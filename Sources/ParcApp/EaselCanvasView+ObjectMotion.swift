@@ -152,11 +152,13 @@ extension EaselCanvasView {
         objectMotionFrame()
     }
 
-    func applyHistory(_ step: () throws -> Void) throws {
+    func applyHistory(_ step: () throws -> Void) throws { try recordingMotion(.history, step) }
+
+    func recordingMotion(_ intent: EaselObjectMotionIntent, _ step: () throws -> Void) throws {
         let before = session.document
         try step()
         guard before != session.document else { return }
-        withObjectMotion(.history) { recordObjectMotion(from: before, to: session.document) }
+        withObjectMotion(intent) { recordObjectMotion(from: before, to: session.document) }
     }
 
     func pulseObjects(_ ids: Set<UUID>) {
@@ -248,7 +250,7 @@ extension EaselCanvasView {
             objectMotion.burst = host
         }
         if host.frame != bounds { host.frame = bounds }
-        if host.superview !== self || subviews.last !== host { addSubview(host, positioned: .above, relativeTo: nil) }
+        if host.superview !== self { addSubview(host, positioned: .above, relativeTo: nil) }
         return host
     }
 
@@ -336,10 +338,11 @@ extension EaselCanvasView {
                         let grow = max(0, max(stretch.x, stretch.y) - 1) * max(box.width, box.height) / 2 + abs(turn) / 90 * max(box.width, box.height) / 2
                         box = box.union(box.offsetBy(dx: from.x, dy: from.y)).insetBy(dx: -reach - grow, dy: -reach - grow)
                     case .appear(.slam):
-                        let grow = (EaselObjectTransition.slamScale - 1) * max(box.width, box.height) / 2 + 8
+                        let grow = (EaselObjectTransition.slamScale - 1 + 0.3) * max(box.width, box.height) / 2 + 8
                         box = box.insetBy(dx: -grow, dy: -grow)
                     default:
                         box = box.union(presentedBounds(of: item, objectMotion.timeline.presentation(for: id, at: now)))
+                        if let previous = objectMotion.timeline.previousLook(for: id) { box = box.union(displayBounds(of: previous)) }
                         let pad = max(box.width, box.height) * 0.06 + 4
                         box = box.insetBy(dx: -pad, dy: -pad)
                     }
@@ -374,6 +377,9 @@ extension EaselCanvasView {
         if case .glide(let from, _, _, _, _) = transition.effect {
             let travel = max(abs(from.x), abs(from.y))
             if travel > 0 { opacity *= max(0, 1 - max(abs(shown.offset.x), abs(shown.offset.y)) / travel) }
+        } else if shown.transforms {
+            let drift = abs(shown.scaleX - 1) + abs(shown.scaleY - 1) + abs(shown.rotation) / 12 + hypot(shown.offset.x, shown.offset.y) / 10
+            opacity *= max(0, 1 - drift * 6)
         }
         if case .restyle = transition.effect { opacity = 1 }
         editor.alphaValue = CGFloat(min(1, max(0, opacity)))
@@ -394,10 +400,18 @@ extension EaselCanvasView {
         for item in ordered {
             let presentation = objectMotion.timeline.presentation(for: item.id, at: now)
             guard presentedBounds(of: item, presentation).intersects(dirtyRect) else { continue }
-            if let previous = objectMotion.timeline.previousLook(for: item.id) {
-                var faded = presentation
-                faded.opacity = 1 - presentation.opacity
-                drawPresented(previous, faded)
+            if let previous = objectMotion.timeline.previousLook(for: item.id), let context = NSGraphicsContext.current?.cgContext {
+                let mix = CGFloat(min(1, max(0, presentation.opacity)))
+                context.saveGState()
+                context.beginTransparencyLayer(auxiliaryInfo: nil)
+                context.setAlpha(1 - mix)
+                drawObject(previous)
+                context.setBlendMode(.plusLighter)
+                context.setAlpha(mix)
+                drawObject(item)
+                context.endTransparencyLayer()
+                context.restoreGState()
+                continue
             }
             drawPresented(item, presentation)
         }
