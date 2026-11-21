@@ -183,8 +183,8 @@ extension EaselCanvasView {
             }
             let prefix = "style.color."
             if row.id.hasPrefix(prefix), let color = EaselPaletteColor(id: String(row.id.dropFirst(prefix.count))) {
-                made.image = Self.swatchImage(EaselInk.color(EaselPalette.stored(color, role: controls.colorRole), adaptive: true,
-                                                             role: controls.colorRole), role: controls.colorRole)
+                made.showImage(Self.swatchImage(EaselInk.color(EaselPalette.stored(color, role: controls.colorRole), adaptive: true,
+                                                               role: controls.colorRole), role: controls.colorRole))
             }
             return made
         }

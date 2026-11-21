@@ -1489,7 +1489,7 @@ extension EaselCanvasView {
         for color in EaselPalette.colors(for: .fill) {
             guard let hex = EaselPalette.hex(color, role: .fill) else { continue }
             add(color.title(dark: dark), #selector(tableSetFill(_:)), to: colors, token: EaselTableMenuToken(table: item.id, fill: hex))
-            colors.items.last?.image = tableSwatch(EaselInk.color(hex, adaptive: adaptsInk, role: .fill))
+            colors.items.last?.showImage(tableSwatch(EaselInk.color(hex, adaptive: adaptsInk, role: .fill)))
         }
         let current = tableSelectionFill
         for row in colors.items {
