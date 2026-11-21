@@ -244,6 +244,11 @@ struct EaselObjectTransition: Equatable {
     }
 }
 
+struct EaselFadingLook: Equatable {
+    let item: EaselItem
+    let weight: Double
+}
+
 struct EaselCarryTilt: Equatable {
     static let maximum = 5.0
     static let gain = 0.006
@@ -324,7 +329,8 @@ struct EaselObjectCarry: Equatable {
 struct EaselObjectMotion {
     private(set) var transitions: [UUID: EaselObjectTransition] = [:]
     private(set) var ghosts: [EaselItem] = []
-    private(set) var previousLooks: [UUID: EaselItem] = [:]
+    private(set) var previousLooks: [UUID: [EaselFadingLook]] = [:]
+    static let fadingLookLimit = 3
     var carry: EaselObjectCarry?
     private(set) var raised: [UUID: TimeInterval] = [:]
 
@@ -410,10 +416,32 @@ struct EaselObjectMotion {
 
     mutating func restyle(_ previous: [EaselItem], at time: TimeInterval, reduced: Bool) {
         for item in previous {
-            if let current = transitions[item.id], current.effect != .restyle { continue }
-            previousLooks[item.id] = item
+            var stack = [EaselFadingLook(item: item, weight: 1)]
+            if let current = transitions[item.id] {
+                guard current.effect == .restyle else { continue }
+                if !current.finished(at: time) {
+                    let shown = min(1, max(0, current.presentation(at: time).opacity))
+                    stack = (previousLooks[item.id] ?? []).map { EaselFadingLook(item: $0.item, weight: $0.weight * (1 - shown)) }
+                    stack.append(EaselFadingLook(item: item, weight: shown))
+                    stack = Self.trimmed(stack)
+                }
+            }
+            previousLooks[item.id] = stack
             transitions[item.id] = EaselObjectTransition(effect: .restyle, start: time, reduced: reduced)
         }
+    }
+
+    static func trimmed(_ looks: [EaselFadingLook]) -> [EaselFadingLook] {
+        var kept = looks.filter { $0.weight > 0.001 }
+        if kept.count > fadingLookLimit {
+            let floor = kept.map(\.weight).sorted(by: >)[fadingLookLimit - 1]
+            var chosen: [EaselFadingLook] = []
+            for look in kept where look.weight >= floor && chosen.count < fadingLookLimit { chosen.append(look) }
+            kept = chosen
+        }
+        let total = kept.reduce(0) { $0 + $1.weight }
+        guard total > 0 else { return Array(looks.suffix(1)).map { EaselFadingLook(item: $0.item, weight: 1) } }
+        return kept.map { EaselFadingLook(item: $0.item, weight: $0.weight / total) }
     }
 
     mutating func pickUp(_ ids: Set<UUID>, tilting: Set<UUID>, shadowOnly: Set<UUID>, at time: TimeInterval, reduced: Bool) {
@@ -445,7 +473,13 @@ struct EaselObjectMotion {
 
     func previousLook(for id: UUID) -> EaselItem? {
         guard let transition = transitions[id], case .restyle = transition.effect else { return nil }
-        return previousLooks[id]
+        return previousLooks[id]?.max { $0.weight < $1.weight }?.item
+    }
+
+    func fadingLooks(for id: UUID, at time: TimeInterval) -> [EaselFadingLook] {
+        guard let transition = transitions[id], case .restyle = transition.effect, let looks = previousLooks[id] else { return [] }
+        let fading = 1 - min(1, max(0, transition.presentation(at: time).opacity))
+        return looks.map { EaselFadingLook(item: $0.item, weight: $0.weight * fading) }
     }
 
     @discardableResult

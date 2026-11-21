@@ -258,6 +258,25 @@ struct EaselObjectMotionTests {
         expect(middle.opacity > 0.3 && middle.opacity < 0.7 && near(middle.scale, 1), "the new look cross-fades in place")
         motion.prune(at: 0.16)
         expect(motion.previousLook(for: old.id) == nil && motion.isEmpty, "the old look is dropped when the fade ends")
+        var twice = EaselObjectMotion()
+        var middle1 = old; middle1.color = "#FF0000"
+        twice.restyle([old], at: 0, reduced: false)
+        let before = twice.fadingLooks(for: old.id, at: 0.06), shownBefore = twice.presentation(for: old.id, at: 0.06).opacity
+        twice.restyle([middle1], at: 0.06, reduced: false)
+        let after = twice.fadingLooks(for: old.id, at: 0.06), shownAfter = twice.presentation(for: old.id, at: 0.06).opacity
+        expect(near(after.first { $0.item == old }?.weight ?? 0, before.first?.weight ?? 1, 1e-9), "a second restyle keeps the first look exactly as visible")
+        expect(near(after.first { $0.item == middle1 }?.weight ?? 0, shownBefore, 1e-9) && near(shownAfter, 0),
+               "the half-faded look carries its opacity instead of popping")
+        expect(near(after.reduce(0) { $0 + $1.weight } + shownAfter, 1, 1e-9), "the cross-fade weights always add up to a solid object")
+        let later = twice.fadingLooks(for: old.id, at: 0.15).reduce(0) { $0 + $1.weight } + twice.presentation(for: old.id, at: 0.15).opacity
+        expect(near(later, 1, 1e-9), "the stacked fade stays solid while it runs")
+        for step in 1...6 {
+            var next = old; next.color = "#00000\(step)"
+            twice.restyle([next], at: 0.06 + Double(step) * 0.01, reduced: false)
+        }
+        expect(twice.fadingLooks(for: old.id, at: 0.12).count <= EaselObjectMotion.fadingLookLimit, "rapid restyles keep at most three looks")
+        twice.prune(at: 0.4)
+        expect(twice.isEmpty && twice.fadingLooks(for: old.id, at: 0.4).isEmpty, "stacked looks are dropped when the fade ends")
         var reduced = EaselObjectMotion()
         reduced.restyle([old], at: 0, reduced: true)
         expect(reduced.previousLook(for: old.id) != nil, "Reduce Motion still cross-fades restyles")
