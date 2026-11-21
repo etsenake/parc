@@ -1,6 +1,6 @@
 #import "ParcEngine.h"
 
-#include "../Support/TestFailure.h"
+#import "ParcNativeTest.h"
 #include <stdio.h>
 
 @interface PCNativePage (Test)
@@ -49,33 +49,37 @@ int parc_engine_shutdown_if_idle(void) { return 0; }
 - (void)browserView:(PCBrowserView*)view didChangeTitle:(NSString*)title { self.titles += 1; }
 @end
 
-int main(void) {
-  ParcExitOnUncaughtExceptions();
+@interface BrowserViewMediaDeliveryTests : ParcNativeTestCase
+@end
+
+@implementation BrowserViewMediaDeliveryTests
+
+- (void)testMediaAndTitleChangesReachTheDelegateOnce {
   @autoreleasepool {
     PCNativePage* page = [[PCNativePage alloc] initForTest];
     page.testTitle = @"Track";
     PCBrowserView* view = [[PCBrowserView alloc] initWithFrame:NSZeroRect adoptingNativePage:page];
     Delegate* delegate = [Delegate new];
     view.delegate = delegate;
-    PARC_EXPECT(delegate.media == 1 && delegate.titles == 1);
+    PARC_CHECK(delegate.media == 1 && delegate.titles == 1);
 
     [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    PARC_EXPECT(delegate.media == 1 && delegate.titles == 1);
+    PARC_CHECK(delegate.media == 1 && delegate.titles == 1);
 
     page.testMediaRevision = 1;
     [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    PARC_EXPECT(delegate.media == 2 && delegate.titles == 1);
+    PARC_CHECK(delegate.media == 2 && delegate.titles == 1);
     [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    PARC_EXPECT(delegate.media == 2);
+    PARC_CHECK(delegate.media == 2);
 
     page.testTitle = @"Next Track";
     [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    PARC_EXPECT(delegate.media == 2 && delegate.titles == 2);
+    PARC_CHECK(delegate.media == 2 && delegate.titles == 2);
 
     Delegate* next = [Delegate new];
     view.delegate = next;
-    PARC_EXPECT(next.media == 1);
+    PARC_CHECK(next.media == 1);
   }
-  printf("Browser view media delivery: checks passed\n");
-  return 0;
 }
+
+@end

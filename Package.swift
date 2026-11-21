@@ -3,6 +3,12 @@ import PackageDescription
 
 let strict: [SwiftSetting] = [.treatAllWarnings(as: .error)]
 let nativeFlags: [CSetting] = [.unsafeFlags(["-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-Werror"])]
+let facadeFlags: [CSetting] = nativeFlags + [
+    .unsafeFlags(["-Wno-unused-parameter", "-Wno-incomplete-implementation", "-Wno-objc-property-implementation",
+                  "-Wno-objc-protocol-property-synthesis", "-Wno-protocol", "-Wno-objc-root-class", "-Wno-nullability-completeness"]),
+    .define("OS_MAC", to: "1"), .headerSearchPath("../../ParcNativeTests/Support"),
+    .headerSearchPath("../../../Engine/ParcNative"), .headerSearchPath("../../../Sources/ParcEngine"),
+]
 
 let package = Package(
     name: "Parc",
@@ -29,6 +35,11 @@ let package = Package(
                     cSettings: nativeFlags + [.unsafeFlags(["-Wno-unused-parameter"]), .headerSearchPath("Support"), .headerSearchPath("../../Engine/ParcNative"),
                                               .headerSearchPath("../../Engine/ParcHost/native"), .headerSearchPath("../../Engine/ParcRenderer"),
                                               .headerSearchPath("../../Sources/ParcEngine")]),
+        .testTarget(name: "EngineFacadeMediaTests", path: "tests/EngineFacadeTests/Media", cSettings: facadeFlags),
+        .testTarget(name: "EngineFacadeImportTests", path: "tests/EngineFacadeTests/Imports",
+                    cSettings: facadeFlags + [.headerSearchPath("../Shared")]),
+        .testTarget(name: "EngineFacadeOldEngineTests", path: "tests/EngineFacadeTests/OldEngine",
+                    cSettings: facadeFlags + [.headerSearchPath("../Shared")]),
     ],
     swiftLanguageModes: [.v5],
     cxxLanguageStandard: .cxx20
