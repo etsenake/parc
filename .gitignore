@@ -24,3 +24,5 @@ __pycache__/
 .env.*
 .sisyphus/
 .*-scratchpad*.md
+/.build/
+/.swiftpm/
