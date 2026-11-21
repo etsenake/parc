@@ -11,6 +11,7 @@ struct EaselCrashHardeningTests {
 
     @MainActor static func main() {
         exportScale()
+        tableCellTrimming()
         print("EaselCrashHardeningTests: \(assertions) assertions passed")
     }
 
@@ -23,5 +24,12 @@ struct EaselCrashHardeningTests {
         expect(wide > 0, "A huge board still exports at a positive scale")
         expect(EaselExportScale.capped(2, width: 0, height: 900) == 2, "Empty sizes leave the scale for the caller's own guard")
         expect(EaselExportScale.capped(.nan, width: 100, height: 100).isNaN, "Invalid scales pass through for the caller's own guard")
+    }
+
+    @MainActor static func tableCellTrimming() {
+        expect(EaselTableData.normalizedCellText("\u{2028}\u{2028} Hello   there \u{2028}") == "Hello there", "Pasted table cells drop leading and trailing breaks")
+        expect(EaselTableData.normalizedCellText("\u{2028} \u{2028}").isEmpty, "A cell of only breaks pastes empty")
+        let flood = String(repeating: "\u{2028}", count: 200_000) + "Kept" + String(repeating: "\u{2028}", count: 200_000)
+        expect(EaselTableData.normalizedCellText(flood) == "Kept", "A cell padded with a flood of breaks still pastes its words")
     }
 }

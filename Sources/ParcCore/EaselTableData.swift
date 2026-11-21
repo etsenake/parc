@@ -209,7 +209,7 @@ enum EaselTableData {
     }
 
     static func normalizedCellText(_ raw: String) -> String {
-        var text = decodeEntities(raw)
+        let text = decodeEntities(raw)
         var collapsed = ""
         var pendingSpace = false
         for scalar in text.unicodeScalars {
@@ -225,10 +225,9 @@ enum EaselTableData {
                 collapsed.unicodeScalars.append(scalar)
             }
         }
-        text = collapsed
-        while let last = text.last, last == "\n" || last == " " { text.removeLast() }
-        while let first = text.first, first == "\n" || first == " " { text.removeFirst() }
-        return text
+        let kept: (Character) -> Bool = { $0 != "\n" && $0 != " " }
+        guard let start = collapsed.firstIndex(where: kept), let end = collapsed.lastIndex(where: kept) else { return "" }
+        return String(collapsed[start...end])
     }
 
     private static let entities: [String: String] = [
