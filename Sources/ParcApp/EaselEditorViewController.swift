@@ -165,6 +165,8 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         }
         webpageButton = palette.button(for: .webpage)
         webpageButton?.isEnabled = pageObjects != nil
+        let timer = makeTimerButton()
+        chrome.addArrangedSubview(timer)
         undoButton = chromeButton("Undo Easel change", "arrow.uturn.backward", #selector(undoChange))
         redoButton = chromeButton("Redo Easel change", "arrow.uturn.forward", #selector(redoChange))
         let options = chromeButton("Easel Options", "ellipsis", #selector(showPageMenu(_:)))
@@ -173,7 +175,8 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         root.addSubview(chrome)
         root.addSubview(recenter)
         var lastChromeSize = NSSize(width: -1, height: -1)
-        root.onLayout = { [weak self, weak root, weak palette, weak chrome] in
+        timer.onResize = { [weak root] in lastChromeSize = NSSize(width: -1, height: -1); root?.needsLayout = true }
+        root.onLayout = { [weak self, weak root, weak palette, weak chrome, weak timer] in
             guard let self, let root, let palette, let chrome else { return }
             let width = root.bounds.width, height = root.bounds.height
             let strip = min(width - 24, palette.preferredWidth)
@@ -181,7 +184,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             let size = root.bounds.size
             guard size != lastChromeSize else { return }
             lastChromeSize = size
-            let chromeWidth: CGFloat = 3 * chromeSize + 2 * 2
+            let chromeWidth: CGFloat = 3 * chromeSize + 3 * 2 + (timer?.intrinsicContentSize.width ?? chromeSize)
             self.titleField.frame = NSRect(x: 24, y: 10, width: max(80, width - chromeWidth - 52), height: 32)
             chrome.frame = NSRect(x: max(24, width - chromeWidth - 14), y: 12, width: chromeWidth, height: chromeSize)
             self.status.frame = NSRect(x: 26, y: 40, width: max(100, width - 52), height: 18)

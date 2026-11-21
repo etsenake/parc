@@ -1,7 +1,7 @@
 # Easel board features
 
 Board-wide tools that work across a whole Easel rather than on one object:
-find and replace, links to a single object and Easel History. They sit beside
+find and replace, links to a single object, Easel History and the timer. They sit beside
 the [Easel editing contract](easels.md) and use the Notes look
 ([appearance](easel-appearance.md)) and motion rules ([motion](easel-motion.md)).
 
@@ -94,6 +94,22 @@ first keeps the current state as a snapshot, then brings back the old one as
 a single undo step, so ⌘Z returns to where you were. ↑ and ↓ move through the
 list and Return restores. A version whose pictures are missing can't be
 previewed and won't restore, and the Easel stays as it was.
+
+## Timer
+
+The timer button sits in the Easel's top-right chrome, before Undo. It opens a
+small Notes-style panel with the countdown: − and + (or ↑ and ↓) change it a
+minute at a time, ⇧ makes that five, up to 99:59. Start runs it, Space or
+Return pauses and resumes, +1 min adds a minute while it runs or is paused
+(it never takes time away mid-run) and Reset goes back to the set length.
+While it runs or is paused the chrome button shows the time left in the
+accent colour, so the panel can stay closed. At 00:00 the button gives a
+gentle shake (a soft fade with Reduce Motion), a quiet "Time's up" toast
+appears and VoiceOver announces it.
+
+There is one timer per Easel, shared by every tab showing it. It lives only
+while Parc runs and is never saved in the Easel. The countdown rules are
+`EaselCountdown` in ParcCore.
 
 ## Checks
 
