@@ -23,6 +23,11 @@ struct EaselPaletteTests {
             expect(EaselPalette.colors(for: role) == [.neutral] + NoteColor.allCases.map { .note($0) },
                    "\(role.rawValue) offers the neutral and Notes' nine colours")
         }
+        expect(EaselPalette.colors(for: .highlight).count == 8 && !EaselPalette.colors(for: .highlight).contains(.note(.brown)),
+               "Highlighters offer eight Notes colours")
+        expect(EaselPalette.stored(.automatic, role: .highlight) == EaselPalette.hex(EaselPalette.defaultHighlight, role: .highlight)
+               && EaselPalette.stored(.automatic, role: .sticky) == "#FFFFFF" && EaselPalette.stored(.neutral, role: .ink) == "#252525",
+               "Swatches a role lacks store that role's default")
         for role in EaselColorRole.allCases {
             let hexes = EaselPalette.colors(for: role).compactMap { EaselPalette.hex($0, role: role) }
             expect(hexes.count == EaselPalette.colors(for: role).count, "Every \(role.rawValue) swatch stores a colour")
@@ -46,8 +51,13 @@ struct EaselPaletteTests {
     static func recognition() {
         expect(EaselPalette.normalized("#2c6c91") == "#2C6C91" && EaselPalette.normalized("#2C6C91ff") == "#2C6C91",
                "Lowercase and opaque eight-digit colours normalise")
-        for bad in ["#2C6C9180", "2C6C91", "#2C6C9", "#GGGGGG", "", "#2C6C91FF00"] {
+        for bad in ["#2C6C9180", "2C6C91", "#2C6C9", "#GGGGGG", "", "#2C6C91FF00", "#\u{FF11}\u{FF12}\u{FF13}456"] {
             expect(EaselPalette.normalized(bad) == nil, "\(bad) is not a stored opaque colour")
+        }
+        expect(EaselPalette.parseHex(" #2c6c91 ") == "#2C6C91" && EaselPalette.parseHex("2C6C91") == "#2C6C91"
+               && EaselPalette.parseHex("#f80") == "#FF8800", "Typed hex codes accept short and long forms, with or without #")
+        for bad in ["#2C6C9", "#2C6C9180", "blue", "#", "##123456", "#12 456"] {
+            expect(EaselPalette.parseHex(bad) == nil, "\(bad) is not a hex code")
         }
         for role in EaselColorRole.allCases {
             for color in EaselPalette.colors(for: role) {
@@ -140,6 +150,14 @@ struct EaselPaletteTests {
         expect(EaselPaintRules.strokeWidth(shape) == EaselPaintRules.maximumWidth, "Widths stay within the saved range")
         shape.strokeWidth = .nan
         expect(EaselPaintRules.strokeWidth(shape) == 2.5, "A damaged width falls back to the default")
+        var arrow = item(.arrow)
+        arrow.strokeWidth = 0
+        expect(EaselPaintRules.strokeWidth(arrow) == EaselPaintRules.minimumLineWidth, "Arrows never vanish while staying clickable")
+        var marker = item(.freehand)
+        marker.brush = .highlighter
+        expect(EaselPaintRules.strokeWidth(marker) == 16 && EaselPaintRules.strokeOpacity(marker) == 0.35, "Highlighters are wide and see-through")
+        expect(EaselPaintRules.ink(marker) == (EaselPalette.stored(EaselPalette.defaultHighlight, role: .highlight), .highlight),
+               "A default highlighter draws in the default highlight colour")
         var text = item(.text)
         text.strokeWidth = 6
         expect(EaselPaintRules.strokeWidth(text) == 0, "Kinds without an outline ignore a stray width")

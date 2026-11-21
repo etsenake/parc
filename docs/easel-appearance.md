@@ -56,17 +56,72 @@ Objects store colours as RGB hex, and `#252525`, the colour every new object
 has always been given, is the automatic ink token. On an Easel canvas it draws
 as the Notes ink, dark on light paper and near-white on dark paper, for text,
 strokes, arrows and shape outlines. Saved Easels need no rewrite: their default
-objects and default-coloured text runs read the same token. Editing stores the
-token again, never the resolved light or dark value, so a document stays the
-same on disk whichever appearance it was edited in. Any other colour is a
-chosen colour and stays exactly as saved. Copy and export to other apps write
-the fixed `#252525`, so pasted text stays readable on their white pages.
+objects and default-coloured text runs read the same token.
 
-The capture editor turns adaptive ink off: its annotations are burned into
-pixels, so they keep the fixed colour and its colour well. Image export paints
-white or black behind the objects from the Easel's own appearance, matching the
-ink it draws with. Authored font geometry, text fill and immutable capture
-pixels are unchanged.
+The palette (`EaselPalette`) is Notes' nine colours, gray to red, in four
+roles. Every palette colour is stored as its light value and draws its dark
+variant on dark paper, exactly like the ink token:
+
+| Role | Used for | Light paper | Dark paper |
+| --- | --- | --- | --- |
+| Ink | text, arrows, pen, outlines, section titles | Notes text colours | Notes dark text colours |
+| Fill | shape fills, section bodies | Notes background colour, 20% over white, opaque | dark background colour, 30% over a dark base |
+| Sticky | sticky paper | the same at 42% | 45% |
+| Highlight | highlighter strokes, drawn at 35% opacity | Notes background colours, without brown | Notes dark background colours |
+
+Ink offers Default (the token) and the nine; fill and sticky offer White, which
+turns into the Notes panel colour on dark paper (the picker and context menu
+call it Black there), and the nine. A hex adapts only in its own role: a fill colour used as
+ink, a custom colour or any other hex stays exactly as saved. Rich-text runs
+adapt the same way, and editing stores the light value again, so a document
+stays the same on disk whichever appearance edited it. Default text reads at
+4.5:1 or better on every fill and sticky paper in both appearances. Solid fills
+are opaque pastels, so shapes and stickies stack like paper. Transparent is the
+classic tint: a shape with no saved fill keeps the 9% wash of its outline
+colour, and the opacity slider strengthens whichever fill the shape has.
+
+Unset widths keep today's look: 2.5-point outlines, 3-point arrows and pen
+lines, 16-point highlighter. Thin, Medium and Thick are 1.5/2.5/5 for outlines
+(plus None), 1.5/3/6 for arrows and the pen, and 10/16/24 for the highlighter;
+arrows and drawings never drop below one point. Dashes and dots scale with the
+width, and arrowheads stay solid and grow with the line.
+
+The style picker (`EaselColorPicker`) is a Notes floating-panel card with the
+Notes highlight and press motion: Color swatches, a custom colour from a hex
+code (type # to start one) or the screen eyedropper, then Fill (No Fill,
+Transparent, Solid and an opacity slider) and Outline or Line (weights, solid,
+dashed, dotted) when the selection takes them; connectors add a Label
+Background toggle. Text shows colour only, shapes
+everything, arrows colour, width and style, the pen and highlighter colour and
+width, stickies and sections colour only. The object context menu offers the
+same choices as Color, Fill and Outline or Line submenus. Canvas commands (`applyColor`,
+`applyFill`, `applyFillOpacity`, `applyStrokeWeight`, `applyStrokeDash`) change
+the selection as one Undo step, skip locked objects and kinds a property doesn't
+fit, and override every colour in a mixed selection. While text
+is being edited, a colour goes to the selected text, or to what you type next
+at a caret. Washi tape takes Default (its own design colours) or a Notes colour
+that retints the design.
+A colour on a shape sets its outline and, when it has a solid fill, the
+matching pastel; Default gives a solid shape the automatic ink and a White
+fill. Stickies take paper and keep automatic text; sections take a pastel body
+and the matching ink for border and title, and Default takes either back to its
+plain look.
+
+Applying a style makes it that tool's next default. Shapes, pen,
+highlighter, tape, text and sections remember across launches; sticky paper starts
+on a random Notes colour each session, then follows the last sticky colour;
+connectors remember their colour, width, dash and label background per Easel
+until Parc quits.
+
+Copy and image files for other apps keep the stored light colours (copied text
+writes `#252525` for the token). Image export paints white or black behind the
+objects from the Easel's own appearance and draws in it, so a dark Easel
+exports dark variants. HTML export writes palette colours as CSS variables such
+as `--easel-ink-blue`, with the light value as fallback and dark overrides
+under `prefers-color-scheme: dark`, beside `--easel-ink`. The capture editor
+turns adaptive ink off: its annotations are burned into pixels, so they keep
+fixed colours and its colour well. Authored font geometry, text fill and
+immutable capture pixels are unchanged.
 
 ## Native adaptations and boundaries
 
@@ -89,9 +144,11 @@ motion visibility, Reduce Motion and original-owner cancellation remain owned
 by `EaselMotion`. Embedded live-page crop/mask/loading pixels and beforeunload
 retirement remain owned by the delivered page pool. No engine change is needed.
 
-The windowless `EaselInkTests` suite in `tests/NotesEditor` checks ink
-resolution, chosen colours and token round trips; `EaselSelectionToolbarTests` checks which controls each
-selection gets. Inert checks cover all font/fill/history behavior, the toolbar's text state helpers,
+The windowless `EaselInkTests`, `EaselPaletteTests` and `EaselStyleTests`
+suites in `tests/NotesEditor` check ink and palette resolution, contrast, chosen
+colours, token round trips, style commands and remembered styles;
+`EaselSelectionToolbarTests` checks which controls each selection gets. Inert
+checks cover all font/fill/history behavior, the toolbar's text state helpers,
 non-overlapping controls, actual selected/disabled states, light/dark drawing,
 unchanged attributed text, scaled corner/edge admission, retained edge refusal after zoom, narrow toolbar
 content height under legacy preferences and the compact native

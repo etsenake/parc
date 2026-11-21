@@ -108,9 +108,7 @@ enum EaselVectorExport {
         return "#" + body.prefix(6).uppercased()
     }
 
-    static func paint(_ hex: String) -> String {
-        isAutomatic(hex) ? "var(--easel-ink)" : (color(hex) ?? "var(--easel-ink)")
-    }
+    static func paint(_ hex: String) -> String { paint(hex, role: .ink) }
 
     static func svg(_ items: [EaselItem], art: EaselVectorArt, title: String) -> String {
         let bounds = contentBounds(items)
@@ -144,7 +142,7 @@ enum EaselVectorExport {
 
     static func board(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
         let f = item.frame, radius = item.kind == .sticky ? 4.0 : 12.0
-        let fill = item.fill.map(paint) ?? paint(automaticInk)
+        let fill = item.fill.map { paint($0, role: EaselPaintRules.fillRole(item.kind)) } ?? paint(automaticInk)
         let opacity = item.fill == nil ? 0.09 : (item.fillOpacity ?? 1)
         let paper = "<rect x=\"" + number(f.x) + "\" y=\"" + number(f.y) + "\" width=\"" + number(f.width) + "\" height=\""
             + number(f.height) + "\" rx=\"" + number(radius) + "\" ry=\"" + number(radius) + "\" style=\"fill:" + fill
@@ -162,8 +160,8 @@ enum EaselVectorExport {
     }
 
     static func shape(_ item: EaselItem) -> String {
-        let f = item.frame, ink = paint(item.color)
-        let style = " style=\"fill:" + ink + ";fill-opacity:.09;stroke:" + ink + ";stroke-width:2.5\""
+        let f = item.frame
+        let style = " style=\"" + fillStyle(item) + ";" + strokeStyle(item) + "\""
         if item.kind == .circle {
             return "<ellipse cx=\"" + number(f.x + f.width / 2) + "\" cy=\"" + number(f.y + f.height / 2) + "\" rx=\""
                 + number(f.width / 2) + "\" ry=\"" + number(f.height / 2) + "\"" + style + "/>"
@@ -185,16 +183,16 @@ enum EaselVectorExport {
         guard item.kind == .arrow, item.points.count >= 2, let last = item.points.last else { return nil }
         let previous = item.points[item.points.count - 2], angle = atan2(last.y - previous.y, last.x - previous.x)
         let end = (x: item.frame.x + last.x, y: item.frame.y + last.y)
-        return "M" + number(end.x - cos(angle - 0.5) * 16) + " " + number(end.y - sin(angle - 0.5) * 16)
+        let length = EaselPaintRules.arrowHeadLength(width: EaselPaintRules.strokeWidth(item))
+        return "M" + number(end.x - cos(angle - 0.5) * length) + " " + number(end.y - sin(angle - 0.5) * length)
             + "L" + number(end.x) + " " + number(end.y)
-            + "L" + number(end.x - cos(angle + 0.5) * 16) + " " + number(end.y - sin(angle + 0.5) * 16)
+            + "L" + number(end.x - cos(angle + 0.5) * length) + " " + number(end.y - sin(angle + 0.5) * length)
     }
 
     static func stroke(_ item: EaselItem) -> String {
         guard let path = strokePath(item) else { return "" }
-        let style = " style=\"fill:none;stroke:" + paint(item.color) + ";stroke-width:3;stroke-linecap:round;stroke-linejoin:round\""
-        var result = "<path d=\"" + path + "\"" + style + "/>"
-        if let head = arrowHead(item) { result += "<path d=\"" + head + "\"" + style + "/>" }
+        var result = "<path d=\"" + path + "\" style=\"fill:none;" + strokeStyle(item, rounded: true) + "\"/>"
+        if let head = arrowHead(item) { result += "<path d=\"" + head + "\" style=\"fill:none;" + strokeStyle(item, dashed: false, rounded: true) + "\"/>" }
         return result
     }
 
@@ -282,8 +280,8 @@ enum EaselVectorExport {
         func variables(_ swatch: EaselVectorPalette.Swatch) -> String {
             "--easel-ink:" + swatch.ink + ";--easel-card:" + swatch.card + ";--easel-card-line:" + swatch.cardLine + ";--easel-muted:" + swatch.muted + ";"
         }
-        return ":root{" + variables(palette.light) + "}\n"
-            + "@media screen and (prefers-color-scheme:dark){:root{" + variables(palette.dark) + "}}\n"
+        return ":root{" + variables(palette.light) + EaselPalette.cssDeclarations(dark: false) + "}\n"
+            + "@media screen and (prefers-color-scheme:dark){:root{" + variables(palette.dark) + EaselPalette.cssDeclarations(dark: true) + "}}\n"
             + ".easel-canvas{margin:0;overflow-x:auto;line-height:0}\n"
             + ".easel-svg{display:block;max-width:100%;height:auto;margin:0 auto}\n"
             + ".easel-svg a{cursor:pointer}\n" + codeCSS(palette.code)

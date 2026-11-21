@@ -81,9 +81,10 @@ struct EaselPaint {
     let dash: [CGFloat]
 
     init(_ item: EaselItem, adaptive: Bool) {
-        let ink = EaselInk.color(item.color, adaptive: adaptive)
+        let source = EaselPaintRules.ink(item), opacity = EaselPaintRules.strokeOpacity(item)
+        let ink = EaselInk.color(source.hex, adaptive: adaptive, role: source.role)
         let width = EaselPaintRules.strokeWidth(item)
-        inkColor = ink
+        inkColor = opacity < 1 ? ink.withAlphaComponent(CGFloat(opacity)) : ink
         lineWidth = CGFloat(width)
         dash = EaselPaintRules.dashPattern(item.strokeDash, width: width).map { CGFloat($0) }
         switch EaselPaintRules.fill(item) {

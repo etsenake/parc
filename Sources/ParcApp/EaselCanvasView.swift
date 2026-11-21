@@ -176,7 +176,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var onImageEditingCancel: (() -> Void)?
     func setInsertionColor(_ color: NSColor) {
         guard let rgb = color.usingColorSpace(.sRGB) else { return }
-        let hex = String(format: "#%02X%02X%02X", Int((rgb.redComponent * 255).rounded()),
+        let hex = EaselInk.canonicalHex(of: color) ?? String(format: "#%02X%02X%02X", Int((rgb.redComponent * 255).rounded()),
                          Int((rgb.greenComponent * 255).rounded()), Int((rgb.blueComponent * 255).rounded()))
         insertionColor = hex
         let ids = selection
@@ -792,7 +792,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 }
             case .rectangle, .circle:
                 let path = item.kind == .circle ? NSBezierPath(ovalIn: r) : NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5)
-                ink.withAlphaComponent(0.09).setFill(); path.fill(); ink.setStroke(); path.lineWidth = 2.5; path.stroke()
+                let paint = EaselPaint(item, adaptive: adaptsInk); paint.fill(path); paint.stroke(path)
             case .arrow, .freehand:
                 if item.kind == .freehand { drawDrawing(item); return }
                 guard let first = item.points.first else { return }
@@ -1016,6 +1016,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                              zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1,
                              text: kind == .text && edit && text.isEmpty && styledText == nil ? EaselTextEditing.defaultText : text,
                              color: insertionColor)
+        stampRememberedStyle(on: &item)
         if kind == .text, let styledText {
             item.textStyle = styledText.style; item.color = styledText.color; item.richText = styledText.richText
             if fixedCanvasSize != nil { item.textStyle?.autoWidth = nil }
@@ -1918,6 +1919,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         for (title, action) in [("Duplicate", #selector(duplicateObjects)), ("Bring to Front", #selector(bringToFront)), ("Copy", #selector(copy(_:))), ("Paste", #selector(paste)), ("Paste as Plain Text", #selector(pasteAsPlainText)), ("Delete", #selector(deleteObjects))] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: ""); item.target = self; item.representedObject = captured; menu.addItem(item)
         }
+        let styles = styleMenuItems()
+        if !styles.isEmpty { menu.addItem(.separator()); styles.forEach(menu.addItem) }
         if let object = captured.command?.originals.first, captured.command?.originals.count == 1, object.url != nil {
             menu.addItem(.separator())
             if EaselWebItemChrome.canMakeLive(object) {

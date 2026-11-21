@@ -588,6 +588,7 @@ enum EaselMermaidColor {
             switch role {
             case .ink: return lightness > 0.62 ? EaselPalette.hex(.note(.gray), role: .ink) : EaselPalette.automaticInk
             case .fill, .sticky: return lightness > 0.86 ? EaselPalette.neutralLight : EaselPalette.hex(.note(.gray), role: role)
+            case .highlight: return EaselPalette.hex(.note(.gray), role: .highlight)
             }
         }
         var hue: Double
