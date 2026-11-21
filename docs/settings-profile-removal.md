@@ -39,4 +39,4 @@ Settings closure invalidates pending focus restoration.
 Isolated model/native-boundary doubles cover atomic admission, Default handoff to the
 recorded survivor, preparation cancellation, journal recovery, refused and incomplete
 removals, and partial completion without deleting real profile storage.
-`tests/SpaceSharingTests.swift` covers which warning each situation gets.
+`SpaceSharingTests` (run by `swift test`) covers which warning each situation gets.

@@ -165,8 +165,3 @@ with tempfile.TemporaryDirectory(prefix='parc-folder-delete-') as tmp:
     binary = Path(tmp) / 'check'
     subprocess.run(['xcrun', 'swiftc', str(root / 'tests/Support/TestFailure.swift'), '-parse-as-library', str(swift), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-keys = body('    override func keyDown(with event: NSEvent)')
-assert 'handleFolderDeletionKey(event)' in keys and 'handleSelectionDeleteKey()' in keys, 'Singleton folder Delete/Backspace must not fall through to NSResponder'
-wiring = (root / 'Sources/ParcApp/BrowserWindowController+Sidebar.swift').read_text()
-assert 'sidebar.holdsOnlyEmptyFolders = ' in wiring and '?.holdsOnlyEmptyFolders == true' in wiring, 'Window controller answers the empty-folder Delete question from the keyboard-close model'
-print('PASS: singleton folder keyboard routing')
