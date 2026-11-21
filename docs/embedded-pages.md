@@ -14,7 +14,11 @@ and retirement. A document plugs in through `EmbeddedPageOwner`, which answers
 whether it still wants a page at an address, fingerprints its embedded objects
 for transfers and records navigation. Easel's session and the note editor both
 implement it. `EaselBrowserObjects` and `NoteEmbeddedPages` are thin subclasses
-that add their canvas behaviour; each brings its own `EmbeddedPageSurface` view.
+that add their canvas behaviour. Both host the same surface, `NoteEmbedSurface`,
+set up for a note or for an Easel: the Easel set-up adds live-capture framing,
+the ••• menu, title-click address editing and the select-first rule, while the
+note set-up keeps first-click activation, the scroll latch and the caption
+button. Note live-capture blocks still use their own `NoteCaptureLiveSurface`.
 
 `EmbeddedPageOwnerGate` is the owner's lifecycle state: open, retiring, moving
 between windows (with a generation that a finished move advances) and disposed.
@@ -54,12 +58,14 @@ with its cookies and sign-ins. A slim header shows the favicon, title and host,
 plus Back, Reload (Stop while loading) and Open, which opens the page in a tab.
 While a page warms up, can't open, closes or crashes, the block shows the
 bookmark-style card with a short status and Retry. Easel webpage objects and
-captured cards share this header (`EmbeddedPageHeader`) and status card. YouTube, Vimeo, Loom,
-Spotify and Figma links load their embed players; Open still uses the address
-in the file. A note's first load sends Parc's app identifier
-(`https://<bundle id>`) as its Referer with a strict-origin-when-cross-origin
-policy, as an iframe would. YouTube's player refuses to play without one
-(Error 153).
+captured cards share this header (`EmbeddedPageHeader`) and status card. In
+notes and Easels alike, YouTube, Vimeo, Loom, Spotify and Figma links load their
+embed players (`NoteEmbedAddress`); Open still uses the saved address, and an
+Easel doesn't record the player address as navigation. Every embed's first load
+sends Parc's app identifier (`https://<bundle id>`) as its Referer with a
+strict-origin-when-cross-origin policy, as an iframe would. YouTube's player
+refuses to play without one (Error 153). Live captures load their saved source
+without it.
 
 The page is a fixed height that people change with the handle on the bottom
 edge. The height is stored as `height` in the block's

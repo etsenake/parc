@@ -271,17 +271,49 @@ says “Snapshot only” and explains why in its tooltip. A live card shows a Li
 badge, **Back to snapshot**, Reload (Stop while loading), Open in a tab and a
 ••• menu with Site Information. A webpage object shows Back, Reload, Open and a
 ••• menu with Forward, Edit Address or Search… and Site Information; clicking
-its title also edits the address. The check mark (“Back to the Easel”) appears
-while a page has input. Warming up, alignment failures, closed and crashed
-pages use the embed block's bookmark card with a short status and Retry.
-`EaselWebItemChrome` decides the state, labels and header placement.
+its title also edits the address. The ••• menu is a Notes menu list. The check
+mark (“Back to the Easel”) appears while a page has input. Warming up,
+alignment failures, closed and crashed pages use the embed block's bookmark
+card with a short status and Retry. `EaselWebItemChrome` decides the state,
+labels and header placement. The page itself is the note embed's surface, so
+YouTube, Vimeo, Loom, Spotify and Figma links play in their embed players and
+the first load carries Parc's Referer, exactly as in a note.
+
+### Embed and Bookmark objects
+
+Inserting an Embed or a Bookmark places an empty object that wears the Notes
+link entry card (“Paste a link to embed…” or “Paste a link to bookmark…”) with
+its field focused. Like webpages, an unselected one takes a first click as
+selection; once it's the only selection its field and chip take clicks and
+keys. Escape returns to the canvas and leaves the empty object, Delete removes
+it, and a locked Easel block in a note shows the read-only “No embed here yet”.
+Submitting fills the object as one Undo step, resized around its centre to
+640 × 420 for an embed or 480 × 120 for a bookmark; a bad link gets the
+entry's shake and hint. Embed also searches: text that isn't an address opens
+DuckDuckGo rows (All, Images, Videos, News, Maps, Shopping) under the entry,
+with Images highlighted, and arrows and Return pick one.
+
+A link object is the Notes bookmark card (`NoteLinkCardView`): title, two lines
+of summary, the site line with its favicon and the preview picture, shimmering
+while it loads. The preview fetched by `NoteLinkMetadata` is saved on the object
+as `preview` without an Undo step, the way webpage navigation is recorded, so
+the card reads the same offline and in exports. A click selects it, and a double
+click or VoiceOver's press opens the link. PDF, PNG and Copy as Image draw the
+card's title, summary and site; HTML and SVG exports draw it as a card linking
+to its address (`EaselBookmarkCard`, `EaselVectorExport.bookmark`). The provider
+is `EaselWebObjects`, registered by the Easel tab and by Easel blocks in notes.
 
 ### Webpage address, search and durable navigation
 
-Address entry accepts credential-free HTTP(S), adding HTTPS when appropriate.
-Search uses DuckDuckGo with All, Images, Videos, News, Maps and Shopping; Images
-is the default. Encode a query once, preserve literal plus signs and use
-`iaxm=maps` for Maps. This is an explicit URL/search flow, without autocomplete.
+Edit Address or Search… opens the Notes link entry in a floating panel under
+the page header, filled with the page's address (or the last search). Text that
+reads as an address opens it; anything else offers the DuckDuckGo rows, with
+the last category chosen highlighted (Images to begin with).
+`EaselWebNavigation.entry` decides: a credential-free HTTP(S) address with a
+real host (a dotted name ending in letters, an IPv4 address or localhost) is an
+address, adding HTTPS when needed, and everything else is a search. Searches
+encode a query once, preserve literal plus signs and use `iaxm=maps` for Maps.
+There's no autocomplete.
 
 Admission checks the original owner, composition and validation errors. A
 selected real page's committed URL updates durable object metadata. Other
@@ -308,7 +340,14 @@ One Undo restores the original attributes and selection. Composition and
 attachment-bearing labels refuse before mutation. Later typing and explicit
 plain paste do not inherit the pasted link.
 
-The canvas accepts URL-only pasteboards as local link objects, and plain text
+A lone URL pasted on the canvas lands as a bookmark at the pointer or the
+visible centre and opens the Notes “Paste as” menu beside it, built by the same
+`NotePasteLinkMenu` a note uses: Link (a text object holding the link),
+Bookmark (highlighted, and what Escape or a click away keeps), Embed, and
+Image, Video, Audio or PDF when the address is that kind of file. Video and
+audio stay links; a picture or PDF is downloaded into the Easel. Each choice
+replaces the bookmark as one Undo step. A URL pasted while editing text keeps
+the text-link behaviour above. Plain text
 that reads as a Mermaid flowchart or ER diagram becomes editable shapes, arrows
 and sections ([Mermaid diagrams](easel-mermaid.md)). Capture's memory-only
 image editor instead inserts annotation text and never creates an Easel or
