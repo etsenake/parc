@@ -134,6 +134,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselTableExport.swift" \
   "$repo_root/Sources/ParcApp/EaselDocumentExport+Connectors.swift" \
   "$repo_root/Sources/ParcApp/EaselStickyText.swift" \
+  "$repo_root/Sources/ParcApp/EaselTooltip.swift" \
   "$repo_root/Sources/ParcApp/EaselShapePicker.swift" \
   "$repo_root/Sources/ParcApp/NoteAnimation.swift" \
   "$repo_root/Sources/ParcApp/NoteFloatingPanel.swift" \
@@ -172,6 +173,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselTableExport.swift" \
   "$repo_root/Sources/ParcApp/EaselDocumentExport+Connectors.swift" \
   "$repo_root/Sources/ParcApp/EaselStickyText.swift" \
+  "$repo_root/Sources/ParcApp/EaselTooltip.swift" \
   "$repo_root/Sources/ParcApp/EaselShapePicker.swift" \
   "$repo_root/Sources/ParcApp/NoteAnimation.swift" \
   "$repo_root/Sources/ParcApp/NoteFloatingPanel.swift" \
@@ -213,6 +215,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselTableExport.swift" \
   "$repo_root/Sources/ParcApp/EaselDocumentExport+Connectors.swift" \
   "$repo_root/Sources/ParcApp/EaselStickyText.swift" \
+  "$repo_root/Sources/ParcApp/EaselTooltip.swift" \
   "$repo_root/Sources/ParcApp/EaselShapePicker.swift" \
   "$repo_root/Sources/ParcApp/NoteAnimation.swift" \
   "$repo_root/Sources/ParcApp/NoteFloatingPanel.swift" \

@@ -33,7 +33,7 @@ sources += [root / "tests/KeyboardNavigation/NativeShortcutStub.swift", root / "
 sources += [app / name for name in ["CommandResultRowView.swift", "CommandResultCell.swift", "CommandBarAppearance.swift",
     "PopoverBackgroundView.swift", "LocalContentDrop.swift", "NoteTheme.swift", "EaselAppearance.swift", "EaselTextStyle.swift", "TextFormatMenu.swift",
     "EaselRichTextCodec.swift", "EaselTextAttachment.swift", "EaselParagraphEditing.swift", "EaselMarkdownEditing.swift",
-    "WebpageEditCommands.swift", "EaselMotion.swift", "EaselDocumentExport.swift", "EaselTableExport.swift", "EaselDocumentExport+Connectors.swift", "EaselStickyText.swift", "EaselToolPalette.swift", 
+    "WebpageEditCommands.swift", "EaselMotion.swift", "EaselDocumentExport.swift", "EaselTableExport.swift", "EaselDocumentExport+Connectors.swift", "EaselStickyText.swift", "EaselTooltip.swift", 
     "EaselShapePicker.swift", "NoteAnimation.swift", "NoteFloatingPanel.swift", "NoteControls.swift", "NoteCustomEmojiImages.swift", "DocumentDefaultIcon.swift", "LibraryArtwork.swift", "EaselStampArtwork.swift", "SidebarIconCatalog.swift", "MenuItemImage.swift", "ParcBrandMark.swift", "EaselImageExport.swift"] if name not in names]
 sources += [path for path in sorted(app.glob("EaselCanvas*.swift")) if path.name not in names]
 sources += sorted(here.glob("Harness/*.swift"))
