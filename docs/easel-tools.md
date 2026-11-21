@@ -19,7 +19,7 @@ between groups:
 | Navigation | Select, Hand |
 | Objects | Sticky note, Shapes ▾, Connector ▾ (elbow, curved, straight), Text, Section, Table |
 | Tools | Draw ▾ (marker, highlighter, washi tape, eraser), Stamp |
-| Inserts | Add image, Add link, Add webpage, Code block, Add Mermaid diagram, Templates |
+| Inserts | Media ▾, Web ▾, Code ▾, Add Mermaid diagram, Templates |
 | View | Zoom percentage ▾ |
 
 A slot whose tool isn't ready yet stays off the toolbar and its key does
@@ -31,7 +31,7 @@ next tool; a button whose menu is open shows its own checked fill. Every button
 shows the pointing hand, and its tooltip sits above the bar with the name and
 key, such as “Sticky note S”. VoiceOver reads the current tool as on.
 
-Variant buttons (shapes, connectors, draw) carry a small chevron. A click picks
+Variant buttons (shapes, connectors, draw, and the insert buttons below) carry a small chevron. A click picks
 the variant used last; clicking the current tool again, or its chevron, opens
 a Notes menu of variants with their keys, opening upward from the bar, like the
 zoom menu. VoiceOver's Show Menu opens it too. With Full Keyboard Access on,
@@ -41,6 +41,23 @@ a tool by key scrolls that tool into view. Wheel and trackpad scrolling over
 the bar still scroll the board (sideways swipes scroll the bar when it
 overflows). The title row keeps the title, save status, page switcher, timer,
 Undo, Redo and Easel Options.
+
+## Insert buttons
+
+Three variant buttons put Notes blocks on the board. **Media** (photo glyph) offers
+Image, Video, Audio, File and PDF; **Web** (globe glyph) offers Embed and
+Bookmark; **Code** offers Code block and Block equation. A click inserts the
+kind chosen last from that button's menu (Image, Embed and Code block to begin
+with); the chevron, or a second click while the code tool is armed, opens a
+detailed Notes menu opening upward, with the last kind checked. Titles, glyphs
+and one-line subtitles come from the Notes block catalog, so a row reads the
+same in a note's slash menu and here. Embed stays dimmed where the Easel can't
+host a page. Choosing a media kind, Embed, Bookmark or Block equation places an
+empty object at the middle of the uncovered view with `placeEmptyObject`, one
+Undo step, selected and ready for its upload or link card; Code block arms the
+code tool exactly as before, and dragging the Code button while Code block is the
+chosen kind still drops a code block where you let go. Mermaid and Templates
+keep their own buttons.
 
 ## Placing objects
 
@@ -114,8 +131,9 @@ layouts stays the Help search.
 ⌘/ opens a search card above the tool bar, styled like the Notes slash menu.
 Type what you want by name, such as sticky, ellipse, connector, pen or zoom,
 and press Return or click it. Objects arm their tool, so the ghost follows the
-pointer and a click (or Return) drops one; tools switch; Add image, link and
-webpage open their usual pickers; view commands zoom. The last three you ran
+pointer and a click (or Return) drops one; tools switch; every Media, Web and Code insert is listed under Add with the Notes
+catalog keywords (so “picture”, “mp3”, “tweet” or “latex” find them) and
+places the same empty object as its toolbar menu; view commands zoom. The last three you ran
 from the card sit at the top under Recent. ⌘/ opens only while the canvas has
 keyboard focus in an Easel tab; Parc has no other ⌘/ shortcut.
 
@@ -164,7 +182,7 @@ endpoint cursors appear only with Select.
 
 `Sources/ParcCore/EaselTool.swift` holds the tools, keys, placement geometry
 and zoom maths; `EaselCanvasView+Tools.swift` the canvas gestures, panning,
-zooming, ghost and cursors; `EaselToolPalette.swift` the tool bar and its menus;
+zooming, ghost and cursors; `EaselToolPalette.swift` the tool bar and its menus (the insert kinds and their catalog copy live in `EaselInsertKinds.swift`);
 `EaselQuickActions.swift` the ⌘/ card; `Sources/ParcCore/EaselFloatingBar.swift`
 the bar frame, covered inset, Recenter spot and tool flourishes. Objects with their own insert code
 (stickies, sections, shapes, text, tables, code blocks) plug into the

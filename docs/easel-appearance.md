@@ -104,12 +104,10 @@ follows the canvas's current tool and scrolls horizontally when the window is
 narrower than the controls. Its explicit overlay scrollbar preserves the full
 control height even under the system legacy-scrollbar preference. Placement
 ghosts are dashed outlines in the Notes accent over a 10% accent wash, and the
-Recenter chip is a filled Notes chip. The ordinary Add Link action now presents the existing
-window-owned URL editor, with a compact address-only layout. Its original
-owner/visibility/IME/cancellation gates also cover this presentation. The rich
-range-link editor retains its separate original-range/revision guard. Both use
-plain controls, eight-point corners, semantic outlines and visible invalid-URL
-feedback; no browser page is created by either editor itself.
+Recenter chip is a filled Notes chip. The object and range link editors, the custom text size panel and the
+add-an-image Easel picker are Notes floating panels ([text](easel-text.md#range-links)).
+The range-link editor keeps its original-range/revision guard; no browser page
+is created by any editor itself.
 
 ## Ink and saved colours
 
@@ -196,9 +194,8 @@ style and shape pickers the Easel pickers in a Notes popover,
 rather than native pop-up buttons, and its buttons draw SF Symbols or letter
 glyphs. Selected/pressed/disabled washes and native focus
 rings are explicit AppKit feedback adaptations; their drawing never changes
-logical state. The rich-link editor's Remove/Apply actions and the webpage
-Address/Search controls retain their existing semantic layout. These are
-native presentation choices.
+logical state. The webpage Address/Search controls keep their existing semantic layout. These
+are native presentation choices.
 
 The focus/geometry action owners and shared annotation
 eligibility predicates are integrated at drawing, hit admission, cursor

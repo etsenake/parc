@@ -46,8 +46,11 @@ scale if it has to, and there's no auto width there.
 A scaled size is stored as the text style's `customSize` and keeps the preset's
 family and weight. Landing exactly on the preset's own size clears it again.
 The floating toolbar's size menu offers the five presets plus **Custom…**, a
-small field that takes 8 to 400 points for the selected objects, or for the
-selected range while editing. Picking a preset clears a custom size, and Bigger
+Notes-style panel: a field that takes 8 to 400 points for the selected objects, or
+for the selected range while editing, above rows for common sizes (12 to 144).
+Return applies the typed size (or the highlighted row when the field is empty),
+Escape cancels, and a size outside the range keeps the panel open with “Pick a
+size from 8 to 400.” Picking a preset clears a custom size, and Bigger
 and Smaller step from a custom size to the next preset above or below it.
 
 ## Alignment
@@ -83,10 +86,13 @@ on dark paper.
 
 A selected text object, shape or sticky that isn't being edited can carry one
 link to a web page: ⌘K (Format → Add Link… or Edit Link…), the selection
-toolbar's Link button or the context menu's Add Link… opens the link field. It
+toolbar's Link button or the context menu's Add Link… opens the Notes link
+editor (a floating panel under the badge, with “Paste a link”). It
 takes an `http` or `https`
 address, adds `https://` to a bare domain like `example.com`, and refuses
-anything else; Remove Link clears it. Range links inside the text keep working
+anything else with “Enter a web link, like example.com.”; it offers no note
+search, because the object link shares the `url` field with link cards and
+captured pages, which stay web-only. Remove Link clears it. Range links inside the text keep working
 as before while editing. A linked object shows a small round link badge just
 outside its top-right corner at a constant on-screen size, with the pointing
 hand; clicking it opens the page in Parc without selecting the object. VoiceOver
@@ -94,6 +100,25 @@ offers Open link. Locked objects keep their link but refuse a new one. HTML
 exports wrap linked objects in a link so they stay clickable. The link is saved
 in the object's existing `url` field, which link cards and captured pages also
 use for their source; those keep their own Open Source rows instead.
+
+## Range links
+
+Links inside text (text objects, stickies, shapes and connector labels) use the
+same Notes link editor as a note: select words and press ⌘K, then paste a link
+or find a note. The panel lists the notes of the Profile's Notes folder (or the
+hosting note's own folder for an Easel block in a note) and keeps Open Link and
+Remove Link rows for an existing link. A web link, `mailto:` or `tel:` link
+opens as it always did; a link to a note is stored as the note's file address
+(only Markdown and text files are accepted, so no other file can be linked) and
+opens the note the way a note link does from a page. Exports leave note links
+out, since they only make sense on this Mac.
+
+Hovering a link, whether the text is being edited or not, shows the Notes link
+card after the same short delay: Open, Copy, Edit and Remove (Edit and Remove
+are left off for locked objects and in read-only Easel blocks). The card
+follows the pointer's link, stays while the pointer is over it, and goes away on
+a scroll, a key press or a click elsewhere. Links in rotated or flipped objects
+don't show the card.
 
 ## Emoji
 
