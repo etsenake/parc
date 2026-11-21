@@ -60,8 +60,11 @@ enum DeveloperToolbarLayout {
         return path
     }
 
-    static func scheduleFirstEditSelection(_ field: NSTextField) {
-        DispatchQueue.main.async {
+    static func scheduleFirstEditSelection(_ field: NSTextField,
+                                           schedule: (@escaping @MainActor () -> Void) -> Void = { work in
+                                               DispatchQueue.main.async { work() }
+                                           }) {
+        schedule {
             field.currentEditor()?.selectAll(field)
         }
     }
