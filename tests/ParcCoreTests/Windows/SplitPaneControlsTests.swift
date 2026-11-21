@@ -2,157 +2,594 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor struct SplitPaneControlsTests {
-    @Test static func scenario() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-pane-controls-" + UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+struct SplitPaneControlsTests {
+    @MainActor private final class Fixture {
+        let root: URL
         let now = Date(timeIntervalSince1970: 1_000_000)
-        let store = try BrowserStore(directory: root, now: { now })
-        let saved = store.open("https://one.invalid", kind: .pinned)
-        let folder = store.createFolder(name: "Original parent")
-        store.moveTab(saved, toSpace: store.activeSpaceID, folderID: folder)
-        let a = store.open("https://one.invalid/today")
-        let b = store.open("https://two.invalid"), c = store.open("https://three.invalid")
-        store.setSplit([a,b,c]); store.setSplitLayout(orientation: .vertical, widthFactors: [1,2,3])
-        let original = store.activeSplitLayout!, tabs = store.state.tabs, archive = store.state.recentlyClosedIDs
-        #expect(!store.moveSplitPane(a, offset: -1, expected: original), "First pane cannot move before start")
-        #expect(!store.moveSplitPane(c, offset: 1, expected: original), "Last pane cannot move after end")
-        #expect(!store.moveSplitPane(a, offset: Int.min, expected: original), "Untrusted offset refuses without overflow")
-        #expect(store.moveSplitPane(b, offset: 1, expected: original), "Move original pane down")
-        let moved = store.activeSplitLayout!
-        #expect(moved.tabIDs == [a,c,b] && moved.id == original.id, "Move retains original group and ordered page IDs")
-        #expect(moved.widthFactors == [original.widthFactors[0], original.widthFactors[2], original.widthFactors[1]], "Original pane proportions move with content")
-        #expect(moved.orientation == .vertical && moved.sidebarAnchorID == original.sidebarAnchorID, "Move preserves container orientation and anchor")
-        #expect(store.state.tabs == tabs && store.state.recentlyClosedIDs == archive, "Move does not recreate pages or close originals")
-        #expect(store.state.selectedTabIDs == moved.tabIDs && store.state.selectionBySpace[store.activeSpaceID.uuidString] == moved.tabIDs, "Order and window selection publish together")
-        #expect(try BrowserStore(directory: root).activeSplitLayout == moved, "Move is durably restored")
-        let unchanged = store.state
-        #expect(!store.moveSplitPane(b, offset: -1, expected: original) && store.state == unchanged, "Stale menu receipt refuses")
-        #expect(store.moveSplitPane(b, offset: -1, expected: moved), "Inverse original move remains available")
-        #expect(store.activeSplitLayout == original, "Inverse move restores original metadata and ratios")
-        #expect(!SplitPaneOperation.movePrevious.isEnabled(index: 0, count: 3) && SplitPaneOperation.moveNext.isEnabled(index: 0, count: 3), "Native menu neighbor availability")
-        #expect(!SplitPaneOperation.addAfter.isEnabled(index: 0, count: 4), "Actual four-content maximum")
-        #expect(!SplitPaneOperation.separate.isEnabled(index: 0, count: 1), "No separation for sole pane")
-        #expect(SplitPaneOperation.copyLinks.isEnabled(index: 0, count: 2) && !SplitPaneOperation.copyLinks.isEnabled(index: 0, count: 1),
-                  "Copy Links is a populated-split action")
-        let beforeDraft = store.state
-        let draft = SplitPaneInsertion(paneID: b, operation: .addAbove, state: store.state)!
-        #expect(draft.index == 1 && draft.orientation == .vertical && draft.selection == [a,b,c], "Exact target top insertion")
-        #expect(draft.previewFactors.count == 4 && abs(draft.previewFactors.reduce(0,+) - 1) < 0.00001, "Temporary geometry stays normalized")
-        let previousFactors = store.activeSplitLayout!.widthFactors, pendingFactors = draft.previewFactors
-        #expect(abs(pendingFactors[1] - 0.25) < 0.00001, "Pending pane receives one over the new pane count")
-        #expect(zip(previousFactors, [pendingFactors[0], pendingFactors[2], pendingFactors[3]]).allSatisfy { abs($0 * 0.75 - $1) < 0.00001 },
-                  "Existing panes keep their relative factors")
-        #expect(store.state == beforeDraft, "Creating a temporary destination never persists a placeholder")
-        let id = UUID(), url = URL(string: "https://four.invalid/post-result")!
-        let creation = TabCreationProvenance(referrerID: nil, activeTabID: b, profileID: store.activeSpace.profileID, state: store.state)
-        #expect(store.insertSplitPane(draft, tabID: id, navigationURL: url, creation: creation, savedHomeIDs: [:], documents: [:]), "Accepted genuine navigation inserts one record atomically")
-        #expect(store.state.selectedTabIDs == [a,id,b,c] && store.activeSplitLayout?.id == original.id, "New pane uses requested slot in original container")
-        let created = store.state.tabs.first { $0.id == id }!
-        #expect(created.url == url.absoluteString && created.kind == .today && created.activeTabBeforeCreationID == b, "Destination metadata and original creation source preserved")
-        #expect(tabs.allSatisfy { store.state.tabs.contains($0) }, "Existing pages and saved records retain exact identity")
-        #expect(SplitPaneInsertion(paneID: id, operation: .addAfter, state: store.state) == nil, "Fifth pane cannot be drafted")
-        let full = store.state
-        #expect(!store.insertSplitPane(draft, tabID: UUID(), navigationURL: url, creation: nil, savedHomeIDs: [:], documents: [:]) && store.state == full, "Previously admitted draft cannot replay after membership changed")
-        #expect(try BrowserStore(directory: root).state.selectedTabIDs == [a,id,b,c], "Accepted pane and group persist together")
-        _ = store.separateSplitPane(b)
-        let single = SplitPaneInsertion(paneID: b, operation: .addAfter, state: store.state)!
-        #expect(single.selection.count == 1 && single.index == 1, "Main Add supports a single original content")
-        let noteFile = root.appendingPathComponent("Shared Note.md")
-        let noteID = store.openNote(url: noteFile, title: "Shared Note")!
-        store.selectTab(b)
-        let local = SplitPaneInsertion(paneID: b, operation: .addBelow, state: store.state)!
-        let oldNote = store.state.tabs.first { $0.id == noteID }!
-        #expect(store.insertSplitPane(local, tabID: noteID, navigationURL: nil, creation: nil, savedHomeIDs: [:], documents: [:]), "Existing original local Note can fill a blank pane")
-        #expect(store.state.tabs.first { $0.id == noteID }?.url == oldNote.url && store.state.selectedTabIDs == [b,noteID], "Original local record is moved, never cloned")
-        #expect(store.state.tabs.filter { InternalPage(urlString: $0.url) == .note(noteFile) }.count == 1,
-                  "A Today Note does not leave a saved home")
-        #expect(store.separateTabFromSplit(noteID, expected: store.activeSplitLayout!, focusedID: b)
-                  && store.state.selectedTabIDs == [b], "Separating the Note restores the original first pane")
-        let easels = try EaselStore(directory: root.appendingPathComponent("easels"))
-        let easel = try easels.create()
-        let easelID = store.openEasel(id: easel.document.id, title: "Shared Easel")!
-        store.selectTab(b)
-        let easelPane = SplitPaneInsertion(paneID: b, operation: .addAfter, state: store.state)!
-        let oldEasel = store.state.tabs.first { $0.id == easelID }!
-        #expect(store.insertSplitPane(easelPane, tabID: easelID, navigationURL: nil, creation: nil, savedHomeIDs: [:], documents: [:]), "Existing original local Easel can fill a blank pane")
-        #expect(store.state.tabs.first { $0.id == easelID }?.url == oldEasel.url && store.state.selectedTabIDs == [b,easelID], "Original Easel record is moved, never cloned")
-        #expect(store.state.tabs.filter { InternalPage(urlString: $0.url)?.easelID == easel.document.id }.count == 1,
-                  "A Today Easel does not leave a saved home")
-        #expect(try easels.load(easel.document.id) === easel, "Shared Easel session remains original")
-        let laterHost = store.open("https://later.invalid/host")
-        store.selectTab(laterHost)
-        let createdNote = root.appendingPathComponent("Untitled.md")
-        let createdNoteTab = UUID()
-        let addLeft = SplitPaneInsertion(paneID: laterHost, operation: .addBefore, state: store.state)!
-        #expect(addLeft.index == 0 && addLeft.orientation == .horizontal && addLeft.selection == [laterHost], "Add Left drafts the first slot")
-        let beforeCreatedNote = store.state
-        #expect(!store.insertSplitPane(addLeft, tabID: UUID(), navigationURL: url, creation: nil, savedHomeIDs: [:], documents: [:],
-            localPage: .note(createdNote), localTitle: "Untitled") && store.state == beforeCreatedNote,
-                  "A local page and a navigation URL cannot materialize together")
-        #expect(store.insertSplitPane(addLeft, tabID: createdNoteTab, navigationURL: nil, creation: nil, savedHomeIDs: [:], documents: [:],
-            localPage: .note(createdNote), localTitle: "Untitled"),
-                  "A new Note occupies Add Split's drafted slot")
-        #expect(store.state.selectedTabIDs == [createdNoteTab, laterHost], "Add Left puts the new Note in the first slot, not after the host")
-        #expect(store.activeSplitLayout?.orientation == .horizontal, "Add Left keeps the drafted horizontal orientation")
-        #expect(store.state.tabs.first { $0.id == createdNoteTab }?.url == InternalPage.note(createdNote).urlString,
-                  "The new Note tab addresses the created document")
-        #expect(store.state.tabs.filter { InternalPage(urlString: $0.url) == .note(createdNote) }.count == 1,
-                  "A new Today Note does not leave a saved home")
-        #expect(store.separateTabFromSplit(createdNoteTab, expected: store.activeSplitLayout!, focusedID: laterHost)
-                  && store.state.selectedTabIDs == [laterHost], "Separating the new Note restores the original host")
-        let createdEasel = try easels.create()
-        let createdEaselTab = UUID()
-        let addTop = SplitPaneInsertion(paneID: laterHost, operation: .addAbove, state: store.state)!
-        #expect(addTop.index == 0 && addTop.orientation == .vertical && addTop.selection == [laterHost], "Add Top drafts a vertical first slot")
-        let beforeClone = store.state
-        #expect(!store.insertSplitPane(addTop, tabID: UUID(), navigationURL: nil, creation: nil, savedHomeIDs: [:], documents: [:],
-            localPage: .note(createdNote), localTitle: "Untitled") && store.state == beforeClone,
-                  "The same new Note document cannot open a second tab")
-        #expect(store.insertSplitPane(addTop, tabID: createdEaselTab, navigationURL: nil, creation: nil, savedHomeIDs: [:], documents: [:],
-            localPage: .easel(createdEasel.document.id), localTitle: createdEasel.document.title),
-                  "A new Easel occupies Add Top's drafted slot")
-        #expect(store.state.selectedTabIDs == [createdEaselTab, laterHost], "Add Top puts the new Easel above the host, not appended")
-        #expect(store.activeSplitLayout?.orientation == .vertical, "Add Top keeps the drafted vertical orientation")
-        store.selectTab(saved)
-        let pinned = SplitPaneInsertion(paneID: saved, operation: .addAfter, state: store.state)!
-        let newID = UUID(), home = UUID()
-        let beforePinned = store.state
-        #expect(!store.insertSplitPane(pinned, tabID: newID, navigationURL: url, creation: nil, savedHomeIDs: [:], documents: [:]), "Saved original needs a real saved-home receipt")
-        #expect(store.state == beforePinned, "Missing home does not leak a partial new tab")
-        #expect(store.insertSplitPane(pinned, tabID: newID, navigationURL: url, creation: nil, savedHomeIDs: [saved:home], documents: [:]), "Pinned original moves with a fresh saved home")
-        #expect(store.state.tabs.first { $0.id == home }?.folderID == folder && store.state.tabs.first { $0.id == home }?.kind == .pinned, "Home retains exact parent section")
-        #expect(store.state.tabs.first { $0.id == saved }?.kind == .today && store.state.selectedTabIDs == [saved,newID], "Live original becomes the pane; saved home never replaces its page")
-        let pending = SplitPaneInsertion(paneID: saved, operation: .addBelow, state: store.state)!
-        var foreign = store.state; foreign.spaces[0].profileID = UUID()
-        #expect(!pending.isCurrent(in: foreign), "Destination profile changes invalidate the original draft")
-        var removedProfile = store.state; removedProfile.profiles.removeAll { $0.id == pending.profileID }
-        #expect(!pending.isCurrent(in: removedProfile), "Removed original profile invalidates draft")
-        var archived = store.state; archived.tabs[archived.tabs.firstIndex { $0.id == saved }!].archivedAt = now
-        #expect(!pending.isCurrent(in: archived), "Retired original invalidates draft")
-        var changed = store.state; changed.splitLayouts[changed.splitLayouts.firstIndex { $0.id == pending.layout?.id }!].widthFactors = [0.75,0.25]
-        #expect(!pending.isCurrent(in: changed), "Changed group geometry invalidates exact draft")
-        let failureState = store.state, failureID = UUID()
-        try FileManager.default.removeItem(at: root); try Data().write(to: root)
-        #expect(!store.insertSplitPane(pending, tabID: failureID, navigationURL: url, creation: nil, savedHomeIDs: [:], documents: [:]), "Actual storage failure refuses pane materialization")
-        #expect(store.state == failureState && store.persistenceError != nil, "Failed save preserves originals and no orphan tab")
-        #expect(!store.moveSplitPane(saved, offset: 1, expected: store.activeSplitLayout!), "Storage failure also refuses reorder")
-        #expect(store.state == failureState, "Failed reorder does not publish visual order")
-        try FileManager.default.removeItem(at: root); try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        #expect(store.insertSplitPane(pending, tabID: failureID, navigationURL: url, creation: nil, savedHomeIDs: [:], documents: [:]), "Same original receipt retries after storage recovery")
-        #expect(store.persistenceError == nil, "Successful retry clears durable error")
-        let space = store.activeSpaceID, profile = store.activeSpace.profileID
-        let linkNote = store.openResolvedURL(URL(string: InternalPage.note(URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")).urlString)!)
-        let linkEasel = store.openResolvedURL(URL(string: InternalPage.easel(UUID()).urlString)!)
-        let linkSettings = store.openResolvedURL(URL(string: "parc://settings/")!)
-        let linkBlank = store.openResolvedURL(URL(string: "about:blank")!)
-        #expect(FolderLinks.links(in: store.state, tabIDs: [c, a, b], spaceID: space, profileID: profile).map(\.tabID) == [c, a, b],
-                  "Copy Links copies every page's address in pane order")
-        #expect(FolderLinks.links(in: store.state, tabIDs: [linkNote, b, linkSettings, linkEasel, a, linkBlank, b], spaceID: space, profileID: profile).map(\.tabID) == [linkNote, b, a],
-                  "Notes copy their file, Easels, Parc pages and blank tabs are skipped, and a page is copied once")
-        #expect(FolderLinks.links(in: store.state, tabIDs: [linkEasel, linkSettings], spaceID: space, profileID: profile).isEmpty,
-                  "A split without a web page has nothing to copy, so its Copy Links stays disabled")
-        #expect(FolderLinks.links(in: store.state, tabIDs: [a, b], spaceID: space, profileID: UUID()).isEmpty,
-                  "Another Profile's pages are never copied")
+        let store: BrowserStore
+        let saved: UUID, folder: UUID
+        let a: UUID, b: UUID, c: UUID
+        let original: BrowserSplitLayout
+        let tabs: [BrowserTab]
+        let archive: [UUID]
+        let url = URL(string: "https://four.invalid/post-result")!
+
+        init() throws {
+            root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-pane-controls-" + UUID().uuidString)
+            let now = now
+            let store = try BrowserStore(directory: root, now: { now })
+            let saved = store.open("https://one.invalid", kind: .pinned)
+            let folder = store.createFolder(name: "Original parent")
+            store.moveTab(saved, toSpace: store.activeSpaceID, folderID: folder)
+            let a = store.open("https://one.invalid/today")
+            let b = store.open("https://two.invalid"), c = store.open("https://three.invalid")
+            store.setSplit([a, b, c])
+            store.setSplitLayout(orientation: .vertical, widthFactors: [1, 2, 3])
+            self.store = store
+            self.saved = saved; self.folder = folder
+            self.a = a; self.b = b; self.c = c
+            original = store.activeSplitLayout!
+            tabs = store.state.tabs
+            archive = store.state.recentlyClosedIDs
+        }
+
+        deinit { try? FileManager.default.removeItem(at: root) }
+
+        func moved() -> BrowserSplitLayout {
+            _ = store.moveSplitPane(b, offset: 1, expected: original)
+            return store.activeSplitLayout!
+        }
+
+        func creation() -> TabCreationProvenance {
+            TabCreationProvenance(referrerID: nil, activeTabID: b, profileID: store.activeSpace.profileID, state: store.state)
+        }
+
+        func insertFour(operation: SplitPaneOperation = .addAbove) throws -> (id: UUID, draft: SplitPaneInsertion) {
+            let draft = try #require(SplitPaneInsertion(paneID: b, operation: operation, state: store.state))
+            let id = UUID()
+            _ = store.insertSplitPane(draft, tabID: id, navigationURL: url, creation: creation(), savedHomeIDs: [:], documents: [:])
+            return (id, draft)
+        }
+
+        func insertPinned() throws -> (home: UUID, newID: UUID) {
+            store.selectTab(saved)
+            let draft = try #require(SplitPaneInsertion(paneID: saved, operation: .addAfter, state: store.state))
+            let newID = UUID(), home = UUID()
+            _ = store.insertSplitPane(draft, tabID: newID, navigationURL: url, creation: nil, savedHomeIDs: [saved: home], documents: [:])
+            return (home, newID)
+        }
+
+        func breakStorage() throws {
+            try FileManager.default.removeItem(at: root)
+            try Data().write(to: root)
+        }
+
+        func restoreStorage() throws {
+            try FileManager.default.removeItem(at: root)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        }
+    }
+
+    @MainActor @Test func theFirstPaneCannotMoveBeforeTheStart() throws {
+        let f = try Fixture()
+        #expect(!f.store.moveSplitPane(f.a, offset: -1, expected: f.original))
+    }
+
+    @MainActor @Test func theLastPaneCannotMoveAfterTheEnd() throws {
+        let f = try Fixture()
+        #expect(!f.store.moveSplitPane(f.c, offset: 1, expected: f.original))
+    }
+
+    @MainActor @Test func anUntrustedOffsetRefusesWithoutOverflow() throws {
+        let f = try Fixture()
+        #expect(!f.store.moveSplitPane(f.a, offset: Int.min, expected: f.original))
+    }
+
+    @MainActor @Test func anOriginalPaneMovesDown() throws {
+        let f = try Fixture()
+        #expect(f.store.moveSplitPane(f.b, offset: 1, expected: f.original))
+    }
+
+    @MainActor @Test func movingKeepsTheGroupAndReordersPageIDs() throws {
+        let f = try Fixture()
+        let moved = f.moved()
+        #expect(moved.tabIDs == [f.a, f.c, f.b])
+        #expect(moved.id == f.original.id)
+    }
+
+    @MainActor @Test func paneProportionsMoveWithTheirContent() throws {
+        let f = try Fixture()
+        let moved = f.moved()
+        #expect(moved.widthFactors == [f.original.widthFactors[0], f.original.widthFactors[2], f.original.widthFactors[1]])
+    }
+
+    @MainActor @Test func movingPreservesOrientationAndAnchor() throws {
+        let f = try Fixture()
+        let moved = f.moved()
+        #expect(moved.orientation == .vertical)
+        #expect(moved.sidebarAnchorID == f.original.sidebarAnchorID)
+    }
+
+    @MainActor @Test func movingDoesNotRecreatePagesOrCloseOriginals() throws {
+        let f = try Fixture()
+        _ = f.moved()
+        #expect(f.store.state.tabs == f.tabs)
+        #expect(f.store.state.recentlyClosedIDs == f.archive)
+    }
+
+    @MainActor @Test func orderAndWindowSelectionPublishTogether() throws {
+        let f = try Fixture()
+        let moved = f.moved()
+        #expect(f.store.state.selectedTabIDs == moved.tabIDs)
+        #expect(f.store.state.selectionBySpace[f.store.activeSpaceID.uuidString] == moved.tabIDs)
+    }
+
+    @MainActor @Test func aMoveIsDurablyRestored() throws {
+        let f = try Fixture()
+        let moved = f.moved()
+        #expect(try BrowserStore(directory: f.root).activeSplitLayout == moved)
+    }
+
+    @MainActor @Test func aStaleMenuReceiptRefuses() throws {
+        let f = try Fixture()
+        _ = f.moved()
+        let unchanged = f.store.state
+        #expect(!f.store.moveSplitPane(f.b, offset: -1, expected: f.original))
+        #expect(f.store.state == unchanged)
+    }
+
+    @MainActor @Test func theInverseMoveRestoresTheOriginalMetadataAndRatios() throws {
+        let f = try Fixture()
+        let moved = f.moved()
+        #expect(f.store.moveSplitPane(f.b, offset: -1, expected: moved))
+        #expect(f.store.activeSplitLayout == f.original)
+    }
+
+    @Test func theFirstPaneCannotMovePreviousButCanMoveNext() {
+        #expect(!SplitPaneOperation.movePrevious.isEnabled(index: 0, count: 3))
+        #expect(SplitPaneOperation.moveNext.isEnabled(index: 0, count: 3))
+    }
+
+    @Test func addIsUnavailableAtFourPanes() {
+        #expect(!SplitPaneOperation.addAfter.isEnabled(index: 0, count: 4))
+    }
+
+    @Test func aSolePaneCannotBeSeparated() {
+        #expect(!SplitPaneOperation.separate.isEnabled(index: 0, count: 1))
+    }
+
+    @Test func copyLinksNeedsAPopulatedSplit() {
+        #expect(SplitPaneOperation.copyLinks.isEnabled(index: 0, count: 2))
+        #expect(!SplitPaneOperation.copyLinks.isEnabled(index: 0, count: 1))
+    }
+
+    @MainActor @Test func aTopInsertionDraftTargetsTheExactPane() throws {
+        let f = try Fixture()
+        let draft = try #require(SplitPaneInsertion(paneID: f.b, operation: .addAbove, state: f.store.state))
+        #expect(draft.index == 1)
+        #expect(draft.orientation == .vertical)
+        #expect(draft.selection == [f.a, f.b, f.c])
+    }
+
+    @MainActor @Test func temporaryGeometryStaysNormalized() throws {
+        let f = try Fixture()
+        let draft = try #require(SplitPaneInsertion(paneID: f.b, operation: .addAbove, state: f.store.state))
+        #expect(draft.previewFactors.count == 4)
+        #expect(abs(draft.previewFactors.reduce(0, +) - 1) < 0.00001)
+    }
+
+    @MainActor @Test func thePendingPaneReceivesOneOverTheNewPaneCount() throws {
+        let f = try Fixture()
+        let draft = try #require(SplitPaneInsertion(paneID: f.b, operation: .addAbove, state: f.store.state))
+        #expect(abs(draft.previewFactors[1] - 0.25) < 0.00001)
+    }
+
+    @MainActor @Test func existingPanesKeepTheirRelativeFactors() throws {
+        let f = try Fixture()
+        let draft = try #require(SplitPaneInsertion(paneID: f.b, operation: .addAbove, state: f.store.state))
+        let previous = try #require(f.store.activeSplitLayout).widthFactors, pending = draft.previewFactors
+        #expect(zip(previous, [pending[0], pending[2], pending[3]]).allSatisfy { abs($0 * 0.75 - $1) < 0.00001 })
+    }
+
+    @MainActor @Test func draftingNeverPersistsAPlaceholder() throws {
+        let f = try Fixture()
+        let before = f.store.state
+        _ = SplitPaneInsertion(paneID: f.b, operation: .addAbove, state: f.store.state)
+        #expect(f.store.state == before)
+    }
+
+    @MainActor @Test func anAcceptedNavigationInsertsOneRecordAtomically() throws {
+        let f = try Fixture()
+        let draft = try #require(SplitPaneInsertion(paneID: f.b, operation: .addAbove, state: f.store.state))
+        #expect(f.store.insertSplitPane(draft, tabID: UUID(), navigationURL: f.url, creation: f.creation(), savedHomeIDs: [:], documents: [:]))
+    }
+
+    @MainActor @Test func theNewPaneUsesTheRequestedSlotInTheOriginalContainer() throws {
+        let f = try Fixture()
+        let inserted = try f.insertFour()
+        #expect(f.store.state.selectedTabIDs == [f.a, inserted.id, f.b, f.c])
+        #expect(f.store.activeSplitLayout?.id == f.original.id)
+    }
+
+    @MainActor @Test func theInsertedTabKeepsItsDestinationAndCreationSource() throws {
+        let f = try Fixture()
+        let inserted = try f.insertFour()
+        let created = try #require(f.store.state.tabs.first { $0.id == inserted.id })
+        #expect(created.url == f.url.absoluteString)
+        #expect(created.kind == .today)
+        #expect(created.activeTabBeforeCreationID == f.b)
+    }
+
+    @MainActor @Test func existingPagesKeepTheirExactIdentity() throws {
+        let f = try Fixture()
+        _ = try f.insertFour()
+        #expect(f.tabs.allSatisfy { f.store.state.tabs.contains($0) })
+    }
+
+    @MainActor @Test func aFifthPaneCannotBeDrafted() throws {
+        let f = try Fixture()
+        let inserted = try f.insertFour()
+        #expect(SplitPaneInsertion(paneID: inserted.id, operation: .addAfter, state: f.store.state) == nil)
+    }
+
+    @MainActor @Test func anAdmittedDraftCannotReplayAfterMembershipChanged() throws {
+        let f = try Fixture()
+        let inserted = try f.insertFour()
+        let full = f.store.state
+        #expect(!f.store.insertSplitPane(inserted.draft, tabID: UUID(), navigationURL: f.url, creation: nil, savedHomeIDs: [:], documents: [:]))
+        #expect(f.store.state == full)
+    }
+
+    @MainActor @Test func theAcceptedPaneAndGroupPersistTogether() throws {
+        let f = try Fixture()
+        let inserted = try f.insertFour()
+        #expect(try BrowserStore(directory: f.root).state.selectedTabIDs == [f.a, inserted.id, f.b, f.c])
+    }
+
+    @MainActor @Test func mainAddSupportsASingleOriginalContent() throws {
+        let f = try Fixture()
+        _ = f.store.separateSplitPane(f.b)
+        let single = try #require(SplitPaneInsertion(paneID: f.b, operation: .addAfter, state: f.store.state))
+        #expect(single.selection.count == 1)
+        #expect(single.index == 1)
+    }
+
+    @MainActor private struct LocalNote {
+        let file: URL
+        let id: UUID
+        let old: BrowserTab
+
+        init(_ f: Fixture) throws {
+            file = f.root.appendingPathComponent("Shared Note.md")
+            id = f.store.openNote(url: file, title: "Shared Note")!
+            f.store.selectTab(f.b)
+            old = f.store.state.tabs.first { $0.id == id }!
+        }
+
+        func join(_ f: Fixture) throws -> Bool {
+            let draft = try #require(SplitPaneInsertion(paneID: f.b, operation: .addBelow, state: f.store.state))
+            return f.store.insertSplitPane(draft, tabID: id, navigationURL: nil, creation: nil, savedHomeIDs: [:], documents: [:])
+        }
+    }
+
+    @MainActor @Test func anExistingLocalNoteCanFillABlankPane() throws {
+        let f = try Fixture()
+        _ = f.store.separateSplitPane(f.b)
+        let note = try LocalNote(f)
+        #expect(try note.join(f))
+    }
+
+    @MainActor @Test func theLocalNoteRecordIsMovedNeverCloned() throws {
+        let f = try Fixture()
+        _ = f.store.separateSplitPane(f.b)
+        let note = try LocalNote(f)
+        _ = try note.join(f)
+        #expect(f.store.state.tabs.first { $0.id == note.id }?.url == note.old.url)
+        #expect(f.store.state.selectedTabIDs == [f.b, note.id])
+    }
+
+    @MainActor @Test func aTodayNoteLeavesNoSavedHome() throws {
+        let f = try Fixture()
+        _ = f.store.separateSplitPane(f.b)
+        let note = try LocalNote(f)
+        _ = try note.join(f)
+        #expect(f.store.state.tabs.filter { InternalPage(urlString: $0.url) == .note(note.file) }.count == 1)
+    }
+
+    @MainActor @Test func separatingTheNoteRestoresTheOriginalFirstPane() throws {
+        let f = try Fixture()
+        _ = f.store.separateSplitPane(f.b)
+        let note = try LocalNote(f)
+        _ = try note.join(f)
+        #expect(f.store.separateTabFromSplit(note.id, expected: f.store.activeSplitLayout!, focusedID: f.b))
+        #expect(f.store.state.selectedTabIDs == [f.b])
+    }
+
+    @MainActor private struct LocalEasel {
+        let easels: EaselStore
+        let easel: EaselSession
+        let id: UUID
+        let old: BrowserTab
+
+        init(_ f: Fixture) throws {
+            easels = try EaselStore(directory: f.root.appendingPathComponent("easels"))
+            easel = try easels.create()
+            id = f.store.openEasel(id: easel.document.id, title: "Shared Easel")!
+            f.store.selectTab(f.b)
+            old = f.store.state.tabs.first { $0.id == id }!
+        }
+
+        func join(_ f: Fixture) throws -> Bool {
+            let draft = try #require(SplitPaneInsertion(paneID: f.b, operation: .addAfter, state: f.store.state))
+            return f.store.insertSplitPane(draft, tabID: id, navigationURL: nil, creation: nil, savedHomeIDs: [:], documents: [:])
+        }
+    }
+
+    @MainActor @Test func anExistingLocalEaselCanFillABlankPane() throws {
+        let f = try Fixture()
+        _ = f.store.separateSplitPane(f.b)
+        let easel = try LocalEasel(f)
+        #expect(try easel.join(f))
+    }
+
+    @MainActor @Test func theLocalEaselRecordIsMovedNeverCloned() throws {
+        let f = try Fixture()
+        _ = f.store.separateSplitPane(f.b)
+        let easel = try LocalEasel(f)
+        _ = try easel.join(f)
+        #expect(f.store.state.tabs.first { $0.id == easel.id }?.url == easel.old.url)
+        #expect(f.store.state.selectedTabIDs == [f.b, easel.id])
+    }
+
+    @MainActor @Test func aTodayEaselLeavesNoSavedHome() throws {
+        let f = try Fixture()
+        _ = f.store.separateSplitPane(f.b)
+        let easel = try LocalEasel(f)
+        _ = try easel.join(f)
+        #expect(f.store.state.tabs.filter { InternalPage(urlString: $0.url)?.easelID == easel.easel.document.id }.count == 1)
+    }
+
+    @MainActor @Test func theSharedEaselSessionRemainsTheOriginal() throws {
+        let f = try Fixture()
+        _ = f.store.separateSplitPane(f.b)
+        let easel = try LocalEasel(f)
+        _ = try easel.join(f)
+        #expect(try easel.easels.load(easel.easel.document.id) === easel.easel)
+    }
+
+    @MainActor private struct Host {
+        let id: UUID
+        let createdNote: URL
+        let draft: SplitPaneInsertion
+
+        init(_ f: Fixture, operation: SplitPaneOperation) throws {
+            id = f.store.open("https://later.invalid/host")
+            f.store.selectTab(id)
+            createdNote = f.root.appendingPathComponent("Untitled.md")
+            draft = try #require(SplitPaneInsertion(paneID: id, operation: operation, state: f.store.state))
+        }
+
+        func insertNote(_ f: Fixture, tabID: UUID = UUID(), navigation: URL? = nil) -> Bool {
+            f.store.insertSplitPane(draft, tabID: tabID, navigationURL: navigation, creation: nil, savedHomeIDs: [:], documents: [:],
+                localPage: .note(createdNote), localTitle: "Untitled")
+        }
+    }
+
+    @MainActor @Test func addLeftDraftsTheFirstSlot() throws {
+        let f = try Fixture()
+        let host = try Host(f, operation: .addBefore)
+        #expect(host.draft.index == 0)
+        #expect(host.draft.orientation == .horizontal)
+        #expect(host.draft.selection == [host.id])
+    }
+
+    @MainActor @Test func aLocalPageAndANavigationURLCannotMaterializeTogether() throws {
+        let f = try Fixture()
+        let host = try Host(f, operation: .addBefore)
+        let before = f.store.state
+        #expect(!host.insertNote(f, navigation: f.url))
+        #expect(f.store.state == before)
+    }
+
+    @MainActor @Test func aNewNoteOccupiesTheDraftedSlot() throws {
+        let f = try Fixture()
+        let host = try Host(f, operation: .addBefore)
+        let tab = UUID()
+        #expect(host.insertNote(f, tabID: tab))
+        #expect(f.store.state.selectedTabIDs == [tab, host.id])
+        #expect(f.store.activeSplitLayout?.orientation == .horizontal)
+    }
+
+    @MainActor @Test func theNewNoteTabAddressesTheCreatedDocumentWithoutASavedHome() throws {
+        let f = try Fixture()
+        let host = try Host(f, operation: .addBefore)
+        let tab = UUID()
+        _ = host.insertNote(f, tabID: tab)
+        #expect(f.store.state.tabs.first { $0.id == tab }?.url == InternalPage.note(host.createdNote).urlString)
+        #expect(f.store.state.tabs.filter { InternalPage(urlString: $0.url) == .note(host.createdNote) }.count == 1)
+    }
+
+    @MainActor @Test func separatingTheNewNoteRestoresTheOriginalHost() throws {
+        let f = try Fixture()
+        let host = try Host(f, operation: .addBefore)
+        let tab = UUID()
+        _ = host.insertNote(f, tabID: tab)
+        #expect(f.store.separateTabFromSplit(tab, expected: f.store.activeSplitLayout!, focusedID: host.id))
+        #expect(f.store.state.selectedTabIDs == [host.id])
+    }
+
+    @MainActor @Test func theSameNewNoteDocumentCannotOpenASecondTab() throws {
+        let f = try Fixture()
+        let host = try Host(f, operation: .addAbove)
+        _ = host.insertNote(f)
+        let before = f.store.state
+        #expect(!host.insertNote(f))
+        #expect(f.store.state == before)
+    }
+
+    @MainActor @Test func aNewEaselOccupiesTheDraftedTopSlot() throws {
+        let f = try Fixture()
+        let host = try Host(f, operation: .addAbove)
+        let easels = try EaselStore(directory: f.root.appendingPathComponent("easels"))
+        let created = try easels.create()
+        let tab = UUID()
+        #expect(host.draft.index == 0)
+        #expect(host.draft.orientation == .vertical)
+        #expect(host.draft.selection == [host.id])
+        #expect(f.store.insertSplitPane(host.draft, tabID: tab, navigationURL: nil, creation: nil, savedHomeIDs: [:], documents: [:],
+            localPage: .easel(created.document.id), localTitle: created.document.title))
+        #expect(f.store.state.selectedTabIDs == [tab, host.id])
+        #expect(f.store.activeSplitLayout?.orientation == .vertical)
+    }
+
+    @MainActor @Test func aSavedOriginalNeedsARealSavedHomeReceipt() throws {
+        let f = try Fixture()
+        f.store.selectTab(f.saved)
+        let pinned = try #require(SplitPaneInsertion(paneID: f.saved, operation: .addAfter, state: f.store.state))
+        #expect(!f.store.insertSplitPane(pinned, tabID: UUID(), navigationURL: f.url, creation: nil, savedHomeIDs: [:], documents: [:]))
+    }
+
+    @MainActor @Test func aMissingHomeLeaksNoPartialTab() throws {
+        let f = try Fixture()
+        f.store.selectTab(f.saved)
+        let pinned = try #require(SplitPaneInsertion(paneID: f.saved, operation: .addAfter, state: f.store.state))
+        let before = f.store.state
+        _ = f.store.insertSplitPane(pinned, tabID: UUID(), navigationURL: f.url, creation: nil, savedHomeIDs: [:], documents: [:])
+        #expect(f.store.state == before)
+    }
+
+    @MainActor @Test func aPinnedOriginalMovesWithAFreshSavedHome() throws {
+        let f = try Fixture()
+        f.store.selectTab(f.saved)
+        let pinned = try #require(SplitPaneInsertion(paneID: f.saved, operation: .addAfter, state: f.store.state))
+        #expect(f.store.insertSplitPane(pinned, tabID: UUID(), navigationURL: f.url, creation: nil, savedHomeIDs: [f.saved: UUID()], documents: [:]))
+    }
+
+    @MainActor @Test func theSavedHomeKeepsTheExactParentSection() throws {
+        let f = try Fixture()
+        let inserted = try f.insertPinned()
+        let home = f.store.state.tabs.first { $0.id == inserted.home }
+        #expect(home?.folderID == f.folder)
+        #expect(home?.kind == .pinned)
+    }
+
+    @MainActor @Test func theLiveOriginalBecomesThePaneAndTheHomeNeverReplacesItsPage() throws {
+        let f = try Fixture()
+        let inserted = try f.insertPinned()
+        #expect(f.store.state.tabs.first { $0.id == f.saved }?.kind == .today)
+        #expect(f.store.state.selectedTabIDs == [f.saved, inserted.newID])
+    }
+
+    @MainActor private func pendingDraft(_ f: Fixture) throws -> SplitPaneInsertion {
+        _ = try f.insertPinned()
+        return try #require(SplitPaneInsertion(paneID: f.saved, operation: .addBelow, state: f.store.state))
+    }
+
+    @MainActor @Test func aDestinationProfileChangeInvalidatesTheDraft() throws {
+        let f = try Fixture()
+        let pending = try pendingDraft(f)
+        var foreign = f.store.state
+        foreign.spaces[0].profileID = UUID()
+        #expect(!pending.isCurrent(in: foreign))
+    }
+
+    @MainActor @Test func aRemovedProfileInvalidatesTheDraft() throws {
+        let f = try Fixture()
+        let pending = try pendingDraft(f)
+        var removed = f.store.state
+        removed.profiles.removeAll { $0.id == pending.profileID }
+        #expect(!pending.isCurrent(in: removed))
+    }
+
+    @MainActor @Test func aRetiredOriginalInvalidatesTheDraft() throws {
+        let f = try Fixture()
+        let pending = try pendingDraft(f)
+        var archived = f.store.state
+        archived.tabs[archived.tabs.firstIndex { $0.id == f.saved }!].archivedAt = f.now
+        #expect(!pending.isCurrent(in: archived))
+    }
+
+    @MainActor @Test func changedGroupGeometryInvalidatesTheDraft() throws {
+        let f = try Fixture()
+        let pending = try pendingDraft(f)
+        var changed = f.store.state
+        changed.splitLayouts[changed.splitLayouts.firstIndex { $0.id == pending.layout?.id }!].widthFactors = [0.75, 0.25]
+        #expect(!pending.isCurrent(in: changed))
+    }
+
+    @MainActor @Test func aStorageFailureRefusesPaneMaterialization() throws {
+        let f = try Fixture()
+        let pending = try pendingDraft(f)
+        try f.breakStorage()
+        #expect(!f.store.insertSplitPane(pending, tabID: UUID(), navigationURL: f.url, creation: nil, savedHomeIDs: [:], documents: [:]))
+    }
+
+    @MainActor @Test func aFailedSaveLeavesOriginalsAndNoOrphanTab() throws {
+        let f = try Fixture()
+        let pending = try pendingDraft(f)
+        let failureState = f.store.state
+        try f.breakStorage()
+        _ = f.store.insertSplitPane(pending, tabID: UUID(), navigationURL: f.url, creation: nil, savedHomeIDs: [:], documents: [:])
+        #expect(f.store.state == failureState)
+        #expect(f.store.persistenceError != nil)
+    }
+
+    @MainActor @Test func aStorageFailureAlsoRefusesAReorder() throws {
+        let f = try Fixture()
+        _ = try pendingDraft(f)
+        let failureState = f.store.state
+        try f.breakStorage()
+        #expect(!f.store.moveSplitPane(f.saved, offset: 1, expected: f.store.activeSplitLayout!))
+        #expect(f.store.state == failureState)
+    }
+
+    @MainActor @Test func theSameReceiptRetriesAfterStorageRecovers() throws {
+        let f = try Fixture()
+        let pending = try pendingDraft(f)
+        let failureID = UUID()
+        try f.breakStorage()
+        _ = f.store.insertSplitPane(pending, tabID: failureID, navigationURL: f.url, creation: nil, savedHomeIDs: [:], documents: [:])
+        try f.restoreStorage()
+        #expect(f.store.insertSplitPane(pending, tabID: failureID, navigationURL: f.url, creation: nil, savedHomeIDs: [:], documents: [:]))
+        #expect(f.store.persistenceError == nil)
+    }
+
+    @MainActor private struct Links {
+        let space: UUID, profile: UUID
+        let note: UUID, easel: UUID, settings: UUID, blank: UUID
+
+        init(_ f: Fixture) {
+            space = f.store.activeSpaceID
+            profile = f.store.activeSpace.profileID
+            note = f.store.openResolvedURL(URL(string: InternalPage.note(URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")).urlString)!)
+            easel = f.store.openResolvedURL(URL(string: InternalPage.easel(UUID()).urlString)!)
+            settings = f.store.openResolvedURL(URL(string: "parc://settings/")!)
+            blank = f.store.openResolvedURL(URL(string: "about:blank")!)
+        }
+    }
+
+    @MainActor @Test func copyLinksCopiesEveryPagesAddressInPaneOrder() throws {
+        let f = try Fixture()
+        let l = Links(f)
+        #expect(FolderLinks.links(in: f.store.state, tabIDs: [f.c, f.a, f.b], spaceID: l.space, profileID: l.profile).map(\.tabID) == [f.c, f.a, f.b])
+    }
+
+    @MainActor @Test func notesCopyTheirFileWhileEaselsParcPagesAndBlankTabsAreSkippedAndPagesCopyOnce() throws {
+        let f = try Fixture()
+        let l = Links(f)
+        let links = FolderLinks.links(in: f.store.state, tabIDs: [l.note, f.b, l.settings, l.easel, f.a, l.blank, f.b], spaceID: l.space, profileID: l.profile)
+        #expect(links.map(\.tabID) == [l.note, f.b, f.a])
+    }
+
+    @MainActor @Test func aSplitWithoutAWebPageHasNothingToCopy() throws {
+        let f = try Fixture()
+        let l = Links(f)
+        #expect(FolderLinks.links(in: f.store.state, tabIDs: [l.easel, l.settings], spaceID: l.space, profileID: l.profile).isEmpty)
+    }
+
+    @MainActor @Test func anotherProfilesPagesAreNeverCopied() throws {
+        let f = try Fixture()
+        let l = Links(f)
+        #expect(FolderLinks.links(in: f.store.state, tabIDs: [f.a, f.b], spaceID: l.space, profileID: UUID()).isEmpty)
     }
 }
