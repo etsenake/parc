@@ -296,8 +296,9 @@ Drawings may use a highlighter or washi `brush` with a tape `pattern`.
 `flipHorizontal`, `flipVertical` and `attachedTo` (an object it sticks to and
 moves with) apply to any object. Text, shapes and stickies hold rich text;
 sections keep a plain title. Tables keep their grid, cell text and merges in a
-`table` field described in [Easel tables](easel-tables.md#saved-format).
-Validation refuses each field on objects it doesn't belong
+`table` field described in [Easel tables](easel-tables.md#saved-format), and
+[code blocks](easel-code-blocks.md#saved-format) keep their code in `text` with an
+optional `language`. Validation refuses each field on objects it doesn't belong
 to, so a malformed file is rejected whole rather than half drawn.
 
 ## Checks and limits
