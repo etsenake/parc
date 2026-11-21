@@ -10,6 +10,10 @@ struct NoteSlashTriggerTests {
         NoteTriggerRule.trigger(from: old, to: new, caret: caret ?? (new as NSString).length).map { ($0.trigger, $0.start) }
     }
 
+    static func resumed(_ old: String, _ new: String, _ caret: Int? = nil) -> NoteResumedTrigger? {
+        NoteTriggerRule.resumedTrigger(from: old, to: new, caret: caret ?? (new as NSString).length)
+    }
+
     static func main() {
         expect(trigger("", "/").map { $0 == (.slash, 0) } == true, "a slash at the start of a block opens the menu")
         expect(trigger("Hello ", "Hello /").map { $0 == (.slash, 6) } == true, "a slash after a space opens the menu")
@@ -111,6 +115,47 @@ struct NoteSlashTriggerTests {
         expect(NoteTriggerRule.isEmojiQuery("smile") && NoteTriggerRule.isEmojiQuery("thumbs_up"), "shortcodes are emoji queries")
         expect(!NoteTriggerRule.isEmojiQuery("s") && !NoteTriggerRule.isEmojiQuery("+1") && !NoteTriggerRule.isEmojiQuery("sm ile"),
                "short, symbol-led or spaced queries aren't")
+
+        expect(resumed("@x", "@") == .inline(.mention, start: 0), "backspacing to a bare @ brings the mentions back")
+        expect(resumed("see @jx", "see @j") == .inline(.mention, start: 4), "deleting inside a mention query brings it back")
+        expect(resumed("see @j", "see @jo") == .inline(.mention, start: 4), "typing after a closed mention brings it back")
+        expect(resumed("@dec 3", "@dec 3 ") == .inline(.mention, start: 0), "mention queries may hold spaces")
+        expect(resumed("(@n", "(@") == .inline(.mention, start: 1), "a mention after a bracket comes back too")
+        expect(resumed("/hx", "/h") == .inline(.slash, start: 0), "the slash menu comes back the same way")
+        expect(resumed("Hello /", "Hello /h") == .inline(.slash, start: 6), "typing after a closed slash brings it back")
+        expect(resumed("/red b", "/red bl") == nil, "a spaced slash query was already given up on")
+        expect(resumed("see [[ab", "see [[a") == .inline(.noteLink, start: 4), "note links come back too")
+        expect(resumed("hi :smx", "hi :sm") == .emoji(start: 3, query: "sm"), "emoji suggestions come back on delete")
+        expect(resumed("hi :sm", "hi :smi") == .emoji(start: 3, query: "smi"), "and on typing")
+        expect(resumed("@dec :sm", "@dec :smi") == .emoji(start: 5, query: "smi"), "the nearest trigger wins")
+        expect(resumed("@ x", "@ ") == nil, "an @ followed by a space was never a mention")
+        expect(resumed("me@x", "me@") == nil, "email addresses stay text")
+        expect(resumed("a/bx", "a/b") == nil, "and/or stays text")
+        expect(resumed("@a\nbx", "@a\nb") == nil, "a line break ends the trigger")
+        expect(resumed("@a\(NoteAtom.character)bx", "@a\(NoteAtom.character)b") == nil, "a mention already made ends the trigger")
+        expect(resumed("@" + String(repeating: "a", count: 80), "@" + String(repeating: "a", count: 81)) == nil, "long-gone triggers stay closed")
+        expect(resumed("", "@ab", 3) == nil, "pasting never opens a menu")
+        expect(resumed("@ab", "@ab") == nil, "no change, no menu")
+        expect(NoteTriggerRule.resumedTrigger(from: "@abc", to: "@ac", caret: 3) == nil, "an edit away from the caret isn't typing there")
+        expect(NoteTriggerRule.resumedTrigger(from: "@abc", to: "@ac", caret: 2) == .inline(.mention, start: 0), "forward delete at the caret is")
+        expect(NoteTriggerRule.activeTrigger(in: "@abc", caret: 0) == nil, "a caret before the @ is outside it")
+
+        expect(NoteTriggerRule.caret(1, isInside: "@", at: 0, in: "@"), "a bare @ still holds an Escape")
+        expect(NoteTriggerRule.caret(4, isInside: "@", at: 0, in: "@foo"), "so does its query")
+        expect(!NoteTriggerRule.caret(0, isInside: "@", at: 0, in: "@foo"), "moving before the @ lets it go")
+        expect(!NoteTriggerRule.caret(3, isInside: "@", at: 0, in: "foo"), "deleting the @ lets it go")
+        expect(!NoteTriggerRule.caret(4, isInside: "@", at: 0, in: "@a\nb"), "moving to another line lets it go")
+        expect(!NoteTriggerRule.caret(0, isInside: "", at: 0, in: ""), "menus without a trigger never hold one")
+
+        var resumedSlash = NoteQueryTracker.slash
+        resumedSlash.resume(query: "hxy") { $0 == "h" }
+        expect(resumedSlash.update(query: "hxy", hasResults: false) == .open, "a reopened menu forgives misses as if it had been typed")
+        var resumedMiss = NoteQueryTracker.slash
+        resumedMiss.resume(query: "hxyz") { $0 == "h" }
+        expect(resumedMiss.update(query: "hxyz", hasResults: false) == .close, "and closes where typing would have")
+        var resumedMention = NoteQueryTracker.mention
+        resumedMention.resume(query: "zz") { _ in false }
+        expect(resumedMention.update(query: "zz", hasResults: false) == .open, "a short miss stays open like a fresh @")
         print("NoteSlashTriggerTests passed")
     }
 }

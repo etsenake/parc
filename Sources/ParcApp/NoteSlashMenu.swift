@@ -36,6 +36,7 @@ final class NoteSlashMenuController {
         didSet { if mode == nil { stopWatchingPointer() } else { watchPointer() } }
     }
     private var anchor: Anchor?
+    private var cancelledAnchor: Anchor?
     private var tracker = NoteQueryTracker.slash
     private var currentQuery: String?
     private var results: [NoteCatalogItem] = []
@@ -65,7 +66,7 @@ final class NoteSlashMenuController {
         self.editor = editor
         list.maximumHeight = 372
         list.onActivate = { [weak self] item in self?.activate(item) }
-        list.onCancel = { [weak self] in self?.dismiss() }
+        list.onCancel = { [weak self] in self?.cancel() }
         list.onHighlight = { [weak self] item in self?.highlightDidChange(item) }
         subscription = editor.session.changes.sink { [weak self] change in self?.sessionDidChange(change) }
         reminderDocument = editor.environment.documentURL
@@ -134,24 +135,57 @@ final class NoteSlashMenuController {
         guard let text = page.block(key.block)?.text(in: key.field), let caret = caret(in: key),
               let old = previousText?.key == key ? previousText?.text : nil else { return }
         let new = text.string
-        guard let typed = NoteTriggerRule.insertion(from: old, to: new, caret: caret) else { return }
-        if typed.text == ":", let done = NoteTriggerRule.completedShortcode(in: new, caret: caret), completeShortcode(done, in: key) { return }
+        if NoteTriggerRule.insertion(from: old, to: new, caret: caret)?.text == ":",
+           let done = NoteTriggerRule.completedShortcode(in: new, caret: caret), completeShortcode(done, in: key) { return }
         guard allowsInline(key) else { return }
         if let found = NoteTriggerRule.trigger(from: old, to: new, caret: caret), !text.marks(at: found.start).code {
-            switch found.trigger {
-            case .slash:
-                guard allowsBlocks(key) else { return }
-                openBlocks(makeAnchor(key, start: found.start, trigger: "/"), context: context(for: key.block, plus: false), origin: .keyboard)
-            case .mention:
-                openMention(makeAnchor(key, start: found.start, trigger: "@"), scope: .everything)
-            case .noteLink:
-                openMention(makeAnchor(key, start: found.start, trigger: "[["), scope: .notes)
-            }
+            cancelledAnchor = nil
+            openInline(found.trigger, in: key, start: found.start, resuming: false)
             return
         }
-        if typed.text.count == 1, let emoji = NoteTriggerRule.emojiQuery(in: new, caret: caret), !text.marks(at: emoji.start).code {
-            openEmoji(makeAnchor(key, start: emoji.start, trigger: ":"), query: emoji.query)
+        guard let resumed = NoteTriggerRule.resumedTrigger(from: old, to: new, caret: caret) else { return }
+        switch resumed {
+        case .inline(let trigger, let start):
+            guard !text.marks(at: start).code, !wasCancelled(key, start: start) else { return }
+            openInline(trigger, in: key, start: start, resuming: true)
+        case .emoji(let start, let query):
+            guard !text.marks(at: start).code, !wasCancelled(key, start: start) else { return }
+            openEmoji(makeAnchor(key, start: start, trigger: ":"), query: query)
         }
+    }
+
+    private func openInline(_ trigger: NoteInlineTrigger, in key: TextKey, start: Int, resuming: Bool) {
+        switch trigger {
+        case .slash:
+            guard allowsBlocks(key) else { return }
+            openBlocks(makeAnchor(key, start: start, trigger: "/"), context: context(for: key.block, plus: false), origin: .keyboard, resuming: resuming)
+        case .mention:
+            openMention(makeAnchor(key, start: start, trigger: "@"), scope: .everything, resuming: resuming)
+        case .noteLink:
+            openMention(makeAnchor(key, start: start, trigger: "[["), scope: .notes, resuming: resuming)
+        }
+    }
+
+    private func wasCancelled(_ key: TextKey, start: Int) -> Bool {
+        guard let cancelledAnchor else { return false }
+        return cancelledAnchor.key == key && cancelledAnchor.start == start
+    }
+
+    private func cancel() {
+        switch mode {
+        case .blocks?, .mention?, .emoji?:
+            if let anchor, !anchor.token.trigger.isEmpty { cancelledAnchor = anchor }
+        default:
+            break
+        }
+        dismiss()
+    }
+
+    private func releaseCancelledAnchor() {
+        guard let cancelled = cancelledAnchor else { return }
+        if let text = page.block(cancelled.block)?.text(in: cancelled.field), let caret = caret(in: cancelled.key),
+           NoteTriggerRule.caret(caret, isInside: cancelled.token.trigger, at: cancelled.start, in: text.string) { return }
+        cancelledAnchor = nil
     }
 
     func handleKey(_ event: NSEvent) -> Bool {
@@ -176,7 +210,7 @@ final class NoteSlashMenuController {
         guard let mode else { return false }
         switch mode {
         case .emoji:
-            if selector == #selector(NSResponder.cancelOperation(_:)) { dismiss(); return true }
+            if selector == #selector(NSResponder.cancelOperation(_:)) { cancel(); return true }
             return emojiList?.handle(selector) ?? false
         case .date:
             if datePicker?.handleCommand(selector) == true { return true }
@@ -200,7 +234,7 @@ final class NoteSlashMenuController {
                 dismiss()
                 return false
             case #selector(NSResponder.cancelOperation(_:)):
-                dismiss()
+                cancel()
                 return true
             default:
                 return false
@@ -226,11 +260,14 @@ final class NoteSlashMenuController {
         datePicker = nil
     }
 
-    private func openBlocks(_ anchor: Anchor, context: NoteCatalogContext, origin: NoteMenuList.Origin) {
+    private func openBlocks(_ anchor: Anchor, context: NoteCatalogContext, origin: NoteMenuList.Origin, resuming: Bool = false) {
         closePanels(except: listPanel)
         self.anchor = anchor
         mode = .blocks(context)
         tracker = .slash
+        if resuming, let query = liveMatch()?.query {
+            tracker.resume(query: query) { !NoteBlockCatalog.results(for: $0, in: context).isEmpty }
+        }
         currentQuery = nil
         results = []
         list.filtersOnTyping = false
@@ -292,11 +329,18 @@ final class NoteSlashMenuController {
         listPanel.present(in: editor.canvas.overlayView, anchor: rect, edge: .below, animated: true)
     }
 
-    private func openMention(_ anchor: Anchor, scope: NoteMentionMenu.Scope) {
+    private func openMention(_ anchor: Anchor, scope: NoteMentionMenu.Scope, resuming: Bool = false) {
         closePanels(except: listPanel)
         self.anchor = anchor
         mode = .mention(scope)
         tracker = .mention
+        if resuming, let query = liveMatch()?.query {
+            let parser = NoteDateParser()
+            tracker.resume(query: query) { prefix in
+                NoteMentionMenu.contents(for: prefix, scope: scope, environment: editor.environment, parser: parser).hasResults
+                    || NoteMentionMenu.isStillTyping(prefix, scope: scope, parser: parser)
+            }
+        }
         currentQuery = nil
         list.filtersOnTyping = false
         list.filterText = ""
@@ -609,7 +653,7 @@ final class NoteSlashMenuController {
     private func makeEmojiList() -> NoteEmojiSuggestionList {
         let suggestions = NoteEmojiSuggestionList(limit: 8)
         suggestions.onPick = { [weak self] character in self?.insertEmoji(character) }
-        suggestions.onCancel = { [weak self] in self?.dismiss() }
+        suggestions.onCancel = { [weak self] in self?.cancel() }
         let panel = makePanel(suggestions)
         suggestions.onResultsChange = { [weak panel] _ in panel?.contentSizeDidChange(animated: true) }
         emojiList = suggestions
@@ -693,7 +737,7 @@ final class NoteSlashMenuController {
         case 125 where flags.isEmpty, 45 where flags == .control: return emojiList.moveSelection(by: 1)
         case 126 where flags.isEmpty, 35 where flags == .control: return emojiList.moveSelection(by: -1)
         case 36 where flags.isEmpty, 76 where flags.isEmpty, 48 where flags.isEmpty: return emojiList.pickSelected()
-        case 53: dismiss(); return true
+        case 53: cancel(); return true
         default: return false
         }
     }
@@ -779,6 +823,7 @@ final class NoteSlashMenuController {
 
     private func sessionDidChange(_ change: NotePageChange) {
         recordText()
+        releaseCancelledAnchor()
         if change.kind != .selection { scheduleReminderSync(after: 0.8) }
         guard let mode else { return }
         switch mode {

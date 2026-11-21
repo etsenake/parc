@@ -466,6 +466,24 @@ struct NoteQueryTracker: Hashable {
         if query.contains(where: \.isNewline) { return .close }
         return length - matchedLength >= slack ? .close : .open
     }
+
+    mutating func resume(query: String, hasResults: (String) -> Bool) {
+        let string = query as NSString
+        matchedLength = 0
+        var length = string.length - 1
+        while length > 0, string.length - length < slack {
+            if string.rangeOfComposedCharacterSequence(at: length).location == length, hasResults(string.substring(to: length)) {
+                matchedLength = length
+                return
+            }
+            length -= 1
+        }
+    }
+}
+
+enum NoteResumedTrigger: Hashable {
+    case inline(NoteInlineTrigger, start: Int)
+    case emoji(start: Int, query: String)
 }
 
 enum NoteInlineTrigger: Hashable {
@@ -518,6 +536,60 @@ enum NoteTriggerRule {
         default:
             return nil
         }
+    }
+
+    static let resumableQueryLength = 64
+
+    static func edit(from old: String, to new: String, caret: Int) -> Bool {
+        if let typed = insertion(from: old, to: new, caret: caret) { return typed.text.count == 1 }
+        let before = old as NSString, after = new as NSString
+        let removed = before.length - after.length
+        guard removed > 0, caret >= 0, caret <= after.length else { return false }
+        return after.substring(to: caret) == before.substring(to: caret) && after.substring(from: caret) == before.substring(from: caret + removed)
+    }
+
+    static func activeTrigger(in value: String, caret: Int) -> (trigger: NoteInlineTrigger, start: Int)? {
+        let text = value as NSString
+        guard caret > 0, caret <= text.length else { return nil }
+        var spaced = false
+        var index = caret
+        while index > 0, caret - index <= resumableQueryLength {
+            index -= 1
+            let unit = text.character(at: index)
+            guard let scalar = Unicode.Scalar(unit) else { continue }
+            if CharacterSet.newlines.contains(scalar) || String(scalar) == NoteAtom.character { return nil }
+            let leadingSpace = index + 1 < caret && Unicode.Scalar(text.character(at: index + 1)).map(CharacterSet.whitespaces.contains) == true
+            switch unit {
+            case 64 where !leadingSpace && isBoundary(text, before: index, allowingOpeners: true):
+                return (.mention, index)
+            case 47 where !spaced && isBoundary(text, before: index, allowingOpeners: false):
+                return (.slash, index)
+            case 91 where !leadingSpace && index > 0 && text.character(at: index - 1) == 91 && isBoundary(text, before: index - 1, allowingOpeners: false):
+                return (.noteLink, index - 1)
+            default:
+                break
+            }
+            if CharacterSet.whitespaces.contains(scalar) { spaced = true }
+        }
+        return nil
+    }
+
+    static func resumedTrigger(from old: String, to new: String, caret: Int) -> NoteResumedTrigger? {
+        guard edit(from: old, to: new, caret: caret) else { return nil }
+        let inline = activeTrigger(in: new, caret: caret)
+        if let emoji = emojiQuery(in: new, caret: caret), emoji.start > inline?.start ?? -1 {
+            return .emoji(start: emoji.start, query: emoji.query)
+        }
+        return inline.map { .inline($0.trigger, start: $0.start) }
+    }
+
+    static func caret(_ caret: Int, isInside trigger: String, at start: Int, in value: String) -> Bool {
+        let text = value as NSString
+        let queryStart = start + (trigger as NSString).length
+        guard !trigger.isEmpty, start >= 0, caret >= queryStart, caret <= text.length,
+              text.substring(with: NSRange(location: start, length: queryStart - start)) == trigger else { return false }
+        let query = text.substring(with: NSRange(location: queryStart, length: caret - queryStart))
+        return !query.contains(where: \.isNewline) && !query.contains(NoteAtom.character)
     }
 
     static func emojiQuery(in value: String, caret: Int) -> (start: Int, query: String)? {
