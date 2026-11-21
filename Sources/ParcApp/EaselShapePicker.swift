@@ -38,6 +38,11 @@ final class EaselShapePickerView: NSView, NoteFloatingPanelContent {
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Shapes")
+        NoteAnimation.observeReduceMotion(self) { [weak self] in
+            guard let self else { return }
+            NoteAnimation.settle(self)
+            self.cells.joined().forEach { $0.refreshSurface() }
+        }
         pin.target = self; pin.action = #selector(togglePin)
         pin.setButtonType(.pushOnPushOff); pin.imagePosition = .imageOnly
         if showsPin { addSubview(pin) }
@@ -91,7 +96,7 @@ final class EaselShapePickerView: NSView, NoteFloatingPanelContent {
     }
 
     private func refreshChecks() {
-        for row in cells { for cell in row { cell.isChecked = checked == [cell.shape] } }
+        for row in cells { for cell in row { cell.setChecked(checked == [cell.shape], animated: window != nil) } }
     }
 
     private func refreshPin() {
@@ -137,10 +142,10 @@ final class EaselShapePickerView: NSView, NoteFloatingPanelContent {
     func setHighlight(_ slot: EaselShapeCatalog.Slot?, animated: Bool) {
         let previous = highlighted
         highlighted = slot
-        for row in cells { for cell in row { cell.isHighlighted = false } }
+        let chosen = slot.flatMap { cell(at: $0) }
+        for row in cells { for cell in row { cell.isHighlighted = cell === chosen } }
         refreshPlateColor()
-        if let slot, let target = cell(at: slot) {
-            target.isHighlighted = true
+        if let slot, let target = chosen {
             let frame = target.frame.insetBy(dx: -2, dy: -2)
             if previous != nil, animated, plate.opacity > 0, !NoteAnimation.reduceMotion {
                 NoteAnimation.slideLayer(plate, to: frame, spring: .glide)
@@ -214,17 +219,19 @@ final class EaselShapePickerView: NSView, NoteFloatingPanelContent {
 @MainActor
 private final class EaselShapeCell: NSView {
     let shape: EaselShape
-    var isChecked = false { didSet { if oldValue != isChecked { needsDisplay = true; setAccessibilitySelected(isChecked) } } }
-    var isHighlighted = false
+    private(set) var isChecked = false
+    var isHighlighted = false { didSet { if oldValue != isHighlighted { refreshSurface() } } }
     var onPress: (() -> Void)?
     var onHover: ((Bool) -> Void)?
     private var isPressed = false
+    private let ring = EaselControlSurface.makeRing()
 
     init(shape: EaselShape) {
         self.shape = shape
         super.init(frame: NSRect(x: 0, y: 0, width: EaselShapePickerView.cellSide, height: EaselShapePickerView.cellSide))
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
+        layer?.addSublayer(ring)
         setEaselTooltip(EaselShapeGeometry.displayName(shape))
         setAccessibilityElement(true)
         setAccessibilityRole(.radioButton)
@@ -236,6 +243,23 @@ private final class EaselShapeCell: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    func setChecked(_ checked: Bool, animated: Bool) {
+        guard checked != isChecked else { return }
+        isChecked = checked
+        needsDisplay = true
+        setAccessibilitySelected(checked)
+        EaselControlSurface.setRing(ring, in: self, shown: checked, animated: animated)
+    }
+
+    func refreshSurface(released: Bool = false) {
+        EaselControlSurface.apply(self, hovered: isHighlighted, pressed: isPressed, released: released)
+    }
+
+    override func layout() {
+        super.layout()
+        NoteAnimation.withoutAnimation { ring.frame = bounds.insetBy(dx: 0.75, dy: 0.75) }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let natural = EaselShapeGeometry.defaultSize(shape)
@@ -254,16 +278,12 @@ private final class EaselShapeCell: NSView {
             lines.lineWidth = 1.5; lines.lineCapStyle = .round
             lines.stroke()
         }
-        if isChecked {
-            let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.75, dy: 0.75), xRadius: 8, yRadius: 8)
-            ring.lineWidth = 1.5
-            NoteTheme.checkedInk.setStroke(); ring.stroke()
-        }
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         needsDisplay = true
+        NoteAnimation.withoutAnimation { ring.borderColor = NoteTheme.resolved(NoteTheme.checkedInk, in: self) }
     }
 
     override func updateTrackingAreas() {
@@ -283,12 +303,9 @@ private final class EaselShapeCell: NSView {
     override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
 
     private func setPressed(_ pressed: Bool) {
-        guard pressed != isPressed, let layer else { return }
+        guard pressed != isPressed else { return }
         isPressed = pressed
-        let centre = NoteAnimation.layerPoint(NSPoint(x: bounds.midX, y: bounds.midY), in: self)
-        let transform = pressed ? NoteAnimation.scaleTransform(NoteAnimation.pressedScale, about: centre) : CATransform3DIdentity
-        NoteAnimation.spring(layer, "transform", to: NSValue(caTransform3D: transform), spring: .press,
-                             key: NoteAnimation.keyPrefix + "shape.press")
+        refreshSurface(released: !pressed)
     }
 
     override func mouseDown(with event: NSEvent) { setPressed(true) }

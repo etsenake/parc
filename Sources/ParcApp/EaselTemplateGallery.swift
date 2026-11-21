@@ -21,7 +21,7 @@ enum EaselTemplateThumbnails {
 @MainActor
 final class EaselTemplateCard: PointingHandButton {
     let template: EaselTemplate
-    var isCurrent = false { didSet { if isCurrent != oldValue { needsDisplay = true } } }
+    var isCurrent = false { didSet { if isCurrent != oldValue { needsDisplay = true; refreshSurface() } } }
     var onHover: ((EaselTemplateCard) -> Void)?
     private var hoverTracking: NSTrackingArea?
     static let size = NSSize(width: 152, height: 132)
@@ -33,7 +33,13 @@ final class EaselTemplateCard: PointingHandButton {
         isBordered = false
         title = ""
         focusRingType = .none
+        wantsLayer = true
         setButtonType(.momentaryChange)
+        NoteAnimation.observeReduceMotion(self) { [weak self] in
+            guard let self else { return }
+            NoteAnimation.settle(self)
+            self.refreshSurface()
+        }
         setEaselTooltip(template.blurb)
         setAccessibilityRole(.button)
         setAccessibilityLabel(template.title + " template")
@@ -54,8 +60,32 @@ final class EaselTemplateCard: PointingHandButton {
     }
 
     override func mouseEntered(with event: NSEvent) { onHover?(self) }
-    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
-    override func highlight(_ flag: Bool) { super.highlight(flag); needsDisplay = true }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true; refreshSurface() }
+
+    override func highlight(_ flag: Bool) {
+        let released = !flag && isHighlighted
+        super.highlight(flag)
+        needsDisplay = true
+        refreshSurface(released: released)
+    }
+
+    private var thumbnailPath: CGPath {
+        var rect = NSRect(x: 6, y: 6, width: bounds.width - 12, height: Self.thumbnailHeight)
+        if layer?.isGeometryFlipped != isFlipped { rect.origin.y = bounds.height - rect.maxY }
+        return CGPath(roundedRect: rect, cornerWidth: NoteTheme.controlRadius, cornerHeight: NoteTheme.controlRadius, transform: nil)
+    }
+
+    func refreshSurface(released: Bool = false) {
+        EaselControlSurface.apply(self, hovered: isCurrent, pressed: isHighlighted, released: released,
+                                  hover: EaselControlMotion.cardHoverScale, press: EaselControlMotion.cardPressedScale,
+                                  shadowPath: thumbnailPath)
+    }
+
+    override func layout() {
+        super.layout()
+        guard let layer else { return }
+        NoteAnimation.withoutAnimation { layer.shadowPath = thumbnailPath }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let radius = NoteTheme.controlRadius + 2
