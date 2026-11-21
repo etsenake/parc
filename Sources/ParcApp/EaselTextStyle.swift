@@ -405,6 +405,9 @@ final class EaselStyledTextView: LocalContentDropTextView {
     var adaptsInk = false
     var caretColor: NSColor = .textColor { didSet { refreshObjectFill() } }
     var onClipboardError: ((Error) -> Void)?
+    var scheduleHistoryCleanup: (@escaping () -> Void) -> Void = { work in
+        DispatchQueue.main.async { work() }
+    }
     var onUndoDocument: (() -> Void)?
     var onRedoDocument: (() -> Void)?
     var canUndoDocument: (() -> Bool)?
@@ -475,7 +478,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         localUndo.groupsByEvent = automatic
         if level > 0 {
             let revision = editRevision
-            DispatchQueue.main.async { [weak self] in
+            scheduleHistoryCleanup { [weak self] in
                 guard let self, self.editRevision == revision, self.localUndo.groupingLevel == 0 else { return }
                 self.localUndo.removeAllActions()
             }
