@@ -58,6 +58,13 @@ class SidebarPreviewSurface: NSView {
     private let background = NSView()
     private var hoverArea: NSTrackingArea?
     private var motionAnchor: NSPoint?
+    var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    var commitsExit: (_ animations: () -> Void, _ completion: @escaping @Sendable () -> Void) -> Void = { animations, completion in
+        CATransaction.begin()
+        CATransaction.setCompletionBlock(completion)
+        animations()
+        CATransaction.commit()
+    }
     override var isFlipped: Bool { true }
     func preferredHeight(width: CGFloat) -> CGFloat { SidebarPreviewMetrics.maximumHeight }
     var hoverFrame: NSRect {
@@ -134,7 +141,7 @@ class SidebarPreviewSurface: NSView {
         let opacity = CABasicAnimation(keyPath: "opacity")
         opacity.fromValue = 0; opacity.toValue = 1
         var animations = [opacity]
-        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        if !reducesMotion() {
             let transform = CABasicAnimation(keyPath: "transform")
             transform.fromValue = NSValue(caTransform3D: scaled(about: anchor))
             transform.toValue = NSValue(caTransform3D: CATransform3DIdentity)
@@ -154,23 +161,22 @@ class SidebarPreviewSurface: NSView {
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = opacity; fade.toValue = 0
         var animations = [fade]
-        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        if !reducesMotion() {
             let transform = CABasicAnimation(keyPath: "transform")
             transform.fromValue = NSValue(caTransform3D: presented?.transform ?? layer.transform)
             transform.toValue = NSValue(caTransform3D: scaled(about: motionAnchor ?? NSPoint(x: 0, y: bounds.height / 2)))
             animations.append(transform)
         }
-        CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak self] in
+        commitsExit({
+            for animation in animations {
+                animation.duration = duration * CFTimeInterval(opacity)
+                animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                animation.fillMode = .forwards; animation.isRemovedOnCompletion = false
+                layer.add(animation, forKey: animation.keyPath)
+            }
+        }, { [weak self] in
             MainActor.assumeIsolated { self?.removeFromSuperview(); completion() }
-        }
-        for animation in animations {
-            animation.duration = duration * CFTimeInterval(opacity)
-            animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            animation.fillMode = .forwards; animation.isRemovedOnCompletion = false
-            layer.add(animation, forKey: animation.keyPath)
-        }
-        CATransaction.commit()
+        })
     }
 
     private func scaled(about point: NSPoint) -> CATransform3D {
