@@ -49,7 +49,8 @@ final class EmbeddedLiveCapturePositioner {
         browser.frame = NSRect(origin: .zero, size: pageSize(zoom: zoom))
         status(Self.positioningStatus, false)
         positioning = page.positionLiveCapture(NSRect(x: layout.region.x, y: layout.region.y, width: layout.region.width, height: layout.region.height),
-            scrollOffset: NSPoint(x: layout.scroll.x, y: layout.scroll.y), displayWidth: width) { [weak self, weak browser, weak page] success in
+            scrollOffset: NSPoint(x: layout.scroll.x, y: layout.scroll.y), scrollContainers: layout.nativeScrollContainers,
+            displayWidth: width) { [weak self, weak browser, weak page] success in
                 MainActor.assumeIsolated {
                     guard let self, let browser, let page, self.generation == expected,
                           browser.nativePage === page, page.embeddedOwnerValid else { return }

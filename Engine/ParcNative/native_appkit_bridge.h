@@ -1576,10 +1576,6 @@ NS_SWIFT_UI_ACTOR
 @interface PCNativePage (LiveCapture)
 @property(nonatomic, readonly) double liveCaptureZoomFactor;
 - (nullable PCNativeLiveCapturePosition*)positionLiveCapture:(NSRect)region
-    scrollOffset:(NSPoint)scrollOffset displayWidth:(double)displayWidth
-    completion:(void (^)(BOOL))completion
-    NS_SWIFT_NAME(positionLiveCapture(_:scrollOffset:displayWidth:completion:));
-- (nullable PCNativeLiveCapturePosition*)positionLiveCapture:(NSRect)region
     scrollOffset:(NSPoint)scrollOffset
     scrollContainers:(NSArray<PCNativeCaptureScrollContainer*>*)scrollContainers
     displayWidth:(double)displayWidth completion:(void (^)(BOOL))completion

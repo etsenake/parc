@@ -1165,11 +1165,6 @@ class LiveCapturePosition final : public std::enable_shared_from_this<LiveCaptur
       blink::ZoomLevelToZoomFactor(content::HostZoomMap::GetZoomLevel(contents)) : 1;
 }
 - (PCNativeLiveCapturePosition*)positionLiveCapture:(NSRect)region scrollOffset:(NSPoint)scroll
-    displayWidth:(double)width completion:(void (^)(BOOL))completion {
-  return [self positionLiveCapture:region scrollOffset:scroll scrollContainers:@[]
-                      displayWidth:width completion:completion];
-}
-- (PCNativeLiveCapturePosition*)positionLiveCapture:(NSRect)region scrollOffset:(NSPoint)scroll
     scrollContainers:(NSArray<PCNativeCaptureScrollContainer*>*)containers
     displayWidth:(double)width completion:(void (^)(BOOL))completion {
   if (!containers || containers.count > parc::kMaxScrollContainers) return nil;
