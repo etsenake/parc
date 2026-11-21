@@ -53,7 +53,9 @@ stay hidden.
 
 ## Rows and columns
 
-Hovering a selected table shows its controls, drawn from the Notes table:
+Hovering a table shows its controls, drawn from the Notes table. They stay
+while the pointer moves out onto the bars and markers, and they work on the
+first click, leaving the table selected.
 
 - `+` bars along the right and bottom edges add a column or a row at the end.
 - `+` markers appear on the top edge between columns and on the left edge

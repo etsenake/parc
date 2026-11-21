@@ -136,12 +136,7 @@ extension EaselCanvasView {
             tableState.tableID = nil
             invalidateTableChrome(id)
         }
-        if let id = tableState.hoverTable, selection != [id] {
-            tableState.hoverTable = nil
-            tableState.hover = nil
-            tableState.hoverCell = nil
-            invalidateTableChrome(id)
-        }
+        if let id = tableState.hoverTable { invalidateTableChrome(id) }
     }
 
     func tablePreview(_ displayed: [EaselItem]) -> [EaselItem] {
@@ -379,13 +374,40 @@ extension EaselCanvasView {
         return nil
     }
 
+    private var showsTableControls: Bool {
+        fixedCanvasSize == nil && !drawing && !toolOwnsPointer && start == nil && marqueeRect == nil
+            && !hidesPassiveAnnotations && tableState.drag == nil && !session.isClosed
+    }
+
+    private func offersTableControls(_ item: EaselItem) -> Bool {
+        guard item.kind == .table, item.table != nil, !item.isLocked, editor == nil || editingID == item.id else { return false }
+        guard selection != [item.id], let group = item.groupID else { return true }
+        return EaselArrange.isInside(group, entered: arrangeState.enteredGroup, selection: selection, in: session.document)
+    }
+
+    private var hoveredTable: EaselItem? {
+        guard showsTableControls, let id = tableState.hoverTable,
+              let item = items.first(where: { $0.id == id }), offersTableControls(item) else { return nil }
+        return item
+    }
+
+    private func tableControlItem(at point: NSPoint) -> EaselItem? {
+        let selected = selectedTable, top = object(at: point)
+        let hovered = tableState.hoverTable.flatMap { id in items.first { $0.id == id } }
+        let reachable = fixedCanvasSize == nil && !drawing && !toolOwnsPointer
+        let candidates = ([selected] + (reachable ? [hovered, top] : [])).compactMap { $0 }.filter(offersTableControls)
+        if let item = candidates.first(where: { tableHit(at: point, item: $0) != nil }) { return item }
+        if let top { return candidates.first { $0.id == top.id } }
+        return candidates.first { tableChromeBounds($0).contains(point) }
+    }
+
     func updateTableHover(at point: NSPoint?) {
         var nextTable: UUID?, nextHover: EaselTableHover?, nextCell: EaselTableCoordinate?
-        if let point, !drawing, tableState.drag == nil, marqueeRect == nil, !hidesPassiveAnnotations,
-           let item = selectedTable, !item.isLocked, let table = item.table {
+        if let point, showsTableControls, isTopmost(atWindowPoint: convert(point, to: nil)),
+           let item = tableControlItem(at: point), let table = item.table {
+            nextTable = item.id
             nextHover = tableHit(at: point, item: item)
             nextCell = EaselTableLayout(table: table, frame: item.frame).cell(at: EaselPoint(point)).map(table.anchor)
-            if nextHover != nil || nextCell != nil || tableChromeBounds(item).contains(point) { nextTable = item.id }
         }
         guard nextTable != tableState.hoverTable || nextHover != tableState.hover || nextCell != tableState.hoverCell else { return }
         let previous = tableState.hoverTable
@@ -393,11 +415,20 @@ extension EaselCanvasView {
         tableState.hover = nextHover
         tableState.hoverCell = nextCell
         invalidateTableChrome(previous)
-        if nextTable != previous { invalidateTableChrome(nextTable) }
+        guard nextTable != previous else { return }
+        invalidateTableChrome(nextTable)
+        window?.invalidateCursorRects(for: self)
     }
 
     func addTableCursorRects() {
-        guard !drawing, let item = selectedTable, !item.isLocked, let table = item.table else { return }
+        guard !drawing else { return }
+        let selected = selectedTable.flatMap { $0.isLocked ? nil : $0 }
+        let hovered = hoveredTable.flatMap { $0.id == selected?.id ? nil : $0 }
+        for item in [selected, hovered].compactMap({ $0 }) { addTableCursorRects(item) }
+    }
+
+    private func addTableCursorRects(_ item: EaselItem) {
+        guard let table = item.table else { return }
         let bands = tableBands(item), scale = CGFloat(max(canvasScale, 0.2))
         for band in [bands.top, bands.left, bands.right, bands.bottom] where !band.isEmpty { addCursorRect(band, cursor: .pointingHand) }
         let grid = EaselTableLayout(table: table, frame: item.frame), f = rect(item)
@@ -419,52 +450,59 @@ extension EaselCanvasView {
 
     func drawTableDecorations(in dirtyRect: NSRect) {
         if let placement = tableState.placement { drawTablePlacement(placement, in: dirtyRect) }
-        guard !drawing, marqueeRect == nil, !hidesPassiveAnnotations || tableState.drag != nil,
-              let item = selectedTable, let table = item.table else { return }
-        guard tableChromeBounds(item).intersects(dirtyRect) else { return }
-        let grid = EaselTableLayout(table: table, frame: item.frame), scale = CGFloat(max(canvasScale, 0.2)), f = rect(item)
-        let accent = EaselAppearance.selection
-        if let selected = tableCellSelection, let box = grid.rect(selected.range) {
-            let r = NSRect(box)
-            if !selected.range.isSingleCell {
-                NoteTheme.blockSelection.setFill()
-                r.fill()
+        guard !drawing, marqueeRect == nil, !hidesPassiveAnnotations || tableState.drag != nil else { return }
+        let hovered = hoveredTable
+        if let item = selectedTable, let table = item.table, tableChromeBounds(item).intersects(dirtyRect) {
+            let grid = EaselTableLayout(table: table, frame: item.frame), scale = CGFloat(max(canvasScale, 0.2))
+            if let selected = tableCellSelection, let box = grid.rect(selected.range) {
+                let r = NSRect(box)
+                if !selected.range.isSingleCell {
+                    NoteTheme.blockSelection.setFill()
+                    r.fill()
+                }
+                let outline = NSBezierPath(rect: r.insetBy(dx: 1 / scale, dy: 1 / scale))
+                outline.lineWidth = 2 / scale
+                EaselAppearance.selection.setStroke()
+                outline.stroke()
             }
-            let outline = NSBezierPath(rect: r.insetBy(dx: 1 / scale, dy: 1 / scale))
-            outline.lineWidth = 2 / scale
-            accent.setStroke()
-            outline.stroke()
+            if let drag = tableState.drag {
+                drawTableDrag(drag, grid: grid, frame: rect(item), scale: scale)
+                return
+            }
+            if !item.isLocked, hovered?.id != item.id, tableCellSelection != nil { drawTableControls(item, table, hovering: false) }
         }
-        if let drag = tableState.drag {
-            drawTableDrag(drag, grid: grid, frame: f, scale: scale)
-            return
-        }
-        guard !item.isLocked, tableState.hoverTable == item.id || tableCellSelection != nil else { return }
-        let bands = tableBands(item)
-        let wholeColumns = tableSelectedColumns(), wholeRows = tableSelectedRows()
+        guard tableState.drag == nil, let item = hovered, let table = item.table, tableChromeBounds(item).intersects(dirtyRect) else { return }
+        drawTableControls(item, table, hovering: true)
+    }
+
+    private func drawTableControls(_ item: EaselItem, _ table: EaselTable, hovering: Bool) {
+        let grid = EaselTableLayout(table: table, frame: item.frame), scale = CGFloat(max(canvasScale, 0.2)), f = rect(item)
+        let bands = tableBands(item), hover = hovering ? tableState.hover : nil
+        let isSelected = selectedTable?.id == item.id
+        let wholeColumns = isSelected ? tableSelectedColumns() : nil, wholeRows = isSelected ? tableSelectedRows() : nil
         var gripColumns = Set<Int>(), gripRows = Set<Int>()
-        if let cell = tableState.hoverCell { gripColumns.insert(cell.column); gripRows.insert(cell.row) }
-        if case .columnGrip(let column)? = tableState.hover { gripColumns.insert(column) }
-        if case .rowGrip(let row)? = tableState.hover { gripRows.insert(row) }
+        if hovering, let cell = tableState.hoverCell { gripColumns.insert(cell.column); gripRows.insert(cell.row) }
+        if case .columnGrip(let column)? = hover { gripColumns.insert(column) }
+        if case .rowGrip(let row)? = hover { gripRows.insert(row) }
         if let columns = wholeColumns { gripColumns.formUnion(columns) }
         if let rows = wholeRows { gripRows.formUnion(rows) }
         for column in gripColumns where column < grid.columnCount {
             let center = NSPoint(x: (grid.columnEdges[column] + grid.columnEdges[column + 1]) / 2, y: Double(f.minY))
             let size = NSSize(width: EaselTableMetrics.gripLength / scale, height: EaselTableMetrics.gripThickness / scale)
             drawTableGrip(NSRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height),
-                          vertical: false, active: wholeColumns?.contains(column) == true, hovered: tableState.hover == .columnGrip(column), scale: scale)
+                          vertical: false, active: wholeColumns?.contains(column) == true, hovered: hover == .columnGrip(column), scale: scale)
         }
         for row in gripRows where row < grid.rowCount {
             let center = NSPoint(x: Double(f.minX), y: (grid.rowEdges[row] + grid.rowEdges[row + 1]) / 2)
             let size = NSSize(width: EaselTableMetrics.gripThickness / scale, height: EaselTableMetrics.gripLength / scale)
             drawTableGrip(NSRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height),
-                          vertical: true, active: wholeRows?.contains(row) == true, hovered: tableState.hover == .rowGrip(row), scale: scale)
+                          vertical: true, active: wholeRows?.contains(row) == true, hovered: hover == .rowGrip(row), scale: scale)
         }
-        if tableState.hoverTable == item.id {
-            drawTableAddBar(bands.right, hovered: tableState.hover == .addColumn, scale: scale)
-            drawTableAddBar(bands.bottom, hovered: tableState.hover == .addRow, scale: scale)
+        if hovering {
+            drawTableAddBar(bands.right, hovered: hover == .addColumn, scale: scale)
+            drawTableAddBar(bands.bottom, hovered: hover == .addRow, scale: scale)
         }
-        switch tableState.hover {
+        switch hover {
         case .insertColumn(let index)?:
             let x = CGFloat(grid.columnEdges[min(index, grid.columnCount)])
             drawTableInsertMarker(at: NSPoint(x: x, y: f.minY), line: NSRect(x: x - 1 / scale, y: f.minY, width: 2 / scale, height: f.height), scale: scale)
@@ -718,9 +756,16 @@ extension EaselCanvasView {
         let point = convert(event.locationInWindow, from: nil)
         let modifiers = event.modifierFlags.intersection([.shift, .command, .option, .control])
         let wasEditing = editingTable.flatMap { item in tableState.editingCell.map { (id: item.id, cell: $0) } }
-        if let item = selectedTable, !item.isLocked, let part = tableHit(at: point, item: item) {
+        if let item = tableControlItem(at: point), let part = tableHit(at: point, item: item) {
             guard beginTableInteraction() else { return true }
             guard let current = items.first(where: { $0.id == item.id }) else { return true }
+            if selection != [current.id] {
+                if let entered = arrangeState.enteredGroup, entered != current.groupID {
+                    arrangeState.enteredGroup = nil
+                    refreshDecorations()
+                }
+                selection = [current.id]
+            }
             handleTablePart(part, item: current, modifiers: modifiers, point: point)
             return true
         }
