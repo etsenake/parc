@@ -9,6 +9,16 @@ extension EaselCanvasView {
     var slashMenuAvailable: Bool { !editingLabel && !isEditingTableCell && !viewOnly }
 
     @discardableResult
+    func placeSlashObject(_ object: EaselSlashObject, removing range: NSRange, in view: EaselStyledTextView) -> Bool {
+        let group = UUID()
+        textUndoGroup = group
+        session.adoptedGroup = group
+        defer { session.adoptedGroup = nil }
+        view.insertCompletion("", replacing: range, name: "Insert block")
+        return placeSlashObject(object)
+    }
+
+    @discardableResult
     func placeSlashObject(_ object: EaselSlashObject) -> Bool {
         guard fixedCanvasSize == nil, !session.isClosed, !session.isDeleted, let id = editingID,
               let text = session.document.items.first(where: { $0.id == id }) else { return false }
