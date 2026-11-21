@@ -53,8 +53,10 @@ final class EaselHistory {
         directory.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
     }
 
+    nonisolated static let maximumSavedSeconds = 1e13
+
     nonisolated static func fileName(savedAt: Date, itemCount: Int) -> String {
-        let millis = Int64((max(0, savedAt.timeIntervalSince1970) * 1000).rounded())
+        let millis = Int64((min(max(0, savedAt.timeIntervalSince1970), maximumSavedSeconds) * 1000).rounded())
         return "v-\(millis)-\(max(0, itemCount)).json"
     }
 

@@ -181,6 +181,7 @@ struct EaselCanvasTests {
         try directControlInteractions()
         try magnifiedGuideInteractions()
         try zoomedOutExtentSettles()
+        try staleTableHoverDraws()
         try inlineImageEditing()
         try await textDefaultsAndDisposal()
         try browserObjectCanvas()
@@ -1002,6 +1003,32 @@ struct EaselCanvasTests {
         let clip = scroll.contentView.bounds.size
         expect(canvas.frame.width >= clip.width - CGFloat(EaselZoom.extentTolerance) && canvas.frame.height >= clip.height - CGFloat(EaselZoom.extentTolerance),
                "The settled canvas still covers the zoomed viewport")
+    }
+
+    @MainActor static func staleTableHoverDraws() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-stale-table-hover-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try EaselStore(directory: directory), session = try store.create()
+        var wide = EaselItem(kind: .table, frame: .init(x: 40, y: 40, width: 500, height: 144))
+        wide.table = EaselTable(columnWidths: Array(repeating: 100, count: 5), rowHeights: Array(repeating: 36, count: 4))
+        try session.perform("Seed wide table") { $0.items = [wide] }
+        let canvas = EaselCanvasView(session: session)
+        canvas.setFrameSize(.init(width: 800, height: 600))
+        for hover in [EaselTableHover.columnBorder(3), .rowBorder(2)] {
+            canvas.tableState.hoverTable = wide.id
+            canvas.tableState.hover = hover
+            try session.perform("Shrink hovered table") { document in
+                guard var table = document.items[0].table else { return }
+                if case .columnBorder = hover { _ = table.removeColumns(2...4) } else { _ = table.removeRows(1...3) }
+                document.items[0].table = table
+                document.items[0].frame.width = table.columnWidths.reduce(0, +)
+                document.items[0].frame.height = table.rowHeights.reduce(0, +)
+            }
+            guard let rep = canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds) else { expect(false, "Canvas offers a bitmap to draw into"); return }
+            canvas.cacheDisplay(in: canvas.bounds, to: rep)
+            expect(canvas.tableState.hover == hover, "A table that shrank under a resting hover draws without its stale border")
+            try session.undo()
+        }
     }
 
     @MainActor static func anchorInteractions() throws {

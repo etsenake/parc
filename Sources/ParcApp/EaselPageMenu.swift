@@ -153,7 +153,7 @@ final class EaselPageMenu {
 @MainActor
 final class EaselPageMenuView: NSView, NoteFloatingPanelContent {
     static let width: CGFloat = 260
-    unowned let pageMenu: EaselPageMenu
+    private weak var pageMenu: EaselPageMenu?
     let list: NoteMenuList
     var preferredSizeDidChange: (() -> Void)?
     private let separator = NSView()
@@ -171,7 +171,7 @@ final class EaselPageMenuView: NSView, NoteFloatingPanelContent {
         setAccessibilityLabel("Easel Options")
         list.onActivate = { [weak self] item in
             guard let self else { return }
-            self.pageMenu.activate(item, from: self.rowRect(for: item.id))
+            self.pageMenu?.activate(item, from: self.rowRect(for: item.id))
         }
         list.onCancel = { [weak menu] in menu?.close() }
         list.preferredSizeDidChange = { [weak self] in self?.preferredSizeDidChange?() }

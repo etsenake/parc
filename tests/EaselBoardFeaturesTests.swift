@@ -327,6 +327,8 @@ struct EaselBoardFeaturesTests {
                "version names read back")
         expect(EaselHistory.parse("v-1-2.json.tmp") == nil && EaselHistory.parse("../v-1-2.json") == nil, "stray files are ignored")
         expect(EaselHistory.parse("v--1-2.json") == nil && EaselHistory.parse("v-x-2.json") == nil, "malformed names are ignored")
+        let far = EaselHistory.fileName(savedAt: Date(timeIntervalSinceReferenceDate: 1e300), itemCount: 3)
+        expect(EaselHistory.parse(far)?.itemCount == 3, "a damaged far-future save time still names a readable version instead of crashing")
     }
 
     @MainActor static func historyPolicy() {

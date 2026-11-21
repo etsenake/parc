@@ -106,6 +106,14 @@ struct EaselInkTests {
         let copiedInk = copied.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
         expect(copiedInk.map { !EaselInk.isAdaptive($0) && hex($0, in: .darkAqua) == "#2C6C91FF" } == true,
                "Text copied to other apps carries the light palette colour")
+        var huge = EaselTextStyle(); huge.customSize = 1e300
+        var unscaled = EaselTextStyle(); unscaled.textScale = .nan
+        var sized = EaselTextStyle(); sized.customSize = 72
+        expect((try? EaselStyledText(text: "Big", style: huge, color: "#2C6C91").validate()) == nil
+               && (try? EaselStyledText(text: "Big", style: unscaled, color: "#2C6C91").validate()) == nil,
+               "Pasted Easel text with an impossible size is refused before it reaches the editor")
+        expect((try? EaselStyledText(text: "Big", style: sized, color: "#2C6C91").validate()) != nil,
+               "Pasted Easel text with a real custom size still pastes")
     }
 
     static func notesColours() {

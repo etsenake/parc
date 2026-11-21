@@ -509,11 +509,11 @@ extension EaselCanvasView {
         case .insertRow(let index)?:
             let y = CGFloat(grid.rowEdges[min(index, grid.rowCount)])
             drawTableInsertMarker(at: NSPoint(x: f.minX, y: y), line: NSRect(x: f.minX, y: y - 1 / scale, width: f.width, height: 2 / scale), scale: scale)
-        case .columnBorder(let index)?:
+        case .columnBorder(let index)? where index + 1 < grid.columnEdges.count:
             let x = CGFloat(grid.columnEdges[index + 1])
             NoteTheme.dropIndicatorFallback.setFill()
             NSRect(x: x - 1 / scale, y: f.minY, width: 2 / scale, height: f.height).fill()
-        case .rowBorder(let index)?:
+        case .rowBorder(let index)? where index + 1 < grid.rowEdges.count:
             let y = CGFloat(grid.rowEdges[index + 1])
             NoteTheme.dropIndicatorFallback.setFill()
             NSRect(x: f.minX, y: y - 1 / scale, width: f.width, height: 2 / scale).fill()

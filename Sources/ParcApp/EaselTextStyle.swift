@@ -299,7 +299,9 @@ struct EaselStyledText: Codable, Equatable {
     }
     func validate() throws {
         guard [1, 2, 3].contains(version), text.utf8.count <= 1_048_576,
-              color.range(of: "^#[0-9A-Fa-f]{6}$", options: .regularExpression) != nil else {
+              color.range(of: "^#[0-9A-Fa-f]{6}$", options: .regularExpression) != nil,
+              style.customSize.map({ EaselTextStyle.customSizes.contains($0) }) != false,
+              style.textScale.map({ EaselTextStyle.textScales.contains($0) }) != false else {
             throw EaselStoreError.invalidDocument("styled text clipboard content")
         }
         try richText?.validate(text: text)
