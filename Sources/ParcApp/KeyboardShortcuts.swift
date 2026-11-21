@@ -315,7 +315,18 @@ final class KeyboardShortcuts: ObservableObject {
     var hasOverrides: Bool { !overrides.isEmpty || !priorities.isEmpty || loadError != nil }
 
     private var keyboardLayoutObserver: NSObjectProtocol?
-    init() {
+    private let mainMenu: @MainActor () -> NSMenu?
+    private let mainWindow: @MainActor () -> NSWindow?
+    private let applicationIsActive: @MainActor () -> Bool
+
+    init(mainMenu: @escaping @MainActor () -> NSMenu? = { NSApp.mainMenu },
+         mainWindow: @escaping @MainActor () -> NSWindow? = { NSApp.mainWindow },
+         applicationIsActive: @escaping @MainActor () -> Bool = { NSApp.isActive },
+         observesKeyboardLayout: Bool = true) {
+        self.mainMenu = mainMenu
+        self.mainWindow = mainWindow
+        self.applicationIsActive = applicationIsActive
+        guard observesKeyboardLayout else { return }
         keyboardLayoutObserver = DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.keyboardLayoutDidChange() } }
@@ -909,7 +920,7 @@ final class KeyboardShortcuts: ObservableObject {
     private func isAttached(_ item: NSMenuItem) -> Bool {
         var menu = item.menu
         while let parent = menu?.supermenu { menu = parent }
-        return menu != nil && menu === NSApp.mainMenu
+        return menu != nil && menu === mainMenu()
             && (!item.isHidden || item.allowsKeyEquivalentWhenHidden)
     }
     private func validatedTarget(_ item: NSMenuItem) -> AnyObject? {
@@ -951,8 +962,8 @@ final class KeyboardShortcuts: ObservableObject {
     }
     func canPerformMenuCommand(_ command: MenuCommand) -> Bool {
         guard command.revision == revision, let window = command.window,
-              window.isVisible, !window.isMiniaturized, NSApp.isActive,
-              NSApp.mainWindow === window, window.attachedSheet == nil,
+              window.isVisible, !window.isMiniaturized, applicationIsActive(),
+              mainWindow() === window, window.attachedSheet == nil,
               let item = command.item,
               references.contains(where: { $0.id == command.id && $0.item === item }) else { return false }
         return validatedTarget(item) != nil
