@@ -30,9 +30,9 @@ extension EaselCanvasView {
     }
 
     @discardableResult
-    func pasteMermaid(from pasteboard: NSPasteboard) -> Bool {
+    func pasteMermaid(from pasteboard: NSPasteboard, at point: NSPoint? = nil) -> Bool {
         switch mermaidDiagram(on: pasteboard) {
-        case .success(let diagram)?: insertMermaid(diagram)
+        case .success(let diagram)?: insertMermaid(diagram, at: point)
         case .failure(let refusal)?: onError?(refusal)
         case nil: return false
         }
