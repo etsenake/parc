@@ -89,6 +89,7 @@ import SwiftUI
     private let privacyInfoButton = CommandBarPrivacyInfoButton()
     private let privacyPolicy: CommandBarSearchPrivacyPolicy
     private let shortcuts: KeyboardShortcuts
+    private let reduceMotion: @MainActor () -> Bool
     private let loadFavicon: @MainActor (URL, String, @escaping @Sendable (NSImage?) -> Void) -> Void
     private var privacyBannerVisible = false
     private var showsPrivacyBanner: Bool { privacyBannerVisible && sidebarAnchor == nil && !addressOnly }
@@ -249,10 +250,12 @@ import SwiftUI
          },
          loadFavicon: @escaping @MainActor (URL, String, @escaping @Sendable (NSImage?) -> Void) -> Void = {
              PCNativeBrowserApplication.favicon(for: $0, profilePath: $1, completion: $2)
-         }) {
+         },
+         reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
         self.shortcuts = shortcuts ?? .shared
         self.privacyPolicy = CommandBarSearchPrivacyPolicy(defaults: privacyDefaults)
         self.loadFavicon = loadFavicon
+        self.reduceMotion = reduceMotion
         self.resident = resident
         self.addressOnly = addressOnly
         self.popup = popup
@@ -413,7 +416,7 @@ import SwiftUI
     private func glideFromPill() {
         guard let anchor = sidebarAnchor, anchor.window === parent, !anchor.isHiddenOrHasHiddenAncestor,
               input.stringValue.isEmpty, !isScoped, !scopeInvalidated,
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              !reduceMotion(),
               let pillIcon = anchor.subviews.first(where: { $0 is SidebarAddressSearchIcon && !$0.isHidden }) else { return }
         container.layoutSubtreeIfNeeded()
         let offsets = CommandBarCompactLayout.glideOffsets(
