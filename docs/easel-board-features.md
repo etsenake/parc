@@ -119,7 +119,8 @@ CSV.
 Seven starter boards built from everyday Easel objects: Brainstorm, Retro,
 Kanban, Flowchart, Weekly Plan, Mind Map and Moodboard. The gallery opens
 from the toolbar's Templates button, Templates… in the ••• menu and the Add
-search, and it sits under the welcome words on an empty Easel. Each card
+search, and its cards sit in the [empty Easel's welcome](easel-appearance.md#first-run),
+under the key chips. Each card
 shows the board drawn by the canvas itself, on the Easel's light or dark
 paper. Arrow keys move between cards, Return or Space adds one and Escape
 closes the panel.

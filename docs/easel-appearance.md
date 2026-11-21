@@ -20,10 +20,17 @@ the keys (Sticky S, Shape R or O, Connector X, Text T, Draw M, Find anything
 shows the Notes hover and pressed washes and the pointing hand, carries a
 tooltip with its shortcut and is a VoiceOver button; clicking one picks that
 tool, or opens Find anything. The key labels come from the Easel key map, so
-they follow any rebinding, and Find anything only appears where ⌘/ works. The
-group lives on the canvas, so it zooms and scrolls with the paper, and only its
-chips take clicks: clicking anywhere else places or selects as usual. It fades
-out when the first object lands and fades back if the board is emptied.
+they follow any rebinding, and Find anything only appears where ⌘/ works.
+Under the chips, "Or start from a template" heads the template gallery's card
+row ([templates](easel-board-features.md#templates)); the Easel editor hands
+its one `EaselTemplateGallery` to the canvas as an `EaselEmptyStateRow`, the
+card plates line up with the words, and the row drops to fewer columns when the
+view is narrow or zoomed in. Easel blocks in notes show the words and chips
+only. The whole group lives on the canvas, so it zooms and scrolls with the
+paper and follows light and dark, and only its chips and cards take clicks:
+clicking anywhere else places or selects as usual. It fades and rises 4 points
+in like a Notes block, fades out as the first object pops in (a picked template
+pops in the same way) and comes back if the board is emptied.
 
 The first time someone selects a single sticky or shape outside the capture
 editor, a Notes menu-card chip pops in at the bottom centre of the canvas:

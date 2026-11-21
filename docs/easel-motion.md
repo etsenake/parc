@@ -66,7 +66,7 @@ Neither adaptation changes the current geometry, selection or focus.
 ## Object motion
 
 Objects move like Notes blocks. A new object (placed with a click, added from
-the toolbar or a key, pasted or dropped) pops from 95% with a short fade; a
+the toolbar or a key, pasted, dropped or added by a template) pops from 95% with a short fade; a
 deleted or cut one fades and shrinks a touch over 0.15 seconds. Duplicates and
 quick-create copies glide out of their source on the Notes settle spring, and
 their text editor fades in as they land. Align, distribute and Tidy up glide
