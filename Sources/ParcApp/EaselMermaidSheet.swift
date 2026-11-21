@@ -26,6 +26,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate, EaselMermaidSheetPr
         panel.isOpaque = false; panel.backgroundColor = ParcDialogStyle.popoverBackground
         panel.isReleasedWhenClosed = false
         (panel as? EaselMermaidPanel)?.onCancel = { [weak self] in self?.cancel(nil) }
+        (panel as? EaselMermaidPanel)?.onConfirm = { [weak self] in self?.insert(nil) }
         build(text: text)
     }
 
@@ -139,7 +140,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate, EaselMermaidSheetPr
     func textDidChange(_ notification: Notification) {
         pendingRefresh?.cancel()
         let size = source.string.utf16.count
-        guard size > 4_000 else { refresh(); return }
+        guard size > 1_500 else { refresh(); return }
         let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.refresh() } }
         pendingRefresh = work
         DispatchQueue.main.asyncAfter(deadline: .now() + (size > 60_000 ? 0.5 : 0.25), execute: work)
@@ -187,10 +188,16 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate, EaselMermaidSheetPr
 @MainActor
 private final class EaselMermaidPanel: NSPanel {
     var onCancel: (() -> Void)?
+    var onConfirm: (() -> Void)?
     override func cancelOperation(_ sender: Any?) { onCancel?() }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if (firstResponder as? NSTextView)?.hasMarkedText() == true,
            event.modifierFlags.intersection([.command, .control, .option]).isEmpty { return false }
+        if event.type == .keyDown, event.keyCode == 36 || event.keyCode == 76,
+           event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command {
+            onConfirm?()
+            return true
+        }
         return super.performKeyEquivalent(with: event)
     }
 }

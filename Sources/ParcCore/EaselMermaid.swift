@@ -162,6 +162,22 @@ extension EaselMermaidRefusal: LocalizedError {
     var errorDescription: String? { message }
 }
 
+private final class EaselMermaidParseMemo: @unchecked Sendable {
+    private let lock = NSLock()
+    private var text: String?
+    private var stored: Result<EaselMermaidDiagram, EaselMermaidRefusal>?
+
+    func result(for source: String) -> Result<EaselMermaidDiagram, EaselMermaidRefusal>? {
+        lock.lock(); defer { lock.unlock() }
+        return text == source ? stored : nil
+    }
+
+    func remember(_ result: Result<EaselMermaidDiagram, EaselMermaidRefusal>, for source: String) {
+        lock.lock(); defer { lock.unlock() }
+        text = source; stored = result
+    }
+}
+
 enum EaselMermaid {
     static let maximumNodes = 500
     static let maximumEdges = 1000
@@ -175,7 +191,16 @@ enum EaselMermaid {
         return false
     }
 
+    private static let parseMemo = EaselMermaidParseMemo()
+
     static func parse(_ text: String) -> Result<EaselMermaidDiagram, EaselMermaidRefusal> {
+        if let known = parseMemo.result(for: text) { return known }
+        let result = parseUncached(text)
+        parseMemo.remember(result, for: text)
+        return result
+    }
+
+    private static func parseUncached(_ text: String) -> Result<EaselMermaidDiagram, EaselMermaidRefusal> {
         let probe = text.utf8.count > maximumSourceBytes ? String(text.prefix(4096)) : text
         guard let lines = EaselMermaidSource.lines(probe),
               let header = lines.firstIndex(where: { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }) else {
@@ -188,7 +213,9 @@ enum EaselMermaid {
         case "erDiagram": kind = .entityRelationship
         default: return .failure(unsupportedName(keyword).map(EaselMermaidRefusal.unsupported) ?? .notMermaid)
         }
-        guard probe.utf8.count == text.utf8.count else { return .failure(.tooLarge) }
+        guard probe.utf8.count == text.utf8.count else {
+            return .failure(headerReadsAsMermaid(lines[header].text, kind: kind) ? .tooLarge : .notMermaid)
+        }
         do {
             switch kind {
             case .flowchart:
@@ -202,6 +229,15 @@ enum EaselMermaid {
             return .failure(refusal)
         } catch {
             return .failure(.notMermaid)
+        }
+    }
+
+    static func headerReadsAsMermaid(_ line: String, kind: EaselMermaidDiagram.Kind) -> Bool {
+        let statement = EaselMermaidSource.strippingComment(line).prefix { $0 != ";" }
+        let words = statement.split(whereSeparator: \.isWhitespace)
+        switch kind {
+        case .flowchart: return words.count == 1 || (words.count == 2 && EaselMermaidDirection(keyword: String(words[1])) != nil)
+        case .entityRelationship: return words.count == 1
         }
     }
 

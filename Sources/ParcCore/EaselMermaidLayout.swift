@@ -591,12 +591,27 @@ extension EaselMermaid {
         }
         var items = sections + connectors + shapes
         for index in items.indices { items[index].zIndex = z; z += 1 }
+        let margin = 10_000.0
         var lookup: [UUID: EaselItem] = [:]
-        for item in items where item.kind != .arrow { lookup[item.id] = item }
-        for index in items.indices where items[index].kind == .arrow {
-            items[index] = EaselConnectorRouter.settled(items[index], lookup: { lookup[$0] })
+        for item in items where item.kind != .arrow {
+            var shifted = item
+            shifted.frame.x += margin; shifted.frame.y += margin
+            lookup[item.id] = shifted
         }
-        return EaselMermaidDrawing(items: items, width: layout.width, height: layout.height, headings: headings)
+        for index in items.indices where items[index].kind == .arrow {
+            var arrow = items[index]
+            arrow.frame.x += margin; arrow.frame.y += margin
+            arrow = EaselConnectorRouter.settled(arrow, lookup: { lookup[$0] })
+            arrow.frame.x -= margin; arrow.frame.y -= margin
+            items[index] = arrow
+        }
+        var minX = 0.0, minY = 0.0, maxX = layout.width, maxY = layout.height
+        for item in items {
+            minX = min(minX, item.frame.x); minY = min(minY, item.frame.y)
+            maxX = max(maxX, item.frame.x + item.frame.width); maxY = max(maxY, item.frame.y + item.frame.height)
+        }
+        let drawing = EaselMermaidDrawing(items: items, width: maxX - minX, height: maxY - minY, headings: headings)
+        return minX < 0 || minY < 0 ? drawing.moved(by: -minX, -minY) : drawing
     }
 
     static func sides(from a: EaselRect, to b: EaselRect, direction: EaselMermaidDirection,

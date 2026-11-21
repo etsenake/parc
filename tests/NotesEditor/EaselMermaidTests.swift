@@ -593,6 +593,17 @@ struct EaselMermaidTests {
         let tall = quickly("Long links over a long spine") { EaselMermaid.drawing(diagram("flowchart TD\n" + spine)) }
         expect(tall.height < EaselRect.maximumCoordinate / 2 && tall.items.allSatisfy { $0.frame.y + $0.frame.height < tall.height + 1 },
                "Long links over a long spine stay inside the Easel")
+        let dashes = String(repeating: "-", count: 100_000)
+        let stretched = quickly("A 100k dash arrow") { diagram("flowchart TD\nA " + dashes + "> B") }
+        expect(stretched.edges.count == 1 && stretched.edges[0].length <= EaselMermaid.maximumLength, "Arrow length is clamped")
+        let stretchedDrawing = EaselMermaid.drawing(stretched)
+        expect(stretchedDrawing.height < EaselRect.maximumCoordinate / 2, "A clamped arrow draws a small layout")
+        let heavy = "flowchart LR\n" + (0..<300).map { "n\($0)[\"" + String(repeating: "w ", count: 100) + "\"]" }.joined(separator: "\n")
+        let heavyDrawing = quickly("Heavy labels") { EaselMermaid.drawing(diagram(heavy)) }
+        expect(heavyDrawing.width.isFinite && heavyDrawing.height.isFinite, "Heavy labels lay out to finite sizes")
+        let repeatedParse = "flowchart TD\nA --> B"
+        let first = EaselMermaid.parse(repeatedParse), second = EaselMermaid.parse(repeatedParse)
+        expect(first == second, "Parsing the same text twice agrees")
         let label = "flowchart TD\nA[\"" + String(repeating: "**a** ", count: 50_000) + "\"]"
         expect(quickly("A giant label") { diagram(label) }.node("A").map { $0.label.count <= EaselMermaidText.maximumLength } == true,
                "Giant labels are cut short")
