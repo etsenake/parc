@@ -366,9 +366,10 @@ final class PortraitCaptureView: NSView {
         PortraitCaptureComposition(options: options, palette: palette, pageColor: pageColor, desktop: desktop, backingScale: backingScale)
     }
 
+    @discardableResult
     func loadDesktop(screen: NSScreen?,
-                     provider: @escaping @MainActor (NSScreen?) async throws -> NSImage = PortraitDesktopSnapshot.capture) {
-        guard desktop == nil, desktopTask == nil else { return }
+                     provider: @escaping @MainActor (NSScreen?) async throws -> NSImage = PortraitDesktopSnapshot.capture) -> Task<Void, Never>? {
+        guard desktop == nil, desktopTask == nil else { return nil }
         desktopGeneration += 1
         let generation = desktopGeneration
         wallpaperTile.setToolTip("Loading desktop wallpaper…")
@@ -390,6 +391,7 @@ final class PortraitCaptureView: NSView {
                 }
             }
         }
+        return desktopTask
     }
 
     func showError(_ message: String) {
