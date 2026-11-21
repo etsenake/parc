@@ -1,53 +1,73 @@
 import Foundation
 
-struct EaselToolKey: Equatable, Hashable {
-    let character: Character
+struct EaselKey: Hashable {
+    enum Base: Hashable {
+        case character(Character)
+        case physical(UInt16, label: String)
+    }
+    let base: Base
     let shift: Bool
 
     init(_ character: Character, shift: Bool = false) {
-        self.character = character
+        base = .character(character)
         self.shift = shift
     }
 
-    var label: String { (shift ? "⇧" : "") + String(character).uppercased() }
+    init(keyCode: UInt16, label: String, shift: Bool) {
+        base = .physical(keyCode, label: label)
+        self.shift = shift
+    }
+
+    var label: String {
+        let key: String
+        switch base {
+        case .character(let character): key = String(character).uppercased()
+        case .physical(_, let label): key = label
+        }
+        return (shift ? "⇧" : "") + key
+    }
 }
 
 enum EaselTool: String, CaseIterable, Equatable {
-    case select, hand, pen, sticky, rectangle, ellipse, text, straightConnector, elbowConnector, curvedConnector, section
+    case select, hand, sticky, rectangle, ellipse, elbowConnector, curvedConnector, straightConnector, text, section, table,
+         marker, highlighter, washi, eraser, stamp, codeBlock
 
     var title: String {
         switch self {
         case .select: return "Select"
         case .hand: return "Hand"
-        case .pen: return "Pen"
         case .sticky: return "Sticky note"
         case .rectangle: return "Rectangle"
         case .ellipse: return "Ellipse"
-        case .text: return "Text"
-        case .straightConnector: return "Straight connector"
         case .elbowConnector: return "Elbow connector"
         case .curvedConnector: return "Curved connector"
+        case .straightConnector: return "Straight connector"
+        case .text: return "Text"
         case .section: return "Section"
+        case .table: return "Table"
+        case .marker: return "Marker"
+        case .highlighter: return "Highlighter"
+        case .washi: return "Washi tape"
+        case .eraser: return "Eraser"
+        case .stamp: return "Stamp"
+        case .codeBlock: return "Code block"
         }
     }
 
-    var keys: [EaselToolKey] {
+    var isAvailable: Bool {
         switch self {
-        case .select: return [EaselToolKey("v")]
-        case .hand: return [EaselToolKey("h")]
-        case .pen: return [EaselToolKey("m")]
-        case .sticky: return [EaselToolKey("s")]
-        case .rectangle: return [EaselToolKey("r")]
-        case .ellipse: return [EaselToolKey("o")]
-        case .text: return [EaselToolKey("t")]
-        case .straightConnector: return [EaselToolKey("l")]
-        case .elbowConnector: return [EaselToolKey("x"), EaselToolKey("l", shift: true)]
-        case .curvedConnector: return []
-        case .section: return [EaselToolKey("s", shift: true)]
+        case .highlighter: return false
+        case .washi: return false
+        case .eraser: return false
+        case .table: return false
+        case .stamp: return false
+        case .codeBlock: return false
+        default: return true
         }
     }
 
-    var key: EaselToolKey? { keys.first }
+    var keys: [EaselKey] { EaselKeyCommands.bindings.filter { $0.command == .tool(self) }.map(\.key) }
+    var key: EaselKey? { keys.first }
 
     var routing: EaselConnectorRouting? {
         switch self {
@@ -66,15 +86,26 @@ enum EaselTool: String, CaseIterable, Equatable {
         }
     }
 
-    var createsObjects: Bool { self != .select && self != .hand }
-    var placesObjects: Bool { createsObjects && self != .pen && routing == nil }
+    var brush: EaselBrush? {
+        switch self {
+        case .marker: return .marker
+        case .highlighter: return .highlighter
+        case .washi: return .washi
+        default: return nil
+        }
+    }
+
+    var createsObjects: Bool { self != .select && self != .hand && self != .eraser }
+    var draws: Bool { brush != nil }
     var drawsConnector: Bool { routing != nil }
-    var returnsToSelect: Bool { placesObjects }
+    var placesObjects: Bool { createsObjects && !draws && !drawsConnector }
+    var returnsToSelect: Bool { placesObjects && self != .stamp }
+    var staysArmed: Bool { !returnsToSelect }
 
     var kind: EaselItemKind? {
         switch self {
-        case .select, .hand: return nil
-        case .pen: return .freehand
+        case .select, .hand, .eraser, .table, .stamp, .codeBlock: return nil
+        case .marker, .highlighter, .washi: return .freehand
         case .sticky: return .sticky
         case .rectangle: return .rectangle
         case .ellipse: return .circle
@@ -91,7 +122,10 @@ enum EaselTool: String, CaseIterable, Equatable {
         case .text: return (280, 28)
         case .straightConnector, .elbowConnector, .curvedConnector: return (160, 0)
         case .section: return (400, 400)
-        case .select, .hand, .pen: return (0, 0)
+        case .table: return (360, 160)
+        case .stamp: return (48, 48)
+        case .codeBlock: return (420, 180)
+        case .select, .hand, .marker, .highlighter, .washi, .eraser: return (0, 0)
         }
     }
 }
@@ -131,58 +165,92 @@ enum EaselZoomCommand: String, CaseIterable, Equatable {
 enum EaselKeyCommand: Equatable {
     case tool(EaselTool)
     case zoom(EaselZoomCommand)
+    case flip(horizontal: Bool)
     case layer(EaselLayerMove)
 }
 
 enum EaselKeyCommands {
     static let spaceKeyCode: UInt16 = 49
 
-    private static let letterKeyCodes: [UInt16: Character] = [
+    static let bindings: [(key: EaselKey, command: EaselKeyCommand)] = [
+        (EaselKey("v"), .tool(.select)),
+        (EaselKey("h"), .tool(.hand)),
+        (EaselKey("s"), .tool(.sticky)),
+        (EaselKey("r"), .tool(.rectangle)),
+        (EaselKey("o"), .tool(.ellipse)),
+        (EaselKey("x"), .tool(.elbowConnector)),
+        (EaselKey("l", shift: true), .tool(.elbowConnector)),
+        (EaselKey("l"), .tool(.straightConnector)),
+        (EaselKey("t"), .tool(.text)),
+        (EaselKey("s", shift: true), .tool(.section)),
+        (EaselKey("t", shift: true), .tool(.table)),
+        (EaselKey("m"), .tool(.marker)),
+        (EaselKey("m", shift: true), .tool(.highlighter)),
+        (EaselKey("w"), .tool(.washi)),
+        (EaselKey(keyCode: 51, label: "⌫", shift: true), .tool(.eraser)),
+        (EaselKey(keyCode: 117, label: "⌦", shift: true), .tool(.eraser)),
+        (EaselKey("e"), .tool(.stamp)),
+        (EaselKey("`"), .tool(.codeBlock)),
+        (EaselKey("`", shift: true), .tool(.codeBlock)),
+        (EaselKey("h", shift: true), .flip(horizontal: true)),
+        (EaselKey("v", shift: true), .flip(horizontal: false)),
+        (EaselKey(keyCode: 18, label: "1", shift: true), .zoom(.fit)),
+        (EaselKey(keyCode: 19, label: "2", shift: true), .zoom(.selection)),
+        (EaselKey(keyCode: 29, label: "0", shift: true), .zoom(.actualSize)),
+        (EaselKey("="), .zoom(.zoomIn)),
+        (EaselKey("+"), .zoom(.zoomIn)),
+        (EaselKey("+", shift: true), .zoom(.zoomIn)),
+        (EaselKey("-"), .zoom(.zoomOut)),
+        (EaselKey("_", shift: true), .zoom(.zoomOut)),
+    ]
+
+    private static let positionKeyCodes: [UInt16: Character] = [
         0: "a", 1: "s", 2: "d", 3: "f", 4: "h", 5: "g", 6: "z", 7: "x", 8: "c", 9: "v", 11: "b", 12: "q", 13: "w",
-        14: "e", 15: "r", 16: "y", 17: "t", 31: "o", 32: "u", 34: "i", 35: "p", 37: "l", 38: "j", 40: "k", 45: "n", 46: "m",
+        14: "e", 15: "r", 16: "y", 17: "t", 30: "]", 31: "o", 32: "u", 33: "[", 34: "i", 35: "p", 37: "l", 38: "j",
+        40: "k", 45: "n", 46: "m", 50: "`",
     ]
 
     static func command(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers) -> EaselKeyCommand? {
         if modifiers.contains(.command) {
             guard modifiers.isDisjoint(with: [.control, .option]) else { return nil }
-            return zoomEquivalent(characters: characters, keyCode: keyCode, shift: modifiers.contains(.shift)).map(EaselKeyCommand.zoom)
+            return zoomChord(characters: characters, keyCode: keyCode, shift: modifiers.contains(.shift)).map(EaselKeyCommand.zoom)
         }
         guard modifiers.isDisjoint(with: [.control, .option]) else { return nil }
         let shift = modifiers.contains(.shift)
         if !shift, let move = EaselChords.bareLayerMove(characters: characters, keyCode: keyCode) { return .layer(move) }
-        if shift {
-            switch keyCode {
-            case 18: return .zoom(.fit)
-            case 19: return .zoom(.selection)
-            case 29: return .zoom(.actualSize)
-            case 24: return .zoom(.zoomIn)
-            case 27: return .zoom(.zoomOut)
-            default: break
-            }
-        }
-        guard let letter = letter(characters: characters, keyCode: keyCode) else { return nil }
-        let key = EaselToolKey(letter, shift: shift)
-        return EaselTool.allCases.first { $0.keys.contains(key) }.map(EaselKeyCommand.tool)
+        if let binding = bindings.first(where: { binding in
+            if case .physical(let code, _) = binding.key.base { return code == keyCode && binding.key.shift == shift }
+            return false
+        }) { return binding.command }
+        guard let character = keyCharacter(characters: characters, keyCode: keyCode) else { return nil }
+        return bindings.first { $0.key == EaselKey(character, shift: shift) }?.command
     }
 
     static func letter(characters: String?, keyCode: UInt16) -> Character? {
+        guard let character = keyCharacter(characters: characters, keyCode: keyCode), character.isLetter else { return nil }
+        return character
+    }
+
+    static func keyCharacter(characters: String?, keyCode: UInt16) -> Character? {
         let typed = (characters ?? "").lowercased()
         if typed.count == 1, let character = typed.first {
-            if character.isASCII { return character.isLetter ? character : nil }
+            if character.isASCII { return character.isLetter || "[]`=+-_".contains(character) ? character : nil }
             guard character.isLetter else { return nil }
         } else if !typed.isEmpty {
             return nil
         }
-        return letterKeyCodes[keyCode]
+        return positionKeyCodes[keyCode]
     }
 
-    private static func zoomEquivalent(characters: String?, keyCode: UInt16, shift: Bool) -> EaselZoomCommand? {
-        switch characters ?? "" {
+    static func zoomChord(characters: String?, keyCode: UInt16, shift: Bool) -> EaselZoomCommand? {
+        let typed = characters ?? ""
+        switch typed {
         case "=", "+": return .zoomIn
         case "-", "_": return .zoomOut
         case "0": return shift ? nil : .actualSize
         default: break
         }
+        guard !shift, typed.isEmpty || typed.unicodeScalars.contains(where: { !$0.isASCII }) else { return nil }
         switch keyCode {
         case 24, 69: return .zoomIn
         case 27, 78: return .zoomOut
@@ -252,7 +320,8 @@ enum EaselZoom {
     static let animationDuration = 0.24
 
     static func stepped(from current: Double, zoomingIn: Bool, minimum: Double, maximum: Double) -> Double {
-        guard current.isFinite, current > 0, minimum > 0, maximum >= minimum else { return 1 }
+        guard minimum.isFinite, maximum.isFinite, minimum > 0, maximum >= minimum else { return 1 }
+        guard current.isFinite, current > 0 else { return min(maximum, max(minimum, 1)) }
         let tolerance = 0.005
         let candidates = levels.filter { $0 >= minimum - tolerance && $0 <= maximum + tolerance }
         let next = zoomingIn ? candidates.first { $0 > current * (1 + tolerance) } : candidates.last { $0 < current * (1 - tolerance) }
@@ -284,13 +353,13 @@ enum EaselZoom {
 
     static func wheelFactor(deviceDelta: Double, precise: Bool) -> Double {
         guard deviceDelta.isFinite, deviceDelta != 0 else { return 1 }
-        let limited = max(-40, min(40, deviceDelta))
-        return precise ? exp(limited * 0.0125) : pow(1.2, limited)
+        let factor = precise ? exp(max(-40, min(40, deviceDelta)) * 0.0125) : pow(1.2, max(-3, min(3, deviceDelta)))
+        return max(0.5, min(2, factor))
     }
 
     static func percent(_ magnification: Double) -> Int {
         guard magnification.isFinite, magnification > 0 else { return 100 }
-        return Int((magnification * 100).rounded())
+        return Int((min(magnification, 1000) * 100).rounded())
     }
 
     static func interpolated(from start: Double, to end: Double, progress: Double) -> Double {

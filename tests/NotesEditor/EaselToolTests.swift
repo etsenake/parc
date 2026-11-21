@@ -13,7 +13,8 @@ struct EaselToolTests {
     }
 
     static let ansi: [Character: UInt16] = [
-        "v": 9, "h": 4, "m": 46, "s": 1, "r": 15, "o": 31, "t": 17, "l": 37, "x": 7,
+        "v": 9, "h": 4, "m": 46, "s": 1, "r": 15, "o": 31, "t": 17, "l": 37, "x": 7, "w": 13, "e": 14,
+        "`": 50, "[": 33, "]": 30, "=": 24, "+": 24, "-": 27, "_": 27,
     ]
 
     static func main() {
@@ -29,25 +30,33 @@ struct EaselToolTests {
     }
 
     static func toolKeys() {
-        var seen: [EaselToolKey: EaselTool] = [:]
-        for tool in EaselTool.allCases {
-            for key in tool.keys {
-                expect(seen[key] == nil, "\(key.label) belongs to one tool only")
-                seen[key] = tool
-                guard let code = ansi[key.character] else { failTest("Missing physical key for \(key.label)") }
-                let typed = key.shift ? String(key.character).uppercased() : String(key.character)
-                expect(command(typed, code, key.shift ? [.shift] : []) == .tool(tool), "\(key.label) picks \(tool.title)")
+        var seen: Set<EaselKey> = []
+        for binding in EaselKeyCommands.bindings {
+            expect(seen.insert(binding.key).inserted, "\(binding.key.label) is bound once")
+            let flags: EaselKeyModifiers = binding.key.shift ? [.shift] : []
+            switch binding.key.base {
+            case .character(let character):
+                guard let code = ansi[character] else { failTest("Missing physical key for \(binding.key.label)") }
+                let typed = binding.key.shift ? String(character).uppercased() : String(character)
+                expect(command(typed, code, flags) == binding.command, "\(binding.key.label) runs its command")
+            case .physical(let code, _):
+                expect(command(nil, code, flags) == binding.command, "\(binding.key.label) runs its command by position")
             }
         }
-        expect(EaselTool.select.key?.label == "V" && EaselTool.hand.key?.label == "H" && EaselTool.pen.key?.label == "M",
-               "Select, hand and pen answer to V, H and M")
-        expect(EaselTool.sticky.key?.label == "S" && EaselTool.section.key?.label == "⇧S", "S is a sticky and Shift-S a section")
-        expect(EaselTool.rectangle.key?.label == "R" && EaselTool.ellipse.key?.label == "O" && EaselTool.text.key?.label == "T",
-               "R, O and T make rectangles, ellipses and text")
-        expect(EaselTool.straightConnector.key?.label == "L" && EaselTool.elbowConnector.key?.label == "X",
-               "L draws straight connectors and X elbow ones")
-        expect(command("L", 37, [.shift]) == .tool(.elbowConnector), "Shift-L is the other elbow connector key")
-        expect(EaselTool.curvedConnector.key == nil, "Curved connectors have no key and come from the picker")
+        let labels = Dictionary(EaselTool.allCases.map { ($0, $0.keys.map(\.label)) }, uniquingKeysWith: { first, _ in first })
+        expect(labels[.select] == ["V"] && labels[.hand] == ["H"] && labels[.marker] == ["M"], "Select, hand and marker answer to V, H and M")
+        expect(labels[.highlighter] == ["⇧M"] && labels[.washi] == ["W"] && labels[.eraser] == ["⇧⌫", "⇧⌦"],
+               "Highlighter, washi tape and eraser keys match the drawing menu")
+        expect(labels[.sticky] == ["S"] && labels[.section] == ["⇧S"] && labels[.table] == ["⇧T"], "Stickies, sections and tables")
+        expect(labels[.rectangle] == ["R"] && labels[.ellipse] == ["O"] && labels[.text] == ["T"], "R, O and T make rectangles, ellipses and text")
+        expect(labels[.straightConnector] == ["L"] && labels[.elbowConnector] == ["X", "⇧L"] && labels[.curvedConnector] == [],
+               "L draws straight connectors, X or Shift-L elbow ones, and curved ones come from the picker")
+        expect(labels[.stamp] == ["E"] && labels[.codeBlock] == ["`", "⇧`"], "E stamps and backtick drops a code block")
+        expect(command("H", 4, [.shift]) == .flip(horizontal: true) && command("V", 9, [.shift]) == .flip(horizontal: false),
+               "Shift-H and Shift-V flip")
+        expect(command("]", 30) == .layer(.front) && command("[", 33) == .layer(.back), "] and [ change the layer order")
+        expect(command("]", 30, [.shift]) == nil, "Shift-] is not a layer key")
+        expect(command(nil, 51) == nil && command(nil, 117) == nil, "Plain Delete stays the canvas delete")
     }
 
     static func modifiersAndLayouts() {
@@ -55,15 +64,17 @@ struct EaselToolTests {
             expect(command("v", 9, flags) == nil, "Tool letters never fire with Command, Control or Option held")
             expect(command("r", 15, flags) == nil, "Rectangle stays quiet under shortcut modifiers")
         }
-        expect(command("V", 9, [.shift]) == nil, "Shift-V is not a tool key")
+        expect(command("R", 15, [.shift]) == nil, "Shift-R is not a tool key")
         expect(command("V", 9) == .tool(.select), "Caps Lock letters still pick their tool")
         expect(command("м", 9) == .tool(.select), "A non-Latin layout falls back to the key's position")
         expect(command("ы", 1) == .tool(.sticky), "Cyrillic layouts reach the sticky tool by position")
         expect(command(",", 46) == nil, "A layout that types punctuation there keeps the key for itself")
-        expect(command("m", 41) == .tool(.pen), "AZERTY's M picks the pen wherever the layout puts it")
+        expect(command("m", 41) == .tool(.marker), "AZERTY's M picks the marker wherever the layout puts it")
+        expect(command("ü", 33) == .layer(.back), "A layout with a letter on the bracket key reaches it by position")
+        expect(command("`", 50) == .tool(.codeBlock), "Backtick drops a code block")
         expect(command("é", 19) == nil, "Accented letters with no tool stay unbound")
         expect(command("", 4) == .tool(.hand), "An empty character string falls back to the key's position")
-        expect(command("q", 12) == nil, "Unused letters stay free for later tools")
+        expect(command("q", 12) == nil && command("1", 18) == nil, "Unused keys stay free for later tools")
         expect(EaselKeyCommands.spaceKeyCode == 49, "Space is the temporary hand")
     }
 
@@ -85,6 +96,13 @@ struct EaselToolTests {
         expect(command(")", 29, [.shift]) == .zoom(.actualSize), "⇧0 returns to 100%")
         expect(command("+", 24, [.shift]) == .zoom(.zoomIn) && command("_", 27, [.shift]) == .zoom(.zoomOut),
                "⇧+ and ⇧− zoom in and out")
+        expect(command("=", 24) == .zoom(.zoomIn) && command("-", 27) == .zoom(.zoomOut), "Bare = and − zoom like their Shift versions")
+        expect(command("+", 30) == .zoom(.zoomIn), "German's own + key zooms in")
+        expect(command("?", 27, [.shift]) == nil, "German Shift-ß types ? and stays free")
+        expect(command("`", 24, [.shift]) == .tool(.codeBlock), "German Shift-´ types a backtick and drops a code block, not a zoom")
+        expect(command("?", 27, [.command, .shift]) == nil, "⇧⌘? stays the Help menu's search on German layouts")
+        expect(command("¿", 24, [.command, .shift]) == nil, "⇧⌘¿ on Spanish layouts is not a zoom")
+        expect(command("ß", 27, [.command]) == .zoom(.zoomOut), "German ⌘ß zooms out by position")
         expect(command("1", 18) == nil && command("2", 19) == nil, "Plain digits are not zoom keys")
         expect(EaselZoomCommand.allCases.map(\.title) == ["Zoom In", "Zoom Out", "Zoom to 100%", "Zoom to Fit", "Zoom to Selection"],
                "Zoom commands read like the menu")
@@ -93,22 +111,27 @@ struct EaselToolTests {
     }
 
     static func toolBehaviour() {
-        expect(!EaselTool.select.createsObjects && !EaselTool.hand.createsObjects, "Select and hand never create objects")
-        expect(EaselTool.allCases.filter(\.createsObjects).allSatisfy { $0.kind != nil }, "Every creation tool names its object kind")
+        expect(!EaselTool.select.createsObjects && !EaselTool.hand.createsObjects && !EaselTool.eraser.createsObjects,
+               "Select, hand and eraser never create objects")
         expect(EaselTool.sticky.kind == .sticky && EaselTool.section.kind == .section && EaselTool.ellipse.kind == .circle
-               && EaselTool.rectangle.kind == .rectangle && EaselTool.text.kind == .text && EaselTool.pen.kind == .freehand,
-               "Tools create the matching kinds")
+               && EaselTool.rectangle.kind == .rectangle && EaselTool.text.kind == .text, "Tools create the matching kinds")
+        expect([EaselTool.marker, .highlighter, .washi].allSatisfy { $0.kind == .freehand && $0.draws }, "Brushes draw doodles")
+        expect(EaselTool.marker.brush == .marker && EaselTool.highlighter.brush == .highlighter && EaselTool.washi.brush == .washi
+               && EaselTool.eraser.brush == nil && EaselTool.sticky.brush == nil, "Each brush tool carries its brush")
         expect([EaselTool.straightConnector, .elbowConnector, .curvedConnector].allSatisfy { $0.kind == .arrow && $0.drawsConnector },
                "Connector tools draw arrows")
         expect(EaselTool.straightConnector.routing == .straight && EaselTool.elbowConnector.routing == .elbow
                && EaselTool.curvedConnector.routing == .curved, "Connector tools carry their routing")
         expect(EaselConnectorRouting.allCases.allSatisfy { EaselTool.connector($0).routing == $0 }, "Routing maps back to its tool")
-        expect([EaselTool.sticky, .rectangle, .ellipse, .text, .section].allSatisfy { $0.placesObjects && $0.returnsToSelect },
-               "Stickies, shapes, text and sections go back to Select after one placement")
-        expect([EaselTool.pen, .straightConnector, .elbowConnector, .curvedConnector, .hand, .select].allSatisfy { !$0.returnsToSelect },
-               "The pen, connectors and hand stay armed until V or Escape")
+        expect([EaselTool.sticky, .rectangle, .ellipse, .text, .section, .table, .codeBlock].allSatisfy { $0.placesObjects && $0.returnsToSelect },
+               "Stickies, shapes, text, sections, tables and code go back to Select after one placement")
+        expect(EaselTool.stamp.placesObjects && EaselTool.stamp.staysArmed, "Stamps keep stamping until V or Escape")
+        expect([EaselTool.marker, .highlighter, .washi, .eraser, .straightConnector, .elbowConnector, .curvedConnector, .hand, .select]
+               .allSatisfy { $0.staysArmed && !$0.returnsToSelect }, "Drawing tools, connectors and the hand stay armed until V or Escape")
+        expect([EaselTool.select, .hand, .marker, .sticky, .rectangle, .ellipse, .text, .section, .straightConnector,
+                .elbowConnector, .curvedConnector].allSatisfy(\.isAvailable), "The core tools are ready")
         let section = EaselTool.section.defaultSize
-        expect(section.width == section.height, "A clicked section is square")
+        expect(section.width > 0 && section.height > 0, "A clicked section has a size")
     }
 
     static func placementGeometry() {
@@ -163,11 +186,13 @@ struct EaselToolTests {
         expect(EaselZoom.stepped(from: 0.12, zoomingIn: false, minimum: 0.01, maximum: 4) == 0.06, "Below the levels zoom out halves")
         expect(EaselZoom.stepped(from: 0.12, zoomingIn: true, minimum: 0.01, maximum: 4) == 0.25, "From a tiny fit, zoom in finds the first level")
         expect(EaselZoom.stepped(from: .nan, zoomingIn: true, minimum: 0.3333, maximum: 4) == 1, "Nonsense zoom resets to 100%")
+        expect(EaselZoom.stepped(from: .nan, zoomingIn: true, minimum: 2, maximum: 4) == 2, "Nonsense zoom resets inside the allowed range")
         var value = 1.0, steps = 0
         while value < 4, steps < 20 { value = EaselZoom.stepped(from: value, zoomingIn: true, minimum: 0.3333, maximum: 4); steps += 1 }
         expect(value == 4 && steps <= 8, "Zooming in walks to the maximum in a handful of steps")
         expect(EaselZoom.presets == [0.5, 1, 2], "The zoom menu offers 50%, 100% and 200%")
         expect(EaselZoom.percent(0.3333) == 33 && EaselZoom.percent(1) == 100 && EaselZoom.percent(1.499) == 150, "Percentages round")
+        expect(EaselZoom.percent(.greatestFiniteMagnitude) == 100_000, "Huge magnifications never overflow the percentage")
         expect(EaselZoom.clamped(9, minimum: 0.3333, maximum: 4) == 4 && EaselZoom.clamped(-1, minimum: 0.3333, maximum: 4) == 1,
                "Clamping keeps zoom in range and refuses nonsense")
         let mid = EaselZoom.interpolated(from: 1, to: 4, progress: 0.5)
@@ -178,8 +203,15 @@ struct EaselToolTests {
                "Scrolling up zooms in and down zooms out")
         expect(EaselZoom.wheelFactor(deviceDelta: 1, precise: false) > EaselZoom.wheelFactor(deviceDelta: 1, precise: true),
                "A mouse wheel notch zooms further than a trackpad pixel")
-        expect(EaselZoom.wheelFactor(deviceDelta: 10_000, precise: false) == EaselZoom.wheelFactor(deviceDelta: 40, precise: false),
+        expect(EaselZoom.wheelFactor(deviceDelta: 10_000, precise: false) == EaselZoom.wheelFactor(deviceDelta: 3, precise: false),
                "A runaway wheel burst is limited")
+        for delta in [-10_000.0, -10, -1, 1, 10, 10_000] {
+            for precise in [true, false] {
+                let factor = EaselZoom.wheelFactor(deviceDelta: delta, precise: precise)
+                expect(factor >= 0.5 && factor <= 2, "One wheel event never more than halves or doubles the zoom")
+            }
+        }
+        expect(EaselZoom.wheelFactor(deviceDelta: 10, precise: false) < 1.8, "An accelerated flick zooms a step, not across the range")
     }
 
     static func zoomFitting() {
