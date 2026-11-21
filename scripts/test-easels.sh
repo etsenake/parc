@@ -6,6 +6,7 @@ trap 'rm -rf "$scratch"' EXIT
 spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$scratch/easel-spinner.swift" ParcButtonSpinner)
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
+  "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/EaselCanvasInteraction.swift" \
@@ -19,6 +20,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
+  "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/EaselWebItemChrome.swift" \
@@ -28,6 +30,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
+  "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/EaselLiveCaptureFraming.swift" \
@@ -52,6 +55,12 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/tests/EaselRoundTripTests.swift" \
   -o "$scratch/easel-round-trip"
 "$scratch/easel-round-trip"
+
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
+  "$repo_root/Sources/ParcCore/"*.swift \
+  "$repo_root/tests/EaselPagesTests.swift" \
+  -o "$scratch/easel-pages"
+"$scratch/easel-pages"
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
@@ -174,6 +183,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
+  "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/CaptureDestinations.swift" \

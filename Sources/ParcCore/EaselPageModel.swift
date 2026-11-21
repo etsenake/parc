@@ -1,0 +1,93 @@
+import Foundation
+
+struct EaselPage: Codable, Equatable, Identifiable {
+    static let maximumCount = 100
+    static let maximumNameLength = 100
+    static let maximumNameBytes = 4096
+    static let dividerName = "-"
+
+    var id: UUID
+    var name: String
+}
+
+struct EaselPageChange: Equatable {
+    var document: EaselDocument
+    var page: UUID?
+    var items: Set<UUID> = []
+}
+
+enum EaselPages {
+    static let firstPageName = "Page 1"
+
+    static func pages(in document: EaselDocument) -> [EaselPage] { document.pages ?? [] }
+
+    static func firstPageID(_ document: EaselDocument) -> UUID? { document.pages?.first?.id }
+
+    static func pageID(of item: EaselItem, in document: EaselDocument) -> UUID? { item.page ?? firstPageID(document) }
+
+    static func isOnPage(_ item: EaselItem, _ page: UUID?, first: UUID?) -> Bool {
+        guard let page, page != first else { return item.page == nil || item.page == first }
+        return item.page == page
+    }
+
+    static func items(on page: UUID?, in document: EaselDocument) -> [EaselItem] {
+        guard document.pages != nil else { return document.items }
+        let first = firstPageID(document)
+        return document.items.filter { isOnPage($0, page, first: first) }
+    }
+
+    static func itemCount(on page: UUID?, in document: EaselDocument) -> Int {
+        guard document.pages != nil else { return document.items.count }
+        let first = firstPageID(document)
+        return document.items.reduce(0) { $0 + (isOnPage($1, page, first: first) ? 1 : 0) }
+    }
+
+    static func isDivider(_ page: EaselPage, in document: EaselDocument) -> Bool {
+        page.name == EaselPage.dividerName && itemCount(on: page.id, in: document) == 0
+    }
+
+    static func contentPages(_ document: EaselDocument) -> [EaselPage] {
+        pages(in: document).filter { !isDivider($0, in: document) }
+    }
+
+    static func resolvedPage(_ page: UUID?, in document: EaselDocument) -> UUID? {
+        guard let pages = document.pages else { return nil }
+        if let page, let match = pages.first(where: { $0.id == page }), !isDivider(match, in: document) { return page }
+        return contentPages(document).first?.id ?? pages.first?.id
+    }
+
+    static func page(_ id: UUID?, in document: EaselDocument) -> EaselPage? {
+        guard let id = resolvedPage(id, in: document) else { return nil }
+        return document.pages?.first { $0.id == id }
+    }
+
+    static func view(_ document: EaselDocument, page: UUID?) -> EaselDocument {
+        guard document.pages != nil else { return document }
+        var view = document
+        view.items = items(on: resolvedPage(page, in: document), in: document)
+        return view
+    }
+
+    static func isValidName(_ name: String) -> Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.count <= EaselPage.maximumNameLength
+            && name.utf8.count <= EaselPage.maximumNameBytes
+            && !name.unicodeScalars.contains { $0.properties.generalCategory == .control || CharacterSet.newlines.contains($0) }
+    }
+
+    static func validationProblem(_ document: EaselDocument) -> String? {
+        var ids = Set<UUID>()
+        if let pages = document.pages {
+            guard !pages.isEmpty, pages.count <= EaselPage.maximumCount else { return "page count" }
+            for page in pages {
+                guard ids.insert(page.id).inserted else { return "duplicate page ID" }
+                guard isValidName(page.name) else { return "page name" }
+            }
+            guard !contentPages(document).isEmpty else { return "every page is a divider" }
+        }
+        for item in document.items {
+            guard let page = item.page else { continue }
+            guard ids.contains(page) else { return "object on a missing page" }
+        }
+        return nil
+    }
+}

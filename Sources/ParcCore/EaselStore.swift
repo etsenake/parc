@@ -399,6 +399,7 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var stamp: String?
     var poster: String?
     var mindMap: EaselMindMapLink?
+    var page: UUID?
     var ownsEmbeddedPage: Bool { kind == .browser || (kind == .webCard && captureLayout != nil && liveCapture == true) }
     var resolvedShape: EaselShape? {
         switch kind {
@@ -429,6 +430,7 @@ struct EaselDocument: Codable, Identifiable, Equatable {
     var createdAt: Date
     var modifiedAt: Date
     var items: [EaselItem] = []
+    var pages: [EaselPage]?
 }
 
 struct EaselSummary: Identifiable, Equatable {
@@ -676,6 +678,7 @@ final class EaselStore {
               document.modifiedAt.timeIntervalSinceReferenceDate.isFinite,
               document.items.count <= 10_000 else { throw EaselStoreError.invalidDocument("document metadata") }
         guard Set(document.items.map(\.id)).count == document.items.count else { throw EaselStoreError.invalidDocument("duplicate object ID") }
+        if let problem = EaselPages.validationProblem(document) { throw EaselStoreError.invalidDocument(problem) }
         for item in document.items {
             let r = item.frame
             guard [r.x, r.y, r.width, r.height].allSatisfy({ $0.isFinite && abs($0) <= EaselRect.maximumCoordinate }),
