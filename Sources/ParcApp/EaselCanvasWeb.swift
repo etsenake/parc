@@ -108,7 +108,7 @@ extension EaselCanvasView {
                 item.fileName = nil
                 natural = (Double(asset.pixelSize.width), Double(asset.pixelSize.height))
             case .pdf:
-                guard let data, let page = PDFDocument(data: data)?.page(at: 0) else { throw EaselStoreError.invalidFile }
+                guard let data, let page = PDFDocument(data: data)?.page(at: 0) else { throw EaselStoreError.invalidPDF }
                 item.assetID = try session.importAsset(data, type: .pdf)
                 let bounds = page.bounds(for: .mediaBox)
                 natural = (Double(bounds.width), Double(bounds.height))
@@ -122,9 +122,7 @@ extension EaselCanvasView {
         let size = EaselMediaPlacement.filledSize(for: kind, natural: natural)
         item.frame = EaselMediaPlacement.resized(link.frame, width: size.width, height: size.height)
         let replaced = commit(EaselMediaPlacement.addName(for: kind)) { document in
-            guard let index = document.items.firstIndex(where: { $0.id == id }), document.items[index] == link else {
-                throw EaselStoreError.invalidDocument("the bookmark changed")
-            }
+            guard let index = document.items.firstIndex(where: { $0.id == id }), document.items[index] == link else { return }
             document.items[index] = item
         }
         if replaced { selection = [id]; needsLayout = true }
