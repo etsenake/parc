@@ -75,7 +75,7 @@ export const specimens: Specimen[] = [
     label: 'Easels',
     latin: 'Tabula viva',
     line: 'A canvas where web pages still work.',
-    behavior: 'Live pages, video, PDFs, text and arrows on one canvas. Type like in Notes, @-mention a note, and the pages keep working.',
+    behavior: 'Live web pages, images, video, PDFs, text and arrows on one canvas. Type like in Notes, @-mention a note, and the pages keep working.',
     habitat: 'Moodboards, research walls, trip plans.',
     spot: 'File → New Easel.',
     note: 'naps after four hours, like the rest of us.',
