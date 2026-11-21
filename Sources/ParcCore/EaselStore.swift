@@ -4,8 +4,12 @@ import Darwin
 
 enum EaselItemKind: String, Codable, CaseIterable {
     case text, image, rectangle, circle, arrow, freehand, webCard, browser, link, sticky, section, table, code, stamp, video
+    case audio, file, pdf, equation
 
     var holdsText: Bool { self == .text || self == .sticky || self == .rectangle || self == .circle }
+    var isMedia: Bool { self == .image || self == .video || self == .audio || self == .file || self == .pdf }
+    var takesFileName: Bool { self == .video || self == .audio || self == .file || self == .pdf }
+    var takesMediaLink: Bool { self == .video || self == .audio }
 }
 
 enum EaselShape: String, Codable, CaseIterable {
@@ -29,13 +33,72 @@ enum EaselBrush: String, Codable, CaseIterable { case marker, highlighter, washi
 enum EaselImageMask: String, Codable, CaseIterable { case rounded, circle, squircle, arch, diamond, hexagon, star, heart }
 
 enum EaselAssetType: String, CaseIterable {
-    case png, gif, mp4, mov
+    case png, gif, mp4, mov, m4a, mp3, wav, aac, aiff, pdf, file
+
+    static let maximumExtensionLength = 16
 
     var isVideo: Bool { self == .mp4 || self == .mov }
+    var isAudio: Bool { self == .m4a || self == .mp3 || self == .wav || self == .aac || self == .aiff }
+    var isPicture: Bool { self == .png || self == .gif }
+
+    var kind: EaselItemKind? {
+        if isVideo { return .video }
+        if isAudio { return .audio }
+        switch self {
+        case .pdf: return .pdf
+        case .file: return .file
+        default: return nil
+        }
+    }
 
     static func of(assetID: String) -> EaselAssetType? {
-        guard let dot = assetID.lastIndex(of: ".") else { return nil }
-        return EaselAssetType(rawValue: String(assetID[assetID.index(after: dot)...]))
+        guard let parts = assetParts(assetID) else { return nil }
+        return parts.type
+    }
+
+    static func fileExtension(of assetID: String) -> String? {
+        guard let parts = assetParts(assetID) else { return nil }
+        return parts.type == .file ? parts.fileExtension : parts.type.rawValue
+    }
+
+    static func isSafeExtension(_ value: String) -> Bool {
+        (1...maximumExtensionLength).contains(value.utf8.count)
+            && value.utf8.allSatisfy { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) }
+    }
+
+    static func safeExtension(_ raw: String?) -> String? {
+        guard let lowered = raw?.lowercased(), isSafeExtension(lowered) else { return nil }
+        return lowered
+    }
+
+    static func assetID(_ uuid: UUID, type: EaselAssetType, fileExtension: String? = nil) -> String {
+        let stem = uuid.uuidString.lowercased() + "." + type.rawValue
+        guard type == .file, let ext = safeExtension(fileExtension) else { return stem }
+        return stem + "." + ext
+    }
+
+    private static func assetParts(_ id: String) -> (type: EaselAssetType, fileExtension: String?)? {
+        let uuidLength = 36
+        guard id.utf8.count > uuidLength + 1, id == id.lowercased(),
+              UUID(uuidString: String(id.prefix(uuidLength))) != nil else { return nil }
+        let rest = id.dropFirst(uuidLength)
+        guard rest.first == "." else { return nil }
+        let pieces = rest.dropFirst().split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        guard let first = pieces.first, let type = EaselAssetType(rawValue: first) else { return nil }
+        if pieces.count == 1 { return (type, nil) }
+        guard type == .file, pieces.count == 2, isSafeExtension(pieces[1]) else { return nil }
+        return (type, pieces[1])
+    }
+
+    static func audioType(forExtension raw: String?) -> EaselAssetType? {
+        switch raw?.lowercased() {
+        case "m4a", "m4b", "mp4a": return .m4a
+        case "mp3": return .mp3
+        case "wav", "wave": return .wav
+        case "aac", "adts": return .aac
+        case "aif", "aiff", "aifc": return .aiff
+        default: return nil
+        }
     }
 
     static func sniff(_ data: Data) -> EaselAssetType? {
@@ -45,6 +108,14 @@ enum EaselAssetType: String, CaseIterable {
             let width = Int(head[6]) | Int(head[7]) << 8, height = Int(head[8]) | Int(head[9]) << 8
             return width > 0 && height > 0 ? .gif : nil
         }
+        if head.count >= 5, head.starts(with: Array("%PDF-".utf8)) { return .pdf }
+        if head.count >= 12, head.starts(with: Array("RIFF".utf8)), Array(head[8..<12]) == Array("WAVE".utf8) { return .wav }
+        if head.count >= 12, head.starts(with: Array("FORM".utf8)),
+           Array(head[8..<12]) == Array("AIFF".utf8) || Array(head[8..<12]) == Array("AIFC".utf8) { return .aiff }
+        if head.count >= 10, head.starts(with: Array("ID3".utf8)), head[3] < 0xFF, head[4] < 0xFF { return .mp3 }
+        if head.count >= 4, head[0] == 0xFF, head[1] & 0xF6 == 0xF0, head[2] & 0x3C != 0x3C { return .aac }
+        if head.count >= 4, head[0] == 0xFF, head[1] & 0xE0 == 0xE0, head[1] & 0x06 != 0, head[1] & 0x18 != 0x08,
+           head[2] & 0xF0 != 0xF0, head[2] & 0x0C != 0x0C { return .mp3 }
         guard head.count >= 12 else { return nil }
         let size = head[0..<4].reduce(0) { $0 << 8 | Int($1) }, box = String(decoding: head[4..<8], as: UTF8.self)
         guard box == "ftyp" else {
@@ -58,10 +129,71 @@ enum EaselAssetType: String, CaseIterable {
             offset += 4
         }
         if brands.contains("qt  ") { return .mov }
+        if audioBrands.contains(brands[0]) { return .m4a }
         return stillImageBrands.contains(brands[0]) ? nil : .mp4
     }
 
+    static func accepts(_ data: Data, as type: EaselAssetType) -> Bool {
+        guard type != .file else { return !data.isEmpty }
+        return sniff(data) == type
+    }
+
     private static let stillImageBrands: Set<String> = ["heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1", "avif", "avis"]
+    private static let audioBrands: Set<String> = ["M4A ", "M4B ", "M4P "]
+}
+
+struct EaselLinkPreviewData: Codable, Equatable {
+    static let maximumTextBytes = 2048
+    static let maximumAddressBytes = 4096
+    var title: String?
+    var summary: String?
+    var siteName: String?
+    var image: String?
+    var icon: String?
+
+    var isEmpty: Bool { [title, summary, siteName, image, icon].allSatisfy { $0 == nil } }
+
+    var assetIDs: [String] {
+        [image, icon].compactMap { $0 }.filter { EaselAssetType.of(assetID: $0) == .png }
+    }
+
+    static func isAddress(_ raw: String) -> Bool {
+        guard raw.utf8.count <= maximumAddressBytes, let url = URL(string: raw),
+              ["https", "http"].contains(url.scheme?.lowercased() ?? ""), let host = url.host, !host.isEmpty else { return false }
+        return true
+    }
+
+    var isValid: Bool {
+        guard !isEmpty, [title, summary, siteName].allSatisfy({ $0.map(EaselMediaText.isValid) != false }) else { return false }
+        return [image, icon].allSatisfy { value in
+            guard let value else { return true }
+            return EaselAssetType.of(assetID: value) == .png || Self.isAddress(value)
+        }
+    }
+}
+
+struct EaselMediaCredit: Codable, Equatable {
+    var name: String
+    var profileURL: String?
+    var photoURL: String?
+
+    var isValid: Bool {
+        EaselMediaText.isValid(name) && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && [profileURL, photoURL].allSatisfy { $0.map(EaselLinkPreviewData.isAddress) != false }
+    }
+}
+
+enum EaselMediaText {
+    static let maximumBytes = 2048
+
+    static func isValid(_ text: String) -> Bool {
+        text.utf8.count <= maximumBytes
+            && !text.unicodeScalars.contains { $0.properties.generalCategory == .control && $0 != "\n" && $0 != "\t" }
+    }
+
+    static func isValidFileName(_ name: String) -> Bool {
+        isValid(name) && !name.contains("\n") && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.utf8.count <= 1024
+    }
 }
 
 enum EaselStampDesign: String, CaseIterable { case plusOne, dot, heart, question, star, thumbsUp, thumbsDown, smiley }
@@ -399,7 +531,20 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var poster: String?
     var mindMap: EaselMindMapLink?
     var page: UUID?
-    var ownsEmbeddedPage: Bool { kind == .browser || (kind == .webCard && captureLayout != nil && liveCapture == true) }
+    var fileName: String?
+    var preview: EaselLinkPreviewData?
+    var credit: EaselMediaCredit?
+    var ownsEmbeddedPage: Bool { (kind == .browser && url != nil) || (kind == .webCard && captureLayout != nil && liveCapture == true) }
+    var isEmptyPlaceholder: Bool {
+        switch kind {
+        case .image, .video, .audio, .file, .pdf: return assetID == nil && url == nil
+        case .link, .browser: return url == nil
+        default: return false
+        }
+    }
+    var assetReferences: [String] {
+        [assetID, poster].compactMap { $0 } + (preview?.assetIDs ?? [])
+    }
     var resolvedShape: EaselShape? {
         switch kind {
         case .rectangle: return shape ?? .rectangle
@@ -441,6 +586,7 @@ struct EaselSummary: Identifiable, Equatable {
 
 enum EaselStoreError: Error, LocalizedError {
     case invalidDocument(String), unsupportedVersion(Int), unsafePath, invalidImage, tooLarge, invalidVideo, videoTooLarge
+    case invalidAudio, audioTooLarge, invalidPDF, pdfTooLarge, invalidFile, fileTooLarge
     case missingDocument, deletedDocument, closedDocument, browserInUse
 
     var errorDescription: String? {
@@ -452,6 +598,12 @@ enum EaselStoreError: Error, LocalizedError {
         case .tooLarge: return "The Easel or image exceeds the local storage limit."
         case .invalidVideo: return "That video can’t play on an Easel. MP4 and MOV videos can."
         case .videoTooLarge: return "That video is a bit big for an Easel. Videos up to 30 MB fit."
+        case .invalidAudio: return "That audio can’t play on an Easel. M4A, MP3, WAV, AAC and AIFF files can."
+        case .audioTooLarge: return "That audio is a bit big for an Easel. Audio up to 30 MB fits."
+        case .invalidPDF: return "That PDF won’t open on an Easel."
+        case .pdfTooLarge: return "That PDF is a bit big for an Easel. PDFs up to 30 MB fit."
+        case .invalidFile: return "That file couldn’t be added to the Easel."
+        case .fileTooLarge: return "That file is a bit big for an Easel. Files up to 30 MB fit."
         case .missingDocument: return "The Easel does not exist."
         case .deletedDocument: return "This Easel was deleted."
         case .closedDocument: return "This Easel editor is closed. Reopen the Easel to edit it."
@@ -552,23 +704,33 @@ final class EaselStore {
         documentWriter.write(document, to: url, maximumBytes: maximumBytes, wait: false) { _ in }
     }
 
-    fileprivate func importAsset(_ data: Data, type: EaselAssetType) throws -> String {
+    fileprivate func importAsset(_ data: Data, type: EaselAssetType, fileExtension: String? = nil) throws -> String {
         try Self.checkAsset(data, type: type)
         try checkDirectories()
-        let id = UUID().uuidString.lowercased() + "." + type.rawValue
+        let id = EaselAssetType.assetID(UUID(), type: type, fileExtension: fileExtension)
         try atomicWrite(data, to: assetsDirectory.appendingPathComponent(id))
         return id
     }
 
     fileprivate static func checkAsset(_ data: Data, type: EaselAssetType) throws {
-        guard data.count <= maximumAssetBytes else { throw type.isVideo ? EaselStoreError.videoTooLarge : EaselStoreError.tooLarge }
-        guard EaselAssetType.sniff(data) == type else { throw type.isVideo ? EaselStoreError.invalidVideo : EaselStoreError.invalidImage }
+        guard data.count <= maximumAssetBytes else {
+            if type.isVideo { throw EaselStoreError.videoTooLarge }
+            if type.isAudio { throw EaselStoreError.audioTooLarge }
+            if type == .pdf { throw EaselStoreError.pdfTooLarge }
+            if type == .file { throw EaselStoreError.fileTooLarge }
+            throw EaselStoreError.tooLarge
+        }
+        guard EaselAssetType.accepts(data, as: type) else {
+            if type.isVideo { throw EaselStoreError.invalidVideo }
+            if type.isAudio { throw EaselStoreError.invalidAudio }
+            if type == .pdf { throw EaselStoreError.invalidPDF }
+            if type == .file { throw EaselStoreError.invalidFile }
+            throw EaselStoreError.invalidImage
+        }
     }
 
     fileprivate func assetURL(_ id: String) throws -> URL {
-        guard id == id.lowercased(), let type = EaselAssetType.of(assetID: id),
-              UUID(uuidString: String(id.dropLast(type.rawValue.count + 1))) != nil,
-              id.count == 37 + type.rawValue.count else { throw EaselStoreError.unsafePath }
+        guard EaselAssetType.of(assetID: id) != nil else { throw EaselStoreError.unsafePath }
         try checkDirectories()
         let url = assetsDirectory.appendingPathComponent(id)
         try ensureRegularFile(url, maximumBytes: Self.maximumAssetBytes)
@@ -587,7 +749,7 @@ final class EaselStore {
         }
         var copied: [String] = []
         do {
-            for asset in Set(document.items.flatMap { [$0.assetID, $0.poster].compactMap { $0 } }).sorted() {
+            for asset in Set(document.items.flatMap(\.assetReferences)).sorted() {
                 let url = destination.assetsDirectory.appendingPathComponent(asset)
                 let original = try Data(contentsOf: assetURL(asset))
                 if FileManager.default.fileExists(atPath: url.path) {
@@ -706,8 +868,7 @@ final class EaselStore {
             }
             try validateStyle(item)
             try validateMedia(item)
-            if let id = item.assetID { try asset(id) }
-            if let id = item.poster { try asset(id) }
+            for id in item.assetReferences { try asset(id) }
             if let layout = item.captureLayout {
                 guard item.kind == .webCard, item.assetID != nil, layout.isValid else {
                     throw EaselStoreError.invalidDocument("captured webpage geometry")
@@ -721,8 +882,7 @@ final class EaselStore {
                       ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
                       let host = url.host, !host.isEmpty else { throw EaselStoreError.invalidDocument("card URL") }
             }
-            if (item.kind == .image || item.kind == .video) && item.assetID == nil { throw EaselStoreError.invalidDocument("image has no asset") }
-            if [.link, .webCard, .browser].contains(item.kind) && item.url == nil { throw EaselStoreError.invalidDocument("card has no URL") }
+            if item.kind == .webCard && item.url == nil { throw EaselStoreError.invalidDocument("card has no URL") }
             if [.arrow, .freehand].contains(item.kind) && item.points.count < 2 { throw EaselStoreError.invalidDocument("drawing has fewer than two points") }
             if (item.kind == .table) != (item.table != nil) { throw EaselStoreError.invalidDocument("table grid on the wrong object") }
             try item.table?.validate()
@@ -794,11 +954,25 @@ final class EaselStore {
             throw EaselStoreError.invalidDocument("alt text")
         }
         let type = item.assetID.flatMap(EaselAssetType.of(assetID:))
-        if (type?.isVideo == true) != (item.kind == .video) || (type == .gif && item.kind != .image) {
+        if let type, type.isVideo != (item.kind == .video) || (type == .gif && item.kind != .image) {
             throw EaselStoreError.invalidDocument("media on an object that can't play it")
         }
         if let poster = item.poster, item.kind != .video || EaselAssetType.of(assetID: poster) != .png {
             throw EaselStoreError.invalidDocument("video poster")
+        }
+        if let type, let owner = type.kind, owner != item.kind { throw EaselStoreError.invalidDocument("media on an object that can't play it") }
+        if [.audio, .file, .pdf].contains(item.kind), let type, type.kind != item.kind {
+            throw EaselStoreError.invalidDocument("media on an object that can't play it")
+        }
+        if item.kind == .image, let type, !type.isPicture { throw EaselStoreError.invalidDocument("image asset") }
+        if item.url != nil, [.file, .pdf, .equation].contains(item.kind) { throw EaselStoreError.invalidDocument("link on an object that can't hold one") }
+        if let name = item.fileName, !item.kind.takesFileName || !EaselMediaText.isValidFileName(name) {
+            throw EaselStoreError.invalidDocument("file name")
+        }
+        if let preview = item.preview, item.kind != .link || !preview.isValid { throw EaselStoreError.invalidDocument("link preview") }
+        if let credit = item.credit, item.kind != .image || !credit.isValid { throw EaselStoreError.invalidDocument("image credit") }
+        if item.kind == .equation, item.assetID != nil || item.richText != nil || item.poster != nil {
+            throw EaselStoreError.invalidDocument("equation contents")
         }
     }
 
@@ -1062,12 +1236,12 @@ final class EaselSession: ObservableObject {
 
     func importPNG(_ data: Data) throws -> String { try importAsset(data, type: .png) }
 
-    func importAsset(_ data: Data, type: EaselAssetType) throws -> String {
+    func importAsset(_ data: Data, type: EaselAssetType, fileExtension: String? = nil) throws -> String {
         try requireWritable()
-        if let store { return try store.importAsset(data, type: type) }
+        if let store { return try store.importAsset(data, type: type, fileExtension: fileExtension) }
         try EaselStore.checkAsset(data, type: type)
         guard memoryAssets.values.reduce(data.count, { $0 + $1.count }) <= Self.maximumMemoryAssetBytes else { throw EaselStoreError.tooLarge }
-        let id = UUID().uuidString.lowercased() + "." + type.rawValue; memoryAssets[id] = data
+        let id = EaselAssetType.assetID(UUID(), type: type, fileExtension: fileExtension); memoryAssets[id] = data
         return id
     }
 
@@ -1077,7 +1251,7 @@ final class EaselSession: ObservableObject {
     }
 
     func discardUnusedAssets(_ ids: [String]) {
-        let used = Set(([document] + undoStack + redoStack).flatMap { $0.items.flatMap { [$0.assetID, $0.poster].compactMap { $0 } } })
+        let used = Set(([document] + undoStack + redoStack).flatMap { $0.items.flatMap(\.assetReferences) })
         let unused = ids.filter { !used.contains($0) }
         guard !unused.isEmpty else { return }
         if let store { store.removeAssets(unused) } else { for id in unused { memoryAssets.removeValue(forKey: id) } }

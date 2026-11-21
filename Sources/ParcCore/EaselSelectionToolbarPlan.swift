@@ -1,7 +1,7 @@
 import Foundation
 
 enum EaselToolbarSubject: String, CaseIterable, Equatable {
-    case text, sticky, shape, connector, section, image, drawing, page, table, code, stamp, icon
+    case text, sticky, shape, connector, section, image, drawing, page, table, code, stamp, icon, media, equation
 
     init(_ kind: EaselItemKind) {
         switch kind {
@@ -16,6 +16,8 @@ enum EaselToolbarSubject: String, CaseIterable, Equatable {
         case .table: self = .table
         case .code: self = .code
         case .stamp: self = .stamp
+        case .audio, .file, .pdf: self = .media
+        case .equation: self = .equation
         }
     }
 
@@ -26,7 +28,7 @@ enum EaselToolbarSubject: String, CaseIterable, Equatable {
     var takesStyle: Bool {
         switch self {
         case .text, .sticky, .shape, .connector, .section, .drawing, .icon: return true
-        case .image, .page, .table, .code, .stamp: return false
+        case .image, .page, .table, .code, .stamp, .media, .equation: return false
         }
     }
 }
@@ -93,7 +95,7 @@ enum EaselSelectionToolbarPlan {
             return [[.crop, .imageMask, .replaceImage, .altText]]
         case .drawing:
             return [[.color, .pattern]]
-        case .page, .stamp:
+        case .page, .stamp, .media, .equation:
             return []
         case .table:
             return editingText

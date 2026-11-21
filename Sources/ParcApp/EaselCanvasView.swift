@@ -64,6 +64,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             self.settleCanvasFeedback()
         })
     weak var pageObjects: EaselBrowserObjectHosting? { didSet { needsLayout = true } }
+    var hostedObjects: [EaselHostedObjects] = [] { didSet { needsLayout = true; needsDisplay = true } }
     var artwork: [UUID: NSView] = [:]
     private var accessibleObjects: [UUID: EaselAccessibleObject] = [:]
     var onKeyboardStructureChange: (() -> Void)?
@@ -598,7 +599,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard let data = try? session.assetData(id), let value = NSImage(data: data) else { return nil }
         images[id] = value; return value
     }
-    var usesObjectSurfaces: Bool { pageObjects != nil && items.contains { $0.ownsEmbeddedPage } }
+    var usesObjectSurfaces: Bool { (pageObjects != nil && items.contains { $0.ownsEmbeddedPage }) || hostsObjectViews }
     func displayBounds(of item: EaselItem) -> NSRect {
         let pad = 16 / max(canvasScale, 0.2) + 16 + CGFloat(EaselPaintRules.strokeWidth(item)) * 1.5 + boardOverhang(item)
             + CGFloat(EaselObjectLink.badgeAllowance(item, scale: max(canvasScale, 0.2)))
@@ -842,8 +843,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     private func synchronizePageSelection() {
-        pageObjects?.synchronize(items: items, selection: selection,
-                                 interacting: tool == .select && editor == nil && start == nil && !isHiddenOrHasHiddenAncestor)
+        let interacting = tool == .select && editor == nil && start == nil && !isHiddenOrHasHiddenAncestor
+        pageObjects?.synchronize(items: items, selection: selection, interacting: interacting)
+        synchronizeHostedObjects(interacting: interacting)
     }
     override func layout() {
         super.layout(); motion.bind(enclosingScrollView); refreshTextControls(); synchronizeAccessibleObjects()
@@ -862,6 +864,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         for item in items {
             let objectView: NSView
             if item.ownsEmbeddedPage, let surface = pageObjects?.surface(for: item) { objectView = surface }
+            else if let hosted = hostedObjectView(for: item) { objectView = hosted }
             else if let existing = artwork[item.id] as? EaselCanvasArtwork { objectView = existing }
             else { objectView = EaselCanvasArtwork(canvas: self, id: item.id) }
             if let old = artwork[item.id], old !== objectView { old.removeFromSuperview() }
@@ -909,6 +912,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         paintingLive { drawObject(item) }
     }
     func drawObject(_ item: EaselItem, showsEditor: Bool = true) {
+            if item.isEmptyPlaceholder, !showsEditor { return }
             let turned = EaselCanvasRotation.begin(item, straight: showsEditor && editingID == item.id)
             defer { if turned { NSGraphicsContext.restoreGraphicsState() } }
             let r = rect(item), ink = color(item.color)
@@ -941,6 +945,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 drawTable(item, showsEditor: showsEditor)
             case .stamp:
                 EaselStampArtwork.draw(item, in: r, ink: ink)
+            case .audio, .file, .pdf, .equation:
+                break
             }
     }
     private func drawText(_ item: EaselItem, showsEditor: Bool) {
@@ -2519,6 +2525,7 @@ private final class EaselAccessibleObject: NSView {
         case .code: return "Code block, " + EaselCodeBlock.displayName(item.language)
         case .stamp: return EaselStampArtwork.accessibilityLabel(item)
         case .arrow: return "Connector"
+        case .image, .video, .audio, .file, .pdf, .equation: return EaselMediaPlacement.accessibilityLabel(item)
         default: return item.kind.rawValue.capitalized
         }
     }
@@ -2528,7 +2535,7 @@ private final class EaselAccessibleObject: NSView {
     override func accessibilityValue() -> Any? {
         guard let item = canvas?.accessibleItem(id), item.kind != .stamp else { return nil }
         let value: String?
-        if item.kind == .image || item.kind == .video { value = item.altText ?? item.url }
+        if item.kind.isMedia { value = item.altText ?? item.fileName ?? item.url }
         else if let table = item.table { value = table.accessibilitySummary }
         else if item.kind == .section { value = canvas?.sectionSummary(item) }
         else { value = item.text.isEmpty ? item.url : item.text }
