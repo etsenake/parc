@@ -38,6 +38,20 @@ struct BrowserStoreTests {
         try body(directory)
     }
 
+    static func waitUntil(timeout: TimeInterval = 10, _ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() && Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
+    }
+
+    static func withDirectory(_ body: (URL) async throws -> Void) async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("parc-model-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
+                                               attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try await body(directory)
+    }
+
     static func commandBarEmptyQueryRecents(
         history: [BrowserHistoryEntry], tabURLs: [String], alreadyShown: Int = 0
     ) -> [BrowserHistoryEntry] {
@@ -492,8 +506,8 @@ struct BrowserStoreTests {
         }
     }
 
-    @Test static func sessionSaveRoundTripIdentity() throws {
-        try withDirectory { directory in
+    @Test static func sessionSaveRoundTripIdentity() async throws {
+        try await withDirectory { directory in
             let date = Date(timeIntervalSince1970: 1_800_000_000)
             let store = try BrowserStore(directory: directory, now: { date })
             let tabID = store.open("https://example.org/start", kind: .pinned)
@@ -525,7 +539,7 @@ struct BrowserStoreTests {
 
             store.updateTab(tabID, title: "Live title")
             store.updateTab(tabID, title: "Final title")
-            RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+            try await waitUntil { (try? String(contentsOf: file, encoding: .utf8))?.contains("Final title") == true }
             let delayed = try BrowserStore(directory: directory, now: { date })
             #expect(delayed.state.tabs.first { $0.id == tabID }?.title == "Final title", "The 0.25s debounce still writes the last mutation")
 
@@ -535,7 +549,7 @@ struct BrowserStoreTests {
             let privateID = privateStore.open("https://private.example.test")
             privateStore.updateTab(privateID, title: "Secret")
             try privateStore.save()
-            RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+            try await Task.sleep(nanoseconds: 400_000_000)
             #expect(try Data(contentsOf: file) == beforePrivate, "Ephemeral stores still skip disk")
 
             let pendingDirectory = FileManager.default.temporaryDirectory
@@ -552,7 +566,7 @@ struct BrowserStoreTests {
             #expect(settingsFailed && pendingStore.persistenceError != nil, "A refused settings commit reports the real failure")
             #expect(pendingStore.state.profiles.count == 1, "A failed settings commit must not publish the profile")
             try FileManager.default.removeItem(at: pendingFile)
-            RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+            try await waitUntil { (try? String(contentsOf: pendingFile, encoding: .utf8))?.contains("pending-save") == true }
             let recovered = try BrowserStore(directory: pendingDirectory)
             #expect(recovered.state.tabs.contains { $0.url == "https://pending-save.example.org" }, "A failed settings commit must not drop an already-scheduled session persist")
         }

@@ -50,7 +50,7 @@ extension BrowserStoreTests {
             let tray = SidebarContainerLocation(spaceID: firstSpace, folderID: nil, section: .favorite, profileID: profile)
             let snapshot = SidebarHierarchySnapshot(state: store.state, spaceID: firstSpace, profileID: profile, includesFavorites: true)!
             #expect(try store.moveSidebarItem(.split(original!.id), to: tray, before: nil, expected: snapshot), "A whole split moves into Favorites")
-            #expect(try tab(first, in: store).kind == .favorite && tab(second, in: store).kind == .favorite, "Every child enters the Favorites container with its split")
+            #expect(try tab(first, in: store).kind == .favorite && (try tab(second, in: store)).kind == .favorite, "Every child enters the Favorites container with its split")
             let secondSpace = store.createSpace(name: "Second")
             store.selectTab(first)
             #expect(store.activeSplitLayout?.id == original?.id && store.state.selectedTabIDs == [first, second], "Another Space of the Profile shows the same Favorite split")
@@ -127,7 +127,7 @@ extension BrowserStoreTests {
             #expect(today() == [.tab(t2), .split(group.id)], "The new split takes the ordinary member's Today slot")
             #expect(SidebarHierarchy.children(in: folderBox, state: store.state) == [.tab(pinnedHome.id)]
                        && pinnedHome.folderID == folder, "The pinned slot keeps a fresh home in its folder")
-            #expect(try tab(pinned, in: store).kind == .today && tab(pinned, in: store).folderID == nil, "The pinned original enters the Today container with its split")
+            #expect(try tab(pinned, in: store).kind == .today && (try tab(pinned, in: store)).folderID == nil, "The pinned original enters the Today container with its split")
             store.selectTab(favorite, extendingSplit: true)
             group = store.activeSplitLayout!
             let favoriteHome = try expectHome(of: favorite, in: store, savedURL: "https://fav.example")
@@ -180,7 +180,7 @@ extension BrowserStoreTests {
             store.selectTab(v1)
             #expect(store.dropTabIntoSplit(t4, expectedSelection: [v1, v2], expectedLayout: store.activeSplitLayout,
                 target: .insert(2), orientation: pinnedSplit.orientation), "Drop a Today tab into a pinned split")
-            #expect(try tab(t4, in: store).kind == .pinned && tab(t4, in: store).folderID == folder
+            #expect(try tab(t4, in: store).kind == .pinned && (try tab(t4, in: store)).folderID == folder
                        && store.activeSplitLayout?.tabIDs == [v1, v2, t4], "The dropped tab enters the pinned split's folder")
 
             try store.save()
@@ -226,10 +226,10 @@ extension BrowserStoreTests {
             store.selectTab(a); store.selectTab(b, extendingSplit: true)
             let pair = store.activeSplitLayout!
             store.setKind(b, .pinned)
-            #expect(try tab(a, in: store).kind == .pinned && tab(b, in: store).kind == .pinned
+            #expect(try tab(a, in: store).kind == .pinned && (try tab(b, in: store)).kind == .pinned
                        && SidebarHierarchy.children(in: pinnedRoot, state: store.state).contains(.split(pair.id)), "Pinning a split pane pins its whole split")
             store.setKind(a, .today)
-            #expect(try tab(a, in: store).kind == .today && tab(b, in: store).kind == .today
+            #expect(try tab(a, in: store).kind == .today && (try tab(b, in: store)).kind == .today
                        && SidebarHierarchy.children(in: todayBox, state: store.state).contains(.split(pair.id)), "Unpinning a split pane unpins its whole split")
 
             let w1 = store.open("https://w1.example", kind: .pinned), w2 = store.open("https://w2.example")
@@ -306,8 +306,8 @@ extension BrowserStoreTests {
             #expect(originals.isSubset(of: Set(store.state.tabs.filter { $0.archivedAt == nil }.map(\.id))), "Migration keeps every original page live")
             let favHome = try expectHome(of: fav.id, in: store, savedURL: "https://fav.example")
             let pinHome = try expectHome(of: pin.id, in: store, savedURL: "https://pin.example")
-            #expect(try tab(fav.id, in: store).kind == .today && tab(pin.id, in: store).kind == .today
-                       && tab(pin.id, in: store).folderID == nil, "Children of a Today-anchored group enter Today")
+            #expect(try tab(fav.id, in: store).kind == .today && (try tab(pin.id, in: store)).kind == .today
+                       && (try tab(pin.id, in: store)).folderID == nil, "Children of a Today-anchored group enter Today")
             #expect(store.state.sidebarItemOrder[trayKey]?.first == .tab(favHome.id)
                        && store.state.sidebarItemOrder[space.uuidString + ":" + folder.id.uuidString] == [.tab(pinHome.id)], "Each saved child keeps a fresh home in its exact former slot")
             #expect(store.state.selectionBySpace[other.id.uuidString] == [favHome.id], "Another Space's remembered Favorite follows the saved home")
@@ -398,7 +398,7 @@ extension BrowserStoreTests {
             store.setSplitLayout(orientation: .vertical, widthFactors: [1, 3, 2])
             store.closeTab(second)
             try expectFactors(store.activeSplitLayout?.widthFactors, [0.25, 0.75], "Closing a pane must resize survivors")
-            #expect(try tab(second, in: store).archivedAt != nil && tab(secondHome.id, in: store).archivedAt == nil, "The joined original archives as a Today pane while its saved home keeps the bookmark")
+            #expect(try tab(second, in: store).archivedAt != nil && (try tab(secondHome.id, in: store)).archivedAt == nil, "The joined original archives as a Today pane while its saved home keeps the bookmark")
             store.closeTab(third)
             #expect(store.state.selectedTabIDs == [first] && store.activeSplitLayout == nil, "Closing the penultimate pane must leave one normal page")
             #expect(store.state.splitLayouts.allSatisfy { !$0.tabIDs.contains(third) }, "Archived tabs must be removed from every saved layout")

@@ -50,29 +50,29 @@ extension BrowserStoreTests {
             let again = store.openEasel(id: documentID, title: "Research")
             #expect(again == tabID && store.activeSpaceID == originalSpace && store.state.tabs.count == 2, "Opening the same profile's Easel again must select its existing tab and Space")
             store.updateEaselTitle(id: documentID, profileID: profileID, title: "Renamed board")
-            #expect(try tab(tabID, in: store).title == "Renamed board" && tab(tabID, in: store).savedTitle == "Renamed board", "Document renaming must update both live and saved titles")
+            #expect(try tab(tabID, in: store).title == "Renamed board" && (try tab(tabID, in: store)).savedTitle == "Renamed board", "Document renaming must update both live and saved titles")
             store.setKind(tabID, .pinned)
             store.updateTab(tabID, title: "A web page", url: "https://example.org/reference")
             store.updateEaselTitle(id: documentID, profileID: profileID, title: "Latest board name")
-            #expect(try tab(tabID, in: store).title == "A web page" && tab(tabID, in: store).savedTitle == "Latest board name", "Renaming a saved Easel must not overwrite the title of a web page currently occupying that tab")
+            #expect(try tab(tabID, in: store).title == "A web page" && (try tab(tabID, in: store)).savedTitle == "Latest board name", "Renaming a saved Easel must not overwrite the title of a web page currently occupying that tab")
             store.closeTab(tabID)
-            #expect(try tab(tabID, in: store).url == created.savedURL && tab(tabID, in: store).title == "Latest board name"
-                       && tab(tabID, in: store).archivedAt == nil && tab(tabID, in: store).kind == .pinned, "Closing a pinned Easel that navigated away resets to the saved document")
+            #expect(try tab(tabID, in: store).url == created.savedURL && (try tab(tabID, in: store)).title == "Latest board name"
+                       && (try tab(tabID, in: store)).archivedAt == nil && (try tab(tabID, in: store)).kind == .pinned, "Closing a pinned Easel that navigated away resets to the saved document")
             store.closeTab(tabID)
-            #expect(try tab(tabID, in: store).archivedAt == nil && tab(tabID, in: store).kind == .pinned
-                       && tab(tabID, in: store).url == created.savedURL, "Closing a pinned Easel that is showing the document unloads it in place, like a deselect")
+            #expect(try tab(tabID, in: store).archivedAt == nil && (try tab(tabID, in: store)).kind == .pinned
+                       && (try tab(tabID, in: store)).url == created.savedURL, "Closing a pinned Easel that is showing the document unloads it in place, like a deselect")
             #expect(try store.openEasel(id: documentID, title: "Latest board name") == tabID && (try tab(tabID, in: store)).kind == .pinned, "Opening it again selects the same pinned tab")
             let folder = store.createFolder(name: "Boards")
             store.moveTab(tabID, toSpace: store.activeSpaceID, folderID: folder)
-            #expect(try tab(tabID, in: store).folderID == folder && tab(tabID, in: store).kind == .pinned, "An Easel can be pinned into a folder")
+            #expect(try tab(tabID, in: store).folderID == folder && (try tab(tabID, in: store)).kind == .pinned, "An Easel can be pinned into a folder")
             store.closeTab(tabID)
-            #expect(try tab(tabID, in: store).archivedAt == nil && tab(tabID, in: store).kind == .pinned
-                       && tab(tabID, in: store).folderID == folder, "Closing a folder-pinned Easel keeps it in its folder")
+            #expect(try tab(tabID, in: store).archivedAt == nil && (try tab(tabID, in: store)).kind == .pinned
+                       && (try tab(tabID, in: store)).folderID == folder, "Closing a folder-pinned Easel keeps it in its folder")
             store.setKind(tabID, .today)
             store.closeTab(tabID)
             #expect(try tab(tabID, in: store).archivedAt != nil, "Closing a Today Easel archives it")
             store.openEasel(id: documentID, title: "Latest board name")
-            #expect(try tab(tabID, in: store).kind == .today && tab(tabID, in: store).archivedAt == nil, "Library reopen restores the archived Easel as Today")
+            #expect(try tab(tabID, in: store).kind == .today && (try tab(tabID, in: store)).archivedAt == nil, "Library reopen restores the archived Easel as Today")
             let web = store.open("https://example.org/alongside")
             try savedSplit(store, [tabID, web], in: .init(spaceID: store.activeSpaceID, folderID: nil, section: .pinned))
             store.selectTab(tabID)
@@ -81,7 +81,7 @@ extension BrowserStoreTests {
             let reopened = try BrowserStore(directory: directory)
             #expect(reopened.state == store.state, "A split containing a native Easel and real web tab must persist without a separate window model")
             reopened.closeTab(tabID)
-            #expect(try tab(tabID, in: reopened).archivedAt == nil && tab(tabID, in: reopened).kind == .pinned, "Closing a pinned Easel pane unloads it like any pinned tab")
+            #expect(try tab(tabID, in: reopened).archivedAt == nil && (try tab(tabID, in: reopened)).kind == .pinned, "Closing a pinned Easel pane unloads it like any pinned tab")
             #expect(try reopened.openEasel(id: documentID, title: "Latest board name") == tabID
                        && (try tab(tabID, in: reopened)).kind == .pinned, "Opening it again selects its existing pinned tab")
         }
@@ -94,7 +94,7 @@ extension BrowserStoreTests {
             let firstProfile = store.activeSpace.profileID
             let firstID = store.openEasel(id: documentID, title: "Personal")!
             let firstPath = store.activeEaselsDirectory
-            #expect(firstPath == URL(fileURLWithPath: store.profilePath(for: tab(firstID, in: store)), isDirectory: true).appendingPathComponent("Easels", isDirectory: true), "Easel storage must live under the same explicit browser profile path")
+            #expect(firstPath == URL(fileURLWithPath: store.profilePath(for: (try tab(firstID, in: store))), isDirectory: true).appendingPathComponent("Easels", isDirectory: true), "Easel storage must live under the same explicit browser profile path")
             let secondSpace = store.createSpace(name: "Work")
             let secondProfile = store.createProfile(name: "Work")
             store.assignProfile(secondProfile, toSpace: secondSpace)
@@ -102,7 +102,7 @@ extension BrowserStoreTests {
             #expect(firstID != secondID && store.activeEaselsDirectory != firstPath, "Matching document UUIDs in distinct profiles must remain separate tabs and directories")
             #expect(store.activeEaselsDirectory == store.easelsDirectory(for: secondProfile), "The active Easel directory must follow the active Space's profile")
             store.updateEaselTitle(id: documentID, profileID: secondProfile, title: "Changed work board")
-            #expect(try tab(firstID, in: store).savedTitle == "Personal" && tab(secondID, in: store).savedTitle == "Changed work board", "A document's title notification must not rename another profile's same-ID document")
+            #expect(try tab(firstID, in: store).savedTitle == "Personal" && (try tab(secondID, in: store)).savedTitle == "Changed work board", "A document's title notification must not rename another profile's same-ID document")
             let before = store.state
             store.updateEaselTitle(id: documentID, profileID: firstProfile, title: "  ")
             #expect(store.state == before, "An empty native title must not erase the pinned destination name")
@@ -465,8 +465,8 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func archiveNoOpDoesNotWriteOrReset() throws {
-        try withDirectory { directory in
+    @Test static func archiveNoOpDoesNotWriteOrReset() async throws {
+        try await withDirectory { directory in
             let now = Date(timeIntervalSince1970: 1_800_000_000)
             let store = try BrowserStore(directory: directory, now: { now })
             store.archiveExpiredTabs()
@@ -479,7 +479,7 @@ extension BrowserStoreTests {
             #expect(store.archiveExpiredTabs().isEmpty, "No eligible tabs must produce no archived IDs")
             store.refreshVisibleTabs([selected])
             store.setAutoArchiveInterval(.twelveHours, for: store.activeSpace.profileID)
-            RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+            try await Task.sleep(nanoseconds: 400_000_000)
             let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
             #expect(try attributes[.modificationDate] as? Date == oldDate && (try Data(contentsOf: file)) == original, "No-op checks, identical activity timestamps and unchanged policies must not rewrite the session")
         }

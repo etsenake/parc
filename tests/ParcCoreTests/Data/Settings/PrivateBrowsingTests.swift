@@ -107,14 +107,14 @@ struct PrivateBrowsingTests {
         #expect(store.archivedTabs.isEmpty && store.state.recentlyClosedIDs.isEmpty)
     }
 
-    @Test func explicitAndDelayedSavesPreserveTheNormalSessionBytesAndState() throws {
+    @Test func explicitAndDelayedSavesPreserveTheNormalSessionBytesAndState() async throws {
         let fixture = try Fixture()
         let store = fixture.privateStore
         _ = fixture.openPrivateTab()
         try store.saveSettingsSelection(pane: "general", profileID: nil)
         try store.saveProfileName(store.activeSpace.profileID, expectedName: "Incognito", name: "Memory only")
         try store.save()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.35))
+        try await Task.sleep(nanoseconds: 400_000_000)
         #expect(try Data(contentsOf: fixture.session) == fixture.originalBytes)
         #expect(fixture.normal.state == fixture.originalState)
     }

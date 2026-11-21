@@ -41,6 +41,21 @@ enum DataFileOperations {
         lock.lock(); defer { lock.unlock() }
         return log
     }
+    private static func begin(_ directory: URL) {
+        let paths = [directory.standardizedFileURL.path, directory.resolvingSymlinksInPath().path]
+        lock.lock(); watched = paths; log = []; lock.unlock()
+    }
+    private static func finish() -> [DataFileOperation] {
+        lock.lock(); defer { lock.unlock() }
+        watched = []
+        return log
+    }
+    static func during(_ directory: URL, _ body: () async throws -> Void) async rethrows -> [DataFileOperation] {
+        if !installed { Issue.record("DataFileOperations.install() first") }
+        begin(directory)
+        do { try await body() } catch { _ = finish(); throw error }
+        return finish()
+    }
     fileprivate static func note(_ name: String, _ path: String) {
         let operation = DataFileOperation(name: name, path: path, onMainThread: Thread.isMainThread,
                                       time: ProcessInfo.processInfo.systemUptime)

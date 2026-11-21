@@ -442,7 +442,7 @@ extension BrowserStoreTests {
             #expect(publications == 1, "Bulk move publishes exactly once")
             #expect(SidebarHierarchy.children(in: destination, state: store.state) == [.tab(first), .tab(third)], "Original selection order is retained")
             #expect(store.state.selectedTabIDs == original.selectedTabIDs && store.state.history == original.history, "Bulk movement does not change page selection/history")
-            #expect(try tab(first, in: store).url == tab(first, in: BrowserStore(directory: directory)).url, "Persisted originals retain their URLs")
+            #expect(try tab(first, in: store).url == (try tab(first, in: BrowserStore(directory: directory))).url, "Persisted originals retain their URLs")
             let stale = snapshot(); store.toggleFolder(parent)
             let unchanged = store.state
             #expect(!(try store.moveSidebarItems([.tab(first), .tab(second)], to: root, before: nil, expected: stale)), "Stale hierarchy rejects the whole batch")
@@ -568,10 +568,12 @@ extension BrowserStoreTests {
         let order = [a, b, c, d]
         var selection = SidebarItemSelection()
         #expect(selection.shown(active: a) == [a], "With nothing chosen the current item is the shown selection")
-        #expect(selection.assign([b], order: order, active: a), "One requested row is accepted")
+        let hoisted1 = selection.assign([b], order: order, active: a)
+        #expect(hoisted1, "One requested row is accepted")
         #expect(selection.items.isEmpty && selection.singleItem == b && selection.focus == b && selection.anchor == b, "One requested row becomes the single selection without forming a multi-set")
         #expect(selection.shown(active: a) == [b], "A single selection is shown alone, without the current item")
-        #expect(selection.assign([b, d], order: order, active: a), "Two requested rows are accepted")
+        let hoisted2 = selection.assign([b, d], order: order, active: a)
+        #expect(hoisted2, "Two requested rows are accepted")
         #expect(selection.items == [a, b, d] && selection.singleItem == nil && selection.focus == d && selection.anchor == d, "A requested multi-set keeps the current item, in display order, focused on the newcomer")
         #expect(selection.shown(active: a) == [a, b, d], "A multi-set is shown exactly")
         #expect(selection.assign([a, b, c, d], order: order, active: a) && selection.items == [a, b, c, d] && selection.focus == c, "Adding one row grows the multi-set and focuses the added row")

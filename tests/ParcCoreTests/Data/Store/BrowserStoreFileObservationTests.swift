@@ -18,6 +18,15 @@ struct BrowserStoreFileObservationTests {
         try body(directory)
     }
 
+    static func withDirectory(_ body: (URL) async throws -> Void) async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("parc-model-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
+                                               attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try await body(directory)
+    }
+
     static func tab(_ id: UUID, in store: BrowserStore) throws -> BrowserTab {
         guard let value = store.state.tabs.first(where: { $0.id == id }) else {
             throw Failure(description: "Expected tab \(id) to exist")
@@ -98,8 +107,8 @@ struct BrowserStoreFileObservationTests {
         }
     }
 
-    @Test static func sessionSavePendingScheduleCoalesce() throws {
-        try withDirectory { directory in
+    @Test static func sessionSavePendingScheduleCoalesce() async throws {
+        try await withDirectory { directory in
             let date = Date(timeIntervalSince1970: 1_800_000_000)
             let store = try BrowserStore(directory: directory, now: { date })
             let tabID = store.open("https://example.org/coalesce")
@@ -111,30 +120,30 @@ struct BrowserStoreFileObservationTests {
             func replaces(_ calls: [DataFileOperation]) -> [DataFileOperation] {
                 calls.filter { $0.name == "createFile" && $0.fileName.hasPrefix(".session-") }
             }
-            func spin(until uptime: TimeInterval) {
-                RunLoop.main.run(until: Date(timeIntervalSinceNow: max(0, uptime - ProcessInfo.processInfo.systemUptime)))
+            func spin(until uptime: TimeInterval) async throws {
+                try await Task.sleep(nanoseconds: UInt64(max(0, uptime - ProcessInfo.processInfo.systemUptime) * 1_000_000_000))
             }
 
-            let idle = DataFileOperations.during(directory) {
+            let idle = try await DataFileOperations.during(directory) {
                 store.selectTab(tabID)
                 store.selectTab(tabID)
                 store.selectTab(tabID)
-                RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+                try await Task.sleep(nanoseconds: 400_000_000)
             }
             #expect(try replaces(idle).isEmpty && (try Data(contentsOf: file)) == bytesAfterSave, "Debounced identical snapshot does not rewrite durable session bytes")
 
             let armedAt = ProcessInfo.processInfo.systemUptime
             var lastUnchanged = armedAt
-            let edit = DataFileOperations.during(directory) {
+            let edit = try await DataFileOperations.during(directory) {
                 store.updateSettings { $0.sidebarWidth = 301 }
-                spin(until: armedAt + 0.12)
+                try await spin(until: armedAt + 0.12)
                 store.updateSettings { $0.sidebarWidth = 301 }
                 store.selectTab(tabID)
-                spin(until: armedAt + 0.22)
+                try await spin(until: armedAt + 0.22)
                 lastUnchanged = ProcessInfo.processInfo.systemUptime
                 store.selectTab(tabID)
                 store.updateSettings { $0.sidebarWidth = 301 }
-                spin(until: armedAt + 0.8)
+                try await spin(until: armedAt + 0.8)
             }
             let writes = replaces(edit)
             #expect(writes.count == 1, "Distinct debounced revision still atomically replaces once")
