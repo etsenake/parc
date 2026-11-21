@@ -194,6 +194,7 @@ extension EaselCanvasView {
         if onKeyEquivalent?(event) == true { return true }
         if performQuickCreateKey(event) { return true }
         guard event.type == .keyDown, window?.isKeyWindow == true else { return super.performKeyEquivalent(with: event) }
+        if canvasOwnsKeyFocus, performZoomKeyEquivalent(event) { return true }
         let editing = textEditorOwnsKeyFocus
         guard editing || canvasOwnsKeyFocus,
               let command = EaselChords.command(characters: event.charactersIgnoringModifiers, keyCode: event.keyCode,
