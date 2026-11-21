@@ -143,6 +143,91 @@ struct EaselBoardTests {
         expect(!session.document.isLocked, "unlocking is allowed on a locked Easel")
         let encoded = String(decoding: try JSONEncoder().encode(session.document), as: UTF8.self)
         expect(!encoded.contains("locked"), "an unlocked Easel leaves the field out of the file")
+        try historyWhileLocked()
+        try linksWhileLocked()
+        try retracting()
+    }
+
+    static func refuses(_ name: String, _ action: () throws -> Void) {
+        do {
+            try action()
+            failTest("\(name) is refused while locked")
+        } catch EaselStoreError.lockedDocument {
+        } catch {
+            failTest("\(name) fails with the lock error")
+        }
+    }
+
+    static func historyWhileLocked() throws {
+        let session = try EaselSession(inMemory: document([]), assets: [:])
+        try session.perform("Edit") { $0.title = "A" }
+        try session.perform("Lock Easel") { $0.locked = true }
+        expect(session.canUndo, "undo is on right after locking")
+        try session.undo()
+        expect(!session.document.isLocked, "undo right after locking unlocks")
+        expectEqual(session.document.title, "A", "unlocking by undo keeps earlier edits")
+        expect(session.canRedo, "redo is on after undoing the lock")
+        try session.redo()
+        expect(session.document.isLocked, "redo locks again")
+        try session.perform("Unlock Easel") { $0.locked = nil }
+        try session.perform("Lock Easel") { $0.locked = true }
+        try session.undo()
+        try session.undo()
+        expect(session.document.isLocked, "undoing an unlock locks again")
+        try session.redo()
+        expect(!session.document.isLocked, "redo re-applies an unlock")
+
+        let mixed = try EaselSession(inMemory: document([]), assets: [:])
+        try mixed.perform("Lock and rename") { $0.locked = true; $0.title = "X" }
+        expect(!mixed.canUndo, "undo is off when the step is more than the lock")
+        refuses("undo") { try mixed.undo() }
+        expectEqual(mixed.document.title, "X", "a refused undo changes nothing")
+
+        try mixed.perform("Unlock Easel") { $0.locked = nil }
+        try mixed.undo()
+        expect(mixed.document.isLocked, "undoing the unlock locks again")
+        expect(!mixed.canUndo, "undo stays off for the step before it")
+        expect(mixed.canRedo, "redo is on for the unlock")
+        try mixed.redo()
+        expect(!mixed.document.isLocked, "redo unlocks again")
+    }
+
+    static func retracting() throws {
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==") ?? Data()
+        let session = try EaselSession(inMemory: document([]), assets: [:])
+        let id = try session.importPNG(png)
+        var picture = EaselItem(kind: .image, frame: EaselRect(x: 0, y: 0, width: 20, height: 20))
+        picture.assetID = id
+        try session.perform("Send Here") { $0.items = [picture] }
+        try session.retractLastStep()
+        expect(session.document.items.isEmpty, "a retracted step leaves the Easel as it was")
+        expect(!session.canRedo, "a retracted step cannot be redone")
+        session.discardUnusedAssets([id])
+        expect(session.inMemoryAssets[id] == nil, "a retracted step's assets can be discarded")
+    }
+
+    static func linksWhileLocked() throws {
+        let old = URL(fileURLWithPath: "/Users/me/Notes/Roadmap.md")
+        let new = URL(fileURLWithPath: "/Users/me/Notes/Plan B.md")
+        let move = NoteBacklinkMove(fromKey: NoteFilePaths.key(for: old), from: old, to: new)
+        let text = "Roadmap"
+        let folder = NoteFileTestSupport.makeFolder("easel-locked-links")
+        defer { NoteFileTestSupport.remove(folder) }
+        let store = try EaselStore(directory: folder)
+        let session = try store.create(title: "Plans")
+        try session.perform("Add") { $0.items = [item(text, runs: [run(text, link: old.absoluteString, location: 0, length: 7)], url: old.absoluteString)] }
+        try session.perform("Lock Easel") { $0.locked = true }
+        try session.updateLinks { EaselBacklinkRewriter.rewrite($0, move: move) }
+        expect(session.document.isLocked, "updating links keeps the lock")
+        expectEqual(session.document.items[0].url, new.absoluteString, "a locked Easel's object links follow the note")
+        expectEqual(session.document.items[0].richText?.runs[0].attributes.link, new.absoluteString, "a locked Easel's text links follow the note")
+        expectEqual(session.document.title, "Plans", "only links change")
+        try session.undo()
+        expectEqual(session.document.items[0].url, new.absoluteString, "history follows the note too")
+        let reopened = try EaselStore(directory: folder).load(session.document.id)
+        expectEqual(reopened.document.items[0].url, new.absoluteString, "the new links are saved")
+        try session.perform("Lock Easel") { $0.locked = true }
+        refuses("a link edit") { try session.perform("Edit") { $0.items[0].url = old.absoluteString } }
     }
 
     static func styled(_ location: Int, _ length: Int, bold: Bool = false, link: String? = nil, heading: Int? = nil,

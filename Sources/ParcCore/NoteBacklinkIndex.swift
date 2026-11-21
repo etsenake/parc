@@ -730,7 +730,11 @@ final class NoteBacklinkIndex {
                   let session = try? store.load(info.id), !session.isClosed, !session.isDeleted,
                   let next = EaselBacklinkRewriter.rewrite(session.document, move: move) else { continue }
             do {
-                try session.perform("Update Links") { $0 = next }
+                if session.document.isLocked {
+                    try session.updateLinks { EaselBacklinkRewriter.rewrite($0, move: move) }
+                } else {
+                    try session.perform("Update Links") { $0 = next }
+                }
             } catch {
                 continue
             }
