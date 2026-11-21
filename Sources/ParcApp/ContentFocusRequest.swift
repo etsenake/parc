@@ -42,7 +42,7 @@ final class ContentFocusRequest {
     func start() {
         guard step() == .waiting, !finished else { return }
         let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, 0) {
-            [weak self] _, _ in MainActor.assumeIsolated { self?.step() }
+            [weak self] _, _ in MainActor.assumeIsolated { _ = self?.step() }
         }
         self.observer = observer
         CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
