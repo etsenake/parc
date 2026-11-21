@@ -126,8 +126,9 @@ extension EaselCanvasView {
                                                    tilt: EaselStamps.tilt(using: &stamps.random), side: EaselStamps.sizes[0])
         refreshStampDraft()
         stamps.timer?.invalidate()
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.growStamp() }
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            MainActor.assumeIsolated { self.growStamp() }
         }
         RunLoop.main.add(timer, forMode: .common)
         stamps.timer = timer
@@ -142,11 +143,12 @@ extension EaselCanvasView {
     }
 
     func finishStampPress(at point: NSPoint) -> Bool {
-        guard var press = stamps.press else { return false }
-        stopStampPress()
-        press.point = point
+        guard let press = stamps.press else { return false }
+        stamps.timer?.invalidate()
+        stamps.timer = nil
         let side = EaselStamps.side(heldFor: CACurrentMediaTime() - press.began)
-        placeStamp(press.face, at: point, side: side, tilt: press.tilt, id: press.id)
+        guard placeStamp(press.face, at: point, side: side, tilt: press.tilt, id: press.id) else { return false }
+        stopStampPress()
         return true
     }
 
@@ -203,12 +205,9 @@ extension EaselCanvasView {
         return true
     }
 
-    func performStampKey(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown, [UInt16(36), UInt16(76)].contains(event.keyCode),
-              event.modifierFlags.intersection([.command, .shift, .option, .control]) == [.command],
-              tool == .stamp, window?.isKeyWindow == true, canvasOwnsKeyFocus, editor == nil, start == nil,
-              !session.isClosed, !session.isDeleted, fixedCanvasSize == nil else { return false }
-        return stampSelection()
+    var stampChordReady: Bool {
+        tool == .stamp && window?.isKeyWindow == true && canvasOwnsKeyFocus && editor == nil && start == nil
+            && !session.isClosed && !session.isDeleted && fixedCanvasSize == nil
     }
 
     @discardableResult

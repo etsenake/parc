@@ -174,12 +174,12 @@ extension EaselCanvasView {
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if onKeyEquivalent?(event) == true { return true }
-        if performStampKey(event) { return true }
         guard event.type == .keyDown, window?.isKeyWindow == true else { return super.performKeyEquivalent(with: event) }
         if canvasOwnsKeyFocus, performZoomKeyEquivalent(event) { return true }
         guard EaselChords.consults(canvasFocus: canvasOwnsKeyFocus, editorFocus: textEditorOwnsKeyFocus),
               let command = EaselChords.command(characters: event.charactersIgnoringModifiers, keyCode: event.keyCode,
-                                                modifiers: easelChordModifiers(event.modifierFlags)),
+                                                modifiers: easelChordModifiers(event.modifierFlags),
+                                                  stampArmed: tool == .stamp),
               performChord(command) else { return super.performKeyEquivalent(with: event) }
         return true
     }
@@ -202,6 +202,9 @@ extension EaselCanvasView {
         case .alignText(let alignment):
             if isEditingTableCell || (editor == nil && selectedTable != nil) { return setTableCellsAlignment(Self.textAlignment(alignment)) }
             return alignText(alignment, editing: textEditorOwnsKeyFocus)
+        case .stampSelection:
+            if stampChordReady, stampSelection() { return true }
+            return performMindMapChord(.quickCreate) || performQuickCreate()
         case .quickCreate: return performMindMapChord(command) || performQuickCreate()
         case .mindMapSibling: return performMindMapChord(command)
         case .focusSelectionToolbar: return selectionToolbar?.focusFromKeyboard() == true

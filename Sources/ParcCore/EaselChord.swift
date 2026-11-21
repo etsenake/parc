@@ -59,6 +59,7 @@ enum EaselChordCommand: Hashable {
     case alignText(EaselTextStyle.Alignment)
     case focusSelectionToolbar
     case quickCreate
+    case stampSelection
     case exportSelection
     case mindMapSibling
 }
@@ -91,6 +92,11 @@ enum EaselChords {
 
     static func command(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers) -> EaselChordCommand? {
         EaselChord(characters: characters, keyCode: keyCode, modifiers: modifiers).flatMap(command(for:))
+    }
+
+    static func command(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers, stampArmed: Bool) -> EaselChordCommand? {
+        let found = command(characters: characters, keyCode: keyCode, modifiers: modifiers)
+        return stampArmed && found == .quickCreate ? .stampSelection : found
     }
 
     static func bareLayerMove(characters: String?, keyCode: UInt16) -> EaselLayerMove? {

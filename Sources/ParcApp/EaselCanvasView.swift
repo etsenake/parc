@@ -1622,7 +1622,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             stopVideoPlayback(); finishImageCrop(save: true); stopImagePlayback()
             if newWindow != nil { DispatchQueue.main.async { [weak self] in self?.refreshImagePlayback() } }
         }
-        if newWindow !== window { selectionToolbar?.detach() }
+        if newWindow !== window { selectionToolbar?.detach(); dismissStampPanels(animated: false) }
         if let newWindow {
             NotificationCenter.default.addObserver(self, selector: #selector(ownerResignedKey),
                                                    name: NSWindow.didResignKeyNotification, object: newWindow)
@@ -1631,7 +1631,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         super.viewWillMove(toWindow: newWindow)
     }
-    @objc private func ownerResignedKey(_ notification: Notification) { hoveredObjectID = nil; menuGeneration &+= 1; motion.cancel(); cancelPointerInteraction(); releaseTemporaryHand() }
+    @objc private func ownerResignedKey(_ notification: Notification) { dismissStampPanels(animated: false); hoveredObjectID = nil; menuGeneration &+= 1; motion.cancel(); cancelPointerInteraction(); releaseTemporaryHand() }
     override func resignFirstResponder() -> Bool {
         menuGeneration &+= 1; cancelPointerInteraction(); finishImageCrop(save: true); releaseTemporaryHand(); return super.resignFirstResponder()
     }

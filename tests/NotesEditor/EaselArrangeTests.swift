@@ -335,6 +335,12 @@ struct EaselArrangeTests {
         expect(chord("]", 30, .command) == .layer(.forward) && chord("[", 33, .command) == .layer(.backward), "⌘] and ⌘[ step through layers")
         expect(chord("ж", 30, .command) == .layer(.forward), "Layer chords follow the physical key on other layouts")
         expect(chord("", 36, .command) == .quickCreate && chord("", 76, .command) == .quickCreate, "⌘Return quick creates from either Return key")
+        func armed(_ keyCode: UInt16, _ modifiers: EaselKeyModifiers) -> EaselChordCommand? {
+            EaselChords.command(characters: "", keyCode: keyCode, modifiers: modifiers, stampArmed: true)
+        }
+        expect(armed(36, .command) == .stampSelection && armed(76, .command) == .stampSelection, "⌘Return stamps the selection while the stamp tool is armed")
+        expect(EaselChords.command(characters: "", keyCode: 36, modifiers: .command, stampArmed: false) == .quickCreate, "⌘Return keeps quick create without the stamp tool")
+        expect(armed(36, [.command, .shift]) == .mindMapSibling && armed(2, .command) == .duplicate, "Armed stamps only claim ⌘Return")
         expect(chord("E", 14, [.command, .shift]) == .exportSelection, "⇧⌘E exports the selection")
         expect(chord("", 36, [.command, .shift]) == .mindMapSibling && chord("", 76, [.command, .shift]) == .mindMapSibling,
                "⇧⌘Return adds a mind map sibling from either Return key")
