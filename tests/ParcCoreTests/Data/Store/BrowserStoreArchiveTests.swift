@@ -14,15 +14,6 @@ extension BrowserStoreTests {
                    && InternalPage.sidebarFallbackSymbol(urlString: "https://example.org") == "globe", "Easel and Note rows keep distinct still glyphs; web rows keep the globe fallback")
         #expect(CommandBarCommandPresentation.symbol(forCommandID: "createEasel:") == InternalPage.easelFallbackSymbol
                    && CommandBarCommandPresentation.symbol(forCommandID: "createNote:") == InternalPage.noteFallbackSymbol, "New Easel and New Note commands show the same Library marks as their rows")
-        for address in ["parc://easel/not-a-uuid", "parc://easel/" + id.uuidString + "/more",
-                        canonical + "?profile=other", canonical + "#fragment", "parc://user@easel/" + id.uuidString,
-                        "parc://easel:88/" + id.uuidString, "parc://other/" + id.uuidString,
-                        "https://easel/" + id.uuidString] {
-            #expect(InternalPage(urlString: address) == nil, "Internal document routes must reject unsupported components")
-        }
-        for address in [canonical, "PARC://easel/" + id.uuidString, "parc://easel/not-a-uuid"] {
-            #expect(NavigationInput.resolve(address) == nil, "General navigation must never send an internal Parc address to a web engine or search provider")
-        }
         try withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let tabID = store.open("https://example.org")
@@ -30,6 +21,29 @@ extension BrowserStoreTests {
             store.navigate(tabID, input: canonical)
             #expect(store.state == before, "A pasted internal route must not mutate a web tab through ordinary navigation")
         }
+    }
+
+    @Test(arguments: [
+        "parc://easel/not-a-uuid",
+        "parc://easel/062e60fe-32d4-4d1b-8568-088b9d608bd3/more",
+        "parc://easel/062e60fe-32d4-4d1b-8568-088b9d608bd3?profile=other",
+        "parc://easel/062e60fe-32d4-4d1b-8568-088b9d608bd3#fragment",
+        "parc://user@easel/062e60fe-32d4-4d1b-8568-088b9d608bd3",
+        "parc://easel:88/062e60fe-32d4-4d1b-8568-088b9d608bd3",
+        "parc://other/062e60fe-32d4-4d1b-8568-088b9d608bd3",
+        "https://easel/062e60fe-32d4-4d1b-8568-088b9d608bd3",
+    ])
+    nonisolated static func invalidDocumentAddressesHaveNoInternalDestination(_ address: String) {
+        #expect(InternalPage(urlString: address) == nil)
+    }
+
+    @Test(arguments: [
+        "parc://easel/062e60fe-32d4-4d1b-8568-088b9d608bd3",
+        "PARC://easel/062e60fe-32d4-4d1b-8568-088b9d608bd3",
+        "parc://easel/not-a-uuid",
+    ])
+    nonisolated static func browserNavigationDoesNotOpenPrivateDocumentAddresses(_ address: String) {
+        #expect(NavigationInput.resolve(address) == nil)
     }
 
     @Test static func easelTabsAndSavedTitle() throws {
@@ -156,14 +170,22 @@ extension BrowserStoreTests {
             try reopened.save()
             let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
             #expect((saved["settings"] as! [String: Any])["autoArchiveHours"] == nil, "New saves must remove the redundant global policy field")
-            for interval in [AutoArchiveInterval.never, .oneHour, .sixHours] {
-                reopened.setAutoArchiveInterval(interval, for: profile)
-                try reopened.save()
-                let again = try BrowserStore(directory: directory)
-                #expect(again.autoArchiveInterval(for: profile) == interval, "Older supported Parc values must round-trip without silently changing user preference")
-            }
             #expect(AutoArchiveInterval.settingsChoices == [.twelveHours, .twentyFourHours, .sevenDays, .thirtyDays], "Normal Settings choices must match the archive menu, excluding hidden and debug cases")
             #expect(AutoArchiveInterval.never.seconds == nil && AutoArchiveInterval.twentyFourHours.seconds == 86400, "Never must be no threshold, and a day must be exactly 86400 seconds")
+        }
+    }
+
+    @Test(arguments: [AutoArchiveInterval.never, .oneHour, .sixHours])
+    static func aSupportedLegacyArchiveIntervalSurvivesReload(_ interval: AutoArchiveInterval) throws {
+        try withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let profile = store.activeSpace.profileID
+            store.setAutoArchiveInterval(interval, for: profile)
+            try store.save()
+
+            let reopened = try BrowserStore(directory: directory)
+
+            #expect(reopened.autoArchiveInterval(for: profile) == interval)
         }
     }
 

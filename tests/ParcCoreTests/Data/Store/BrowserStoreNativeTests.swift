@@ -726,8 +726,7 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func markdownLinkLabels() throws {
-        let cases: [(String, String)] = [
+    @Test(arguments: [
             ("Vec<T>", #"Vec\<T>"#),
             ("<b>bold</b> & <https://example.com>", #"\<b>bold\</b> & \<https://example.com>"#),
             ("snake_case_name.py", "snake_case_name.py"),
@@ -744,10 +743,12 @@ extension BrowserStoreTests {
             ("naïve_test 日本_語 😀_x", #"naïve_test 日本_語 😀\_x"#),
             ("a\u{00A0}*\u{00A0}b", "a\u{00A0}*\u{00A0}b"),
             ("", ""),
-        ]
-        for (title, label) in cases {
-            #expect(FolderLinks.markdownLabel(title) == label, "Markdown label for \(title.debugDescription) is \(label.debugDescription), got \(FolderLinks.markdownLabel(title).debugDescription)")
-        }
+    ])
+    nonisolated static func markdownLabelsEscapeOnlySpecialText(_ title: String, _ label: String) {
+        #expect(FolderLinks.markdownLabel(title) == label)
+    }
+
+    @Test nonisolated static func copiedMarkdownLabelsUseTheAddressForBlankTitles() {
         let links = [FolderLinks.Link(tabID: UUID(), title: "Vec<T> & `Option<_>`", url: "https://example.com/a_b"),
                      FolderLinks.Link(tabID: UUID(), title: "", url: "https://example.com/_next/a_b?x=1&y=2")]
         #expect(FolderLinks.text(for: links, format: .markdown) == #"[Vec\<T> & \`Option\<\_>\`](<https://example.com/a_b>)"# + "\n"
