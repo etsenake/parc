@@ -5,6 +5,8 @@ Sources/ParcApp/EaselAppearance.swift
 Sources/ParcApp/PointingHand.swift
 Sources/ParcApp/PointerCover.swift
 Sources/ParcApp/EaselTextStyle.swift
+Sources/ParcApp/NoteClipboardReading.swift
+Sources/ParcApp/EaselClipboardText.swift
 Sources/ParcApp/TextFormatMenu.swift
 Sources/ParcApp/EaselRichTextCodec.swift
 Sources/ParcApp/EaselTextHighlight.swift

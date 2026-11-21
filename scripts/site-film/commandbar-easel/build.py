@@ -31,7 +31,7 @@ sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [app / name for 
 sources += [root / "tests/KeyboardNavigation/NativeShortcutStub.swift", root / "tests/SpaceManager/NativeHostStub.swift",
             root / "tests/Support/TestFailure.swift"]
 sources += [app / name for name in ["CommandResultRowView.swift", "CommandResultCell.swift", "CommandBarAppearance.swift",
-    "PopoverBackgroundView.swift", "LocalContentDrop.swift", "NoteTheme.swift", "EaselAppearance.swift", "EaselTextStyle.swift", "TextFormatMenu.swift",
+    "PopoverBackgroundView.swift", "LocalContentDrop.swift", "NoteTheme.swift", "EaselAppearance.swift", "EaselTextStyle.swift", "NoteClipboardReading.swift", "EaselClipboardText.swift", "TextFormatMenu.swift",
     "EaselRichTextCodec.swift", "EaselTextHighlight.swift", "NoteFormatShortcut.swift", "EaselTextAttachment.swift", "EaselParagraphEditing.swift", "EaselMarkdownEditing.swift",
     "WebpageEditCommands.swift", "EaselMotion.swift", "EaselDocumentExport.swift", "EaselTableExport.swift", "EaselDocumentExport+Connectors.swift", "EaselStickyText.swift", "EaselTooltip.swift", 
     "EaselShapePicker.swift", "NoteAnimation.swift", "NoteFloatingPanel.swift", "NoteControls.swift", "NoteMathFont.swift", "NoteMathLayout.swift", "NoteMathRenderer.swift", "NoteEquationArtwork.swift", "NoteCodeFont.swift", "NoteCustomEmojiImages.swift", "DocumentDefaultIcon.swift", "LibraryArtwork.swift", "EaselStampArtwork.swift", "SidebarIconCatalog.swift", "MenuItemImage.swift", "ParcBrandMark.swift", "EaselImageExport.swift"] if name not in names]

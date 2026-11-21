@@ -18,6 +18,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/PointerCover.swift" \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
+  "$repo_root/Sources/ParcApp/NoteClipboardReading.swift" \
+  "$repo_root/Sources/ParcApp/EaselClipboardText.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
   "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \

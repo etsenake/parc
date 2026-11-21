@@ -273,8 +273,10 @@ struct EaselRoundTripTests {
     }
 
     @MainActor static func noteLinks() {
-        expect(EaselRichText.noteLinkExtensions == NoteFileKind.markdownExtensions.union(NoteFileKind.plainTextExtensions),
-               "Easel note links accept exactly the file types Notes opens")
+        for fileExtension in NoteFileKind.markdownExtensions.union(NoteFileKind.plainTextExtensions) {
+            expect(EaselRichText.validLink("file:///Users/me/Notes/a.\(fileExtension)"), "Easel note links accept the .\(fileExtension) files Notes opens")
+        }
+        expect(!EaselRichText.validLink("file:///Users/me/Notes/a.png"), "Easel note links refuse file types Notes doesn't open")
         expect(EaselRichText.validLink("file:///Users/me/Parc%20Notes/Plan.md"), "A link to a note file is a valid text link")
         expect(EaselRichText.validLink("file:///Users/me/Notes/ideas.TXT#top"), "Note links keep fragments and any extension case")
         for refused in ["file:///etc/passwd", "file:///Applications/Parc.app", "file://server/share/a.md", "file:relative/a.md", "file:///tmp/a.md/.."] {
