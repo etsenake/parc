@@ -1128,7 +1128,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard tool == .select, editor == nil, marqueeRect == nil, selectedConnector == nil, !isCroppingImage else { return nil }
         return EaselGeometryEdit.bounds(of: items.filter { displayedSelection.contains($0.id) && !$0.isLocked })
     }
-    private func resizeHandle(at point: NSPoint) -> EaselResizeHandle? {
+    func resizeHandle(at point: NSPoint) -> EaselResizeHandle? {
         guard let chrome = selectionChrome else { return nil }
         let selected = items.filter { displayedSelection.contains($0.id) }
         let local = chrome.local(EaselPoint(x: point.x, y: point.y))
@@ -1821,6 +1821,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if offerUnlock(at: point) { cancelPointerInteraction(); return }
         if mindMapControlPress(at: point) { cancelPointerInteraction(); return }
         if checklistPress(at: point) { cancelPointerInteraction(); return }
+        if atomPress(at: point, event: event) { cancelPointerInteraction(); return }
         if beginConnectorGesture(at: point, event: event) { return }
         if let handle = resizeHandle(at: point) {
             if event.clickCount == 2, EaselTextSizing.setsTextWidth(handle), restoreTextAutoWidth() { cancelPointerInteraction(); return }
@@ -2086,6 +2087,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         addTableCursorRects()
         addSectionCursorRects()
         addChecklistCursorRects()
+        addAtomCursorRects()
         if !drawing, onOpenURL != nil {
             for item in items where EaselObjectLink.hasLink(item) {
                 let r = EaselObjectLink.badgeRect(for: EaselRotation.bounds(of: item), scale: canvasScale)

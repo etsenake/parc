@@ -80,6 +80,12 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
+  "$repo_root/tests/EaselAtomClickTests.swift" \
+  -o "$scratch/easel-atom-click"
+"$scratch/easel-atom-click"
+
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
+  "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/tests/EaselChecklistTests.swift" \
   -o "$scratch/easel-checklist"
 "$scratch/easel-checklist"
