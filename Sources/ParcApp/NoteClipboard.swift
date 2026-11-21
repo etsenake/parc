@@ -234,6 +234,16 @@ enum NoteClipboard {
         "excalidraw.com", "tiktok.com", "instagram.com", "music.apple.com", "podcasts.apple.com",
     ]
 
+    static func mediaKind(forContentType contentType: String?) -> NoteBlockKind? {
+        guard let type = contentType?.split(separator: ";").first?.trimmingCharacters(in: .whitespaces).lowercased(), !type.isEmpty else { return nil }
+        if type == "application/pdf" { return .pdf }
+        if type == "image/svg+xml" { return .image }
+        if type.hasPrefix("image/") { return .image }
+        if type.hasPrefix("video/") { return .video }
+        if type.hasPrefix("audio/") { return .audio }
+        return nil
+    }
+
     static func playsAsEmbed(_ url: URL, kind: NoteBlockKind) -> Bool {
         (kind == .video || kind == .audio) && isEmbeddable(url)
     }
@@ -777,5 +787,43 @@ enum NoteOfflineHTML {
             }
         }
         return mutable as String
+    }
+}
+
+@MainActor
+enum NoteLinkKindProbe {
+    private static var known: [URL: NoteBlockKind?] = [:]
+    private static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 6
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        return URLSession(configuration: configuration)
+    }()
+
+    static func kind(of url: URL, completion: @escaping (NoteBlockKind?) -> Void) {
+        if let cached = known[url] { completion(cached); return }
+        var head = URLRequest(url: url)
+        head.httpMethod = "HEAD"
+        request(head) { kind, answered in
+            if answered { finish(url, kind, completion); return }
+            var ranged = URLRequest(url: url)
+            ranged.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+            request(ranged) { kind, _ in finish(url, kind, completion) }
+        }
+    }
+
+    private static func request(_ request: URLRequest, completion: @escaping @MainActor (NoteBlockKind?, Bool) -> Void) {
+        session.dataTask(with: request) { _, response, _ in
+            let http = response as? HTTPURLResponse
+            let answered = http.map { (200..<300).contains($0.statusCode) } ?? false
+            let kind = answered ? NoteClipboard.mediaKind(forContentType: http?.value(forHTTPHeaderField: "Content-Type")) : nil
+            DispatchQueue.main.async { MainActor.assumeIsolated { completion(kind, answered) } }
+        }.resume()
+    }
+
+    private static func finish(_ url: URL, _ kind: NoteBlockKind?, _ completion: (NoteBlockKind?) -> Void) {
+        known[url] = kind
+        completion(kind)
     }
 }

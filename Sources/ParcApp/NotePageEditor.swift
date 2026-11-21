@@ -1156,11 +1156,18 @@ final class NotePageEditor {
         let start = host.textView.caretRect(at: link.position.offset)
         let anchor = canvas.overlayView.convert(NSRect(x: start.minX, y: caret.minY, width: max(1, caret.maxX - start.minX), height: caret.height),
                                                 from: host.textView)
-        let menu = NotePasteLinkMenu(link: link, embeddable: NoteClipboard.isEmbeddable(link.url), media: NoteClipboard.linkedMediaKind(link.url)) { [weak self] choice in
+        let embeddable = NoteClipboard.isEmbeddable(link.url)
+        let media = NoteClipboard.linkedMediaKind(link.url)
+        let menu = NotePasteLinkMenu(link: link, embeddable: embeddable, media: media) { [weak self] choice in
             self?.choosePasteOption(choice)
         }
         pasteMenu = menu
         menu.present(in: canvas.overlayView, anchor: anchor)
+        guard media == nil, !embeddable, let scheme = link.url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
+        NoteLinkKindProbe.kind(of: link.url) { [weak self, weak menu] kind in
+            guard let self, let menu, self.pasteMenu === menu, let kind else { return }
+            menu.offer(kind)
+        }
     }
 
     private func handlePasteMenuKey(_ event: NSEvent, menu: NotePasteLinkMenu) -> Bool {
@@ -1397,22 +1404,7 @@ final class NotePasteLinkMenu {
             .init(id: Choice.mention.rawValue, title: "Mention", subtitle: "A tidy inline chip", icon: .symbol("at"), section: "Paste as"),
             .init(id: Choice.bookmark.rawValue, title: "Bookmark", subtitle: "A card with a preview", icon: .symbol("bookmark"), section: "Paste as"),
         ]
-        switch media {
-        case .image?:
-            items.insert(.init(id: Choice.image.rawValue, title: "Image", subtitle: "Show the picture in the note",
-                               icon: .symbol("photo"), section: "Paste as"), at: 1)
-        case .video?:
-            items.insert(.init(id: Choice.video.rawValue, title: "Video", subtitle: "Play it right in the note",
-                               icon: .symbol("play.rectangle"), section: "Paste as"), at: 1)
-        case .audio?:
-            items.insert(.init(id: Choice.audio.rawValue, title: "Audio", subtitle: "Play it right in the note",
-                               icon: .symbol("waveform"), section: "Paste as"), at: 1)
-        case .pdf?:
-            items.append(.init(id: Choice.pdf.rawValue, title: "PDF", subtitle: "Read it right in the note",
-                               icon: .symbol("doc.richtext"), section: "Paste as"))
-        default:
-            break
-        }
+        if let media { Self.insert(media, into: &items) }
         if NoteEaselAddress.id(from: link.url) != nil {
             items.removeAll { $0.id == Choice.bookmark.rawValue }
             items.append(.init(id: Choice.easel.rawValue, title: "Easel", subtitle: "Show the Easel right in the note",
@@ -1436,6 +1428,29 @@ final class NotePasteLinkMenu {
 
     func present(in host: NSView, anchor: NSRect) {
         panel.present(in: host, anchor: anchor, edge: .below, animated: true)
+    }
+
+    func offer(_ kind: NoteBlockKind) {
+        var items = list.items
+        let highlighted = list.highlightedIndex.flatMap { items.indices.contains($0) ? items[$0].id : nil }
+        guard Self.insert(kind, into: &items) else { return }
+        list.items = items
+        if let highlighted, let index = items.firstIndex(where: { $0.id == highlighted }) { list.highlightedIndex = index }
+    }
+
+    @discardableResult
+    private static func insert(_ kind: NoteBlockKind, into items: inout [NoteMenuList.Item]) -> Bool {
+        let row: NoteMenuList.Item
+        switch kind {
+        case .image: row = .init(id: Choice.image.rawValue, title: "Image", subtitle: "Show the picture in the note", icon: .symbol("photo"), section: "Paste as")
+        case .video: row = .init(id: Choice.video.rawValue, title: "Video", subtitle: "Play it right in the note", icon: .symbol("play.rectangle"), section: "Paste as")
+        case .audio: row = .init(id: Choice.audio.rawValue, title: "Audio", subtitle: "Play it right in the note", icon: .symbol("waveform"), section: "Paste as")
+        case .pdf: row = .init(id: Choice.pdf.rawValue, title: "PDF", subtitle: "Read it right in the note", icon: .symbol("doc.richtext"), section: "Paste as")
+        default: return false
+        }
+        guard !items.contains(where: { $0.id == row.id }) else { return false }
+        if kind == .pdf { items.append(row) } else { items.insert(row, at: min(1, items.count)) }
+        return true
     }
 
     func dismiss() {

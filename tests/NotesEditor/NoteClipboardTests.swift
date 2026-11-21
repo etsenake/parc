@@ -556,6 +556,12 @@ struct NoteClipboardTests {
         expect(NoteClipboard.playsAsEmbed(video, kind: .video), "a YouTube page given to a video block plays as an embed")
         expect(!NoteClipboard.playsAsEmbed(URL(string: "https://example.com/clip.mp4")!, kind: .video), "a real video file stays a video")
         expect(!NoteClipboard.playsAsEmbed(video, kind: .image), "only video and audio blocks turn into embeds")
+        expect(NoteClipboard.mediaKind(forContentType: "image/jpeg") == .image, "a server saying image/jpeg means an image")
+        expect(NoteClipboard.mediaKind(forContentType: "video/mp4; codecs=avc1") == .video, "content-type parameters are ignored")
+        expect(NoteClipboard.mediaKind(forContentType: "Audio/MPEG") == .audio, "content types are case-insensitive")
+        expect(NoteClipboard.mediaKind(forContentType: "application/pdf") == .pdf, "PDFs are recognised by type")
+        expect(NoteClipboard.mediaKind(forContentType: "text/html; charset=utf-8") == nil && NoteClipboard.mediaKind(forContentType: nil) == nil,
+               "web pages and missing types offer nothing extra")
         reading = NoteClipboard.Reading(html: "<span style=\"color: blue\">https://example.com/a.mp3</span>", string: "https://example.com/a.mp3")
         expect(NoteClipboard.choose(reading, plainOnly: false, canReadHTML: true) == .url, "a URL copied as rich text from another app is still a link")
         reading = NoteClipboard.Reading(string: "# Notes\n- one")
