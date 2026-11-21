@@ -16,7 +16,7 @@ import sys
 sys.path.insert(0, str(Path(".") / "tests/Support"))
 from window_sources import browser_window_controller_source
 controller = browser_window_controller_source(Path(".") / "Sources/ParcApp")
-assert "InternalPage.sidebarFallbackSymbol(urlString: tab.url)" in controller
+assert "DocumentDefaultIcon.fallback(named: page.sidebarFallbackSymbol)" in controller
 assert 'systemSymbolName: "paintpalette"' not in controller
 print("sidebar document glyphs use title tint and distinct symbols")
 PY
