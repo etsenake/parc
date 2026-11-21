@@ -730,6 +730,11 @@ struct EaselTextStyleTests {
                "Inline code is monospaced on a soft fill")
         expect((view.typingAttributes[.font] as? NSFont)?.fontDescriptor.symbolicTraits.contains(.monoSpace) != true, "Typing after code is plain again")
         expect(EaselTextAppearance.isInlineCode(code) && !EaselTextAppearance.isInlineCode(view.typingAttributes), "Inline code is recognised, plain text isn't")
+        var marked = code
+        marked[.backgroundColor] = EaselTextHighlight.color(.yellow)
+        expect(EaselTextAppearance.isInlineCode(marked), "Highlighted inline code is still code")
+        marked[.font] = EaselTextAppearance.font(.init())
+        expect(!EaselTextAppearance.isInlineCode(marked), "A highlight on plain text isn't code")
         load(""); type("> ")
         expect(view.string == "\t\u{258E}\t" && view.paragraphKind() == .quote, "A typed > starts a quote")
         type("Quoted"); grouped { view.insertNewline(nil) }
