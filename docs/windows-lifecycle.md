@@ -114,7 +114,7 @@ are left alone: they are the person's own data, perhaps from a newer Parc, and
 this version can't safely rewrite them. `tests/ParcCoreTests/Data/Store/SessionBackupTests.swift` covers
 the schedule, cadence, validation, rescue choice, write order after a clock fix,
 the kept file and pruning, including range clears with a clock that was set
-behind. `tests/SessionBackupTests.swift` covers the rescue wording, the
+behind. `SidebarRescueTests` (`tests/ParcTests/Data`) cover the rescue wording, the
 missing-file offer and the starts that never ask.
 
 ## Dock, reopen and closing windows
