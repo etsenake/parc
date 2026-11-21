@@ -70,6 +70,17 @@ struct EaselBoardTests {
         expectEqual(EaselBacklinkScanner.outgoing(of: object).count, 1, "object links are found")
         let web = item("Web", runs: [run("Web", link: "https://example.com", location: 0, length: 3)])
         expect(EaselBacklinkScanner.outgoing(of: web).isEmpty, "web links are not backlinks")
+        let note = URL(fileURLWithPath: "/Users/me/Notes/Roadmap.md")
+        let mentionText = "See \u{FFFC} today"
+        var mention = run(mentionText, link: nil, location: 4, length: 1)
+        mention.attributes.inline = .note(note, title: "Roadmap")
+        let mentioned = item(mentionText, runs: [run(mentionText, link: nil, location: 0, length: 4), mention,
+                                                 run(mentionText, link: nil, location: 5, length: 6)])
+        let mentions = EaselBacklinkScanner.outgoing(of: mentioned)
+        expectEqual(mentions.count, 1, "note mentions count as backlinks")
+        expectEqual(mentions.first?.kind, .mention, "they count as mentions")
+        expectEqual(mentions.first?.target, NoteBacklinkScanner.targetKey(note.absoluteString, from: URL(fileURLWithPath: "/")), "mentions point at the note")
+        expectEqual(mentions.first?.snippet.text, "See Roadmap today", "the snippet spells the mention out")
     }
 
     static func rewriting() {
@@ -84,6 +95,12 @@ struct EaselBoardTests {
         expectEqual(next.items[0].text, text, "only the link changes")
         let other = document([item(text, runs: [run(text, link: "file:///Users/me/Notes/Other.md", location: 0, length: 7)])])
         expect(EaselBacklinkRewriter.rewrite(other, move: move) == nil, "other links are left alone")
+        var mention = run("\u{FFFC}", link: nil, location: 0, length: 1)
+        mention.attributes.inline = .note(old, title: "Roadmap")
+        guard let moved = EaselBacklinkRewriter.rewrite(document([item("\u{FFFC}", runs: [mention])]), move: move),
+              let inline = moved.items[0].richText?.runs[0].attributes.inline else { failTest("mentions of the moved note are rewritten") }
+        expectEqual(inline.noteURL?.path, new.path, "mentions follow the note")
+        expectEqual(inline.title, "Plan B", "mentions take the note's new name")
     }
 
     static func indexing() throws {

@@ -35,7 +35,18 @@ enum EaselBacklinkScanner {
                                            snippet: .around(current.start..<current.end, in: item.text), anchor: anchor))
             open = nil
         }
+        var readable: (text: String, starts: [Int], ends: [Int])?
         for run in rich.runs {
+            if let inline = run.attributes.inline, inline.kind == .note, let target = inline.target,
+               let key = NoteBacklinkScanner.targetKey(target, from: root) {
+                close()
+                let map = readable ?? EaselRichText.readableMap(item.text, rich: rich)
+                readable = map
+                let spots = map.starts.indices.filter { map.starts[$0] == run.location }
+                let span = (spots.first ?? 0)..<((spots.last ?? -1) + 1)
+                result.append(NoteOutgoingLink(target: key, kind: .mention, snippet: .around(span, in: map.text), anchor: anchor))
+                continue
+            }
             guard let link = run.attributes.link, let key = NoteBacklinkScanner.targetKey(link, from: root) else {
                 close()
                 continue
@@ -74,6 +85,16 @@ enum EaselBacklinkRewriter {
             guard var rich = next.items[index].richText else { continue }
             var touched = false
             for run in rich.runs.indices {
+                if var inline = rich.runs[run].attributes.inline, inline.kind == .note, let target = inline.target,
+                   let replaced = replacement(for: target, move: move), EaselRichText.Inline.validTarget(replaced) {
+                    if inline.title == move.from.deletingPathExtension().lastPathComponent {
+                        inline.title = move.to.deletingPathExtension().lastPathComponent
+                    }
+                    inline.target = replaced
+                    rich.runs[run].attributes.inline = inline
+                    touched = true
+                    continue
+                }
                 guard let link = rich.runs[run].attributes.link, let replaced = replacement(for: link, move: move),
                       EaselRichText.isInternalLink(replaced) else { continue }
                 rich.runs[run].attributes.link = replaced
