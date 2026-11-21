@@ -638,7 +638,9 @@ struct EaselStoreTests {
             expectThrows("immutable ID") { try session.perform("Bad") { $0.id = UUID() } }
             expectThrows("immutable creation time") { try session.perform("Bad") { $0.createdAt = .distantPast } }
             expectThrows("version mutation") { try session.perform("Bad") { $0.version = 20 } }
-            expectThrows("mutation throwing") { try session.perform("Bad") { $0.title = "Uncommitted"; throw EaselStoreError.tooLarge } }
+            expectThrows("mutation throwing") { try session.perform("Bad") { $0.title = "Uncommitted"; throw EaselStoreError.documentTooLarge } }
+            expect(EaselStoreError.assetImageTooLarge.errorDescription == "That picture is a bit big for an Easel. Pictures up to 30 MB fit.", "Picture limit wording")
+            expect(EaselStoreError.documentTooLarge.errorDescription == "This Easel is a bit big to save. Easels up to 8 MB fit.", "Easel limit wording")
             expect(session.document == original, "Failed transactions never publish")
             expect(!session.canUndo && !session.canRedo, "Failed transactions add no history")
             expect(try! Data(contentsOf: file(directory, original.id)) == bytes, "Failed validation preserves original file exactly")

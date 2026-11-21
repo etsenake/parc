@@ -63,7 +63,7 @@ enum EaselMediaImportPlan {
 
     static func tooLargeError(for source: Source) -> EaselStoreError {
         switch source {
-        case .image: return .tooLarge
+        case .image: return .assetImageTooLarge
         case .video: return .videoTooLarge
         case .audio: return .audioTooLarge
         case .pdf: return .pdfTooLarge

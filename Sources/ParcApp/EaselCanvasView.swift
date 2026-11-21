@@ -244,14 +244,14 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     func renderImage(pixelSize: NSSize, backingScale: CGFloat, colorSpace: CGColorSpace? = nil) throws -> CGImage {
         guard finishImageEditing() else { throw EaselStoreError.invalidDocument("finish the current text edit") }
         guard pixelSize.width.isFinite, pixelSize.height.isFinite, pixelSize.width > 0, pixelSize.height > 0,
-              pixelSize.width <= 32768, pixelSize.height <= 32768 else { throw EaselStoreError.tooLarge }
+              pixelSize.width <= 32768, pixelSize.height <= 32768 else { throw EaselStoreError.exportTooLarge }
         let width = Int(pixelSize.width), height = Int(pixelSize.height)
         let outputSpace = colorSpace?.model == .rgb ? colorSpace! : CGColorSpace(name: CGColorSpace.sRGB)!
         guard width > 0, height > 0, width <= 32768, height <= 32768,
               width * height <= 128_000_000, backingScale.isFinite, backingScale > 0,
               let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
                 bytesPerRow: 0, space: outputSpace,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw EaselStoreError.tooLarge }
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw EaselStoreError.exportTooLarge }
         context.translateBy(x: 0, y: CGFloat(height)); context.scaleBy(x: backingScale, y: -backingScale)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)

@@ -88,7 +88,7 @@ final class EaselHistory {
         let url = folder(for: id).appendingPathComponent(version.id)
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
         guard values.isRegularFile == true, values.isSymbolicLink != true else { throw EaselStoreError.unsafePath }
-        guard (values.fileSize ?? Int.max) <= Self.maximumDocumentBytes else { throw EaselStoreError.tooLarge }
+        guard (values.fileSize ?? Int.max) <= Self.maximumDocumentBytes else { throw EaselStoreError.documentTooLarge }
         let document = try JSONDecoder().decode(EaselDocument.self, from: Data(contentsOf: url))
         guard document.id == id else { throw EaselStoreError.invalidDocument("the version belongs to another Easel") }
         return EaselStore.repairingStackOrder(EaselStore.repairingDuplicateIDs(document))

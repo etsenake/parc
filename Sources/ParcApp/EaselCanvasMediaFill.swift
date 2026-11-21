@@ -210,7 +210,7 @@ extension EaselCanvasView {
     }
 
     static func stagedFile(_ data: Data, fileExtension: String, fileName: String?) throws -> URL {
-        guard data.count <= EaselStore.maximumAssetBytes else { throw EaselStoreError.tooLarge }
+        guard data.count <= EaselStore.maximumAssetBytes else { throw EaselStoreError.fileTooLarge }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Parc Easel Media", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

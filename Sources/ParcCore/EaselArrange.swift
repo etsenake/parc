@@ -103,12 +103,12 @@ struct EaselClipboardPayload: Codable, Equatable {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         let data = try encoder.encode(self)
-        guard data.count <= Self.maximumBytes else { throw EaselStoreError.tooLarge }
+        guard data.count <= Self.maximumBytes else { throw EaselStoreError.objectsTooLarge }
         return data
     }
 
     static func decoded(_ data: Data) throws -> EaselClipboardPayload {
-        guard data.count <= maximumBytes else { throw EaselStoreError.tooLarge }
+        guard data.count <= maximumBytes else { throw EaselStoreError.objectsTooLarge }
         let payload = try PropertyListDecoder().decode(Self.self, from: data)
         try payload.validate()
         return payload

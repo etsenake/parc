@@ -695,7 +695,7 @@ extension EaselCanvasView {
                 guard let self, let window, self.window === window else { return }
                 do {
                     let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-                    guard values.isRegularFile == true, let size = values.fileSize, size <= EaselStore.maximumAssetBytes else { throw EaselStoreError.tooLarge }
+                    guard values.isRegularFile == true, let size = values.fileSize, size <= EaselStore.maximumAssetBytes else { throw EaselStoreError.assetImageTooLarge }
                     try self.replaceImage(id: item.id, data: Data(contentsOf: url, options: .mappedIfSafe))
                 } catch { self.onError?(error) }
             }
@@ -752,7 +752,7 @@ extension EaselCanvasView {
     }
 
     func preparedImageAsset(_ data: Data) throws -> (data: Data, type: EaselAssetType, pixelSize: CGSize) {
-        guard data.count <= EaselStore.maximumAssetBytes else { throw EaselStoreError.tooLarge }
+        guard data.count <= EaselStore.maximumAssetBytes else { throw EaselStoreError.assetImageTooLarge }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) > 0,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
