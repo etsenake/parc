@@ -12,11 +12,9 @@ final class EaselFindController: NoteFindBarController {
     }
 
     unowned let editor: EaselEditorViewController
-    private(set) var query = ""
-    private(set) var options = NoteFindOptions()
-    private(set) var matches: [EaselFindMatch] = []
-    private(set) var currentIndex: Int?
+    private(set) var state = EaselFindSession()
     private(set) var isReplacing = false
+    private var notice: String?
     private var bar: NoteFindBar?
     private var panel: NoteFloatingPanel?
     private var subscription: AnyCancellable?
@@ -24,6 +22,8 @@ final class EaselFindController: NoteFindBarController {
     private weak var returnResponder: NSResponder?
     private var refreshScheduled = false
     private var highlights: [Highlight] = []
+    private var paintedZoom: CGFloat = 1
+    private var zoomDependent = false
     private var layouts: [UUID: (item: EaselItem, layout: EaselTextLayout.Layout)] = [:]
     private let viewport = EaselViewportMover()
 
@@ -31,19 +31,18 @@ final class EaselFindController: NoteFindBarController {
         self.editor = editor
     }
 
+    var query: String { state.query }
+    var options: NoteFindOptions { state.options }
+    var matches: [EaselFindMatch] { state.matches }
+    var currentMatch: EaselFindMatch? { state.currentMatch }
     var isVisible: Bool { panel?.isPresented == true }
-    var hasMatches: Bool { !matches.isEmpty }
+    var hasMatches: Bool { !state.matches.isEmpty }
     var canReplace: Bool { !editor.session.isClosed && !editor.session.isDeleted }
-
-    var currentMatch: EaselFindMatch? {
-        guard let currentIndex, matches.indices.contains(currentIndex) else { return nil }
-        return matches[currentIndex]
-    }
+    var canReplaceCurrent: Bool { canReplace && state.replaceability(in: editor.session.document) == .replaceable }
 
     var countLabel: String {
-        guard !query.isEmpty else { return "" }
-        guard let currentIndex, !matches.isEmpty else { return matches.isEmpty ? "No matches" : "\(matches.count) found" }
-        return "\(currentIndex + 1) of \(matches.count)"
+        if let notice, !state.query.isEmpty { return notice }
+        return state.countLabel(replacing: isReplacing, in: editor.session.document)
     }
 
     private var canvas: EaselCanvasView { editor.canvas }
@@ -60,17 +59,17 @@ final class EaselFindController: NoteFindBarController {
         if !canReplace { isReplacing = false }
         bar.setReplacing(isReplacing, animated: isVisible)
         bar.setReplaceEnabled(canReplace)
-        bar.refresh()
         let panel = self.panel ?? makePanel(bar)
         if !isVisible {
             observe()
             panel.present(in: editor.view, anchor: anchorRect(for: panel), edge: .below, animated: true)
             recompute(keeping: nil, reveal: true)
         } else {
+            refreshViews()
             panel.contentSizeDidChange(animated: true)
             panel.reposition(anchor: anchorRect(for: panel), edge: .below, animated: false)
         }
-        let target = replacing && isReplacing && !query.isEmpty ? bar.replaceField : bar.findField
+        let target = replacing && isReplacing && !state.query.isEmpty ? bar.replaceField : bar.findField
         target.focus()
         target.textField.currentEditor()?.selectAll(nil)
     }
@@ -81,14 +80,14 @@ final class EaselFindController: NoteFindBarController {
 
     func hide(restoringFocus: Bool) {
         guard let panel, panel.isPresented else { return }
-        let match = currentMatch
+        let match = state.currentMatch
         subscription = nil
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers.removeAll()
         viewport.cancel()
         panel.dismiss(animated: true)
-        matches = []
-        currentIndex = nil
+        state.clear()
+        notice = nil
         repaint()
         layouts.removeAll()
         guard restoringFocus, let window = editor.view.window else { return }
@@ -118,56 +117,58 @@ final class EaselFindController: NoteFindBarController {
     }
 
     func setQuery(_ text: String) {
-        guard text != query else { return }
-        query = text
+        guard text != state.query else { return }
+        state.query = text
         recompute(keeping: nil, reveal: true)
     }
 
     func setMatchCase(_ value: Bool) {
-        guard value != options.matchCase else { return }
-        options.matchCase = value
-        recompute(keeping: currentMatch, reveal: true)
+        guard value != state.options.matchCase else { return }
+        state.options.matchCase = value
+        recompute(keeping: state.currentMatch, reveal: true)
     }
 
     func toggleReplacing() {
         guard canReplace || isReplacing else { return }
         isReplacing.toggle()
         bar?.setReplacing(isReplacing, animated: true)
+        refreshViews()
         panel?.contentSizeDidChange(animated: true)
         if let panel { panel.reposition(anchor: anchorRect(for: panel), edge: .below, animated: false) }
         (isReplacing ? bar?.replaceField : bar?.findField)?.focus()
     }
 
     func replaceCurrent() {
-        guard prepareToReplace(), let match = currentMatch,
-              let item = editor.session.document.items.first(where: { $0.id == match.itemID }),
-              EaselFinder.isReplaceable(item) else { NSSound.beep(); return }
-        let replacement = bar?.replaceField.text ?? ""
-        let outcome = EaselFinder.replace([match], with: replacement, in: editor.session.document)
-        guard outcome.count > 0, commit("Replace", outcome) else { NSSound.beep(); return }
-        let offset = match.range.lowerBound + (replacement as NSString).length
-        recompute(keeping: EaselFindMatch(itemID: match.itemID, part: match.part, range: offset..<offset), reveal: true)
+        guard canReplace, canvas.finishEditingForTransfer() else { NSSound.beep(); return }
+        notice = nil
+        switch state.replaceCurrent(with: bar?.replaceField.text ?? "", in: editor.session.document) {
+        case .replaced(let outcome, let next):
+            if !outcome.touched.isEmpty, !commit("Replace", outcome) { NSSound.beep(); return }
+            state.refresh(in: editor.session.document, keeping: next)
+            revealCurrent()
+            refreshViews()
+        case .moved, .skipped:
+            revealCurrent()
+            refreshViews()
+        case .refused:
+            NSSound.beep()
+            refreshViews()
+        }
     }
 
     func replaceAll() {
-        guard prepareToReplace(), !matches.isEmpty else { NSSound.beep(); return }
-        let replacement = bar?.replaceField.text ?? ""
-        let outcome = EaselFinder.replace(matches, with: replacement, in: editor.session.document)
-        let count = outcome.count > 0 && commit("Replace All", outcome) ? outcome.count : 0
-        recompute(keeping: currentMatch, reveal: false)
-        bar?.flash(count == 1 ? "Replaced 1" : "Replaced \(count)")
-    }
-
-    private func prepareToReplace() -> Bool {
-        guard canReplace, canvas.finishEditingForTransfer() else { return false }
-        let document = editor.session.document
-        let fresh = EaselFinder.matches(of: query, in: document, options: options)
-        guard fresh != matches else { return true }
-        let kept = currentMatch
-        matches = fresh
-        currentIndex = kept.map { EaselFinder.index(of: $0, in: matches, document: document) } ?? initialIndex(in: document)
+        guard canReplace, canvas.finishEditingForTransfer(), hasMatches else { NSSound.beep(); return }
+        let outcome = state.replaceAll(with: bar?.replaceField.text ?? "", in: editor.session.document)
+        let count = !outcome.touched.isEmpty && commit("Replace All", outcome) ? outcome.count : 0
+        state.refresh(in: editor.session.document, keeping: state.currentMatch)
+        let summary = EaselFindSession.summary(outcome)
+        notice = summary.isEmpty ? nil : summary
         refreshViews()
-        return true
+        bar?.flash(count == 1 ? "Replaced 1" : "Replaced \(count)")
+        if let bar, !summary.isEmpty {
+            NSAccessibility.post(element: bar, notification: .announcementRequested,
+                                 userInfo: [.announcement: summary, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        }
     }
 
     private func commit(_ name: String, _ outcome: EaselFindReplacement) -> Bool {
@@ -177,8 +178,11 @@ final class EaselFindController: NoteFindBarController {
             if next.kind == .text {
                 let height = EaselTextLayout.Layout(EaselRichTextCodec.attributed(next), width: next.frame.width).height
                 next.frame.height = max(next.frame.height, Double(height))
+            } else if next.kind == .sticky {
+                next = EaselBoardObjects.fitted(next) { EaselStickyText.height($0) }
+            } else if next.kind == .code {
+                next.frame.height = EaselCodeLayoutCache.height(for: next)
             }
-            if next.kind == .code { next.frame.height = EaselCodeLayoutCache.height(for: next) }
             replaced[item.id] = next
         }
         do {
@@ -195,30 +199,25 @@ final class EaselFindController: NoteFindBarController {
     }
 
     private func step(_ delta: Int) {
-        guard !matches.isEmpty else {
-            if !query.isEmpty { NSSound.beep() }
+        guard hasMatches else {
+            if !state.query.isEmpty { NSSound.beep() }
             return
         }
-        let count = matches.count
-        let index = currentIndex.map { ($0 + delta + count) % count } ?? (delta > 0 ? 0 : count - 1)
-        currentIndex = index
-        reveal(matches[index])
+        notice = nil
+        state.step(delta)
+        revealCurrent()
         refreshViews()
     }
 
     private func recompute(keeping match: EaselFindMatch?, reveal shouldReveal: Bool) {
-        let document = editor.session.document
-        matches = EaselFinder.matches(of: query, in: document, options: options)
-        currentIndex = match.map { EaselFinder.index(of: $0, in: matches, document: document) } ?? initialIndex(in: document)
-        if shouldReveal, let current = currentMatch { reveal(current) }
-        refreshViews()
-    }
-
-    private func initialIndex(in document: EaselDocument) -> Int? {
-        guard !matches.isEmpty else { return nil }
+        notice = nil
         let visible = canvas.visibleRect
-        let frames = Dictionary(document.items.map { ($0.id, Self.frame($0)) }, uniquingKeysWith: { first, _ in first })
-        return matches.firstIndex { frames[$0.itemID]?.intersects(visible) == true } ?? 0
+        let frames = Dictionary(editor.session.document.items.map { ($0.id, Self.frame($0)) }, uniquingKeysWith: { first, _ in first })
+        state.refresh(in: editor.session.document, keeping: match) { matches in
+            matches.firstIndex { frames[$0.itemID]?.intersects(visible) == true }
+        }
+        if shouldReveal { revealCurrent() }
+        refreshViews()
     }
 
     private func refreshViews() {
@@ -230,10 +229,11 @@ final class EaselFindController: NoteFindBarController {
         }
     }
 
-    private func reveal(_ match: EaselFindMatch) {
-        guard let item = editor.session.document.items.first(where: { $0.id == match.itemID }),
+    private func revealCurrent() {
+        guard let match = state.currentMatch,
+              let item = editor.session.document.items.first(where: { $0.id == match.itemID }),
               let scroll = canvas.enclosingScrollView else { return }
-        let target = textRects(for: match, in: item)?.reduce(NSRect.null) { $0.union($1) } ?? Self.frame(item)
+        let target = highlightGeometry(for: match, in: item).rects.reduce(NSRect.null) { $0.union($1) }
         let inset = (panel?.frame.height ?? 0) + 16
         guard let plan = EaselViewportMover.plan(for: target.isNull ? Self.frame(item) : target, in: scroll, mode: .reveal, topInset: inset) else { return }
         viewport.move(scroll, to: plan)
@@ -243,50 +243,76 @@ final class EaselFindController: NoteFindBarController {
         NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height)
     }
 
-    private func textRects(for match: EaselFindMatch, in item: EaselItem) -> [NSRect]? {
-        if item.kind == .code, match.part == .text { return EaselCodeLayout.rects(for: match.range, in: item) }
-        guard item.kind == .text, match.part == .text else { return nil }
+    private func highlightGeometry(for match: EaselFindMatch, in item: EaselItem) -> (rects: [NSRect], exact: Bool) {
+        switch item.kind {
+        case .text:
+            if let rects = textRects(match.range, in: item, text: EaselRichTextCodec.attributed(item),
+                                     origin: NSPoint(x: item.frame.x, y: item.frame.y), width: item.frame.width, height: item.frame.height) {
+                return (rects, true)
+            }
+        case .sticky:
+            let box = EaselBoardObjects.stickyTextBox(item)
+            if let rects = textRects(match.range, in: item, text: EaselStickyText.presented(item, adaptive: false),
+                                     origin: NSPoint(x: box.x, y: box.y), width: box.width, height: 1_000_000) {
+                return (rects, true)
+            }
+        case .section:
+            return ([EaselSectionArt.titleTab(item, zoom: Double(canvas.enclosingScrollView?.magnification ?? 1))], false)
+        case .code:
+            if match.part == .text, let rects = EaselCodeLayout.rects(for: match.range, in: item), !rects.isEmpty { return (rects, true) }
+        default:
+            break
+        }
+        return ([Self.frame(item)], false)
+    }
+
+    private func textRects(_ range: Range<Int>, in item: EaselItem, text: @autoclosure () -> NSAttributedString,
+                           origin: NSPoint, width: Double, height: Double) -> [NSRect]? {
         let layout: EaselTextLayout.Layout
         if let cached = layouts[item.id], cached.item == item {
             layout = cached.layout
         } else {
-            layout = EaselTextLayout.Layout(EaselRichTextCodec.attributed(item), width: item.frame.width, height: item.frame.height)
+            layout = EaselTextLayout.Layout(text(), width: width, height: height)
             layouts[item.id] = (item, layout)
         }
-        guard match.range.upperBound <= layout.storage.length else { return nil }
-        let glyphs = layout.manager.glyphRange(forCharacterRange: NSRange(location: match.range.lowerBound, length: match.range.count),
-                                               actualCharacterRange: nil)
+        guard range.upperBound <= layout.storage.length else { return nil }
+        let glyphs = layout.manager.glyphRange(forCharacterRange: NSRange(location: range.lowerBound, length: range.count), actualCharacterRange: nil)
         var rects: [NSRect] = []
         let inset = EaselTextLayout.inset
         layout.manager.enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
                                                in: layout.container) { rect, _ in
             guard rect.width.isFinite, rect.height.isFinite, !rect.isEmpty else { return }
-            rects.append(rect.offsetBy(dx: item.frame.x + inset.width, dy: item.frame.y + inset.height).insetBy(dx: -2, dy: -1))
+            rects.append(rect.offsetBy(dx: origin.x + inset.width, dy: origin.y + inset.height).insetBy(dx: -2, dy: -1))
         }
         return rects.isEmpty ? nil : rects
     }
 
     private func repaint() {
         let previous = highlights
+        paintedZoom = canvas.enclosingScrollView?.magnification ?? 1
         highlights = makeHighlights()
         for highlight in previous + highlights { canvas.setOverlayNeedsDisplay(highlight.bounds) }
         canvas.onDrawOverlay = highlights.isEmpty ? nil : { [weak self] dirty, scale in self?.draw(in: dirty, scale: scale) }
     }
 
     private func makeHighlights() -> [Highlight] {
-        guard isVisible, !matches.isEmpty else { return [] }
-        let items = Dictionary(editor.session.document.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        zoomDependent = false
+        guard isVisible, hasMatches else { return [] }
+        var items: [UUID: EaselItem] = [:]
+        for item in editor.session.document.items where items[item.id] == nil { items[item.id] = item }
         var result: [Highlight] = []
         var ringed = Set<UUID>()
-        for (index, match) in matches.enumerated() {
+        for (index, match) in state.matches.enumerated() {
             guard let item = items[match.itemID] else { continue }
-            let current = index == currentIndex
-            if let rects = textRects(for: match, in: item) {
-                let bounds = rects.reduce(NSRect.null) { $0.union($1) }.insetBy(dx: -8, dy: -8)
-                result.append(Highlight(rects: rects, object: nil, isCurrent: current, bounds: bounds))
-            } else if current || !ringed.contains(item.id) {
+            let current = index == state.currentIndex
+            let geometry = highlightGeometry(for: match, in: item)
+            if item.kind == .section { zoomDependent = true }
+            if geometry.exact {
+                let bounds = geometry.rects.reduce(NSRect.null) { $0.union($1) }.insetBy(dx: -8, dy: -8)
+                result.append(Highlight(rects: geometry.rects, object: nil, isCurrent: current, bounds: bounds))
+            } else if current || !ringed.contains(item.id), let first = geometry.rects.first {
                 ringed.insert(item.id)
-                let frame = Self.frame(item).insetBy(dx: -6, dy: -6)
+                let frame = first.insetBy(dx: -6, dy: -6)
                 result.append(Highlight(rects: [], object: frame, oval: item.kind == .circle, isCurrent: current,
                                         bounds: frame.insetBy(dx: -24, dy: -24)))
             }
@@ -295,6 +321,10 @@ final class EaselFindController: NoteFindBarController {
     }
 
     private func draw(in dirty: NSRect, scale: CGFloat) {
+        if zoomDependent, abs(scale - paintedZoom) > 0.001 {
+            paintedZoom = scale
+            DispatchQueue.main.async { [weak self] in self?.repaint() }
+        }
         let scale = max(scale, 0.1)
         for highlight in highlights where highlight.bounds.intersects(dirty) {
             if let frame = highlight.object {
@@ -346,10 +376,9 @@ final class EaselFindController: NoteFindBarController {
 
     private func observe() {
         subscription = editor.session.$document.dropFirst().sink { [weak self] _ in self?.scheduleRefresh() }
-        let center = NotificationCenter.default
         guard let scroll = canvas.enclosingScrollView else { return }
         scroll.postsFrameChangedNotifications = true
-        observers.append(center.addObserver(forName: NSView.frameDidChangeNotification, object: scroll, queue: .main) { [weak self] _ in
+        observers.append(NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scroll, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.isVisible, let panel = self.panel else { return }
                 panel.reposition(anchor: self.anchorRect(for: panel), edge: .below, animated: false)
@@ -364,24 +393,9 @@ final class EaselFindController: NoteFindBarController {
             guard let self else { return }
             self.refreshScheduled = false
             guard self.isVisible else { return }
-            self.recompute(keeping: self.currentMatch, reveal: false)
+            self.state.refresh(in: self.editor.session.document, keeping: self.state.currentMatch)
             self.bar?.setReplaceEnabled(self.canReplace)
+            self.refreshViews()
         }
-    }
-}
-
-@MainActor
-extension EaselEditorViewController {
-    func performBoardKeyEquivalent(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown, isViewLoaded, let window = view.window, window.isKeyWindow,
-              !view.isHiddenOrHasHiddenAncestor, window.attachedSheet == nil, ownsBoardKeyFocus(in: window),
-              (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true else { return false }
-        return find.handleKeyEquivalent(event)
-    }
-
-    private func ownsBoardKeyFocus(in window: NSWindow) -> Bool {
-        guard let responder = window.firstResponder as? NSView else { return false }
-        if responder === canvas || responder.superview === canvas { return true }
-        return responder.isDescendant(of: view) && !responder.isDescendant(of: canvas)
     }
 }

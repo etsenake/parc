@@ -10,13 +10,16 @@ use the Notes look ([appearance](easel-appearance.md)) and motion rules
 ⌘F opens the Notes find bar over the top right of the canvas, with the same
 field, count, Match Case, previous and next arrows, Replace disclosure and
 chips. ⌥⌘F opens it with Replace showing. The chords belong to the Easel while
-the canvas, one of its object stops, an object being edited, the title or the
-find bar has the keyboard; inside a live webpage on the canvas they stay with
-that page, as in a note's embeds.
+anything in the Easel has the keyboard: the canvas, an object stop, text being
+edited in a text object, sticky or shape, the title or the find bar. Inside a
+live webpage on the canvas they stay with that page, as in a note's embeds.
 
-Finding runs as you type over every object that shows text: text objects,
-stickies, shape text, connector labels, section titles, and the titles of link
-and webpage cards. Matching ignores case and accents until Match Case is on.
+Finding runs as you type over the text the canvas actually shows: text
+objects, stickies, shape text, connector labels, section titles, link cards
+and webpage cards that draw their title. Captured and live webpages show the
+page itself, so their titles aren't searched, and URLs never are. Objects
+tucked inside a section whose contents are hidden are left out, since nobody
+can see them. Matching ignores case and accents until Match Case is on.
 Matches run in reading order: objects on roughly the same row left to right,
 then the next row down, and within an object from start to end. The first
 match is the first one already in view, so opening find doesn't throw the
@@ -30,28 +33,39 @@ zoomed too far out to read it; a match already in view doesn't move anything.
 Reduce Motion makes the move instant.
 
 Matches are highlighted on the canvas in the Notes find colours. Text objects
-highlight the matched words themselves, with the current one outlined. Other
-objects get a soft ring, and the current match's object a stronger ring and
-wash. Highlights are drawing only: they never reach the document, exports or
-the selection.
+and stickies highlight the matched words themselves, with the current one
+outlined; a section highlights its title tab, and other objects get a soft
+ring, with a stronger ring and wash on the current match. Highlights are
+drawing only: they never reach the document, exports or the selection.
 
 Replace changes the current match and moves to the next; Replace All (or
 ⌘Return in the replace field) changes every match and flashes the count. Each
-is one undo step. A replacement takes the formatting of the first character it
-replaces, never swallows an inline picture, and grows a text object to fit.
-Locked objects and link or webpage card titles are found but never replaced,
-so Replace All may change fewer than it found. Escape closes the bar and
-selects the object of the last current match, ready for the keyboard.
+is one undo step. Replace only ever changes the match you can see: if an edit
+made it disappear, the bar shows the new current match first and the next
+press replaces that. A replacement takes the formatting of the first character
+it replaces, never swallows an inline picture, and grows a text object or
+sticky to fit. If any match in an object can't be rewritten, Replace All
+leaves that whole object alone rather than changing half of it.
 
-The matching, reading order, replacement and viewport maths are pure ParcCore
-code (`EaselFinder`, `EaselViewportFocus`). Adding a kind that shows text means
-listing its text in `EaselFinder.searchableParts(of:)` and saying whether it is
-replaceable; tables and code blocks join the same way once they exist.
+Locked objects and card titles are found but can't change. While Replace is
+showing, the count says so ("2 of 5 · locked" or "· read-only") and the
+Replace chip dims; Return in the replace field skips ahead to the next match
+that can change. After Replace All the count line says what was skipped and
+why ("Skipped 2 locked, 1 read-only"), and VoiceOver reads it too. Escape
+closes the bar and selects the object of the last current match, ready for the
+keyboard.
+
+The matching, reading order, replacement and the bar's replace and refresh
+rules are pure ParcCore code (`EaselFinder`, `EaselFindSession`,
+`EaselViewportFocus`). Adding a kind that shows text means listing its text in
+`EaselFinder.searchableParts(of:)` and its `replaceability(of:)`; tables and
+code blocks join the same way once they exist.
 
 ## Checks
 
 `tests/EaselBoardFeaturesTests.swift` is a windowless suite over the ParcCore
-board logic: find order, matching, replacement across rich text runs, refusals
-and viewport focus. Build it with every `Sources/ParcCore` file plus
-`tests/Support/TestFailure.swift` and run the binary. The views are checked by
-compiling only.
+board logic: find order, visibility, matching, replacement across rich text
+runs, per-object refusals, the find session's replace and refresh rules and
+viewport focus. Build it with every `Sources/ParcCore` file
+plus `tests/Support/TestFailure.swift` and run the binary. The views are
+checked by compiling only.
