@@ -315,7 +315,9 @@ enum EaselAttachments {
                 guard let target = item.attachedTo, frontier.contains(target), !carried.contains(item.id), !moved.contains(item.id),
                       let old = before[item.id], !placementChanged(old, item),
                       let targetBefore = before[target], let targetIndex = positions[target],
-                      let placed = transformed(item, from: targetBefore, to: result.items[targetIndex]) else { continue }
+                      let placed = explicit(target, before: targetBefore, now: result.items[targetIndex], moved: moved.union(carried))
+                        ? transformed(item, from: targetBefore, to: result.items[targetIndex])
+                        : pinned(item, from: targetBefore, to: result.items[targetIndex]) else { continue }
                 result.items[index] = placed
                 carried.insert(item.id)
                 reached.insert(item.id)
@@ -349,6 +351,26 @@ enum EaselAttachments {
     static func placementChanged(_ old: EaselItem, _ new: EaselItem) -> Bool {
         old.frame != new.frame || old.points != new.points || old.resolvedRotation != new.resolvedRotation
             || (old.flipHorizontal == true) != (new.flipHorizontal == true) || (old.flipVertical == true) != (new.flipVertical == true)
+    }
+
+    static func explicit(_ target: UUID, before: EaselItem, now: EaselItem, moved: Set<UUID>) -> Bool {
+        moved.contains(target) || before.resolvedRotation != now.resolvedRotation
+    }
+
+    static func pinned(_ item: EaselItem, from old: EaselItem, to new: EaselItem) -> EaselItem? {
+        let before = corner(of: old), after = corner(of: new)
+        var next = item
+        next.frame.x += after.x - before.x
+        next.frame.y += after.y - before.y
+        let r = next.frame
+        guard [r.x, r.y].allSatisfy({ $0.isFinite && abs($0) <= 1_000_000 }) else { return nil }
+        return next
+    }
+
+    static func corner(of item: EaselItem) -> EaselPoint {
+        let f = item.frame
+        let turned = EaselDrawing.rotated(EaselPoint(x: -f.width / 2, y: -f.height / 2), by: item.resolvedRotation * Double.pi / 180)
+        return EaselPoint(x: f.x + f.width / 2 + turned.x, y: f.y + f.height / 2 + turned.y)
     }
 
     static func transformed(_ item: EaselItem, from old: EaselItem, to new: EaselItem) -> EaselItem? {

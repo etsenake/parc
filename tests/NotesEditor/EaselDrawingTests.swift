@@ -217,8 +217,19 @@ struct EaselDrawingTests {
         let scaled = EaselAttachments.carry(grown, previous: before, moved: [note.id])
         let ends = EaselDrawing.visualPoints(scaled.items[1])
         expect(near(ends[0], p(40, 100), 1e-6) && near(ends[1], p(360, 100), 1e-6), "Resizing the sticky stretches the highlight with it")
+        var typed = before
+        typed.items[0].frame.height = 320
+        let taller = EaselAttachments.carry(typed, previous: before, moved: [])
+        expect(taller.items[1] == highlight, "A sticky growing as you type leaves its highlight where it is")
+        var reflowed = before
+        reflowed.items[0].frame.x += 30; reflowed.items[0].frame.width = 260
+        let pinned = EaselAttachments.carry(reflowed, previous: before, moved: []).items[1]
+        expect(pinned.frame.x == highlight.frame.x + 30 && pinned.frame.width == highlight.frame.width,
+               "Content changes pin stuck things to the object's corner instead of stretching them")
         var spun = before
         spun.items[0].rotation = 90
+        let quietly = EaselDrawing.visualPoints(EaselAttachments.carry(spun, previous: before, moved: []).items[1])
+        expect(near(quietly[0], p(150, 20), 1e-6), "A turn always swings stuck things, even when the edit doesn't say what moved")
         let turned = EaselDrawing.visualPoints(EaselAttachments.carry(spun, previous: before, moved: [note.id]).items[1])
         expect(near(turned[0], p(150, 20), 1e-6) && near(turned[1], p(150, 180), 1e-6), "Rotating the sticky swings the highlight around its centre")
         var stamp = object(.image, 90, 90, 20, 20)
