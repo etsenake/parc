@@ -24,7 +24,7 @@ for source, use in (("PaneTitleControl.swift", "entry.showImage(service.image)")
                     ("BrowserWindowController.swift", "item.showImage(icon)"),
                     ("DownloadLocationPicker.swift", "folder.showImage(NSImage(size: size, flipped: false)"),
                     ("SplitPaneMenu.swift", "item.showImage(SplitPaneMenuArtwork.image(artwork))"),
-                    ("EaselImageExport.swift", "item.showImage(SidebarIconCatalog.featherImage(0xE9CA, size: 14))")):
+                    ("EaselPageMenu.swift", 'title: "Export", icon: .symbol("square.and.arrow.up")')):
     text = browser_window_controller_source(app) if source == "BrowserWindowController.swift" else (app / source).read_text()
     expect(use in text, f"{source} no longer shows its menu image: {use}")
 
