@@ -168,7 +168,6 @@ The app itself is compiled by `package.py` against the actual public headers, us
 After the reviewed cohort is applied and the normal engine build completes:
 
 ```sh
-python3 tests/NativeRuntime/check-chromium.py /absolute/chromium/src
 python3 scripts/build.py seal-engine --engine-dir /absolute/chromium/src/out/Release_GN_arm64 --manifest /new/output/engine.json
 python3 tests/NativeRuntime/package.py --engine-dir /absolute/chromium/src/out/Release_GN_arm64 --manifest /new/output/engine.json --output /new/output/runtime-development
 python3 tests/NativeRuntime/run.py /new/output/runtime-development/parc_native_runtime_tests.app --artifacts /existing/test-artifacts
@@ -178,7 +177,7 @@ The packager refuses an active build, incomplete source seal, missing test expor
 
 The launcher imposes a 120-second outer deadline (the app uses 80 seconds, each controller case 15 seconds). Failure first cancels the test-owned handler and requests actual Browser close. If close or idle shutdown stalls, the outer deadline fails and terminates the test process group; it does not claim clean shutdown or prove every helper exited. Profiles and logs are retained. A default-suite success receipt requires all three unique cases, exit zero and the post-loop actual engine shutdown result. Optional suites require their own complete ordered markers, including all seven PiP case markers for `video-pip`; partial controller results do not pass another suite.
 
-`python3 tests/NativeRuntime/test_launcher.py` verifies the fresh-profile/result guards and actual loopback transport/hash/range behavior. It never runs Chromium and its success is not runtime browser coverage. The source checker verifies the full applied overlay and exact generated driver object/flags before syntax checking; it has no compatibility fallback and never invokes GN/Ninja.
+`python3 tests/NativeRuntime/test_launcher.py` verifies the fresh-profile/result guards and actual loopback transport/hash/range behavior. It never runs Chromium and its success is not runtime browser coverage.
 
 ## Verification boundaries
 

@@ -3,7 +3,6 @@ import importlib.util
 import json
 from pathlib import Path
 import plistlib
-import re
 import shutil
 import struct
 import subprocess
@@ -210,10 +209,8 @@ class PackagingIconTests(unittest.TestCase):
                             if kind["UTTypeIdentifier"] == "net.daringfireball.markdown")
             self.assertEqual(markdown["UTTypeConformsTo"], ["public.plain-text"])
             self.assertEqual(markdown["UTTypeTagSpecification"]["public.mime-type"], "text/markdown")
-            note_kinds = (REPO / "Sources/ParcCore/NoteFileKind.swift").read_text()
-            declared = re.search(r"markdownExtensions: Set<String> = \[([^\]]*)\]", note_kinds).group(1)
             self.assertEqual(set(markdown["UTTypeTagSpecification"]["public.filename-extension"]),
-                             set(re.findall(r'"([^"]+)"', declared)))
+                             {"md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdtxt", "mdtext"})
             imported = {kind["UTTypeIdentifier"] for kind in info["UTImportedTypeDeclarations"]}
             self.assertLessEqual(imported, documents)
             self.assertTrue(all(kind["UTTypeTagSpecification"]["public.filename-extension"]

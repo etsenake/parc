@@ -23,7 +23,7 @@ The connected Swift consumer reserves both physical-window claims and keeps the 
 Chromium owns delegate transitions through its actual tab-strip callbacks;
 rollback restores surviving source pin/group/opener state. The overlay connects
 the native bridge and shared controller/test targets. Shell ownership and
-presentation checks run with `bash scripts/test-window-presentation.sh`.
+presentation checks run with `swift test --filter WindowPresentationTests`.
 
 Five collection cases cover all-original attachment before commit, second-member
 failure rollback with order/pin/opener/selection, durable-commit refusal,

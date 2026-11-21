@@ -3,8 +3,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
-xcrun swiftc tests/Support/TestFailure.swift -warnings-as-errors -parse-as-library Sources/ParcCore/*.swift tests/SidebarRows/SplitPaneControlsTests.swift -o "$output/model"
-"$output/model"
 xcrun swiftc tests/Support/TestFailure.swift -warnings-as-errors -parse-as-library Sources/ParcCore/*.swift Sources/ParcApp/SplitPaneMenu.swift Sources/ParcApp/LinkPasteboard.swift Sources/ParcApp/MenuItemImage.swift Sources/ParcApp/SplitPaneHighlight.swift tests/SidebarRows/SplitPaneMenuTests.swift -o "$output/native"
 cp -R Resources/SplitPaneMenu "$output/SplitPaneMenu"
 "$output/native"

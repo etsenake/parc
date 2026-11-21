@@ -81,8 +81,6 @@ when its previous compositor was evicted from the single-spare pool.
 
 The implementation is in the native page host/compositor bridge and window
 selection/layout integration. Focused checks cover compositor reuse policy,
-`NativePageHost`, `NativeFocusManager`, `NativeDevTools`,
-[display handoffs](../tests/PaneCompositorDisplay/README.md) and packaging exports.
-Native compiler checks validate bridge integration when run.
+`NativePageHost`, `NativeFocusManager`, `NativeDevTools` and packaging exports.
 Authorized runtime investigations follow
 [collaboration](collaboration.md#runtime-investigations).

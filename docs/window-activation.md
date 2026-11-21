@@ -101,6 +101,6 @@ its session belongs to it alone, so it always opens a new private window.
 Import-focus and original-owner sequence components cover background, minimized
 and obstructed parents, inactive app, key changes during cleanup and refusal.
 `WindowOwnerSequence` exercises revalidation between callback-capable steps.
-`tests/PopupTabHandoff/check.py` covers admitted, blocked, minimized, fresh and
+`swift test --filter PopupTabHandoffTests` covers admitted, blocked, minimized, fresh and
 private popup handoffs; `scripts/test-shortcut-essentials.sh` covers the Copy
 routes and their native admission wiring.

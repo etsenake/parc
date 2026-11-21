@@ -217,22 +217,18 @@ main-row edge. A drop reservation holding a stack target lays the split out with
 
 ## Checks
 
-`tests/SplitStacksTests.swift` (in `scripts/test.sh`) is windowless. It pins the
+`swift test --filter SplitStacksTests` is windowless. It pins the
 flat bytes against the previous format, round-trips stacked splits, reads them
 as an older build would, loads corrupt stacks flat, and covers every edit above
 through the model and the store, including reopen, Undo, copies, Favorites,
-window projections, drops and Arc import. `tests/SplitStackLayoutTests.swift`
-(also windowless, in `scripts/test.sh`) covers the stacked frames, divider rects
+window projections, drops and Arc import. `SplitStackLayoutTests`
+(also windowless) covers the stacked frames, divider rects
 and regions, tight page areas, splitter values and labels, the layout commands,
 pending-pane previews and reserved drop shapes. `scripts/test-split-drop-geometry.sh`
 pins every drop band, corner and four-pane fallback on flat and stacked splits,
-and the original, external and cross-window drop suites commit stack drops. `tests/SplitStackCommandsTests.swift` (windowless, in
-`scripts/test.sh`) checks command enabling against the store's moves, Split
+and the original, external and cross-window drop suites commit stack drops. `SplitStackCommandsTests` (windowless) checks command enabling against the store's moves, Split
 This Pane's targets, previews and commits, its single-page start of a split,
-and reading order after each. `tests/SidebarRows/split_stack_commands_check.py`
-pins the View command, its shortcut, the shared availability gate, the
-single-page route to Add Split View and the pane menu wiring, and
-`SplitPaneMenuTests` asserts the stacked rows and their artwork. The divider,
+and reading order after each. `SplitPaneMenuTests` asserts the stacked rows and their artwork. The divider,
 snap and Favorites tile suites listed in
 [split groups](split-groups.md#source-and-validation) also cover stacked
 dividers and pictures, alongside flat splits unchanged.
