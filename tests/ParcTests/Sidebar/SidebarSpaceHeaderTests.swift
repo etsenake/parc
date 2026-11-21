@@ -693,11 +693,11 @@ struct SidebarSpaceHeaderTests {
         #expect(header.button.alphaValue == 1 && Self.isEditFade(header.opacityFade))
     }
 
-    @Test func doneReplacesTheEllipsis() throws {
+    @Test func doneReplacesTheEllipsis() {
         let header = editing()
-        let edit = try #require(header.exposed.last as? NSCell)
         #expect(header.button.image?.tiffRepresentation != Self.ellipsis?.tiffRepresentation && (header.button.image?.size.width ?? 0) <= 1)
-        #expect(header.button.title == "Done" && edit.accessibilityLabel() == "Done")
+        #expect(header.button.title == "Done")
+        #expect(header.button.cell?.accessibilityLabel() == "Done")
     }
 
     @Test func thereIsNoHoverFillWhileEditing() {
