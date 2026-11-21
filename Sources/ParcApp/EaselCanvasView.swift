@@ -112,11 +112,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             refreshTextControls(); updateAccessibilitySummary(); window?.invalidateCursorRects(for: self)
         }
     }
-    private var draft: [EaselItem]?
+    var draft: [EaselItem]?
     private var textPreview: [UUID: EaselItem] = [:]
     private var textSizeBadge: (label: String, rect: NSRect)?
     var start: NSPoint?
-    private var original: [EaselItem] = []
+    var original: [EaselItem] = []
     private var resizeHandle: EaselResizeHandle?
     private var arrowEndpoint: EaselArrowEndpoint?
     var resizing: Bool { resizeHandle != nil || arrowEndpoint != nil }
@@ -130,7 +130,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private var tentativeSelection: Set<UUID>?
     var hoveredObjectID: UUID?
     private var appearanceTracking: NSTrackingArea?
-    private var stroke: [NSPoint] = []
+    var stroke: [NSPoint] = []
+    let brushes = EaselCanvasBrushes()
     private var guides: EaselAlignmentGuides?
     var alignmentGuidesEnabled = true
     var arrangeState = EaselCanvasArrangeState()
@@ -162,7 +163,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     var fixedCanvasSize: NSSize?
-    private var insertionColor = EaselInk.automatic
+    var insertionColor = EaselInk.automatic
     var adaptsInk = true {
         didSet {
             guard adaptsInk != oldValue else { return }
@@ -543,7 +544,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         images[id] = value; return value
     }
     var usesObjectSurfaces: Bool { pageObjects != nil && items.contains { $0.ownsEmbeddedPage } }
-    private func displayBounds(of item: EaselItem) -> NSRect {
+    func displayBounds(of item: EaselItem) -> NSRect {
         let pad = 16 / max(canvasScale, 0.2) + 16 + CGFloat(EaselPaintRules.strokeWidth(item)) * 1.5 + boardOverhang(item)
         return rect(item).insetBy(dx: -pad, dy: -pad)
     }
@@ -787,6 +788,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 let path = item.kind == .circle ? NSBezierPath(ovalIn: r) : NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5)
                 ink.withAlphaComponent(0.09).setFill(); path.fill(); ink.setStroke(); path.lineWidth = 2.5; path.stroke()
             case .arrow, .freehand:
+                if item.kind == .freehand { drawDrawing(item); return }
                 guard let first = item.points.first else { return }
                 let paint = EaselPaint(item, adaptive: adaptsInk)
                 let path = NSBezierPath(); path.move(to: NSPoint(x: r.minX + first.x, y: r.minY + first.y))
@@ -818,6 +820,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     fileprivate func drawDecorations(in dirtyRect: NSRect) {
         onDrawOverlay?(dirtyRect, canvasScale)
+        drawBrushOverlay(in: dirtyRect)
         if drawImageDecorations(in: dirtyRect) { return }
         for item in items where displayedSelection.contains(item.id) || (item.id == hoveredObjectID && !item.isLocked) {
             if displayBounds(of: item).intersects(dirtyRect) {
@@ -887,6 +890,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         case .section: path = NSBezierPath(roundedRect: r, xRadius: EaselSectionArt.radius, yRadius: EaselSectionArt.radius)
         case .code: path = NSBezierPath(roundedRect: r, xRadius: EaselCodeBlock.cornerRadius, yRadius: EaselCodeBlock.cornerRadius)
         case .arrow, .freehand:
+            if drawBrushSelection(item) { return }
             path = NSBezierPath()
             guard let first = item.points.first else { return }
             path.move(to: NSPoint(x: r.minX + first.x, y: r.minY + first.y))
@@ -1383,6 +1387,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         lastDragTimestamp = nil; dragVelocity = .init(x: 0, y: 0)
         lastGeometryPoint = nil; lastDragLocation = nil; dragDistance = 0
         updateTextSizeBadge()
+        cancelBrushStroke()
         if hadPointerOwner { synchronizePageSelection(); keyboardStructureChanged() }
         window?.invalidateCursorRects(for: self)
         invalidateIncrementalDisplay(layout: true)
@@ -1417,6 +1422,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     override func flagsChanged(with event: NSEvent) {
         if let end = marqueeEnd { updateMarquee(to: end, flags: event.modifierFlags) }
         else if geometryEdit != nil, let point = lastGeometryPoint { updateGeometry(to: point, flags: event.modifierFlags) }
+        else { refreshBrushStroke(flags: event.modifierFlags) }
         super.flagsChanged(with: event)
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -1438,7 +1444,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         motion.cancel(); cancelPointerInteraction(); guard finishEditing() else { return }; window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil); start = point; original = session.document.items
         selectionBeforeGesture = selection; lastDragLocation = event.locationInWindow; lastDragTimestamp = event.timestamp
-        if drawing { stroke = [point]; selection.removeAll(); return }
+        if drawing { beginBrushStroke(.marker, at: point, flags: event.modifierFlags); return }
         if offerUnlock(at: point) { cancelPointerInteraction(); return }
         if let endpoint = arrowEndpoint(at: point) {
             arrowEndpoint = endpoint; beginGeometry()
@@ -1480,10 +1486,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard start != nil else { return }
         let point = convert(event.locationInWindow, from: nil)
         if marqueeRect != nil { updateMarquee(to: point, flags: event.modifierFlags); autoscroll(with: event); return }
-        if drawing {
-            if stroke.count < 20_000 { stroke.append(point) }
-            draft = [strokeItem()]; invalidateIncrementalDisplay(); return
-        }
+        if drawing { dragBrushStroke(to: point, flags: event.modifierFlags); return }
         recordDragTravel(event.locationInWindow, timestamp: event.timestamp)
         if arrangeState.duplicateDragArmed, dragDistance > 3, !resizing, beginDuplicateDrag() { beginGeometry() }
         updateGeometry(to: point, flags: event.modifierFlags)
@@ -1616,12 +1619,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             .map { NSRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height) } ?? host.bounds : host.bounds)
         popover.show(relativeTo: place, of: host, preferredEdge: host.isFlipped ? .maxY : .minY)
     }
-    private func strokeItem() -> EaselItem {
-        let minX = stroke.map(\.x).min() ?? 0, minY = stroke.map(\.y).min() ?? 0
-        return EaselItem(kind: .freehand, frame: EaselRect(x: minX, y: minY, width: max(1, (stroke.map(\.x).max() ?? minX) - minX),
-                         height: max(1, (stroke.map(\.y).max() ?? minY) - minY)), zIndex: (original.map(\.zIndex).max() ?? 0) + 1,
-                         color: insertionColor, points: stroke.map { EaselPoint(x: $0.x - minX, y: $0.y - minY) })
-    }
     override func mouseUp(with event: NSEvent) {
         if imageMouseUp(event) { return }
         if tableMouseUp(with: event) { return }
@@ -1634,9 +1631,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         guard let draft else { return }
         if drawing {
-            if commit("Draw", { $0.items.append(contentsOf: draft) }) {
-                selection = Set(draft.map(\.id)); selectionBeforeGesture = selection
-            }
+            endBrushStroke(flags: event.modifierFlags)
         } else if let edit = geometryEdit, edit.ids == movableSelection, edit.isCurrent(in: session.document),
                   guides?.matchesCanvas(width: bounds.width) == true {
             guard resizing || dragDistance > 3 else { return }
@@ -2092,7 +2087,7 @@ private final class EaselAccessibleObject: NSView {
         case .text: return "Text"
         case .webCard: return "Captured webpage"
         case .browser: return "Webpage"
-        case .freehand: return "Drawing"
+        case .freehand: return item.resolvedBrush.title
         case .sticky: return "Sticky note"
         case .section: return EaselBoardObjects.displayTitle(item)
         case .code: return "Code block, " + EaselCodeBlock.displayName(item.language)
