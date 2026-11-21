@@ -83,25 +83,58 @@ extension BrowserWindowController {
         return true
     }
 
-    func noteVisitTarget(_ action: PCNativeNavigationAction) -> UUID? {
+    static func pageHistory(_ page: PCNativePage) -> TabNoteVisit.PageHistory? {
+        guard page.responds(to: #selector(getter: PCNativePage.historyEntries)) else { return nil }
+        let live = page.historyEntries
+        let entries = live.map { entry in
+            TabNoteVisit.PageEntry(id: entry.persistentIdentifier,
+                                   url: BrowserInternalURL.publicString(entry.url?.absoluteString ?? ""), title: entry.title)
+        }
+        let history = TabNoteVisit.PageHistory(entries: entries, current: page.currentHistoryIndex,
+                                               navigating: page.historyNavigationPending)
+        return history.isValid ? history : nil
+    }
+
+    func visitHistory(_ state: NSObject?, for tab: BrowserTab) -> NSObject? {
+        guard let state, let visit = tab.noteVisit,
+              let target = visit.leaving ? visit.pageUnderShown : visit.shownPage, !target.id.isEmpty,
+              PCNativePage.responds(to: #selector(PCNativePage.navigationState(_:at:endingAt:))) else { return state }
+        return PCNativePage.navigationState(state, at: target.id, endingAt: visit.pageEntryIDs.last) ?? state
+    }
+
+    func browserViewDidChangeHistory(_ view: PCBrowserView) {
+        guard let id = id(for: view) ?? coveredTabID(for: view), let page = view.nativePage, !page.isClosed,
+              store.state.tab(id)?.noteVisit != nil, let history = Self.pageHistory(page) else { return }
+        store.syncPageHistory(id, history: history)
+    }
+
+    func noteVisitMenuTarget(_ action: PCNativeNavigationAction) -> UUID? {
         guard action == .back || action == .forward, presentation.isReady, !isClosing, !wholeWindowClose,
               !windowClosePending, activePeek == nil, libraryView == nil, window?.attachedSheet == nil,
               let id = currentTabID, !transferringTabIDs.contains(id), !closingTabIDs.contains(id),
               let tab = store.state.tab(id, where: { $0.archivedAt == nil }), tab.profileID == activeProfileID,
               let visit = tab.noteVisit else { return nil }
+        let back = action == .back
         if tab.showsNoteOverPage {
             guard renderedPaneIDs.contains(id) else { return nil }
-            return action == .back || !visit.ahead.isEmpty ? id : nil
+            return (back ? visit.behind : visit.ahead).isEmpty ? nil : id
         }
-        guard action == .forward, tab.hasNoteAhead, let page = navigationPage, browsers[id]?.nativePage === page else { return nil }
+        guard !InternalPage.isInternal(tab.url), visit.hasDocument(towardBack: back),
+              let page = navigationPage, browsers[id]?.nativePage === page else { return nil }
         return id
     }
 
+    func noteVisitTarget(_ action: PCNativeNavigationAction) -> UUID? {
+        guard let id = noteVisitMenuTarget(action), let visit = store.state.tab(id)?.noteVisit else { return nil }
+        if visit.showsNote { return id }
+        return (action == .back ? visit.behind.first : visit.ahead.first)?.document != nil ? id : nil
+    }
+
     var navigationCanShowBack: Bool {
-        noteVisitTarget(.back) != nil || (navigationPage?.canShowBackHistory ?? false)
+        noteVisitMenuTarget(.back) != nil || (navigationPage?.canShowBackHistory ?? false)
     }
     var navigationCanShowForward: Bool {
-        noteVisitTarget(.forward) != nil || (navigationPage?.canShowForwardHistory ?? false)
+        noteVisitMenuTarget(.forward) != nil || (navigationPage?.canShowForwardHistory ?? false)
     }
 
     @discardableResult
@@ -111,74 +144,92 @@ extension BrowserWindowController {
 
     @discardableResult
     func stepNoteVisit(_ id: UUID, by offset: Int) -> Bool {
-        if store.state.tab(id)?.showsNoteOverPage == true, let note = noteEditors[id],
-           !note.editor.prepareToClose() { return false }
+        guard let tab = store.state.tab(id, where: { $0.archivedAt == nil }), let visit = tab.noteVisit,
+              let target = visit.step(offset) else { return false }
+        if tab.showsNoteOverPage, let note = noteEditors[id], !note.editor.prepareToClose() { return false }
         navigationHistory?.dismiss()
+        guard moveVisitPage(id, visit: visit, offset: offset, target: target) else { return false }
         var stepped = false
         performWindowCommand { stepped = store.stepNoteVisit(id, by: offset) }
         if stepped { focusSelectedLocalContent() }
         return stepped
     }
 
+    private func moveVisitPage(_ id: UUID, visit: TabNoteVisit, offset: Int, target: TabNoteVisit.Step) -> Bool {
+        guard let page = nativePage(forTabID: id) else { return true }
+        if visit.leaving, offset < 0, browsers[id]?.nativePage === page { browsers[id]?.stop() }
+        guard let anchor = visit.anchor(afterMovingBy: offset), !anchor.id.isEmpty,
+              page.responds(to: #selector(PCNativePage.goToHistoryEntry(_:))) else { return true }
+        let entries = page.historyEntries, index = page.currentHistoryIndex
+        let currentID = entries.indices.contains(index) ? entries[index].persistentIdentifier : nil
+        if currentID != anchor.id {
+            guard entries.contains(where: { $0.persistentIdentifier == anchor.id }), page.goToHistoryEntry(anchor.id) else {
+                if let history = Self.pageHistory(page) { store.syncPageHistory(id, history: history) }
+                return false
+            }
+        }
+        if case .page(let entry) = target {
+            if let covered = coveredPages[id] { covered.requestedURL = entry.url } else if browsers[id] != nil { requestedURLs[id] = entry.url }
+        }
+        return true
+    }
+
     func noteVisitInteraction(_ kind: NavigationControlKind) -> NavigationControlInteraction? {
         guard kind != .reload else { return nil }
         let action: PCNativeNavigationAction = kind == .back ? .back : .forward
-        guard let id = noteVisitTarget(action) else { return nil }
+        guard let id = noteVisitMenuTarget(action) else { return nil }
         return NavigationControlInteraction(activate: { [weak self] alternate in
-            guard let self, self.noteVisitTarget(action) == id else { return }
-            self.chooseNoteVisitStep(id, offset: action == .forward ? 1 : -1, alternate: alternate)
+            guard let self, self.noteVisitMenuTarget(action) == id else { return }
+            if self.noteVisitTarget(action) == id {
+                self.chooseNoteVisitStep(id, offset: action == .forward ? 1 : -1, alternate: alternate)
+            } else if let page = self.navigationPage, self.browsers[id]?.nativePage === page,
+                      page.performNavigation(action, inNewTab: alternate), !alternate {
+                self.failures.removeValue(forKey: id)
+                self.refreshPagePresentation(id)
+            }
         }, showHistory: { [weak self] anchor in
             self?.showNoteVisitHistory(id, forward: action == .forward, from: anchor)
         })
     }
 
     private func chooseNoteVisitStep(_ id: UUID, offset: Int, alternate: Bool) {
-        guard noteVisitTarget(offset > 0 ? .forward : .back) == id,
-              let visit = store.state.tab(id, where: { $0.archivedAt == nil })?.noteVisit,
-              let entry = visit.step(offset) else { return }
-        if alternate {
-            _ = (visit.position ?? -1) + offset < 0 ? openPageUnderNoteInBackground(id) : openNoteStepInBackground(id, entry: entry)
-        } else {
-            stepNoteVisit(id, by: offset)
+        guard noteVisitMenuTarget(offset > 0 ? .forward : .back) == id,
+              let step = store.state.tab(id, where: { $0.archivedAt == nil })?.noteVisit?.step(offset) else { return }
+        guard alternate else { stepNoteVisit(id, by: offset); return }
+        switch step {
+        case .document(let entry): openNoteStepInBackground(id, entry: entry)
+        case .page(let entry): openPageEntryInBackground(id, entry: entry)
+        }
+    }
+
+    func noteVisitRows(_ visit: TabNoteVisit, forward: Bool, page: PCNativePage?) -> [(step: TabNoteVisit.Step, title: String, icon: NSImage?)] {
+        let live = page.map { $0.responds(to: #selector(getter: PCNativePage.historyEntries)) ? $0.historyEntries : [] } ?? []
+        return (forward ? visit.ahead : visit.behind).map { step in
+            let entry = step.page.flatMap { shown in live.first { !shown.id.isEmpty && $0.persistentIdentifier == shown.id } }
+            let title = entry.map { $0.title.isEmpty ? step.title : $0.title } ?? step.title
+            return (step, title, step.document.map(Self.noteVisitIcon) ?? entry?.favicon)
         }
     }
 
     private func showNoteVisitHistory(_ id: UUID, forward: Bool, from anchor: NSView) {
         let action: PCNativeNavigationAction = forward ? .forward : .back
-        guard let window, noteVisitTarget(action) == id,
+        guard let window, noteVisitMenuTarget(action) == id,
               let visit = store.state.tab(id, where: { $0.archivedAt == nil })?.noteVisit else { return }
-        let page = forward ? (visit.showsNote ? nil : navigationPage) : coveredPages[id]?.browser.nativePage
-        let snapshot = page?.navigationHistory(back: !forward)
-        let steps = forward ? visit.ahead : visit.behind
-        let leading = steps.enumerated().map { index, entry in
+        let page = nativePage(forTabID: id)
+        let rows = noteVisitRows(visit, forward: forward, page: page).enumerated().map { index, row in
             let offset = forward ? index + 1 : -(index + 1)
-            let isPage = !forward && index == steps.count - 1
-            return NavigationHistoryStepRow(
-                title: entry.title, icon: isPage ? page?.favicon : Self.noteVisitIcon(entry),
-                url: URL(string: entry.url)) { [weak self] alternate in
-                    self?.chooseNoteVisitStep(id, offset: offset, alternate: alternate)
-                }
+            return NavigationHistoryStepRow(title: row.title, icon: row.icon, url: URL(string: row.step.url)) { [weak self] alternate in
+                self?.chooseNoteVisitStep(id, offset: offset, alternate: alternate)
+            }
         }
         navigationHistory?.dismiss()
         sidebarPreviews?.dismiss(); tabSwitcher?.cancel()
-        let history = NavigationHistoryController(page: page, snapshot: snapshot?.isValid == true ? snapshot : nil,
-                                                  leading: leading, window: window, theme: windowPaletteTheme)
-        let showsNote = visit.showsNote
-        history.stillSelected = { [weak self, weak page] in
-            guard let self, self.noteVisitTarget(action) == id else { return false }
-            return !forward || showsNote || (page != nil && self.navigationPage === page)
-        }
-        if !forward {
-            let toPage = -steps.count
-            history.beforeEntry = { [weak self] alternate in
-                guard let self else { return false }
-                return alternate || self.stepNoteVisit(id, by: toPage)
-            }
-        }
-        history.onNavigate = { [weak self] in
-            guard let self, self.currentTabID == id else { return }
-            self.failures.removeValue(forKey: id)
-            self.refreshPagePresentation(id)
+        let history = NavigationHistoryController(page: page, snapshot: nil, leading: rows, window: window, theme: windowPaletteTheme)
+        let position = visit.position, leaving = visit.leaving, count = visit.steps.count
+        history.stillSelected = { [weak self] in
+            guard let self, self.noteVisitMenuTarget(action) == id,
+                  let current = self.store.state.tab(id)?.noteVisit else { return false }
+            return current.position == position && current.leaving == leaving && current.steps.count == count
         }
         history.onClose = { [weak self, weak history] in
             guard let self, self.navigationHistory === history else { return }
@@ -189,18 +240,23 @@ extension BrowserWindowController {
     }
 
     @discardableResult
-    func openPageUnderNoteInBackground(_ id: UUID) -> Bool {
-        guard let tab = store.state.tab(id, where: { $0.archivedAt == nil }), let visit = tab.noteVisit,
-              visit.showsNote, let page = coveredPages[id]?.browser.nativePage, !page.isClosed else { return false }
+    func openPageEntryInBackground(_ id: UUID, entry: TabNoteVisit.PageEntry) -> Bool {
+        guard let tab = store.state.tab(id, where: { $0.archivedAt == nil }), tab.noteVisit != nil else { return false }
         navigationHistory?.dismiss()
-        let history = page.responds(to: #selector(PCNativePage.captureNavigationState)) ? page.captureNavigationState() : nil
+        let page = nativePage(forTabID: id)
+        let captured = page.flatMap { $0.responds(to: #selector(PCNativePage.captureNavigationState)) ? $0.captureNavigationState() : nil }
+        let history = captured.flatMap { state -> NSObject? in
+            guard !entry.id.isEmpty else { return state }
+            guard PCNativePage.responds(to: #selector(PCNativePage.navigationState(_:at:endingAt:))) else { return nil }
+            return PCNativePage.navigationState(state, at: entry.id, endingAt: nil)
+        }
         let creation = TabCreationProvenance(referrerID: id, activeTabID: currentTabID,
                                              profileID: tab.profileID, state: store.state)
         var opened: UUID?
         performWindowCommand(selectNativePage: false) {
-            opened = store.adoptNativePage(url: URL(string: visit.page.url), title: visit.page.title,
-                                           profilePath: page.profilePath, preferredSpaceID: tab.spaceID,
-                                           select: false, creation: creation)
+            opened = store.adoptNativePage(url: URL(string: entry.url), title: entry.title,
+                                           profilePath: page?.profilePath ?? store.independentEngineProfilePath(for: tab.profileID),
+                                           preferredSpaceID: tab.spaceID, select: false, creation: creation)
             guard let created = opened else { return }
             if let history {
                 store.closedPageHistory.closed(created, state: history)
@@ -253,9 +309,15 @@ extension BrowserWindowController {
             guard let page, browsers[sourceID]?.nativePage === page else { return false }
         }
         closeLibrary(restoreFocus: false)
+        let live = nativePage(forTabID: sourceID)
+        let history = live.flatMap(Self.pageHistory)
         var opened = false
-        performWindowCommand { opened = store.openDocumentOverPage(sourceID, page: document, title: title) }
+        performWindowCommand { opened = store.openDocumentOverPage(sourceID, page: document, title: title, history: history) }
         guard opened else { return false }
+        if let live, let history, store.state.tab(sourceID)?.noteVisit?.pageUnderShown.id == history.entries[history.current].id,
+           live.responds(to: #selector(PCNativePage.removeHistoryEntriesAfterCurrent)) {
+            _ = live.removeHistoryEntriesAfterCurrent()
+        }
         focusSelectedLocalContent()
         if let anchor, !anchor.isEmpty { revealNoteAnchor(anchor, inTab: sourceID) }
         return true

@@ -28,6 +28,9 @@ struct NoteVisitTests {
             try persistence(directory, readme: readme)
             try renamesAndDeletion(directory, notes: notes, readme: readme)
             try storeEasels(directory)
+            try interleaving(notes, readme: readme)
+            try pageHistoryEdges(readme)
+            try storeInterleaving(directory, notes: notes, readme: readme)
             print("NoteVisits: \(assertions) assertions passed")
         }
     }
@@ -42,12 +45,12 @@ struct NoteVisitTests {
         try expect(tab.openNoteVisit(url: readme, title: ""), "A page can open a note over itself")
         try expect(tab.url == readme.absoluteString && tab.title == "Readme", "The tab's address and title follow the note")
         try expect(tab.savedURL == tab.url && tab.savedTitle == "Readme", "A Today tab's saved address follows what shows")
-        try expect(tab.showsNoteOverPage && !tab.hasNoteAhead, "The note shows on top of the page")
+        try expect(tab.showsNoteOverPage && !tab.hasVisitStepAhead, "The note shows on top of the page")
         try expect(tab.noteVisit?.page == .init(url: "https://example.test/docs", title: "Docs"), "The page entry remembers where it was")
         try expect(!tab.stepForwardToNote(), "Forward does nothing while the note shows")
         try expect(tab.stepBackFromNote(), "Back leaves the note")
         try expect(tab.url == "https://example.test/docs" && tab.title == "Docs", "Back shows the page's address and title")
-        try expect(tab.hasNoteAhead && !tab.showsNoteOverPage, "The note waits ahead after Back")
+        try expect(tab.hasVisitStepAhead && !tab.showsNoteOverPage, "The note waits ahead after Back")
         try expect(!tab.stepBackFromNote(), "Back from the page is the page's own business")
         tab.title = "Docs, updated"
         try expect(tab.stepForwardToNote(), "Forward returns to the note")
@@ -86,7 +89,7 @@ struct NoteVisitTests {
 
         let encoded = try JSONEncoder().encode(tab)
         let decoded = try JSONDecoder().decode(BrowserTab.self, from: encoded)
-        try expect(decoded == tab && decoded.hasNoteAhead, "The note entry survives encoding")
+        try expect(decoded == tab && decoded.hasVisitStepAhead, "The note entry survives encoding")
         var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(webTab())) as? [String: Any] ?? [:]
         legacy.removeValue(forKey: "noteVisit")
         let old = try JSONDecoder().decode(BrowserTab.self, from: JSONSerialization.data(withJSONObject: legacy))
@@ -103,7 +106,7 @@ struct NoteVisitTests {
         try expect(tab.openDocumentVisit(.easel(id), title: " Board "), "A page can open an Easel over itself")
         try expect(tab.url == easel && tab.title == "Board" && tab.showsNoteOverPage, "The tab shows the Easel on top of the page")
         try expect(tab.noteVisit?.document == .easel(id) && tab.noteVisit?.noteFile == nil, "The step holds the Easel, not a note")
-        try expect(tab.stepBackFromNote() && tab.url == "https://example.test/docs" && tab.hasNoteAhead, "Back shows the page")
+        try expect(tab.stepBackFromNote() && tab.url == "https://example.test/docs" && tab.hasVisitStepAhead, "Back shows the page")
         try expect(tab.stepForwardToNote() && tab.url == easel, "Forward returns to the Easel")
 
         var untitled = webTab()
@@ -174,7 +177,7 @@ struct NoteVisitTests {
         var long = webTab()
         long.openNoteVisit(url: readme, title: "Readme")
         for _ in 0..<(TabNoteVisit.limit + 9) { long.openDocumentVisit(.easel(UUID()), title: "Board") }
-        try expect(long.noteVisit?.documents.count == TabNoteVisit.limit && long.noteVisit?.position == TabNoteVisit.limit - 1,
+        try expect(long.noteVisit?.documents.count == TabNoteVisit.limit && long.noteVisit?.position == TabNoteVisit.limit,
                    "A tab keeps the newest 50 document steps, as Chromium keeps 50 page entries")
         try expect(long.noteVisit?.documents.first?.url != a, "The oldest steps go first")
         try expect(long.stepNoteVisit(by: -TabNoteVisit.limit) && long.url == page, "Back from the oldest kept step is still the page")
@@ -198,7 +201,7 @@ struct NoteVisitTests {
         repeated.openNoteVisit(url: readme, title: "Readme"); repeated.openDocumentVisit(.easel(board), title: "Board")
         repeated.openNoteVisit(url: readme, title: "Readme")
         try expect(repeated.forgetNote(matching: InternalPage.easel(board).matcher()) && docsAt(repeated) == [a]
-                   && repeated.noteVisit?.position == 0 && repeated.url == a, "Steps left side by side on one document merge")
+                   && repeated.noteVisit?.position == 1 && repeated.url == a, "Steps left side by side on one document merge")
         var aheadOnly = webTab()
         aheadOnly.openNoteVisit(url: readme, title: "Readme"); aheadOnly.openDocumentVisit(.easel(board), title: "Board")
         aheadOnly.stepNoteVisit(by: -2)
@@ -244,12 +247,12 @@ struct NoteVisitTests {
         }
         let store = try BrowserStore(directory: location)
         let restored = try unwrap(store.state.tab(page)?.noteVisit, "restored stack")
-        try expect(restored.documents.map(\.url) == [a, b, c] && restored.position == 1 && store.state.tab(page)?.url == b,
+        try expect(restored.documents.map(\.url) == [a, b, c] && restored.position == 2 && store.state.tab(page)?.url == b,
                    "A restart restores every step and where the tab stood")
         let renamed = notes.appendingPathComponent("Moved.md")
         try FileManager.default.moveItem(at: guide, to: renamed)
         store.updateNoteFile(from: guide, to: renamed, title: "Moved")
-        try expect(store.state.tab(page)?.noteVisit?.ahead == [.init(url: renamed.absoluteString, title: "Moved")]
+        try expect(store.state.tab(page)?.noteVisit?.ahead.compactMap(\.document) == [.init(url: renamed.absoluteString, title: "Moved")]
                    && store.state.tab(page)?.url == b, "A renamed note ahead keeps its place")
         var finished: Error??
         store.deleteLocalDocument(.easel(board), profileID: store.activeSpace.profileID, ownerValid: { true },
@@ -284,11 +287,11 @@ struct NoteVisitTests {
                    "The hidden page's address is remembered without changing the tab")
         try expect(store.stepNoteVisit(page, forward: false), "Back shows the page")
         let back = try unwrap(store.state.tab(page), "back")
-        try expect(back.url == "https://example.test/docs#section" && back.title == "Docs — Section" && back.hasNoteAhead,
+        try expect(back.url == "https://example.test/docs#section" && back.title == "Docs — Section" && back.hasVisitStepAhead,
                    "Back puts the page's address and title on the tab and keeps the note ahead")
         try expect(!store.stepNoteVisit(page, forward: false), "A second Back is the page's own")
         store.updateTab(page, title: "Docs, retitled")
-        try expect(store.state.tab(page)?.hasNoteAhead == true, "A title change keeps the Forward entry")
+        try expect(store.state.tab(page)?.hasVisitStepAhead == true, "A title change keeps the Forward entry")
         try expect(store.stepNoteVisit(page, forward: true), "Forward shows the note again")
         try expect(store.state.tab(page)?.url == readme.absoluteString, "Forward puts the note back on the tab")
         try expect(store.stepNoteVisit(page, forward: false), "And Back again")
@@ -404,7 +407,7 @@ struct NoteVisitTests {
         let store = try BrowserStore(directory: location)
         try expect(store.state.tab(shown)?.url == easel && store.state.tab(shown)?.showsNoteOverPage == true,
                    "After a restart the tab still shows the Easel over its page")
-        try expect(store.state.tab(ahead)?.hasNoteAhead == true, "and the other tab still has it ahead")
+        try expect(store.state.tab(ahead)?.hasVisitStepAhead == true, "and the other tab still has it ahead")
         try expect(store.stepNoteVisit(shown, forward: false) && store.state.tab(shown)?.url == "https://example.test/shown",
                    "Back after a restart puts the page back")
         try expect(store.stepNoteVisit(shown, forward: true), "Forward again")
@@ -417,4 +420,163 @@ struct NoteVisitTests {
         try expect(store.state.tab(ahead)?.noteVisit == nil && store.state.tab(ahead)?.url == "https://example.test/ahead",
                    "A page with the deleted Easel ahead just loses Forward")
     }
+
+    static func entry(_ id: String) -> TabNoteVisit.PageEntry {
+        .init(id: id, url: "https://example.test/" + id, title: id.uppercased())
+    }
+
+    static func history(_ ids: [String], current: Int, navigating: Bool = false) -> TabNoteVisit.PageHistory {
+        .init(entries: ids.map(entry), current: current, navigating: navigating)
+    }
+
+    static func interleaving(_ notes: URL, readme: URL) throws {
+        let guide = notes.appendingPathComponent("Interleaved.md")
+        try Data("# Interleaved\n".utf8).write(to: guide)
+        let board = UUID()
+        let note = readme.absoluteString, easel = InternalPage.easel(board).urlString, second = guide.absoluteString
+        let a = entry("a"), b = entry("b"), c = entry("c")
+        var tab = webTab(a.url, title: a.title)
+        try expect(tab.openDocumentVisit(.note(readme), title: "Readme", history: history(["a"], current: 0))
+                   && tab.openDocumentVisit(.easel(board), title: "Board", history: history(["a"], current: 0)),
+                   "web A → note → Easel")
+        try expect(tab.leaveNoteVisit(for: b.url), "Typing an address over the Easel leaves it for the page")
+        tab.url = b.url; tab.title = b.title
+        try expect(tab.noteVisit?.leaving == true && tab.noteVisit?.behind.first == .document(.init(url: easel, title: "Board"))
+                   && tab.hasVisitStepBehind && !tab.hasVisitStepAhead,
+                   "While the new page loads, the Easel waits right behind it and nothing is ahead")
+        try expect(tab.syncPageHistory(history(["a", "b"], current: 1)), "The new page commits")
+        try expect(tab.openDocumentVisit(.note(guide), title: "Interleaved", history: history(["a", "b"], current: 1)),
+                   "→ web B → note")
+        try expect(tab.leaveNoteVisit(for: c.url), "and another typed address")
+        tab.url = c.url; tab.title = c.title
+        try expect(tab.syncPageHistory(history(["a", "b", "c"], current: 2)), "→ web C")
+        let steps: [TabNoteVisit.Step] = [.page(a), .document(.init(url: note, title: "Readme")), .document(.init(url: easel, title: "Board")),
+                                          .page(b), .document(.init(url: second, title: "Interleaved")), .page(c)]
+        try expect(tab.noteVisit?.steps == steps && tab.noteVisit?.shownPage == c && !tab.showsNoteOverPage,
+                   "Every page and document sits in one history, in the order it was visited")
+        let back: [(String, String)] = [(second, "b"), (b.url, "b"), (easel, "a"), (note, "a"), (a.url, "a")]
+        for (url, page) in back {
+            let anchor = tab.noteVisit?.anchor(afterMovingBy: -1)
+            try expect(anchor?.id == page && tab.stepBackFromNote() && tab.url == url && tab.noteVisit?.pageUnderShown.id == page,
+                       "Back walks every step in reverse, with the page underneath at the entry it was opened over")
+        }
+        try expect(!tab.stepBackFromNote() && tab.noteVisit?.step(-1) == nil, "Back past the first page is the page's own history")
+        for (url, page) in [(note, "a"), (easel, "a"), (b.url, "b"), (second, "b"), (c.url, "c")] {
+            try expect(tab.noteVisit?.anchor(afterMovingBy: 1)?.id == page && tab.stepForwardToNote() && tab.url == url,
+                       "Forward retraces them")
+        }
+        try expect(!tab.stepForwardToNote(), "Nothing past the newest page")
+        try expect(tab.stepNoteVisit(by: -2) && tab.url == b.url && tab.stepNoteVisit(by: -2) && tab.url == note,
+                   "A list or swipe jumps across pages and documents")
+        let encoded = try JSONDecoder().decode(BrowserTab.self, from: JSONEncoder().encode(tab))
+        try expect(encoded.noteVisit?.steps == tab.noteVisit?.steps && encoded.noteVisit?.position == tab.noteVisit?.position
+                   && encoded.url == note, "The interleaved history survives a restart")
+        var mid = tab
+        try expect(mid.openDocumentVisit(.easel(UUID()), title: "Fresh", history: history(["a", "b", "c"], current: 0)),
+                   "A document opened from the middle")
+        try expect(mid.noteVisit?.steps.count == 3 && mid.noteVisit?.steps.compactMap(\.page) == [a] && !mid.hasVisitStepAhead,
+                   "drops every later page and document, like any new navigation")
+        var renamed = tab
+        try expect(renamed.followNoteRename(from: InternalPage.note(guide).matcher(), to: second, title: "Renamed")
+                   && renamed.noteVisit?.steps[4] == .document(.init(url: second, title: "Renamed")),
+                   "A rename reaches a document in another page's run")
+        var trashed = tab
+        trashed.stepNoteVisit(by: 1)
+        try expect(trashed.forgetNote(matching: InternalPage.easel(board).matcher()) && trashed.url == note
+                   && trashed.noteVisit?.steps.count == 5, "Trashing the shown Easel shows the note behind it")
+        try expect(trashed.forgetNote(matching: InternalPage.note(readme).matcher()) && trashed.url == a.url
+                   && trashed.noteVisit?.shownPage == a && trashed.noteVisit?.ahead.first == .page(b),
+                   "Trashing the last document over a page shows that page, with the rest still ahead")
+        var leftover = webTab(a.url, title: a.title)
+        leftover.openDocumentVisit(.note(readme), title: "Readme", history: history(["a"], current: 0))
+        leftover.stepBackFromNote()
+        try expect(leftover.syncPageHistory(history(["a", "x"], current: 1)) && leftover.noteVisit == nil,
+                   "A link followed on the page drops the document ahead of it, and the visit with it")
+    }
+
+    static func pageHistoryEdges(_ readme: URL) throws {
+        let doc = TabNoteVisit.Entry(url: readme.absoluteString, title: "Readme")
+        var visit = TabNoteVisit.page(entry("a").url, title: "A", history: history(["a"], current: 0))
+        visit.push(doc)
+        try expect(!visit.sync(history(["a", "a"], current: 0)) && !visit.sync(history([], current: 0))
+                   && !visit.sync(.init(entries: [.init(id: "", url: "x", title: "")], current: 0))
+                   && !visit.sync(history(["a"], current: 3)), "Unreadable history reports change nothing")
+        var underneath = visit
+        try expect(underneath.sync(history(["a", "x"], current: 1)) && underneath.current == doc
+                   && underneath.steps.compactMap(\.page) == [entry("a"), entry("x")] && underneath.pageID == "x",
+                   "The page moving on behind a document keeps the document and puts the new page after it")
+        try expect(underneath.followPage(url: nil, title: "Moved on") && underneath.steps[2].title == "Moved on",
+                   "Title updates from the hidden page reach the entry it's on")
+        var replaced = visit
+        try expect(replaced.sync(history(["z"], current: 0)) && replaced.current == doc && replaced.pageUnderShown.id == "z",
+                   "A shown document whose page entry was replaced stays, over the page's current entry")
+        var pruned = TabNoteVisit.page(entry("a").url, title: "A", history: history(["a"], current: 0))
+        pruned.push(doc); _ = pruned.leave(); pruned.sync(history(["a", "b"], current: 1))
+        pruned.push(.init(url: InternalPage.easel(UUID()).urlString, title: "Board")); _ = pruned.leave()
+        pruned.sync(history(["a", "b", "c"], current: 2))
+        try expect(pruned.sync(history(["b", "c"], current: 1)) && pruned.documents.count == 1 && pruned.steps.first == .page(entry("b")),
+                   "When Chromium forgets its oldest page, the documents over it go too")
+        var waiting = visit
+        try expect(waiting.leave() && waiting.sync(history(["a"], current: 0, navigating: true)) == false && waiting.leaving,
+                   "A typed address still loading keeps the document right behind it")
+        try expect(waiting.sync(history(["a"], current: 0)) && !waiting.leaving && waiting.shownPage == entry("a")
+                   && waiting.ahead == [.document(doc)], "A typed address that never commits leaves the page showing, with the document ahead")
+        var legacy = TabNoteVisit(page: .init(url: "https://example.test/old", title: "Old"), documents: [doc], position: 0)
+        try expect(!legacy.tracksPageHistory && legacy.sync(history(["p", "q"], current: 1))
+                   && legacy.steps == [.page(entry("p")), .page(entry("q")), .document(doc)] && legacy.tracksPageHistory,
+                   "A stack saved before page tracking attaches to the page's current entry on its first report")
+        var restart = webTab()
+        restart.openDocumentVisit(.note(readme), title: "Readme", history: history(["a"], current: 0))
+        _ = restart.leaveNoteVisit(for: "https://example.test/typed")
+        let saved = try JSONDecoder().decode(BrowserTab.self, from: JSONEncoder().encode(restart))
+        try expect(saved.noteVisit?.leaving == true && saved.noteVisit == restart.noteVisit,
+                   "A typed address that hadn't committed yet is remembered across a restart")
+        var bounded = TabNoteVisit.page(entry("a").url, title: "A", history: history(["a"], current: 0))
+        for _ in 0..<(TabNoteVisit.limit + 5) { bounded.push(.init(url: InternalPage.easel(UUID()).urlString, title: "Board")) }
+        try expect(bounded.documents.count == TabNoteVisit.limit && bounded.steps.first?.page == entry("a"),
+                   "The newest 50 documents are kept and the first page stays")
+    }
+
+    static func storeInterleaving(_ directory: URL, notes: URL, readme: URL) throws {
+        let location = directory.appendingPathComponent("interleaved")
+        let board = UUID(), id: UUID
+        let a = entry("a"), b = entry("b")
+        do {
+            let store = try BrowserStore(directory: location)
+            id = store.open(a.url)
+            store.updateTab(id, title: a.title, url: a.url)
+            try expect(store.openDocumentOverPage(id, page: .note(readme), title: "Readme", history: history(["a"], current: 0)),
+                       "A note opens over the page, anchored to its history entry")
+            store.updateTab(id, url: b.url)
+            let typed = try unwrap(store.state.tab(id), "typed")
+            try expect(typed.url == b.url && typed.noteVisit?.leaving == true && typed.noteVisit?.documents.count == 1,
+                       "Typing an address over a note keeps the note behind the new page")
+            store.syncPageHistory(id, history: history(["a", "b"], current: 1))
+            try expect(store.state.tab(id)?.noteVisit?.shownPage == b, "The new page joins the history after the note")
+            store.updateTab(id, title: "B, titled")
+            try expect(store.state.tab(id)?.noteVisit?.shownPage?.title == "B, titled", "The page's title is remembered for its step")
+            var titled = history(["a", "b"], current: 1)
+            titled.entries[1].title = "B, titled"
+            try expect(store.openDocumentOverPage(id, page: .easel(board), title: "Board", history: titled),
+                       "An Easel over the second page")
+            try expect(store.stepNoteVisit(id, by: -2) && store.state.tab(id)?.url == readme.absoluteString,
+                       "Back across the page lands on the note")
+            try store.save()
+        }
+        let store = try BrowserStore(directory: location)
+        let restored = try unwrap(store.state.tab(id)?.noteVisit, "restored")
+        try expect(restored.steps.compactMap(\.page).map(\.id) == ["a", "b"] && restored.current?.url == readme.absoluteString
+                   && restored.position == 1, "A restart restores the whole history and where the tab stood")
+        try expect(store.stepNoteVisit(id, by: 2) && store.state.tab(id)?.url == InternalPage.easel(board).urlString,
+                   "Forward after a restart reaches the Easel over the second page")
+        try expect(store.stepNoteVisit(id, by: -1) && store.state.tab(id)?.url == "https://example.test/b"
+                   && store.state.tab(id)?.title == "B, titled", "Back from it shows the second page under its own title")
+        store.updateTab(id, url: "https://example.test/link")
+        try expect(store.state.tab(id)?.noteVisit != nil, "A page's own navigation waits for its history report")
+        store.syncPageHistory(id, history: history(["a", "b", "link"], current: 2))
+        let followed = try unwrap(store.state.tab(id)?.noteVisit, "followed")
+        try expect(followed.documents.map(\.url) == [readme.absoluteString] && followed.shownPage?.id == "link",
+                   "A link followed from the page drops the Easel that was ahead of it, like web history")
+    }
+
 }

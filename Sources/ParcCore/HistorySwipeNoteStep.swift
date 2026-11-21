@@ -1,8 +1,7 @@
 import Foundation
 
 enum HistorySwipeNoteStep: Equatable {
-    case note(TabNoteVisit.Entry)
-    case pageUnderNote(TabNoteVisit.Entry)
+    case visit(TabNoteVisit.Step)
     case page(distance: Int)
 
     static func entries(toward direction: HistorySwipeDirection, visit: TabNoteVisit?, pageEntries: Int) -> Int {
@@ -11,14 +10,9 @@ enum HistorySwipeNoteStep: Equatable {
 
     static func steps(toward direction: HistorySwipeDirection, visit: TabNoteVisit?, pageEntries: Int) -> [HistorySwipeNoteStep] {
         let pages = (0..<max(0, pageEntries)).map { HistorySwipeNoteStep.page(distance: $0 + 1) }
-        guard let visit else { return pages }
-        switch direction {
-        case .back:
-            guard visit.showsNote else { return pages }
-            return visit.behind.dropLast().map(HistorySwipeNoteStep.note) + [.pageUnderNote(visit.page)] + pages
-        case .forward:
-            return visit.ahead.map(HistorySwipeNoteStep.note) + (visit.showsNote ? [] : pages)
-        }
+        guard let visit, visit.hasDocument(towardBack: direction == .back) else { return pages }
+        let steps = (direction == .back ? visit.behind : visit.ahead).map(HistorySwipeNoteStep.visit)
+        return visit.tracksPageHistory || visit.showsNote || direction == .back ? steps : steps + pages
     }
 
     static func step(toward direction: HistorySwipeDirection, distance: Int, visit: TabNoteVisit?,

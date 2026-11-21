@@ -12,6 +12,7 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
     private let clock = HistorySwipeSystemClock()
     private lazy var driver = HistorySwipeDriver(target: self, presenter: self, clock: clock)
     private var monitor: Any?
+    private var buttonMonitor: Any?
     private weak var controller: BrowserWindowController?
     private var tabID: UUID?
     private var overlay: HistorySwipeOverlayView?
@@ -22,6 +23,21 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
         monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             MainActor.assumeIsolated { HistorySwipeNoteSource.shared.receive(event) } ? nil : event
         }
+        buttonMonitor = NSEvent.addLocalMonitorForEvents(matching: [.otherMouseDown, .otherMouseUp]) { event in
+            MainActor.assumeIsolated { HistorySwipeNoteSource.shared.historyButton(event) } ? nil : event
+        }
+    }
+
+    private func historyButton(_ event: NSEvent) -> Bool {
+        guard event.buttonNumber == 3 || event.buttonNumber == 4, let window = event.window,
+              let controller = window.windowController as? BrowserWindowController, let content = window.contentView,
+              let hit = content.hitTest(content.convert(event.locationInWindow, from: nil)) else { return false }
+        let forward = event.buttonNumber == 4
+        guard let id = controller.noteVisitTarget(forward ? .forward : .back),
+              let view = controller.browsers[id] ?? noteView(controller, id),
+              hit === view || hit.isDescendant(of: view) else { return false }
+        if event.type == .otherMouseUp { controller.stepNoteVisit(id, forward: forward) }
+        return true
     }
 
     private func receive(_ event: NSEvent) -> Bool {
@@ -104,7 +120,7 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
         case .dismiss: return false
         }
         switch HistorySwipeNoteStep.step(toward: direction, distance: distance, visit: visit, pageEntries: 0) {
-        case .note?, .pageUnderNote?:
+        case .visit?:
             return controller.stepNoteVisit(tabID, by: HistorySwipeNoteStep.visitOffset(toward: direction, distance: distance))
         case .page?, nil:
             return false
@@ -141,12 +157,13 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
         let view = HistorySwipeOverlayView(frame: frame)
         view.autoresizingMask = [.width, .height]
         view.palette = controller.historySwipePalette
-        let row = { (entry: TabNoteVisit.Entry) in
-            HistorySwipeOverlayRow(title: entry.title, favicon: BrowserWindowController.noteVisitIcon(entry))
+        let page = controller.nativePage(forTabID: tabID)
+        let rows = { (forward: Bool) in
+            controller.noteVisitRows(visit, forward: forward, page: page).map { HistorySwipeOverlayRow(title: $0.title, favicon: $0.icon) }
         }
-        let page = HistorySwipeOverlayRow(title: visit.page.title,
-                                          favicon: controller.coveredPages[tabID]?.browser.nativePage?.favicon)
-        view.setRows(current: row(visit.shown), back: visit.behind.dropLast().map(row) + [page], forward: visit.ahead.map(row))
+        let shown = visit.current.map { HistorySwipeOverlayRow(title: $0.title, favicon: BrowserWindowController.noteVisitIcon($0)) }
+            ?? HistorySwipeOverlayRow(title: visit.page.title, favicon: page?.favicon)
+        view.setRows(current: shown, back: rows(false), forward: rows(true))
         container.addSubview(view, positioned: .above, relativeTo: noteView(controller, tabID))
         overlay = view
     }

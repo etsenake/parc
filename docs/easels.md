@@ -5,8 +5,10 @@ commits an atomic save before publishing changes to other editors. File → New
 Easel opens the Easel in its own tab; Add Split's draft fills its pending pane.
 In a split, New Easel, an Easel row and a typed Easel address go to the
 command bar's pane, and over a web page the Easel sits on top of the page like
-a note, as one step in the pane's history: Back walks through the notes and
-Easels opened before it to the page as it was, and Forward returns to them
+a note, as one step in the pane's history, which it shares with the pages and
+notes around it: Back walks through every note, Easel and page before it, with
+each page as it was, and Forward returns to them, and an address typed over the
+Easel keeps it behind the new page
 ([navigation](navigation.md#links-to-markdown-and-text-files)). Local editing
 and export do not require a collaboration service.
 

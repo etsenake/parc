@@ -81,13 +81,13 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
 
     func historyEntries(toward direction: HistorySwipeDirection) -> Int {
         let pageEntries = source?.historyEntries(back: direction == .back) ?? 0
-        return HistorySwipeNoteStep.entries(toward: direction, visit: noteAhead(direction)?.visit, pageEntries: pageEntries)
+        return HistorySwipeNoteStep.entries(toward: direction, visit: visitSwipe(direction)?.visit, pageEntries: pageEntries)
     }
 
-    private func noteAhead(_ direction: HistorySwipeDirection) -> (controller: BrowserWindowController, tabID: UUID, visit: TabNoteVisit)? {
-        guard direction == .forward, let browser = swipeBrowser,
+    private func visitSwipe(_ direction: HistorySwipeDirection) -> (controller: BrowserWindowController, tabID: UUID, visit: TabNoteVisit)? {
+        guard let browser = swipeBrowser,
               let controller = browser.window?.windowController as? BrowserWindowController,
-              let id = controller.noteVisitTarget(.forward), controller.browsers[id] === browser,
+              let id = controller.noteVisitMenuTarget(direction == .back ? .back : .forward), controller.browsers[id] === browser,
               let visit = controller.store.state.tab(id)?.noteVisit, !visit.showsNote else { return nil }
         return (controller, id, visit)
     }
@@ -119,9 +119,11 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
     }
 
     func beginSwipe(_ direction: HistorySwipeDirection) -> Bool {
-        noteStep = noteAhead(direction)
+        noteStep = visitSwipe(direction)
         let pageEntries = source?.historyEntries(back: direction == .back) ?? 0
-        history = noteStep == nil || pageEntries > 0 ? source?.beginSwipe(back: direction == .back) : nil
+        let reachesPage = HistorySwipeNoteStep.steps(toward: direction, visit: noteStep?.visit, pageEntries: pageEntries)
+            .contains { if case .page = $0 { true } else { false } }
+        history = noteStep == nil || reachesPage ? source?.beginSwipe(back: direction == .back) : nil
         engineSwipe = history != nil
         return history != nil || noteStep != nil
     }
@@ -129,20 +131,20 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
     func navigate(_ commit: HistorySwipeCommit) -> Bool {
         guard let source else { return false }
         if let noteStep {
-            let distance: Int
+            let direction: HistorySwipeDirection, distance: Int
             switch commit {
-            case .adjacent: distance = 1
-            case let .entry(_, steps): distance = steps
+            case let .adjacent(toward): direction = toward; distance = 1
+            case let .entry(toward, steps): direction = toward; distance = steps
             case .dismiss: return false
             }
-            switch HistorySwipeNoteStep.step(toward: .forward, distance: distance, visit: noteStep.visit,
-                                             pageEntries: engineSwipe ? source.historyEntries(back: false) : 0) {
-            case .note?:
-                guard noteStep.controller.noteVisitTarget(.forward) == noteStep.tabID else { return false }
-                return noteStep.controller.stepNoteVisit(noteStep.tabID, by: distance)
+            switch HistorySwipeNoteStep.step(toward: direction, distance: distance, visit: noteStep.visit,
+                                             pageEntries: engineSwipe ? source.historyEntries(back: direction == .back) : 0) {
+            case .visit?:
+                guard noteStep.controller.noteVisitMenuTarget(direction == .back ? .back : .forward) == noteStep.tabID else { return false }
+                return noteStep.controller.stepNoteVisit(noteStep.tabID, by: HistorySwipeNoteStep.visitOffset(toward: direction, distance: distance))
             case let .page(steps)?:
-                return source.navigate(back: false, distance: steps)
-            case .pageUnderNote?, nil:
+                return source.navigate(back: direction == .back, distance: steps)
+            case nil:
                 return false
             }
         }
@@ -203,11 +205,18 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
         view.palette = (container.window?.windowController as? BrowserWindowController)?.historySwipePalette
         let rows = history.map { HistorySwipeRows(entries: $0.entries.map(Self.row), currentIndex: $0.currentIndex) }
         if let noteStep {
-            let notes = noteStep.visit.ahead.map {
-                HistorySwipeOverlayRow(title: $0.title, favicon: BrowserWindowController.noteVisitIcon($0))
+            let page = noteStep.controller.nativePage(forTabID: noteStep.tabID)
+            let steps = { (forward: Bool) in
+                noteStep.controller.noteVisitRows(noteStep.visit, forward: forward, page: page).map {
+                    HistorySwipeOverlayRow(title: $0.title, favicon: $0.icon)
+                }
             }
-            let current = rows?.current ?? HistorySwipeOverlayRow(title: noteStep.visit.page.title, favicon: nil)
-            view.setRows(current: current, back: rows?.back ?? [], forward: notes + (rows?.forward ?? []))
+            let current = rows?.current ?? HistorySwipeOverlayRow(title: noteStep.visit.page.title, favicon: page?.favicon)
+            if noteStep.visit.tracksPageHistory {
+                view.setRows(current: current, back: steps(false), forward: steps(true))
+            } else {
+                view.setRows(current: current, back: rows?.back ?? [], forward: steps(true) + (rows?.forward ?? []))
+            }
         } else if let rows {
             view.setRows(current: rows.current ?? HistorySwipeOverlayRow(title: "", favicon: nil),
                          back: rows.back, forward: rows.forward)

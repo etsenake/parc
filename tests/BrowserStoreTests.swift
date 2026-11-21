@@ -104,8 +104,8 @@ struct BrowserStoreTests {
             }
             let reopened = try BrowserStore(directory: directory)
             let restored = reopened.state.tab(page)!
-            try expect(restored.url == InternalPage.note(note).urlString && restored.noteVisit?.position == 0
-                       && restored.noteVisit?.documents.count == 2 && restored.hasNoteAhead,
+            try expect(restored.url == InternalPage.note(note).urlString && restored.noteVisit?.position == 1
+                       && restored.noteVisit?.documents.count == 2 && restored.hasVisitStepAhead,
                        "A session restores every document step and where the tab stood")
             try expect(reopened.stepNoteVisit(page, forward: true) && reopened.state.tab(page)?.url == InternalPage.easel(easel).urlString,
                        "Forward after a restart reaches the Easel")
@@ -124,7 +124,7 @@ struct BrowserStoreTests {
             let legacy = try BrowserStore(directory: directory)
             let migrated = legacy.state.tab(page)!.noteVisit!
             try expect(migrated.documents == [.init(url: InternalPage.easel(easel).urlString, title: "Board")]
-                       && migrated.position == nil && migrated.page.url == "https://example.test/docs",
+                       && migrated.position == 0 && !migrated.showsNote && migrated.page.url == "https://example.test/docs",
                        "A session saved with one document step loads as a one-step stack")
         }
     }

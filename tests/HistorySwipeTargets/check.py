@@ -74,9 +74,10 @@ require(glue, "the swipe forwarder's Swift half", present=("source.navigate(back
         absent=focus + ("performNavigation", "navigationHistory("))
 
 forwarder = (root / "Sources/ParcApp/HistorySwipeForwarder.swift").read_text()
-require(forwarder, "the forward swipe into a note", present=(
-    "noteVisitTarget(.forward)", "HistorySwipeNoteStep.entries(", "HistorySwipeNoteStep.step(",
-    "stepNoteVisit(noteStep.tabID, by: distance)", "HistorySwipeNoteSource.shared.install()"), absent=focus)
+require(forwarder, "the swipe across notes and pages", present=(
+    "noteVisitMenuTarget(", "HistorySwipeNoteStep.entries(", "HistorySwipeNoteStep.step(",
+    "stepNoteVisit(noteStep.tabID, by: HistorySwipeNoteStep.visitOffset(", "HistorySwipeNoteSource.shared.install()"),
+    absent=focus)
 note_source = (root / "Sources/ParcApp/HistorySwipeNoteSource.swift").read_text()
 require(note_source, "the swipe back off a note", present=(
     "noteVisitTarget(.back)", "HistorySwipeNoteStep.entries(", "HistorySwipeTargets.scrollsHorizontally(",

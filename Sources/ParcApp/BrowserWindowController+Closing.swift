@@ -238,7 +238,7 @@ extension BrowserWindowController {
                   let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
                   tab.profileID == (browserProfiles[id] ?? coveredPages[id]?.profileID),
                   let navigation = page.archivedNavigationState() else { continue }
-            let url = tab.showsNoteOverPage ? tab.noteVisit?.page.url ?? tab.url : tab.url
+            let url = tab.noteVisit?.page.url ?? tab.url
             archive.store(.init(url: url, profileID: tab.profileID, navigation: navigation), for: id)
         }
     }
@@ -255,7 +255,8 @@ extension BrowserWindowController {
     func launchHistory(for tab: BrowserTab) -> NSObject? {
         guard let archive = store.tabHistory,
               PCNativePage.responds(to: #selector(PCNativePage.navigationState(archive:profilePath:))),
-              let navigation = archive.takeLaunchNavigation(for: tab.id, url: tab.url, profileID: tab.profileID) else { return nil }
+              let navigation = archive.takeLaunchNavigation(for: tab.id, urls: Set([tab.url] + (tab.noteVisit?.steps.compactMap { $0.page?.url } ?? [])),
+                                                            profileID: tab.profileID) else { return nil }
         return PCNativePage.navigationState(archive: navigation,
                                             profilePath: store.independentEngineProfilePath(for: tab.profileID))
     }

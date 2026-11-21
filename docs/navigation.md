@@ -82,8 +82,8 @@ has no sidebar referrer, while Peek Reload/history use the parent item.
 Clicking a page's link to a local Markdown or text file opens it as a [note](notes.md) in the
 same tab. The page stays alive behind the note, hidden, with its history, scroll position and
 form state, so Back (the sidebar or toolbar arrow, ⌘[ or the Go menu) puts it back exactly as it
-was, and Forward then shows the note again. A new navigation on the page, a typed address or a
-Back past it drops that Forward step. The tab's address, title and URL pill follow whatever
+was, and Forward then shows the note again. A new navigation on the page, such as a link or a
+typed address, drops that Forward step. The tab's address, title and URL pill follow whatever
 shows, and the session saves both steps: after a restart, or when the tab comes back from the
 archive, it shows the note and Back loads the page with its saved history. Closing the tab asks
 the hidden page before it leaves, as closing any page does. A Command-click or middle-click opens
@@ -91,36 +91,46 @@ the note in its own tab, in the background unless Shift is held. A private windo
 to a regular window.
 
 An [Easel](easels.md) opened in a split pane showing a page uses the same steps, with the same
-swipes, held-arrow lists, session restore, archive, closing and window moves. Notes and Easels
-opened over a page stack like web history: page → note → Easel → note walks Back through each
-document to the page, and Forward retraces them. A document opened partway down the stack drops
-the steps ahead of it, like any new navigation, and one opened from the page replaces them all.
-Web pages stay in the page's own history underneath: a typed address over a document loads in
-the page behind it and drops the document steps, since Chromium's history has no entry that
-stands for a document.
+swipes, held-arrow lists, session restore, archive, closing and window moves. Notes, Easels and
+web pages share one history: web A → note → Easel → web B → note → web C walks Back through every
+step to A, and Forward retraces them. Each document sits over the page entry it was opened from,
+and a step to it or past it first moves the hidden page to that entry, so the page comes back as
+Chromium kept it, from its back-forward cache when it could. A typed address over a document loads
+in the page behind it and keeps the documents behind the new page; until the new page commits,
+Back returns to the document it left. Opening a document, or following a link or typed address
+from a page, drops every step ahead, like any new navigation, including the page's own Forward
+entries; only entries the page can't drop at that moment, such as during a history move still in
+flight, stay after the new document.
 
-`TabNoteVisit` on the tab holds the page step, the document steps (note files or Easel
-addresses, the newest 50 kept, matching Chromium's 50 page entries) and which step shows; the
-store is the source of truth and each render covers or uncovers the tab's live page to match.
-The session saves it in the tab's `noteVisit` record, which still names the shown or next
-document as `note` with `showsNote`, so a record from a one-step version loads as a one-step
-stack and older versions still find the shown document. If the hidden page can't stay (the tab
-moves to another window or Profile), Parc closes it and keeps its history, so Back reloads it with
-that history, and every Easel in the stack moves to the new Profile with its tab. Renaming a note
-or Easel renames each step holding it; trashing it removes those steps, and a tab showing it moves
-to the nearest step behind, down to its page.
+`TabNoteVisit` on the tab holds every step in order: each of the page's Chromium history entries,
+by an identifier the engine keeps on the entry, with the documents opened over it right after it
+(note files or Easel addresses, the newest 50 kept), and which step shows. The engine reports each
+change to the page's history, and the store rebuilds the steps from the page's entries: documents
+stay with their entry, a shown document whose entry was replaced stays over the page's current
+entry, and documents over entries Chromium no longer has go with them. The store is the source of
+truth; each render covers or uncovers the tab's live page to match. The session saves the steps in
+the tab's `noteVisit` record, which still names the shown or next document as `note` with
+`showsNote` for older versions, and a record from before page tracking attaches its documents to
+the page's current entry on the page's first report. After a restart the page keeps Chromium's six
+saved entries either side of where it stood, so documents over older pages go with those pages.
+If the hidden page can't stay (the tab moves to another window or Profile), Parc closes it and
+keeps its history, so a step to it reopens it at the right entry, and every Easel in the history
+moves to the new Profile with its tab. Renaming a note or Easel renames each step holding it;
+trashing it removes those steps, and a tab showing it moves to the nearest step behind, down to
+the page under it.
 
-Swipes and the held-arrow list treat each document as one more history step, through
-`HistorySwipeNoteStep`. A two-finger swipe over a document moves through the documents and the
-page behind them with the usual swipe indicator (`HistorySwipeNoteSource` feeds the document's
-scroll events to the same recognizer, and a wide table or code block that can still scroll
-sideways keeps the gesture). Swiping forward on the page reaches the documents ahead, then the
-page's own Forward entries. Holding Back on a document lists the documents behind it, nearest
-first, then the page and that page's Back entries; holding Forward lists the documents ahead, with
-their titles and icons. Picking a page entry behind the documents steps back to the page and then
-moves its history, which drops the document steps like any page navigation. A Command-click or
-middle-click on the arrow or a row opens that step in a background tab: a document in its own tab,
-or the page behind the documents in a new tab that keeps its history.
+Back and Forward (the arrows, ⌘[ and ⌘], the Go menu and the mouse's Back and Forward buttons),
+swipes and the held-arrow lists walk the same steps, through `HistorySwipeNoteStep`. A step
+between two pages with no document between them stays Chromium's own Back or Forward, so pages
+that manipulate history keep Chromium's skipping, and page scripts move only through the page's
+own entries. A two-finger swipe over a document, or over the page when a document lies that way,
+moves through documents and pages with the usual swipe indicator (`HistorySwipeNoteSource` feeds
+the document's scroll events to the same recognizer, and a wide table or code block that can still
+scroll sideways keeps the gesture); with no document that way, the page's own swipe runs
+unchanged. Holding Back or Forward lists every step that way, nearest first, documents with their
+icons and pages with their titles and favicons. A Command-click or middle-click on the arrow or a
+row opens that step in a background tab: a document in its own tab, or a page in a new tab that
+keeps its history, at that entry.
 
 The file types match the note editor's. For a same-tab click, Parc's navigation throttle holds the
 navigation for one task and asks the window through `openNoteFile`; for a new-tab click, Parc's

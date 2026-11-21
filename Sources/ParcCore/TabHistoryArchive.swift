@@ -16,10 +16,14 @@ final class TabHistoryArchive {
     init(directory: URL) { self.directory = directory }
 
     func takeLaunchNavigation(for id: UUID, url: String, profileID: UUID) -> Data? {
+        takeLaunchNavigation(for: id, urls: [url], profileID: profileID)
+    }
+
+    func takeLaunchNavigation(for id: UUID, urls: Set<String>, profileID: UUID) -> Data? {
         guard paged.insert(id).inserted else { return nil }
         let file = file(id)
         guard let record = queue.sync(execute: { Self.read(file) }),
-              record.url == url, record.profileID == profileID else { return nil }
+              urls.contains(record.url), record.profileID == profileID else { return nil }
         return record.navigation
     }
 

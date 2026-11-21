@@ -119,7 +119,7 @@ extension BrowserWindowController {
                 var restoredHistory: NSObject?
                 if browsers[tab.id] == nil {
                     guard !applyingNativeSelection, !store.retiringTabIDs.contains(tab.id) else { continue }
-                    restoredHistory = store.closedPageHistory.takeRestored(tab.id) as? NSObject ?? launchHistory(for: tab)
+                    restoredHistory = visitHistory(store.closedPageHistory.takeRestored(tab.id) as? NSObject ?? launchHistory(for: tab), for: tab)
                     pane.layoutSubtreeIfNeeded()
                     let enginePath = store.independentEngineProfilePath(for: tab.profileID)
                     let browser = PCBrowserView(frame: pane.contentBounds, profilePath: enginePath)
@@ -134,8 +134,14 @@ extension BrowserWindowController {
                     failures.removeValue(forKey: tab.id)
                     refreshPagePresentation(tab.id)
                     requestedURLs[tab.id] = tab.url
+                    let restoredBehind = restoredHistory.flatMap { history in
+                        tab.noteVisit.flatMap { $0.leaving ? URL(string: $0.pageUnderShown.url) : nil }
+                            .map { browsers[tab.id]?.restoreNavigationState(history, url: $0) == true }
+                    } ?? false
                     if let navigation = pendingSearchNavigations.removeValue(forKey: tab.id), BrowserInternalURL.publicString(navigation.url.absoluteString) == BrowserInternalURL.publicString(url.absoluteString) {
                         browsers[tab.id]?.loadSearchNavigation(navigation)
+                    } else if restoredBehind {
+                        browsers[tab.id]?.loadURL(url)
                     } else if let history = restoredHistory, browsers[tab.id]?.restoreNavigationState(history, url: url) == true {
                     } else {
                         browsers[tab.id]?.loadURL(url)

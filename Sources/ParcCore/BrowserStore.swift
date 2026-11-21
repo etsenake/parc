@@ -1116,6 +1116,8 @@ struct BrowserState: Codable, Equatable {
                     && current.referrerID == prior.referrerID
                     && current.activeTabBeforeCreationID == prior.activeTabBeforeCreationID
                     && current.noteVisit?.position == prior.noteVisit?.position
+                    && current.noteVisit?.leaving == prior.noteVisit?.leaving
+                    && current.noteVisit?.steps.count == prior.noteVisit?.steps.count
                     && current.noteVisit?.documents.count == prior.noteVisit?.documents.count
             }
     }
@@ -2896,11 +2898,12 @@ final class BrowserStore: ObservableObject {
         return id
     }
     @discardableResult
-    func openDocumentOverPage(_ id: UUID, page: InternalPage, title: String) -> Bool {
+    func openDocumentOverPage(_ id: UUID, page: InternalPage, title: String,
+                              history: TabNoteVisit.PageHistory? = nil) -> Bool {
         guard !isEphemeral, !retiringTabIDs.contains(id), let index = state.tabIndex(id, where: { $0.archivedAt == nil }),
               !isProfileRemovalPending(state.tabs[index].profileID) else { return false }
         var next = state
-        guard next.tabs[index].openDocumentVisit(page, title: title) else { return false }
+        guard next.tabs[index].openDocumentVisit(page, title: title, history: history) else { return false }
         next.tabs[index].lastAccessed = clock()
         state = next
         changed()
@@ -2927,6 +2930,14 @@ final class BrowserStore: ObservableObject {
         guard let index = state.tabIndex(id) else { return }
         var next = state
         guard next.tabs[index].followPageUnderNote(url: url, title: title) else { return }
+        state = next
+        changed()
+    }
+
+    func syncPageHistory(_ id: UUID, history: TabNoteVisit.PageHistory) {
+        guard let index = state.tabIndex(id, where: { $0.archivedAt == nil }), state.tabs[index].noteVisit != nil else { return }
+        var next = state
+        guard next.tabs[index].syncPageHistory(history) else { return }
         state = next
         changed()
     }
@@ -3246,7 +3257,7 @@ final class BrowserStore: ObservableObject {
         let nextSavedTitle = current.kind == .today ? nextTitle : current.savedTitle
         var historyTitle: String?
         var appendHistory = false
-        let leavesNoteVisit = current.noteVisit != nil && url != nil && nextURL != current.url
+        let nextVisit = Self.followingNoteVisit(current, url: url == nil ? nil : nextURL, title: nextTitle)
         if let url, url.hasPrefix("https://") || url.hasPrefix("http://") {
             if let last = state.history.last, last.url == url, last.profileID == current.profileID,
                clock().timeIntervalSince(last.visitedAt) < 2 {
@@ -3257,11 +3268,11 @@ final class BrowserStore: ObservableObject {
         }
         if nextTitle == current.title, nextURL == current.url,
            nextSavedURL == current.savedURL, nextSavedTitle == current.savedTitle,
-           historyTitle == nil, !appendHistory, !leavesNoteVisit {
+           historyTitle == nil, !appendHistory, nextVisit == current.noteVisit {
             return
         }
         var next = state
-        if leavesNoteVisit { next.tabs[index].noteVisit = nil }
+        next.tabs[index].noteVisit = nextVisit
         next.tabs[index].title = nextTitle
         next.tabs[index].url = nextURL
         next.tabs[index].savedURL = nextSavedURL
@@ -3279,6 +3290,17 @@ final class BrowserStore: ObservableObject {
         guard next != state else { return }
         state = next
         changed()
+    }
+
+    private static func followingNoteVisit(_ tab: BrowserTab, url: String?, title: String) -> TabNoteVisit? {
+        guard var visit = tab.noteVisit else { return nil }
+        if let url, url != tab.url {
+            guard visit.tracksPageHistory, !InternalPage.isInternal(url) else { return nil }
+            if visit.showsNote { return InternalPage.isInternal(tab.url) && visit.leave() ? visit : nil }
+            return visit
+        }
+        if visit.shownPage != nil, !InternalPage.isInternal(tab.url) { visit.syncShown(url: tab.url, title: title) }
+        return visit
     }
 
     func splitExtensionHomes(_ id: UUID) -> [BrowserTab] {

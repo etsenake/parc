@@ -33,7 +33,7 @@ struct PaneDocumentRouteTests {
             try expect(PaneDocumentRoute.routes(paneCount: 2, paneHoldsWebPage: tab.showsNoteOverPage) == [.overPage, .newTab],
                        "at every depth the pane still holds its page, so the next document stacks on top")
         }
-        try expect(tab.stepNoteVisit(by: -3) && !tab.showsNoteOverPage && tab.hasNoteAhead,
+        try expect(tab.stepNoteVisit(by: -3) && !tab.showsNoteOverPage && tab.hasVisitStepAhead,
                    "Back through every document returns the pane to its page")
     }
 

@@ -24,8 +24,8 @@ extension BrowserWindowController {
             && window.map { PCNativeBrowserApplication.canPresentTabSwitcher(in: $0) } == true
         toolbar.update(url: browser.url,
             fullURL: BrowserToolbarPreferences.shared.state.showsFullURL,
-            enabled: enabled, canBack: page.canShowBackHistory,
-            canForward: page.canShowForwardHistory || tabID.flatMap { store.state.tab($0)?.hasNoteAhead } == true,
+            enabled: enabled, canBack: page.canShowBackHistory || tabID.flatMap { store.state.tab($0)?.hasVisitStepBehind } == true,
+            canForward: page.canShowForwardHistory || tabID.flatMap { store.state.tab($0)?.hasVisitStepAhead } == true,
             loading: page.loading, canReload: page.canPerformNavigation(page.loading ? .stop : .reload),
             canCopy: selected ? canCopyCurrentURL : browser.url != nil && page.canCopyLink(as: .plain),
             canShowSiteInfo: true,
@@ -83,7 +83,7 @@ extension BrowserWindowController {
             && window.map { PCNativeBrowserApplication.canPresentTabSwitcher(in: $0) } == true
         toolbar.update(url: nil, documentTitle: tab.title.isEmpty ? "New tab" : tab.title,
             fullURL: false, enabled: enabled, canBack: tab.showsNoteOverPage,
-            canForward: tab.showsNoteOverPage && tab.hasNoteAhead, loading: false,
+            canForward: tab.showsNoteOverPage && tab.hasVisitStepAhead, loading: false,
             canReload: false, canCopy: false, canShowSiteInfo: false, canSplit: true,
             close: activeSplitLayout != nil, showSidebar: leading && sidebarPresentation != .locked,
             siteControls: false, extensionItems: [])
