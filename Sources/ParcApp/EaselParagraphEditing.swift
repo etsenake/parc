@@ -4,7 +4,7 @@ import AppKit
 enum EaselParagraphEditing {
     enum Kind: String, CaseIterable {
         case text = "Text", heading1 = "Heading 1", heading2 = "Heading 2", heading3 = "Heading 3", heading4 = "Heading 4"
-        case bullets = "Bulleted List", numbers = "Numbered List", checklist = "To-do list", quote = "Quote"
+        case bullets = "Bulleted List", numbers = "Numbered List", checklist = "To-do List", quote = "Quote"
         var level: Int { switch self { case .heading1: 1; case .heading2: 2; case .heading3: 3; case .heading4: 4; default: 0 } }
         var marker: NSTextList.MarkerFormat? {
             switch self {

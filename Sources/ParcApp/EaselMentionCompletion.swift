@@ -159,7 +159,7 @@ final class EaselMentionCompletion: EaselTextCompletion {
         switch request {
         case .mention(let dates):
             let range = view.selectedRange()
-            view.insertCompletion("@", replacing: range, name: dates ? "Date" : "Mention")
+            view.insertCompletion("@", replacing: range, name: dates ? "Add date" : "Add mention")
             previous = view.string
             cancelledStart = nil
             open(start: range.location, trigger: .mention, resuming: false, scope: dates ? .dates : .everything)
@@ -168,7 +168,7 @@ final class EaselMentionCompletion: EaselTextCompletion {
             let range = view.selectedRange()
             let selected = (view.string as NSString).substring(with: range)
             let tex = selected.contains(where: \.isNewline) || selected.contains("\u{FFFC}") ? "" : selected
-            guard view.replace(range, with: .equation(tex), name: "Inline Equation") else { return false }
+            guard view.replace(range, with: .equation(tex), name: "Inline equation") else { return false }
             previous = view.string
             return openEquation(at: range.location)
         case .activate(let index):
@@ -186,7 +186,7 @@ final class EaselMentionCompletion: EaselTextCompletion {
             guard let name = NoteCustomEmojiName.name(inReference: reference),
                   let inline = EaselNoteEnvironment.customEmoji(name, in: environment.emojiLibrary) else { return false }
             NoteEmojiCatalog.shared.recordUse(reference)
-            let result = view.replace(range, with: inline, name: "Emoji")
+            let result = view.replace(range, with: inline, name: "Add emoji")
             previous = view.string
             return result
         }
@@ -273,14 +273,14 @@ final class EaselMentionCompletion: EaselTextCompletion {
         dismiss()
         switch choice {
         case .date(let mention):
-            _ = view.replace(range, with: .date(mention), name: mention.remind ? "Reminder" : "Date")
+            _ = view.replace(range, with: .date(mention), name: mention.remind ? "Add reminder" : "Add date")
             if mention.remind { NoteReminderCenter.shared.requestAuthorizationIfNeeded() }
         case .note(let reference):
-            _ = view.replace(range, with: .note(reference.url, title: reference.title), name: "Mention")
+            _ = view.replace(range, with: .note(reference.url, title: reference.title), name: "Add mention")
         case .createNote(let name):
             do {
                 let url = try environment.createNote(titled: name)
-                _ = view.replace(range, with: .note(url, title: url.deletingPathExtension().lastPathComponent), name: "Mention")
+                _ = view.replace(range, with: .note(url, title: url.deletingPathExtension().lastPathComponent), name: "Add mention")
             } catch { canvas?.onError?(error) }
         }
         previous = view.string
@@ -292,7 +292,7 @@ final class EaselMentionCompletion: EaselTextCompletion {
         dismiss()
         let picker = NoteDatePickerView(mention: mention)
         picker.onChange = { [weak self] value in self?.updateDate(value, at: index) }
-        picker.onRemove = { [weak self] in self?.removeInline(at: index, name: "Remove Date") }
+        picker.onRemove = { [weak self] in self?.removeInline(at: index, name: "Remove date") }
         picker.onNeedsTextFocus = { [weak self] in self?.focusText(after: index) }
         let panel = NoteFloatingPanel(content: picker)
         panel.onDismiss = { [weak self, weak panel] in
@@ -310,7 +310,7 @@ final class EaselMentionCompletion: EaselTextCompletion {
     private func updateDate(_ value: NoteDateMention, at index: Int) {
         guard let view, EaselInlineText.inline(at: index, in: view.attributedString())?.kind == .date else { dismiss(); return }
         let selection = view.selectedRanges
-        _ = view.replace(NSRange(location: index, length: 1), with: .date(value), name: value.remind ? "Reminder" : "Change Date")
+        _ = view.replace(NSRange(location: index, length: 1), with: .date(value), name: value.remind ? "Add reminder" : "Change date")
         view.selectedRanges = selection
         previous = view.string
         if value.remind { NoteReminderCenter.shared.requestAuthorizationIfNeeded() }
@@ -371,7 +371,7 @@ final class EaselMentionCompletion: EaselTextCompletion {
         view.previewInline(.equation(equation.original), at: index)
         guard commit, text != equation.original else { return }
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, equation.original.isEmpty {
-            _ = view.replace(NSRange(location: index, length: 1), with: nil, name: "Inline Equation")
+            _ = view.replace(NSRange(location: index, length: 1), with: nil, name: "Inline equation")
         } else {
             _ = view.replace(NSRange(location: index, length: 1), with: .equation(text), name: "Edit equation")
         }
