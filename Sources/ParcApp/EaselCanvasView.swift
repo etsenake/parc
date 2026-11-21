@@ -1114,7 +1114,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         editingTextSnapshot = (item.text, item.richText)
         synchronizingEditor = true
         defer { synchronizingEditor = false }
-        text.enforcedAlignment = EaselTextSizing.enforcedAlignment(item).map(EaselRichTextCodec.textAlignment)
         let selected = text.selectedRanges
         let target = displayedText(item)
         EaselTextAttachments.bind(target, container: text.textContainer)
@@ -1123,10 +1122,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if !text.hasLoadedDocument || text.string != item.text || current != desired {
             text.retire()
             text.textStorage?.setAttributedString(target); text.resetEditingHistory()
-            if target.length == 0 {
-                let typing: [NSAttributedString.Key: Any] = [.font: EaselTextAppearance.font(item.resolvedTextStyle), .foregroundColor: color(item.color)]
-                text.typingAttributes = text.enforcedAlignment.map { EaselRichTextCodec.aligned(typing, to: $0) } ?? typing
-            }
+            if target.length == 0 { text.typingAttributes = [.font: EaselTextAppearance.font(item.resolvedTextStyle), .foregroundColor: color(item.color)] }
         }
         text.hasLoadedDocument = true
         text.objectStyle = item.resolvedTextStyle; text.objectColor = item.color
@@ -1296,7 +1292,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             updateEditor(item); return
         }
         let payload: EaselStyledText
-        do { payload = try text.documentPayload() }
+        do { payload = try EaselStyledText.capture(text.attributedString(), style: text.objectStyle, color: text.objectColor) }
         catch { onError?(error); if let item = session.document.items.first(where: { $0.id == id }) { updateEditor(item) }; return }
         let saved = commit("Edit text", coalescing: textUndoGroup) { document in
             guard let i = document.items.firstIndex(where: { $0.id == id }) else { return }

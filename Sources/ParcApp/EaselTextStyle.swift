@@ -364,29 +364,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
     private var editRevision = UUID()
     private var suppressMarkdown = false
     var onAlign: ((EaselTextStyle.Alignment) -> Void)?
-    var enforcedAlignment: NSTextAlignment? {
-        didSet { if enforcedAlignment != oldValue { synchronizeAlignment() } }
-    }
-    private func synchronizeAlignment() {
-        guard let storage = textStorage, !hasMarkedText() else { return }
-        localUndo.disableUndoRegistration()
-        storage.beginEditing()
-        if let alignment = enforcedAlignment { EaselRichTextCodec.align(storage, to: alignment) }
-        else { EaselRichTextCodec.unalign(storage) }
-        storage.endEditing()
-        localUndo.enableUndoRegistration()
-        if let alignment = enforcedAlignment { typingAttributes = EaselRichTextCodec.aligned(typingAttributes, to: alignment) }
-        else if (typingAttributes[.paragraphStyle] as? NSParagraphStyle)?.alignment ?? .natural != .natural {
-            typingAttributes = EaselRichTextCodec.aligned(typingAttributes, to: .natural)
-        }
-        needsDisplay = true
-    }
-    private func documentText(_ value: NSAttributedString) -> NSAttributedString {
-        enforcedAlignment == nil ? value : EaselRichTextCodec.unaligned(value)
-    }
-    func documentPayload() throws -> EaselStyledText {
-        try EaselStyledText.capture(documentText(attributedString()), style: objectStyle, color: objectColor)
-    }
     override func alignLeft(_ sender: Any?) { if let onAlign { onAlign(.left) } else { super.alignLeft(sender) } }
     override func alignCenter(_ sender: Any?) { if let onAlign { onAlign(.center) } else { super.alignCenter(sender) } }
     override func alignRight(_ sender: Any?) { if let onAlign { onAlign(.right) } else { super.alignRight(sender) } }
@@ -395,7 +372,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
     func selectedPayload() throws -> EaselStyledText? {
         let range = selectedRange()
         guard range.length > 0 else { return nil }
-        return try EaselStyledText.capture(documentText(attributedString().attributedSubstring(from: range)), style: objectStyle, color: objectColor)
+        return try EaselStyledText.capture(attributedString().attributedSubstring(from: range), style: objectStyle, color: objectColor)
     }
     private func copySelection() -> Bool {
         do {

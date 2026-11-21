@@ -85,13 +85,6 @@ enum EaselTextSizing {
         item.textStyle?.alignment ?? defaultAlignment(for: item.kind)
     }
 
-    static func enforcedAlignment(_ item: EaselItem) -> EaselTextStyle.Alignment? {
-        guard item.kind.holdsText else { return nil }
-        if let alignment = item.textStyle?.alignment { return alignment }
-        let fallback = defaultAlignment(for: item.kind)
-        return fallback == .left ? nil : fallback
-    }
-
     static func sharedAlignment(_ items: [EaselItem]) -> EaselTextStyle.Alignment? {
         let alignments = items.filter(\.kind.holdsText).map(resolvedAlignment)
         guard let first = alignments.first, alignments.allSatisfy({ $0 == first }) else { return nil }

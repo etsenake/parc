@@ -128,12 +128,10 @@ struct EaselTextSizingTests {
                "Shapes centre their text")
         expect(EaselTextSizing.defaultAlignment(for: .text) == .left && EaselTextSizing.defaultAlignment(for: .sticky) == .left,
                "Text and stickies start on the left")
-        expect(EaselTextSizing.enforcedAlignment(text()) == nil, "Older text keeps its own paragraph alignment")
-        expect(EaselTextSizing.enforcedAlignment(text(style: EaselTextStyle(alignment: .right))) == .right, "Chosen alignment applies to the whole object")
-        expect(EaselTextSizing.enforcedAlignment(text(kind: .rectangle)) == .center, "Shape text is centred by default")
-        expect(EaselTextSizing.enforcedAlignment(text(style: EaselTextStyle(alignment: .left), kind: .rectangle)) == .left, "Shape text can align left")
-        expect(EaselTextSizing.enforcedAlignment(text(kind: .arrow)) == nil && EaselTextSizing.enforcedAlignment(text(kind: .image)) == nil,
-               "Objects without text have no alignment")
+        expect(EaselTextSizing.resolvedAlignment(text()) == .left, "Text without a choice reads as left-aligned")
+        expect(EaselTextSizing.resolvedAlignment(text(style: EaselTextStyle(alignment: .right))) == .right, "Chosen alignment wins")
+        expect(EaselTextSizing.resolvedAlignment(text(kind: .rectangle)) == .center, "Shape text is centred by default")
+        expect(EaselTextSizing.resolvedAlignment(text(style: EaselTextStyle(alignment: .left), kind: .rectangle)) == .left, "Shape text can align left")
 
         let shape = text(kind: .rectangle), plain = text()
         var locked = text(); locked.locked = true
