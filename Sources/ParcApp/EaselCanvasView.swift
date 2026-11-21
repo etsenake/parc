@@ -397,6 +397,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if geometryEdit != nil, newSize.width != frame.width { cancelPointerInteraction() }
         super.setFrameSize(newSize)
     }
+    @discardableResult override func scrollToVisible(_ rect: NSRect) -> Bool {
+        let covered = toolState.coveredBottom / max(CGFloat(magnification), 0.01)
+        return super.scrollToVisible(covered > 0 ? NSRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height + covered) : rect)
+    }
     func resizeCanvas(viewport: NSSize) {
         if let fixedCanvasSize {
             if frame.size != fixedCanvasSize { setFrameSize(fixedCanvasSize) }
@@ -404,7 +408,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         let viewport = enclosingScrollView?.contentView.bounds.size ?? viewport
         let right = session.document.items.map { EaselCanvasRotation.bounds($0).maxX + 80 }.max() ?? 0
-        let bottom = session.document.items.map { EaselCanvasRotation.bounds($0).maxY + 180 }.max() ?? 0
+        let covered = toolState.coveredBottom / max(CGFloat(magnification), 0.01)
+        let bottom = session.document.items.map { EaselCanvasRotation.bounds($0).maxY + 180 + covered }.max() ?? 0
         let size = NSSize(width: max(viewport.width, right), height: max(viewport.height, 1400, bottom))
         if size != frame.size { setFrameSize(size) }
     }
@@ -1158,8 +1163,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     func insertShape(_ shape: EaselShape, in frame: EaselRect? = nil, editing: Bool = false) -> Bool {
         cancelPointerInteraction(); guard finishEditing(), !session.isClosed else { return false }; drawing = false
         let size = EaselShapeGeometry.defaultSize(shape), top = session.document.items.map(\.zIndex).max() ?? 0
-        var target = frame ?? EaselRect(x: max(24, (visibleRect.midX - size.width / 2).rounded()),
-                                         y: max(24, (visibleRect.midY - size.height / 2).rounded()), width: size.width, height: size.height)
+        let shown = uncoveredVisibleRect
+        var target = frame ?? EaselRect(x: max(24, (shown.midX - size.width / 2).rounded()),
+                                         y: max(24, (shown.midY - size.height / 2).rounded()), width: size.width, height: size.height)
         guard top < Int.max, [target.x, target.y, target.width, target.height].allSatisfy({ $0.isFinite && abs($0) <= 1_000_000 }),
               target.width >= 1, target.height >= 1 else { return false }
         if frame == nil {
