@@ -2683,7 +2683,7 @@ package final class BrowserStore: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: task)
     }
     private var pendingSaveSnapshot: BrowserState?
-    private let sessionWriter = SessionFileWriter()
+    private let sessionWriter: SessionFileWriter
     package var closedPageHistory = ClosedPageHistory<AnyObject>()
     package let placeholderImages = PagePlaceholderImages()
     package lazy var tabHistory: TabHistoryArchive? = isEphemeral ? nil
@@ -2709,10 +2709,12 @@ package final class BrowserStore: ObservableObject {
     package var retiringTabIDs: Set<UUID> { Set(retirementRequests.keys).union(exclusiveRetirementIDs) }
     private var stateURL: URL { directory.appendingPathComponent("session.json") }
 
-    package init(directory: URL, now: @escaping () -> Date = Date.init, keepsBackups: Bool = false) throws {
+    package init(directory: URL, now: @escaping () -> Date = Date.init, keepsBackups: Bool = false,
+                 sessionFiles: SessionFileOperations = .live) throws {
         self.directory = directory
         privateParentProfileID = nil; privateEnginePath = nil
         self.clock = now
+        sessionWriter = SessionFileWriter(files: sessionFiles)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         if keepsBackups { sessionWriter.keepBackups(SessionBackups(directory: directory)) }
@@ -2781,6 +2783,7 @@ package final class BrowserStore: ObservableObject {
         self.privateParentProfileID = privateParentProfileID
         privateEnginePath = engineProfilePath
         clock = now
+        sessionWriter = SessionFileWriter(files: .live)
         let profile = BrowserProfile(id: UUID(), name: "Incognito")
         let space = BrowserSpace(id: UUID(), name: "Space 1", symbol: "circle.fill", color: "202020", profileID: profile.id)
         var initial = BrowserState(profiles: [profile], spaces: [space], activeSpaceID: space.id)
@@ -6498,14 +6501,32 @@ package struct SidebarSplitAppearanceChange: Equatable {
     }
 }
 
+package struct SessionFileOperations {
+    package let exists: (URL) -> Bool
+    package let replace: (Data, URL) throws -> Void
+
+    package init(exists: @escaping (URL) -> Bool, replace: @escaping (Data, URL) throws -> Void) {
+        self.exists = exists
+        self.replace = replace
+    }
+
+    package static var live: Self {
+        Self(exists: { FileManager.default.fileExists(atPath: $0.path) },
+             replace: { try SessionFileWriter.replaceAtomically($0, at: $1) })
+    }
+}
+
 private final class SessionFileWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "org.parc.session-save", qos: .utility)
+    private let files: SessionFileOperations
     private var lastWritten: BrowserState?
     private var lastWrittenBytes: Data?
     private var lastWrittenHistory: [BrowserHistoryEntry]?
     private var historyRecords = 0
     private var historyPreserved = false
     private var backups: SessionBackups?
+
+    init(files: SessionFileOperations) { self.files = files }
 
     func drain() { queue.sync {} }
     func preserveHistoryFile() { queue.sync { historyPreserved = true } }
@@ -6554,8 +6575,8 @@ private final class SessionFileWriter: @unchecked Sendable {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(session)
-        if lastWrittenBytes != data || !FileManager.default.fileExists(atPath: url.path) {
-            do { try Self.replaceAtomically(data, at: url) } catch {
+        if lastWrittenBytes != data || !files.exists(url) {
+            do { try files.replace(data, url) } catch {
                 lastWritten = nil
                 throw error
             }
@@ -6594,7 +6615,7 @@ private final class SessionFileWriter: @unchecked Sendable {
         lastWrittenHistory = history
     }
 
-    private static func replaceAtomically(_ data: Data, at url: URL, prefix: String = ".session-") throws {
+    fileprivate static func replaceAtomically(_ data: Data, at url: URL, prefix: String = ".session-") throws {
         let temporary = url.deletingLastPathComponent()
             .appendingPathComponent(prefix + UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: temporary) }

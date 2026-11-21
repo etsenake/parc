@@ -23,10 +23,21 @@ final class OnboardingPasswordHelp: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    func present() {
+    static func install(in root: NSView, onDismiss: @escaping () -> Void) -> OnboardingPasswordHelp {
+        let help = OnboardingPasswordHelp(frame: root.bounds)
+        help.onDismiss = onDismiss
+        root.addSubview(help, positioned: .above, relativeTo: nil)
+        return help
+    }
+
+    static func cover(_ views: [NSView], hidden: Bool, except help: OnboardingPasswordHelp? = nil) {
+        for view in views where view !== help { view.setAccessibilityHidden(hidden) }
+    }
+
+    func present(animated: Bool = true) {
         guard !isPresented, let window else { return }
         previousResponder = window.firstResponder
-        setPresented(true, animated: true)
+        setPresented(true, animated: animated)
         window.makeFirstResponder(host)
     }
 

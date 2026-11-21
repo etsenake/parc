@@ -516,10 +516,8 @@ final class BrowserImportViewController: NSViewController {
         let help: OnboardingPasswordHelp
         if let passwordHelp { help = passwordHelp }
         else {
-            help = OnboardingPasswordHelp(frame: root.bounds)
-            help.onDismiss = { [weak self] in self?.coverContent(false) }
+            help = OnboardingPasswordHelp.install(in: root) { [weak self] in self?.coverContent(false) }
             passwordHelp = help
-            root.addSubview(help, positioned: .above, relativeTo: nil)
         }
         help.export = passwordExport
         help.present()
@@ -538,7 +536,7 @@ final class BrowserImportViewController: NSViewController {
 
     private func coverContent(_ covered: Bool) {
         guard !closed else { return }
-        root.subviews.forEach { if $0 !== passwordHelp { $0.setAccessibilityHidden(covered) } }
+        OnboardingPasswordHelp.cover(root.subviews, hidden: covered, except: passwordHelp)
         updateCloseKey()
     }
 

@@ -58,11 +58,10 @@ its list and detail columns on the new margins.
 
 ## Checks and evidence
 
-`tests/SettingsPresentation/check.py` covers production component layout,
-input ownership, decorative-descendant isolation, truncation, disabled colors
-and light/dark renders. The history model has its own test in
-`tests/SettingsNavigation`. Shared Download Location checks cover that
-component's integration; typechecking and SIL complement these inert checks.
+`SettingsPresentationTests` covers component layout, input ownership,
+decorative-descendant isolation, truncation, disabled colors and light and dark
+appearance. `SettingsNavigationTests` covers navigation history. Shared Download
+Location checks cover that component's integration.
 
 Focus and motion have separate [Settings](settings.md) and
 [motion](settings-motion.md) contracts.

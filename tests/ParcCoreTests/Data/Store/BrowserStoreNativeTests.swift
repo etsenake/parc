@@ -726,8 +726,7 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func markdownLinkLabels() throws {
-        let cases: [(String, String)] = [
+    @Test(arguments: [
             ("Vec<T>", #"Vec\<T>"#),
             ("<b>bold</b> & <https://example.com>", #"\<b>bold\</b> & \<https://example.com>"#),
             ("snake_case_name.py", "snake_case_name.py"),
@@ -744,10 +743,12 @@ extension BrowserStoreTests {
             ("naïve_test 日本_語 😀_x", #"naïve_test 日本_語 😀\_x"#),
             ("a\u{00A0}*\u{00A0}b", "a\u{00A0}*\u{00A0}b"),
             ("", ""),
-        ]
-        for (title, label) in cases {
-            #expect(FolderLinks.markdownLabel(title) == label, "Markdown label for \(title.debugDescription) is \(label.debugDescription), got \(FolderLinks.markdownLabel(title).debugDescription)")
-        }
+    ])
+    nonisolated static func markdownLabelsEscapeOnlySpecialText(_ title: String, _ label: String) {
+        #expect(FolderLinks.markdownLabel(title) == label)
+    }
+
+    @Test nonisolated static func copiedMarkdownLabelsUseTheAddressForBlankTitles() {
         let links = [FolderLinks.Link(tabID: UUID(), title: "Vec<T> & `Option<_>`", url: "https://example.com/a_b"),
                      FolderLinks.Link(tabID: UUID(), title: "", url: "https://example.com/_next/a_b?x=1&y=2")]
         #expect(FolderLinks.text(for: links, format: .markdown) == #"[Vec\<T> & \`Option\<\_>\`](<https://example.com/a_b>)"# + "\n"
@@ -1032,71 +1033,70 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func archivePutBackDestinations() throws {
-        for scenario in ["all", "filtered", "missing", "reassigned", "original-moved", "foreign-profile", "no-compatible-space", "recent"] {
-            try withDirectory { directory in
-                let store = try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 1_900_000_000) })
-                let originalSpace = store.activeSpaceID, profile = store.activeSpace.profileID
-                let a = store.open("https://archive-a.example"), b = store.open("https://archive-b.example")
-                store.setSplit([a, b]); _ = store.setSplitLayout(orientation: .vertical, widthFactors: [0.35, 0.65])
-                let originalSplit = store.activeSplitLayout!
-                store.closeTabs([a, b])
-                let currentSpace = store.createSpace(name: "Current window")
-                let filteredSpace = store.createSpace(name: "Selected filter")
-                let otherProfile = store.createProfile(name: "Other profile")
-                store.selectSpace(currentSpace)
-                if scenario == "reassigned" { store.assignProfile(otherProfile, toSpace: filteredSpace) }
-                if scenario == "original-moved" { store.assignProfile(otherProfile, toSpace: originalSpace) }
-                let destination: ArchiveRestoreDestination
-                let expected: UUID?
-                let requestedProfile: UUID
-                switch scenario {
-                case "filtered":
-                    destination = .putBack(currentSpaceID: currentSpace, requestedSpaceID: filteredSpace)
-                    expected = filteredSpace; requestedProfile = profile
-                case "missing":
-                    destination = .putBack(currentSpaceID: currentSpace, requestedSpaceID: UUID())
-                    expected = currentSpace; requestedProfile = profile
-                case "reassigned":
-                    destination = .putBack(currentSpaceID: currentSpace, requestedSpaceID: filteredSpace)
-                    expected = currentSpace; requestedProfile = profile
-                case "foreign-profile":
-                    destination = .putBack(currentSpaceID: currentSpace, requestedSpaceID: nil)
-                    expected = nil; requestedProfile = otherProfile
-                case "no-compatible-space":
-                    destination = .putBack(currentSpaceID: UUID(), requestedSpaceID: UUID())
-                    expected = nil; requestedProfile = profile
-                case "recent":
-                    destination = .previousSpace(fallbackSpaceID: currentSpace)
-                    expected = originalSpace; requestedProfile = profile
-                default:
-                    destination = .putBack(currentSpaceID: currentSpace, requestedSpaceID: nil)
-                    expected = currentSpace; requestedProfile = profile
-                }
-                let before = store.state
-                var publications: [BrowserState] = []
-                let observation = store.statePublisher.dropFirst().sink { publications.append($0) }
-                let restored = store.restoreArchivedTab(a, profileID: requestedProfile, destination: destination)
-                if let expected {
-                    #expect(restored == originalSplit.tabIDs && store.activeSpaceID == expected, "Put Back \(scenario) selects the original group in its resolved destination")
-                    #expect(!publications.isEmpty && publications.allSatisfy { snapshot in
-                        snapshot.tabs.filter { [a, b].contains($0.id) }.allSatisfy { $0.archivedAt == nil && $0.spaceID == expected }
-                    }, "Put Back publishes the complete original group without partially restored siblings")
-                    let tabs = store.state.tabs.filter { [a, b].contains($0.id) }
-                    #expect(tabs.count == 2 && tabs.allSatisfy { $0.spaceID == expected && $0.profileID == profile && $0.archivedAt == nil && $0.archiveProvenance == nil }, "Put Back retains original identities/profile and clears only archive metadata")
-                    var expectedSplit = originalSplit; expectedSplit.spaceID = expected
-                    let restoredLayout = store.activeSplitLayout
-                    var restoredShape = restoredLayout; restoredShape?.widthFactors = expectedSplit.widthFactors
-                    #expect(restoredShape == expectedSplit && zip(restoredLayout?.widthFactors ?? [], expectedSplit.widthFactors).allSatisfy { abs($0 - $1) < 1e-12 }, "Put Back preserves original split order, orientation, ratios and identity")
-                    #expect(!store.state.recentlyClosedIDs.contains(a) && !store.state.recentlyClosedIDs.contains(b), "Restored group leaves the recent-closed stack")
-                    try store.save()
-                    let loaded = try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 1_900_000_000) })
-                    #expect(loaded.state.tabs == store.state.tabs && loaded.state.splitLayouts == store.state.splitLayouts, "Put Back destination persists with the original group")
-                } else {
-                    #expect(restored.isEmpty && store.state == before && publications.isEmpty, "Invalid Put Back \(scenario) preserves every archived record and selection")
-                }
-                _ = observation
+    @Test(arguments: ["all", "filtered", "missing", "reassigned", "original-moved", "foreign-profile", "no-compatible-space", "recent"])
+    static func archivePutBackResolvesTheRequestedDestination(scenario: String) throws {
+        try withDirectory { directory in
+            let store = try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 1_900_000_000) })
+            let originalSpace = store.activeSpaceID, profile = store.activeSpace.profileID
+            let a = store.open("https://archive-a.example"), b = store.open("https://archive-b.example")
+            store.setSplit([a, b]); _ = store.setSplitLayout(orientation: .vertical, widthFactors: [0.35, 0.65])
+            let originalSplit = store.activeSplitLayout!
+            store.closeTabs([a, b])
+            let currentSpace = store.createSpace(name: "Current window")
+            let filteredSpace = store.createSpace(name: "Selected filter")
+            let otherProfile = store.createProfile(name: "Other profile")
+            store.selectSpace(currentSpace)
+            if scenario == "reassigned" { store.assignProfile(otherProfile, toSpace: filteredSpace) }
+            if scenario == "original-moved" { store.assignProfile(otherProfile, toSpace: originalSpace) }
+            let destination: ArchiveRestoreDestination
+            let expected: UUID?
+            let requestedProfile: UUID
+            switch scenario {
+            case "filtered":
+                destination = .putBack(currentSpaceID: currentSpace, requestedSpaceID: filteredSpace)
+                expected = filteredSpace; requestedProfile = profile
+            case "missing":
+                destination = .putBack(currentSpaceID: currentSpace, requestedSpaceID: UUID())
+                expected = currentSpace; requestedProfile = profile
+            case "reassigned":
+                destination = .putBack(currentSpaceID: currentSpace, requestedSpaceID: filteredSpace)
+                expected = currentSpace; requestedProfile = profile
+            case "foreign-profile":
+                destination = .putBack(currentSpaceID: currentSpace, requestedSpaceID: nil)
+                expected = nil; requestedProfile = otherProfile
+            case "no-compatible-space":
+                destination = .putBack(currentSpaceID: UUID(), requestedSpaceID: UUID())
+                expected = nil; requestedProfile = profile
+            case "recent":
+                destination = .previousSpace(fallbackSpaceID: currentSpace)
+                expected = originalSpace; requestedProfile = profile
+            default:
+                destination = .putBack(currentSpaceID: currentSpace, requestedSpaceID: nil)
+                expected = currentSpace; requestedProfile = profile
             }
+            let before = store.state
+            var publications: [BrowserState] = []
+            let observation = store.statePublisher.dropFirst().sink { publications.append($0) }
+            let restored = store.restoreArchivedTab(a, profileID: requestedProfile, destination: destination)
+            if let expected {
+                #expect(restored == originalSplit.tabIDs && store.activeSpaceID == expected, "Put Back \(scenario) selects the original group in its resolved destination")
+                #expect(!publications.isEmpty && publications.allSatisfy { snapshot in
+                    snapshot.tabs.filter { [a, b].contains($0.id) }.allSatisfy { $0.archivedAt == nil && $0.spaceID == expected }
+                }, "Put Back publishes the complete original group without partially restored siblings")
+                let tabs = store.state.tabs.filter { [a, b].contains($0.id) }
+                #expect(tabs.count == 2 && tabs.allSatisfy { $0.spaceID == expected && $0.profileID == profile && $0.archivedAt == nil && $0.archiveProvenance == nil }, "Put Back retains original identities/profile and clears only archive metadata")
+                var expectedSplit = originalSplit; expectedSplit.spaceID = expected
+                let restoredLayout = store.activeSplitLayout
+                var restoredShape = restoredLayout; restoredShape?.widthFactors = expectedSplit.widthFactors
+                #expect(restoredShape == expectedSplit && zip(restoredLayout?.widthFactors ?? [], expectedSplit.widthFactors).allSatisfy { abs($0 - $1) < 1e-12 }, "Put Back preserves original split order, orientation, ratios and identity")
+                #expect(!store.state.recentlyClosedIDs.contains(a) && !store.state.recentlyClosedIDs.contains(b), "Restored group leaves the recent-closed stack")
+                try store.save()
+                let loaded = try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 1_900_000_000) })
+                #expect(loaded.state.tabs == store.state.tabs && loaded.state.splitLayouts == store.state.splitLayouts, "Put Back destination persists with the original group")
+            } else {
+                #expect(restored.isEmpty && store.state == before && publications.isEmpty, "Invalid Put Back \(scenario) preserves every archived record and selection")
+            }
+            _ = observation
         }
     }
 }

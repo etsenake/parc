@@ -42,6 +42,11 @@ final class SidebarBannerHost: NSView {
     var onLayoutChanged: (() -> Void)?
     var onInteractionChanged: ((Bool) -> Void)?
     var onRelinquishFocus: (() -> Void)?
+    var scheduleWork: (TimeInterval, DispatchWorkItem) -> Void = { delay, work in
+        if delay == 0 { DispatchQueue.main.async(execute: work) }
+        else { DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work) }
+    }
+    var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     private let presentation = Presentation()
     private var hosting: NSHostingView<Content>!
     private var desiredVisible = false
@@ -67,7 +72,7 @@ final class SidebarBannerHost: NSView {
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+                guard let self, self.reduceMotion() else { return }
                 self.settle()
             }
         }
@@ -90,8 +95,7 @@ final class SidebarBannerHost: NSView {
         } else {
             relinquishFocusIfOwned()
             guard phase != .absent else { return }
-            guard window != nil, phase == .appeared,
-                  !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { finishDismissal(); return }
+            guard window != nil, phase == .appeared, !reduceMotion() else { finishDismissal(); return }
             setPhase(.dismissing)
             let token = generation
             let work = DispatchWorkItem { [weak self] in
@@ -100,7 +104,7 @@ final class SidebarBannerHost: NSView {
                 self.finishDismissal()
             }
             scheduled = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + Self.dismissalLifetime, execute: work)
+            scheduleWork(Self.dismissalLifetime, work)
         }
     }
 
@@ -154,7 +158,7 @@ final class SidebarBannerHost: NSView {
             self.onLayoutChanged?()
         }
         scheduled = work
-        DispatchQueue.main.async(execute: work)
+        scheduleWork(0, work)
     }
     private func setPhase(_ phase: Phase, animated: Bool = true) {
         if animated { presentation.phase = phase }

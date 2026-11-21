@@ -14,7 +14,10 @@ final class IconSettingsView: NSView {
     private var subscriptions: Set<AnyCancellable> = []
     private var displayedSelection: String?
 
-    init(icons: AppIconController) {
+    init(icons: AppIconController,
+         scheduleRefresh: @escaping (@escaping @MainActor () -> Void) -> Void = { refresh in
+             RunLoop.main.schedule { MainActor.assumeIsolated { refresh() } }
+         }) {
         self.icons = icons
         super.init(frame: NSRect(x: 0, y: 0, width: 596, height: 562))
         autoresizingMask = [.width]
@@ -36,7 +39,9 @@ final class IconSettingsView: NSView {
         }
         choices.setAccessibilityRole(.radioGroup)
         choices.setAccessibilityLabel("App icon")
-        icons.objectWillChange.receive(on: RunLoop.main).sink { [weak self] in self?.refresh() }.store(in: &subscriptions)
+        icons.objectWillChange.sink { [weak self] in
+            scheduleRefresh { [weak self] in self?.refresh() }
+        }.store(in: &subscriptions)
         refresh()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }

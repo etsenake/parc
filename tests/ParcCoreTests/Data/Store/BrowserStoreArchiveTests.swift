@@ -14,15 +14,6 @@ extension BrowserStoreTests {
                    && InternalPage.sidebarFallbackSymbol(urlString: "https://example.org") == "globe", "Easel and Note rows keep distinct still glyphs; web rows keep the globe fallback")
         #expect(CommandBarCommandPresentation.symbol(forCommandID: "createEasel:") == InternalPage.easelFallbackSymbol
                    && CommandBarCommandPresentation.symbol(forCommandID: "createNote:") == InternalPage.noteFallbackSymbol, "New Easel and New Note commands show the same Library marks as their rows")
-        for address in ["parc://easel/not-a-uuid", "parc://easel/" + id.uuidString + "/more",
-                        canonical + "?profile=other", canonical + "#fragment", "parc://user@easel/" + id.uuidString,
-                        "parc://easel:88/" + id.uuidString, "parc://other/" + id.uuidString,
-                        "https://easel/" + id.uuidString] {
-            #expect(InternalPage(urlString: address) == nil, "Internal document routes must reject unsupported components")
-        }
-        for address in [canonical, "PARC://easel/" + id.uuidString, "parc://easel/not-a-uuid"] {
-            #expect(NavigationInput.resolve(address) == nil, "General navigation must never send an internal Parc address to a web engine or search provider")
-        }
         try withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let tabID = store.open("https://example.org")
@@ -30,6 +21,29 @@ extension BrowserStoreTests {
             store.navigate(tabID, input: canonical)
             #expect(store.state == before, "A pasted internal route must not mutate a web tab through ordinary navigation")
         }
+    }
+
+    @Test(arguments: [
+        "parc://easel/not-a-uuid",
+        "parc://easel/062e60fe-32d4-4d1b-8568-088b9d608bd3/more",
+        "parc://easel/062e60fe-32d4-4d1b-8568-088b9d608bd3?profile=other",
+        "parc://easel/062e60fe-32d4-4d1b-8568-088b9d608bd3#fragment",
+        "parc://user@easel/062e60fe-32d4-4d1b-8568-088b9d608bd3",
+        "parc://easel:88/062e60fe-32d4-4d1b-8568-088b9d608bd3",
+        "parc://other/062e60fe-32d4-4d1b-8568-088b9d608bd3",
+        "https://easel/062e60fe-32d4-4d1b-8568-088b9d608bd3",
+    ])
+    nonisolated static func invalidDocumentAddressesHaveNoInternalDestination(_ address: String) {
+        #expect(InternalPage(urlString: address) == nil)
+    }
+
+    @Test(arguments: [
+        "parc://easel/062e60fe-32d4-4d1b-8568-088b9d608bd3",
+        "PARC://easel/062e60fe-32d4-4d1b-8568-088b9d608bd3",
+        "parc://easel/not-a-uuid",
+    ])
+    nonisolated static func browserNavigationDoesNotOpenPrivateDocumentAddresses(_ address: String) {
+        #expect(NavigationInput.resolve(address) == nil)
     }
 
     @Test static func easelTabsAndSavedTitle() throws {
@@ -156,33 +170,40 @@ extension BrowserStoreTests {
             try reopened.save()
             let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
             #expect((saved["settings"] as! [String: Any])["autoArchiveHours"] == nil, "New saves must remove the redundant global policy field")
-            for interval in [AutoArchiveInterval.never, .oneHour, .sixHours] {
-                reopened.setAutoArchiveInterval(interval, for: profile)
-                try reopened.save()
-                let again = try BrowserStore(directory: directory)
-                #expect(again.autoArchiveInterval(for: profile) == interval, "Older supported Parc values must round-trip without silently changing user preference")
-            }
             #expect(AutoArchiveInterval.settingsChoices == [.twelveHours, .twentyFourHours, .sevenDays, .thirtyDays], "Normal Settings choices must match the archive menu, excluding hidden and debug cases")
             #expect(AutoArchiveInterval.never.seconds == nil && AutoArchiveInterval.twentyFourHours.seconds == 86400, "Never must be no threshold, and a day must be exactly 86400 seconds")
         }
     }
 
-    @Test static func invalidArchivePoliciesPreserveSession() throws {
+    @Test(arguments: [AutoArchiveInterval.never, .oneHour, .sixHours])
+    static func aSupportedLegacyArchiveIntervalSurvivesReload(_ interval: AutoArchiveInterval) throws {
+        try withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let profile = store.activeSpace.profileID
+            store.setAutoArchiveInterval(interval, for: profile)
+            try store.save()
+
+            let reopened = try BrowserStore(directory: directory)
+
+            #expect(reopened.autoArchiveInterval(for: profile) == interval)
+        }
+    }
+
+    @Test(arguments: [-1.0, 2.0, 20.0 / 3600, 999.0])
+    static func invalidArchivePoliciesPreserveSession(hours: Double) throws {
         try withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             try store.save()
             let file = directory.appendingPathComponent("session.json")
             let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
-            for hours in [-1.0, 2.0, 20.0 / 3600, 999.0] {
-                var state = store.state
-                state.profiles[0].autoArchiveHours = hours
-                let bytes = try encoder.encode(state)
-                try bytes.write(to: file)
-                var rejected = false
-                do { _ = try BrowserStore(directory: directory) } catch { rejected = true }
-                #expect(rejected, "Invalid or debug-only persisted policies must not become accidental Never or arbitrary timers")
-                #expect(try Data(contentsOf: file) == bytes, "Rejecting an invalid archive policy must preserve the existing session file")
-            }
+            var state = store.state
+            state.profiles[0].autoArchiveHours = hours
+            let bytes = try encoder.encode(state)
+            try bytes.write(to: file)
+            var rejected = false
+            do { _ = try BrowserStore(directory: directory) } catch { rejected = true }
+            #expect(rejected, "Invalid or debug-only persisted policies must not become accidental Never or arbitrary timers")
+            #expect(try Data(contentsOf: file) == bytes, "Rejecting an invalid archive policy must preserve the existing session file")
         }
     }
 
@@ -431,44 +452,45 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func archiveOriginalItemRevalidation() throws {
-        for change in ["space", "document", "title"] {
-            try withDirectory { directory in
-                var now = Date(timeIntervalSince1970: 1_800_000_000)
-                let store = try BrowserStore(directory: directory, now: { now })
-                let source = store.activeSpaceID
-                let destination = store.createSpace(name: "Destination")
-                store.selectSpace(source)
-                let original = store.open("https://original.example")
-                _ = store.open("https://current.example")
-                store.archiveExpiredTabs()
-                now.addTimeInterval(13 * 3600)
-                var request: (() -> Bool)?, finish: ((Bool) -> Void)?
-                var result: [[UUID]] = []
-                store.requestPageRetirement = { ids, validate, complete in
-                    if ids == [original] { request = validate; finish = complete }
-                }
-                store.archiveExpiredTabs(protectedTabIDs: []) { result.append($0) }
-                #expect(request != nil && result.isEmpty, "The original item waits for native retirement")
-                switch change {
-                case "space": store.moveTab(original, toSpace: destination)
-                case "document": store.updateTab(original, url: "https://replacement.example")
-                default: store.updateTab(original, title: "Updated page title")
-                }
-                let accepted = request?() == true
-                #expect(accepted == (change == "title"), "A changed original \(change) is distinguished from a metadata-only title refresh")
-                finish?(accepted)
-                finish?(accepted)
-                #expect(result == [accepted ? [original] : []] && store.retiringTabIDs.isEmpty, "Original-item revalidation completes once and releases its reservation")
-                #expect(((try tab(original, in: store)).archivedAt != nil) == accepted, "Only an unchanged original item follows accepted retirement into Archive")
+    @Test(arguments: ["space", "document", "title"])
+    static func archiveRevalidatesTheOriginalItem(change: String) throws {
+        try withDirectory { directory in
+            var now = Date(timeIntervalSince1970: 1_800_000_000)
+            let store = try BrowserStore(directory: directory, now: { now })
+            let source = store.activeSpaceID
+            let destination = store.createSpace(name: "Destination")
+            store.selectSpace(source)
+            let original = store.open("https://original.example")
+            _ = store.open("https://current.example")
+            store.archiveExpiredTabs()
+            now.addTimeInterval(13 * 3600)
+            var request: (() -> Bool)?, finish: ((Bool) -> Void)?
+            var result: [[UUID]] = []
+            store.requestPageRetirement = { ids, validate, complete in
+                if ids == [original] { request = validate; finish = complete }
             }
+            store.archiveExpiredTabs(protectedTabIDs: []) { result.append($0) }
+            #expect(request != nil && result.isEmpty, "The original item waits for native retirement")
+            switch change {
+            case "space": store.moveTab(original, toSpace: destination)
+            case "document": store.updateTab(original, url: "https://replacement.example")
+            default: store.updateTab(original, title: "Updated page title")
+            }
+            let accepted = request?() == true
+            #expect(accepted == (change == "title"), "A changed original \(change) is distinguished from a metadata-only title refresh")
+            finish?(accepted)
+            finish?(accepted)
+            #expect(result == [accepted ? [original] : []] && store.retiringTabIDs.isEmpty, "Original-item revalidation completes once and releases its reservation")
+            #expect(((try tab(original, in: store)).archivedAt != nil) == accepted, "Only an unchanged original item follows accepted retirement into Archive")
         }
     }
 
-    @Test static func archiveNoOpDoesNotWriteOrReset() async throws {
-        try await withDirectory { directory in
+    @Test(arguments: ["archive", "refresh", "policy"])
+    static func anUnchangedArchiveOperationKeepsTheSessionFile(operation: String) throws {
+        try withDirectory { directory in
             let now = Date(timeIntervalSince1970: 1_800_000_000)
             let store = try BrowserStore(directory: directory, now: { now })
+            let scheduler = DataFixtures.DeferredSave(store)
             store.archiveExpiredTabs()
             let selected = store.open("https://selected.example")
             try store.save()
@@ -476,10 +498,12 @@ extension BrowserStoreTests {
             let original = try Data(contentsOf: file)
             let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
             try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: file.path)
-            #expect(store.archiveExpiredTabs().isEmpty, "No eligible tabs must produce no archived IDs")
-            store.refreshVisibleTabs([selected])
-            store.setAutoArchiveInterval(.twelveHours, for: store.activeSpace.profileID)
-            try await Task.sleep(nanoseconds: 400_000_000)
+            switch operation {
+            case "archive": #expect(store.archiveExpiredTabs().isEmpty)
+            case "refresh": store.refreshVisibleTabs([selected])
+            default: store.setAutoArchiveInterval(.twelveHours, for: store.activeSpace.profileID)
+            }
+            scheduler.run(on: store)
             let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
             #expect(try attributes[.modificationDate] as? Date == oldDate && (try Data(contentsOf: file)) == original, "No-op checks, identical activity timestamps and unchanged policies must not rewrite the session")
         }

@@ -46,6 +46,6 @@ policies independently. The `/appearance` page exercises default canvas, explici
 site colors and CSS color-scheme changes; it is not an archive-state assertion.
 
 `bash scripts/test.sh` contains the BrowserStore elapsed-time and Profile-policy
-checks. `tests/ArchiveScheduling/run.sh` covers clock deadlines and coalescing
+checks. `ArchiveSchedulingTests` cover clock deadlines and coalescing
 without waiting a real day. The [archive guide](../../docs/archive.md) describes
 the production protection and retirement owners.

@@ -8,6 +8,7 @@ final class SettingsFocusState {
         init(view: NSView, selection: NSRange?) { self.view = view; self.selection = selection }
     }
     private var bookmarks: [String: Bookmark] = [:]
+    var applicationIsActive: () -> Bool = { NSApp.isActive }
 
     func remember(in window: NSWindow, root: NSView, context: String) {
         let responder = window.firstResponder
@@ -19,7 +20,7 @@ final class SettingsFocusState {
 
     @discardableResult
     func restore(in window: NSWindow, root: NSView, context: String?, fallback: NSView? = nil) -> Bool {
-        guard window.isVisible, window.isKeyWindow, NSApp.isActive,
+        guard window.isVisible, window.isKeyWindow, applicationIsActive(),
               window.attachedSheet == nil, root.window === window else { return false }
         let bookmark = context.flatMap { bookmarks[$0] }
         let candidate = bookmark?.view

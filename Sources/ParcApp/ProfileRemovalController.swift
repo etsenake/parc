@@ -4,8 +4,39 @@ import ParcCore
 import ParcEngine
 
 @MainActor
+protocol ProfileRemovalLease: AnyObject {
+    var operationID: String { get }
+    var profilePath: String { get }
+    func cancel()
+    func commit(revalidate: @escaping () -> Bool, completion: @escaping (PCNativeProfileRemovalState, Error?) -> Void)
+}
+
+extension PCNativeProfileRemoval: ProfileRemovalLease {}
+
+@MainActor
+struct ProfileRemovalNative {
+    var prepare: (_ profilePath: String, _ protectedProfilePath: String, _ operationID: String,
+                  _ completion: @escaping @Sendable (ProfileRemovalLease?, Error?) -> Void) -> Void
+    var recover: (_ profilePath: String, _ protectedProfilePath: String, _ operationID: String,
+                  _ completion: @escaping @Sendable (PCNativeProfileRemovalState, Error?) -> Void) -> Void
+
+    static let engine = ProfileRemovalNative(
+        prepare: { path, protectedPath, operationID, completion in
+            PCNativeBrowserApplication.prepareProfileRemoval(profilePath: path, protectedProfilePath: protectedPath,
+                                                             operationID: operationID) { lease, error in
+                completion(lease, error)
+            }
+        },
+        recover: { path, protectedPath, operationID, completion in
+            PCNativeBrowserApplication.recoverProfileRemoval(profilePath: path, protectedProfilePath: protectedPath,
+                                                             operationID: operationID, completion: completion)
+        })
+}
+
+@MainActor
 final class ProfileRemovalController: ObservableObject {
     static let shared = ProfileRemovalController()
+    var native = ProfileRemovalNative.engine
     struct Progress {
         var message: String
         var running: Bool
@@ -17,7 +48,7 @@ final class ProfileRemovalController: ObservableObject {
     private weak var store: BrowserStore?
     private var progress: [UUID: Progress] = [:]
     private var cancelling = Set<UUID>()
-    private var leases: [UUID: PCNativeProfileRemoval] = [:]
+    private var leases: [UUID: ProfileRemovalLease] = [:]
 
     func configure(store: BrowserStore) {
         self.store = store
@@ -70,10 +101,10 @@ final class ProfileRemovalController: ObservableObject {
     private func prepare(_ record: ProfileRemovalRecord) {
         guard let store else { return }
         set(record.profileID, message: "Preparing this profile for removal…", running: true, canCancel: true)
-        PCNativeBrowserApplication.prepareProfileRemoval(
-            profilePath: store.independentEngineProfilePath(for: record.profileID),
-            protectedProfilePath: store.independentEngineProfilePath(for: store.fallbackProfileID(for: record)),
-            operationID: record.id.uuidString) { [weak self] lease, error in
+        native.prepare(
+            store.independentEngineProfilePath(for: record.profileID),
+            store.independentEngineProfilePath(for: store.fallbackProfileID(for: record)),
+            record.id.uuidString) { [weak self] lease, error in
                 MainActor.assumeIsolated { self?.prepared(record, lease: lease, error: error) }
             }
     }
@@ -90,7 +121,7 @@ final class ProfileRemovalController: ObservableObject {
         }
     }
 
-    private func prepared(_ record: ProfileRemovalRecord, lease: PCNativeProfileRemoval?, error: Error?) {
+    private func prepared(_ record: ProfileRemovalRecord, lease: ProfileRemovalLease?, error: Error?) {
         guard let store else { lease?.cancel(); return }
         let nativeError = error as NSError?
         if lease == nil, nativeError?.domain == "ParcProfileRemoval", nativeError?.code == 6 {
@@ -129,10 +160,10 @@ final class ProfileRemovalController: ObservableObject {
     private func recover(_ record: ProfileRemovalRecord) {
         guard let store, progress[record.profileID]?.running != true else { return }
         set(record.profileID, message: "Finishing this profile’s removal…", running: true, canCancel: false)
-        PCNativeBrowserApplication.recoverProfileRemoval(
-            profilePath: store.independentEngineProfilePath(for: record.profileID),
-            protectedProfilePath: store.independentEngineProfilePath(for: store.fallbackProfileID(for: record)),
-            operationID: record.id.uuidString) { [weak self] result, error in
+        native.recover(
+            store.independentEngineProfilePath(for: record.profileID),
+            store.independentEngineProfilePath(for: store.fallbackProfileID(for: record)),
+            record.id.uuidString) { [weak self] result, error in
                 MainActor.assumeIsolated { self?.completed(record, result: result, error: error) }
             }
     }

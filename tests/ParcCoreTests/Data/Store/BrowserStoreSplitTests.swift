@@ -4,27 +4,59 @@ import Testing
 @testable import ParcCore
 
 extension BrowserStoreTests {
-    @Test static func splitLayoutValidation() throws {
+    private static func withTwoSplitTabs(_ body: (BrowserStore, UUID, UUID) throws -> Void) throws {
         try withDirectory { directory in
-            let store = try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 1_800_000_000) })
+            let date = Date(timeIntervalSince1970: 1_800_000_000)
+            let store = try BrowserStore(directory: directory, now: { date })
             let first = store.open("https://one.example")
             let second = store.open("https://two.example")
-            #expect(!store.setSplitLayout(orientation: .vertical, widthFactors: [1, 1]), "A single selected tab must not accept split geometry")
             store.setSplit([first, second])
-            #expect(store.setSplitLayout(orientation: .vertical, widthFactors: [2, 6]), "A valid layout must accept positive relative weights")
-            try expectFactors(store.activeSplitLayout?.widthFactors, [0.25, 0.75], "Weights must normalize to a unit sum")
-            let expected = store.state
-            for weights in [[Double](), [1], [1, 1, 1], [0, 1], [-1, 2], [.nan, 1], [.infinity, 1], [Double.leastNonzeroMagnitude, Double.greatestFiniteMagnitude]] {
-                #expect(!store.setSplitLayout(orientation: .horizontal, widthFactors: weights), "Invalid, mismatched or unrepresentable weights must be rejected")
-                #expect(store.state == expected, "Rejected geometry must not mutate selection or persisted layouts")
-            }
-            #expect(store.setSplitLayout(orientation: .horizontal,
-                widthFactors: [Double.greatestFiniteMagnitude, Double.greatestFiniteMagnitude]), "Normalization must not overflow when large valid weights have a non-finite raw sum")
-            try expectFactors(store.activeSplitLayout?.widthFactors, [0.5, 0.5], "Large equal weights must remain equal")
+            try body(store, first, second)
+        }
+    }
+
+    @Test static func oneSelectedPageCannotHaveSplitGeometry() throws {
+        try withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            _ = store.open("https://one.example")
+            #expect(!store.setSplitLayout(orientation: .vertical, widthFactors: [1, 1]))
+        }
+    }
+
+    @Test(arguments: [
+        ([2.0, 6.0], [0.25, 0.75]),
+        ([Double.greatestFiniteMagnitude, .greatestFiniteMagnitude], [0.5, 0.5]),
+    ])
+    static func validSplitWeightsNormalizeWithoutOverflow(_ weights: [Double], _ expected: [Double]) throws {
+        try withTwoSplitTabs { store, _, _ in
+            #expect(store.setSplitLayout(orientation: .vertical, widthFactors: weights))
+            try expectFactors(store.activeSplitLayout?.widthFactors, expected, "Relative split weights normalize")
+        }
+    }
+
+    @Test(arguments: [
+        [Double](), [1], [1, 1, 1], [0, 1], [-1, 2], [.nan, 1], [.infinity, 1],
+        [Double.leastNonzeroMagnitude, Double.greatestFiniteMagnitude],
+    ])
+    static func invalidSplitWeightsDoNotChangeTheSelectionOrLayout(_ weights: [Double]) throws {
+        try withTwoSplitTabs { store, _, _ in
+            let original = store.state
+            #expect(!store.setSplitLayout(orientation: .vertical, widthFactors: weights))
+            #expect(store.state == original)
+        }
+    }
+
+    @Test static func selectingAChildKeepsTheWholeSplitSelected() throws {
+        try withTwoSplitTabs { store, first, second in
             store.selectTab(first)
-            #expect(store.state.selectedTabIDs == [first, second], "Selecting a typed child retains the whole split")
+            #expect(store.state.selectedTabIDs == [first, second])
+        }
+    }
+
+    @Test static func closingASplitClearsItsActiveLayout() throws {
+        try withTwoSplitTabs { store, _, _ in
             store.closeSplit()
-            #expect(store.activeSplitLayout == nil, "A dissolved split leaves one normal page")
+            #expect(store.activeSplitLayout == nil)
         }
     }
 
@@ -492,34 +524,34 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func invalidPersistedSplitsArePreserved() throws {
-        try withDirectory { directory in
-            let store = try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 1_800_000_000) })
-            let first = store.open("https://one.example")
-            let second = store.open("https://two.example")
-            store.setSplit([first, second])
+    enum SplitDamage: CaseIterable {
+        case zeroWeight, missingWeight, unnormalized, repeatedTab, missingTab, missingSpace, repeatedLayout
+    }
+
+    @Test(arguments: SplitDamage.allCases)
+    static func anInvalidPersistedSplitIsRejectedAndTheSessionIsPreserved(_ damage: SplitDamage) throws {
+        try withTwoSplitTabs { store, first, _ in
             try store.save()
-            let good = store.state
-            let base = good.splitLayouts[0]
-            var cases: [[BrowserSplitLayout]] = []
-            var invalid = base; invalid.widthFactors = [0, 1]; cases.append([invalid])
-            invalid = base; invalid.widthFactors = [1]; cases.append([invalid])
-            invalid = base; invalid.widthFactors = [2, 3]; cases.append([invalid])
-            invalid = base; invalid.tabIDs = [first, first]; cases.append([invalid])
-            invalid = base; invalid.tabIDs = [first, UUID()]; cases.append([invalid])
-            invalid = base; invalid.spaceID = UUID(); cases.append([invalid])
-            cases.append([base, base])
-            let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
-            let file = directory.appendingPathComponent("session.json")
-            for layouts in cases {
-                var damaged = good; damaged.splitLayouts = layouts
-                let bytes = try encoder.encode(damaged)
-                try bytes.write(to: file)
-                var rejected = false
-                do { _ = try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 1_800_000_000) }) } catch { rejected = true }
-                #expect(rejected, "Invalid saved split membership or geometry must reject the session")
-                #expect(try Data(contentsOf: file) == bytes, "Rejecting a malformed split must preserve the session for recovery")
+            var state = store.state
+            var layout = try #require(state.splitLayouts.first)
+            switch damage {
+            case .zeroWeight: layout.widthFactors = [0, 1]
+            case .missingWeight: layout.widthFactors = [1]
+            case .unnormalized: layout.widthFactors = [2, 3]
+            case .repeatedTab: layout.tabIDs = [first, first]
+            case .missingTab: layout.tabIDs = [first, UUID()]
+            case .missingSpace: layout.spaceID = UUID()
+            case .repeatedLayout: break
             }
+            state.splitLayouts = damage == .repeatedLayout ? [layout, layout] : [layout]
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let bytes = try encoder.encode(state)
+            let file = store.directory.appendingPathComponent("session.json")
+            try bytes.write(to: file)
+
+            #expect(throws: (any Error).self) { try BrowserStore(directory: store.directory) }
+            #expect(try Data(contentsOf: file) == bytes)
         }
     }
 }

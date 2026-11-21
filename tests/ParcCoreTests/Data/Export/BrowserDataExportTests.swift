@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct BrowserDataExportTests {
     let profile = BrowserProfile(id: UUID(), name: "Primary")
     let otherProfile = BrowserProfile(id: UUID(), name: "Other")

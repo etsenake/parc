@@ -38,20 +38,6 @@ struct BrowserStoreTests {
         try body(directory)
     }
 
-    static func waitUntil(timeout: TimeInterval = 10, _ condition: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() && Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
-    }
-
-    static func withDirectory(_ body: (URL) async throws -> Void) async throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("parc-model-tests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
-                                               attributes: [.posixPermissions: 0o700])
-        defer { try? FileManager.default.removeItem(at: directory) }
-        try await body(directory)
-    }
-
     static func commandBarEmptyQueryRecents(
         history: [BrowserHistoryEntry], tabURLs: [String], alreadyShown: Int = 0
     ) -> [BrowserHistoryEntry] {
@@ -506,69 +492,79 @@ struct BrowserStoreTests {
         }
     }
 
-    @Test static func sessionSaveRoundTripIdentity() async throws {
-        try await withDirectory { directory in
+    @Test static func theSessionFileRoundTripsThePersistedState() throws {
+        try withDirectory { directory in
             let date = Date(timeIntervalSince1970: 1_800_000_000)
             let store = try BrowserStore(directory: directory, now: { date })
-            let tabID = store.open("https://example.org/start", kind: .pinned)
-            store.updateTab(tabID, title: "Article", url: "https://example.org/article")
-            store.updateSettings { $0.sidebarWidth = 278 }
+            let tab = store.open("https://example.org/start", kind: .pinned)
+            store.updateTab(tab, title: "Article", url: "https://example.org/article")
+            try store.save()
+
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let data = try Data(contentsOf: directory.appendingPathComponent("session.json"))
+            var expected = store.state
+            expected.windows = store.windowRecords
+            expected.history = []
+            #expect(try decoder.decode(BrowserState.self, from: data) == expected)
+        }
+    }
+
+    @Test static func compactSessionFilesLoadAndSaveTheSameState() throws {
+        try withDirectory { directory in
+            let date = Date(timeIntervalSince1970: 1_800_000_000)
+            let store = try BrowserStore(directory: directory, now: { date })
+            _ = store.open("https://example.org/start", kind: .pinned)
             try store.save()
             let file = directory.appendingPathComponent("session.json")
-            let savedBytes = try Data(contentsOf: file)
-            let savedText = String(data: savedBytes, encoding: .utf8)
-            #expect(savedText?.hasPrefix("{\n") == true && savedText?.contains("\n  \"") == true, "Existing sessions stay pretty-printed; this is not a format change")
-            let permissions = try FileManager.default.attributesOfItem(atPath: file.path)
-            #expect((permissions[.posixPermissions] as? NSNumber)?.intValue == 0o600, "Off-main replace still uses owner-only permissions")
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let expected = try decoder.decode(BrowserState.self, from: Data(contentsOf: file))
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            try encoder.encode(expected).write(to: file)
 
-            let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
-            let fromDisk = try decoder.decode(BrowserState.self, from: savedBytes)
-            var expected = store.state; expected.windows = store.windowRecords; expected.history = []
-            #expect(fromDisk == expected, "Load of the saved file yields the exact persisted BrowserState")
-            let savedHistory = BrowserHistoryFile.decode(
-                try Data(contentsOf: directory.appendingPathComponent(BrowserHistoryFile.name)))
-            #expect(!savedHistory.isEmpty && savedHistory == store.state.history, "Visits persist in history.jsonl, not inline in session.json")
+            let reopened = try BrowserStore(directory: directory, now: { date })
+            try reopened.save()
 
-            let compactEncoder = JSONEncoder(); compactEncoder.dateEncodingStrategy = .iso8601
-            try compactEncoder.encode(expected).write(to: file)
-            let fromCompact = try BrowserStore(directory: directory, now: { date })
-            #expect(fromCompact.state == store.state && fromCompact.windowRecords == store.windowRecords, "JSONDecoder does not depend on pretty-printed or sorted keys")
-            try fromCompact.save()
             let restored = try decoder.decode(BrowserState.self, from: Data(contentsOf: file))
-            #expect(restored == expected, "Re-saving an existing session preserves BrowserState identity")
+            #expect(restored == expected)
+        }
+    }
 
-            store.updateTab(tabID, title: "Live title")
-            store.updateTab(tabID, title: "Final title")
-            try await waitUntil { (try? String(contentsOf: file, encoding: .utf8))?.contains("Final title") == true }
-            let delayed = try BrowserStore(directory: directory, now: { date })
-            #expect(delayed.state.tabs.first { $0.id == tabID }?.title == "Final title", "The 0.25s debounce still writes the last mutation")
+    @Test static func deferredSavingWritesTheMostRecentTitle() throws {
+        try withDirectory { directory in
+            let date = Date(timeIntervalSince1970: 1_800_000_000)
+            let store = try BrowserStore(directory: directory, now: { date })
+            let scheduler = DataFixtures.DeferredSave(store)
+            let tab = store.open("https://example.org/start", kind: .pinned)
+            store.updateTab(tab, title: "Live title")
+            store.updateTab(tab, title: "Final title")
 
-            let beforePrivate = try Data(contentsOf: file)
-            let privateStore = BrowserStore(privateParentProfileID: store.activeSpace.profileID,
-                engineProfilePath: "/disposable", directory: directory, settings: store.state.settings, now: { date })
-            let privateID = privateStore.open("https://private.example.test")
-            privateStore.updateTab(privateID, title: "Secret")
-            try privateStore.save()
-            try await Task.sleep(nanoseconds: 400_000_000)
-            #expect(try Data(contentsOf: file) == beforePrivate, "Ephemeral stores still skip disk")
+            scheduler.run(on: store)
 
-            let pendingDirectory = FileManager.default.temporaryDirectory
-                .appendingPathComponent("parc-session-pending-\(UUID().uuidString)", isDirectory: true)
-            try FileManager.default.createDirectory(at: pendingDirectory, withIntermediateDirectories: false,
-                                                    attributes: [.posixPermissions: 0o700])
-            defer { try? FileManager.default.removeItem(at: pendingDirectory) }
-            let pendingStore = try BrowserStore(directory: pendingDirectory)
-            _ = pendingStore.open("https://pending-save.example.org")
-            let pendingFile = pendingDirectory.appendingPathComponent("session.json")
-            try FileManager.default.createDirectory(at: pendingFile, withIntermediateDirectories: false)
-            var settingsFailed = false
-            do { _ = try pendingStore.createProfilePersisted(name: "Work") } catch { settingsFailed = true }
-            #expect(settingsFailed && pendingStore.persistenceError != nil, "A refused settings commit reports the real failure")
-            #expect(pendingStore.state.profiles.count == 1, "A failed settings commit must not publish the profile")
-            try FileManager.default.removeItem(at: pendingFile)
-            try await waitUntil { (try? String(contentsOf: pendingFile, encoding: .utf8))?.contains("pending-save") == true }
-            let recovered = try BrowserStore(directory: pendingDirectory)
-            #expect(recovered.state.tabs.contains { $0.url == "https://pending-save.example.org" }, "A failed settings commit must not drop an already-scheduled session persist")
+            let reopened = try BrowserStore(directory: directory, now: { date })
+            #expect(reopened.state.tabs.first { $0.id == tab }?.title == "Final title")
+        }
+    }
+
+    @Test static func aFailedSettingsCommitKeepsAnAlreadyScheduledSessionSave() throws {
+        try withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let scheduler = DataFixtures.DeferredSave(store)
+            let url = "https://pending-save.example.org"
+            _ = store.open(url)
+            let file = directory.appendingPathComponent("session.json")
+            try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
+
+            #expect(throws: (any Error).self) { try store.createProfilePersisted(name: "Work") }
+            #expect(store.persistenceError != nil)
+            #expect(store.state.profiles.count == 1)
+            try FileManager.default.removeItem(at: file)
+            scheduler.run(on: store)
+
+            let reopened = try BrowserStore(directory: directory)
+            #expect(reopened.state.tabs.contains { $0.url == url })
         }
     }
 }

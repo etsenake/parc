@@ -1,13 +1,21 @@
 import Foundation
+@testable import ParcCore
 
 enum DataFixtures {
-    static let testsRoot = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
+    @MainActor
+    final class DeferredSave {
+        private(set) var work: [DispatchWorkItem] = []
 
-    static func fixture(_ path: String) -> URL {
-        testsRoot.appendingPathComponent("Fixtures").appendingPathComponent(path)
+        init(_ store: BrowserStore) {
+            store.scheduleDeferredSave = { [weak self] _, item in self?.work.append(item) }
+        }
+
+        func run(on store: BrowserStore) {
+            let pending = work
+            work.removeAll()
+            for item in pending where !item.isCancelled { item.perform() }
+            store.flushPendingWrites()
+        }
     }
 
     static func withTemporaryDirectory<T>(_ body: (URL) throws -> T) throws -> T {

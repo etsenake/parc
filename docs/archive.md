@@ -214,7 +214,7 @@ already published model state.
 
 Model suites cover typed items, split atomicity, settings snapshots and original
 consent. `ArchivedFolderPathTests` covers deleted-folder paths, rebuild order,
-saved-data compatibility, clearing and Undo refusal. `tests/ArchiveScheduling/run.sh` covers clock ownership/coalescing;
-`tests/AutoArchiveEducation/check.sh` covers inert card focus and lifecycle.
+saved-data compatibility, clearing and Undo refusal. `ArchiveSchedulingTests` cover clock ownership/coalescing;
+`SidebarBannerHostTests` and `AutoArchiveEducationViewTests` cover card focus and lifecycle.
 Library components cover filtering, original-row menus and stale leases.
 Current open product work belongs in [the backlog](backlog.md).
