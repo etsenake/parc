@@ -17,6 +17,7 @@ protocol EaselBrowserObjectHosting: AnyObject {
     func prepareReplacement(_ next: EaselDocument, valid: @escaping () -> Bool,
                             completion: @escaping (Bool) -> Void)
     func exportSnapshots(within deadline: TimeInterval, _ completion: @escaping ([UUID: EaselPageSnapshot]) -> Void)
+    func snapshotHeader(for item: EaselItem) -> NSView?
 }
 
 @MainActor
@@ -24,6 +25,7 @@ extension EaselBrowserObjectHosting {
     func focusPage(for id: UUID) -> Bool { false }
     func accessibilitySurface(for id: UUID) -> NSView? { nil }
     func exportSnapshots(within deadline: TimeInterval, _ completion: @escaping ([UUID: EaselPageSnapshot]) -> Void) { completion([:]) }
+    func snapshotHeader(for item: EaselItem) -> NSView? { nil }
 }
 
 @MainActor
@@ -126,7 +128,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private var finishingEditor = false
     private let textStyleBar = EaselTextStyleBar(frame: .zero)
     private var textPaletteSelection: Set<UUID> = []
-    private let liveCaptureButton = PointingHandButton(title: "Make Live", target: nil, action: nil)
+    private var snapshotHeader: NSView?
+    private var snapshotHeaderItem: UUID?
+    private weak var headerScrollClip: NSClipView?
+    private var headerScrollObserver: NSObjectProtocol?
     private var liveCaptureEducation: ParcDialog?
     private static let liveCaptureEducationKey = "easel.liveCaptureEducationSeen"
     private var editingID: UUID?
@@ -284,10 +289,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         textStyleBar.onLayoutChange = { [weak self] in
             self?.refreshTextControls(); self?.keyboardStructureChanged()
         }
-        liveCaptureButton.target = self; liveCaptureButton.action = #selector(toggleLiveCapture)
-        liveCaptureButton.bezelStyle = .texturedRounded
-        liveCaptureButton.toolTip = "Show this region from a live webpage"
-        liveCaptureButton.isHidden = true; addSubview(liveCaptureButton)
         textStyleBar.onFamily = { [weak self] family in self?.changeTextStyle(preservingSize: true) { $0.family = family } }
         textStyleBar.onSize = { [weak self] size in self?.changeTextStyle { $0.size = size } }
         textStyleBar.onResize = { [weak self] delta in self?.resizeText(by: delta) }
@@ -359,7 +360,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         synchronizeAccessibleObjects()
         var result: [Any] = items.compactMap { accessibleObjects[$0.id] }
         if !textStyleBar.isHidden { result.append(textStyleBar) }
-        if !liveCaptureButton.isHidden { result.append(liveCaptureButton) }
+        if let snapshotHeader { result.append(snapshotHeader) }
         result.append(contentsOf: accessibleManipulationControls())
         return result
     }
@@ -554,11 +555,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return true
     }
     private func invalidateIncrementalDisplay(layout: Bool = false) {
+        if layout { needsLayout = true }
         if presentationMatchesPaintedArtwork() {
             presentationNoOpSkipCount += 1
             return
         }
-        if layout { needsLayout = true }
         var dirty = NSRect.null
         func add(_ rect: NSRect) {
             guard !rect.isNull, rect.width.isFinite, rect.height.isFinite else { return }
@@ -632,18 +633,47 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             setNeedsDisplay(dirty)
         }
     }
+    private func refreshSnapshotHeader() {
+        let snapshot = selection.count == 1 ? items.first { selection.contains($0.id) && EaselWebItemChrome.isSnapshot($0) } : nil
+        let dragging = start != nil && (dragDistance > 3 || resizing || marqueeRect != nil)
+        let hidden = dragging || drawing || editor != nil || fixedCanvasSize != nil || motion.isInteracting
+        let header = hidden ? nil : snapshot.flatMap { pageObjects?.snapshotHeader(for: $0) }
+        if snapshotHeader !== header {
+            snapshotHeader?.removeFromSuperview(); snapshotHeader = header
+            NSAccessibility.post(element: self, notification: .layoutChanged)
+        }
+        snapshotHeaderItem = header == nil ? nil : snapshot?.id
+        guard let header else { return }
+        bindHeaderScroll()
+        positionSnapshotHeader()
+        if subviews.last !== header { addSubview(header, positioned: .above, relativeTo: nil) }
+    }
+    private func positionSnapshotHeader() {
+        guard let header = snapshotHeader, let id = snapshotHeaderItem, let item = items.first(where: { $0.id == id }) else { return }
+        let visible = visibleRect.isEmpty ? bounds : visibleRect
+        let placed = EaselWebItemChrome.headerFrame(item: item.frame,
+            visible: EaselRect(x: visible.minX, y: visible.minY, width: visible.width, height: visible.height))
+        let next = NSRect(x: placed.x, y: placed.y, width: placed.width, height: placed.height)
+        if header.frame != next { header.frame = next }
+    }
+    private func bindHeaderScroll() {
+        let clip = enclosingScrollView?.contentView
+        guard headerScrollClip !== clip || (clip != nil && headerScrollObserver == nil) else { return }
+        if let headerScrollObserver { NotificationCenter.default.removeObserver(headerScrollObserver) }
+        headerScrollClip = clip; headerScrollObserver = nil
+        guard let clip else { return }
+        clip.postsBoundsChangedNotifications = true
+        headerScrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.positionSnapshotHeader() }
+        }
+    }
     private func synchronizePageSelection() {
         pageObjects?.synchronize(items: items, selection: selection,
                                  interacting: !drawing && editor == nil && start == nil && !isHiddenOrHasHiddenAncestor)
     }
     override func layout() {
         super.layout(); motion.bind(enclosingScrollView); refreshTextControls(); synchronizeAccessibleObjects()
-        let captured = selection.count == 1 ? items.first { selection.contains($0.id) && $0.kind == .webCard && $0.captureLayout != nil && !$0.ownsEmbeddedPage } : nil
-        liveCaptureButton.isHidden = captured == nil || pageObjects == nil || start != nil || drawing || fixedCanvasSize != nil || motion.isInteracting
-        if let captured {
-            let frame = rect(captured)
-            liveCaptureButton.frame = NSRect(x: max(frame.minX, frame.maxX - 100), y: frame.minY + 7, width: 92, height: 26)
-        }
+        refreshSnapshotHeader()
         synchronizePageSelection()
         guard usesObjectSurfaces else {
             artwork.values.forEach { $0.removeFromSuperview() }; artwork.removeAll()
@@ -678,7 +708,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if let editor { ordered.append(editor) }
         ordered.append(contentsOf: items.compactMap { accessibleObjects[$0.id] })
         ordered.append(textStyleBar)
-        ordered.append(liveCaptureButton)
+        if let snapshotHeader { ordered.append(snapshotHeader) }
         if subviews.map(ObjectIdentifier.init) != ordered.map(ObjectIdentifier.init) {
             for view in ordered { addSubview(view, positioned: .above, relativeTo: nil) }
         }
@@ -1268,7 +1298,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
         guard usesObjectSurfaces, let hit, hit !== self else { return hit }
-        if hit === liveCaptureButton { return hit }
+        if let snapshotHeader, hit === snapshotHeader || hit.isDescendant(of: snapshotHeader) { return hit }
         if hit === editor || editor.map({ hit.isDescendant(of: $0) }) == true
             || hit === textStyleBar || hit.isDescendant(of: textStyleBar) { return hit }
         let local = convert(point, from: superview)
@@ -1609,8 +1639,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         if let object = captured.command?.originals.first, captured.command?.originals.count == 1, object.url != nil {
             menu.addItem(.separator())
-            if object.kind == .webCard, object.captureLayout != nil {
-                let row = NSMenuItem(title: object.liveCapture == true ? "Show Captured Image" : "Make Live",
+            if EaselWebItemChrome.canMakeLive(object) {
+                let row = NSMenuItem(title: object.liveCapture == true ? "Back to Snapshot" : "Make Live",
                     action: #selector(toggleLiveCapture), keyEquivalent: "")
                 row.target = self; row.representedObject = captured; menu.addItem(row)
             }
@@ -1633,7 +1663,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             guard liveCaptureEducation == nil, let owner = window, owner.isKeyWindow, owner.attachedSheet == nil else { return }
             let original = session.document, originalSelection = selection
             let alert = ParcDialog(.init(title: "Make it Live",
-                message: "See an up-to-date, interactive view of the region you captured. This does not work on all sites. You can always return to the original screenshot with Snapshot.",
+                message: "See an up-to-date, interactive view of the region you captured. This does not work on all sites. You can always return to the original screenshot with Back to snapshot.",
                 confirm: "Make it Live", cancel: "Cancel"))
             liveCaptureEducation = alert
             _ = alert.begin(for: owner) { [weak self, weak owner, weak alert] response in
@@ -1677,7 +1707,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             menuItem.state = alignmentGuidesEnabled ? .on : .off; return true
         }
         if menuItem.action == #selector(toggleLiveCapture) {
-            return pageObjects != nil && command(for: menuItem)?.originals.first?.captureLayout != nil
+            return pageObjects != nil && fixedCanvasSize == nil && command(for: menuItem)?.originals.first.map(EaselWebItemChrome.canMakeLive) == true
         }
         if menuItem.action == #selector(undo) { return canUndo }
         if menuItem.action == #selector(redo) { return canRedo }

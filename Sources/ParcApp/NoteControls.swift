@@ -402,7 +402,8 @@ class NoteControlButton: PointingHandButton {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { false }
+    var acceptsKeyboardFocus = false
+    override var acceptsFirstResponder: Bool { acceptsKeyboardFocus && isEnabled }
 
     override func viewDidMoveToSuperview() {
         super.viewDidMoveToSuperview()

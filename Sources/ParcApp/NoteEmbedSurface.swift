@@ -16,7 +16,7 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         didSet {
             guard captionButton.isHidden != (onCaption == nil) else { return }
             captionButton.isHidden = onCaption == nil
-            needsLayout = true
+            header.needsLayout = true
         }
     }
     var interactive = false {
@@ -31,11 +31,8 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     var scrollLatched = false
     private let content = NoteEmbedPageClip()
     private let ring = CALayer()
-    private let headerRule = CALayer()
+    private let header = EmbeddedPageHeader()
     private let clip = NoteEmbedPageClip()
-    private let favicon = CALayer()
-    private let titleLabel: NSTextField
-    private let hostLabel: NSTextField
     private let backButton = NoteToolbarButton(icon: .symbol("chevron.left"), label: "Back")
     private let reloadButton = NoteToolbarButton(icon: .symbol("arrow.clockwise"), label: "Reload")
     private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in a tab")
@@ -43,15 +40,12 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     private let captionButton = NoteToolbarButton(icon: .symbol("text.below.photo"), label: "Caption")
     private let fallback: NoteEmbedFallbackView
     private var status: String?
-    private var faviconSource: String?
     private var retryTitle = "Retry"
 
     init(address: URL, profilePath: String) {
         self.address = address
         liveAddress = NoteEmbedAddress.liveURL(for: address)
         browser = PCBrowserView(frame: .zero, profilePath: profilePath)
-        titleLabel = NoteMediaStyle.label("", font: NoteTheme.nunitoBold(13), color: NoteTheme.ink)
-        hostLabel = NoteMediaStyle.label("", font: NoteTheme.nunitoRegular(12), color: NoteTheme.tertiaryInk)
         fallback = NoteEmbedFallbackView(address: address)
         super.init(frame: .zero)
         wantsLayer = true
@@ -66,12 +60,6 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         ring.cornerCurve = .continuous
         ring.borderWidth = 2
         ring.opacity = 0
-        content.layer?.addSublayer(headerRule)
-        content.layer?.addSublayer(favicon)
-        favicon.contentsGravity = .resizeAspect
-        favicon.cornerRadius = 3
-        favicon.cornerCurve = .continuous
-        favicon.masksToBounds = true
         clip.wantsLayer = true
         clip.layer?.masksToBounds = true
         clip.exposesChildren = { [weak self] in self?.inputAvailable == true }
@@ -83,10 +71,7 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         }
         fallback.onRetry = { [weak self] in self?.onRetry?() }
         content.addSubview(fallback)
-        for label in [titleLabel, hostLabel] {
-            label.setAccessibilityElement(false)
-            content.addSubview(label)
-        }
+        content.addSubview(header)
         backButton.onPress = { [weak self] in self?.navigate(.back) }
         reloadButton.onPress = { [weak self] in self?.reloadOrStop() }
         openButton.onPress = { [weak self] in self?.openInTab() }
@@ -94,7 +79,7 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         doneButton.isHidden = true
         captionButton.onPress = { [weak self] in self?.onCaption?() }
         captionButton.isHidden = true
-        for button in [captionButton, backButton, reloadButton, openButton, doneButton] { content.addSubview(button) }
+        header.buttons = [captionButton, backButton, reloadButton, openButton, doneButton]
         layer?.addSublayer(ring)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -104,8 +89,10 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
             NoteAnimation.settle(self.ring)
             if let layer = self.fallback.layer { NoteAnimation.settle(layer) }
         }
-        loadFavicon(NoteLinkMetadata.shared.cached(address)?.iconURL)
-        fetchPreview()
+        header.loadPreview(for: address) { [weak self] preview in
+            if let preview { self?.fallback.configure(preview: preview) }
+            self?.refresh()
+        }
         setStatus("Loading webpage…", retry: false)
     }
 
@@ -141,14 +128,7 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         needsLayout = true
     }
 
-    private static func friendly(_ text: String) -> String {
-        switch text {
-        case "Loading webpage…": return "Waking the page up…"
-        case "Webpage closed": return "This page closed. Give it another go?"
-        case "This webpage owner is unavailable.": return "Live pages wake up when the note is open in a window."
-        default: return text
-        }
-    }
+    private static func friendly(_ text: String) -> String { EmbeddedPageStatusText.friendly(text, document: "note") }
 
     func setRetryTitle(_ title: String) {
         retryTitle = title
@@ -168,8 +148,8 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         let live = page?.isClosed == false && page?.embeddedOwnerValid == true
         let title = browser.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let preview = NoteLinkMetadata.shared.cached(address)
-        titleLabel.stringValue = live && !title.isEmpty ? title : (preview?.title ?? NoteMediaFormat.displayHost(address))
-        hostLabel.stringValue = NoteMediaFormat.displayHost(live ? (page?.url ?? address) : address)
+        header.setPage(title: live && !title.isEmpty ? title : (preview?.title ?? NoteMediaFormat.displayHost(address)),
+                       host: NoteMediaFormat.displayHost(live ? (page?.url ?? address) : address))
         backButton.isEnabled = live && page?.canPerformNavigation(.back) == true
         let loading = browser.isLoading
         reloadButton.content = .icon(.symbol(loading ? "xmark" : "arrow.clockwise"))
@@ -178,6 +158,7 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         reloadButton.isEnabled = live && page?.canPerformNavigation(loading ? .stop : .reload) == true
         doneButton.isHidden = !interactive
         setAccessibilityValue(page?.url?.absoluteString ?? address.absoluteString)
+        header.needsLayout = true
         needsLayout = true
     }
 
@@ -197,25 +178,11 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         content.frame = bounds
         NoteMediaMotion.instant {
             ring.frame = bounds.insetBy(dx: -3, dy: -3)
-            headerRule.frame = NSRect(x: 1, y: Self.headerHeight - 1, width: max(0, width - 2), height: 1)
-            favicon.frame = NSRect(x: 12, y: (Self.headerHeight - 16) / 2, width: 16, height: 16)
-            favicon.contentsScale = window?.backingScaleFactor ?? 2
         }
+        header.frame = NSRect(x: 0, y: 0, width: width, height: Self.headerHeight)
         clip.frame = pageRect
         browser.frame = clip.bounds
         fallback.frame = pageRect
-        let size = NoteTheme.toolbarButtonSize
-        var trailing = width - 6
-        for button in [doneButton, openButton, reloadButton, backButton, captionButton] where !button.isHidden {
-            button.frame = NSRect(x: trailing - size.width, y: (Self.headerHeight - size.height) / 2, width: size.width, height: size.height)
-            trailing = button.frame.minX - 2
-        }
-        let textLeading: CGFloat = 36
-        let available = max(0, trailing - 8 - textLeading)
-        let titleWidth = min(available, NoteMediaStyle.textWidth(titleLabel))
-        titleLabel.frame = NSRect(x: textLeading, y: (Self.headerHeight - 18) / 2, width: titleWidth, height: 18)
-        let hostWidth = max(0, min(available - titleWidth - 6, NoteMediaStyle.textWidth(hostLabel)))
-        hostLabel.frame = NSRect(x: titleLabel.frame.maxX + 6, y: (Self.headerHeight - 16) / 2 + 1, width: hostWidth, height: 16)
         refreshColors()
         onLayout?()
     }
@@ -224,7 +191,6 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         NoteMediaMotion.instant {
             content.layer?.backgroundColor = NoteMediaStyle.cg(NoteMediaStyle.cardFill, in: self)
             content.layer?.borderColor = NoteMediaStyle.cg(NoteMediaStyle.cardStroke, in: self)
-            headerRule.backgroundColor = NoteMediaStyle.cg(NoteMediaStyle.cardStroke, in: self)
             ring.borderColor = NoteMediaStyle.cg(NoteTheme.accent, in: self)
         }
     }
@@ -238,7 +204,6 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         needsLayout = true
-        if faviconSource == nil { loadFavicon(nil) }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -268,32 +233,6 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         let unchanged = current.absoluteString == liveAddress.absoluteString || current.absoluteString == address.absoluteString
         onOpen?(unchanged ? address : current)
     }
-
-    private func fetchPreview() {
-        guard NoteLinkMetadata.shared.cached(address) == nil, NoteLinkMetadata.shared.failure(for: address) == nil else { return }
-        let expected = address
-        NoteLinkMetadata.shared.fetch(address) { [weak self] result in
-            guard let self, self.address == expected else { return }
-            if case .success(let preview) = result {
-                self.loadFavicon(preview.iconURL)
-                self.fallback.configure(preview: preview)
-            }
-            self.refresh()
-        }
-    }
-
-    private func loadFavicon(_ source: String?) {
-        let link = source ?? NoteLinkMetadataParser.defaultIcon(for: address)
-        faviconSource = source
-        NoteMediaMotion.instant {
-            favicon.contents = NoteMediaStyle.symbol("globe", size: 12, weight: .medium).map { NoteMediaStyle.tinted($0, NoteTheme.tertiaryInk, in: self) }
-        }
-        guard let link, let iconURL = URL(string: link) else { return }
-        NoteMediaImageLoader.shared.load(iconURL, pixels: 64) { [weak self] result in
-            guard let self, case .success(let image) = result else { return }
-            NoteMediaMotion.instant { self.favicon.contents = image.first }
-        }
-    }
 }
 
 @MainActor
@@ -310,7 +249,7 @@ final class NoteEmbedFallbackView: NSView {
     private let address: URL
     private let card = NoteLinkCardView(style: .bookmark)
     private let statusLabel: NSTextField
-    private let retryChip = NoteChip("Retry", icon: .symbol("arrow.clockwise"))
+    let retryChip = NoteChip("Retry", icon: .symbol("arrow.clockwise"))
     private var tracking: NSTrackingArea?
 
     init(address: URL) {

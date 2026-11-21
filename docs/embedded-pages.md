@@ -53,7 +53,8 @@ An embed block with a web address shows the live page in the note's Profile,
 with its cookies and sign-ins. A slim header shows the favicon, title and host,
 plus Back, Reload (Stop while loading) and Open, which opens the page in a tab.
 While a page warms up, can't open, closes or crashes, the block shows the
-bookmark-style card with a short status and Retry. YouTube, Vimeo, Loom,
+bookmark-style card with a short status and Retry. Easel webpage objects and
+captured cards share this header (`EmbeddedPageHeader`) and status card. YouTube, Vimeo, Loom,
 Spotify and Figma links load their embed players; Open still uses the address
 in the file. A note's first load sends Parc's app identifier
 (`https://<bundle id>`) as its Referer with a strict-origin-when-cross-origin
@@ -86,6 +87,9 @@ that handles the wheel itself, like a map, keeps it. The decision is
 history-swipe handler. Note shortcuts stay out of a focused page: Find, Find
 Next, Find Previous and Use Selection for Find search the page with its own find
 bar, as in an Easel, and Find and Replace is off.
+
+Easel blocks in notes reuse this scroll latch for their canvas, but host no
+live pages: their webpage objects show saved cards.
 
 Navigation inside a note embed doesn't rewrite the file. Deleting the block
 closes its page with the page's usual leave-page check; if someone chooses to

@@ -3,8 +3,8 @@
 A captured WebCard keeps its original PNG, URL, acquisition time and optional
 renderer geometry. **Make Live**, on the selected card and its context menu,
 opens a real auxiliary Chromium page in that Easel editor's window and Profile.
-The first use presents the Make it Live/Cancel education, explaining that sites can change and the original screenshot remains available through Snapshot. Its callback is bound to the same window, selection and document. The page is framed to the captured region. Its own renderer continues to update;
-there is no screenshot timer or image relabeling. **Snapshot** returns to the
+The first use presents the Make it Live/Cancel education, explaining that sites can change and the original screenshot remains available through Back to snapshot. Its callback is bound to the same window, selection and document. The page is framed to the captured region. Its own renderer continues to update;
+there is no screenshot timer or image relabeling. **Back to snapshot** returns to the
 same original image after the live page actually agrees to close.
 
 ## Source and geometry
@@ -43,7 +43,7 @@ The page retains normal renderer updates and original permission, dialog,
 security, capture-stop and crash owners. Selected-object input uses the existing
 single-selection canvas policy. The original screenshot remains immutable even
 when the live page navigates: navigation never rewrites capture provenance.
-Switching to Snapshot, deletion and Undo ask all original shared-document child
+Going back to the snapshot, deletion and Undo ask all original shared-document child
 owners to retire before committing. A refused close preserves live mode. Pending positioning is suspended during retirement or physical-window transfer and resumes only after settlement; an already positioned page keeps its current interaction state.
 Cross-Profile moves retire these same children before the document moves; the
 destination owns fresh content in its destination Profile, never a rebound
@@ -52,9 +52,12 @@ source renderer.
 ## Presentation and checks
 
 Parc stores the live preference with the local object so it follows document
-Undo and relocation. The compact security/reload/Snapshot control strip and
-single-selection input reuse the existing browser-object surface. The region
-fits beneath that strip without changing its aspect ratio or showing neighboring
+Undo and relocation. Make live depends only on the saved card (image, web
+address and valid region geometry), so it stays available after deselecting,
+switching tabs, reopening the Easel or relaunching. The live page uses the
+shared embed header described in [Easel editing](easels.md#embedded-webpages-and-captured-cards);
+single-selection input reuses the browser-object surface. The region fits
+beneath that header without changing its aspect ratio or showing neighboring
 page pixels. Oversized canvas objects letterbox at the original renderer's
 maximum viewport extent. Browser zoom is accounted for without changing the
 Profile's zoom preference. The fixed positioning script preserves unrelated

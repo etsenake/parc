@@ -91,8 +91,9 @@ final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHosting {
     func surface(for item: EaselItem) -> NSView? {
         guard item.ownsEmbeddedPage, let url = item.url else { return nil }
         let profilePath = self.profilePath, layout = item.captureLayout
+        let address = URL(string: url) ?? URL(string: "about:blank")!
         guard let entry = surface(id: item.id, url: url, variant: Self.variant(item), make: {
-            EaselBrowserSurface(profilePath: profilePath, captureLayout: layout)
+            EaselBrowserSurface(profilePath: profilePath, address: address, captureLayout: layout)
         }) else { return nil }
         guard entry.surface.onDone == nil, let view = entry.surface as? EaselBrowserSurface else { return entry.surface }
         view.onDone = { [weak self, weak entry] in
@@ -103,7 +104,20 @@ final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHosting {
             canvas.layoutSubtreeIfNeeded()
         }
         view.onSnapshot = { [weak self] in self?.canvas?.setLiveCapture(item.id, enabled: false) }
+        view.onOpen = { [weak self] url in self?.canvas?.onOpenURL?(url) }
         return view
+    }
+
+    private var snapshotChrome: EaselSnapshotHeader?
+    func snapshotHeader(for item: EaselItem) -> NSView? {
+        guard EaselWebItemChrome.isSnapshot(item), let raw = item.url, let address = URL(string: raw) else { return nil }
+        let header = snapshotChrome ?? EaselSnapshotHeader()
+        snapshotChrome = header
+        let id = item.id
+        header.onMakeLive = { [weak self] in self?.canvas?.setLiveCapture(id, enabled: true) }
+        header.onOpen = { [weak self] in self?.canvas?.onOpenURL?(address) }
+        header.configure(item, address: address)
+        return header
     }
 
     func synchronize(items: [EaselItem], selection: Set<UUID>, interacting: Bool) {
@@ -149,6 +163,7 @@ extension EaselSession: EmbeddedPageOwner {
 private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
     let browser: PCBrowserView
     private let captureLayout: EaselCaptureLayout?
+    private let address: URL
     private let clip = EaselLiveCaptureClip()
     private var positioning: PCNativeLiveCapturePosition?
     private var positionGeneration: UInt64 = 0
@@ -162,77 +177,95 @@ private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
         }
     }
     var onSnapshot: (() -> Void)?
-    private let snapshot = PointingHandButton(title: "Snapshot", target: nil, action: nil)
-    var interactive = false { didSet { if oldValue != interactive { if !interactive { input?.cancel(restoreFocus: false) }; needsLayout = true } } }
+    var onOpen: ((URL) -> Void)?
+    var interactive = false { didSet { if oldValue != interactive { if !interactive { input?.cancel(restoreFocus: false) }; refresh(); needsLayout = true } } }
     var onLayout: (() -> Void)?
     var onRetry: (() -> Void)?
     var onDone: (() -> Void)?
     var onNavigate: ((URL) -> Bool)?
     private var input: EaselWebInput?
     private var lastDraft = EaselWebNavigation.Draft()
-    private let label = PointingHandButton(title: "Webpage", target: nil, action: nil)
-    private let status = NSTextField(wrappingLabelWithString: "")
+    private let header = EmbeddedPageHeader()
     private let cover = NSView()
-    private let retry = PointingHandButton(title: "Retry", target: nil, action: nil)
-    private let back = PointingHandButton(), forward = PointingHandButton(), reload = PointingHandButton(), done = PointingHandButton()
-    private let security = PointingHandButton()
+    private let fallback: NoteEmbedFallbackView
+    private var status: String?
+    private var retryTitle = "Retry"
+    private let backButton = NoteToolbarButton(icon: .symbol("chevron.left"), label: "Back")
+    private let reloadButton = NoteToolbarButton(icon: .symbol("arrow.clockwise"), label: "Reload")
+    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in a tab")
+    private let moreButton = NoteToolbarButton(icon: .symbol("ellipsis"), label: "More")
+    private let doneButton = NoteToolbarButton(icon: .symbol("checkmark"), label: "Back to the Easel")
+    private let snapshotChip = NoteChip(EaselWebItemChrome.backToSnapshotTitle, icon: .symbol("photo"))
     var inputAvailable: Bool {
         interactive && (browser.nativePage?.isClosed != false || browser.nativePage?.embeddedOwnerValid == true)
     }
     override var isFlipped: Bool { true }
-    init(profilePath: String, captureLayout: EaselCaptureLayout?) {
+    init(profilePath: String, address: URL, captureLayout: EaselCaptureLayout?) {
         self.captureLayout = captureLayout
+        self.address = address
         browser = PCBrowserView(frame: .zero, profilePath: profilePath)
+        fallback = NoteEmbedFallbackView(address: address)
         super.init(frame: .zero)
-        wantsLayer = true; layer?.cornerRadius = 8; layer?.masksToBounds = true
+        wantsLayer = true
+        layer?.cornerRadius = NoteMediaStyle.cardRadius; layer?.cornerCurve = .continuous
+        layer?.borderWidth = 1; layer?.masksToBounds = true
         clip.wantsLayer = true; clip.layer?.masksToBounds = true
         addSubview(clip); clip.addSubview(browser)
-        cover.wantsLayer = true; cover.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor; cover.isHidden = true
-        addSubview(cover); addSubview(label); addSubview(status); addSubview(retry)
-        snapshot.target = self; snapshot.action = #selector(showSnapshot); snapshot.isHidden = captureLayout == nil
-        snapshot.toolTip = "Return to the original captured image"; addSubview(snapshot)
-        label.font = .systemFont(ofSize: 11); label.lineBreakMode = .byTruncatingMiddle
-        label.isBordered = false; label.alignment = .left; label.target = self; label.action = #selector(editAddress)
-        label.setAccessibilityLabel("Edit webpage address or search")
-        status.font = .systemFont(ofSize: 12); status.alignment = .center; status.textColor = .secondaryLabelColor
-        for (button, title, symbol, selector) in [(back,"Back","chevron.left",#selector(goBack)),(forward,"Forward","chevron.right",#selector(goForward)),(reload,"Reload","arrow.clockwise",#selector(reloadOrStop)),(done,"Return to Easel","checkmark",#selector(finish)),(security,"Site information","lock",#selector(siteInfo))] {
-            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-            button.bezelStyle = .texturedRounded; button.toolTip = title; button.setAccessibilityLabel(title)
-            button.target = self; button.action = selector; addSubview(button)
+        cover.wantsLayer = true; cover.isHidden = true
+        fallback.isHidden = true
+        fallback.onOpen = { [weak self] in self?.openInTab() }
+        fallback.onRetry = { [weak self] in self?.onRetry?() }
+        fallback.retryChip.acceptsKeyboardFocus = true
+        addSubview(cover); addSubview(fallback); addSubview(header)
+        backButton.onPress = { [weak self] in self?.navigate(.back) }
+        reloadButton.onPress = { [weak self] in self?.reloadOrStop() }
+        openButton.onPress = { [weak self] in self?.openInTab() }
+        moreButton.onPress = { [weak self] in self?.showMore() }
+        doneButton.onPress = { [weak self] in self?.onDone?() }
+        doneButton.acceptsKeyboardFocus = true
+        snapshotChip.onPress = { [weak self] in self?.onSnapshot?() }
+        snapshotChip.setToolTip(EaselWebItemChrome.backToSnapshotHelp)
+        if captureLayout != nil {
+            header.buttons = [reloadButton, openButton, moreButton, doneButton]
+            header.action = snapshotChip
+            header.setBadge("Live", help: EaselWebItemChrome.liveHelp, live: true)
+        } else {
+            header.buttons = [backButton, reloadButton, openButton, moreButton, doneButton]
+            header.onTitle = { [weak self] in self?.editAddress() }
         }
-        retry.target = self; retry.action = #selector(retryPage)
+        header.loadPreview(for: address) { [weak self] preview in
+            if let preview { self?.fallback.configure(preview: preview) }
+            self?.refresh()
+        }
         setAccessibilityElement(false)
+        refresh()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance { layer?.backgroundColor = EaselAppearance.surface.cgColor }
+        layer?.backgroundColor = NoteMediaStyle.cg(NoteTheme.panelFill, in: self)
+        layer?.borderColor = NoteMediaStyle.cg(NoteTheme.panelStroke, in: self)
+        cover.layer?.backgroundColor = NoteMediaStyle.cg(NoteTheme.menuFill, in: self)
     }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
+    private var headerHeight: CGFloat { EmbeddedPageHeader.height }
+    private var pageRect: NSRect { NSRect(x: 0, y: headerHeight, width: bounds.width, height: max(1, bounds.height - headerHeight)) }
     override func layout() {
         super.layout()
-        clip.frame = NSRect(x: 0, y: 32, width: bounds.width, height: max(1, bounds.height - 32))
+        header.frame = NSRect(x: 0, y: 0, width: bounds.width, height: headerHeight)
+        clip.frame = pageRect
         if let captureLayout {
             let zoom = browser.nativePage?.liveCaptureZoomFactor ?? 1
-            let width = min(bounds.width, max(1, bounds.height - 32) * captureLayout.region.width / captureLayout.region.height,
+            let width = min(bounds.width, pageRect.height * captureLayout.region.width / captureLayout.region.height,
                             captureLayout.viewport.x * zoom, captureLayout.viewport.y * zoom * captureLayout.region.width / captureLayout.region.height)
             let height = width * captureLayout.region.height / captureLayout.region.width
-            clip.frame = NSRect(x: (bounds.width - width) / 2, y: 32 + (max(1, bounds.height - 32) - height) / 2, width: width, height: height)
+            clip.frame = NSRect(x: (bounds.width - width) / 2, y: headerHeight + (pageRect.height - height) / 2, width: width, height: height)
             browser.frame = NSRect(x: 0, y: 0, width: captureLayout.viewport.x * zoom, height: captureLayout.viewport.y * zoom)
             clip.isHidden = false
             positionCapture()
         } else { browser.frame = clip.bounds }
-        back.frame = NSRect(x: 4, y: 3, width: 25, height: 25)
-        forward.frame = NSRect(x: 30, y: 3, width: 25, height: 25)
-        reload.frame = NSRect(x: 56, y: 3, width: 25, height: 25)
-        done.frame = NSRect(x: max(82, bounds.width - 30), y: 3, width: 25, height: 25)
-        security.frame = NSRect(x: 82, y: 3, width: 25, height: 25)
-        label.frame = NSRect(x: 140, y: 9, width: max(0, bounds.width - 178), height: 17)
-        status.frame = NSRect(x: 14, y: max(38, bounds.midY - 25), width: max(0, bounds.width - 28), height: 48)
-        retry.frame = NSRect(x: max(0, bounds.midX - 40), y: min(bounds.maxY - 32, status.frame.maxY), width: 80, height: 26)
-        cover.frame = clip.frame
-        snapshot.frame = NSRect(x: 110, y: 3, width: 80, height: 25)
-        if captureLayout != nil { label.isHidden = true; back.isHidden = true; forward.isHidden = true }
+        cover.frame = pageRect
+        fallback.frame = pageRect
         onLayout?()
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -240,40 +273,58 @@ private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
         return super.hitTest(point)
     }
     var pageArea: (page: NSRect, visible: NSRect) { (convert(browser.bounds, from: browser), clip.frame) }
-    func setRetryTitle(_ title: String) { retry.title = title }
-    func focusRetry() { if interactive && !retry.isHidden { window?.makeFirstResponder(retry) } }
-    var showsRecovery: Bool { !status.isHidden || browser.nativePage?.rendererCrash != nil }
+    func setRetryTitle(_ title: String) {
+        retryTitle = title
+        if let status { fallback.configure(status: Self.friendly(status), retryTitle: fallback.retryChip.isHidden ? nil : title) }
+    }
+    func focusRetry() { if interactive && !fallback.isHidden && !fallback.retryChip.isHidden { window?.makeFirstResponder(fallback.retryChip) } }
+    var showsRecovery: Bool { status != nil || browser.nativePage?.rendererCrash != nil }
     func focusRecovery() -> Bool {
         guard interactive, let window else { return false }
-        return window.makeFirstResponder(retry.isHidden ? done : retry)
+        let retryVisible = !fallback.isHidden && !fallback.retryChip.isHidden
+        return window.makeFirstResponder(retryVisible ? fallback.retryChip : doneButton)
     }
     override func cancelOperation(_ sender: Any?) {
         if input != nil { input?.cancel(); return }
         if interactive { onDone?() }
     }
     override func accessibilityChildren() -> [Any]? { inputAvailable ? super.accessibilityChildren() : [] }
+    private static func friendly(_ text: String) -> String { EmbeddedPageStatusText.friendly(text, document: "Easel") }
     func setStatus(_ text: String?, retry retryVisible: Bool = false) {
-        status.stringValue = text ?? ""; status.isHidden = text == nil; retry.isHidden = !retryVisible
-        cover.isHidden = captureLayout == nil || text == nil; needsLayout = true
+        status = text
+        fallback.configure(status: text.map(Self.friendly), retryTitle: retryVisible ? retryTitle : nil)
+        fallback.isHidden = text == nil; cover.isHidden = text == nil
+        needsLayout = true
     }
     func refresh() {
         input?.validate()
         let page = browser.nativePage
         let interactive = inputAvailable
-        label.title = page?.url?.host ?? "Webpage"
-        label.isEnabled = interactive && page?.canPerformNavigation(.reload) == true
-        label.toolTip = page?.url?.absoluteString
-        back.isEnabled = interactive && page?.canPerformNavigation(.back) == true
-        forward.isEnabled = interactive && page?.canPerformNavigation(.forward) == true
-        let action: PCNativeNavigationAction = browser.isLoading ? .stop : .reload
-        reload.isEnabled = interactive && page?.canPerformNavigation(action) == true
-        reload.image = NSImage(systemSymbolName: browser.isLoading ? "xmark" : "arrow.clockwise", accessibilityDescription: browser.isLoading ? "Stop" : "Reload")
-        done.isEnabled = interactive; retry.isEnabled = interactive; snapshot.isEnabled = interactive
+        let live = page?.isClosed == false && page?.embeddedOwnerValid == true
+        let preview = NoteLinkMetadata.shared.cached(address)
+        let current = live ? (page?.url ?? address) : address
+        let pageTitle = browser.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        header.setPage(title: live && !pageTitle.isEmpty ? pageTitle : (preview?.title ?? EaselWebItemChrome.displayHost(address)),
+                       host: EaselWebItemChrome.displayHost(current))
+        header.toolTip = captureLayout == nil ? "Edit webpage address or search" : nil
+        header.onTitle = captureLayout == nil && interactive ? { [weak self] in self?.editAddress() } : nil
+        backButton.isEnabled = interactive && page?.canPerformNavigation(.back) == true
+        let loading = browser.isLoading
+        reloadButton.content = .icon(.symbol(loading ? "xmark" : "arrow.clockwise"))
+        reloadButton.setAccessibilityLabel(loading ? "Stop" : "Reload")
+        reloadButton.setToolTip(loading ? "Stop" : "Reload")
+        reloadButton.isEnabled = interactive && page?.canPerformNavigation(loading ? .stop : .reload) == true
+        openButton.isEnabled = true
+        moreButton.isEnabled = interactive
+        snapshotChip.isEnabled = interactive
+        doneButton.isHidden = !interactive
+        fallback.retryChip.isEnabled = interactive
         setAccessibilityHidden(!interactive)
-        security.isEnabled = interactive && browser.canShowSiteInfo
+        header.needsLayout = true
+        window?.invalidateCursorRects(for: header)
     }
     func validateInput() { input?.validate() }
-    @objc private func editAddress() {
+    private func editAddress() {
         guard interactive, let page = browser.nativePage, page.embeddedOwnerValid else { return }
         input?.cancel()
         var draft = lastDraft
@@ -287,7 +338,36 @@ private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
         })
         input = editor
         editor.onClose = { [weak self, weak editor] in if self?.input === editor { self?.input = nil } }
-        if !editor.show(from: label) { editor.cancel(restoreFocus: false) }
+        if !editor.show(from: header) { editor.cancel(restoreFocus: false) }
+    }
+    private func showMore() {
+        guard interactive else { return }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        func add(_ title: String, enabled: Bool, _ action: Selector) {
+            let row = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            row.target = self; row.isEnabled = enabled; menu.addItem(row)
+        }
+        let page = browser.nativePage
+        if captureLayout == nil {
+            add("Forward", enabled: page?.canPerformNavigation(.forward) == true, #selector(goForward))
+            add("Edit Address or Search…", enabled: page?.canPerformNavigation(.reload) == true, #selector(editAddressFromMenu))
+        } else {
+            add("Back to Snapshot", enabled: true, #selector(showSnapshot))
+        }
+        add("Open in a Tab", enabled: true, #selector(openFromMenu))
+        menu.addItem(.separator())
+        add("Site Information", enabled: browser.canShowSiteInfo, #selector(siteInfo))
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: moreButton.bounds.maxY + 4), in: moreButton)
+    }
+    private func navigate(_ action: PCNativeNavigationAction) {
+        guard let page = browser.nativePage, !page.isClosed, page.embeddedOwnerValid, page.canPerformNavigation(action) else { return }
+        _ = page.performNavigation(action, inNewTab: false)
+    }
+    private func reloadOrStop() { navigate(browser.isLoading ? .stop : .reload) }
+    private func openInTab() {
+        let page = browser.nativePage
+        onOpen?(page?.isClosed == false ? (page?.url ?? address) : address)
     }
     func cancelPositioning() {
         positionGeneration &+= 1; positioning?.cancel(); positioning = nil
@@ -317,12 +397,70 @@ private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
         if positioning == nil { setStatus("Live capture is unavailable for this page.", retry: true) }
     }
     @objc private func showSnapshot() { onSnapshot?() }
-    @objc private func goBack() { _ = browser.nativePage?.performNavigation(.back, inNewTab: false) }
-    @objc private func goForward() { _ = browser.nativePage?.performNavigation(.forward, inNewTab: false) }
-    @objc private func reloadOrStop() { _ = browser.nativePage?.performNavigation(browser.isLoading ? .stop : .reload, inNewTab: false) }
-    @objc private func siteInfo() { _ = browser.showSiteInfo(from: security) }
-    @objc private func finish() { onDone?() }
-    @objc private func retryPage() { onRetry?() }
+    @objc private func goForward() { navigate(.forward) }
+    @objc private func editAddressFromMenu() { editAddress() }
+    @objc private func openFromMenu() { openInTab() }
+    @objc private func siteInfo() { _ = browser.showSiteInfo(from: moreButton) }
+}
+
+@MainActor
+private final class EaselSnapshotHeader: NSView {
+    var onMakeLive: (() -> Void)?
+    var onOpen: (() -> Void)?
+    private let header = EmbeddedPageHeader()
+    private let makeLive = NoteChip(EaselWebItemChrome.makeLiveTitle, icon: .symbol("dot.radiowaves.left.and.right"), style: .filled)
+    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in a tab")
+    private var address: URL?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = NoteMediaStyle.cardRadius
+        layer?.cornerCurve = .continuous
+        layer?.borderWidth = 1
+        layer?.shadowOpacity = 0.12
+        layer?.shadowRadius = 6
+        layer?.shadowOffset = CGSize(width: 0, height: -2)
+        header.showsRule = false
+        makeLive.onPress = { [weak self] in self?.onMakeLive?() }
+        makeLive.setToolTip(EaselWebItemChrome.makeLiveHelp)
+        openButton.onPress = { [weak self] in self?.onOpen?() }
+        header.buttons = [openButton]
+        addSubview(header)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+
+    func configure(_ item: EaselItem, address: URL) {
+        let canGoLive = EaselWebItemChrome.canMakeLive(item)
+        header.setPage(title: EaselWebItemChrome.title(for: item), host: EaselWebItemChrome.displayHost(address))
+        header.setBadge(EaselWebItemChrome.badge(for: item), help: EaselWebItemChrome.badgeHelp(for: item), live: false)
+        header.action = canGoLive ? makeLive : nil
+        setAccessibilityLabel("Captured page: " + EaselWebItemChrome.title(for: item))
+        if self.address != address {
+            self.address = address
+            header.showFavicon(for: address, source: NoteLinkMetadata.shared.cached(address)?.iconURL)
+        }
+        needsLayout = true
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {
+        layer?.backgroundColor = NoteMediaStyle.cg(NoteTheme.menuFill, in: self)
+        layer?.borderColor = NoteMediaStyle.cg(NoteTheme.panelStroke, in: self)
+    }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
+    override func layout() {
+        super.layout()
+        header.frame = bounds
+        header.needsLayout = true
+    }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) {}
 }
 
 @MainActor

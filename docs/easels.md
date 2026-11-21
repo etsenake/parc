@@ -143,6 +143,22 @@ their optional live page is a separate owner. Selection, cancellation,
 `beforeunload`, transfer and Profile relocation contracts are in
 [embedded pages](embedded-pages.md).
 
+Webpage objects and captured cards wear the Notes embed block's header
+(`EmbeddedPageHeader`): favicon, page title and host, then labelled state and
+actions. A selected captured card floats that header over the top of its image,
+above every other object; it pins to the visible top while the card scrolls
+past and sits just outside cards shorter than the header. It says “Snapshot ·
+captured <day>” and offers **Make live** plus Open in a tab. A card without
+saved region geometry (full-page, cropped, marked-up, Portrait-framed or older)
+says “Snapshot only” and explains why in its tooltip. A live card shows a Live
+badge, **Back to snapshot**, Reload (Stop while loading), Open in a tab and a
+••• menu with Site Information. A webpage object shows Back, Reload, Open and a
+••• menu with Forward, Edit Address or Search… and Site Information; clicking
+its title also edits the address. The check mark (“Back to the Easel”) appears
+while a page has input. Warming up, alignment failures, closed and crashed
+pages use the embed block's bookmark card with a short status and Retry.
+`EaselWebItemChrome` decides the state, labels and header placement.
+
 ### Webpage address, search and durable navigation
 
 Address entry accepts credential-free HTTP(S), adding HTTPS when appropriate.
