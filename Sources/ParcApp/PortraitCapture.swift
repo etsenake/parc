@@ -57,8 +57,8 @@ enum PortraitCaptureRenderer {
             }
         }
     }
-    static func palette(bundle: Bundle = .main) -> [NSColor] {
-        guard let url = bundle.url(forResource: "presets", withExtension: "json", subdirectory: "ThemeEditor"),
+    static func palette(bundle: Bundle = .main, subdirectory: String = "ThemeEditor") -> [NSColor] {
+        guard let url = bundle.url(forResource: "presets", withExtension: "json", subdirectory: subdirectory),
               let data = try? Data(contentsOf: url), let records = try? JSONDecoder().decode([Preset].self, from: data) else { return [] }
         let first = records.filter { $0.page == 0 }.sorted { $0.index < $1.index }
         guard first.map(\.index) == Array(0..<9) else { return [] }
