@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension NSAttributedString.Key {
     static let noteMarks = NSAttributedString.Key("parc.note.marks")

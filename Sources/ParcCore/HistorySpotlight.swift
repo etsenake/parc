@@ -1,25 +1,33 @@
 import CryptoKit
 import Foundation
 
-struct HistorySpotlightItem: Equatable {
-    var url: String
-    var title: String
-    var site: String
-    var lastVisit: Date
-    var visits: Int
+package struct HistorySpotlightItem: Equatable {
+    package var url: String
+    package var title: String
+    package var site: String
+    package var lastVisit: Date
+    package var visits: Int
+
+    package init(url: String, title: String, site: String, lastVisit: Date, visits: Int) {
+        self.url = url
+        self.title = title
+        self.site = site
+        self.lastVisit = lastVisit
+        self.visits = visits
+    }
 }
 
-enum HistorySpotlight {
-    static let format = Data("parc-history-1".utf8)
+package enum HistorySpotlight {
+    package static let format = Data("parc-history-1".utf8)
 
-    static func site(of address: String) -> String? {
+    package static func site(of address: String) -> String? {
         guard let parts = URLComponents(string: address),
               let scheme = parts.scheme?.lowercased(), scheme == "http" || scheme == "https",
               let host = parts.host?.lowercased(), !host.isEmpty else { return nil }
         return host.hasPrefix("www.") && host.count > 4 ? String(host.dropFirst(4)) : host
     }
 
-    static func items(from history: [BrowserHistoryEntry]) -> [String: HistorySpotlightItem] {
+    package static func items(from history: [BrowserHistoryEntry]) -> [String: HistorySpotlightItem] {
         var items: [String: HistorySpotlightItem] = [:]
         var titledAt: [String: Date] = [:]
         var rejected = Set<String>()
@@ -41,14 +49,14 @@ enum HistorySpotlight {
         return items
     }
 
-    static func changes(from indexed: [String: HistorySpotlightItem],
+    package static func changes(from indexed: [String: HistorySpotlightItem],
                         to current: [String: HistorySpotlightItem]) -> (upserts: [HistorySpotlightItem], removals: [String]) {
         let upserts = current.values.filter { indexed[$0.url] != $0 }.sorted { $0.url < $1.url }
         let removals = indexed.keys.filter { current[$0] == nil }.sorted()
         return (upserts, removals)
     }
 
-    static func clientState(for items: [String: HistorySpotlightItem]) -> Data {
+    package static func clientState(for items: [String: HistorySpotlightItem]) -> Data {
         var hash = SHA256()
         for url in items.keys.sorted() {
             let item = items[url]!

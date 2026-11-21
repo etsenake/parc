@@ -1,21 +1,29 @@
 import Foundation
 
-struct NoteCaptureInput {
-    let pngData: Data
-    let sourceURL: String
-    let pageTitle: String
-    let capturedAt: Date
-    let captureLayout: EaselCaptureLayout?
+package struct NoteCaptureInput {
+    package let pngData: Data
+    package let sourceURL: String
+    package let pageTitle: String
+    package let capturedAt: Date
+    package let captureLayout: EaselCaptureLayout?
 
-    var capture: NoteCapture {
+    package init(pngData: Data, sourceURL: String, pageTitle: String, capturedAt: Date, captureLayout: EaselCaptureLayout?) {
+        self.pngData = pngData
+        self.sourceURL = sourceURL
+        self.pageTitle = pageTitle
+        self.capturedAt = capturedAt
+        self.captureLayout = captureLayout
+    }
+
+    package var capture: NoteCapture {
         NoteCapture(sourceURL: sourceURL, capturedAt: capturedAt, geometry: captureLayout.flatMap { $0.isValid ? NoteCaptureGeometry($0) : nil })
     }
 }
 
-enum NoteCaptureDeliveryError: Error, LocalizedError, Equatable {
+package enum NoteCaptureDeliveryError: Error, LocalizedError, Equatable {
     case plainText(String), locked(String), empty
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .plainText(let name): return "“\(name)” is a plain-text note, so it can’t hold images."
         case .locked(let name): return "“\(name)” is locked or read-only, so the capture wasn’t added."
@@ -25,16 +33,22 @@ enum NoteCaptureDeliveryError: Error, LocalizedError, Equatable {
 }
 
 @MainActor
-enum NoteCaptureDelivery {
-    struct Result: Equatable {
-        let note: URL
-        let block: NoteBlockID
-        let title: String
+package enum NoteCaptureDelivery {
+    package struct Result: Equatable {
+        package let note: URL
+        package let block: NoteBlockID
+        package let title: String
+
+        package init(note: URL, block: NoteBlockID, title: String) {
+            self.note = note
+            self.block = block
+            self.title = title
+        }
     }
 
-    static let editName = "Add Capture"
+    package static let editName = "Add Capture"
 
-    static func deliver(_ input: NoteCaptureInput, to target: CaptureNoteTarget, notesFolder: URL) throws -> Result {
+    package static func deliver(_ input: NoteCaptureInput, to target: CaptureNoteTarget, notesFolder: URL) throws -> Result {
         guard !input.pngData.isEmpty else { throw NoteCaptureDeliveryError.empty }
         let note: URL
         var created = false
@@ -54,7 +68,7 @@ enum NoteCaptureDelivery {
         }
     }
 
-    static func insert(_ input: NoteCaptureInput, into note: URL) throws -> Result {
+    package static func insert(_ input: NoteCaptureInput, into note: URL) throws -> Result {
         let file = try NoteFileSession.open(note)
         file.retain()
         defer { file.release() }
@@ -69,7 +83,7 @@ enum NoteCaptureDelivery {
     }
 
     @discardableResult
-    static func insert(_ block: NoteBlock, into session: NotePageSession) -> Bool {
+    package static func insert(_ block: NoteBlock, into session: NotePageSession) -> Bool {
         let caret = session.selection.caret?.block
         var inserted = false
         session.edit(editName, selection: .blocks([block.id])) { page in
@@ -78,7 +92,7 @@ enum NoteCaptureDelivery {
         return inserted && session.page.block(block.id) != nil
     }
 
-    static func place(_ block: NoteBlock, in page: inout NotePage, caret: NoteBlockID?) -> Bool {
+    package static func place(_ block: NoteBlock, in page: inout NotePage, caret: NoteBlockID?) -> Bool {
         if NoteCaptureInsertion.replacesEmptyParagraph(caret, in: page), let caret {
             return page.insert([block], .before(caret)) && page.remove(caret) != nil
         }

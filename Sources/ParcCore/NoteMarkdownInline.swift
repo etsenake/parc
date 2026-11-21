@@ -1,27 +1,27 @@
 import Foundation
 
-struct NoteMDInlineNode {
-    enum Kind { case root, text, softBreak, hardBreak, code, emphasis, strong, strike, highlight, link, image, html, math, rawSource, wiki, autolink, customEmoji }
+package struct NoteMDInlineNode {
+    package enum Kind { case root, text, softBreak, hardBreak, code, emphasis, strong, strike, highlight, link, image, html, math, rawSource, wiki, autolink, customEmoji }
 
-    var kind: Kind
-    var literal = ""
-    var destination = ""
-    var title: String?
-    var decoded = false
-    var sourceStart = 0
-    var sourceEnd = 0
-    var parent = -1
-    var first = -1
-    var last = -1
-    var next = -1
-    var previous = -1
+    package var kind: Kind
+    package var literal = ""
+    package var destination = ""
+    package var title: String?
+    package var decoded = false
+    package var sourceStart = 0
+    package var sourceEnd = 0
+    package var parent = -1
+    package var first = -1
+    package var last = -1
+    package var next = -1
+    package var previous = -1
 }
 
-struct NoteMDInlineTree {
-    var nodes: [NoteMDInlineNode]
-    var source: [UInt8]
+package struct NoteMDInlineTree {
+    package var nodes: [NoteMDInlineNode]
+    package var source: [UInt8]
 
-    func children(of index: Int) -> [Int] {
+    package func children(of index: Int) -> [Int] {
         var result: [Int] = []
         var child = nodes[index].first
         while child != -1 {
@@ -31,13 +31,13 @@ struct NoteMDInlineTree {
         return result
     }
 
-    func source(of index: Int) -> String {
+    package func source(of index: Int) -> String {
         let node = nodes[index]
         guard node.sourceEnd > node.sourceStart, node.sourceEnd <= source.count else { return node.literal }
         return NoteMDByte.string(source[node.sourceStart..<node.sourceEnd])
     }
 
-    func plainText(of index: Int) -> String {
+    package func plainText(of index: Int) -> String {
         var result = ""
         func walk(_ node: Int, _ depth: Int = 0) {
             let value = nodes[node]
@@ -60,7 +60,7 @@ struct NoteMDInlineTree {
     }
 }
 
-final class NoteMDInlineParser {
+package final class NoteMDInlineParser {
     private struct Delimiter {
         var node: Int
         var character: UInt8
@@ -70,6 +70,17 @@ final class NoteMDInlineParser {
         var canClose: Bool
         var previous: Int
         var next: Int
+
+        package init(node: Int, character: UInt8, count: Int, original: Int, canOpen: Bool, canClose: Bool, previous: Int, next: Int) {
+            self.node = node
+            self.character = character
+            self.count = count
+            self.original = original
+            self.canOpen = canOpen
+            self.canClose = canClose
+            self.previous = previous
+            self.next = next
+        }
     }
 
     private struct Bracket {
@@ -100,7 +111,7 @@ final class NoteMDInlineParser {
     private var backtickRuns: [Int: [Int]]?
     private var backtickCursor: [Int: Int] = [:]
 
-    init(_ bytes: [UInt8], references: [String: NoteMDLinkReference], footnotes: Set<String>, customEmoji: Set<String> = []) {
+    package init(_ bytes: [UInt8], references: [String: NoteMDLinkReference], footnotes: Set<String>, customEmoji: Set<String> = []) {
         self.bytes = bytes
         end = bytes.count
         self.references = references
@@ -108,7 +119,7 @@ final class NoteMDInlineParser {
         self.customEmoji = customEmoji
     }
 
-    static func parse(_ bytes: [UInt8], references: [String: NoteMDLinkReference] = [:], footnotes: Set<String> = [],
+    package static func parse(_ bytes: [UInt8], references: [String: NoteMDLinkReference] = [:], footnotes: Set<String> = [],
                       customEmoji: Set<String> = []) -> NoteMDInlineTree {
         var content = bytes[...]
         while let first = content.first, NoteMDByte.isWhitespace(first) { content = content.dropFirst() }
@@ -117,12 +128,12 @@ final class NoteMDInlineParser {
         return parser.run()
     }
 
-    static func parseVerbatim(_ bytes: [UInt8], references: [String: NoteMDLinkReference] = [:], footnotes: Set<String> = [],
+    package static func parseVerbatim(_ bytes: [UInt8], references: [String: NoteMDLinkReference] = [:], footnotes: Set<String> = [],
                               customEmoji: Set<String> = []) -> NoteMDInlineTree {
         NoteMDInlineParser(bytes, references: references, footnotes: footnotes, customEmoji: customEmoji).run()
     }
 
-    static func customEmojiEnd(_ bytes: [UInt8], at start: Int, upTo end: Int, names: Set<String>) -> Int? {
+    package static func customEmojiEnd(_ bytes: [UInt8], at start: Int, upTo end: Int, names: Set<String>) -> Int? {
         guard !names.isEmpty, start < end, bytes[start] == 58 else { return nil }
         var index = start + 1
         while index < end, index - start <= NoteCustomEmojiName.maximumLength, NoteCustomEmojiName.isNameByte(bytes[index]) { index += 1 }
@@ -835,13 +846,13 @@ final class NoteMDInlineParser {
         return index - start
     }
 
-    func extendedAutolink(at start: Int) -> (String, Int)? {
+    package func extendedAutolink(at start: Int) -> (String, Int)? {
         NoteMDAutolink.extended(bytes, at: start, upTo: end)
     }
 }
 
-enum NoteMDAutolink {
-    static func extended(_ bytes: [UInt8], at start: Int, upTo end: Int) -> (String, Int)? {
+package enum NoteMDAutolink {
+    package static func extended(_ bytes: [UInt8], at start: Int, upTo end: Int) -> (String, Int)? {
         var domainStart: Int
         var prefix = ""
         if NoteMDHTML.matches(bytes, at: start, upTo: end, ascii: "www.", caseInsensitive: true) {

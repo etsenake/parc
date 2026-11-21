@@ -1,9 +1,9 @@
 import Foundation
 
-enum EaselMermaidDirection: String, Equatable, CaseIterable {
+package enum EaselMermaidDirection: String, Equatable, CaseIterable {
     case down, up, right, left
 
-    init?(keyword: String) {
+    package init?(keyword: String) {
         switch keyword.trimmingCharacters(in: .whitespaces).uppercased() {
         case "TB", "TD", "V": self = .down
         case "BT", "^": self = .up
@@ -13,15 +13,15 @@ enum EaselMermaidDirection: String, Equatable, CaseIterable {
         }
     }
 
-    var isVertical: Bool { self == .down || self == .up }
+    package var isVertical: Bool { self == .down || self == .up }
 }
 
-enum EaselMermaidShape: String, Equatable, CaseIterable {
+package enum EaselMermaidShape: String, Equatable, CaseIterable {
     case rectangle, rounded, stadium, subroutine, cylinder, circle, doubleCircle, asymmetric, diamond, hexagon
     case leanRight, leanLeft, trapezoid, invertedTrapezoid, ellipse, document, documents, card, horizontalCylinder
     case manualInput, internalStorage, triangle, flippedTriangle, crossedCircle, text, entity
 
-    init(mermaidName raw: String) {
+    package init(mermaidName raw: String) {
         switch raw.trimmingCharacters(in: .whitespaces).lowercased() {
         case "rounded", "event", "delay", "half-rounded-rectangle": self = .rounded
         case "stadium", "pill", "terminal": self = .stadium
@@ -53,33 +53,33 @@ enum EaselMermaidShape: String, Equatable, CaseIterable {
     }
 }
 
-enum EaselMermaidHead: String, Equatable, CaseIterable {
+package enum EaselMermaidHead: String, Equatable, CaseIterable {
     case none, arrow, circle, cross, zeroOrOne, exactlyOne, zeroOrMore, oneOrMore
 }
 
-enum EaselMermaidLine: String, Equatable, CaseIterable {
+package enum EaselMermaidLine: String, Equatable, CaseIterable {
     case solid, dotted, thick, invisible
 }
 
-struct EaselMermaidStyle: Equatable {
-    var fill: String?
-    var stroke: String?
-    var strokeWidth: Double?
-    var dashed: Bool?
+package struct EaselMermaidStyle: Equatable {
+    package var fill: String?
+    package var stroke: String?
+    package var strokeWidth: Double?
+    package var dashed: Bool?
 
-    func merged(with other: EaselMermaidStyle) -> EaselMermaidStyle {
+    package func merged(with other: EaselMermaidStyle) -> EaselMermaidStyle {
         EaselMermaidStyle(fill: other.fill ?? fill, stroke: other.stroke ?? stroke,
                           strokeWidth: other.strokeWidth ?? strokeWidth, dashed: other.dashed ?? dashed)
     }
 }
 
-struct EaselMermaidAttribute: Equatable {
-    var type: String
-    var name: String
-    var keys: [String] = []
-    var comment = ""
+package struct EaselMermaidAttribute: Equatable {
+    package var type: String
+    package var name: String
+    package var keys: [String] = []
+    package var comment = ""
 
-    var line: String {
+    package var line: String {
         var value = type + " " + name
         if !keys.isEmpty { value += " " + keys.joined(separator: ", ") }
         if !comment.isEmpty { value += " · " + comment }
@@ -87,47 +87,55 @@ struct EaselMermaidAttribute: Equatable {
     }
 }
 
-struct EaselMermaidNode: Equatable {
-    var id: String
-    var label: String
-    var shape: EaselMermaidShape = .rectangle
-    var group: String?
-    var style = EaselMermaidStyle()
-    var attributes: [EaselMermaidAttribute] = []
+package struct EaselMermaidNode: Equatable {
+    package var id: String
+    package var label: String
+    package var shape: EaselMermaidShape = .rectangle
+    package var group: String?
+    package var style = EaselMermaidStyle()
+    package var attributes: [EaselMermaidAttribute] = []
 }
 
-struct EaselMermaidEdge: Equatable {
-    var from: String
-    var to: String
-    var label = ""
-    var line: EaselMermaidLine = .solid
-    var startHead: EaselMermaidHead = .none
-    var endHead: EaselMermaidHead = .arrow
-    var length = 1
-    var style = EaselMermaidStyle()
+package struct EaselMermaidEdge: Equatable {
+    package var from: String
+    package var to: String
+    package var label = ""
+    package var line: EaselMermaidLine = .solid
+    package var startHead: EaselMermaidHead = .none
+    package var endHead: EaselMermaidHead = .arrow
+    package var length = 1
+    package var style = EaselMermaidStyle()
 }
 
-struct EaselMermaidGroup: Equatable {
-    var id: String
-    var title: String
-    var parent: String?
-    var direction: EaselMermaidDirection?
-    var style = EaselMermaidStyle()
+package struct EaselMermaidGroup: Equatable {
+    package var id: String
+    package var title: String
+    package var parent: String?
+    package var direction: EaselMermaidDirection?
+    package var style = EaselMermaidStyle()
 }
 
-struct EaselMermaidDiagram: Equatable {
-    enum Kind: String, Equatable { case flowchart, entityRelationship }
+package struct EaselMermaidDiagram: Equatable {
+    package enum Kind: String, Equatable { case flowchart, entityRelationship }
 
-    var kind: Kind
-    var direction: EaselMermaidDirection = .down
-    var nodes: [EaselMermaidNode] = []
-    var edges: [EaselMermaidEdge] = []
-    var groups: [EaselMermaidGroup] = []
+    package var kind: Kind
+    package var direction: EaselMermaidDirection = .down
+    package var nodes: [EaselMermaidNode] = []
+    package var edges: [EaselMermaidEdge] = []
+    package var groups: [EaselMermaidGroup] = []
 
-    func node(_ id: String) -> EaselMermaidNode? { nodes.first { $0.id == id } }
-    func group(_ id: String) -> EaselMermaidGroup? { groups.first { $0.id == id } }
+    package init(kind: Kind, direction: EaselMermaidDirection = .down, nodes: [EaselMermaidNode] = [], edges: [EaselMermaidEdge] = [], groups: [EaselMermaidGroup] = []) {
+        self.kind = kind
+        self.direction = direction
+        self.nodes = nodes
+        self.edges = edges
+        self.groups = groups
+    }
 
-    var summary: String {
+    package func node(_ id: String) -> EaselMermaidNode? { nodes.first { $0.id == id } }
+    package func group(_ id: String) -> EaselMermaidGroup? { groups.first { $0.id == id } }
+
+    package var summary: String {
         func count(_ value: Int, _ one: String, _ many: String) -> String { "\(value) \(value == 1 ? one : many)" }
         let arrows = edges.filter { $0.line != .invisible }.count
         var parts = [count(nodes.count, kind == .entityRelationship ? "entity" : "shape",
@@ -139,14 +147,14 @@ struct EaselMermaidDiagram: Equatable {
     }
 }
 
-enum EaselMermaidRefusal: Error, Equatable {
+package enum EaselMermaidRefusal: Error, Equatable {
     case notMermaid
     case unsupported(String)
     case empty
     case syntax(line: Int, detail: String)
     case tooLarge
 
-    var message: String {
+    package var message: String {
         switch self {
         case .notMermaid: return "Start with flowchart, graph or erDiagram and Parc draws the rest."
         case .unsupported(let name): return "\(name) can’t become Easel objects. Flowcharts and ER diagrams can."
@@ -159,7 +167,7 @@ enum EaselMermaidRefusal: Error, Equatable {
 }
 
 extension EaselMermaidRefusal: LocalizedError {
-    var errorDescription: String? { message }
+    package var errorDescription: String? { message }
 }
 
 private final class EaselMermaidParseMemo: @unchecked Sendable {
@@ -178,22 +186,22 @@ private final class EaselMermaidParseMemo: @unchecked Sendable {
     }
 }
 
-enum EaselMermaid {
-    static let maximumNodes = 500
-    static let maximumEdges = 1000
-    static let maximumGroups = 200
-    static let maximumAttributes = 100
-    static let maximumLength = 6
-    static let maximumSourceBytes = 400_000
+package enum EaselMermaid {
+    package static let maximumNodes = 500
+    package static let maximumEdges = 1000
+    package static let maximumGroups = 200
+    package static let maximumAttributes = 100
+    package static let maximumLength = 6
+    package static let maximumSourceBytes = 400_000
 
-    static func canParse(_ text: String) -> Bool {
+    package static func canParse(_ text: String) -> Bool {
         if case .success = parse(text) { return true }
         return false
     }
 
     private static let parseMemo = EaselMermaidParseMemo()
 
-    static func parse(_ text: String) -> Result<EaselMermaidDiagram, EaselMermaidRefusal> {
+    package static func parse(_ text: String) -> Result<EaselMermaidDiagram, EaselMermaidRefusal> {
         if let known = parseMemo.result(for: text) { return known }
         let result = parseUncached(text)
         parseMemo.remember(result, for: text)
@@ -232,7 +240,7 @@ enum EaselMermaid {
         }
     }
 
-    static func headerReadsAsMermaid(_ line: String, kind: EaselMermaidDiagram.Kind) -> Bool {
+    package static func headerReadsAsMermaid(_ line: String, kind: EaselMermaidDiagram.Kind) -> Bool {
         let statement = EaselMermaidSource.strippingComment(line).prefix { $0 != ";" }
         let words = statement.split(whereSeparator: \.isWhitespace)
         switch kind {
@@ -241,7 +249,7 @@ enum EaselMermaid {
         }
     }
 
-    static func unsupportedName(_ keyword: String) -> String? {
+    package static func unsupportedName(_ keyword: String) -> String? {
         switch keyword {
         case "sequenceDiagram": return "Sequence diagrams"
         case "classDiagram", "classDiagram-v2": return "Class diagrams"
@@ -269,13 +277,18 @@ enum EaselMermaid {
     }
 }
 
-enum EaselMermaidSource {
-    struct Line: Equatable {
-        var number: Int
-        var text: String
+package enum EaselMermaidSource {
+    package struct Line: Equatable {
+        package var number: Int
+        package var text: String
+
+        package init(number: Int, text: String) {
+            self.number = number
+            self.text = text
+        }
     }
 
-    static func lines(_ text: String) -> [Line]? {
+    package static func lines(_ text: String) -> [Line]? {
         let normalized = text.unicodeScalars.contains("\r")
             ? text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n") : text
         var lines = normalized.components(separatedBy: "\n").enumerated().map { Line(number: $0.offset + 1, text: $0.element) }
@@ -317,11 +330,11 @@ enum EaselMermaidSource {
         return (marker, count, String(info.prefix { !$0.isWhitespace && $0 != "{" }).lowercased())
     }
 
-    static func firstWord(_ text: String) -> String {
+    package static func firstWord(_ text: String) -> String {
         String(text.prefix { !$0.isWhitespace && $0 != ";" && $0 != ":" })
     }
 
-    static func statements(_ lines: [Line]) -> [Line] {
+    package static func statements(_ lines: [Line]) -> [Line] {
         var result: [Line] = []
         var buffer = "", start = 0, depth = 0, quoted = false
         func flush() {
@@ -363,7 +376,7 @@ enum EaselMermaidSource {
         return result
     }
 
-    static func strippingComment(_ text: String) -> String {
+    package static func strippingComment(_ text: String) -> String {
         var quoted = false, previous: Character?
         var index = text.startIndex
         while index < text.endIndex {
@@ -377,30 +390,30 @@ enum EaselMermaidSource {
     }
 }
 
-struct EaselMermaidScanner {
-    let characters: [Character]
-    var index = 0
+package struct EaselMermaidScanner {
+    package let characters: [Character]
+    package var index = 0
 
-    init(_ text: String) { characters = Array(text) }
+    package init(_ text: String) { characters = Array(text) }
 
-    var atEnd: Bool { index >= characters.count }
-    var rest: String { index < characters.count ? String(characters[index...]) : "" }
+    package var atEnd: Bool { index >= characters.count }
+    package var rest: String { index < characters.count ? String(characters[index...]) : "" }
 
-    func peek(_ offset: Int = 0) -> Character? {
+    package func peek(_ offset: Int = 0) -> Character? {
         let position = index + offset
         return position >= 0 && position < characters.count ? characters[position] : nil
     }
 
-    mutating func advance(_ count: Int = 1) { index = min(characters.count, index + max(0, count)) }
+    package mutating func advance(_ count: Int = 1) { index = min(characters.count, index + max(0, count)) }
 
     @discardableResult
-    mutating func skipSpaces() -> Bool {
+    package mutating func skipSpaces() -> Bool {
         let start = index
         while let character = peek(), character.isWhitespace { index += 1 }
         return index > start
     }
 
-    func matches(_ text: String, at offset: Int = 0) -> Bool {
+    package func matches(_ text: String, at offset: Int = 0) -> Bool {
         var position = index + offset
         for character in text {
             guard position < characters.count, characters[position] == character else { return false }
@@ -409,23 +422,23 @@ struct EaselMermaidScanner {
         return true
     }
 
-    func run(of character: Character, from offset: Int = 0) -> Int {
+    package func run(of character: Character, from offset: Int = 0) -> Int {
         var count = 0
         while peek(offset + count) == character { count += 1 }
         return count
     }
 
-    mutating func take(_ character: Character) -> Int {
+    package mutating func take(_ character: Character) -> Int {
         let count = run(of: character)
         advance(count)
         return count
     }
 
-    static func isNameCharacter(_ character: Character) -> Bool {
+    package static func isNameCharacter(_ character: Character) -> Bool {
         character.isLetter || character.isNumber || character == "_" || character == "$"
     }
 
-    mutating func readIdentifier() -> String? {
+    package mutating func readIdentifier() -> String? {
         var result = ""
         while let character = peek() {
             if Self.isNameCharacter(character) {
@@ -439,7 +452,7 @@ struct EaselMermaidScanner {
         return result.isEmpty ? nil : result
     }
 
-    mutating func readQuoted() -> String? {
+    package mutating func readQuoted() -> String? {
         guard peek() == "\"" else { return nil }
         let start = index
         advance()
@@ -450,7 +463,7 @@ struct EaselMermaidScanner {
         return value
     }
 
-    mutating func readLabel(closers: [String]) -> (text: String, closer: String)? {
+    package mutating func readLabel(closers: [String]) -> (text: String, closer: String)? {
         let family = closers.first?.last ?? "]"
         let open: Character = family == ")" ? "(" : family == "}" ? "{" : "["
         let start = index
@@ -481,7 +494,7 @@ struct EaselMermaidScanner {
         return nil
     }
 
-    mutating func readUntil(_ terminator: Character) -> String? {
+    package mutating func readUntil(_ terminator: Character) -> String? {
         let start = index
         var value = "", quoted = false
         while let character = peek() {
@@ -494,7 +507,7 @@ struct EaselMermaidScanner {
     }
 }
 
-enum EaselMermaidText {
+package enum EaselMermaidText {
     private static let entityNames: [String: String] = [
         "quot": "\"", "amp": "&", "lt": "<", "gt": ">", "nbsp": " ", "apos": "'", "hellip": "…",
         "mdash": "—", "ndash": "–", "larr": "←", "rarr": "→", "uarr": "↑", "darr": "↓", "harr": "↔",
@@ -514,9 +527,9 @@ enum EaselMermaidText {
         "(?<![A-Za-z0-9_])_(?!\\s)(.+?)(?<!\\s)_(?![A-Za-z0-9_])",
     ].compactMap { try? NSRegularExpression(pattern: $0) }
 
-    static let maximumLength = 2000
+    package static let maximumLength = 2000
 
-    static func clean(_ raw: String) -> String {
+    package static func clean(_ raw: String) -> String {
         var text = String(raw.prefix(maximumLength * 2)).trimmingCharacters(in: .whitespacesAndNewlines)
         if text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") {
             text = String(text.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -566,7 +579,7 @@ enum EaselMermaidText {
         return result
     }
 
-    static func properties(_ body: String) -> [String: String] {
+    package static func properties(_ body: String) -> [String: String] {
         var result: [String: String] = [:]
         var parts: [String] = [], current = "", quoted = false
         for character in body {
@@ -584,7 +597,7 @@ enum EaselMermaidText {
     }
 }
 
-enum EaselMermaidColor {
+package enum EaselMermaidColor {
     private static let named: [String: UInt32] = [
         "black": 0x000000, "white": 0xFFFFFF, "gray": 0x808080, "grey": 0x808080, "silver": 0xC0C0C0,
         "lightgray": 0xD3D3D3, "lightgrey": 0xD3D3D3, "darkgray": 0xA9A9A9, "darkgrey": 0xA9A9A9, "whitesmoke": 0xF5F5F5,
@@ -599,7 +612,7 @@ enum EaselMermaidColor {
         "ivory": 0xFFFFF0,
     ]
 
-    static func rgb(_ raw: String) -> (red: Double, green: Double, blue: Double)? {
+    package static func rgb(_ raw: String) -> (red: Double, green: Double, blue: Double)? {
         let value = raw.trimmingCharacters(in: .whitespaces).lowercased()
         if value.hasPrefix("#") {
             var digits = String(value.dropFirst())
@@ -621,7 +634,7 @@ enum EaselMermaidColor {
         (Double(number >> 16 & 0xFF) / 255, Double(number >> 8 & 0xFF) / 255, Double(number & 0xFF) / 255)
     }
 
-    static func palette(_ raw: String, role: EaselColorRole) -> String? {
+    package static func palette(_ raw: String, role: EaselColorRole) -> String? {
         guard let color = rgb(raw) else { return nil }
         let high = max(color.red, color.green, color.blue), low = min(color.red, color.green, color.blue)
         let lightness = (high + low) / 2, chroma = high - low
@@ -648,7 +661,7 @@ enum EaselMermaidColor {
         return EaselPalette.hex(.note(nearest), role: role)
     }
 
-    static func style(_ declarations: String, strokeRole: EaselColorRole = .ink) -> EaselMermaidStyle {
+    package static func style(_ declarations: String, strokeRole: EaselColorRole = .ink) -> EaselMermaidStyle {
         var style = EaselMermaidStyle()
         var parts: [String] = [], current = "", depth = 0
         for character in declarations {
@@ -689,7 +702,7 @@ private struct EaselMermaidLink {
     var label = ""
 }
 
-struct EaselMermaidFlowchartParser {
+package struct EaselMermaidFlowchartParser {
     private var diagram = EaselMermaidDiagram(kind: .flowchart)
     private var nodeIndex: [String: Int] = [:]
     private var explicitNodes: Set<String> = []
@@ -719,7 +732,7 @@ struct EaselMermaidFlowchartParser {
         (">", ["]"], [.asymmetric]),
     ]
 
-    mutating func parse(_ lines: [EaselMermaidSource.Line]) throws -> EaselMermaidDiagram {
+    package mutating func parse(_ lines: [EaselMermaidSource.Line]) throws -> EaselMermaidDiagram {
         let statements = EaselMermaidSource.statements(lines)
         guard let header = statements.first else { throw EaselMermaidRefusal.notMermaid }
         let words = header.text.split(whereSeparator: \.isWhitespace).map(String.init)
@@ -1090,7 +1103,7 @@ struct EaselMermaidFlowchartParser {
     }
 }
 
-struct EaselMermaidEntityParser {
+package struct EaselMermaidEntityParser {
     private var diagram = EaselMermaidDiagram(kind: .entityRelationship)
     private var nodeIndex: [String: Int] = [:]
     private var classes: [String: EaselMermaidStyle] = [:]
@@ -1106,7 +1119,7 @@ struct EaselMermaidEntityParser {
     private static let leftSymbols: [String: EaselMermaidHead] = ["|o": .zeroOrOne, "||": .exactlyOne, "}o": .zeroOrMore, "}|": .oneOrMore]
     private static let rightSymbols: [String: EaselMermaidHead] = ["o|": .zeroOrOne, "||": .exactlyOne, "o{": .zeroOrMore, "|{": .oneOrMore]
 
-    mutating func parse(_ lines: [EaselMermaidSource.Line], header: Int) throws -> EaselMermaidDiagram {
+    package mutating func parse(_ lines: [EaselMermaidSource.Line], header: Int) throws -> EaselMermaidDiagram {
         var index = header + 1
         let trailing = lines[header].text.trimmingCharacters(in: .whitespaces).dropFirst("erDiagram".count)
             .trimmingCharacters(in: .whitespaces)

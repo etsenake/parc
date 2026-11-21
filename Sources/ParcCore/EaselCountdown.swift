@@ -1,17 +1,22 @@
 import Foundation
 
-struct EaselCountdown: Equatable {
-    enum Phase: Equatable { case idle, running, paused, finished }
+package struct EaselCountdown: Equatable {
+    package enum Phase: Equatable { case idle, running, paused, finished }
 
-    static let maximum: TimeInterval = 99 * 60 + 59
-    static let defaultDuration: TimeInterval = 5 * 60
+    package static let maximum: TimeInterval = 99 * 60 + 59
+    package static let defaultDuration: TimeInterval = 5 * 60
 
-    private(set) var phase: Phase = .idle
-    private(set) var duration: TimeInterval = defaultDuration
+    package private(set) var phase: Phase = .idle
+    package private(set) var duration: TimeInterval = defaultDuration
     private var remainingAtPause: TimeInterval = defaultDuration
     private var endsAt: Date?
 
-    func remaining(at now: Date) -> TimeInterval {
+    package init(phase: Phase = .idle, duration: TimeInterval = defaultDuration) {
+        self.phase = phase
+        self.duration = duration
+    }
+
+    package func remaining(at now: Date) -> TimeInterval {
         switch phase {
         case .idle: return duration
         case .paused: return remainingAtPause
@@ -20,9 +25,9 @@ struct EaselCountdown: Equatable {
         }
     }
 
-    func isDue(at now: Date) -> Bool { phase == .running && remaining(at: now) <= 0 }
+    package func isDue(at now: Date) -> Bool { phase == .running && remaining(at: now) <= 0 }
 
-    mutating func set(minutes: Int) {
+    package mutating func set(minutes: Int) {
         guard phase == .idle || phase == .finished else { return }
         duration = Self.clamped(TimeInterval(max(0, minutes) * 60))
         remainingAtPause = duration
@@ -30,7 +35,7 @@ struct EaselCountdown: Equatable {
         phase = .idle
     }
 
-    mutating func adjust(minutes: Int, at now: Date) {
+    package mutating func adjust(minutes: Int, at now: Date) {
         switch phase {
         case .idle, .finished:
             let base = phase == .finished ? 0 : duration
@@ -44,14 +49,14 @@ struct EaselCountdown: Equatable {
         }
     }
 
-    mutating func addMinute(at now: Date) {
+    package mutating func addMinute(at now: Date) {
         switch phase {
         case .running, .paused: addTime(60, at: now)
         case .idle, .finished: adjust(minutes: 1, at: now)
         }
     }
 
-    mutating func start(at now: Date) {
+    package mutating func start(at now: Date) {
         switch phase {
         case .idle:
             guard duration > 0 else { return }
@@ -66,42 +71,42 @@ struct EaselCountdown: Equatable {
         }
     }
 
-    mutating func pause(at now: Date) {
+    package mutating func pause(at now: Date) {
         guard phase == .running else { return }
         remainingAtPause = remaining(at: now)
         endsAt = nil
         phase = remainingAtPause > 0 ? .paused : .finished
     }
 
-    mutating func resume(at now: Date) {
+    package mutating func resume(at now: Date) {
         guard phase == .paused else { return }
         endsAt = now.addingTimeInterval(remainingAtPause)
         phase = .running
     }
 
-    mutating func toggle(at now: Date) {
+    package mutating func toggle(at now: Date) {
         phase == .running ? pause(at: now) : start(at: now)
     }
 
-    mutating func finish() {
+    package mutating func finish() {
         guard phase == .running else { return }
         endsAt = nil
         remainingAtPause = 0
         phase = .finished
     }
 
-    mutating func reset() {
+    package mutating func reset() {
         phase = .idle
         endsAt = nil
         remainingAtPause = duration
     }
 
-    static func label(_ seconds: TimeInterval) -> String {
+    package static func label(_ seconds: TimeInterval) -> String {
         let whole = Int(max(0, min(maximum, seconds.rounded(.up))))
         return String(format: "%02d:%02d", whole / 60, whole % 60)
     }
 
-    static func spoken(_ seconds: TimeInterval) -> String {
+    package static func spoken(_ seconds: TimeInterval) -> String {
         let whole = Int(max(0, min(maximum, seconds.rounded(.up))))
         let minutes = whole / 60, rest = whole % 60
         let minuteText = minutes == 1 ? "1 minute" : "\(minutes) minutes"

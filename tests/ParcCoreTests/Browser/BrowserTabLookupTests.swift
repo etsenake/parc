@@ -90,7 +90,7 @@ struct BrowserTabLookupTests {
         var random = Generator(state: 0x5EED)
         var published = state(tabs: 60, archivedEvery: 4).attachingTabLookup(after: nil)
         var next = 60
-        for step in 0..<150 {
+        for step in 0..<400 {
             var changed = published
             switch Int.random(in: 0..<9, using: &random) {
             case 0: changed.tabs.append(tab(next, archived: Bool.random(using: &random))); next += 1

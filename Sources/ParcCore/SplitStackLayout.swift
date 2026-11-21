@@ -1,11 +1,16 @@
 import Foundation
 
-struct SplitStackDivider: Equatable {
-    let slot: Int?
-    let index: Int
+package struct SplitStackDivider: Equatable {
+    package let slot: Int?
+    package let index: Int
+
+    package init(slot: Int?, index: Int) {
+        self.slot = slot
+        self.index = index
+    }
 }
 
-enum SplitStackResize: Equatable {
+package enum SplitStackResize: Equatable {
     case divider(Int, slot: Int?, leadingShare: Double)
     case level(slot: Int?, factors: [Double])
     case slots([Double])
@@ -13,7 +18,7 @@ enum SplitStackResize: Equatable {
 }
 
 extension BrowserSplitLayout {
-    func resized(by change: SplitStackResize) -> BrowserSplitLayout? {
+    package func resized(by change: SplitStackResize) -> BrowserSplitLayout? {
         switch change {
         case .divider(let divider, let slot, let leadingShare):
             return resizingDivider(divider, inSlot: slot, leadingShare: leadingShare)
@@ -27,13 +32,13 @@ extension BrowserSplitLayout {
 }
 
 extension BrowserSplitStacks {
-    var paneCount: Int { slotSizes.reduce(0, +) }
+    package var paneCount: Int { slotSizes.reduce(0, +) }
 
-    var slotBoundaries: [Int] {
+    package var slotBoundaries: [Int] {
         slotSizes.reduce(into: [0]) { boundaries, size in boundaries.append(boundaries[boundaries.count - 1] + size) }
     }
 
-    func place(ofPane pane: Int) -> (slot: Int, index: Int)? {
+    package func place(ofPane pane: Int) -> (slot: Int, index: Int)? {
         var start = 0
         for (slot, size) in slotSizes.enumerated() {
             if pane >= start, pane < start + size { return (slot, pane - start) }
@@ -42,25 +47,25 @@ extension BrowserSplitStacks {
         return nil
     }
 
-    func divider(after pane: Int) -> SplitStackDivider? {
+    package func divider(after pane: Int) -> SplitStackDivider? {
         guard let first = place(ofPane: pane), let second = place(ofPane: pane + 1) else { return nil }
         return first.slot == second.slot
             ? SplitStackDivider(slot: first.slot, index: first.index)
             : SplitStackDivider(slot: nil, index: first.slot)
     }
 
-    func factors(inSlot slot: Int?) -> [Double]? {
+    package func factors(inSlot slot: Int?) -> [Double]? {
         guard let slot else { return slotFactors }
         return stackFactors.indices.contains(slot) ? stackFactors[slot] : nil
     }
 
-    func replacing(_ factors: [Double], inSlot slot: Int?) -> BrowserSplitStacks {
+    package func replacing(_ factors: [Double], inSlot slot: Int?) -> BrowserSplitStacks {
         var result = self
         if let slot { result.stackFactors[slot] = factors } else { result.slotFactors = factors }
         return result
     }
 
-    func reservingSlot(at slot: Int) -> BrowserSplitStacks {
+    package func reservingSlot(at slot: Int) -> BrowserSplitStacks {
         let share = 1 / Double(slotSizes.count + 1)
         var result = self
         result.slotFactors = slotFactors.map { $0 * (1 - share) }
@@ -70,11 +75,11 @@ extension BrowserSplitStacks {
         return result
     }
 
-    static func flat(_ factors: [Double]) -> BrowserSplitStacks {
+    package static func flat(_ factors: [Double]) -> BrowserSplitStacks {
         BrowserSplitStacks(slotSizes: factors.map { _ in 1 }, slotFactors: factors, stackFactors: factors.map { _ in [1] })
     }
 
-    func reservingStack(besidePane pane: Int, after: Bool) -> (stacks: BrowserSplitStacks, region: Int)? {
+    package func reservingStack(besidePane pane: Int, after: Bool) -> (stacks: BrowserSplitStacks, region: Int)? {
         guard let place = place(ofPane: pane), stackFactors.indices.contains(place.slot),
               stackFactors[place.slot].count == slotSizes[place.slot] else { return nil }
         var factors = stackFactors[place.slot]
@@ -85,7 +90,7 @@ extension BrowserSplitStacks {
         return (result, pane + (after ? 1 : 0))
     }
 
-    var isEven: Bool {
+    package var isEven: Bool {
         ([slotFactors] + stackFactors).allSatisfy { factors in
             let total = factors.reduce(0, +)
             return total > 0 && factors.allSatisfy { abs($0 / total - 1 / Double(factors.count)) < 1e-9 }
@@ -93,13 +98,18 @@ extension BrowserSplitStacks {
     }
 }
 
-struct SplitDividerSnapState {
-    private(set) var canSnap = false
-    private(set) var isSnapped = false
-    static func velocity(_ pan: CGPoint, movingHorizontally horizontal: Bool) -> Double {
+package struct SplitDividerSnapState {
+    package private(set) var canSnap = false
+    package private(set) var isSnapped = false
+
+    package init(canSnap: Bool = false, isSnapped: Bool = false) {
+        self.canSnap = canSnap
+        self.isSnapped = isSnapped
+    }
+    package static func velocity(_ pan: CGPoint, movingHorizontally horizontal: Bool) -> Double {
         Double(horizontal ? pan.x : pan.y)
     }
-    mutating func update(distance: Double, velocity: Double) -> Bool {
+    package mutating func update(distance: Double, velocity: Double) -> Bool {
         guard distance.isFinite, velocity.isFinite else { return false }
         let previous = isSnapped
         if abs(distance) >= 14 { canSnap = true; isSnapped = false }
@@ -109,18 +119,25 @@ struct SplitDividerSnapState {
     }
 }
 
-struct SplitStackGeometry {
-    static let dividerTopInset: CGFloat = 53
-    static let dividerEndInset: CGFloat = 8
+package struct SplitStackGeometry {
+    package static let dividerTopInset: CGFloat = 53
+    package static let dividerEndInset: CGFloat = 8
 
-    struct Divider: Equatable {
-        let id: SplitStackDivider
-        let rect: CGRect
-        let region: CGRect
-        let isVerticalBar: Bool
+    package struct Divider: Equatable {
+        package let id: SplitStackDivider
+        package let rect: CGRect
+        package let region: CGRect
+        package let isVerticalBar: Bool
+
+        package init(id: SplitStackDivider, rect: CGRect, region: CGRect, isVerticalBar: Bool) {
+            self.id = id
+            self.rect = rect
+            self.region = region
+            self.isVerticalBar = isVerticalBar
+        }
     }
 
-    static func lengths(_ factors: [Double], available: CGFloat, minimum: CGFloat) -> [CGFloat] {
+    package static func lengths(_ factors: [Double], available: CGFloat, minimum: CGFloat) -> [CGFloat] {
         var lengths = Array(repeating: CGFloat(0), count: factors.count)
         var remaining = available
         var pending = Array(factors.indices)
@@ -137,11 +154,11 @@ struct SplitStackGeometry {
         return lengths
     }
 
-    static func fittedMinimum(count: Int, available: CGFloat, minimum: CGFloat) -> CGFloat {
+    package static func fittedMinimum(count: Int, available: CGFloat, minimum: CGFloat) -> CGFloat {
         count > 1 ? min(minimum, max(0, available) / CGFloat(count)) : minimum
     }
 
-    static func fittedLengths(_ factors: [Double], available: CGFloat, minimum: CGFloat,
+    package static func fittedLengths(_ factors: [Double], available: CGFloat, minimum: CGFloat,
                               scale: CGFloat) -> [CGFloat] {
         guard factors.count > 1, available < minimum * CGFloat(factors.count) else {
             return lengths(factors, available: available, minimum: minimum).map { max(minimum, ($0 * scale).rounded() / scale) }
@@ -150,7 +167,7 @@ struct SplitStackGeometry {
         return factors.map { _ in share }
     }
 
-    static func runs(_ factors: [Double], length: CGFloat, thickness: CGFloat, minimum: CGFloat,
+    package static func runs(_ factors: [Double], length: CGFloat, thickness: CGFloat, minimum: CGFloat,
                      scale: CGFloat) -> [(start: CGFloat, length: CGFloat)] {
         guard factors.count > 1 else { return factors.isEmpty ? [] : [(0, length)] }
         let available = max(0, length - thickness * CGFloat(factors.count - 1))
@@ -161,7 +178,7 @@ struct SplitStackGeometry {
         }
     }
 
-    static func flatFrames(size: CGSize, orientation: SplitOrientation, factors: [Double],
+    package static func flatFrames(size: CGSize, orientation: SplitOrientation, factors: [Double],
                            thickness: CGFloat, minimum: CGFloat, scale: CGFloat) -> [CGRect] {
         guard !factors.isEmpty else { return [] }
         let horizontal = orientation == .horizontal
@@ -174,13 +191,13 @@ struct SplitStackGeometry {
         }
     }
 
-    static func aligned(_ frame: CGRect) -> CGRect {
+    package static func aligned(_ frame: CGRect) -> CGRect {
         let left = frame.minX.rounded(), top = frame.minY.rounded()
         return CGRect(x: left, y: top, width: max(0, frame.maxX.rounded() - left),
                       height: max(0, frame.maxY.rounded() - top))
     }
 
-    static func paneFrames(size: CGSize, orientation: SplitOrientation, stacks: BrowserSplitStacks,
+    package static func paneFrames(size: CGSize, orientation: SplitOrientation, stacks: BrowserSplitStacks,
                            thickness: CGFloat, minimum: CGFloat, scale: CGFloat) -> [CGRect] {
         let horizontal = orientation == .horizontal
         let slots = runs(stacks.slotFactors, length: horizontal ? size.width : size.height,
@@ -198,7 +215,7 @@ struct SplitStackGeometry {
         return frames
     }
 
-    static func dividers(paneFrames: [CGRect], size: CGSize, orientation: SplitOrientation,
+    package static func dividers(paneFrames: [CGRect], size: CGSize, orientation: SplitOrientation,
                          stacks: BrowserSplitStacks, thickness: CGFloat) -> [Divider] {
         guard paneFrames.count == stacks.paneCount else { return [] }
         let horizontal = orientation == .horizontal
@@ -222,7 +239,7 @@ struct SplitStackGeometry {
         }
     }
 
-    static func adjustableShares(saved: [Double], shown: [Double], available: Double,
+    package static func adjustableShares(saved: [Double], shown: [Double], available: Double,
                                  minimum: Double) -> (shares: [Double], minimum: Double)? {
         guard available.isFinite, available > 0 else { return nil }
         if let settled = BrowserSplitLayout.normalized(saved, count: saved.count),
@@ -234,7 +251,7 @@ struct SplitStackGeometry {
         return (visible, minimum / total)
     }
 
-    static func resizableFactors(saved: [Double], shown: [Double], divider: Int, available: Double,
+    package static func resizableFactors(saved: [Double], shown: [Double], divider: Int, available: Double,
                                  minimum: Double) -> [Double]? {
         guard saved.indices.contains(divider + 1), divider >= 0, shown.count == saved.count,
               let factors = BrowserSplitLayout.normalized(saved, count: saved.count) else { return nil }
@@ -247,7 +264,7 @@ struct SplitStackGeometry {
         return BrowserSplitLayout.normalized(lengths, count: lengths.count) ?? factors
     }
 
-    static func splitterPosition(shares: [Double], index: Int,
+    package static func splitterPosition(shares: [Double], index: Int,
                                  minimum: Double) -> (value: Double, minimum: Double, maximum: Double)? {
         guard index >= 0, shares.indices.contains(index + 1) else { return nil }
         let before = shares[..<index].reduce(0, +)
@@ -255,7 +272,7 @@ struct SplitStackGeometry {
         return (value, min(value, before + minimum), max(value, value + shares[index + 1] - minimum))
     }
 
-    static func splitterLabel(index: Int, count: Int, slot: Int?, orientation: SplitOrientation) -> String {
+    package static func splitterLabel(index: Int, count: Int, slot: Int?, orientation: SplitOrientation) -> String {
         let name = count > 1 ? "Split View Divider \(index + 1)" : "Split View Divider"
         guard let slot else { return name }
         return "\(name), inside \(orientation == .horizontal ? "column" : "row") \(slot + 1)"

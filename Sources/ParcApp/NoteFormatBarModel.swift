@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 struct NoteFormatShortcut: Hashable {
     let key: String

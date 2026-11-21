@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import ParcCore
+import ParcEngine
 
 extension BrowserWindowController {
     func releaseClosedTab(_ id: UUID, updateSavedTab: Bool) {

@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import AVKit
+import ParcCore
 
 @MainActor
 enum NoteMediaAssets {

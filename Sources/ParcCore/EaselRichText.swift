@@ -1,12 +1,19 @@
 import Foundation
 
-struct EaselRichText: Codable, Equatable {
-    struct Image: Codable, Equatable {
-        var data: Data
-        var fileType: String
-        var width: Double
-        var height: Double
-        func validate() throws {
+package struct EaselRichText: Codable, Equatable {
+    package struct Image: Codable, Equatable {
+        package var data: Data
+        package var fileType: String
+        package var width: Double
+        package var height: Double
+
+        package init(data: Data, fileType: String, width: Double, height: Double) {
+            self.data = data
+            self.fileType = fileType
+            self.width = width
+            self.height = height
+        }
+        package func validate() throws {
             let signature: Bool
             switch fileType {
             case "public.png": signature = data.starts(with: [137, 80, 78, 71, 13, 10, 26, 10])
@@ -19,69 +26,129 @@ struct EaselRichText: Codable, Equatable {
                   width * height <= 16_777_216 else { throw EaselStoreError.invalidImage }
         }
     }
-    struct Font: Codable, Equatable {
-        var name: String
-        var size: Double
-        var traits: UInt32 = 0
-        var weight: Double = 0
-        var width: Double = 0
-        var slant: Double = 0
-        var variations: [String: Double] = [:]
-        var style: EaselTextStyle?
-    }
-    struct Paragraph: Codable, Equatable {
-        struct Tab: Codable, Equatable { var alignment: Int; var location: Double }
-        struct List: Codable, Equatable { var marker: String; var options: UInt; var start: Int }
-        var alignment: Int
-        var direction: Int
-        var lineBreak: Int
-        var firstIndent: Double
-        var headIndent: Double
-        var tailIndent: Double
-        var lineSpacing: Double
-        var before: Double
-        var after: Double
-        var minimumHeight: Double
-        var maximumHeight: Double
-        var heightMultiple: Double
-        var hyphenation: Float
-        var tightening: Float
-        var allowsTightening: Bool
-        var defaultHyphenation: Bool
-        var defaultTab: Double
-        var tabs: [Tab]
-        var lists: [List]
-        var heading: Int? = nil
-    }
-    enum SemanticInk: String, Codable { case noteBody }
-    struct Attributes: Codable, Equatable {
-        var font: Font
-        var ink: String
-        var semanticInk: SemanticInk? = nil
-        var background: String?
-        var underline: Int = 0
-        var strike: Int = 0
-        var underlineColor: String?
-        var strikeColor: String?
-        var link: String?
-        var kern: Double = 0
-        var baseline: Double = 0
-        var paragraph: Paragraph?
-        var image: Image? = nil
-    }
-    struct Run: Codable, Equatable {
-        var location: Int
-        var length: Int
-        var attributes: Attributes
-    }
-    var runs: [Run]
+    package struct Font: Codable, Equatable {
+        package var name: String
+        package var size: Double
+        package var traits: UInt32 = 0
+        package var weight: Double = 0
+        package var width: Double = 0
+        package var slant: Double = 0
+        package var variations: [String: Double] = [:]
+        package var style: EaselTextStyle?
 
-    static func validLink(_ value: String) -> Bool {
+        package init(name: String, size: Double, traits: UInt32 = 0, weight: Double = 0, width: Double = 0, slant: Double = 0, variations: [String: Double] = [:], style: EaselTextStyle? = nil) {
+            self.name = name
+            self.size = size
+            self.traits = traits
+            self.weight = weight
+            self.width = width
+            self.slant = slant
+            self.variations = variations
+            self.style = style
+        }
+    }
+    package struct Paragraph: Codable, Equatable {
+        package struct Tab: Codable, Equatable { package var alignment: Int; package var location: Double; package init(alignment: Int, location: Double) { self.alignment = alignment; self.location = location } }
+        package struct List: Codable, Equatable { package var marker: String; package var options: UInt; package var start: Int; package init(marker: String, options: UInt, start: Int) { self.marker = marker; self.options = options; self.start = start } }
+        package var alignment: Int
+        package var direction: Int
+        package var lineBreak: Int
+        package var firstIndent: Double
+        package var headIndent: Double
+        package var tailIndent: Double
+        package var lineSpacing: Double
+        package var before: Double
+        package var after: Double
+        package var minimumHeight: Double
+        package var maximumHeight: Double
+        package var heightMultiple: Double
+        package var hyphenation: Float
+        package var tightening: Float
+        package var allowsTightening: Bool
+        package var defaultHyphenation: Bool
+        package var defaultTab: Double
+        package var tabs: [Tab]
+        package var lists: [List]
+        package var heading: Int? = nil
+
+        package init(alignment: Int, direction: Int, lineBreak: Int, firstIndent: Double, headIndent: Double, tailIndent: Double, lineSpacing: Double, before: Double, after: Double, minimumHeight: Double, maximumHeight: Double, heightMultiple: Double, hyphenation: Float, tightening: Float, allowsTightening: Bool, defaultHyphenation: Bool, defaultTab: Double, tabs: [Tab], lists: [List], heading: Int? = nil) {
+            self.alignment = alignment
+            self.direction = direction
+            self.lineBreak = lineBreak
+            self.firstIndent = firstIndent
+            self.headIndent = headIndent
+            self.tailIndent = tailIndent
+            self.lineSpacing = lineSpacing
+            self.before = before
+            self.after = after
+            self.minimumHeight = minimumHeight
+            self.maximumHeight = maximumHeight
+            self.heightMultiple = heightMultiple
+            self.hyphenation = hyphenation
+            self.tightening = tightening
+            self.allowsTightening = allowsTightening
+            self.defaultHyphenation = defaultHyphenation
+            self.defaultTab = defaultTab
+            self.tabs = tabs
+            self.lists = lists
+            self.heading = heading
+        }
+    }
+    package enum SemanticInk: String, Codable { case noteBody }
+    package struct Attributes: Codable, Equatable {
+        package var font: Font
+        package var ink: String
+        package var semanticInk: SemanticInk? = nil
+        package var background: String?
+        package var underline: Int = 0
+        package var strike: Int = 0
+        package var underlineColor: String?
+        package var strikeColor: String?
+        package var link: String?
+        package var kern: Double = 0
+        package var baseline: Double = 0
+        package var paragraph: Paragraph?
+        package var image: Image? = nil
+
+        package init(font: Font, ink: String, semanticInk: SemanticInk? = nil, background: String? = nil, underline: Int = 0, strike: Int = 0, underlineColor: String? = nil, strikeColor: String? = nil, link: String? = nil, kern: Double = 0, baseline: Double = 0, paragraph: Paragraph? = nil, image: Image? = nil) {
+            self.font = font
+            self.ink = ink
+            self.semanticInk = semanticInk
+            self.background = background
+            self.underline = underline
+            self.strike = strike
+            self.underlineColor = underlineColor
+            self.strikeColor = strikeColor
+            self.link = link
+            self.kern = kern
+            self.baseline = baseline
+            self.paragraph = paragraph
+            self.image = image
+        }
+    }
+    package struct Run: Codable, Equatable {
+        package var location: Int
+        package var length: Int
+        package var attributes: Attributes
+
+        package init(location: Int, length: Int, attributes: Attributes) {
+            self.location = location
+            self.length = length
+            self.attributes = attributes
+        }
+    }
+    package var runs: [Run]
+
+    package init(runs: [Run]) {
+        self.runs = runs
+    }
+
+    package static func validLink(_ value: String) -> Bool {
         guard value.utf8.count <= 16_384, let url = URL(string: value),
               let scheme = url.scheme?.lowercased(), ["https", "http", "mailto", "tel"].contains(scheme) else { return false }
         return scheme == "mailto" || scheme == "tel" || url.host?.isEmpty == false
     }
-    func validate(text: String) throws {
+    package func validate(text: String) throws {
         let units = Array(text.utf16)
         guard units.count <= 1_048_576, runs.count <= 16_384 else { throw EaselStoreError.tooLarge }
         func validBoundary(_ position: Int) -> Bool {

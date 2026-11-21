@@ -1,19 +1,19 @@
 import Foundation
 
 @MainActor
-final class NoteFileTimer {
+package final class NoteFileTimer {
     private var cancellation: (@MainActor () -> Void)?
 
-    init(cancel: @escaping @MainActor () -> Void) { cancellation = cancel }
+    package init(cancel: @escaping @MainActor () -> Void) { cancellation = cancel }
 
-    func cancel() {
+    package func cancel() {
         cancellation?()
         cancellation = nil
     }
 }
 
 @MainActor
-protocol NoteFileClock: AnyObject {
+package protocol NoteFileClock: AnyObject {
     var now: Date { get }
     func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) -> NoteFileTimer
 }
@@ -25,12 +25,14 @@ private final class NoteFileMainAction: @unchecked Sendable {
 }
 
 @MainActor
-final class NoteFileSystemClock: NoteFileClock {
-    static let shared = NoteFileSystemClock()
+package final class NoteFileSystemClock: NoteFileClock {
+    package static let shared = NoteFileSystemClock()
 
-    var now: Date { Date() }
+    package var now: Date { Date() }
 
-    func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) -> NoteFileTimer {
+    package init() {}
+
+    package func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) -> NoteFileTimer {
         let box = NoteFileMainAction(action)
         let item = DispatchWorkItem { box.run() }
         DispatchQueue.main.asyncAfter(deadline: .now() + max(0, delay), execute: item)
@@ -38,23 +40,23 @@ final class NoteFileSystemClock: NoteFileClock {
     }
 }
 
-final class NoteFileWorker: @unchecked Sendable {
-    static let files = NoteFileWorker(label: "org.parc.notes.files")
-    static let index = NoteFileWorker(label: "org.parc.notes.index", qos: .utility)
-    static let inline = NoteFileWorker()
+package final class NoteFileWorker: @unchecked Sendable {
+    package static let files = NoteFileWorker(label: "org.parc.notes.files")
+    package static let index = NoteFileWorker(label: "org.parc.notes.index", qos: .utility)
+    package static let inline = NoteFileWorker()
 
     private let queue: DispatchQueue?
 
-    init(label: String, qos: DispatchQoS = .userInitiated) {
+    package init(label: String, qos: DispatchQoS = .userInitiated) {
         queue = DispatchQueue(label: label, qos: qos)
     }
 
     private init() { queue = nil }
 
-    var isInline: Bool { queue == nil }
+    package var isInline: Bool { queue == nil }
 
     @MainActor
-    func perform<Value>(_ work: @escaping () -> Value, then finish: @escaping @MainActor (Value) -> Void) {
+    package func perform<Value>(_ work: @escaping () -> Value, then finish: @escaping @MainActor (Value) -> Void) {
         guard let queue else {
             finish(work())
             return
@@ -63,7 +65,7 @@ final class NoteFileWorker: @unchecked Sendable {
         queue.async { job.run() }
     }
 
-    func sync<Value>(_ work: () throws -> Value) rethrows -> Value {
+    package func sync<Value>(_ work: () throws -> Value) rethrows -> Value {
         guard let queue else { return try work() }
         return try queue.sync(execute: work)
     }

@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension EaselCanvasView {
     static let codeLanguageDefaultsKey = "easel.codeBlockLanguage"

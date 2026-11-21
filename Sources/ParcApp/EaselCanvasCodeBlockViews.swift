@@ -1,5 +1,6 @@
 import AppKit
 import CoreText
+import ParcCore
 
 extension NSAttributedString.Key {
     static let easelSyntaxFamily = NSAttributedString.Key("ParcEaselSyntaxFamily")

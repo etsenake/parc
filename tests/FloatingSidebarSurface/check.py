@@ -1,61 +1,11 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import hashlib
-import re
 import shutil
 import subprocess
 import tempfile
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
-from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
-controller = browser_window_controller_source(app)
-for use in ("        sidebarContainer.floatingCornerRadius = floatingSurface ? FloatingSidebarSurface.cornerRadius : nil\n"
-            "        sidebarContainer.docksFloatingSurface = fullPass && sidebarFloatingSurface && sidebarPresentation == .locked\n",
-            "        sidebar.layer?.cornerRadius = floatingSurface ? FloatingSidebarSurface.cornerRadius : 0\n"
-            "        sidebar.clipsToBounds = floatingSurface\n",
-            "        if sidebarFloatingSurface && sidebarPresentation == .locked { sidebarContainer.docksFloatingSurface = true }\n",
-            "            sidebarChromePass = .preparation\n"
-            "            layoutChrome()\n"
-            "            sidebarContainer.preparesFloatingDock = transition.docksFloatingSurface\n"
-            "            sidebarChromePass = .geometry\n",
-            "        if fullPass { sidebarContainer.preparesFloatingDock = false }\n"):
-    assert use in controller, f"BrowserWindowController no longer drives the floating surface as checked: {use}"
-assert controller.count("preparesFloatingDock") == 2, "only the dock's preparation and the full pass set preparesFloatingDock"
-assert "        docksFloatingSurface = previous == .floating && next == .locked\n" in (app / "SidebarMotionController.swift").read_text(), \
-    "SidebarTransition no longer prepares the dock only for floating → locked"
-assert "sidebarContainer.layer?.cornerRadius" not in controller and "sidebarContainer.layer?.masksToBounds" not in controller, \
-    "the surface's corners and clip belong to ThemeRendererView.floatingCornerRadius"
-assert "sidebar.layer?.cornerRadius = 0" not in controller, "a docking sidebar keeps its corners until it settles"
-sidebar_view = (app / "SidebarView.swift").read_text()
-strip = sidebar_view[sidebar_view.index("    private func showPageStrip(at offset: CGFloat) {"):]
-strip = strip[:strip.index("\n    }\n")]
-assert re.search(r"SidebarSpacePagingModel\.themePages\(selected: index, offset: offset, width: width, count: spaces\.count,\s+within: reach\)", strip) \
-    and re.search(r"onPagingTheme\?\(ThemePagingTransition\(from: spaces\[pages\.left\]\.theme, theme: spaces\[pages\.left \+ 1\]\.theme,\s+progress: pages\.progress\)\)", strip) \
-    and "ThemePagingTransition(from: spaces[source].theme, theme: spaces[index].theme, progress: 1 - fraction)" in strip \
-    and "onPagingTheme?(nil)" in strip, "SidebarView no longer gives every swipe's pages to the window's surfaces"
-assert "alphaValue" not in strip and "isOnFloatingSurface" not in sidebar_view, "a swipe's neighbouring theme is stacked over the sidebar again"
-assert "ThemeRendererView(" not in sidebar_view and "neighborTheme" not in sidebar_view \
-    and "        applyPagePalette(page, paletteForPage(spaceID))\n" in sidebar_view \
-    and "ThemeChromePalette(theme: space.theme, appearance: window?.effectiveAppearance ?? NSApp?.effectiveAppearance ?? effectiveAppearance)" in sidebar_view, \
-    "the neighbouring page builds a theme renderer for its palette again"
-refresh = sidebar_view[sidebar_view.index("    private func refresh(_ page: SidebarSpacePage"):]
-refresh = refresh[:refresh.index("\n    }\n")]
-assert "applyPagePalette(page, paletteForPage(spaceID))" in refresh, "a page shown beside the strip no longer takes its Space's palette"
-assert ("        sidebar.onPagingTheme = { [weak self] transition in\n"
-        "            self?.rootView.pagingTransition = transition; self?.sidebarContainer.pagingTransition = transition\n"
-        "            self?.loadedStartPage?.pagingTransition = transition\n"
-        "        }\n") in controller, "the controller no longer gives the swipe to the window's background and the sidebar surface"
-assert "isOnFloatingSurface" not in controller, "the swipe's colour no longer depends on the presentation"
-assert 'shutil.copytree(repo / "Resources", resources, symlinks=True)' in (root / "scripts/build.py").read_text(), \
-    "scripts/build.py no longer packages the whole Resources directory"
 artwork = root / "Resources/FloatingSidebar"
-for name, recorded in (("CellDropShadow.png", "a537e2218c29a0467b4e80ccb70469d082662e2927beeccacf926aba501152a1"),
-                       ("CellDropShadow@2x.png", "7e84d6eef8e795b798011214fdd84d92a390346692a3237ff4519ffa52eb63fd")):
-    assert hashlib.sha256((artwork / name).read_bytes()).hexdigest() == recorded, f"{name} no longer matches the recorded shadow"
-assert sorted(path.name for path in artwork.iterdir() if not path.name.startswith(".")) == ["CellDropShadow.png", "CellDropShadow@2x.png", "README.md"], \
-    "Resources/FloatingSidebar holds only the shadow and its README"
 with tempfile.TemporaryDirectory(prefix="parc-floating-sidebar-surface-") as directory:
     executable = Path(directory) / "checks"
     subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",

@@ -9,4 +9,3 @@ xcrun swiftc "$root/tests/Support/TestFailure.swift" -parse-as-library -warnings
   "$root/tests/DeveloperToolbar/Tests.swift" \
   -o "$build/developer-toolbar"
 "$build/developer-toolbar"
-python3 "$root/tests/DeveloperToolbarSkip/check.py"

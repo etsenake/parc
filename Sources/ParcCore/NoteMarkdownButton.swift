@@ -1,17 +1,17 @@
 import Foundation
 
-enum NoteMDButtonFormat {
-    static let flag = "button"
-    static let insertKey = "insert"
-    static let confirmKey = "confirm"
-    static let openKey = "open"
+package enum NoteMDButtonFormat {
+    package static let flag = "button"
+    package static let insertKey = "insert"
+    package static let confirmKey = "confirm"
+    package static let openKey = "open"
 
-    static func action(_ node: NoteMDBlock) -> NoteButtonAction? {
+    package static func action(_ node: NoteMDBlock) -> NoteButtonAction? {
         guard node.kind == .html, let attributes = NoteMDAttributes.parse(NoteMDByte.string(node.content)) else { return nil }
         return action(attributes)
     }
 
-    static func action(_ attributes: NoteMDAttributes) -> NoteButtonAction? {
+    package static func action(_ attributes: NoteMDAttributes) -> NoteButtonAction? {
         guard attributes.kind == nil, !attributes.flags.contains(flag) else { return nil }
         if let value = attributes.values[insertKey] {
             return .insert(placement: NoteButtonPlacement(rawValue: value.lowercased()) ?? .below, blocks: [])
@@ -23,7 +23,7 @@ enum NoteMDButtonFormat {
         return nil
     }
 
-    static func marker(for action: NoteButtonAction) -> (String, String?) {
+    package static func marker(for action: NoteButtonAction) -> (String, String?) {
         switch action {
         case .insert(let placement, _): return (insertKey, placement.rawValue)
         case .confirm(let message): return (confirmKey, message)
@@ -31,16 +31,16 @@ enum NoteMDButtonFormat {
         }
     }
 
-    static func usesImplicitInsert(_ actions: [NoteButtonAction]) -> Bool {
+    package static func usesImplicitInsert(_ actions: [NoteButtonAction]) -> Bool {
         guard actions.count == 1, case .insert(.below, let blocks) = actions[0] else { return false }
         return blocks.contains { !NoteMDWriter.isBareEmptyParagraph($0) }
     }
 
-    static func label(name: String, icon: String?) -> String {
+    package static func label(name: String, icon: String?) -> String {
         [icon ?? "", name].filter { !$0.isEmpty }.joined(separator: " ")
     }
 
-    static func name(fromLabel label: String, icon: String?) -> String {
+    package static func name(fromLabel label: String, icon: String?) -> String {
         guard let icon, !icon.isEmpty else { return label }
         if label == icon { return "" }
         let prefix = icon + " "
@@ -49,7 +49,7 @@ enum NoteMDButtonFormat {
 }
 
 extension NoteMDReader {
-    func button(_ opener: DetailsOpener, label: NoteText, attributes: NoteMDAttributes, children: ArraySlice<NoteMDBlock>,
+    package func button(_ opener: DetailsOpener, label: NoteText, attributes: NoteMDAttributes, children: ArraySlice<NoteMDBlock>,
                 trailing: Int) -> NoteBlock {
         var block = NoteBlock(.button)
         apply(attributes, to: &block)
@@ -100,7 +100,7 @@ extension NoteMDReader {
 }
 
 extension NoteMDWriter {
-    func button(_ block: NoteBlock) -> [String] {
+    package func button(_ block: NoteBlock) -> [String] {
         let button = block.buttonValue
         let icon = block.props.icon.flatMap { $0.isEmpty ? nil : $0 }
         var items: [(String, String?)] = [(NoteMDButtonFormat.flag, nil)]

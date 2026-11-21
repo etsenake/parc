@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 enum PaneContentHostedLayoutFlush {
     static func shouldLayoutContent(frameChanged: Bool, needsLayout: Bool) -> Bool {

@@ -1,12 +1,12 @@
 import Foundation
 
-enum FavoriteOptionRoute: Equatable {
+package enum FavoriteOptionRoute: Equatable {
     case split
     case present
     case paneLimit
     case unchanged
 
-    init(favoriteID: UUID, selection: [UUID], focusedID: UUID?) {
+    package init(favoriteID: UUID, selection: [UUID], focusedID: UUID?) {
         guard let focusedID, selection.contains(focusedID) else { self = .present; return }
         if selection.contains(favoriteID) {
             self = favoriteID == focusedID && selection.count >= 4 ? .unchanged : .split
@@ -16,20 +16,20 @@ enum FavoriteOptionRoute: Equatable {
     }
 }
 
-struct FavoriteSplitRequest {
-    let favorite: BrowserTab
-    let spaceID: UUID
-    let selection: [UUID]
-    let focusedID: UUID
-    let members: [BrowserTab]
-    let layouts: [BrowserSplitLayout]
-    let layout: BrowserSplitLayout?
-    let duplicateURL: String?
-    let duplicateTitle: String?
-    let newID: UUID
-    let homeIDs: [UUID: UUID]
+package struct FavoriteSplitRequest {
+    package let favorite: BrowserTab
+    package let spaceID: UUID
+    package let selection: [UUID]
+    package let focusedID: UUID
+    package let members: [BrowserTab]
+    package let layouts: [BrowserSplitLayout]
+    package let layout: BrowserSplitLayout?
+    package let duplicateURL: String?
+    package let duplicateTitle: String?
+    package let newID: UUID
+    package let homeIDs: [UUID: UUID]
 
-    init?(favorite: BrowserTab, spaceID: UUID, selection: [UUID], focusedID: UUID,
+    package init?(favorite: BrowserTab, spaceID: UUID, selection: [UUID], focusedID: UUID,
           state: BrowserState, duplicateURL: String? = nil, duplicateTitle: String? = nil,
           newID: UUID = UUID(), homeIDs: [UUID: UUID] = [:]) {
         guard favorite.kind == .favorite, favorite.archivedAt == nil,
@@ -52,9 +52,9 @@ struct FavoriteSplitRequest {
         self.homeIDs = homeIDs
     }
 
-    var targetID: UUID { favorite.id == focusedID ? newID : favorite.id }
+    package var targetID: UUID { favorite.id == focusedID ? newID : favorite.id }
 
-    var paneIDs: [UUID] {
+    package var paneIDs: [UUID] {
         var ids = selection
         if !ids.contains(targetID), let index = ids.firstIndex(of: focusedID) {
             ids.insert(targetID, at: layout?.mainRowInsertionIndex(after: focusedID) ?? index + 1)
@@ -62,13 +62,13 @@ struct FavoriteSplitRequest {
         return ids
     }
 
-    func savedHomeSources(in state: BrowserState) -> [BrowserTab] {
+    package func savedHomeSources(in state: BrowserState) -> [BrowserTab] {
         guard paneIDs != selection else { return [] }
         return SplitMembership.savedHomeSources(joining: paneIDs, existing: layout,
             added: favorite.id == focusedID ? newID : nil, state: state)
     }
 
-    func applying(to state: BrowserState, retiring: Set<UUID>, now: Date) -> BrowserState? {
+    package func applying(to state: BrowserState, retiring: Set<UUID>, now: Date) -> BrowserState? {
         guard state.activeSpaceID == spaceID, state.selectedTabIDs == selection,
               state.spaces.contains(where: { $0.id == spaceID && $0.profileID == favorite.profileID }),
               state.profiles.contains(where: { $0.id == favorite.profileID }),

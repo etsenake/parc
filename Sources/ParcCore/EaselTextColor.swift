@@ -1,7 +1,7 @@
 import Foundation
 
-enum EaselTextColor {
-    static func recoloured(_ item: EaselItem, hex raw: String) -> EaselItem? {
+package enum EaselTextColor {
+    package static func recoloured(_ item: EaselItem, hex raw: String) -> EaselItem? {
         guard let hex = EaselPalette.normalized(raw), item.kind.holdsText, !item.isLocked else { return nil }
         var next = item
         if item.kind == .text { next.color = hex }
@@ -15,11 +15,11 @@ enum EaselTextColor {
         return next == item ? nil : next
     }
 
-    static func needsRuns(_ item: EaselItem) -> Bool {
+    package static func needsRuns(_ item: EaselItem) -> Bool {
         item.kind.holdsText && item.kind != .text && item.richText == nil && !item.text.isEmpty
     }
 
-    static func recolouring(_ document: EaselDocument, ids: Set<UUID>, hex: String,
+    package static func recolouring(_ document: EaselDocument, ids: Set<UUID>, hex: String,
                             runs make: (EaselItem, String) -> EaselRichText?) -> EaselDocument? {
         guard let hex = EaselPalette.normalized(hex) else { return nil }
         var next = document, changed = false

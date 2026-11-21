@@ -2,20 +2,20 @@ import CoreGraphics
 import Foundation
 
 extension EaselImageMask {
-    var noteMask: NoteImageMask { NoteImageMask(rawValue: rawValue) ?? .rounded }
-    var title: String { noteMask.title }
-    var isSquare: Bool { noteMask.isSquare }
-    func path(in rect: CGRect) -> CGPath { noteMask.path(in: rect) }
+    package var noteMask: NoteImageMask { NoteImageMask(rawValue: rawValue) ?? .rounded }
+    package var title: String { noteMask.title }
+    package var isSquare: Bool { noteMask.isSquare }
+    package func path(in rect: CGRect) -> CGPath { noteMask.path(in: rect) }
 }
 
-enum EaselImageFraming {
-    static func turns(_ value: Int) -> Int { ((value % 4) + 4) % 4 }
+package enum EaselImageFraming {
+    package static func turns(_ value: Int) -> Int { ((value % 4) + 4) % 4 }
 
-    static func turnedSize(_ natural: CGSize, turns value: Int) -> CGSize {
+    package static func turnedSize(_ natural: CGSize, turns value: Int) -> CGSize {
         turns(value) % 2 == 0 ? natural : CGSize(width: natural.height, height: natural.width)
     }
 
-    static func turnedCrop(_ crop: EaselRect?, turns value: Int) -> NoteImageCrop {
+    package static func turnedCrop(_ crop: EaselRect?, turns value: Int) -> NoteImageCrop {
         guard let crop else { return .full }
         let x = crop.x, y = crop.y, w = crop.width, h = crop.height
         switch turns(value) {
@@ -26,7 +26,7 @@ enum EaselImageFraming {
         }
     }
 
-    static func sourceCrop(_ turned: NoteImageCrop, turns value: Int) -> EaselRect? {
+    package static func sourceCrop(_ turned: NoteImageCrop, turns value: Int) -> EaselRect? {
         let crop = turned.normalized
         guard !crop.isFull else { return nil }
         let x = crop.x, y = crop.y, w = crop.width, h = crop.height
@@ -41,31 +41,31 @@ enum EaselImageFraming {
         return EaselRect(x: normalized.x, y: normalized.y, width: normalized.width, height: normalized.height)
     }
 
-    static func displayAspect(natural: CGSize, crop: EaselRect?, turns value: Int) -> CGFloat? {
+    package static func displayAspect(natural: CGSize, crop: EaselRect?, turns value: Int) -> CGFloat? {
         let turned = turnedSize(natural, turns: value)
         let size = turnedCrop(crop, turns: value).croppedSize(of: turned)
         guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return nil }
         return size.width / size.height
     }
 
-    static func pictureRect(frame: CGRect, crop: EaselRect?, turns value: Int) -> CGRect {
+    package static func pictureRect(frame: CGRect, crop: EaselRect?, turns value: Int) -> CGRect {
         turnedCrop(crop, turns: value).fullRect(forFrame: frame)
     }
 
-    static func sourceRect(picture: CGRect, turns value: Int) -> CGRect {
+    package static func sourceRect(picture: CGRect, turns value: Int) -> CGRect {
         let size = turnedSize(picture.size, turns: value)
         return CGRect(x: picture.midX - size.width / 2, y: picture.midY - size.height / 2, width: size.width, height: size.height)
     }
 
-    static func angle(turns value: Int) -> CGFloat { CGFloat(turns(value)) * .pi / 2 }
+    package static func angle(turns value: Int) -> CGFloat { CGFloat(turns(value)) * .pi / 2 }
 
-    static func isFramed(_ item: EaselItem) -> Bool { item.crop != nil || item.mask != nil || item.resolvedQuarterTurns != 0 }
+    package static func isFramed(_ item: EaselItem) -> Bool { item.crop != nil || item.mask != nil || item.resolvedQuarterTurns != 0 }
 
-    static func rotatedClockwise(_ rect: CGRect, around center: CGPoint) -> CGRect {
+    package static func rotatedClockwise(_ rect: CGRect, around center: CGPoint) -> CGRect {
         CGRect(x: center.x - (rect.maxY - center.y), y: center.y + (rect.minX - center.x), width: rect.height, height: rect.width)
     }
 
-    static func replacing(_ item: EaselItem, natural: CGSize) -> EaselItem {
+    package static func replacing(_ item: EaselItem, natural: CGSize) -> EaselItem {
         var next = item
         next.crop = nil; next.quarterTurns = nil; next.altText = nil
         let f = item.frame
@@ -77,7 +77,7 @@ enum EaselImageFraming {
         return next
     }
 
-    static func masking(_ item: EaselItem, with mask: EaselImageMask?) -> EaselItem {
+    package static func masking(_ item: EaselItem, with mask: EaselImageMask?) -> EaselItem {
         var next = item
         next.mask = mask
         guard mask?.isSquare == true else { return next }
@@ -92,20 +92,20 @@ enum EaselImageFraming {
     }
 }
 
-struct EaselImageCropDraft: Equatable {
-    static let minimumSide: CGFloat = 20
-    static let maximumZoom: CGFloat = 8
+package struct EaselImageCropDraft: Equatable {
+    package static let minimumSide: CGFloat = 20
+    package static let maximumZoom: CGFloat = 8
 
-    var frame: CGRect
-    var picture: CGRect
-    var turns: Int
-    var mask: EaselImageMask?
-    var aspect: NoteImageCropAspect
-    let natural: CGSize
-    let original: CGRect
-    let zoomLimit: CGFloat
+    package var frame: CGRect
+    package var picture: CGRect
+    package var turns: Int
+    package var mask: EaselImageMask?
+    package var aspect: NoteImageCropAspect
+    package let natural: CGSize
+    package let original: CGRect
+    package let zoomLimit: CGFloat
 
-    init(item: EaselItem, natural: CGSize) {
+    package init(item: EaselItem, natural: CGSize) {
         let f = CGRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height)
         frame = f
         original = f
@@ -119,37 +119,37 @@ struct EaselImageCropDraft: Equatable {
         zoomLimit = max(Self.maximumZoom, cover > 0 && cover.isFinite ? 1 / cover : 1)
     }
 
-    var turnedNatural: CGSize { EaselImageFraming.turnedSize(natural, turns: turns) }
-    var ratio: CGFloat? { aspect.ratio(natural: turnedNatural) }
-    var crop: NoteImageCrop { NoteImageCrop(frame, in: picture) }
-    var isWhole: Bool { crop.isFull }
+    package var turnedNatural: CGSize { EaselImageFraming.turnedSize(natural, turns: turns) }
+    package var ratio: CGFloat? { aspect.ratio(natural: turnedNatural) }
+    package var crop: NoteImageCrop { NoteImageCrop(frame, in: picture) }
+    package var isWhole: Bool { crop.isFull }
 
     private var coverFactor: CGFloat {
         guard picture.width > 0, picture.height > 0 else { return 1 }
         return max(frame.width / picture.width, frame.height / picture.height)
     }
 
-    var zoom: CGFloat {
+    package var zoom: CGFloat {
         let factor = coverFactor
         return factor > 0 ? min(zoomLimit, max(1, 1 / factor)) : 1
     }
 
-    mutating func move(by delta: CGSize) {
+    package mutating func move(by delta: CGSize) {
         let x = min(max(frame.maxX - picture.width, picture.minX + delta.width), frame.minX)
         let y = min(max(frame.maxY - picture.height, picture.minY + delta.height), frame.minY)
         picture.origin = CGPoint(x: x, y: y)
     }
 
-    mutating func moveFrame(by delta: CGSize) {
+    package mutating func moveFrame(by delta: CGSize) {
         frame = NoteImageCropGeometry.move(frame, by: delta, within: picture)
     }
 
-    mutating func resize(_ handle: NoteImageCropHandle, from start: CGRect, by delta: CGSize, lockingAspect: Bool) {
+    package mutating func resize(_ handle: NoteImageCropHandle, from start: CGRect, by delta: CGSize, lockingAspect: Bool) {
         let lock = ratio ?? (lockingAspect && start.height > 0 ? start.width / start.height : nil)
         frame = NoteImageCropGeometry.resize(start, handle: handle, by: delta, within: picture, minimum: Self.minimumSide, aspect: lock)
     }
 
-    mutating func setZoom(_ value: CGFloat) {
+    package mutating func setZoom(_ value: CGFloat) {
         guard value.isFinite, picture.width > 0, picture.height > 0 else { return }
         let target = min(zoomLimit, max(1, value))
         let factor = coverFactor * target
@@ -160,7 +160,7 @@ struct EaselImageCropDraft: Equatable {
         move(by: .zero)
     }
 
-    mutating func rotate() {
+    package mutating func rotate() {
         let center = CGPoint(x: frame.midX, y: frame.midY)
         frame = EaselImageFraming.rotatedClockwise(frame, around: center)
         picture = EaselImageFraming.rotatedClockwise(picture, around: center)
@@ -174,13 +174,13 @@ struct EaselImageCropDraft: Equatable {
         }
     }
 
-    mutating func setAspect(_ next: NoteImageCropAspect) {
+    package mutating func setAspect(_ next: NoteImageCropAspect) {
         aspect = next
         guard let ratio else { return }
         frame = NoteImageCropGeometry.fitted(aspect: ratio, around: frame, within: picture)
     }
 
-    mutating func setMask(_ next: EaselImageMask?) {
+    package mutating func setMask(_ next: EaselImageMask?) {
         let previous = mask
         mask = next
         if next?.isSquare == true {
@@ -191,18 +191,18 @@ struct EaselImageCropDraft: Equatable {
         }
     }
 
-    mutating func reset() {
+    package mutating func reset() {
         setZoom(1)
         let whole = picture
         if let ratio { frame = NoteImageCropGeometry.fitted(aspect: ratio, around: whole, within: whole) } else { frame = whole }
     }
 
-    var result: (frame: EaselRect, crop: EaselRect?, turns: Int?, mask: EaselImageMask?) {
+    package var result: (frame: EaselRect, crop: EaselRect?, turns: Int?, mask: EaselImageMask?) {
         let rect = EaselRect(x: Double(frame.minX), y: Double(frame.minY), width: Double(frame.width), height: Double(frame.height))
         return (rect, EaselImageFraming.sourceCrop(crop, turns: turns), turns == 0 ? nil : turns, mask)
     }
 
-    func applying(to item: EaselItem) -> EaselItem {
+    package func applying(to item: EaselItem) -> EaselItem {
         var next = item
         let value = result
         next.frame = value.frame; next.crop = value.crop; next.quarterTurns = value.turns; next.mask = value.mask

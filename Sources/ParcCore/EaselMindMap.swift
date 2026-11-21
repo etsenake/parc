@@ -1,31 +1,31 @@
 import Foundation
 
-struct EaselMindMapTree {
-    struct Node: Equatable {
-        let id: UUID
-        var parent: UUID?
-        var depth = 0
-        var side = EaselMindMapLink.Side.right
-        var children: [UUID] = []
-        var collapsed = false
+package struct EaselMindMapTree {
+    package struct Node: Equatable {
+        package let id: UUID
+        package var parent: UUID?
+        package var depth = 0
+        package var side = EaselMindMapLink.Side.right
+        package var children: [UUID] = []
+        package var collapsed = false
     }
 
-    var nodes: [UUID: Node] = [:]
-    var roots: [UUID] = []
-    var branches: [UUID: UUID] = [:]
+    package var nodes: [UUID: Node] = [:]
+    package var roots: [UUID] = []
+    package var branches: [UUID: UUID] = [:]
 
-    func root(of id: UUID) -> UUID? {
+    package func root(of id: UUID) -> UUID? {
         guard nodes[id] != nil else { return nil }
         var current = id, steps = 0
         while let parent = nodes[current]?.parent, steps <= nodes.count { current = parent; steps += 1 }
         return current
     }
 
-    func children(of id: UUID, side: EaselMindMapLink.Side) -> [UUID] {
+    package func children(of id: UUID, side: EaselMindMapLink.Side) -> [UUID] {
         (nodes[id]?.children ?? []).filter { nodes[$0]?.side == side }
     }
 
-    func descendants(of id: UUID) -> [UUID] {
+    package func descendants(of id: UUID) -> [UUID] {
         var result: [UUID] = []
         var seen: Set<UUID> = [id]
         var stack = Array((nodes[id]?.children ?? []).reversed())
@@ -37,7 +37,7 @@ struct EaselMindMapTree {
         return result
     }
 
-    func contains(_ id: UUID, inSubtreeOf ancestor: UUID) -> Bool {
+    package func contains(_ id: UUID, inSubtreeOf ancestor: UUID) -> Bool {
         var current: UUID? = id, steps = 0
         while let value = current, steps <= nodes.count {
             if value == ancestor { return true }
@@ -47,7 +47,7 @@ struct EaselMindMapTree {
         return false
     }
 
-    var hidden: Set<UUID> {
+    package var hidden: Set<UUID> {
         var result = Set<UUID>()
         var visited = Set<UUID>()
         var stack = roots
@@ -67,41 +67,49 @@ struct EaselMindMapTree {
     }
 }
 
-struct EaselMindMapDrop: Equatable {
-    var parent: UUID
-    var side: EaselMindMapLink.Side
-    var index: Int
-    var onto: Bool
-    var slot: EaselPoint
+package struct EaselMindMapDrop: Equatable {
+    package var parent: UUID
+    package var side: EaselMindMapLink.Side
+    package var index: Int
+    package var onto: Bool
+    package var slot: EaselPoint
+
+    package init(parent: UUID, side: EaselMindMapLink.Side, index: Int, onto: Bool, slot: EaselPoint) {
+        self.parent = parent
+        self.side = side
+        self.index = index
+        self.onto = onto
+        self.slot = slot
+    }
 }
 
-enum EaselMindMap {
-    static let rootGap = 72.0
-    static let levelGap = 48.0
-    static let siblingGap = 16.0
-    static let deepBranchWidth = 2.0
-    static let dropReach = 72.0
-    static let rootText = "Big idea"
-    static let starterTexts = ["A thought", "Another thought"]
-    static let branchColors: [NoteColor] = [.orange, .yellow, .green, .blue, .purple, .pink, .red, .brown, .gray]
+package enum EaselMindMap {
+    package static let rootGap = 72.0
+    package static let levelGap = 48.0
+    package static let siblingGap = 16.0
+    package static let deepBranchWidth = 2.0
+    package static let dropReach = 72.0
+    package static let rootText = "Big idea"
+    package static let starterTexts = ["A thought", "Another thought"]
+    package static let branchColors: [NoteColor] = [.orange, .yellow, .green, .blue, .purple, .pink, .red, .brown, .gray]
 
-    static func isNodeKind(_ kind: EaselItemKind) -> Bool { EaselMindMapLink.holdsNode(kind) }
+    package static func isNodeKind(_ kind: EaselItemKind) -> Bool { EaselMindMapLink.holdsNode(kind) }
 
-    static func isNode(_ item: EaselItem) -> Bool { item.mindMap != nil && isNodeKind(item.kind) }
-    static func isBranch(_ item: EaselItem) -> Bool { item.mindMap != nil && item.kind == .arrow }
-    static func gap(depth: Int) -> Double { depth <= 1 ? rootGap : levelGap }
+    package static func isNode(_ item: EaselItem) -> Bool { item.mindMap != nil && isNodeKind(item.kind) }
+    package static func isBranch(_ item: EaselItem) -> Bool { item.mindMap != nil && item.kind == .arrow }
+    package static func gap(depth: Int) -> Double { depth <= 1 ? rootGap : levelGap }
 
-    static func branchColor(_ index: Int) -> String {
+    package static func branchColor(_ index: Int) -> String {
         let count = branchColors.count
         let color = branchColors[((index % count) + count) % count]
         return EaselPalette.hex(.note(color), role: .ink) ?? EaselPalette.automaticInk
     }
 
-    static func connectionSides(_ side: EaselMindMapLink.Side) -> (start: EaselConnection.Side, end: EaselConnection.Side) {
+    package static func connectionSides(_ side: EaselMindMapLink.Side) -> (start: EaselConnection.Side, end: EaselConnection.Side) {
         side == .right ? (.right, .left) : (.left, .right)
     }
 
-    static func tree(of items: [EaselItem], previous: [EaselItem]? = nil) -> EaselMindMapTree {
+    package static func tree(of items: [EaselItem], previous: [EaselItem]? = nil) -> EaselMindMapTree {
         var tree = EaselMindMapTree()
         var order: [UUID] = [], links: [UUID: EaselMindMapLink] = [:], frames: [UUID: EaselRect] = [:]
         for item in items where isNode(item) && links[item.id] == nil {
@@ -171,7 +179,7 @@ enum EaselMindMap {
         return tree
     }
 
-    static func hiddenIDs(in items: [EaselItem]) -> Set<UUID> {
+    package static func hiddenIDs(in items: [EaselItem]) -> Set<UUID> {
         guard items.contains(where: { $0.mindMap?.collapsed == true }) else { return [] }
         let hidden = tree(of: items).hidden
         guard !hidden.isEmpty else { return [] }
@@ -182,7 +190,7 @@ enum EaselMindMap {
         return result
     }
 
-    static func settling(_ next: EaselDocument, previous: EaselDocument, moved: Set<UUID>,
+    package static func settling(_ next: EaselDocument, previous: EaselDocument, moved: Set<UUID>,
                          tidy: Bool) -> (document: EaselDocument, moved: Set<UUID>) {
         guard next.items.contains(where: { $0.mindMap != nil }) else { return (next, moved) }
         let carried = carrying(next, previous: previous, moved: moved)
@@ -196,7 +204,7 @@ enum EaselMindMap {
         return (settled, shifted)
     }
 
-    static func tidied(_ document: EaselDocument, previous: EaselDocument? = nil) -> EaselDocument {
+    package static func tidied(_ document: EaselDocument, previous: EaselDocument? = nil) -> EaselDocument {
         guard document.items.contains(where: { $0.mindMap != nil }) else { return document }
         var next = document
         for index in next.items.indices where next.items[index].mindMap != nil
@@ -214,7 +222,7 @@ enum EaselMindMap {
         return routingBranches(laidOut(next, tree: tree))
     }
 
-    static func syncingBranches(_ document: EaselDocument, tree: EaselMindMapTree) -> EaselDocument {
+    package static func syncingBranches(_ document: EaselDocument, tree: EaselMindMapTree) -> EaselDocument {
         var next = document
         var branchOf: [UUID: EaselItem] = [:], doomed = Set<UUID>(), updates: [UUID: EaselItem] = [:]
         for arrow in next.items where isBranch(arrow) {
@@ -294,7 +302,7 @@ enum EaselMindMap {
         return branch
     }
 
-    static func laidOut(_ document: EaselDocument, tree: EaselMindMapTree) -> EaselDocument {
+    package static func laidOut(_ document: EaselDocument, tree: EaselMindMapTree) -> EaselDocument {
         guard !tree.roots.isEmpty else { return document }
         var frames: [UUID: EaselRect] = [:]
         for item in document.items where tree.nodes[item.id] != nil && frames[item.id] == nil { frames[item.id] = item.frame }
@@ -373,7 +381,7 @@ enum EaselMindMap {
         return next
     }
 
-    static func routingBranches(_ document: EaselDocument) -> EaselDocument {
+    package static func routingBranches(_ document: EaselDocument) -> EaselDocument {
         guard document.items.contains(where: isBranch) else { return document }
         var lookup: [UUID: EaselItem] = [:]
         for item in document.items where lookup[item.id] == nil { lookup[item.id] = item }
@@ -385,7 +393,7 @@ enum EaselMindMap {
         return next
     }
 
-    static func carrying(_ next: EaselDocument, previous: EaselDocument,
+    package static func carrying(_ next: EaselDocument, previous: EaselDocument,
                          moved: Set<UUID>) -> (document: EaselDocument, moved: Set<UUID>) {
         guard !moved.isEmpty, previous.items.contains(where: { $0.mindMap != nil }) else { return (next, moved) }
         let tree = tree(of: previous.items)
@@ -415,7 +423,7 @@ enum EaselMindMap {
         return (result, carried)
     }
 
-    static func removalDependents(of ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
+    package static func removalDependents(of ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
         guard !ids.isEmpty, document.items.contains(where: { $0.mindMap != nil }) else { return [] }
         let tree = tree(of: document.items)
         var nodes = Set<UUID>()
@@ -431,7 +439,7 @@ enum EaselMindMap {
         return result.subtracting(ids)
     }
 
-    static func detaching(_ removed: Set<UUID>, from original: EaselDocument, in next: EaselDocument) -> EaselDocument {
+    package static func detaching(_ removed: Set<UUID>, from original: EaselDocument, in next: EaselDocument) -> EaselDocument {
         let cut = Set(original.items.filter { isBranch($0) && removed.contains($0.id) }
             .compactMap { $0.endConnection?.itemID }.filter { !removed.contains($0) })
         guard !cut.isEmpty else { return next }
@@ -442,7 +450,7 @@ enum EaselMindMap {
         return result
     }
 
-    static func relinked(_ copies: [EaselItem], ids: [UUID: UUID]) -> [EaselItem] {
+    package static func relinked(_ copies: [EaselItem], ids: [UUID: UUID]) -> [EaselItem] {
         guard copies.contains(where: { $0.mindMap != nil }) else { return copies }
         let copied = Set(ids.values)
         var parents = Set<UUID>()
@@ -477,12 +485,12 @@ enum EaselMindMap {
         }
     }
 
-    static func balancedSide(of root: UUID, in tree: EaselMindMapTree) -> EaselMindMapLink.Side {
+    package static func balancedSide(of root: UUID, in tree: EaselMindMapTree) -> EaselMindMapLink.Side {
         let left = tree.children(of: root, side: .left).count, right = tree.children(of: root, side: .right).count
         return left > 0 && left < right ? .left : .right
     }
 
-    static func template(forChildOf parentID: UUID, side requested: EaselMindMapLink.Side? = nil,
+    package static func template(forChildOf parentID: UUID, side requested: EaselMindMapLink.Side? = nil,
                          in document: EaselDocument) -> EaselItem? {
         let tree = tree(of: document.items)
         guard let parentNode = tree.nodes[parentID], let parent = document.items.first(where: { $0.id == parentID }) else { return nil }
@@ -511,7 +519,7 @@ enum EaselMindMap {
         return node
     }
 
-    static func orderedFrame(_ frame: EaselRect, parent: EaselRect, side: EaselMindMapLink.Side, depth: Int,
+    package static func orderedFrame(_ frame: EaselRect, parent: EaselRect, side: EaselMindMapLink.Side, depth: Int,
                              siblings: [EaselRect], at index: Int) -> EaselRect {
         let mid: Double
         if siblings.isEmpty {
@@ -533,7 +541,7 @@ enum EaselMindMap {
         return ids.compactMap { lookup[$0] }
     }
 
-    static func creatingMap(root: EaselItem, children: [EaselItem], in document: EaselDocument) -> EaselDocument? {
+    package static func creatingMap(root: EaselItem, children: [EaselItem], in document: EaselDocument) -> EaselDocument? {
         guard isNodeKind(root.kind), !root.isLocked, children.allSatisfy({ isNodeKind($0.kind) }) else { return nil }
         var next = document
         var top = root
@@ -554,7 +562,7 @@ enum EaselMindMap {
         return tidied(next, previous: document)
     }
 
-    static func adding(_ node: EaselItem, to parentID: UUID, side requested: EaselMindMapLink.Side? = nil, at index: Int? = nil,
+    package static func adding(_ node: EaselItem, to parentID: UUID, side requested: EaselMindMapLink.Side? = nil, at index: Int? = nil,
                        in document: EaselDocument) -> EaselDocument? {
         guard isNodeKind(node.kind), !document.items.contains(where: { $0.id == node.id }) else { return nil }
         let tree = tree(of: document.items)
@@ -575,14 +583,14 @@ enum EaselMindMap {
         return tidied(next, previous: document)
     }
 
-    static func addingSibling(_ node: EaselItem, after id: UUID, in document: EaselDocument) -> EaselDocument? {
+    package static func addingSibling(_ node: EaselItem, after id: UUID, in document: EaselDocument) -> EaselDocument? {
         let tree = tree(of: document.items)
         guard let current = tree.nodes[id], let parent = current.parent,
               let position = tree.children(of: parent, side: current.side).firstIndex(of: id) else { return nil }
         return adding(node, to: parent, side: current.side, at: position + 1, in: document)
     }
 
-    static func indenting(_ id: UUID, in document: EaselDocument) -> EaselDocument? {
+    package static func indenting(_ id: UUID, in document: EaselDocument) -> EaselDocument? {
         let tree = tree(of: document.items)
         guard let current = tree.nodes[id], let parent = current.parent,
               let me = document.items.firstIndex(where: { $0.id == id }), !document.items[me].isLocked else { return nil }
@@ -599,7 +607,7 @@ enum EaselMindMap {
         return tidied(next, previous: document)
     }
 
-    static func outdenting(_ id: UUID, in document: EaselDocument) -> EaselDocument? {
+    package static func outdenting(_ id: UUID, in document: EaselDocument) -> EaselDocument? {
         let tree = tree(of: document.items)
         guard let current = tree.nodes[id], let parentID = current.parent, let parentNode = tree.nodes[parentID],
               let grandID = parentNode.parent, let grandNode = tree.nodes[grandID],
@@ -616,7 +624,7 @@ enum EaselMindMap {
         return tidied(next, previous: document)
     }
 
-    static func settingCollapsed(_ collapsed: Bool, _ ids: Set<UUID>, in document: EaselDocument) -> EaselDocument? {
+    package static func settingCollapsed(_ collapsed: Bool, _ ids: Set<UUID>, in document: EaselDocument) -> EaselDocument? {
         let tree = tree(of: document.items)
         var next = document, changed = false
         let value: Bool? = collapsed ? true : nil
@@ -629,12 +637,12 @@ enum EaselMindMap {
         return changed ? tidied(next, previous: document) : nil
     }
 
-    static func canCollapse(_ id: UUID, in tree: EaselMindMapTree) -> Bool {
+    package static func canCollapse(_ id: UUID, in tree: EaselMindMapTree) -> Bool {
         guard let node = tree.nodes[id] else { return false }
         return node.parent != nil && !node.children.isEmpty
     }
 
-    static func moving(_ id: UUID, to drop: EaselMindMapDrop, in document: EaselDocument) -> EaselDocument? {
+    package static func moving(_ id: UUID, to drop: EaselMindMapDrop, in document: EaselDocument) -> EaselDocument? {
         let tree = tree(of: document.items)
         guard let me = document.items.firstIndex(where: { $0.id == id }), isNodeKind(document.items[me].kind),
               !document.items[me].isLocked, let parentNode = tree.nodes[drop.parent],
@@ -652,7 +660,7 @@ enum EaselMindMap {
         return tidied(next, previous: document)
     }
 
-    static func drop(for id: UUID, frame: EaselRect, pointer: EaselPoint, in document: EaselDocument) -> EaselMindMapDrop? {
+    package static func drop(for id: UUID, frame: EaselRect, pointer: EaselPoint, in document: EaselDocument) -> EaselMindMapDrop? {
         let tree = tree(of: document.items)
         guard !tree.nodes.isEmpty else { return nil }
         var frames: [UUID: EaselRect] = [:], order: [UUID: Int] = [:]
@@ -701,7 +709,7 @@ enum EaselMindMap {
         return best?.drop
     }
 
-    static func slot(parent: EaselRect, depth: Int, side: EaselMindMapLink.Side, siblings: [EaselRect], at index: Int) -> EaselPoint {
+    package static func slot(parent: EaselRect, depth: Int, side: EaselMindMapLink.Side, siblings: [EaselRect], at index: Int) -> EaselPoint {
         let x = side == .right ? parent.x + parent.width + gap(depth: depth) : parent.x - gap(depth: depth)
         let y: Double
         if siblings.isEmpty {
@@ -716,16 +724,16 @@ enum EaselMindMap {
         return EaselPoint(x: x, y: y)
     }
 
-    static func childSides(of id: UUID, in tree: EaselMindMapTree) -> [EaselMindMapLink.Side] {
+    package static func childSides(of id: UUID, in tree: EaselMindMapTree) -> [EaselMindMapLink.Side] {
         guard let node = tree.nodes[id] else { return [] }
         return node.parent == nil ? [.right, .left] : [node.side]
     }
 
-    static func canStart(from item: EaselItem) -> Bool {
+    package static func canStart(from item: EaselItem) -> Bool {
         item.kind == .text && item.mindMap == nil && !item.isLocked
     }
 
-    static func hiddenCount(of id: UUID, in tree: EaselMindMapTree) -> Int {
+    package static func hiddenCount(of id: UUID, in tree: EaselMindMapTree) -> Int {
         guard tree.nodes[id]?.collapsed == true else { return 0 }
         return tree.descendants(of: id).count
     }

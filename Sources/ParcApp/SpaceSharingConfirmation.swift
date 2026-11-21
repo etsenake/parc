@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 @MainActor enum SpaceSharingConfirmation {
     static func present(on window: NSWindow, store: BrowserStore, spaceID: UUID, sharing: SpaceDataSharing,

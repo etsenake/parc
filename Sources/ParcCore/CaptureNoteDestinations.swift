@@ -1,23 +1,29 @@
 import Foundation
 
-struct CaptureNoteDestination: Equatable, Identifiable {
-    static let catalogLimit = 50
+package struct CaptureNoteDestination: Equatable, Identifiable {
+    package static let catalogLimit = 50
 
-    let url: URL
-    let title: String
-    let icon: String?
-    let lastActive: Date?
-    let modifiedAt: Date
+    package let url: URL
+    package let title: String
+    package let icon: String?
+    package let lastActive: Date?
+    package let modifiedAt: Date
 
-    var id: String { "note:" + NoteFilePaths.key(for: url) }
+    package var id: String { "note:" + NoteFilePaths.key(for: url) }
 
-    struct Activity {
-        let url: URL
-        let profileID: UUID
-        let date: Date
+    package struct Activity {
+        package let url: URL
+        package let profileID: UUID
+        package let date: Date
+
+        package init(url: URL, profileID: UUID, date: Date) {
+            self.url = url
+            self.profileID = profileID
+            self.date = date
+        }
     }
 
-    static func catalog(notes: [NoteReference], activity: [Activity], profileID: UUID, limit: Int = catalogLimit) -> [Self] {
+    package static func catalog(notes: [NoteReference], activity: [Activity], profileID: UUID, limit: Int = catalogLimit) -> [Self] {
         var dates: [String: Date] = [:]
         for item in activity where item.profileID == profileID && item.date.timeIntervalSinceReferenceDate.isFinite {
             let key = NoteFilePaths.key(for: item.url)
@@ -32,7 +38,7 @@ struct CaptureNoteDestination: Equatable, Identifiable {
         return Array(ranked(destinations).prefix(max(0, limit)))
     }
 
-    static func ranked(_ destinations: [Self]) -> [Self] {
+    package static func ranked(_ destinations: [Self]) -> [Self] {
         destinations.sorted {
             let left = $0.lastActive ?? .distantPast, right = $1.lastActive ?? .distantPast
             if left != right { return left > right }
@@ -41,27 +47,27 @@ struct CaptureNoteDestination: Equatable, Identifiable {
         }
     }
 
-    static func search(_ destinations: [Self], query: String) -> [Self] {
+    package static func search(_ destinations: [Self], query: String) -> [Self] {
         guard !query.isEmpty else { return destinations }
         let query = query.lowercased()
         return destinations.filter { $0.title.lowercased().contains(query) }
     }
 
-    static func reselect(_ previousID: String?, in destinations: [Self]) -> Self? {
+    package static func reselect(_ previousID: String?, in destinations: [Self]) -> Self? {
         guard let previousID else { return nil }
         return destinations.first { $0.id == previousID }
     }
 }
 
-enum CaptureNoteTarget: Equatable {
+package enum CaptureNoteTarget: Equatable {
     case newNote
     case note(URL)
 
-    static let newNoteTitle = "New Note"
-    static let newNoteSymbol = "square.and.pencil"
-    static let noteSymbol = "doc.text"
+    package static let newNoteTitle = "New Note"
+    package static let newNoteSymbol = "square.and.pencil"
+    package static let noteSymbol = "doc.text"
 
-    var id: String {
+    package var id: String {
         switch self {
         case .newNote: return "newNote"
         case .note(let url): return "note:" + NoteFilePaths.key(for: url)

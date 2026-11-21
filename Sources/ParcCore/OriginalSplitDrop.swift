@@ -1,7 +1,7 @@
 import Foundation
 
-enum OriginalSplitDrop {
-    static func savedHomes(source: UUID, state: BrowserState, selection: [UUID],
+package enum OriginalSplitDrop {
+    package static func savedHomes(source: UUID, state: BrowserState, selection: [UUID],
                            layout: BrowserSplitLayout?, target: SplitDropTarget,
                            orientation: SplitOrientation, spaceID: UUID) -> [BrowserTab]? {
         guard let group = SplitDropTransaction.make(source: source, selection: selection,
@@ -9,7 +9,7 @@ enum OriginalSplitDrop {
         return SplitMembership.savedHomeSources(joining: group.tabIDs, existing: layout, added: nil, state: state)
     }
 
-    static func proposal(source: UUID, state: BrowserState, selection: [UUID],
+    package static func proposal(source: UUID, state: BrowserState, selection: [UUID],
                          layout: BrowserSplitLayout?, target: SplitDropTarget,
                          orientation: SplitOrientation, spaceID: UUID, profileID: UUID,
                          now: Date, savedHomeIDs: [UUID: UUID],
@@ -39,23 +39,23 @@ enum OriginalSplitDrop {
     }
 }
 
-enum SplitMembership {
-    static func isSaved(_ tab: BrowserTab) -> Bool { tab.kind == .pinned || tab.kind == .favorite }
+package enum SplitMembership {
+    package static func isSaved(_ tab: BrowserTab) -> Bool { tab.kind == .pinned || tab.kind == .favorite }
 
-    static func container(of group: BrowserSplitLayout, in state: BrowserState) -> SidebarContainerLocation? {
+    package static func container(of group: BrowserSplitLayout, in state: BrowserState) -> SidebarContainerLocation? {
         guard let anchorID = group.sidebarAnchorID ?? group.tabIDs.first, group.tabIDs.contains(anchorID),
               let anchor = state.tab(anchorID, where: { $0.archivedAt == nil }) else { return nil }
         return placement(of: anchor, groupSpaceID: group.spaceID)
     }
 
-    static func placement(of tab: BrowserTab, groupSpaceID: UUID) -> SidebarContainerLocation {
+    package static func placement(of tab: BrowserTab, groupSpaceID: UUID) -> SidebarContainerLocation {
         if tab.kind == .favorite {
             return .init(spaceID: groupSpaceID, folderID: nil, section: .favorite, profileID: tab.profileID)
         }
         return .init(spaceID: tab.spaceID, folderID: tab.folderID, section: tab.folderID == nil ? tab.kind : .pinned)
     }
 
-    static func conforms(_ tab: BrowserTab, to container: SidebarContainerLocation) -> Bool {
+    package static func conforms(_ tab: BrowserTab, to container: SidebarContainerLocation) -> Bool {
         guard tab.archivedAt == nil else { return false }
         if container.section == .favorite {
             return tab.kind == .favorite && tab.folderID == nil && tab.profileID == container.profileID
@@ -64,7 +64,7 @@ enum SplitMembership {
             && tab.kind == (container.folderID == nil ? container.section : .pinned)
     }
 
-    static func convert(_ tab: inout BrowserTab, to container: SidebarContainerLocation) {
+    package static func convert(_ tab: inout BrowserTab, to container: SidebarContainerLocation) {
         if container.section == .favorite {
             tab.kind = .favorite; tab.folderID = nil; tab.spaceID = container.spaceID
         } else {
@@ -73,7 +73,7 @@ enum SplitMembership {
         }
     }
 
-    static func savedHomeSources(joining ids: [UUID], existing: BrowserSplitLayout?, added: UUID?,
+    package static func savedHomeSources(joining ids: [UUID], existing: BrowserSplitLayout?, added: UUID?,
                                  state: BrowserState) -> [BrowserTab] {
         guard ids.count > 1 else { return [] }
         let kept = Set(existing?.tabIDs ?? [])
@@ -83,7 +83,7 @@ enum SplitMembership {
         }
     }
 
-    @MainActor static func homePlan(_ homes: [BrowserTab],
+    @MainActor package static func homePlan(_ homes: [BrowserTab],
                                     resolve: ([BrowserTab]) -> [UUID: SidebarDocumentReference]?)
         -> (ids: [UUID: UUID], documents: [UUID: SidebarDocumentReference])? {
         let ids = Dictionary(uniqueKeysWithValues: homes.map { ($0.id, UUID()) })
@@ -93,7 +93,7 @@ enum SplitMembership {
         return (ids, documents)
     }
 
-    static func makeHome(of original: BrowserTab, id: UUID, now: Date, activeTabBeforeCreationID: UUID?) -> BrowserTab {
+    package static func makeHome(of original: BrowserTab, id: UUID, now: Date, activeTabBeforeCreationID: UUID?) -> BrowserTab {
         var home = original
         home.id = id; home.url = original.savedURL; home.title = original.savedTitle
         home.createdAt = now; home.lastAccessed = now; home.isUnread = false
@@ -102,7 +102,7 @@ enum SplitMembership {
         return home
     }
 
-    static func admitting(_ group: BrowserSplitLayout, existing: BrowserSplitLayout?, added: UUID?,
+    package static func admitting(_ group: BrowserSplitLayout, existing: BrowserSplitLayout?, added: UUID?,
                           state: BrowserState, spaceID: UUID, homeIDs: [UUID: UUID], now: Date,
                           activeTabBeforeCreationID: UUID? = nil) -> BrowserState? {
         let ids = group.tabIDs
@@ -203,7 +203,7 @@ enum SplitMembership {
         return next
     }
 
-    static func preservingSlots(before: BrowserState, after next: inout BrowserState) {
+    package static func preservingSlots(before: BrowserState, after next: inout BrowserState) {
         for old in before.splitLayouts where old.tabIDs.count > 1 {
             let current = next.splitLayouts.first { $0.id == old.id }
             if current == old { continue }
@@ -220,7 +220,7 @@ enum SplitMembership {
         }
     }
 
-    static func place(_ items: [SidebarItemReference], atSlotOf slot: SidebarItemReference?,
+    package static func place(_ items: [SidebarItemReference], atSlotOf slot: SidebarItemReference?,
                       in container: SidebarContainerLocation, before: BrowserState, after next: inout BrowserState) {
         let current = SidebarHierarchy.children(in: container, state: next)
         let moving = items.filter { current.contains($0) }
@@ -237,7 +237,7 @@ enum SplitMembership {
         next.sidebarItemOrder[container.key] = result.map { stored($0, state: next) }
     }
 
-    static func normalizingLegacyContainers(_ state: BrowserState, now: Date) -> BrowserState {
+    package static func normalizingLegacyContainers(_ state: BrowserState, now: Date) -> BrowserState {
         var next = state
         for group in state.splitLayouts where group.tabIDs.count > 1 {
             guard let target = container(of: group, in: next) else { continue }
@@ -267,7 +267,7 @@ enum SplitMembership {
         return next
     }
 
-    static func resolvingSharedLegacyFavorites(_ state: BrowserState) -> BrowserState {
+    package static func resolvingSharedLegacyFavorites(_ state: BrowserState) -> BrowserState {
         var next = state
         let favorites = state.openTabs(where: { $0.kind == .favorite }).map(\.id)
         let visible = SidebarSplitItems.groups(in: state, spaceID: state.activeSpaceID).map(\.id)

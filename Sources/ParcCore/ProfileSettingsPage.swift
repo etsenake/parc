@@ -1,9 +1,9 @@
 import Foundation
 
-enum ProfileSettingsPage: String, CaseIterable {
+package enum ProfileSettingsPage: String, CaseIterable {
     case search, privacy, passwords, payments, notifications, clearBrowsingData
 
-    var title: String {
+    package var title: String {
         switch self {
         case .search: return "Search Settings…"
         case .privacy: return "Privacy and Security"
@@ -14,7 +14,7 @@ enum ProfileSettingsPage: String, CaseIterable {
         }
     }
 
-    var address: String {
+    package var address: String {
         switch self {
         case .search: return "parc://settings/searchEngines"
         case .privacy: return "parc://settings/privacy"
@@ -25,7 +25,7 @@ enum ProfileSettingsPage: String, CaseIterable {
         }
     }
 
-    func canReuse(_ address: String) -> Bool {
+    package func canReuse(_ address: String) -> Bool {
         guard let url = URL(string: address), BrowserInternalURL.isWebUI(url),
               let destination = URL(string: self.address), url.host == destination.host,
               url.user == nil, url.password == nil, url.port == nil else { return false }

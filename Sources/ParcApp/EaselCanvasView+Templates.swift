@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension EaselCanvasView {
     var acceptsTemplates: Bool { fixedCanvasSize == nil && !session.isClosed && !session.isDeleted }

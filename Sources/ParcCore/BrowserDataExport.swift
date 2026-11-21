@@ -1,11 +1,11 @@
 import Foundation
 
-struct BrowserDataExport {
+package struct BrowserDataExport {
     private let state: BrowserState
 
-    init(state: BrowserState) { self.state = state }
+    package init(state: BrowserState) { self.state = state }
 
-    var markdown: String {
+    package var markdown: String {
         state.spaces.enumerated().map { index, space in
             let title = space.name.isEmpty ? "Space \(index + 1)" : space.name
             var lines = ["# " + Self.heading(title)]
@@ -20,7 +20,7 @@ struct BrowserDataExport {
         }.joined(separator: "\n")
     }
 
-    func write(to destination: URL) throws {
+    package func write(to destination: URL) throws {
         guard destination.isFileURL else { throw CocoaError(.fileWriteUnsupportedScheme) }
         try Data(markdown.utf8).write(to: destination, options: .atomic)
     }

@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import ParcCore
 
 @MainActor
 final class EaselPageSession {

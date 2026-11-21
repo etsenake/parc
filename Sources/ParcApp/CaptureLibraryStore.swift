@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import ImageIO
+import ParcCore
 import UniformTypeIdentifiers
 
 struct SavedCapture: Codable, Equatable, Identifiable, Sendable {

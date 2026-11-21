@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import ParcCore
+import ParcEngine
 
 @MainActor
 final class BrowserImportCoordinator {

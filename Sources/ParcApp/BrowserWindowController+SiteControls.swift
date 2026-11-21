@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import ParcCore
+import ParcEngine
 
 extension BrowserWindowController {
     func preparePopupSiteControls(requireExtensions: Bool, from anchor: NSView? = nil) -> (() -> Bool)? {

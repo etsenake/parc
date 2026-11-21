@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 enum NoteTableClipboard {
     static func grid(fromDelimited text: String, fromSpreadsheet: Bool = false) -> [[String]]? {

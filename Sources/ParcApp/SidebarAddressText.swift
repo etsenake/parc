@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 enum SidebarAddressText {
     static let placeholder = "Search or Enter URL…"

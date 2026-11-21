@@ -3,7 +3,7 @@ import Foundation
 private typealias Ch = NoteSyntaxChar
 
 extension NoteSyntaxScanner {
-    mutating func lexCode(_ g: NoteSyntaxGrammar, closing: UInt16 = 0) {
+    package mutating func lexCode(_ g: NoteSyntaxGrammar, closing: UInt16 = 0) {
         let opening: UInt16 = closing == Ch.closeParen ? Ch.openParen
             : closing == Ch.closeBrace ? Ch.openBrace
             : closing == Ch.closeBracket ? Ch.openBracket : 0
@@ -59,7 +59,7 @@ extension NoteSyntaxScanner {
         return false
     }
 
-    mutating func lexTrivia(_ g: NoteSyntaxGrammar, _ c: UInt16) -> Bool {
+    package mutating func lexTrivia(_ g: NoteSyntaxGrammar, _ c: UInt16) -> Bool {
         let features = g.features
         if features.contains(.luaLongBrackets) && c == Ch.minus && peek() == Ch.minus,
            let level = longBracketLevel(at: pos + 2) {
@@ -111,7 +111,7 @@ extension NoteSyntaxScanner {
         return next != 0 && "!#$%&*+./<=>?@\\^|~:".utf16.contains(next)
     }
 
-    mutating func lexBlockComment(_ rule: NoteSyntaxBlockComment) {
+    package mutating func lexBlockComment(_ rule: NoteSyntaxBlockComment) {
         let start = pos
         pos += rule.open.count
         var level = 1
@@ -136,7 +136,7 @@ extension NoteSyntaxScanner {
         emit(start, pos, rule.kind)
     }
 
-    mutating func lexStringRules(_ g: NoteSyntaxGrammar, _ c: UInt16) -> Bool {
+    package mutating func lexStringRules(_ g: NoteSyntaxGrammar, _ c: UInt16) -> Bool {
         for rule in g.strings where rule.open[0] == c && matches(rule.open, at: pos) {
             let start = pos
             pos += rule.open.count
@@ -147,14 +147,14 @@ extension NoteSyntaxScanner {
         return false
     }
 
-    mutating func finishString(_ g: NoteSyntaxGrammar, from start: Int) {
+    package mutating func finishString(_ g: NoteSyntaxGrammar, from start: Int) {
         state.operandEnded = true
         guard g.features.contains(.keysBeforeColon) else { return }
         let next = skipSpaces(from: pos)
         if at(next) == Ch.colon && at(next + 1) != Ch.colon { retag(from: start, to: pos, as: .property) }
     }
 
-    mutating func lexStringBody(_ rule: NoteSyntaxStringRule, from start: Int, grammar g: NoteSyntaxGrammar?) {
+    package mutating func lexStringBody(_ rule: NoteSyntaxStringRule, from start: Int, grammar g: NoteSyntaxGrammar?) {
         var segment = start
         let kind = rule.kind
         let closeFirst = rule.close.first ?? 0
@@ -220,7 +220,7 @@ extension NoteSyntaxScanner {
         emit(segment, pos, kind)
     }
 
-    func escapeEnd(from cursor: Int) -> Int {
+    package func escapeEnd(from cursor: Int) -> Int {
         let c = at(cursor)
         if c == 0 { return cursor }
         if c == 117 || c == 120 {
@@ -248,7 +248,7 @@ extension NoteSyntaxScanner {
         return cursor + 1
     }
 
-    mutating func lexInterpolation(_ g: NoteSyntaxGrammar, closing: UInt16) {
+    package mutating func lexInterpolation(_ g: NoteSyntaxGrammar, closing: UInt16) {
         guard depth < Self.depthLimit else { return }
         let saved = state
         depth += 1
@@ -361,7 +361,7 @@ extension NoteSyntaxScanner {
         }
     }
 
-    mutating func lexNumber(_ g: NoteSyntaxGrammar) {
+    package mutating func lexNumber(_ g: NoteSyntaxGrammar) {
         let start = pos
         if units[pos] == Ch.minus || units[pos] == Ch.plus { pos += 1 }
         let separators = g.digitSeparators
@@ -404,7 +404,7 @@ extension NoteSyntaxScanner {
         while Ch.isDigit(at(pos)) || at(pos) == Ch.underscore { pos += 1 }
     }
 
-    mutating func lexWord(_ g: NoteSyntaxGrammar, member: Bool, declaration: NoteSyntaxKind?, lineStart: Bool) {
+    package mutating func lexWord(_ g: NoteSyntaxGrammar, member: Bool, declaration: NoteSyntaxKind?, lineStart: Bool) {
         let start = pos
         pos += 1
         while pos < end && g.isWord(units[pos]) { pos += 1 }
@@ -494,7 +494,7 @@ extension NoteSyntaxScanner {
         return letters > 1
     }
 
-    mutating func lexSymbol(_ g: NoteSyntaxGrammar, _ c: UInt16) {
+    package mutating func lexSymbol(_ g: NoteSyntaxGrammar, _ c: UInt16) {
         let start = pos
         pos += 1
         let shell = g.features.contains(.shell)
@@ -530,7 +530,7 @@ extension NoteSyntaxScanner {
         state.operandEnded = false
     }
 
-    mutating func lexPrefixedString(_ g: NoteSyntaxGrammar, wordStart start: Int) -> Bool {
+    package mutating func lexPrefixedString(_ g: NoteSyntaxGrammar, wordStart start: Int) -> Bool {
         let prefix = text(start, pos)
         let lower = prefix.lowercased()
         let quote = at(pos)
@@ -618,7 +618,7 @@ extension NoteSyntaxScanner {
         lexStringBody(rule, from: start, grammar: g)
     }
 
-    mutating func readHeredocs(_ g: NoteSyntaxGrammar) {
+    package mutating func readHeredocs(_ g: NoteSyntaxGrammar) {
         let pending = heredocs
         heredocs = []
         for (index, doc) in pending.enumerated() {

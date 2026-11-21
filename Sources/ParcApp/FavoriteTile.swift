@@ -1,5 +1,6 @@
 import AppKit
 import CoreImage
+import ParcCore
 import QuartzCore
 
 enum FavoritePointerAction: Hashable {

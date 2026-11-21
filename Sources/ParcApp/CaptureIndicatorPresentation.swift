@@ -1,4 +1,5 @@
 import AppKit
+import ParcEngine
 
 struct CaptureIndicatorPresentation: Equatable {
     let camera: Bool

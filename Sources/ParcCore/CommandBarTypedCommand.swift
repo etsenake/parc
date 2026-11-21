@@ -1,11 +1,17 @@
 import Foundation
 
-struct CommandBarWebDocument: Hashable, Sendable {
-    let title: String
-    let url: String
-    let domains: [String]
+package struct CommandBarWebDocument: Hashable, Sendable {
+    package let title: String
+    package let url: String
+    package let domains: [String]
 
-    static let catalog: [CommandBarWebDocument] = [
+    package init(title: String, url: String, domains: [String]) {
+        self.title = title
+        self.url = url
+        self.domains = domains
+    }
+
+    package static let catalog: [CommandBarWebDocument] = [
         .init(title: "Google Doc", url: "https://doc.new", domains: ["drive.google.com", "docs.google.com"]),
         .init(title: "Google Sheet", url: "https://sheet.new", domains: ["drive.google.com", "sheets.google.com"]),
         .init(title: "Google Slide", url: "https://slide.new", domains: ["drive.google.com", "slides.google.com"]),
@@ -19,7 +25,7 @@ struct CommandBarWebDocument: Hashable, Sendable {
         .init(title: "Confluence Page", url: "https://make.page", domains: ["confluence.com"]),
     ]
 
-    static func available(visitedHosts: Set<String>) -> [CommandBarWebDocument] {
+    package static func available(visitedHosts: Set<String>) -> [CommandBarWebDocument] {
         catalog.filter { document in
             document.domains.contains { domain in
                 visitedHosts.contains { $0 == domain || $0.hasSuffix("." + domain) }
@@ -28,12 +34,12 @@ struct CommandBarWebDocument: Hashable, Sendable {
     }
 }
 
-struct CommandBarTypedCommand: Hashable, Sendable {
-    enum SplitEdge: Hashable, Sendable { case left, right, top, bottom }
-    enum SettingsPane: CaseIterable, Hashable, Sendable {
+package struct CommandBarTypedCommand: Hashable, Sendable {
+    package enum SplitEdge: Hashable, Sendable { case left, right, top, bottom }
+    package enum SettingsPane: CaseIterable, Hashable, Sendable {
         case account, general, profiles, shortcuts, links, appIcon, advanced
 
-        var title: String {
+        package var title: String {
             switch self {
             case .account: return "Settings"
             case .general: return "Open General Preferences"
@@ -45,7 +51,7 @@ struct CommandBarTypedCommand: Hashable, Sendable {
             }
         }
 
-        var triggerPhrases: [String] {
+        package var triggerPhrases: [String] {
             switch self {
             case .account: return ["membership card", "id card", "arc card", "parc card", "open account preferences"]
             case .general: return ["autofill", "credit cards", "general"]
@@ -58,26 +64,26 @@ struct CommandBarTypedCommand: Hashable, Sendable {
             }
         }
 
-        var bump: Double { self == .general ? 0.6 : 0.5 }
+        package var bump: Double { self == .general ? 0.6 : 0.5 }
     }
-    enum Appearance: CaseIterable, Hashable, Sendable {
+    package enum Appearance: CaseIterable, Hashable, Sendable {
         case light, dark, automatic
 
-        var title: String {
+        package var title: String {
             switch self {
             case .light: return "Switch to Light Mode"
             case .dark: return "Switch to Dark Mode"
             case .automatic: return "Switch to Automatic Appearance"
             }
         }
-        var triggerPhrases: [String] {
+        package var triggerPhrases: [String] {
             switch self {
             case .light: return ["Switch Light Mode", "Light Mode"]
             case .dark: return ["Switch Dark Mode", "Dark Mode", "Night Mode"]
             case .automatic: return ["Switch Automatic Mode", "Automatic Mode"]
             }
         }
-        var selectorName: String {
+        package var selectorName: String {
             switch self {
             case .light: return "setLightAppearance:"
             case .dark: return "setDarkAppearance:"
@@ -85,7 +91,7 @@ struct CommandBarTypedCommand: Hashable, Sendable {
             }
         }
     }
-    enum Kind: Hashable, Sendable {
+    package enum Kind: Hashable, Sendable {
         case undo(String), redo(String)
         case pinToSpace(UUID, name: String, position: Int? = nil)
         case pinToNewFolder
@@ -103,9 +109,13 @@ struct CommandBarTypedCommand: Hashable, Sendable {
         case openTaskManager
     }
 
-    let kind: Kind
+    package let kind: Kind
 
-    var candidateBump: Double? {
+    package init(kind: Kind) {
+        self.kind = kind
+    }
+
+    package var candidateBump: Double? {
         switch kind {
         case .settingsPane(let pane): return pane.bump
         case .copyAppInfo, .revealAppData: return 0.1
@@ -113,7 +123,7 @@ struct CommandBarTypedCommand: Hashable, Sendable {
         }
     }
 
-    var id: String {
+    package var id: String {
         switch kind {
         case .undo: return "typed:undo"
         case .redo: return "typed:redo"
@@ -136,7 +146,7 @@ struct CommandBarTypedCommand: Hashable, Sendable {
         }
     }
 
-    var title: String {
+    package var title: String {
         switch kind {
         case .undo(let name): return "Undo " + name
         case .redo(let name): return "Redo " + name
@@ -162,12 +172,12 @@ struct CommandBarTypedCommand: Hashable, Sendable {
         }
     }
 
-    var detail: String {
+    package var detail: String {
         if case .pinToSpace(_, _, let position?) = kind { return "Space \(position)" }
         return ""
     }
 
-    var symbol: String {
+    package var symbol: String {
         switch kind {
         case .undo: return "arrow.uturn.backward"
         case .redo: return "arrow.uturn.forward"
@@ -192,7 +202,7 @@ struct CommandBarTypedCommand: Hashable, Sendable {
         }
     }
 
-    var searchPhrases: [String] {
+    package var searchPhrases: [String] {
         switch kind {
         case .pinToSpace: return ["move space"]
         case .pinToNewFolder: return ["move folder create"]
@@ -212,7 +222,7 @@ struct CommandBarTypedCommand: Hashable, Sendable {
         }
     }
 
-    func matches(query: String) -> Bool {
+    package func matches(query: String) -> Bool {
         let words = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             .split(whereSeparator: \.isWhitespace)
         let text = ([title] + searchPhrases).joined(separator: " ")
@@ -220,15 +230,15 @@ struct CommandBarTypedCommand: Hashable, Sendable {
         return !words.isEmpty && words.allSatisfy { text.contains($0) }
     }
 
-    var rankingTexts: [String] {
+    package var rankingTexts: [String] {
         searchPhrases.isEmpty ? [title] : [title] + searchPhrases + [([title] + searchPhrases).joined(separator: " ")]
     }
 
-    static func rankingPhrases(forMenuCommand id: String) -> [String] {
+    package static func rankingPhrases(forMenuCommand id: String) -> [String] {
         CommandBarMenuItemInfo.info(forMenuCommand: id)?.triggers ?? []
     }
 
-    static func commandBarTitle(forMenuCommand id: String, menuTitle: String) -> String {
+    package static func commandBarTitle(forMenuCommand id: String, menuTitle: String) -> String {
         switch id {
         case "toggleSidebar:": return "Toggle Sidebar"
         case "resetTab:": return "Reset Tab"
@@ -237,11 +247,11 @@ struct CommandBarTypedCommand: Hashable, Sendable {
         }
     }
 
-    static func commandBarSearchText(forMenuCommand id: String) -> String {
+    package static func commandBarSearchText(forMenuCommand id: String) -> String {
         CommandBarMenuItemInfo.searchText(forMenuCommand: id)
     }
 
-    static func splitCommands(paneCount: Int, vertical: Bool) -> [CommandBarTypedCommand] {
+    package static func splitCommands(paneCount: Int, vertical: Bool) -> [CommandBarTypedCommand] {
         guard (1...4).contains(paneCount) else { return [] }
         let edges: [SplitEdge]
         if paneCount == 1 { edges = [.left, .right, .top, .bottom] }

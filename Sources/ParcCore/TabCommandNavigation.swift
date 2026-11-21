@@ -1,7 +1,7 @@
 import Foundation
 
-struct TabSelectionHistory {
-    static let isEnabled = false
+package struct TabSelectionHistory {
+    package static let isEnabled = false
 
     private struct Stack {
         var items: [RecentTabOrder.Item] = []
@@ -9,7 +9,9 @@ struct TabSelectionHistory {
     }
     private var spaces: [UUID: Stack] = [:]
 
-    mutating func record(_ item: RecentTabOrder.Item) {
+    package init() {}
+
+    package mutating func record(_ item: RecentTabOrder.Item) {
         var stack = spaces[item.spaceID] ?? Stack()
         if stack.items.indices.contains(stack.index), stack.items[stack.index].id == item.id,
            stack.items[stack.index].profileID == item.profileID {
@@ -22,7 +24,7 @@ struct TabSelectionHistory {
         spaces[item.spaceID] = stack
     }
 
-    func destination(in space: UUID, forward: Bool,
+    package func destination(in space: UUID, forward: Bool,
                      available: (RecentTabOrder.Item) -> Bool) -> RecentTabOrder.Item? {
         guard let stack = spaces[space] else { return nil }
         let step = forward ? 1 : -1
@@ -35,7 +37,7 @@ struct TabSelectionHistory {
         return nil
     }
 
-    mutating func move(in space: UUID, forward: Bool,
+    package mutating func move(in space: UUID, forward: Bool,
                        available: (RecentTabOrder.Item) -> Bool) -> RecentTabOrder.Item? {
         guard var stack = spaces[space] else { return nil }
         let step = forward ? 1 : -1
@@ -52,8 +54,8 @@ struct TabSelectionHistory {
     }
 }
 
-enum PositionalTabNavigation {
-    static func items(state: BrowserState, spaceID: UUID, selected: [UUID],
+package enum PositionalTabNavigation {
+    package static func items(state: BrowserState, spaceID: UUID, selected: [UUID],
                       focused: UUID?, includeFavorites: Bool = true,
                       available: (UUID) -> Bool) -> [RecentTabOrder.Item] {
         guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return [] }
@@ -95,7 +97,7 @@ enum PositionalTabNavigation {
         return result
     }
 
-    static func destination(_ items: [RecentTabOrder.Item], selected: [UUID],
+    package static func destination(_ items: [RecentTabOrder.Item], selected: [UUID],
                             forward: Bool) -> RecentTabOrder.Item? {
         guard !items.isEmpty else { return nil }
         guard let index = items.firstIndex(where: { $0.tabIDs == selected }) else {

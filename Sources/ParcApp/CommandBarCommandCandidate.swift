@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 extension CommandBarRanking {
     static func commandCandidate(key: String, texts: [String], menuCommandID: String? = nil, menuText: String? = nil,

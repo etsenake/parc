@@ -1,15 +1,15 @@
 import Foundation
 
-struct SidebarSpaceMove: Equatable {
-    let source: SidebarHierarchySnapshot
-    let destination: SidebarHierarchySnapshot
-    let roots: [SidebarItemReference]
-    let tabIDs: [UUID]
-    let folderIDs: [UUID]
-    let groupIDs: [UUID]
-    var pinsToday = false
+package struct SidebarSpaceMove: Equatable {
+    package let source: SidebarHierarchySnapshot
+    package let destination: SidebarHierarchySnapshot
+    package let roots: [SidebarItemReference]
+    package let tabIDs: [UUID]
+    package let folderIDs: [UUID]
+    package let groupIDs: [UUID]
+    package var pinsToday = false
 
-    init?(items: [SidebarItemReference], from source: SidebarHierarchySnapshot,
+    package init?(items: [SidebarItemReference], from source: SidebarHierarchySnapshot,
           to destination: SidebarHierarchySnapshot, state: BrowserState) {
         guard source.spaceID != destination.spaceID,
               source.profileID == destination.profileID
@@ -54,15 +54,15 @@ struct SidebarSpaceMove: Equatable {
         tabIDs = tabs; folderIDs = folders; groupIDs = groups
     }
 
-    var crossesProfiles: Bool { source.profileID != destination.profileID }
+    package var crossesProfiles: Bool { source.profileID != destination.profileID }
 
-    func permitsSplitOwners(_ owners: [UUID: UUID], in windowID: UUID) -> Bool {
+    package func permitsSplitOwners(_ owners: [UUID: UUID], in windowID: UUID) -> Bool {
         source.groups.filter { groupIDs.contains($0.id) }.allSatisfy { group in
             group.tabIDs.allSatisfy { owners[$0] == nil || owners[$0] == windowID }
         }
     }
 
-    func applying(to state: BrowserState) -> BrowserState? {
+    package func applying(to state: BrowserState) -> BrowserState? {
         guard var current = SidebarSpaceMove(items: roots, from: source, to: destination, state: state) else { return nil }
         current.pinsToday = pinsToday
         guard current == self else { return nil }
@@ -135,13 +135,13 @@ struct SidebarSpaceMove: Equatable {
     }
 }
 
-struct SidebarItemReveal: Equatable {
-    let item: SidebarItemReference
-    let spaceID: UUID
-    let profileID: UUID
-    let expandedFolderIDs: Set<UUID>
+package struct SidebarItemReveal: Equatable {
+    package let item: SidebarItemReference
+    package let spaceID: UUID
+    package let profileID: UUID
+    package let expandedFolderIDs: Set<UUID>
 
-    init?(item: SidebarItemReference, spaceID: UUID, profileID: UUID, state: BrowserState) {
+    package init?(item: SidebarItemReference, spaceID: UUID, profileID: UUID, state: BrowserState) {
         guard state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }),
               state.profiles.contains(where: { $0.id == profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == profileID }),
@@ -160,7 +160,7 @@ struct SidebarItemReveal: Equatable {
         self.item = item; self.spaceID = spaceID; self.profileID = profileID; expandedFolderIDs = expanded
     }
 
-    func applying(to state: BrowserState) -> BrowserState? {
+    package func applying(to state: BrowserState) -> BrowserState? {
         guard SidebarItemReveal(item: item, spaceID: spaceID, profileID: profileID, state: state) == self else { return nil }
         var next = state
         for index in next.folders.indices where expandedFolderIDs.contains(next.folders[index].id) {
@@ -171,11 +171,11 @@ struct SidebarItemReveal: Equatable {
 }
 
 
-enum SidebarSpaceInsertion: Equatable {
+package enum SidebarSpaceInsertion: Equatable {
     case after(UUID)
     case absolute(Int)
 
-    func index(in state: BrowserState) -> Int? {
+    package func index(in state: BrowserState) -> Int? {
         switch self {
         case .after(let id): return state.spaces.firstIndex { $0.id == id }.map { $0 + 1 }
         case .absolute(let index): return (0...state.spaces.count).contains(index) ? index : nil
@@ -183,22 +183,22 @@ enum SidebarSpaceInsertion: Equatable {
     }
 }
 
-struct SidebarNewSpaceDraft: Equatable {
-    let source: SidebarHierarchySnapshot
-    let spaceID: UUID
-    let insertion: SidebarSpaceInsertion
-    let roots: [SidebarItemReference]
-    let tabIDs: [UUID]
-    let folderIDs: [UUID]
-    let groupIDs: [UUID]
-    var name: String
-    var profileID: UUID
-    var customIcon: SidebarGroupIcon?
-    var theme: SpaceTheme
-    private(set) var separateProfileID: UUID?
+package struct SidebarNewSpaceDraft: Equatable {
+    package let source: SidebarHierarchySnapshot
+    package let spaceID: UUID
+    package let insertion: SidebarSpaceInsertion
+    package let roots: [SidebarItemReference]
+    package let tabIDs: [UUID]
+    package let folderIDs: [UUID]
+    package let groupIDs: [UUID]
+    package var name: String
+    package var profileID: UUID
+    package var customIcon: SidebarGroupIcon?
+    package var theme: SpaceTheme
+    package private(set) var separateProfileID: UUID?
     private var acceptsProfileChange = false
 
-    init?(items: [SidebarItemReference] = [], from source: SidebarHierarchySnapshot,
+    package init?(items: [SidebarItemReference] = [], from source: SidebarHierarchySnapshot,
           state: BrowserState, spaceID: UUID = UUID(), insertion: SidebarSpaceInsertion? = nil,
           theme: SpaceTheme? = nil) {
         guard SidebarHierarchySnapshot(state: state, spaceID: source.spaceID,
@@ -227,17 +227,17 @@ struct SidebarNewSpaceDraft: Equatable {
         }
     }
 
-    func canUseProfile(_ id: UUID, in state: BrowserState) -> Bool {
+    package func canUseProfile(_ id: UUID, in state: BrowserState) -> Bool {
         state.profiles.contains { $0.id == id } &&
         !state.profileRemovals.contains { $0.profileID == id } &&
         (roots.isEmpty || id == source.profileID)
     }
 
-    var keepsSeparate: Bool { separateProfileID != nil }
-    var movesItemsAcrossProfiles: Bool { !tabIDs.isEmpty && profileID != source.profileID }
+    package var keepsSeparate: Bool { separateProfileID != nil }
+    package var movesItemsAcrossProfiles: Bool { !tabIDs.isEmpty && profileID != source.profileID }
 
     @discardableResult
-    mutating func shareData(withSpace id: UUID, in state: BrowserState) -> Bool {
+    package mutating func shareData(withSpace id: UUID, in state: BrowserState) -> Bool {
         guard let space = state.spaces.first(where: { $0.id == id }),
               state.profiles.contains(where: { $0.id == space.profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == space.profileID }) else { return false }
@@ -245,7 +245,7 @@ struct SidebarNewSpaceDraft: Equatable {
         return true
     }
 
-    mutating func keepSeparate(profileID id: UUID = UUID()) {
+    package mutating func keepSeparate(profileID id: UUID = UUID()) {
         let id = separateProfileID ?? id
         separateProfileID = id; acceptsProfileChange = true; profileID = id
     }
@@ -280,7 +280,7 @@ struct SidebarNewSpaceDraft: Equatable {
         return next
     }
 
-    func move(in state: BrowserState) -> SidebarSpaceMove? {
+    package func move(in state: BrowserState) -> SidebarSpaceMove? {
         guard !roots.isEmpty, let next = stagedState(in: state),
               let destination = SidebarHierarchySnapshot(state: next, spaceID: spaceID, profileID: profileID),
               let move = SidebarSpaceMove(items: roots, from: source, to: destination, state: next),
@@ -289,7 +289,7 @@ struct SidebarNewSpaceDraft: Equatable {
         return move
     }
 
-    func applying(to state: BrowserState) -> BrowserState? {
+    package func applying(to state: BrowserState) -> BrowserState? {
         guard let next = stagedState(in: state) else { return nil }
         if roots.isEmpty { return next }
         return move(in: state)?.applying(to: next)

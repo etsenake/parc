@@ -258,11 +258,24 @@ depends on it.
 
 `ParcCoreTests` (in `tests/ParcCoreTests`) tests the `ParcCore` library, which has
 no AppKit or engine dependency. `ParcTests` (in `tests/ParcTests`) tests the `Parc`
-app module with `@testable import Parc`; it links the engine framework from
-`PARC_ENGINE_FRAMEWORKS` (default: the local engine build on the Parc volume) and
-Sparkle from `PARC_SPARKLE_FRAMEWORKS` (default: the `build/sparkle` cache). The
-engine is loaded, never started. Put a test in the lowest target that can reach
-the code under test, in a folder named for its feature area.
+app module with `@testable import Parc`. Sparkle comes from
+`PARC_SPARKLE_FRAMEWORKS` (default: the `build/sparkle` cache). Put a test in the
+lowest target that can reach the code under test, in a folder named for its
+feature area.
+
+Package builds never need an engine binary. Debug and test builds weak-link
+`Stubs/Chromium Embedded Framework.framework`, a text stub of what the engine
+bridge headers export, so the local engine can lag the headers. `ParcTests` also
+links `ParcEngineDoubles`, empty classes with the engine classes' names and
+superclasses, so XCTest's class discovery can load the app module without an
+engine. Release packaging links the sealed engine itself. Both generated files
+are committed. When the bridge headers add or remove an export, a package link
+fails with an undefined `_OBJC_CLASS_$_PCNative…` or `parc_engine_…` symbol;
+regenerate both files from the headers:
+
+```sh
+swift package --allow-writing-to-package-directory generate-engine-stub
+```
 
 Engine components that build without Chromium are in the `ParcNative` library.
 `tests/ParcNativeLibrary` holds a symlink to each `Engine/ParcNative` source it

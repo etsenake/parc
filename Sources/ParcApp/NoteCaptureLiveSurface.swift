@@ -1,4 +1,6 @@
 import AppKit
+import ParcCore
+import ParcEngine
 
 @MainActor
 protocol NoteEmbeddedPageInputSurface: EmbeddedPageSurface {

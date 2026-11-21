@@ -1,4 +1,6 @@
 import AppKit
+import ParcCore
+import ParcEngine
 
 enum NavigationControlKind { case back, forward, reload }
 

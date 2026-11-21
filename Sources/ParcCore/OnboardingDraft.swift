@@ -1,18 +1,18 @@
 import Foundation
 
-struct OnboardingDraft: Codable, Equatable {
-    enum Stage: Int, Codable, CaseIterable {
+package struct OnboardingDraft: Codable, Equatable {
+    package enum Stage: Int, Codable, CaseIterable {
         case introAnimation, sellIntro, sellCompleted, introduction, theme, favorites, bookmarks, ready
         case defaultBrowser
         case adBlockers
         case windowFrame
         case continuedImport
-        var isWelcome: Bool { rawValue <= Self.sellCompleted.rawValue }
-        var holdsImport: Bool { self == .bookmarks || self == .favorites || self == .continuedImport }
-        var showsImport: Bool { self == .bookmarks || self == .continuedImport }
+        package var isWelcome: Bool { rawValue <= Self.sellCompleted.rawValue }
+        package var holdsImport: Bool { self == .bookmarks || self == .favorites || self == .continuedImport }
+        package var showsImport: Bool { self == .bookmarks || self == .continuedImport }
 
-        static var setupOrder: [Self] { setupOrder(includingAdBlockers: false) }
-        static func setupOrder(includingAdBlockers: Bool, continuingImport: Bool = false,
+        package static var setupOrder: [Self] { setupOrder(includingAdBlockers: false) }
+        package static func setupOrder(includingAdBlockers: Bool, continuingImport: Bool = false,
                                retaining current: Self? = nil) -> [Self] {
             var order: [Self] = [.bookmarks, .favorites]
             if continuingImport || current == .continuedImport { order.append(.continuedImport) }
@@ -21,9 +21,9 @@ struct OnboardingDraft: Codable, Equatable {
             order.append(contentsOf: [.defaultBrowser, .ready])
             return order
         }
-        var current: Self { self == .introduction ? .bookmarks : self }
-        var next: Self? { next(includingAdBlockers: false) }
-        func next(includingAdBlockers: Bool, continuingImport: Bool = false) -> Self? {
+        package var current: Self { self == .introduction ? .bookmarks : self }
+        package var next: Self? { next(includingAdBlockers: false) }
+        package func next(includingAdBlockers: Bool, continuingImport: Bool = false) -> Self? {
             switch self {
             case .introAnimation: return .sellIntro
             case .sellIntro: return .sellCompleted
@@ -35,105 +35,116 @@ struct OnboardingDraft: Codable, Equatable {
                 return order[index + 1]
             }
         }
-        var previous: Self? { previous(includingAdBlockers: false) }
-        func previous(includingAdBlockers: Bool) -> Self? {
+        package var previous: Self? { previous(includingAdBlockers: false) }
+        package func previous(includingAdBlockers: Bool) -> Self? {
             let order = Self.setupOrder(includingAdBlockers: includingAdBlockers, retaining: current)
             guard let index = order.firstIndex(of: current), index > 0 else { return nil }
             return order[index - 1]
         }
     }
-    struct Bookmark: Codable, Equatable {
-        var title: String
-        var url: String
+    package struct Bookmark: Codable, Equatable {
+        package var title: String
+        package var url: String
+
+        package init(title: String, url: String) {
+            self.title = title
+            self.url = url
+        }
     }
-    enum ImportPage: String, Codable {
+    package enum ImportPage: String, Codable {
         case progress, bookmarks, passwordChoice, passwordFile
     }
-    var version = 1
-    var spaceID: UUID
-    var stage: Stage = .introAnimation
-    var spaceName: String
-    var theme: SpaceTheme
-    var favoriteURLs: Set<String> = ["https://youtube.com", "https://calendar.google.com"]
-    var favoriteOrder: [String]? = ["https://youtube.com", "https://calendar.google.com"]
-    var bookmarks: [Bookmark] = []
-    var bookmarkFileName: String?
-    var defaultBrowserChoice: Bool?
-    var iCloudPasswordsProfileID: UUID?
-    var importedAdBlockers: [ImportedAdBlocker] = []
-    var adBlockerChoice: AdBlockerChoice?
-    var windowFrameThickness: Int?
-    var replayBaseName: String?
-    var replayBaseTheme: SpaceTheme?
-    var replayAppearance: String?
-    var importPages: [ImportPage] = []
-    var wantsDefaultBrowser: Bool { defaultBrowserChoice ?? true }
-    var showsAdBlockers: Bool {
+    package var version = 1
+    package var spaceID: UUID
+    package var stage: Stage = .introAnimation
+    package var spaceName: String
+    package var theme: SpaceTheme
+    package var favoriteURLs: Set<String> = ["https://youtube.com", "https://calendar.google.com"]
+    package var favoriteOrder: [String]? = ["https://youtube.com", "https://calendar.google.com"]
+    package var bookmarks: [Bookmark] = []
+    package var bookmarkFileName: String?
+    package var defaultBrowserChoice: Bool?
+    package var iCloudPasswordsProfileID: UUID?
+    package var importedAdBlockers: [ImportedAdBlocker] = []
+    package var adBlockerChoice: AdBlockerChoice?
+    package var windowFrameThickness: Int?
+    package var replayBaseName: String?
+    package var replayBaseTheme: SpaceTheme?
+    package var replayAppearance: String?
+    package var importPages: [ImportPage] = []
+    package var wantsDefaultBrowser: Bool { defaultBrowserChoice ?? true }
+    package var showsAdBlockers: Bool {
         Set(importedAdBlockers.map(\.identifier)) != [OnboardingAdBlocker.uBlockOrigin] || stage.current == .adBlockers
     }
-    func nextStage(continuingImport: Bool = false) -> Stage? {
+    package func nextStage(continuingImport: Bool = false) -> Stage? {
         stage.next(includingAdBlockers: showsAdBlockers, continuingImport: continuingImport)
     }
-    func previousStage() -> Stage? { stage.previous(includingAdBlockers: showsAdBlockers) }
-    func visibleSetupOrder() -> [Stage] {
+    package func previousStage() -> Stage? { stage.previous(includingAdBlockers: showsAdBlockers) }
+    package func visibleSetupOrder() -> [Stage] {
         Stage.setupOrder(includingAdBlockers: showsAdBlockers, retaining: stage.current)
     }
-    func displayedSetupCount(importSteps: Int? = nil) -> Int {
+    package func displayedSetupCount(importSteps: Int? = nil) -> Int {
         visibleSetupOrder().filter { $0 != .ready && $0 != .continuedImport }.count + (importSteps ?? importPages.count)
     }
-    func displayedStepNumber(importSteps: Int? = nil) -> Int {
+    package func displayedStepNumber(importSteps: Int? = nil) -> Int {
         let counted = visibleSetupOrder().filter { $0 != .continuedImport }
         let favorites = counted.firstIndex(of: .favorites) ?? 1
         if stage == .continuedImport { return favorites + 1 + importPages.count }
         let index = counted.firstIndex(of: stage.current) ?? 0
         return index + 1 + (index > favorites ? importSteps ?? importPages.count : 0)
     }
-    func importSteps(current: ImportPage?, ahead: [ImportPage]) -> Int {
+    package func importSteps(current: ImportPage?, ahead: [ImportPage]) -> Int {
         let waiting = current.map { $0 != .progress && $0 != importPages.last } ?? false
         return importPages.count + (waiting ? 1 : 0) + ahead.count
     }
-    mutating func recordImportPage(_ page: ImportPage) {
+    package mutating func recordImportPage(_ page: ImportPage) {
         if page != .progress, let index = importPages.lastIndex(of: page) {
             importPages.removeSubrange(importPages.index(after: index)...)
         } else if importPages.last != page {
             importPages.append(page)
         }
     }
-    func savedForResume(importInProgress: Bool) -> Self {
+    package func savedForResume(importInProgress: Bool) -> Self {
         var saved = self
         if stage == .continuedImport || (importInProgress && stage == .favorites) { saved.stage = .bookmarks }
         if saved.stage == .bookmarks { saved.importPages = [] }
         return saved
     }
-    func windowFrameValue(saved: Int) -> Int {
+    package func windowFrameValue(saved: Int) -> Int {
         WindowFrameThickness.clamped(windowFrameThickness ?? saved)
     }
-    mutating func chooseWindowFrame(_ value: Int) {
+    package mutating func chooseWindowFrame(_ value: Int) {
         windowFrameThickness = WindowFrameThickness.clamped(value)
     }
-    mutating func skipWindowFrame() { windowFrameThickness = nil }
+    package mutating func skipWindowFrame() { windowFrameThickness = nil }
 
-    struct ImportedAdBlocker: Codable, Equatable, Identifiable {
-        var identifier: String
-        var displayName: String
-        var profileIDs: [UUID]? = nil
-        var id: String { identifier }
+    package struct ImportedAdBlocker: Codable, Equatable, Identifiable {
+        package var identifier: String
+        package var displayName: String
+        package var profileIDs: [UUID]? = nil
+        package var id: String { identifier }
+
+        package init(identifier: String, displayName: String, profileIDs: [UUID]? = nil) {
+            self.identifier = identifier
+            self.displayName = displayName
+            self.profileIDs = profileIDs
+        }
     }
 
-    enum AdBlockerChoice: Codable, Equatable {
+    package enum AdBlockerChoice: Codable, Equatable {
         case none
         case keep(String)
         case uBlock
         case keepAll
-        var keptIdentifier: String? {
+        package var keptIdentifier: String? {
             if case .keep(let identifier) = self { return identifier }
             return nil
         }
-        func isSelected(_ identifier: String) -> Bool {
+        package func isSelected(_ identifier: String) -> Bool {
             if case .keep(let kept) = self { return kept == identifier }
             return false
         }
-        static func settled(_ choice: Self?, for blockers: [ImportedAdBlocker]) -> Self {
+        package static func settled(_ choice: Self?, for blockers: [ImportedAdBlocker]) -> Self {
             guard let first = blockers.first else { return choice == AdBlockerChoice.none ? .none : .uBlock }
             switch choice {
             case .some(.none): return .none
@@ -141,7 +152,7 @@ struct OnboardingDraft: Codable, Equatable {
             default: return .keep(first.identifier)
             }
         }
-        func plan(for blockers: [ImportedAdBlocker], setupProfileID: UUID) -> AdBlockerPlan {
+        package func plan(for blockers: [ImportedAdBlocker], setupProfileID: UUID) -> AdBlockerPlan {
             var removals: [UUID: Set<String>] = [:]
             if self != .uBlock && self != .keepAll {
                 for blocker in blockers where blocker.identifier != keptIdentifier {
@@ -155,19 +166,25 @@ struct OnboardingDraft: Codable, Equatable {
         }
     }
 
-    struct AdBlockerPlan: Equatable {
-        var removals: [UUID: Set<String>]
-        var installProfileID: UUID?
+    package struct AdBlockerPlan: Equatable {
+        package var removals: [UUID: Set<String>]
+        package var installProfileID: UUID?
     }
 
-    struct FavoriteChoice: Identifiable {
-        let id: String
-        let title: String
-        let url: String
-        var artwork: String { "favorite-" + id }
-        var bookmark: Bookmark { .init(title: title, url: url) }
+    package struct FavoriteChoice: Identifiable {
+        package let id: String
+        package let title: String
+        package let url: String
+        package var artwork: String { "favorite-" + id }
+        package var bookmark: Bookmark { .init(title: title, url: url) }
+
+        package init(id: String, title: String, url: String) {
+            self.id = id
+            self.title = title
+            self.url = url
+        }
     }
-    static let favoriteChoices: [FavoriteChoice] = [
+    package static let favoriteChoices: [FavoriteChoice] = [
         .init(id: "twitter", title: "Twitter", url: "https://twitter.com"),
         .init(id: "gmail", title: "Gmail", url: "https://mail.google.com"),
         .init(id: "gcal", title: "Google Calendar", url: "https://calendar.google.com"),
@@ -182,21 +199,21 @@ struct OnboardingDraft: Codable, Equatable {
         .init(title: "Google", url: "https://www.google.com"),
         .init(title: "GitHub", url: "https://github.com")
     ]
-    static func favoriteKey(_ url: String) -> String {
+    package static func favoriteKey(_ url: String) -> String {
         switch url {
         case "https://www.youtube.com": return "https://youtube.com"
         case "https://www.notion.so": return "https://notion.so"
         default: return url
         }
     }
-    static func choiceURL(forSaved url: String) -> String {
+    package static func choiceURL(forSaved url: String) -> String {
         let key = SavedTabURLComparison.key(favoriteKey(url))
         return favoriteChoices.first { SavedTabURLComparison.key($0.url) == key }?.url ?? favoriteKey(url)
     }
-    func isFavoriteSelected(_ choice: FavoriteChoice) -> Bool {
+    package func isFavoriteSelected(_ choice: FavoriteChoice) -> Bool {
         favoriteURLs.contains { Self.favoriteKey($0) == choice.url }
     }
-    var selectedFavorites: [Bookmark] {
+    package var selectedFavorites: [Bookmark] {
         let selected = Set(favoriteURLs.map(Self.favoriteKey))
         let available = Self.favoriteChoices.map(\.bookmark) + Self.legacyFavorites
         let byURL = Dictionary(uniqueKeysWithValues: available.map { ($0.url, $0) })
@@ -207,7 +224,7 @@ struct OnboardingDraft: Codable, Equatable {
             return item
         }
     }
-    mutating func toggleFavorite(_ choice: FavoriteChoice) {
+    package mutating func toggleFavorite(_ choice: FavoriteChoice) {
         guard Self.favoriteChoices.contains(where: { $0.id == choice.id && $0.url == choice.url }) else { return }
         var order = selectedFavorites.map(\.url)
         if isFavoriteSelected(choice) {
@@ -219,14 +236,14 @@ struct OnboardingDraft: Codable, Equatable {
         }
         favoriteOrder = order
     }
-    enum CodingKeys: String, CodingKey {
+    package enum CodingKeys: String, CodingKey {
         case version, spaceID, stage, spaceName, theme, favoriteURLs, favoriteOrder
         case bookmarks, bookmarkFileName, defaultBrowserChoice, iCloudPasswordsProfileID
         case importedAdBlockers, adBlockerChoice, windowFrameThickness
         case replayBaseName, replayBaseTheme, replayAppearance, importPages
     }
 
-    init(spaceID: UUID, spaceName: String, theme: SpaceTheme,
+    package init(spaceID: UUID, spaceName: String, theme: SpaceTheme,
          favoriteURLs: Set<String> = ["https://youtube.com", "https://calendar.google.com"]) {
         self.spaceID = spaceID
         self.spaceName = spaceName
@@ -234,7 +251,7 @@ struct OnboardingDraft: Codable, Equatable {
         self.favoriteURLs = favoriteURLs
     }
 
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         version = try container.decode(Int.self, forKey: .version)
         spaceID = try container.decode(UUID.self, forKey: .spaceID)
@@ -257,7 +274,7 @@ struct OnboardingDraft: Codable, Equatable {
             .compactMap(ImportPage.init(rawValue:)) ?? []
     }
 
-    func encode(to encoder: Encoder) throws {
+    package func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(version, forKey: .version)
         try container.encode(spaceID, forKey: .spaceID)
@@ -279,12 +296,12 @@ struct OnboardingDraft: Codable, Equatable {
         if !importPages.isEmpty { try container.encode(importPages, forKey: .importPages) }
     }
 
-    static let introDuration: TimeInterval = 3.3
-    static let sellDuration: TimeInterval = 6.5
+    package static let introDuration: TimeInterval = 3.3
+    package static let sellDuration: TimeInterval = 6.5
 
-    static let replayRestartFileName = "onboarding-replay.json"
+    package static let replayRestartFileName = "onboarding-replay.json"
 
-    static func load(directory: URL, space: BrowserSpace, fileName: String = "onboarding.json") throws -> Self {
+    package static func load(directory: URL, space: BrowserSpace, fileName: String = "onboarding.json") throws -> Self {
         let url = directory.appendingPathComponent(fileName)
         guard FileManager.default.fileExists(atPath: url.path) else {
             return .init(spaceID: space.id, spaceName: space.name, theme: space.theme)
@@ -312,18 +329,18 @@ struct OnboardingDraft: Codable, Equatable {
         draft.stage = draft.stage.current
         return draft
     }
-    func save(directory: URL, fileName: String = "onboarding.json") throws {
+    package func save(directory: URL, fileName: String = "onboarding.json") throws {
         let url = directory.appendingPathComponent(fileName)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         try encoder.encode(self).write(to: url, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
-    static func remove(directory: URL, fileName: String = "onboarding.json") throws {
+    package static func remove(directory: URL, fileName: String = "onboarding.json") throws {
         let url = directory.appendingPathComponent(fileName)
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
-    static func takeReplayRestart(directory: URL, space: BrowserSpace) -> Self? {
+    package static func takeReplayRestart(directory: URL, space: BrowserSpace) -> Self? {
         defer { try? remove(directory: directory, fileName: replayRestartFileName) }
         guard FileManager.default.fileExists(atPath: directory.appendingPathComponent(replayRestartFileName).path),
               var draft = try? load(directory: directory, space: space, fileName: replayRestartFileName) else { return nil }
@@ -332,8 +349,8 @@ struct OnboardingDraft: Codable, Equatable {
     }
 }
 
-enum OnboardingAdBlocker {
-    static let chromeExtensionIDs: Set<String> = [
+package enum OnboardingAdBlocker {
+    package static let chromeExtensionIDs: Set<String> = [
         "cfhdojbkjhnklbpkdaibdccddilifddb",
         "aemffjkmgcepimloclpkecifcnipnodh",
         "mlomiejdfkolichcflejclcbmpeaniij",
@@ -354,6 +371,6 @@ enum OnboardingAdBlocker {
         "gekoepiplklhniacchbbgbhilidiojmb",
         "amgmhmoikcefmalfmbpkpnnpebhmhfnd"
     ]
-    static let uBlockOrigin = "cjpalhdlnbpafiamejdnhcphjbkeiagm"
-    static func isKnown(_ identifier: String) -> Bool { chromeExtensionIDs.contains(identifier) }
+    package static let uBlockOrigin = "cjpalhdlnbpafiamejdnhcphjbkeiagm"
+    package static func isKnown(_ identifier: String) -> Bool { chromeExtensionIDs.contains(identifier) }
 }

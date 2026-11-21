@@ -1,55 +1,71 @@
 import Foundation
 
-struct SplitDropIntent {
-    struct Zone: Equatable {
-        let target: SplitDropTarget
-        let orientation: SplitOrientation
+package struct SplitDropIntent {
+    package struct Zone: Equatable {
+        package let target: SplitDropTarget
+        package let orientation: SplitOrientation
+
+        package init(target: SplitDropTarget, orientation: SplitOrientation) {
+            self.target = target
+            self.orientation = orientation
+        }
     }
-    enum Place: Equatable {
+    package enum Place: Equatable {
         case pane(Zone?)
         case preview
     }
-    struct Step: Equatable {
-        let shown: Zone?
-        let changed: Bool
-        var appeared: Bool { changed && shown != nil }
+    package struct Step: Equatable {
+        package let shown: Zone?
+        package let changed: Bool
+        package var appeared: Bool { changed && shown != nil }
+
+        package init(shown: Zone?, changed: Bool) {
+            self.shown = shown
+            self.changed = changed
+        }
     }
     private struct Sample {
         let x: Double
         let y: Double
         let time: TimeInterval
+
+        package init(x: Double, y: Double, time: TimeInterval) {
+            self.x = x
+            self.y = y
+            self.time = time
+        }
     }
     private struct Pending {
         let zone: Zone?
         var since: TimeInterval
     }
 
-    let settleSpeed: Double
-    let traversalSpeed: Double
-    let dwell: TimeInterval
-    let window: TimeInterval
-    private(set) var shown: Zone?
+    package let settleSpeed: Double
+    package let traversalSpeed: Double
+    package let dwell: TimeInterval
+    package let window: TimeInterval
+    package private(set) var shown: Zone?
     private var pending: Pending?
     private var samples: [Sample] = []
 
-    init(settleSpeed: Double = 250, traversalSpeed: Double = 500, dwell: TimeInterval = 0.12, window: TimeInterval = 0.05) {
+    package init(settleSpeed: Double = 250, traversalSpeed: Double = 500, dwell: TimeInterval = 0.12, window: TimeInterval = 0.05) {
         self.settleSpeed = settleSpeed; self.traversalSpeed = traversalSpeed
         self.dwell = dwell; self.window = window
     }
 
-    var isPending: Bool { pending != nil }
+    package var isPending: Bool { pending != nil }
 
-    var deadline: TimeInterval? {
+    package var deadline: TimeInterval? {
         guard let pending, let last = samples.last else { return nil }
         return min(pending.since + dwell, last.time + window)
     }
 
-    func dropZone(at place: Place) -> Zone? {
+    package func dropZone(at place: Place) -> Zone? {
         if case .pane(let zone) = place { return zone }
         return shown
     }
 
-    mutating func move(to place: Place, x: Double, y: Double, at time: TimeInterval) -> Step {
+    package mutating func move(to place: Place, x: Double, y: Double, at time: TimeInterval) -> Step {
         guard x.isFinite, y.isFinite, time.isFinite else { return Step(shown: shown, changed: false) }
         record(Sample(x: x, y: y, time: time))
         guard case .pane(let zone) = place, zone != shown else {
@@ -71,14 +87,14 @@ struct SplitDropIntent {
         return Step(shown: zone, changed: true)
     }
 
-    mutating func leave() -> Step {
+    package mutating func leave() -> Step {
         pending = nil; samples = []
         let changed = shown != nil
         shown = nil
         return Step(shown: nil, changed: changed)
     }
 
-    mutating func reset() {
+    package mutating func reset() {
         shown = nil; pending = nil; samples = []
     }
 
@@ -101,7 +117,7 @@ struct SplitDropIntent {
 }
 
 extension SplitDropTarget {
-    var reservesRoom: Bool {
+    package var reservesRoom: Bool {
         if case .replace = self { return false }
         return true
     }

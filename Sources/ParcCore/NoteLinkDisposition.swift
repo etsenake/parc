@@ -1,13 +1,13 @@
 import Foundation
 
-enum NoteLinkDisposition: Equatable, CaseIterable {
+package enum NoteLinkDisposition: Equatable, CaseIterable {
     case inPlace
     case foregroundTab
     case backgroundTab
     case newWindow
 }
 
-enum NoteLinkRoute: Equatable {
+package enum NoteLinkRoute: Equatable {
     case regularWindow
     case overPage
     case foregroundTab
@@ -16,7 +16,7 @@ enum NoteLinkRoute: Equatable {
 }
 
 extension NoteLinkDisposition {
-    func routes(inRegularWindow: Bool) -> [NoteLinkRoute] {
+    package func routes(inRegularWindow: Bool) -> [NoteLinkRoute] {
         guard inRegularWindow else { return [.regularWindow] }
         switch self {
         case .inPlace: return [.overPage, .foregroundTab]

@@ -61,7 +61,7 @@ all of these against plain scans through random edits.
 
 ## Checks and measurement
 
-`tests/BrowserStoreTests.swift` covers coherent metadata publication, history
+`tests/ParcCoreTests/Data/Store/` covers coherent metadata publication, history
 storage and deduplication, saved destinations and private-history behavior.
 `tests/DownloadLibrary/ViewTests.swift` covers catalog reload guards and original
 row ownership. These tests assert behavior rather than a speedup threshold.

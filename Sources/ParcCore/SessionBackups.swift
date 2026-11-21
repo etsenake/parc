@@ -1,12 +1,16 @@
 import Foundation
 
-struct SessionFileUnreadable: LocalizedError {
-    let underlying: Error
-    var errorDescription: String? { underlying.localizedDescription }
+package struct SessionFileUnreadable: LocalizedError {
+    package let underlying: Error
+    package var errorDescription: String? { underlying.localizedDescription }
+
+    package init(underlying: Error) {
+        self.underlying = underlying
+    }
 }
 
 extension BrowserStore {
-    nonisolated static func savedSession(from bytes: Data) throws -> BrowserState {
+    package nonisolated static func savedSession(from bytes: Data) throws -> BrowserState {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let decoded = try decoder.decode(BrowserState.self, from: bytes)
@@ -18,29 +22,35 @@ extension BrowserStore {
     }
 }
 
-final class SessionBackups {
-    struct Backup: Equatable {
-        let url: URL
-        let date: Date
-        var sequence = 0
+package final class SessionBackups {
+    package struct Backup: Equatable {
+        package let url: URL
+        package let date: Date
+        package var sequence = 0
 
-        func isNewer(than other: Backup) -> Bool {
+        package init(url: URL, date: Date, sequence: Int = 0) {
+            self.url = url
+            self.date = date
+            self.sequence = sequence
+        }
+
+        package func isNewer(than other: Backup) -> Bool {
             (sequence, date) > (other.sequence, other.date)
         }
     }
 
-    struct Restorable {
-        let backup: Backup
-        let data: Data
+    package struct Restorable {
+        package let backup: Backup
+        package let data: Data
     }
 
-    enum Pruning: Equatable {
+    package enum Pruning: Equatable {
         case all
         case since(Date)
         case addresses([[String]])
         case profile(UUID)
 
-        init?(_ deletion: ChromiumHistoryDeletion) {
+        package init?(_ deletion: ChromiumHistoryDeletion) {
             if deletion.all { self = .all; return }
             if deletion.range != nil, let addresses = deletion.rangeURLs, !addresses.isEmpty {
                 self = .addresses(Self.values(addresses)); return
@@ -58,13 +68,13 @@ final class SessionBackups {
             addresses.sorted().map { ["\"" + $0 + "\"", "\"" + $0.replacingOccurrences(of: "/", with: "\\/") + "\""] }
         }
 
-        func excluding(_ current: Data?) -> Self? {
+        package func excluding(_ current: Data?) -> Self? {
             guard case .addresses(let items) = self, let current else { return self }
             let remaining = items.filter { !Self.found($0, in: current) }
             return remaining.isEmpty ? nil : .addresses(remaining)
         }
 
-        func removed(from backups: [Backup]) -> [Backup] {
+        package func removed(from backups: [Backup]) -> [Backup] {
             guard case .since = self else { return backups.filter(removes) }
             let written = backups.sorted { $1.isNewer(than: $0) }
             var laterMinimum = Array(repeating: Date.distantFuture, count: written.count)
@@ -99,33 +109,33 @@ final class SessionBackups {
         }
     }
 
-    static let folderName = "Sidebar Backups"
-    static let interval: TimeInterval = 60 * 60
-    static let recentCount = 6
-    static let dailyCount = 7
+    package static let folderName = "Sidebar Backups"
+    package static let interval: TimeInterval = 60 * 60
+    package static let recentCount = 6
+    package static let dailyCount = 7
     private static let stamp = Date.ISO8601FormatStyle(timeZone: TimeZone(identifier: "UTC")!)
         .year().month().day().dateSeparator(.omitted)
         .time(includingFractionalSeconds: false).timeSeparator(.omitted)
 
-    let directory: URL
-    let calendar: Calendar
+    package let directory: URL
+    package let calendar: Calendar
     private var lastBackup: Date?
     private var lastBackupKnown = false
 
-    init(directory: URL, calendar: Calendar = .current) {
+    package init(directory: URL, calendar: Calendar = .current) {
         self.directory = directory
         self.calendar = calendar
     }
 
-    static func folder(in directory: URL) -> URL {
+    package static func folder(in directory: URL) -> URL {
         directory.appendingPathComponent(folderName, isDirectory: true)
     }
 
-    static func name(for date: Date, sequence: Int) -> String {
+    package static func name(for date: Date, sequence: Int) -> String {
         "session-" + date.formatted(stamp) + "-\(sequence).json"
     }
 
-    static func backup(named name: String, in folder: URL) -> Backup? {
+    package static func backup(named name: String, in folder: URL) -> Backup? {
         guard name.hasPrefix("session-"), name.hasSuffix(".json") else { return nil }
         let fields = name.dropFirst("session-".count).dropLast(".json".count)
             .split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
@@ -136,13 +146,13 @@ final class SessionBackups {
         return Backup(url: url, date: date, sequence: sequence)
     }
 
-    static func list(in directory: URL) -> [Backup] {
+    package static func list(in directory: URL) -> [Backup] {
         let folder = folder(in: directory)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         return names.compactMap { backup(named: $0, in: folder) }.sorted { $0.isNewer(than: $1) }
     }
 
-    static func retained(_ backups: [Backup], calendar: Calendar) -> Set<URL> {
+    package static func retained(_ backups: [Backup], calendar: Calendar) -> Set<URL> {
         let newest = backups.sorted { $0.isNewer(than: $1) }
         var keep = Set(newest.prefix(recentCount).map(\.url))
         var days: [(day: Date, first: Backup)] = []
@@ -154,7 +164,7 @@ final class SessionBackups {
         return keep
     }
 
-    static func encoded(_ state: BrowserState) throws -> Data {
+    package static func encoded(_ state: BrowserState) throws -> Data {
         var copy = state
         copy.history = []
         copy.downloads = []
@@ -164,7 +174,7 @@ final class SessionBackups {
         return try encoder.encode(copy)
     }
 
-    func backUpIfDue(_ state: BrowserState, at date: Date) {
+    package func backUpIfDue(_ state: BrowserState, at date: Date) {
         if !lastBackupKnown {
             lastBackup = Self.list(in: directory).first?.date
             lastBackupKnown = true
@@ -174,7 +184,7 @@ final class SessionBackups {
         try? backUp(state, at: date)
     }
 
-    func backUp(_ state: BrowserState, at date: Date) throws {
+    package func backUp(_ state: BrowserState, at date: Date) throws {
         let data = try Self.encoded(state)
         _ = try BrowserStore.savedSession(from: data)
         let newest = Self.list(in: directory).first
@@ -192,12 +202,12 @@ final class SessionBackups {
         }
     }
 
-    func forget(_ pruning: Pruning) {
+    package func forget(_ pruning: Pruning) {
         Self.prune(pruning, in: directory)
         lastBackupKnown = false
     }
 
-    static func prune(_ pruning: Pruning, in directory: URL) {
+    package static func prune(_ pruning: Pruning, in directory: URL) {
         for backup in pruning.removed(from: list(in: directory)) {
             try? FileManager.default.removeItem(at: backup.url)
         }
@@ -212,7 +222,7 @@ final class SessionBackups {
         }
     }
 
-    static func restorable(in directory: URL) -> [Restorable] {
+    package static func restorable(in directory: URL) -> [Restorable] {
         list(in: directory).compactMap { backup in
             guard let data = try? Data(contentsOf: backup.url),
                   (try? BrowserStore.savedSession(from: data)) != nil else { return nil }
@@ -221,7 +231,7 @@ final class SessionBackups {
     }
 
     @discardableResult
-    static func restore(_ data: Data, in directory: URL, at date: Date) throws -> URL? {
+    package static func restore(_ data: Data, in directory: URL, at date: Date) throws -> URL? {
         let fileManager = FileManager.default
         let session = directory.appendingPathComponent("session.json")
         let temporary = directory.appendingPathComponent(".restore-" + UUID().uuidString + ".json")
@@ -247,7 +257,7 @@ final class SessionBackups {
         return aside
     }
 
-    static func setAsideURL(in directory: URL, at date: Date) -> URL {
+    package static func setAsideURL(in directory: URL, at date: Date) -> URL {
         let base = "session-unreadable-" + date.formatted(stamp)
         var candidate = directory.appendingPathComponent(base + ".json")
         var suffix = 2

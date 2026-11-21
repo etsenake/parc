@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 struct NoteTableRect: Hashable {
     var rows: ClosedRange<Int>

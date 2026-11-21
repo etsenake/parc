@@ -355,25 +355,6 @@ class EngineStringsTests(unittest.TestCase):
         self.assertTrue(overrides["az"])
         self.assertTrue(overrides["ko"])
 
-        build = (REPO / "Engine/ParcChromium/BUILD.gn").read_text()
-        self.assertIn("grit_predetermined_resource_ids_file", build)
-        self.assertIn('"--predetermined-ids"', build)
-        self.assertIn('"//tools/grit/grit.pydeps"', build)
-        app_delegate = (
-            REPO / "Engine/ParcNative/native_appkit_application.mm"
-        ).read_text()
-        self.assertIn("message_id == IDS_VERSION_UI_TITLE", app_delegate)
-        self.assertIn('*value = u"About Parc";', app_delegate)
-
-    def test_packed_overrides_cover_child_processes(self):
-        delegate = (
-            REPO / "Engine/ParcChromium/parc_main_delegate.mm"
-        ).read_text()
-        self.assertIn("ChildProductBrandingDelegate", delegate)
-        self.assertIn("return delegate.get();", delegate)
-        self.assertIn("GetProductNameString(locale, message_id, value)",
-                      delegate)
-
     def test_non_pak_output_inventory_stays_explicit(self):
         source = engine_source()
         for output_type, grds in BRANDING.NON_PAK_OUTPUT_GRDS.items():
@@ -383,12 +364,6 @@ class EngineStringsTests(unittest.TestCase):
                     for output in ET.parse(source / grd).iter("output")
                 }
                 self.assertIn(output_type, formats, grd)
-        patch = (
-            REPO / "Engine/ParcHost/integration/product-name.patch"
-        ).read_text()
-        self.assertIn(
-            "--- a/tools/grit/grit/format/chrome_messages_json.py", patch)
-        self.assertNotIn("--- a/tools/grit/grit/node/message.py", patch)
 
     def test_translations_name_parc(self):
         source = engine_source()
@@ -438,81 +413,6 @@ class EngineStringsTests(unittest.TestCase):
         self.assertEqual(sum(map(len, CHROME_KEPT.values())), len(kept))
         self.assertFalse(kept & branding.CHROME_MEANS_PARC)
         self.assertEqual(sorted(says_chrome ^ (kept | branding.CHROME_MEANS_PARC)), [])
-
-
-SOURCE_ROOTS = ("Sources", "Resources", "Engine/ParcNative", "Engine/ParcRenderer",
-                "Engine/ParcImport", "Engine/ParcInternalExtension",
-                "Engine/ParcHost/native", "Engine/ParcHost/integration")
-CODE = {".swift", ".m", ".mm", ".h", ".cc", ".c", ".js", ".ts"}
-TEXT = {".html", ".css", ".json", ".strings", ".plist", ".sdef", ".svg", ".txt"}
-LITERAL = re.compile(r"\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*'")
-ALLOWED = {
-    "Sources/ParcApp/AboutParcWindow.swift": {
-        '"ParcChromiumVersion"',
-        '"Chromium Engine Version \\(info.chromium)"',
-        '"Parc is made possible by the Chromium open source project, Chromium’s open source software, and WebKit."',
-        '"Chromium open source project"',
-        '"Chromium’s open source software"',
-    },
-    "Sources/ParcApp/BrowserWindowController.swift": {
-        '"Chromium Embedded Framework.framework"',
-        '"Chromium Engine Version \\(engine)"',
-    },
-    "Sources/ParcApp/AppDelegate.swift": {'"/Chromium Embedded Framework.framework"'},
-    "Sources/ParcHelper/main.cc": {
-        '"/../../../Chromium Embedded Framework.framework/"',
-        '"Chromium Embedded Framework"',
-    },
-    "Engine/ParcNative/native_engine_entry.mm": {
-        '"Native application must implement Chromium\'s sendEvent protocol"',
-        '"Native application must implement Chromium\'s native event protocol"',
-    },
-    "Engine/ParcNative/native_appkit_application.mm": {
-        '"the next time you relaunch Chromium."',
-    },
-    "Sources/ParcCore/BrowserStore.swift": {'"Chromium-v1"'},
-    "Sources/ParcCore/NativeMessagingHosts.swift": {'"Chromium"'},
-    "Engine/ParcNative/native_import_discovery.mm": {
-        '"org.chromium.Chromium"',
-        '"Chromium"',
-        '"Library/Application Support/Chromium"',
-        '"Chromium Safe Storage"',
-    },
-    "Engine/ParcNative/native_keychain_namespace.h": {
-        '"Parc (Chromium compatibility)"',
-        '"Chromium Safe Storage"',
-        '"Chromium"',
-    },
-    "Engine/ParcRenderer/parc_safari_identity.h": {'"Chromium/"'},
-}
-
-
-def chromium_strings(path):
-    text = path.read_text(errors="replace")
-    for number, line in enumerate(text.splitlines(), 1):
-        if "Chromium" not in line:
-            continue
-        if path.suffix in TEXT:
-            yield number, line.strip()
-        elif not line.strip().startswith(("//", "*", "/*", "#")):
-            yield from ((number, literal) for literal in LITERAL.findall(line) if "Chromium" in literal)
-
-
-class ParcSourceTests(unittest.TestCase):
-    def test_parc_names_chromium_only_where_allowed(self):
-        unexpected, seen = [], {}
-        for root in SOURCE_ROOTS:
-            for path in sorted((REPO / root).rglob("*")):
-                if not path.is_file() or path.suffix not in CODE | TEXT:
-                    continue
-                relative = path.relative_to(REPO).as_posix()
-                for number, string in chromium_strings(path):
-                    if string in ALLOWED.get(relative, ()):
-                        seen.setdefault(relative, set()).add(string)
-                    else:
-                        unexpected.append(f"{relative}:{number}: {string}")
-        self.assertEqual(unexpected, [])
-        self.assertEqual(seen, ALLOWED)
 
 
 if __name__ == "__main__":

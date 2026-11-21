@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 final class CommandResultCell: NSView {
     struct Marks: Equatable {

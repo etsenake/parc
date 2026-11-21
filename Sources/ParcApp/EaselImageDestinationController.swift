@@ -1,5 +1,7 @@
 import AppKit
 import ImageIO
+import ParcCore
+import ParcEngine
 
 @MainActor
 final class EaselImageDestinationController: NSWindowController {

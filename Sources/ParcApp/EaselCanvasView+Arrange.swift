@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 struct EaselCanvasArrangeState {
     var enteredGroup: UUID?

@@ -2,6 +2,8 @@ import AppKit
 import Combine
 import IOKit
 import IOKit.pwr_mgt
+import ParcCore
+import ParcEngine
 import UserNotifications
 
 @MainActor

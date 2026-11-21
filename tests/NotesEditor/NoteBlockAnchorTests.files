@@ -1,6 +1,0 @@
-Sources/ParcCore/NoteModel.swift
-Sources/ParcCore/NoteCustomEmojiName.swift
-Sources/ParcCore/NoteImageFraming.swift
-Sources/ParcCore/NotePageSession.swift
-Sources/ParcCore/NotePageEditing.swift
-tests/NotesEditor/NotesTestKit.swift

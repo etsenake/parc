@@ -1,6 +1,8 @@
 import AppKit
 import Carbon.HIToolbox
 import Combine
+import ParcCore
+import ParcEngine
 
 enum CaptureGesturePreference {
     static let disabledKey = "parc.capture.dragDisabled"

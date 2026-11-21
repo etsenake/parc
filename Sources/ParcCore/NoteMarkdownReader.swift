@@ -1,24 +1,24 @@
 import Foundation
 
-struct NoteMDAttributes: Equatable {
-    var flags: Set<String> = []
-    var values: [String: String] = [:]
+package struct NoteMDAttributes: Equatable {
+    package var flags: Set<String> = []
+    package var values: [String: String] = [:]
 
-    var isEmpty: Bool { flags.isEmpty && values.isEmpty }
+    package var isEmpty: Bool { flags.isEmpty && values.isEmpty }
 
-    static let kindNames: [String: NoteBlockKind] = [
+    package static let kindNames: [String: NoteBlockKind] = [
         "paragraph": .paragraph, "image": .image, "video": .video, "audio": .audio, "file": .file,
         "embed": .embed, "easel": .easel, "bookmark": .bookmark, "pdf": .pdf, "breadcrumb": .breadcrumb,
     ]
 
-    var kind: NoteBlockKind? {
+    package var kind: NoteBlockKind? {
         for (name, kind) in Self.kindNames where flags.contains(name) { return kind }
         return nil
     }
 
-    var color: NoteColorStyle? { values["color"].flatMap(NoteMDColor.style) }
+    package var color: NoteColorStyle? { values["color"].flatMap(NoteMDColor.style) }
 
-    static func parse(_ comment: String) -> NoteMDAttributes? {
+    package static func parse(_ comment: String) -> NoteMDAttributes? {
         let trimmed = comment.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("<!--"), trimmed.hasSuffix("-->"), trimmed.count >= 7 else { return nil }
         let inner = Array(trimmed.dropFirst(4).dropLast(3).utf8)
@@ -52,12 +52,12 @@ struct NoteMDAttributes: Equatable {
     }
 }
 
-enum NoteMDSynced {
-    static let flag = "synced"
-    static let sourceKey = "from"
-    static let closer = "<!-- parc /synced -->"
+package enum NoteMDSynced {
+    package static let flag = "synced"
+    package static let sourceKey = "from"
+    package static let closer = "<!-- parc /synced -->"
 
-    static func isCloser(_ node: NoteMDBlock) -> Bool {
+    package static func isCloser(_ node: NoteMDBlock) -> Bool {
         guard node.kind == .html else { return false }
         let inner = NoteMDByte.string(NoteMDText.trimmed(node.content[...]))
         guard inner.hasPrefix("<!--"), inner.hasSuffix("-->") else { return false }
@@ -65,11 +65,11 @@ enum NoteMDSynced {
         return words.count == 2 && words[0].lowercased() == "parc" && words[1].lowercased() == "/" + flag
     }
 
-    static func isOpener(_ node: NoteMDBlock) -> Bool {
+    package static func isOpener(_ node: NoteMDBlock) -> Bool {
         node.kind == .html && NoteMDAttributes.parse(NoteMDByte.string(node.content))?.flags.contains(flag) == true
     }
 
-    static func matchingClose(_ nodes: ArraySlice<NoteMDBlock>, after index: Int) -> Int? {
+    package static func matchingClose(_ nodes: ArraySlice<NoteMDBlock>, after index: Int) -> Int? {
         var depth = 0
         var probe = index + 1
         while probe < nodes.endIndex {
@@ -86,8 +86,8 @@ enum NoteMDSynced {
     }
 }
 
-enum NoteMDColor {
-    static func style(_ value: String) -> NoteColorStyle? {
+package enum NoteMDColor {
+    package static func style(_ value: String) -> NoteColorStyle? {
         let lowered = value.lowercased()
         for suffix in ["_background", "-background", "_bg", "-bg"] where lowered.hasSuffix(suffix) {
             return NoteColor(rawValue: String(lowered.dropLast(suffix.count))).map(NoteColorStyle.background)
@@ -95,7 +95,7 @@ enum NoteMDColor {
         return NoteColor(rawValue: lowered).map(NoteColorStyle.text)
     }
 
-    static func name(_ style: NoteColorStyle) -> String {
+    package static func name(_ style: NoteColorStyle) -> String {
         switch style {
         case .text(let color): return color.rawValue
         case .background(let color): return color.rawValue + "_background"
@@ -103,24 +103,24 @@ enum NoteMDColor {
     }
 }
 
-enum NoteMDMedia {
-    static func carriesCredit(_ kind: NoteBlockKind) -> Bool {
+package enum NoteMDMedia {
+    package static func carriesCredit(_ kind: NoteBlockKind) -> Bool {
         kind.isMedia || kind == .embed
     }
 
-    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "svg", "heic", "heif", "tif", "tiff", "bmp", "ico", "avif", "apng", "jfif"]
-    static let videoExtensions: Set<String> = ["mp4", "m4v", "mov", "webm", "ogv", "mkv", "avi", "mpg", "mpeg", "3gp"]
-    static let audioExtensions: Set<String> = ["mp3", "m4a", "wav", "aac", "flac", "ogg", "oga", "opus", "aif", "aiff", "caf", "weba", "mid", "midi"]
-    static let embedHosts: Set<String> = [
+    package static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "svg", "heic", "heif", "tif", "tiff", "bmp", "ico", "avif", "apng", "jfif"]
+    package static let videoExtensions: Set<String> = ["mp4", "m4v", "mov", "webm", "ogv", "mkv", "avi", "mpg", "mpeg", "3gp"]
+    package static let audioExtensions: Set<String> = ["mp3", "m4a", "wav", "aac", "flac", "ogg", "oga", "opus", "aif", "aiff", "caf", "weba", "mid", "midi"]
+    package static let embedHosts: Set<String> = [
         "youtube.com", "youtu.be", "vimeo.com", "twitter.com", "x.com", "figma.com", "codepen.io", "loom.com",
         "open.spotify.com", "soundcloud.com", "gist.github.com", "codesandbox.io", "miro.com", "maps.google.com",
     ]
 
-    static func writesFraming(_ kind: NoteBlockKind) -> Bool {
+    package static func writesFraming(_ kind: NoteBlockKind) -> Bool {
         kind == .image || kind == .video || kind == .audio || kind == .file || kind == .embed
     }
 
-    static func pathExtension(_ source: String) -> String {
+    package static func pathExtension(_ source: String) -> String {
         var path = Substring(source)
         if let cut = path.firstIndex(where: { $0 == "?" || $0 == "#" }) { path = path[..<cut] }
         guard let slash = path.lastIndex(of: "/").map({ path.index(after: $0) }) ?? Optional(path.startIndex) else { return "" }
@@ -129,14 +129,14 @@ enum NoteMDMedia {
         return name[name.index(after: dot)...].lowercased()
     }
 
-    static func host(_ source: String) -> String? {
+    package static func host(_ source: String) -> String? {
         guard let components = URLComponents(string: source), let scheme = components.scheme?.lowercased(),
               scheme == "http" || scheme == "https", var host = components.host?.lowercased() else { return nil }
         for prefix in ["www.", "m.", "player."] where host.hasPrefix(prefix) { host.removeFirst(prefix.count) }
         return host
     }
 
-    static func inferredKind(_ source: String) -> NoteBlockKind {
+    package static func inferredKind(_ source: String) -> NoteBlockKind {
         if let host = host(source), embedHosts.contains(host) || (host == "google.com" && source.contains("/maps")) { return .embed }
         let ext = pathExtension(source)
         if ext.isEmpty || imageExtensions.contains(ext) { return .image }
@@ -146,8 +146,8 @@ enum NoteMDMedia {
     }
 }
 
-enum NoteMDLinks {
-    static func isRelativeMarkdown(_ destination: String) -> Bool {
+package enum NoteMDLinks {
+    package static func isRelativeMarkdown(_ destination: String) -> Bool {
         guard !destination.isEmpty, !destination.hasPrefix("#"), !destination.hasPrefix("//") else { return false }
         if let colon = destination.firstIndex(of: ":") {
             let scheme = destination[..<colon]
@@ -157,7 +157,7 @@ enum NoteMDLinks {
         return NoteFileKind.markdownExtensions.contains(ext)
     }
 
-    static func stem(_ destination: String) -> String {
+    package static func stem(_ destination: String) -> String {
         var path = Substring(destination)
         if let cut = path.firstIndex(where: { $0 == "?" || $0 == "#" }) { path = path[..<cut] }
         let name = path.split(separator: "/", omittingEmptySubsequences: false).last.map(String.init) ?? String(path)
@@ -167,10 +167,10 @@ enum NoteMDLinks {
     }
 }
 
-struct NoteMDReader {
-    let references: [String: NoteMDLinkReference]
-    let footnotes: Set<String>
-    var customEmoji: Set<String> = []
+package struct NoteMDReader {
+    package let references: [String: NoteMDLinkReference]
+    package let footnotes: Set<String>
+    package var customEmoji: Set<String> = []
 
     private struct Event {
         enum Content {
@@ -180,6 +180,11 @@ struct NoteMDReader {
         }
         var content: Content
         var marks: NoteMarks
+
+        package init(content: Content, marks: NoteMarks) {
+            self.content = content
+            self.marks = marks
+        }
     }
 
     private enum TagMeaning {
@@ -187,11 +192,11 @@ struct NoteMDReader {
         case date(NoteDateMention), mention(String), equation(String)
     }
 
-    static let maximumInlineDepth = 96
+    package static let maximumInlineDepth = 96
 
     private static let pairableTags: Set<String> = ["b", "strong", "i", "em", "s", "del", "strike", "u", "ins", "code", "mark", "span", "a", "time"]
 
-    func sequence(_ nodes: ArraySlice<NoteMDBlock>, documentEdges: Bool, trailingBlank: Int) -> [NoteBlock] {
+    package func sequence(_ nodes: ArraySlice<NoteMDBlock>, documentEdges: Bool, trailingBlank: Int) -> [NoteBlock] {
         var result: [NoteBlock] = []
         var lastNumber: Int?
         var index = nodes.startIndex
@@ -372,7 +377,7 @@ struct NoteMDReader {
         return block
     }
 
-    func paragraph(_ content: [UInt8]) -> NoteBlock {
+    package func paragraph(_ content: [UInt8]) -> NoteBlock {
         var tree = NoteMDInlineParser.parse(content, references: references, footnotes: footnotes, customEmoji: customEmoji)
         var children = tree.children(of: 0)
         let attributes = Self.stripTrailingAttributes(&tree, &children)
@@ -433,7 +438,7 @@ struct NoteMDReader {
         return block
     }
 
-    func caption(_ title: String) -> NoteText {
+    package func caption(_ title: String) -> NoteText {
         let tree = NoteMDInlineParser.parseVerbatim(Array(title.utf8), references: references, footnotes: footnotes, customEmoji: customEmoji)
         return text(tree, children: tree.children(of: 0))
     }
@@ -476,10 +481,10 @@ struct NoteMDReader {
 
     private static let githubAlerts: Set<String> = ["TIP", "IMPORTANT", "WARNING", "CAUTION"]
 
-    static let noteAlert = "NOTE"
-    static let keepsAlertFlag = "alert"
+    package static let noteAlert = "NOTE"
+    package static let keepsAlertFlag = "alert"
 
-    static func calloutUsesBody(_ alert: String?) -> Bool {
+    package static func calloutUsesBody(_ alert: String?) -> Bool {
         guard let alert else { return true }
         return githubAlerts.contains(alert) || alert == noteAlert
     }
@@ -559,14 +564,14 @@ struct NoteMDReader {
         return CalloutMarker(type: type, fold: fold, title: title, rest: rest)
     }
 
-    struct DetailsOpener {
-        var open: Bool
-        var level: Int?
-        var summary: [UInt8]
-        var closed: Bool
+    package struct DetailsOpener {
+        package var open: Bool
+        package var level: Int?
+        package var summary: [UInt8]
+        package var closed: Bool
     }
 
-    static func details(_ content: [UInt8]) -> DetailsOpener? {
+    package static func details(_ content: [UInt8]) -> DetailsOpener? {
         var index = 0
         let end = content.count
         func skip() { while index < end, NoteMDByte.isWhitespace(content[index]) { index += 1 } }
@@ -608,11 +613,11 @@ struct NoteMDReader {
         return index >= end ? opener : nil
     }
 
-    static func isDetailsClose(_ node: NoteMDBlock) -> Bool {
+    package static func isDetailsClose(_ node: NoteMDBlock) -> Bool {
         node.kind == .html && NoteMDByte.string(NoteMDText.trimmed(node.content[...])).lowercased() == "</details>"
     }
 
-    func matchingDetailsClose(_ nodes: ArraySlice<NoteMDBlock>, after index: Int) -> Int? {
+    package func matchingDetailsClose(_ nodes: ArraySlice<NoteMDBlock>, after index: Int) -> Int? {
         var depth = 0
         var probe = index + 1
         while probe < nodes.endIndex {
@@ -711,7 +716,7 @@ struct NoteMDReader {
         return block
     }
 
-    func apply(_ attributes: NoteMDAttributes, to block: inout NoteBlock) {
+    package func apply(_ attributes: NoteMDAttributes, to block: inout NoteBlock) {
         if let color = attributes.color { block.color = color }
         let values = attributes.values
         if let icon = values["icon"] { block.props.icon = icon }
@@ -755,14 +760,14 @@ struct NoteMDReader {
         if block.kind == .code, block.props.fence == "    ", !NoteMDWriter.writesIndentedCode(block, afterList: false) { block.props.fence = nil }
     }
 
-    func inline(_ content: [UInt8]) -> (NoteText, NoteMDAttributes?) {
+    package func inline(_ content: [UInt8]) -> (NoteText, NoteMDAttributes?) {
         var tree = NoteMDInlineParser.parse(content, references: references, footnotes: footnotes, customEmoji: customEmoji)
         var children = tree.children(of: 0)
         let attributes = Self.stripTrailingAttributes(&tree, &children)
         return (text(tree, children: children), attributes)
     }
 
-    func cellText(_ content: [UInt8]) -> NoteText {
+    package func cellText(_ content: [UInt8]) -> NoteText {
         let tree = NoteMDInlineParser.parse(content, references: references, footnotes: footnotes, customEmoji: customEmoji)
         return text(tree, children: tree.children(of: 0))
     }
@@ -779,7 +784,7 @@ struct NoteMDReader {
         return attributes
     }
 
-    func text(_ tree: NoteMDInlineTree, children: [Int]) -> NoteText {
+    package func text(_ tree: NoteMDInlineTree, children: [Int]) -> NoteText {
         var events: [Event] = []
         for child in children { flatten(tree, child, marks: .plain, depth: 0, into: &events) }
         return build(events)

@@ -198,7 +198,7 @@ Primary owners are `BrowserImportCoordinator.swift`, the original setup/menu
 presenter, `BrowserImportDestination` and [native import](../Engine/ParcImport/README.md).
 Focused import, access, focus, password-file and restart-helper checks use
 fixtures or inert components. Restart fixtures replace final app launch with a
-recording seam. `scripts/test-safari-browsing-export.sh` runs the export ZIP
+recording seam. `tests/ParcCoreTests/Data/Import/SafariBrowsingExportTests.swift` runs the export ZIP
 and bookmark-file readers against made-up archives, including ZIP64, data
 descriptors, damaged and hostile entries, and localized file names.
 `EngineFacadeImportTests` feed the extension-report adapter the current

@@ -1,9 +1,9 @@
 import Foundation
 
-struct SoftwareUpdateSession {
-    typealias Reply = () -> Void
+package struct SoftwareUpdateSession {
+    package typealias Reply = () -> Void
 
-    enum Phase: Equatable {
+    package enum Phase: Equatable {
         case idle
         case checking
         case available(version: String)
@@ -13,20 +13,20 @@ struct SoftwareUpdateSession {
         case installing
     }
 
-    enum Choice { case install, dismiss }
+    package enum Choice { case install, dismiss }
 
-    enum Found {
+    package enum Found {
         case present, wait
         case install(Reply)
     }
 
-    enum Install {
+    package enum Install {
         case run(Reply)
         case resume
     }
 
-    let hasFeed: Bool
-    private(set) var phase = Phase.idle
+    package let hasFeed: Bool
+    package private(set) var phase = Phase.idle
     private var version = ""
     private var cancellation: Reply?
     private var choice: ((Choice) -> Void)?
@@ -35,7 +35,7 @@ struct SoftwareUpdateSession {
     private var resumable = false
     private var installRequested = false
 
-    var menuTitle: String {
+    package var menuTitle: String {
         switch phase {
         case .available, .readyToInstall: "Update Available…"
         case .downloading, .preparing, .installing: "Updating…"
@@ -43,18 +43,18 @@ struct SoftwareUpdateSession {
         }
     }
 
-    var menuToolTip: String? { hasFeed ? nil : "Updates are only available in released builds" }
+    package var menuToolTip: String? { hasFeed ? nil : "Updates are only available in released builds" }
 
-    var installsWithoutWindow: Bool { installNow != nil }
+    package var installsWithoutWindow: Bool { installNow != nil }
 
-    init(hasFeed: Bool = true) { self.hasFeed = hasFeed }
+    package init(hasFeed: Bool = true) { self.hasFeed = hasFeed }
 
-    mutating func beginCheck(cancellation: @escaping Reply) {
+    package mutating func beginCheck(cancellation: @escaping Reply) {
         self.cancellation = cancellation
         phase = .checking
     }
 
-    mutating func found(version: String, downloaded: Bool, userInitiated: Bool,
+    package mutating func found(version: String, downloaded: Bool, userInitiated: Bool,
                         reply: @escaping (Choice) -> Void) -> Found {
         installNow = nil
         cancellation = nil
@@ -67,12 +67,12 @@ struct SoftwareUpdateSession {
         return userInitiated ? .present : .wait
     }
 
-    mutating func upToDate(acknowledgement: @escaping Reply) {
+    package mutating func upToDate(acknowledgement: @escaping Reply) {
         self.acknowledgement = acknowledgement
         failed()
     }
 
-    mutating func failed() {
+    package mutating func failed() {
         cancellation = nil
         installNow = nil
         resumable = false
@@ -80,17 +80,17 @@ struct SoftwareUpdateSession {
         settle()
     }
 
-    mutating func beginDownload(cancellation: @escaping Reply) {
+    package mutating func beginDownload(cancellation: @escaping Reply) {
         self.cancellation = cancellation
         phase = .downloading
     }
 
-    mutating func beginPreparing() {
+    package mutating func beginPreparing() {
         cancellation = nil
         phase = .preparing
     }
 
-    mutating func ready(reply: @escaping (Choice) -> Void) -> Reply? {
+    package mutating func ready(reply: @escaping (Choice) -> Void) -> Reply? {
         phase = .readyToInstall(version: version)
         if installRequested {
             installRequested = false
@@ -100,19 +100,19 @@ struct SoftwareUpdateSession {
         return nil
     }
 
-    mutating func beginInstalling(retry: Reply?) {
+    package mutating func beginInstalling(retry: Reply?) {
         installNow = retry
         installRequested = false
         phase = .installing
     }
 
-    mutating func downloadedInBackground(version: String, install: @escaping Reply) {
+    package mutating func downloadedInBackground(version: String, install: @escaping Reply) {
         installNow = install
         self.version = version
         phase = .readyToInstall(version: version)
     }
 
-    mutating func dismissed() {
+    package mutating func dismissed() {
         cancellation = nil
         choice = nil
         acknowledgement = nil
@@ -120,7 +120,7 @@ struct SoftwareUpdateSession {
         settle()
     }
 
-    mutating func installAndRelaunch() -> Install? {
+    package mutating func installAndRelaunch() -> Install? {
         switch phase {
         case .readyToInstall, .installing:
             if let installNow {
@@ -136,17 +136,17 @@ struct SoftwareUpdateSession {
         }
     }
 
-    mutating func choose(_ value: Choice) -> Reply? {
+    package mutating func choose(_ value: Choice) -> Reply? {
         guard let reply = take(&choice) else { return nil }
         if value == .dismiss, case .readyToInstall = phase { resumable = true }
         return { reply(value) }
     }
 
-    mutating func acknowledge() -> Reply? { take(&acknowledgement) }
+    package mutating func acknowledge() -> Reply? { take(&acknowledgement) }
 
-    mutating func cancel() -> Reply? { take(&cancellation) }
+    package mutating func cancel() -> Reply? { take(&cancellation) }
 
-    mutating func statusClosed() -> Reply? {
+    package mutating func statusClosed() -> Reply? {
         switch phase {
         case .checking, .downloading: cancel()
         default: nil

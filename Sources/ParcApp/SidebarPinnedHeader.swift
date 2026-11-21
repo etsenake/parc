@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 struct SidebarPinnedPresentation: Equatable {
     var header = false

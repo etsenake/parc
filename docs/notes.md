@@ -349,9 +349,9 @@ sounds and no haptics.
 
 ## Checks
 
-`scripts/test-notes.sh` runs the note tab tests and `scripts/test-notes-editor.sh`,
-which builds every windowless suite in `tests/NotesEditor/`: the model and
-editing rules, the Markdown codec (including generated round-trip pages), files
-and folders, HTML, syntax, math, emoji, the canvas layout, selection, menus and
-clipboard. Pass a suite name to run one. Views are checked by compiling and by
-offscreen renders, never in a window.
+`swift test --filter Note` (or a suite name such as `MarkdownCodecTests`) runs the
+model and editing rules, the Markdown codec (including generated round-trip
+pages), files and folders, HTML, syntax, math, emoji, note tabs and the Easel
+model suites in `tests/ParcCoreTests/Notes/`. `scripts/test-notes.sh` still
+builds the remaining view and menu suites in `tests/NotesEditor/`; pass a suite
+name to run one.

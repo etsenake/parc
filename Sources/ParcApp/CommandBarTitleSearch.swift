@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 enum CommandBarTitleText {
     static func fold(_ text: String) -> String {

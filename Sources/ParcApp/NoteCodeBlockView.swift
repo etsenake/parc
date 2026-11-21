@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import CoreText
+import ParcCore
 
 @MainActor
 enum NoteCodeFont {

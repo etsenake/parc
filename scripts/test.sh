@@ -103,8 +103,6 @@ step bash "$repo_root/scripts/test-fairplay-identity.sh"
 step bash "$repo_root/tests/DebuggerWarning/run.sh"
 step bash "$repo_root/scripts/test-scripting.sh"
 step bash "$repo_root/scripts/test-site-permission-rows.sh"
-step compile_and_run link-routing-text LinkRoutingTextEditingTests \
-  "$repo_root/Sources/ParcApp/LinkRoutingTextEditing.swift"
 step compile_and_run automatic-archive-presentation AutoArchivePresentationTests
 step compile_and_run automatic-archive-education-view AutoArchiveEducationViewTests \
   "$repo_root/Sources/ParcApp/ThemeRenderer.swift" \

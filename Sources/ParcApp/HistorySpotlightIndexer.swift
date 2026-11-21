@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import CoreSpotlight
+import ParcCore
 import UniformTypeIdentifiers
 
 @MainActor

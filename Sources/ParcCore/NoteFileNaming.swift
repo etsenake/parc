@@ -1,12 +1,12 @@
 import Foundation
 
-enum NoteFileNaming {
-    static let untitled = "Untitled"
-    static let maximumComponentBytes = 255
-    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "heif", "tif", "tiff", "webp", "bmp", "svg", "avif"]
+package enum NoteFileNaming {
+    package static let untitled = "Untitled"
+    package static let maximumComponentBytes = 255
+    package static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "heif", "tif", "tiff", "webp", "bmp", "svg", "avif"]
     private static let suffixAllowance = 6
 
-    static func sanitizedTitle(_ title: String) -> String {
+    package static func sanitizedTitle(_ title: String) -> String {
         var scalars = String.UnicodeScalarView()
         for scalar in title.unicodeScalars {
             switch scalar {
@@ -29,20 +29,20 @@ enum NoteFileNaming {
         return result
     }
 
-    static func sanitizedExtension(_ value: String) -> String {
+    package static func sanitizedExtension(_ value: String) -> String {
         let trimmed = value.hasPrefix(".") ? String(value.dropFirst()) : value
         return String(trimmed.unicodeScalars.filter { $0.isASCII && CharacterSet.alphanumerics.contains($0) }.map(Character.init))
             .lowercased()
     }
 
-    static func fileName(base: String, pathExtension: String, suffix: String = "") -> String {
+    package static func fileName(base: String, pathExtension: String, suffix: String = "") -> String {
         let extensionBytes = pathExtension.isEmpty ? 0 : pathExtension.utf8.count + 1
         let limit = maximumComponentBytes - extensionBytes - max(suffix.utf8.count, suffixAllowance)
         let stem = truncated(base, toBytes: limit) + suffix
         return pathExtension.isEmpty ? stem : stem + "." + pathExtension
     }
 
-    static func truncated(_ value: String, toBytes limit: Int) -> String {
+    package static func truncated(_ value: String, toBytes limit: Int) -> String {
         guard value.utf8.count > limit else { return value }
         var result = ""
         var bytes = 0
@@ -55,7 +55,7 @@ enum NoteFileNaming {
         return result.trimmingCharacters(in: .whitespaces)
     }
 
-    static func candidates(in folder: URL, base: String, pathExtension: String) -> AnySequence<URL> {
+    package static func candidates(in folder: URL, base: String, pathExtension: String) -> AnySequence<URL> {
         AnySequence(sequence(state: 1) { (index: inout Int) -> URL? in
             defer { index += 1 }
             let suffix = index == 1 ? "" : " \(index)"
@@ -63,7 +63,7 @@ enum NoteFileNaming {
         })
     }
 
-    static func uniqueURL(in folder: URL, base: String, pathExtension: String,
+    package static func uniqueURL(in folder: URL, base: String, pathExtension: String,
                           isTaken: (URL) -> Bool = NoteFilePaths.itemExists) -> URL {
         for candidate in candidates(in: folder, base: base, pathExtension: pathExtension) where !isTaken(candidate) {
             return candidate
@@ -71,7 +71,7 @@ enum NoteFileNaming {
         return folder.appendingPathComponent(fileName(base: base + " " + UUID().uuidString, pathExtension: pathExtension))
     }
 
-    static func renameTarget(for url: URL, to proposed: String) throws -> URL? {
+    package static func renameTarget(for url: URL, to proposed: String) throws -> URL? {
         let folder = url.deletingLastPathComponent()
         let pathExtension = url.pathExtension
         let base = sanitizedTitle(proposed)
@@ -91,7 +91,7 @@ enum NoteFileNaming {
         return target
     }
 
-    static func isUntitled(_ title: String) -> Bool {
+    package static func isUntitled(_ title: String) -> Bool {
         guard title.hasPrefix(untitled) else { return false }
         let rest = title.dropFirst(untitled.count)
         if rest.isEmpty { return true }
@@ -100,7 +100,7 @@ enum NoteFileNaming {
         return !digits.isEmpty && digits.allSatisfy(\.isASCII) && digits.allSatisfy(\.isNumber)
     }
 
-    static func pastedBaseName(at date: Date, isImage: Bool) -> String {
+    package static func pastedBaseName(at date: Date, isImage: Bool) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)

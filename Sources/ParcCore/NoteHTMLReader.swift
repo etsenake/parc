@@ -1,11 +1,11 @@
 import Foundation
 
-enum NoteHTMLReader {
-    static func blocks(from html: String, baseURL: URL?) -> [NoteBlock] {
+package enum NoteHTMLReader {
+    package static func blocks(from html: String, baseURL: URL?) -> [NoteBlock] {
         NoteHTMLConversion(document: NoteHTMLParser.parse(html), baseURL: baseURL).run()
     }
 
-    static func tidy(_ blocks: [NoteBlock], parent: NoteBlockKind? = nil) -> [NoteBlock] {
+    package static func tidy(_ blocks: [NoteBlock], parent: NoteBlockKind? = nil) -> [NoteBlock] {
         var result: [NoteBlock] = []
         for var block in blocks {
             block.children = tidy(block.children, parent: block.kind)
@@ -33,18 +33,18 @@ enum NoteHTMLReader {
     }
 }
 
-struct NoteHTMLInline {
-    enum Spacing { case collapse, preserve, preserveBreaks }
-    enum Script { case normal, sub, sup }
+package struct NoteHTMLInline {
+    package enum Spacing { case collapse, preserve, preserveBreaks }
+    package enum Script { case normal, sub, sup }
 
-    var marks = NoteMarks.plain
-    var textColor: NoteColor?
-    var backgroundColor: NoteColor?
-    var spacing = Spacing.collapse
-    var script = Script.normal
-    var inLink = false
+    package var marks = NoteMarks.plain
+    package var textColor: NoteColor?
+    package var backgroundColor: NoteColor?
+    package var spacing = Spacing.collapse
+    package var script = Script.normal
+    package var inLink = false
 
-    var resolved: NoteMarks {
+    package var resolved: NoteMarks {
         var value = marks
         if let backgroundColor { value.color = .background(backgroundColor) }
         else if let textColor { value.color = .text(textColor) }
@@ -52,7 +52,7 @@ struct NoteHTMLInline {
         return value
     }
 
-    mutating func apply(_ style: NoteColorStyle) {
+    package mutating func apply(_ style: NoteColorStyle) {
         switch style {
         case .text(let color): textColor = color
         case .background(let color): backgroundColor = color
@@ -60,12 +60,12 @@ struct NoteHTMLInline {
     }
 }
 
-struct NoteHTMLLine {
-    private(set) var pieces: [(text: String, marks: NoteMarks)] = []
+package struct NoteHTMLLine {
+    package private(set) var pieces: [(text: String, marks: NoteMarks)] = []
     private var pendingSpace: NoteMarks?
     private var atLineStart = true
 
-    var hasContent: Bool {
+    package var hasContent: Bool {
         pieces.contains { piece in piece.marks.atom != nil || piece.text.contains { !$0.isWhitespace } }
     }
 
@@ -82,7 +82,7 @@ struct NoteHTMLLine {
         pendingSpace = nil
     }
 
-    mutating func append(_ value: String, _ style: NoteHTMLInline) {
+    package mutating func append(_ value: String, _ style: NoteHTMLInline) {
         let marks = style.resolved
         let source = style.script == .normal ? value : Self.shifted(value, style.script)
         for scalar in source.unicodeScalars {
@@ -108,7 +108,7 @@ struct NoteHTMLLine {
         }
     }
 
-    mutating func lineBreak(_ style: NoteHTMLInline) {
+    package mutating func lineBreak(_ style: NoteHTMLInline) {
         pendingSpace = nil
         var marks = style.resolved
         marks.link = nil
@@ -116,7 +116,7 @@ struct NoteHTMLLine {
         atLineStart = true
     }
 
-    mutating func atom(_ atom: NoteAtom, _ style: NoteHTMLInline) {
+    package mutating func atom(_ atom: NoteAtom, _ style: NoteHTMLInline) {
         flushSpace()
         var marks = style.resolved
         marks.link = nil
@@ -125,7 +125,7 @@ struct NoteHTMLLine {
         atLineStart = false
     }
 
-    func text() -> NoteText {
+    package func text() -> NoteText {
         var list = pieces
         let trim: (Character) -> Bool = { $0 == " " || $0 == "\n" }
         while let first = list.first {
@@ -150,7 +150,7 @@ struct NoteHTMLLine {
         "k": "ₖ", "l": "ₗ", "m": "ₘ", "n": "ₙ", "p": "ₚ", "s": "ₛ", "t": "ₜ"
     ]
 
-    static func shifted(_ value: String, _ script: NoteHTMLInline.Script) -> String {
+    package static func shifted(_ value: String, _ script: NoteHTMLInline.Script) -> String {
         let table = script == .sup ? superscripts : subscripts
         guard value.contains(where: { !$0.isWhitespace }) else { return value }
         var result = ""
@@ -163,10 +163,12 @@ struct NoteHTMLLine {
     }
 }
 
-final class NoteHTMLConversion {
+package final class NoteHTMLConversion {
     private final class Sink {
         var blocks: [NoteBlock] = []
         var line = NoteHTMLLine()
+
+        package init() {}
     }
 
     private let document: NoteHTMLNode
@@ -201,14 +203,14 @@ final class NoteHTMLConversion {
         "danger": "CAUTION", "error": "CAUTION", "failure": "CAUTION", "bug": "CAUTION"
     ]
 
-    init(document: NoteHTMLNode, baseURL: URL?) {
+    package init(document: NoteHTMLNode, baseURL: URL?) {
         self.document = document
         self.baseURL = baseURL
         sheet = NoteHTMLStyleSheet(document)
         sizeHeadings = measureSizeHeadings()
     }
 
-    func run() -> [NoteBlock] {
+    package func run() -> [NoteBlock] {
         NoteHTMLReader.tidy(flow(document.children, NoteHTMLInline()))
     }
 

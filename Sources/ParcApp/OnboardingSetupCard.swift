@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 enum OnboardingSetupLayout {
     static let size = NSSize(width: 967, height: 548)

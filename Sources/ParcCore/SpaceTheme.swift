@@ -1,19 +1,19 @@
 import Foundation
 
-struct ThemeColor: Codable, Equatable {
-    enum ColorSpace: String, Codable { case sRGB, displayP3, linearSRGB }
-    let red: Double
-    let green: Double
-    let blue: Double
-    let colorSpace: ColorSpace
+package struct ThemeColor: Codable, Equatable {
+    package enum ColorSpace: String, Codable { case sRGB, displayP3, linearSRGB }
+    package let red: Double
+    package let green: Double
+    package let blue: Double
+    package let colorSpace: ColorSpace
 
-    init?(red: Double, green: Double, blue: Double, colorSpace: ColorSpace = .sRGB) {
+    package init?(red: Double, green: Double, blue: Double, colorSpace: ColorSpace = .sRGB) {
         guard [red, green, blue].allSatisfy({ $0.isFinite && (0...1).contains($0) }) else { return nil }
         self.red = red; self.green = green; self.blue = blue
         self.colorSpace = colorSpace
     }
 
-    init?(hex: String) {
+    package init?(hex: String) {
         guard hex.utf8.count == 6, hex.utf8.allSatisfy({
             (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0)
         }), let value = UInt32(hex, radix: 16) else { return nil }
@@ -22,12 +22,12 @@ struct ThemeColor: Codable, Equatable {
                   blue: Double(value & 255) / 255)
     }
 
-    var hex: String {
+    package var hex: String {
         String(format: "%02X%02X%02X", Int((red * 255).rounded()),
                Int((green * 255).rounded()), Int((blue * 255).rounded()))
     }
 
-    var hsl: (hue: Double, saturation: Double, lightness: Double) {
+    package var hsl: (hue: Double, saturation: Double, lightness: Double) {
         let high = max(red, green, blue), low = min(red, green, blue)
         let lightness = (high + low) / 2, delta = high - low
         guard delta > 0 else { return (0, 0, lightness) }
@@ -40,7 +40,7 @@ struct ThemeColor: Codable, Equatable {
         return (hue < 0 ? hue + 1 : hue, saturation, lightness)
     }
 
-    static func hsl(hue: Double, saturation: Double, lightness: Double, colorSpace: ColorSpace = .sRGB) -> Self? {
+    package static func hsl(hue: Double, saturation: Double, lightness: Double, colorSpace: ColorSpace = .sRGB) -> Self? {
         guard hue.isFinite, saturation.isFinite, lightness.isFinite,
               (0...1).contains(saturation), (0...1).contains(lightness) else { return nil }
         if saturation == 0 { return Self(red: lightness, green: lightness, blue: lightness, colorSpace: colorSpace) }
@@ -62,7 +62,7 @@ struct ThemeColor: Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey { case red, green, blue, colorSpace }
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         guard let color = Self(red: try c.decode(Double.self, forKey: .red),
                                green: try c.decode(Double.self, forKey: .green),
@@ -75,43 +75,43 @@ struct ThemeColor: Codable, Equatable {
     }
 }
 
-enum ThemeTexturePitch { static let points: Double = 100 }
+package enum ThemeTexturePitch { package static let points: Double = 100 }
 
-struct SpaceTheme: Codable, Equatable {
-    enum Appearance: String, Codable, CaseIterable { case automatic, light, dark }
-    enum Wheel: String, Codable, CaseIterable { case complimentary, analogous }
-    enum Texture: String, Codable, CaseIterable { case grain, sand, denim, tweed }
+package struct SpaceTheme: Codable, Equatable {
+    package enum Appearance: String, Codable, CaseIterable { case automatic, light, dark }
+    package enum Wheel: String, Codable, CaseIterable { case complimentary, analogous }
+    package enum Texture: String, Codable, CaseIterable { case grain, sand, denim, tweed }
 
-    var primaryColor: ThemeColor?
-    var colorCount: Int
-    var wheel: Wheel
-    var appearance: Appearance
-    var noise: Double
-    var intensity: Double
-    var texture: Texture
+    package var primaryColor: ThemeColor?
+    package var colorCount: Int
+    package var wheel: Wheel
+    package var appearance: Appearance
+    package var noise: Double
+    package var intensity: Double
+    package var texture: Texture
 
-    init(primaryColor: ThemeColor? = nil, colorCount: Int = 0, wheel: Wheel = .complimentary,
+    package init(primaryColor: ThemeColor? = nil, colorCount: Int = 0, wheel: Wheel = .complimentary,
          appearance: Appearance = .automatic, noise: Double = 0, intensity: Double = 0.8,
          texture: Texture = .grain) {
         self.primaryColor = primaryColor; self.colorCount = colorCount; self.wheel = wheel
         self.appearance = appearance; self.noise = noise; self.intensity = intensity; self.texture = texture
     }
 
-    static func singleColor(_ color: ThemeColor) -> Self { Self(primaryColor: color, colorCount: 1) }
+    package static func singleColor(_ color: ThemeColor) -> Self { Self(primaryColor: color, colorCount: 1) }
 
-    func textureStrength(isActive: Bool) -> Double {
+    package func textureStrength(isActive: Bool) -> Double {
         let maximum: Double
         switch texture { case .grain: maximum = 0.8; case .sand: maximum = 0.15; case .denim: maximum = 0.6; case .tweed: maximum = 0.4 }
         return noise * maximum * (isActive ? 1 : 0.25)
     }
 
-    var isValid: Bool {
+    package var isValid: Bool {
         (0...3).contains(colorCount) && (primaryColor == nil) == (colorCount == 0)
             && noise.isFinite && (0...1).contains(noise)
             && intensity.isFinite && (0...1).contains(intensity)
     }
 
-    var colors: [ThemeColor] {
+    package var colors: [ThemeColor] {
         guard isValid, let primaryColor else { return [] }
         let hsl = primaryColor.hsl
         let offsets: [Double]
@@ -129,7 +129,7 @@ struct SpaceTheme: Codable, Equatable {
         }
     }
 
-    mutating func removeColor() {
+    package mutating func removeColor() {
         guard colorCount > 0 else { return }
         colorCount -= 1
         if colorCount == 1 { wheel = .complimentary }
@@ -138,7 +138,7 @@ struct SpaceTheme: Codable, Equatable {
         }
     }
 
-    mutating func setNoise(_ value: Double, rotating: Bool = false) {
+    package mutating func setNoise(_ value: Double, rotating: Bool = false) {
         guard value.isFinite else { return }
         let bounded = min(1, max(0, value))
         noise = rotating ? bounded : (bounded * 20).rounded() / 20
@@ -147,7 +147,7 @@ struct SpaceTheme: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case primaryColor, colorCount, wheel, appearance, noise, intensity, texture
     }
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         primaryColor = try c.decodeIfPresent(ThemeColor.self, forKey: .primaryColor)
         colorCount = try c.decode(Int.self, forKey: .colorCount)

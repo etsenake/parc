@@ -1,31 +1,36 @@
 import Combine
 import Foundation
 
-enum NoteAttachments {
-    struct Placement: Equatable, Sendable {
-        var path: String
-        var created: Bool
+package enum NoteAttachments {
+    package struct Placement: Equatable, Sendable {
+        package var path: String
+        package var created: Bool
+
+        package init(path: String, created: Bool) {
+            self.path = path
+            self.created = created
+        }
     }
 
-    static let folderName = "Attachments"
-    static let stagingFolder = FileManager.default.temporaryDirectory.appendingPathComponent("Parc Note Imports", isDirectory: true)
+    package static let folderName = "Attachments"
+    package static let stagingFolder = FileManager.default.temporaryDirectory.appendingPathComponent("Parc Note Imports", isDirectory: true)
 
-    static func folder(for note: URL) -> URL {
+    package static func folder(for note: URL) -> URL {
         note.deletingLastPathComponent().appendingPathComponent(folderName, isDirectory: true)
     }
 
-    static func existingSource(for file: URL, in note: URL) -> String? {
+    package static func existingSource(for file: URL, in note: URL) -> String? {
         let noteFolder = NoteFilePaths.canonical(note.deletingLastPathComponent())
         let original = NoteFilePaths.canonical(file)
         guard NoteFilePaths.contains(folder: noteFolder, item: original) else { return nil }
         return NoteFilePaths.relativePath(from: noteFolder, to: original)
     }
 
-    static func importFile(_ source: URL, into note: URL) throws -> String {
+    package static func importFile(_ source: URL, into note: URL) throws -> String {
         try placeFile(source, into: note).path
     }
 
-    static func placeFile(_ source: URL, into note: URL) throws -> Placement {
+    package static func placeFile(_ source: URL, into note: URL) throws -> Placement {
         let original = NoteFilePaths.canonical(source)
         guard NoteFilePaths.itemExists(original) else { throw NoteFileError.missing }
         if let relative = existingSource(for: original, in: note) { return Placement(path: relative, created: false) }
@@ -53,11 +58,11 @@ enum NoteAttachments {
         throw NoteFileError.nameTaken(base)
     }
 
-    static func importData(_ data: Data, fileExtension: String, suggestedName: String?, into note: URL, date: Date) throws -> String {
+    package static func importData(_ data: Data, fileExtension: String, suggestedName: String?, into note: URL, date: Date) throws -> String {
         try placeData(data, fileExtension: fileExtension, suggestedName: suggestedName, into: note, date: date).path
     }
 
-    static func placeData(_ data: Data, fileExtension: String, suggestedName: String?, into note: URL, date: Date) throws -> Placement {
+    package static func placeData(_ data: Data, fileExtension: String, suggestedName: String?, into note: URL, date: Date) throws -> Placement {
         let pathExtension = NoteFileNaming.sanitizedExtension(fileExtension)
         var base = ""
         if let suggestedName {
@@ -86,7 +91,7 @@ enum NoteAttachments {
         throw NoteFileError.nameTaken(base)
     }
 
-    static func stage(_ data: Data, fileExtension: String, suggestedName: String) throws -> URL {
+    package static func stage(_ data: Data, fileExtension: String, suggestedName: String) throws -> URL {
         var base = NoteFileNaming.sanitizedTitle(suggestedName)
         if base.isEmpty { base = "Attachment" }
         let folder = stagingFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -96,7 +101,7 @@ enum NoteAttachments {
         return NoteFilePaths.canonical(file)
     }
 
-    static func isStaged(_ file: URL) -> Bool {
+    package static func isStaged(_ file: URL) -> Bool {
         file.isFileURL && NoteFilePaths.contains(folder: stagingFolder, item: file)
     }
 
@@ -120,10 +125,10 @@ enum NoteAttachments {
     }
 }
 
-enum NoteAttachmentError: LocalizedError, Equatable {
+package enum NoteAttachmentError: LocalizedError, Equatable {
     case leftInPlace(String)
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .leftInPlace(let name): return "Couldn’t copy “\(name)” into Attachments, so the note still links to where it lives."
         }
@@ -131,7 +136,7 @@ enum NoteAttachmentError: LocalizedError, Equatable {
 }
 
 @MainActor
-final class NoteAttachmentImports {
+package final class NoteAttachmentImports {
     private final class Ledger {
         weak var session: NotePageSession?
         var pending: [String: Int] = [:]
@@ -143,40 +148,42 @@ final class NoteAttachmentImports {
         init(_ session: NotePageSession) { self.session = session }
     }
 
-    static let shared = NoteAttachmentImports()
+    package static let shared = NoteAttachmentImports()
 
-    var worker = NoteFileWorker(label: "org.parc.notes.attachments")
-    let changes = PassthroughSubject<String, Never>()
+    package var worker = NoteFileWorker(label: "org.parc.notes.attachments")
+    package let changes = PassthroughSubject<String, Never>()
     private var ledgers: [ObjectIdentifier: Ledger] = [:]
     private var originals: Set<String> = []
     private var orphans: [String: [String: String]] = [:]
 
-    func isPending(_ source: String?, in session: NotePageSession) -> Bool {
+    package init() {}
+
+    package func isPending(_ source: String?, in session: NotePageSession) -> Bool {
         guard let source, let ledger = existingLedger(for: session) else { return false }
         return ledger.pending[source] != nil
     }
 
-    func hasTried(_ source: String?, in session: NotePageSession) -> Bool {
+    package func hasTried(_ source: String?, in session: NotePageSession) -> Bool {
         guard let source, let ledger = existingLedger(for: session) else { return false }
         return ledger.tried.contains(source)
     }
 
-    func landedPath(for source: String?, in session: NotePageSession) -> String? {
+    package func landedPath(for source: String?, in session: NotePageSession) -> String? {
         guard let source else { return nil }
         return existingLedger(for: session)?.landed[source]
     }
 
-    func takeFailure(of source: String?, in session: NotePageSession) -> Error? {
+    package func takeFailure(of source: String?, in session: NotePageSession) -> Error? {
         guard let source, let ledger = existingLedger(for: session) else { return nil }
         return ledger.failures.removeValue(forKey: source)
     }
 
-    func mayImport(_ file: URL) -> Bool {
+    package func mayImport(_ file: URL) -> Bool {
         guard file.isFileURL else { return false }
         return originals.contains(NoteFilePaths.canonical(file).path) || NoteAttachments.isStaged(file)
     }
 
-    func begin(_ source: String, from original: URL, in session: NotePageSession, note: URL,
+    package func begin(_ source: String, from original: URL, in session: NotePageSession, note: URL,
                _ work: @escaping () throws -> NoteAttachments.Placement) {
         let ledger = ledger(for: session)
         ledger.pending[source, default: 0] += 1
@@ -240,7 +247,7 @@ final class NoteAttachmentImports {
         }
     }
 
-    nonisolated static func rebase(_ landed: URL, created: Bool, into note: URL, discardingOriginal: Bool) throws -> NoteAttachments.Placement {
+    package nonisolated static func rebase(_ landed: URL, created: Bool, into note: URL, discardingOriginal: Bool) throws -> NoteAttachments.Placement {
         let folder = note.deletingLastPathComponent()
         do {
             let placed = try NoteAttachments.placeFile(landed, into: note)
@@ -261,7 +268,7 @@ final class NoteAttachmentImports {
         return current
     }
 
-    func adoptOrphans(of note: URL, in session: NotePageSession) {
+    package func adoptOrphans(of note: URL, in session: NotePageSession) {
         guard !orphans.isEmpty, let found = orphans.removeValue(forKey: NoteFilePaths.key(for: note)) else { return }
         let folder = note.deletingLastPathComponent()
         land(found.filter { NoteFilePaths.itemExists(folder.appendingPathComponent($0.value.removingPercentEncoding ?? $0.value)) }, in: session)
@@ -302,7 +309,7 @@ final class NoteAttachmentImports {
         return NoteFileSession.session(for: note)?.page
     }
 
-    static func settle(_ replacements: [String: String], in session: NotePageSession) {
+    package static func settle(_ replacements: [String: String], in session: NotePageSession) {
         guard !replacements.isEmpty else { return }
         let page = session.page
         for id in page.documentOrder(includingCollapsed: true) {

@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 @MainActor
-final class NoteSyncedHold {
+package final class NoteSyncedHold {
     private weak var engine: NoteSyncedBlocks?
     private weak var session: NotePageSession?
     private var leases: [String: NoteSyncedLease] = [:]
@@ -14,7 +14,7 @@ final class NoteSyncedHold {
     private var wantsRefresh = false
     private var ended = false
 
-    init(engine: NoteSyncedBlocks, session: NotePageSession) {
+    package init(engine: NoteSyncedBlocks, session: NotePageSession) {
         self.engine = engine
         self.session = session
         engine.changes.sink { [weak self] in self?.refresh() }.store(in: &subscriptions)
@@ -29,9 +29,9 @@ final class NoteSyncedHold {
         refresh()
     }
 
-    var heldCount: Int { leases.count }
+    package var heldCount: Int { leases.count }
 
-    func end() {
+    package func end() {
         guard !ended else { return }
         ended = true
         subscriptions.removeAll()
@@ -41,7 +41,7 @@ final class NoteSyncedHold {
         for lease in held { lease.end() }
     }
 
-    func refresh() {
+    package func refresh() {
         guard !ended else { return }
         if isRefreshing {
             wantsRefresh = true

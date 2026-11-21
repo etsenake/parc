@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension EaselCanvasView {
     func shapeMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] {

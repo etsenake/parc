@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension NoteSelectionController {
     func handleTextCommand(_ selector: Selector, in host: NoteTextHost) -> Bool {

@@ -1,28 +1,28 @@
 import Foundation
 
-enum EaselWebItemChrome {
-    enum State: Equatable {
+package enum EaselWebItemChrome {
+    package enum State: Equatable {
         case snapshot(canGoLive: Bool)
         case live
         case page
     }
 
-    static let headerHeight: Double = 38
-    static let minimumHeaderWidth: Double = 320
-    static let makeLiveTitle = "Make live"
-    static let backToSnapshotTitle = "Back to snapshot"
-    static let makeLiveHelp = "Show this captured region from the live webpage"
-    static let backToSnapshotHelp = "Return to the original captured image"
-    static let snapshotOnlyHelp = "Only a captured visible region can go live. Full-page, cropped, marked-up and Portrait-framed captures, and older cards, keep just their image."
-    static let liveHelp = "Showing the live webpage. The original captured image is kept."
+    package static let headerHeight: Double = 38
+    package static let minimumHeaderWidth: Double = 320
+    package static let makeLiveTitle = "Make live"
+    package static let backToSnapshotTitle = "Back to snapshot"
+    package static let makeLiveHelp = "Show this captured region from the live webpage"
+    package static let backToSnapshotHelp = "Return to the original captured image"
+    package static let snapshotOnlyHelp = "Only a captured visible region can go live. Full-page, cropped, marked-up and Portrait-framed captures, and older cards, keep just their image."
+    package static let liveHelp = "Showing the live webpage. The original captured image is kept."
 
-    static func canMakeLive(_ item: EaselItem) -> Bool {
+    package static func canMakeLive(_ item: EaselItem) -> Bool {
         guard item.kind == .webCard, item.assetID != nil, let layout = item.captureLayout, layout.isValid,
               let raw = item.url, let url = URL(string: raw), let scheme = url.scheme?.lowercased() else { return false }
         return scheme == "http" || scheme == "https"
     }
 
-    static func state(of item: EaselItem) -> State? {
+    package static func state(of item: EaselItem) -> State? {
         switch item.kind {
         case .browser: return .page
         case .webCard where item.ownsEmbeddedPage: return .live
@@ -31,12 +31,12 @@ enum EaselWebItemChrome {
         }
     }
 
-    static func isSnapshot(_ item: EaselItem) -> Bool {
+    package static func isSnapshot(_ item: EaselItem) -> Bool {
         if case .snapshot = state(of: item) { return true }
         return false
     }
 
-    static func badge(for item: EaselItem, now: Date = Date(), calendar: Calendar = .current, locale: Locale = .current) -> String? {
+    package static func badge(for item: EaselItem, now: Date = Date(), calendar: Calendar = .current, locale: Locale = .current) -> String? {
         switch state(of: item) {
         case .live: return "Live"
         case .snapshot(let canGoLive):
@@ -47,7 +47,7 @@ enum EaselWebItemChrome {
         }
     }
 
-    static func badgeHelp(for item: EaselItem) -> String? {
+    package static func badgeHelp(for item: EaselItem) -> String? {
         switch state(of: item) {
         case .live: return liveHelp
         case .snapshot(let canGoLive): return canGoLive ? "The image you captured. Make live shows the same region from the current webpage." : snapshotOnlyHelp
@@ -55,7 +55,7 @@ enum EaselWebItemChrome {
         }
     }
 
-    static func capturedPhrase(_ date: Date, now: Date, calendar: Calendar, locale: Locale) -> String {
+    package static func capturedPhrase(_ date: Date, now: Date, calendar: Calendar, locale: Locale) -> String {
         if calendar.isDate(date, inSameDayAs: now) { return "today" }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
             return "yesterday"
@@ -67,7 +67,7 @@ enum EaselWebItemChrome {
         return formatter.string(from: date)
     }
 
-    static func title(for item: EaselItem, pageTitle: String? = nil) -> String {
+    package static func title(for item: EaselItem, pageTitle: String? = nil) -> String {
         let live = pageTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !live.isEmpty { return live }
         let saved = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -75,12 +75,12 @@ enum EaselWebItemChrome {
         return item.url.flatMap(URL.init(string:)).map(displayHost) ?? "Webpage"
     }
 
-    static func displayHost(_ url: URL) -> String {
+    package static func displayHost(_ url: URL) -> String {
         guard let host = url.host, !host.isEmpty else { return url.absoluteString }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
-    static func headerFrame(item: EaselRect, visible: EaselRect, height: Double = headerHeight,
+    package static func headerFrame(item: EaselRect, visible: EaselRect, height: Double = headerHeight,
                             minimumWidth: Double = minimumHeaderWidth) -> EaselRect {
         let width = max(item.width, min(minimumWidth, max(visible.width, 1)))
         var x = item.x + (item.width - width) / 2
@@ -97,8 +97,8 @@ enum EaselWebItemChrome {
     }
 }
 
-enum EmbeddedPageStatusText {
-    static func friendly(_ text: String, document: String) -> String {
+package enum EmbeddedPageStatusText {
+    package static func friendly(_ text: String, document: String) -> String {
         switch text {
         case "Loading webpage…": return "Waking the page up…"
         case "Webpage closed": return "This page closed. Give it another go?"

@@ -1,65 +1,65 @@
 import Foundation
 
-struct NoteTableMerge: Hashable, Codable {
-    var row: Int
-    var column: Int
-    var rowSpan: Int
-    var columnSpan: Int
+package struct NoteTableMerge: Hashable, Codable {
+    package var row: Int
+    package var column: Int
+    package var rowSpan: Int
+    package var columnSpan: Int
 
-    init(row: Int, column: Int, rowSpan: Int, columnSpan: Int) {
+    package init(row: Int, column: Int, rowSpan: Int, columnSpan: Int) {
         self.row = row
         self.column = column
         self.rowSpan = rowSpan
         self.columnSpan = columnSpan
     }
 
-    init(rows: ClosedRange<Int>, columns: ClosedRange<Int>) {
+    package init(rows: ClosedRange<Int>, columns: ClosedRange<Int>) {
         self.init(row: rows.lowerBound, column: columns.lowerBound, rowSpan: rows.count, columnSpan: columns.count)
     }
 
-    var anchor: NoteTableCell { NoteTableCell(row: row, column: column) }
-    var lastRow: Int { row + max(1, rowSpan) - 1 }
-    var lastColumn: Int { column + max(1, columnSpan) - 1 }
-    var rows: ClosedRange<Int> { row...lastRow }
-    var columns: ClosedRange<Int> { column...lastColumn }
-    var cellCount: Int { rowSpan * columnSpan }
+    package var anchor: NoteTableCell { NoteTableCell(row: row, column: column) }
+    package var lastRow: Int { row + max(1, rowSpan) - 1 }
+    package var lastColumn: Int { column + max(1, columnSpan) - 1 }
+    package var rows: ClosedRange<Int> { row...lastRow }
+    package var columns: ClosedRange<Int> { column...lastColumn }
+    package var cellCount: Int { rowSpan * columnSpan }
 
-    var cells: [NoteTableCell] {
+    package var cells: [NoteTableCell] {
         rows.flatMap { row in columns.map { NoteTableCell(row: row, column: $0) } }
     }
 
-    func contains(_ cell: NoteTableCell) -> Bool {
+    package func contains(_ cell: NoteTableCell) -> Bool {
         rows.contains(cell.row) && columns.contains(cell.column)
     }
 
-    func intersects(rows other: ClosedRange<Int>, columns otherColumns: ClosedRange<Int>) -> Bool {
+    package func intersects(rows other: ClosedRange<Int>, columns otherColumns: ClosedRange<Int>) -> Bool {
         rows.overlaps(other) && columns.overlaps(otherColumns)
     }
 }
 
-enum NoteTableFill: Hashable {
+package enum NoteTableFill: Hashable {
     case down, right
 }
 
 extension NoteTable {
-    func merge(containing cell: NoteTableCell) -> NoteTableMerge? {
+    package func merge(containing cell: NoteTableCell) -> NoteTableMerge? {
         merges.first { $0.contains(cell) }
     }
 
-    func anchor(of cell: NoteTableCell) -> NoteTableCell {
+    package func anchor(of cell: NoteTableCell) -> NoteTableCell {
         merge(containing: cell)?.anchor ?? cell
     }
 
-    func isCovered(_ cell: NoteTableCell) -> Bool {
+    package func isCovered(_ cell: NoteTableCell) -> Bool {
         guard let merge = merge(containing: cell) else { return false }
         return merge.anchor != cell
     }
 
-    func span(of cell: NoteTableCell) -> NoteTableMerge {
+    package func span(of cell: NoteTableCell) -> NoteTableMerge {
         merge(containing: cell) ?? NoteTableMerge(row: cell.row, column: cell.column, rowSpan: 1, columnSpan: 1)
     }
 
-    var visibleCells: [NoteTableCell] {
+    package var visibleCells: [NoteTableCell] {
         var result: [NoteTableCell] = []
         let covered = coveredCells
         for row in 0..<rowCount {
@@ -71,7 +71,7 @@ extension NoteTable {
         return result
     }
 
-    var coveredCells: Set<NoteTableCell> {
+    package var coveredCells: Set<NoteTableCell> {
         var result = Set<NoteTableCell>()
         for merge in merges {
             for cell in merge.cells where cell != merge.anchor { result.insert(cell) }
@@ -79,7 +79,7 @@ extension NoteTable {
         return result
     }
 
-    func expanded(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> (rows: ClosedRange<Int>, columns: ClosedRange<Int>) {
+    package func expanded(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> (rows: ClosedRange<Int>, columns: ClosedRange<Int>) {
         var rowsOut = rowRange, columnsOut = columnRange
         var changed = !merges.isEmpty
         while changed {
@@ -97,7 +97,7 @@ extension NoteTable {
         return (rowsOut, columnsOut)
     }
 
-    func canMerge(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
+    package func canMerge(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
         guard rowRange.lowerBound >= 0, columnRange.lowerBound >= 0, rowRange.upperBound < rowCount,
               columnRange.upperBound < columnCount else { return false }
         let area = expanded(rows: rowRange, columns: columnRange)
@@ -105,12 +105,12 @@ extension NoteTable {
         return !merges.contains { $0.rows == area.rows && $0.columns == area.columns }
     }
 
-    func hasMerges(intersecting rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
+    package func hasMerges(intersecting rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
         merges.contains { $0.intersects(rows: rowRange, columns: columnRange) }
     }
 
     @discardableResult
-    mutating func mergeCells(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
+    package mutating func mergeCells(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
         normalize()
         guard canMerge(rows: rowRange, columns: columnRange) else { return false }
         let area = expanded(rows: rowRange, columns: columnRange)
@@ -126,18 +126,18 @@ extension NoteTable {
     }
 
     @discardableResult
-    mutating func unmergeCells(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
+    package mutating func unmergeCells(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
         let before = merges.count
         merges.removeAll { $0.intersects(rows: rowRange, columns: columnRange) }
         return merges.count != before
     }
 
-    func color(at cell: NoteTableCell) -> NoteColorStyle? {
+    package func color(at cell: NoteTableCell) -> NoteColorStyle? {
         cellColors[anchor(of: cell)]
     }
 
     @discardableResult
-    mutating func setColor(_ style: NoteColorStyle?, rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
+    package mutating func setColor(_ style: NoteColorStyle?, rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
         normalize()
         let before = cellColors
         let area = expanded(rows: rowRange, columns: columnRange)
@@ -150,7 +150,7 @@ extension NoteTable {
         return cellColors != before
     }
 
-    func commonColor(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> NoteColorStyle?? {
+    package func commonColor(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> NoteColorStyle?? {
         var result: NoteColorStyle??
         for row in rowRange where row >= 0 && row < rowCount {
             for column in columnRange where column >= 0 && column < columnCount {
@@ -165,11 +165,11 @@ extension NoteTable {
         return .some(nil)
     }
 
-    func uniformColor(column: Int) -> NoteColorStyle? {
+    package func uniformColor(column: Int) -> NoteColorStyle? {
         uniformColor((0..<rowCount).map { NoteTableCell(row: $0, column: column) }, minimum: 2)
     }
 
-    func uniformColor(row: Int) -> NoteColorStyle? {
+    package func uniformColor(row: Int) -> NoteColorStyle? {
         uniformColor((0..<columnCount).map { NoteTableCell(row: row, column: $0) }, minimum: 2)
     }
 
@@ -184,7 +184,7 @@ extension NoteTable {
     }
 
     @discardableResult
-    mutating func fill(_ direction: NoteTableFill, rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
+    package mutating func fill(_ direction: NoteTableFill, rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
         normalize()
         guard rowRange.lowerBound >= 0, columnRange.lowerBound >= 0, rowRange.upperBound < rowCount, columnRange.upperBound < columnCount else { return false }
         let before = self
@@ -214,7 +214,7 @@ extension NoteTable {
         cellColors[target] = cellColors[origin]
     }
 
-    func slice(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> NoteTable {
+    package func slice(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> NoteTable {
         let lastRow = max(0, rowCount - 1), lastColumn = max(0, columnCount - 1)
         let rowsIn = min(max(0, rowRange.lowerBound), lastRow)...min(max(0, rowRange.upperBound), lastRow)
         let columnsIn = min(max(0, columnRange.lowerBound), lastColumn)...min(max(0, columnRange.upperBound), lastColumn)
@@ -236,7 +236,7 @@ extension NoteTable {
     }
 
     @discardableResult
-    mutating func paste(_ source: NoteTable, at origin: NoteTableCell) -> (rows: ClosedRange<Int>, columns: ClosedRange<Int>) {
+    package mutating func paste(_ source: NoteTable, at origin: NoteTableCell) -> (rows: ClosedRange<Int>, columns: ClosedRange<Int>) {
         normalize()
         var source = source
         source.normalize()
@@ -257,30 +257,30 @@ extension NoteTable {
         return (rowRange, columnRange)
     }
 
-    func isRowEmpty(_ row: Int) -> Bool {
+    package func isRowEmpty(_ row: Int) -> Bool {
         guard rows.indices.contains(row) else { return false }
         return rows[row].allSatisfy(\.isEmpty) && !merges.contains { $0.rows.contains(row) }
     }
 
-    func isColumnEmpty(_ column: Int) -> Bool {
+    package func isColumnEmpty(_ column: Int) -> Bool {
         guard column >= 0, column < columnCount else { return false }
         return rows.allSatisfy { !$0.indices.contains(column) || $0[column].isEmpty } && !merges.contains { $0.columns.contains(column) }
     }
 
-    var trailingEmptyRows: Int {
+    package var trailingEmptyRows: Int {
         var count = 0
         while count < rowCount - 1, isRowEmpty(rowCount - 1 - count) { count += 1 }
         return count
     }
 
-    var trailingEmptyColumns: Int {
+    package var trailingEmptyColumns: Int {
         var count = 0
         while count < columnCount - 1, isColumnEmpty(columnCount - 1 - count) { count += 1 }
         return count
     }
 
     @discardableResult
-    mutating func resize(rows targetRows: Int, columns targetColumns: Int) -> Bool {
+    package mutating func resize(rows targetRows: Int, columns targetColumns: Int) -> Bool {
         normalize()
         let before = self
         let minimumRows = rowCount - trailingEmptyRows, minimumColumns = columnCount - trailingEmptyColumns
@@ -292,7 +292,7 @@ extension NoteTable {
         return self != before
     }
 
-    mutating func normalizeSpans() {
+    package mutating func normalizeSpans() {
         let rowLimit = rows.count, columnLimit = columnCount
         if !cellColors.isEmpty, cellColors.keys.contains(where: { $0.row < 0 || $0.column < 0 || $0.row >= rowLimit || $0.column >= columnLimit }) {
             cellColors = cellColors.filter { $0.key.row >= 0 && $0.key.column >= 0 && $0.key.row < rowLimit && $0.key.column < columnLimit }
@@ -320,7 +320,7 @@ extension NoteTable {
         }
     }
 
-    mutating func insertRows(at index: Int, count: Int, copying source: Int? = nil) {
+    package mutating func insertRows(at index: Int, count: Int, copying source: Int? = nil) {
         normalize()
         guard count > 0 else { return }
         let position = min(max(0, index), rowCount)
@@ -357,7 +357,7 @@ extension NoteTable {
     }
 
     @discardableResult
-    mutating func removeRows(_ range: Range<Int>) -> Bool {
+    package mutating func removeRows(_ range: Range<Int>) -> Bool {
         normalize()
         let lower = max(0, range.lowerBound), upper = min(rowCount, range.upperBound)
         guard lower < upper, upper - lower < rowCount else { return false }
@@ -384,7 +384,7 @@ extension NoteTable {
         return true
     }
 
-    mutating func reorderRows(_ newIndex: (Int) -> Int) {
+    package mutating func reorderRows(_ newIndex: (Int) -> Int) {
         normalize()
         var reordered = rows
         for (old, row) in rows.enumerated() { reordered[newIndex(old)] = row }
@@ -406,7 +406,7 @@ extension NoteTable {
         normalize()
     }
 
-    mutating func insertColumns(at index: Int, count: Int, copying source: Int? = nil) {
+    package mutating func insertColumns(at index: Int, count: Int, copying source: Int? = nil) {
         normalize()
         guard count > 0 else { return }
         let position = min(max(0, index), columnCount)
@@ -446,7 +446,7 @@ extension NoteTable {
     }
 
     @discardableResult
-    mutating func removeColumns(_ range: Range<Int>) -> Bool {
+    package mutating func removeColumns(_ range: Range<Int>) -> Bool {
         normalize()
         let lower = max(0, range.lowerBound), upper = min(columnCount, range.upperBound)
         guard lower < upper, upper - lower < columnCount else { return false }
@@ -475,7 +475,7 @@ extension NoteTable {
         return true
     }
 
-    mutating func reorderColumns(_ newIndex: (Int) -> Int) {
+    package mutating func reorderColumns(_ newIndex: (Int) -> Int) {
         normalize()
         let columns = columnCount
         for row in rows.indices {
@@ -526,8 +526,8 @@ extension NoteTable {
     }
 }
 
-enum NoteTableReference {
-    static func columnName(_ index: Int) -> String {
+package enum NoteTableReference {
+    package static func columnName(_ index: Int) -> String {
         var value = max(0, index) + 1
         var letters: [Character] = []
         while value > 0 {
@@ -538,7 +538,7 @@ enum NoteTableReference {
         return String(letters.reversed())
     }
 
-    static func columnIndex<S: StringProtocol>(_ name: S) -> Int? {
+    package static func columnIndex<S: StringProtocol>(_ name: S) -> Int? {
         guard !name.isEmpty, name.count <= 3 else { return nil }
         var value = 0
         for scalar in name.unicodeScalars {
@@ -550,21 +550,21 @@ enum NoteTableReference {
         return value - 1
     }
 
-    static func cellName(_ cell: NoteTableCell) -> String {
+    package static func cellName(_ cell: NoteTableCell) -> String {
         columnName(cell.column) + String(cell.row + 1)
     }
 
-    static func rangeName(rows: ClosedRange<Int>, columns: ClosedRange<Int>) -> String {
+    package static func rangeName(rows: ClosedRange<Int>, columns: ClosedRange<Int>) -> String {
         let start = cellName(NoteTableCell(row: rows.lowerBound, column: columns.lowerBound))
         if rows.count == 1 && columns.count == 1 { return start }
         return start + ":" + cellName(NoteTableCell(row: rows.upperBound, column: columns.upperBound))
     }
 
-    static func columnsName(_ columns: ClosedRange<Int>) -> String {
+    package static func columnsName(_ columns: ClosedRange<Int>) -> String {
         columnName(columns.lowerBound) + ":" + columnName(columns.upperBound)
     }
 
-    static func rowsName(_ rows: ClosedRange<Int>) -> String {
+    package static func rowsName(_ rows: ClosedRange<Int>) -> String {
         String(rows.lowerBound + 1) + ":" + String(rows.upperBound + 1)
     }
 
@@ -590,7 +590,7 @@ enum NoteTableReference {
         return .cell(NoteTableCell(row: number - 1, column: column))
     }
 
-    static func range<S: StringProtocol>(_ text: S, rowCount: Int, columnCount: Int) -> (rows: ClosedRange<Int>, columns: ClosedRange<Int>)? {
+    package static func range<S: StringProtocol>(_ text: S, rowCount: Int, columnCount: Int) -> (rows: ClosedRange<Int>, columns: ClosedRange<Int>)? {
         guard rowCount > 0, columnCount > 0 else { return nil }
         let pieces = text.split(separator: ":", omittingEmptySubsequences: false)
         guard pieces.count == 1 || pieces.count == 2, let first = part(pieces[0]) else { return nil }
@@ -616,12 +616,12 @@ enum NoteTableReference {
 }
 
 extension NoteTable {
-    var mergeAttribute: String? {
+    package var mergeAttribute: String? {
         guard !merges.isEmpty else { return nil }
         return merges.map { NoteTableReference.rangeName(rows: $0.rows, columns: $0.columns) }.joined(separator: ",")
     }
 
-    var colorsAttribute: String? {
+    package var colorsAttribute: String? {
         guard !cellColors.isEmpty else { return nil }
         let covered = coveredCells
         var done = Set<NoteTableCell>()
@@ -665,7 +665,7 @@ extension NoteTable {
         return items.isEmpty ? nil : items.joined(separator: ",")
     }
 
-    mutating func applyMergeAttribute(_ value: String) {
+    package mutating func applyMergeAttribute(_ value: String) {
         normalize()
         for item in value.split(separator: ",") {
             guard let range = NoteTableReference.range(item, rowCount: rowCount, columnCount: columnCount),
@@ -675,7 +675,7 @@ extension NoteTable {
         normalize()
     }
 
-    mutating func applyColorsAttribute(_ value: String) {
+    package mutating func applyColorsAttribute(_ value: String) {
         normalize()
         for item in value.split(separator: ",") {
             guard let equals = item.lastIndex(of: "="),

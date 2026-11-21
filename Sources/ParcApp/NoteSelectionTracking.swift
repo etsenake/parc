@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension NoteSelectionController {
     static let dragThreshold: CGFloat = 3

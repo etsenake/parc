@@ -1,14 +1,14 @@
 import Combine
 import Foundation
 
-struct NoteBacklinkSnippet: Hashable, Sendable {
-    var text: String
-    var highlight: Range<Int>?
+package struct NoteBacklinkSnippet: Hashable, Sendable {
+    package var text: String
+    package var highlight: Range<Int>?
 
-    static let leadingContext = 40
-    static let maximumLength = 150
+    package static let leadingContext = 40
+    package static let maximumLength = 150
 
-    static func around(_ range: Range<Int>, in plain: String) -> NoteBacklinkSnippet {
+    package static func around(_ range: Range<Int>, in plain: String) -> NoteBacklinkSnippet {
         let string = plain as NSString
         let length = string.length
         guard length > 0 else { return NoteBacklinkSnippet(text: "", highlight: nil) }
@@ -39,7 +39,7 @@ struct NoteBacklinkSnippet: Hashable, Sendable {
         return NoteBacklinkSnippet(text: text, highlight: span > 0 ? offset..<(offset + span) : nil)
     }
 
-    static func whole(_ text: String) -> NoteBacklinkSnippet {
+    package static func whole(_ text: String) -> NoteBacklinkSnippet {
         around(0..<(text as NSString).length, in: text)
     }
 
@@ -70,58 +70,67 @@ struct NoteBacklinkSnippet: Hashable, Sendable {
     }
 }
 
-struct NoteOutgoingLink: Hashable, Sendable {
-    enum Kind: Hashable, Sendable { case link, mention, pageLink }
+package struct NoteOutgoingLink: Hashable, Sendable {
+    package enum Kind: Hashable, Sendable { case link, mention, pageLink }
 
-    var target: String
-    var kind: Kind
-    var snippet: NoteBacklinkSnippet
-    var anchor: String?
+    package var target: String
+    package var kind: Kind
+    package var snippet: NoteBacklinkSnippet
+    package var anchor: String?
 }
 
-struct NoteBacklink: Hashable, Identifiable, Sendable {
-    var source: URL
-    var title: String
-    var icon: String?
-    var snippet: NoteBacklinkSnippet
-    var anchor: String?
-    var links: Int
+package struct NoteBacklink: Hashable, Identifiable, Sendable {
+    package var source: URL
+    package var title: String
+    package var icon: String?
+    package var snippet: NoteBacklinkSnippet
+    package var anchor: String?
+    package var links: Int
 
-    var id: URL { source }
+    package var id: URL { source }
 
-    var destination: URL {
+    package init(source: URL, title: String, icon: String? = nil, snippet: NoteBacklinkSnippet, anchor: String? = nil, links: Int) {
+        self.source = source
+        self.title = title
+        self.icon = icon
+        self.snippet = snippet
+        self.anchor = anchor
+        self.links = links
+    }
+
+    package var destination: URL {
         guard let anchor, !anchor.isEmpty, var components = URLComponents(url: source, resolvingAgainstBaseURL: false) else { return source }
         components.fragment = anchor
         return components.url ?? source
     }
 }
 
-struct NoteBacklinkMove: Hashable, Sendable {
-    var fromKey: String
-    var from: URL
-    var to: URL
+package struct NoteBacklinkMove: Hashable, Sendable {
+    package var fromKey: String
+    package var from: URL
+    package var to: URL
 }
 
-enum NoteBacklinkScanner {
-    static let readLimit = 2 * 1024 * 1024
+package enum NoteBacklinkScanner {
+    package static let readLimit = 2 * 1024 * 1024
 
-    struct Reference: Hashable {
-        var target: String
-        var kind: NoteOutgoingLink.Kind
-        var range: Range<Int>
+    package struct Reference: Hashable {
+        package var target: String
+        package var kind: NoteOutgoingLink.Kind
+        package var range: Range<Int>
     }
 
-    static func mayLink(_ text: String) -> Bool {
+    package static func mayLink(_ text: String) -> Bool {
         text.contains("](") || text.contains("[[") || text.contains("]:") || text.contains("href")
     }
 
-    static func outgoing(fileAt url: URL) -> [NoteOutgoingLink] {
+    package static func outgoing(fileAt url: URL) -> [NoteOutgoingLink] {
         guard NoteFileKind(url: url) == .markdown,
               let text = NoteFileSummary.readHead(url, kind: .markdown, upTo: readLimit), mayLink(text) else { return [] }
         return outgoing(in: NoteMarkdown.parse(text), folder: url.deletingLastPathComponent())
     }
 
-    static func outgoing(in page: NotePage, folder: URL) -> [NoteOutgoingLink] {
+    package static func outgoing(in page: NotePage, folder: URL) -> [NoteOutgoingLink] {
         var keys: [String: String] = [:]
         var misses: Set<String> = []
         func key(_ target: String) -> String? {
@@ -159,7 +168,7 @@ enum NoteBacklinkScanner {
         return result
     }
 
-    static func flatten(_ text: NoteText) -> (plain: String, references: [Reference]) {
+    package static func flatten(_ text: NoteText) -> (plain: String, references: [Reference]) {
         var plain = ""
         var position = 0
         var references: [Reference] = []
@@ -201,7 +210,7 @@ enum NoteBacklinkScanner {
         return (plain, references)
     }
 
-    static func targetURL(_ raw: String, from folder: URL) -> URL? {
+    package static func targetURL(_ raw: String, from folder: URL) -> URL? {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.count >= 2, value.hasPrefix("<"), value.hasSuffix(">") { value = String(value.dropFirst().dropLast()) }
         guard !value.isEmpty, !value.hasPrefix("#"), !value.hasPrefix("//") else { return nil }
@@ -226,11 +235,11 @@ enum NoteBacklinkScanner {
         return file.standardizedFileURL
     }
 
-    static func targetKey(_ raw: String, from folder: URL) -> String? {
+    package static func targetKey(_ raw: String, from folder: URL) -> String? {
         targetURL(raw, from: folder).map { NoteFilePaths.key(for: $0) }
     }
 
-    static func scheme(of value: String) -> String? {
+    package static func scheme(of value: String) -> String? {
         guard let colon = value.firstIndex(of: ":") else { return nil }
         let candidate = value[..<colon]
         guard candidate.count >= 2, let first = candidate.unicodeScalars.first, first.isASCII, CharacterSet.letters.contains(first),
@@ -241,7 +250,7 @@ enum NoteBacklinkScanner {
 }
 
 @MainActor
-final class NoteBacklinkIndex {
+package final class NoteBacklinkIndex {
     private struct Source: Equatable {
         var url: URL
         var title: String
@@ -251,6 +260,17 @@ final class NoteBacklinkIndex {
         var identity: String?
         var node: NoteFileNode?
         var links: [NoteOutgoingLink]?
+
+        package init(url: URL, title: String, icon: String? = nil, modifiedAt: Date, size: Int, identity: String? = nil, node: NoteFileNode? = nil, links: [NoteOutgoingLink]? = nil) {
+            self.url = url
+            self.title = title
+            self.icon = icon
+            self.modifiedAt = modifiedAt
+            self.size = size
+            self.identity = identity
+            self.node = node
+            self.links = links
+        }
     }
 
     private struct Job {
@@ -258,6 +278,13 @@ final class NoteBacklinkIndex {
         var url: URL
         var modifiedAt: Date
         var size: Int
+
+        package init(path: String, url: URL, modifiedAt: Date, size: Int) {
+            self.path = path
+            self.url = url
+            self.modifiedAt = modifiedAt
+            self.size = size
+        }
     }
 
     private struct Reading: Sendable {
@@ -267,6 +294,15 @@ final class NoteBacklinkIndex {
         var identity: String
         var node: NoteFileNode?
         var links: [NoteOutgoingLink]
+
+        package init(path: String, modifiedAt: Date, size: Int, identity: String, node: NoteFileNode? = nil, links: [NoteOutgoingLink]) {
+            self.path = path
+            self.modifiedAt = modifiedAt
+            self.size = size
+            self.identity = identity
+            self.node = node
+            self.links = links
+        }
     }
 
     private struct Departure {
@@ -274,15 +310,15 @@ final class NoteBacklinkIndex {
         var at: Date
     }
 
-    static let shared = NoteBacklinkIndex()
-    static var worker = NoteFileWorker(label: "org.parc.notes.backlinks", qos: .utility)
-    static var clock: NoteFileClock = NoteFileSystemClock.shared
-    static var followDelay: TimeInterval = 1.5
-    static var departureWindow: TimeInterval = 10
-    static let chunkSize = 200
+    package static let shared = NoteBacklinkIndex()
+    package static var worker = NoteFileWorker(label: "org.parc.notes.backlinks", qos: .utility)
+    package static var clock: NoteFileClock = NoteFileSystemClock.shared
+    package static var followDelay: TimeInterval = 1.5
+    package static var departureWindow: TimeInterval = 10
+    package static let chunkSize = 200
 
-    let changes = PassthroughSubject<Void, Never>()
-    private(set) var isActive = false
+    package let changes = PassthroughSubject<Void, Never>()
+    package private(set) var isActive = false
     private var libraries: [NoteLibrary] = []
     private var tracked: [ObjectIdentifier: AnyCancellable] = [:]
     private var creation: AnyCancellable?
@@ -298,30 +334,32 @@ final class NoteBacklinkIndex {
     private var followTimer: NoteFileTimer?
     private var rewriting = 0
 
-    var isSettled: Bool {
+    package init() {}
+
+    package var isSettled: Bool {
         !isReading && queue.isEmpty && refreshTimer == nil && followTimer == nil && rewriting == 0 && moves.isEmpty
     }
 
-    func activate() {
+    package func activate() {
         guard !isActive else { return }
         isActive = true
         creation = NoteLibrary.opened.sink { [weak self] library in self?.track(library) }
         for library in NoteLibrary.known { track(library) }
     }
 
-    func include(_ library: NoteLibrary) {
+    package func include(_ library: NoteLibrary) {
         activate()
         track(library)
     }
 
-    func backlinks(to note: URL) -> [NoteBacklink] {
+    package func backlinks(to note: URL) -> [NoteBacklink] {
         guard note.isFileURL else { return [] }
         activate()
         track(NoteLibrary.library(for: note))
         return incoming[NoteFilePaths.key(for: note)] ?? []
     }
 
-    func noteMoved(from old: URL, to new: URL) {
+    package func noteMoved(from old: URL, to new: URL) {
         guard old.isFileURL, new.isFileURL, old.path != new.path else { return }
         activate()
         track(NoteLibrary.library(for: new))

@@ -1,54 +1,54 @@
 import Foundation
 
-final class NoteMDBlock {
-    enum Kind { case document, quote, list, item, paragraph, heading, thematicBreak, code, html, table, math, directive, footnote, definitions }
+package final class NoteMDBlock {
+    package enum Kind { case document, quote, list, item, paragraph, heading, thematicBreak, code, html, table, math, directive, footnote, definitions }
 
-    let kind: Kind
-    weak var parent: NoteMDBlock?
-    var children: [NoteMDBlock] = []
-    var isOpen = true
-    var content: [UInt8] = []
-    var blankBefore = 0
-    var pendingBlank = 0
-    var trailingBlank = 0
-    var ordered = false
-    var marker: UInt8 = 0
-    var start = 1
-    var markerOffset = 0
-    var padding = 0
-    var loose = false
-    var level = 0
-    var setext: UInt8 = 0
-    var fenced = false
-    var fenceChar: UInt8 = 0
-    var fenceLength = 0
-    var fenceOffset = 0
-    var info = ""
-    var htmlType = 0
-    var alignments: [NoteAlignment?] = []
-    var rows: [[[UInt8]]] = []
-    var literal = ""
-    var directiveName = ""
-    var directiveWidth: Double?
-    var rawLines: [[UInt8]] = []
+    package let kind: Kind
+    package weak var parent: NoteMDBlock?
+    package var children: [NoteMDBlock] = []
+    package var isOpen = true
+    package var content: [UInt8] = []
+    package var blankBefore = 0
+    package var pendingBlank = 0
+    package var trailingBlank = 0
+    package var ordered = false
+    package var marker: UInt8 = 0
+    package var start = 1
+    package var markerOffset = 0
+    package var padding = 0
+    package var loose = false
+    package var level = 0
+    package var setext: UInt8 = 0
+    package var fenced = false
+    package var fenceChar: UInt8 = 0
+    package var fenceLength = 0
+    package var fenceOffset = 0
+    package var info = ""
+    package var htmlType = 0
+    package var alignments: [NoteAlignment?] = []
+    package var rows: [[[UInt8]]] = []
+    package var literal = ""
+    package var directiveName = ""
+    package var directiveWidth: Double?
+    package var rawLines: [[UInt8]] = []
 
-    init(_ kind: Kind) { self.kind = kind }
+    package init(_ kind: Kind) { self.kind = kind }
 
-    var acceptsLines: Bool {
+    package var acceptsLines: Bool {
         switch kind {
         case .paragraph, .code, .html, .table, .math: return true
         default: return false
         }
     }
 
-    var isContainer: Bool {
+    package var isContainer: Bool {
         switch kind {
         case .document, .quote, .item, .directive, .footnote: return true
         default: return false
         }
     }
 
-    func canContain(_ child: Kind) -> Bool {
+    package func canContain(_ child: Kind) -> Bool {
         switch kind {
         case .document, .quote, .item, .directive, .footnote: return child != .item
         case .list: return child == .item
@@ -56,19 +56,19 @@ final class NoteMDBlock {
         }
     }
 
-    var lastOpenChild: NoteMDBlock? {
+    package var lastOpenChild: NoteMDBlock? {
         guard let last = children.last, last.isOpen else { return nil }
         return last
     }
 }
 
-struct NoteMDDocument {
-    var root: NoteMDBlock
-    var references: [String: NoteMDLinkReference]
-    var footnotes: Set<String>
+package struct NoteMDDocument {
+    package var root: NoteMDBlock
+    package var references: [String: NoteMDLinkReference]
+    package var footnotes: Set<String>
 }
 
-final class NoteMDBlockParser {
+package final class NoteMDBlockParser {
     private let bytes: [UInt8]
     private let document = NoteMDBlock(.document)
     private var tip: NoteMDBlock
@@ -91,14 +91,14 @@ final class NoteMDBlockParser {
     private var references: [String: NoteMDLinkReference] = [:]
     private var footnotes: Set<String> = []
 
-    init(_ bytes: [UInt8]) {
+    package init(_ bytes: [UInt8]) {
         self.bytes = bytes
         tip = document
         oldTip = document
         lastMatchedContainer = document
     }
 
-    static func parse(_ bytes: [UInt8]) -> NoteMDDocument {
+    package static func parse(_ bytes: [UInt8]) -> NoteMDDocument {
         let parser = NoteMDBlockParser(bytes)
         return parser.run()
     }
@@ -287,7 +287,7 @@ final class NoteMDBlockParser {
         }
     }
 
-    static func mayOpenBlock(_ byte: UInt8) -> Bool {
+    package static func mayOpenBlock(_ byte: UInt8) -> Bool {
         switch byte {
         case 35, 96, 126, 42, 43, 45, 95, 61, 60, 62, 124, 58, 36, 91: return true
         default: return NoteMDByte.isDigit(byte)
@@ -407,7 +407,7 @@ final class NoteMDBlockParser {
 
     private enum StartResult { case none, container, leaf }
 
-    static let maximumDepth = 64
+    package static let maximumDepth = 64
 
     private func tryBlockStart(_ container: NoteMDBlock) -> StartResult {
         let first = peek(nextNonspace)
@@ -747,7 +747,7 @@ final class NoteMDBlockParser {
         return block
     }
 
-    static func startsParagraph(_ content: ArraySlice<UInt8>) -> Bool {
+    package static func startsParagraph(_ content: ArraySlice<UInt8>) -> Bool {
         let firstLine = content.prefix { $0 != NoteMDByte.newline }
         let document = NoteMDBlockParser.parse(Array(firstLine))
         return document.root.children.count == 1 && document.root.children[0].kind == .paragraph
@@ -822,8 +822,8 @@ final class NoteMDBlockParser {
     }
 }
 
-enum NoteMDTableRow {
-    static func cells(_ line: [UInt8]) -> [[UInt8]] {
+package enum NoteMDTableRow {
+    package static func cells(_ line: [UInt8]) -> [[UInt8]] {
         var trimmed = Array(NoteMDText.trimmed(line[...]))
         if trimmed.first == 124 { trimmed.removeFirst() }
         if trimmed.last == 124, !(trimmed.count >= 2 && trimmed[trimmed.count - 2] == 92) { trimmed.removeLast() }
@@ -855,7 +855,7 @@ enum NoteMDTableRow {
         return cells
     }
 
-    static func delimiter(_ line: [UInt8]) -> [NoteAlignment?]? {
+    package static func delimiter(_ line: [UInt8]) -> [NoteAlignment?]? {
         var alignments: [NoteAlignment?] = []
         let raw = cellsRaw(line)
         guard !raw.isEmpty else { return nil }
@@ -880,11 +880,11 @@ enum NoteMDTableRow {
     }
 }
 
-enum NoteMDDirective {
-    static let indent = "indent"
-    static let names: Set<String> = ["columns", "column", indent]
+package enum NoteMDDirective {
+    package static let indent = "indent"
+    package static let names: Set<String> = ["columns", "column", indent]
 
-    static func parse(_ rest: String) -> (String, Double?)? {
+    package static func parse(_ rest: String) -> (String, Double?)? {
         let lowered = rest.lowercased()
         if names.contains(lowered) { return (lowered, nil) }
         guard rest.hasPrefix("{"), rest.hasSuffix("}") else { return nil }
@@ -908,7 +908,7 @@ enum NoteMDDirective {
         return (name, name == "column" ? width : nil)
     }
 
-    static func ratio(fromPercent text: String) -> Double? {
+    package static func ratio(fromPercent text: String) -> Double? {
         guard !text.isEmpty, text.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == ".") }), text.filter({ $0 == "." }).count <= 1 else { return nil }
         let parts = text.split(separator: ".", omittingEmptySubsequences: false)
         var whole = String(parts[0])
@@ -918,7 +918,7 @@ enum NoteMDDirective {
         return Double(shifted)
     }
 
-    static func percent(fromRatio ratio: Double) -> String {
+    package static func percent(fromRatio ratio: Double) -> String {
         var text = "\(ratio)"
         if text.contains("e") || text.contains("E") { text = String(format: "%.17f", ratio) }
         let negative = text.hasPrefix("-")

@@ -1,17 +1,17 @@
 import Foundation
 
-enum CommandBarCommandPresentation {
-    static func symbol(commandID: String, title: String, group: String = "") -> String {
+package enum CommandBarCommandPresentation {
+    package static func symbol(commandID: String, title: String, group: String = "") -> String {
         if let symbol = symbol(forCommandID: commandID) { return symbol }
         if title.hasPrefix("Go to") && title.contains("Sidebar Item") { return "arrow.right" }
         return groupSymbols[group] ?? "arrow.right.circle"
     }
 
-    static func symbol(forCommandID commandID: String) -> String? { commandSymbols[selectorName(commandID)] }
+    package static func symbol(forCommandID commandID: String) -> String? { commandSymbols[selectorName(commandID)] }
 
-    static func title(commandID: String, title: String) -> String { commandTitles[selectorName(commandID)] ?? title }
+    package static func title(commandID: String, title: String) -> String { commandTitles[selectorName(commandID)] ?? title }
 
-    static func selectorName(_ commandID: String) -> String { String(commandID.prefix { $0 != ":" }) }
+    package static func selectorName(_ commandID: String) -> String { String(commandID.prefix { $0 != ":" }) }
 
     private static let commandTitles = ["sharePage": "Share URL"]
 

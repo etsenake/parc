@@ -1,13 +1,13 @@
 import Foundation
 
-struct CommandBarFavoriteRenameAction: Equatable, Identifiable {
-    let tab: BrowserTab
-    let spaceID: UUID
-    let profileID: UUID
-    var id: String { "rename-favorite:\(profileID):\(spaceID):\(tab.id):\(tab.createdAt.timeIntervalSinceReferenceDate)" }
-    var title: String { "Rename Current Tab…" }
+package struct CommandBarFavoriteRenameAction: Equatable, Identifiable {
+    package let tab: BrowserTab
+    package let spaceID: UUID
+    package let profileID: UUID
+    package var id: String { "rename-favorite:\(profileID):\(spaceID):\(tab.id):\(tab.createdAt.timeIntervalSinceReferenceDate)" }
+    package var title: String { "Rename Current Tab…" }
 
-    init?(state: BrowserState, spaceID: UUID, profileID: UUID, selectedTabIDs: [UUID]) {
+    package init?(state: BrowserState, spaceID: UUID, profileID: UUID, selectedTabIDs: [UUID]) {
         guard selectedTabIDs.count == 1, let id = selectedTabIDs.first,
               state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }),
               state.profiles.contains(where: { $0.id == profileID }),
@@ -18,7 +18,7 @@ struct CommandBarFavoriteRenameAction: Equatable, Identifiable {
         self.tab = tab; self.spaceID = spaceID; self.profileID = profileID
     }
 
-    func currentTab(in state: BrowserState, spaceID: UUID, profileID: UUID,
+    package func currentTab(in state: BrowserState, spaceID: UUID, profileID: UUID,
                     selectedTabIDs: [UUID]) -> BrowserTab? {
         guard self.spaceID == spaceID, self.profileID == profileID,
               let current = Self(state: state, spaceID: spaceID, profileID: profileID,
@@ -28,7 +28,7 @@ struct CommandBarFavoriteRenameAction: Equatable, Identifiable {
         return current.tab
     }
 
-    func matches(query: String) -> Bool {
+    package func matches(query: String) -> Bool {
         let words = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             .split(whereSeparator: \.isWhitespace)
         return !words.isEmpty && words.allSatisfy { title.lowercased().contains($0) }

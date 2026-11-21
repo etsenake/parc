@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 @MainActor
 class NoteLinkBlockView: NoteCaptionedBlockView {

@@ -1,7 +1,7 @@
 import Foundation
 
-struct EaselPath: Equatable {
-    enum Element: Equatable {
+package struct EaselPath: Equatable {
+    package enum Element: Equatable {
         case move(EaselPoint)
         case line(EaselPoint)
         case quad(control: EaselPoint, to: EaselPoint)
@@ -9,27 +9,27 @@ struct EaselPath: Equatable {
         case close
     }
 
-    enum FillRule { case nonZero, evenOdd }
+    package enum FillRule { case nonZero, evenOdd }
 
-    struct Subpath: Equatable {
-        var points: [EaselPoint]
-        var closed: Bool
+    package struct Subpath: Equatable {
+        package var points: [EaselPoint]
+        package var closed: Bool
     }
 
-    static let kappa = 0.5522847498307936
+    package static let kappa = 0.5522847498307936
 
-    private(set) var elements: [Element] = []
+    package private(set) var elements: [Element] = []
 
-    init() {}
+    package init() {}
 
-    init(polygon points: [EaselPoint]) {
+    package init(polygon points: [EaselPoint]) {
         guard let first = points.first else { return }
         move(to: first)
         for point in points.dropFirst() { line(to: point) }
         close()
     }
 
-    var isEmpty: Bool { elements.isEmpty }
+    package var isEmpty: Bool { elements.isEmpty }
 
     private var lastPoint: EaselPoint? {
         switch elements.last {
@@ -38,16 +38,16 @@ struct EaselPath: Equatable {
         }
     }
 
-    mutating func move(to point: EaselPoint) { elements.append(.move(point)) }
-    mutating func line(to point: EaselPoint) { elements.append(.line(point)) }
-    mutating func quad(to point: EaselPoint, control: EaselPoint) { elements.append(.quad(control: control, to: point)) }
-    mutating func cubic(to point: EaselPoint, control1: EaselPoint, control2: EaselPoint) {
+    package mutating func move(to point: EaselPoint) { elements.append(.move(point)) }
+    package mutating func line(to point: EaselPoint) { elements.append(.line(point)) }
+    package mutating func quad(to point: EaselPoint, control: EaselPoint) { elements.append(.quad(control: control, to: point)) }
+    package mutating func cubic(to point: EaselPoint, control1: EaselPoint, control2: EaselPoint) {
         elements.append(.cubic(control1: control1, control2: control2, to: point))
     }
-    mutating func close() { elements.append(.close) }
-    mutating func append(_ other: EaselPath) { elements.append(contentsOf: other.elements) }
+    package mutating func close() { elements.append(.close) }
+    package mutating func append(_ other: EaselPath) { elements.append(contentsOf: other.elements) }
 
-    mutating func arc(center: EaselPoint, radiusX: Double, radiusY: Double, from start: Double, to end: Double) {
+    package mutating func arc(center: EaselPoint, radiusX: Double, radiusY: Double, from start: Double, to end: Double) {
         let sweep = end - start
         guard sweep.isFinite, sweep != 0, radiusX.isFinite, radiusY.isFinite else { return }
         let steps = max(1, Int((abs(sweep) / (.pi / 2) - 1e-9).rounded(.up)))
@@ -70,7 +70,7 @@ struct EaselPath: Equatable {
         }
     }
 
-    static func ellipse(in r: EaselRect) -> EaselPath {
+    package static func ellipse(in r: EaselRect) -> EaselPath {
         let rx = r.width / 2, ry = r.height / 2, cx = r.x + rx, cy = r.y + ry
         let kx = rx * kappa, ky = ry * kappa, maxX = r.x + r.width, maxY = r.y + r.height
         var path = EaselPath()
@@ -83,7 +83,7 @@ struct EaselPath: Equatable {
         return path
     }
 
-    static func roundedRect(_ r: EaselRect, radius requested: Double) -> EaselPath {
+    package static func roundedRect(_ r: EaselRect, radius requested: Double) -> EaselPath {
         let radius = max(0, min(requested, r.width / 2, r.height / 2))
         let minX = r.x, minY = r.y, maxX = r.x + r.width, maxY = r.y + r.height
         guard radius > 0 else {
@@ -105,7 +105,7 @@ struct EaselPath: Equatable {
         return path
     }
 
-    func applying(_ transform: EaselTransform) -> EaselPath {
+    package func applying(_ transform: EaselTransform) -> EaselPath {
         guard !transform.isIdentity else { return self }
         var path = EaselPath()
         path.elements = elements.map { element in
@@ -121,7 +121,7 @@ struct EaselPath: Equatable {
         return path
     }
 
-    var bounds: EaselRect? {
+    package var bounds: EaselRect? {
         var minX = Double.infinity, minY = Double.infinity, maxX = -Double.infinity, maxY = -Double.infinity
         func include(_ p: EaselPoint) {
             minX = min(minX, p.x); minY = min(minY, p.y); maxX = max(maxX, p.x); maxY = max(maxY, p.y)
@@ -146,7 +146,7 @@ struct EaselPath: Equatable {
         return EaselRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
-    func subpaths(tolerance: Double = 0.2) -> [Subpath] {
+    package func subpaths(tolerance: Double = 0.2) -> [Subpath] {
         let tolerance = tolerance.isFinite && tolerance > 0 ? tolerance : 0.2
         var result: [Subpath] = []
         var points: [EaselPoint] = []
@@ -183,7 +183,7 @@ struct EaselPath: Equatable {
         return result
     }
 
-    func contains(_ point: EaselPoint, rule: FillRule = .nonZero, tolerance: Double = 0.2) -> Bool {
+    package func contains(_ point: EaselPoint, rule: FillRule = .nonZero, tolerance: Double = 0.2) -> Bool {
         guard point.x.isFinite, point.y.isFinite else { return false }
         var winding = 0
         for subpath in subpaths(tolerance: tolerance) where subpath.points.count > 2 {
@@ -201,7 +201,7 @@ struct EaselPath: Equatable {
         return rule == .nonZero ? winding != 0 : winding % 2 != 0
     }
 
-    func distance(to point: EaselPoint, tolerance: Double = 0.2) -> Double {
+    package func distance(to point: EaselPoint, tolerance: Double = 0.2) -> Double {
         guard point.x.isFinite, point.y.isFinite else { return .infinity }
         var best = Double.infinity
         for subpath in subpaths(tolerance: tolerance) {
@@ -216,7 +216,7 @@ struct EaselPath: Equatable {
         return best
     }
 
-    var svgPathData: String {
+    package var svgPathData: String {
         elements.map { element in
             switch element {
             case .move(let p): return "M" + Self.svg(p)
@@ -228,7 +228,7 @@ struct EaselPath: Equatable {
         }.joined(separator: " ")
     }
 
-    static func svgNumber(_ value: Double) -> String {
+    package static func svgNumber(_ value: Double) -> String {
         let rounded = (value * 1000).rounded() / 1000
         guard rounded.isFinite, rounded != 0 else { return "0" }
         var text = String(format: "%.3f", rounded)
@@ -237,7 +237,7 @@ struct EaselPath: Equatable {
         return text
     }
 
-    static func segmentDistance(_ p: EaselPoint, _ a: EaselPoint, _ b: EaselPoint) -> Double {
+    package static func segmentDistance(_ p: EaselPoint, _ a: EaselPoint, _ b: EaselPoint) -> Double {
         let dx = b.x - a.x, dy = b.y - a.y, squared = dx * dx + dy * dy
         let t = squared > 0 ? min(1, max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / squared)) : 0
         return length(p.x - a.x - t * dx, p.y - a.y - t * dy)
@@ -292,11 +292,11 @@ struct EaselPath: Equatable {
     }
 }
 
-enum EaselShapeGeometry {
-    static let defaultStrokeWidth = 2.5
-    static let rectangleRadius = 5.0
+package enum EaselShapeGeometry {
+    package static let defaultStrokeWidth = 2.5
+    package static let rectangleRadius = 5.0
 
-    static func outline(_ shape: EaselShape, in r: EaselRect) -> EaselPath {
+    package static func outline(_ shape: EaselShape, in r: EaselRect) -> EaselPath {
         let w = r.width, h = r.height
         func p(_ x: Double, _ y: Double) -> EaselPoint { EaselPoint(x: r.x + x, y: r.y + y) }
         switch shape {
@@ -405,7 +405,7 @@ enum EaselShapeGeometry {
         }
     }
 
-    static func details(_ shape: EaselShape, in r: EaselRect) -> EaselPath {
+    package static func details(_ shape: EaselShape, in r: EaselRect) -> EaselPath {
         let w = r.width, h = r.height
         func p(_ x: Double, _ y: Double) -> EaselPoint { EaselPoint(x: r.x + x, y: r.y + y) }
         var path = EaselPath()
@@ -444,7 +444,7 @@ enum EaselShapeGeometry {
         return path
     }
 
-    static func cornerRadius(_ shape: EaselShape, in r: EaselRect) -> Double {
+    package static func cornerRadius(_ shape: EaselShape, in r: EaselRect) -> Double {
         let limit = max(0, min(r.width, r.height) / 2)
         switch shape {
         case .rectangle, .predefinedProcess, .internalStorage: return min(rectangleRadius, limit)
@@ -454,7 +454,7 @@ enum EaselShapeGeometry {
         }
     }
 
-    static func textRect(_ shape: EaselShape, in r: EaselRect) -> EaselRect {
+    package static func textRect(_ shape: EaselShape, in r: EaselRect) -> EaselRect {
         let w = r.width, h = r.height
         func area(_ x0: Double, _ y0: Double, _ x1: Double, _ y1: Double) -> EaselRect {
             EaselRect(x: r.x + x0, y: r.y + y0, width: max(0, x1 - x0), height: max(0, y1 - y0))
@@ -533,7 +533,7 @@ enum EaselShapeGeometry {
                          width: max(0, raw.width - 2 * padding), height: max(0, raw.height - 2 * padding))
     }
 
-    static func defaultSize(_ shape: EaselShape) -> (width: Double, height: Double) {
+    package static func defaultSize(_ shape: EaselShape) -> (width: Double, height: Double) {
         switch shape {
         case .rectangle, .roundedRectangle, .parallelogram, .parallelogramLeft, .trapezoid, .manualInput, .predefinedProcess:
             return (200, 120)
@@ -553,7 +553,7 @@ enum EaselShapeGeometry {
         }
     }
 
-    static func displayName(_ shape: EaselShape) -> String {
+    package static func displayName(_ shape: EaselShape) -> String {
         switch shape {
         case .rectangle: return "Rectangle"
         case .roundedRectangle: return "Rounded rectangle"
@@ -590,7 +590,7 @@ enum EaselShapeGeometry {
         }
     }
 
-    static func reshaped(_ item: EaselItem, to shape: EaselShape) -> EaselItem {
+    package static func reshaped(_ item: EaselItem, to shape: EaselShape) -> EaselItem {
         guard item.resolvedShape != nil else { return item }
         var next = item
         next.kind = shape == .ellipse ? .circle : .rectangle
@@ -598,73 +598,73 @@ enum EaselShapeGeometry {
         return next
     }
 
-    static func rotation(of item: EaselItem) -> Double {
+    package static func rotation(of item: EaselItem) -> Double {
         let degrees = item.rotation ?? 0
         guard degrees.isFinite else { return 0 }
         let normalized = degrees.truncatingRemainder(dividingBy: 360)
         return abs(normalized) < 1e-9 ? 0 : normalized
     }
 
-    static func center(of r: EaselRect) -> EaselPoint { EaselPoint(x: r.x + r.width / 2, y: r.y + r.height / 2) }
+    package static func center(of r: EaselRect) -> EaselPoint { EaselPoint(x: r.x + r.width / 2, y: r.y + r.height / 2) }
 
-    static func rotationTransform(for item: EaselItem) -> EaselTransform {
+    package static func rotationTransform(for item: EaselItem) -> EaselTransform {
         .rotation(degrees: rotation(of: item), around: center(of: item.frame))
     }
 
-    static func flipTransform(for item: EaselItem) -> EaselTransform {
+    package static func flipTransform(for item: EaselItem) -> EaselTransform {
         .mirror(horizontally: item.flipHorizontal == true, vertically: item.flipVertical == true, around: center(of: item.frame))
     }
 
-    static func transform(for item: EaselItem) -> EaselTransform {
+    package static func transform(for item: EaselItem) -> EaselTransform {
         flipTransform(for: item).concatenating(rotationTransform(for: item))
     }
 
-    static func localPoint(_ point: EaselPoint, in item: EaselItem) -> EaselPoint {
+    package static func localPoint(_ point: EaselPoint, in item: EaselItem) -> EaselPoint {
         let transform = transform(for: item)
         guard !transform.isIdentity, let inverse = transform.inverted else { return point }
         return inverse.apply(point)
     }
 
-    static func rotatedBounds(_ r: EaselRect, degrees: Double) -> EaselRect {
+    package static func rotatedBounds(_ r: EaselRect, degrees: Double) -> EaselRect {
         let transform = EaselTransform.rotation(degrees: degrees, around: center(of: r))
         guard !transform.isIdentity else { return r }
         return transform.bounds(of: r)
     }
 
-    static func visualBounds(of item: EaselItem) -> EaselRect { rotatedBounds(item.frame, degrees: rotation(of: item)) }
+    package static func visualBounds(of item: EaselItem) -> EaselRect { rotatedBounds(item.frame, degrees: rotation(of: item)) }
 
-    static func outline(for item: EaselItem) -> EaselPath? {
+    package static func outline(for item: EaselItem) -> EaselPath? {
         guard let shape = item.resolvedShape else { return nil }
         return outline(shape, in: item.frame).applying(transform(for: item))
     }
 
-    static func details(for item: EaselItem) -> EaselPath? {
+    package static func details(for item: EaselItem) -> EaselPath? {
         guard let shape = item.resolvedShape else { return nil }
         return details(shape, in: item.frame).applying(transform(for: item))
     }
 
-    static func textRect(for item: EaselItem) -> EaselRect? {
+    package static func textRect(for item: EaselItem) -> EaselRect? {
         guard let shape = item.resolvedShape else { return nil }
         let rect = textRect(shape, in: item.frame), flip = flipTransform(for: item)
         return flip.isIdentity ? rect : flip.bounds(of: rect)
     }
 
-    static func strokeWidth(of item: EaselItem) -> Double {
+    package static func strokeWidth(of item: EaselItem) -> Double {
         guard let width = item.strokeWidth, width.isFinite else { return defaultStrokeWidth }
         return min(64, max(0, width))
     }
 
-    static func hasVisibleFill(_ item: EaselItem) -> Bool {
+    package static func hasVisibleFill(_ item: EaselItem) -> Bool {
         guard let opacity = item.fillOpacity else { return true }
         return opacity.isFinite && opacity > 0.001
     }
 
-    static func usesOriginalLook(_ item: EaselItem) -> Bool {
+    package static func usesOriginalLook(_ item: EaselItem) -> Bool {
         item.shape == nil && item.fill == nil && item.fillOpacity == nil && item.strokeWidth == nil
             && item.strokeDash == nil && rotation(of: item) == 0
     }
 
-    static func hits(_ point: EaselPoint, item: EaselItem, selected: Bool, scale: Double) -> Bool {
+    package static func hits(_ point: EaselPoint, item: EaselItem, selected: Bool, scale: Double) -> Bool {
         guard let shape = item.resolvedShape, scale.isFinite, scale > 0, point.x.isFinite, point.y.isFinite else { return false }
         let local = localPoint(point, in: item)
         let r = item.frame, minimum = 30 / scale
@@ -679,7 +679,7 @@ enum EaselShapeGeometry {
         return nearOutline(local, shape: shape, frame: r, band: band, tolerance: tolerance)
     }
 
-    static func intersects(_ rect: EaselRect, item: EaselItem, selected: Bool) -> Bool {
+    package static func intersects(_ rect: EaselRect, item: EaselItem, selected: Bool) -> Bool {
         guard rect.width > 0, rect.height > 0, item.resolvedShape != nil else { return false }
         let bounds = visualBounds(of: item)
         guard EaselContentHitTest.intersects(rect, bounds) else { return false }
@@ -700,7 +700,7 @@ enum EaselShapeGeometry {
         return corners.contains { path.contains($0, tolerance: 0.5) }
     }
 
-    static func edgePoint(of item: EaselItem, toward target: EaselPoint) -> EaselPoint? {
+    package static func edgePoint(of item: EaselItem, toward target: EaselPoint) -> EaselPoint? {
         guard let path = outline(for: item), target.x.isFinite, target.y.isFinite else { return nil }
         let origin = center(of: item.frame)
         let dx = target.x - origin.x, dy = target.y - origin.y
@@ -722,7 +722,7 @@ enum EaselShapeGeometry {
         return EaselPoint(x: origin.x + dx * best, y: origin.y + dy * best)
     }
 
-    static func anchorPoint(of item: EaselItem, side: EaselConnection.Side) -> EaselPoint? {
+    package static func anchorPoint(of item: EaselItem, side: EaselConnection.Side) -> EaselPoint? {
         let r = item.frame, origin = center(of: r)
         let direction: EaselPoint
         switch side {

@@ -1,7 +1,7 @@
 import Combine
 import Foundation
 
-enum NoteFileSaveState: Equatable {
+package enum NoteFileSaveState: Equatable {
     case saved
     case unsaved
     case saving
@@ -10,7 +10,7 @@ enum NoteFileSaveState: Equatable {
     case missing
 }
 
-enum NoteFileError: Error, LocalizedError, Equatable {
+package enum NoteFileError: Error, LocalizedError, Equatable {
     case unreadable(String)
     case tooLarge
     case nameTaken(String)
@@ -22,7 +22,7 @@ enum NoteFileError: Error, LocalizedError, Equatable {
     case unsaved([String])
     case occupied(String)
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .unreadable(let detail): return "Parc couldn’t read this note. \(detail)"
         case .tooLarge: return "This file is too big to open as a note."
@@ -42,7 +42,7 @@ enum NoteFileError: Error, LocalizedError, Equatable {
 }
 
 @MainActor
-final class NoteFileSession {
+package final class NoteFileSession {
     private struct SaveRequest {
         var page: NotePage
         var text: String
@@ -69,14 +69,14 @@ final class NoteFileSession {
 
     private static var sessions: [String: NoteFileSession] = [:]
     private static var live: [ObjectIdentifier: NoteFileSession] = [:]
-    static var clock: NoteFileClock = NoteFileSystemClock.shared
-    static var worker: NoteFileWorker = .files
-    static var autosaveDelay: TimeInterval = 0.6
-    static var longestAutosaveWait: TimeInterval = 5
-    static var diskCheckDelay: TimeInterval = 0.12
-    static var retryDelays: [TimeInterval] = [1, 2, 4, 8, 15, 30, 60]
+    package static var clock: NoteFileClock = NoteFileSystemClock.shared
+    package static var worker: NoteFileWorker = .files
+    package static var autosaveDelay: TimeInterval = 0.6
+    package static var longestAutosaveWait: TimeInterval = 5
+    package static var diskCheckDelay: TimeInterval = 0.12
+    package static var retryDelays: [TimeInterval] = [1, 2, 4, 8, 15, 30, 60]
 
-    static func open(_ url: URL) throws -> NoteFileSession {
+    package static func open(_ url: URL) throws -> NoteFileSession {
         guard url.isFileURL else { throw NoteFileError.notANote }
         let canonical = NoteFilePaths.canonical(url)
         let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
@@ -95,11 +95,11 @@ final class NoteFileSession {
         return session
     }
 
-    static func session(for url: URL) -> NoteFileSession? { sessions[NoteFilePaths.key(for: url)] }
+    package static func session(for url: URL) -> NoteFileSession? { sessions[NoteFilePaths.key(for: url)] }
 
-    static var openSessions: [NoteFileSession] { Array(live.values) }
+    package static var openSessions: [NoteFileSession] { Array(live.values) }
 
-    static func flushAll() throws {
+    package static func flushAll() throws {
         var unsaved: [String] = []
         for session in live.values.sorted(by: { $0.url.path < $1.url.path }) {
             do { try session.flush() } catch {
@@ -110,23 +110,23 @@ final class NoteFileSession {
         if !unsaved.isEmpty { throw NoteFileError.unsaved(unsaved) }
     }
 
-    nonisolated static func render(_ value: NotePage, kind: NoteFileKind, format: NoteFileFormat, customEmoji: Set<String> = []) -> String {
+    package nonisolated static func render(_ value: NotePage, kind: NoteFileKind, format: NoteFileFormat, customEmoji: Set<String> = []) -> String {
         let body = kind == .markdown ? NoteMarkdown.serialize(value, customEmoji: customEmoji) : NotePlainText.serialize(value)
         return NoteFileText.fileText(body, format: format, kind: kind)
     }
 
-    private(set) var url: URL
-    let kind: NoteFileKind
-    let page: NotePageSession
-    let environment: NoteEnvironment
-    @Published private(set) var state: NoteFileSaveState = .saved
-    let urlChanges = PassthroughSubject<URL, Never>()
-    private(set) var format: NoteFileFormat
-    private(set) var hasUnsavedChanges = false
-    private(set) var editorCount = 0
-    private(set) var lastSaveError: String?
-    private(set) var readProblem: String?
-    private(set) var customEmoji: Set<String> = []
+    package private(set) var url: URL
+    package let kind: NoteFileKind
+    package let page: NotePageSession
+    package let environment: NoteEnvironment
+    @Published package private(set) var state: NoteFileSaveState = .saved
+    package let urlChanges = PassthroughSubject<URL, Never>()
+    package private(set) var format: NoteFileFormat
+    package private(set) var hasUnsavedChanges = false
+    package private(set) var editorCount = 0
+    package private(set) var lastSaveError: String?
+    package private(set) var readProblem: String?
+    package private(set) var customEmoji: Set<String> = []
     private var emojiLibrary: NoteEmojiLibrary?
     private var emojiSubscription: AnyCancellable?
 
@@ -190,23 +190,23 @@ final class NoteFileSession {
         refreshState()
     }
 
-    var title: String { url.deletingPathExtension().lastPathComponent }
+    package var title: String { url.deletingPathExtension().lastPathComponent }
 
-    var conflictingText: String? { conflict.map { NoteFileText.editableText($0, kind: kind) } }
+    package var conflictingText: String? { conflict.map { NoteFileText.editableText($0, kind: kind) } }
 
-    var isMissing: Bool { diskText == nil }
+    package var isMissing: Bool { diskText == nil }
 
-    var presenter: NSFilePresenter? { watcher }
+    package var presenter: NSFilePresenter? { watcher }
 
     private var diskText: String? { disk.text }
 
-    func retain() {
+    package func retain() {
         if isClosed { reopen() }
         editorCount += 1
         wasAttended = true
     }
 
-    func release() {
+    package func release() {
         guard editorCount > 0 else { return }
         editorCount -= 1
         guard editorCount == 0 else { return }
@@ -214,7 +214,7 @@ final class NoteFileSession {
         closeIfIdle()
     }
 
-    func flush() throws {
+    package func flush() throws {
         autosaveTimer?.cancel()
         autosaveTimer = nil
         drainWrites()
@@ -230,7 +230,7 @@ final class NoteFileSession {
         if let error = outcome?.error { throw error }
     }
 
-    func restore() throws {
+    package func restore() throws {
         autosaveTimer?.cancel()
         autosaveTimer = nil
         drainWrites()
@@ -258,7 +258,7 @@ final class NoteFileSession {
         }
     }
 
-    func resolveConflict(keepMine: Bool) {
+    package func resolveConflict(keepMine: Bool) {
         guard let theirs = conflict else { return }
         conflict = nil
         if keepMine {
@@ -274,7 +274,7 @@ final class NoteFileSession {
         closeIfIdle()
     }
 
-    func rename(to proposed: String) throws -> URL {
+    package func rename(to proposed: String) throws -> URL {
         guard let target = try NoteFileNaming.renameTarget(for: url, to: proposed) else { return url }
         if NoteFilePaths.itemExists(url) {
             let source = url
@@ -285,7 +285,7 @@ final class NoteFileSession {
         return url
     }
 
-    func saveMarkdownCopy() throws -> URL {
+    package func saveMarkdownCopy() throws -> URL {
         let folder = url.deletingLastPathComponent()
         let base = NoteFileNaming.sanitizedTitle(title)
         let target = NoteFileNaming.uniqueURL(in: folder, base: base.isEmpty ? NoteFileNaming.untitled : base, pathExtension: "md")
@@ -294,7 +294,7 @@ final class NoteFileSession {
         return NoteFilePaths.canonical(target)
     }
 
-    func checkDisk() {
+    package func checkDisk() {
         diskCheckTimer?.cancel()
         diskCheckTimer = nil
         guard !isClosed else { return }
@@ -306,12 +306,12 @@ final class NoteFileSession {
         }
     }
 
-    func noteWasTrashed() {
+    package func noteWasTrashed() {
         handleDeletion()
         refreshState()
     }
 
-    func handle(_ event: NoteFileWatchEvent) {
+    package func handle(_ event: NoteFileWatchEvent) {
         guard !isClosed else { return }
         switch event {
         case .moved(let destination):

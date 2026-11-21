@@ -1,22 +1,29 @@
 import Foundation
 
-struct ProfileRemovalRecord: Codable, Equatable, Identifiable {
-    let id: UUID
-    let profileID: UUID
-    let profileName: String
-    var fallbackProfileID: UUID?
+package struct ProfileRemovalRecord: Codable, Equatable, Identifiable {
+    package let id: UUID
+    package let profileID: UUID
+    package let profileName: String
+    package var fallbackProfileID: UUID?
+
+    package init(id: UUID, profileID: UUID, profileName: String, fallbackProfileID: UUID? = nil) {
+        self.id = id
+        self.profileID = profileID
+        self.profileName = profileName
+        self.fallbackProfileID = fallbackProfileID
+    }
 }
 
-struct ProfileRemovalSummary: Equatable {
-    let profile: BrowserProfile
-    let savedTabCount: Int
-    let historyEntryCount: Int
+package struct ProfileRemovalSummary: Equatable {
+    package let profile: BrowserProfile
+    package let savedTabCount: Int
+    package let historyEntryCount: Int
 }
 
-enum ProfileRemovalError: LocalizedError, Equatable {
+package enum ProfileRemovalError: LocalizedError, Equatable {
     case unavailable, assignedToSpaces, alreadyRemoving, nameChanged
     case incompleteOperation, invalidSelection, activeDocumentWrite
-    var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .unavailable: return "This profile is no longer available."
         case .assignedToSpaces: return "Only Profiles not assigned to any Spaces can be deleted."
@@ -30,11 +37,11 @@ enum ProfileRemovalError: LocalizedError, Equatable {
 }
 
 extension BrowserStore {
-    var unusedProfilesForRemoval: [BrowserProfile] {
+    package var unusedProfilesForRemoval: [BrowserProfile] {
         state.profiles.filter { (try? profileRemovalSummary($0.id)) != nil }
     }
 
-    func validateUnusedProfileRemoval(_ profiles: [BrowserProfile]) throws {
+    package func validateUnusedProfileRemoval(_ profiles: [BrowserProfile]) throws {
         guard !profiles.isEmpty, Set(profiles.map(\.id)).count == profiles.count else {
             throw ProfileRemovalError.invalidSelection
         }
@@ -44,24 +51,24 @@ extension BrowserStore {
         }
     }
 
-    var defaultProfileID: UUID { state.settings.defaultProfileID ?? state.profiles[0].id }
+    package var defaultProfileID: UUID { state.settings.defaultProfileID ?? state.profiles[0].id }
 
-    func fallbackProfileID(for record: ProfileRemovalRecord) -> UUID {
+    package func fallbackProfileID(for record: ProfileRemovalRecord) -> UUID {
         record.fallbackProfileID ?? defaultProfileID
     }
 
-    func survivingProfileID(excluding removed: Set<UUID>) -> UUID? {
+    package func survivingProfileID(excluding removed: Set<UUID>) -> UUID? {
         let used = state.spaces.map(\.profileID).filter { !removed.contains($0) && !isProfileRemovalPending($0) }
         if let current = state.settings.defaultProfileID ?? state.profiles.first?.id, used.contains(current) { return current }
         if let active = state.spaces.first(where: { $0.id == state.activeSpaceID })?.profileID, used.contains(active) { return active }
         return used.first
     }
 
-    func isProfileRemovalPending(_ profileID: UUID) -> Bool {
+    package func isProfileRemovalPending(_ profileID: UUID) -> Bool {
         state.profileRemovals.contains { $0.profileID == profileID }
     }
 
-    func profileRemovalSummary(_ profileID: UUID) throws -> ProfileRemovalSummary {
+    package func profileRemovalSummary(_ profileID: UUID) throws -> ProfileRemovalSummary {
         guard let profile = state.profiles.first(where: { $0.id == profileID }) else {
             throw ProfileRemovalError.unavailable
         }
@@ -74,19 +81,19 @@ extension BrowserStore {
             historyEntryCount: state.history.filter { $0.profileID == profileID }.count)
     }
 
-    func validateProfileRemoval(_ profileID: UUID, expectedName: String) throws -> ProfileRemovalSummary {
+    package func validateProfileRemoval(_ profileID: UUID, expectedName: String) throws -> ProfileRemovalSummary {
         let summary = try profileRemovalSummary(profileID)
         guard summary.profile.name == expectedName else { throw ProfileRemovalError.nameChanged }
         return summary
     }
 }
 
-@MainActor final class ProfileWriteReservation {
+@MainActor package final class ProfileWriteReservation {
     private var release: (() -> Void)?
-    init(release: @escaping () -> Void) { self.release = release }
-    func perform<T>(_ operation: () async throws -> T) async rethrows -> T {
+    package init(release: @escaping () -> Void) { self.release = release }
+    package func perform<T>(_ operation: () async throws -> T) async rethrows -> T {
         defer { finish() }
         return try await operation()
     }
-    func finish() { let action = release; release = nil; action?() }
+    package func finish() { let action = release; release = nil; action?() }
 }

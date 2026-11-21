@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 struct EaselMenuRow {
     var id: String

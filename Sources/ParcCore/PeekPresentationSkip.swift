@@ -1,24 +1,33 @@
 import Foundation
 
-struct PeekSplitBlockers: Equatable {
-    var windowClosing = false
-    var libraryOpen = false
-    var fullscreenTabID: UUID?
-    var transferringTabIDs = Set<UUID>()
-    var selectedTabIDs: [UUID] = []
-    var grouped = false
+package struct PeekSplitBlockers: Equatable {
+    package var windowClosing = false
+    package var libraryOpen = false
+    package var fullscreenTabID: UUID?
+    package var transferringTabIDs = Set<UUID>()
+    package var selectedTabIDs: [UUID] = []
+    package var grouped = false
+
+    package init(windowClosing: Bool = false, libraryOpen: Bool = false, fullscreenTabID: UUID? = nil, transferringTabIDs: Set<UUID> = Set<UUID>(), selectedTabIDs: [UUID] = [], grouped: Bool = false) {
+        self.windowClosing = windowClosing
+        self.libraryOpen = libraryOpen
+        self.fullscreenTabID = fullscreenTabID
+        self.transferringTabIDs = transferringTabIDs
+        self.selectedTabIDs = selectedTabIDs
+        self.grouped = grouped
+    }
 }
 
-enum PeekPresentationSkip {
-    static func shouldSkip(previous: String?, next: String) -> Bool {
+package enum PeekPresentationSkip {
+    package static func shouldSkip(previous: String?, next: String) -> Bool {
         previous == next
     }
 
-    static func displayTitle(browserTitle: String, urlHost: String?) -> String {
+    package static func displayTitle(browserTitle: String, urlHost: String?) -> String {
         browserTitle.isEmpty ? (urlHost ?? "Peek") : browserTitle
     }
 
-    static func captureToken(active: Bool, camera: Bool, microphone: Bool, tab: Bool,
+    package static func captureToken(active: Bool, camera: Bool, microphone: Bool, tab: Bool,
                              window: Bool, display: Bool, mirrored: Bool, shared: Bool) -> String {
         guard active else { return "c0" }
         return [
@@ -33,12 +42,12 @@ enum PeekPresentationSkip {
         ].joined(separator: "|")
     }
 
-    static func crashToken(identity: ObjectIdentifier?, terminationStatus: Int, errorCode: Int) -> String {
+    package static func crashToken(identity: ObjectIdentifier?, terminationStatus: Int, errorCode: Int) -> String {
         guard let identity else { return "crash-" }
         return "crash:\(identity)|\(terminationStatus)|\(errorCode)"
     }
 
-    static func faviconToken(_ data: Data?) -> String {
+    package static func faviconToken(_ data: Data?) -> String {
         guard let data else { return "fav-" }
         var hash: UInt64 = 14_695_981_039_346_656_037
         data.withUnsafeBytes { raw in
@@ -50,7 +59,7 @@ enum PeekPresentationSkip {
         return "fav:\(data.count).\(String(hash, radix: 16))"
     }
 
-    static func fingerprint(
+    package static func fingerprint(
         title: String,
         url: String,
         loading: Bool,

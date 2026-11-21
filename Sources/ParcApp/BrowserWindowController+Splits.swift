@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import ParcCore
+import ParcEngine
 
 extension BrowserWindowController {
     private func externalSplitDropContent(_ id: UUID) -> (view: NSView, local: Bool, valid: () -> Bool)? {

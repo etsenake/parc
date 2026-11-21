@@ -228,7 +228,8 @@ pending-pane previews and reserved drop shapes. `scripts/test-split-drop-geometr
 pins every drop band, corner and four-pane fallback on flat and stacked splits,
 and the original, external and cross-window drop suites commit stack drops. `SplitStackCommandsTests` (windowless) checks command enabling against the store's moves, Split
 This Pane's targets, previews and commits, its single-page start of a split,
-and reading order after each. `SplitPaneMenuTests` asserts the stacked rows and their artwork. The divider,
+and reading order after each. `SplitPaneMenuTests` asserts the stacked rows
+and their artwork. The divider,
 snap and Favorites tile suites listed in
 [split groups](split-groups.md#source-and-validation) also cover stacked
 dividers and pictures, alongside flat splits unchanged.

@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension BrowserWindowController {
     var savedFrame: SavedWindowFrame? {

@@ -1,7 +1,7 @@
 import Foundation
 
-enum NoteMDExport {
-    static func portable(_ page: NotePage) -> NotePage {
+package enum NoteMDExport {
+    package static func portable(_ page: NotePage) -> NotePage {
         var settings = page.settings
         settings.font = .standard
         settings.smallText = false
@@ -13,7 +13,7 @@ enum NoteMDExport {
         return NotePage(settings: settings, blocks: contents(blocks, outline: outline(blocks)))
     }
 
-    static func sequence(_ blocks: [NoteBlock]) -> [NoteBlock] {
+    package static func sequence(_ blocks: [NoteBlock]) -> [NoteBlock] {
         blocks.flatMap(convert)
     }
 
@@ -131,7 +131,7 @@ enum NoteMDExport {
         return [NoteBlock.paragraph(NoteText(pieces: pieces))]
     }
 
-    static func text(_ original: NoteText) -> NoteText {
+    package static func text(_ original: NoteText) -> NoteText {
         guard original.spans.contains(where: { $0.marks.color != nil || $0.marks.atom != nil }) else { return original }
         var pieces: [(String, NoteMarks)] = []
         let string = original.string as NSString
@@ -166,13 +166,19 @@ enum NoteMDExport {
         return NoteText(pieces: pieces)
     }
 
-    struct Heading {
-        var level: Int
-        var title: String
-        var slug: String
+    package struct Heading {
+        package var level: Int
+        package var title: String
+        package var slug: String
+
+        package init(level: Int, title: String, slug: String) {
+            self.level = level
+            self.title = title
+            self.slug = slug
+        }
     }
 
-    static func outline(_ blocks: [NoteBlock]) -> [Heading] {
+    package static func outline(_ blocks: [NoteBlock]) -> [Heading] {
         var used: [String: Int] = [:]
         var result: [Heading] = []
         func walk(_ list: [NoteBlock]) {
@@ -191,7 +197,7 @@ enum NoteMDExport {
         return result
     }
 
-    static func slug(_ title: String) -> String {
+    package static func slug(_ title: String) -> String {
         var result = ""
         for character in title.lowercased() {
             if character == " " { result.append("-") } else if character == "-" || character == "_" || character.isLetter || character.isNumber {

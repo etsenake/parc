@@ -1,14 +1,21 @@
 import Foundation
 
-struct NoteOutlineEntry: Hashable {
-    var id: NoteBlockID
-    var level: Int
-    var depth: Int
-    var title: String
+package struct NoteOutlineEntry: Hashable {
+    package var id: NoteBlockID
+    package var level: Int
+    package var depth: Int
+    package var title: String
+
+    package init(id: NoteBlockID, level: Int, depth: Int, title: String) {
+        self.id = id
+        self.level = level
+        self.depth = depth
+        self.title = title
+    }
 }
 
-enum NoteOutline {
-    static func entries(in page: NotePage, levels: ClosedRange<Int> = 1...4) -> [NoteOutlineEntry] {
+package enum NoteOutline {
+    package static func entries(in page: NotePage, levels: ClosedRange<Int> = 1...4) -> [NoteOutlineEntry] {
         var found: [(id: NoteBlockID, level: Int, title: String)] = []
         func walk(_ blocks: [NoteBlock]) {
             for block in blocks {
@@ -28,7 +35,7 @@ enum NoteOutline {
         return found.map { NoteOutlineEntry(id: $0.id, level: $0.level, depth: $0.level - top, title: $0.title) }
     }
 
-    static func title(of text: NoteText) -> String {
+    package static func title(of text: NoteText) -> String {
         text.plainText
             .components(separatedBy: .newlines)
             .joined(separator: " ")
