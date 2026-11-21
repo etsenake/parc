@@ -266,7 +266,7 @@ extension EaselCanvasView {
         object += textMenuRows(context) + linkMenuRows(context) + mediaMenuRows(context) + tableMenuRows(context)
             + codeMenuRows(context) + connectorMenuRows(context) + styleMenuRows(context) + drawingMenuRows(context)
             + stampMenuRows(context)
-        let view = [row("copy-image", "Copy as Image", "photo.on.rectangle") { $0.copySelectionAsImage() }, selectAll]
+        let view = [row("copy-image", "Copy as Image", "photo.on.rectangle") { $0.copySelectionAsImage() }, exportSelectionMenuRow(), selectAll]
             + zoomMenuRows(context)
         return [edit, arrange, object, view, [guides]]
     }

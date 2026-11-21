@@ -194,6 +194,7 @@ extension EaselEditorViewController {
     func export(_ format: EaselPageMenu.ExportFormat) {
         guard canExportImage, let window = view.window else { return }
         if format == .image { exportImage(); return }
+        if format == .stickies { exportStickies(EaselSelectionExport.stickies(in: session.document)); return }
         let panel = NSSavePanel()
         panel.title = "Export Easel"
         panel.allowedContentTypes = [format == .pdf ? .pdf : .html]
@@ -226,7 +227,7 @@ extension EaselEditorViewController {
         }
     }
 
-    private func withExportPages(in window: NSWindow, _ completion: @escaping ([UUID: EaselPageSnapshot]) -> Void) {
+    func withExportPages(in window: NSWindow, _ completion: @escaping ([UUID: EaselPageSnapshot]) -> Void) {
         let documentID = session.document.id
         _ = canvas.collectExportPages { [weak self, weak window] pages in
             DispatchQueue.main.async {

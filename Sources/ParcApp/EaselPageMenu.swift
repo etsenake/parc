@@ -4,13 +4,14 @@ import UniformTypeIdentifiers
 @MainActor
 final class EaselPageMenu {
     enum ExportFormat: String, CaseIterable {
-        case image, html, pdf
+        case image, html, pdf, stickies
 
         var title: String {
             switch self {
             case .image: return "Image…"
             case .html: return "HTML File…"
             case .pdf: return "PDF…"
+            case .stickies: return "Stickies as CSV…"
             }
         }
 
@@ -19,6 +20,7 @@ final class EaselPageMenu {
             case .image: return "photo"
             case .html: return "doc.text"
             case .pdf: return "doc.richtext"
+            case .stickies: return "list.bullet.rectangle"
             }
         }
 
@@ -111,8 +113,12 @@ final class EaselPageMenu {
     private func presentExport(from row: NSRect?) {
         guard let popover, popover.isOpen else { return }
         exportPopover?.close(animated: false)
+        let hasStickies = !EaselSelectionExport.stickies(in: editor.session.document).isEmpty
         let list = NoteMenuList(items: ExportFormat.allCases.map { format in
-            NoteMenuList.Item(id: format.rawValue, title: format.title, icon: .symbol(format.symbol), shortcut: format.shortcut)
+            var item = NoteMenuList.Item(id: format.rawValue, title: format.title, icon: .symbol(format.symbol), shortcut: format.shortcut,
+                                         isEnabled: format != .stickies || hasStickies)
+            item.separatorBefore = format == .stickies
+            return item
         })
         list.minimumWidth = 180
         let child = NotePagePopover(content: list, parent: popover)

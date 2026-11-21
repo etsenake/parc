@@ -100,7 +100,7 @@ extension EaselCanvasView {
         return words.isEmpty ? nil : words
     }
 
-    func renderObjectsImage(_ ids: Set<UUID>, backingScale: CGFloat) -> CGImage? {
+    func renderObjectsImage(_ ids: Set<UUID>, backingScale: CGFloat, pages: [UUID: EaselPageSnapshot] = [:]) -> CGImage? {
         let objects = EaselArrange.paintOrder(session.document).filter { ids.contains($0.id) }
         guard let bounds = EaselArrange.union(objects.map(EaselArrange.visualFrame)) else { return nil }
         let pad = 16.0
@@ -123,7 +123,9 @@ extension EaselCanvasView {
         appearance.performAsCurrentDrawingAppearance {
             (NoteTheme.isDark(appearance) ? NSColor.black : NSColor.white).setFill()
             area.fill()
-            for item in objects { drawObject(item, showsEditor: false) }
+            for item in objects {
+                if let page = pages[item.id] { drawLivePage(page, in: rect(item)) } else { drawObject(item, showsEditor: false) }
+            }
         }
         NSGraphicsContext.restoreGraphicsState()
         return context.makeImage()
@@ -132,7 +134,7 @@ extension EaselCanvasView {
     @discardableResult
     func copySelectionAsImage() -> Bool {
         let scale = max(2, window?.backingScaleFactor ?? 2)
-        guard !selection.isEmpty, let image = renderObjectsImage(selection, backingScale: scale),
+        guard !selection.isEmpty, let image = renderObjectsImage(EaselSelectionExport.scope(selection, in: session.document), backingScale: scale),
               let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { return false }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()

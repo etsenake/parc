@@ -1,7 +1,8 @@
 # Easel board features
 
 Board-wide tools that work across a whole Easel rather than on one object:
-find and replace, links to a single object, Easel History and the timer. They sit beside
+find and replace, links to a single object, Easel History, selection
+export and the timer. They sit beside
 the [Easel editing contract](easels.md) and use the Notes look
 ([appearance](easel-appearance.md)) and motion rules ([motion](easel-motion.md)).
 
@@ -95,6 +96,24 @@ a single undo step, so ⌘Z returns to where you were. ↑ and ↓ move through 
 list and Return restores. A version whose pictures are missing can't be
 previewed and won't restore, and the Easel stays as it was.
 
+## Export a selection
+
+⇧⌘E with objects selected (and the canvas holding the keyboard) opens Export
+Selection beside them; the same list sits under Export Selection in the
+right-click menu. Image, PDF and HTML File save just what's picked, using the
+same drawing as the whole-Easel exports. Picking a section brings its
+contents, and stuck-on highlights and stamps come along with their object;
+objects tucked in a hidden section stay out, as on the canvas. A connector
+whose other end is left out keeps its last route. Copy as Image in the same
+menu follows the same rules and puts a PNG on the clipboard. While text is
+being edited, ⇧⌘E stays with the text.
+
+Stickies as CSV (in Export Selection when the pick has stickies, and in the •••
+menu's Export list for the whole Easel) saves one Content column, a row per
+sticky in reading order, as UTF-8 with a byte order mark so spreadsheets read
+accents. `EaselSelectionExport` in ParcCore picks the objects and writes the
+CSV.
+
 ## Timer
 
 The timer button sits in the Easel's top-right chrome, before Undo. It opens a
@@ -116,7 +135,8 @@ while Parc runs and is never saved in the Easel. The countdown rules are
 `tests/EaselBoardFeaturesTests.swift` is a windowless suite over the ParcCore
 board logic: find order, visibility, matching, replacement across rich text
 runs, per-object and per-table refusals, the find session's replace and
-refresh rules, viewport focus, object links, and history names, caps and
-recording against a temporary store. Build it with every `Sources/ParcCore` file
+refresh rules, viewport focus, object links, history names, caps and
+recording against a temporary store, selection export scope and the sticky
+CSV. Build it with every `Sources/ParcCore` file
 plus `tests/Support/TestFailure.swift` and run the binary. The views are
 checked by compiling only.

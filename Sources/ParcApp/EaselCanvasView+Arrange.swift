@@ -201,6 +201,7 @@ extension EaselCanvasView {
             return alignText(alignment, editing: textEditorOwnsKeyFocus)
         case .quickCreate: return performQuickCreate()
         case .focusSelectionToolbar: return selectionToolbar?.focusFromKeyboard() == true
+        case .exportSelection: return claim(applies && canvasOwnsKeyFocus) { presentExportSelectionMenu() }
         }
     }
 

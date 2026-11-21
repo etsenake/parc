@@ -59,6 +59,7 @@ enum EaselChordCommand: Hashable {
     case alignText(EaselTextStyle.Alignment)
     case focusSelectionToolbar
     case quickCreate
+    case exportSelection
 }
 
 enum EaselChords {
@@ -75,6 +76,7 @@ enum EaselChords {
         EaselChord("r", [.command, .option]): .alignText(.right),
         EaselChord("/", [.command, .shift]): .focusSelectionToolbar,
         EaselChord(.returnKey, .command): .quickCreate,
+        EaselChord("e", [.command, .shift]): .exportSelection,
     ]
 
     static let reserved: [EaselChord] = [
@@ -104,7 +106,7 @@ extension EaselChords {
     static func applies(_ command: EaselChordCommand, selection: Set<UUID>, in document: EaselDocument) -> Bool {
         let live = selection.intersection(Set(document.items.map(\.id)))
         switch command {
-        case .duplicate, .toggleLock: return !live.isEmpty
+        case .duplicate, .toggleLock, .exportSelection: return !live.isEmpty
         case .group: return EaselArrange.canGroup(live, in: document)
         case .ungroup, .unwrap: return EaselArrange.canUngroup(live, in: document)
         case .layer: return EaselArrange.canMoveLayer(live, in: document)

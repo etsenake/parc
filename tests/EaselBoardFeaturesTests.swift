@@ -26,6 +26,9 @@ struct EaselBoardFeaturesTests {
         historyPolicy()
         historyRecording()
         countdown()
+        selectionExport()
+        stickyCSV()
+        templates()
         print("EaselBoardFeaturesTests: \(assertions) assertions passed")
     }
 
@@ -420,5 +423,69 @@ struct EaselBoardFeaturesTests {
         expect(InternalPage(urlString: "parc://easel/" + easel.uuidString + "#heading") == nil, "other fragments aren't Easel links")
         expect(InternalPage(urlString: "parc://easel/" + easel.uuidString + "?x=1#" + object.uuidString) == nil, "queries still aren't Easel links")
         expect(EaselObjectAddress.target(of: InternalPage.easel(easel).urlString) == nil, "a plain Easel link names no object")
+    }
+
+    @MainActor static func selectionExport() {
+        let section = item(.section, "Ideas", x: 0, y: 0, width: 600, height: 400)
+        let inside = item(.sticky, "inside", x: 40, y: 40)
+        let outside = item(.sticky, "outside", x: 900, y: 40)
+        var arrow = item(.arrow, "", x: 240, y: 90, width: 660, height: 1)
+        arrow.points = [EaselPoint(x: 0, y: 0), EaselPoint(x: 660, y: 0)]
+        arrow.startConnection = EaselConnection(itemID: inside.id)
+        arrow.endConnection = EaselConnection(itemID: outside.id)
+        let board = EaselDocument(id: UUID(), title: "Board", createdAt: Date(), modifiedAt: Date(), items: [section, inside, outside, arrow])
+        let scope = EaselSelectionExport.scope([section.id], in: board)
+        expect(scope == [section.id, inside.id], "exporting a section brings its contents along")
+        expect(EaselSelectionExport.scope([UUID()], in: board).isEmpty, "a vanished selection exports nothing")
+        let subset = EaselSelectionExport.document(board, keeping: [inside.id, arrow.id])
+        expect(subset.items.map(\.id) == [inside.id, arrow.id], "the export keeps only the chosen objects")
+        expect(subset.items.last?.endConnection == nil && subset.items.last?.startConnection?.itemID == inside.id,
+               "connectors let go of objects left out of the export")
+        var hidden = section
+        hidden.contentsHidden = true
+        let tucked = EaselDocument(id: UUID(), title: "Board", createdAt: Date(), modifiedAt: Date(), items: [hidden, inside, outside])
+        expect(EaselSelectionExport.scope([hidden.id], in: tucked) == [hidden.id], "hidden section contents stay out, as on the canvas")
+        expect(EaselSelectionExport.stickies(in: tucked).map(\.id) == [outside.id], "hidden stickies stay out of the CSV")
+    }
+
+    @MainActor static func stickyCSV() {
+        let first = item(.sticky, "Plain", x: 300, y: 0)
+        let second = item(.sticky, "Says \"hi\", twice\nand more", x: 0, y: 0)
+        let third = item(.sticky, "Below", x: 0, y: 400)
+        let board = EaselDocument(id: UUID(), title: "Board", createdAt: Date(), modifiedAt: Date(),
+                                  items: [third, first, item(.text, "not a sticky", x: 0, y: 200), second])
+        let stickies = EaselSelectionExport.stickies(in: board)
+        expect(stickies.map(\.id) == [second.id, first.id, third.id], "stickies export in reading order")
+        expect(EaselSelectionExport.stickies(in: board, within: [first.id]).map(\.id) == [first.id], "a selection exports only its stickies")
+        let csv = EaselSelectionExport.stickyCSV(stickies)
+        expect(csv == "Content\r\n\"Says \"\"hi\"\", twice\nand more\"\r\nPlain\r\nBelow\r\n", "the CSV has a Content column with quoted fields")
+        expect(EaselSelectionExport.stickyCSV([]) == "Content\r\n", "no stickies still makes a valid CSV")
+    }
+
+    @MainActor static func templates() {
+        expect((6...8).contains(EaselTemplate.allCases.count), "the gallery offers six to eight templates")
+        for template in EaselTemplate.allCases {
+            let base = EaselTemplates.drawing(template)
+            expect(!base.items.isEmpty && Set(base.items.map(\.id)).count == base.items.count, "\(template.title) has unique objects")
+            let ids = Set(base.items.map(\.id))
+            for connector in base.items where connector.kind == .arrow {
+                expect([connector.startConnection?.itemID, connector.endConnection?.itemID].allSatisfy { $0.map(ids.contains) == true },
+                       "\(template.title) connectors join objects in the template")
+            }
+            for section in base.items where section.kind == .section {
+                expect(!EaselBoardObjects.contents(of: section, in: base.items).isEmpty || template == .moodboard,
+                       "\(template.title) sections hold their stickies")
+            }
+            let visible = EaselRect(x: 2000, y: 3000, width: 1400, height: 900)
+            let placed = EaselTemplates.placed(template, centeredAt: EaselPoint(x: 2700, y: 3450), within: visible, firstZIndex: 10)
+            expect(placed.items.count == base.items.count && placed.items.map(\.zIndex) == Array(10..<(10 + base.items.count)),
+                   "\(template.title) lands above everything in its own order")
+            expect(placed.bounds.x >= visible.x && placed.bounds.y >= visible.y, "\(template.title) lands in view")
+            let corner = EaselTemplates.placed(template, centeredAt: EaselPoint(x: 0, y: 0), firstZIndex: 0)
+            expect(corner.bounds.x >= EaselTemplates.margin.x && corner.bounds.y >= EaselTemplates.margin.y, "\(template.title) never lands off the board")
+            let document = EaselDocument(id: UUID(), title: template.title, createdAt: Date(), modifiedAt: Date(), items: placed.items)
+            do { _ = try EaselSession(inMemory: document, assets: [:]) }
+            catch { expect(false, "\(template.title) makes a valid Easel: \(error)") }
+        }
     }
 }

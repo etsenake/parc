@@ -262,8 +262,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             NSGraphicsContext.restoreGraphicsState()
         }
     }
-    func exportPDF(title: String, pages: [UUID: EaselPageSnapshot] = [:]) -> Data? {
-        let content = EaselBoardObjects.displayed(session.document.items)
+    func exportPDF(title: String, pages: [UUID: EaselPageSnapshot] = [:], only ids: Set<UUID>? = nil) -> Data? {
+        let content = EaselBoardObjects.displayed(session.document.items).filter { ids?.contains($0.id) ?? true }
         let area = EaselVectorExport.contentBounds(content)
         let scale = min(1, 14_400 / max(area.width, area.height))
         var box = CGRect(x: 0, y: 0, width: (area.width * scale).rounded(.up), height: (area.height * scale).rounded(.up))
@@ -306,7 +306,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         NSGraphicsContext.restoreGraphicsState()
         return context.makeImage()
     }
-    private func drawLivePage(_ page: EaselPageSnapshot, in frame: NSRect) {
+    func drawLivePage(_ page: EaselPageSnapshot, in frame: NSRect) {
         let shape = NSBezierPath(roundedRect: frame, xRadius: 8, yRadius: 8)
         EaselAppearance.cardFill.setFill(); shape.fill()
         NSGraphicsContext.saveGraphicsState()
@@ -328,6 +328,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var onOpenURL: ((URL) -> Void)?
     static var textCompletionFactory: (@MainActor () -> EaselTextCompletion)?
     var onCopiedImage: (() -> Void)?
+    var onExportSelection: ((Set<UUID>, EaselSelectionExportFormat) -> Void)?
     var onKeyEquivalent: ((NSEvent) -> Bool)?
     var onDrawOverlay: ((NSRect, CGFloat) -> Void)?
     override var isFlipped: Bool { true }

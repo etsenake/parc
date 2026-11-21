@@ -202,6 +202,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         canvas.onOpenURL = { [weak self] url in self?.onOpenURL?(url) }
         canvas.onExportImage = { [weak self] in self?.exportImage() }
         canvas.onCopiedImage = { [weak self] in self?.showExportToast(.copiedImage) }
+        canvas.onExportSelection = { [weak self] ids, format in self?.exportSelection(ids, as: format) }
         canvas.onKeyEquivalent = { [weak self] event in self?.performBoardKeyEquivalent(event) ?? false }
         subscription = session.$document.receive(on: DispatchQueue.main).sink { [weak self] doc in
             guard let self else { return }
