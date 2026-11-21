@@ -81,7 +81,7 @@ extension EaselEditorViewController {
         let document = session.document
         let folderName = destination.deletingPathExtension().lastPathComponent + " Files"
         var assets: [UUID: String] = [:]
-        for item in document.items where [.image, .video].contains(item.kind) {
+        for item in document.items where item.kind.isMedia {
             if let id = item.assetID { assets[item.id] = id }
         }
         var options = EaselMarkdown.Options()

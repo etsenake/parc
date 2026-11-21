@@ -110,17 +110,32 @@ enum EaselMarkdown {
             return flat(NoteBlock(.code, text: NoteText(item.text), props: props))
         case .link, .webCard, .browser:
             guard let raw = item.url else { return item.text.isEmpty ? [] : flat(.paragraph(NoteText(item.text))) }
-            return flat(.paragraph(linked(item.text.isEmpty ? displayName(raw) : item.text, raw)))
-        case .image, .video:
-            return media(item, kind: item.kind == .image ? .image : .video, options: options)
+            let title = item.text.isEmpty ? (item.preview?.title ?? displayName(raw)) : item.text
+            return flat(.paragraph(linked(title.isEmpty ? displayName(raw) : title, raw)))
+        case .image, .video, .audio, .file, .pdf:
+            return media(item, options: options)
+        case .equation:
+            return item.text.isEmpty ? [] : flat(NoteBlock(.equation, text: NoteText(item.text)))
         case .stamp, .freehand:
             return []
         }
     }
 
-    static func media(_ item: EaselItem, kind: NoteBlockKind, options: Options) -> [(block: NoteBlock, depth: Int)] {
-        let alt = item.altText ?? ""
+    static func blockKind(_ kind: EaselItemKind) -> NoteBlockKind {
+        switch kind {
+        case .video: return .video
+        case .audio: return .audio
+        case .file: return .file
+        case .pdf: return .pdf
+        default: return .image
+        }
+    }
+
+    static func media(_ item: EaselItem, options: Options) -> [(block: NoteBlock, depth: Int)] {
+        let kind = blockKind(item.kind)
+        let alt = item.altText ?? item.fileName ?? ""
         guard let path = options.assetPath(item) else {
+            if let raw = item.url { return [(.paragraph(linked(alt.isEmpty ? displayName(raw) : alt, raw)), 0)] }
             return alt.isEmpty ? [] : [(.paragraph(NoteText(alt)), 0)]
         }
         var props = NoteBlockProps()
