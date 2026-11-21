@@ -31,6 +31,7 @@ final class EaselCanvasObjectMotionState {
     var retiring: [UUID: NSView] = [:]
     var burst: EaselCanvasBurst?
     var carriedSurfaces: Set<UUID> = []
+    var shadowedPages: Set<UUID> = []
     var lockedPress: UUID?
     var refusedThisGesture = false
 
@@ -80,7 +81,12 @@ extension EaselCanvasView {
             let ordered = EaselObjectMotion.added(from: before, to: after)
             let added = admitted(ordered)
             var entrances: [UUID: EaselObjectEntrance] = [:]
-            for id in added { if let item = frames[id] { entrances[id] = EaselObjectEntrance.of(item) } }
+            for id in added {
+                guard let item = frames[id] else { continue }
+                let side: Double = item.id.uuid.1 & 1 == 0 ? 1 : -1
+                entrances[id] = objectMotion.timeline.isRaised(id)
+                    ? .slam(tilt: EaselObjectEntrance.pressedSlamTilt * side, raised: true) : EaselObjectEntrance.of(item)
+            }
             let delays = cascade(added)
             objectMotion.timeline.appear(entrances, delays: delays, at: now, reduced: reduced)
             touched.formUnion(added)
@@ -266,7 +272,7 @@ extension EaselCanvasView {
         objectMotion.driver = nil
         editor?.alphaValue = 1
         for view in artwork.values { if let layer = view.layer { Self.settleSurface(layer) } }
-        objectMotion.carriedSurfaces.removeAll()
+        resetHeldSurfaces()
         for view in objectMotion.retiring.values { view.layer?.removeAllAnimations(); view.removeFromSuperview() }
         objectMotion.retiring.removeAll()
         if let burst = objectMotion.burst { burst.settle(); burst.removeFromSuperview() }
@@ -452,10 +458,17 @@ extension EaselCanvasView {
 
     private static func settleSurface(_ layer: CALayer) {
         for key in layer.animationKeys() ?? [] where key.hasPrefix(surfaceKey) { layer.removeAnimation(forKey: key) }
+    }
+
+    private func resetHeldSurfaces(_ ids: Set<UUID>? = nil) {
+        let carried = ids.map { objectMotion.carriedSurfaces.intersection($0) } ?? objectMotion.carriedSurfaces
+        let pages = ids.map { objectMotion.shadowedPages.intersection($0) } ?? objectMotion.shadowedPages
+        for id in carried { if let layer = artwork[id]?.layer { Self.resetSurfaceModel(layer) } }
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        if !CATransform3DIsIdentity(layer.transform) { layer.transform = CATransform3DIdentity }
-        if layer.shadowOpacity != 0 { layer.shadowOpacity = 0 }
+        for id in pages { if let layer = artwork[id]?.layer, layer.shadowOpacity != 0 { layer.shadowOpacity = 0 } }
         CATransaction.commit()
+        objectMotion.carriedSurfaces.subtract(carried)
+        objectMotion.shadowedPages.subtract(pages)
     }
 
     private struct SurfaceFrame {
@@ -604,6 +617,19 @@ extension EaselCanvasView {
         CATransaction.commit()
     }
 
+    func raiseStampDraft(_ id: UUID) {
+        guard canAnimateObjects else { return }
+        objectMotion.timeline.raise(id, at: CACurrentMediaTime(), reduced: reduceMotion)
+        guard objectMotion.timeline.isRaised(id) else { return }
+        startObjectMotionDriver()
+    }
+
+    func lowerStampDraft(_ id: UUID) {
+        guard objectMotion.timeline.isRaised(id) else { return }
+        objectMotion.timeline.lower(id)
+        resetHeldSurfaces([id])
+    }
+
     func carryDraggedObjects(rotating: Bool, velocity: EaselPoint) {
         let now = CACurrentMediaTime()
         if objectMotion.timeline.carry != nil {
@@ -625,31 +651,44 @@ extension EaselCanvasView {
         objectMotion.lockedPress = nil
         guard objectMotion.timeline.carry != nil else { return }
         let landed = objectMotion.timeline.drop(at: CACurrentMediaTime())
-        for id in objectMotion.carriedSurfaces { if let layer = artwork[id]?.layer { Self.settleSurface(layer) } }
-        objectMotion.carriedSurfaces.removeAll()
+        resetHeldSurfaces()
         objectMotion.pendingSurfaces.formUnion(landed)
         needsLayout = true
         startObjectMotionDriver()
     }
 
+    private static func resetSurfaceModel(_ layer: CALayer) {
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        if !CATransform3DIsIdentity(layer.transform) { layer.transform = CATransform3DIdentity }
+        if layer.shadowOpacity != 0 { layer.shadowOpacity = 0 }
+        if layer.opacity != 1 { layer.opacity = 1 }
+        CATransaction.commit()
+    }
+
     private func presentCarriedSurfaces(at now: TimeInterval) {
-        guard usesObjectSurfaces, let carry = objectMotion.timeline.carry else { return }
+        let held = (objectMotion.timeline.carry?.ids ?? []).union(objectMotion.timeline.raised.keys)
+        let stale = objectMotion.carriedSurfaces.union(objectMotion.shadowedPages).subtracting(held)
+        if !stale.isEmpty { resetHeldSurfaces(stale) }
+        guard usesObjectSurfaces, !held.isEmpty else { return }
         var lookup: [UUID: EaselItem] = [:]
-        for item in items where carry.ids.contains(item.id) { lookup[item.id] = item }
+        for item in items where held.contains(item.id) { lookup[item.id] = item }
         let dark = NoteTheme.isDark(effectiveAppearance)
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        for id in carry.ids {
+        for id in held {
             guard let item = lookup[id], let view = artwork[id] else { continue }
             view.wantsLayer = true
             guard let layer = view.layer, let frame = surfaceFrame(for: item, layer: layer) else { continue }
-            let shown = carry.presentation(for: id, at: now)
-            if !item.ownsEmbeddedPage { layer.transform = Self.surfaceTransform(shown, frame) }
+            let shown = objectMotion.timeline.presentation(for: id, at: now)
+            if item.ownsEmbeddedPage { objectMotion.shadowedPages.insert(id) } else {
+                layer.transform = Self.surfaceTransform(shown, frame)
+                if layer.opacity != Float(shown.opacity) { layer.opacity = Float(shown.opacity) }
+                objectMotion.carriedSurfaces.insert(id)
+            }
             if !layer.masksToBounds {
                 styleSurfaceShadow(layer, frame)
                 layer.shadowOpacity = Float(min(1, shown.shadow) * (dark ? 0.5 : 0.24))
                 layer.shadowRadius = Self.shadowReach(shown.shadow) / 2
             }
-            objectMotion.carriedSurfaces.insert(id)
         }
         CATransaction.commit()
     }

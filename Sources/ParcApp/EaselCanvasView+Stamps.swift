@@ -21,6 +21,9 @@ final class EaselCanvasStampState {
         let began: CFTimeInterval
         let tilt: Double
         var side: Double
+        var stage = 0
+        var stageStart: CFTimeInterval = 0
+        var stageFrom: Double = 0
     }
 
     static let recentsKey = "easel.stampRecents"
@@ -125,6 +128,7 @@ extension EaselCanvasView {
         stamps.press = EaselCanvasStampState.Press(id: UUID(), face: stamps.face, point: point, began: CACurrentMediaTime(),
                                                    tilt: EaselStamps.tilt(using: &stamps.random), side: EaselStamps.sizes[0])
         refreshStampDraft()
+        if let id = stamps.press?.id { raiseStampDraft(id) }
         stamps.timer?.invalidate()
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
             guard let self else { timer.invalidate(); return }
@@ -158,6 +162,7 @@ extension EaselCanvasView {
     }
 
     private func stopStampPress() {
+        if let id = stamps.press?.id { lowerStampDraft(id) }
         stamps.timer?.invalidate()
         stamps.timer = nil
         stamps.press = nil
@@ -167,10 +172,19 @@ extension EaselCanvasView {
 
     private func growStamp() {
         guard let press = stamps.press, start != nil else { cancelStampPress(); return }
-        let target = EaselStamps.side(heldFor: CACurrentMediaTime() - press.began)
-        var side = press.side
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || abs(target - side) < 0.5 { side = target } else { side += (target - side) * 0.28 }
-        guard side != press.side else { return }
+        let now = CACurrentMediaTime()
+        let stage = EaselStamps.stage(heldFor: now - press.began)
+        if stage != press.stage {
+            stamps.press?.stage = stage
+            stamps.press?.stageStart = now
+            stamps.press?.stageFrom = press.side
+            EaselCanvasHaptics.snap()
+        }
+        guard let current = stamps.press else { return }
+        let side = EaselStampGrowth.side(from: current.stage == 0 ? current.side : current.stageFrom, to: EaselStamps.sizes[current.stage],
+                                         since: now - current.stageStart,
+                                         reduced: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        guard abs(side - press.side) > 0.01 else { return }
         stamps.press?.side = side
         refreshStampDraft()
     }

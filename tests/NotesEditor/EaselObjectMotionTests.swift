@@ -25,6 +25,18 @@ struct EaselObjectMotionTests {
         reducedMotion()
         bookkeeping()
         diffs()
+        entrances()
+        stampSlam()
+        landing()
+        pulsing()
+        shaking()
+        restyling()
+        carrying()
+        cascading()
+        history()
+        stampHold()
+        wheel()
+        bursts()
         print("EaselObjectMotionTests passed")
     }
 
@@ -127,5 +139,243 @@ struct EaselObjectMotionTests {
         let copy = box(16, 16)
         let offsets = EaselObjectMotion.copyOffsets(sources: [a.id], copies: [copy.id], before: before, after: document([a, copy]))
         expect(near(offsets[copy.id]?.x ?? 0, -16) && near(offsets[copy.id]?.y ?? 0, -16), "copies glide out of their source")
+    }
+
+    static func sample(_ motion: EaselObjectMotion, _ id: UUID, from start: Double, to end: Double) -> [EaselObjectPresentation] {
+        stride(from: start, through: end, by: 0.004).map { motion.presentation(for: id, at: $0) }
+    }
+
+    static func entrances() {
+        let sticky = box(0, 0, kind: .sticky), stamp = box(0, 0, kind: .stamp), shape = box(0, 0, kind: .rectangle)
+        let arrow = box(0, 0, kind: .arrow)
+        if case .drop(let tilt) = EaselObjectEntrance.of(sticky) { expect(near(abs(tilt), 3), "stickies drop with a 3° tilt") }
+        else { expect(false, "stickies drop like paper") }
+        if case .slam(let tilt, let raised) = EaselObjectEntrance.of(stamp) { expect(near(abs(tilt), 12) && !raised, "stamps slam with 12° of tilt") }
+        else { expect(false, "stamps slam") }
+        expect(EaselObjectEntrance.of(shape) == .pop, "shapes pop")
+        expect(EaselObjectEntrance.of(arrow) == .fade, "connectors fade in so they can draw themselves")
+
+        var motion = EaselObjectMotion()
+        motion.appear([sticky.id: .drop(tilt: 3)], at: 0, reduced: false)
+        let first = motion.presentation(for: sticky.id, at: 0)
+        expect(near(first.scale, 1.08) && near(first.offset.y, -8) && near(first.rotation, 3) && near(first.shadow, 1), "a sticky starts lifted, higher and tilted")
+        let midway = motion.presentation(for: sticky.id, at: 0.12)
+        expect(midway.shadow < first.shadow && midway.shadow > 0 && midway.rotation < 3, "the sticky's shadow tightens as it lands")
+        expect(motion.presentation(for: sticky.id, at: 0.43).isIdentity, "the sticky ends flat on the board")
+
+        var quick = EaselObjectMotion()
+        quick.appear([shape.id: .quick], at: 0, reduced: false)
+        expect(near(quick.presentation(for: shape.id, at: 0).scale, 0.92), "undo pops back from 92%")
+        expect(quick.presentation(for: shape.id, at: 0.25).isIdentity, "undo pops are quick")
+
+        var reduced = EaselObjectMotion()
+        reduced.appear([sticky.id: .drop(tilt: 3), stamp.id: .slam(tilt: 12, raised: false)], at: 0, reduced: true)
+        for id in [sticky.id, stamp.id] {
+            let shown = reduced.presentation(for: id, at: 0.05)
+            expect(near(shown.scale, 1) && near(shown.rotation, 0) && near(shown.offset.y, 0) && near(shown.shadow, 0) && shown.opacity < 1,
+                   "Reduce Motion lands stickies and stamps with a fade only")
+        }
+    }
+
+    static func stampSlam() {
+        var motion = EaselObjectMotion()
+        let id = UUID()
+        motion.appear([id: .slam(tilt: 12, raised: false)], at: 0, reduced: false)
+        let first = motion.presentation(for: id, at: 0)
+        expect(near(first.scale, 1.6) && near(first.opacity, 0) && near(first.rotation, 12), "a stamp starts big, clear and tilted")
+        let shown = sample(motion, id, from: 0, to: 0.36)
+        let low = shown.map(\.scale).min() ?? 1
+        expect(low > 0.86 && low < 0.94, "the stamp overshoots to about 90% before springing back")
+        expect(motion.presentation(for: id, at: 0.08).opacity > 0.99, "the stamp is solid as soon as it hits")
+        expect(motion.presentation(for: id, at: 0.37).isIdentity, "the stamp settles at rest")
+
+        var pressed = EaselObjectMotion()
+        pressed.raise(id, at: 0, reduced: false)
+        expect(pressed.isRaised(id) && !pressed.isEmpty, "a held stamp hovers above the board")
+        let hovering = pressed.presentation(for: id, at: 0.5)
+        expect(hovering.scale > 1.1 && hovering.opacity < 0.9 && hovering.shadow > 0.5, "the held stamp is raised with a soft shadow")
+        pressed.appear([id: .slam(tilt: 4, raised: true)], at: 1, reduced: false)
+        expect(!pressed.isRaised(id), "landing ends the hover")
+        let landing = pressed.presentation(for: id, at: 1)
+        expect(near(landing.scale, 1.15) && near(landing.opacity, 0.8), "a held stamp slams from where it hovered")
+        var calm = EaselObjectMotion()
+        calm.raise(id, at: 0, reduced: true)
+        expect(!calm.isRaised(id), "Reduce Motion never raises the held stamp")
+    }
+
+    static func landing() {
+        var motion = EaselObjectMotion()
+        let id = UUID()
+        motion.glide([id: EaselPoint(x: -16, y: -16)], fades: true, lands: true, at: 0, reduced: false)
+        let squashed = sample(motion, id, from: 0.16, to: 0.4).map { $0.stretch.x - $0.stretch.y }.max() ?? 0
+        expect(squashed > 0.03 && squashed < 0.08, "a duplicate finishes with a small settle squash")
+        expect(motion.presentation(for: id, at: 0.46).isIdentity, "the squash ends at rest")
+
+        var turned = EaselObjectMotion()
+        turned.glide([:], fades: false, stretches: [id: EaselPoint(x: 2, y: 0.5)], turns: [id: 30], at: 0, reduced: false)
+        let start = turned.presentation(for: id, at: 0)
+        expect(near(start.scaleX, 2) && near(start.scaleY, 0.5) && near(start.rotation, 30), "a resize or turn glides back from the old shape")
+        expect(turned.presentation(for: id, at: 0.46).isIdentity, "resizes settle at the new shape")
+    }
+
+    static func pulsing() {
+        var motion = EaselObjectMotion()
+        let id = UUID()
+        motion.pulse([id], at: 0, reduced: false)
+        let peak = sample(motion, id, from: 0, to: 0.5).map(\.scale).max() ?? 0
+        expect(near(peak, 1.05, 0.002), "an attention pulse swells to 105%")
+        expect(motion.presentation(for: id, at: 0.51).isIdentity, "the pulse returns to rest")
+        var reduced = EaselObjectMotion()
+        reduced.pulse([id], at: 0, reduced: true)
+        expect(reduced.isEmpty, "Reduce Motion skips the pulse scale")
+    }
+
+    static func shaking() {
+        var motion = EaselObjectMotion()
+        let id = UUID()
+        motion.shake([id], at: 0, reduced: false)
+        let shown = sample(motion, id, from: 0, to: 0.3).map(\.offset.x)
+        expect((shown.map(abs).max() ?? 0) <= 4 && (shown.map(abs).max() ?? 0) > 2.5, "a locked object shakes about 4 points sideways")
+        var swings = 0
+        for (a, b) in zip(shown, shown.dropFirst()) where (a < 0) != (b < 0) && abs(a - b) > 1e-9 { swings += 1 }
+        expect(swings >= 4 && swings <= 6, "the shake swings back and forth three times")
+        expect(motion.presentation(for: id, at: 0.31).isIdentity, "the shake ends where it started")
+        var reduced = EaselObjectMotion()
+        reduced.shake([id], at: 0, reduced: true)
+        expect(reduced.isEmpty, "Reduce Motion skips the shake")
+    }
+
+    static func restyling() {
+        var motion = EaselObjectMotion()
+        let old = box(0, 0, kind: .rectangle)
+        motion.restyle([old], at: 0, reduced: false)
+        expect(motion.previousLook(for: old.id) == old, "a restyle keeps the old look while it fades")
+        let middle = motion.presentation(for: old.id, at: 0.075)
+        expect(middle.opacity > 0.3 && middle.opacity < 0.7 && near(middle.scale, 1), "the new look cross-fades in place")
+        motion.prune(at: 0.16)
+        expect(motion.previousLook(for: old.id) == nil && motion.isEmpty, "the old look is dropped when the fade ends")
+        var reduced = EaselObjectMotion()
+        reduced.restyle([old], at: 0, reduced: true)
+        expect(reduced.previousLook(for: old.id) != nil, "Reduce Motion still cross-fades restyles")
+    }
+
+    static func carrying() {
+        expect(near(EaselCarryTilt.target(forPointerSpeed: 100_000), 5) && near(EaselCarryTilt.target(forPointerSpeed: -100_000), -5),
+               "tilt never passes 5°")
+        expect(EaselCarryTilt.target(forPointerSpeed: 300) > 0 && EaselCarryTilt.target(forPointerSpeed: -300) < 0, "tilt follows the pointer's direction")
+        var tilt = EaselCarryTilt()
+        for _ in 0..<60 { tilt.step(by: 1.0 / 60.0, toward: 5) }
+        expect(abs(tilt.angle - 5) < 0.3, "tilt springs to its target")
+        for _ in 0..<90 { tilt.step(by: 1.0 / 60.0, toward: 0) }
+        expect(tilt.isResting, "tilt levels out again")
+
+        let sticky = UUID(), card = UUID(), page = UUID()
+        var motion = EaselObjectMotion()
+        motion.pickUp([sticky, card, page], tilting: [sticky], shadowOnly: [page], at: 0, reduced: false)
+        for step in 1...30 {
+            motion.carry?.pointer(speed: 2_000, at: 0.05 + Double(step) / 60)
+            motion.carry?.advance(to: 0.05 + Double(step) / 60)
+        }
+        let lifted = motion.presentation(for: sticky, at: 0.5)
+        expect(lifted.scale > 1.02 && lifted.scale < 1.03 && lifted.shadow > 0.9, "picked-up objects lift to 102.5% with a shadow")
+        expect(near(motion.presentation(for: card, at: 0.5).rotation, 0), "only stickies and stamps tilt")
+        expect(lifted.rotation > 3 && lifted.rotation <= 5.5, "a sticky tilts up to 5° while dragged briskly")
+        let pageShown = motion.presentation(for: page, at: 0.5)
+        expect(near(pageShown.scale, 1) && pageShown.shadow > 0.9, "live page cards only get the shadow")
+        var still = motion
+        for step in 1...60 { still.carry?.advance(to: 0.6 + Double(step) / 60) }
+        expect(abs(still.presentation(for: sticky, at: 1.6).rotation) < 0.3, "a still pointer levels the sticky")
+        let landed = motion.drop(at: 0.6)
+        expect(landed == [sticky, card, page] && motion.carry == nil, "dropping ends the carry")
+        let touchdown = motion.presentation(for: card, at: 0.6)
+        expect(touchdown.scale > 1.02 && touchdown.shadow > 0.9, "the landing starts from the lifted look")
+        let squash = sample(motion, card, from: 0.6, to: 1.0).map { $0.stretch.x - $0.stretch.y }.max() ?? 0
+        expect(squash > 0.02, "landing gives a tiny squash")
+        expect(motion.presentation(for: card, at: 1.03).isIdentity, "the landing settles at rest")
+        var reduced = EaselObjectMotion()
+        reduced.pickUp([card], tilting: [], shadowOnly: [], at: 0, reduced: true)
+        expect(reduced.carry == nil, "Reduce Motion never lifts")
+    }
+
+    static func cascading() {
+        let centre = UUID(), near1 = UUID(), far = UUID()
+        let delays = EaselObjectMotion.cascade([
+            centre: EaselRect(x: 300, y: 100, width: 100, height: 100),
+            near1: EaselRect(x: 150, y: 100, width: 100, height: 100),
+            far: EaselRect(x: 0, y: 100, width: 100, height: 100),
+            UUID(): EaselRect(x: 600, y: 100, width: 100, height: 100),
+        ])
+        expect((delays[centre] ?? 1) < (delays[near1] ?? 0) && (delays[near1] ?? 1) < (delays[far] ?? 0), "the cascade spreads from the centre")
+        expect(delays.values.allSatisfy { $0 >= 0 && $0 <= 0.25 }, "the whole cascade stays within 0.25 seconds")
+        var many: [UUID: EaselRect] = [:]
+        for index in 0..<60 { many[UUID()] = EaselRect(x: Double(index * 40), y: 0, width: 30, height: 30) }
+        expect((EaselObjectMotion.cascade(many).values.max() ?? 1) <= 0.25, "big groups still finish within 0.25 seconds")
+        expect(EaselObjectMotion.cascade([centre: EaselRect(x: 0, y: 0, width: 10, height: 10)])[centre] == 0, "a single object pops at once")
+
+        var motion = EaselObjectMotion()
+        motion.appear([far: .pop], delays: [far: 0.1], at: 0, reduced: false)
+        expect(near(motion.presentation(for: far, at: 0.05).opacity, 0), "a delayed pop waits hidden")
+        expect(motion.presentation(for: far, at: 0.53).isIdentity, "a delayed pop still lands")
+        var reduced = EaselObjectMotion()
+        reduced.appear([far: .pop], delays: [far: 0.2], at: 0, reduced: true)
+        expect(reduced.presentation(for: far, at: 0.15).isIdentity, "Reduce Motion drops the stagger")
+    }
+
+    static func history() {
+        let kept = box(0, 0, kind: .rectangle, z: 0), moved = box(200, 0, kind: .rectangle, z: 1)
+        let typed = box(400, 0, kind: .text, z: 2), styled = box(600, 0, kind: .rectangle, z: 3)
+        let gone = box(800, 0, z: 4), turned = box(1000, 0, kind: .rectangle, z: 5)
+        var movedAfter = moved; movedAfter.frame = EaselRect(x: 250, y: 0, width: 200, height: 100)
+        var typedAfter = typed; typedAfter.text = "Hello"
+        var styledAfter = styled; styledAfter.color = "#FF0000"
+        var turnedAfter = turned; turnedAfter.rotation = 350
+        let fresh = box(0, 400, z: 6)
+        let before = document([kept, moved, typed, styled, gone, turned])
+        let after = document([kept, movedAfter, typedAfter, styledAfter, turnedAfter, fresh])
+        let change = EaselObjectMotion.history(from: before, to: after)
+        expect(change.added == [fresh.id], "undo finds objects that come back")
+        expect(change.removed.map(\.id) == [gone.id], "undo finds objects that leave")
+        expect(near(change.offsets[moved.id]?.x ?? 0, -100) && near(change.stretches[moved.id]?.x ?? 0, 0.5), "moved and resized objects glide back from their old frame")
+        expect(near(change.turns[turned.id] ?? 0, 10), "turns take the short way round")
+        expect(change.restyled.map(\.id) == [styled.id] && change.restyled.first?.color == styled.color, "restyles keep the old look to fade from")
+        expect(change.offsets[typed.id] == nil && !change.restyled.contains { $0.id == typed.id }, "typing undo stays instant")
+        expect(EaselObjectMotion.history(from: before, to: before).isEmpty, "an unchanged board has nothing to animate")
+        expect(EaselObjectMotion.restyled(from: before, to: after).map(\.id).contains(styled.id), "restyle commands find their changed look")
+        expect(!EaselObjectMotion.restyled(from: before, to: after).contains { $0.id == typed.id }, "typing is never a restyle")
+    }
+
+    static func stampHold() {
+        expect(near(EaselStampGrowth.side(from: 64, to: 96, since: 0, reduced: false), 64), "a growth stage starts from the shown size")
+        let sizes = stride(from: 0.0, through: 0.5, by: 0.005).map { EaselStampGrowth.side(from: 64, to: 96, since: $0, reduced: false) }
+        expect((sizes.max() ?? 0) > 97 && (sizes.max() ?? 0) < 102, "each growth stage pops past its size")
+        expect(abs((sizes.last ?? 0) - 96) < 0.5, "the stage settles at its size")
+        expect(near(EaselStampGrowth.side(from: 64, to: 96, since: 0.01, reduced: true), 96), "Reduce Motion jumps between sizes")
+        let breaths = stride(from: 0.4, through: 1.6, by: 0.01).map { EaselObjectMotion.raisedPresentation(since: $0).scale }
+        let swing = (breaths.max() ?? 0) - (breaths.min() ?? 0)
+        expect(swing > 0.02 && swing < 0.05, "the held stamp breathes gently")
+    }
+
+    static func wheel() {
+        let first = EaselStampWheelMotion.fan(slot: 0, elapsed: 0.01), late = EaselStampWheelMotion.fan(slot: 7, elapsed: 0.01)
+        expect(first.opacity > 0 && late.opacity == 0, "wheel faces fan out one after another")
+        expect(EaselStampWheelMotion.duration(count: 12) < 0.7, "the fan is quick")
+        let settled = EaselStampWheelMotion.fan(slot: 7, elapsed: 2)
+        expect(near(settled.reach, 1, 1e-3) && near(settled.scale, 1, 1e-3) && near(settled.opacity, 1), "faces end in their slots")
+        let tucked = EaselStampWheelMotion.tucked(settled, elapsed: EaselStampWheelMotion.tuck)
+        expect(near(tucked.opacity, 0) && tucked.reach < 1, "the wheel tucks away")
+        let flown = EaselStampWheelMotion.flight(elapsed: EaselStampWheelMotion.tuck)
+        expect(near(flown.travel, 1) && flown.scale < 1, "the picked face flies to the pointer")
+    }
+
+    static func bursts() {
+        let confetti = EaselBurstPlan.confetti(width: 64, height: 64, seed: 7)
+        expect((6...8).contains(confetti.count), "a stamp throws six to eight specks")
+        expect(confetti == EaselBurstPlan.confetti(width: 64, height: 64, seed: 7), "speck plans are deterministic")
+        expect(confetti.allSatisfy { $0.distance > 32 && $0.size >= 3 }, "specks land outside the stamp")
+        let angles = confetti.map(\.angle).sorted()
+        expect(zip(angles, angles.dropFirst()).allSatisfy { $1 - $0 > 0.2 }, "specks spread all the way round")
+        let puff = EaselBurstPlan.puff(width: 100, height: 40, seed: 3)
+        expect((5...6).contains(puff.count) && puff.allSatisfy { $0.size >= 7 }, "a poof puffs a few soft specks")
+        expect(EaselBurstPlan.perCommand == 8, "bursts play for at most eight objects")
     }
 }
