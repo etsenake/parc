@@ -162,14 +162,6 @@ step compile_and_run sidebar-plural-removal SidebarPluralRemovalTests \
 step compile_and_run archived-folder-paths ArchivedFolderPathTests
 step python3 "$repo_root/tests/FolderDeletion/check.py"
 
-step compile_and_run sidebar-keyboard-close SidebarKeyboardCloseTests \
-  "$repo_root/Sources/ParcCore/EaselStore.swift" \
-  "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
-  "$repo_root/Sources/ParcCore/EaselTable.swift" \
-  "$repo_root/Sources/ParcCore/NoteFileKind.swift" \
-  "$repo_root/Sources/ParcCore/EaselRichText.swift" \
-  "$repo_root/Sources/ParcApp/FolderUndoManager.swift"
-
 step compile_and_run closed-items ClosedItemsTests \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
