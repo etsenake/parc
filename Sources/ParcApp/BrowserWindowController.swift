@@ -169,7 +169,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var frameCrank: WindowFrameCrankView?
     static weak var frameCrankOwner: BrowserWindowController?
     var onFrameCrankFinished: (() -> Void)?
-    private var lastAppliedShortcutTooltipDiscovery: String?
+    private let shortcutTooltipDiscovery = ShortcutTooltipDiscovery()
     var browsers: [UUID: PCBrowserView] = [:] {
         didSet {
             for id in browsers.keys where oldValue[id] == nil {
@@ -730,16 +730,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         shortcutDiscoverySubscription = NotificationCenter.default.publisher(for: LiveShortcutToolTip.didChange).sink { [weak self] _ in
             guard let self else { return }
-            let discovery = self.shortcutTooltipDiscoveryFingerprint()
-            if ShortcutTooltipDiscoverySkip.shouldSkip(
-                previous: self.lastAppliedShortcutTooltipDiscovery, next: discovery
-            ) {
-                return
-            }
-            self.toasts.dismissShortcutToasts()
-            self.popupChrome.updateCopyTooltip()
-            self.updateSiteControlCenterShortcuts()
-            self.lastAppliedShortcutTooltipDiscovery = discovery
+            self.shortcutTooltipDiscovery.apply(self.shortcutTooltipDiscoveryFingerprint(),
+                dismissToasts: { self.toasts.dismissShortcutToasts() },
+                refreshCopyTooltip: { self.popupChrome.updateCopyTooltip() },
+                refreshSiteControlShortcuts: { self.updateSiteControlCenterShortcuts() })
         }
         window.delegate = self
         window.contentView = rootView
