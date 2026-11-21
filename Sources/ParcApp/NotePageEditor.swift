@@ -112,7 +112,7 @@ final class NotePageEditor {
         guard responder === canvas || responder.isDescendant(of: canvas) else { return false }
         if let header = canvas.headerView, responder.isDescendant(of: header) { return false }
         if (responder as? NSTextView)?.isFieldEditor == true { return false }
-        if embeddedPageHasFocus { return false }
+        if embeddedPageHasFocus || sequence(first: responder, next: \.superview).contains(where: { $0 is NoteEaselSurface }) { return false }
         return !responder.isDescendant(of: canvas.overlayView)
     }
 
@@ -1043,7 +1043,7 @@ final class NotePageEditor {
             }
         case .url:
             let text = reading.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard let url = NoteClipboard.webURL(in: text) ?? reading.url else { return false }
+            guard let url = NoteClipboard.webURL(in: text) ?? NoteClipboard.easelURL(in: text) ?? reading.url else { return false }
             if !fillSelectedEmptyBlock(with: url) { pasteURL(url, title: reading.urlTitle) }
         case .markdown:
             guard let string = reading.string else { return false }
@@ -1183,9 +1183,9 @@ final class NotePageEditor {
         case .mention:
             let atom = NoteText.atom(.link(url: link.url.absoluteString, title: link.title ?? ""), marks: text.marks(at: range.lowerBound).withoutAtom.unlinked)
             session.replaceText(at: link.position, length: link.length, with: atom)
-        case .bookmark, .embed, .pdf, .image, .video, .audio:
+        case .bookmark, .embed, .easel, .pdf, .image, .video, .audio:
             var props = NoteBlockProps()
-            props.source = link.url.absoluteString
+            props.source = NoteEaselAddress.id(from: link.url).map(NoteEaselAddress.address) ?? link.url.absoluteString
             let kind = choice.blockKind
             let fresh = NoteBlock(kind, props: props)
             var remaining = text
@@ -1322,7 +1322,7 @@ struct NotePastedLink: Hashable {
 @MainActor
 final class NotePasteLinkMenu {
     enum Choice: String {
-        case dismiss, mention, bookmark, embed, pdf, image, video, audio
+        case dismiss, mention, bookmark, embed, easel, pdf, image, video, audio
 
         var blockKind: NoteBlockKind {
             switch self {
@@ -1331,6 +1331,7 @@ final class NotePasteLinkMenu {
             case .video: return .video
             case .audio: return .audio
             case .bookmark: return .bookmark
+            case .easel: return .easel
             case .dismiss, .mention, .embed: return .embed
             }
         }
@@ -1341,6 +1342,7 @@ final class NotePasteLinkMenu {
             case .mention: return "Mention"
             case .bookmark: return "Bookmark"
             case .embed: return "Embed"
+            case .easel: return "Easel"
             case .pdf: return "PDF"
             case .image: return "Image"
             case .video: return "Video"
@@ -1379,6 +1381,11 @@ final class NotePasteLinkMenu {
                                icon: .symbol("doc.richtext"), section: "Paste as"))
         default:
             break
+        }
+        if NoteEaselAddress.id(from: link.url) != nil {
+            items.removeAll { $0.id == Choice.bookmark.rawValue }
+            items.append(.init(id: Choice.easel.rawValue, title: "Easel", subtitle: "Show the Easel right in the note",
+                               icon: .symbol("square.on.square"), section: "Paste as"))
         }
         if embeddable {
             items.append(.init(id: Choice.embed.rawValue, title: "Embed", subtitle: "Show it right in the note",

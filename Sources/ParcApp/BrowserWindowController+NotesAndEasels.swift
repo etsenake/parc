@@ -230,6 +230,7 @@ extension BrowserWindowController {
     @discardableResult
     func configureNoteEmbeds(_ tab: BrowserTab, editor: NotePageViewController,
                              windowTransfer: EmbeddedPagePool.WindowTransfer? = nil) -> Bool {
+        configureNoteEasels(tab, editor: editor)
         guard let binding = nativeBinding, !isPrivateBrowsing, !isPopupWindow else { return windowTransfer == nil }
         let tabID = tab.id, profileID = tab.profileID
         return NoteEmbeddedPages.configure(editor, binding: binding,
@@ -259,6 +260,23 @@ extension BrowserWindowController {
                       self.activeProfileID == profileID, !self.isClosing, !self.wholeWindowClose else { return }
                 self.openInput(url.absoluteString)
             }, windowTransfer: windowTransfer)
+    }
+
+    func configureNoteEasels(_ tab: BrowserTab, editor controller: NotePageViewController) {
+        guard !isPrivateBrowsing, controller.isViewLoaded, let editor = controller.editor else { return }
+        let tabID = tab.id, profileID = tab.profileID
+        NoteEaselHost.configure(editor, directory: store.easelsDirectory(for: profileID), open: { [weak self, weak controller] id, title in
+            guard let self, let controller, self.noteEditors[tabID]?.editor === controller,
+                  self.activeProfileID == profileID, !self.isClosing, !self.wholeWindowClose else { return }
+            self.openEasel(id: id, title: title)
+        }, elsewhere: { [weak self] id in
+            guard let self else { return false }
+            let name = id.uuidString.lowercased() + ".json"
+            return self.store.state.profiles.contains { profile in
+                profile.id != profileID && FileManager.default.fileExists(atPath: self.store.easelsDirectory(for: profile.id)
+                    .appendingPathComponent("documents", isDirectory: true).appendingPathComponent(name).path)
+            }
+        })
     }
 
     func notePagesCanSleep(_ note: NotePane, lastShown: Date) -> Bool {
@@ -457,6 +475,7 @@ enum NotePaneRetention {
             if count > 1 { holders[key] = count - 1; continue }
             holders.removeValue(forKey: key)
             NoteEmbeddedPages.retire(pane.editor)
+            if pane.editor.isViewLoaded, let editor = pane.editor.editor { NoteEaselHost.retire(editor) }
             pane.editor.teardown()
             pane.editor.file.release()
         }

@@ -262,9 +262,9 @@ enum NotePagePreviewRenderer {
                 result.append(NSAttributedString(string: String(repeating: "─", count: 24) + "\n", attributes: [
                     .font: NoteTheme.bodyFont(.standard, small: true), .foregroundColor: NoteTheme.dividerLine, .paragraphStyle: paragraph]))
                 return
-            case .image, .video, .audio, .file, .pdf, .bookmark, .embed, .pageLink:
+            case .image, .video, .audio, .file, .pdf, .bookmark, .embed, .easel, .pageLink:
                 let name = block.props.caption.plainText.isEmpty
-                    ? (block.props.bookmark?.title ?? block.props.target ?? block.props.source.map { ($0 as NSString).lastPathComponent } ?? "")
+                    ? (block.props.bookmark?.title ?? block.props.target ?? (block.kind == .easel ? block.props.alt : nil) ?? block.props.source.map { ($0 as NSString).lastPathComponent } ?? "")
                     : block.props.caption.plainText
                 let symbol: String
                 switch block.kind {
@@ -272,6 +272,7 @@ enum NotePagePreviewRenderer {
                 case .video: symbol = "🎬"
                 case .audio: symbol = "🎧"
                 case .bookmark, .embed: symbol = "🔗"
+                case .easel: symbol = "🎨"
                 case .pageLink: symbol = "📄"
                 case .pdf: symbol = "📑"
                 default: symbol = "📎"

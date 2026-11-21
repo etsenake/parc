@@ -54,6 +54,8 @@ enum NoteMDExport {
             guard block.kind == .file || block.kind == .embed || NoteMDMedia.inferredKind(block.props.source ?? "") != block.kind
             else { return [media(block)] + credit(block) }
             return [link(block)] + credit(block)
+        case .easel:
+            return [link(block)]
         case .image:
             return [media(block)] + credit(block) + captureSource(block)
         case .code where !block.props.caption.isEmpty:

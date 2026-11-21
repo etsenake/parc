@@ -269,7 +269,7 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
         }
     }
 
-    private static func scrollPhase(of event: NSEvent) -> NoteEmbedScrollLatch.Phase {
+    static func scrollPhase(of event: NSEvent) -> NoteEmbedScrollLatch.Phase {
         if event.momentumPhase == .ended || event.momentumPhase == .cancelled { return .momentumEnded }
         if !event.momentumPhase.isEmpty { return .momentum }
         if event.phase.contains(.began) { return .began }
@@ -295,6 +295,10 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
 
     private func scrollNote(with event: NSEvent, phase: NoteEmbedScrollLatch.Phase) {
         guard let scrollView = editor.canvas.enclosingScrollView else { return }
+        Self.scroll(scrollView, with: event, phase: phase)
+    }
+
+    static func scroll(_ scrollView: NSScrollView, with event: NSEvent, phase: NoteEmbedScrollLatch.Phase) {
         if phase == .discrete {
             scrollView.scrollWheel(with: event)
             return

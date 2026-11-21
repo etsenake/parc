@@ -22,11 +22,13 @@ enum NotePageHTML {
     static func document(_ page: NotePage, title: String, assets: (String) -> URL?, embedImages: Bool,
                          equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)? = nil,
                          diagramArt: ((NoteBlock) -> NoteDiagramArt?)? = nil,
+                         easelArt: ((NoteBlock) -> Data?)? = nil,
                          imageSize: ((String) -> CGSize?)? = nil, breadcrumb: [NoteBreadcrumbSegment] = []) -> String {
         withoutActuallyEscaping(assets) { assets in
             var writer = NotePageHTMLWriter(mode: .document, assets: assets, embedImages: embedImages,
                                             equationArt: equationArt, blocks: page.blocks)
             writer.diagramArt = diagramArt
+            writer.easelArt = easelArt
             writer.imageSize = imageSize
             writer.breadcrumb = breadcrumb
             writer.write(page.blocks)
@@ -81,6 +83,7 @@ struct NotePageHTMLWriter {
     let embedImages: Bool
     let equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)?
     var diagramArt: ((NoteBlock) -> NoteDiagramArt?)?
+    var easelArt: ((NoteBlock) -> Data?)?
     var breadcrumb: [NoteBreadcrumbSegment] = []
     var imageSize: ((String) -> CGSize?)?
     private(set) var output = ""
@@ -343,6 +346,8 @@ struct NotePageHTMLWriter {
             let source = block.props.source ?? ""
             let anchor = "<a class=\"embed-link\" href=\"" + Self.attribute(link(source)) + "\">" + Self.escape(source) + "</a>"
             figure("embed", block, attributes: " data-source=\"" + Self.attribute(source) + "\"", content: anchor)
+        case .easel:
+            easel(block)
         case .table:
             table(block)
         case .tableOfContents:
@@ -642,6 +647,26 @@ struct NotePageHTMLWriter {
         let href = Self.attribute(link(raw))
         let title = metadata?.title?.isEmpty == false ? metadata!.title! : raw
         figure("bookmark", block, attributes: attributes, content: bookmarkCard(href: href, title: title, raw: raw, metadata: metadata))
+    }
+
+    private mutating func easel(_ block: NoteBlock) {
+        let raw = NoteEaselAddress.id(of: block).map(NoteEaselAddress.address) ?? block.props.source ?? ""
+        let title = NoteEaselAddress.title(of: block)
+        var attributes = " data-source=\"" + Self.attribute(raw) + "\" data-title=\"" + Self.attribute(title) + "\""
+        if let width = block.props.width { attributes += " data-width=\"" + NoteMDWriter.number(width) + "\"" }
+        if let height = block.props.height { attributes += " data-height=\"" + NoteMDWriter.number(height) + "\"" }
+        if block.props.alignment != .center { attributes += " data-align=\"" + block.props.alignment.rawValue + "\"" }
+        let anchor = "<a class=\"embed-link\" href=\"" + Self.attribute(raw) + "\">" + Self.escape(title) + "</a>"
+        guard mode == .document, let art = easelArt?(block) else {
+            figure("easel", block, attributes: attributes, content: anchor)
+            return
+        }
+        var style = ""
+        if let width = block.props.width, width > 0 {
+            style = " style=\"width:" + (width <= 1 ? NoteMDWriter.number((width * 100).rounded()) + "%" : NoteMDWriter.number(width.rounded()) + "px") + "\""
+        }
+        let image = "<img class=\"easel-art\" alt=\"" + Self.attribute(title) + "\" src=\"data:image/png;base64," + art.base64EncodedString() + "\"" + style + ">"
+        figure("easel", block, attributes: attributes, content: image + "<br>" + anchor)
     }
 
     private func bookmarkCard(href: String, title: String, raw: String, metadata: NoteBookmark?) -> String {

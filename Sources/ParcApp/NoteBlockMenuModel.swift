@@ -365,7 +365,7 @@ enum NoteBlockMenuModel {
                 result.append(NoteBlockMenuEntry(id: "unwrapButton", title: "Turn into Blocks", icon: .symbol("square.stack.3d.up"),
                                                  keywords: ["unwrap", "template", "spill", "contents"], group: 1, action: .unwrapButton))
             }
-        case .bookmark, .embed:
+        case .bookmark, .embed, .easel:
             if single && block.props.source?.isEmpty == false {
                 result.append(NoteBlockMenuEntry(id: "copyOriginal", title: "Copy Link to Original", icon: .symbol("link"),
                                                  keywords: ["url", "address"], group: 1, action: .copyOriginalLink))

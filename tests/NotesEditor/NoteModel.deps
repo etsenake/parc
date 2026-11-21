@@ -1,0 +1,10 @@
+Sources/ParcCore/NoteCustomEmojiName.swift
+Sources/ParcCore/NoteImageFraming.swift
+Sources/ParcCore/NoteTableModel.swift
+Sources/ParcCore/NoteDateMentionText.swift
+Sources/ParcCore/NoteFileKind.swift
+Sources/ParcCore/NoteMarkdown*.swift
+Sources/ParcCore/NoteMermaid.swift
+Sources/ParcCore/NoteSyntaxLanguages.swift
+Sources/ParcCore/NoteCaptureModel.swift
+Sources/ParcCore/NoteEaselModel.swift

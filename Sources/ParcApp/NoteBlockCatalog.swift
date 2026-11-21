@@ -20,7 +20,7 @@ enum NoteCatalogSection: String, CaseIterable, Hashable {
 enum NoteCatalogBlock: Hashable {
     case text, heading(Int), toggleHeading(Int), bulleted, numbered, todo, toggle, quote, callout, divider
     case newNote, linkToNote, table
-    case image, video, audio, file, pdf, bookmark, embed
+    case image, video, audio, file, pdf, bookmark, embed, easel
     case tableOfContents, breadcrumb, equation, button, code, columns(Int), synced
 
     static let turnIntoTargets: [NoteCatalogBlock] = [
@@ -48,6 +48,7 @@ enum NoteCatalogBlock: Hashable {
         case .pdf: return .pdf
         case .bookmark: return .bookmark
         case .embed: return .embed
+        case .easel: return .easel
         case .tableOfContents: return .tableOfContents
         case .breadcrumb: return .breadcrumb
         case .equation: return .equation
@@ -362,6 +363,8 @@ enum NoteBlockCatalog {
                   aliases: ["book", "web", "web bookmark", "url"], keywords: ["link", "preview", "website"], .bookmark),
             block("embed", "Embed", "Bring a live page into the note.", .media, .symbol("chevron.left.forwardslash.chevron.right"),
                   aliases: ["iframe", "tweet", "maps"], keywords: ["website", "figma", "codepen", "youtube", "widget"], .embed),
+            block("easel", "Easel", "Drop in an Easel, or start a new one.", .media, .symbol("square.on.square"),
+                  aliases: ["canvas", "board", "whiteboard", "moodboard"], keywords: ["draw", "sketch", "collage", "shapes", "freeform"], .easel),
             block("tableOfContents", "Table of contents", "A map of every heading here.", .advanced, .symbol("list.bullet.indent"),
                   aliases: ["toc", "contents", "outline"], keywords: ["index", "headings", "navigation"], .tableOfContents),
             block("equation", "Block equation", "Write TeX, get beautiful math.", .advanced, .symbol("function"), hint: "$$",

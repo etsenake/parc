@@ -16,6 +16,7 @@ enum NoteBlockViewFactory {
         case .image, .video, .audio, .file, .pdf: return NoteMediaBlockView(block: block, editor: editor)
         case .bookmark: return NoteBookmarkBlockView(block: block, editor: editor)
         case .embed: return NoteEmbedBlockView(block: block, editor: editor)
+        case .easel: return NoteEaselBlockView(block: block, editor: editor)
         case .pageLink: return NotePageLinkBlockView(block: block, editor: editor)
         case .columns, .column: return NoteColumnsBlockView(block: block, editor: editor)
         case .synced: return NoteSyncedBlockView(block: block, editor: editor)

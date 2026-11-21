@@ -8,7 +8,7 @@ struct NoteMDAttributes: Equatable {
 
     static let kindNames: [String: NoteBlockKind] = [
         "paragraph": .paragraph, "image": .image, "video": .video, "audio": .audio, "file": .file,
-        "embed": .embed, "bookmark": .bookmark, "pdf": .pdf, "breadcrumb": .breadcrumb,
+        "embed": .embed, "easel": .easel, "bookmark": .bookmark, "pdf": .pdf, "breadcrumb": .breadcrumb,
     ]
 
     var kind: NoteBlockKind? {
@@ -379,7 +379,7 @@ struct NoteMDReader {
         let kindHint = attributes?.kind
         if children.count == 1 {
             let node = tree.nodes[children[0]]
-            if node.kind == .image, kindHint == nil || (kindHint != .paragraph && kindHint != .bookmark && kindHint != .breadcrumb) {
+            if node.kind == .image, kindHint == nil || (kindHint != .paragraph && kindHint != .bookmark && kindHint != .breadcrumb && kindHint != .easel) {
                 var block = NoteBlock(kindHint ?? NoteMDMedia.inferredKind(node.destination))
                 block.props.source = node.destination
                 let alt = tree.plainText(of: children[0])
@@ -394,6 +394,12 @@ struct NoteMDReader {
                 let alt = tree.plainText(of: children[0])
                 block.props.alt = alt.isEmpty ? nil : alt
                 if let title = node.title { block.props.caption = caption(title) }
+                if let attributes { apply(attributes, to: &block) }
+                return block
+            }
+            if node.kind == .link || node.kind == .autolink, kindHint == .easel, let id = NoteEaselAddress.id(from: node.destination) {
+                let title = node.kind == .link ? tree.plainText(of: children[0]) : ""
+                var block = NoteEaselAddress.block(id: id, title: title)
                 if let attributes { apply(attributes, to: &block) }
                 return block
             }

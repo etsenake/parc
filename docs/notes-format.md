@@ -1,14 +1,12 @@
 # Notes file format
 
-Every Parc note is a plain Markdown file. You can open it in GitHub, Obsidian,
-VS Code or any text editor and it reads the way you'd expect. This guide is for
-people who edit those files by hand or want to know what Parc writes. The
-editor itself is described in [Notes](notes.md).
+Every Parc note is a plain Markdown file that reads as you'd expect in GitHub,
+Obsidian, VS Code or any text editor. This guide is for people who edit those
+files by hand; the editor itself is described in [Notes](notes.md).
 
 The note's title is its file name without the extension, so the body never
-repeats it. Files ending in `.txt` (or `.text`) open in plain-text mode: each
-line is one paragraph, formatting is off, and the file is saved exactly as
-typed.
+repeats it. `.txt` (or `.text`) files open in plain-text mode: each line is one
+paragraph, formatting is off, and the file is saved exactly as typed.
 
 ## The core: CommonMark and GitHub Markdown
 
@@ -31,12 +29,10 @@ A few details worth knowing:
   Numbers after the first item are rewritten in order. A numbered list that
   starts again right after another one is separated with `<!-- -->`, the usual
   CommonMark trick.
-- **Code.** The info string after the fence gives the language. Anything after
-  the first word (such as `title="app.js"`) is kept as is. Parc keeps tildes or
-  backticks, and a longer fence if you used one.
-- **Reference links and footnotes.** `[text][label]` links work. The
-  `[label]: url` lines and `[^1]: ...` footnotes stay in your file word for word.
-  Footnote markers like `[^1]` are kept too.
+- **Code.** The fence's first word is the language; the rest (such as
+  `title="app.js"`) is kept, as are tildes, backticks and a longer fence.
+- **Reference links and footnotes.** `[text][label]` links work; `[label]: url`
+  lines, `[^1]: ...` footnotes and `[^1]` markers stay word for word.
 
 ## Page settings (front matter)
 
@@ -117,10 +113,10 @@ after it:
 ```
 
 The comment always starts with `parc`, followed by words and `name="value"`
-pairs. Parc writes `color`, `icon`, `width`, `height` (an embed's page height),
+pairs. Parc writes `color`, `icon`, `width`, `height` (an embed's or Easel's height),
 `align`, `crop` and `mask` (an image's framing), `caption`, `wrap` (code that wraps), `view` (`code` or `split` for a Mermaid block; Preview writes nothing), the table flags `no-header-row`, `header-column` and
 `widths="120,,80"`, the table's `merge` and `colors` (see below), the bookmark fields, and a block kind (`paragraph`,
-`image`, `video`, `audio`, `file`, `pdf`, `embed` or `bookmark`) when the file
+`image`, `video`, `audio`, `file`, `pdf`, `embed`, `easel` or `bookmark`) when the file
 wouldn't otherwise make the kind clear. An empty paragraph that has a colour is
 written as `<!-- parc paragraph color="…" -->` on its own line.
 
@@ -388,6 +384,14 @@ A **bookmark** is a link on its own line plus its cached preview:
 
 A **page link** is a link to another note on its own line:
 `[Project plan](Project%20plan.md)`. Paths are relative to the note.
+
+An **Easel** is a link to its `parc://easel/<id>` address, the one Easel tabs
+use, flagged `easel`. Easels live in the Profile, so the note points at one:
+`[Moodboard](parc://easel/6f1c2a4e-…) <!-- parc easel width="0.6" height="560" -->`.
+The link text is the Easel's title when it was added; Parc shows the current one.
+`width` and `align` work as for a PDF and `height` as for an embed; defaults
+write nothing. An unflagged Easel link stays a link. Markdown exports write the
+link, HTML exports a picture of the canvas above it, `.txt` notes the address.
 
 ## Mentions and inline extras
 

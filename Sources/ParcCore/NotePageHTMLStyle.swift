@@ -172,6 +172,7 @@ enum NotePageHTMLStyle {
     @media screen and (prefers-color-scheme:dark){.diagram-light{display:none}.diagram-dark{display:block}}
     .file-link,.embed-link{display:inline-flex;gap:.4em;align-items:center;padding:.35em .7em;border-radius:8px;\
     background:var(--fill);text-decoration:none;color:var(--ink)}
+    .easel-art{display:block;max-width:100%;border:1px solid var(--line);border-radius:10px;margin-bottom:.5em}
     .bookmark-card{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:10px;overflow:hidden;\
     text-decoration:none;color:var(--ink)}
     .bookmark-text{flex:1 1 auto;min-width:0;padding:12px 16px;display:flex;flex-direction:column;gap:.2em}

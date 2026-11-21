@@ -66,7 +66,7 @@ struct NoteCanvasMetrics: Equatable {
             case 3: value = (6, 2)
             default: value = (4, 2)
             }
-        case .callout, .code, .table, .image, .video, .audio, .file, .pdf, .embed, .bookmark, .equation: value = (6, 6)
+        case .callout, .code, .table, .image, .video, .audio, .file, .pdf, .embed, .easel, .bookmark, .equation: value = (6, 6)
         case .button: value = (4, 4)
         case .columns: value = (4, 4)
         case .synced: value = (4, 4)
@@ -812,6 +812,9 @@ enum NoteCanvasEstimate {
         case .embed:
             guard block.props.source?.isEmpty == false else { return 60 + caption }
             return CGFloat(NoteEmbedSizing.height(of: block.props)) + 38 + caption
+        case .easel:
+            guard block.props.source?.isEmpty == false else { return 60 }
+            return CGFloat(NoteEmbedSizing.height(of: block.props)) + 38 + 16
         case .image, .video:
             let used = block.props.width.map { CGFloat($0) <= 1 ? width * CGFloat($0) : min(width, CGFloat($0)) } ?? width
             return min(used * 0.5625, 480) + caption

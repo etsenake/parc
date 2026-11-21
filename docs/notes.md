@@ -44,6 +44,22 @@ Scrolling that starts over a page scrolls the page and carries on into the note
 once the page hits its edge. The pages nap after four hours out of sight, follow the tab
 between windows and ask before leaving, like an Easel's pages ([embedded pages](embedded-pages.md#live-embeds-in-notes)).
 
+Easel blocks (`/easel`, also `canvas`, `board` or `whiteboard`) put an Easel in
+the note. The block starts as a search of the Profile's Easels with New Easel,
+titled from the search; pasting a `parc://easel/…` link offers Easel too. The block shows the real canvas with the Easel tab's editor and
+document, so edits in either place are the same Easel. Its header shows the
+title and Open, which opens the Easel in a tab. Side handles change its width
+and the alignment button places it, as with images and PDFs, and the bottom
+handle sets its height. Scrolling passes over the canvas until it's clicked; the
+click activates it, moves the keyboard into it and reaches the canvas. Then
+scrolling pans the canvas and carries on into the note at its edge, as an embed
+does, and Escape with nothing selected, the check mark or a click outside
+returns to the note. Webpages on the canvas show their saved cards; Open shows
+them live. A locked note shows the canvas view-only. A deleted Easel, or one
+that belongs to another Profile (Easels live in their Profile, notes don't),
+shows a card saying so with Remove. Sidebar drags don't carry Easel addresses
+yet, so dropping an Easel from the sidebar doesn't add one.
+
 PDF blocks (`/pdf`, a dropped or pasted PDF file, a pasted `.pdf` link, or Turn
 Into on a file row) read the PDF right in the note with PDFKit: pages scroll
 inside the viewer at fit width, and scrolling hands over to the note at the first
@@ -83,7 +99,7 @@ with syntax highlighting for 39 languages, equations typeset natively from TeX
 (including chemistry with `\ce`, numbering that runs through the whole note,
 and `\label` with `\eqref` or `\ref` that link up in the editor and in HTML and
 PDF exports), simple tables, images, video, audio, files, inline PDFs,
-bookmarks with a cached preview card, embeds, links to other notes, columns (two
+bookmarks with a cached preview card, embeds, Easels, links to other notes, columns (two
 to five), a table of contents and a breadcrumb (`/bread`). The breadcrumb shows
 where the note lives, from the Notes folder (or the home folder or disk for notes
 elsewhere) down to the note's own icon and title, keeps up when the note moves

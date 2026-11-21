@@ -125,7 +125,7 @@ enum NoteClipboard {
         if reading.archive != nil { return .blocks }
         if !reading.files.isEmpty { return .files }
         let text = reading.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let textLink = webURL(in: text)
+        let textLink = webURL(in: text) ?? easelURL(in: text)
         if reading.image != nil, text.isEmpty || textLink != nil, !htmlHasText(reading.html) { return .image }
         if textLink != nil { return .url }
         if canReadHTML, let html = reading.html, htmlHasText(html) || reading.string == nil { return .html }
@@ -148,6 +148,10 @@ enum NoteClipboard {
         stripped = stripped.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
         stripped = stripped.replacingOccurrences(of: "&nbsp;", with: " ")
         return !stripped.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    static func easelURL(in text: String) -> URL? {
+        NoteEaselAddress.id(from: text).map(NoteEaselAddress.url)
     }
 
     static func webURL(in text: String) -> URL? {

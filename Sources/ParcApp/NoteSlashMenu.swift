@@ -1200,7 +1200,7 @@ final class NoteBlockPreviewCard: NSView {
             }
             path.lineWidth = 1
             path.stroke()
-        case .image, .video, .audio, .file, .pdf, .embed, .bookmark:
+        case .image, .video, .audio, .file, .pdf, .embed, .easel, .bookmark:
             mediaSample(in: NSRect(x: x, y: y, width: width, height: rect.height))
         case .breadcrumb:
             let font = NoteTheme.nunitoRegular(13)

@@ -347,7 +347,7 @@ struct NoteText: Hashable, Codable, ExpressibleByStringLiteral {
 
 enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
     case paragraph, heading, bulletedItem, numberedItem, todo, toggle, quote, callout, divider
-    case code, equation, image, video, audio, file, pdf, bookmark, embed, table, tableOfContents, breadcrumb
+    case code, equation, image, video, audio, file, pdf, bookmark, embed, easel, table, tableOfContents, breadcrumb
     case columns, column, pageLink, html, raw, synced, button
 
     var hasRichText: Bool {

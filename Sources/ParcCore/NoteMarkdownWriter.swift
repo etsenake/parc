@@ -249,7 +249,7 @@ struct NoteMDWriter {
     static func writesAsParagraph(_ block: NoteBlock?) -> Bool {
         guard let block else { return false }
         switch block.kind {
-        case .paragraph, .pageLink, .image, .video, .audio, .file, .pdf, .embed, .bookmark: return true
+        case .paragraph, .pageLink, .image, .video, .audio, .file, .pdf, .embed, .easel, .bookmark: return true
         default: return false
         }
     }
@@ -268,6 +268,7 @@ struct NoteMDWriter {
         case .equation: return equation(block)
         case .image, .video, .audio, .file, .pdf, .embed: return [media(block)]
         case .bookmark: return [bookmark(block)]
+        case .easel: return [easel(block)]
         case .pageLink:
             var label = block.text
             label.updateMarks(in: 0..<label.length) { $0.link = nil }
@@ -586,6 +587,17 @@ struct NoteMDWriter {
         if block.kind == .image, let capture = block.props.capture { items += capture.attributes }
         items += blockAttributes(block)
         return line + suffix(items)
+    }
+
+    private func easel(_ block: NoteBlock) -> String {
+        let source = NoteEaselAddress.id(of: block).map(NoteEaselAddress.address) ?? block.props.source ?? ""
+        let title = inline.write(NoteText(NoteEaselAddress.title(of: block)), style: NoteMDInlineStyle(shape: .line, insideLink: true, trailingComment: true))
+        var items: [(String, String?)] = [("easel", nil)]
+        if let width = block.props.width { items.append(("width", Self.number(width))) }
+        if let height = block.props.height { items.append(("height", Self.number(height))) }
+        if block.props.alignment != .center { items.append(("align", block.props.alignment.rawValue)) }
+        items += blockAttributes(block)
+        return "[" + title + "](" + NoteMDInlineWriter.destination(source) + ")" + suffix(items)
     }
 
     private func bookmark(_ block: NoteBlock) -> String {

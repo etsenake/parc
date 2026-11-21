@@ -1017,6 +1017,13 @@ final class NoteHTMLConversion {
                 }
             }
             return captioned(block)
+        case "easel":
+            guard let id = node["data-source"].flatMap(NoteEaselAddress.id(from:)) else { return [] }
+            var block = NoteEaselAddress.block(id: id, title: node["data-title"])
+            block.props.width = node["data-width"].flatMap(Double.init)
+            block.props.height = node["data-height"].flatMap(Double.init)
+            if let align = node["data-align"].flatMap({ NoteAlignment(rawValue: $0.lowercased()) }) { block.props.alignment = align }
+            return [block]
         case "html", "raw":
             let value = node["data-source"] ?? node.textContent
             guard !value.isEmpty else { return [] }

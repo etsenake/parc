@@ -43,7 +43,7 @@ enum NotePlainText {
     }
 
     static func line(_ block: NoteBlock) -> String {
-        guard block.kind.isMedia || block.kind == .bookmark || block.kind == .embed, block.text.isEmpty,
+        guard block.kind.isMedia || block.kind == .bookmark || block.kind == .embed || block.kind == .easel, block.text.isEmpty,
               let source = block.props.source, !source.isEmpty else { return block.text.plainText }
         return source
     }
