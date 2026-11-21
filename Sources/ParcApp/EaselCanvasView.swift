@@ -1819,7 +1819,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if event.clickCount == 2 { insert(kind: .text, edit: true, at: point); return }
             marqueeRect = NSRect(origin: point, size: .zero); updateMarquee(to: point, flags: event.modifierFlags); return
         }
-        let enteredGroup = selectForClick(hit, extending: event.modifierFlags.contains(.shift), clickCount: event.clickCount)
+        let adds = event.modifierFlags.contains(.command) && !selection.contains(hit.id)
+        let enteredGroup = selectForClick(hit, extending: event.modifierFlags.contains(.shift) || adds, clickCount: event.clickCount)
         guard selection.contains(hit.id) else { cancelPointerInteraction(); return }
         beginGeometry()
         arrangeState.duplicateDragArmed = event.modifierFlags.contains(.option) && !hit.isLocked

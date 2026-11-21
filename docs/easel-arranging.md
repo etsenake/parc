@@ -10,7 +10,9 @@ toolbar and export stay in the [Easels guide](easels.md).
 ## Selecting
 
 A click selects the topmost unlocked object under the pointer and Shift-click
-adds or removes it. Clicking any member of a group selects the group (its
+adds or removes it. Command-click adds an object too, and on one already
+selected it leaves the selection alone so a Command-drag still moves it
+without snapping. Clicking any member of a group selects the group (its
 unlocked members), and Shift-click adds or removes it as a whole.
 Double-clicking a member enters the group and selects just that member: from
 there clicks pick single
