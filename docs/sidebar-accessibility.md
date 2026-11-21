@@ -263,7 +263,7 @@ neither focus nor selection, and only a running screen reader speaks them.
 | `SidebarOutlineTests`, `SidebarOutlineSelectionTests` | Row/cell hierarchy, geometry, stable identities, disclosure, selection and accessibility selection |
 | `SidebarWindowKeyLoopTests` | Bidirectional traversal, renderer replacement, hidden sidebar, Peek and closed-loop exclusions |
 | `tests/SidebarMiniPlayerFocus/check.py` | Mini-player keyboard actions and visible rings |
-| `tests/SidebarChrome/check.py` | Dock order, Space identifiers and header controls |
+| `SidebarDockStripTests`, `SidebarDockMenuTests`, `SidebarSpaceHeaderTests` | Dock order, Space identifiers and header controls |
 | `SidebarWindowButtonsTests` | Window controls and presentation-state pointer handling |
 | `tests/SidebarHeaderGlyphs/check.py` | URL row button reveal rule, popup and panel holds, and VoiceOver |
 
