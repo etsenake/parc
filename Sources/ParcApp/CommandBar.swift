@@ -971,9 +971,11 @@ import SwiftUI
         }
         for result in results where result.navigation?.search != true {
             guard let url = result.url else { continue }
-            if result.tabID != nil || result.archivedTabID != nil, let note = InternalPage.noteFile(url) {
+            let profile = tabs.first { $0.id == result.tabID || $0.id == result.archivedTabID }?.profileID ?? tabs.first?.profileID ?? UUID()
+            if result.tabID != nil || result.archivedTabID != nil,
+               let subject = NoteTabIconArt.Subject(address: url.absoluteString, profile: profile) {
                 guard requestedIcons.insert(url).inserted else { continue }
-                NoteTabIconArt.shared.requestImage(forNote: note) { [weak self] image in self?.adoptIcon(image, for: url) }
+                NoteTabIconArt.shared.requestImage(for: subject) { [weak self] image in self?.adoptIcon(image, for: url) }
                 continue
             }
             guard ["https", "http"].contains(url.scheme?.lowercased() ?? ""), requestedIcons.insert(url).inserted else { continue }
