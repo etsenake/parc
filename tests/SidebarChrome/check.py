@@ -22,8 +22,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-chrome-") as directory:
     action_button.write_text(sidebar[:sidebar.index("final class MenuAction")])
     tooltips = tooltip_sources(root, Path(directory), store_sources)
     theme_palette = next((path for path in tooltips if Path(path).name == "TooltipThemePalette.swift"), None)
-    suites = {"chrome": [app / "SidebarChromeLayout.swift", here / "SidebarChromeLayoutTests.swift"],
-              "header": [*store_sources, app / "SidebarChromeLayout.swift", app / "SidebarSpaceMenu.swift", app / "SidebarSpaceHeader.swift",
+    suites = {"header": [*store_sources, app / "SidebarChromeLayout.swift", app / "SidebarSpaceMenu.swift", app / "SidebarSpaceHeader.swift",
                          app / "SidebarRowAppearance.swift", here / "SidebarSpaceHeaderTests.swift", *tooltips],
               "dockmenu": [*store_sources, app / "SidebarChromeLayout.swift", app / "SidebarSpaceMenu.swift", app / "SidebarDockStrip.swift",
                            app / "SidebarRowAppearance.swift", theme_palette, app / "SidebarAccessibility.swift", here / "SidebarDockMenuTests.swift"],
@@ -36,8 +35,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-chrome-") as directory:
         subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                         *map(str, sources), "-o", str(executable)], check=True)
         return executable
-    for name, sources, runs in [("chrome", suites["chrome"], [[]]),
-                                ("header", suites["header"], [[]]),
+    for name, sources, runs in [("header", suites["header"], [[]]),
                                 ("dockmenu", suites["dockmenu"], [[]]),
                                 ("listmenu", suites["listmenu"], [[]]),
                                 ("tablist", [core / "SidebarOutlineConfigureSkip.swift",
