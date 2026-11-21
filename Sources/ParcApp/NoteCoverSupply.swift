@@ -10,7 +10,7 @@ final class NoteCoverSupply {
     private var next: String?
 
     static func install() {
-        NoteLibrary.newNoteCover = { shared.take() }
+        NoteFiles.shared.newNoteCover = { shared.take() }
     }
 
     func take() -> NoteNewCover? {

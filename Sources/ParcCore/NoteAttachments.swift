@@ -148,16 +148,20 @@ package final class NoteAttachmentImports {
         init(_ session: NotePageSession) { self.session = session }
     }
 
-    package static let shared = NoteAttachmentImports()
+    package static var shared: NoteAttachmentImports { NoteFiles.shared.attachmentImports }
 
-    package var worker = NoteFileWorker(label: "org.parc.notes.attachments")
-    package var clock: NoteFileClock = NoteFileSystemClock.shared
+    package unowned let files: NoteFiles
     package let changes = PassthroughSubject<String, Never>()
     private var ledgers: [ObjectIdentifier: Ledger] = [:]
     private var originals: Set<String> = []
     private var orphans: [String: [String: String]] = [:]
 
-    package init() {}
+    package init(files: NoteFiles) {
+        self.files = files
+    }
+
+    private var worker: NoteFileWorker { files.settings.attachmentWorker }
+    private var clock: NoteFileClock { files.clock }
 
     package func isPending(_ source: String?, in session: NotePageSession) -> Bool {
         guard let source, let ledger = existingLedger(for: session) else { return false }
@@ -198,8 +202,8 @@ package final class NoteAttachmentImports {
 
     private func finish(_ source: String, _ result: Result<NoteAttachments.Placement, Error>, from origin: NotePageSession?, note: URL) {
         ledgers = ledgers.filter { $0.value.session != nil }
-        if case .success(let placement) = result, let target = Self.liveSession(origin, note: note),
-           let moved = Self.movedNote(of: target, from: note) {
+        if case .success(let placement) = result, let target = liveSession(origin, note: note),
+           let moved = movedNote(of: target, from: note) {
             follow(source, placement, from: note, to: moved, origin: origin)
             return
         }
@@ -208,7 +212,7 @@ package final class NoteAttachmentImports {
         }
         switch result.map(\.path) {
         case .success(let path):
-            if let target = Self.liveSession(origin, note: note) {
+            if let target = liveSession(origin, note: note) {
                 land([source: path], in: target)
             } else {
                 orphans[NoteFilePaths.key(for: note), default: [:]][source] = path
@@ -233,7 +237,7 @@ package final class NoteAttachmentImports {
         let fileKey = NoteFilePaths.key(for: file), folderKey = NoteFilePaths.key(for: folder)
         for ledger in ledgers.values {
             guard let session = ledger.session,
-                  let note = NoteFileSession.openSessions.first(where: { $0.page === session })?.url else { continue }
+                  let note = files.openSessions.first(where: { $0.page === session })?.url else { continue }
             let noteFolder = note.deletingLastPathComponent()
             if session !== origin, !ledger.pending.isEmpty, NoteFilePaths.key(for: noteFolder) == folderKey { return true }
             if ledger.landed.values.contains(where: { NoteFilePaths.key(for: noteFolder.appendingPathComponent($0.removingPercentEncoding ?? $0)) == fileKey }) {
@@ -262,8 +266,8 @@ package final class NoteAttachmentImports {
         }
     }
 
-    private static func movedNote(of session: NotePageSession, from note: URL) -> URL? {
-        guard let current = NoteFileSession.openSessions.first(where: { $0.page === session })?.url,
+    private func movedNote(of session: NotePageSession, from note: URL) -> URL? {
+        guard let current = files.openSessions.first(where: { $0.page === session })?.url,
               NoteFilePaths.key(for: current.deletingLastPathComponent()) != NoteFilePaths.key(for: note.deletingLastPathComponent())
         else { return nil }
         return current
@@ -305,9 +309,9 @@ package final class NoteAttachmentImports {
         return ledger
     }
 
-    private static func liveSession(_ origin: NotePageSession?, note: URL) -> NotePageSession? {
-        if let origin, NoteFileSession.openSessions.contains(where: { $0.page === origin }) { return origin }
-        return NoteFileSession.session(for: note)?.page
+    private func liveSession(_ origin: NotePageSession?, note: URL) -> NotePageSession? {
+        if let origin, files.openSessions.contains(where: { $0.page === origin }) { return origin }
+        return files.session(for: note)?.page
     }
 
     package static func settle(_ replacements: [String: String], in session: NotePageSession) {

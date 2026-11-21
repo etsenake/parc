@@ -66,31 +66,15 @@ package final class NoteEmojiLibrary {
     package nonisolated static let manifestName = "emoji.json"
     package nonisolated static let imageExtensions: Set<String> = ["png", "gif", "jpg", "jpeg", "webp", "heic", "tif", "tiff"]
 
-    package static let anyChange = PassthroughSubject<NoteEmojiLibrary, Never>()
-    package static var notesFolders: @MainActor () -> [URL] = { NoteFolderPreferences.allFolders }
-    private static var libraries: [String: NoteEmojiLibrary] = [:]
+    package static var anyChange: PassthroughSubject<NoteEmojiLibrary, Never> { NoteFiles.shared.emojiChanges }
 
     package nonisolated static func directory(in root: URL) -> URL {
         root.appendingPathComponent(folderName, isDirectory: true).appendingPathComponent(emojiFolderName, isDirectory: true)
     }
 
-    package static func library(for note: URL) -> NoteEmojiLibrary {
-        library(root: root(for: note, notesFolders: notesFolders()))
-    }
+    package static func library(for note: URL) -> NoteEmojiLibrary { NoteFiles.shared.emojiLibrary(for: note) }
 
-    package static func library(root: URL) -> NoteEmojiLibrary {
-        let canonical = NoteFilePaths.canonical(root)
-        let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
-        if let existing = libraries[key] {
-            existing.refreshIfNeeded()
-            return existing
-        }
-        let library = NoteEmojiLibrary(root: canonical)
-        libraries[key] = library
-        return library
-    }
-
-    package static func forgetAll() { libraries.removeAll() }
+    package static func library(root: URL) -> NoteEmojiLibrary { NoteFiles.shared.emojiLibrary(root: root) }
 
     package nonisolated static func root(for note: URL, notesFolders: [URL]) -> URL {
         let start = NoteFilePaths.canonical(note.deletingLastPathComponent())
@@ -111,14 +95,20 @@ package final class NoteEmojiLibrary {
 
     package let root: URL
     package let changes = PassthroughSubject<Void, Never>()
+    private let announcements: PassthroughSubject<NoteEmojiLibrary, Never>
     package private(set) var emoji: [NoteCustomEmoji] = []
     package private(set) var revision = 0
     private var byName: [String: Int] = [:]
     private var byAlias: [String: Int] = [:]
     private var stamp = Stamp()
 
-    package init(root: URL) {
+    package convenience init(root: URL) {
+        self.init(root: root, announcing: NoteFiles.shared.emojiChanges)
+    }
+
+    package init(root: URL, announcing announcements: PassthroughSubject<NoteEmojiLibrary, Never>) {
         self.root = root
+        self.announcements = announcements
         reload()
     }
 
@@ -325,7 +315,7 @@ package final class NoteEmojiLibrary {
     private func announce() {
         revision += 1
         changes.send()
-        Self.anyChange.send(self)
+        announcements.send(self)
     }
 
     private func refreshStamp() { stamp = currentStamp() }
@@ -409,5 +399,23 @@ extension NoteCustomEmojiName {
         var next = page
         next.blocks = blocks
         return next
+    }
+}
+
+extension NoteFiles {
+    package func emojiLibrary(for note: URL) -> NoteEmojiLibrary {
+        emojiLibrary(root: NoteEmojiLibrary.root(for: note, notesFolders: notesFolders))
+    }
+
+    package func emojiLibrary(root: URL) -> NoteEmojiLibrary {
+        let canonical = NoteFilePaths.canonical(root)
+        let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
+        if let existing = emojiLibraries[key] {
+            existing.refreshIfNeeded()
+            return existing
+        }
+        let library = NoteEmojiLibrary(root: canonical, announcing: emojiChanges)
+        emojiLibraries[key] = library
+        return library
     }
 }

@@ -320,13 +320,10 @@ package final class NoteBacklinkIndex {
         var at: Date
     }
 
-    package static let shared = NoteBacklinkIndex()
-    package static var worker = NoteFileWorker(label: "org.parc.notes.backlinks", qos: .utility)
-    package static var clock: NoteFileClock = NoteFileSystemClock.shared
-    package static var followDelay: TimeInterval = 1.5
-    package static var departureWindow: TimeInterval = 10
-    package static var easelDelay: TimeInterval = 1
+    package static var shared: NoteBacklinkIndex { NoteFiles.shared.backlinks }
     package static let chunkSize = 200
+
+    package unowned let files: NoteFiles
 
     package let changes = PassthroughSubject<Void, Never>()
     package private(set) var isActive = false
@@ -350,6 +347,12 @@ package final class NoteBacklinkIndex {
     private var easelListingAgain = false
     private var easelTimer: NoteFileTimer?
 
+    package init(files: NoteFiles) {
+        self.files = files
+    }
+
+    private var settings: NoteFileSettings { files.settings }
+
     package var isSettled: Bool {
         !isReading && queue.isEmpty && refreshTimer == nil && followTimer == nil && rewriting == 0 && moves.isEmpty
             && easelTimer == nil && !easelListing
@@ -358,8 +361,8 @@ package final class NoteBacklinkIndex {
     package func activate() {
         guard !isActive else { return }
         isActive = true
-        creation = NoteLibrary.opened.sink { [weak self] library in self?.track(library) }
-        for library in NoteLibrary.known { track(library) }
+        creation = files.libraryOpened.sink { [weak self] library in self?.track(library) }
+        for library in files.knownLibraries { track(library) }
     }
 
     package func include(_ library: NoteLibrary) {
@@ -386,14 +389,14 @@ package final class NoteBacklinkIndex {
     package func backlinks(to note: URL) -> [NoteBacklink] {
         guard note.isFileURL else { return [] }
         activate()
-        track(NoteLibrary.library(for: note))
+        track(files.library(for: note))
         return incoming[NoteFilePaths.key(for: note)] ?? []
     }
 
     package func noteMoved(from old: URL, to new: URL) {
         guard old.isFileURL, new.isFileURL, old.path != new.path else { return }
         activate()
-        track(NoteLibrary.library(for: new))
+        track(files.library(for: new))
         let fromKey = NoteFilePaths.key(for: old)
         let path = sources[old.path] != nil ? old.path : sources.first(where: { $0.value.identity == fromKey })?.key
         if let path, let source = sources.removeValue(forKey: path) {
@@ -412,7 +415,7 @@ package final class NoteBacklinkIndex {
         rebuild()
         moves.append((old, new))
         followTimer?.cancel()
-        followTimer = Self.clock.schedule(after: Self.followDelay) { [weak self] in
+        followTimer = settings.clock.schedule(after: settings.backlinkFollowDelay) { [weak self] in
             self?.followTimer = nil
             self?.scheduleRefresh()
         }
@@ -444,7 +447,7 @@ package final class NoteBacklinkIndex {
 
     private func scheduleEaselListing(after delay: TimeInterval? = nil) {
         guard !easelStores.isEmpty, easelTimer == nil else { return }
-        easelTimer = Self.clock.schedule(after: delay ?? Self.easelDelay) { [weak self] in
+        easelTimer = settings.clock.schedule(after: delay ?? settings.easelListingDelay) { [weak self] in
             self?.easelTimer = nil
             self?.listEaselsNow()
         }
@@ -457,7 +460,7 @@ package final class NoteBacklinkIndex {
         }
         easelListing = true
         let directories = easelStores.map { (key: $0.key, directory: $0.value.documentsDirectory) }
-        Self.worker.perform({
+        settings.backlinkWorker.perform({
             directories.map { entry in (entry.key, Self.listEasels(in: entry.directory)) }
         }) { [weak self] listings in
             self?.finishEaselListing(listings)
@@ -515,7 +518,7 @@ package final class NoteBacklinkIndex {
 
     private func scheduleRefresh() {
         guard refreshTimer == nil else { return }
-        refreshTimer = Self.clock.schedule(after: 0) { [weak self] in self?.refresh() }
+        refreshTimer = settings.clock.schedule(after: 0) { [weak self] in self?.refresh() }
     }
 
     private func refresh() {
@@ -531,8 +534,8 @@ package final class NoteBacklinkIndex {
         }
         var changed = false
         if complete {
-            let now = Self.clock.now
-            departed = departed.filter { now.timeIntervalSince($0.value.at) < Self.departureWindow }
+            let now = settings.clock.now
+            departed = departed.filter { now.timeIntervalSince($0.value.at) < settings.backlinkDepartureWindow }
             for path in Array(sources.keys) where listed[path] == nil && sources[path]?.easel == nil {
                 guard let source = sources.removeValue(forKey: path) else { continue }
                 if source.node != nil { departed[path] = Departure(source: source, at: now) }
@@ -604,7 +607,7 @@ package final class NoteBacklinkIndex {
             return
         }
         isReading = true
-        Self.worker.perform({
+        settings.backlinkWorker.perform({
             jobs.map { job in
                 if job.isEasel {
                     let read = EaselBacklinkScanner.read(fileAt: job.url)
@@ -711,8 +714,8 @@ package final class NoteBacklinkIndex {
             let move = NoteBacklinkMove(fromKey: item.key, from: item.from, to: item.to)
             let toKey = NoteFilePaths.key(for: item.to)
             var handled: Set<String> = []
-            for session in NoteFileSession.openSessions where session.kind == .markdown {
-                guard NoteFileSession.session(for: session.url) === session else { continue }
+            for session in files.openSessions where session.kind == .markdown {
+                guard files.session(for: session.url) === session else { continue }
                 let identity = NoteFilePaths.key(for: session.url)
                 handled.insert(identity)
                 guard !session.page.isReadOnly else { continue }
@@ -724,7 +727,7 @@ package final class NoteBacklinkIndex {
             rewriteEasels(move, toKey: toKey)
             var closed: [(path: String, url: URL)] = []
             for (path, source) in sources where source.identity == toKey || source.links?.contains(where: { $0.target == item.key }) == true {
-                guard let identity = source.identity, !handled.contains(identity), NoteFileSession.session(for: source.url) == nil,
+                guard let identity = source.identity, !handled.contains(identity), files.session(for: source.url) == nil,
                       NoteFilePaths.itemExists(source.url) else { continue }
                 handled.insert(identity)
                 closed.append((path, source.url))
@@ -735,7 +738,7 @@ package final class NoteBacklinkIndex {
             }
             rewriting += 1
             let from = item.from
-            NoteFileSession.worker.perform({
+            settings.fileWorker.perform({
                 closed.filter { entry in
                     let folder = entry.url.deletingLastPathComponent()
                     let resolving = NoteFilePaths.key(for: entry.url) == toKey ? from.deletingLastPathComponent() : folder
@@ -745,7 +748,7 @@ package final class NoteBacklinkIndex {
                 guard let self else { return }
                 self.rewriting -= 1
                 for entry in rewritten { self.retarget(entry.path, from: move.fromKey, to: toKey) }
-                NoteLibrary.filesRewritten(closed.map(\.url))
+                self.files.filesRewritten(closed.map(\.url))
                 self.finishFollowing(move)
             }
         }
