@@ -2,7 +2,7 @@
 
 Read [the working contract](../../AGENTS.md) before running checks.
 
-`bash scripts/test-external-split-drop.sh` checks the durable model transaction
+`swift test --filter ExternalSplitDropTests` checks the durable model transaction
 using a temporary session and a failed atomic replacement.
 
 `python3 tests/NativeContentDrop/run_components.py router` or `session` checks

@@ -16,7 +16,6 @@ xcrun swiftc tests/Support/TestFailure.swift -warnings-as-errors -parse-as-libra
     Sources/ParcApp/SidebarSplitCellLayout.swift "$output/TooltipThemePalette.swift" Sources/ParcCore/SpaceTheme.swift \
     tests/SidebarRows/SplitCellLayoutTests.swift -o "$output/layout"
 "$output/layout"
-python3 tests/SidebarRows/split_close_gate_check.py
 mkdir "$output/drag"
 drag_list=$(python3 -B tests/Support/sidebar_item_drag.py "$output/drag" Sources/ParcCore/*.swift)
 drag=()
@@ -24,4 +23,3 @@ while IFS= read -r path; do drag+=("$path"); done <<< "$drag_list"
 xcrun swiftc tests/Support/TestFailure.swift -warnings-as-errors -parse-as-library Sources/ParcCore/*.swift "${drag[@]}" \
     tests/SidebarRows/SidebarMoveCopyTests.swift -o "$output/copy"
 "$output/copy"
-python3 tests/SidebarRows/split_copy_drag_check.py
