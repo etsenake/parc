@@ -3,7 +3,7 @@ import QuartzCore
 import Testing
 @testable import Parc
 
-@Suite(.serialized) @MainActor
+@MainActor
 struct FavoriteTileOverlayTests {
     private func close(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.0001 }
 
@@ -16,8 +16,8 @@ struct FavoriteTileOverlayTests {
         var overlays: FavoriteTileOverlays { tile.overlays }
 
         init(reduceMotion: Bool = false, attached: Bool = true) {
-            SystemOverrides.install()
-            SystemOverrides.reduceMotion = reduceMotion
+            tile.reducesMotion = { reduceMotion }
+            tile.overlays.reducesMotion = { reduceMotion }
             window.isReleasedWhenClosed = false
             tile.frame = NSRect(x: 20, y: 20, width: 60, height: 47)
             tile.applyPalette(isDark: false, glyphColor: .labelColor)
@@ -28,7 +28,6 @@ struct FavoriteTileOverlayTests {
         }
 
         deinit {
-            SystemOverrides.reduceMotion = nil
             MainActor.assumeIsolated { window.close() }
         }
 

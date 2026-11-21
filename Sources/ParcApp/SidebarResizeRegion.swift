@@ -16,6 +16,16 @@ final class SidebarResizeRegionView: NSView, ResizeHandleView {
     var performHaptic: () -> Void = {
         NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
     }
+    var delay: (TimeInterval) -> AnyPublisher<Void, Never> = { seconds in
+        Just(()).delay(for: .seconds(seconds), scheduler: DispatchQueue.main).eraseToAnyPublisher()
+    }
+    var runFadeOut: (_ animations: () -> Void, _ completion: @escaping () -> Void) -> Void = { animations, completion in
+        CATransaction.begin()
+        CATransaction.setCompletionBlock(completion)
+        animations()
+        CATransaction.commit()
+    }
+    var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     var color = NSColor.clear { didSet { if color != oldValue { needsDisplay = true } } }
     var isResizing = false {
         didSet {
@@ -53,9 +63,9 @@ final class SidebarResizeRegionView: NSView, ResizeHandleView {
         addGestureRecognizer(doubleClickGestureRecognizer)
         hoverSubscription = $isHovered.removeDuplicates().dropFirst()
             .filter { [weak self] _ in self?.isResizing == false }
-            .map { hovered -> AnyPublisher<Bool, Never> in
-                hovered ? Just(true).delay(for: .seconds(0.25), scheduler: DispatchQueue.main).eraseToAnyPublisher()
-                    : Just(false).eraseToAnyPublisher()
+            .map { [weak self] hovered -> AnyPublisher<Bool, Never> in
+                guard hovered else { return Just(false).eraseToAnyPublisher() }
+                return (self?.delay(0.25) ?? Empty().eraseToAnyPublisher()).map { true }.eraseToAnyPublisher()
             }
             .switchToLatest()
             .filter { [weak self] _ in self?.isResizing == false }
@@ -189,7 +199,7 @@ final class SidebarResizeRegionView: NSView, ResizeHandleView {
     func pulseSnap() {
         fadeGeneration &+= 1
         indicatorLayer.removeAllAnimations(); indicatorLayer.isHidden = false
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        guard !reducesMotion() else { return }
         let pulse = CABasicAnimation(keyPath: "transform.scale.x")
         pulse.fromValue = 1; pulse.toValue = 1.7; pulse.duration = 0.08; pulse.autoreverses = true
         pulse.timingFunction = CAMediaTimingFunction(controlPoints: 0.215, 0.61, 0.355, 1)
@@ -206,18 +216,17 @@ final class SidebarResizeRegionView: NSView, ResizeHandleView {
     private func fadeOut() {
         fadeGeneration &+= 1
         let generation = fadeGeneration
-        CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak self] in
+        runFadeOut({
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0.5; fade.toValue = 0; fade.duration = 0.2
+            fade.fillMode = .forwards; fade.isRemovedOnCompletion = false
+            indicatorLayer.add(fade, forKey: "opacity")
+        }, { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.fadeGeneration == generation else { return }
                 self.indicatorLayer.removeAnimation(forKey: "opacity")
                 self.indicatorLayer.isHidden = true; self.indicatorLayer.opacity = 0.5
             }
-        }
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 0.5; fade.toValue = 0; fade.duration = 0.2
-        fade.fillMode = .forwards; fade.isRemovedOnCompletion = false
-        indicatorLayer.add(fade, forKey: "opacity")
-        CATransaction.commit()
+        })
     }
 }

@@ -297,6 +297,7 @@ final class FavoriteRecordingDotView: NSView {
     private let outer = CALayer()
     private let inner = CALayer()
     var pulse: CAAnimation? { inner.animation(forKey: "pulse") }
+    var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -339,7 +340,7 @@ final class FavoriteRecordingDotView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else { inner.removeAllAnimations(); return }
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        guard !reducesMotion() else { return }
         let pulse = CABasicAnimation(keyPath: "opacity")
         pulse.fromValue = 0.4
         pulse.duration = 0.75
@@ -561,6 +562,7 @@ final class FavoriteMusicParticlesView: NSView {
     private(set) var badgeShown = false
     private var badgeGeneration = 0
     private var paletteIsDark: Bool?
+    var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     init(host: NSView) { self.host = host }
 
@@ -618,6 +620,7 @@ final class FavoriteMusicParticlesView: NSView {
         if recording {
             guard dotView == nil else { return }
             let dot = FavoriteRecordingDotView(frame: .zero)
+            dot.reducesMotion = reducesMotion
             dotView = dot
             insert(dot)
             layout()
@@ -726,7 +729,7 @@ final class FavoriteMusicParticlesView: NSView {
     }
 
     private func refreshParticles() {
-        guard state.music, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+        guard state.music, !reducesMotion() else {
             particlesView?.removeFromSuperview(); particlesView = nil
             return
         }

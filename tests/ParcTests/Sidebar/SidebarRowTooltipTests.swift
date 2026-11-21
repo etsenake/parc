@@ -16,8 +16,8 @@ struct SidebarRowTooltipTests {
         var committed: [String] = []
 
         init() {
-            SidebarApplicationActivity.set(true)
             window = sidebarTestWindow(containing: sidebar)
+            window.applicationActive = true
             var state = BrowserState.initial()
             let space = state.spaces[0]
             func make(_ name: String, _ kind: TabKind) -> BrowserTab {
@@ -40,7 +40,6 @@ struct SidebarRowTooltipTests {
         }
 
         deinit {
-            SidebarApplicationActivity.set(nil)
             MainActor.assumeIsolated { window.contentView = nil }
         }
 

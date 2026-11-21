@@ -108,6 +108,7 @@ final class SidebarPinnedHeaderView: NSView {
     private(set) var content = SidebarPinnedHeaderContent()
     var toggle: (() -> Void)?
     var makeMenu: (() -> NSMenu?)?
+    var setCursor: (NSCursor) -> Void = { $0.set() }
     private var favicons: [UUID: (url: String, image: NSImage)] = [:]
     private var fallbacks: [UUID: String] = [:]
     private var symbolImages: [String: NSImage] = [:]
@@ -363,7 +364,7 @@ final class SidebarPinnedHeaderView: NSView {
         refreshColors()
     }
     override func cursorUpdate(with event: NSEvent) {
-        if content.placeholder { super.cursorUpdate(with: event) } else { NSCursor.pointingHand.set() }
+        if content.placeholder { super.cursorUpdate(with: event) } else { setCursor(.pointingHand) }
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {

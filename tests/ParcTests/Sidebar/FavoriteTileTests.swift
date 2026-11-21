@@ -297,7 +297,6 @@ struct FavoriteTileTests {
         let tile = FavoriteTile(title: "Layout Favorite", monogram: "L", url: "https://example.test/layout")
 
         init() {
-            GeometryWrites.install()
             window.isReleasedWhenClosed = false
             tile.frame = NSRect(x: 10, y: 10, width: 60, height: 47)
             window.contentView!.addSubview(tile)
@@ -305,7 +304,7 @@ struct FavoriteTileTests {
 
         deinit { MainActor.assumeIsolated { window.close() } }
 
-        func layoutWrites() -> Int { GeometryWrites.layerWrites(by: tile) { tile.layout() }.count }
+        func layoutWrites() -> Int { SidebarLayerWrites.count(byLayersOf: tile) { tile.layout() } }
 
         func settled() -> Layout {
             _ = layoutWrites()

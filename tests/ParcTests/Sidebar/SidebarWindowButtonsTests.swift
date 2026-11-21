@@ -4,6 +4,19 @@ import Testing
 
 private final class FlippedHost: NSView { override var isFlipped: Bool { true } }
 
+private final class PointerWindow: NSWindow {
+    var pointer = NSPoint(x: -100, y: -100)
+    override var mouseLocationOutsideOfEventStream: NSPoint { pointer }
+}
+
+private final class ClosingWindow: NSWindow {
+    var closes = 0
+    override func close() {
+        closes += 1
+        super.close()
+    }
+}
+
 @MainActor
 struct SidebarWindowButtonsTests {
     typealias W = WindowStandardButtons
@@ -162,14 +175,106 @@ struct SidebarWindowButtonsTests {
         #expect(Lights().lights.responds(to: NSSelectorFromString("_mouseInGroup:")))
     }
 
-    private typealias Query = @convention(c) (AnyObject, Selector, AnyObject?) -> Bool
-
-    private func inGroup(_ l: Lights) -> Bool {
-        let selector = NSSelectorFromString("_mouseInGroup:")
-        let method = class_getInstanceMethod(W.self, selector)!
-        let original = unsafeBitCast(method_getImplementation(method), to: Query.self)
-        return original(l.lights, selector, l.made[0])
+    @MainActor private final class Answers {
+        var all: [Bool] = []
     }
+
+    private func answers(drawing button: NSView, in l: Lights) -> [Bool] {
+        let answers = Answers()
+        l.lights.onGroupQuery = { answers.all.append($0) }
+        button.needsDisplay = true
+        button.needsLayout = true
+        let rep = button.bitmapImageRepForCachingDisplay(in: button.bounds)!
+        button.cacheDisplay(in: button.bounds, to: rep)
+        l.lights.onGroupQuery = nil
+        return answers.all
+    }
+
+    @Test func drawnWidgetsAskTheLightsWhetherTheGroupIsHovered() {
+        let l = laidOut()
+        let asked = answers(drawing: l.made[0], in: l)
+        #expect(!asked.isEmpty)
+        #expect(!asked.contains(true))
+    }
+
+    @Test func afterAHoverChangeTheWidgetsAreAnsweredTrue() {
+        let l = laidOut()
+        l.lights.setMouseInside(true)
+        let asked = answers(drawing: l.made[0], in: l)
+        #expect(!asked.isEmpty)
+        #expect(asked.allSatisfy { $0 })
+    }
+
+    @Test func aWidgetFindsTheLightsAcrossAnIntermediateView() {
+        let l = laidOut()
+        let intermediate = NSView(frame: NSRect(x: 0, y: 0, width: 14, height: 14))
+        let nested = NSWindow.standardWindowButton(.closeButton, for: SidebarWindowButtonsTests.style)!
+        intermediate.addSubview(nested)
+        l.lights.addSubview(intermediate)
+        #expect(!answers(drawing: nested, in: l).isEmpty)
+    }
+
+    @MainActor private final class Returning {
+        let window = PointerWindow(contentRect: NSRect(x: -10000, y: -10000, width: 200, height: 100), styleMask: [.borderless],
+                                   backing: .buffered, defer: true)
+        let host = FlippedHost(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        let lights = W()
+
+        init() {
+            window.isReleasedWhenClosed = false
+            window.contentView?.addSubview(host)
+            host.addSubview(lights)
+            lights.frame.origin = .zero
+        }
+
+        deinit { MainActor.assumeIsolated { window.close() } }
+
+        func pointAtLights() { window.pointer = lights.convert(NSPoint(x: 5, y: 5), to: nil) }
+    }
+
+    @Test func aHeaderLeavingUnderThePointerDropsItsHover() {
+        let r = Returning()
+        r.pointAtLights()
+        r.lights.setMouseInside(true)
+        r.lights.setPresented(false)
+        #expect(!r.lights.mouseInside)
+    }
+
+    @Test func itsReturnUnderThePointerHoversItAgain() {
+        let r = Returning()
+        r.pointAtLights()
+        r.lights.setPresented(false)
+        r.lights.setPresented(true)
+        #expect(r.lights.mouseInside)
+    }
+
+    @Test func itsReturnAwayFromThePointerDoesNotHoverIt() {
+        let r = Returning()
+        r.lights.setMouseInside(true)
+        r.lights.setPresented(false)
+        r.lights.setPresented(true)
+        #expect(!r.lights.mouseInside)
+    }
+
+    @Test func closeActsOnItsOwnWindowWhenNoWindowIsKey() {
+        func window() -> ClosingWindow {
+            let window = ClosingWindow(contentRect: NSRect(x: -10000, y: -10000, width: 900, height: 600),
+                                       styleMask: SidebarWindowButtonsTests.style, backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            return window
+        }
+        let other = window()
+        let closing = window()
+        let lights = W()
+        closing.contentView?.addSubview(lights)
+        #expect(!closing.isKeyWindow)
+        #expect(!other.isKeyWindow)
+        lights.buttons[0].performClick(nil)
+        #expect(closing.closes == 1)
+        #expect(other.closes == 0)
+    }
+
+    private func inGroup(_ l: Lights) -> Bool { l.lights.mouseInGroup(l.made[0]) }
 
     @Test func notHoveredInAquaTheLightsDimToPointOne() {
         let l = laidOut()

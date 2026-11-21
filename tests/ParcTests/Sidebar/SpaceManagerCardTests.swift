@@ -53,8 +53,8 @@ struct SpaceManagerCardTests {
         func tab(_ name: String, _ kind: TabKind) -> BrowserTab { Self.tab(name, kind, in: first) }
 
         init() {
-            SidebarApplicationActivity.set(true)
             window = sidebarTestWindow(containing: manager)
+            window.applicationActive = true
             first = state.spaces[0]
             pinned = Self.tab("pinned", .pinned, in: first)
             today = Self.tab("today", .today, in: first)
@@ -71,7 +71,6 @@ struct SpaceManagerCardTests {
         }
 
         deinit {
-            SidebarApplicationActivity.set(nil)
             MainActor.assumeIsolated { window.contentView = nil }
         }
 

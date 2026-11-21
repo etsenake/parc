@@ -133,7 +133,7 @@ final class ActionButton: PointingHandButton {
         super.viewWillMove(toWindow: newWindow)
     }
     func refreshHover() {
-        guard let window, isEnabled, NSApp.isActive, !isHiddenOrHasHiddenAncestor else { hovered = false; return }
+        guard let window, isEnabled, window.applicationIsActive, !isHiddenOrHasHiddenAncestor else { hovered = false; return }
         let point = window.mouseLocationOutsideOfEventStream
         hovered = bounds.contains(convert(point, from: nil)) && isTopmost(atWindowPoint: point)
     }
@@ -1629,7 +1629,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         updateAddressButtonsReveal()
     }
     private var pointerOverOwnWindow: Bool {
-        guard let window, NSApp.isActive else { return false }
+        guard let window, window.applicationIsActive else { return false }
         return NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0) == window.windowNumber
     }
     private var voiceOverRunning = NSWorkspace.shared.isVoiceOverEnabled {
@@ -1661,6 +1661,13 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private var clearShown: Bool { isSpaceManagement || pointerInSidebar }
     private var clearRevealed: Bool { get { shownPage.clearRevealed } set { shownPage.clearRevealed = newValue } }
     private var clearRevealGeneration = 0
+    var fadeClear: (_ button: NSView, _ alpha: CGFloat, _ completion: @escaping () -> Void) -> Void = { button, alpha, completion in
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = SidebarClearAppearance.revealDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            button.animator().alphaValue = alpha
+        }, completionHandler: completion)
+    }
     private func updateClearReveal() {
         guard let clearButton else { return }
         let shown = clearShown
@@ -1669,11 +1676,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         clearRevealGeneration += 1
         let generation = clearRevealGeneration
         if shown { clearButton.isHidden = false; clearButton.refreshHover(); clearButton.superview?.needsLayout = true }
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = SidebarClearAppearance.revealDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            clearButton.animator().alphaValue = shown ? 1 : 0
-        }, completionHandler: { [weak self, weak clearButton] in
+        fadeClear(clearButton, shown ? 1 : 0) { [weak self, weak clearButton] in
             MainActor.assumeIsolated {
                 guard let self, let clearButton, clearButton === self.clearButton,
                       generation == self.clearRevealGeneration, !self.clearRevealed else { return }
@@ -1681,7 +1684,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 clearButton.refreshHover()
                 clearButton.superview?.needsLayout = true
             }
-        })
+        }
     }
     private func refreshClearAvailability() {
         let available = clearAvailable

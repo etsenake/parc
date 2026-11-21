@@ -10,8 +10,17 @@ struct SidebarPointingHandTests {
                                eventNumber: 0, trackingNumber: 0, userData: nil)!
     }
 
+    @MainActor private final class Cursors {
+        var set: [NSCursor] = []
+    }
+
     private func cursors(for control: NSView) -> [NSCursor] {
-        SidebarCursorSets.during { control.cursorUpdate(with: event()) }
+        let cursors = Cursors()
+        let record: (NSCursor) -> Void = { cursors.set.append($0) }
+        if let button = control as? PointingHandButton { button.setCursor = record }
+        if let header = control as? SidebarPinnedHeaderView { header.setCursor = record }
+        control.cursorUpdate(with: event())
+        return cursors.set
     }
 
     private func isPointingHand(_ cursors: [NSCursor]) -> Bool { cursors.contains { $0 === NSCursor.pointingHand } }

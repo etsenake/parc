@@ -39,7 +39,7 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     private var trackedMenu: NSMenu?
 
     init(title: String, domain: SidebarRecentDomain?, providerURL: URL?, picture image: NSImage? = nil, site: String = "",
-         document: SidebarDocumentKind? = nil) {
+         document: SidebarDocumentKind? = nil, resources: Bundle = .main) {
         self.domain = domain; self.providerURL = providerURL; self.document = document
         showsPicture = image != nil || document != nil
         super.init(frame: .zero)
@@ -59,7 +59,7 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
                 Self.styleHeaderButton(button, label: label, tint: secondary)
                 button.showsHoverFill = true
             }
-            peek.image = SidebarPreviewArtwork.openInPeek
+            peek.image = SidebarPreviewArtwork.openInPeek(in: resources)
             split.actionBlock = { [weak self] in
                 guard let self, let row = self.rows.first else { return }
                 self.onAction?(row, .split)
@@ -432,14 +432,18 @@ private final class SidebarPreviewTable: NSTableView {
 }
 
 @MainActor enum SidebarPreviewArtwork {
-    static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("SidebarPreview", isDirectory: true)
     private static var cache: [String: NSImage] = [:]
 
-    static var openInPeek: NSImage? { image("open-in-peek") }
+    static func directory(in bundle: Bundle) -> URL? {
+        bundle.resourceURL?.appendingPathComponent("SidebarPreview", isDirectory: true)
+    }
 
-    static func image(_ name: String) -> NSImage? {
-        if let image = cache[name] { return image }
-        guard let directory,
+    static func openInPeek(in bundle: Bundle = .main) -> NSImage? { image("open-in-peek", in: bundle) }
+
+    static func image(_ name: String, in bundle: Bundle = .main) -> NSImage? {
+        let key = bundle.bundlePath + "/" + name
+        if let image = cache[key] { return image }
+        guard let directory = directory(in: bundle),
               let data = try? Data(contentsOf: directory.appendingPathComponent(name + ".png")),
               let base = NSBitmapImageRep(data: data) else { return nil }
         let size = NSSize(width: base.pixelsWide, height: base.pixelsHigh)
@@ -455,7 +459,7 @@ private final class SidebarPreviewTable: NSTableView {
             for representation in vector.representations { image.addRepresentation(representation) }
         }
         image.isTemplate = true
-        cache[name] = image
+        cache[key] = image
         return image
     }
 }
