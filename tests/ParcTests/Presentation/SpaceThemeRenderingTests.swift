@@ -29,6 +29,7 @@ struct SpaceThemeRenderingTests {
         let opposite = try #require(NSAppearance(named: dark ? .aqua : .darkAqua))
         let fallback = ThemeSurfaceStyle(theme: theme, appearance: opposite, colorRenderingAvailable: false)
         #expect(fallback.backgroundIsDark == dark)
+        #expect(fallback.material.rawValue == (dark ? 2 : 1))
     }
 
     @Test(arguments: [1, 2, 3])
@@ -48,6 +49,8 @@ struct SpaceThemeRenderingTests {
         let config = ThemeGradientUniforms(theme: theme, backgroundIsDark: true, pointSize: CGSize(width: 800, height: 400))
         let reading = try #require(ThemeRenderMath.chromeReading(theme: theme, backdropIsDark: true))
         #expect(config.underlay == reading.underlay)
+        #expect(config.underlay.x == 0)
+        #expect(config.underlay.w > ThemeRenderMath.underlay(alpha: config.parameters.x, isDark: true).w)
     }
 
     @Test(arguments: [(SpaceTheme.Texture.grain, Float(0.8)),
@@ -198,6 +201,163 @@ extension SpaceThemeRenderingTests {
         let appearance = try #require(NSAppearance(named: dark ? .aqua : .darkAqua))
         #expect(ThemeChromePalette(theme: theme, appearance: appearance).isDark == dark)
         #expect(ThemeSurfaceStyle(theme: theme, appearance: appearance).backgroundIsDark == dark)
+        #expect(ThemeSurfaceStyle(theme: theme, appearance: appearance).material.rawValue == (dark ? 2 : 1))
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func aColoredAutomaticSpacesMaterialFollowsTheMac(dark: Bool) throws {
+        let theme = SpaceTheme.singleColor(try #require(ThemeColor(hex: dark ? "FAF7FC" : "0A0814")))
+        let appearance = try #require(NSAppearance(named: dark ? .darkAqua : .aqua))
+        #expect(ThemeSurfaceStyle(theme: theme, appearance: appearance).material.rawValue == (dark ? 2 : 1))
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func anEmptyThemeUsesTheNativeMaterial(dark: Bool) throws {
+        let appearance = try #require(NSAppearance(named: dark ? .darkAqua : .aqua))
+        #expect(ThemeSurfaceStyle(theme: SpaceTheme(), appearance: appearance).material.rawValue == (dark ? 2 : 1))
+    }
+
+    @Test @MainActor func anInvalidThemeKeepsTheNativeAppearance() throws {
+        var theme = SpaceTheme.singleColor(try #require(ThemeColor(red: 0.04, green: 0.03, blue: 0.08)))
+        theme.noise = .nan
+        let light = try #require(NSAppearance(named: .aqua))
+        #expect(ThemeChromePalette(theme: theme, appearance: light).contentAppearance === light)
+    }
+
+    @Test func minimumIntensityKeepsTheMeasuredColorAndUnderlayAlpha() throws {
+        var theme = SpaceTheme.singleColor(try #require(ThemeColor(red: 0.04, green: 0.03, blue: 0.08)))
+        theme.intensity = 0
+        let config = ThemeGradientUniforms(theme: theme, backgroundIsDark: false, pointSize: CGSize(width: 800, height: 400))
+        #expect(abs(config.parameters.x - 0.2) < 0.00001)
+        #expect(abs(config.underlay.w - 0.2) < 0.00001)
+    }
+
+    @Test func aLightUnderlayUsesContinuousFullWindowGradientCoordinates() throws {
+        var theme = SpaceTheme.singleColor(try #require(ThemeColor(red: 0.04, green: 0.03, blue: 0.08)))
+        theme.intensity = 0
+        let config = ThemeGradientUniforms(theme: theme, backgroundIsDark: false, pointSize: CGSize(width: 800, height: 400))
+        #expect(config.underlay.x == 1)
+        #expect(config.baseStartEnd == SIMD4(0, 0.25, 1, 0.75))
+    }
+
+    @Test func aReadableDarkSpaceKeepsTheCappedBlackUnderlayOnDarkGlass() throws {
+        var theme = SpaceTheme.singleColor(try #require(ThemeColor(red: 0.04, green: 0.03, blue: 0.08)))
+        theme.intensity = 1
+        let config = ThemeGradientUniforms(theme: theme, backgroundIsDark: true, pointSize: CGSize(width: 800, height: 400))
+        #expect(abs(config.parameters.x - 0.75) < 0.00001)
+        #expect(abs(config.underlay.w - 0.175) < 0.00001)
+        #expect(config.underlay.x == 0)
+    }
+
+    @Test func anUnavailableTextureLeavesTheGradientVisible() throws {
+        var theme = SpaceTheme.singleColor(try #require(ThemeColor(hex: "4C6688")))
+        theme.noise = 0.5
+        let config = ThemeOutputUniforms(theme: theme, isActive: true, pointSize: CGSize(width: 800, height: 400),
+                                        sampleRect: SIMD4(0, 0, 1, 1), hasTexture: false)
+        #expect(config.parameters.w == 0)
+    }
+}
+
+extension SpaceThemeRenderingTests {
+    @MainActor private func withoutActions<T>(_ body: () throws -> T) rethrows -> T {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        return try body()
+    }
+
+    @MainActor private func springingHandle() -> CALayer {
+        let handle = CALayer()
+        handle.position = CGPoint(x: 10, y: 10)
+        ThemeColorPadMotion.update(handle, position: CGPoint(x: 100, y: 20), scale: 1.1, animatePosition: true, allowsMotion: true)
+        return handle
+    }
+
+    @Test @MainActor func thePositionSpringUsesTheRecoveredResponseAndDamping() throws {
+        let spring = try withoutActions { try #require(springingHandle().animation(forKey: "position") as? CASpringAnimation) }
+        let omega = 2 * Double.pi / 0.28
+        #expect(abs(spring.stiffness - omega * omega) < 0.001)
+        #expect(abs(spring.damping - 2 * 0.63 * omega) < 0.001)
+    }
+
+    @Test @MainActor func theHoverSpringUsesTheRecoveredTiming() throws {
+        let spring = try withoutActions { try #require(springingHandle().animation(forKey: "hover") as? CASpringAnimation) }
+        #expect(abs(spring.damping - 2 * 0.9 * (2 * .pi / 0.25)) < 0.001)
+    }
+
+    @Test @MainActor func directInputCancelsAStaleSpringAndShowsThePointer() {
+        let handle = withoutActions {
+            let handle = springingHandle()
+            ThemeColorPadMotion.update(handle, position: CGPoint(x: 110, y: 20), scale: 1.1, animatePosition: false, allowsMotion: true)
+            return handle
+        }
+        #expect(handle.animation(forKey: "position") == nil)
+        #expect(handle.position.x == 110)
+    }
+
+    @Test @MainActor func aReversalStartsAtTheModelWhenNoPresentationExists() {
+        let spring = withoutActions {
+            let handle = springingHandle()
+            ThemeColorPadMotion.update(handle, position: CGPoint(x: 110, y: 20), scale: 1.1, animatePosition: false, allowsMotion: true)
+            ThemeColorPadMotion.update(handle, position: CGPoint(x: 20, y: 20), scale: 1, animatePosition: true, allowsMotion: true)
+            return handle.animation(forKey: "position") as? CASpringAnimation
+        }
+        #expect(spring?.fromValue as? NSValue == NSValue(point: CGPoint(x: 110, y: 20)))
+    }
+
+    @Test @MainActor func aKnobAtThePadCornerIsAValidSpringOrigin() {
+        let spring = withoutActions {
+            let handle = CALayer()
+            handle.position = CGPoint(x: 30, y: 30)
+            ThemeColorPadMotion.update(handle, position: .zero, scale: 1, animatePosition: false, allowsMotion: true)
+            ThemeColorPadMotion.update(handle, position: CGPoint(x: 30, y: 30), scale: 1, animatePosition: true, allowsMotion: true)
+            return handle.animation(forKey: "position") as? CASpringAnimation
+        }
+        #expect(spring?.fromValue as? NSValue == NSValue(point: .zero))
+    }
+
+    @Test func aHoveredPressScalesTheKnobByBothFactors() {
+        var motion = ThemeButtonMotion()
+        motion.setHovered(true, animated: false)
+        motion.setPressed(true, animated: false)
+        #expect(abs(motion.scale - 0.945) < 1e-9)
+        #expect(motion.isSettled)
+    }
+
+    @Test func aPressSpringsFromRest() {
+        var motion = ThemeButtonMotion()
+        motion.setPressed(true, animated: true)
+        #expect(motion.scale == 1)
+        #expect(!motion.isSettled)
+    }
+
+    @Test func theHalfDampedPressSpringOvershootsAndSettlesWithinASecond() {
+        var motion = ThemeButtonMotion()
+        motion.setPressed(true, animated: true)
+        var deepest: CGFloat = 1
+        for _ in 0..<60 {
+            motion.advance(1.0 / 60)
+            deepest = min(deepest, motion.scale)
+        }
+        #expect(deepest < 0.89 && deepest > 0.87)
+        #expect(motion.isSettled && motion.scale == 0.9)
+    }
+
+    @Test func hoverScaleAndFillEaseOutTogether() {
+        var motion = ThemeButtonMotion()
+        motion.setHovered(true, animated: true)
+        motion.advance(0.05)
+        #expect(motion.scale > 1.03 && motion.scale < 1.045)
+        #expect(motion.hover > 0.6 && motion.hover < 0.9)
+    }
+
+    @Test func hoverReachesItsFullScaleAndFillAfterATenthOfASecond() {
+        var motion = ThemeButtonMotion()
+        motion.setHovered(true, animated: true)
+        motion.advance(0.05)
+        motion.advance(0.05)
+        #expect(motion.scale == 1.05 && motion.hover == 1)
+        #expect(motion.isSettled)
     }
 }
 

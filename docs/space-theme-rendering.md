@@ -109,10 +109,13 @@ Undo transactions remain in their focused guides.
 ## Checks
 
 `SpaceThemeRenderingTests` checks the backdrop and chrome decisions, gradient
-layers, texture strengths and spring behavior. The component renderer checks in
-`scripts/test-theme-rendering.sh` cover backing/content separation, propagation,
-material ownership, no-op publication, invalid themes, gradient/texture uniforms,
-alpha readback and spring interruption. Theme input/appearance/Undo and website-
+layers, texture strengths and spring behavior. `ThemeRendererViewTests` and its
+neighbors in `tests/ParcTests/Presentation` cover backing/content separation,
+propagation, material ownership and paging materials, no-op publication, invalid
+themes and activity redraws. `ThemeCanvasRenderingTests` renders the Metal
+passes into an offscreen texture and reads back grain and tweed alpha, and the
+editor presentation suites read the dial, slider, chevrons, swatches and pad from
+offscreen snapshots. Theme input/appearance/Undo and website-
 palette components cover their shared boundaries. The appearance check also
 verifies text and accent contrast for Automatic and forced Spaces across colors,
 intensities and both appearances, that the underlay deepens only as far as the
