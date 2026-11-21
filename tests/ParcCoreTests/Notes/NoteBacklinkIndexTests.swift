@@ -36,7 +36,7 @@ extension NoteProcessWide {
         for _ in 0..<20 { clock.advance(0.5) }
     }
 
-    @Test func snippets() throws {
+    @Test func longLeadInsAreClippedWithAnEllipsis() throws {
         let plain = "We talked for ages about the weather and the rain before finally getting to the Roadmap which matters most, then lunch."
         let range = (plain as NSString).range(of: "Roadmap")
         let snippet = NoteBacklinkSnippet.around(range.location..<(range.location + range.length), in: plain)
@@ -50,7 +50,7 @@ extension NoteProcessWide {
         #expect(NoteBacklinkSnippet.around(0..<0, in: "").text == "", "empty text gives an empty snippet")
     }
 
-    @Test func frontMatter() {
+    @Test func isWrittenToFrontMatter() {
         for display in [NoteBacklinksDisplay.expanded, .off, .popup] {
             var page = NotePage(blocks: [.paragraph("Hi")])
             page.settings.backlinks = display
@@ -67,7 +67,7 @@ extension NoteProcessWide {
         #expect(odd.settings.properties.first?.key == "backlinks", "unknown values survive as a property")
     }
 
-    @Test func scanning() {
+    @Test func wikiLinksLinkMarksMentionsAndPageLinksAll() {
         let base = folder.appendingPathComponent("Scan", isDirectory: true)
         let roadmap = NoteFileTestSupport.write("# Roadmap\n", to: base.appendingPathComponent("Roadmap.md"))
         let key = NoteFilePaths.key(for: roadmap)
@@ -101,7 +101,7 @@ extension NoteProcessWide {
         #expect(NoteBacklinkScanner.targetKey("mailto:a@b.c", from: base) == nil, "other schemes are skipped")
     }
 
-    @Test func rewriting() {
+    @Test func bareWikiLinksFollowAndKeepTheirForm() {
         let base = folder.appendingPathComponent("Rewrite", isDirectory: true)
         let old = base.appendingPathComponent("Roadmap.md")
         let new = base.appendingPathComponent("Big Plan.md")
@@ -143,7 +143,7 @@ extension NoteProcessWide {
         #expect(NoteBacklinkRewriter.replacement(for: "../Roadmap.md", writingFrom: sub, to: new, wiki: false) == "../Big%20Plan.md", "relative links stay relative to their note")
     }
 
-    @Test func headerGeometry() throws {
+    @Test func noBacklinksNoSlot() throws {
         var geometry = NotePageHeaderGeometry(width: 1000, column: CGRect(x: 140, y: 0, width: 720, height: 0), titleHeight: 55)
         let bare = geometry.layout()
         #expect(bare.backlinks == nil, "no backlinks, no slot")
@@ -158,7 +158,7 @@ extension NoteProcessWide {
         #expect((both.backlinks?.minY ?? 0) > (both.properties?.maxY ?? .infinity), "backlinks follow the properties")
     }
 
-    @Test func indexing() throws {
+    @Test func sourcesAreListedByTitleWithoutTheNoteItself() throws {
         let root = folder.appendingPathComponent("Index", isDirectory: true)
         let target = NoteFileTestSupport.write("# Target\n", to: root.appendingPathComponent("Target.md"))
         let alpha = NoteFileTestSupport.write("See [[Target]] and [Target](Target.md).\n", to: root.appendingPathComponent("Alpha.md"))

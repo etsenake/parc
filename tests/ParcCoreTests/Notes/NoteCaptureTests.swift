@@ -24,7 +24,7 @@ extension NoteProcessWide {
 
     var capture: NoteCapture { NoteCapture(sourceURL: "https://example.com/story?id=1", capturedAt: date, geometry: NoteCaptureGeometry(layout)) }
 
-    @Test func geometry() {
+    @Test func geometryAttributesParseIntoTheRendererLayout() {
         let parsed = NoteCaptureGeometry(viewport: "1280,800", scroll: "0,1200.5", region: "10,20,400,300")
         #expect(parsed == NoteCaptureGeometry(layout), "geometry attributes parse into the renderer layout")
         #expect(parsed?.easelLayout == layout, "note geometry converts back to the Easel layout exactly")
@@ -48,7 +48,7 @@ extension NoteProcessWide {
         #expect(!NoteCaptureLive.canMakeLive(unreadable), "an unreadable scroll panel record never goes live with the wrong framing")
     }
 
-    @Test func liveDecision() {
+    @Test func aCaptureWithGeometryAndAWebSourceCan() {
         var block = NoteCapture.block(source: "Attachments/Story.png", title: "Story", capture: capture)
         #expect(NoteCaptureLive.canMakeLive(block), "a capture with geometry and a web source can go live")
         #expect(!NoteCaptureLive.ownsLivePage(block), "a new capture starts as its snapshot")
@@ -94,7 +94,7 @@ extension NoteProcessWide {
         #expect(plainImage?.props.capture == nil, "ordinary images carry no capture")
     }
 
-    @Test func exports() {
+    @Test func markdownExportsCarryNoParcMarkup() {
         let block = NoteCapture.block(source: "Attachments/Story.png", title: "Story", capture: capture)
         let markdown = NoteMarkdown.serialize(NotePage(blocks: [block]), purpose: .export)
         #expect(!markdown.contains("<!--") && !markdown.contains("parc"), "Markdown exports carry no Parc markup: \(markdown)")
@@ -107,7 +107,7 @@ extension NoteProcessWide {
         #expect(back.first?.props.capture == block.props.capture, "capture metadata survives Parc's own HTML")
     }
 
-    @Test func badges() {
+    @Test func theBadgeMatchesAnEaselSnapshots() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
         let locale = Locale(identifier: "en_US")
@@ -124,7 +124,7 @@ extension NoteProcessWide {
         #expect(NoteCaptureText.title(for: capture, alt: nil) == "example.com", "untitled captures fall back to the domain")
     }
 
-    @Test func destinations() {
+    @Test func recentSidebarActivityRanksFirstThenNotesByModification() {
         let profile = UUID(), other = UUID()
         let base = URL(fileURLWithPath: "/tmp/parc-capture-notes", isDirectory: true)
         func note(_ name: String, modified: TimeInterval) -> NoteReference {
@@ -148,7 +148,7 @@ extension NoteProcessWide {
         #expect(CaptureNoteTarget.note(notes[0].url).id == catalog[0].id && CaptureNoteTarget.newNote.id == "newNote", "targets share destination identity")
     }
 
-    @Test func insertion() {
+    @Test func insertingWithoutACaretWorks() {
         let block = NoteCapture.block(source: "Attachments/a.png", title: "A", capture: capture)
         let first = NoteBlock.paragraph(NoteText("one")), empty = NoteBlock.paragraph(), last = NoteBlock.paragraph(NoteText("two"))
         var page = NotePage(blocks: [first, empty, last])
@@ -165,7 +165,7 @@ extension NoteProcessWide {
         #expect(page.blocks.map(\.id) == [block.id], "a blank new note holds just the capture")
     }
 
-    @Test func delivery() throws {
+    @Test func newNoteLandsInTheNotesFolder() throws {
         let folder = NoteFileTestSupport.makeFolder("captures")
         defer { NoteFileTestSupport.remove(folder) }
         let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3])

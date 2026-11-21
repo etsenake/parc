@@ -34,7 +34,7 @@ import Testing
         #expect(cells[0].props.table?.headerRow == false, "without a header row")
     }
 
-    @Test func copyingStructure() {
+    @Test func aCrossBlockCopyKeepsNestingClosedTogglesKeep() {
         let session = makeSession([
             para("Start here"),
             bullet("Parent", [bullet("Child", [bullet("Grandchild")]), bullet("Second child")]),
@@ -226,7 +226,7 @@ import Testing
         #expect(codePage.page.blocks[0].text.string == "a\nb", "code keeps pasted line breaks")
     }
 
-    @Test func pasteUndo() {
+    @Test func deletingAndInsertingAreOnePasteStep() {
         let session = makeSession([para("Hello world")])
         let id = session.page.blocks[0].id
         session.setSelection(.text(anchor: NotePosition(id, 0), head: NotePosition(id, 5)))

@@ -9,7 +9,7 @@ struct NoteHTMLParserTests {
         }.joined()
     }
 
-    @Test func entities() {
+    @Test func latin1EntityTableCovers160255() {
         #expect(NoteHTMLEntities.latin1Count == 96, "Latin-1 entity table covers 160...255")
         let decoded = NoteHTMLEntities.decode("&amp;&lt;&gt;&quot;&apos;&#x1F600;&#128512;&copy2026&notanentity;&#150;&#0;&nbsp;&eacute;&hellip;&rarr;")
         #expect(decoded == "&<>\"'😀😀©2026¬anentity;–\u{FFFD}\u{A0}é…→", "entity decoding: \(decoded.debugDescription)")
@@ -18,7 +18,7 @@ struct NoteHTMLParserTests {
         #expect(attribute?["title"] == "it's", "single-quoted attribute")
     }
 
-    @Test func structure() {
+    @Test func pClosesP() {
         #expect(names(NoteHTMLParser.parse("<p>One<p>Two")) == "<p>One</p><p>Two</p>", "p closes p")
         #expect(names(NoteHTMLParser.parse("<ul><li>a<li>b</ul>")) == "<ul><li>a</li><li>b</li></ul>", "li closes li")
         #expect(names(NoteHTMLParser.parse("<ul><li>a<ul><li>b</ul><li>c</ul>")) == "<ul><li>a<ul><li>b</li></ul></li><li>c</li></ul>", "nested lists close the right items")
@@ -43,7 +43,7 @@ struct NoteHTMLParserTests {
         #expect(names(NoteHTMLParser.parse("a\r\nb\rc")) == "a\nb\nc", "line endings normalise")
     }
 
-    @Test func styles() {
+    @Test func declarationsSplitOutsideParentheses() {
         let css = NoteHTMLStyleSheet.declarations("color: red; background: url(data:image/png;base64,AA==) no-repeat; font-weight:700 !important;;")
         #expect(css["color"] == "red" && css["font-weight"] == "700" && css["background"]?.hasPrefix("url(data:image/png;base64") == true, "declarations split outside parentheses: \(css)")
         let document = NoteHTMLParser.parse("<style>/* x */ p.p1 {font: italic bold 12.0px Menlo} .s1{color:#f00} h1{color:blue} div span.no{x:y} @media print{.s1{color:green}}</style><p class=\"p1 s1\">t</p>")
@@ -58,7 +58,7 @@ struct NoteHTMLParserTests {
         #expect(NoteHTMLFont(["font-weight": "500"]).bold == false && NoteHTMLFont(["font-weight": "600"]).bold == true, "weights")
     }
 
-    @Test func colors() {
+    @Test func mapsToExpected() {
         let cases: [(String, NoteColor?)] = [
             ("#ff0000", .red), ("rgb(212, 76, 71)", .red), ("#C00000", .red), ("#ffa500", .orange), ("#FF9900", .orange),
             ("#D9730D", .orange), ("#ffff00", .yellow), ("#FFF2CC", .yellow), ("#CB912F", .yellow), ("#00ff00", .green),

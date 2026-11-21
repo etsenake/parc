@@ -21,7 +21,7 @@ import Testing
         NoteMarkdown.serialize(NotePage(blocks: [.paragraph(value)]), customEmoji: names)
     }
 
-    @Test func naming() {
+    @Test func spacesAndPunctuationBecomeOneDash() {
         #expect(NoteCustomEmojiName.normalized("Party Parrot!") == "party-parrot", "spaces and punctuation become one dash")
         #expect(NoteCustomEmojiName.normalized("  :Fiesta: ") == "fiesta", "colons and case fall away")
         #expect(NoteCustomEmojiName.normalized("Crème brûlée") == "creme-brulee", "accents fold")
@@ -42,7 +42,7 @@ import Testing
         #expect(NoteCustomEmojiName.names(in: page) == ["party", "parrot"], "pages list the custom emoji they use, cells included")
     }
 
-    @Test func reading() {
+    @Test func aKnownNameReadsAsACustomEmoji() {
         #expect(firstText("Hi :party: there") == text("Hi ", atom("party"), " there"), "a known name reads as a custom emoji")
         #expect(firstText("Hi :party: there", names: []) == "Hi :party: there", "without a library it stays text")
         #expect(firstText("Hi :nope: there") == "Hi :nope: there", "names the library lacks stay text")
@@ -63,7 +63,7 @@ import Testing
         #expect(NotePlainText.serialize(NotePage(blocks: [.paragraph(text("Yay ", atom("party")))])) == "Yay :party:", "plain text keeps the shortcode")
     }
 
-    @Test func writing() {
+    @Test func aCustomEmojiWritesAsItsShortcode() {
         #expect(write(text("Hi ", atom("party"), " there")) == "Hi :party: there\n", "a custom emoji writes as its shortcode")
         #expect(write(text("Hi ", atom("party")), names: []) == "Hi :party:\n", "it writes plainly without a library too")
         #expect(write("Hi :party: there") == "Hi \\:party: there\n", "text that would read as a known emoji is escaped")
@@ -74,7 +74,7 @@ import Testing
         #expect(write(text(atom("party"), "**")).hasPrefix(":party:"), "atoms lead cleanly")
     }
 
-    @Test func roundTrips() {
+    @Test func roundTripKeepsWrote() {
         let samples: [NoteText] = [
             text("Hi ", atom("party"), " there"),
             text(":b", atom("a")),
@@ -115,7 +115,7 @@ import Testing
         #expect(summary.icon == ":party:", "tab icons read the shortcode from front matter")
     }
 
-    @Test func html() {
+    @Test func inlineCustomEmojiExportAsImages() {
         let image = URL(fileURLWithPath: "/tmp/notes/.parc/emoji/party.png")
         let assets: (String) -> URL? = { $0 == ":party:" ? image : nil }
         var settings = NotePageSettings()

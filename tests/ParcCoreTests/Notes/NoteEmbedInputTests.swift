@@ -3,7 +3,7 @@ import Testing
 @testable import ParcCore
 
 @MainActor struct NoteEmbedInputTests {
-    @Test func pointer() {
+    @Test func theFirstClickOnASleepingPageActivates() {
         let a = UUID(), b = UUID()
         #expect(NoteEmbedPointerDecision.decide(pageUnderPointer: a, active: nil, insideActive: false) == .activate(a), "the first click on a sleeping page activates it")
         #expect(NoteEmbedPointerDecision.decide(pageUnderPointer: b, active: a, insideActive: false) == .activate(b), "clicking another page hands activation over")
@@ -13,7 +13,7 @@ import Testing
         #expect(NoteEmbedPointerDecision.decide(pageUnderPointer: nil, active: nil, insideActive: false) == .none, "ordinary note clicks change nothing")
     }
 
-    @Test func scrollLatching() {
+    @Test func gesturesOverTheNoteScrollTheNote() {
         let page = UUID()
         var latch = NoteEmbedScrollLatch()
         #expect(latch.receive(.began, deltaX: 0, deltaY: 0, time: 1, pageUnderPointer: nil) == .native, "gestures over the note scroll the note")
@@ -58,7 +58,7 @@ import Testing
         #expect(NoteEmbedScrollLatch.noteOffset(100, delta: .nan, flipped: true) == 100, "broken deltas change nothing")
     }
 
-    @Test func discreteWheel() {
+    @Test func aWheelClickOnAPageGoes() {
         let page = UUID()
         var latch = NoteEmbedScrollLatch()
         #expect(latch.receive(.discrete, deltaX: 0, deltaY: -1, time: 1, pageUnderPointer: page) == .page, "a wheel click on a page goes to it")
@@ -70,7 +70,7 @@ import Testing
         #expect(latch.receive(.discrete, deltaX: 0, deltaY: 1, time: 1.7, pageUnderPointer: page) == .page, "the new run tries the page first")
     }
 
-    @Test func escape() {
+    @Test func anEscapeThePageDidntUseGoesBack() {
         var confirmation = NoteEmbedEscapeConfirmation()
         let hoisted70 = confirmation.receive(prefersConfirmation: false, now: 1)
         #expect(hoisted70, "an Escape the page didn't use goes back to the note")

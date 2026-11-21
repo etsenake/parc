@@ -42,7 +42,7 @@ import Testing
         return value
     }
 
-    @Test func headers() throws {
+    @Test func flowchartTDFlowsDown() throws {
         #expect(try diagram("flowchart TD\nA-->B").direction == .down, "flowchart TD flows down")
         #expect(try diagram("graph LR\nA-->B").direction == .right, "graph LR flows right")
         #expect(try diagram("flowchart BT\nA-->B").direction == .up, "BT flows up")
@@ -68,7 +68,7 @@ import Testing
         #expect(refusal(String(repeating: "hello world ", count: 50_000)) == .notMermaid, "Huge prose stays plain text")
     }
 
-    @Test func nodeShapes() throws {
+    @Test func makesOneNode() throws {
         let cases: [(String, EaselMermaidShape, String)] = [
             ("A", .rectangle, "A"), ("A[Box]", .rectangle, "Box"), ("A(Round)", .rounded, "Round"),
             ("A([Pill])", .stadium, "Pill"), ("A[[Sub]]", .subroutine, "Sub"), ("A[(Data)]", .cylinder, "Data"),
@@ -165,7 +165,7 @@ import Testing
         #expect(declared.nodes.map(\.shape) == [.rectangle, .rounded] && declared.edges.isEmpty, "& can declare nodes alone")
     }
 
-    @Test func subgraphs() throws {
+    @Test func aNodeLinkedInsideASubgraphJoins() throws {
         let value = try diagram("""
         flowchart TB
             c1-->a2
@@ -199,7 +199,7 @@ import Testing
         #expect(try diagram("flowchart TD\nsubgraph S\nA\n").node("A")?.group == "S", "An unclosed subgraph closes at the end")
     }
 
-    @Test func styles() throws {
+    @Test func f96BecomesThePalettesOrangeFill() throws {
         let value = try diagram("""
         flowchart TD
         classDef hot fill:#f96,stroke:#333,stroke-width:4px
@@ -229,7 +229,7 @@ import Testing
         #expect(EaselMermaidColor.palette("nonsense", role: .fill) == nil, "Unknown colours are ignored")
     }
 
-    @Test func labels() throws {
+    @Test func brBecomesANewLine() throws {
         let value = try diagram("""
         flowchart TD
         A["Line one<br>Line two"]
@@ -250,7 +250,7 @@ import Testing
         #expect(comments.edges.count == 2 && comments.node("note") == nil, "Comments are ignored")
     }
 
-    @Test func failures() throws {
+    @Test func unclosedLabelsNameTheirLine() throws {
         #expect(refusal("flowchart TD\nA --> B\nC[Unclosed --> D") == .syntax(line: 3, detail: "the label for C is missing its closing bracket"), "Unclosed labels name their line")
         #expect(refusal("flowchart TD\nA -- yes B") == .syntax(line: 2, detail: "an arrow label needs the rest of its arrow, like -- yes -->"), "Labels without arrows are refused")
         #expect(refusal("flowchart TD\nA -->") == .syntax(line: 2, detail: "this arrow needs something on the other end"), "Dangling arrows are refused")
@@ -264,7 +264,7 @@ import Testing
         #expect(refusal(many) == .tooLarge, "More than 500 nodes is too large")
     }
 
-    @Test func entityRelationships() throws {
+    @Test func erDiagramReadsItsDirection() throws {
         let value = try diagram("""
         erDiagram
             direction LR
@@ -308,7 +308,7 @@ import Testing
         #expect(refusal("erDiagram\n%% only a comment") == .empty, "An empty ER diagram is empty")
     }
 
-    @Test func layoutDirections() throws {
+    @Test func tdStacksDownward() throws {
         let (_, down) = try frames("flowchart TD\nA --> B --> C")
         #expect(center(down.nodes["A"]).y < center(down.nodes["B"]).y && center(down.nodes["B"]).y < center(down.nodes["C"]).y, "TD stacks downward")
         #expect(abs(center(down.nodes["A"]).x - center(down.nodes["C"]).x) < 1, "A straight chain stays in one column")
@@ -328,7 +328,7 @@ import Testing
         }
     }
 
-    @Test func layoutSeparation() throws {
+    @Test func everyNodeGetsAFrame() throws {
         let (value, layout) = try frames("""
         flowchart TD
         Start --> A & B & C & D
@@ -361,7 +361,7 @@ import Testing
         #expect(kept == [0, 50, 100], "Targets far enough apart stay put")
     }
 
-    @Test func layoutSections() throws {
+    @Test func sectionsHoldTheirNodes() throws {
         let (value, layout) = try frames("""
         flowchart LR
         x --> a1
@@ -399,7 +399,7 @@ import Testing
         #expect(center(layout.nodes["a1"]).y - one.y >= EaselMermaidLayoutEngine.sectionTitleBand, "Sections leave room for their title")
     }
 
-    @Test func layoutCycles() throws {
+    @Test func cyclesLayOut() throws {
         let (_, loop) = try frames("flowchart TD\nA --> B --> C --> A\nC --> C")
         #expect(loop.nodes.count == 3, "Cycles lay out")
         let ranks = Set(loop.nodes.values.map { ($0.y * 10).rounded() })
@@ -408,7 +408,7 @@ import Testing
         #expect(center(mutual.nodes["A"]).x < center(mutual.nodes["B"]).x, "A two-way pair keeps the first link's direction")
     }
 
-    @Test func mapping() throws {
+    @Test func sectionsComeFirst() throws {
         let value = try diagram("""
         flowchart TD
         A[Start] --> B{Choose}
@@ -492,7 +492,7 @@ import Testing
         #expect(EaselMermaid.estimate("", maximumWidth: 100).height == 20, "Empty labels keep a line")
     }
 
-    @Test func entityMapping() throws {
+    @Test func entitiesWithAttributesReadLeftAligned() throws {
         let value = try diagram("""
         erDiagram
         CUSTOMER ||--o{ ORDER : places
@@ -510,7 +510,7 @@ import Testing
         #expect(billed?.startHead == .erdOneOrMore && billed?.endHead == .erdExactlyOne && billed?.strokeDash == .dashed, "Non-identifying relationships are dashed")
     }
 
-    @Test func hostileInput() throws {
+    @Test func hugeGroupsAreRefused() throws {
         let wide = (0..<1500).map { "a\($0)" }.joined(separator: "&") + " --> " + (0..<1500).map { "b\($0)" }.joined(separator: "&")
         #expect(quickly("A huge & product") { refusal("flowchart TD\n" + wide) } == .tooLarge, "Huge & groups are refused")
         let square = (0..<41).map { "a\($0)" }.joined(separator: "&") + " --> " + (0..<41).map { "b\($0)" }.joined(separator: "&")
@@ -560,7 +560,7 @@ import Testing
         #expect(try quickly("A giant label") { try diagram(label) }.node("A").map { $0.label.count <= EaselMermaidText.maximumLength } == true, "Giant labels are cut short")
     }
 
-    @Test func validation() throws {
+    @Test func everyDrawnObjectHasItsOwnID() throws {
         let sources = [
             "flowchart TD\nA[Start] --> B{Choose}\nB -->|yes| C\nB -->|no| D\nC --> A\nsubgraph S\nC\nD\nend\nS --> E",
             "graph LR\nA((a)) --o B[(b)] -.-x C>c] ==> D{{d}}\nD --> D\nclassDef c fill:#f9f,stroke:#333,stroke-width:9px\nclass A,B c",

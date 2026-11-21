@@ -19,7 +19,7 @@ import Testing
         (try? EaselSession(inMemory: document(items), assets: [:])) != nil
     }
 
-    @Test func savedFields() {
+    @Test func stickiesKeepATextScaleAndSectionsCanHide() {
         var sticky = item(.sticky, 10, 10, 220, 220)
         sticky.textStyle = EaselTextStyle(textScale: 2)
         var section = item(.section, 0, 0, 640, 480, text: "Section")
@@ -52,7 +52,7 @@ import Testing
         #expect(decoded?.items.first?.textStyle?.textScale == 2 && decoded?.items.last?.contentsHidden == true, "Text scale and hidden contents survive a save")
     }
 
-    @Test func stickySizing() {
+    @Test func aStickyDropsAsA220PointSquareCentred() {
         let square = EaselBoardObjects.sticky(centeredAt: EaselPoint(x: 300, y: 300), wide: false, zIndex: 3)
         #expect(square.kind == .sticky && square.frame == EaselRect(x: 190, y: 190, width: 220, height: 220) && square.zIndex == 3, "A sticky drops as a 220 point square centred on the pointer")
         let wide = EaselBoardObjects.sticky(centeredAt: EaselPoint(x: 100, y: 50), wide: true, zIndex: 0)
@@ -86,7 +86,7 @@ import Testing
         #expect(!EaselBoardObjects.transforms(.sticky) && !EaselBoardObjects.transforms(.section) && EaselBoardObjects.transforms(.rectangle), "Stickies and sections never rotate or flip")
     }
 
-    @Test func stickyResizing() {
+    @Test func aSideDragWidensUpTo880PointsWithout() {
         let original = item(.sticky, 100, 100, 220, 220)
         let measure: (EaselItem) -> Double = { 30_000 / $0.frame.width }
         var proposed = original
@@ -127,7 +127,7 @@ import Testing
         #expect(grouped.frame.x == 300 && grouped.frame.y == 260 && grouped.textStyle?.textScale == 1.5, "In a group resize a sticky keeps its mapped place and scales evenly")
     }
 
-    @Test func sectionNaming() {
+    @Test func theFirstSectionIsCalledSection() {
         var items = [item(.text, 0, 0, 10, 10, text: "Section")]
         #expect(EaselBoardObjects.sectionName(in: items) == "Section", "The first section is called Section")
         items.append(item(.section, 0, 0, 640, 480, text: "Section"))
@@ -145,7 +145,7 @@ import Testing
         #expect(EaselBoardObjects.sectionName(in: wrapped) == "Section 3", "Names compare the way titles are shown")
     }
 
-    @Test func membership() {
+    @Test func membersSitFullyInsideSmallerSectionsCountEqualSections() {
         let section = item(.section, 100, 100, 600, 400)
         let inside = item(.sticky, 120, 120, 220, 220)
         let edge = item(.text, 100, 100, 600, 400)
@@ -223,7 +223,7 @@ import Testing
         #expect(shown?.items.first?.contentsHidden == nil, "Showing contents leaves the field out of the file")
     }
 
-    @Test func carrying() {
+    @Test func movingASectionCarriesEverythingInsideItNestedSections() {
         let section = item(.section, 100, 100, 600, 400)
         let nested = item(.section, 150, 150, 200, 200)
         let deep = item(.sticky, 160, 160, 100, 100)
@@ -263,7 +263,7 @@ import Testing
                && kept.document.items[1].frame.x == 50 && kept.document.items[2].frame.y == 60, "A section pushed past the canvas edge stops at zero and its contents stop with it")
     }
 
-    @Test func sectionFrames() {
+    @Test func aClickedSectionIs640By480Around() {
         #expect(EaselBoardObjects.sectionFrame(centeredAt: EaselPoint(x: 500, y: 400)) == EaselRect(x: 180, y: 160, width: 640, height: 480), "A clicked section is 640 by 480 around the pointer")
         #expect(EaselBoardObjects.sectionFrame(centeredAt: EaselPoint(x: 10, y: 10)).x == 0, "Clicked sections stay on the canvas")
         #expect(EaselBoardObjects.sectionFrame(dragged: EaselRect(x: 5, y: 5, width: 20, height: 900))

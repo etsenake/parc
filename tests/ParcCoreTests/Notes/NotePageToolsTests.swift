@@ -25,7 +25,7 @@ import Testing
         return (NotePage(blocks: blocks), [intro.id, table.id, image.id, toggle.id, hidden.id, code.id, mention.id])
     }
 
-    @Test func finding() {
+    @Test func findsEveryParkAcrossBodyCellsCaptionCollapsedToggle() {
         let (page, ids) = samplePage()
         let matches = NotePageFinder.matches(of: "park", in: page)
         let expected: [(NoteBlockID, NoteTextField, Int)] = [
@@ -58,7 +58,7 @@ import Testing
         #expect(emojiMatches.map(\.position.offset) == [3, 11], "offsets are UTF-16, so emoji count twice")
     }
 
-    @Test func findingTitles() {
+    @Test func theTitleAddsItsTwoParksToTheTen() {
         let (page, ids) = samplePage()
         let matches = NotePageFinder.matches(of: "park", in: page, title: "Park day at the park")
         #expect(matches.count == 12, "the title adds its two parks to the ten in the body (got \(matches.count))")
@@ -85,7 +85,7 @@ import Testing
         #expect(after.block == NoteFindMatch.titleBlock && after.offset == 6, "the caret after a title replace stays in the title")
     }
 
-    @Test func titleChecks() {
+    @Test func aTakenNameIsCaughtBeforeRenaming() {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("title-checks-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -104,7 +104,7 @@ import Testing
         #expect(NotePageTitleCheck.problem(renaming: note, to: "a/b") == nil, "slashes become dashes instead of failing")
     }
 
-    @Test func headerGeometry() throws {
+    @Test func theCoverRunsEdgeToEdge() throws {
         let column = CGRect(x: 140, y: 0, width: 720, height: 0)
         var base = NotePageHeaderGeometry(width: 1000, column: column, titleHeight: 55)
         base.titleCapInset = 12
@@ -165,7 +165,7 @@ import Testing
         #expect(narrow.layout().title.width == 1000, "a missing column falls back to the full width")
     }
 
-    @Test func calloutAlerts() {
+    @Test func getsABox() {
         func callout(alert: String?, icon: String? = nil, color: NoteColorStyle? = nil) -> NoteBlock {
             var block = NoteBlock(.callout, text: "Heads up")
             block.props.alert = alert
@@ -213,7 +213,7 @@ import Testing
         #expect(fragment.contains("data-default-icon") && !fragment.contains("data-color") && !fragment.contains("data-icon="), "copied callouts mark alert defaults so pasting doesn't adopt them")
     }
 
-    @Test func pagination() {
+    @Test func aBlockStraddlingTheBreakMovesToTheNext() {
         let spans = [
             NotePagePrintSpan(minY: 0, maxY: 300, keepsTogether: true),
             NotePagePrintSpan(minY: 304, maxY: 700, keepsTogether: false),
@@ -287,7 +287,7 @@ import Testing
         #expect(NotePageFinder.titleReplacementCount("parkpark", matches: titleMatches) == 1, "title counting skips overlapping and out-of-range matches")
     }
 
-    @Test func stats() {
+    @Test func anEmptyPageHasNothingToRead() {
         let empty = NotePageStats(page: NotePage(blocks: [.paragraph()]))
         #expect(empty.words == 0 && empty.readingMinutes == 0 && empty.summary == "No words yet", "an empty page has nothing to read")
         let one = NotePageStats(page: NotePage(blocks: [.paragraph("Hello")]))
@@ -349,7 +349,7 @@ import Testing
         #expect(NotePropertyValue.list([]).isEmpty && !NotePropertyValue.number(0).isEmpty, "emptiness depends on the kind")
     }
 
-    @Test func history() {
+    @Test func theFirstSaveIsAlwaysWorthKeeping() {
         let policy = NotePageHistoryPolicy()
         let start = Date(timeIntervalSince1970: 1_000_000)
         #expect(policy.shouldRecord(.save, current: "a", lastRecorded: nil, lastRecordedAt: nil, now: start), "the first save is always worth keeping")
@@ -361,7 +361,7 @@ import Testing
         #expect(!policy.shouldRecord(.idle, current: "a", lastRecorded: "a", lastRecordedAt: start, now: start.addingTimeInterval(999)), "an unchanged page never records")
     }
 
-    @Test func exporting() {
+    @Test func copiedMarkdownLeadsWithTheTitle() {
         #expect(NotePageExport.markdownForCopy(body: "Hello\n\n", title: " Trip ") == "# Trip\n\nHello\n", "copied Markdown leads with the title")
         #expect(NotePageExport.markdownForCopy(body: "Hello", title: "") == "Hello\n", "an untitled page copies just the body")
         #expect(NotePageExport.markdownForCopy(body: "\n", title: "Empty") == "# Empty\n", "an empty body copies just the title")
@@ -391,7 +391,7 @@ import Testing
         #expect(NotePageExport.isImageSource("Attachments/a.HEIC") && !NotePageExport.isImageSource("🌳"), "image icons are told apart from emoji")
     }
 
-    @Test func relativeTime() {
+    @Test func secondsAgoIsJustNow() {
         let now = Date(timeIntervalSince1970: 2_000_000)
         #expect(NoteRelativeTime.edited(now.addingTimeInterval(-10), now: now) == "Edited just now", "seconds ago is just now")
         #expect(NoteRelativeTime.edited(nil, now: now) == "Not saved yet", "no date means not saved")

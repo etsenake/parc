@@ -114,7 +114,7 @@ struct EaselConnectorRoutingTests {
         #expect(!EaselConnectorAttachment.canAttach(to: connector(from: .init(x: 0, y: 0), to: .init(x: 10, y: 10))), "Connectors never attach to connectors")
     }
 
-    @Test func anchors() {
+    @Test func pinnedPointsAreStoredAsFractionsOfTheFrame() {
         var item = box(100, 100, 200, 100)
         let anchor = EaselConnectorAttachment.anchor(at: EaselPoint(x: 150, y: 175), on: item)
         #expect(near(anchor, EaselPoint(x: 0.25, y: 0.75)), "Pinned points are stored as fractions of the frame")
@@ -130,7 +130,7 @@ struct EaselConnectorRoutingTests {
         #expect(EaselConnectorAttachment.nearestSide(of: EaselPoint(x: 0.5, y: 0.02), on: box(0, 0)) == .top, "A pin near the top leaves upwards")
     }
 
-    @Test func snapping() {
+    @Test func endsSnapToTheNearestSideMagnet() {
         let target = box(100, 100, 200, 200)
         let edge = EaselConnectorAttachment.snap(EaselPoint(x: 296, y: 190), to: target, pin: false, scale: 1)
         #expect(edge.connection?.side == .right && near(edge.point, EaselPoint(x: 300, y: 200)), "Ends snap to the nearest side magnet")
@@ -148,7 +148,7 @@ struct EaselConnectorRoutingTests {
         #expect(free.connection == nil, "No object, no attachment")
     }
 
-    @Test func straightRoutes() throws {
+    @Test func aStraightConnectorJoinsTheFacingMagnets() throws {
         let a = box(100, 100), b = box(400, 100)
         let item = connector(from: .init(x: 0, y: 0), to: .init(x: 10, y: 10),
                              startConnection: EaselConnection(itemID: a.id), endConnection: EaselConnection(itemID: b.id))
@@ -165,7 +165,7 @@ struct EaselConnectorRoutingTests {
         #expect(settled.startConnection == nil && near(EaselConnectorRouter.absolutePoints(settled).first ?? .init(x: -1, y: -1), EaselPoint(x: 10, y: 10)), "A connection to a missing object turns into a free end where it last was")
     }
 
-    @Test func elbowRoutes() throws {
+    @Test func elbowRoutesOnlyRunAcrossAndDown() throws {
         let a = box(100, 100), b = box(400, 300)
         let item = connector(from: .init(x: 0, y: 0), to: .init(x: 10, y: 10), routing: .elbow,
                              startConnection: EaselConnection(itemID: a.id, side: .right), endConnection: EaselConnection(itemID: b.id, side: .left))
@@ -214,7 +214,7 @@ struct EaselConnectorRoutingTests {
         #expect(orthogonal(crowded.vertices) && crowded.vertices.count >= 2, "Overlapping objects still get an orthogonal route")
     }
 
-    @Test func manualElbows() throws {
+    @Test func aDraggedMiddleSegmentStaysWhereItWasPut() throws {
         let a = box(100, 100), b = box(400, 300)
         var item = connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .elbow,
                              startConnection: EaselConnection(itemID: a.id, side: .right), endConnection: EaselConnection(itemID: b.id, side: .left))
@@ -261,7 +261,7 @@ struct EaselConnectorRoutingTests {
         #expect(mapped == [EaselPoint(x: 120, y: 60)], "Bends travel and stretch with their connector")
     }
 
-    @Test func curvedRoutes() throws {
+    @Test func curvesJoinTheChosenMagnets() throws {
         let a = box(100, 100), b = box(400, 300)
         let item = connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .curved,
                              startConnection: EaselConnection(itemID: a.id, side: .right), endConnection: EaselConnection(itemID: b.id, side: .left))
@@ -282,7 +282,7 @@ struct EaselConnectorRoutingTests {
         #expect(flat.distance(to: EaselPoint(x: 110, y: 10)) < 1e-6, "A level free curve stays a clean line")
     }
 
-    @Test func arrowHeads() {
+    @Test func theLineArrowMatchesTheOriginalOpenVExactly() {
         let tip = EaselPoint(x: 100, y: 50), direction = EaselPoint(x: 0.6, y: 0.8)
         let v = EaselArrowHeadGeometry.make(.arrow, tip: tip, direction: direction, width: 3)
         let angle = atan2(direction.y, direction.x)
@@ -314,7 +314,7 @@ struct EaselConnectorRoutingTests {
         #expect(circle.hasPrefix("M") && circle.contains("A"), "Circle heads export as arcs")
     }
 
-    @Test func labels() throws {
+    @Test func labelsSitCentredOnThePath() throws {
         guard let route = EaselConnectorRoute(routing: .straight, segments: [.line(EaselPoint(x: 0, y: 0), EaselPoint(x: 400, y: 0))],
                                               vertices: [EaselPoint(x: 0, y: 0), EaselPoint(x: 400, y: 0)]) else { Issue.record("Routes build"); return }
         let size = (width: 60.0, height: 18.0)
@@ -336,7 +336,7 @@ struct EaselConnectorRoutingTests {
         #expect(pieces.count == 2, "A label splits the line in two")
     }
 
-    @Test func hitTesting() throws {
+    @Test func theHitBandIsAtLeastTenPointsEach() throws {
         let item = connector(from: .init(x: 0, y: 100), to: .init(x: 300, y: 100), routing: .straight,
                              startConnection: nil, endConnection: nil)
         let route = try #require(EaselConnectorRouter.route(for: item, lookup: lookup([])), "Hit routes build")
@@ -357,7 +357,7 @@ struct EaselConnectorRoutingTests {
         #expect(!EaselConnectorHit.intersects(EaselRect(x: 1000, y: 1000, width: 10, height: 10), route: bent), "Marquees elsewhere miss")
     }
 
-    @Test func pathData() {
+    @Test func curvesExportAsASingleCubic() {
         guard let route = EaselConnectorRoute(routing: .curved, segments: [.cubic(EaselPoint(x: 0, y: 0), EaselPoint(x: 50, y: 0),
                                                                                     EaselPoint(x: 50, y: 100), EaselPoint(x: 100, y: 100))],
                                               vertices: [EaselPoint(x: 0, y: 0), EaselPoint(x: 100, y: 100)]) else { Issue.record("Curves build"); return }
@@ -377,7 +377,7 @@ struct EaselConnectorRoutingTests {
         #expect(near(polyline.length, 150) && near(polyline.endDirection, EaselPoint(x: 0, y: 1)) && near(polyline.startDirection, EaselPoint(x: -1, y: 0)), "Routes know their length and which way each end points")
     }
 
-    @Test func settling() throws {
+    @Test func settlingStoresTheLiveRoutesEnds() throws {
         let a = box(100, 100), b = box(400, 300)
         let item = connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .elbow,
                              startConnection: EaselConnection(itemID: a.id, side: .right), endConnection: EaselConnection(itemID: b.id, side: .left))
@@ -398,7 +398,7 @@ struct EaselConnectorRoutingTests {
         #expect(kept.vertices == points, "A freed elbow keeps its last route")
     }
 
-    @Test func dependents() throws {
+    @Test func aConnectorFollowsTheObjectItIsAttached() throws {
         let a = box(100, 100), b = box(400, 300)
         let item = EaselConnectorRouter.settled(connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .elbow,
                                                           startConnection: EaselConnection(itemID: a.id, side: .right),
@@ -513,7 +513,7 @@ struct EaselConnectorRoutingTests {
         #expect(near(corner.start, EaselPoint(x: 200, y: 100)) && near(corner.end, EaselPoint(x: 300, y: 150)), "An automatic end beside a fixed one moves on to the next side")
     }
 
-    @Test func freedCurves() throws {
+    @Test func aFreedCurveRemembersWhereItsMiddleWas() throws {
         let a = box(100, 100), b = box(400, 300)
         let curve = EaselConnectorRouter.settled(connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .curved,
                                                            startConnection: EaselConnection(itemID: a.id, side: .bottom),
@@ -532,7 +532,7 @@ struct EaselConnectorRoutingTests {
         #expect(settled.items.first(where: { $0.id == curve.id }) == freed, "An unrelated edit leaves the freed curve exactly where it was")
     }
 
-    @Test func draggingTogether() throws {
+    @Test func aSharedContextSettlesExactlyLikeAFreshOne() throws {
         let a = box(100, 100), b = box(400, 300)
         var elbow = EaselConnectorRouter.settled(connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .elbow,
                                                            startConnection: EaselConnection(itemID: a.id, side: .right),

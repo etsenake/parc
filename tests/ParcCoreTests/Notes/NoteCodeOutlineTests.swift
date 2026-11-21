@@ -3,7 +3,7 @@ import Testing
 @testable import ParcCore
 
 @MainActor struct NoteCodeOutlineTests {
-    @Test func extraction() {
+    @Test func headingsH1H4InPageOrderColumnsIncluded() {
         let intro = NoteBlock.heading(1, "Intro")
         let details = NoteBlock.heading(2, "Details")
         let deep = NoteBlock.heading(3, "Deep")
@@ -28,7 +28,7 @@ import Testing
         #expect(NoteOutline.entries(in: NotePage(blocks: [.paragraph("Nothing")])).isEmpty, "no headings, no entries")
     }
 
-    @Test func indentation() {
+    @Test func eachLevelIndentsOneStep() {
         let page = NotePage(blocks: [.heading(1, "A"), .heading(2, "B"), .heading(3, "C"), .heading(2, "D")])
         #expect(NoteOutline.entries(in: page).map(\.depth) == [0, 1, 2, 1], "each level indents one step")
         let shallow = NotePage(blocks: [.heading(2, "B"), .heading(3, "C"), .heading(2, "D")])
@@ -36,7 +36,7 @@ import Testing
         #expect(NoteOutline.entries(in: shallow).map(\.level) == [2, 3, 2], "levels are kept as written")
     }
 
-    @Test func titles() {
+    @Test func titlesReadAsPlainTextOnOneLine() {
         let mention = NoteText(pieces: [("See ", .plain)]) + .atom(.equation("E=mc^2")) + NoteText(" now")
         let page = NotePage(blocks: [.heading(1, mention), .heading(2, "Two\nlines"), .heading(3, "  padded  ")])
         #expect(NoteOutline.entries(in: page).map(\.title) == ["See E=mc^2 now", "Two lines", "padded"], "titles read as plain text on one line")

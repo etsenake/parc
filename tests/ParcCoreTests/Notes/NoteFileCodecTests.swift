@@ -69,7 +69,7 @@ import Testing
         #expect(String(decoding: encoded.data, as: UTF8.self) == "café 🙂", "nothing is lost in the upgrade")
     }
 
-    @Test func lineEndings() {
+    @Test func crlf() {
         #expect(NoteFileText.lineEnding(of: "a\nb\n") == .lf, "LF")
         #expect(NoteFileText.lineEnding(of: "a\r\nb\r\n") == .crlf, "CRLF")
         #expect(NoteFileText.lineEnding(of: "a\rb\r") == .cr, "CR")
@@ -131,7 +131,7 @@ import Testing
         #expect(NoteFileNaming.pastedBaseName(at: date, isImage: false) == "Pasted file 2026-11-20 at 14.03.22", "pasted files too")
     }
 
-    @Test func paths() {
+    @Test func siblingsLinkByEncodedName() {
         let folder = NoteFileTestSupport.makeFolder("paths")
         defer { NoteFileTestSupport.remove(folder) }
         let deep = folder.appendingPathComponent("Sub/Deeper", isDirectory: true)
@@ -155,7 +155,7 @@ import Testing
         #expect(!NoteFilePaths.isInTrash(folder.appendingPathComponent("n.md")), "ordinary folders aren't the Trash")
     }
 
-    @Test func identities() {
+    @Test func aSymlinkedFolderResolvesToTheRealFile() {
         let folder = NoteFileTestSupport.makeFolder("identity")
         defer { NoteFileTestSupport.remove(folder) }
         let real = folder.appendingPathComponent("Real Folder", isDirectory: true)
@@ -192,7 +192,7 @@ import Testing
         #expect(NoteFilePaths.isOpenableFile(viaLink), "a real file through a symlink is")
     }
 
-    @Test func summaries() {
+    @Test func theIconComesFromFrontMatter() {
         let note = """
         ---
         icon: "🚀"
@@ -222,7 +222,7 @@ import Testing
         #expect(NoteFileSummary.make(fromHead: "```swift\nlet x = 1\n```\n| a | b |\n|---|---|", kind: .markdown).snippet == "let x = 1 a b", "code and tables read as text")
     }
 
-    @Test func reconciling() {
+    @Test func unchangedBlocksKeepTheirIdentity() {
         let a = NoteBlock.paragraph("Alpha"), b = NoteBlock.paragraph("Beta"), c = NoteBlock.paragraph("Gamma")
         let old = NotePage(blocks: [a, b, c])
         let fresh = NotePage(blocks: [.paragraph("Alpha"), .paragraph("Beta, edited"), .paragraph("New"), .paragraph("Gamma")])

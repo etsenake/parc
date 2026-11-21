@@ -182,7 +182,7 @@ import Testing
         #expect(close(stepwise.x, combined.x, 1e-9) && close(stepwise.y, combined.y, 1e-9), "Concatenated transforms apply in order")
     }
 
-    @Test func checkHits() {
+    @Test func anUnfilledShapeLetsClicksThroughItsMiddle() {
         let frame = EaselRect(x: 100, y: 100, width: 200, height: 120)
         var plain = shapeItem(.rectangle, frame)
         plain.fillOpacity = 0
@@ -220,7 +220,7 @@ import Testing
                && EaselShapeGeometry.hasVisibleFill(EaselItem(kind: .rectangle, frame: frame)), "Saved shapes keep their 2.5-point outline and wash")
     }
 
-    @Test func checkMarquee() {
+    @Test func aMarqueeInsideAnUnfilledShapePicksWhatsInside() {
         var hollow = shapeItem(.ellipse, EaselRect(x: 0, y: 0, width: 400, height: 400))
         hollow.fillOpacity = 0
         let inside = EaselRect(x: 150, y: 150, width: 100, height: 100)
@@ -237,7 +237,7 @@ import Testing
                && !EaselShapeGeometry.intersects(EaselRect(x: 160, y: 0, width: 20, height: 20), item: turned, selected: false), "Marquees follow rotated outlines")
     }
 
-    @Test func checkEdges() {
+    @Test func edgePointsLandOnTheOutline() {
         let box = shapeItem(.rectangle, EaselRect(x: 0, y: 0, width: 200, height: 100))
         let right = EaselShapeGeometry.edgePoint(of: box, toward: EaselPoint(x: 1000, y: 50))
         #expect(right.map { close($0.x, 200, 1e-6) && close($0.y, 50, 1e-6) } == true, "Edge points land on the outline")
@@ -254,7 +254,7 @@ import Testing
         #expect(EaselShapeGeometry.edgePoint(of: EaselItem(kind: .text, frame: box.frame), toward: EaselPoint(x: 0, y: 0)) == nil, "Only shapes have outlines")
     }
 
-    @Test func checkPlacement() {
+    @Test func textObjectsKeepTodaysPlacement() {
         let frame = EaselRect(x: 40, y: 60, width: 200, height: 120)
         let text = EaselItem(kind: .text, frame: frame, text: "Hello")
         #expect(EaselTextPlacement.box(for: text) == frame && EaselTextPlacement.alignment(for: text) == nil
@@ -330,7 +330,7 @@ import Testing
         #expect(EaselVectorExport.element(EaselItem(kind: .rectangle, frame: frame), art: .init()).hasPrefix("<rect"), "Saved shapes export exactly as before")
     }
 
-    @Test func checkCatalog() {
+    @Test func thePickerListsEveryShapeExactlyOnce() {
         let listed = EaselShapeCatalog.families.flatMap(\.shapes)
         #expect(listed.count == EaselShape.allCases.count && Set(listed) == Set(EaselShape.allCases), "The picker lists every shape exactly once")
         for shape in EaselShape.allCases {

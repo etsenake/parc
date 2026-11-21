@@ -10,7 +10,7 @@ import Testing
         return block
     }
 
-    @Test func language() {
+    @Test func mermaidIsARealCodeLanguage() {
         #expect(NoteCodeLanguage.named("mermaid")?.name == "Mermaid", "Mermaid is a real code language")
         #expect(NoteCodeLanguage.named("mmd")?.id == "mermaid", "the .mmd alias names Mermaid")
         #expect(NoteMermaid.isMermaid("Mermaid") && NoteMermaid.isMermaid(" mermaid "), "language matching ignores case and padding")
@@ -23,7 +23,7 @@ import Testing
         #expect(tokens.contains { $0.kind == .keyword }, "diagram types read as keywords")
     }
 
-    @Test func modes() {
+    @Test func diagramsDefaultToPreview() {
         #expect(NoteMermaid.storedMode(of: diagram("graph TD")) == .preview, "diagrams default to Preview")
         #expect(NoteMermaid.storedMode(of: diagram("graph TD", mode: .split)) == .split, "a chosen mode sticks")
         #expect(NoteMermaid.presentedMode(stored: .preview, editing: true) == .split, "editing a previewed diagram shows the code too")
@@ -36,7 +36,7 @@ import Testing
         #expect(NoteDiagramMode.split.showsCode && NoteDiagramMode.split.showsDiagram, "Split shows both")
     }
 
-    @Test func markdown() {
+    @Test func aPreviewedDiagramStaysAPlainFenceGitHubDraws() {
         let source = "flowchart TD\n  A --> B"
         let plain = NoteMarkdown.serialize(NotePage(blocks: [diagram(source)]))
         #expect(plain == "```mermaid\n" + source + "\n```\n", "a previewed diagram stays a plain fence GitHub draws: \(plain.debugDescription)")
@@ -98,7 +98,7 @@ import Testing
         #expect(fragment.contains("language-mermaid") && !fragment.contains("diagram-art"), "clipboard HTML keeps plain code")
     }
 
-    @Test func theme() {
+    @Test func lightAndDarkThemesDiffer() {
         let light = NoteMermaidTheme.note(dark: false)
         let dark = NoteMermaidTheme.note(dark: true)
         #expect(light != dark, "light and dark themes differ")
@@ -125,7 +125,7 @@ import Testing
         #expect(NoteMermaidPalette.cssSize(16) == "16px" && NoteMermaidPalette.cssSize(13.5) == "13.5px", "sizes print as CSS")
     }
 
-    @Test func requests() {
+    @Test func lineEndingsDontSplitTheCache() {
         let light = NoteMermaidTheme.note(dark: false)
         let dark = NoteMermaidTheme.note(dark: true)
         let a = NoteMermaidRequest(source: "graph TD\r\nA-->B", theme: light)
@@ -144,7 +144,7 @@ import Testing
         #expect(NoteMermaid.fingerprint("a") == NoteMermaid.fingerprint("a") && NoteMermaid.fingerprint("a") != NoteMermaid.fingerprint("b"), "fingerprints are stable")
     }
 
-    @Test func replies() {
+    @Test func sizesRoundUpToWholePoints() {
         let good: [String: Any] = ["ok": true, "svg": "<svg/>", "x": 0, "y": 2, "width": 120.4, "height": 80]
         guard let parsed = NoteMermaidOutcome.parse(good), let drawing = parsed.outcome.drawing else {
             Issue.record("a good reply parses")
@@ -169,7 +169,7 @@ import Testing
         #expect(NoteMermaidOutcome.failure("x").isCacheable && !NoteMermaidOutcome.unavailable("x").isCacheable, "Mermaid's verdicts cache, broken renderers retry")
     }
 
-    @Test func problems() {
+    @Test func theFirstLineHeadlinesWithoutItsColon() {
         let message = "Parse error on line 3:\n...lowchart TD  A -->\n---------------------^\nExpecting 'AMP', got 'EOF'"
         let problem = NoteMermaidProblem(message: message)
         #expect(problem.headline == "Parse error on line 3", "the first line headlines without its colon")
@@ -187,7 +187,7 @@ import Testing
         #expect(unknown.range(in: source) == nil, "no line, no range")
     }
 
-    @Test func cache() {
+    @Test func hitsReturnTheValue() {
         var cache = NoteMermaidCache<String>(capacity: 3, costLimit: 100)
         cache.insert("a", for: "a", cost: 10)
         cache.insert("b", for: "b", cost: 10)
@@ -209,7 +209,7 @@ import Testing
         #expect(cache.count == 0 && cache.totalCost == 0, "clearing empties everything")
     }
 
-    @Test func queue() {
+    @Test func twoBlocksWithTheSameDiagramShareOneRender() {
         let theme = NoteMermaidTheme.note(dark: false)
         func request(_ source: String) -> NoteMermaidRequest { NoteMermaidRequest(source: source, theme: theme) }
         var queue = NoteMermaidQueue()

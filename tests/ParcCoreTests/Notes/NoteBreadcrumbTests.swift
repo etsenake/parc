@@ -101,7 +101,7 @@ import Testing
         #expect(NoteBlockKind.breadcrumb.supportsColor && !NoteBlockKind.breadcrumb.hasText && !NoteBlockKind.breadcrumb.acceptsChildren, "breadcrumbs take a colour but no text or children")
     }
 
-    @Test func html() {
+    @Test func copiedHTMLSpellsOutThePath() {
         let trail = [
             NoteBreadcrumbSegment(kind: .notes, name: "Notes", url: URL(fileURLWithPath: "/n", isDirectory: true)),
             NoteBreadcrumbSegment(kind: .folder, name: "Trips & Food", url: URL(fileURLWithPath: "/n/t", isDirectory: true)),

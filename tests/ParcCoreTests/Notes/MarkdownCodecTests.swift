@@ -287,7 +287,7 @@ struct MarkdownCodecTests: NoteFixtures {
         #expect(breakAtEnd[0].text.string == "ends with backslash\\", "a backslash at the end of a block stays literal")
     }
 
-    @Test func inlineStructure() {
+    @Test func emphasisNests() {
         func text(_ source: String) -> NoteText { blocks(source)[0].text }
         let nested = text("**bold *both* bold**")
         #expect(nested.string == "bold both bold" && nested.marks(at: 0).bold && nested.marks(at: 5).italic && nested.marks(at: 5).bold, "emphasis nests")
@@ -401,7 +401,7 @@ struct MarkdownCodecTests: NoteFixtures {
         #expect(NoteMarkdown.parse("\u{FEFF}---\nicon: 📓\n---\nHi\n").settings.icon == "📓", "a byte-order mark doesn't hide front matter")
     }
 
-    @Test func callouts() {
+    @Test func gitHubAlertsBecomeCallouts() {
         let alert = blocks("> [!WARNING]\n> Watch out.\n>\n> Second.\n")[0]
         #expect(alert.kind == .callout && alert.props.alert == "WARNING" && alert.text.string == "Watch out." && alert.children.count == 1, "GitHub alerts become callouts")
         let note = blocks("> [!NOTE]\n> Hi\n")[0]
@@ -533,7 +533,7 @@ struct MarkdownCodecTests: NoteFixtures {
         NoteMarkdownCheck.checkModelRoundTrip(NotePage(blocks: [.paragraph(mentions)]), "mentions")
     }
 
-    @Test func escaping() {
+    @Test func ordinaryProseStaysUnescaped() {
         let hazards = [
             "# not a heading", "> not a quote", "- not a list", "+ nor this", "* nor this", "1. not ordered", "2) nor this",
             "--- not a rule", "***", "___", "===", "---", "```not code", "~~~ nor this", "    four spaces", "\tTab start",
@@ -565,7 +565,7 @@ struct MarkdownCodecTests: NoteFixtures {
         #expect(clean == "Plain prose costs $5, uses snake_case, 2 * 3, a-b, (parens), \"quotes\" and C# — no escapes needed.\n", "ordinary prose stays unescaped: \(clean)")
     }
 
-    @Test func plainText() {
+    @Test func oneParagraphPerLine() {
         let source = "first line\n\n  indented # not markdown *at all*\nlast"
         let page = NotePlainText.parse(source)
         #expect(page.blocks.count == 4 && page.blocks.allSatisfy { $0.kind == .paragraph }, "one paragraph per line")

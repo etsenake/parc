@@ -3,7 +3,7 @@ import Testing
 @testable import ParcCore
 
 @MainActor struct NoteEmbedModelTests {
-    @Test func sizing() {
+    @Test func noHeightMeansTheDefault() {
         #expect(NoteEmbedSizing.clamped(nil) == NoteEmbedSizing.defaultHeight, "no height means the default")
         #expect(NoteEmbedSizing.clamped(.nan) == NoteEmbedSizing.defaultHeight && NoteEmbedSizing.clamped(.infinity) == NoteEmbedSizing.defaultHeight, "broken numbers fall back to the default")
         #expect(NoteEmbedSizing.clamped(10) == NoteEmbedSizing.minimumHeight, "tiny heights clamp up")
@@ -19,7 +19,7 @@ import Testing
         #expect(NoteEmbedSizing.height(of: props) == NoteEmbedSizing.minimumHeight, "stored heights clamp when read")
     }
 
-    @Test func addresses() {
+    @Test func youTubeWatchLinksPlayInTheEmbedPlayer() {
         func live(_ string: String) -> String { NoteEmbedAddress.liveURL(for: URL(string: string)!).absoluteString }
         #expect(live("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s") == "https://www.youtube.com/embed/dQw4w9WgXcQ?start=42", "YouTube watch links play in the embed player from their timestamp")
         #expect(live("https://youtu.be/dQw4w9WgXcQ") == "https://www.youtube.com/embed/dQw4w9WgXcQ", "short YouTube links use the player")
@@ -36,7 +36,7 @@ import Testing
         #expect(NoteEmbedAddress.embedderReferrer(appID: "bad id/x") == nil && NoteEmbedAddress.embedderReferrer(appID: ".parc") == nil, "identifiers that aren't host names send no referrer")
     }
 
-    @Test func roundTrip() {
+    @Test func theCommentKeepsTheEmbedKind() {
         let source = "![](https://example.com/widget) <!-- parc embed height=\"640\" -->\n"
         let page = NoteMarkdown.parse(source)
         #expect(page.blocks.count == 1 && page.blocks[0].kind == .embed, "the comment keeps the embed kind")

@@ -10,7 +10,7 @@ import Testing
         if edit.selection != caret { Issue.record("\(message): selection \(edit.selection), wanted \(caret)") }
     }
 
-    @Test func widths() {
+    @Test func pythonIndentsByFour() {
         #expect(NoteCodeEditing.indentWidth(forLanguage: "python") == 4, "Python indents by four")
         #expect(NoteCodeEditing.indentWidth(forLanguage: " Swift ") == 4, "language names are trimmed and case-insensitive")
         #expect(NoteCodeEditing.indentWidth(forLanguage: "javascript") == 2, "JavaScript indents by two")
@@ -74,7 +74,7 @@ import Testing
               gives: "h lo", caret: 2..<2, "a partial selection is replaced up to the next tab stop")
     }
 
-    @Test func dedents() {
+    @Test func nothingToDedentGivesNoEdit() {
         let two = NoteCodeIndent.spaces(2), four = NoteCodeIndent.spaces(4)
         check(NoteCodeEditing.dedentLines(in: "    a\n  b", selection: 0..<9, indent: two), on: "    a\n  b",
               gives: "  a\nb", caret: 0..<5, "Shift-Tab dedents every selected line")
@@ -87,7 +87,7 @@ import Testing
         #expect(NoteCodeEditing.dedentLines(in: "x\ny", selection: 0..<3, indent: two) == nil, "nothing to dedent gives no edit")
     }
 
-    @Test func brackets() {
+    @Test func bracesAfterCodeTypeNormally() {
         let two = NoteCodeIndent.spaces(2)
         check(NoteCodeEditing.closingBracket("}", in: "if {\n    ", selection: 9..<9, indent: two), on: "if {\n    ",
               gives: "if {\n  }", caret: 8..<8, "a closing brace on an indented blank line dedents")
@@ -96,7 +96,7 @@ import Testing
         #expect(NoteCodeEditing.closingBracket("a", in: "  ", selection: 2..<2, indent: two) == nil, "letters never dedent")
     }
 
-    @Test func backspace() {
+    @Test func aSingleSpaceDeletesNormally() {
         let four = NoteCodeIndent.spaces(4)
         check(NoteCodeEditing.deleteBackward(in: "    ", selection: 4..<4, indent: four), on: "    ",
               gives: "", caret: 0..<0, "Backspace in indentation removes a whole step")
@@ -107,7 +107,7 @@ import Testing
         #expect(NoteCodeEditing.deleteBackward(in: "\t", selection: 1..<1, indent: .tab(4)) == nil, "tabs delete normally")
     }
 
-    @Test func escape() {
+    @Test func returnOnAnEmptyLastLineExits() {
         #expect(NoteCodeEditing.exitsOnReturn("echo hi\n", selection: 8..<8), "Return on an empty last line exits")
         #expect(!NoteCodeEditing.exitsOnReturn("echo hi", selection: 7..<7), "Return after code stays inside")
         #expect(!NoteCodeEditing.exitsOnReturn("echo hi\n", selection: 2..<2), "Return away from the end stays inside")

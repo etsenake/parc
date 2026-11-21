@@ -37,7 +37,7 @@ extension NoteProcessWide {
 
     func texts(_ session: NoteFileSession) -> [String] { session.page.page.blocks.map(\.text.string) }
 
-    @Test func openingRules() throws {
+    @Test func richTextIsntANote() throws {
         #expect(throws: NoteFileError.notANote, "rich text isn't a note") { _ = try NoteFileSession.open(file("doc.rtf", "{\\rtf1}")) }
         #expect(throws: NoteFileError.missing, "missing files say so") {
             _ = try NoteFileSession.open(folder.appendingPathComponent("nowhere.md"))
@@ -206,7 +206,7 @@ extension NoteProcessWide {
         #expect(NoteFileTestSupport.read(target).contains("Through the link"), "the real file is saved")
     }
 
-    @Test func renaming() throws {
+    @Test func renamesAreSanitizedAndKeepTheExtension() throws {
         let url = file("Draft.md", "Words\n")
         let session = try NoteFileSession.open(url)
         var moves: [URL] = []
@@ -485,7 +485,7 @@ extension NoteProcessWide {
         stuck.resolveConflict(keepMine: true)
     }
 
-    @Test func markdownCopy() throws {
+    @Test func theCopyGetsAFreshName() throws {
         let url = file("Turn me.txt", "Line one\nLine two\n")
         file("Turn me.md", "existing")
         let session = try NoteFileSession.open(url)
@@ -495,7 +495,7 @@ extension NoteProcessWide {
         #expect(NoteFileTestSupport.read(url) == "Line one\nLine two\n", "the text file is untouched")
     }
 
-    @Test func liveWatcher() async throws {
+    @Test func aRealOutsideEditIsNoticedAndReloaded() async throws {
         let url = file("watched.txt", "before\n")
         let session = try NoteFileSession.open(url)
         session.retain()

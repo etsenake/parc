@@ -4,7 +4,7 @@ import Testing
 @testable import ParcCore
 
 @MainActor struct NoteBlockAnchorTests: NoteFixtures {
-    @Test func githubSlugs() {
+    @Test func punctuationDropsAndSpacesBecomeDashes() {
         #expect(NoteAnchor.githubSlug("Hello, World!") == "hello-world", "punctuation drops and spaces become dashes")
         #expect(NoteAnchor.githubSlug("A  B") == "a--b", "every space becomes its own dash, like GitHub")
         #expect(NoteAnchor.githubSlug("snake_case-ok") == "snake_case-ok", "underscores and dashes stay")
@@ -18,7 +18,7 @@ import Testing
         #expect(page.headingSlugs().map(\.slug) == ["intro", "intro-1", "intro-1-1", "next-step"], "repeats count up the way GitHub does")
     }
 
-    @Test func anchorLookup() {
+    @Test func anExactAnchorWins() {
         var anchored = para("Pinned")
         anchored.props.anchor = "k3x9qa"
         let page = NotePage(blocks: [heading(1, "My Plan"), anchored, toggle("Box", [heading(2, "Inside Out")])])
@@ -201,7 +201,7 @@ import Testing
         #expect(!failing.isWithdrawn && FileManager.default.fileExists(atPath: url.path), "a Trash that says no leaves the file where it was")
     }
 
-    @Test func linkSafety() {
+    @Test func neverOpens() {
         for bad in ["javascript:alert(1)", "JavaScript:alert(1)", "vbscript:msgbox", "data:text/html,<script>x</script>"] {
             #expect(!NoteLinkPolicy.allowsOpening(URL(string: bad)!), "\(bad) never opens")
         }

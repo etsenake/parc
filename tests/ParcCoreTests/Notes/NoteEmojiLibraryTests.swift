@@ -82,7 +82,7 @@ extension NoteProcessWide {
         return false
     }
 
-    @Test func upgrades() {
+    @Test func newNamesTurnMatchingTextIntoEmoji() {
         let text = NoteText("Hi :cat: and `:cat:` and :dog:")
         let upgraded = NoteCustomEmojiName.upgrading(text, names: ["cat"])
         #expect(upgraded.marks(at: 3).atom == .customEmoji("cat") && upgraded.plainText == "Hi :cat: and `:cat:` and :dog:", "new names turn matching text into emoji")

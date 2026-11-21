@@ -118,7 +118,7 @@ struct NoteHTMLRoundTripTests {
         ]
     }
 
-    @Test func roundTrip() {
+    @Test func aSecondTripWritesTheSameHTML() {
         let original = page
         let html = NotePageHTML.fragment(original)
         let back = NoteHTMLReader.blocks(from: html, baseURL: nil)
@@ -128,7 +128,7 @@ struct NoteHTMLRoundTripTests {
         #expect(again == html, "a second trip writes the same HTML")
     }
 
-    @Test func fragmentShape() {
+    @Test func fragmentsAreBareHTML() {
         let html = NotePageHTML.fragment(page)
         #expect(!html.contains("<html") && !html.contains("<style"), "fragments are bare HTML")
         #expect(html.contains("<h1 id=\"big-title\">Big title</h1>"), "semantic headings with anchors for the outline")
@@ -152,7 +152,7 @@ struct NoteHTMLRoundTripTests {
         #expect(resolved.contains("src=\"file:///Users/me/Notes/Attachments/a.png\""), "assets resolve for the clipboard: \(resolved)")
     }
 
-    @Test func documentShape() {
+    @Test func standaloneDocument() {
         var settings = NotePageSettings()
         settings.icon = "🌿"
         settings.cover = NoteCover(source: "Attachments/cover.jpg", position: 0.25)
@@ -188,7 +188,7 @@ struct NoteHTMLRoundTripTests {
         #expect(reread.contains { $0.kind == .table } && reread.contains { $0.kind == .callout && $0.props.icon == "🧭" }, "an exported document reads back in")
     }
 
-    @Test func embeddedImages() {
+    @Test func localImagesAndTheIconEmbedAsDataURIs() {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("NoteHTML-" + UUID().uuidString)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }

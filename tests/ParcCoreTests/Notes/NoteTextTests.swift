@@ -3,7 +3,7 @@ import Testing
 @testable import ParcCore
 
 struct NoteTextTests: NoteFixtures {
-    @Test func typingMarks() {
+    @Test func emptyTextTypesPlain() {
         #expect(NoteText().typingMarks(at: 0) == .plain, "empty text types plain")
         let linked = marks { $0.link = "https://parc.example"; $0.bold = true }
         let text = NoteText(pieces: [("Bold", boldMarks), (" link", linked), (" tail", italicMarks)])
@@ -45,7 +45,7 @@ struct NoteTextTests: NoteFixtures {
         #expect(NoteText("a\n\r\n").trimmingTrailingNewlines().string == "a", "trailing newlines trim")
     }
 
-    @Test func markUpdates() {
+    @Test func marksApplyToTheWholeRange() {
         var text = NoteText("Hello ") + NoteText.atom(.equation("e=mc^2")) + NoteText(" world")
         text.updateMarks(in: 0..<text.length) { $0 = .plain; $0.bold = true }
         #expect(text.allHave(.bold, in: 0..<text.length), "marks apply to the whole range")
@@ -55,7 +55,7 @@ struct NoteTextTests: NoteFixtures {
         #expect(!NoteText("plain").allHave(.bold, in: 0..<0), "an empty range has no marks")
     }
 
-    @Test func links() {
+    @Test func aLinkSpansRunsWithDifferentStyles() {
         let link = marks { $0.link = "https://a" }
         let other = marks { $0.link = "https://b" }
         let boldLink = marks { $0.link = "https://a"; $0.bold = true }
@@ -67,7 +67,7 @@ struct NoteTextTests: NoteFixtures {
         #expect(text.linkRange(at: 11) == 11..<12, "neighbouring links stay separate")
     }
 
-    @Test func composedCharacters() {
+    @Test func theSkinTonedEmojiIsOneCharacter() {
         let text = NoteText("a👍🏽é\u{301}b")
         #expect(text.composedRange(before: 5) == 1..<5, "the skin-toned emoji is one character")
         #expect(text.composedRange(after: 1) == 1..<5, "from either side")

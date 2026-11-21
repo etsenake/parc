@@ -21,7 +21,7 @@ struct EaselPaletteTests {
         EaselItem(kind: kind, frame: EaselRect(x: 0, y: 0, width: 100, height: 80))
     }
 
-    @Test func swatches() {
+    @Test func inkOffersTheAutomaticInkAndNotesNineColours() {
         #expect(EaselPalette.colors(for: .ink) == [.automatic] + NoteColor.allCases.map { .note($0) }, "Ink offers the automatic ink and Notes' nine colours, in Notes order")
         for role in [EaselColorRole.fill, .sticky] {
             #expect(EaselPalette.colors(for: role) == [.neutral] + NoteColor.allCases.map { .note($0) }, "\(role.rawValue) offers the neutral and Notes' nine colours")
@@ -46,7 +46,7 @@ struct EaselPaletteTests {
         #expect(EaselPaletteColor.automatic.title(dark: true) == "Default" && EaselPaletteColor.note(.pink).title(dark: false) == "Pink", "Swatches use the names Notes uses")
     }
 
-    @Test func recognition() {
+    @Test func lowercaseAndOpaqueEightDigitColoursNormalise() {
         #expect(EaselPalette.normalized("#2c6c91") == "#2C6C91" && EaselPalette.normalized("#2C6C91ff") == "#2C6C91", "Lowercase and opaque eight-digit colours normalise")
         for bad in ["#2C6C9180", "2C6C91", "#2C6C9", "#GGGGGG", "", "#2C6C91FF00", "#\u{FF11}\u{FF12}\u{FF13}456"] {
             #expect(EaselPalette.normalized(bad) == nil, "\(bad) is not a stored opaque colour")
@@ -69,7 +69,7 @@ struct EaselPaletteTests {
         #expect(EaselPalette.color(for: "#FFFFFF", role: .ink) == nil, "White text stays white, so pasted white text never flips")
     }
 
-    @Test func resolution() {
+    @Test func theAutomaticInkResolvesToTheNotesInk() {
         #expect(EaselPalette.resolve("#252525", role: .ink, dark: false) == EaselPalette.inkLight
                && EaselPalette.resolve("#252525FF", role: .ink, dark: true) == EaselPalette.inkDark, "The automatic ink resolves to the Notes ink on light and dark paper")
         for role in EaselColorRole.allCases {
@@ -112,7 +112,7 @@ struct EaselPaletteTests {
         }
     }
 
-    @Test func strokes() {
+    @Test func shapesSavedBeforeStylesKeepTheir25Point() {
         #expect(EaselPaintRules.strokeWidth(item(.rectangle)) == 2.5 && EaselPaintRules.strokeWidth(item(.circle)) == 2.5, "Shapes saved before styles keep their 2.5-point outline")
         #expect(EaselPaintRules.strokeWidth(item(.arrow)) == 3 && EaselPaintRules.strokeWidth(item(.freehand)) == 3, "Arrows and drawings saved before styles keep their 3-point line")
         #expect(EaselPaintRules.strokeWidth(item(.text)) == 0 && EaselPaintRules.strokeWidth(item(.sticky)) == 0, "Text and stickies have no outline by default")
@@ -141,7 +141,7 @@ struct EaselPaletteTests {
         #expect(EaselPaintRules.arrowHeadLength(width: 8) > EaselPaintRules.arrowHeadLength(width: 3), "Heads grow with the line")
     }
 
-    @Test func fills() {
+    @Test func shapesSavedBeforeStylesKeepTheirLightInkWash() {
         #expect(EaselPaintRules.fill(item(.rectangle)) == .wash(opacity: 0.09), "Shapes saved before styles keep their light ink wash")
         #expect(EaselPaintRules.fill(item(.text)) == .none && EaselPaintRules.fill(item(.arrow)) == .none
                && EaselPaintRules.fill(item(.image)) == .none, "Only shapes, stickies and sections take a fill")

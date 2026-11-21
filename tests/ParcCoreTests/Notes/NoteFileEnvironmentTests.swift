@@ -23,7 +23,7 @@ extension NoteProcessWide {
         return NoteFileEnvironment(documentURL: note, isPlainText: false)
     }
 
-    @Test func resolving() {
+    @Test func percentEncodedRelativePathsResolveAgainstTheNotesFolder() {
         let env = environment(for: "Notes/Page.md")
         let notes = folder.appendingPathComponent("Notes", isDirectory: true)
         #expect(env.resolve("Attachments/My%20Image.png")?.path == notes.appendingPathComponent("Attachments/My Image.png").path, "percent-encoded relative paths resolve against the note's folder")
@@ -47,7 +47,7 @@ extension NoteProcessWide {
         #expect(NoteFileEnvironment(documentURL: folder.appendingPathComponent("x.md"), isPlainText: true).isPlainText, "plain text is flagged")
     }
 
-    @Test func importingFiles() throws {
+    @Test func importsLandInAttachmentsWithAReadableEncodedName() throws {
         let env = environment(for: "Trip.md")
         let outside = NoteFileTestSupport.makeFolder("outside")
         defer { NoteFileTestSupport.remove(outside) }
@@ -70,7 +70,7 @@ extension NoteProcessWide {
         }
     }
 
-    @Test func importingData() throws {
+    @Test func pastedImagesGetDatedNames() throws {
         let env = environment(for: "Paste/Board.md")
         var components = DateComponents()
         (components.year, components.month, components.day, components.hour, components.minute, components.second) = (2026, 11, 20, 14, 3, 22)
@@ -86,7 +86,7 @@ extension NoteProcessWide {
         #expect(NoteFileTestSupport.bytes(pasted) == [1], "the data is written beside the note")
     }
 
-    @Test func linking() {
+    @Test func siblingsLinkByName() {
         let env = environment(for: "Projects/Plan.md")
         let projects = folder.appendingPathComponent("Projects", isDirectory: true)
         let sibling = NoteFileTestSupport.write("", to: projects.appendingPathComponent("Budget (draft).md"))
@@ -109,7 +109,7 @@ extension NoteProcessWide {
         #expect(env.linkTarget(for: elsewhere) == elsewhere.absoluteString, "notes on other roots link absolutely")
     }
 
-    @Test func searching() throws {
+    @Test func searchSkipsTheNoteItself() throws {
         let root = folder.appendingPathComponent("Library", isDirectory: true)
         let library = NoteLibrary.shared(folder: root)
         let here = try library.createNote(title: "Garden journal")
@@ -128,7 +128,7 @@ extension NoteProcessWide {
         #expect(looseEnv.searchNotes("", limit: 10).map(\.title) == ["Two"], "notes outside a library search their own folder only")
     }
 
-    @Test func creating() throws {
+    @Test func newNotesLandBesideThePageWithTidyNames() throws {
         let root = folder.appendingPathComponent("Created", isDirectory: true)
         let library = NoteLibrary.shared(folder: root)
         let page = try library.createNote(title: "Page")

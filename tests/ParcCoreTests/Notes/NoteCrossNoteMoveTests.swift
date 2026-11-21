@@ -25,7 +25,7 @@ import Testing
         }
     }
 
-    @Test func moveLands() async {
+    @Test func theBlockLeavesTheSource() async {
         let (source, target, move) = pair()
         #expect(texts(source) == ["a", "c"], "the block leaves the source")
         #expect(texts(target) == ["x", "b", "b"], "the copy lands at the end of the target")

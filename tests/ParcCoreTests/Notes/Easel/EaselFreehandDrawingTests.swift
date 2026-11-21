@@ -25,7 +25,7 @@ struct EaselFreehandDrawingTests {
                       createdAt: Date(timeIntervalSinceReferenceDate: 0), modifiedAt: Date(timeIntervalSinceReferenceDate: 0), items: items)
     }
 
-    @Test func capture() {
+    @Test func theFirstSampleAlwaysLands() {
         var points: [EaselPoint] = []
         #expect(EaselDrawing.append(p(10, 10), to: &points, scale: 1), "The first sample always lands")
         #expect(!EaselDrawing.append(p(10.4, 10), to: &points, scale: 1), "Jitter under a point is skipped at 100%")
@@ -74,7 +74,7 @@ struct EaselFreehandDrawingTests {
         #expect(EaselDrawing.finished([], scale: 1).isEmpty, "Nothing drawn finishes as nothing")
     }
 
-    @Test func straightLines() {
+    @Test func aNearlyLevelLineSettlesExactlyLevel() {
         let flat = EaselDrawing.straightEnd(from: p(0, 0), to: p(100, 4), strict: false)
         #expect(near(flat.y, 0) && near(flat.x, hypot(100, 4)), "A nearly level line settles exactly level")
         let steep = EaselDrawing.straightEnd(from: p(0, 0), to: p(3, -100), strict: false)
@@ -89,7 +89,7 @@ struct EaselFreehandDrawingTests {
         #expect(EaselDrawing.isStraight(stroke([p(0, 0), p(40, 40)])) && !EaselDrawing.isStraight(stroke([p(0, 0), p(4, 9), p(40, 40)])), "Only two point drawings count as straight lines")
     }
 
-    @Test func paths() {
+    @Test func twoPointsDrawAStraightSegment() {
         #expect(EaselDrawing.smoothPath([p(0, 0), p(10, 0)]) == [.move(p(0, 0)), .line(p(10, 0))], "Two points draw a straight segment")
         #expect(EaselDrawing.smoothPath([p(3, 3)]) == [.move(p(3, 3)), .line(p(3, 3))], "One point draws a dot")
         let curve = EaselDrawing.smoothPath([p(0, 0), p(10, 0), p(10, 10)])
@@ -119,7 +119,7 @@ struct EaselFreehandDrawingTests {
         #expect(near(ends[0], p(50.5, -49.5), 1e-6) && near(ends[1], p(50.5, 50.5), 1e-6), "Rotation turns clockwise around the frame centre")
     }
 
-    @Test func erasing() {
+    @Test func aClickNearAStrokeCatches() {
         let marker = stroke([p(0, 0), p(100, 0), p(100, 100)])
         #expect(EaselDrawing.touches(marker, from: p(50, 8), to: p(50, 8), scale: 1), "A click near a stroke catches it")
         #expect(!EaselDrawing.touches(marker, from: p(50, 20), to: p(50, 20), scale: 1), "A click well away misses")
@@ -148,7 +148,7 @@ struct EaselFreehandDrawingTests {
         #expect(!EaselDrawing.touches(far, from: p(0, 0), to: p(10, 10), scale: 1), "Distant long strokes are skipped by their bounds")
     }
 
-    @Test func choosingTargets() {
+    @Test func aHighlightOverAStickySticks() {
         let note = object(.sticky, 0, 0, 200, 200, z: 1)
         let picture = object(.image, 100, 0, 200, 200, z: 2)
         let section = object(.section, -50, -50, 600, 600, z: 0)
@@ -175,7 +175,7 @@ struct EaselFreehandDrawingTests {
         #expect(EaselDrawing.attachmentTarget(for: [p(2, 2), p(12, 12)], in: [ring]) == nil, "Circles don't claim their empty corners")
     }
 
-    @Test func carrying() {
+    @Test func aHighlightFollowsItsStickyAcrossTheBoard() {
         let note = object(.sticky, 0, 0, 200, 200, z: 1)
         var highlight = stroke([p(20, 50), p(180, 50)], brush: .highlighter)
         highlight.attachedTo = note.id
@@ -238,7 +238,7 @@ struct EaselFreehandDrawingTests {
         #expect(settled.items[0].frame.x == 5 && settled.items[1].frame.x == 15, "Objects stuck to each other settle in one pass")
     }
 
-    @Test func rebinding() {
+    @Test func aHighlightDraggedOntoAPictureSticks() {
         let note = object(.sticky, 0, 0, 200, 200, z: 1)
         let picture = object(.image, 400, 0, 200, 200, z: 2)
         var highlight = stroke([p(20, 50), p(180, 50)], brush: .highlighter)
@@ -270,7 +270,7 @@ struct EaselFreehandDrawingTests {
         #expect(EaselAttachments.carry(drawn, previous: doodled, moved: [marker.id]).items[1].attachedTo == nil, "Marker doodles never stick")
     }
 
-    @Test func removingDependents() {
+    @Test func deletingAStickyTakesEverythingStuck() {
         let note = object(.sticky, 0, 0, 200, 200)
         var first = stroke([p(10, 10), p(40, 40)], brush: .highlighter)
         first.attachedTo = note.id
@@ -296,7 +296,7 @@ struct EaselFreehandDrawingTests {
         #expect(chain.items.map(\.id) == [other.id], "Deleting the bottom of a chain removes every link")
     }
 
-    @Test func pipeline() {
+    @Test func settlingAfterAMoveBringsStuckTapeAlong() {
         let note = object(.sticky, 0, 0, 200, 200, z: 1)
         var tape = stroke([p(20, 50), p(180, 50)], brush: .washi)
         tape.attachedTo = note.id
@@ -323,7 +323,7 @@ struct EaselFreehandDrawingTests {
         #expect(result.items[3].frame.x == outside.frame.x + 100, "Tape hanging off the section still follows its sticky")
     }
 
-    @Test func exporting() {
+    @Test func newDoodlesExportAsSmoothCurvesWithRoundEnds() {
         let doodle = stroke([p(0, 0), p(10, 0), p(10, 10)], brush: .marker)
         let marker = EaselVectorExport.drawing(doodle)
         #expect(marker.contains("Q") && marker.contains("stroke-linecap:round") && !marker.contains("easel-highlight"), "New doodles export as smooth curves with round ends")
@@ -355,7 +355,7 @@ struct EaselFreehandDrawingTests {
         #expect(Set(pair).count == pair.count && pair.count == 4, "Strips that share an id still get their own pattern and clip")
     }
 
-    @Test @MainActor func strokes() throws {
+    @Test @MainActor func aTapLeavesADotOfTwoEqualPoints() throws {
         var template = EaselItem(kind: .freehand, frame: EaselRect(x: 0, y: 0, width: 1, height: 1), zIndex: 7, color: "#2C6C91")
         template.brush = .marker
         let tap = try #require(EaselDrawing.strokeItem([p(40, 50)], like: template, straight: false, strict: false, scale: 1), "A tap draws")
@@ -385,7 +385,7 @@ struct EaselFreehandDrawingTests {
         #expect(session.document.items.isEmpty && !session.canUndo, "One Undo takes the whole stroke back")
     }
 
-    @Test func washi() {
+    @Test func unknownPatternsFallBackToStripes() {
         #expect(EaselWashi.pattern(named: nil) == .stripes && EaselWashi.pattern(named: "nope") == .stripes, "Unknown patterns fall back to stripes")
         #expect(EaselWashi.pattern(named: "kraft") == .kraft, "Saved pattern names come back")
         #expect(EaselWashi.storedName(.stripes) == nil && EaselWashi.storedName(.dots) == "dots", "The default pattern isn't written to the file")

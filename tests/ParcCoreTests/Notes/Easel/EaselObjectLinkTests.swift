@@ -10,7 +10,7 @@ struct EaselObjectLinkTests {
         return item
     }
 
-    @Test func normalizing() {
+    @Test func fullWebLinksStayAsTyped() {
         #expect(EaselObjectLink.normalized("https://parc.example/notes?a=1") == "https://parc.example/notes?a=1", "Full web links stay as typed")
         #expect(EaselObjectLink.normalized("  example.com/path ") == "https://example.com/path", "Bare domains get https")
         #expect(EaselObjectLink.normalized("http://localhost:8080") == "http://localhost:8080", "Local addresses with a scheme work")
@@ -22,7 +22,7 @@ struct EaselObjectLinkTests {
         #expect(EaselObjectLink.normalized("https://example.com/" + String(repeating: "a", count: 17_000)) == nil, "Huge links are refused")
     }
 
-    @Test func linking() throws {
+    @Test func storesTheNormalizedLink() throws {
         let text = item(.text), shape = item(.rectangle), sticky = item(.sticky), image = item(.image), locked = item(.circle, locked: true)
         let board = EaselDocument(id: UUID(), title: "Board", createdAt: Date(), modifiedAt: Date(), items: [text, shape, sticky, image, locked])
         for target in [text, shape, sticky] {
@@ -52,7 +52,7 @@ struct EaselObjectLinkTests {
         #expect(EaselVectorExport.objectLinked(item(.text, url: "https://example.com"), "") == "", "Empty art gets no stray link")
     }
 
-    @Test func badges() {
+    @Test func theBadgeFloatsJustOutsideTheTopRightCorner() {
         let frame = EaselRect(x: 100, y: 100, width: 200, height: 80)
         let badge = EaselObjectLink.badgeRect(for: frame, scale: 1)
         #expect(badge == EaselRect(x: 305, y: 77, width: 18, height: 18), "The badge floats just outside the top-right corner")
@@ -67,7 +67,7 @@ struct EaselObjectLinkTests {
         #expect(EaselObjectLink.badgeAllowance(linked, scale: 1) == 32 && EaselObjectLink.badgeAllowance(plain, scale: 1) == 0, "Only linked objects reserve room for the badge")
     }
 
-    @Test @MainActor func saving() {
+    @Test @MainActor func objectLinksSurviveASaveAndReopen() {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("easel-object-link-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         do {

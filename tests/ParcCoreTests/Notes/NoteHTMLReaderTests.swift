@@ -14,7 +14,7 @@ struct NoteHTMLReaderTests {
         #expect(kinds == expected, "\(label) shape:\n\(NoteHTMLCheck.outline(blocks))")
     }
 
-    @Test func googleDocs() {
+    @Test func docsHeading() {
         let span = "font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;white-space:pre-wrap;"
         let html = """
         <meta charset="utf-8"><b style="font-weight:normal;" id="docs-internal-guid-4f1c2a9e-7fff-1b2c-3d4e-5f6a7b8c9d0e">\
@@ -86,7 +86,7 @@ struct NoteHTMLReaderTests {
         #expect(blocks[10].text.string == "H₂O and x²", "sub and super scripts use Unicode forms: \(blocks[10].text.string)")
     }
 
-    @Test func word() {
+    @Test func wordHeadingWithoutItsThemeColour() {
         let html = """
         <html xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
         <head><meta http-equiv=Content-Type content="text/html; charset=utf-8"><meta name=ProgId content=Word.Document>
@@ -150,7 +150,7 @@ struct NoteHTMLReaderTests {
         #expect(blocks[7].props.table?.headerRow == true, "bold Word header row")
     }
 
-    @Test func github() {
+    @Test func permalinkAnchorsVanish() {
         let html = """
         <article class="markdown-body entry-content container-lg" itemprop="text"><div class="markdown-heading" dir="auto"><h1 tabindex="-1" class="heading-element" dir="auto">Parc</h1><a id="user-content-parc" class="anchor" aria-label="Permalink: Parc" href="#parc"><svg class="octicon octicon-link" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path d="m7.775 3.275"></path></svg></a></div>
         <p dir="auto">A browser that <strong>feels</strong> like home. See <a href="/etsenake/parc/blob/main/docs/product.md">the guide</a> and <code>make test</code>.</p>
@@ -211,7 +211,7 @@ struct NoteHTMLReaderTests {
         #expect(blocks[11].text.string == "Quote line one\nline two", "br inside a quote is a soft break")
     }
 
-    @Test func notion() {
+    @Test func notionHeading() {
         let html = """
         <meta charset="utf-8"><h2 id="1a2b" class="">Trip ideas</h2><p id="2b3c" class="">A <mark class="highlight-red">red</mark> word, a <span class="highlight-yellow_background">sunny</span> one and <code>inline code</code>.</p><ul id="3c4d" class="bulleted-list"><li style="list-style-type:disc">Lisbon<ul id="3c4e" class="bulleted-list"><li style="list-style-type:circle">Trams</li></ul></li></ul><ol type="1" id="4d5e" class="numbered-list" start="3"><li>Book flights</li></ol><ul id="5e6f" class="to-do-list"><li><div class="checkbox checkbox-on"></div> <span class="to-do-children-checked">Passport</span></li></ul><ul id="6f7a" class="to-do-list"><li><div class="checkbox checkbox-off"></div> <span class="to-do-children-unchecked">Adapters</span></li></ul><ul id="7a8b" class="toggle"><li><details open=""><summary>Packing</summary><p id="8b9c" class="">Socks</p></details></li></ul><figure class="block-color-gray_background callout" style="white-space:pre-wrap;display:flex" id="9c0d"><div style="font-size:1.5em"><span class="icon">✈️</span></div><div style="width:100%">Window seat, always.</div></figure><blockquote id="0d1e" class="block-color-purple">Travel light.</blockquote><pre id="1e2f" class="code"><code class="language-JavaScript">const trip = plan("Lisbon")</code></pre><figure id="2f3a" class="equation"><style>@import url('https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css')</style><div class="equation-container"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>a</mi></mrow><annotation encoding="application/x-tex">a^2 + b^2 = c^2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base">a2+b2=c2</span></span></span></span></div></figure><table id="3a4b" class="simple-table"><thead class="simple-table-header"><tr id="r1"><th id="c1" class="simple-table-header-color simple-table-header">City</th><th id="c2" class="simple-table-header-color simple-table-header">Days</th></tr></thead><tbody><tr id="r2"><th id="c3" class="simple-table-header-color simple-table-header">Porto</th><td id="c4">2</td></tr></tbody></table><div id="4b5c" class="column-list"><div id="a1" style="width:50%" class="column"><p>Left side</p></div><div id="b1" style="width:50%" class="column"><p>Right side</p></div></div><figure id="5c6d"><a href="https://www.visitportugal.com/" class="bookmark source"><div class="bookmark-info"><div class="bookmark-text"><div class="bookmark-title">Visit Portugal</div><div class="bookmark-description">Official tourism site</div></div><div class="bookmark-href">https://www.visitportugal.com/</div></div></a></figure><hr id="6d7e"/><figure id="7e8f" class="image"><a href="Trip/tram.jpg"><img style="width:640px" src="Trip/tram.jpg"/></a><figcaption>Tram 28</figcaption></figure><p>Equation <span class="notion-text-equation-token" contenteditable="false"><span class="katex"><span class="katex-mathml"><math><semantics><annotation encoding="application/x-tex">\\pi r^2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true">πr2</span></span></span> inline.</p>
         """
@@ -241,7 +241,7 @@ struct NoteHTMLReaderTests {
         #expect(blocks[16].text.runs().contains { $0.marks.atom == .equation("\\pi r^2") } && blocks[16].text.plainText == "Equation \\pi r^2 inline.", "Notion inline equation: \(blocks[16].text.plainText.debugDescription)")
     }
 
-    @Test func webArticle() {
+    @Test func whitespaceCollapsesInHeadings() {
         let html = """
         <html><head><title>Ignore me</title><script>var x = "<p>not content</p>"; if (a < b) {}</script>
         <style>.byline{color:#999} .lede { font-weight: bold } nav a { color: red }</style></head><body>
@@ -298,7 +298,7 @@ struct NoteHTMLReaderTests {
                && !flat.contains("News") && !flat.contains("cdata") && !flat.contains("secret"), "chrome, scripts and hidden bits stay out")
     }
 
-    @Test func appleNotes() {
+    @Test func bigCocoaTextBecomesATitleHeading() {
         let html = """
         <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
         <html>
@@ -350,7 +350,7 @@ struct NoteHTMLReaderTests {
         #expect(blocks[5].text.string == "Tab\there  end", "Apple tab spans keep the tab: \(blocks[5].text.string.debugDescription)")
     }
 
-    @Test func slack() {
+    @Test func slackBold() {
         let html = """
         <meta charset='utf-8'><div class="p-rich_text_section">Here's the plan for <b data-stringify-type="bold">Friday</b>:</div><ul data-stringify-type="unordered-list" data-indent="0" class="p-rich_text_list p-rich_text_list__bullet" data-border="0"><li data-stringify-indent="0" data-stringify-border="0">Ship it</li></ul><ul data-stringify-type="unordered-list" data-indent="1" class="p-rich_text_list p-rich_text_list__bullet p-rich_text_list--nested" data-border="0"><li data-stringify-indent="1" data-stringify-border="0">Run tests</li><li data-stringify-indent="1" data-stringify-border="0">Tag it</li></ul><ul data-stringify-type="unordered-list" data-indent="0" class="p-rich_text_list p-rich_text_list__bullet" data-border="0"><li data-stringify-indent="0" data-stringify-border="0">Celebrate <img data-id=":tada:" data-stringify-type="emoji" data-stringify-emoji=":tada:" class="c-emoji c-emoji__medium c-emoji--inline" src="https://a.slack-edge.com/production-standard-emoji-assets/14.0/apple-medium/1f389.png" alt="tada" aria-label="tada emoji"></li></ul><div class="p-rich_text_section"><a target="_blank" class="c-link" data-stringify-link="https://example.com" delay="150" data-sk="tooltip_parent" href="https://example.com" rel="noopener noreferrer">example.com</a> then <code data-stringify-type="code" class="c-mrkdwn__code">npm test</code><span class="c-mrkdwn__br" data-stringify-type="paragraph-break"></span>New paragraph</div><pre class="c-mrkdwn__pre" data-stringify-type="pre"><div class="p-rich_text_block--no-overflow">let x = 1<br>let y = 2</div></pre><blockquote type="cite" class="c-mrkdwn__quote" data-stringify-type="quote">Quoted <i data-stringify-type="italic">text</i></blockquote><span style="color: rgb(29, 28, 29); font-family: Slack-Lato, Slack-Fractions, appleLogo, sans-serif; font-size: 15px; background-color: rgb(248, 248, 248);">Plain loose text</span>
         """
@@ -367,7 +367,7 @@ struct NoteHTMLReaderTests {
         #expect(blocks[7].text.string == "Plain loose text" && marks("Plain", blocks[7].text)?.isPlain == true, "near-black ink and near-white backgrounds are ignored")
     }
 
-    @Test func tables() {
+    @Test func colspanPadsAndListsFlattenIntoCellText() {
         let html = """
         <table><tr><td colspan="2"><b>Plan</b></td></tr><tr><td>Mon</td><td><ul><li>Gym</li><li>Read<ol><li>Book</li></ol></li></ul></td></tr></table>
         <table role="presentation"><tr><td><h3>Inside layout</h3></td><td><p>Side text</p></td></tr></table>
@@ -391,7 +391,7 @@ struct NoteHTMLReaderTests {
         #expect(blocks[6].props.table?.headerRow == false, "plain tables have no header")
     }
 
-    @Test func nestedLists() {
+    @Test func nestedOrdered() {
         let html = """
         <ol start="5"><li>Five<ol type="a"><li>Five a</li><li>Five b<ul><li>deep</li></ul></li></ol></li><li><p>Six</p><p>Six more</p></li></ol>
         <ul><li></li><li>[x] Done markdown style</li><li>[ ] Not yet</li></ul>

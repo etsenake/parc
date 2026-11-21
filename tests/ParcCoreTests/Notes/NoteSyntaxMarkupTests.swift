@@ -3,7 +3,7 @@ import Testing
 @testable import ParcCore
 
 struct NoteSyntaxMarkupTests {
-    @Test func catalog() {
+    @Test func plainTextLeadsThePicker() {
         let all = NoteCodeLanguage.all
         #expect(all.first?.id == "plaintext" && all.first?.name == "Plain Text", "Plain Text leads the picker")
         let names = all.dropFirst().map { $0.name.lowercased() }
@@ -465,7 +465,7 @@ struct NoteSyntaxMarkupTests {
         probe.expectWellFormed()
     }
 
-    @Test func robustness() {
+    @Test func everyLanguageStaysLinearOn2000Line() {
         let languages = NoteCodeLanguage.all.map(\.id)
         let snippets = [
             "\"unterminated", "/* open", "`${`${`${", "<div <span", "'''", "#{", "${", "$(", "<<EOF", "@\"", "r#\"",

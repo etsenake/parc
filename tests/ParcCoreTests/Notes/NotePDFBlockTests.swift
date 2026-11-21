@@ -55,14 +55,14 @@ import Testing
         #expect(nested.first?.children.first?.kind == .pdf, "PDFs nest under list items")
     }
 
-    @Test func plainText() {
+    @Test func aPlainTextNoteKeepsThePDF() {
         let page = NotePage(blocks: [.paragraph("Read this"), pdf { $0.source = "Attachments/report.pdf" }, .paragraph("Thanks")])
         #expect(NotePlainText.serialize(page) == "Read this\nAttachments/report.pdf\nThanks", "a plain-text note keeps the PDF as a file reference: \(NotePlainText.serialize(page))")
         let empty = NotePage(blocks: [.paragraph("a"), NoteBlock(.pdf)])
         #expect(NotePlainText.serialize(empty) == "a\n", "an empty PDF is an empty line")
     }
 
-    @Test func html() {
+    @Test func clipboardHTMLLinksThePDF() {
         let block = pdf {
             $0.source = "Attachments/report.pdf"
             $0.alt = "Report"
@@ -133,7 +133,7 @@ import Testing
         #expect(NotePDFLayout.originX(width: 300, alignment: .right, columnWidth: 700) == 400, "right alignment hugs the edge")
     }
 
-    @Test func zoom() {
+    @Test func zoomingInStepsUpFromFit() {
         let fit: CGFloat = 0.8
         let first = NotePDFZoom.zoomed(current: fit, fit: fit, zoomIn: true)
         #expect(first == .init(scale: fit * 1.25, fitsWidth: false), "zooming in steps up from fit: \(first)")
@@ -152,7 +152,7 @@ import Testing
         #expect(NotePDFZoom.zoomed(current: .nan, fit: fit, zoomIn: true).fitsWidth, "broken scales reset to fit")
     }
 
-    @Test func pages() {
+    @Test func pagesCountFromOne() {
         #expect(NotePDFPages.label(current: 0, count: 12) == "1 / 12", "pages count from one")
         #expect(NotePDFPages.label(current: 40, count: 12) == "12 / 12", "page labels clamp")
         #expect(NotePDFPages.label(current: 0, count: 0) == "–", "an empty document says so")
@@ -161,7 +161,7 @@ import Testing
         #expect(NotePDFPages.summary(count: 1) == "1 page" && NotePDFPages.summary(count: 3) == "3 pages", "page counts read naturally")
     }
 
-    @Test func scrolling() {
+    @Test func scrollingOverAPDFScrollsThePDF() {
         let middle = NotePDFScrollLatch.Room(up: true, down: true)
         let bottom = NotePDFScrollLatch.Room(up: true, down: false)
         let fits = NotePDFScrollLatch.Room()
@@ -196,7 +196,7 @@ import Testing
         #expect(ending.target == nil, "reset forgets the latch")
     }
 
-    @Test func turnInto() {
+    @Test func aFileTurnsIntoAPDFAndKeepsEverything() {
         var file = NoteBlock(.file)
         file.props.source = "Attachments/report.pdf"
         file.props.caption = NoteText("Numbers")

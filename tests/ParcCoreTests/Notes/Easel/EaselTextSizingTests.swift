@@ -24,7 +24,7 @@ struct EaselTextSizingTests {
                                 lists: [.init(marker: "{disc}", options: 0, start: 1)])
     }
 
-    @Test func savedFields() {
+    @Test func unusedSizingFieldsStayOutOfSavedBytes() {
         do {
             let plain = String(decoding: try JSONEncoder().encode(EaselTextStyle()), as: UTF8.self)
             #expect(!plain.contains("customSize") && !plain.contains("autoWidth"), "Unused sizing fields stay out of saved bytes")
@@ -39,7 +39,7 @@ struct EaselTextSizingTests {
         } catch { Issue.record("Text style coding failed: \(error)") }
     }
 
-    @Test @MainActor func validation() {
+    @Test @MainActor func validSizingFieldsSaveAndInvalidOnesAreRefused() {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("easel-text-sizing-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         do {
@@ -143,7 +143,7 @@ struct EaselTextSizingTests {
         #expect(EaselChords.reserved.allSatisfy { EaselChords.table[$0] == nil }, "Alignment chords stay clear of Parc's reserved chords")
     }
 
-    @Test func handles() throws {
+    @Test func textHasNoTopOrBottomHandle() throws {
         let frame = EaselRect(x: 0, y: 0, width: 200, height: 28)
         let texts = [text(frame)]
         for handle in [EaselResizeHandle.top, .bottom] {
@@ -245,7 +245,7 @@ struct EaselTextSizingTests {
         #expect(EaselTextSizing.sizeLabel(for: EaselTextStyle(customSize: 36)) == "36 pt", "Custom sizes show their points")
     }
 
-    @Test func sizeControls() {
+    @Test func biggerJumpsFromACustomSizeToTheNext() {
         let custom = EaselTextStyle(customSize: 36)
         #expect(EaselTextSizing.stepped(custom, by: 1) == EaselTextStyle(size: .h1), "Bigger jumps from a custom size to the next preset")
         #expect(EaselTextSizing.stepped(custom, by: -1) == EaselTextStyle(size: .h2), "Smaller jumps to the preset below")
@@ -261,7 +261,7 @@ struct EaselTextSizingTests {
         #expect(EaselTextStyle.Size.allCases.map(\.title) == ["Body", "Heading 2", "Heading 1", "Title", "Display"], "Size names match the menu")
     }
 
-    @Test func textColor() throws {
+    @Test func textColoursItsInkAndEveryRun() throws {
         let font = EaselRichText.Font(name: ".AppleSystemUIFont", size: 15)
         func rich(_ ink: String, semantic: EaselRichText.SemanticInk? = nil) -> EaselRichText {
             EaselRichText(runs: [.init(location: 0, length: 5, attributes: .init(font: font, ink: ink, semanticInk: semantic))])

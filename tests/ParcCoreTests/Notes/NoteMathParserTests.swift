@@ -208,7 +208,7 @@ import Testing
         for bond in ["~", "~-", "~=", "~--", "-~-", "...", "...."] { _ = try parse("\\ce{C\\bond{\(bond)}C}") }
     }
 
-    @Test func katexEnvironments() throws {
+    @Test func alignatTakesItsColumnPairs() throws {
         guard case .environment(let alignat)? = try parse("\\begin{alignat}{2} a &= b & c &= d \\\\ e &= f \\end{alignat}").first else {
             Issue.record("alignat parses")
             return
@@ -278,7 +278,7 @@ import Testing
         #expect(dashed.rowRules == [1, 2] && dashed.rowRuleDashes == [true, false], "hdashline draws a dashed row rule")
     }
 
-    @Test func commutativeDiagrams() throws {
+    @Test func cdKeepsObjectAndArrowRows() throws {
         let source = "\\begin{CD} A @>a>b> B \\\\ @VcVdV @AAA \\\\ C @<<< D @= E \\\\ @| @. \\\\ \\end{CD}"
         guard case .environment(let diagram)? = try parse(source).first else { Issue.record("CD parses"); return }
         #expect(diagram.kind == .commutativeDiagram && diagram.rows.count == 4 && diagram.arrows.count == 4, "CD keeps object and arrow rows")
@@ -376,7 +376,7 @@ import Testing
         #expect(try parse("a \\bmod b").count == 3, "bmod")
     }
 
-    @Test func delimiters() throws {
+    @Test func leftRight() throws {
         #expect(try parse("\\left( x \\right)") == [.fenced(left: "(", right: ")", middles: [], segments: [[.char("x", .ord)]])], "left right")
         #expect(try parse("\\left\\{ x \\middle| y \\right.") == [.fenced(left: "{", right: nil, middles: ["|"],
                                                                      segments: [[.char("x", .ord)], [.char("y", .ord)]])], "middle and null")
@@ -392,7 +392,7 @@ import Testing
         #expect(try parse("\\Bigg\\uparrow") == [.sizedDelimiter("↑", size: 4, kind: .ord)], "Bigg arrow")
     }
 
-    @Test func environments() throws {
+    @Test func pmatrixDelimiters() throws {
         guard case .environment(let matrix)? = try parse("\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}").first else {
             Issue.record("pmatrix parses")
             return
@@ -498,7 +498,7 @@ import Testing
         #expect(try parse("\\mathrel{x}\\mathbin{y}") == [.classed(.rel, [.char("x", .ord)]), .classed(.bin, [.char("y", .ord)])], "math classes")
     }
 
-    @Test func macros() throws {
+    @Test func newcommandWithoutArguments() throws {
         #expect(try parse("\\newcommand{\\RR}{\\mathbb{R}} \\RR^n") == parse("\\mathbb{R}^n"), "newcommand without arguments")
         #expect(try parse("\\newcommand\\sq[1]{#1^2} \\sq{a}+\\sq b") == parse("a^2+b^2"), "argument count with braced and bare arguments")
         #expect(try parse("\\newcommand{\\pair}[2][0]{(#1,#2)} \\pair{x} \\pair[1]{y}") == parse("(0,x) (1,y)"), "optional argument with a default")
@@ -526,7 +526,7 @@ import Testing
         #expect(try parse("% \\def\\a{b}\n a") == parse("a"), "definitions in comments are ignored")
     }
 
-    @Test func macroErrors() throws {
+    @Test func runawayRecursionIsCaughtAtTheCall() throws {
         let loop = try failure("\\def\\a{\\a}\\a")
         #expect(loop.message == "\\a keeps expanding (over 1,000 times). Is it calling itself?" && loop.offset == 10 && loop.length == 2, "runaway recursion is caught at the call: \(loop.message) \(loop.offset) \(loop.length)")
         #expect(try failure("\\def\\a{\\a\\a}\\a").message.hasPrefix("\\a keeps expanding"), "exponential recursion is caught")
@@ -548,7 +548,7 @@ import Testing
         #expect(try failure("\\newcommand{\\z}{x").message == "Missing } to close this {", "unclosed definition")
     }
 
-    @Test func delimitedParameters() throws {
+    @Test func delimitersAroundAndBetweenParameters() throws {
         #expect(try parse("\\def\\pt(#1,#2){#1+#2}\\pt(a,b)") == parse("a+b"), "delimiters around and between parameters")
         #expect(try parse("\\def\\foo#1.{[#1]}\\foo abc.d") == parse("[abc]d"), "an argument runs to its delimiter")
         #expect(try parse("\\def\\foo#1.{[#1]}\\foo {a.b}.") == parse("[a.b]"), "braces hide the delimiter and come off")
@@ -570,7 +570,7 @@ import Testing
         #expect(try failure("\\def\\foo#1}{x}").message == "\\def\\foo has a } before its definition starts", "stray brace in parameter text")
     }
 
-    @Test func expansionPrimitives() throws {
+    @Test func expandafterExpandsTheSecondTokenFirst() throws {
         #expect(try parse("\\def\\a{x.y}\\def\\b#1.{[#1]}\\expandafter\\b\\a") == parse("[x]y"), "expandafter expands the second token first")
         #expect(try failure("\\def\\a{x.y}\\def\\b#1.{[#1]}\\b\\a").message.hasPrefix("\\b never finds"), "without expandafter the macro sees \\a")
         #expect(try parse("\\def\\a{1}\\def\\b{\\a}\\def\\c#1.{[#1]}\\expandafter\\expandafter\\expandafter\\c\\b.") == parse("[1]"), "expandafter chains expand twice")
@@ -593,7 +593,7 @@ import Testing
         #expect(try parse("% \\csname alpha\\endcsname\n a") == parse("a"), "primitives in comments are ignored")
     }
 
-    @Test func cellScopes() throws {
+    @Test func aDefinitionWorksInItsOwnCell() throws {
         #expect(try parse("\\begin{matrix}\\def\\x{1}\\x & 2\\end{matrix}") == parse("\\begin{matrix}1 & 2\\end{matrix}"), "a definition works in its own cell")
         #expect(try failure("\\begin{matrix}\\def\\x{1}\\x & \\x\\end{matrix}").message == "Unknown command \\x", "a definition ends with its cell")
         #expect(try failure("\\begin{aligned} \\def\\y{a} \\y \\\\ \\y \\end{aligned}").message == "Unknown command \\y", "a new row starts fresh")
@@ -605,7 +605,7 @@ import Testing
         #expect(try parse("\\begin{matrix}{\\def\\s{1}\\s} & 2\\end{matrix}") == parse("\\begin{matrix}{1} & 2\\end{matrix}"), "groups still work inside cells")
     }
 
-    @Test func chemistry() throws {
+    @Test func subscriptedFormula() throws {
         #expect(try parse("\\ce{H2O}") == parse("{\\mathrm{H}_{2}\\mathrm{O}}"), "subscripted formula")
         #expect(try parse("\\ce{Fe2(SO4)3}") == parse("{\\mathrm{Fe}_{2}(\\mathrm{S}\\mathrm{O}_{4})_{3}}"), "parentheses take subscripts")
         #expect(try parse("\\ce{SO4^2-}") == parse("{\\mathrm{S}\\mathrm{O}_{4}^{2-}}"), "charge over a subscript")
@@ -647,7 +647,7 @@ import Testing
         #expect(try failure("\\ce").message == "\\ce needs {…} after it", "ce needs an argument")
     }
 
-    @Test func mhchemManual() throws {
+    @Test func bondCommandsMatchBondCharacters() throws {
         #expect(try parse("\\ce{A\\bond{-}B\\bond{=}C\\bond{#}D}") == parse("\\ce{A-B=C#D}"), "bond commands match bond characters")
         #expect(try parse("\\ce{A\\bond{1}B\\bond{2}C\\bond{3}D}") == parse("\\ce{A-B=C#D}"), "numbered bonds")
         for bond in ["~", "~-", "~=", "~--", "-~-", "...", "....", "->", "<-"] {
@@ -685,7 +685,7 @@ import Testing
         #expect(try parse("\\pu{3 m^{-2}}") == parse("{3~\\mathrm{m}^{-2}}"), "braced exponents")
     }
 
-    @Test func units() throws {
+    @Test func numberAndUnit() throws {
         #expect(try parse("\\pu{123 kJ/mol}") == parse("{123~\\mathrm{kJ}/\\mathrm{mol}}"), "number and unit")
         #expect(try parse("\\pu{1.2e3 kJ}") == parse("{1.2\\cdot 10^{3}~\\mathrm{kJ}}"), "lowercase e uses a dot")
         #expect(try parse("\\pu{1.2E-3 kJ}") == parse("{1.2\\times 10^{-3}~\\mathrm{kJ}}"), "capital E uses a cross")
@@ -701,7 +701,7 @@ import Testing
         #expect(try parse("\\pu{5 µm}") == parse("{5~\\mu \\mathrm{m}}"), "micro sign")
     }
 
-    @Test func tags() throws {
+    @Test func tagWrapsItsLabelInParentheses() throws {
         let plain = try equation("E = mc^2 \\tag{1}")
         #expect(try plain.tag == [.text("(1)", .roman)] && plain.nodes == parse("E = mc^2"), "tag wraps its label in parentheses")
         #expect(try equation("x \\tag*{A.1}").tag == [.text("A.1", .roman)], "tag* keeps the label as written")
@@ -741,7 +741,7 @@ import Testing
         #expect(try equation("\\newcommand{\\eq}[1]{\\tag{#1}} x \\eq{7}").tag == [.text("(7)", .roman)], "tags from macros")
     }
 
-    @Test func labels() throws {
+    @Test func labelsAttachToRowNumbersAndTags() throws {
         let numbered = try equation("\\begin{align} a &= b \\label{first} \\\\ c &= d \\tag{x}\\label{second} \\\\ e \\label{third} \\end{align}")
         #expect(numbered.labels == [NoteMathLabel(key: "first", target: .automatic(1)), NoteMathLabel(key: "second", target: .tag([.text("x", .roman)])),
                                    NoteMathLabel(key: "third", target: .automatic(2))] && numbered.automaticNumbers == 2, "labels attach to row numbers and tags: \(numbered.labels)")
@@ -775,7 +775,7 @@ import Testing
         #expect(try failure("\\eqref{}").message == "\\eqref needs a label, like \\eqref{eq:energy}", "references need a key")
     }
 
-    @Test func errors() throws {
+    @Test func missingArgumentMessage() throws {
         let missingArgument = try failure("\\frac{a}")
         #expect(missingArgument.message == "\\frac needs 2 arguments", "missing argument message: \(missingArgument.message)")
         let double = try failure("x^2^3")

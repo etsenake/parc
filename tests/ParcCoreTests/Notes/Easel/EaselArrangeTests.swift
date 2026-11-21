@@ -19,7 +19,7 @@ struct EaselArrangeTests {
         document?.items.first { $0.id == id }?.frame
     }
 
-    @Test func historySelection() {
+    @Test func undoingAMoveSelectsTheMovedObject() {
         let a = box(0, 0), b = box(300, 0)
         var arrow = box(100, 50, 200, 1, kind: .arrow)
         arrow.startConnection = EaselConnection(itemID: a.id, side: nil, anchor: nil)
@@ -47,7 +47,7 @@ struct EaselArrangeTests {
         #expect(EaselArrange.historySelection(from: dragged, to: framed) == [section.id], "Undoing a section move selects the section without its contents")
     }
 
-    @Test func alignment() {
+    @Test func alignLeftLinesEveryObjectUpWithTheLeftmost() {
         let a = box(10, 10), b = box(200, 50, 50, 50), c = box(90, 300, 300, 20)
         let board = document([a, b, c])
         let ids: Set<UUID> = [a.id, b.id, c.id]
@@ -92,7 +92,7 @@ struct EaselArrangeTests {
         #expect(bentResult?.items.first { $0.id == bent.id }?.waypoints == [EaselPoint(x: 15, y: 450)], "Manual bends travel with a free arrow")
     }
 
-    @Test func distribution() {
+    @Test func distributeLeavesEqualGapsBetweenNeighbours() {
         let a = box(0, 0, 100), b = box(130, 0, 20), c = box(500, 0, 60)
         let board = document([c, a, b])
         let result = EaselArrange.distributed(board, ids: [a.id, b.id, c.id], along: .horizontal)
@@ -111,7 +111,7 @@ struct EaselArrangeTests {
         #expect(ys.count == 3 && near(ys[1], 130), "Vertical distribution spaces rows evenly")
     }
 
-    @Test func tidying() {
+    @Test func tidyUpStartsTheGridAtTheSelectionsCorner() {
         let a = box(0, 0), b = box(300, 10), c = box(10, 300), d = box(320, 290)
         let board = document([d, c, b, a])
         let tidy = EaselArrange.tidied(board, ids: [a.id, b.id, c.id, d.id])
@@ -128,7 +128,7 @@ struct EaselArrangeTests {
         #expect(EaselArrange.canTidy([a.id, b.id, c.id], in: board), "Three stickies can be tidied")
     }
 
-    @Test func layering() {
+    @Test func bringToFrontPutsTheSelectionOnTop() {
         let a = box(0, 0, z: 1), b = box(50, 50, z: 2), c = box(500, 500, z: 3), d = box(60, 60, z: 4)
         let board = document([a, b, c, d])
         func order(_ document: EaselDocument?) -> [UUID] { document.map { EaselArrange.paintOrder($0).map(\.id) } ?? [] }
@@ -158,7 +158,7 @@ struct EaselArrangeTests {
         #expect(raised.suffix(2) == [b.id, stuck.id], "Things stuck on an object come along to the front and stay on top of it")
     }
 
-    @Test func grouping() throws {
+    @Test func groupingTagsEveryChosenObject() throws {
         let a = box(0, 0), b = box(200, 0), c = box(400, 0)
         let board = document([a, b, c])
         let id = UUID()
@@ -178,7 +178,7 @@ struct EaselArrangeTests {
         #expect(EaselArrange.sharedGroup([a.id], in: grouped) == id && EaselArrange.sharedGroup([a.id, c.id], in: grouped) == nil, "Shift-Return finds the group shared by the selection")
     }
 
-    @Test func locking() throws {
+    @Test func lockMarksTheObject() throws {
         let a = box(0, 0), b = box(10, 10)
         let board = document([a, b])
         let locked = try #require(EaselArrange.settingLock(true, ids: [a.id], in: board), "Locking changes the board")
@@ -192,7 +192,7 @@ struct EaselArrangeTests {
         #expect(!EaselArrange.canGroup([a.id, b.id], in: locked), "Locked objects stay out of new groups")
     }
 
-    @Test func duplication() throws {
+    @Test func everyCopyGetsAFreshUniqueID() throws {
         var a = box(0, 0, z: 3), b = box(200, 0, z: 1)
         let group = UUID(); a.groupID = group; b.groupID = group
         let outside = box(600, 600, z: 2)
@@ -235,7 +235,7 @@ struct EaselArrangeTests {
                && EaselArrange.axisLocked(EaselPoint(x: 3, y: -10), when: false) == EaselPoint(x: 3, y: -10), "Shift-drag keeps only the dominant direction")
     }
 
-    @Test func pastePlacement() {
+    @Test func pasteCentresOnThePointer() {
         let content = EaselRect(x: 100, y: 100, width: 200, height: 100)
         let viewport = EaselRect(x: 0, y: 1000, width: 800, height: 600)
         #expect(EaselArrange.pasteOffset(content: content, anchor: .pointer(EaselPoint(x: 500, y: 400)), viewport: viewport)
@@ -247,7 +247,7 @@ struct EaselArrangeTests {
         #expect(EaselArrange.pasteOffset(content: content, anchor: .viewport, viewport: viewport) == EaselPoint(x: 200, y: 1150), "Without a pointer or source, paste lands in the middle of the view")
     }
 
-    @Test func clipboard() {
+    @Test func copyKnowsWhichPicturesToBring() {
         var a = box(0, 0, kind: .image, z: 2), b = box(200, 0, z: 1)
         a.assetID = "11111111-1111-1111-1111-111111111111.png"
         let group = UUID(); a.groupID = group; b.groupID = group
@@ -289,7 +289,7 @@ struct EaselArrangeTests {
         #expect(EaselArrange.duplicating([d.id], in: document([d])) != nil, "A lone object duplicates")
     }
 
-    @Test func selectionRules() {
+    @Test func aClickPicksTheGroupsUnlockedMembers() {
         let group = UUID()
         var a = box(0, 0), b = box(200, 0), locked = box(400, 0)
         a.groupID = group; b.groupID = group; locked.groupID = group; locked.locked = true
@@ -325,7 +325,7 @@ struct EaselArrangeTests {
         #expect(!EaselChords.applies(.alignText(.left), selection: [a.id], in: board), "Other features' chords decide for themselves")
     }
 
-    @Test func chords() {
+    @Test func dDuplicates() {
         func chord(_ characters: String, _ keyCode: UInt16, _ modifiers: EaselKeyModifiers) -> EaselChordCommand? {
             EaselChords.command(characters: characters, keyCode: keyCode, modifiers: modifiers)
         }

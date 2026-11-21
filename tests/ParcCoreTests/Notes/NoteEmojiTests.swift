@@ -181,7 +181,7 @@ import Testing
     }
 
 
-    @Test func missingFile() {
+    @Test func aMissingFileIsAnEmptyCatalog() {
         let catalog = NoteEmojiCatalog(url: URL(fileURLWithPath: "/nonexistent/emoji.json"))
         #expect(!catalog.isLoaded && catalog.all.isEmpty && catalog.search("smile").isEmpty && catalog.random() == nil, "a missing file is an empty catalog, not a crash")
         let broken = NoteEmojiCatalog(data: Data("{".utf8))
@@ -221,7 +221,7 @@ import Testing
     }
 
     @Test func missingFile2() {
-        missingFile()
+        aMissingFileIsAnEmptyCatalog()
     }
 
     struct SeededGenerator: RandomNumberGenerator {

@@ -28,7 +28,7 @@ struct EaselTableTests {
         #expect(filled([["a", ""]]).accessibilitySummary == "2 columns, 1 row, 1 filled", "VoiceOver hears how much is filled")
     }
 
-    @Test func coding() {
+    @Test func tablesWithoutMergesLeaveTheFieldOut() {
         var table = filled([["Name", "Age"], ["Ada", ""]])
         table.cells[1][1].fill = "#FAE7D5"
         let data = try! JSONEncoder().encode(table)
@@ -52,7 +52,7 @@ struct EaselTableTests {
         #expect(EaselItemKind(rawValue: "table") == .table && !EaselItemKind.table.holdsText, "Tables are their own kind and keep text in cells")
     }
 
-    @Test func validation() {
+    @Test func aPlainTableIsValid() {
         var table = filled([["a", "b"], ["c", "d"]])
         #expect((try? table.validate()) != nil, "A plain table is valid")
         var ragged = table
@@ -97,7 +97,7 @@ struct EaselTableTests {
         rejects(tooMany, "More than 10,000 cells are refused")
     }
 
-    @Test @MainActor func documentValidation() {
+    @Test @MainActor func aDocumentWithATableSaves() {
         let date = Date(timeIntervalSinceReferenceDate: 1000)
         var document = EaselDocument(id: UUID(), title: "Board", createdAt: date, modifiedAt: date)
         var good = EaselTableGeometry.item(columns: 2, rows: 2, frame: EaselRect(x: 10, y: 10, width: 200, height: 80), zIndex: 1)
@@ -161,7 +161,7 @@ struct EaselTableTests {
         #expect(copy.duplicateColumns(1...1) && copy.columnCount == 3 && copy.cells[0][2].text == "b", "Columns duplicate to the right")
     }
 
-    @Test func moving() {
+    @Test func rowsMove() {
         var table = filled([["1"], ["2"], ["3"], ["4"]])
         let hoisted160 = table.moveRows(0...0, to: 2)
         #expect(hoisted160, "Rows move")
@@ -197,7 +197,7 @@ struct EaselTableTests {
                && sideways.merges == [EaselTableMerge(row: 0, column: 0, rowSpan: 1, columnSpan: 2)], "Column moves keep merges whole")
     }
 
-    @Test func merging() {
+    @Test func mergingNeedsTwoOrMoreCells() {
         var table = filled([["a", "b", "c"], ["d", "e", "f"]])
         let range = EaselTableRange(cell(0, 0), cell(1, 1))
         #expect(table.canMerge(range) && !table.canMerge(EaselTableRange(cell(0, 0))), "Merging needs two or more cells")
@@ -224,7 +224,7 @@ struct EaselTableTests {
         #expect(hoisted214, "Clearing an empty table changes nothing")
     }
 
-    @Test func navigation() {
+    @Test func tabWrapsToTheNextRow() {
         var table = filled([["a", "b", "c"], ["d", "e", "f"]])
         #expect(table.tab(from: cell(0, 2), backward: false) == .cell(cell(1, 0)), "Tab wraps to the next row")
         #expect(table.tab(from: cell(1, 2), backward: false) == .appendRow, "Tab in the last cell adds a row")
@@ -239,7 +239,7 @@ struct EaselTableTests {
         #expect(table.extended(cell(1, 2), .down) == cell(1, 2) && table.extended(cell(0, 0), .right) == cell(0, 1), "Shift-arrows grow within bounds")
     }
 
-    @Test func pasting() {
+    @Test func pastingReportsWhereItLanded() {
         var table = filled([["a", "b"], ["c", "d"]])
         let source = filled([["1", "2", "3"], ["4", "5", "6"]])
         let area = table.paste(source, at: cell(1, 1))
@@ -265,7 +265,7 @@ struct EaselTableTests {
         #expect(slice?.cells.map { $0.map(\.text) } == [["b", "c"], ["e", "f"]], "Slices copy a block of cells")
     }
 
-    @Test func sizing() {
+    @Test func columnsStopAtTheMinimumWidth() {
         var table = EaselTable.blank(columns: 2, rows: 2, columnWidth: 100, rowHeight: 40)
         #expect(table.setWidth(10, column: 0) && table.columnWidths[0] == EaselTable.minimumColumnWidth, "Columns stop at the minimum width")
         #expect(table.setHeight(10, row: 0, minimum: 50) && table.rowHeights[0] == 50, "Rows stop at their content")
@@ -298,7 +298,7 @@ struct EaselTableTests {
         #expect(far.columns == 12 && far.rows == 24, "Dragged tables stay a sensible size")
     }
 
-    @Test func layout() {
+    @Test func edgesAddUpFromTheFrame() {
         var table = filled([["a", "b", "c"], ["d", "e", "f"]])
         table.columnWidths = [100, 50, 100]
         table.rowHeights = [40, 60]
@@ -324,7 +324,7 @@ struct EaselTableTests {
         #expect(EaselTableLayout.index(of: 260, in: grid.columnEdges) == nil && EaselTableLayout.index(of: 259.9, in: grid.columnEdges) == 2, "Edges are half open")
     }
 
-    @Test func parsing() {
+    @Test func csvHandlesQuotesCommasNewlinesAndCRLF() {
         let quoted = EaselTableData.delimited("a,\"b,c\",\"say \"\"hi\"\"\"\r\n\"multi\nline\",x,\r\n", separator: ",")
         #expect(quoted.cells == [["a", "b,c", "say \"hi\""], ["multi\nline", "x", ""]], "CSV handles quotes, commas, newlines and CRLF")
         #expect(EaselTableData.delimited("", separator: ",").cells.isEmpty, "Empty text has no rows")
@@ -372,7 +372,7 @@ struct EaselTableTests {
         #expect(EaselTableData.clipped("héllo", bytes: 2) == "h", "Clipping never splits a character")
     }
 
-    @Test func exporting() {
+    @Test func csvQuotesWhatItMust() {
         var table = filled([["Name", "Note"], ["Ada", "said \"hi\", then\nleft"]])
         #expect(EaselTableData.csv(table) == "Name,Note\r\nAda,\"said \"\"hi\"\", then\nleft\"\r\n", "CSV quotes what it must")
         #expect(EaselTableData.tsv(table, range: EaselTableRange(cell(0, 0), cell(1, 0))) == "Name\nAda\n", "TSV exports a chosen range")
@@ -393,7 +393,7 @@ struct EaselTableTests {
         #expect(svg.contains("var(--easel-card)") && svg.contains("var(--easel-card-line)"), "Table chrome follows light and dark")
     }
 
-    @Test func stickies() {
+    @Test func eachFilledCellBecomesASticky() {
         var item = EaselTableGeometry.item(columns: 2, rows: 2, frame: EaselRect(x: 50, y: 60, width: 200, height: 72), zIndex: 4)
         item.table?.cells[0][0].text = "Idea"
         item.table?.cells[1][1].text = "Other"

@@ -45,7 +45,7 @@ struct NoteUnsplashTests {
         return Dictionary(items.map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { _, last in last })
     }
 
-    @Test func api() throws {
+    @Test func thePhotographersNameComesFromTheUser() throws {
         let photo = try photo()
         #expect(photo.photographer == "Jane \"JJ\" Doe", "the photographer's name comes from the user")
         #expect(abs(photo.aspectRatio - 1.5) < 0.0001, "the aspect ratio follows the pixel size")
@@ -116,7 +116,7 @@ struct NoteUnsplashTests {
         #expect(NoteUnsplash.accessKey(defaults: defaults) == nil, "a blank key keeps it off")
     }
 
-    @Test func credits() throws {
+    @Test func theCreditNamesAndLinksThePhotographer() throws {
         let credit = NoteUnsplash.credit(for: try photo())
         #expect(credit == NoteMediaCredit(name: "Jane \"JJ\" Doe", link: "https://unsplash.com/@jane"), "the credit names and links the photographer")
         #expect(credit.sentence == "Photo by Jane \"JJ\" Doe on Unsplash", "the credit reads like Unsplash asks")
@@ -135,7 +135,7 @@ struct NoteUnsplashTests {
         #expect(NoteMediaCredit(name: " Sam ", link: " ").link == nil, "blank links are dropped")
     }
 
-    @Test func markdown() throws {
+    @Test func theCreditRidesInTheBlocksParcCommentN() throws {
         var block = NoteBlock(.image)
         block.props.source = "Attachments/Photo%20by%20Jane.jpg"
         block.props.alt = "A mountain lake"
@@ -156,7 +156,7 @@ struct NoteUnsplashTests {
         #expect(paragraph.blocks.first?.props.credit == nil, "text blocks don't take credits")
     }
 
-    @Test func frontMatter() throws {
+    @Test func coverCreditsSitRightUnderTheCoverN() throws {
         var page = NotePage(blocks: [NoteBlock.paragraph(NoteText("Body"))])
         page.settings.cover = NoteCover(source: "Attachments/Photo by Jane.jpg", position: 0.3,
                                         credit: NoteMediaCredit(name: "1999", link: "https://unsplash.com/@jane"))
@@ -178,7 +178,7 @@ struct NoteUnsplashTests {
         #expect(NotePropertyEditing.reservedKeys.isSuperset(of: ["cover-credit", "cover-credit-url"]), "people can't make properties that shadow the credit")
     }
 
-    @Test func html() throws {
+    @Test func exportedImagesCreditThePhotographerUnderTheCaptionN() throws {
         var block = NoteBlock(.image)
         block.props.source = "https://images.unsplash.com/photo.jpg"
         block.props.caption = NoteText("Morning")

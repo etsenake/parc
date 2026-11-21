@@ -4,7 +4,7 @@ import Testing
 @testable import ParcCore
 
 @MainActor struct PageUndoTests: NoteFixtures {
-    @Test func typingCoalesces() {
+    @Test func quickTypingInOneBlockIsOneStep() {
         let clock = NoteTestClock()
         let session = makeSession([para(""), para("other")], clock: clock)
         let first = session.page.blocks[0].id
@@ -206,7 +206,7 @@ import Testing
         expectOutline(session.page, "p x", "unlocked, undo works again")
     }
 
-    @Test func changeNotifications() {
+    @Test func aMoveReportsTheOldParentTheMovedBlock() {
         let session = makeSession([para("a"), bullet("b", [bullet("c")]), para("d")])
         var received: [NotePageChange] = []
         let subscription = session.changes.sink { received.append($0) }
@@ -234,7 +234,7 @@ import Testing
         subscription.cancel()
     }
 
-    @Test func adjustmentsCoalesce() {
+    @Test func aColumnDragIsOneUndoStep() {
         let clock = NoteTestClock()
         let session = makeSession([columns([[para("l")], [para("r")]])], clock: clock)
         let group = session.page.blocks[0].id

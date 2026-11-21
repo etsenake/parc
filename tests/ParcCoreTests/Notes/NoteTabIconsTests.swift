@@ -49,7 +49,7 @@ extension NoteProcessWide {
         folderSignals[(NoteTabIcons.key(url) as NSString).deletingLastPathComponent]?.send()
     }
 
-    @Test func parsing() {
+    @Test func aPlainEmojiIsAnIcon() {
         let base = URL(fileURLWithPath: "/Users/me/Notes/Plan.md")
         let resolve: (String) -> URL? = { value in
             value.hasPrefix("https://") ? URL(string: value) : base.deletingLastPathComponent().appendingPathComponent(value)
@@ -141,7 +141,7 @@ extension NoteProcessWide {
         #expect(heard.last ?? nil == [NoteTabIcons.key(first), NoteTabIcons.key(second)], "and name every note")
     }
 
-    @Test func liveSessions() throws {
+    @Test func followingASessionReadsItsLiveSettings() throws {
         let icons = freshIcons()
         var heard: [Set<String>?] = []
         let watch = icons.changes.sink { heard.append($0) }
@@ -182,7 +182,7 @@ extension NoteProcessWide {
         #expect(icons.follow(plain) == nil, "text sessions never show an icon")
     }
 
-    @Test func backgroundReads() async throws {
+    @Test func aColdLookupWaitsForTheBackgroundRead() async throws {
         let icons = freshIcons()
         NoteTabIcons.clock = NoteFileSystemClock.shared
         NoteTabIcons.worker = NoteFileWorker(label: "org.parc.tests.tab-icons")
@@ -207,7 +207,7 @@ extension NoteProcessWide {
         #expect(heard.count == 2, "two quick folder changes still announce once")
     }
 
-    @Test func followedFolders() throws {
+    @Test func followingReadsTheLiveIcon() throws {
         let icons = freshIcons()
         let url = note("Followed/Open.md", iconNote("🦉"))
         let folderKey = (NoteTabIcons.key(url) as NSString).deletingLastPathComponent
@@ -232,7 +232,7 @@ extension NoteProcessWide {
         clock.advance(0)
     }
 
-    @Test func staleReads() async throws {
+    @Test func theColdReadIsStuckInTheBackground() async throws {
         let icons = freshIcons()
         let gate = DispatchSemaphore(value: 0)
         NoteTabIcons.clock = NoteFileSystemClock.shared

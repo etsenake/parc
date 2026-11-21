@@ -5,7 +5,7 @@ import Testing
 @MainActor struct NoteEaselBlockTests {
     let id = UUID(uuidString: "6F1C2A4E-9B1D-4C55-8E0A-3D2B1C0F9A77")!
 
-    @Test func pageKeys() {
+    @Test func pageKeysAreStableForTheSameBlock() {
         let block = UUID(uuidString: "0A1B2C3D-4E5F-6071-8293-A4B5C6D7E8F9")!
         let other = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
         let key = NoteEaselPageKey.key(block: block, item: id)
@@ -15,7 +15,7 @@ import Testing
         #expect(NoteEaselPageKey.key(block: other, item: id) != key, "the same Easel in two blocks gets two pages")
     }
 
-    @Test func documentDrags() {
+    @Test func dragsRoundTripOnOneTitleLine() {
         let easel = NoteDocumentDrag(address: NoteEaselAddress.address(id), title: "Mood\nboard")
         let decoded = NoteDocumentDrag(encoded: easel.encoded)
         #expect(decoded?.address == NoteEaselAddress.address(id) && decoded?.title == "Mood board", "drags round-trip on one title line")
@@ -27,7 +27,7 @@ import Testing
         #expect(NoteDocumentDrag(encoded: NoteEaselAddress.address(id))?.title == "", "a missing title stays empty")
     }
 
-    @Test func addresses() {
+    @Test func addressesUseTheEaselLinkFormLowercased() {
         #expect(NoteEaselAddress.address(id) == "parc://easel/6f1c2a4e-9b1d-4c55-8e0a-3d2b1c0f9a77", "addresses use the Easel link form, lowercased")
         #expect(NoteEaselAddress.id(from: "  PARC://Easel/6F1C2A4E-9B1D-4C55-8E0A-3D2B1C0F9A77\n") == id, "pasted links trim and ignore case")
         #expect(NoteEaselAddress.id(from: "parc://easel/not-a-uuid") == nil, "broken ids aren't Easels")
@@ -41,7 +41,7 @@ import Testing
         #expect(NoteEaselAddress.title(of: NoteEaselAddress.block(id: id, title: nil)) == "Easel", "untitled blocks say Easel")
     }
 
-    @Test func picker() {
+    @Test func anEmptySearchListsEveryEaselThenNewEasel() {
         let a = UUID(), b = UUID(), c = UUID()
         let easels = [NoteEaselPicker.Candidate(id: a, title: "Garden plans", itemCount: 3),
                       NoteEaselPicker.Candidate(id: b, title: "Plans", itemCount: 1),
@@ -57,7 +57,7 @@ import Testing
         #expect(NoteEaselPicker.choices(many, query: "board").count == NoteEaselPicker.limit + 1, "the list stays short")
     }
 
-    @Test func roundTrip() {
+    @Test func theEaselCommentMakesAnEaselBlock() {
         let source = "[Moodboard](parc://easel/6f1c2a4e-9b1d-4c55-8e0a-3d2b1c0f9a77) <!-- parc easel width=\"0.6\" height=\"560\" align=\"left\" -->\n"
         let page = NoteMarkdown.parse(source)
         #expect(page.blocks.count == 1 && page.blocks[0].kind == .easel, "the easel comment makes an Easel block")
@@ -82,14 +82,14 @@ import Testing
         #expect(NotePlainText.line(block) == "parc://easel/6f1c2a4e-9b1d-4c55-8e0a-3d2b1c0f9a77", "plain text keeps the address")
     }
 
-    @Test func sizing() {
+    @Test func easelsStartFullWidth() {
         #expect(NotePDFLayout.displayWidth(fraction: nil, columnWidth: 700) == 700, "Easels start full width")
         #expect(NotePDFLayout.displayWidth(fraction: 0.5, columnWidth: 700) == 350, "width is a fraction of the column")
         #expect(NotePDFLayout.storedFraction(width: 698, columnWidth: 700) == nil, "near full width snaps back to full")
         #expect(NotePDFLayout.storedFraction(width: 350, columnWidth: 700) == 0.5, "narrow widths store their fraction")
     }
 
-    @Test func exports() {
+    @Test func markdownExportsWriteAPlainLink() {
         let page = NoteMarkdown.parse("[Moodboard](parc://easel/6f1c2a4e-9b1d-4c55-8e0a-3d2b1c0f9a77) <!-- parc easel height=\"560\" -->\n")
         let portable = NoteMarkdown.serialize(page, purpose: .export)
         #expect(portable == "[Moodboard](parc://easel/6f1c2a4e-9b1d-4c55-8e0a-3d2b1c0f9a77)\n", "Markdown exports write a plain link")

@@ -246,7 +246,7 @@ import Testing
         #expect(grid.selectAllStep() == .blocks([id]), "then the table")
     }
 
-    @Test func captions() {
+    @Test func addingACaptionPutsTheCaret() {
         let session = makeSession([image(), divider()])
         let picture = session.page.blocks[0].id
         session.addCaption(to: picture)
@@ -262,7 +262,7 @@ import Testing
         #expect(session.selection == .blocks([picture]), "dividers don't take captions")
     }
 
-    @Test func segments() {
+    @Test func blockSegmentsIncludeCellsAndChildren() {
         let session = makeSession([para("ab"), table([["c", "de"], ["f", "g"]]), bullet("h", [bullet("ij")]), code("k"), para("lm")])
         let grid = session.page.blocks[1].id
         let fromBlocks = session.textSegments(of: .blocks([session.id("h"), grid]))

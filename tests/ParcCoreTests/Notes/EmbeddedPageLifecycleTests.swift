@@ -3,7 +3,7 @@ import Testing
 @testable import ParcCore
 
 @MainActor struct EmbeddedPageLifecycleTests {
-    @Test func gate() {
+    @Test func aFreshOwnerAdmitsPagesInputPublicationAndTransfer() {
         var gate = EmbeddedPageOwnerGate()
         #expect(gate.admitsCreation && gate.admitsInput && gate.publishesPages && gate.admitsTransferSnapshot, "a fresh owner admits pages, input, publication and transfer")
         let hoisted9 = gate.beginRetirement()
@@ -37,7 +37,7 @@ import Testing
         #expect(gate.admitsInput, "input stays a transfer and retirement gate, so disposal alone doesn't flip it")
     }
 
-    @Test func fingerprints() {
+    @Test func equalValuesMatch() {
         struct Layout: Equatable { var x: Int }
         #expect(EmbeddedPageFingerprint(Layout(x: 1)) == EmbeddedPageFingerprint(Layout(x: 1)), "equal values match")
         #expect(EmbeddedPageFingerprint(Layout(x: 1)) != EmbeddedPageFingerprint(Layout(x: 2)), "different values differ")
@@ -47,7 +47,7 @@ import Testing
         #expect(none != EmbeddedPageFingerprint(Layout(x: 1)), "a missing variant differs from a present one")
     }
 
-    @Test func sleep() {
+    @Test func pagesHiddenPastFourHoursFallAsleep() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let old = now.addingTimeInterval(-EmbeddedPageSleepPolicy.idleInterval - 1)
         let idle = EmbeddedPageSleepPolicy.Candidate(lastShown: old, shown: false, closing: false, transferring: false,

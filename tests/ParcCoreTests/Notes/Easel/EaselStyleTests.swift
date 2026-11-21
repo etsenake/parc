@@ -15,7 +15,7 @@ struct EaselStyleTests {
         EaselItem(kind: kind, frame: EaselRect(x: 0, y: 0, width: 120, height: 80))
     }
 
-    @Test func families() {
+    @Test func rectanglesAndEllipsesAreShapes() {
         #expect(EaselStyleFamily.of(item(.rectangle)) == .shapes && EaselStyleFamily.of(item(.circle)) == .shapes, "Rectangles and ellipses are shapes")
         #expect(EaselStyleFamily.of(item(.arrow)) == .lines && EaselStyleFamily.of(item(.text)) == .text, "Arrows are lines and text is text")
         #expect(EaselStyleFamily.of(item(.sticky)) == .stickies && EaselStyleFamily.of(item(.section)) == .sections, "Stickies and sections")
@@ -37,7 +37,7 @@ struct EaselStyleTests {
         #expect(EaselStyleFamily.lines.weight(forWidth: 2.9) == .medium && EaselStyleFamily.shapes.weight(forWidth: 0) == EaselStrokeWeight.none, "Widths show the nearest weight")
     }
 
-    @Test func controls() {
+    @Test func textShowsColourOnly() {
         let text = EaselStyleControls(items: [item(.text)])
         #expect(text?.colorRole == .ink && text?.fill == false && text?.weights.isEmpty == true && text?.dash == false, "Text shows colour only")
         let shapes = EaselStyleControls(items: [item(.rectangle), item(.circle)])
@@ -60,7 +60,7 @@ struct EaselStyleTests {
         #expect(cells.colors.count == 10 && !cells.fill && cells.weights.isEmpty && !cells.dash && !cells.labelBackground, "Hosts can ask for a colour-only picker in any role")
     }
 
-    @Test func colors() {
+    @Test func textTakesAColour() {
         var text = item(.text)
         text.richText = EaselRichText(runs: [
             .init(location: 0, length: 2, attributes: .init(font: .init(name: "Nunito", size: 15), ink: "#194B93FF")),
@@ -103,7 +103,7 @@ struct EaselStyleTests {
         #expect(!EaselStyle.apply(.color(.palette(.note(.red))), to: &picture) && picture.color == "#252525", "Images are skipped")
     }
 
-    @Test func fills() {
+    @Test func solidDerivesThePastelFromTheOutline() {
         var shape = item(.circle)
         shape.color = "#2C6C91"
         EaselStyle.apply(.fill(.solid), to: &shape)
@@ -134,7 +134,7 @@ struct EaselStyleTests {
         #expect(!EaselStyle.apply(.fill(.none), to: &sticky) && sticky.fillOpacity == nil, "Stickies stay opaque")
     }
 
-    @Test func lines() {
+    @Test func arrowsTakeWidthAndDots() {
         var arrow = item(.arrow)
         EaselStyle.apply(.weight(.thick), to: &arrow)
         EaselStyle.apply(.dash(.dotted), to: &arrow)
@@ -161,7 +161,7 @@ struct EaselStyleTests {
         #expect(!EaselStyle.apply(.labelBackground(true), to: &boxed) && boxed.labelBackground == nil, "Shapes have no label background")
     }
 
-    @Test func summaries() {
+    @Test func oneColourAcrossRolesReadsAsThatColour() {
         var blue = item(.rectangle)
         EaselStyle.apply(.color(.palette(.note(.blue))), to: &blue)
         var blueArrow = item(.arrow)
@@ -189,7 +189,7 @@ struct EaselStyleTests {
         #expect(EaselStyleSummary(items: [item(.sticky)]).color == .palette(EaselPalette.defaultSticky), "Plain stickies read as the default paper")
     }
 
-    @Test func memory() {
+    @Test func eachSessionStartsStickiesOnARandomNotesColour() {
         var dice = Dice(state: 7)
         let start = EaselStyleMemory.randomSticky(using: &dice)
         #expect(start.color.flatMap(EaselColorChoice.init(storage:)).map { choice -> Bool in

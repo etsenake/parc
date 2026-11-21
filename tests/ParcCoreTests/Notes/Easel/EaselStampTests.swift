@@ -35,7 +35,7 @@ struct EaselStampTests {
         (try? EaselSession(inMemory: document(items), assets: [:])) != nil
     }
 
-    @Test func faces() {
+    @Test func survivesATripThroughTheObject() {
         for design in EaselStampDesign.allCases {
             let face = EaselStampFace.design(design)
             #expect(EaselStampFace(item: stamp(face)) == face, "\(design.title) survives a trip through the object")
@@ -86,7 +86,7 @@ struct EaselStampTests {
         }
     }
 
-    @Test @MainActor func validation() {
+    @Test @MainActor func everyFaceSaves() {
         let plain = item(.rectangle, 10, 10, 100, 100)
         #expect(accepts([plain, stamp(.design(.heart)), stamp(.emoji("🎉")), stamp(.icon("cloud"))]), "Every face saves")
         var wrongKind = plain; wrongKind.stamp = "heart"
@@ -111,7 +111,7 @@ struct EaselStampTests {
         #expect(accepts([plain, tilted]), "Tilted, attached stamps save")
     }
 
-    @Test func savedFormat() {
+    @Test func objectsWithoutStampsLeaveTheFieldOut() {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let plain = item(.rectangle, 0, 0, 10, 10)
@@ -143,7 +143,7 @@ struct EaselStampTests {
         #expect([odd.x, odd.y, odd.width, odd.height].allSatisfy{ $0.isFinite } && odd.width == EaselStamps.sizes[0], "Bad input still lands sanely")
     }
 
-    @Test func tilt() {
+    @Test func tiltStaysAGentleLean() {
         var generator = Seeded(state: 42)
         var signs = Set<Bool>()
         for _ in 0..<200 {
@@ -216,7 +216,7 @@ struct EaselStampTests {
         #expect(!cleared.items.contains { $0.id == riding.id } && cleared.items.contains { $0.id == other.id }, "Deleting an object takes its stamps with it")
     }
 
-    @Test func stamping() {
+    @Test func stampingMakesAStamp() {
         let sticky = item(.sticky, 0, 0, 200, 200, z: 3)
         let doc = document([sticky])
         let heart = EaselStamps.stamped(.design(.heart), at: EaselPoint(x: 100, y: 100), tilt: -6.5, color: "#C0322D", in: doc)
@@ -262,7 +262,7 @@ struct EaselStampTests {
         #expect(EaselStamps.keyboardTargets([riding.id, sticky.id, other.id, locked.id, arrow.id], in: all) == [sticky.id, other.id], "⌘Return stamps each selected object once, through its stamps, never locked objects or connectors")
     }
 
-    @Test func recents() {
+    @Test func recentsMoveToTheFrontWithoutRepeats() {
         var list: [String] = []
         list = EaselStamps.recording(.emoji("🎉"), in: list)
         list = EaselStamps.recording(.design(.heart), in: list)
@@ -279,7 +279,7 @@ struct EaselStampTests {
         #expect(Set(EaselStamps.ring) == Set(EaselStampDesign.allCases) && EaselStamps.ring.count == 8, "The ring holds all eight stamps")
     }
 
-    @Test func icons() {
+    @Test func aGenerousIconSet() {
         let all = EaselStampIcons.all
         #expect(all.count >= 80, "A generous icon set")
         #expect(Set(all.map(\.symbol)).count == all.count, "Each icon appears once")
@@ -296,7 +296,7 @@ struct EaselStampTests {
         #expect(EaselStampIcons.icon(named: "cloud")?.title == "Cloud" && EaselStampIcons.icon(named: "nope") == nil, "Icons look up by symbol")
     }
 
-    @Test func artwork() {
+    @Test func hasARimShadowAndBody() {
         for design in EaselStampDesign.allCases {
             let layers = EaselStampArt.layers(design)
             #expect(layers.count >= 5, "\(design.title) has a rim, shadow and body")
@@ -326,7 +326,7 @@ struct EaselStampTests {
         #expect(ring.points.allSatisfy { hypot($0.x - 50, $0.y - 50) < 23 }, "Arcs hug their circle")
     }
 
-    @Test func vectorExport() {
+    @Test func builtInStampsExportAsVectorPaths() {
         let art = EaselVectorArt()
         var heart = stamp(.design(.heart)); heart.rotation = 8
         let heartSVG = EaselVectorExport.element(heart, art: art)
@@ -352,7 +352,7 @@ struct EaselStampTests {
         #expect(html.contains("easel-stamp") && html.contains("🎉"), "Stamps make it into the HTML page")
     }
 
-    @Test @MainActor func iconColour() throws {
+    @Test @MainActor func onlyIconStampsTakeAColour() throws {
         var cloud = stamp(.icon("cloud"))
         let party = stamp(.emoji("🎉")), heart = stamp(.design(.heart))
         #expect(EaselStyleFamily.of(cloud) == .icons && EaselStyleFamily.of(party) == nil && EaselStyleFamily.of(heart) == nil, "Only icon stamps take a colour")

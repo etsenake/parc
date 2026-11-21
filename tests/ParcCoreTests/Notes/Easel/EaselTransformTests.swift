@@ -24,7 +24,7 @@ struct EaselTransformTests {
         EaselDocument(id: UUID(), title: "Rotation", createdAt: Date(), modifiedAt: Date(), items: items)
     }
 
-    @Test func transforms() throws {
+    @Test func quarterTurnsUseExactCosines() throws {
         let quarter = EaselTransform.rotation(degrees: 90, around: EaselPoint(x: 0, y: 0))
         #expect(quarter.a == 0 && quarter.b == 1 && quarter.c == -1 && quarter.d == 0, "Quarter turns use exact cosines")
         #expect(near(quarter.apply(EaselPoint(x: 1, y: 0)), EaselPoint(x: 0, y: 1)), "Positive degrees turn clockwise on a top-down canvas")
@@ -40,7 +40,7 @@ struct EaselTransformTests {
         #expect(near(turn.applyVector(EaselPoint(x: 1, y: 0)), EaselPoint(x: cos(33 * .pi / 180), y: sin(33 * .pi / 180))), "Vectors ignore translation")
     }
 
-    @Test func kindRules() {
+    @Test func rotates() {
         for kind in [EaselItemKind.text, .image, .rectangle, .circle, .freehand, .stamp] {
             #expect(EaselRotation.isRotatable(kind), "\(kind) rotates")
         }
@@ -59,7 +59,7 @@ struct EaselTransformTests {
         #expect(!EaselRotation.isTransformed(text), "Text never mirrors")
     }
 
-    @Test func angles() {
+    @Test func anglesWrapPastAFullTurn() {
         #expect(EaselRotation.normalized(370) == 10, "Angles wrap past a full turn")
         #expect(EaselRotation.normalized(-190) == 170, "Negative angles wrap into range")
         #expect(EaselRotation.normalized(180) == 180 && EaselRotation.normalized(-180) == 180, "Half a turn reads as 180")
@@ -70,7 +70,7 @@ struct EaselTransformTests {
         #expect(EaselRotation.snapped(22) == 15 && EaselRotation.snapped(23) == 30 && EaselRotation.snapped(-8) == -15, "Drags land on 15° steps")
     }
 
-    @Test func itemGeometry() throws {
+    @Test func rotatedBoundsSwapAQuarterTurn() throws {
         let bar = item(.image, 0, 0, 100, 40, rotation: 90)
         #expect(near(EaselRotation.bounds(of: bar), EaselRect(x: 30, y: -30, width: 40, height: 100)), "Rotated bounds swap a quarter turn")
         let flipped = item(.image, 3, 4, 10, 20, flipH: true)
@@ -90,7 +90,7 @@ struct EaselTransformTests {
         #expect(EaselGeometryEdit.bounds(of: [item(.text, 1, 2, 3, 4), item(.text, 10, 20, 5, 5)]) == EaselRect(x: 1, y: 2, width: 14, height: 23), "Upright selection bounds stay exactly as before")
     }
 
-    @Test func hitTests() {
+    @Test func theTurnedTipIsHit() {
         let bar = item(.image, 0, 100, 200, 20, rotation: 90)
         #expect(EaselContentHitTest.contains(EaselPoint(x: 100, y: 15), item: bar, selected: false), "The turned tip is hit")
         #expect(!EaselContentHitTest.contains(EaselPoint(x: 10, y: 110), item: bar, selected: false), "The old upright corner is empty")
@@ -108,7 +108,7 @@ struct EaselTransformTests {
         #expect(!EaselContentHitTest.contains(EaselPoint(x: 5, y: 2), item: flippedStroke, selected: false), "A mirrored stroke misses its old side")
     }
 
-    @Test func marquee() {
+    @Test func aBoxInTheEmptyCornerOfATurned() {
         let diamond = item(.image, 0, 0, 100, 100, rotation: 45)
         #expect(!EaselContentHitTest.intersects(EaselRect(x: 0, y: 0, width: 12, height: 12), item: diamond, selected: false), "A box in the empty corner of a turned square misses it")
         #expect(EaselContentHitTest.intersects(EaselRect(x: 45, y: -25, width: 10, height: 10), item: diamond, selected: false), "A box over the turned tip catches it")
@@ -120,7 +120,7 @@ struct EaselTransformTests {
         #expect(picked == [diamond.id], "Marquee selection follows turned outlines")
     }
 
-    @Test func rotatedResize() throws {
+    @Test func aSingleTurnedObjectResizesAlongItsOwnAxes() throws {
         let bar = item(.image, 0, 0, 100, 40, rotation: 90)
         let doc = document([bar])
         let edit = try #require(EaselGeometryEdit(document: doc, selection: [bar.id]), "Edit exists")
@@ -147,7 +147,7 @@ struct EaselTransformTests {
         #expect(near(aspect.frame.width / aspect.frame.height, 2), "Turned images keep their aspect")
     }
 
-    @Test func groupRotation() {
+    @Test func membersOrbitTheSharedCentre() {
         let left = item(.image, 0, 300, 100, 100), right = item(.image, 200, 300, 100, 100, rotation: 10)
         let sticky = item(.sticky, 400, 400, 100, 100)
         var arrow = item(.arrow, 100, 350, 100, 1)
@@ -167,7 +167,7 @@ struct EaselTransformTests {
         #expect(single.frame == right.frame && single.rotation == nil, "A single object spins in place and drops the field at upright")
     }
 
-    @Test func flips() throws {
+    @Test func flippingOneObjectMirrorsItInPlace() throws {
         let photo = item(.image, 10, 10, 100, 50)
         let once = try #require(EaselRotation.flipped([photo], horizontally: true)?.first, "Flip succeeds")
         #expect(once.flipHorizontal == true && once.frame == photo.frame, "Flipping one object mirrors it in place")
@@ -190,7 +190,7 @@ struct EaselTransformTests {
         #expect(EaselRotation.flipped([label], horizontally: true) == nil, "Text alone can't flip")
     }
 
-    @Test func dragSnapping() throws {
+    @Test func singleObjectsLandOnAbsolute15Steps() throws {
         let photo = item(.image, 0, 0, 100, 100, rotation: 7)
         let drag = try #require(EaselRotationDrag(items: [photo], pointer: EaselPoint(x: 150, y: 50)), "Drag begins")
         let pointer = EaselPoint(x: 50 + 100 * cos(20 * .pi / 180), y: 50 + 100 * sin(20 * .pi / 180))
@@ -205,7 +205,7 @@ struct EaselTransformTests {
         #expect(EaselRotationDrag(items: [item(.sticky, 0, 0, 10, 10)], pointer: EaselPoint(x: 50, y: 50)) == nil, "Stickies have no rotate drag")
     }
 
-    @Test func editIntegration() throws {
+    @Test func applyingCarriesTheAngle() throws {
         let photo = item(.image, 0, 0, 100, 100)
         let doc = document([photo])
         guard let edit = EaselGeometryEdit(document: doc, selection: [photo.id]),
@@ -223,7 +223,7 @@ struct EaselTransformTests {
         #expect(plain.frame.x == 0 && plain.frame.y == 0, "Upright clamping is unchanged")
     }
 
-    @Test func groupResize() {
+    @Test func scalingAQuarterTurnedMemberSwapsTheAxes() {
         let turned = item(.image, 0, 0, 100, 40, rotation: 90), other = item(.text, 200, 0, 100, 40)
         let size = EaselRotation.scaledSize(turned, scaleX: 2, scaleY: 1)
         #expect(near(size.width, 100) && near(size.height, 80), "Scaling a quarter-turned member swaps the axes")
@@ -241,14 +241,14 @@ struct EaselTransformTests {
         #expect(crossedText.flipHorizontal == nil, "Crossing an edge keeps text readable")
     }
 
-    @Test func labels() {
+    @Test func wholeAnglesReadPlainly() {
         #expect(EaselRotation.turnLabel(45) == "45°", "Whole angles read plainly")
         #expect(EaselRotation.turnLabel(-30) == "\u{2212}30°", "Counter-clockwise angles use a real minus")
         #expect(EaselRotation.turnLabel(12.34) == "12.3°", "Free angles show a tenth")
         #expect(EaselRotation.turnLabel(0) == "0°", "Upright reads zero")
     }
 
-    @Test func vectorExport() {
+    @Test func svgTurnsAndMirrorsAroundTheCentre() {
         let shape = item(.rectangle, 10, 20, 100, 50, rotation: 30, flipH: true)
         let svg = EaselVectorExport.element(shape, art: EaselVectorArt())
         #expect(svg.hasPrefix("<g transform=\"rotate(30 60 45) translate(60 45) scale(-1 1) translate(-60 -45)\">") && svg.hasSuffix("</g>"), "SVG turns and mirrors around the centre")
@@ -259,7 +259,7 @@ struct EaselTransformTests {
         #expect(EaselVectorExport.matrix(.rotation(degrees: 90, around: EaselPoint(x: 0, y: 0))) == "matrix(0 1 -1 0 0 0)", "Matrices print plainly")
     }
 
-    @Test func chrome() throws {
+    @Test func aSingleTurnedObjectKeepsItsOwnFrame() throws {
         let turned = item(.image, 100, 100, 100, 40, rotation: 90)
         let box = EaselRotation.bounds(of: turned)
         let single = EaselSelectionChrome(frame: box, items: [turned])

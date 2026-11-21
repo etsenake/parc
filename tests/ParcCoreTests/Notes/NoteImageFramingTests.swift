@@ -11,7 +11,7 @@ struct NoteImageFramingTests {
             && near(lhs.width, rhs.width, tolerance) && near(lhs.height, rhs.height, tolerance)
     }
 
-    @Test func crops() {
+    @Test func cropAttributesParseWithSpaces() {
         let crop = NoteImageCrop(attribute: "0.1, 0.05,0.8,0.9")
         #expect(crop == NoteImageCrop(x: 0.1, y: 0.05, width: 0.8, height: 0.9), "crop attributes parse with spaces")
         #expect(crop?.attribute == "0.1,0.05,0.8,0.9", "crop attributes write without trailing zeros: \(crop?.attribute ?? "nil")")
@@ -34,7 +34,7 @@ struct NoteImageFramingTests {
         #expect(size == CGSize(width: 400, height: 100), "cropped natural size")
     }
 
-    @Test func masks() {
+    @Test func staysInsideItsFrame() {
         let rect = CGRect(x: 10, y: 20, width: 300, height: 200)
         for mask in NoteImageMask.allCases {
             let box = mask.path(in: rect).boundingBoxOfPath
@@ -66,7 +66,7 @@ struct NoteImageFramingTests {
         #expect(!NoteImageMask.heart.maskImageURL.contains("<") && !NoteImageMask.heart.maskImageURL.contains("\""), "mask URLs are CSS safe")
     }
 
-    @Test func geometry() {
+    @Test func freeCornersFollowThePointer() {
         let bounds = CGRect(x: 0, y: 0, width: 400, height: 300)
         let start = CGRect(x: 100, y: 100, width: 200, height: 100)
         let free = NoteImageCropGeometry.resize(start, handle: .bottomRight, by: CGSize(width: 50, height: 20), within: bounds, minimum: 24, aspect: nil)
@@ -100,7 +100,7 @@ struct NoteImageFramingTests {
         #expect(NoteImageCropHandle.allCases.filter(\.isCorner).count == 4, "four corners")
     }
 
-    @Test func framing() {
+    @Test func theMaskApplies() {
         var props = NoteBlockProps()
         props.crop = NoteImageCrop(x: 0, y: 0, width: 1, height: 0.5)
         let circled = NoteImageFraming.applying(.circle, to: props, natural: CGSize(width: 800, height: 600))
@@ -117,7 +117,7 @@ struct NoteImageFramingTests {
         #expect(NoteImageFraming.frameAspect(crop: props.crop, natural: CGSize(width: 800, height: 600)) == 0.375, "frame aspect")
     }
 
-    @Test func markdown() {
+    @Test func cropAndMaskRideInTheParcCommentN() {
         var image = NoteBlock(.image)
         image.props.source = "Attachments/cat.png"
         image.props.alt = "A sleepy cat"
@@ -148,7 +148,7 @@ struct NoteImageFramingTests {
         #expect(NoteMarkdown.parse(titledText).blocks.first?.props == titled.props, "captions and framing live together")
     }
 
-    @Test func html() {
+    @Test func cropsSizeTheirFrameN() {
         var cropped = NoteBlock(.image)
         cropped.props.source = "Attachments/cat.png"
         cropped.props.alt = "Cat"
@@ -185,7 +185,7 @@ struct NoteImageFramingTests {
         #expect(!plain.contains("image-frame mask") && !plain.contains("<span class=\"image-frame"), "plain images stay plain")
     }
 
-    @Test func clipboard() {
+    @Test func theBlockClipboardKeepsFraming() {
         var props = NoteBlockProps()
         props.crop = NoteImageCrop(x: 0.1, y: 0.2, width: 0.3, height: 0.4)
         props.mask = .hexagon

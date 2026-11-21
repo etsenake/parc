@@ -17,7 +17,7 @@ struct EaselSelectionToolbarTests {
             || frame.y + frame.height <= selection.y || frame.y >= selection.y + selection.height
     }
 
-    @Test func subjects() {
+    @Test func rectanglesAndEllipsesShareTheShapeToolbar() {
         #expect(EaselToolbarSubject(.rectangle) == .shape && EaselToolbarSubject(.circle) == .shape, "Rectangles and ellipses share the shape toolbar")
         #expect(EaselToolbarSubject(.arrow) == .connector, "Arrows use the connector toolbar")
         #expect(EaselToolbarSubject(.freehand) == .drawing, "Doodles, highlights and tape use the drawing toolbar")
@@ -25,7 +25,7 @@ struct EaselSelectionToolbarTests {
         #expect(EaselToolbarSubject(.code) == .code && plan([.code]).first == [.codeLanguage], "Code blocks lead with their language")
     }
 
-    @Test func singleSelections() {
+    @Test func nothingSelectedShowsNoToolbar() {
         #expect(plan([]).isEmpty, "Nothing selected shows no toolbar")
         #expect(plan([.webCard]).isEmpty && plan([.browser]).isEmpty && plan([.link]).isEmpty, "A single page object keeps its own header instead")
         let sticky = plan([.sticky])
@@ -48,7 +48,7 @@ struct EaselSelectionToolbarTests {
         #expect(!text.contains(.bold), "Range emphasis waits for text editing, like the rail")
     }
 
-    @Test func textEditing() {
+    @Test func editingAddsEmphasisParagraphAndLinkControls() {
         let editing = plan([.text], editing: true).joined()
         #expect([.bold, .italic, .underline, .strikethrough, .paragraph, .link, .textFill].allSatisfy(editing.contains), "Editing adds emphasis, paragraph and link controls")
         #expect(editing.contains(.smaller) && editing.contains(.larger), "Editing keeps the quick size steps beside the size menu")
@@ -60,7 +60,7 @@ struct EaselSelectionToolbarTests {
         #expect(plan([.arrow], editing: true) == [[.bold, .strikethrough], [.more]], "A connector label only takes bold and strikethrough")
     }
 
-    @Test func multipleSelections() {
+    @Test func sameKindSelectionsKeepThatKindsControls() {
         let stickies = plan([.sticky, .sticky])
         #expect(stickies.first == [.color] && stickies.joined().contains(.stickyShape), "Same-kind selections keep that kind's controls")
         #expect(stickies.contains([.arrange, .tidyUp]) && stickies.contains([.group, .createSection, .lock]), "Several objects add arrange, tidy up, group, section and lock")
@@ -76,7 +76,7 @@ struct EaselSelectionToolbarTests {
         #expect(pages.contains([.arrange, .tidyUp]), "Several page objects can still be arranged together")
     }
 
-    @Test func lockedSelections() {
+    @Test func lockedSelectionsOfferOnlyUnlockAndTheMenu() {
         #expect(plan([.sticky], locked: true) == [[.unlock], [.more]], "Locked selections offer only unlock and the ••• menu")
         #expect(plan([.text, .arrow], locked: true) == [[.unlock], [.more]], "Locked groups unlock as one")
         let group = UUID()
@@ -91,14 +91,14 @@ struct EaselSelectionToolbarTests {
         #expect(!EaselSelectionToolbarPlan.unlocksGroup([item(group)]), "A single object just unlocks")
     }
 
-    @Test func availability() {
+    @Test func controlsWithoutACommandDropOutOfTheirGroup() {
         let filtered = EaselSelectionToolbarPlan.available(plan([.rectangle])) { $0 != .shape }
         #expect(filtered.first == [.color], "Controls without a command drop out of their group")
         #expect(!filtered.contains([]), "Emptied groups disappear instead of leaving stray dividers")
         #expect(EaselSelectionToolbarPlan.available(plan([.image])) { $0 == .more } == [[.more]], "An image without its tools keeps the ••• menu")
     }
 
-    @Test func placement() {
+    @Test func roomAbovePutsTheToolbarEightPointsOver() {
         let middle = EaselRect(x: 300, y: 200, width: 200, height: 100)
         let above = place(middle)
         #expect(above?.edge == .above && above?.frame.y == 156 && above?.frame.x == 300, "Room above puts the toolbar eight points over the selection, centred")
@@ -121,7 +121,7 @@ struct EaselSelectionToolbarTests {
                                                      visible: EaselRect(x: 0, y: 0, width: 800, height: 600)) == nil, "An empty toolbar never places")
     }
 
-    @Test func chord() {
+    @Test func focusesTheSelectionToolbarTypedAsAQuestionMark() {
         #expect(EaselChords.command(characters: "?", keyCode: 44, modifiers: [.command, .shift]) == .focusSelectionToolbar, "⇧⌘/ focuses the selection toolbar, typed as a question mark")
         #expect(EaselChords.command(characters: "/", keyCode: 44, modifiers: [.command, .shift]) == .focusSelectionToolbar, "⇧⌘/ also matches when the layout reports the unshifted slash")
         #expect(EaselChords.command(characters: "/", keyCode: 44, modifiers: [.command]) == nil

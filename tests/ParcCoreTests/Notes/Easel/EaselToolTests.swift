@@ -15,7 +15,7 @@ struct EaselToolTests {
 
     ]
 
-    @Test func toolKeys() throws {
+    @Test func isBoundOnce() throws {
         var seen: Set<EaselKey> = []
         for binding in EaselKeyCommands.bindings {
             #expect(seen.insert(binding.key).inserted, "\(binding.key.label) is bound once")
@@ -61,7 +61,7 @@ struct EaselToolTests {
         #expect(EaselKeyCommands.spaceKeyCode == 49, "Space is the temporary hand")
     }
 
-    @Test func zoomKeys() {
+    @Test func zoomsIn() {
         #expect(command("=", 24, [.command]) == .zoom(.zoomIn), "⌘= zooms in")
         #expect(command("+", 24, [.command, .shift]) == .zoom(.zoomIn), "⌘+ zooms in")
         #expect(command("+", 69, [.command]) == .zoom(.zoomIn), "Keypad plus zooms in")
@@ -90,7 +90,7 @@ struct EaselToolTests {
         #expect(EaselZoomCommand.allCases.allSatisfy { !$0.shortcut.isEmpty && !$0.shortcut.contains("+") }, "Zoom shortcut labels avoid the plus sign the keycap renderer uses as a separator")
     }
 
-    @Test func toolBehaviour() {
+    @Test func selectHandAndEraserNeverCreateObjects() {
         #expect(!EaselTool.select.createsObjects && !EaselTool.hand.createsObjects && !EaselTool.eraser.createsObjects, "Select, hand and eraser never create objects")
         #expect(EaselTool.sticky.kind == .sticky && EaselTool.section.kind == .section && EaselTool.ellipse.kind == .circle
                && EaselTool.rectangle.kind == .rectangle && EaselTool.text.kind == .text, "Tools create the matching kinds")
@@ -111,7 +111,7 @@ struct EaselToolTests {
         #expect(section.width > 0 && section.height > 0, "A clicked section has a size")
     }
 
-    @Test func placementGeometry() {
+    @Test func aClickedStickyIsCentredOnTheClick() {
         let sticky = EaselToolGeometry.placedFrame(.sticky, at: EaselPoint(x: 300, y: 200))
         #expect(near(sticky.x + sticky.width / 2, 300) && near(sticky.y + sticky.height / 2, 200), "A clicked sticky is centred on the click")
         let text = EaselToolGeometry.placedFrame(.text, at: EaselPoint(x: 300, y: 200))
@@ -136,7 +136,7 @@ struct EaselToolTests {
         #expect(EaselToolGeometry.clamped(EaselPoint(x: -5, y: 400), to: bounds) == EaselPoint(x: 0, y: 200), "Points clamp to a fixed canvas")
     }
 
-    @Test func connectorGeometry() {
+    @Test func shiftTurnsANearlyFlatDragIntoAFlat() {
         let start = EaselPoint(x: 100, y: 100)
         let flat = EaselToolGeometry.snappedLineEnd(from: start, to: EaselPoint(x: 200, y: 108))
         #expect(near(flat.y, 100) && flat.x > 199, "Shift turns a nearly flat drag into a flat line")
@@ -153,7 +153,7 @@ struct EaselToolTests {
         #expect(flatLine.frame.height == 1, "A flat connector keeps a valid one-point frame")
     }
 
-    @Test func zoomAnchor() {
+    @Test func zoomingInKeepsThePointUnderThePointerStill() {
         let origin = EaselPoint(x: 100, y: 50)
         let anchor = EaselPoint(x: 300, y: 250)
         let zoomedIn = EaselZoom.anchoredOrigin(anchor: anchor, visibleOrigin: origin, before: 1, after: 2)
@@ -168,7 +168,7 @@ struct EaselToolTests {
         #expect(atLimit == origin, "Wheeling past the zoom limit does not drift the view")
     }
 
-    @Test func zoomSteps() {
+    @Test func zoomInFrom100GoesTo150() {
         #expect(EaselZoom.stepped(from: 1, zoomingIn: true, minimum: 0.3333, maximum: 4) == 1.5, "Zoom in from 100% goes to 150%")
         #expect(EaselZoom.stepped(from: 1, zoomingIn: false, minimum: 0.3333, maximum: 4) == 0.75, "Zoom out from 100% goes to 75%")
         #expect(EaselZoom.stepped(from: 0.8, zoomingIn: true, minimum: 0.3333, maximum: 4) == 1, "Off-step zoom in lands on the next level")
@@ -202,7 +202,7 @@ struct EaselToolTests {
         #expect(EaselZoom.wheelFactor(deviceDelta: 10, precise: false) < 1.8, "An accelerated flick zooms a step, not across the range")
     }
 
-    @Test func zoomFitting() {
+    @Test func aBoardTwiceTheViewportsWidthFitsAt50() {
         let content = EaselRect(x: 0, y: 0, width: 2000, height: 1000)
         let fit = EaselZoom.fitting(content, viewport: (1096, 896), minimum: 0.3333, maximum: 4)
         #expect(fit.map { near($0, 0.5) } == true, "A board twice the viewport's width fits at 50%")
@@ -217,7 +217,7 @@ struct EaselToolTests {
         #expect(EaselZoom.bounds(of: []) == nil, "No objects, no bounds")
     }
 
-    @Test func wheelGestures() {
+    @Test func aMouseWheelNotchZoomsWithAndPansWithout() {
         var wheel = EaselWheelGesture()
         #expect(wheel.route(.discrete, zoomChord: true) == .zoom && wheel.route(.discrete, zoomChord: false) == .pan, "A mouse wheel notch zooms with ⌘ and pans without it")
         #expect(wheel.route(.active, zoomChord: false) == .pan, "A plain trackpad scroll pans")
@@ -233,7 +233,7 @@ struct EaselToolTests {
         #expect(wheel.route(.active, zoomChord: false) == .pan && wheel.route(.momentum, zoomChord: true) == .pan, "The next gesture starts fresh after a zoom")
     }
 
-    @Test func canvasExtent() {
+    @Test func theClipViewsRoundingWhileZoomedOutDoesntCount() {
         #expect(EaselZoom.extentMatches((3110.895928713965, 1874.7443725386834), (3110.895928713965, 1874.7443725386831)), "The clip view's rounding while zoomed out doesn't count as a new canvas size")
         #expect(EaselZoom.extentMatches((1200, 1400), (1200.004, 1399.996)), "Differences far below a pixel at 400% leave the canvas alone")
         #expect(!EaselZoom.extentMatches((1200.25, 1400), (1200, 1400)), "A quarter-point drag at the edge still grows the canvas")

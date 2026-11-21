@@ -23,7 +23,7 @@ extension NoteProcessWide {
 
     var folder: URL!
 
-    @Test func creating() throws {
+    @Test func oneLibraryPerFolder() throws {
         let root = folder.appendingPathComponent("Fresh", isDirectory: true)
         let library = NoteLibrary.shared(folder: root)
         #expect(NoteLibrary.shared(folder: URL(fileURLWithPath: root.path.replacingOccurrences(of: "/private/var/", with: "/var/"))) === library, "one library per folder")
@@ -43,7 +43,7 @@ extension NoteProcessWide {
         watch.cancel()
     }
 
-    @Test func listing() throws {
+    @Test func notesAreListedNewestFirstSkippingHiddenAttachment() throws {
         let root = folder.appendingPathComponent("Listing", isDirectory: true)
         func note(_ path: String, _ text: String, age: TimeInterval) {
             let url = NoteFileTestSupport.write(text, to: root.appendingPathComponent(path))
@@ -71,7 +71,7 @@ extension NoteProcessWide {
         #expect(library.snippet(for: outside) == "Elsewhere hello", "snippets work for notes outside the listing too")
     }
 
-    @Test func searching() throws {
+    @Test func exactPrefixWordThenBodyMatches() throws {
         let root = folder.appendingPathComponent("Search", isDirectory: true)
         func note(_ name: String, _ text: String, age: TimeInterval) {
             let url = NoteFileTestSupport.write(text, to: root.appendingPathComponent(name))
@@ -100,7 +100,7 @@ extension NoteProcessWide {
         #expect(library.search("hose", limit: 10) == [], "old contents are forgotten")
     }
 
-    @Test func containment() throws {
+    @Test func directChildrenAreInside() throws {
         let root = folder.appendingPathComponent("Contain", isDirectory: true)
         let library = NoteLibrary.shared(folder: root)
         #expect(library.contains(root.appendingPathComponent("a.md")), "direct children are inside")
@@ -117,7 +117,7 @@ extension NoteProcessWide {
         #expect(!loose.contains(folder.appendingPathComponent("Loose/deeper/n.md")), "shallow libraries stay shallow")
     }
 
-    @Test func renaming() throws {
+    @Test func renamingWithoutASessionSanitizesToo() throws {
         let root = folder.appendingPathComponent("Rename", isDirectory: true)
         let library = NoteLibrary.shared(folder: root)
         let note = try library.createNote(title: "Old name")
@@ -141,7 +141,7 @@ extension NoteProcessWide {
         watch.cancel()
     }
 
-    @Test func watching() async throws {
+    @Test func filesMadeOutsideParcAreNoticed() async throws {
         let root = folder.appendingPathComponent("Watched", isDirectory: true)
         let library = NoteLibrary.shared(folder: root)
         _ = try library.createNote(title: "Existing")

@@ -552,7 +552,7 @@ import Testing
         #expect(grid.undoDepth == 1, "and it's one step")
     }
 
-    @Test func numberedLabels() {
+    @Test func listsStartAt1() {
         let page = NotePage(blocks: [
             numbered("one"), numbered("two", [numbered("a", [numbered("i", [numbered("deep")]), numbered("ii")]), numbered("b")]),
             numbered("three"), para("break"), numbered("again"), bullet("dot"), numbered("five", start: 5), numbered("six"),
@@ -576,7 +576,7 @@ import Testing
         #expect(NoteListNumber(value: 0, level: 1).label == "0.", "letters fall back to digits below one")
     }
 
-    @Test func toggles() {
+    @Test func theToggleCloses() {
         let session = makeSession([toggle("Fold", expanded: true, [para("inside")]), todo("a"), todo("b", checked: true)])
         let fold = session.id("Fold")
         session.setSelection(.caret(NotePosition(session.id("inside"), 2)))

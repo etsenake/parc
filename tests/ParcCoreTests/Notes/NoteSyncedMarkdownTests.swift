@@ -5,7 +5,7 @@ import Testing
 struct NoteSyncedMarkdownTests {
     typealias Check = NoteMarkdownCheck
 
-    @Test func originalReads() {
+    @Test func theSyncedBlockAndTheParagraphAfter() {
         let page = NoteMarkdown.parse("""
         <!-- parc synced id="k3x9qa" -->
 
@@ -25,7 +25,7 @@ struct NoteSyncedMarkdownTests {
         #expect(page.blocks[1].text.string == "After", "the closer ends the block")
     }
 
-    @Test func copyReads() {
+    @Test func aFromAttributeMakesACopy() {
         let page = NoteMarkdown.parse("""
         <!-- parc synced from="Project%20plan.md#k3x9qa" -->
 

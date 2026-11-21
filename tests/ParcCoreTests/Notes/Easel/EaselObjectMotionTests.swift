@@ -14,7 +14,7 @@ struct EaselObjectMotionTests {
                       modifiedAt: Date(timeIntervalSince1970: 0), items: items)
     }
 
-    @Test func appearing() {
+    @Test func anAppearingObjectStartsFadedAt95() {
         var motion = EaselObjectMotion()
         let id = UUID()
         motion.appear([id], at: 10, reduced: false)
@@ -26,7 +26,7 @@ struct EaselObjectMotionTests {
         #expect(motion.presentation(for: UUID(), at: 10.05).isIdentity, "other objects stay at rest")
     }
 
-    @Test func vanishing() {
+    @Test func aDeletedObjectLeavesAGhostWhileItFades() {
         var motion = EaselObjectMotion()
         let item = box(0, 0)
         motion.vanish([item], at: 0, reduced: false)
@@ -38,7 +38,7 @@ struct EaselObjectMotionTests {
         #expect(motion.ghosts.isEmpty && motion.isEmpty, "finished ghosts are dropped")
     }
 
-    @Test func gliding() {
+    @Test func aCopyStartsOnItsSourceFullyDrawn() {
         var motion = EaselObjectMotion()
         let id = UUID()
         motion.glide([id: EaselPoint(x: -40, y: 0)], fades: true, at: 0, reduced: false)
@@ -57,7 +57,7 @@ struct EaselObjectMotionTests {
         #expect(near(chained.presentation(for: id, at: 0.05).offset.x, shown + 10, 1e-3), "a second move continues from where the object is shown")
     }
 
-    @Test func lifting() {
+    @Test func bringingForwardStartsSlightlyLarge() {
         var motion = EaselObjectMotion()
         let id = UUID()
         motion.lift([id], from: 1.03, at: 0, reduced: false)
@@ -68,7 +68,7 @@ struct EaselObjectMotionTests {
         #expect(reduced.isEmpty, "Reduce Motion skips layer lifts")
     }
 
-    @Test func reducedMotion() {
+    @Test func reduceMotionTurnsThePopIntoAFade() {
         var motion = EaselObjectMotion()
         let a = UUID(), b = UUID(), c = box(0, 0)
         motion.appear([a], at: 0, reduced: true)
@@ -82,7 +82,7 @@ struct EaselObjectMotionTests {
         #expect(motion.presentation(for: a, at: 0.15).isIdentity && motion.presentation(for: b, at: 0.15).isIdentity, "reduced fades are short")
     }
 
-    @Test func bookkeeping() {
+    @Test func objectsThatVanishFromTheDocumentStopAnimatingGhosts() {
         var motion = EaselObjectMotion()
         let kept = UUID(), dropped = UUID(), ghost = box(0, 0)
         motion.appear([kept, dropped], at: 0, reduced: false)
@@ -95,7 +95,7 @@ struct EaselObjectMotionTests {
         #expect(motion.isEmpty && motion.ghosts.isEmpty, "cancel settles everything")
     }
 
-    @Test func diffs() {
+    @Test func movesGlideObjectsBackFromTheirOldSpotNever() {
         let a = box(0, 0), b = box(200, 0, z: 1)
         var moved = a; moved.frame.x = 50
         var arrow = EaselItem(kind: .arrow, frame: EaselRect(x: 0, y: 0, width: 10, height: 10), zIndex: 2)

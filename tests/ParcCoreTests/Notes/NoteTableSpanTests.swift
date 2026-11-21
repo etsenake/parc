@@ -95,7 +95,7 @@ import Testing
         #expect(moved.merges == [NoteTableMerge(row: 2, column: 0, rowSpan: 1, columnSpan: 2)] && moved.rows[2][0].string == "a", "a sideways merge rides along with its row")
     }
 
-    @Test func colors() {
+    @Test func aWholeColouredColumn() {
         var table = grid([["a", "b", "c"], ["d", "e", "f"], ["g", "h", "i"]])
         table.setColor(.background(.blue), rows: 0...2, columns: 1...1)
         #expect(table.uniformColor(column: 1) == .background(.blue), "a whole coloured column")
@@ -114,7 +114,7 @@ import Testing
         #expect(table.color(at: cell(1, 1)) == .background(.blue), "duplicates keep their colours")
     }
 
-    @Test func filling() {
+    @Test func fillDown() {
         var table = grid([["a", "b", "c"], ["d", "e", "f"], ["g", "h", "i"]])
         table.setColor(.background(.green), rows: 0...0, columns: 0...0)
         let hoisted114 = table.fill(.down, rows: 0...2, columns: 0...1)
@@ -137,7 +137,7 @@ import Testing
         #expect(strings(merged) == [["a", "", "c"], ["a", "a", "c"], ["a", "a", "c"]] && merged.merges.count == 1, "a merged source fills every cell under it: \(strings(merged))")
     }
 
-    @Test func slicing() {
+    @Test func slicesKeepMergesAndColours() {
         var table = grid([["a", "b", "c"], ["d", "e", "f"], ["g", "h", "i"]])
         table.mergeCells(rows: 1...2, columns: 1...2)
         table.setColor(.text(.purple), rows: 1...1, columns: 1...1)
@@ -153,7 +153,7 @@ import Testing
         #expect(overlap.merges.isEmpty && strings(overlap) == [["a", ""], ["x", "y"]], "pasting over part of a merge splits it")
     }
 
-    @Test func resizing() {
+    @Test func trailingEmpties() {
         var table = grid([["a", "b", ""], ["c", "", ""], ["", "", ""]])
         #expect(table.trailingEmptyRows == 1 && table.trailingEmptyColumns == 1, "trailing empties")
         let hoisted149 = table.resize(rows: 5, columns: 4)
@@ -171,7 +171,7 @@ import Testing
         #expect(blank.rowCount == 1 && blank.columnCount == 1, "at least one cell stays")
     }
 
-    @Test func references() {
+    @Test func columnNames() {
         #expect(NoteTableReference.columnName(0) == "A" && NoteTableReference.columnName(25) == "Z" && NoteTableReference.columnName(26) == "AA"
                && NoteTableReference.columnName(701) == "ZZ" && NoteTableReference.columnName(702) == "AAA", "column names")
         for index in [0, 1, 25, 26, 51, 52, 701, 702, 5000] {
@@ -188,7 +188,7 @@ import Testing
         #expect(NoteTableReference.range("C2:E9", rowCount: 4, columnCount: 4)?.columns == 2...3, "ranges clip to the table")
     }
 
-    @Test func markdown() {
+    @Test func mergedAwayCellsStayEmptyInThePipeTable() {
         var table = grid([["Name", "Q1", "Q2"], ["Ada", "3", "4"], ["Alan", "", "5"], ["Total", "", ""]])
         table.mergeCells(rows: 0...0, columns: 1...2)
         table.mergeCells(rows: 2...3, columns: 0...0)
@@ -219,7 +219,7 @@ import Testing
         #expect(NoteMarkdown.parse(loneText).blocks.first?.props.table == lone, "and reads back")
     }
 
-    @Test func html() {
+    @Test func colspanInTheHeader() {
         var table = grid([["Name", "Q1", "Q2"], ["Ada", "3", "4"], ["Alan", "", "5"]])
         table.mergeCells(rows: 0...0, columns: 1...2)
         table.mergeCells(rows: 1...2, columns: 0...0)
@@ -244,7 +244,7 @@ import Testing
         #expect(spreadsheet?.merges == [NoteTableMerge(row: 0, column: 0, rowSpan: 2, columnSpan: 1), NoteTableMerge(row: 1, column: 1, rowSpan: 1, columnSpan: 2)], "and become merges: \(String(describing: spreadsheet?.merges))")
     }
 
-    @Test func session() throws {
+    @Test func sessionMerge() throws {
         let session = NotePageSession(page: page(grid([["a", "b", "c"], ["d", "e", "f"], ["g", "h", "i"]])))
         let id = try #require(session.page.blocks.first?.id, "no table")
         session.setSelection(.cells(table: id, anchor: cell(0, 0), head: cell(1, 1)))
