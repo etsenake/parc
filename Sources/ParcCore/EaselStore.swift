@@ -342,7 +342,6 @@ struct EaselMindMapLink: Codable, Equatable {
 
     static func validationProblem(_ item: EaselItem) -> String? {
         guard let link = item.mindMap else { return nil }
-        guard link.parent != item.id else { return "a mind map node that is its own parent" }
         if item.kind == .arrow {
             return link.parent != nil && link.side == nil && link.collapsed == nil ? nil : "mind map branch"
         }

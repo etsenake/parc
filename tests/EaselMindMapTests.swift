@@ -80,7 +80,10 @@ struct EaselMindMapTests {
         expect(!accepts([sided]), "a root can't pick a side")
         var looped = plain
         looped.mindMap = EaselMindMapLink(parent: plain.id)
-        expect(!accepts([looped]), "a node can't be its own parent")
+        expect(accepts([looped]), "a node that is its own parent still opens")
+        let repaired = EaselMindMap.tidied(document([looped]))
+        expect(repaired.items[0].mindMap?.parent == nil, "a self-parented node is repaired")
+        expect(EaselMindMap.tree(of: [looped]).roots == [plain.id], "a self-parented node becomes a root")
         var picture = EaselItem(kind: .freehand, frame: EaselRect(x: 0, y: 0, width: 10, height: 10))
         picture.points = [EaselPoint(x: 0, y: 0), EaselPoint(x: 10, y: 10)]
         picture.mindMap = EaselMindMapLink()
@@ -304,9 +307,23 @@ struct EaselMindMapTests {
         expect(EaselMindMap.tree(of: settled.items).roots.count == 2, "a duplicated map is its own map")
         expect(nodes(settled).count == 6 && branches(settled).count == 4, "the copy keeps every node and branch")
         expect(accepts(settled.items), "a duplicated map is valid")
+        expect(EaselMindMap.tree(of: settled.items).hidden.isEmpty, "nothing is hidden in an open map")
         guard let single = EaselArrange.duplicating([kids[0]], in: map) else { return expect(false, "a node duplicates") }
         let lone = single.copies.compactMap { item($0, in: single.document) }
         expect(lone.count == 1 && lone[0].mindMap == nil, "a lone copied leaf becomes a plain object")
+        guard let leaf = EaselMindMap.template(forChildOf: kids[0], in: map),
+              let deep = EaselMindMap.adding(leaf, to: kids[0], in: map) else { return expect(false, "a grandchild is added") }
+        let below = EaselMindMap.tree(of: deep.items).nodes[kids[0]]?.children ?? []
+        guard let grand = below.first else { return expect(false, "the grandchild exists") }
+        let part = Set([kids[0], grand] + deep.items.filter { EaselMindMap.isBranch($0) && $0.endConnection?.itemID == grand }.map(\.id))
+        guard let partial = EaselArrange.duplicating(part, in: deep) else { return expect(false, "part of a map duplicates") }
+        let pasted = partial.copies.compactMap { item($0, in: partial.document) }
+        expect(pasted.filter { $0.kind == .arrow }.allSatisfy { $0.startConnection != nil && $0.endConnection != nil },
+               "pasting part of a map leaves no loose branch")
+        let top = pasted.first { $0.kind != .arrow && $0.text == item(kids[0], in: map)?.text }
+        let settledPart = EaselMindMap.tidied(partial.document)
+        expect(top.flatMap { item($0.id, in: settledPart) }?.mindMap?.parent == nil, "the pasted top node becomes a root")
+        expect(EaselMindMap.tree(of: settledPart.items).roots.count == 2, "the pasted piece is its own map")
     }
 
     @MainActor static func export() {

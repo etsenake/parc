@@ -438,7 +438,13 @@ enum EaselMindMap {
         for copy in copies where isNode(copy) {
             if let parent = copy.mindMap?.parent, let mapped = ids[parent] { parents.insert(mapped) }
         }
-        return copies.map { item in
+        let kept = copies.compactMap { item -> EaselItem? in
+            guard item.kind == .arrow, let link = item.mindMap else { return item }
+            guard let parent = link.parent, let mapped = ids[parent], copied.contains(mapped),
+                  let child = item.endConnection?.itemID, copied.contains(child) else { return nil }
+            return item
+        }
+        return kept.map { item in
             guard let link = item.mindMap else { return item }
             var copy = item
             if item.kind == .arrow {
