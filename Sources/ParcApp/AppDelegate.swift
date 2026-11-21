@@ -282,7 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             TooltipController.eventChord = { KeyboardShortcuts.shared.chord(for: $0) }
             TooltipController.symbolicChord = { KeyboardShortcuts.shared.symbolicChord(for: $0) }
             EaselCanvasView.selectionToolbarFactory = { EaselSelectionToolbar() }
-            EaselCanvasView.textCompletionFactory = { EaselTextCompletions([EaselSlashCompletion(), EaselEmojiCompletion()]) }
+            EaselCanvasView.textCompletionFactory = { EaselTextCompletions([EaselSlashCompletion(), EaselMentionCompletion(), EaselEmojiCompletion()]) }
             EaselCanvasView.highlightRecorder = { NoteColorRecents.record(.background($0)) }
             EaselCanvasView.highlightRecall = { NoteColorRecents.load().first(where: \.isBackground)?.color }
             EaselCanvasView.mermaidSheetFactory = { EaselMermaidSheet(canvas: $0, text: $1) }
@@ -400,6 +400,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         UNUserNotificationCenter.current().delegate = NoteReminderCenter.shared
         NoteReminderCenter.shared.onOpenNote = { [weak self] url in
             guard let self, !self.terminationInProgress else { return }
+            if let easel = EaselReminderOwner(file: url) { EaselInlineDates.open(easel, in: self.windows, front: self.front); return }
             self.application(NSApp, open: [url])
         }
     }

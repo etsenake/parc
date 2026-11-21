@@ -200,6 +200,14 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     var onImageEditingCancel: (() -> Void)?
+    @objc private func inlineDatesChanged() {
+        textLayouts.removeAll(); boardState.stickyLayouts.removeAll(); connectors.labels.removeAll(); needsDisplay = true
+        for view in artwork.values { view.needsDisplay = true }
+        if let text = editor, let layout = text.layoutManager {
+            layout.invalidateLayout(forCharacterRange: NSRange(location: 0, length: (text.string as NSString).length), actualCharacterRange: nil)
+            text.needsDisplay = true
+        }
+    }
     var lastTextTint: EaselLastTextTint?
     func setInsertionColor(_ color: NSColor) {
         guard let rgb = color.usingColorSpace(.sRGB) else { return }
@@ -348,6 +356,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var onError: ((Error) -> Void)?
     var onOpenURL: ((URL) -> Void)?
     var onOpenNote: ((URL) -> Void)?
+    var notesFolder: (() -> URL?)?
     static var textCompletionFactory: (@MainActor () -> EaselTextCompletion)?
     static var highlightRecorder: (@MainActor (NoteColor) -> Void)?
     static var highlightRecall: (@MainActor () -> NoteColor?)?
@@ -386,6 +395,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         setAccessibilityElement(true); setAccessibilityRole(.group); setAccessibilityLabel("Easel canvas")
         registerForDraggedTypes([Self.documentDragType, .URL, EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType, .rtfd, .rtf, .fileURL, Self.gifPasteboardType, .png, .tiff, .string])
         subscription = session.$document.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.documentDidChange() }
+        NotificationCenter.default.addObserver(self, selector: #selector(inlineDatesChanged), name: EaselInlineText.datesChanged, object: nil)
     }
     func documentDidChange() {
         let document = self.session.document

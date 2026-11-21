@@ -107,3 +107,57 @@ extension EaselRichText {
         return (result, starts, ends)
     }
 }
+
+extension EaselRichText {
+    static func noteText(_ text: String, rich: EaselRichText?) -> NoteText {
+        let source = text as NSString
+        var value = NoteText()
+        var location = 0
+        for run in rich?.runs ?? [] where run.attributes.isAtomic && run.length == 1 && run.location >= location && run.location < source.length {
+            if run.location > location { value.append(NoteText(source.substring(with: NSRange(location: location, length: run.location - location)))) }
+            if let inline = run.attributes.inline { value.append(.atom(inline.atom)) }
+            location = run.location + 1
+        }
+        if location < source.length { value.append(NoteText(source.substring(from: location))) }
+        return value
+    }
+}
+
+extension EaselDocument {
+    var inlineTexts: [(text: String, rich: EaselRichText)] {
+        var result: [(String, EaselRichText)] = []
+        for item in EaselPages.pageDocuments(self).flatMap(\.items) {
+            if let rich = item.richText, rich.runs.contains(where: { $0.attributes.inline != nil }) { result.append((item.text, rich)) }
+            for row in item.table?.cells ?? [] {
+                for cell in row {
+                    if let rich = cell.richText, rich.runs.contains(where: { $0.attributes.inline != nil }) { result.append((cell.text, rich)) }
+                }
+            }
+        }
+        return result
+    }
+
+    var dateMentions: [NoteDateMention] { inlineTexts.flatMap { $0.rich.dateMentions } }
+
+    var reminderPage: NotePage {
+        NotePage(blocks: inlineTexts.filter { $0.rich.dateMentions.contains(where: \.remind) }.map {
+            NoteBlock(.paragraph, text: EaselRichText.noteText($0.text, rich: $0.rich))
+        })
+    }
+}
+
+struct EaselReminderOwner: Equatable {
+    var profile: UUID
+    var id: UUID
+    var file: URL
+
+    init?(file: URL) {
+        let parts = file.standardizedFileURL.pathComponents
+        guard parts.count >= 5, file.pathExtension == "json", parts[parts.count - 2] == "documents", parts[parts.count - 3] == "Easels",
+              parts[parts.count - 5] == "Profiles", let profile = UUID(uuidString: parts[parts.count - 4]),
+              let id = UUID(uuidString: file.deletingPathExtension().lastPathComponent) else { return nil }
+        self.profile = profile
+        self.id = id
+        self.file = file
+    }
+}

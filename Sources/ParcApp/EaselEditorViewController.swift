@@ -11,6 +11,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         if let store = stores[key] { return store }
         let store = try EaselStore(directory: URL(fileURLWithPath: key, isDirectory: true))
         EaselHistories.attach(to: store)
+        EaselInlineDates.shared.attach(to: store)
         store.onListed = { [weak store] summaries in
             guard let store else { return }
             EaselTabIcons.shared.learn(summaries, directory: store.directory)
@@ -142,6 +143,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         panels.toast = { [weak self] content in (self?.view.window?.windowController as? BrowserWindowController)?.showToast(content) }
         canvas.panels = panels
         canvas.onOpenNote = { [weak self] url in self?.onOpenNote?(url) }
+        canvas.notesFolder = { [weak self] in self?.notesFolder?() }
         self.panels = panels
         palette.onTool = { [weak self] tool, control in
             guard let self else { return }

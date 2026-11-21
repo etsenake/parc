@@ -82,6 +82,7 @@ final class EaselEmojiCompletion: EaselTextCompletion {
 
     private func show(start: Int, query: String, in view: EaselStyledTextView) {
         let suggestions = list ?? makeList()
+        suggestions.library = library(for: view)
         suggestions.query = query
         guard suggestions.hasResults, let panel, let host = completionHost(for: view),
               let anchor = anchorRect(at: start, in: view, host: host) else { dismiss(); return }
@@ -89,6 +90,15 @@ final class EaselEmojiCompletion: EaselTextCompletion {
         panel.contentSizeDidChange(animated: false)
         if panel.isPresented, panel.superview === host { panel.reposition(anchor: anchor, edge: .below, animated: false) }
         else { panel.present(in: host, anchor: anchor, edge: .below, animated: true) }
+    }
+
+    private func library(for view: EaselStyledTextView) -> NoteEmojiLibrary? {
+        var ancestor = view.superview
+        while let current = ancestor {
+            if let canvas = current as? EaselCanvasView { return EaselNoteEnvironment(folder: canvas.notesFolder?()).emojiLibrary }
+            ancestor = current.superview
+        }
+        return nil
     }
 
     private func completionHost(for view: EaselStyledTextView) -> NSView? {
@@ -124,11 +134,22 @@ final class EaselEmojiCompletion: EaselTextCompletion {
         let caret = view.selectedRange().location
         dismiss()
         guard caret >= start else { return }
-        view.insertCompletion(character, replacing: NSRange(location: start, length: caret - start), name: "Emoji")
+        let range = NSRange(location: start, length: caret - start)
+        if NoteCustomEmojiName.name(inReference: character) != nil {
+            _ = view.insertCustomEmoji(character, replacing: range)
+            previous = view.string
+            return
+        }
+        view.insertCompletion(character, replacing: range, name: "Emoji")
     }
 
     private func complete(_ done: (range: Range<Int>, shortcode: String), expected: String) {
         guard let view, view.string == expected, !view.hasMarkedText() else { return }
+        let range = NSRange(location: done.range.lowerBound, length: done.range.count)
+        if let custom = library(for: view)?.emoji(named: done.shortcode), view.insertCustomEmoji(custom.reference, replacing: range) {
+            previous = view.string
+            return
+        }
         let catalog = NoteEmojiCatalog.shared
         guard let emoji = catalog.emoji(forShortcode: done.shortcode) else { return }
         let character = catalog.character(for: emoji)
