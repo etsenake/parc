@@ -33,7 +33,11 @@ enum EaselTextAppearance {
     @MainActor static func isInlineCode(_ attributes: [NSAttributedString.Key: Any]) -> Bool {
         guard let fill = attributes[.backgroundColor] as? NSColor, let font = attributes[.font] as? NSFont,
               font.fontDescriptor.symbolicTraits.contains(.monoSpace) else { return false }
+        if EaselTextHighlight.note(of: fill) != nil { return isSystemMonospaced(font) }
         return (try? EaselRichTextCodec.hex(fill)) == (try? EaselRichTextCodec.hex(inlineCodeFill))
+    }
+    static func isSystemMonospaced(_ font: NSFont) -> Bool {
+        font.fontName.hasPrefix(".AppleSystemUIFontMonospaced") || font.fontName.hasPrefix(".SFMono")
     }
     static func color(_ hex: String) -> NSColor {
         let value = UInt32(hex.dropFirst(), radix: 16) ?? 0x252525
@@ -698,7 +702,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
                                                      selection: NSRange(location: 0, length: 0), typing: typingAttributes)
             EaselParagraphEditing.replace(&cleared, range: NSRange(location: 0, length: cleared.text.length), with: NSAttributedString())
             suppressMarkdown = true; defer { suppressMarkdown = false }
-            commitParagraph(cleared, name: "Block Equation")
+            commitParagraph(cleared, name: "Block equation")
             if !onBlockEquation() { localUndo.undo() }
             return
         }
