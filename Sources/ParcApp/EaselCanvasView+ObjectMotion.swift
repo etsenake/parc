@@ -83,6 +83,7 @@ extension EaselCanvasView {
     }
 
     func settleObjectMotion() {
+        dismissQuickCreateHint()
         let wasActive = !objectMotion.timeline.isEmpty || objectMotion.animatesChrome
         let envelope = objectMotion.envelope.union(objectMotionEnvelope())
         objectMotion.timeline.cancelAll()

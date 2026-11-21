@@ -151,6 +151,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     lazy var selectionToolbar: EaselSelectionToolbarPresenting? = Self.selectionToolbarFactory?()
     let codeBlocks = EaselCodeBlockState()
     let objectMotion = EaselCanvasObjectMotionState()
+    let onboarding = EaselCanvasOnboardingState()
     private var snapshotHeader: NSView?
     private var snapshotHeaderItem: UUID?
     private weak var headerScrollClip: NSClipView?
@@ -689,9 +690,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if let rect = marqueeRect { add(rect.insetBy(dx: -marqueePad, dy: -marqueePad)) }
         add(trackedGuideBounds)
         add(guideDirtyBounds())
-        if session.document.items.isEmpty || trackedItems.isEmpty {
-            add(NSRect(x: 40, y: 50, width: max(180, bounds.width - 80), height: 106))
-        }
         rememberPaintedArtwork()
         if usesObjectSurfaces {
             if overlayChanged {
@@ -917,13 +915,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if badge.intersects(dirtyRect) { EaselTextLayout.drawLinkBadge(in: badge, scale: canvasScale) }
         }
         if let badge = textSizeBadge, badge.rect.intersects(dirtyRect) { EaselTextLayout.drawSizeBadge(badge.label, in: badge.rect, scale: canvasScale) }
-        if session.document.items.isEmpty && editor == nil {
-            let placeholder = NSRect(x: 40, y: 50, width: max(180, bounds.width - 80), height: 106)
-            if placeholder.intersects(dirtyRect) {
-                ("A place for your ideas" as NSString).draw(at: NSPoint(x: 40, y: 50), withAttributes: [.font: NoteTheme.nunitoExtraBold(28), .foregroundColor: NoteTheme.titlePlaceholderInk])
-                ("Add text, images, links or a drawing. Everything saves here on your Mac." as NSString).draw(in: NSRect(x: 40, y: 96, width: max(180, bounds.width - 80), height: 60), withAttributes: [.font: NoteTheme.nunitoRegular(15), .foregroundColor: NoteTheme.placeholderInk])
-            }
-        }
     }
     private func drawSelectionOutline(_ item: EaselItem, exclusive: Bool) {
         let turned = EaselCanvasRotation.begin(item, straight: editingID == item.id)
@@ -1455,6 +1446,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     func refreshTextControls() {
         refreshCodeBlockChrome(hidden: hidesPassiveAnnotations || !canPresentMotion)
         refreshSelectionToolbar()
+        refreshOnboarding()
     }
     func textDidChange(_ notification: Notification) {
         if tableCellTextDidChange(notification) { return }
