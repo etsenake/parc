@@ -42,7 +42,7 @@ final class ContentFocusRequest {
     func start() {
         guard step() == .waiting, !finished else { return }
         let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, 0) {
-            [weak self] _, _ in MainActor.assumeIsolated { _ = self?.step() }
+            [weak self] _, _ in MainActor.assumeIsolated { self?.step() }
         }
         self.observer = observer
         CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
@@ -50,7 +50,8 @@ final class ContentFocusRequest {
 
     func cancel() { finish() }
 
-    private func step() -> Outcome {
+    @discardableResult
+    func step() -> Outcome {
         guard !finished else { return .cancelled }
         guard let window, let content, window.isKeyWindow, window.attachedSheet == nil,
               ProcessInfo.processInfo.systemUptime < deadline,
