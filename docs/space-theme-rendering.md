@@ -108,7 +108,9 @@ Undo transactions remain in their focused guides.
 
 ## Checks
 
-`scripts/test-theme-rendering.sh` covers backing/content separation, propagation,
+`SpaceThemeRenderingTests` checks the backdrop and chrome decisions, gradient
+layers, texture strengths and spring behavior. The component renderer checks in
+`scripts/test-theme-rendering.sh` cover backing/content separation, propagation,
 material ownership, no-op publication, invalid themes, gradient/texture uniforms,
 alpha readback and spring interruption. Theme input/appearance/Undo and website-
 palette components cover their shared boundaries. The appearance check also

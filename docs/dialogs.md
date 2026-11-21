@@ -69,4 +69,4 @@ keyboard focus; Space toggles it and every other key passes on.
 
 Return confirms and Escape cancels wherever focus is, including the field and the
 checkbox, and keypad Enter confirms. An input method that is composing keeps its
-own Return and Escape. `scripts/test-parc-dialog.sh` covers these cases.
+own Return and Escape. `ParcDialogTests` covers dialog decisions, required fields and marked text.

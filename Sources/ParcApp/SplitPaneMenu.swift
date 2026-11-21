@@ -4,6 +4,7 @@ import ParcCore
 @MainActor
 enum SplitPaneMenu {
     static func make(orientation: SplitOrientation, index: Int, count: Int, layout: BrowserSplitLayout? = nil,
+                     artwork: ((String) -> NSImage?)? = nil,
                      prepare: (SplitPaneOperation) -> (() -> Void)?) -> NSMenu {
         let vertical = orientation == .vertical
         let horizontal: [(String, String, SplitPaneOperation)?] = [
@@ -53,12 +54,12 @@ enum SplitPaneMenu {
         let menu = NSMenu(title: "Split View Controls Menu")
         menu.autoenablesItems = false
         for row in rows {
-            guard let (title, artwork, operation) = row else { menu.addItem(.separator()); continue }
+            guard let (title, imageName, operation) = row else { menu.addItem(.separator()); continue }
             let action = operation.isEnabled(index: index, count: count, layout: layout) ? prepare(operation) : nil
             let target = SplitPaneMenuAction(action)
             let item = NSMenuItem(title: title, action: #selector(SplitPaneMenuAction.invoke), keyEquivalent: "")
             item.target = target; item.representedObject = target
-            item.showImage(SplitPaneMenuArtwork.image(artwork))
+            item.showImage((artwork ?? SplitPaneMenuArtwork.image)(imageName))
             item.isEnabled = action != nil; menu.addItem(item)
         }
         return menu

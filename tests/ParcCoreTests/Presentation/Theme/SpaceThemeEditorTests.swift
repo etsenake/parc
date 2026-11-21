@@ -2,7 +2,7 @@ import Testing
 @testable import ParcCore
 
 struct SpaceThemeEditorTests {
-    func near(_ a: Double, _ b: Double, _ message: Comment, sourceLocation: SourceLocation = #_sourceLocation) {
+    private func near(_ a: Double, _ b: Double, _ message: Comment, sourceLocation: SourceLocation = #_sourceLocation) {
         #expect(abs(a - b) < 0.000001, message, sourceLocation: sourceLocation)
     }
 
@@ -63,17 +63,34 @@ struct SpaceThemeEditorTests {
         #expect(editor.theme.colorCount == 1 && editor.theme.noise == 0.5)
     }
 
-    @Test func aWholeDragIsOneUndoStepAndRedoRestoresIt() {
+    private func draggedTheme() -> (SpaceThemeEditorState, SpaceTheme) {
         let initial = SpaceTheme.singleColor(ThemeColor(hex: "B9D4E8")!)
         let editor = SpaceThemeEditorState(theme: initial)
-        editor.beginGesture(); editor.beginGesture()
-        for index in 0...20 { editor.moveColor(x: Double(index) / 30, y: 0.2) }
+        editor.beginGesture()
+        editor.beginGesture()
+        editor.moveColor(x: 0.1, y: 0.2)
+        editor.moveColor(x: 0.3, y: 0.2)
+        return (editor, initial)
+    }
+
+    @Test func anActiveDragDoesNotPublishAnUndoStep() {
+        let (editor, _) = draggedTheme()
         #expect(!editor.canUndo)
-        let final = editor.theme
+    }
+
+    @Test func aWholeDragIsOneUndoStep() {
+        let (editor, initial) = draggedTheme()
         #expect(editor.finishGesture())
         #expect(!editor.finishGesture())
         #expect(editor.undo())
         #expect(editor.theme == initial && !editor.canUndo)
+    }
+
+    @Test func redoRestoresTheDraggedColor() {
+        let (editor, _) = draggedTheme()
+        let final = editor.theme
+        editor.finishGesture()
+        editor.undo()
         #expect(editor.redo() && editor.theme == final)
     }
 
@@ -176,13 +193,21 @@ struct SpaceThemeEditorTests {
         #expect(editor.theme.texture == .grain && editor.theme.noise == 0.8)
     }
 
-    @Test func texturesCycleInOrderThenTurnOff() {
-        let editor = SpaceThemeEditorState(theme: SpaceTheme())
+    @Test(arguments: [(SpaceTheme.Texture.grain, SpaceTheme.Texture.sand), (.sand, .denim), (.denim, .tweed)])
+    func cyclingTextureKeepsNoiseAndSelectsTheNextTexture(textures: (SpaceTheme.Texture, SpaceTheme.Texture)) {
+        var theme = SpaceTheme()
+        theme.noise = 0.8
+        theme.texture = textures.0
+        let editor = SpaceThemeEditorState(theme: theme)
         editor.cycleTexture()
-        for texture in [SpaceTheme.Texture.sand, .denim, .tweed] {
-            editor.cycleTexture()
-            #expect(editor.theme.texture == texture && editor.theme.noise == 0.8)
-        }
+        #expect(editor.theme.texture == textures.1 && editor.theme.noise == 0.8)
+    }
+
+    @Test func cyclingTheLastTextureTurnsNoiseOff() {
+        var theme = SpaceTheme()
+        theme.noise = 0.8
+        theme.texture = .tweed
+        let editor = SpaceThemeEditorState(theme: theme)
         editor.cycleTexture()
         #expect(editor.theme.texture == .grain && editor.theme.noise == 0)
     }

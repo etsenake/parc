@@ -116,13 +116,11 @@ Share actions hand the selected URLs to the chosen system service.
 
 ## Checks
 
-`scripts/test-toasts.sh` covers placement, one-time framing, geometry, hit testing,
-replacement, timer/hover, scroll, tap and Retry ordering, keyboard focus and
-keys, the focus elements VoiceOver hears, focus-shortcut routing and its yielding
-to an assigned command, idle hand-off, the import-notice queue, extension notice
-wording, binding/parent changes and theme contrast. The live-chord index check
+`ParcToastTests` covers placement, the dismissal clock, scroll decisions,
+replacement, action ordering, keyboard commands, accessible actions and the
+notice queue. The live-chord index check
 covers which shortcuts Settings has assigned. Shortcut cue checks
-retain their own lifecycle tests; BrowserToolbar checks cover share-menu
+retain their own lifecycle tests. `MenuImagesTests` covers share-menu
 construction.
 
 ## Scope

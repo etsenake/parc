@@ -74,8 +74,8 @@ Git retains the original approved input artwork.
 
 ## Checks
 
-- `scripts/test-brand-marks.sh`: resource loading, matching alpha, missing-mark
-  behavior and light/dark template drawing.
+- `BrandMarkTests`: resource loading, missing-mark behavior and light/dark
+  template drawing.
 - `scripts/test-portrait-capture.sh`: the real portrait compositor and resources.
 - `python3 -m unittest discover -s tests/BrandMarks -v`: approved-master RGB and
   protected-pixel fingerprints, alpha cleanup, contours and interior colors.

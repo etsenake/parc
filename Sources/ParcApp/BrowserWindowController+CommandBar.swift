@@ -1087,11 +1087,10 @@ extension BrowserWindowController {
         openPageInNewTab(addExtension ? "https://chromewebstore.google.com/category/extensions" : "parc://extensions/")
     }
     func openHistoryPage() { openPageInNewTab("parc://history/") }
-    func openReleaseNotes(fragment: String? = nil) {
-        guard SoftwareUpdateBanner.releaseNotesURL != nil else { return }
-        openPageInNewTab(WhatsNewPage.address(range: fragment))
+    func openReleaseNotes() {
+        SoftwareUpdateBanner.openReleaseNotes(using: openPageInNewTab)
     }
-    private func openPageInNewTab(_ address: String) {
+    func openPageInNewTab(_ address: String) {
         guard canOpenPageInNewTab, window?.isKeyWindow == true, windowCommandSecurityAvailable,
               let url = URL(string: address) else { return }
         openExactAddress(url)

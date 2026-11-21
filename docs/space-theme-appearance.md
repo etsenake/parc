@@ -35,8 +35,7 @@ rewrite that stored theme. Palette Undo is documented separately in
 
 ## Checks
 
-`scripts/test-theme-appearance.sh` compiles the actual AppKit editor and
-`AppAppearance` with isolated preferences. It covers nil reset, preference
-removal, Light/Dark siblings, external-parent updates, saved-choice restoration,
-palette/preset/Undo preservation and observer lifetime. Theme model tests and
-whole-module Swift checks cover shared integration.
+`SpaceThemeAppearanceTests` exercises appearance changes, preview rollback,
+theme Undo, updates to sibling editors and observer lifetime with isolated
+preferences. `ThemeAppearanceTimerIdleTests` advances cue and hover frames by
+hand to check redraw suppression and when the timers stop.

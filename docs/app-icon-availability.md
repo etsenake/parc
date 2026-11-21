@@ -25,7 +25,7 @@ previews may use PNG when ICNS is absent. An unreadable existing ICNS reports
 an artwork failure instead of silently falling back.
 
 The controller owns persistence and native identity; the [picker](app-icon-picker.md)
-owns interaction. `scripts/test-app-icon-controller.sh` exercises the production
+owns interaction. `AppIconControllerTests` exercises the production
 controller with disposable catalogs and an injected identity applier. It covers
 choice/order/defaults, restoration, earlier-name migration, invalid IDs, native
 sizes, missing-ICNS fallback and corrupt-ICNS refusal without changing the

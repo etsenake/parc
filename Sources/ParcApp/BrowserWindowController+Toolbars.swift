@@ -639,19 +639,17 @@ extension BrowserWindowController {
         let actions = binding.paymentActions(for: page)
         let title = actions.count > 1 ? "Payment methods" : actions.first?.title
         let saved = actions.map(\.savedLabel).filter { !$0.isEmpty }.joined(separator: " · ")
-        if sidebar.updatePaymentEntry(title: title, symbol: actions.first?.symbolName ?? "creditcard",
-                                      enabled: actions.contains { $0.isEnabled }, savedLabel: saved) {
-            sidebar.layoutSubtreeIfNeeded()
-        }
-        guard sidebarPresentation != .hidden, sidebar.isPaymentEntryVisible else { return }
-        for action in actions where action.requiresPresentationAcknowledgment {
-            _ = binding.paymentFeedbackPresented(action, for: page)
-            guard !isClosing, !page.isClosed, nativeBinding === binding,
-                  currentBrowser?.nativePage === page, sidebar.isPaymentEntryVisible else { return }
-        }
-        guard !saved.isEmpty else { return }
-        NSAccessibility.post(element: sidebar, notification: .announcementRequested,
-                             userInfo: [.announcement: saved, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        guard sidebar.presentPaymentEntry(title: title, symbol: actions.first?.symbolName ?? "creditcard",
+                                          enabled: actions.contains { $0.isEnabled }, savedLabel: saved,
+                                          canAcknowledge: {
+            guard sidebarPresentation != .hidden, sidebar.isPaymentEntryVisible else { return false }
+            for action in actions where action.requiresPresentationAcknowledgment {
+                _ = binding.paymentFeedbackPresented(action, for: page)
+                guard !isClosing, !page.isClosed, nativeBinding === binding,
+                      currentBrowser?.nativePage === page, sidebar.isPaymentEntryVisible else { return false }
+            }
+            return true
+        }) else { return }
         for action in actions where !action.savedLabel.isEmpty {
             _ = binding.paymentFeedbackPresented(action, for: page)
         }

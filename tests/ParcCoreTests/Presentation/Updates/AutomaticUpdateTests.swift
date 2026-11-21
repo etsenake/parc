@@ -5,18 +5,18 @@ import Testing
 struct AutomaticUpdateTests {
     let busy: TimeInterval = 10
 
-    func idle(_ seconds: TimeInterval) -> AutomaticUpdate.Activity { .init(idleTime: seconds) }
+    private func idle(_ seconds: TimeInterval) -> AutomaticUpdate.Activity { .init(idleTime: seconds) }
 
     @Test func aMacInUseIsNotAway() {
         let schedule = AutomaticUpdate()
         #expect(!schedule.isAway(at: 10_000, idle(busy)))
     }
 
-    @Test func aLockCountsAsAwayOnlyAfterFiveMinutes() {
+    @Test(arguments: [(399.0, false), (400.0, true)])
+    func aLockCountsAsAwayOnlyAfterFiveMinutes(timeAndAway: (TimeInterval, Bool)) {
         var schedule = AutomaticUpdate()
         schedule.began(.screenLock, at: 100)
-        #expect(!schedule.isAway(at: 399, idle(busy)))
-        #expect(schedule.isAway(at: 400, idle(busy)))
+        #expect(schedule.isAway(at: timeAndAway.0, idle(busy)) == timeAndAway.1)
     }
 
     @Test func aSecondReasonJoinsTheSameAwayPeriod() {

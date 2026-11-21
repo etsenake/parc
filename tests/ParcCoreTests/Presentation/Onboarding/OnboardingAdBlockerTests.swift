@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct OnboardingAdBlockerTests {
     typealias Choice = OnboardingDraft.AdBlockerChoice
     typealias Stage = OnboardingDraft.Stage
@@ -16,7 +15,7 @@ struct OnboardingAdBlockerTests {
               profileIDs: [setupProfile, sideProfile])
     }
 
-    func saved(_ fixture: PresentationOnboardingFixture, stage: Stage = .windowFrame,
+    @MainActor func saved(_ fixture: PresentationOnboardingFixture, stage: Stage = .windowFrame,
                _ change: (inout OnboardingDraft) -> Void) throws -> OnboardingDraft {
         var draft = try fixture.pendingDraft()
         draft.stage = stage
@@ -74,7 +73,7 @@ struct OnboardingAdBlockerTests {
         #expect(blocked.nextStage() == .defaultBrowser)
     }
 
-    @Test func importedBlockersTheirProfilesAndThePendingKeepChoiceResume() throws {
+    @Test @MainActor func importedBlockersTheirProfilesAndThePendingKeepChoiceResume() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         let resumed = try saved(fixture) {
@@ -85,7 +84,7 @@ struct OnboardingAdBlockerTests {
         #expect(resumed.adBlockerChoice == .keep(ublock.identifier))
     }
 
-    @Test func unknownExtensionIDsCannotInventTheStepOrKeepChoice() throws {
+    @Test @MainActor func unknownExtensionIDsCannotInventTheStepOrKeepChoice() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         let filtered = try saved(fixture) {
@@ -96,7 +95,7 @@ struct OnboardingAdBlockerTests {
         #expect(filtered.adBlockerChoice == nil)
     }
 
-    @Test func dontBlockAdsSurvivesRestartUntilSetupFinishes() throws {
+    @Test @MainActor func dontBlockAdsSurvivesRestartUntilSetupFinishes() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         let none = try saved(fixture) {
@@ -106,7 +105,7 @@ struct OnboardingAdBlockerTests {
         #expect(none.adBlockerChoice == Choice.none)
     }
 
-    @Test func yesBelongsOnlyToTheLayoutShownWhenNothingWasImported() throws {
+    @Test @MainActor func yesBelongsOnlyToTheLayoutShownWhenNothingWasImported() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         let misplaced = try saved(fixture) {
@@ -116,7 +115,7 @@ struct OnboardingAdBlockerTests {
         #expect(misplaced.adBlockerChoice == nil)
     }
 
-    @Test func yesSurvivesRestart() throws {
+    @Test @MainActor func yesSurvivesRestart() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         let yes = try saved(fixture) {
@@ -126,7 +125,7 @@ struct OnboardingAdBlockerTests {
         #expect(yes.adBlockerChoice == .uBlock)
     }
 
-    @Test func draftsSavedBeforeProfilesWereRecordedStillDecode() throws {
+    @Test @MainActor func draftsSavedBeforeProfilesWereRecordedStillDecode() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         _ = try saved(fixture) { $0.importedAdBlockers = [] }
@@ -181,7 +180,7 @@ struct OnboardingAdBlockerTests {
         #expect(Choice.keepAll.plan(for: [], setupProfileID: setupProfile) == .init(removals: [:], installProfileID: nil))
     }
 
-    @Test func keepAllSurvivesRestartAndReturningToTheStepSelectsItsFirstRowAgain() throws {
+    @Test @MainActor func keepAllSurvivesRestartAndReturningToTheStepSelectsItsFirstRowAgain() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         let kept = try saved(fixture) {
@@ -192,7 +191,7 @@ struct OnboardingAdBlockerTests {
         #expect(Choice.settled(.keepAll, for: [ublock, adGuard]) == .keep(ublock.identifier))
     }
 
-    @Test func aChoiceMadeAtTheStepStandsAfterRestartEvenIfItsKeptBlockerLaterFailed() throws {
+    @Test @MainActor func aChoiceMadeAtTheStepStandsAfterRestartEvenIfItsKeptBlockerLaterFailed() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         let after = try saved(fixture, stage: .defaultBrowser) {

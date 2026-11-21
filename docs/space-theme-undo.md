@@ -48,11 +48,7 @@ restart; the saved theme is persisted.
 
 ## Checks
 
-`scripts/test-theme-undo.sh` compiles the actual BrowserStore, theme editor view,
-window Undo manager and theme registration adapter. Disposable model and inert
-AppKit checks exercise sequential popovers, release of the retired editor,
-Undo/Redo before and after reopening, complete theme restoration, multi-Space
-selection preservation, original-window availability, no-op/branch behavior,
-gesture commit on close, stale shared edits, interruption by a parent update,
-actual persistence failures and retry, deleted/reassigned targets and local
-draft history. No window is displayed and no browser or engine is loaded.
+`SpaceThemeUndoTests` runs the window's undo registration against disposable
+stores. It checks durable Undo, Redo, selection and Space ownership, stale
+changes, unavailability and retrying a failed write. `SpaceThemeInputTests`
+checks the editor's local history and interruption by parent edits.

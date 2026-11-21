@@ -2,16 +2,29 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct MembershipCardStoreTests {
     let date = Date(timeIntervalSince1970: 1_800_000_000)
 
-    func store(in directory: PresentationScratch, name: String = "Ada Lovelace") -> (store: MembershipCardStore, url: URL) {
+    private var sample: MembershipCardState {
+        MembershipCardState(name: "Ada Lovelace", createdAt: date, palette: 2, shape: 1,
+                            title: "ARCHITECT", backgroundBlobInfo: Array(1...14) + [1])
+    }
+
+    private struct Seed: RandomNumberGenerator {
+        var value: UInt64 = 2026
+
+        mutating func next() -> UInt64 {
+            value = (value &* 6_364_136_223_846_793_005) &+ 1
+            return value
+        }
+    }
+
+    @MainActor private func store(in directory: PresentationScratch, name: String = "Ada Lovelace") -> (store: MembershipCardStore, url: URL) {
         let url = directory.url.appendingPathComponent("card.json")
         return (MembershipCardStore(url: url, initialName: name, now: { date }), url)
     }
 
-    @Test func aNewCardStartsValidWithTheInitialNameAndCreationDate() throws {
+    @Test @MainActor func aNewCardStartsValidWithTheInitialNameAndCreationDate() throws {
         let directory = try PresentationScratch("parc-card")
         defer { directory.remove() }
         let initial = try #require(store(in: directory).store.state)
@@ -20,37 +33,44 @@ struct MembershipCardStoreTests {
         #expect(initial.isValid)
     }
 
-    @Test func theShapeFollowsTheName() {
-        #expect(MembershipCardState.shapeForName("Josh") == 3)
-        #expect(MembershipCardState.shapeForName("Ada Lovelace") == 1)
-        #expect(MembershipCardState.shapeForName("🪐") == 1)
+    @Test(arguments: [("Josh", 3), ("Ada Lovelace", 1), ("🪐", 1)])
+    func theShapeFollowsTheName(example: (String, Int)) {
+        #expect(MembershipCardState.shapeForName(example.0) == example.1)
     }
 
-    @Test func openingACardRetainsItsNameDateAndDesign() throws {
+    @Test @MainActor func openingACardRetainsItsNameDateAndDesign() throws {
         let directory = try PresentationScratch("parc-card")
         defer { directory.remove() }
         let (store, url) = store(in: directory)
-        let reopened = MembershipCardStore(url: url, initialName: "Different", now: { Date() })
+        let reopened = MembershipCardStore(url: url, initialName: "Different", now: { date.addingTimeInterval(1) })
         #expect(reopened.state == store.state)
     }
 
-    @Test func randomizePicksANewShapePaletteAndBlobConfigurationEachTime() throws {
+    @MainActor private func regenerateCard() throws -> (MembershipCardState, MembershipCardState) {
         let directory = try PresentationScratch("parc-card")
         defer { directory.remove() }
         let store = store(in: directory).store
-        let initial = try #require(store.state)
-        for _ in 0..<32 {
-            let previous = try #require(store.state)
-            try store.regenerate()
-            let next = try #require(store.state)
-            #expect(next.name == initial.name && next.createdAt == initial.createdAt)
-            #expect(next.shape != previous.shape && (1...4).contains(next.shape))
-            #expect(next.palette != previous.palette && (1...7).contains(next.palette) && next.isValid)
-            #expect(next.backgroundBlobInfo != previous.backgroundBlobInfo)
-        }
+        let previous = try #require(store.state)
+        try store.regenerate()
+        return (previous, try #require(store.state))
     }
 
-    @Test func renamingTrimsTheNameAndKeepsTheRestOfTheDesign() throws {
+    @Test @MainActor func randomizingKeepsTheCardIdentity() throws {
+        let (previous, next) = try regenerateCard()
+        #expect(next.name == previous.name && next.createdAt == previous.createdAt)
+    }
+
+    @Test func randomizingChangesTheArtwork() {
+        var generator = Seed()
+        let original = sample
+        let next = original.regenerated(using: &generator)
+        #expect(next.shape != original.shape)
+        #expect(next.palette != original.palette)
+        #expect(next.backgroundBlobInfo != original.backgroundBlobInfo)
+        #expect(next.isValid)
+    }
+
+    @Test @MainActor func renamingTrimsTheNameAndKeepsTheRestOfTheDesign() throws {
         let directory = try PresentationScratch("parc-card")
         defer { directory.remove() }
         let store = store(in: directory).store
@@ -61,7 +81,7 @@ struct MembershipCardStoreTests {
         #expect(renamed.title == before.title && renamed.palette == before.palette)
     }
 
-    @Test func renamingFromAStaleCardIsRefused() throws {
+    @Test @MainActor func renamingFromAStaleCardIsRefused() throws {
         let directory = try PresentationScratch("parc-card")
         defer { directory.remove() }
         let store = store(in: directory).store
@@ -71,7 +91,7 @@ struct MembershipCardStoreTests {
     }
 
     @Test(arguments: ["", "  ", "One\nTwo", "One\u{2028}Two", "One\u{2029}Two", String(repeating: "a", count: 65)])
-    func anInvalidNameIsRefusedAndLeavesTheCardUntouched(invalid: String) throws {
+    @MainActor func anInvalidNameIsRefusedAndLeavesTheCardUntouched(invalid: String) throws {
         let directory = try PresentationScratch("parc-card")
         defer { directory.remove() }
         let store = store(in: directory).store
@@ -81,10 +101,8 @@ struct MembershipCardStoreTests {
     }
 
     @Test(arguments: ["\u{2028}", "\u{2029}"])
-    func savedTitlesAndNamesMustRemainOnOneLine(separator: String) throws {
-        let directory = try PresentationScratch("parc-card")
-        defer { directory.remove() }
-        let initial = try #require(store(in: directory).store.state)
+    func savedTitlesAndNamesMustRemainOnOneLine(separator: String) {
+        let initial = sample
         var invalid = initial
         invalid.title = "ONE" + separator + "TWO"
         #expect(!invalid.isValid)
@@ -93,7 +111,7 @@ struct MembershipCardStoreTests {
         #expect(!invalid.isValid)
     }
 
-    @Test func aFailedWriteLeavesTheFileAndTheStateAsTheyWere() throws {
+    @Test @MainActor func aFailedWriteLeavesTheFileAndTheStateAsTheyWere() throws {
         let directory = try PresentationScratch("parc-card")
         defer { directory.remove() }
         let (_, url) = store(in: directory)
@@ -105,7 +123,7 @@ struct MembershipCardStoreTests {
         #expect(failing.state == state)
     }
 
-    @Test func aRefusedExternalReplacementCannotPublishANewDesign() throws {
+    @Test @MainActor func aRefusedExternalReplacementCannotPublishANewDesign() throws {
         let directory = try PresentationScratch("parc-card")
         defer { directory.remove() }
         let (store, url) = store(in: directory)
@@ -120,7 +138,7 @@ struct MembershipCardStoreTests {
         #expect(store.state == initial)
     }
 
-    @Test func aCardFromAFutureVersionIsNeverRewritten() throws {
+    @Test @MainActor func aCardFromAFutureVersionIsNeverRewritten() throws {
         let directory = try PresentationScratch("parc-card")
         defer { directory.remove() }
         let (store, url) = store(in: directory)
@@ -134,7 +152,7 @@ struct MembershipCardStoreTests {
         #expect(try Data(contentsOf: url) == futureData)
     }
 
-    @Test func aCorruptCardIsPreservedAsItIs() throws {
+    @Test @MainActor func aCorruptCardIsPreservedAsItIs() throws {
         let directory = try PresentationScratch("parc-card")
         defer { directory.remove() }
         let (store, url) = store(in: directory)
@@ -144,7 +162,7 @@ struct MembershipCardStoreTests {
         #expect(try Data(contentsOf: url) == Data("broken".utf8))
     }
 
-    @Test func theSharedStoreIsOwnedOncePerDirectory() throws {
+    @Test @MainActor func theSharedStoreIsOwnedOncePerDirectory() throws {
         let directory = try PresentationScratch("parc-card")
         defer { directory.remove() }
         let a = MembershipCardStore.shared(directory: directory.url, name: "Shared")

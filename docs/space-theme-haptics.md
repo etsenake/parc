@@ -50,7 +50,6 @@ macOS 13 minimum is above this API's macOS 10.11 availability.
 
 ## Checks
 
-`scripts/test-theme-haptics.sh` injects the feedback action so it can inspect
-detent and control ownership without producing physical feedback. Its checks cover
-the inclusive boundaries, reversal, multiple crossings, repeated/clamped
-values, gesture provenance, silent non-haptic actions and parent cancellation.
+`SpaceThemeHapticTests` injects the feedback action into the actual editor.
+The cases cover detent boundaries, reversal, multiple crossings, unchanged
+values, physical input, silent discrete input and cancellation.

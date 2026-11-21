@@ -11,12 +11,17 @@ final class ApplicationQuitWarning: NSObject {
     private weak var parent: NSWindow?
     private var closeObserver: NSObjectProtocol?
     private var sheetEndObserver: NSObjectProtocol?
+    private let schedule: (TimeInterval, @escaping @MainActor () -> Void) -> Void
     private(set) var finished = false
     var isCurrent: () -> Bool = { false }
     var onDecision: ((Bool) -> Void)?
 
-    init(preferences: QuitWarningPreferences) {
+    init(preferences: QuitWarningPreferences,
+         schedule: @escaping (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, work in
+             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { work() } }
+         }) {
         self.preferences = preferences
+        self.schedule = schedule
         var content = ParcDialog.Content(title: [("Quit Parc?", false)], icon: NSApp.applicationIconImage,
                                         confirm: "Quit", cancel: "Cancel")
         content.auxiliary = "Quit, and don’t ask again"
@@ -47,12 +52,10 @@ final class ApplicationQuitWarning: NSObject {
     }
 
     private func beginAfterSheetEnded(attempts: Int, delay: TimeInterval) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, !self.finished, self.isWaiting, let parent = self.parent else { return }
-                if parent.attachedSheet == nil { self.beginSheet() }
-                else if attempts > 1 { self.beginAfterSheetEnded(attempts: attempts - 1, delay: 0.05) }
-            }
+        schedule(delay) { [weak self] in
+            guard let self, !self.finished, self.isWaiting, let parent = self.parent else { return }
+            if parent.attachedSheet == nil { self.beginSheet() }
+            else if attempts > 1 { self.beginAfterSheetEnded(attempts: attempts - 1, delay: 0.05) }
         }
     }
 

@@ -2439,6 +2439,22 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             !paymentAction.isHiddenOrHasHiddenAncestor && !paymentAction.visibleRect.isEmpty
     }
 
+    func presentPaymentEntry(title: String?, symbol: String, enabled: Bool, savedLabel: String,
+                             layout: (() -> Void)? = nil, canAcknowledge: () -> Bool,
+                             announce: ((String) -> Void)? = nil) -> Bool {
+        if updatePaymentEntry(title: title, symbol: symbol, enabled: enabled, savedLabel: savedLabel) {
+            (layout ?? layoutSubtreeIfNeeded)()
+        }
+        guard canAcknowledge(), !savedLabel.isEmpty else { return false }
+        if let announce {
+            announce(savedLabel)
+        } else {
+            NSAccessibility.post(element: self, notification: .announcementRequested,
+                                 userInfo: [.announcement: savedLabel, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        }
+        return true
+    }
+
     @discardableResult
     func updatePaymentEntry(title: String?, symbol: String, enabled: Bool, savedLabel: String) -> Bool {
         guard title != paymentEntryTitle || symbol != paymentEntrySymbol

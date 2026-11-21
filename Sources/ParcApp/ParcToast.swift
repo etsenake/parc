@@ -624,14 +624,18 @@ final class ParcToastPresentation: NSView {
             guard let self, !self.isRetiring else { return }
             self.state.show()
         }
-        cancelTimer = clock.repeating(duration) { [weak self] in
-            guard let self, !self.isRetiring, !self.containsPointer, self.state.focused == nil else { return }
-            self.retire(animated: true, finished: true)
-        }
+        startDismissalTimer { [weak self] in self?.containsPointer == true }
         NSAccessibility.post(element: self, notification: .announcementRequested,
             userInfo: [.announcement: state.content.accessibilityText,
                        .priority: NSAccessibilityPriorityLevel.medium.rawValue])
         return true
+    }
+
+    func startDismissalTimer(isHovered: @escaping () -> Bool) {
+        cancelTimer = clock.repeating(duration) { [weak self] in
+            guard let self, !self.isRetiring, !isHovered(), self.state.focused == nil else { return }
+            self.retire(animated: true, finished: true)
+        }
     }
 
     func update(theme: SpaceTheme, basicBackground: NSColor?) {
@@ -868,11 +872,14 @@ final class ParcToastQueue {
     private weak var shown: ParcToastPresentation?
     private let next: () -> Item?
     private let present: (Item) -> ParcToastPresentation?
+    private let schedule: (@escaping @MainActor () -> Void) -> Void
     var canShow: () -> Bool = { true }
     var isFront: () -> Bool = { true }
 
-    init(presenter: ParcToastPresenter, next: @escaping () -> Item?, present: @escaping (Item) -> ParcToastPresentation?) {
+    init(presenter: ParcToastPresenter, next: @escaping () -> Item?, present: @escaping (Item) -> ParcToastPresentation?,
+         schedule: @escaping (@escaping @MainActor () -> Void) -> Void = { work in DispatchQueue.main.async { work() } }) {
         self.presenter = presenter; self.next = next; self.present = present
+        self.schedule = schedule
     }
 
     func showNext() {
@@ -882,7 +889,7 @@ final class ParcToastQueue {
     }
 
     func showNextWhenIdle() {
-        DispatchQueue.main.async { [weak self] in
+        schedule { [weak self] in
             guard let self, self.isFront(), self.presenter?.current == nil else { return }
             self.showNext()
         }
@@ -897,9 +904,12 @@ final class ParcToastPresenter {
     var onIdle: (() -> Void)?
     var yieldsShortcut: (NSEvent) -> Bool = { _ in false }
     private let clock: ParcToastClock
-    init(share: @escaping @MainActor ([URL], NSPoint?) -> Void = { _, _ in }, clock: ParcToastClock = .system) {
+    private let present: @MainActor (ParcToastPresentation, NSWindow, NSView?) -> Bool
+    init(share: @escaping @MainActor ([URL], NSPoint?) -> Void = { _, _ in }, clock: ParcToastClock = .system,
+         present: @escaping @MainActor (ParcToastPresentation, NSWindow, NSView?) -> Bool = { $0.present(in: $1, over: $2) }) {
         self.share = share
         self.clock = clock
+        self.present = present
     }
 
     @discardableResult
@@ -909,7 +919,7 @@ final class ParcToastPresenter {
         let next = ParcToastPresentation(content: content, theme: theme, basicBackground: basicBackground,
                                         duration: duration, onTap: onTap, onRetry: onRetry, share: share, clock: clock)
         next.yieldsShortcut = yieldsShortcut
-        guard next.present(in: parent, over: anchor) else { return nil }
+        guard present(next, parent, anchor) else { return nil }
         let previous = current
         current = next
         next.onRetire = { [weak self, weak next] finished in

@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct OnboardingImportStepCounterTests {
     typealias Stage = OnboardingDraft.Stage
     typealias Page = OnboardingDraft.ImportPage
@@ -11,7 +10,7 @@ struct OnboardingImportStepCounterTests {
         OnboardingDraft(spaceID: UUID(), spaceName: "Setup", theme: SpaceTheme())
     }
 
-    func show(_ draft: inout OnboardingDraft, _ stage: Stage, _ current: Page? = nil, ahead: [Page] = [],
+    private func show(_ draft: inout OnboardingDraft, _ stage: Stage, _ current: Page? = nil, ahead: [Page] = [],
               started: Bool = true) -> String {
         draft.stage = stage
         if stage == .continuedImport, let current { draft.recordImportPage(current) }
@@ -19,7 +18,7 @@ struct OnboardingImportStepCounterTests {
         return "\(draft.displayedStepNumber(importSteps: steps)) of \(draft.displayedSetupCount(importSteps: steps))"
     }
 
-    func walk(_ draft: inout OnboardingDraft) -> [String] {
+    private func walk(_ draft: inout OnboardingDraft) -> [String] {
         [Stage.theme, .windowFrame, .adBlockers, .defaultBrowser].map { show(&draft, $0) }
     }
 
@@ -205,7 +204,7 @@ struct OnboardingImportStepCounterTests {
         #expect(page(.bookmarks, .progress, true) == page(.bookmarks, .bookmarks, true))
     }
 
-    func resumedAfterTheImport(_ fixture: PresentationOnboardingFixture) throws -> OnboardingDraft {
+    @MainActor func resumedAfterTheImport(_ fixture: PresentationOnboardingFixture) throws -> OnboardingDraft {
         var resumed = try fixture.loadDraft()
         _ = show(&resumed, .favorites, .progress, ahead: [.bookmarks])
         _ = show(&resumed, .continuedImport, .bookmarks)
@@ -213,7 +212,7 @@ struct OnboardingImportStepCounterTests {
         return resumed
     }
 
-    @Test func aSetupResumedAfterTheImportKeepsItsPagesInTheCount() throws {
+    @Test @MainActor func aSetupResumedAfterTheImportKeepsItsPagesInTheCount() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         let resumed = try resumedAfterTheImport(fixture)
@@ -223,7 +222,7 @@ struct OnboardingImportStepCounterTests {
         #expect(show(&reopened, .theme) == "4 of 7")
     }
 
-    @Test func aSetupResumedAtTheImportStartsItsCountAfresh() throws {
+    @Test @MainActor func aSetupResumedAtTheImportStartsItsCountAfresh() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         var resumed = try resumedAfterTheImport(fixture)
@@ -233,7 +232,7 @@ struct OnboardingImportStepCounterTests {
         #expect(atImport.importPages.isEmpty)
     }
 
-    @Test func draftsWithoutImportPagesSaveNothingNew() throws {
+    @Test @MainActor func draftsWithoutImportPagesSaveNothingNew() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         var resumed = try resumedAfterTheImport(fixture)
@@ -243,7 +242,7 @@ struct OnboardingImportStepCounterTests {
         #expect(!json.contains("importPages"))
     }
 
-    @Test func aSavedDraftAtTheBrowserChoiceNeverCarriesAnOldImportsPages() throws {
+    @Test @MainActor func aSavedDraftAtTheBrowserChoiceNeverCarriesAnOldImportsPages() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         try fixture.loadDraft().save(directory: fixture.root)
@@ -254,7 +253,7 @@ struct OnboardingImportStepCounterTests {
         #expect(try fixture.loadDraft().importPages.isEmpty)
     }
 
-    @Test func aPageNameFromANewerParcIsLeftOutRatherThanBreakingTheDraft() throws {
+    @Test @MainActor func aPageNameFromANewerParcIsLeftOutRatherThanBreakingTheDraft() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         try fixture.loadDraft().save(directory: fixture.root)
@@ -265,7 +264,7 @@ struct OnboardingImportStepCounterTests {
         #expect(try fixture.loadDraft().importPages == [.bookmarks])
     }
 
-    @Test func anImpossibleNumberOfImportPagesIsADamagedDraft() throws {
+    @Test @MainActor func anImpossibleNumberOfImportPagesIsADamagedDraft() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         try fixture.loadDraft().save(directory: fixture.root)
@@ -276,7 +275,7 @@ struct OnboardingImportStepCounterTests {
         #expect((try? fixture.loadDraft()) == nil)
     }
 
-    @Test func replaysAccessRestartBeginsTheImportsCountAfreshToo() throws {
+    @Test @MainActor func replaysAccessRestartBeginsTheImportsCountAfreshToo() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         var resumed = try resumedAfterTheImport(fixture)

@@ -35,7 +35,7 @@ final class SpaceThemeEditorView: NSView {
     private let background = NSVisualEffectView()
     private let pad = ThemeColorPad()
     private let intensity = ThemeIntensityControl()
-    private let noise = ThemeNoiseControl()
+    private let noise: ThemeNoiseControl
     private var appearanceButtons: [ThemeAppearanceButton] = []
     private var appearanceObservation: NSKeyValueObservation?
     private var presets: [ThemePresetButton] = []
@@ -50,10 +50,13 @@ final class SpaceThemeEditorView: NSView {
     override var intrinsicContentSize: NSSize { NSSize(width: 356, height: 508) }
 
     init(theme: SpaceTheme, presetPage: Int = 0,
+         scrollPublisher: ((AnyPublisher<Double, Never>) -> AnyPublisher<Double, Never>)? = nil,
+         scrollTime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
          performHapticFeedback: @escaping @MainActor () -> Void = ThemeHapticFeedback.perform) {
         editor = SpaceThemeEditorState(theme: theme)
         committedTheme = theme
         page = presetPage
+        noise = ThemeNoiseControl(scrollPublisher: scrollPublisher, now: scrollTime)
         self.performHapticFeedback = performHapticFeedback
         super.init(frame: NSRect(x: 0, y: 0, width: 356, height: 508))
         page = min(families.count - 1, max(0, page))
@@ -548,9 +551,15 @@ struct ThemeButtonMotion {
     private var timer: Timer?
     private var frameTime: CFTimeInterval = 0
     private let now: () -> CFTimeInterval
+    private let allowsMotionOverride: (() -> Bool)?
+    private let scheduleFrame: (Timer) -> Void
     private var reduceMotionObserver: NSObjectProtocol?
-    init(view: NSView, now: @escaping () -> CFTimeInterval = { CACurrentMediaTime() }) {
+    init(view: NSView, now: @escaping () -> CFTimeInterval = { CACurrentMediaTime() },
+         allowsMotion: (() -> Bool)? = nil,
+         scheduleFrame: @escaping (Timer) -> Void = { RunLoop.main.add($0, forMode: .common) }) {
         self.view = view; self.now = now
+        allowsMotionOverride = allowsMotion
+        self.scheduleFrame = scheduleFrame
         reduceMotionObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -570,7 +579,8 @@ struct ThemeButtonMotion {
     func update(hovered: Bool? = nil, pressed: Bool? = nil, animatesHover: Bool = true) {
         let hovered = hovered ?? motion.isHovered, pressed = pressed ?? motion.isPressed
         guard hovered != motion.isHovered || pressed != motion.isPressed else { return }
-        let allowsMotion = view?.window != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let allowsMotion = allowsMotionOverride?()
+            ?? (view?.window != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
         motion.setHovered(hovered, animated: allowsMotion && animatesHover)
         motion.setPressed(pressed, animated: allowsMotion)
         view?.needsDisplay = true
@@ -579,7 +589,7 @@ struct ThemeButtonMotion {
         let timer = Timer(timeInterval: 1 / 60, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated { self?.frame(timer) }
         }
-        self.timer = timer; RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer; scheduleFrame(timer)
     }
     func reset() { timer?.invalidate(); timer = nil; motion = ThemeButtonMotion() }
     private func settle() {
@@ -986,13 +996,20 @@ private final class ThemeNoiseControl: NSControl {
     private var cancelledScroll = false
     private var cancelledScrollUntil: TimeInterval = 0
     private let scrollEvents = PassthroughSubject<Double, Never>()
+    private let scrollPublisher: (AnyPublisher<Double, Never>) -> AnyPublisher<Double, Never>
+    private let now: () -> TimeInterval
     private var scrollDelivery: AnyCancellable?
     private var lastScrollTime: TimeInterval = 0
     private let tooltipAnchor = TooltipAnchorView()
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+    init(scrollPublisher: ((AnyPublisher<Double, Never>) -> AnyPublisher<Double, Never>)?,
+         now: @escaping () -> TimeInterval) {
+        self.scrollPublisher = scrollPublisher ?? {
+            $0.throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true).eraseToAnyPublisher()
+        }
+        self.now = now
+        super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.slider); setAccessibilityLabel("Theme texture and noise")
         setAccessibilityHelp("Click to cycle textures. Rotate or scroll to adjust noise.")
@@ -1078,8 +1095,7 @@ private final class ThemeNoiseControl: NSControl {
     }
 
     private func observeScroll() {
-        scrollDelivery = scrollEvents
-            .throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true)
+        scrollDelivery = scrollPublisher(scrollEvents.eraseToAnyPublisher())
             .sink { [weak self] delta in
                 guard let self, self.pointerInsideCenter, !self.cancelledScroll,
                       self.startPoint == nil, !self.rotationSequenceActive,
@@ -1091,9 +1107,9 @@ private final class ThemeNoiseControl: NSControl {
     }
 
     private func cancelScrollInput() {
-        if scrollSequenceActive || ProcessInfo.processInfo.systemUptime < lastScrollTime + 0.2 {
+        if scrollSequenceActive || now() < lastScrollTime + 0.2 {
             cancelledScroll = true
-            cancelledScrollUntil = ProcessInfo.processInfo.systemUptime + 0.2
+            cancelledScrollUntil = now() + 0.2
         }
         scrollDelivery?.cancel(); observeScroll()
     }
@@ -1208,8 +1224,8 @@ struct ThemeAppearanceAnimation {
     let start: Double
     let end: Double
     let size: CGSize
-    init?(name: String) {
-        guard let url = ThemeEditorResources.url(name, extension: "json"),
+    init?(name: String, resources: Bundle = .main) {
+        guard let url = resources.url(forResource: name, withExtension: "json", subdirectory: "ThemeEditor"),
               let data = try? Data(contentsOf: url),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let layers = root["layers"] as? [[String: Any]],
@@ -1354,18 +1370,24 @@ final class ThemeAppearanceButton: NSButton {
         }
     }
     private let animation: ThemeAppearanceAnimation?
+    private let allowsPlaybackOverride: (() -> Bool)?
+    private let scheduleFrame: (Timer) -> Void
     private var timer: Timer?
     var now: () -> CFTimeInterval = { CACurrentMediaTime() }
+    var onDisplayInvalidated: (() -> Void)?
     private var startedAt = 0.0
     private var frozenAt = 0.0
     private var lastDisplayFingerprint: Int?
     private var hovered = false
     private var tracking: NSTrackingArea?
     override var isFlipped: Bool { true }
-    init(appearance: AppAppearance) {
+    init(appearance: AppAppearance, resources: Bundle = .main, allowsPlayback: (() -> Bool)? = nil,
+         scheduleFrame: @escaping (Timer) -> Void = { RunLoop.main.add($0, forMode: .common) }) {
         appearanceChoice = appearance
+        allowsPlaybackOverride = allowsPlayback
+        self.scheduleFrame = scheduleFrame
         let asset = appearance == .automatic ? "automatic" : appearance == .light ? "sun" : "moon"
-        animation = ThemeAppearanceAnimation(name: asset)
+        animation = ThemeAppearanceAnimation(name: asset, resources: resources)
         super.init(frame: .zero)
         title = ""; isBordered = false; focusRingType = .exterior
         target = self; action = #selector(invoke)
@@ -1385,8 +1407,8 @@ final class ThemeAppearanceButton: NSButton {
     override func viewDidHide() { super.viewDidHide(); updatePlayback() }
     override func viewDidUnhide() { super.viewDidUnhide(); updatePlayback() }
     private var shouldPlay: Bool {
-        isSelected && window != nil && !isHiddenOrHasHiddenAncestor
-            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        isSelected && !isHiddenOrHasHiddenAncestor
+            && (allowsPlaybackOverride?() ?? (window != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion))
     }
     private func updatePlayback() {
         if shouldPlay && timer == nil {
@@ -1428,11 +1450,12 @@ final class ThemeAppearanceButton: NSButton {
         let timer = Timer(timeInterval: 1 / 60, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated { self?.tick(timer) }
         }
-        self.timer = timer; RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer; scheduleFrame(timer)
     }
     private func stopFrames() { timer?.invalidate(); timer = nil }
     private func invalidateDisplay() {
         needsDisplay = true
+        onDisplayInvalidated?()
     }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
