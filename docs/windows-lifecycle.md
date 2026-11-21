@@ -217,5 +217,6 @@ Window presentation/session storage, `LaunchContinuity`, the native page
 transfer registry and `BrowserWindowController` own these paths. Focused model
 coverage includes `WindowPresentation`, `ClosedItems`, `CloseUndo`,
 `PagePlaceholder`, `PagePlaceholderImages` and session-store tests. Native/compiler checks validate their
-interfaces when run. `tests/TerminationRestart/check.py` runs the real
-termination coordinator against stand-ins for every way a quit can stop short.
+interfaces when run. `ApplicationTermination` owns the quit sequence behind a
+host boundary, so `ApplicationTerminationTests` drive it against stand-ins for
+every way a quit can stop short without showing a sheet or calling the engine.

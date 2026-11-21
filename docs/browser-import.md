@@ -197,7 +197,10 @@ password-store and file-removal contracts.
 Primary owners are `BrowserImportCoordinator.swift`, the original setup/menu
 presenter, `BrowserImportDestination` and [native import](../Engine/ParcImport/README.md).
 Focused import, access, focus, password-file and restart-helper checks use
-fixtures or inert components. Restart fixtures replace final app launch with a
+fixtures or inert components. The coordinator, extension retries and setup
+extension changes reach the engine through `BrowserImportNative`, so the
+`BrowserImport*Tests` suites in `tests/ParcTests/Data` drive them with a fake
+engine and a manual work queue. Restart fixtures replace final app launch with a
 recording seam. `tests/ParcCoreTests/Data/Import/SafariBrowsingExportTests.swift` runs the export ZIP
 and bookmark-file readers against made-up archives, including ZIP64, data
 descriptors, damaged and hostile entries, and localized file names.
