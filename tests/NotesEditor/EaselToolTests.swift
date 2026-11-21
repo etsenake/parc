@@ -26,6 +26,7 @@ struct EaselToolTests {
         connectorGeometry()
         zoomSteps()
         zoomFitting()
+        zoomAnchor()
         print("EaselToolTests passed")
     }
 
@@ -174,6 +175,22 @@ struct EaselToolTests {
         expect(line.points == [EaselPoint(x: 80, y: 0), EaselPoint(x: 0, y: 40)], "Connector points are relative to the frame and keep their order")
         let flatLine = EaselToolGeometry.lineItemGeometry(from: EaselPoint(x: 0, y: 10), to: EaselPoint(x: 50, y: 10))
         expect(flatLine.frame.height == 1, "A flat connector keeps a valid one-point frame")
+    }
+
+    static func zoomAnchor() {
+        let origin = EaselPoint(x: 100, y: 50)
+        let anchor = EaselPoint(x: 300, y: 250)
+        let zoomedIn = EaselZoom.anchoredOrigin(anchor: anchor, visibleOrigin: origin, before: 1, after: 2)
+        expect(near(zoomedIn.x, 200) && near(zoomedIn.y, 150), "Zooming in keeps the point under the pointer still")
+        let zoomedOut = EaselZoom.anchoredOrigin(anchor: anchor, visibleOrigin: origin, before: 2, after: 1)
+        expect(near(zoomedOut.x, -100) && near(zoomedOut.y, -150), "Zooming out keeps the point under the pointer still")
+        expect(EaselZoom.anchoredOrigin(anchor: anchor, visibleOrigin: origin, before: 1, after: 1) == origin, "No zoom change leaves the view alone")
+        expect(EaselZoom.anchoredOrigin(anchor: anchor, visibleOrigin: origin, before: 1, after: 0) == origin, "Nonsense zoom leaves the view alone")
+        expect(EaselZoom.anchoredOrigin(anchor: EaselPoint(x: .nan, y: 0), visibleOrigin: origin, before: 1, after: 2) == origin,
+               "A nonsense pointer leaves the view alone")
+        let clampedAfter = EaselZoom.clamped(10, minimum: 0.3333, maximum: 4)
+        let atLimit = EaselZoom.anchoredOrigin(anchor: anchor, visibleOrigin: origin, before: 4, after: clampedAfter)
+        expect(atLimit == origin, "Wheeling past the zoom limit does not drift the view")
     }
 
     static func zoomSteps() {

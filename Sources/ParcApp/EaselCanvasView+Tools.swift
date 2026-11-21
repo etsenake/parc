@@ -257,12 +257,12 @@ extension EaselCanvasView {
 
     func ownerPlacement(_ placing: EaselTool, from start: NSPoint, to end: NSPoint, frame: EaselRect, dragged: Bool) -> Bool? {
         switch placing {
-        case .sticky: return insertSticky(at: end)
+        case .sticky: return insertSticky(at: dragged ? end : start)
         case .section:
-            return dragged ? insertSection(frame: NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)) : insertSection(at: end)
+            return dragged ? insertSection(frame: NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)) : insertSection(at: dragged ? end : start)
         case .rectangle: return nil
         case .ellipse: return nil
-        case .text: return dragged ? insertText(at: NSPoint(x: frame.x, y: frame.y), width: frame.width) : insertText(at: end)
+        case .text: return dragged ? insertText(at: NSPoint(x: frame.x, y: frame.y), width: frame.width) : insertText(at: dragged ? end : start)
         case .table: return placeTable(from: start, to: dragged ? end : nil)
         case .codeBlock: return placeCodeBlock(in: frame)
         case .stamp: return nil
@@ -588,11 +588,12 @@ extension EaselCanvasView {
         guard let scroll = enclosingScrollView else { return }
         let clip = scroll.contentView
         let before = scroll.magnification
-        let offset = NSPoint(x: (anchor.x - clip.bounds.minX) * before, y: (anchor.y - clip.bounds.minY) * before)
+        let origin = clip.bounds.origin
         let next = CGFloat(EaselZoom.clamped(value, minimum: Double(scroll.minMagnification), maximum: Double(scroll.maxMagnification)))
         if abs(before - next) > 0.0001 { scroll.magnification = next }
         resizeCanvas(viewport: scroll.contentSize)
-        panCanvas(toVisibleOrigin: NSPoint(x: anchor.x - offset.x / next, y: anchor.y - offset.y / next))
+        let target = EaselZoom.anchoredOrigin(anchor: EaselPoint(anchor), visibleOrigin: EaselPoint(origin), before: Double(before), after: Double(next))
+        panCanvas(toVisibleOrigin: NSPoint(x: target.x, y: target.y))
         zoomDidChange()
     }
 

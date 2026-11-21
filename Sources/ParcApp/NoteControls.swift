@@ -466,7 +466,7 @@ class NoteControlButton: PointingHandButton {
         }
     }
 
-    private func setPressed(_ pressed: Bool) {
+    func setPressed(_ pressed: Bool) {
         guard pressed != isPressed else { return }
         isPressed = pressed
         refreshFace(animated: false)

@@ -12,6 +12,9 @@ final class EaselToolButton: NoteControlButton {
     private(set) var pressedWithPointer = false
     private var downPoint: NSPoint?
     private var dragging = false
+    private var dragCancelled = false
+    private var keyMonitor: Any?
+    private var resignObserver: NSObjectProtocol?
 
     init(_ content: NoteToolbarButton.Content, label: String) {
         self.content = content
@@ -86,13 +89,51 @@ final class EaselToolButton: NoteControlButton {
         pressedWithPointer = true
         downPoint = event.locationInWindow
         dragging = false
+        dragCancelled = false
         super.mouseDown(with: event)
+    }
+
+    private func watchDrag() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return event }
+            let cancelled = MainActor.assumeIsolated { () -> Bool in
+                guard let self, self.dragging else { return false }
+                self.cancelDrag()
+                return true
+            }
+            return cancelled ? nil : event
+        }
+        resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.cancelDrag() }
+        }
+    }
+
+    private func unwatchDrag() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
+        keyMonitor = nil
+        resignObserver = nil
+    }
+
+    private func cancelDrag() {
+        guard dragging else { return }
+        dragging = false
+        dragCancelled = true
+        downPoint = nil
+        unwatchDrag()
+        setPressed(false)
+        onDragEnded?(nil)
+        NSCursor.arrow.set()
     }
 
     override func mouseDragged(with event: NSEvent) {
         super.mouseDragged(with: event)
-        guard let start = downPoint, let onDragMoved else { return }
-        if !dragging, hypot(event.locationInWindow.x - start.x, event.locationInWindow.y - start.y) > 6 { dragging = true }
+        guard !dragCancelled, let start = downPoint, let onDragMoved else { return }
+        if !dragging, hypot(event.locationInWindow.x - start.x, event.locationInWindow.y - start.y) > 6 {
+            dragging = true
+            watchDrag()
+        }
         if dragging {
             onDragMoved(event.locationInWindow)
             NSCursor.closedHand.set()
@@ -101,8 +142,12 @@ final class EaselToolButton: NoteControlButton {
 
     override func mouseUp(with event: NSEvent) {
         let wasDragging = dragging
+        let cancelled = dragCancelled
         dragging = false
+        dragCancelled = false
         downPoint = nil
+        unwatchDrag()
+        if cancelled { setPressed(false); return }
         if wasDragging {
             let inside = bounds.contains(convert(event.locationInWindow, from: nil))
             onDragEnded?(inside ? nil : event.locationInWindow)

@@ -355,6 +355,14 @@ enum EaselZoom {
         return max(0.5, min(2, factor))
     }
 
+    static func anchoredOrigin(anchor: EaselPoint, visibleOrigin: EaselPoint, before: Double, after: Double) -> EaselPoint {
+        guard [anchor.x, anchor.y, visibleOrigin.x, visibleOrigin.y, before, after].allSatisfy(\.isFinite), before > 0, after > 0 else {
+            return visibleOrigin
+        }
+        return EaselPoint(x: anchor.x - (anchor.x - visibleOrigin.x) * before / after,
+                          y: anchor.y - (anchor.y - visibleOrigin.y) * before / after)
+    }
+
     static func percent(_ magnification: Double) -> Int {
         guard magnification.isFinite, magnification > 0 else { return 100 }
         return Int((min(magnification, 1000) * 100).rounded())
