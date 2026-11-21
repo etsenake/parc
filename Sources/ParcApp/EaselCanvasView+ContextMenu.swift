@@ -59,6 +59,7 @@ struct EaselMenuContext {
     let target: Target
     let items: [EaselItem]
     let point: EaselPoint
+    var fromPointer = true
 }
 
 @MainActor
@@ -171,7 +172,7 @@ extension EaselCanvasView {
     func presentContextMenu(at point: NSPoint, keyboard: Bool) {
         let objects = selectedObjects
         let context = EaselMenuContext(target: objects.isEmpty ? .canvas : objects.count == 1 ? .object : .objects,
-                                       items: objects, point: EaselPoint(x: point.x, y: point.y))
+                                       items: objects, point: EaselPoint(x: point.x, y: point.y), fromPointer: !keyboard)
         let sections = modeMenuRows(context).map { [$0] } ?? contextMenuSections(context)
         let label = context.target == .canvas ? "Easel" : objects.count == 1 ? "Object" : "\(objects.count) objects"
         presentMenu(sections, anchor: NSRect(x: point.x, y: point.y, width: 1, height: 1), keyboard: keyboard, label: label)
@@ -186,6 +187,7 @@ extension EaselCanvasView {
         let document = session.document
         let ids = Set(context.items.map(\.id))
         let point = NSPoint(x: context.point.x, y: context.point.y)
+        let landing = context.fromPointer ? point : nil
         let pasteable = canPasteObjects
         let pastesHere = NSPasteboard.general.availableType(from: [Self.objectsPasteboardType]) != nil
         let plain = NSPasteboard.general.availableType(from: [.string, .URL, .rtfd, .rtf]) != nil
@@ -207,8 +209,8 @@ extension EaselCanvasView {
         let edit = [
             row("cut", "Cut", "scissors", "⌘X", enabled: removable) { $0.cutSelection() },
             row("copy", "Copy", "doc.on.doc", "⌘C") { $0.copySelection() },
-            row("paste", "Paste", "doc.on.clipboard", "⌘V", enabled: pasteable) { $0.pasteHere(nil) },
-            row("paste-plain", "Paste as Plain Text", "doc.plaintext", enabled: plain) { $0.pastePlainText(at: nil) },
+            row("paste", "Paste", "doc.on.clipboard", "⌘V", enabled: pasteable) { $0.pasteHere(landing) },
+            row("paste-plain", "Paste as Plain Text", "doc.plaintext", enabled: plain) { $0.pastePlainText(at: landing) },
             row("duplicate", "Duplicate", "plus.square.on.square", "⌘D") { $0.duplicateSelection() },
             row("delete", "Delete", "trash", "⌫", enabled: removable, destructive: true) { $0.deleteSelection() },
         ]
