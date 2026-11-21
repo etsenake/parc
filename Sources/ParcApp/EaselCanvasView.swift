@@ -1161,10 +1161,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             }
         }
     }
-    @objc private func changeShapeFromMenu(_ sender: NSMenuItem) {
-        guard command(for: sender) != nil, EaselShape.allCases.indices.contains(sender.tag) else { return }
-        changeSelectedShapes(to: EaselShape.allCases[sender.tag])
-    }
     func selectBrowserObject(_ id: UUID) {
         guard let item = session.document.items.first(where: { $0.id == id && $0.ownsEmbeddedPage }) else { return }
         cancelPointerInteraction(); guard finishEditing() else { return }; drawing = false; selection = [id]
