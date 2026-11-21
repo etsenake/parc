@@ -56,7 +56,6 @@ enum EaselTool: String, CaseIterable, Equatable {
 
     var isAvailable: Bool {
         switch self {
-        case .stamp: return false
         default: return true
         }
     }

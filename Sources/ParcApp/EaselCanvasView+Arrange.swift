@@ -172,6 +172,7 @@ extension EaselCanvasView {
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if onKeyEquivalent?(event) == true { return true }
+        if performStampKey(event) { return true }
         guard event.type == .keyDown, window?.isKeyWindow == true else { return super.performKeyEquivalent(with: event) }
         if canvasOwnsKeyFocus, performZoomKeyEquivalent(event) { return true }
         guard EaselChords.consults(canvasFocus: canvasOwnsKeyFocus, editorFocus: textEditorOwnsKeyFocus),

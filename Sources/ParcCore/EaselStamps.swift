@@ -121,6 +121,44 @@ enum EaselStamps {
         return faces
     }
 
+    static func wheelOffset(of index: Int, radius: Double) -> EaselPoint {
+        let angle = Double(index) / Double(ring.count) * 2 * .pi
+        return EaselPoint(x: sin(angle) * radius, y: -cos(angle) * radius)
+    }
+
+    static func wheelIndex(dx: Double, dy: Double, inner: Double, outer: Double) -> Int? {
+        let distance = (dx * dx + dy * dy).squareRoot()
+        guard distance.isFinite, distance >= inner, distance <= outer else { return nil }
+        var turns = atan2(dx, -dy) / (2 * .pi)
+        if turns < 0 { turns += 1 }
+        return Int((turns * Double(ring.count) + 0.5).rounded(.down)) % ring.count
+    }
+
+    static func pinnedPoint(on item: EaselItem, side: Double, slot: Int) -> EaselPoint {
+        let frame = item.frame
+        let halfWidth = frame.width / 2, halfHeight = frame.height / 2
+        let inset = min(side * 0.4, halfWidth, halfHeight)
+        let step = side * 0.6
+        let lanes = max(1, Int(((frame.width - inset * 2) / step).rounded(.down)) + 1)
+        let index = max(0, slot)
+        let x = max(-halfWidth + inset, halfWidth - inset - Double(index % lanes) * step)
+        let y = min(halfHeight - inset, -halfHeight + inset + Double(index / lanes) * step)
+        let radians = item.resolvedRotation * .pi / 180
+        let turnedX = x * cos(radians) - y * sin(radians), turnedY = x * sin(radians) + y * cos(radians)
+        return EaselPoint(x: frame.x + halfWidth + turnedX, y: frame.y + halfHeight + turnedY)
+    }
+
+    static func keyboardTargets(_ selection: Set<UUID>, in items: [EaselItem]) -> [UUID] {
+        let byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen: Set<UUID> = []
+        return items.filter { selection.contains($0.id) }.compactMap { item -> UUID? in
+            let start = item.kind == .stamp ? item.attachedTo : item.id
+            guard let start, let target = root(of: start, in: byID), let held = byID[target], !held.isLocked,
+                  seen.insert(target).inserted else { return nil }
+            return target
+        }
+    }
+
     static func sentenceCased(_ text: String) -> String {
         guard let first = text.first else { return text }
         return first.uppercased() + text.dropFirst()

@@ -51,7 +51,7 @@ extension EaselCanvasView {
         case .select: return .arrow
         case .hand: return .openHand
         case .marker, .highlighter, .washi, .eraser: return brushCursor(for: tool)
-        case .stamp: return .crosshair
+        case .stamp: return stampCursor
         default: return .crosshair
         }
     }
@@ -64,7 +64,7 @@ extension EaselCanvasView {
 
     func toolActivated(_ tool: EaselTool, from control: NSView?) {
         switch tool {
-        case .stamp: break
+        case .stamp: stampToolActivated(from: control)
         default: break
         }
     }
@@ -77,6 +77,7 @@ extension EaselCanvasView {
 
     func toolDidChange() {
         cancelToolGesture()
+        if tool != .stamp { dismissStampPanels() }
         hoveredObjectID = nil
         needsDisplay = true
         decoration.needsDisplay = true
@@ -85,6 +86,7 @@ extension EaselCanvasView {
     }
 
     func cancelToolGesture() {
+        cancelStampPress()
         if toolState.creation?.tool == .table { cancelTablePlacement() }
         toolState.creation = nil
         cancelConnectorGesture()
@@ -213,6 +215,7 @@ extension EaselCanvasView {
     }
 
     func beginToolGesture(at point: NSPoint, event: NSEvent) -> Bool {
+        if tool == .stamp { return beginStampPress(at: point, event: event) }
         guard tool.createsObjects, !tool.draws, tool.isAvailable else { return false }
         toolState.creation = EaselCanvasToolState.Creation(tool: tool, start: point, end: point, flags: event.modifierFlags)
         selection.removeAll()
@@ -222,6 +225,7 @@ extension EaselCanvasView {
     }
 
     func continueToolGesture(at point: NSPoint, event: NSEvent) -> Bool {
+        if moveStampPress(to: point) { return true }
         guard let creation = toolState.creation else { return false }
         if creation.tool.drawsConnector { updateConnectorCreation(to: point, event: event); return true }
         toolState.creation?.end = point
@@ -239,6 +243,7 @@ extension EaselCanvasView {
     }
 
     func finishToolGesture(at point: NSPoint, event: NSEvent) -> Bool {
+        if finishStampPress(at: point) { return true }
         guard var creation = toolState.creation else { return false }
         toolState.creation = nil
         creation.end = point
@@ -265,7 +270,7 @@ extension EaselCanvasView {
         case .text: return dragged ? insertText(at: NSPoint(x: frame.x, y: frame.y), width: frame.width) : insertText(at: dragged ? end : start)
         case .table: return placeTable(from: start, to: dragged ? end : nil)
         case .codeBlock: return placeCodeBlock(in: frame)
-        case .stamp: return nil
+        case .stamp: return placeStamp(at: end)
         default: return nil
         }
     }

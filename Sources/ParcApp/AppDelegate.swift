@@ -284,6 +284,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             EaselCanvasView.textCompletionFactory = { EaselEmojiCompletion() }
             EaselCanvasView.mermaidSheetFactory = { EaselMermaidSheet(canvas: $0, text: $1) }
             EaselCanvasView.menuPresenterFactory = { EaselObjectMenuPresenter() }
+            EaselCanvasView.stampPanelsFactory = { EaselStampPanels() }
             KeyboardShortcuts.shared.onDiscoveryChange = {
                 NotificationCenter.default.post(name: LiveShortcutToolTip.didChange, object: nil)
             }

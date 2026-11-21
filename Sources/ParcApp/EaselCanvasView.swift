@@ -163,6 +163,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var onDrawingStateChange: ((Bool) -> Void)?
     var onToolChange: ((EaselTool) -> Void)?
     let toolState = EaselCanvasToolState()
+    let stamps = EaselCanvasStampState()
     var tool: EaselTool = .select {
         didSet {
             if tool != oldValue { cancelPointerInteraction(); keyboardStructureChanged(); toolDidChange() }

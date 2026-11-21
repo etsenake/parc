@@ -47,6 +47,7 @@ struct EaselStampTests {
         tilt()
         attachment()
         stamping()
+        wheelAndKeyboard()
         recents()
         icons()
         artwork()
@@ -255,6 +256,37 @@ struct EaselStampTests {
         expect(icon.frame.width == 136, "Grown stamps keep their size")
         let wild = EaselStamps.stamped(.emoji("🎉"), at: EaselPoint(x: 10, y: 10), tilt: .infinity, color: "nope", in: doc)
         expect(wild.rotation == nil && wild.color == "#252525", "Bad tilt and colour fall back")
+    }
+
+    static func wheelAndKeyboard() {
+        for index in EaselStamps.ring.indices {
+            let offset = EaselStamps.wheelOffset(of: index, radius: 80)
+            expect(EaselStamps.wheelIndex(dx: offset.x, dy: offset.y, inner: 40, outer: 110) == index, "Pointing at wheel slot \(index) picks it")
+        }
+        expect(EaselStamps.wheelOffset(of: 0, radius: 80).y < -79 && EaselStamps.wheelOffset(of: 2, radius: 80).x > 79,
+               "The wheel starts at the top and runs clockwise")
+        expect(EaselStamps.wheelIndex(dx: 5, dy: 5, inner: 40, outer: 110) == nil
+               && EaselStamps.wheelIndex(dx: 200, dy: 0, inner: 40, outer: 110) == nil
+               && EaselStamps.wheelIndex(dx: .nan, dy: 0, inner: 40, outer: 110) == nil, "The hub and the outside pick no ring stamp")
+
+        let sticky = item(.sticky, 100, 100, 200, 200, z: 1)
+        let first = EaselStamps.pinnedPoint(on: sticky, side: 64, slot: 0), second = EaselStamps.pinnedPoint(on: sticky, side: 64, slot: 1)
+        expect(abs(first.x - 274.4) < 0.01 && abs(first.y - 125.6) < 0.01, "Keyboard stamps land in the top right corner")
+        expect(second.x < first.x && second.y == first.y, "More keyboard stamps line up beside the first")
+        let later = EaselStamps.pinnedPoint(on: sticky, side: 64, slot: 40)
+        expect(later.x >= 125 && later.y <= 275, "Crowded objects keep stamps inside")
+        var turned = sticky; turned.rotation = 90
+        let spun = EaselStamps.pinnedPoint(on: turned, side: 64, slot: 0)
+        expect(abs(spun.x - 274.4) < 0.01 && abs(spun.y - 274.4) < 0.01, "Turned objects get stamps on their turned corner")
+        let tiny = item(.rectangle, 0, 0, 10, 10, z: 0)
+        expect(EaselStamps.pinnedPoint(on: tiny, side: 184, slot: 3) == EaselPoint(x: 5, y: 5), "Tiny objects get stamps in the middle")
+
+        var riding = stamp(.design(.heart), at: EaselPoint(x: 150, y: 150)); riding.attachedTo = sticky.id
+        var locked = item(.rectangle, 500, 0, 100, 100, z: 1); locked.locked = true
+        let arrow = item(.arrow, 0, 0, 50, 50, z: 1), other = item(.rectangle, 700, 0, 100, 100, z: 1)
+        let all = [sticky, riding, locked, arrow, other]
+        expect(EaselStamps.keyboardTargets([riding.id, sticky.id, other.id, locked.id, arrow.id], in: all) == [sticky.id, other.id],
+               "⌘Return stamps each selected object once, through its stamps, never locked objects or connectors")
     }
 
     static func recents() {
