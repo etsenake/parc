@@ -1651,7 +1651,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if beginNavigationGesture(event) { return }
         let point = convert(event.locationInWindow, from: nil); start = point; original = session.document.items
         selectionBeforeGesture = selection; lastDragLocation = event.locationInWindow; lastDragTimestamp = event.timestamp
-        if drawing { beginBrushStroke(.marker, at: point, flags: event.modifierFlags); return }
+        if drawing { beginBrushStroke(tool.brush ?? .marker, at: point, flags: event.modifierFlags); return }
+        if tool == .eraser { beginErasing(at: point); return }
         if beginToolGesture(at: point, event: event) { return }
         if offerUnlock(at: point) { cancelPointerInteraction(); return }
         if beginConnectorGesture(at: point, event: event) { return }
@@ -1703,6 +1704,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if continueConnectorGesture(to: point, event: event) { return }
         if marqueeRect != nil { updateMarquee(to: point, flags: event.modifierFlags); autoscroll(with: event); return }
         if drawing { dragBrushStroke(to: point, flags: event.modifierFlags); return }
+        if tool == .eraser { continueErasing(to: point); autoscroll(with: event); return }
         if continueToolGesture(at: point, event: event) { return }
         recordDragTravel(event.locationInWindow, timestamp: event.timestamp)
         if arrangeState.duplicateDragArmed, dragDistance > 3, !resizing, beginDuplicateDrag() { beginGeometry() }
@@ -1883,6 +1885,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard let draft else { return }
         if drawing {
             endBrushStroke(flags: event.modifierFlags)
+        } else if tool == .eraser {
+            endErasing()
         } else if let edit = geometryEdit, edit.ids == movableSelection, edit.isCurrent(in: session.document),
                   guides?.matchesCanvas(width: bounds.width) == true {
             guard resizing || dragDistance > 3 else { return }

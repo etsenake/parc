@@ -22,9 +22,8 @@ in this order, with a hairline between groups:
 
 A slot whose tool isn't ready yet stays off the toolbar and its key does
 nothing, so the bar never shows a button that can't do its job. Each tool
-reports that through `EaselTool.isAvailable` (today the stamp, highlighter,
-washi tape and eraser wait for their objects; templates appear when a
-templates owner sets the toolbar's hook). Buttons use the Notes states:
+reports that through `EaselTool.isAvailable` (today the stamp waits for its
+objects; templates appear when a templates owner sets the toolbar's hook). Buttons use the Notes states:
 secondary ink at rest, hover and pressed washes, and the checked fill for the
 current tool or an open picker. Every button shows the pointing hand, and its
 tooltip shows the name and key, such as “Sticky note S”.
@@ -143,7 +142,8 @@ capped at 100%; smaller Easels open at 100% from the top left as before.
 ## Cursors
 
 Select shows the arrow, the hand tool and Space the open and closed hands,
-drawing tools a pen, and every other creation tool a crosshair. Resize and
+the marker, highlighter and washi tape a pen, the eraser a soft round disc
+([drawing](easel-drawing.md#eraser)), and every other creation tool a crosshair. Resize and
 endpoint cursors appear only with Select.
 
 ## Where it lives and how to check it

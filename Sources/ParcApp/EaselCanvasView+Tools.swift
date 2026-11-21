@@ -50,7 +50,7 @@ extension EaselCanvasView {
         switch tool {
         case .select: return .arrow
         case .hand: return .openHand
-        case .marker, .highlighter, .washi, .eraser: return EaselToolCursors.pen
+        case .marker, .highlighter, .washi, .eraser: return brushCursor(for: tool)
         case .stamp: return .crosshair
         default: return .crosshair
         }

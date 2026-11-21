@@ -160,6 +160,10 @@ enum EaselBrushArt {
 }
 
 extension EaselCanvasView {
+    func brushCursor(for tool: EaselTool) -> NSCursor {
+        tool == .eraser ? EaselBrushArt.eraserCursor : EaselToolCursors.pen
+    }
+
     func drawDrawing(_ item: EaselItem) {
         EaselBrushArt.draw(item, adaptive: adaptsInk, dark: NoteTheme.isDark(effectiveAppearance), faded: brushes.erasing.contains(item.id))
     }

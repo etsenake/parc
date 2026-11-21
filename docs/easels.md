@@ -323,7 +323,8 @@ arrows carry arrowheads (`startHead`, `endHead`; absent means none at the start
 and an arrow at the end), `routing` (absent means straight) and connections to
 other objects, which may pin a point on the object (`anchor`), plus a label
 (`text`, `labelPosition`, `labelBackground`) and manual bends (`waypoints`).
-Drawings may use a highlighter or washi `brush` with a tape `pattern`.
+Drawings may use a highlighter or washi `brush` with a tape `pattern`
+([drawing](easel-drawing.md#saved-format)).
 `groupID`, `locked`, `rotation` (degrees around the frame's centre),
 `flipHorizontal`, `flipVertical` and `attachedTo` (an object it sticks to and
 moves with) apply to any object. Text, shapes and stickies hold rich text;
