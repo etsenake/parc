@@ -304,7 +304,7 @@ boundary.
   sessions, commits and list picks, refused and late navigation, engine
   cancels, clock ticks, AppKit tracking and Peek dismissals.
 - `tests/HistorySwipeTargets` covers which panes can swipe.
-- `tests/PeekSwipeDismissal` covers the Peek's drag, close,
+- `PeekSwipeDismissalTests` covers the Peek's drag, close,
   refusal, Hang up and motion on the real recognizer.
 - Swift typecheck and whole-module SIL cover the app; the engine build compiles
   the forwarder's engine half.

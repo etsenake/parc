@@ -39,232 +39,510 @@ private struct FakeWindow {
 }
 
 struct TabPeekTests {
-    @Test static func admission() {
-        let id = UUID()
-        func plan(_ edit: (inout TabPeekCandidate) -> Void) -> Result<TabPeekPlan, TabPeekRefusal> {
-            var candidate = TabPeekCandidate(tabID: id, page: .live("page-a"))
-            edit(&candidate)
-            return TabPeekAdmission.plan(candidate)
-        }
-        #expect(plan { _ in } == .success(.present("page-a")), "a live tab presents its own page")
-        #expect(plan { $0.page = .unloaded(loadable: true); $0.holder = .nobody } == .success(.load),
-               "an unloaded tab loads straight into the Peek")
-        #expect(plan { $0.page = .unloaded(loadable: true) } == .success(.load), "an unloaded tab claimed here loads too")
-        #expect(plan { $0.page = .unloaded(loadable: false) } == .failure(.unloadable), "a tab with no address can't load")
-        #expect(plan { $0.page = .creating } == .failure(.busy), "a page still being created is left alone")
-        #expect(plan { $0.page = .failed } == .failure(.failed), "a failed page opens normally, not in Peek")
-        #expect(plan { $0.page = .closed } == .failure(.closed), "a closed page can't be shown")
-        #expect(plan { $0.holder = .elsewhere(movable: true) } == .success(.moveHere),
-               "a page in another window moves here through the transfer first")
-        #expect(plan { $0.holder = .elsewhere(movable: false) } == .failure(.heldElsewhere),
-               "a page another window can't give up is refused")
-        #expect(plan { $0.onScreen = true } == .failure(.onScreen), "a tab already on screen isn't peeked")
-        #expect(plan { $0.busy = true } == .failure(.busy), "a closing or moving tab is refused")
-        #expect(plan { $0.content = .unsupported } == .failure(.unsupported), "an internal page that isn't a note or Easel is refused")
-        #expect(plan { $0.content = .document; $0.page = .live("document") } == .success(.present("document")),
-               "an open note or Easel presents its own editor")
-        #expect(plan { $0.content = .document; $0.page = .unloaded(loadable: true) } == .success(.load),
-               "a note or Easel that isn't open yet opens straight into the Peek")
-        #expect(plan { $0.content = .document; $0.page = .failed } == .failure(.failed),
-               "a note or Easel that failed to open opens normally, not in Peek")
-        #expect(plan { $0.content = .document; $0.onScreen = true } == .failure(.onScreen),
-               "a note or Easel already on screen isn't peeked")
-        #expect(plan { $0.content = .document; $0.parentCanHost = false } == .failure(.parent),
-               "a note or Easel needs a page to float over too")
-        #expect(plan { $0.content = .document; $0.holder = .elsewhere(movable: true) } == .success(.moveHere),
-               "a note or Easel in another window moves here through the transfer first")
-        #expect(plan { $0.content = .document; $0.shown = .peek(canClose: true) } == .success(.replaceShown),
-               "a note or Easel replaces a shown Peek")
-        #expect(plan { $0.content = .unsupported; $0.shown = .peek(canClose: true) } == .failure(.unsupported),
-               "a shown Peek is never closed for a page Peek can't show")
-        #expect(plan { $0.inActiveSpace = false } == .failure(.space), "a tab from another Space is refused")
-        #expect(plan { $0.profileMatches = false } == .failure(.profile), "a tab from another Profile is refused")
-        #expect(plan { $0.parentCanHost = false } == .failure(.parent), "there must be a page to float over")
-        #expect(plan { $0.windowAdmits = false } == .failure(.window), "a busy window refuses")
-        #expect(plan { $0.windowAdmits = false; $0.shown = .tab(id, canClose: false) } == .success(.alreadyShown),
-               "asking again for the shown tab is a no-op")
-        #expect(plan { $0.shown = .peek(canClose: true) } == .success(.replaceShown), "a shown Peek is replaced")
-        #expect(plan { $0.shown = .tab(UUID(), canClose: true) } == .success(.replaceShown), "another tab's Peek is replaced")
-        #expect(plan { $0.shown = .peek(canClose: false) } == .failure(.peekBusy), "a Peek that can't close now keeps its place")
-        #expect(plan { $0.shown = .peek(canClose: true); $0.page = .closed } == .failure(.closed),
-               "a shown Peek is never closed for a tab that can't open anyway")
-        var offered = TabPeekCandidate(tabID: id, page: .live("page-a"))
-        #expect(TabPeekAdmission.offers(offered), "the menu offers Open in Peek for a live tab")
-        offered.shown = .tab(id, canClose: true)
-        #expect(!TabPeekAdmission.offers(offered), "the menu doesn't offer the tab that's already in Peek")
-        offered.shown = .none; offered.onScreen = true
-        #expect(!TabPeekAdmission.offers(offered), "the menu doesn't offer a refused tab")
-        #expect(TabPeekSession(tabID: id, plan: .moveHere) == nil && TabPeekSession(tabID: id, plan: .replaceShown) == nil
-               && TabPeekSession(tabID: id, plan: .alreadyShown) == nil, "only present and load start a session")
+    private static let id = UUID()
+
+    private static func plan(_ edit: (inout TabPeekCandidate) -> Void) -> Result<TabPeekPlan, TabPeekRefusal> {
+        var candidate = TabPeekCandidate(tabID: id, page: .live("page-a"))
+        edit(&candidate)
+        return TabPeekAdmission.plan(candidate)
     }
 
-    @Test static func holdResolution() {
-        func resolve(_ edit: (inout TabPeekHoldFacts) -> Void) -> TabPeekResolution {
-            var facts = TabPeekHoldFacts()
-            edit(&facts)
-            return TabPeekHold.resolve(facts)
-        }
-        #expect(resolve { _ in } == .keep, "a steady Peek stays")
-        #expect(resolve { $0.tabDisplayed = true } == .promote, "opening the tab normally promotes the Peek")
-        #expect(resolve { $0.parentCurrent = false } == .putBack, "leaving the page underneath puts the tab's page back")
-        #expect(resolve { $0.tabUsable = false } == .putBack, "a tab that's closing or moving gets its page back first")
-        #expect(resolve { $0.tabUsable = false; $0.tabDisplayed = true } == .putBack, "an unusable tab is never promoted")
-        #expect(resolve { $0.windowOpen = false; $0.tabDisplayed = true } == .putBack, "a closing window puts the page back")
-        #expect(resolve { $0.pageInCard = false; $0.windowOpen = false } == .drop,
-               "a page that left the card is never pulled back by the Peek")
+    @Test func aLiveTabPresentsItsOwnPage() {
+        #expect(Self.plan { _ in } == .success(.present("page-a")))
     }
 
-    @Test static func liveRoundTrip() {
+    @Test func anUnloadedTabLoadsStraightIntoThePeek() {
+        #expect(Self.plan { $0.page = .unloaded(loadable: true); $0.holder = .nobody } == .success(.load))
+    }
+
+    @Test func anUnloadedTabClaimedHereLoadsToo() {
+        #expect(Self.plan { $0.page = .unloaded(loadable: true) } == .success(.load))
+    }
+
+    @Test func aTabWithNoAddressCannotLoad() {
+        #expect(Self.plan { $0.page = .unloaded(loadable: false) } == .failure(.unloadable))
+    }
+
+    @Test func aPageStillBeingCreatedIsLeftAlone() {
+        #expect(Self.plan { $0.page = .creating } == .failure(.busy))
+    }
+
+    @Test func aFailedPageOpensNormallyNotInPeek() {
+        #expect(Self.plan { $0.page = .failed } == .failure(.failed))
+    }
+
+    @Test func aClosedPageCannotBeShown() {
+        #expect(Self.plan { $0.page = .closed } == .failure(.closed))
+    }
+
+    @Test func aPageInAnotherWindowMovesHereThroughTheTransferFirst() {
+        #expect(Self.plan { $0.holder = .elsewhere(movable: true) } == .success(.moveHere))
+    }
+
+    @Test func aPageAnotherWindowCannotGiveUpIsRefused() {
+        #expect(Self.plan { $0.holder = .elsewhere(movable: false) } == .failure(.heldElsewhere))
+    }
+
+    @Test func aTabAlreadyOnScreenIsNotPeeked() {
+        #expect(Self.plan { $0.onScreen = true } == .failure(.onScreen))
+    }
+
+    @Test func aClosingOrMovingTabIsRefused() {
+        #expect(Self.plan { $0.busy = true } == .failure(.busy))
+    }
+
+    @Test func anInternalPageThatIsNotANoteOrEaselIsRefused() {
+        #expect(Self.plan { $0.content = .unsupported } == .failure(.unsupported))
+    }
+
+    @Test func anOpenNoteOrEaselPresentsItsOwnEditor() {
+        #expect(Self.plan { $0.content = .document; $0.page = .live("document") } == .success(.present("document")))
+    }
+
+    @Test func aNoteOrEaselThatIsNotOpenYetOpensStraightIntoThePeek() {
+        #expect(Self.plan { $0.content = .document; $0.page = .unloaded(loadable: true) } == .success(.load))
+    }
+
+    @Test func aNoteOrEaselThatFailedToOpenOpensNormally() {
+        #expect(Self.plan { $0.content = .document; $0.page = .failed } == .failure(.failed))
+    }
+
+    @Test func aNoteOrEaselAlreadyOnScreenIsNotPeeked() {
+        #expect(Self.plan { $0.content = .document; $0.onScreen = true } == .failure(.onScreen))
+    }
+
+    @Test func aNoteOrEaselNeedsAPageToFloatOver() {
+        #expect(Self.plan { $0.content = .document; $0.parentCanHost = false } == .failure(.parent))
+    }
+
+    @Test func aNoteOrEaselInAnotherWindowMovesHereThroughTheTransferFirst() {
+        #expect(Self.plan { $0.content = .document; $0.holder = .elsewhere(movable: true) } == .success(.moveHere))
+    }
+
+    @Test func aNoteOrEaselReplacesAShownPeek() {
+        #expect(Self.plan { $0.content = .document; $0.shown = .peek(canClose: true) } == .success(.replaceShown))
+    }
+
+    @Test func aShownPeekIsNeverClosedForAPagePeekCannotShow() {
+        #expect(Self.plan { $0.content = .unsupported; $0.shown = .peek(canClose: true) } == .failure(.unsupported))
+    }
+
+    @Test func aTabFromAnotherSpaceIsRefused() {
+        #expect(Self.plan { $0.inActiveSpace = false } == .failure(.space))
+    }
+
+    @Test func aTabFromAnotherProfileIsRefused() {
+        #expect(Self.plan { $0.profileMatches = false } == .failure(.profile))
+    }
+
+    @Test func thereMustBeAPageToFloatOver() {
+        #expect(Self.plan { $0.parentCanHost = false } == .failure(.parent))
+    }
+
+    @Test func aBusyWindowRefuses() {
+        #expect(Self.plan { $0.windowAdmits = false } == .failure(.window))
+    }
+
+    @Test func askingAgainForTheShownTabIsANoOp() {
+        let id = Self.id
+        #expect(Self.plan { $0.windowAdmits = false; $0.shown = .tab(id, canClose: false) } == .success(.alreadyShown))
+    }
+
+    @Test func aShownPeekIsReplaced() {
+        #expect(Self.plan { $0.shown = .peek(canClose: true) } == .success(.replaceShown))
+    }
+
+    @Test func anotherTabsPeekIsReplaced() {
+        #expect(Self.plan { $0.shown = .tab(UUID(), canClose: true) } == .success(.replaceShown))
+    }
+
+    @Test func aPeekThatCannotCloseNowKeepsItsPlace() {
+        #expect(Self.plan { $0.shown = .peek(canClose: false) } == .failure(.peekBusy))
+    }
+
+    @Test func aShownPeekIsNeverClosedForATabThatCannotOpenAnyway() {
+        #expect(Self.plan { $0.shown = .peek(canClose: true); $0.page = .closed } == .failure(.closed))
+    }
+
+    @Test func theMenuOffersOpenInPeekForALiveTab() {
+        #expect(TabPeekAdmission.offers(TabPeekCandidate(tabID: Self.id, page: .live("page-a"))))
+    }
+
+    @Test func theMenuDoesNotOfferTheTabAlreadyInPeek() {
+        var offered = TabPeekCandidate(tabID: Self.id, page: .live("page-a"))
+        offered.shown = .tab(Self.id, canClose: true)
+        #expect(!TabPeekAdmission.offers(offered))
+    }
+
+    @Test func theMenuDoesNotOfferARefusedTab() {
+        var offered = TabPeekCandidate(tabID: Self.id, page: .live("page-a"))
+        offered.onScreen = true
+        #expect(!TabPeekAdmission.offers(offered))
+    }
+
+    @Test(arguments: 0..<3)
+    func onlyPresentAndLoadStartASession(_ index: Int) {
+        let plans: [TabPeekPlan] = [.moveHere, .replaceShown, .alreadyShown]
+        #expect(TabPeekSession(tabID: Self.id, plan: plans[index]) == nil)
+    }
+
+    private static func resolve(_ edit: (inout TabPeekHoldFacts) -> Void) -> TabPeekResolution {
+        var facts = TabPeekHoldFacts()
+        edit(&facts)
+        return TabPeekHold.resolve(facts)
+    }
+
+    @Test func aSteadyPeekStays() {
+        #expect(Self.resolve { _ in } == .keep)
+    }
+
+    @Test func openingTheTabNormallyPromotesThePeek() {
+        #expect(Self.resolve { $0.tabDisplayed = true } == .promote)
+    }
+
+    @Test func leavingThePageUnderneathPutsTheTabsPageBack() {
+        #expect(Self.resolve { $0.parentCurrent = false } == .putBack)
+    }
+
+    @Test func aTabThatIsClosingOrMovingGetsItsPageBackFirst() {
+        #expect(Self.resolve { $0.tabUsable = false } == .putBack)
+    }
+
+    @Test func anUnusableTabIsNeverPromoted() {
+        #expect(Self.resolve { $0.tabUsable = false; $0.tabDisplayed = true } == .putBack)
+    }
+
+    @Test func aClosingWindowPutsThePageBack() {
+        #expect(Self.resolve { $0.windowOpen = false; $0.tabDisplayed = true } == .putBack)
+    }
+
+    @Test func aPageThatLeftTheCardIsNeverPulledBackByThePeek() {
+        #expect(Self.resolve { $0.pageInCard = false; $0.windowOpen = false } == .drop)
+    }
+
+    private static func liveSession() throws -> (page: FakePage, window: FakeWindow, session: TabPeekSession) {
         let original = FakePage("page-a")
         var window = FakeWindow(pane: original)
-        guard var session = TabPeekSession(tabID: UUID(), plan: .present(original.identifier)) else {
-            Issue.record("a live plan starts a session"); return
-        }
+        let session = try #require(TabPeekSession(tabID: UUID(), plan: .present(original.identifier)))
         window.apply(session.opening)
-        #expect(window.card === original && window.pane == nil, "the card shows the very same page object")
-        #expect(session.holdsPage && session.loads == 0, "opening a live tab loads nothing")
-        window.apply(session.returnRequested())
-        #expect(window.pane === original && window.card == nil && !window.cardShown,
-               "closing the Peek hands the same page back to its tab")
-        #expect(session.loads == 0 && window.created == 0, "the round trip never loads or creates a page")
-        #expect(session.returnRequested().isEmpty && session.promote().isEmpty && session.pageReady("page-a").isEmpty,
-               "a finished session ignores late requests")
+        return (original, window, session)
     }
 
-    @Test static func promotion() {
-        let original = FakePage("page-a")
-        var window = FakeWindow(pane: original)
-        guard var session = TabPeekSession(tabID: UUID(), plan: .present(original.identifier)) else {
-            Issue.record("a live plan starts a session"); return
-        }
-        window.apply(session.opening)
-        #expect(session.holdsPage, "a shown tab Peek presents its page as a Peek")
-        let promoting = session.resolve(.promote)
-        #expect(promoting == [.returnPage("page-a"), .exit], "the page returns before the card plays its exit")
-        #expect(!session.holdsPage, "an expanded tab Peek stops presenting its page as a Peek in the same step")
-        window.apply(promoting)
-        #expect(window.pane === original && window.cardShown && window.exits == 1,
-               "the tab shows its page while the empty card exits")
-        #expect(session.returnRequested().isEmpty && session.resolve(.putBack).isEmpty,
-               "a promoting session can't hand the page back twice")
-        window.apply(session.exitFinished())
-        #expect(!window.cardShown && session.phase == .finished, "the exit's end removes the card")
-        #expect(session.exitFinished().isEmpty, "a late exit timer does nothing")
-        #expect(window.created == 0 && session.loads == 0, "promotion never reloads")
+    @Test func theCardShowsTheVerySamePageObject() throws {
+        let s = try Self.liveSession()
+        #expect(s.window.card === s.page)
+        #expect(s.window.pane == nil)
     }
 
-    @Test static func unloadedLoad() {
+    @Test func openingALiveTabLoadsNothing() throws {
+        let s = try Self.liveSession()
+        #expect(s.session.holdsPage)
+        #expect(s.session.loads == 0)
+    }
+
+    @Test func closingThePeekHandsTheSamePageBackToItsTab() throws {
+        var s = try Self.liveSession()
+        s.window.apply(s.session.returnRequested())
+        #expect(s.window.pane === s.page)
+        #expect(s.window.card == nil)
+        #expect(!s.window.cardShown)
+    }
+
+    @Test func theRoundTripNeverLoadsOrCreatesAPage() throws {
+        var s = try Self.liveSession()
+        s.window.apply(s.session.returnRequested())
+        #expect(s.session.loads == 0)
+        #expect(s.window.created == 0)
+    }
+
+    @Test func aFinishedSessionIgnoresLateRequests() throws {
+        var s = try Self.liveSession()
+        s.window.apply(s.session.returnRequested())
+        #expect(s.session.returnRequested().isEmpty)
+        #expect(s.session.promote().isEmpty)
+        #expect(s.session.pageReady("page-a").isEmpty)
+    }
+
+    @Test func aShownTabPeekPresentsItsPageAsAPeek() throws {
+        let s = try Self.liveSession()
+        #expect(s.session.holdsPage)
+    }
+
+    @Test func thePageReturnsBeforeTheCardPlaysItsExit() throws {
+        var s = try Self.liveSession()
+        #expect(s.session.resolve(.promote) == [.returnPage("page-a"), .exit])
+    }
+
+    @Test func anExpandedTabPeekStopsPresentingItsPageInTheSameStep() throws {
+        var s = try Self.liveSession()
+        _ = s.session.resolve(.promote)
+        #expect(!s.session.holdsPage)
+    }
+
+    @Test func theTabShowsItsPageWhileTheEmptyCardExits() throws {
+        var s = try Self.liveSession()
+        s.window.apply(s.session.resolve(.promote))
+        #expect(s.window.pane === s.page)
+        #expect(s.window.cardShown)
+        #expect(s.window.exits == 1)
+    }
+
+    @Test func aPromotingSessionCannotHandThePageBackTwice() throws {
+        var s = try Self.liveSession()
+        _ = s.session.resolve(.promote)
+        #expect(s.session.returnRequested().isEmpty)
+        #expect(s.session.resolve(.putBack).isEmpty)
+    }
+
+    @Test func theExitsEndRemovesTheCard() throws {
+        var s = try Self.liveSession()
+        s.window.apply(s.session.resolve(.promote))
+        s.window.apply(s.session.exitFinished())
+        #expect(!s.window.cardShown)
+        #expect(s.session.phase == .finished)
+    }
+
+    @Test func aLateExitTimerDoesNothing() throws {
+        var s = try Self.liveSession()
+        s.window.apply(s.session.resolve(.promote))
+        _ = s.session.exitFinished()
+        #expect(s.session.exitFinished().isEmpty)
+    }
+
+    @Test func promotionNeverReloads() throws {
+        var s = try Self.liveSession()
+        s.window.apply(s.session.resolve(.promote))
+        #expect(s.window.created == 0)
+        #expect(s.session.loads == 0)
+    }
+
+    private static func loadingSession() throws -> (window: FakeWindow, session: TabPeekSession) {
         var window = FakeWindow()
-        guard var session = TabPeekSession(tabID: UUID(), plan: .load) else {
-            Issue.record("an unloaded plan starts a session"); return
-        }
+        let session = try #require(TabPeekSession(tabID: UUID(), plan: .load))
         window.apply(session.opening)
-        #expect(window.created == 1 && session.loads == 1 && !window.cardShown, "the tab's page is created once")
-        #expect(session.returnRequested().isEmpty && session.promote().isEmpty, "nothing returns before the page exists")
-        guard let created = window.pane else { Issue.record("the created page belongs to the tab"); return }
-        window.apply(session.pageReady(created.identifier))
-        #expect(window.card === created && window.cardShown, "the new page goes straight into the card")
-        #expect(session.pageReady("page-z").isEmpty, "a second ready signal is ignored")
-        window.apply(session.returnRequested())
-        #expect(window.pane === created && window.created == 1, "the loaded page stays the tab's page afterwards")
-
-        var abandoned = FakeWindow()
-        guard var waiting = TabPeekSession(tabID: UUID(), plan: .load) else { Issue.record("load session"); return }
-        abandoned.apply(waiting.opening)
-        #expect(waiting.resolve(.putBack).isEmpty && waiting.phase == .finished,
-               "leaving before the page is ready abandons the Peek and leaves the page with its tab")
-        #expect(waiting.pageReady("created-1").isEmpty && abandoned.pane != nil && !abandoned.cardShown,
-               "a page that arrives after abandonment never opens a card")
-        guard var selected = TabPeekSession(tabID: UUID(), plan: .load) else { Issue.record("load session"); return }
-        #expect(selected.resolve(.promote).isEmpty && selected.phase == .finished,
-               "opening the tab normally while it loads just shows it in its tab")
+        return (window, session)
     }
 
-    @Test static func forcedReturns() {
-        let original = FakePage("page-a")
-        var window = FakeWindow(pane: original)
-        guard var session = TabPeekSession(tabID: UUID(), plan: .present(original.identifier)) else {
-            Issue.record("a live plan starts a session"); return
-        }
-        window.apply(session.opening)
-        window.apply(session.resolve(.keep))
-        #expect(window.card === original, "keep changes nothing")
-        window.apply(session.resolve(.putBack))
-        #expect(window.pane === original && !window.cardShown && window.exits == 0,
-               "a forced return puts the page back without a motion")
+    @Test func theTabsPageIsCreatedOnceWhenLoading() throws {
+        let s = try Self.loadingSession()
+        #expect(s.window.created == 1)
+        #expect(s.session.loads == 1)
+        #expect(!s.window.cardShown)
+    }
 
+    @Test func nothingReturnsBeforeThePageExists() throws {
+        var s = try Self.loadingSession()
+        #expect(s.session.returnRequested().isEmpty)
+        #expect(s.session.promote().isEmpty)
+    }
+
+    @Test func theNewPageGoesStraightIntoTheCard() throws {
+        var s = try Self.loadingSession()
+        let created = try #require(s.window.pane)
+        s.window.apply(s.session.pageReady(created.identifier))
+        #expect(s.window.card === created)
+        #expect(s.window.cardShown)
+    }
+
+    @Test func aSecondReadySignalIsIgnored() throws {
+        var s = try Self.loadingSession()
+        let created = try #require(s.window.pane)
+        s.window.apply(s.session.pageReady(created.identifier))
+        #expect(s.session.pageReady("page-z").isEmpty)
+    }
+
+    @Test func theLoadedPageStaysTheTabsPageAfterwards() throws {
+        var s = try Self.loadingSession()
+        let created = try #require(s.window.pane)
+        s.window.apply(s.session.pageReady(created.identifier))
+        s.window.apply(s.session.returnRequested())
+        #expect(s.window.pane === created)
+        #expect(s.window.created == 1)
+    }
+
+    @Test func leavingBeforeThePageIsReadyAbandonsThePeekAndLeavesThePageWithItsTab() throws {
+        var s = try Self.loadingSession()
+        #expect(s.session.resolve(.putBack).isEmpty)
+        #expect(s.session.phase == .finished)
+    }
+
+    @Test func aPageThatArrivesAfterAbandonmentNeverOpensACard() throws {
+        var s = try Self.loadingSession()
+        _ = s.session.resolve(.putBack)
+        #expect(s.session.pageReady("created-1").isEmpty)
+        #expect(s.window.pane != nil)
+        #expect(!s.window.cardShown)
+    }
+
+    @Test func openingTheTabNormallyWhileItLoadsJustShowsItInItsTab() throws {
+        var selected = try #require(TabPeekSession(tabID: UUID(), plan: .load))
+        #expect(selected.resolve(.promote).isEmpty)
+        #expect(selected.phase == .finished)
+    }
+
+    @Test func keepChangesNothing() throws {
+        var s = try Self.liveSession()
+        s.window.apply(s.session.resolve(.keep))
+        #expect(s.window.card === s.page)
+    }
+
+    @Test func aForcedReturnPutsThePageBackWithoutAMotion() throws {
+        var s = try Self.liveSession()
+        s.window.apply(s.session.resolve(.putBack))
+        #expect(s.window.pane === s.page)
+        #expect(!s.window.cardShown)
+        #expect(s.window.exits == 0)
+    }
+
+    @Test func aPageThatClosedInTheCardJustRemovesTheCard() throws {
         var closing = FakeWindow(pane: FakePage("page-b"))
-        guard var closed = TabPeekSession(tabID: UUID(), plan: .present("page-b")) else { Issue.record("session"); return }
+        var closed = try #require(TabPeekSession(tabID: UUID(), plan: .present("page-b")))
         closing.apply(closed.opening)
         closing.card = nil
         closing.apply(closed.resolve(.drop))
-        #expect(!closing.cardShown && closing.pane == nil, "a page that closed in the card just removes the card")
-        #expect(closed.pageClosed().isEmpty, "a second close signal is ignored")
+        #expect(!closing.cardShown)
+        #expect(closing.pane == nil)
+        #expect(closed.pageClosed().isEmpty)
     }
 
-    @Test static func handBackNeedsAShownCard() {
-        func shown() -> (TabPeekSession, FakeWindow)? {
-            var window = FakeWindow(pane: FakePage("page-a"))
-            guard let session = TabPeekSession(tabID: UUID(), plan: .present("page-a")) else { return nil }
-            window.apply(session.opening)
-            return (session, window)
-        }
-        guard var control = shown() else { Issue.record("a live plan starts a session"); return }
-        #expect(!control.0.returnRequested().isEmpty, "a shown card's hand-back returns the page")
+    private static func shownSession() throws -> (session: TabPeekSession, window: FakeWindow) {
+        var window = FakeWindow(pane: FakePage("page-a"))
+        let session = try #require(TabPeekSession(tabID: UUID(), plan: .present("page-a")))
+        window.apply(session.opening)
+        return (session, window)
+    }
 
-        let ways: [(String, (inout TabPeekSession) -> [TabPeekSession.Effect])] = [
-            ("its hand-back", { $0.returnRequested() }),
-            ("a forced return", { $0.resolve(.putBack) }),
-            ("its page closing", { $0.pageClosed() }),
-            ("its page dropping out of the card", { $0.resolve(.drop) }),
-            ("opening its tab", { $0.resolve(.promote) }),
-        ]
-        for (way, leave) in ways {
-            guard var (session, window) = shown() else { Issue.record("a live plan starts a session"); return }
-            if way == "its page dropping out of the card" || way == "its page closing" { window.card = nil }
-            let effects = leave(&session)
-            window.apply(effects)
-            #expect(!session.holdsPage, "\(way) ends the shown session")
-            #expect(effects.contains(.finish) || effects.contains(.exit),
-                   "\(way) removes the card or plays its exit in the same step, so no card outlives its session")
-            #expect(window.card == nil, "\(way) never leaves the page in the card")
-            #expect(session.returnRequested().isEmpty, "a late hand-back after \(way) has nothing to return")
-            window.apply(session.exitFinished())
-            #expect(!window.cardShown, "after \(way) the card is gone once any exit ends")
+    @Test func aShownCardsHandBackReturnsThePage() throws {
+        var control = try Self.shownSession()
+        #expect(!control.session.returnRequested().isEmpty)
+    }
+
+    enum Departure: CaseIterable, Sendable, CustomTestStringConvertible {
+        case handBack, forcedReturn, pageClosing, pageDropping, openingTab
+
+        var testDescription: String {
+            switch self {
+            case .handBack: return "its hand-back"
+            case .forcedReturn: return "a forced return"
+            case .pageClosing: return "its page closing"
+            case .pageDropping: return "its page dropping out of the card"
+            case .openingTab: return "opening its tab"
+            }
+        }
+
+        var emptiesCard: Bool { self == .pageClosing || self == .pageDropping }
+
+        func leave(_ session: inout TabPeekSession) -> [TabPeekSession.Effect] {
+            switch self {
+            case .handBack: return session.returnRequested()
+            case .forcedReturn: return session.resolve(.putBack)
+            case .pageClosing: return session.pageClosed()
+            case .pageDropping: return session.resolve(.drop)
+            case .openingTab: return session.resolve(.promote)
+            }
         }
     }
 
-    @Test static func splitAvailability() {
-        func refusal(_ edit: (inout TabPeekSplitFacts) -> Void) -> TabPeekSplitRefusal? {
-            var facts = TabPeekSplitFacts()
-            edit(&facts)
-            return TabPeekSplit.refusal(facts)
-        }
-        #expect(refusal { _ in } == nil, "a tab-backed Peek over a single page offers Split View")
-        #expect(refusal { $0.panes = 3 } == nil, "a tab-backed Peek over a three-page split still offers Split View")
-        #expect(refusal { $0.panes = 4 } == .full, "four pages is as full as Split View gets, as on the card")
-        #expect(refusal { $0.panes = 4; $0.windowReady = false } == .full, "a full split says so even while the window is busy")
-        #expect(refusal { $0.peekInteractive = false } == .unavailable, "a Peek that isn't the window's live Peek can't split")
-        #expect(refusal { $0.tabUsable = false } == .unavailable, "a tab that's closing, moving or gone can't join the split")
-        #expect(refusal { $0.parentSelected = false } == .unavailable, "the page underneath must be on screen to split with")
-        #expect(refusal { $0.windowReady = false } == .unavailable, "a popup, full screen page or open Library refuses")
-        #expect(refusal { $0.peekInteractive = false; $0.panes = 4 } == .unavailable,
-               "a Peek that can't act is unavailable before it is full")
-        #expect(TabPeekSplitRefusal.full.toolTip.contains("four pages"), "the full tooltip says why")
-        #expect(!TabPeekSplitRefusal.unavailable.toolTip.isEmpty
-               && TabPeekSplitRefusal.unavailable.toolTip != TabPeekSplitRefusal.full.toolTip,
-               "each refusal has its own tooltip")
+    private static func departed(_ way: Departure) throws -> (session: TabPeekSession, window: FakeWindow, effects: [TabPeekSession.Effect]) {
+        var (session, window) = try shownSession()
+        if way.emptiesCard { window.card = nil }
+        let effects = way.leave(&session)
+        window.apply(effects)
+        return (session, window, effects)
     }
 
-    @Test static func replacement() {
-        let id = UUID()
-        var candidate = TabPeekCandidate(tabID: id, page: .live("page-a"), shown: .peek(canClose: true))
-        #expect(TabPeekAdmission.plan(candidate) == .success(.replaceShown), "the shown Peek closes first")
-        candidate.shown = .none
-        #expect(TabPeekAdmission.plan(candidate) == .success(.present("page-a")),
-               "once it's gone the tab's page opens in the single Peek")
-        candidate.shown = .tab(UUID(), canClose: true)
-        candidate.page = .unloaded(loadable: true)
-        #expect(TabPeekAdmission.plan(candidate) == .success(.replaceShown), "another tab's Peek returns first")
+    @Test(arguments: Departure.allCases)
+    func leavingEndsTheShownSession(_ way: Departure) throws {
+        #expect(!(try Self.departed(way)).session.holdsPage)
+    }
+
+    @Test(arguments: Departure.allCases)
+    func leavingRemovesTheCardOrPlaysItsExitInTheSameStep(_ way: Departure) throws {
+        let effects = try Self.departed(way).effects
+        #expect(effects.contains(.finish) || effects.contains(.exit))
+    }
+
+    @Test(arguments: Departure.allCases)
+    func leavingNeverLeavesThePageInTheCard(_ way: Departure) throws {
+        #expect(try Self.departed(way).window.card == nil)
+    }
+
+    @Test(arguments: Departure.allCases)
+    func aLateHandBackAfterLeavingHasNothingToReturn(_ way: Departure) throws {
+        var d = try Self.departed(way)
+        #expect(d.session.returnRequested().isEmpty)
+    }
+
+    @Test(arguments: Departure.allCases)
+    func theCardIsGoneOnceAnyExitEnds(_ way: Departure) throws {
+        var d = try Self.departed(way)
+        d.window.apply(d.session.exitFinished())
+        #expect(!d.window.cardShown)
+    }
+
+    private static func refusal(_ edit: (inout TabPeekSplitFacts) -> Void) -> TabPeekSplitRefusal? {
+        var facts = TabPeekSplitFacts()
+        edit(&facts)
+        return TabPeekSplit.refusal(facts)
+    }
+
+    @Test func aTabBackedPeekOverASinglePageOffersSplitView() {
+        #expect(Self.refusal { _ in } == nil)
+    }
+
+    @Test func aPeekOverAThreePageSplitStillOffersSplitView() {
+        #expect(Self.refusal { $0.panes = 3 } == nil)
+    }
+
+    @Test func fourPagesIsAsFullAsSplitViewGets() {
+        #expect(Self.refusal { $0.panes = 4 } == .full)
+    }
+
+    @Test func aFullSplitSaysSoEvenWhileTheWindowIsBusy() {
+        #expect(Self.refusal { $0.panes = 4; $0.windowReady = false } == .full)
+    }
+
+    @Test func aPeekThatIsNotTheWindowsLivePeekCannotSplit() {
+        #expect(Self.refusal { $0.peekInteractive = false } == .unavailable)
+    }
+
+    @Test func aTabThatIsClosingMovingOrGoneCannotJoinTheSplit() {
+        #expect(Self.refusal { $0.tabUsable = false } == .unavailable)
+    }
+
+    @Test func thePageUnderneathMustBeOnScreenToSplitWith() {
+        #expect(Self.refusal { $0.parentSelected = false } == .unavailable)
+    }
+
+    @Test func aPopupFullScreenPageOrOpenLibraryRefuses() {
+        #expect(Self.refusal { $0.windowReady = false } == .unavailable)
+    }
+
+    @Test func aPeekThatCannotActIsUnavailableBeforeItIsFull() {
+        #expect(Self.refusal { $0.peekInteractive = false; $0.panes = 4 } == .unavailable)
+    }
+
+    @Test func theFullTooltipSaysWhy() {
+        #expect(TabPeekSplitRefusal.full.toolTip.contains("four pages"))
+    }
+
+    @Test func eachRefusalHasItsOwnTooltip() {
+        #expect(!TabPeekSplitRefusal.unavailable.toolTip.isEmpty)
+        #expect(TabPeekSplitRefusal.unavailable.toolTip != TabPeekSplitRefusal.full.toolTip)
+    }
+
+    @Test func theShownPeekClosesFirst() {
+        let candidate = TabPeekCandidate(tabID: Self.id, page: .live("page-a"), shown: .peek(canClose: true))
+        #expect(TabPeekAdmission.plan(candidate) == .success(.replaceShown))
+    }
+
+    @Test func onceItIsGoneTheTabsPageOpensInTheSinglePeek() {
+        let candidate = TabPeekCandidate(tabID: Self.id, page: .live("page-a"), shown: .none)
+        #expect(TabPeekAdmission.plan(candidate) == .success(.present("page-a")))
+    }
+
+    @Test func anotherTabsPeekReturnsFirst() {
+        let candidate = TabPeekCandidate(tabID: Self.id, page: .unloaded(loadable: true), shown: .tab(UUID(), canClose: true))
+        #expect(TabPeekAdmission.plan(candidate) == .success(.replaceShown))
     }
 }

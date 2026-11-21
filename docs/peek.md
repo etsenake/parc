@@ -87,7 +87,7 @@ its view is removed, so no fading card lingers over a newer Peek or tab and
 nothing flashes. `PeekDismissalMotion` is the pure spring, slide and fade model,
 and `PeekDismissalAnimator` applies it to any card stage and wash view for reuse
 by other Peek hosts; the host sets its geometry and resting wash and leaves the
-stage's transform and opacity to it. `tests/PeekSwipeDismissal/main.swift`
+stage's transform and opacity to it. `PeekSwipeDismissalTests`
 checks `PeekCloseTransition` and `PeekDismissalMotion` with the real recognizer
 and confirmation rules, including the keyboard handover and the wait for a
 closing tab or window.
@@ -325,7 +325,7 @@ Parent transfer, orphan preservation, promotion and new-tab provenance already
 use the original page and parent identity. Model/native components cover those
 transactions, confirmation timers, renderer acknowledgments and focus
 cancellation; window key-loop checks cover forward and backward traversal.
-`tests/PeekWindowHost` checks the card and step geometry, the step following a
+`PeekWindowHostTests` check the card and step geometry, the step following a
 slide, a replaced slide or an opening during one, the click regions, and real
 view hit-testing for the top edge, the revealed frame band, the split grip and
 the floating sidebar.

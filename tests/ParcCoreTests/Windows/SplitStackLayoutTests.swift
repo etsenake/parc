@@ -2,445 +2,760 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct SplitStackLayoutTests {
-    static func close(_ left: [Double], _ right: [Double], _ tolerance: Double = 1e-9) -> Bool {
+    private static func close(_ left: [Double], _ right: [Double], _ tolerance: Double = 1e-9) -> Bool {
         left.count == right.count && zip(left, right).allSatisfy { abs($0 - $1) < tolerance }
     }
 
-    static func stacks(_ sizes: [Int], _ slots: [Double], _ inner: [[Double]]) -> BrowserSplitStacks {
+    private static func stacks(_ sizes: [Int], _ slots: [Double], _ inner: [[Double]]) -> BrowserSplitStacks {
         BrowserSplitStacks(slotSizes: sizes, slotFactors: slots, stackFactors: inner)
     }
 
-    static func frames(_ value: BrowserSplitStacks, _ orientation: SplitOrientation = .horizontal,
-                       size: CGSize = CGSize(width: 1010, height: 710), scale: CGFloat = 2) -> [CGRect] {
+    private static func frames(_ value: BrowserSplitStacks, _ orientation: SplitOrientation = .horizontal,
+                               size: CGSize = CGSize(width: 1010, height: 710), scale: CGFloat = 2) -> [CGRect] {
         SplitStackGeometry.paneFrames(size: size, orientation: orientation, stacks: value,
                                       thickness: 10, minimum: 220, scale: scale)
     }
 
-    static func dividers(_ value: BrowserSplitStacks, _ orientation: SplitOrientation = .horizontal,
-                         size: CGSize = CGSize(width: 1010, height: 710)) -> [SplitStackGeometry.Divider] {
+    private static func dividers(_ value: BrowserSplitStacks, _ orientation: SplitOrientation = .horizontal,
+                                 size: CGSize = CGSize(width: 1010, height: 710)) -> [SplitStackGeometry.Divider] {
         SplitStackGeometry.dividers(paneFrames: frames(value, orientation, size: size), size: size,
                                     orientation: orientation, stacks: value, thickness: 10)
     }
-    @Test static func frameMaths() throws {
-        let column = stacks([2, 1], [0.5, 0.5], [[0.5, 0.5], [1]])
-        #expect(frames(column) == [CGRect(x: 0, y: 0, width: 500, height: 350), CGRect(x: 0, y: 360, width: 500, height: 350),
-                                      CGRect(x: 510, y: 0, width: 500, height: 710)],
-                   "A side-by-side split runs its slots across and stacks the first column top and bottom with a 10-point gap")
-        let row = stacks([2, 1], [0.5, 0.5], [[0.5, 0.5], [1]])
-        #expect(frames(row, .vertical) == [CGRect(x: 0, y: 0, width: 500, height: 350), CGRect(x: 510, y: 0, width: 500, height: 350),
-                                              CGRect(x: 0, y: 360, width: 1010, height: 350)],
-                   "A top-and-bottom split runs its rows down and divides the first row left and right")
-        let squeezedStack = frames(stacks([2, 1], [0.5, 0.5], [[0.95, 0.05], [1]]))
-        #expect(squeezedStack[1].height == 220 && squeezedStack[0].height == 480 && squeezedStack[1].minY == 490,
-                   "A stacked pane keeps the 220-point minimum on the cross axis and its neighbour gives up the deficit")
-        let squeezedRow = frames(stacks([2, 1], [0.9, 0.1], [[0.5, 0.5], [1]]))
-        #expect(squeezedRow[2].width == 220 && squeezedRow[0].width == 780 && squeezedRow[1].width == 780,
-                   "A slot keeps the 220-point minimum on the main axis and both panes in the stack share its width")
-        let three = frames(stacks([1, 3], [0.5, 0.5], [[1], [0.9, 0.05, 0.05]]))
-        #expect(three[2].height == 220 && three[3].height == 220 && three[1].height == 250,
-                   "Several squeezed stack panes each keep the minimum and the rest redistributes")
-        let odd = frames(stacks([2, 1], [0.5, 0.5], [[0.5, 0.5], [1]]), size: CGSize(width: 1001, height: 701), scale: 2)
-        let integral = odd.allSatisfy { [$0.minX, $0.minY, $0.maxX, $0.maxY].allSatisfy { $0 == $0.rounded() } }
-        #expect(integral, "Pane edges stay on whole points after backing-scale rounding")
-        #expect(odd[0].minX == odd[1].minX && odd[0].maxX == odd[1].maxX, "Panes in one stack share the slot's edges exactly")
-        #expect(odd[2].maxX == 1001 && odd[1].maxY == 701, "The last slot and the last stacked pane reach the split's far edges")
+
+    private static func flat(_ factors: [Double], _ orientation: SplitOrientation, _ size: CGSize) -> [CGRect] {
+        SplitStackGeometry.flatFrames(size: size, orientation: orientation, factors: factors, thickness: 10, minimum: 220, scale: 2)
+    }
+
+    private static func fits(_ frames: [CGRect], _ size: CGSize) -> Bool {
+        frames.allSatisfy { CGRect(origin: .zero, size: size).contains($0) }
+    }
+
+    private static let columnStacks = stacks([2, 1], [0.5, 0.5], [[0.5, 0.5], [1]])
+    private static let roomy = CGSize(width: 1010, height: 710)
+    private static let page = CGSize(width: 500, height: 520)
+
+    @Test func aSideBySideSplitRunsItsSlotsAcrossAndStacksTheFirstColumnWithATenPointGap() {
+        #expect(Self.frames(Self.columnStacks) == [CGRect(x: 0, y: 0, width: 500, height: 350), CGRect(x: 0, y: 360, width: 500, height: 350),
+                                                   CGRect(x: 510, y: 0, width: 500, height: 710)])
+    }
+
+    @Test func aTopAndBottomSplitRunsItsRowsDownAndDividesTheFirstRow() {
+        #expect(Self.frames(Self.columnStacks, .vertical) == [CGRect(x: 0, y: 0, width: 500, height: 350), CGRect(x: 510, y: 0, width: 500, height: 350),
+                                                              CGRect(x: 0, y: 360, width: 1010, height: 350)])
+    }
+
+    @Test func aStackedPaneKeepsTheMinimumOnTheCrossAxisAndItsNeighbourGivesUpTheDeficit() {
+        let squeezed = Self.frames(Self.stacks([2, 1], [0.5, 0.5], [[0.95, 0.05], [1]]))
+        #expect(squeezed[1].height == 220)
+        #expect(squeezed[0].height == 480)
+        #expect(squeezed[1].minY == 490)
+    }
+
+    @Test func aSlotKeepsTheMinimumOnTheMainAxisAndBothStackPanesShareItsWidth() {
+        let squeezed = Self.frames(Self.stacks([2, 1], [0.9, 0.1], [[0.5, 0.5], [1]]))
+        #expect(squeezed[2].width == 220)
+        #expect(squeezed[0].width == 780)
+        #expect(squeezed[1].width == 780)
+    }
+
+    @Test func severalSqueezedStackPanesEachKeepTheMinimumAndTheRestRedistributes() {
+        let three = Self.frames(Self.stacks([1, 3], [0.5, 0.5], [[1], [0.9, 0.05, 0.05]]))
+        #expect(three[2].height == 220)
+        #expect(three[3].height == 220)
+        #expect(three[1].height == 250)
+    }
+
+    @Test func paneEdgesStayOnWholePointsAfterBackingScaleRounding() {
+        let odd = Self.frames(Self.columnStacks, size: CGSize(width: 1001, height: 701), scale: 2)
+        #expect(odd.allSatisfy { [$0.minX, $0.minY, $0.maxX, $0.maxY].allSatisfy { $0 == $0.rounded() } })
+    }
+
+    @Test func panesInOneStackShareTheSlotsEdgesExactly() {
+        let odd = Self.frames(Self.columnStacks, size: CGSize(width: 1001, height: 701), scale: 2)
+        #expect(odd[0].minX == odd[1].minX)
+        #expect(odd[0].maxX == odd[1].maxX)
+    }
+
+    @Test func theLastSlotAndLastStackedPaneReachTheFarEdges() {
+        let odd = Self.frames(Self.columnStacks, size: CGSize(width: 1001, height: 701), scale: 2)
+        #expect(odd[2].maxX == 1001)
+        #expect(odd[1].maxY == 701)
+    }
+
+    @Test func theDeficitLoopMatchesTheFlatSplitsRedistribution() {
         let lengths = SplitStackGeometry.lengths([0.7, 0.2, 0.1], available: 1000, minimum: 220)
-        #expect(lengths.map { Double($0) } == [560, 220, 220], "The deficit loop matches the flat split's redistribution")
+        #expect(lengths.map { Double($0) } == [560, 220, 220])
     }
 
-    @Test static func dividerRectsAndRegions() throws {
-        let column = dividers(stacks([2, 1], [0.5, 0.5], [[0.5, 0.5], [1]]))
-        #expect(column.map(\.id) == [SplitStackDivider(slot: 0, index: 0), SplitStackDivider(slot: nil, index: 0)],
-                   "Dividers follow reading order: the stack divider, then the main-row divider")
-        #expect(column[0].rect == CGRect(x: 0, y: 350, width: 500, height: 10) && !column[0].isVerticalBar,
-                   "A stack divider spans only its column")
-        #expect(column[0].region == CGRect(x: 8, y: 350, width: 484, height: 10),
-                   "The stacked divider's 8-point end inset applies within its column")
-        #expect(column[1].rect == CGRect(x: 500, y: 0, width: 10, height: 710) && column[1].isVerticalBar,
-                   "A main-row divider spans the whole split")
-        #expect(column[1].region == CGRect(x: 500, y: 53, width: 10, height: 657),
-                   "The main-row side-by-side divider keeps the 53-point top bar clear")
-
-        let rows = dividers(stacks([1, 2], [0.5, 0.5], [[1], [0.5, 0.5]]), .vertical)
-        #expect(rows.map(\.id) == [SplitStackDivider(slot: nil, index: 0), SplitStackDivider(slot: 1, index: 0)],
-                   "A top-and-bottom split lists the main-row divider before the lower row's divider")
-        #expect(rows[0].rect == CGRect(x: 0, y: 350, width: 1010, height: 10)
-                   && rows[0].region == CGRect(x: 8, y: 350, width: 994, height: 10),
-                   "The main-row divider in a top-and-bottom split spans the width with the 8-point end inset")
-        #expect(rows[1].rect == CGRect(x: 500, y: 360, width: 10, height: 350) && rows[1].isVerticalBar,
-                   "A divider inside the lower row spans only that row")
-        #expect(rows[1].region == CGRect(x: 500, y: 413, width: 10, height: 297),
-                   "A divider between two lower panes stays clear of their own headers")
-
-        let four = stacks([2, 2], [0.5, 0.5], [[0.5, 0.5], [0.5, 0.5]])
-        #expect(four.divider(after: 0) == SplitStackDivider(slot: 0, index: 0)
-                   && four.divider(after: 1) == SplitStackDivider(slot: nil, index: 0)
-                   && four.divider(after: 2) == SplitStackDivider(slot: 1, index: 0) && four.divider(after: 3) == nil,
-                   "Four panes in two stacks give a splitter between each pair of reading-order neighbours")
-        #expect(stacks([3, 1], [0.5, 0.5], [[1, 1, 1], [1]]).divider(after: 1) == SplitStackDivider(slot: 0, index: 1),
-                   "The second divider inside a three-pane stack is that stack's second divider")
-        #expect(SplitStackGeometry.dividers(paneFrames: [.zero, .zero], size: .zero, orientation: .horizontal,
-                                               stacks: four, thickness: 10).isEmpty,
-                   "Frames that don't match the stack give no dividers")
+    @Test func dividersFollowReadingOrder() {
+        let column = Self.dividers(Self.columnStacks)
+        #expect(column.map(\.id) == [SplitStackDivider(slot: 0, index: 0), SplitStackDivider(slot: nil, index: 0)])
     }
 
-    @Test static func tightPageArea() throws {
-        func flat(_ factors: [Double], _ orientation: SplitOrientation, _ size: CGSize) -> [CGRect] {
-            SplitStackGeometry.flatFrames(size: size, orientation: orientation, factors: factors,
-                                          thickness: 10, minimum: 220, scale: 2)
-        }
-        func fits(_ frames: [CGRect], _ size: CGSize) -> Bool {
-            frames.allSatisfy { CGRect(origin: .zero, size: size).contains($0) }
-        }
-        let roomy = CGSize(width: 1010, height: 710), page = CGSize(width: 500, height: 520)
+    @Test func aStackDividerSpansOnlyItsColumn() {
+        let divider = Self.dividers(Self.columnStacks)[0]
+        #expect(divider.rect == CGRect(x: 0, y: 350, width: 500, height: 10))
+        #expect(!divider.isVerticalBar)
+    }
 
-        #expect(SplitStackGeometry.fittedLengths([0.7, 0.2, 0.1], available: 1000, minimum: 220, scale: 2) == [560, 220, 220]
-                   && SplitStackGeometry.fittedLengths([0.6, 0.2, 0.2], available: 660, minimum: 220, scale: 2) == [220, 220, 220],
-                   "With room, every pane keeps the 220-point minimum and the deficit redistributes as before")
-        #expect(flat([0.25, 0.75], .horizontal, roomy) == [CGRect(x: 0, y: 0, width: 250, height: 710),
-                                                              CGRect(x: 260, y: 0, width: 750, height: 710)]
-                   && flat([0.3, 0.7], .vertical, roomy) == [CGRect(x: 0, y: 0, width: 1010, height: 220),
-                                                             CGRect(x: 0, y: 230, width: 1010, height: 480)],
-                   "A roomy flat split keeps its weights, with the minimum on the axis it runs")
-        #expect(flat([1], .horizontal, CGSize(width: 180, height: 140)) == [CGRect(x: 0, y: 0, width: 180, height: 140)],
-                   "A single page fills its page area with no split minimum")
+    @Test func theStackedDividersEightPointEndInsetAppliesWithinItsColumn() {
+        #expect(Self.dividers(Self.columnStacks)[0].region == CGRect(x: 8, y: 350, width: 484, height: 10))
+    }
 
-        #expect(SplitStackGeometry.fittedLengths([0.6, 0.2, 0.2], available: 480, minimum: 220, scale: 2) == [160, 160, 160],
-                   "Short of room for every minimum, the panes share what there is evenly")
+    @Test func aMainRowDividerSpansTheWholeSplit() {
+        let divider = Self.dividers(Self.columnStacks)[1]
+        #expect(divider.rect == CGRect(x: 500, y: 0, width: 10, height: 710))
+        #expect(divider.isVerticalBar)
+    }
+
+    @Test func theMainRowSideBySideDividerKeepsTheTopBarClear() {
+        #expect(Self.dividers(Self.columnStacks)[1].region == CGRect(x: 500, y: 53, width: 10, height: 657))
+    }
+
+    @Test func aTopAndBottomSplitListsTheMainRowDividerBeforeTheLowerRowsDivider() {
+        let rows = Self.dividers(Self.stacks([1, 2], [0.5, 0.5], [[1], [0.5, 0.5]]), .vertical)
+        #expect(rows.map(\.id) == [SplitStackDivider(slot: nil, index: 0), SplitStackDivider(slot: 1, index: 0)])
+    }
+
+    @Test func theMainRowDividerInATopAndBottomSplitSpansTheWidthWithTheEndInset() {
+        let rows = Self.dividers(Self.stacks([1, 2], [0.5, 0.5], [[1], [0.5, 0.5]]), .vertical)
+        #expect(rows[0].rect == CGRect(x: 0, y: 350, width: 1010, height: 10))
+        #expect(rows[0].region == CGRect(x: 8, y: 350, width: 994, height: 10))
+    }
+
+    @Test func aDividerInsideTheLowerRowSpansOnlyThatRow() {
+        let rows = Self.dividers(Self.stacks([1, 2], [0.5, 0.5], [[1], [0.5, 0.5]]), .vertical)
+        #expect(rows[1].rect == CGRect(x: 500, y: 360, width: 10, height: 350))
+        #expect(rows[1].isVerticalBar)
+    }
+
+    @Test func aDividerBetweenTwoLowerPanesStaysClearOfTheirHeaders() {
+        let rows = Self.dividers(Self.stacks([1, 2], [0.5, 0.5], [[1], [0.5, 0.5]]), .vertical)
+        #expect(rows[1].region == CGRect(x: 500, y: 413, width: 10, height: 297))
+    }
+
+    @Test(arguments: [(0, SplitStackDivider(slot: 0, index: 0)), (1, SplitStackDivider(slot: nil, index: 0)), (2, SplitStackDivider(slot: 1, index: 0))])
+    func fourPanesInTwoStacksGiveASplitterBetweenEachReadingOrderPair(_ pane: Int, _ expected: SplitStackDivider) {
+        let four = Self.stacks([2, 2], [0.5, 0.5], [[0.5, 0.5], [0.5, 0.5]])
+        #expect(four.divider(after: pane) == expected)
+    }
+
+    @Test func thereIsNoSplitterAfterTheLastPane() {
+        let four = Self.stacks([2, 2], [0.5, 0.5], [[0.5, 0.5], [0.5, 0.5]])
+        #expect(four.divider(after: 3) == nil)
+    }
+
+    @Test func theSecondDividerInAThreePaneStackIsThatStacksSecondDivider() {
+        #expect(Self.stacks([3, 1], [0.5, 0.5], [[1, 1, 1], [1]]).divider(after: 1) == SplitStackDivider(slot: 0, index: 1))
+    }
+
+    @Test func framesThatDoNotMatchTheStackGiveNoDividers() {
+        let four = Self.stacks([2, 2], [0.5, 0.5], [[0.5, 0.5], [0.5, 0.5]])
+        #expect(SplitStackGeometry.dividers(paneFrames: [.zero, .zero], size: .zero, orientation: .horizontal, stacks: four, thickness: 10).isEmpty)
+    }
+
+    @Test func withRoomEveryPaneKeepsTheMinimumAndTheDeficitRedistributes() {
+        #expect(SplitStackGeometry.fittedLengths([0.7, 0.2, 0.1], available: 1000, minimum: 220, scale: 2) == [560, 220, 220])
+        #expect(SplitStackGeometry.fittedLengths([0.6, 0.2, 0.2], available: 660, minimum: 220, scale: 2) == [220, 220, 220])
+    }
+
+    @Test func aRoomyFlatSplitKeepsItsWeightsWithTheMinimumOnTheAxisItRuns() {
+        #expect(Self.flat([0.25, 0.75], .horizontal, Self.roomy) == [CGRect(x: 0, y: 0, width: 250, height: 710), CGRect(x: 260, y: 0, width: 750, height: 710)])
+        #expect(Self.flat([0.3, 0.7], .vertical, Self.roomy) == [CGRect(x: 0, y: 0, width: 1010, height: 220), CGRect(x: 0, y: 230, width: 1010, height: 480)])
+    }
+
+    @Test func aSinglePageFillsItsPageAreaWithNoSplitMinimum() {
+        #expect(Self.flat([1], .horizontal, CGSize(width: 180, height: 140)) == [CGRect(x: 0, y: 0, width: 180, height: 140)])
+    }
+
+    @Test func shortOfRoomForEveryMinimumThePanesShareWhatThereIsEvenly() {
+        #expect(SplitStackGeometry.fittedLengths([0.6, 0.2, 0.2], available: 480, minimum: 220, scale: 2) == [160, 160, 160])
+    }
+
+    @Test func evenSharesRoundDownAtTheWindowsScaleSoTheyNeverExceedTheRoom() {
         let odd = SplitStackGeometry.fittedLengths([1, 1, 1], available: 500, minimum: 220, scale: 1)
-        #expect(odd == [166, 166, 166] && odd.reduce(0, +) <= 500, "Even shares round down at the window's scale so they never add up past the room")
-        #expect(flat([0.6, 0.2, 0.2], .horizontal, page) == [CGRect(x: 0, y: 0, width: 160, height: 520),
-                                                               CGRect(x: 170, y: 0, width: 160, height: 520),
-                                                               CGRect(x: 340, y: 0, width: 160, height: 520)],
-                   "Three side-by-side panes in a 500-point page area share it instead of spilling past its right edge")
-        #expect(flat([1, 1, 1], .vertical, page) == [CGRect(x: 0, y: 0, width: 500, height: 167),
-                                                       CGRect(x: 0, y: 177, width: 500, height: 166),
-                                                       CGRect(x: 0, y: 353, width: 500, height: 167)],
-                   "Three top-and-bottom panes in a 520-point page area share its height instead of spilling below it")
-        #expect(flat([1, 1, 1], .vertical, CGSize(width: 300, height: 860)) == [CGRect(x: 0, y: 0, width: 300, height: 280),
-                                                                                  CGRect(x: 0, y: 290, width: 300, height: 280),
-                                                                                  CGRect(x: 0, y: 580, width: 300, height: 280)],
-                   "A top-and-bottom split puts no width minimum on a narrow page area")
-        let short = CGSize(width: 600, height: 300)
-        #expect(flat([0.5, 0.5], .horizontal, short).allSatisfy { $0.height == 300 },
-                   "A side-by-side split fills a page area shorter than the old 382-point floor")
+        #expect(odd == [166, 166, 166])
+        #expect(odd.reduce(0, +) <= 500)
+    }
 
-        let three = stacks([3, 1], [0.5, 0.5], [[1, 1, 1], [1]])
+    @Test func threeSideBySidePanesInANarrowPageAreaShareItInsteadOfSpillingPastItsEdge() {
+        #expect(Self.flat([0.6, 0.2, 0.2], .horizontal, Self.page) == [CGRect(x: 0, y: 0, width: 160, height: 520),
+                                                                    CGRect(x: 170, y: 0, width: 160, height: 520),
+                                                                    CGRect(x: 340, y: 0, width: 160, height: 520)])
+    }
+
+    @Test func threeTopAndBottomPanesInAShortPageAreaShareItsHeight() {
+        #expect(Self.flat([1, 1, 1], .vertical, Self.page) == [CGRect(x: 0, y: 0, width: 500, height: 167),
+                                                             CGRect(x: 0, y: 177, width: 500, height: 166),
+                                                             CGRect(x: 0, y: 353, width: 500, height: 167)])
+    }
+
+    @Test func aTopAndBottomSplitPutsNoWidthMinimumOnANarrowPageArea() {
+        #expect(Self.flat([1, 1, 1], .vertical, CGSize(width: 300, height: 860)) == [CGRect(x: 0, y: 0, width: 300, height: 280),
+                                                                                   CGRect(x: 0, y: 290, width: 300, height: 280),
+                                                                                   CGRect(x: 0, y: 580, width: 300, height: 280)])
+    }
+
+    @Test func aSideBySideSplitFillsAPageAreaShorterThanTheOldFloor() {
+        #expect(Self.flat([0.5, 0.5], .horizontal, CGSize(width: 600, height: 300)).allSatisfy { $0.height == 300 })
+    }
+
+    @Test func aThreePaneStackInAShortPageAreaSharesTheColumnWhileTheMainRowKeepsItsRoom() {
         let wide = CGSize(width: 1000, height: 520)
-        let committed = frames(three, size: wide)
-        #expect(fits(committed, wide) && committed[0...2].allSatisfy { $0.width == 495 && abs($0.height - 500.0 / 3) < 1 }
-                   && committed[3] == CGRect(x: 505, y: 0, width: 495, height: 520),
-                   "A three-pane stack in a 520-point page area shares the column while the main row keeps its room")
-        let fourSlots = frames(BrowserSplitStacks.flat([0.4, 0.2, 0.2, 0.2]), size: CGSize(width: 700, height: 520))
-        #expect(fits(fourSlots, CGSize(width: 700, height: 520)) && fourSlots.allSatisfy { abs($0.width - 167.5) <= 0.5 },
-                   "Four slots in a 700-point page area share its width")
+        let committed = Self.frames(Self.stacks([3, 1], [0.5, 0.5], [[1, 1, 1], [1]]), size: wide)
+        #expect(Self.fits(committed, wide))
+        #expect(committed[0...2].allSatisfy { $0.width == 495 && abs($0.height - 500.0 / 3) < 1 })
+        #expect(committed[3] == CGRect(x: 505, y: 0, width: 495, height: 520))
+    }
 
-        let column = stacks([2, 1], [0.5, 0.5], [[0.5, 0.5], [1]])
-        let reserved = column.reservingStack(besidePane: 1, after: true)!.stacks
-        let grownLayout = BrowserSplitLayout(id: UUID(), spaceID: UUID(), tabIDs: [UUID(), UUID(), UUID()], orientation: .horizontal,
-                                             widthFactors: column.flattenedFactors, stacks: column)
-            .insertingIntoStack(UUID(), besidePaneAt: 1, after: true)!
-        #expect(fits(frames(reserved, size: wide), wide) && frames(reserved, size: wide) == frames(grownLayout.stacks!, size: wide),
-                   "A stack drop preview in a short page area fits and shows exactly the frames the drop commits")
-        let lone = BrowserSplitStacks.flat([0.5, 0.5]).reservingStack(besidePane: 0, after: true)!.stacks
-        #expect(fits(frames(lone, size: CGSize(width: 1000, height: 400)), CGSize(width: 1000, height: 400)),
-                   "Starting a stack in a short flat split previews inside the page area")
+    @Test func fourSlotsInANarrowPageAreaShareItsWidth() {
+        let size = CGSize(width: 700, height: 520)
+        let fourSlots = Self.frames(BrowserSplitStacks.flat([0.4, 0.2, 0.2, 0.2]), size: size)
+        #expect(Self.fits(fourSlots, size))
+        #expect(fourSlots.allSatisfy { abs($0.width - 167.5) <= 0.5 })
+    }
 
-        let ids = [UUID(), UUID()], source = UUID(), space = UUID()
-        let pair = BrowserSplitLayout(id: UUID(), spaceID: space, tabIDs: ids, orientation: .horizontal,
-                                      widthFactors: [0.75, 0.25], stacks: nil)
-        let dropped = SplitDropTransaction.make(source: source, selection: ids, layout: pair, target: .insert(1),
-                                                orientation: .horizontal, spaceID: space)!
+    @Test func aStackDropPreviewInAShortPageAreaFitsAndShowsTheFramesTheDropCommits() throws {
+        let wide = CGSize(width: 1000, height: 520)
+        let reserved = try #require(Self.columnStacks.reservingStack(besidePane: 1, after: true)).stacks
+        let grown = try #require(BrowserSplitLayout(id: UUID(), spaceID: UUID(), tabIDs: [UUID(), UUID(), UUID()], orientation: .horizontal,
+                                                    widthFactors: Self.columnStacks.flattenedFactors, stacks: Self.columnStacks)
+            .insertingIntoStack(UUID(), besidePaneAt: 1, after: true))
+        #expect(Self.fits(Self.frames(reserved, size: wide), wide))
+        #expect(Self.frames(reserved, size: wide) == Self.frames(try #require(grown.stacks), size: wide))
+    }
+
+    @Test func startingAStackInAShortFlatSplitPreviewsInsideThePageArea() throws {
+        let lone = try #require(BrowserSplitStacks.flat([0.5, 0.5]).reservingStack(besidePane: 0, after: true)).stacks
+        let size = CGSize(width: 1000, height: 400)
+        #expect(Self.fits(Self.frames(lone, size: size), size))
+    }
+
+    @Test func aMainRowDropPreviewInANarrowPageAreaFitsAndMatchesTheDroppedSplit() throws {
+        let ids = [UUID(), UUID()], space = UUID()
+        let pair = BrowserSplitLayout(id: UUID(), spaceID: space, tabIDs: ids, orientation: .horizontal, widthFactors: [0.75, 0.25], stacks: nil)
+        let dropped = try #require(SplitDropTransaction.make(source: UUID(), selection: ids, layout: pair, target: .insert(1),
+                                                             orientation: .horizontal, spaceID: space))
         let preview = BrowserSplitStacks.flat(pair.widthFactors).reservingSlot(at: 1).slotFactors
-        #expect(flat(preview, .horizontal, page) == flat(dropped.widthFactors, .horizontal, page) && fits(flat(preview, .horizontal, page), page),
-                   "A main-row drop preview in a narrow page area fits, laid out just as the dropped split will be")
+        #expect(Self.flat(preview, .horizontal, Self.page) == Self.flat(dropped.widthFactors, .horizontal, Self.page))
+        #expect(Self.fits(Self.flat(preview, .horizontal, Self.page), Self.page))
+    }
 
-        #expect(SplitStackGeometry.fittedMinimum(count: 3, available: 1000, minimum: 220) == 220
-                   && SplitStackGeometry.fittedMinimum(count: 3, available: 480, minimum: 220) == 160
-                   && SplitStackGeometry.fittedMinimum(count: 1, available: 100, minimum: 220) == 220,
-                   "Dividers and steps use the minimum the layout can actually give")
-        for (saved, available, scale) in [([1.0 / 3, 1.0 / 3, 1.0 / 3], CGFloat(480), CGFloat(2)), ([0.6, 0.2, 0.2], 500, 1),
-                                          ([0.6, 0.2, 0.2], 481, 2)] {
+    @Test(arguments: [(3, 1000.0, 220.0), (3, 480.0, 160.0), (1, 100.0, 220.0)])
+    func dividersAndStepsUseTheMinimumTheLayoutCanActuallyGive(_ count: Int, _ available: CGFloat, _ expected: CGFloat) {
+        #expect(SplitStackGeometry.fittedMinimum(count: count, available: available, minimum: 220) == expected)
+    }
+
+    struct SqueezedCase: Sendable, CustomTestStringConvertible {
+        let saved: [Double]
+        let available: CGFloat
+        let scale: CGFloat
+        var testDescription: String { "saved \(saved) in \(available) points" }
+        static let all = [SqueezedCase(saved: [1.0 / 3, 1.0 / 3, 1.0 / 3], available: 480, scale: 2),
+                          SqueezedCase(saved: [0.6, 0.2, 0.2], available: 500, scale: 1),
+                          SqueezedCase(saved: [0.6, 0.2, 0.2], available: 481, scale: 2)]
+
+        func squeezed() -> (shares: [Double], minimum: Double) {
             let shown = SplitStackGeometry.fittedLengths(saved, available: available, minimum: 220, scale: scale).map { Double($0) }
             let minimum = SplitStackGeometry.fittedMinimum(count: 3, available: available, minimum: 220)
-            let squeezed = SplitStackGeometry.adjustableShares(saved: saved, shown: shown, available: Double(available),
-                                                               minimum: Double(minimum))!
-            let positions = (0..<2).compactMap { SplitStackGeometry.splitterPosition(shares: squeezed.shares, index: $0,
-                                                                                     minimum: squeezed.minimum) }
-            #expect(SplitPaneResize.resizingPane(0, in: squeezed.shares, growing: true, minimum: squeezed.minimum) == nil
-                       && SplitPaneResize.resizingPane(1, in: squeezed.shares, growing: false, minimum: squeezed.minimum) == nil
-                       && SplitPaneResize.movingDivider(0, in: squeezed.shares, forward: true, minimum: squeezed.minimum) == nil
-                       && positions.count == 2 && positions.allSatisfy { abs($0.minimum - $0.value) < 1e-9 && abs($0.maximum - $0.value) < 1e-9 },
-                       "Squeezed panes saved as \(saved) in \(available) points have no room to give, so steps stay put and VoiceOver's limits meet")
+            let result = SplitStackGeometry.adjustableShares(saved: saved, shown: shown, available: Double(available), minimum: Double(minimum))!
+            return (result.shares, result.minimum)
         }
-        let crossing = SplitStackGeometry.splitterPosition(shares: [0.3, 0.3, 0.4], index: 0, minimum: 0.31)!
-        #expect(crossing.minimum <= crossing.value && crossing.maximum >= crossing.value,
-                   "A splitter's limits never cross its value")
     }
 
-    @Test static func dividerSnapAlongItsAxis() throws {
-        func run(_ steps: [(distance: Double, x: CGFloat, y: CGFloat)], horizontal: Bool = false) -> (state: SplitDividerSnapState, haptics: [Bool]) {
-            var state = SplitDividerSnapState()
-            let haptics = steps.map { step in
-                state.update(distance: step.distance,
-                             velocity: SplitDividerSnapState.velocity(CGPoint(x: step.x, y: step.y), movingHorizontally: horizontal))
-            }
-            return (state, haptics)
+    @Test(arguments: SqueezedCase.all)
+    func squeezedPanesCannotGrowFromTheFirst(_ c: SqueezedCase) {
+        let s = c.squeezed()
+        #expect(SplitPaneResize.resizingPane(0, in: s.shares, growing: true, minimum: s.minimum) == nil)
+    }
+
+    @Test(arguments: SqueezedCase.all)
+    func squeezedPanesCannotShrinkTheSecond(_ c: SqueezedCase) {
+        let s = c.squeezed()
+        #expect(SplitPaneResize.resizingPane(1, in: s.shares, growing: false, minimum: s.minimum) == nil)
+    }
+
+    @Test(arguments: SqueezedCase.all)
+    func squeezedPanesCannotMoveADividerForward(_ c: SqueezedCase) {
+        let s = c.squeezed()
+        #expect(SplitPaneResize.movingDivider(0, in: s.shares, forward: true, minimum: s.minimum) == nil)
+    }
+
+    @Test(arguments: SqueezedCase.all)
+    func squeezedSplitterLimitsMeetAtTheirValue(_ c: SqueezedCase) {
+        let s = c.squeezed()
+        let positions = (0..<2).compactMap { SplitStackGeometry.splitterPosition(shares: s.shares, index: $0, minimum: s.minimum) }
+        #expect(positions.count == 2)
+        #expect(positions.allSatisfy { abs($0.minimum - $0.value) < 1e-9 && abs($0.maximum - $0.value) < 1e-9 })
+    }
+
+    @Test func aSplittersLimitsNeverCrossItsValue() throws {
+        let crossing = try #require(SplitStackGeometry.splitterPosition(shares: [0.3, 0.3, 0.4], index: 0, minimum: 0.31))
+        #expect(crossing.minimum <= crossing.value)
+        #expect(crossing.maximum >= crossing.value)
+    }
+
+    private struct SnapStep { let distance: Double; let x: CGFloat; let y: CGFloat }
+
+    private static func run(_ steps: [SnapStep], horizontal: Bool = false) -> (state: SplitDividerSnapState, haptics: [Bool]) {
+        var state = SplitDividerSnapState()
+        let haptics = steps.map { step in
+            state.update(distance: step.distance,
+                         velocity: SplitDividerSnapState.velocity(CGPoint(x: step.x, y: step.y), movingHorizontally: horizontal))
         }
-        #expect(SplitDividerSnapState.velocity(CGPoint(x: -80, y: 500), movingHorizontally: true) == -80
-                   && SplitDividerSnapState.velocity(CGPoint(x: -80, y: 500), movingHorizontally: false) == 500,
-                   "A side-by-side divider reads sideways speed and an up-and-down divider reads vertical speed")
-        let fromAbove = run([(-30, 2, 400), (-6, -1, 80)])
-        #expect(fromAbove.state.isSnapped && fromAbove.haptics == [false, true],
-                   "An up-and-down divider eased down onto the centre snaps with one haptic")
-        let fromBelow = run([(30, -2, -400), (6, 3, -80)])
-        #expect(fromBelow.state.isSnapped && fromBelow.haptics == [false, true],
-                   "Eased up onto the centre from below, it snaps too")
-        #expect(run([(30, 0, -400), (6, 0, -120)]).state.isSnapped && run([(-30, 0, 400), (-6, 0, 120)]).state.isSnapped,
-                   "120 points per second along the divider's own axis still snaps from either side")
-        let fastDown = run([(-30, 0, 400), (-6, 0, 121)]), fastUp = run([(30, 0, -400), (6, 0, -121)])
-        #expect(!fastDown.state.isSnapped && !fastUp.state.isSnapped && fastDown.haptics == [false, false]
-                   && fastUp.haptics == [false, false], "A quick drag through the centre passes straight through from either side")
-        let awayUp = run([(-30, 0, 900), (-4, 0, 900), (-6, 0, -50)])
-        let awayDown = run([(30, 0, -900), (4, 0, -900), (6, 0, 50)])
-        #expect(!awayUp.state.isSnapped && !awayDown.state.isSnapped && awayUp.haptics == [false, false, false]
-                   && awayDown.haptics == [false, false, false], "Easing away from the centre never snaps, from either side")
-        #expect(!run([(-6, 0, 30)]).state.isSnapped, "Snapping waits until the divider has moved 14 points away")
-        var held = fromBelow.state
-        let stay = held.update(distance: -10, velocity: SplitDividerSnapState.velocity(CGPoint(x: 0, y: -900), movingHorizontally: false))
-        let release = held.update(distance: -14, velocity: SplitDividerSnapState.velocity(CGPoint(x: 0, y: -900), movingHorizontally: false))
-        let beyond = held.update(distance: -40, velocity: SplitDividerSnapState.velocity(CGPoint(x: 0, y: -900), movingHorizontally: false))
-        #expect(!stay && release && !beyond && !held.isSnapped,
-                   "A snapped divider holds inside the band, then releases with one haptic as it leaves")
-        let sideways = run([(30, -400, 0), (6, -80, 900)], horizontal: true)
-        let sidewaysAway = run([(-30, 900, 0), (-4, 900, 0), (-6, -50, 900)], horizontal: true)
-        #expect(sideways.state.isSnapped && sideways.haptics == [false, true] && !sidewaysAway.state.isSnapped,
-                   "A side-by-side divider still snaps on its sideways speed alone, whatever the vertical speed")
+        return (state, haptics)
     }
 
-    @Test static func splitterValuesAndLabels() throws {
-        #expect(SplitStackGeometry.splitterLabel(index: 0, count: 2, slot: 0, orientation: .horizontal)
-                   == "Split View Divider 1, inside column 1", "A stack splitter says which column it sits in")
-        #expect(SplitStackGeometry.splitterLabel(index: 1, count: 3, slot: 0, orientation: .horizontal)
-                   == "Split View Divider 2, inside column 1", "Splitters keep their reading-order number")
-        #expect(SplitStackGeometry.splitterLabel(index: 1, count: 2, slot: 1, orientation: .vertical)
-                   == "Split View Divider 2, inside row 2", "A top-and-bottom split names rows")
-        #expect(SplitStackGeometry.splitterLabel(index: 1, count: 2, slot: nil, orientation: .horizontal)
-                   == "Split View Divider 2", "Main-row splitters keep today's label")
-        #expect(SplitStackGeometry.splitterLabel(index: 0, count: 1, slot: nil, orientation: .horizontal)
-                   == "Split View Divider", "A lone splitter stays unnumbered")
-        let pair = SplitStackGeometry.splitterPosition(shares: [0.25, 0.75], index: 0, minimum: 0.2)!
-        #expect(close([pair.value, pair.minimum, pair.maximum], [0.25, 0.2, 0.8]),
-                   "A stack splitter reports its share within its slot, bounded by the minimum on each side")
-        let middle = SplitStackGeometry.splitterPosition(shares: [0.25, 0.25, 0.5], index: 1, minimum: 0.2)!
-        #expect(close([middle.value, middle.minimum, middle.maximum], [0.5, 0.45, 0.8]),
-                   "A later splitter counts the panes before it")
-        #expect(SplitStackGeometry.splitterPosition(shares: [0.5, 0.5], index: 1, minimum: 0.2) == nil,
-                   "A splitter past the last pair has no value")
-        let saved = SplitStackGeometry.adjustableShares(saved: [0.5, 0.5], shown: [350, 350], available: 700, minimum: 220)!
-        #expect(close(saved.shares, [0.5, 0.5]) && abs(saved.minimum - 220.0 / 700) < 1e-12,
-                   "Valid saved stack shares measure against the slot's own length")
-        let shown = SplitStackGeometry.adjustableShares(saved: [0.95, 0.05], shown: [480, 220], available: 700, minimum: 220)!
-        #expect(close(shown.shares, [480.0 / 700, 220.0 / 700]), "Shares squeezed below the minimum fall back to what's shown")
-        #expect(close(SplitStackGeometry.resizableFactors(saved: [0.5, 0.5], shown: [350, 350], divider: 0,
-                                                              available: 700, minimum: 220)!, [0.5, 0.5]),
-                   "A roomy pair drags from its saved shares")
+    @Test func aSideBySideDividerReadsSidewaysSpeedAndAnUpAndDownDividerReadsVerticalSpeed() {
+        #expect(SplitDividerSnapState.velocity(CGPoint(x: -80, y: 500), movingHorizontally: true) == -80)
+        #expect(SplitDividerSnapState.velocity(CGPoint(x: -80, y: 500), movingHorizontally: false) == 500)
     }
 
-    @Test static func layoutCommands() throws {
-        let ids = [UUID(), UUID(), UUID()]
-        let value = stacks([2, 1], [0.6, 0.4], [[0.3, 0.7], [1]])
-        let layout = BrowserSplitLayout(id: UUID(), spaceID: UUID(), tabIDs: ids, orientation: .horizontal,
-                                        widthFactors: value.flattenedFactors, stacks: value)
+    @Test func anUpAndDownDividerEasedDownOntoTheCentreSnapsWithOneHaptic() {
+        let fromAbove = Self.run([SnapStep(distance: -30, x: 2, y: 400), SnapStep(distance: -6, x: -1, y: 80)])
+        #expect(fromAbove.state.isSnapped)
+        #expect(fromAbove.haptics == [false, true])
+    }
 
-        let expanded = layout.expanded(focusing: ids[1])!.stacks!
-        #expect(expanded.slotFactors[0] > 0.999 && expanded.stackFactors[0][1] > 0.999,
-                   "Expand gives the focused pane the largest share on both levels")
-        let expandedFrames = frames(expanded)
-        #expect(expandedFrames[2].width == 220 && expandedFrames[0].height == 220 && expandedFrames[1].height == 480,
-                   "An expanded stacked pane leaves its neighbours at the minimum on both axes")
+    @Test func easedUpOntoTheCentreFromBelowItSnapsToo() {
+        let fromBelow = Self.run([SnapStep(distance: 30, x: -2, y: -400), SnapStep(distance: 6, x: 3, y: -80)])
+        #expect(fromBelow.state.isSnapped)
+        #expect(fromBelow.haptics == [false, true])
+    }
 
-        let equal = layout.resized(by: .equal)!.stacks!
-        #expect(equal.slotFactors == [0.5, 0.5] && equal.stackFactors == [[0.5, 0.5], [1]] && equal.isEven,
-                   "Make All Equal evens the slots, then each stack")
-        #expect(!value.isEven && stacks([2, 2], [1, 1], [[2, 2], [3, 3]]).isEven, "Evenness checks both levels")
+    @Test(arguments: [true, false])
+    func oneTwentyPointsPerSecondAlongTheDividersOwnAxisStillSnaps(_ fromBelow: Bool) {
+        let steps = fromBelow ? [SnapStep(distance: 30, x: 0, y: -400), SnapStep(distance: 6, x: 0, y: -120)]
+                              : [SnapStep(distance: -30, x: 0, y: 400), SnapStep(distance: -6, x: 0, y: 120)]
+        #expect(Self.run(steps).state.isSnapped)
+    }
 
-        let widened = SplitPaneResize.resizingPane(0, in: value.slotFactors, growing: true, minimum: 0.22)!
-        let wide = layout.resized(by: .slots(widened))!.stacks!
-        #expect(close(wide.slotFactors, [0.7, 0.3]) && wide.stackFactors == value.stackFactors,
-                   "Widen steps the focused pane's slot along the main row only")
-        let narrowed = SplitPaneResize.resizingPane(0, in: value.slotFactors, growing: false, minimum: 0.22)!
-        let narrow = layout.resized(by: .slots(narrowed))!.stacks!
-        #expect(close(narrow.slotFactors, [0.5, 0.5]) && narrow.stackFactors == value.stackFactors,
-                   "Narrow steps the slot back toward even and leaves the stack alone")
+    @Test(arguments: [true, false])
+    func aQuickDragThroughTheCentrePassesStraightThrough(_ fromBelow: Bool) {
+        let steps = fromBelow ? [SnapStep(distance: 30, x: 0, y: -400), SnapStep(distance: 6, x: 0, y: -121)]
+                              : [SnapStep(distance: -30, x: 0, y: 400), SnapStep(distance: -6, x: 0, y: 121)]
+        let result = Self.run(steps)
+        #expect(!result.state.isSnapped)
+        #expect(result.haptics == [false, false])
+    }
 
-        let stackDivider = layout.resized(by: .divider(0, slot: 0, leadingShare: 0.5))!.stacks!
-        #expect(close(stackDivider.stackFactors[0], [0.5, 0.5]) && close(stackDivider.slotFactors, value.slotFactors),
-                   "Evening a stack divider moves only its two panes")
-        let mainDivider = layout.resized(by: .divider(0, slot: nil, leadingShare: 0.25))!.stacks!
-        #expect(close(mainDivider.slotFactors, [0.25, 0.75]) && mainDivider.stackFactors == value.stackFactors,
-                   "A main-row divider moves only its two slots")
-        let stepped = SplitPaneResize.movingDivider(0, in: [0.3, 0.7], forward: true, minimum: 0.3)!
-        #expect(close(stepped, [0.4, 0.6]), "A keyboard step on a stack divider uses the slot's own shares")
-        #expect(layout.resized(by: .divider(1, slot: 0, leadingShare: 0.5)) == nil, "A divider outside the stack is refused")
-        let squeezed = SplitStackGeometry.resizableFactors(saved: [0.05, 0.24, 0.71], shown: [220, 318, 942], divider: 0,
-                                                           available: 1480, minimum: 220)!
-        #expect(close(squeezed, [220.0 / 1480, 318.0 / 1480, 942.0 / 1480]),
-                   "A pair squeezed below the minimum drags from what's shown")
-        let three = stacks([1, 1, 2], [0.05, 0.24, 0.71], [[1], [1], [0.5, 0.5]])
+    @Test(arguments: [true, false])
+    func easingAwayFromTheCentreNeverSnaps(_ up: Bool) {
+        let steps = up ? [SnapStep(distance: -30, x: 0, y: 900), SnapStep(distance: -4, x: 0, y: 900), SnapStep(distance: -6, x: 0, y: -50)]
+                       : [SnapStep(distance: 30, x: 0, y: -900), SnapStep(distance: 4, x: 0, y: -900), SnapStep(distance: 6, x: 0, y: 50)]
+        let result = Self.run(steps)
+        #expect(!result.state.isSnapped)
+        #expect(result.haptics == [false, false, false])
+    }
+
+    @Test func snappingWaitsUntilTheDividerHasMovedFourteenPointsAway() {
+        #expect(!Self.run([SnapStep(distance: -6, x: 0, y: 30)]).state.isSnapped)
+    }
+
+    @Test func aSnappedDividerHoldsInsideTheBandThenReleasesWithOneHapticAsItLeaves() {
+        var held = Self.run([SnapStep(distance: 30, x: -2, y: -400), SnapStep(distance: 6, x: 3, y: -80)]).state
+        let velocity = SplitDividerSnapState.velocity(CGPoint(x: 0, y: -900), movingHorizontally: false)
+        let stay = held.update(distance: -10, velocity: velocity)
+        let release = held.update(distance: -14, velocity: velocity)
+        let beyond = held.update(distance: -40, velocity: velocity)
+        #expect(!stay)
+        #expect(release)
+        #expect(!beyond)
+        #expect(!held.isSnapped)
+    }
+
+    @Test func aSideBySideDividerSnapsOnItsSidewaysSpeedAlone() {
+        let sideways = Self.run([SnapStep(distance: 30, x: -400, y: 0), SnapStep(distance: 6, x: -80, y: 900)], horizontal: true)
+        #expect(sideways.state.isSnapped)
+        #expect(sideways.haptics == [false, true])
+    }
+
+    @Test func aSideBySideDividerEasingAwayDoesNotSnap() {
+        let away = Self.run([SnapStep(distance: -30, x: 900, y: 0), SnapStep(distance: -4, x: 900, y: 0), SnapStep(distance: -6, x: -50, y: 900)], horizontal: true)
+        #expect(!away.state.isSnapped)
+    }
+
+    @Test(arguments: [(0, 2, 0 as Int?, "Split View Divider 1, inside column 1", SplitOrientation.horizontal),
+                      (1, 3, 0, "Split View Divider 2, inside column 1", .horizontal),
+                      (1, 2, 1, "Split View Divider 2, inside row 2", .vertical),
+                      (1, 2, nil, "Split View Divider 2", .horizontal),
+                      (0, 1, nil, "Split View Divider", .horizontal)])
+    func splittersAreLabelledWithTheirReadingOrderNumberAndContainer(_ index: Int, _ count: Int, _ slot: Int?, _ label: String, _ orientation: SplitOrientation) {
+        #expect(SplitStackGeometry.splitterLabel(index: index, count: count, slot: slot, orientation: orientation) == label)
+    }
+
+    @Test func aStackSplitterReportsItsShareWithinItsSlotBoundedByTheMinimumOnEachSide() throws {
+        let pair = try #require(SplitStackGeometry.splitterPosition(shares: [0.25, 0.75], index: 0, minimum: 0.2))
+        #expect(Self.close([pair.value, pair.minimum, pair.maximum], [0.25, 0.2, 0.8]))
+    }
+
+    @Test func aLaterSplitterCountsThePanesBeforeIt() throws {
+        let middle = try #require(SplitStackGeometry.splitterPosition(shares: [0.25, 0.25, 0.5], index: 1, minimum: 0.2))
+        #expect(Self.close([middle.value, middle.minimum, middle.maximum], [0.5, 0.45, 0.8]))
+    }
+
+    @Test func aSplitterPastTheLastPairHasNoValue() {
+        #expect(SplitStackGeometry.splitterPosition(shares: [0.5, 0.5], index: 1, minimum: 0.2) == nil)
+    }
+
+    @Test func validSavedStackSharesMeasureAgainstTheSlotsOwnLength() throws {
+        let saved = try #require(SplitStackGeometry.adjustableShares(saved: [0.5, 0.5], shown: [350, 350], available: 700, minimum: 220))
+        #expect(Self.close(saved.shares, [0.5, 0.5]))
+        #expect(abs(saved.minimum - 220.0 / 700) < 1e-12)
+    }
+
+    @Test func sharesSqueezedBelowTheMinimumFallBackToWhatIsShown() throws {
+        let shown = try #require(SplitStackGeometry.adjustableShares(saved: [0.95, 0.05], shown: [480, 220], available: 700, minimum: 220))
+        #expect(Self.close(shown.shares, [480.0 / 700, 220.0 / 700]))
+    }
+
+    @Test func aRoomyPairDragsFromItsSavedShares() throws {
+        let factors = try #require(SplitStackGeometry.resizableFactors(saved: [0.5, 0.5], shown: [350, 350], divider: 0, available: 700, minimum: 220))
+        #expect(Self.close(factors, [0.5, 0.5]))
+    }
+
+    private static let commandValue = stacks([2, 1], [0.6, 0.4], [[0.3, 0.7], [1]])
+    private static let commandIDs = [UUID(), UUID(), UUID()]
+    private static func commandLayout() -> BrowserSplitLayout {
+        BrowserSplitLayout(id: UUID(), spaceID: UUID(), tabIDs: commandIDs, orientation: .horizontal,
+                           widthFactors: commandValue.flattenedFactors, stacks: commandValue)
+    }
+
+    @Test func expandGivesTheFocusedPaneTheLargestShareOnBothLevels() throws {
+        let layout = Self.commandLayout()
+        let expanded = try #require(layout.expanded(focusing: layout.tabIDs[1])?.stacks)
+        #expect(expanded.slotFactors[0] > 0.999)
+        #expect(expanded.stackFactors[0][1] > 0.999)
+    }
+
+    @Test func anExpandedStackedPaneLeavesItsNeighboursAtTheMinimumOnBothAxes() throws {
+        let layout = Self.commandLayout()
+        let expanded = try #require(layout.expanded(focusing: layout.tabIDs[1])?.stacks)
+        let expandedFrames = Self.frames(expanded)
+        #expect(expandedFrames[2].width == 220)
+        #expect(expandedFrames[0].height == 220)
+        #expect(expandedFrames[1].height == 480)
+    }
+
+    @Test func makeAllEqualEvensTheSlotsThenEachStack() throws {
+        let equal = try #require(Self.commandLayout().resized(by: .equal)?.stacks)
+        #expect(equal.slotFactors == [0.5, 0.5])
+        #expect(equal.stackFactors == [[0.5, 0.5], [1]])
+        #expect(equal.isEven)
+    }
+
+    @Test func evennessChecksBothLevels() {
+        #expect(!Self.commandValue.isEven)
+        #expect(Self.stacks([2, 2], [1, 1], [[2, 2], [3, 3]]).isEven)
+    }
+
+    @Test func widenStepsTheFocusedPanesSlotAlongTheMainRowOnly() throws {
+        let widened = try #require(SplitPaneResize.resizingPane(0, in: Self.commandValue.slotFactors, growing: true, minimum: 0.22))
+        let wide = try #require(Self.commandLayout().resized(by: .slots(widened))?.stacks)
+        #expect(Self.close(wide.slotFactors, [0.7, 0.3]))
+        #expect(wide.stackFactors == Self.commandValue.stackFactors)
+    }
+
+    @Test func narrowStepsTheSlotBackTowardEvenAndLeavesTheStackAlone() throws {
+        let narrowed = try #require(SplitPaneResize.resizingPane(0, in: Self.commandValue.slotFactors, growing: false, minimum: 0.22))
+        let narrow = try #require(Self.commandLayout().resized(by: .slots(narrowed))?.stacks)
+        #expect(Self.close(narrow.slotFactors, [0.5, 0.5]))
+        #expect(narrow.stackFactors == Self.commandValue.stackFactors)
+    }
+
+    @Test func eveningAStackDividerMovesOnlyItsTwoPanes() throws {
+        let divider = try #require(Self.commandLayout().resized(by: .divider(0, slot: 0, leadingShare: 0.5))?.stacks)
+        #expect(Self.close(divider.stackFactors[0], [0.5, 0.5]))
+        #expect(Self.close(divider.slotFactors, Self.commandValue.slotFactors))
+    }
+
+    @Test func aMainRowDividerMovesOnlyItsTwoSlots() throws {
+        let divider = try #require(Self.commandLayout().resized(by: .divider(0, slot: nil, leadingShare: 0.25))?.stacks)
+        #expect(Self.close(divider.slotFactors, [0.25, 0.75]))
+        #expect(divider.stackFactors == Self.commandValue.stackFactors)
+    }
+
+    @Test func aKeyboardStepOnAStackDividerUsesTheSlotsOwnShares() throws {
+        let stepped = try #require(SplitPaneResize.movingDivider(0, in: [0.3, 0.7], forward: true, minimum: 0.3))
+        #expect(Self.close(stepped, [0.4, 0.6]))
+    }
+
+    @Test func aDividerOutsideTheStackIsRefused() {
+        #expect(Self.commandLayout().resized(by: .divider(1, slot: 0, leadingShare: 0.5)) == nil)
+    }
+
+    @Test func aPairSqueezedBelowTheMinimumDragsFromWhatIsShown() throws {
+        let squeezed = try #require(SplitStackGeometry.resizableFactors(saved: [0.05, 0.24, 0.71], shown: [220, 318, 942], divider: 0, available: 1480, minimum: 220))
+        #expect(Self.close(squeezed, [220.0 / 1480, 318.0 / 1480, 942.0 / 1480]))
+    }
+
+    @Test func aSqueezedDragSavesItsWholeLevelAsPreviewedSoTheOtherSlotKeepsItsSize() throws {
+        let three = Self.stacks([1, 1, 2], [0.05, 0.24, 0.71], [[1], [1], [0.5, 0.5]])
         let trio = BrowserSplitLayout(id: UUID(), spaceID: UUID(), tabIDs: [UUID(), UUID(), UUID(), UUID()], orientation: .horizontal,
                                       widthFactors: three.flattenedFactors, stacks: three)
-        let whole = trio.resized(by: .level(slot: nil, factors: [269.0 / 1480, 269.0 / 1480, 942.0 / 1480]))!.stacks!
-        #expect(close(whole.slotFactors, [269.0 / 1480, 269.0 / 1480, 942.0 / 1480]) && whole.stackFactors == three.stackFactors,
-                   "A squeezed drag saves its whole level as previewed, so the other slot keeps its size")
-        let inner = layout.resized(by: .level(slot: 0, factors: [0.2, 0.8]))!.stacks!
-        #expect(close(inner.stackFactors[0], [0.2, 0.8]) && close(inner.slotFactors, value.slotFactors),
-                   "A whole-level save inside a stack changes only that stack")
-
-        #expect(value.replacing([0.2, 0.8], inSlot: 0).stackFactors[0] == [0.2, 0.8]
-                   && value.replacing([0.1, 0.9], inSlot: nil).slotFactors == [0.1, 0.9],
-                   "A live drag replaces only its own level")
-        let reserved = value.reservingSlot(at: 1)
-        #expect(reserved.slotSizes == [2, 1, 1] && close(reserved.slotFactors, [0.4, 1.0 / 3, 0.4 * 2 / 3])
-                   && reserved.stackFactors == [[0.3, 0.7], [1], [1]],
-                   "A main-row drop reservation makes a whole new slot")
+        let whole = try #require(trio.resized(by: .level(slot: nil, factors: [269.0 / 1480, 269.0 / 1480, 942.0 / 1480]))?.stacks)
+        #expect(Self.close(whole.slotFactors, [269.0 / 1480, 269.0 / 1480, 942.0 / 1480]))
+        #expect(whole.stackFactors == three.stackFactors)
     }
 
-    @Test static func reservedStackShapes() throws {
-        func committed(_ value: BrowserSplitStacks, _ orientation: SplitOrientation = .horizontal,
-                       pane: Int, after: Bool) -> BrowserSplitStacks? {
-            let layout = BrowserSplitLayout(id: UUID(), spaceID: UUID(), tabIDs: (0..<value.paneCount).map { _ in UUID() },
-                                            orientation: orientation, widthFactors: value.flattenedFactors,
-                                            stacks: value.slotSizes.contains { $0 > 1 } ? value : nil)
-            return layout.insertingIntoStack(UUID(), besidePaneAt: pane, after: after)?.stacks
-        }
-        func matches(_ left: BrowserSplitStacks, _ right: BrowserSplitStacks?) -> Bool {
-            guard let right else { return false }
-            return left.slotSizes == right.slotSizes && close(left.slotFactors, right.slotFactors)
-                && left.stackFactors.count == right.stackFactors.count
-                && zip(left.stackFactors, right.stackFactors).allSatisfy { close($0, $1) }
-        }
-        func inside(_ region: CGRect, slotOf pane: CGRect, _ orientation: SplitOrientation = .horizontal) -> Bool {
-            orientation == .horizontal ? region.minX == pane.minX && region.maxX == pane.maxX
-                                       : region.minY == pane.minY && region.maxY == pane.maxY
-        }
+    @Test func aWholeLevelSaveInsideAStackChangesOnlyThatStack() throws {
+        let inner = try #require(Self.commandLayout().resized(by: .level(slot: 0, factors: [0.2, 0.8]))?.stacks)
+        #expect(Self.close(inner.stackFactors[0], [0.2, 0.8]))
+        #expect(Self.close(inner.slotFactors, Self.commandValue.slotFactors))
+    }
 
+    @Test func aLiveDragReplacesOnlyItsOwnLevel() {
+        #expect(Self.commandValue.replacing([0.2, 0.8], inSlot: 0).stackFactors[0] == [0.2, 0.8])
+        #expect(Self.commandValue.replacing([0.1, 0.9], inSlot: nil).slotFactors == [0.1, 0.9])
+    }
+
+    @Test func aMainRowDropReservationMakesAWholeNewSlot() {
+        let reserved = Self.commandValue.reservingSlot(at: 1)
+        #expect(reserved.slotSizes == [2, 1, 1])
+        #expect(Self.close(reserved.slotFactors, [0.4, 1.0 / 3, 0.4 * 2 / 3]))
+        #expect(reserved.stackFactors == [[0.3, 0.7], [1], [1]])
+    }
+
+    private static func committed(_ value: BrowserSplitStacks, _ orientation: SplitOrientation = .horizontal, pane: Int, after: Bool) -> BrowserSplitStacks? {
+        let layout = BrowserSplitLayout(id: UUID(), spaceID: UUID(), tabIDs: (0..<value.paneCount).map { _ in UUID() },
+                                        orientation: orientation, widthFactors: value.flattenedFactors,
+                                        stacks: value.slotSizes.contains { $0 > 1 } ? value : nil)
+        return layout.insertingIntoStack(UUID(), besidePaneAt: pane, after: after)?.stacks
+    }
+
+    private static func matches(_ left: BrowserSplitStacks, _ right: BrowserSplitStacks?) -> Bool {
+        guard let right else { return false }
+        return left.slotSizes == right.slotSizes && close(left.slotFactors, right.slotFactors)
+            && left.stackFactors.count == right.stackFactors.count
+            && zip(left.stackFactors, right.stackFactors).allSatisfy { close($0, $1) }
+    }
+
+    private static func inside(_ region: CGRect, slotOf pane: CGRect, _ orientation: SplitOrientation = .horizontal) -> Bool {
+        orientation == .horizontal ? region.minX == pane.minX && region.maxX == pane.maxX
+                                   : region.minY == pane.minY && region.maxY == pane.maxY
+    }
+
+    @Test func aFlatSplitReadsAsOnePanePerSlot() {
         let pair = BrowserSplitStacks.flat([0.6, 0.4])
-        #expect(pair.slotSizes == [1, 1] && pair.slotFactors == [0.6, 0.4] && pair.stackFactors == [[1], [1]],
-                   "A flat split reads as one pane per slot")
-        let below = pair.reservingStack(besidePane: 0, after: true)!
-        #expect(below.region == 1 && below.stacks.slotSizes == [2, 1] && below.stacks.slotFactors == [0.6, 0.4]
-                   && below.stacks.stackFactors == [[0.5, 0.5], [1]],
-                   "Stacking below the first of two panes halves its column and keeps the slot weights")
-        #expect(matches(below.stacks, committed(pair, pane: 0, after: true)), "The reserved shape is the one the store commits")
-        let belowFrames = frames(below.stacks)
-        #expect(inside(belowFrames[1], slotOf: belowFrames[0]) && belowFrames[1].minY == belowFrames[0].maxY + 10
-                   && belowFrames[2].height == 710,
-                   "The region sits under its pane inside that column while the other column keeps its full height")
-        let above = pair.reservingStack(besidePane: 1, after: false)!
-        let aboveFrames = frames(above.stacks)
-        #expect(above.region == 1 && above.stacks.slotSizes == [1, 2] && above.stacks.stackFactors == [[1], [0.5, 0.5]]
-                   && inside(aboveFrames[1], slotOf: aboveFrames[2]) && aboveFrames[1].maxY + 10 == aboveFrames[2].minY,
-                   "Stacking above the second pane puts the region first in its column")
-
-        let trio = BrowserSplitStacks.flat([0.5, 0.25, 0.25])
-        let middle = trio.reservingStack(besidePane: 1, after: false)!
-        let middleFrames = frames(middle.stacks)
-        #expect(middle.region == 1 && middle.stacks.slotSizes == [1, 2, 1] && middle.stacks.stackFactors == [[1], [0.5, 0.5], [1]]
-                   && matches(middle.stacks, committed(trio, pane: 1, after: false)),
-                   "Three flat panes stack the middle one in place")
-        #expect(inside(middleFrames[1], slotOf: middleFrames[2]) && middleFrames[1].minY == 0
-                   && middleFrames[0].height == 710 && middleFrames[3].height == 710, "Only the middle column divides")
-
-        let column = stacks([2, 1], [0.6, 0.4], [[0.3, 0.7], [1]])
-        let grown = column.reservingStack(besidePane: 0, after: true)!
-        #expect(grown.region == 1 && grown.stacks.slotSizes == [3, 1] && grown.stacks.slotFactors == [0.6, 0.4]
-                   && close(grown.stacks.stackFactors[0], [0.2, 1.0 / 3, 0.7 / 1.5]) && grown.stacks.stackFactors[1] == [1],
-                   "A stack of two grows to three, the newcomer taking an average share before renormalising")
-        #expect(matches(grown.stacks, committed(column, pane: 0, after: true)), "The grown stack matches the store's insertion")
-        let grownFrames = frames(grown.stacks)
-        #expect(inside(grownFrames[1], slotOf: grownFrames[0]) && grownFrames[1].minY == grownFrames[0].maxY + 10
-                   && grownFrames[2].minY == grownFrames[1].maxY + 10,
-                   "The region sits between the stacked panes inside their column")
-        let lone = column.reservingStack(besidePane: 2, after: true)!
-        #expect(lone.region == 3 && lone.stacks.slotSizes == [2, 2] && lone.stacks.stackFactors == [[0.3, 0.7], [0.5, 0.5]],
-                   "Stacking the lone column leaves the other stack alone")
-
-        let rows = BrowserSplitStacks.flat([0.5, 0.5])
-        let right = rows.reservingStack(besidePane: 1, after: true)!
-        let rowFrames = frames(right.stacks, .vertical)
-        #expect(right.region == 2 && right.stacks.slotSizes == [1, 2]
-                   && matches(right.stacks, committed(rows, .vertical, pane: 1, after: true)),
-                   "A top-and-bottom split stacks its lower row left and right")
-        #expect(inside(rowFrames[2], slotOf: rowFrames[1], .vertical) && rowFrames[2].minX == rowFrames[1].maxX + 10
-                   && rowFrames[0].width == 1010, "The region sits to the right of its pane inside that row")
-
-        #expect(column.reservingStack(besidePane: 3, after: false) == nil
-                   && stacks([2, 1], [0.5, 0.5], [[1], [1]]).reservingStack(besidePane: 0, after: true) == nil,
-                   "A pane outside the split or a malformed stack reserves nothing")
+        #expect(pair.slotSizes == [1, 1])
+        #expect(pair.slotFactors == [0.6, 0.4])
+        #expect(pair.stackFactors == [[1], [1]])
     }
 
-    @Test static func pendingPanePreview() throws {
-        let profile = BrowserProfile(id: UUID(), name: "Profile")
-        let space = BrowserSpace(id: UUID(), name: "Home", symbol: "circle", color: "000000", profileID: profile.id)
+    @Test func stackingBelowTheFirstOfTwoPanesHalvesItsColumnAndKeepsTheSlotWeights() throws {
+        let below = try #require(BrowserSplitStacks.flat([0.6, 0.4]).reservingStack(besidePane: 0, after: true))
+        #expect(below.region == 1)
+        #expect(below.stacks.slotSizes == [2, 1])
+        #expect(below.stacks.slotFactors == [0.6, 0.4])
+        #expect(below.stacks.stackFactors == [[0.5, 0.5], [1]])
+    }
+
+    @Test func theReservedShapeIsTheOneTheStoreCommits() throws {
+        let pair = BrowserSplitStacks.flat([0.6, 0.4])
+        let below = try #require(pair.reservingStack(besidePane: 0, after: true))
+        #expect(Self.matches(below.stacks, Self.committed(pair, pane: 0, after: true)))
+    }
+
+    @Test func theRegionSitsUnderItsPaneWhileTheOtherColumnKeepsItsFullHeight() throws {
+        let below = try #require(BrowserSplitStacks.flat([0.6, 0.4]).reservingStack(besidePane: 0, after: true))
+        let belowFrames = Self.frames(below.stacks)
+        #expect(Self.inside(belowFrames[1], slotOf: belowFrames[0]))
+        #expect(belowFrames[1].minY == belowFrames[0].maxY + 10)
+        #expect(belowFrames[2].height == 710)
+    }
+
+    @Test func stackingAboveTheSecondPaneMakesTheRegionFirstInItsColumn() throws {
+        let above = try #require(BrowserSplitStacks.flat([0.6, 0.4]).reservingStack(besidePane: 1, after: false))
+        let aboveFrames = Self.frames(above.stacks)
+        #expect(above.region == 1)
+        #expect(above.stacks.slotSizes == [1, 2])
+        #expect(above.stacks.stackFactors == [[1], [0.5, 0.5]])
+        #expect(Self.inside(aboveFrames[1], slotOf: aboveFrames[2]))
+        #expect(aboveFrames[1].maxY + 10 == aboveFrames[2].minY)
+    }
+
+    @Test func threeFlatPanesStackTheMiddleOneInPlace() throws {
+        let trio = BrowserSplitStacks.flat([0.5, 0.25, 0.25])
+        let middle = try #require(trio.reservingStack(besidePane: 1, after: false))
+        #expect(middle.region == 1)
+        #expect(middle.stacks.slotSizes == [1, 2, 1])
+        #expect(middle.stacks.stackFactors == [[1], [0.5, 0.5], [1]])
+        #expect(Self.matches(middle.stacks, Self.committed(trio, pane: 1, after: false)))
+    }
+
+    @Test func onlyTheMiddleColumnDivides() throws {
+        let middle = try #require(BrowserSplitStacks.flat([0.5, 0.25, 0.25]).reservingStack(besidePane: 1, after: false))
+        let middleFrames = Self.frames(middle.stacks)
+        #expect(Self.inside(middleFrames[1], slotOf: middleFrames[2]))
+        #expect(middleFrames[1].minY == 0)
+        #expect(middleFrames[0].height == 710)
+        #expect(middleFrames[3].height == 710)
+    }
+
+    @Test func aStackOfTwoGrowsToThreeWithTheNewcomerTakingAnAverageShareBeforeRenormalising() throws {
+        let column = Self.stacks([2, 1], [0.6, 0.4], [[0.3, 0.7], [1]])
+        let grown = try #require(column.reservingStack(besidePane: 0, after: true))
+        #expect(grown.region == 1)
+        #expect(grown.stacks.slotSizes == [3, 1])
+        #expect(grown.stacks.slotFactors == [0.6, 0.4])
+        #expect(Self.close(grown.stacks.stackFactors[0], [0.2, 1.0 / 3, 0.7 / 1.5]))
+        #expect(grown.stacks.stackFactors[1] == [1])
+    }
+
+    @Test func theGrownStackMatchesTheStoresInsertion() throws {
+        let column = Self.stacks([2, 1], [0.6, 0.4], [[0.3, 0.7], [1]])
+        let grown = try #require(column.reservingStack(besidePane: 0, after: true))
+        #expect(Self.matches(grown.stacks, Self.committed(column, pane: 0, after: true)))
+    }
+
+    @Test func theRegionSitsBetweenTheStackedPanesInsideTheirColumn() throws {
+        let column = Self.stacks([2, 1], [0.6, 0.4], [[0.3, 0.7], [1]])
+        let grownFrames = Self.frames(try #require(column.reservingStack(besidePane: 0, after: true)).stacks)
+        #expect(Self.inside(grownFrames[1], slotOf: grownFrames[0]))
+        #expect(grownFrames[1].minY == grownFrames[0].maxY + 10)
+        #expect(grownFrames[2].minY == grownFrames[1].maxY + 10)
+    }
+
+    @Test func stackingTheLoneColumnLeavesTheOtherStackAlone() throws {
+        let column = Self.stacks([2, 1], [0.6, 0.4], [[0.3, 0.7], [1]])
+        let lone = try #require(column.reservingStack(besidePane: 2, after: true))
+        #expect(lone.region == 3)
+        #expect(lone.stacks.slotSizes == [2, 2])
+        #expect(lone.stacks.stackFactors == [[0.3, 0.7], [0.5, 0.5]])
+    }
+
+    @Test func aTopAndBottomSplitStacksItsLowerRowLeftAndRight() throws {
+        let rows = BrowserSplitStacks.flat([0.5, 0.5])
+        let right = try #require(rows.reservingStack(besidePane: 1, after: true))
+        #expect(right.region == 2)
+        #expect(right.stacks.slotSizes == [1, 2])
+        #expect(Self.matches(right.stacks, Self.committed(rows, .vertical, pane: 1, after: true)))
+    }
+
+    @Test func theRegionSitsRightOfItsPaneInsideThatRow() throws {
+        let right = try #require(BrowserSplitStacks.flat([0.5, 0.5]).reservingStack(besidePane: 1, after: true))
+        let rowFrames = Self.frames(right.stacks, .vertical)
+        #expect(Self.inside(rowFrames[2], slotOf: rowFrames[1], .vertical))
+        #expect(rowFrames[2].minX == rowFrames[1].maxX + 10)
+        #expect(rowFrames[0].width == 1010)
+    }
+
+    @Test func aPaneOutsideTheSplitReservesNothing() {
+        #expect(Self.stacks([2, 1], [0.6, 0.4], [[0.3, 0.7], [1]]).reservingStack(besidePane: 3, after: false) == nil)
+    }
+
+    @Test func aMalformedStackReservesNothing() {
+        #expect(Self.stacks([2, 1], [0.5, 0.5], [[1], [1]]).reservingStack(besidePane: 0, after: true) == nil)
+    }
+
+    private struct Pending {
         let ids = [UUID(), UUID(), UUID()]
-        func state(_ layout: BrowserSplitLayout) -> BrowserState {
+        let stacked: BrowserState
+        let flat: BrowserState
+
+        init() {
+            let profile = BrowserProfile(id: UUID(), name: "Profile")
+            let space = BrowserSpace(id: UUID(), name: "Home", symbol: "circle", color: "000000", profileID: profile.id)
+            func state(_ layout: BrowserSplitLayout) -> BrowserState {
+                var state = BrowserState(profiles: [profile], spaces: [space], activeSpaceID: space.id)
+                state.tabs = layout.tabIDs.enumerated().map { index, id in
+                    BrowserTab(id: id, spaceID: space.id, profileID: profile.id, url: "https://\(index).test/", title: "T\(index)",
+                               kind: .today, createdAt: Date(timeIntervalSince1970: 10), lastAccessed: Date(timeIntervalSince1970: 10),
+                               savedURL: "https://\(index).test/", savedTitle: "T\(index)")
+                }
+                state.splitLayouts = [layout]
+                state.selectedTabIDs = layout.tabIDs
+                return state
+            }
+            let ids = ids
+            let value = SplitStackLayoutTests.stacks([2, 1], [0.5, 0.5], [[0.5, 0.5], [1]])
+            stacked = state(BrowserSplitLayout(id: UUID(), spaceID: space.id, tabIDs: ids, orientation: .horizontal,
+                                               widthFactors: value.flattenedFactors, stacks: value))
+            flat = state(BrowserSplitLayout(spaceID: space.id, tabIDs: [ids[0], ids[1]], orientation: .horizontal, widthFactors: [0.5, 0.5]))
+        }
+    }
+
+    @Test func aPendingPaneBelowTheLoneColumnRendersInsideThatColumnAfterItsPane() throws {
+        let p = Pending()
+        let below = try #require(SplitPaneInsertion(paneID: p.ids[2], stackingAfter: true, state: p.stacked))
+        #expect(below.index == 3)
+        #expect(below.previewLayout?.stacks?.slotSizes == [2, 2])
+        #expect(below.previewLayout?.orientation == .horizontal)
+    }
+
+    @Test func thePendingStackedPreviewKeepsAValidFlatRow() throws {
+        let p = Pending()
+        let below = try #require(SplitPaneInsertion(paneID: p.ids[2], stackingAfter: true, state: p.stacked))
+        #expect(below.previewFactors.count == 4)
+        #expect(abs(below.previewFactors.reduce(0, +) - 1) < 1e-9)
+    }
+
+    @Test func aPendingPaneAboveTheTopLeftPaneJoinsItsStackAtTheTop() throws {
+        let p = Pending()
+        let above = try #require(SplitPaneInsertion(paneID: p.ids[0], stackingAfter: false, state: p.stacked))
+        #expect(above.index == 0)
+        #expect(above.previewLayout?.stacks?.slotSizes == [3, 1])
+    }
+
+    @Test func aPendingMainRowPaneBesideAStackRendersAsItsOwnFullLengthSlot() throws {
+        let p = Pending()
+        let mainRow = try #require(SplitPaneInsertion(paneID: p.ids[1], operation: .addAfter, state: p.stacked))
+        #expect(mainRow.index == 2)
+        #expect(mainRow.previewLayout?.stacks?.slotSizes == [2, 1, 1])
+    }
+
+    @Test func anAddThatWouldChangeAStackedSplitsDirectionNeverOpensAPendingPane() {
+        let p = Pending()
+        #expect(SplitPaneInsertion(paneID: p.ids[0], operation: .addBelow, state: p.stacked) == nil)
+    }
+
+    @Test func aFlatSplitsPendingPaneKeepsTodaysFlatPreview() throws {
+        let p = Pending()
+        let flatAdd = try #require(SplitPaneInsertion(paneID: p.ids[1], operation: .addAfter, state: p.flat))
+        #expect(flatAdd.previewLayout == nil)
+        #expect(Self.close(flatAdd.previewFactors, [1.0 / 3, 1.0 / 3, 1.0 / 3]))
+    }
+
+    @Test func stackingAPaneInAFlatSplitPreviewsTheNewStack() throws {
+        let p = Pending()
+        let flatStack = try #require(SplitPaneInsertion(paneID: p.ids[0], stackingAfter: true, state: p.flat))
+        #expect(flatStack.index == 1)
+        #expect(flatStack.previewLayout?.stacks?.slotSizes == [2, 1])
+    }
+
+    private struct Pictures {
+        let items: [RecentTabOrder.Item]
+        let ids: [UUID]
+
+        init() {
+            var order = RecentTabOrder()
+            let profile = BrowserProfile(id: UUID(), name: "Profile")
+            let space = BrowserSpace(id: UUID(), name: "Home", symbol: "circle", color: "000000", profileID: profile.id)
+            let ids = [UUID(), UUID(), UUID(), UUID()]
             var state = BrowserState(profiles: [profile], spaces: [space], activeSpaceID: space.id)
-            state.tabs = layout.tabIDs.enumerated().map { index, id in
+            state.tabs = ids.enumerated().map { index, id in
                 BrowserTab(id: id, spaceID: space.id, profileID: profile.id, url: "https://\(index).test/", title: "T\(index)",
                            kind: .today, createdAt: Date(timeIntervalSince1970: 10), lastAccessed: Date(timeIntervalSince1970: 10),
                            savedURL: "https://\(index).test/", savedTitle: "T\(index)")
             }
-            state.splitLayouts = [layout]; state.selectedTabIDs = layout.tabIDs
-            return state
+            let value = SplitStackLayoutTests.stacks([1, 2], [0.5, 0.5], [[1], [0.5, 0.5]])
+            state.splitLayouts = [BrowserSplitLayout(id: UUID(), spaceID: space.id, tabIDs: Array(ids.prefix(3)), orientation: .vertical,
+                                                     widthFactors: value.flattenedFactors, stacks: value)]
+            items = order.items(state: state, selected: [ids[3]], currentSpace: space.id) { _ in true }
+            self.ids = ids
         }
-        let value = stacks([2, 1], [0.5, 0.5], [[0.5, 0.5], [1]])
-        let stacked = state(BrowserSplitLayout(id: UUID(), spaceID: space.id, tabIDs: ids, orientation: .horizontal,
-                                               widthFactors: value.flattenedFactors, stacks: value))
-        let below = SplitPaneInsertion(paneID: ids[2], stackingAfter: true, state: stacked)!
-        #expect(below.index == 3 && below.previewLayout?.stacks?.slotSizes == [2, 2]
-                   && below.previewLayout?.orientation == .horizontal,
-                   "A pending pane below the lone column renders inside that column, after its pane")
-        #expect(below.previewFactors.count == 4 && abs(below.previewFactors.reduce(0, +) - 1) < 1e-9,
-                   "The pending stacked preview keeps a valid flat row")
-        let above = SplitPaneInsertion(paneID: ids[0], stackingAfter: false, state: stacked)!
-        #expect(above.index == 0 && above.previewLayout?.stacks?.slotSizes == [3, 1],
-                   "A pending pane above the top-left pane joins its stack at the top")
-        let mainRow = SplitPaneInsertion(paneID: ids[1], operation: .addAfter, state: stacked)!
-        #expect(mainRow.index == 2 && mainRow.previewLayout?.stacks?.slotSizes == [2, 1, 1],
-                   "A pending main-row pane beside a stack renders as its own full-length slot")
-        #expect(SplitPaneInsertion(paneID: ids[0], operation: .addBelow, state: stacked) == nil,
-                   "An Add that would change a stacked split's direction never opens a pending pane")
-
-        let flat = state(BrowserSplitLayout(spaceID: space.id, tabIDs: [ids[0], ids[1]], orientation: .horizontal, widthFactors: [0.5, 0.5]))
-        let flatAdd = SplitPaneInsertion(paneID: ids[1], operation: .addAfter, state: flat)!
-        #expect(flatAdd.previewLayout == nil && close(flatAdd.previewFactors, [1.0 / 3, 1.0 / 3, 1.0 / 3]),
-                   "A flat split's pending pane keeps today's flat preview")
-        let flatStack = SplitPaneInsertion(paneID: ids[0], stackingAfter: true, state: flat)!
-        #expect(flatStack.index == 1 && flatStack.previewLayout?.stacks?.slotSizes == [2, 1],
-                   "Stacking a pane in a flat split previews the new stack")
     }
 
-    @Test static func picturesOfASplit() throws {
-        var order = RecentTabOrder()
-        let profile = BrowserProfile(id: UUID(), name: "Profile")
-        let space = BrowserSpace(id: UUID(), name: "Home", symbol: "circle", color: "000000", profileID: profile.id)
-        let ids = [UUID(), UUID(), UUID(), UUID()]
-        var state = BrowserState(profiles: [profile], spaces: [space], activeSpaceID: space.id)
-        state.tabs = ids.enumerated().map { index, id in
-            BrowserTab(id: id, spaceID: space.id, profileID: profile.id, url: "https://\(index).test/", title: "T\(index)",
-                       kind: .today, createdAt: Date(timeIntervalSince1970: 10), lastAccessed: Date(timeIntervalSince1970: 10),
-                       savedURL: "https://\(index).test/", savedTitle: "T\(index)")
-        }
-        let value = stacks([1, 2], [0.5, 0.5], [[1], [0.5, 0.5]])
-        state.splitLayouts = [BrowserSplitLayout(id: UUID(), spaceID: space.id, tabIDs: Array(ids.prefix(3)), orientation: .vertical,
-                                                 widthFactors: value.flattenedFactors, stacks: value)]
-        let items = order.items(state: state, selected: [ids[3]], currentSpace: space.id) { _ in true }
-        let split = items.first { $0.tabIDs.count == 3 }
-        #expect(split?.slotSizes == [1, 2] && split?.orientation == .vertical,
-                   "The tab switcher learns the split's real stacked shape")
-        #expect(items.first { $0.tabIDs == [ids[3]] }?.slotSizes == nil, "A single page has no stacked shape")
+    @Test func theTabSwitcherLearnsTheSplitsRealStackedShape() {
+        let p = Pictures()
+        let split = p.items.first { $0.tabIDs.count == 3 }
+        #expect(split?.slotSizes == [1, 2])
+        #expect(split?.orientation == .vertical)
+    }
+
+    @Test func aSinglePageHasNoStackedShape() {
+        let p = Pictures()
+        #expect(p.items.first { $0.tabIDs == [p.ids[3]] }?.slotSizes == nil)
     }
 }

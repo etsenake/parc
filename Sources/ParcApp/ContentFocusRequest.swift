@@ -50,7 +50,8 @@ final class ContentFocusRequest {
 
     func cancel() { finish() }
 
-    private func step() -> Outcome {
+    @discardableResult
+    func step() -> Outcome {
         guard !finished else { return .cancelled }
         guard let window, let content, window.isKeyWindow, window.attachedSheet == nil,
               ProcessInfo.processInfo.systemUptime < deadline,
