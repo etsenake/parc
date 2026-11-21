@@ -480,6 +480,7 @@ extension EaselCanvasView {
         artwork[item.id]?.needsDisplay = true
         window?.makeFirstResponder(self)
         cropChanged()
+        refreshDecorations()
         invalidateIncrementalDisplay(layout: true)
         refreshTextControls()
         NSAccessibility.post(element: self, notification: .layoutChanged)
@@ -491,6 +492,7 @@ extension EaselCanvasView {
         imageEditing.crop = nil
         imageEditing.chrome?.hideCropBar(on: self)
         cropChanged()
+        refreshDecorations()
         artwork[crop.item.id]?.needsDisplay = true
         if save, let current = session.document.items.first(where: { $0.id == crop.item.id }), current == crop.item {
             let next = crop.draft.applying(to: current)

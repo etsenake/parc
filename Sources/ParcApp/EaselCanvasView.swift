@@ -96,6 +96,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private var trackedCanvasScale: Double?
     private var trackedHidesAnnotations = false
     private var trackedEditingID: UUID?
+    private var trackedHiddenCounts: [UUID: Int] = [:]
     private var textLayouts: [UUID: CachedTextLayout] = [:]
     private(set) var presentationNoOpSkipCount = 0
     private(set) var presentationDirtyCount = 0
@@ -112,6 +113,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 keyboardStructureChanged()
                 synchronizePageSelection()
                 invalidateIncrementalDisplay(layout: true)
+                if arrangeState.enteredGroup != nil { refreshDecorations() }
             }
             refreshTextControls(); updateAccessibilitySummary(); window?.invalidateCursorRects(for: self)
         }
@@ -143,7 +145,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     let brushes = EaselCanvasBrushes()
     private var guides: EaselAlignmentGuides?
     var alignmentGuidesEnabled = true
-    var arrangeState = EaselCanvasArrangeState()
+    var arrangeState = EaselCanvasArrangeState() {
+        didSet { if arrangeState.enteredGroup != oldValue.enteredGroup { refreshDecorations() } }
+    }
     private var lastDragTimestamp: TimeInterval?
     private var dragVelocity = EaselPoint(x: 0, y: 0)
     var editor: EaselStyledTextView?
@@ -624,8 +628,17 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         trackedCanvasScale = canvasScale
         trackedHidesAnnotations = hidesPassiveAnnotations
         trackedEditingID = paintedEditingID
+        trackedHiddenCounts = hiddenSectionCounts
     }
     private var paintedEditingID: UUID? { editor == nil ? nil : editingID }
+    private var hiddenSectionCounts: [UUID: Int] {
+        let all = session.document.items
+        var counts: [UUID: Int] = [:]
+        for section in all where section.kind == .section && section.contentsHidden == true {
+            counts[section.id] = EaselBoardObjects.contents(of: section, in: all).count
+        }
+        return counts
+    }
     private func presentationMatchesPaintedArtwork() -> Bool {
         guard let trackedCanvasScale, trackedCanvasScale == canvasScale,
               trackedHidesAnnotations == hidesPassiveAnnotations,
@@ -681,11 +694,17 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             }
         }
         if trackedEditingID != paintedEditingID {
+            overlayChanged = true
             for id in Set([trackedEditingID, paintedEditingID].compactMap { $0 }) {
                 guard let item = current.first(where: { $0.id == id }) ?? trackedItems[id] else { continue }
                 add(displayBounds(of: item))
                 artwork[id]?.needsDisplay = true
             }
+        }
+        for (id, count) in hiddenSectionCounts where trackedHiddenCounts[id] != count {
+            guard let section = current.first(where: { $0.id == id }) else { continue }
+            add(displayBounds(of: section))
+            artwork[id]?.needsDisplay = true
         }
         func addSelectionChrome(_ ids: Set<UUID>, _ source: [EaselItem]) {
             let selected = source.filter { ids.contains($0.id) }

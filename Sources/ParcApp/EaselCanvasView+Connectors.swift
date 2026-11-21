@@ -145,9 +145,15 @@ extension EaselCanvasView {
     }
 
     func contrastingInk(on color: NSColor) -> NSColor {
-        guard let rgb = color.usingColorSpace(.sRGB) else { return EaselInk.fixed(EaselPalette.neutralLight) }
-        let luminance = 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent
-        return EaselInk.fixed(luminance > 0.6 ? EaselPalette.inkLight : EaselPalette.neutralLight)
+        let onLight = EaselInk.fixed(EaselPalette.inkLight), onDark = EaselInk.fixed(EaselPalette.neutralLight)
+        return NSColor(name: nil) { appearance in
+            var luminance: CGFloat = 0
+            appearance.performAsCurrentDrawingAppearance {
+                guard let rgb = color.usingColorSpace(.sRGB) else { return }
+                luminance = 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent
+            }
+            return luminance > 0.6 ? onLight : onDark
+        }
     }
 
     func connectorLabelLayout(_ item: EaselItem) -> EaselConnectorLabelLayout {
