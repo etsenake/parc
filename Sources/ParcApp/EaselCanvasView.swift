@@ -1416,6 +1416,12 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         text.removeFromSuperview(); refreshTextControls(); invalidateIncrementalDisplay(layout: true); keyboardStructureChanged()
         return true
     }
+    private func finishEditingFromEscape() {
+        let id = editingID
+        guard finishEditing() else { return }
+        selection = id.flatMap { id in session.document.items.contains { $0.id == id } ? [id] : nil } ?? []
+        window?.makeFirstResponder(self)
+    }
     func textDidEndEditing(_ notification: Notification) {
         guard let text = notification.object as? EaselStyledTextView, text === editor, !finishingEditor else { return }
         DispatchQueue.main.async { [weak self, weak text] in
@@ -1687,7 +1693,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if tableTextCommand(textView, commandSelector) { return true }
         if mindMapTextCommand(textView, commandSelector) { return true }
         if commandSelector == #selector(NSResponder.cancelOperation(_:)), textView === editor {
-            if finishEditing() { selection.removeAll(); window?.makeFirstResponder(self) }
+            finishEditingFromEscape()
             return true
         }
         return false
@@ -2066,9 +2072,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     override func cancelOperation(_ sender: Any?) {
         if cancelImageCrop() { return }
-        if editor != nil {
-            if finishEditing() { selection.removeAll(); window?.makeFirstResponder(self) }
-        } else if start != nil || toolState.pan != nil { cancelPointerInteraction() }
+        if editor != nil { finishEditingFromEscape() }
+        else if start != nil || toolState.pan != nil { cancelPointerInteraction() }
         else if !selection.isEmpty { selection.removeAll(); invalidateIncrementalDisplay(layout: true) }
         else if tool != .select { tool = .select }
         else if let onImageEditingCancel { onImageEditingCancel() }

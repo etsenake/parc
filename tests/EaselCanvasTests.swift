@@ -417,10 +417,12 @@ struct EaselCanvasTests {
         expect(editor.isContinuousSpellCheckingEnabled, "Native text spelling is enabled for the active editor")
         canvas.cancelOperation(nil)
         expect(session.document.items == [prompt], "Untouched default text is content and survives dismissal")
+        expect(canvas.selection == [prompt.id], "Escape finishes text input and keeps the object selected")
+        canvas.cancelOperation(nil)
         let returnKey = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
             windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 36)!
         canvas.keyDown(with: returnKey)
-        expect(canvas.subviews.allSatisfy { !($0 is EaselStyledTextView) }, "Escape clears canvas selection as well as text input")
+        expect(canvas.subviews.allSatisfy { !($0 is EaselStyledTextView) }, "A second Escape clears canvas selection")
         canvas.selectAll(nil); window.makeFirstResponder(canvas); canvas.keyDown(with: returnKey)
         let clearing = currentEditor()
         replace(clearing, with: " \t\n\u{00a0}")

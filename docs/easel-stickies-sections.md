@@ -27,7 +27,8 @@ text goes, never below its minimum. The height refit rides in the same text
 commit as the typing, so one Undo takes back a whole editing session's
 typing and growth together. While an input method is composing, the editor
 keeps its frame and nothing is saved until the composition lands. Emptying a
-sticky keeps it on the board; Escape finishes editing.
+sticky keeps it on the board; Escape finishes editing and leaves the sticky
+selected, and a second Escape deselects it.
 
 Stickies scale as a whole (see below). Their text is stored at the regular
 size and shown through `EaselStickyText.presented`, which multiplies every
