@@ -1057,7 +1057,11 @@ final class NotePageEditor {
         guard case .blocks(let ids) = session.selection, ids.count == 1, let block = session.page.block(ids[0]),
               fillable.contains(block.kind), (block.props.source ?? "").isEmpty,
               let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
-        session.updateBlock(block.id, name: "Paste Link") { $0.props.source = url.absoluteString }
+        let playsAsEmbed = NoteClipboard.playsAsEmbed(url, kind: block.kind)
+        session.updateBlock(block.id, name: "Paste Link") { updated in
+            if playsAsEmbed { updated.kind = .embed }
+            updated.props.source = url.absoluteString
+        }
         return true
     }
 

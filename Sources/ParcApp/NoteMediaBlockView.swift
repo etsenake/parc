@@ -439,7 +439,24 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
 
     func embed(_ url: URL) {
         guard canEdit else { return }
+        if NoteClipboard.playsAsEmbed(url, kind: kind) { embedAsPage(url); return }
         setSource(url.absoluteString, name: "Embed " + NoteMediaCopy.title(for: kind))
+    }
+
+    var embeddablePage: URL? {
+        guard let url = source.url, NoteClipboard.playsAsEmbed(url, kind: kind) else { return nil }
+        return url
+    }
+
+    func embedAsPage(_ url: URL) {
+        guard canEdit else { return }
+        failure = nil
+        editor?.session.updateBlock(blockID, name: "Embed") { block in
+            block.kind = .embed
+            block.props.source = url.absoluteString
+            block.props.credit = nil
+            block.props.crop = nil
+        }
     }
 
     private func setSource(_ value: String, name: String) {
@@ -1050,6 +1067,7 @@ final class NoteMediaProblemCard: NoteMediaCardView {
     private let replaceChip = NoteChip("Replace", icon: .symbol("arrow.triangle.2.circlepath"))
     private let retryChip = NoteChip("Try again", icon: .symbol("arrow.clockwise"))
     private let openChip = NoteChip("Open", icon: .symbol("arrow.up.right.square"))
+    private let embedChip = NoteChip("Play here", icon: .symbol("play.rectangle"))
     private let deleteChip = NoteToolbarButton(icon: .symbol("trash"), label: "Delete")
     private static let height: CGFloat = 64
 
@@ -1069,7 +1087,11 @@ final class NoteMediaProblemCard: NoteMediaCardView {
             self.host?.open(url)
         }
         deleteChip.onPress = { [weak self] in self?.host?.deleteBlock() }
-        for view in [icon, title, detail, replaceChip, retryChip, openChip, deleteChip] as [NSView] { addSubview(view) }
+        embedChip.onPress = { [weak self] in
+            guard let self, let url = self.host?.embeddablePage else { return }
+            self.host?.embedAsPage(url)
+        }
+        for view in [icon, title, detail, embedChip, replaceChip, retryChip, openChip, deleteChip] as [NSView] { addSubview(view) }
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
     }
@@ -1103,8 +1125,9 @@ final class NoteMediaProblemCard: NoteMediaCardView {
         retryChip.isHidden = !(remote && (problem == .unreachable || problem == .unreadable))
         let opensElsewhere = remote || (host?.kind == .pdf && host?.source.url != nil)
         openChip.isHidden = !(opensElsewhere && (problem == .unsupported || problem == .unreadable))
+        embedChip.isHidden = !(editable && problem == .unsupported && host?.embeddablePage != nil)
         var trailing = bounds.width - 12
-        for chip in [deleteChip, replaceChip, retryChip, openChip] where !chip.isHidden {
+        for chip in [deleteChip, replaceChip, retryChip, openChip, embedChip] where !chip.isHidden {
             let width = chip.intrinsicContentSize.width
             chip.frame = NSRect(x: trailing - width, y: (bounds.height - NoteTheme.chipHeight) / 2, width: width, height: NoteTheme.chipHeight)
             trailing = chip.frame.minX - 4

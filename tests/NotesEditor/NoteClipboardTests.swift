@@ -552,6 +552,10 @@ struct NoteClipboardTests {
         reading = NoteClipboard.Reading(string: "https://example.com/a")
         expect(NoteClipboard.choose(reading, plainOnly: false, canReadHTML: true) == .url, "a lone URL offers the link menu")
         expect(NoteClipboard.choose(reading, plainOnly: true, canReadHTML: true) == .plainText, "plain paste skips the link menu")
+        let video = URL(string: "https://www.youtube.com/watch?v=KlwA8U-1wzM")!
+        expect(NoteClipboard.playsAsEmbed(video, kind: .video), "a YouTube page given to a video block plays as an embed")
+        expect(!NoteClipboard.playsAsEmbed(URL(string: "https://example.com/clip.mp4")!, kind: .video), "a real video file stays a video")
+        expect(!NoteClipboard.playsAsEmbed(video, kind: .image), "only video and audio blocks turn into embeds")
         reading = NoteClipboard.Reading(html: "<span style=\"color: blue\">https://example.com/a.mp3</span>", string: "https://example.com/a.mp3")
         expect(NoteClipboard.choose(reading, plainOnly: false, canReadHTML: true) == .url, "a URL copied as rich text from another app is still a link")
         reading = NoteClipboard.Reading(string: "# Notes\n- one")

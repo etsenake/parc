@@ -234,6 +234,10 @@ enum NoteClipboard {
         "excalidraw.com", "tiktok.com", "instagram.com", "music.apple.com", "podcasts.apple.com",
     ]
 
+    static func playsAsEmbed(_ url: URL, kind: NoteBlockKind) -> Bool {
+        (kind == .video || kind == .audio) && isEmbeddable(url)
+    }
+
     static func isEmbeddable(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
               var host = url.host?.lowercased() else { return false }
