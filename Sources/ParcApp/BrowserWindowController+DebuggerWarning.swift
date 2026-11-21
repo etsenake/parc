@@ -70,7 +70,7 @@ extension BrowserWindowController {
         guard browser === nativeBinding, presentation.isReady, !isClosing, !wholeWindowClose, !page.isClosed,
               let window, window.isKeyWindow, window.attachedSheet == nil, commandBar == nil else { return false }
         let strip: DebuggerWarningStrip?
-        if let peek = activePeek { strip = peek.browser.nativePage === page ? peek.view.debuggerWarning : nil }
+        if activePeek != nil { strip = activePagePeek.flatMap { $0.browser.nativePage === page ? $0.view.debuggerWarning : nil } }
         else { strip = panes.first(where: { $0.value.browser?.nativePage === page })?.value.debuggerWarning }
         return strip?.focusFirstCancel() == true
     }

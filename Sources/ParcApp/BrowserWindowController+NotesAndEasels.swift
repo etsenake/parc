@@ -186,12 +186,12 @@ extension BrowserWindowController {
         }
         editor.onOpenURL = { [weak self, weak editor] url in
             guard let self, let editor, self.noteEditors[tabID]?.editor === editor,
-                  self.currentTabID == tabID, self.activeProfileID == profileID, !self.isClosing else { return }
+                  self.documentTakesInput(tabID), self.activeProfileID == profileID, !self.isClosing else { return }
             self.openInput(url.absoluteString)
         }
         editor.onFollowURL = { [weak self, weak editor] url, click in
             guard let self, let editor, self.noteEditors[tabID]?.editor === editor,
-                  self.currentTabID == tabID, self.activeProfileID == profileID, !self.isClosing else { return }
+                  self.documentTakesInput(tabID), self.activeProfileID == profileID, !self.isClosing else { return }
             if self.openNoteLinkInPeek(url, click: click, over: tabID, profileID: profileID) { return }
             self.openInput(url.absoluteString)
         }
@@ -201,7 +201,7 @@ extension BrowserWindowController {
         }
         editor.onOpenNote = { [weak self, weak editor] url in
             guard let self, let editor, self.noteEditors[tabID]?.editor === editor,
-                  self.currentTabID == tabID, self.activeProfileID == profileID, !self.isClosing else { return }
+                  self.documentTakesInput(tabID), self.activeProfileID == profileID, !self.isClosing else { return }
             self.openNote(url: url)
         }
         editor.onToast = { [weak self, weak editor] content in
@@ -216,7 +216,7 @@ extension BrowserWindowController {
         }
         if !store.isEphemeral {
             editor.onShowInLibrary = { [weak self, weak editor] url in
-                guard let self, let editor, self.noteEditors[tabID]?.editor === editor, self.currentTabID == tabID,
+                guard let self, let editor, self.noteEditors[tabID]?.editor === editor, self.documentTakesInput(tabID),
                       self.activeProfileID == profileID, !self.isClosing, !self.wholeWindowClose else { return }
                 self.revealInDocumentsLibrary(.note(url))
             }
@@ -272,7 +272,7 @@ extension BrowserWindowController {
                 return !self.isClosing && !self.wholeWindowClose && !self.windowCloseApproved
             }, activeOwner: { [weak self] in
                 guard let self else { return false }
-                return !self.transferringTabIDs.contains(tabID) && self.currentTabID == tabID && self.activePeek == nil
+                return !self.transferringTabIDs.contains(tabID) && self.documentTakesInput(tabID)
                     && self.libraryView == nil && self.commandBar == nil && !self.windowClosePending && !self.isClosing
             }, selectionChanged: { [weak self] in
                 guard let self, !self.isClosing else { return }
@@ -328,6 +328,7 @@ extension BrowserWindowController {
                 guard let self, let pool, let current = self.noteEditors[id], current.editor === cached.editor,
                       NoteEmbeddedPages.pool(for: current.editor) === pool else { return false }
                 let shown = self.renderedPaneIDs.contains(id) || self.selectedTabIDs.contains(id) || self.pendingNativeSelection?.tabID == id
+                    || self.tabPeeks.current?.tabID == id
                 return !self.isClosing && !self.wholeWindowClose && !shown && !self.transferringTabIDs.contains(id)
                     && self.store.state.tab(id) == expected
                     && self.notePagesCanSleep(current, lastShown: expected?.lastAccessed ?? .distantFuture)
@@ -385,8 +386,8 @@ extension BrowserWindowController {
     }
 
     var currentNoteEditor: NotePageViewController? {
-        guard presentation.isReady, !isClosing, !wholeWindowClose, activePeek == nil, libraryView == nil,
-              let id = currentTabID, !transferringTabIDs.contains(id), renderedPaneIDs.contains(id),
+        guard presentation.isReady, !isClosing, !wholeWindowClose, libraryView == nil,
+              let id = documentInputTabID, !transferringTabIDs.contains(id),
               let note = noteEditors[id], note.profileID == activeProfileID, note.editor.isViewLoaded else { return nil }
         return note.editor
     }

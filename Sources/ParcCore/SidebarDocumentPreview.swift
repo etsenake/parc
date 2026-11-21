@@ -37,7 +37,7 @@ struct SidebarDocumentContent: Equatable, Sendable {
 }
 
 enum SidebarDocumentButton: Equatable, Sendable {
-    case peek, copyLink, split
+    case peek, split
 }
 
 enum SidebarDocumentPreviewText {
@@ -70,9 +70,9 @@ enum SidebarDocumentPreviewText {
 }
 
 enum SidebarDocumentPreviewButtons {
-    static func buttons(availability: SidebarDocumentAvailability, peekAdmitsDocuments: Bool) -> [SidebarDocumentButton] {
+    static func buttons(availability: SidebarDocumentAvailability, offersPeek: Bool) -> [SidebarDocumentButton] {
         guard availability == .available else { return [] }
-        return (peekAdmitsDocuments ? [.peek] : []) + [.copyLink, .split]
+        return (offersPeek ? [.peek] : []) + [.split]
     }
 }
 

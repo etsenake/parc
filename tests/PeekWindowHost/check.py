@@ -25,8 +25,8 @@ positions = [window.index(line) for line in order]
 assert positions == sorted(positions), "the Peek layer sits above the page, grip and side panel, below Find and the sidebar"
 assert "pageHost.addSubview(peek.view" not in window and "pageHost.addSubview(controller.view" not in window, \
     "no Peek lives inside the page card any more"
-assert window.count("peekLayer.addSubview(controller.view, positioned: .above, relativeTo: nil)") == 1, \
-    "a tab-backed Peek lands in the window's Peek layer too"
+assert window.count("peekLayer.addSubview(controller.view, positioned: .above, relativeTo: nil)") == 2, \
+    "a tab-backed Peek, page or note and Easel alike, lands in the window's Peek layer too"
 assert window.count("peekLayer.addSubview(peek.view, positioned: .above, relativeTo: nil)") == 2, \
     "adoption and window transfer both land a Peek in the window's Peek layer"
 assert "rootView.subviews =" not in window, "the Peek layer keeps its place instead of being re-stacked under a focused page"
@@ -41,17 +41,17 @@ for token in ("loadingIndicator.alphaValue = (shown?.view.stepProgress ?? 0) > 0
               "peek.view.stepsBack", "pageHost.peekStepScale = scale",
               "peekStepBack.animateIn(scale: scale)", "peekStepBack.reset()"):
     assert token in step, f"the step-back sync lost {token!r}"
-stepping = body(window, "    private var steppingPeek: PeekController? {")
+stepping = body(window, "    private var steppingPeek: PeekCard? {")
 assert "tabPeeks.leaving" in stepping, "a tab-backed Peek that is fading out still eases the page forward"
 laid = body(window, "    func layoutPeeks() {")
 assert laid.index("reconcileTabPeek()") < laid.index("for card in leavingTabPeekCards { placePeek(card); card.view.layoutSubtreeIfNeeded() }") \
     < laid.index("syncPeekStepBack()"), "a tab-backed Peek fading out after its tab opens follows the window's new layout"
-assert "var leavingTabPeekCards: [PeekController] { tabPeeks.leaving.compactMap(\\.controller) }" in window, \
+assert "var leavingTabPeekCards: [PeekCard] { tabPeeks.leaving.compactMap(\\.controller) }" in window, \
     "the fading tab-backed cards are the ones still leaving"
 geometry = body(window, "    private func layoutChromeGeometry() {")
 assert "for peek in presentedPeeks + leavingTabPeekCards { placePeek(peek); peek.view.layoutSubtreeIfNeeded() }" in geometry, \
     "the geometry-only layout pass moves fading tab-backed cards too"
-place = body(window, "    func placePeek(_ peek: PeekController) {")
+place = body(window, "    func placePeek(_ peek: PeekCard) {")
 assert "peek.view.pageFrame = pageHost.frame" in place and "accessibilityDisplayShouldReduceMotion" in place, \
     "a Peek measures its card from the window and skips the step-back under Reduce Motion"
 assert "lazy var peekStepBack = PeekStepBack([pageHost, pageShadow])" in window, "the page card and its shadow step back together"

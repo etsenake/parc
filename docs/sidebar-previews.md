@@ -74,8 +74,8 @@ keyboard to Split View. Its artwork is Parc's own, sized to Split View's weight
 ([sidebar preview artwork](../Resources/SidebarPreview/README.md)). The title
 and site end 8 pt before the leftmost button and truncate at the tail, so
 without a Peek offer they end 8 pt before Split View. Both buttons show Parc's 24 pt
-hover plate, carry their name as tooltip and VoiceOver label, and take keyboard
-focus with a 5 pt ring. The picture is inset 10 pt (268 pt wide in a full-width
+hover plate, carry their name as Parc's own tooltip and VoiceOver label, and take
+keyboard focus with a 5 pt ring. The picture is inset 10 pt (268 pt wide in a full-width
 card) with 5 pt corners and a hairline, the card still capped at 384 pt. Chromium
 captures the thumbnail at about 530–560 pixels wide, close to the 536 a 268 pt
 picture needs on a Retina display, so it stays sharp; a wider picture would need a
@@ -108,10 +108,11 @@ snippet ("Empty note", "No objects yet"). A note or Easel that moved or was
 deleted shows "This note moved or was deleted" or "This Easel was deleted" and
 no buttons.
 
-Peek doesn't admit documents, so the buttons are Copy Link (`link`, 26 pt left
-of Split View, copying the file or `parc://easel/` address) and Open in Split
-View. The card appears when a picture or the final text arrives, or after the
-same 500 ms with the snippet, and a later picture replaces the text in place.
+The buttons are the tab picture card's: Open in Peek, while the tab can open in a
+Peek right then ([notes and Easels in a Peek](peek.md#notes-and-easels)), and Open
+in Split View, with the same placement, title width and live offer rule. Copy Link stays in the folder rows' menus. The card appears when
+a picture or the final text arrives, or after the same 500 ms with the snippet,
+and a later picture replaces the text in place.
 
 Pictures are drawn without a window: a detached print view cached with
 `cacheDisplay`, and the Easel's own image export on a detached canvas. Unloaded
@@ -124,9 +125,12 @@ redraws at most once a second, showing the stale picture meanwhile. Folder
 cards list notes and Easels with these icons and offer Copy Link in place of
 Copy URL; their rows keep the list's 16 pt icons rather than page pictures.
 
-While any preview card is shown, the window's tooltips stay hidden: the row's
-title tooltip waits 1.5 s and would otherwise open over a card that already
-shows the title, and right after another tooltip it opens almost at once.
+While any preview card is shown, the window's other tooltips stay hidden: the
+row's title tooltip waits 1.5 s and would otherwise open over a card that already
+shows the title, and right after another tooltip it opens almost at once. The
+card's own header buttons (Open in Peek, Open in Split View, the Recents create
+button and Previews Settings) keep Parc's tooltip, shown below the button, and a
+card that is leaving exempts nothing.
 
 ## Titles, grouping and badges
 

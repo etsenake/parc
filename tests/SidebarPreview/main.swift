@@ -251,7 +251,7 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
              "provider empty state")
     c.expect(!all(recents, NSTextField.self).contains { $0.isEditable }, "recents have no search row")
     let buttons = all(recents, NSButton.self)
-    c.expect(buttons.map { $0.toolTip ?? "" } == ["New Page", "Previews Settings"], "CTA and gear only")
+    c.expect(buttons.map { $0.accessibilityLabel() ?? "" } == ["New Page", "Previews Settings"], "CTA and gear only")
     buttons.forEach { $0.performClick(nil) }
     c.expect(created == [URL(string: "https://notion.so/new")!] && settings == 1, "CTA and gear actions")
     c.expect(recents.fill != nil, "recents content background")
@@ -272,7 +272,7 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     c.expect(pageLabels.contains("Example") && pageLabels.contains("example.com"), "tab title and site in the header")
     c.expect(all(pictured, NSScrollView.self).isEmpty && resized == 0, "a picture card has no list")
     let pageButtons = all(pictured, NSButton.self)
-    c.expect(pageButtons.map { $0.toolTip ?? "" } == ["Open in Split View"], "split is the picture card's only control")
+    c.expect(pageButtons.map { $0.accessibilityLabel() ?? "" } == ["Open in Split View"], "split is the picture card's only control")
     pageButtons.forEach { $0.performClick(nil) }
     c.expect(pageActions == [.split], "split opens the tab in Split View")
     c.expect(pictured.fill != nil && pictured.preferredHeight(width: 288) == 56 + 168 + 10, "a 288 × 234 card, picture 268 pt wide")

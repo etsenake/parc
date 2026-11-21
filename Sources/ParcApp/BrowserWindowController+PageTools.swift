@@ -448,15 +448,16 @@ extension BrowserWindowController {
                                  prepare: @escaping () -> Void) -> BrowserFindCommand {
         let profileID = activeProfileID
         return BrowserFindCommand(action: action, window: window, available: { [weak self, weak editor] in
-            guard let self, let editor, editor.isViewLoaded, self.canOwnFind, self.activePeek == nil,
+            guard let self, let editor, editor.isViewLoaded, self.canOwnFind,
                   let note = self.noteEditors[id], note.editor === editor,
-                  self.renderedPaneIDs.contains(id), note.profileID == profileID, self.activeProfileID == profileID,
+                  (self.activePeek == nil && self.renderedPaneIDs.contains(id)) || self.peekedDocumentTabID == id,
+                  note.profileID == profileID, self.activeProfileID == profileID,
                   self.switcherCanUse(id),
                   let tab = self.store.state.tab(id, where: { $0.profileID == profileID }),
                   InternalPage(urlString: tab.url) == .note(editor.file.url),
                   editor.canPerform(action) else { return false }
             if let current = window.firstResponder as? NSView, current.isDescendant(of: editor.view) { return true }
-            return self.currentTabID == id
+            return self.currentTabID == id || self.peekedDocumentTabID == id
         }, prepare: prepare, execute: { [weak self, weak editor] in
             guard let editor, editor.isViewLoaded else { return }
             if action == .show || action == .replace { self?.dismissFind(restoreFocus: false) }
@@ -464,7 +465,7 @@ extension BrowserWindowController {
         })
     }
     private func focusedNoteEmbedPage(in window: NSWindow) -> PCNativePage? {
-        guard activePeek == nil, libraryView == nil, let id = currentTabID, renderedPaneIDs.contains(id),
+        guard libraryView == nil, let id = documentInputTabID,
               let note = noteEditors[id], note.profileID == activeProfileID,
               let page = NoteEmbeddedPages.pool(for: note.editor)?.selectedPage, selectedNativePage() === page,
               let responder = window.firstResponder as? NSView else { return nil }
@@ -482,10 +483,11 @@ extension BrowserWindowController {
         let prepare: () -> Void = { [weak self] in self?.commandBar?.dismiss() }
         let command: BrowserFindCommand
         let noteEmbedHasFocus = focusedNoteEmbedPage(in: window) != nil
-        if !noteEmbedHasFocus, let responder = window.firstResponder as? NSView, activePeek == nil,
+        if !noteEmbedHasFocus, let responder = window.firstResponder as? NSView,
            let entry = noteEditors.first(where: { $0.value.editor.isViewLoaded
                && responder.isDescendant(of: $0.value.editor.view) }),
-           renderedPaneIDs.contains(entry.key), entry.value.profileID == activeProfileID {
+           (activePeek == nil && renderedPaneIDs.contains(entry.key)) || peekedDocumentTabID == entry.key,
+           entry.value.profileID == activeProfileID {
             command = noteFindCommand(action, id: entry.key, editor: entry.value.editor, window: window, prepare: prepare)
         } else if action == .show, let libraryView {
             command = BrowserFindCommand(action: action, window: window, available: { [weak self, weak libraryView] in
@@ -493,7 +495,7 @@ extension BrowserWindowController {
             }, prepare: prepare, execute: { [weak self, weak libraryView] in
                 self?.dismissFind(restoreFocus: false); libraryView?.focusSearch()
             })
-        } else if !noteEmbedHasFocus, activePeek == nil, libraryView == nil, let id = currentTabID, renderedPaneIDs.contains(id),
+        } else if !noteEmbedHasFocus, libraryView == nil, let id = documentInputTabID,
                   let note = noteEditors[id], note.profileID == activeProfileID, note.editor.isViewLoaded {
             command = noteFindCommand(action, id: id, editor: note.editor, window: window, prepare: prepare)
         } else if action.isNativeTextOnly {

@@ -33,10 +33,10 @@ for needle in (
 
 assert "private var lastPresentedFingerprint: String?" in controller, \
     "missing last-applied Peek presentation fingerprint"
-assert "private func publishPresentationIfChanged()" in controller, \
+assert "    func publishPresentationIfChanged() {" in controller, \
     "missing publishPresentationIfChanged gate"
-assert "private func presentationFingerprint()" in controller, \
-    "missing live presentationFingerprint builder"
+assert controller.count("func contentFingerprint() -> String {") == 3, \
+    "every Peek card, web page and document alike, builds a live presentation fingerprint"
 assert "PeekPresentationSkip.shouldSkip(previous: lastPresentedFingerprint, next: fingerprint)" in controller, \
     "refresh must gate on PeekPresentationSkip.shouldSkip"
 assert "if refresh() { onUpdate?() }" in controller, \
@@ -89,9 +89,9 @@ def function_body(text, start, end="\n    }\n"):
     return text[begin:text.index(end, begin)]
 
 
-assert "splitToolTip: presentedSplitToolTip," in controller and "view.splitToolTip = presentedSplitToolTip" in controller, \
+assert controller.count("splitToolTip: presentedSplitToolTip,") == 2 and "view.splitToolTip = presentedSplitToolTip" in controller, \
     "the split reason must change the fingerprint and reach the Split button's tooltip"
-assert "private var presentedSplitToolTip: String? { closePending ? nil : splitToolTip?() }" in controller, \
+assert "    var presentedSplitToolTip: String? { closePending ? nil : splitToolTip?() }" in controller, \
     "a closing Peek shows the plain Split tooltip"
 assert "LiveShortcutToolTip.set(splitButton, splitToolTip ?? Self.splitTitle, anchor: .trailing)" in controller \
     and 'private static let splitTitle = "Add Peek to Split View"' in controller, \

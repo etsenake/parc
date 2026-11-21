@@ -34,9 +34,9 @@ check(SidebarDocumentPreviewText.body(page, content: .init()) == "Empty note", "
 check(SidebarDocumentPreviewText.body(page, content: .init(availability: .missing, snippet: "Old")) == "This note moved or was deleted", "missing note body")
 check(SidebarDocumentPreviewText.body(easel, content: .init(objectCount: 0)) == "No objects yet", "empty Easel body")
 
-check(SidebarDocumentPreviewButtons.buttons(availability: .available, peekAdmitsDocuments: false) == [.copyLink, .split], "documents offer Copy Link and Split View")
-check(SidebarDocumentPreviewButtons.buttons(availability: .available, peekAdmitsDocuments: true) == [.peek, .copyLink, .split], "Peek only when it admits documents")
-check(SidebarDocumentPreviewButtons.buttons(availability: .missing, peekAdmitsDocuments: true).isEmpty, "a missing document offers nothing")
+check(SidebarDocumentPreviewButtons.buttons(availability: .available, offersPeek: false) == [.split], "documents offer Split View alone when Peek isn't offered")
+check(SidebarDocumentPreviewButtons.buttons(availability: .available, offersPeek: true) == [.peek, .split], "documents offer Peek then Split View when Peek is offered")
+check(SidebarDocumentPreviewButtons.buttons(availability: .missing, offersPeek: true).isEmpty, "a missing document offers nothing")
 
 typealias Cache = SidebarThumbnailCache<String, Int>
 let start = Date(timeIntervalSinceReferenceDate: 1000)

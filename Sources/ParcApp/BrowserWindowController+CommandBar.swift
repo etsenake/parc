@@ -184,6 +184,7 @@ extension BrowserWindowController {
         }
     }
     func presentCommandBar(newTab: Bool, inSidebar: Bool = false, addressAnchor: NSView? = nil, initialEdit: (String, NSRange)? = nil) {
+        let newTab = newTab || activePeek is DocumentPeekController
         let originalProfileID = activeProfileID
         guard let original = window, ownsWindowCommandFocus, original.attachedSheet == nil,
               canOwnDownloadDialog(for: originalProfileID), windowCommandSecurityAvailable else { return }
@@ -290,7 +291,7 @@ extension BrowserWindowController {
         let commandProfile = activeProfileID
         let commandTab = currentTabID
         let sourcePeek = activePeek
-        let commandPeek = newTab ? nil : sourcePeek
+        let commandPeek = newTab ? nil : sourcePeek as? PeekController
         let commandBrowser = currentBrowser
         let commandPage = selectedNativePage()
         let isOriginal: () -> Bool = { [weak self, weak window] in

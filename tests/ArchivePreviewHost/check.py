@@ -20,7 +20,7 @@ def body(text, start, end="\n    }\n"):
 assert "private(set) var parentPage: PCNativePage?" in peek, "a Peek over a Note, Easel, start page or unloaded tab has no parent page"
 assert "if parentPage == nil { parentPage = page }" in body(peek, "    func adoptParent(_ page: PCNativePage) {"), \
     "a tab-owned preview takes the tab's page as its parent once, and never swaps a parent it already has"
-active = body(window, "    var activePeek: PeekController? {")
+active = body(window, "    var activePeek: PeekCard? {")
 assert "peekHostID" in active and "currentTabID" not in active, \
     "the shown Peek is found by the window's host, so a start-page preview shows with no tab selected"
 assert "PeekBackdrop.hostID(currentTabID: currentTabID, showsStartPage: showsStartPage, activeSpaceID: activeSpaceID)" in window
@@ -74,7 +74,7 @@ assert "peekLayer.addSubview(peek.view" in present and "placePeek(peek)" in pres
 assert "presentAdoptedPeek(peek, shown: shown, entryFocus: entryFocus)" in window, \
     "both adoptions share the Peek layer placement, entry motion and focus"
 
-promote = body(window, "    func promotePeek(_ peek: PeekController, split: Bool, orphaned: Bool = false) {")
+promote = body(window, "    func promotePeek(_ peek: PeekCard, split: Bool, orphaned: Bool = false) {")
 assert "} else if peek.parentPage == nil {" in promote and "archivePreviews[peek.identity] != nil" in promote, \
     "Expand puts a window-hosted preview back without a parent page"
 removal = body(window, "    func removePeek(_ peek: PeekController) {")
@@ -87,7 +87,7 @@ assert "if peek.parentPage.map({ $0.isClosed }) ?? !self.peekHostLives(peek) { s
     "a hosted preview that refuses to close after its host went keeps its page as a tab"
 assert "($0.parentPage == nil && browsers[$0.parentTabID]?.nativePage === page)" in body(window, "    func canHostPeek("), \
     "no second Peek opens over a tab whose waiting preview hasn't adopted its page yet"
-lookup = body(window, "    func peek(over id: UUID) -> PeekController? {")
+lookup = body(window, "    func peek(over id: UUID) -> PeekCard? {")
 assert "PeekBackdrop.peekStays(parent: $0.parentPage, hostPage: browsers[id]?.nativePage)" in lookup, \
     "a tab-owned preview stays shown when the tab's page arrives, and an ordinary Peek still needs its own parent page"
 downloads = (root / "Sources/ParcApp/BrowserWindowController+Downloads.swift").read_text()

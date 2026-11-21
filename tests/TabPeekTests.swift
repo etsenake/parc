@@ -78,7 +78,23 @@ struct FakeWindow {
                "a page another window can't give up is refused")
         expect(plan { $0.onScreen = true } == .failure(.onScreen), "a tab already on screen isn't peeked")
         expect(plan { $0.busy = true } == .failure(.busy), "a closing or moving tab is refused")
-        expect(plan { $0.document = true } == .failure(.document), "Notes and Easels aren't web pages")
+        expect(plan { $0.content = .unsupported } == .failure(.unsupported), "an internal page that isn't a note or Easel is refused")
+        expect(plan { $0.content = .document; $0.page = .live("document") } == .success(.present("document")),
+               "an open note or Easel presents its own editor")
+        expect(plan { $0.content = .document; $0.page = .unloaded(loadable: true) } == .success(.load),
+               "a note or Easel that isn't open yet opens straight into the Peek")
+        expect(plan { $0.content = .document; $0.page = .failed } == .failure(.failed),
+               "a note or Easel that failed to open opens normally, not in Peek")
+        expect(plan { $0.content = .document; $0.onScreen = true } == .failure(.onScreen),
+               "a note or Easel already on screen isn't peeked")
+        expect(plan { $0.content = .document; $0.parentCanHost = false } == .failure(.parent),
+               "a note or Easel needs a page to float over too")
+        expect(plan { $0.content = .document; $0.holder = .elsewhere(movable: true) } == .success(.moveHere),
+               "a note or Easel in another window moves here through the transfer first")
+        expect(plan { $0.content = .document; $0.shown = .peek(canClose: true) } == .success(.replaceShown),
+               "a note or Easel replaces a shown Peek")
+        expect(plan { $0.content = .unsupported; $0.shown = .peek(canClose: true) } == .failure(.unsupported),
+               "a shown Peek is never closed for a page Peek can't show")
         expect(plan { $0.inActiveSpace = false } == .failure(.space), "a tab from another Space is refused")
         expect(plan { $0.profileMatches = false } == .failure(.profile), "a tab from another Profile is refused")
         expect(plan { $0.parentCanHost = false } == .failure(.parent), "there must be a page to float over")

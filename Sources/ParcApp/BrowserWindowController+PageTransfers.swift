@@ -614,7 +614,7 @@ extension BrowserWindowController {
         return selectedTabIDs.first
     }
     var currentBrowser: PCBrowserView? {
-        if let peek = activePeek { return peek.browser }
+        if activePeek != nil { return activePagePeek?.browser }
         return currentTabID.flatMap(paneBrowser)
     }
     func paneBrowser(_ id: UUID) -> PCBrowserView? {

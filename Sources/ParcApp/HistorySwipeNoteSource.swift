@@ -15,6 +15,8 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
     private var buttonMonitor: Any?
     private weak var controller: BrowserWindowController?
     private var tabID: UUID?
+    private weak var peek: DocumentPeekController?
+    private var dismissing = false
     private var overlay: HistorySwipeOverlayView?
     private var reducesMotion = false
 
@@ -44,18 +46,18 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
         if event.phase == .began {
             if driver.isActive { driver.cancel() }
             resolveTarget(event)
-            guard tabID != nil else { return false }
+            guard tabID != nil || peek != nil else { return false }
             driver.receive(.pageScroll(.began(synthetic: false, momentum: false)))
             driver.receive(.pageScroll(.updated(consumed: Self.scrollsHorizontally(event))))
             driver.receive(.overscroll(propagatesX: true))
         }
-        guard tabID != nil else { return false }
+        guard tabID != nil || peek != nil else { return false }
         let step = driver.receive(HistorySwipeEvents.scroll(
             phase: event.phase, momentumPhase: event.momentumPhase, deltaX: Double(event.scrollingDeltaX),
             deltaY: Double(event.scrollingDeltaY), directionInverted: event.isDirectionInvertedFromDevice))
         if let request = step.startsTracking { track(event, request) }
         if event.momentumPhase == .ended || event.momentumPhase == .cancelled, !driver.isActive {
-            tabID = nil
+            tabID = nil; peek = nil; dismissing = false
         }
         return step.consumesEvent
     }
@@ -63,10 +65,18 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
     private func resolveTarget(_ event: NSEvent) {
         controller = nil
         tabID = nil
+        peek = nil
+        dismissing = false
         guard let window = event.window, let controller = window.windowController as? BrowserWindowController,
-              let id = controller.noteVisitTarget(.back), let view = noteView(controller, id),
               let content = window.contentView,
-              let hit = content.hitTest(content.convert(event.locationInWindow, from: nil)),
+              let hit = content.hitTest(content.convert(event.locationInWindow, from: nil)) else { return }
+        if let card = controller.activePeek as? DocumentPeekController, card.holdsDocument,
+           hit === card.document || hit.isDescendant(of: card.document) {
+            self.controller = controller
+            peek = card
+            return
+        }
+        guard let id = controller.noteVisitTarget(.back), let view = noteView(controller, id),
               hit === view || hit.isDescendant(of: view) else { return }
         self.controller = controller
         tabID = id
@@ -97,21 +107,35 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
     }
 
     var swipesBetweenPages: Bool { NSEvent.isSwipeTrackingFromScrollEventsEnabled }
-    var allowsHistorySwipe: Bool { visit?.showsNote == true && controller?.navigationHistory == nil }
+    var allowsHistorySwipe: Bool {
+        if let peek { return peek.canSwipeDismiss || dismissing }
+        return visit?.showsNote == true && controller?.navigationHistory == nil
+    }
 
     func historyEntries(toward direction: HistorySwipeDirection) -> Int {
-        HistorySwipeNoteStep.entries(toward: direction, visit: visit, pageEntries: 0)
+        guard peek == nil else { return 0 }
+        return HistorySwipeNoteStep.entries(toward: direction, visit: visit, pageEntries: 0)
     }
 
-    func dismisses(toward direction: HistorySwipeDirection) -> Bool { false }
+    func dismisses(toward direction: HistorySwipeDirection) -> Bool {
+        direction == .back && peek?.canSwipeDismiss == true
+    }
 
     func beginSwipe(_ direction: HistorySwipeDirection) -> Bool {
-        allowsHistorySwipe && historyEntries(toward: direction) > 0
+        peek == nil && allowsHistorySwipe && historyEntries(toward: direction) > 0
     }
 
-    func beginDismissal() -> Bool { false }
+    func beginDismissal() -> Bool {
+        guard let peek, peek.canSwipeDismiss, peek.beginSwipeDismissal() else { return false }
+        dismissing = true
+        return true
+    }
 
     func navigate(_ commit: HistorySwipeCommit) -> Bool {
+        if peek != nil {
+            guard case .dismiss = commit, dismissing else { return false }
+            return peek?.commitSwipeDismissal() ?? false
+        }
         guard let controller, let tabID, let visit else { return false }
         let direction: HistorySwipeDirection, distance: Int
         switch commit {
@@ -132,6 +156,19 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
     func preloadBack() {}
 
     func present(_ output: HistorySwipeOutput) {
+        if dismissing, let peek {
+            switch output {
+            case .commit:
+                dismissing = false; self.peek = nil
+            case .cancel:
+                dismissing = false; self.peek = nil
+                peek.followSwipeDismissal(output)
+            default:
+                peek.followSwipeDismissal(output)
+            }
+            return
+        }
+        if case .beginDismissal = output { return }
         if case .begin = output { showOverlay() }
         guard let overlay else { return }
         overlay.handle(output)

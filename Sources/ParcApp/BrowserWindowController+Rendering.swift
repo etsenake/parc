@@ -331,13 +331,13 @@ extension BrowserWindowController {
         refreshDownloads()
         refreshNavigationControls()
         let tab = store.state.tabs.first { $0.id == currentTabID }
-        window?.title = activePeek.map { "\($0.browser.title) — Peek — Parc" } ?? tab.map { "\($0.title) — Parc" } ?? "Parc"
+        window?.title = activePeek.map { "\($0.title) — Peek — Parc" } ?? tab.map { "\($0.title) — Parc" } ?? "Parc"
         refreshLoadingIndicators()
         checkPanePresentation()
         return true
     }
 
-    private func showInternalPage(_ tab: BrowserTab, in pane: BrowserPane) {
+    func showInternalPage(_ tab: BrowserTab, in pane: BrowserPane) {
         guard let page = InternalPage(urlString: tab.url) else {
             pane.showError(InternalPage.isRetiredNoteAddress(tab.url)
                 ? NoteTabError.retiredAddress.localizedDescription : "This internal address is not supported.")
@@ -379,7 +379,7 @@ extension BrowserWindowController {
                 self.windowKeyViews.relink()
             }
             editor.onOpenURL = { [weak self] url in
-                guard let self, self.currentTabID == tab.id, self.activeProfileID == tab.profileID,
+                guard let self, self.documentTakesInput(tab.id), self.activeProfileID == tab.profileID,
                       self.easelEditors[tab.id]?.documentID == documentID,
                       !self.isClosing, !self.wholeWindowClose,
                       ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
@@ -405,7 +405,7 @@ extension BrowserWindowController {
                         return !self.isClosing && !self.wholeWindowClose && !self.windowCloseApproved
                     }, activeOwner: { [weak self] in
                         guard let self else { return false }
-                        return !self.transferringTabIDs.contains(tab.id) && self.currentTabID == tab.id && self.activePeek == nil && self.libraryView == nil
+                        return !self.transferringTabIDs.contains(tab.id) && self.documentTakesInput(tab.id) && self.libraryView == nil
                             && self.commandBar == nil && !self.windowClosePending && !self.isClosing
                     }, selectionChanged: { [weak self] in
                         guard let self, !self.isClosing else { return }

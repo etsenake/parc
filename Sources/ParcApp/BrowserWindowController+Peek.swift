@@ -333,7 +333,7 @@ extension BrowserWindowController {
         syncPeekStepBack()
     }
 
-    var leavingTabPeekCards: [PeekController] { tabPeeks.leaving.compactMap(\.controller) }
+    var leavingTabPeekCards: [PeekCard] { tabPeeks.leaving.compactMap(\.controller) }
 
     func notePeekSplitBlockers() {
         guard let peek = activePeek else { peekSplitBlockers = nil; return }
@@ -346,14 +346,14 @@ extension BrowserWindowController {
         _ = peek.refresh()
     }
 
-    func placePeek(_ peek: PeekController) {
+    func placePeek(_ peek: PeekCard) {
         if peekLayer.frame != rootView.bounds { peekLayer.frame = rootView.bounds }
         peek.view.frame = peekLayer.bounds
         peek.view.pageFrame = pageHost.frame
         peek.view.stepsBack = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    func wirePeekPresentation(_ peek: PeekController) {
+    func wirePeekPresentation(_ peek: PeekCard) {
         peek.view.adoptWindowTheme(rootView)
         peek.onLeavingChange = { [weak self, weak peek] in
             guard let self, let peek else { return }
@@ -366,7 +366,7 @@ extension BrowserWindowController {
         peek.onMotionPreference = { [weak self] in self?.layoutPeeks() }
     }
 
-    private var steppingPeek: PeekController? {
+    private var steppingPeek: PeekCard? {
         if let peek = activePeek { return peek }
         guard let id = currentTabID else { return nil }
         return tabPeeks.leaving.compactMap(\.controller).last {
@@ -584,7 +584,7 @@ extension BrowserWindowController {
         }
     }
 
-    private func parentCanTakeFocus(from peek: PeekController, binding: PCNativeBrowserWindow, window: NSWindow) -> Bool {
+    private func parentCanTakeFocus(from peek: PeekCard, binding: PCNativeBrowserWindow, window: NSWindow) -> Bool {
         peekHostID == peek.parentTabID
             && browsers[peek.parentTabID]?.nativePage === peek.parentPage
             && nativeBinding === binding && commandBar == nil
@@ -597,7 +597,7 @@ extension BrowserWindowController {
             && PCNativeBrowserApplication.canUseWindowUndo(in: window)
     }
 
-    private func followLeavingPeek(_ peek: PeekController) {
+    private func followLeavingPeek(_ peek: PeekCard) {
         guard activePeek === peek else { return }
         guard !applyingNativeSelection, !rendering else {
             DispatchQueue.main.async { [weak self, weak peek] in
@@ -610,7 +610,7 @@ extension BrowserWindowController {
         if peek.isLeaving { handPeekFocusToParent(peek) }
     }
 
-    private func handPeekFocusToParent(_ peek: PeekController) {
+    private func handPeekFocusToParent(_ peek: PeekCard) {
         guard let window, let binding = nativeBinding else { return }
         peek.lendFocus(in: window) {
             guard let parent = peek.parentPage else { return false }
@@ -632,13 +632,17 @@ extension BrowserWindowController {
         }
     }
 
-    private func peekPromotionDestination(_ peek: PeekController) -> BrowserSpace? {
+    private func peekPromotionDestination(_ peek: PeekCard) -> BrowserSpace? {
         guard activePeek === peek, peek.canInteract?() == true,
               let profileID = store.state.tab(peek.parentTabID, where: { $0.archivedAt == nil })?.profileID
                 ?? (peek.parentPage == nil ? archivePreviews[peek.identity]?.profileID : nil),
               let space = store.state.spaces.first(where: { $0.id == activeSpaceID }),
-              space.profileID == profileID, space.profileID == activeProfileID,
-              peek.page.profilePath == store.independentEngineProfilePath(for: space.profileID) else { return nil }
+              space.profileID == profileID, space.profileID == activeProfileID else { return nil }
+        if let peek = peek as? PeekController {
+            guard peek.page.profilePath == store.independentEngineProfilePath(for: space.profileID) else { return nil }
+        } else if peek.canExpand?() != true {
+            return nil
+        }
         return space
     }
 
@@ -668,9 +672,9 @@ extension BrowserWindowController {
         return true
     }
 
-    func promotePeek(_ peek: PeekController, split: Bool, orphaned: Bool = false) {
+    func promotePeek(_ peek: PeekCard, split: Bool, orphaned: Bool = false) {
         if peek.returnsPage { if tabPeeks.current?.shownController === peek, !orphaned { promoteTabPeek(split: split) }; return }
-        guard peeks[peek.page.identifier] === peek, !peek.page.isClosed,
+        guard let peek = peek as? PeekController, peeks[peek.page.identifier] === peek, !peek.page.isClosed,
               !peek.closePending || (orphaned && peek.waitsForParent),
               !isClosing, !wholeWindowClose, !promotingPeek,
               !split || peek.canSplit?() == true,
@@ -819,13 +823,18 @@ extension BrowserWindowController {
     }
 
     func activePeek(showing page: PCNativePage) -> PeekController? {
-        guard let peek = activePeek, peek.page === page else { return nil }
+        guard let peek = activePagePeek, peek.page === page else { return nil }
         return peek
     }
 
     var historySwipePalette: ThemeChromePalette { rootView.palette }
     var historySwipePages: [PCNativePage] {
-        let peek = activePeek
+        if let card = activePeek, !(card is PeekController) {
+            guard !card.view.isHidden, let id = peekedDocumentTabID,
+                  let page = embeddedPagePool(forTabID: id)?.selectedPage else { return [] }
+            return [page]
+        }
+        let peek = activePagePeek
         let panes = renderedPaneIDs.map { id in
             let tab = store.state.tab(id)
             let browser = tab == nil ? nil : browsers[id]

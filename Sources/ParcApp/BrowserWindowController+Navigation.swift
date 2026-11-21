@@ -405,7 +405,7 @@ extension BrowserWindowController {
         refreshDownloads()
         let tab = store.state.tabs.first { $0.id == currentTabID }
         refreshNavigationControls()
-        window?.title = activePeek.map { "\($0.browser.title) — Peek — Parc" } ?? tab.map { "\($0.title) — Parc" } ?? "Parc"
+        window?.title = activePeek.map { "\($0.title) — Peek — Parc" } ?? tab.map { "\($0.title) — Parc" } ?? "Parc"
         refreshLoadingIndicators()
         noteReturnGate()
         if let window {

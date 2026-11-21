@@ -2097,6 +2097,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         else if !selection.isEmpty { selection.removeAll(); invalidateIncrementalDisplay(layout: true) }
         else if tool != .select { tool = .select }
         else if let onImageEditingCancel { onImageEditingCancel() }
+        else if sender is NSEvent { nextResponder?.tryToPerform(#selector(NSResponder.cancelOperation(_:)), with: sender) }
     }
     override func keyDown(with event: NSEvent) {
         guard canvasOwnsKeyFocus else {
@@ -2110,7 +2111,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             else { window?.selectNextKeyView(window?.firstResponder) }
             return
         }
-        if event.keyCode == 53 { cancelOperation(nil); return }
+        if event.keyCode == 53 { cancelOperation(event); return }
         if handlePageKey(event) { return }
         if handleToolKey(event) { return }
         guard start == nil else { return }

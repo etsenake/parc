@@ -136,8 +136,13 @@ extension BrowserWindowController {
         } else if let peek = activePeek {
             available = { [weak self, weak peek] in
                 guard let self, let peek else { return false }
-                return common() && self.activePeek === peek && self.presentedPeek(for: peek.page) === peek
-                    && self.selectedNativePage() === peek.page && peek.canPrepareExit
+                guard common(), self.activePeek === peek, peek.canPrepareExit else { return false }
+                if let card = peek as? DocumentPeekController {
+                    guard let responder = self.window?.firstResponder as? NSView else { return true }
+                    return responder !== card.document && !responder.isDescendant(of: card.document)
+                }
+                guard let peek = peek as? PeekController else { return false }
+                return self.presentedPeek(for: peek.page) === peek && self.selectedNativePage() === peek.page
             }
             execute = { [weak peek] in
                 guard let peek, peek.canRequestExit else { return false }

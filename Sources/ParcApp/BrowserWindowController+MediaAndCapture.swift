@@ -496,7 +496,7 @@ extension BrowserWindowController {
               canOwnDownloadDialog(for: activeProfileID), let window, window.isKeyWindow,
               NSApp.isActive, window.attachedSheet == nil,
               let hit = rootView.hitTest(rootView.superview?.convert(point, from: nil) ?? point) else { return nil }
-        let candidates = activePeek.map { [$0.browser] }
+        let candidates: [PCBrowserView] = activePeek.map { _ in activePagePeek.map { [$0.browser] } ?? [] }
             ?? selectedTabIDs.compactMap { browsers[$0] }
         guard let browser = candidates.first(where: { browser in
             guard let native = browser.nativePage?.nativeView as? PCNativePageHost,
@@ -516,7 +516,7 @@ extension BrowserWindowController {
                 && page.nativeView.window === window && !page.nativeView.isHiddenOrHasHiddenAncestor
                 && page.profilePath == self.store.independentEngineProfilePath(for: profileID)
                 && PCNativeBrowserApplication.owner(of: page) === self.nativeBinding
-                && (self.activePeek.map { $0.browser === browser && !$0.closePending }
+                && (self.activePeek.map { ($0 as? PeekController)?.browser === browser && !$0.closePending }
                     ?? self.selectedTabIDs.contains { self.browsers[$0] === browser })
                 && page.canCapture(in: window)
         }

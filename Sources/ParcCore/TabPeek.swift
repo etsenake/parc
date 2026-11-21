@@ -4,6 +4,7 @@ struct TabPeekCandidate: Equatable {
     enum Holder: Equatable { case here, elsewhere(movable: Bool), nobody }
     enum Page: Equatable { case live(String), creating, unloaded(loadable: Bool), failed, closed }
     enum Shown: Equatable { case none, peek(canClose: Bool), tab(UUID, canClose: Bool) }
+    enum Content: Equatable { case web, document, unsupported }
 
     var tabID: UUID
     var windowAdmits = true
@@ -12,14 +13,14 @@ struct TabPeekCandidate: Equatable {
     var profileMatches = true
     var onScreen = false
     var busy = false
-    var document = false
+    var content = Content.web
     var holder = Holder.here
     var page = Page.unloaded(loadable: true)
     var shown = Shown.none
 }
 
 enum TabPeekRefusal: Error, Equatable {
-    case window, parent, space, profile, onScreen, busy, document, heldElsewhere, failed, closed, unloadable, peekBusy
+    case window, parent, space, profile, onScreen, busy, unsupported, heldElsewhere, failed, closed, unloadable, peekBusy
 }
 
 enum TabPeekPlan: Equatable {
@@ -37,7 +38,7 @@ enum TabPeekAdmission {
         guard candidate.parentCanHost else { return .failure(.parent) }
         guard candidate.inActiveSpace else { return .failure(.space) }
         guard candidate.profileMatches else { return .failure(.profile) }
-        guard !candidate.document else { return .failure(.document) }
+        guard candidate.content != .unsupported else { return .failure(.unsupported) }
         guard !candidate.onScreen else { return .failure(.onScreen) }
         guard !candidate.busy else { return .failure(.busy) }
         let opening: TabPeekPlan

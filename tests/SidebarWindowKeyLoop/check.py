@@ -16,13 +16,17 @@ for use, count in (("lazy var windowKeyViews = WindowKeyViewLoop(", 1),
                    ("isPage: { [extensionSidePanel] in $0 is PCBrowserView || $0 === extensionSidePanel.content },", 1),
                    ("passesThrough: { $0 is PeekHostView })", 1),
                    ("windowKeyViews.attach(to: window)", 1),
-                   ("windowKeyViews.relink()", 6),
+                   ("windowKeyViews.relink()", 8),
                    ("keyLoopChanged: { [weak self] in self?.windowKeyViews.relink() })", 1),
                    ("if relinksKeyViews { windowKeyViews.relink() }", 1),
                    ("extension SidebarView: SidebarKeyViewEnds {}", 1),
                    ("recalculateKeyViewLoop", 0),
                    ("autorecalculatesKeyViewLoop", 0)):
     assert controller.count(use) == count, f"the window owner's key-view loop wiring changed: {use}"
+tab_peek = (root / "Sources/ParcApp/BrowserWindowController+TabPeek.swift").read_text()
+for start in ("    private func presentDocumentPeekCard(", "    private func handDocumentBack("):
+    moved = tab_peek[tab_peek.index(start):tab_peek.index("\n    }\n", tab_peek.index(start))]
+    assert "windowKeyViews.relink()" in moved, f"a note or Easel moving between its pane and a Peek relinks the window loop: {start.strip()}"
 layout = controller[controller.index("    func layoutChrome() {"):controller.index("    private func chromeFrames(sidebarWidth: CGFloat, in bounds: NSRect) -> SidebarChromeFrames {")]
 assert layout.index("guard fullPass else { return }") < layout.index("windowKeyViews.relink()"), \
     "the window loop must relink at the end of every full chrome layout"

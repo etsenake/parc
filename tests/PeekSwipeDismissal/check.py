@@ -24,11 +24,14 @@ peek = "Sources/ParcApp/PeekController.swift"
 require(body(peek, "    private func closeConfirmed("), "the confirmed close",
         present=("closeTransition.close(", "observeSheets()"), absent=("browser.requestClose",))
 request = body(peek, "    private func requestPageClose() {")
-require(request, "the page close request",
-        present=("browser.requestClose", "self.refuseClose()", "stopObservingSheets()", "onReturn()"))
-assert request.count("closeTransition.holdForParent(visible: !") == 2 \
-    and request.index("closeTransition.holdForParent(visible: !view.isHidden)") < request.index("browser.requestClose") \
-    and "closeTransition.holdForParent(visible: !self.view.isHidden)" in request, \
+require(request, "the page close request", present=("onReturn()", "requestContentClose()"))
+content = body(peek, "    override func requestContentClose() {")
+require(content, "the web page close request",
+        present=("browser.requestClose", "self.contentClosed()", "!self.holdsForParent()", "self.refuseClose()"))
+require(body(peek, "    fileprivate func contentClosed() {"), "a finished close", present=("stopObservingSheets()", "onClose?()"))
+require(body(peek, "    fileprivate func holdsForParent() -> Bool {"), "the closing-owner wait",
+        present=("closeTransition.holdForParent(visible: !view.isHidden)",))
+assert request.index("closeTransition.holdForParent(visible: !view.isHidden)") < request.index("requestContentClose()"), \
     "a Peek whose tab or window is closing must wait instead of asking or springing back, unless its card is showing"
 assert request.index("if returnsPage {") < request.index("closeTransition.holdForParent("), \
     "Open in Peek hands its page back before any wait, so its hand-back never waits on a closing owner"
@@ -130,7 +133,7 @@ assert "func nativeBrowser(_ browser: PCNativeBrowserWindow, isPeekPage page: PC
     "the right-click menu asks the window whether a page is a Peek, Open in Peek included"
 require(body(tab, "    func presentedPeek(for page: PCNativePage) -> PeekController? {"), "the presented Peek lookup",
         present=("tabPeeks.current?.shownController",))
-assert "var shownController: PeekController? { session.holdsPage ? controller : nil }" in (root / tab).read_text(), \
+assert "var shownController: PeekCard? { session.holdsPage ? controller : nil }" in (root / tab).read_text(), \
     "an expanded tab Peek no longer presents its page, so its menu offers Open Link in Split View again"
 back = body(tab, "    private func handTabPageBack(")
 assert back.index("browser.delegate = self") < back.index("pane.browser = browser"), \
@@ -152,7 +155,14 @@ require((root / "Sources/ParcApp/HistorySwipeForwarder.swift").read_text(), "the
                  "beginSwipeDismissal()"))
 require(body("Sources/ParcApp/BrowserWindowController+Peek.swift",
              "    func activePeek(showing page: PCNativePage) -> PeekController? {"),
-        "the swiped Peek lookup", present=("activePeek", "peek.page === page"))
+        "the swiped Peek lookup", present=("activePagePeek", "peek.page === page"))
+note = "Sources/ParcApp/HistorySwipeNoteSource.swift"
+require(body(note, "    private func resolveTarget("), "a note or Easel Peek's swipe target",
+        present=("controller.activePeek as? DocumentPeekController", "card.holdsDocument", "hit.isDescendant(of: card.document)"))
+require(body(note, "    func beginDismissal() -> Bool {"), "a note or Easel Peek's swipe start",
+        present=("peek.canSwipeDismiss", "peek.beginSwipeDismissal()"))
+require(body(note, "    func navigate("), "a note or Easel Peek's swipe close", present=("peek?.commitSwipeDismissal()",))
+require(body(note, "    func present("), "a note or Easel Peek following the fingers", present=("peek.followSwipeDismissal(output)",))
 
 sources = [root / "tests/Support/TestFailure.swift",
            root / "Sources/ParcCore/HistorySwipeInterface.swift",
