@@ -154,7 +154,10 @@ writes cannot publish partial disclosure.
 
 New Folder has no default, avoiding the New Incognito Window chord. Capture
 Visible Area, Portion and Full Page enter the same editor; Portrait is framing
-inside that flow. Replay onboarding remains exclusively in Settings → General.
+inside that flow. Inside capture mode, unmodified E and R switch between Element
+and Region, V captures the visible area, F the full page, Return the outlined
+area (or the visible area) and Escape cancels. Replay onboarding remains
+exclusively in Settings → General.
 
 ## Alternate navigation and page-tool bindings
 

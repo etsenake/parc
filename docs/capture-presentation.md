@@ -30,8 +30,16 @@ outward-rounded pixel rectangle; only `CapturedImage` commits the result.
 
 The selection lens uses two live-page layers: grayscale/color blending and a
 black quarter-opacity scrim with a shared cutout. Its focus expands six points;
-it has a four-point border and seven-point corners. The instruction card uses
-14-point semibold text, 25-point padding, 16-point corners and a static gradient.
+its four-point frame is a light halo around a two-point Notes accent line, with
+seven-point corners. An accent size chip sits under the frame's trailing corner,
+or above or inside it when that would leave the page or cover the mode bar.
+
+The mode bar is a Notes menu card (`CaptureModeBar` in a `NoteFloatingPanel`):
+36 points high, 16 points above the page bottom, with 28-point Notes buttons
+that pair an icon, a Nunito label and a keycap. The current mode uses the Notes
+checked fill. Narrow panes drop the keycaps first, then the labels. The hint is
+a slim Notes card in 12.5-point Nunito, eight points above the bar, or at the
+bar's place when no bar is showing, such as crop and direct captures.
 [Capture motion](capture-motion.md) owns transitions separately.
 
 Appearance updates resolve native text and layer colors. Rows share one

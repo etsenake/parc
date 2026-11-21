@@ -11,6 +11,7 @@ extend a document lease or prove delivery to a message recipient.
 | Selection rectangle | Latest target throttled at 90 ms; response 0.35, damping 0.87 spring; shared geometry for lens and cutouts. |
 | Newly acquired image | One-second opacity reveal with cubic (0.215, 0.61, 0.355, 1). Edits and catalog refreshes do not restart it. |
 | Selection instruction | 0.2-second ease-in-out crossfade; one accessible instruction. |
+| Capture mode | The scrim fades in over 0.2 seconds as the mode bar pops in like a Notes card; the bar fades out for a drag; Cancel fades the scrim, hint and bar out over 0.18 seconds. Reduce Motion keeps only short fades. |
 | Portrait preview | Response 0.5, damping 0.7 spring blends owned preview bitmaps, never committed output bytes. |
 | Output palette | Notes card pop (scale 0.95 to 1 with a short fade, 0.07-second close); the highlight glides on the Notes spring; submenus pop beside their row; the card glides to new sizes and pages push over 0.22 seconds. |
 | Saved Library preview | Opening damping/response 0.9/0.25; closing 0.95/0.15 from the current presentation transform. |
@@ -36,7 +37,7 @@ leases and clipboard/thumbnail cancellation stay with the Library coordinator.
 
 ## Focus, keyboard and accessibility
 
-Selection owns the overlay, Visible Area and Cancel loop. Preview keeps focus in
+Selection owns the overlay and the mode bar's enabled buttons. Preview keeps focus in
 the palette's search field; its rows are a menu whose items VoiceOver reads, and
 Up/Down/Return, Right/Left and Escape drive the rows and submenus from the field,
 whose help names the highlighted row. Each submenu focuses its own search.

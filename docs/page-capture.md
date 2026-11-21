@@ -8,9 +8,17 @@ enables Command–Shift drag over an eligible page without changing that binding
 
 ## Selection and destinations
 
-Move over a page area to offer its outline; click or Return captures that target.
-Drag selects a freeform rectangle. Return with no selected target captures the
-visible page. Tab/Shift-Tab and accessibility actions reach the native controls.
+Capture mode floats a mode bar near the bottom of the page: Element, Region,
+Visible Area, Full Page and Cancel, each showing its key (E, R, V, F, Escape).
+Element, the default, outlines the page area under the pointer; click or Return
+captures it, and a drag still selects a freeform rectangle. Region drops the
+outlines for a crosshair and only drags. Visible Area and Full Page capture at
+once, and Return with no outlined target also captures the visible page. A
+one-line hint above the bar says what a click or drag does right now, and an
+accent chip shows the outlined or dragged size in page points. The bar fades out
+during a drag. Letter keys follow the typed letter, or the key's position on
+non-Latin layouts. Left/Right move between the bar's buttons, Tab/Shift-Tab reach
+them when keyboard navigation is on, and accessibility actions reach every control.
 
 The searchable output palette offers Save to Library, Copy, Save…, Send via
 iMessage…, Edit, Crop, Frame and Retake, with Easel and Note submenus for
@@ -65,7 +73,8 @@ already accepted by the OS composer.
 The native original-document query resolves `elementsFromPoint` geometry and
 returns an opaque latest-target token. Capture rechecks that token, point,
 document, zoom and owner with a two-point margin. It does not render a screenshot
-in page JavaScript. A click without an offered target performs the real query.
+in page JavaScript. In Element mode a click without an offered target performs
+the real query; Region mode never queries targets, so a plain click does nothing.
 
 Outline and clear veil animate together from their current presentation paths
 using the 0.35/0.87 spring and a 90-ms latest-target throttle. Pointer exit, drag,

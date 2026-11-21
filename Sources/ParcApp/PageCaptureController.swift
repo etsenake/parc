@@ -76,6 +76,7 @@ final class PageCaptureController: NSObject {
         overlay.onHover = { [weak self] point in self?.targetElement(at: point) }
         overlay.onElement = { [weak self] target, point in self?.selectedElement(target, at: point) }
         overlay.onViewport = { [weak self] in self?.capture(.viewport) }
+        overlay.onFullPage = { [weak self] in self?.capture(.fullPage) }
         overlay.onAction = { [weak self] action in self?.perform(action) }
     }
 
@@ -89,6 +90,7 @@ final class PageCaptureController: NSObject {
         parentFrame = parent.frame; hostBounds = host.bounds
         guard sourceFrame.width > 1, sourceFrame.height > 1 else { dismiss(restoreFocus: false); return }
         overlay.frame = sourceFrame
+        overlay.pageSize = lease.viewportSize
         previousMouseMovedEvents = parent.acceptsMouseMovedEvents
         parent.acceptsMouseMovedEvents = true
         host.addSubview(overlay, positioned: .above, relativeTo: nil)
@@ -176,7 +178,13 @@ final class PageCaptureController: NSObject {
                            width: target.viewportRect.width / self.lease.viewportSize.width * self.overlay.bounds.width,
                            height: target.viewportRect.height / self.lease.viewportSize.height * self.overlay.bounds.height)
                 }
-                self.overlay.setTarget(target, rect: rect)
+                let size = target.flatMap { target -> CGSize? in
+                    let r = target.viewportRect
+                    return EaselCaptureGeometry.elementCaptureArea(elementRect: EaselRect(x: r.minX, y: r.minY, width: r.width, height: r.height),
+                        viewport: EaselPoint(x: self.lease.viewportSize.width, y: self.lease.viewportSize.height))
+                        .map { CaptureSizeReadout.pointSize(CGRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height)) }
+                }
+                self.overlay.setTarget(target, rect: rect, size: size)
             }
         }
     }
@@ -196,7 +204,7 @@ final class PageCaptureController: NSObject {
                 guard self.state == .capturing, self.valid(), self.lease.isValid else { return }
                 self.state = .selecting
                 if let target { self.capture(.region, element: target) }
-                else { self.overlay.showSelection(message: "Drag to capture a portion of this page") }
+                else { self.overlay.showSelection(message: CaptureModeHint.noElement) }
             }
         }
     }
@@ -549,14 +557,18 @@ final class PageCaptureOverlay: NSView {
     var onHover: ((NSPoint?) -> Void)?
     var onElement: ((PCNativePageCaptureTarget?, NSPoint) -> Void)?
     var onViewport: (() -> Void)?
+    var onFullPage: (() -> Void)?
     var onAction: ((Action) -> Void)?
+    var pageSize = CGSize.zero
     let palette = CapturePalette()
     private let picture = CapturePreviewImageView()
     private let pictureFrame = CaptureFlippedView()
     private let selectionShade = CaptureSelectionShade()
     private let elementLens = CaptureElementLens()
-    private let hint = CaptureHintView()
-    private let viewport = ActionButton("Capture Visible Area", symbol: "camera")
+    private let modeChrome = CaptureModeChrome()
+    private var hint: CaptureHintCard { modeChrome.hint }
+    private var selectionMode = CaptureSelectionMode.element
+    private var readoutSize: CGSize?
     private let cancel = ActionButton("Cancel", symbol: "xmark")
     private let spinner = NSProgressIndicator()
     private var paletteShown = false
@@ -596,11 +608,12 @@ final class PageCaptureOverlay: NSView {
         addSubview(pictureFrame); addSubview(picture)
         addSubview(selectionShade)
         elementLens.isHidden = true; addSubview(elementLens)
-        addSubview(hint)
-        viewport.actionBlock = { [weak self] in self?.onViewport?() }; addSubview(viewport)
+        modeChrome.install(in: self)
+        modeChrome.bar.onItem = { [weak self] item in self?.choose(item) }
+        elementLens.onFocusChange = { [weak self] focus in self?.followFocus(focus) }
         cancel.actionBlock = { [weak self] in self?.onCancel?() }; addSubview(cancel)
         updateKeyLoop()
-        setAccessibilityHelp("Move over an area and click to capture it, or drag to select. Escape cancels. Tab reaches capture controls.")
+        setAccessibilityHelp("Drag to select a region, or in Element mode click the outlined part of the page. E and R switch modes, V captures the visible area, F the full page, and Escape cancels.")
         palette.onAction = { [weak self] action in self?.onAction?(action) }
         palette.onCancel = { [weak self] in self?.onCancel?() }
         palette.onSizeChange = { [weak self] in self?.needsLayout = true }
@@ -610,16 +623,19 @@ final class PageCaptureOverlay: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func showSelection(message: String? = nil) {
+        let entering = !modeChrome.isShown
         settlePresentation()
         endSelection()
         selecting = true; editing = false; busy = false; selection = nil; start = nil
         elementLens.isHidden = false; elementLens.setTarget(nil, animated: false)
+        if entering { CaptureModeMotion.enter(elementLens) }
         selectionShade.region = nil
         picture.isHidden = true; pictureFrame.isHidden = true; setPaletteShown(false); spinner.stopAnimation(nil); spinner.isHidden = true
-        hint.stringValue = message ?? "Drag to capture a portion of this page"
-        hint.isHidden = false; viewport.isHidden = false; cancel.isHidden = false
+        hint.stringValue = message ?? CaptureModeHint.text(mode: selectionMode, targeted: false, dragging: false)
+        hint.isHidden = false; cancel.isHidden = true
+        modeChrome.bar.setMode(selectionMode); modeChrome.show(in: bounds)
         needsLayout = true; needsDisplay = true; window?.invalidateCursorRects(for: self)
-        updateKeyLoop(); setAccessibilityValue("Select an area to capture")
+        updateKeyLoop(); setAccessibilityValue(CaptureModeHint.accessibilityValue(mode: selectionMode, targeted: false))
         if let window { updateHover(convert(window.mouseLocationOutsideOfEventStream, from: nil)) }
     }
     func showConfiguration() {
@@ -627,7 +643,7 @@ final class PageCaptureOverlay: NSView {
         endSelection()
         selecting = false; editing = false; busy = false; selection = nil; start = nil
         picture.isHidden = true; pictureFrame.isHidden = true; setPaletteShown(false); hint.isHidden = true
-        viewport.isHidden = true; cancel.isHidden = true
+        cancel.isHidden = true
         spinner.stopAnimation(nil); spinner.isHidden = true
         updateKeyLoop()
         needsDisplay = true; window?.invalidateCursorRects(for: self)
@@ -637,7 +653,8 @@ final class PageCaptureOverlay: NSView {
         endSelection()
         selecting = false; editing = false; busy = true; setPaletteShown(false)
         picture.isHidden = true; pictureFrame.isHidden = true
-        hint.stringValue = "Capturing…"; hint.isHidden = false; viewport.isHidden = true; cancel.isHidden = false
+        hint.stringValue = CaptureModeHint.capturing; hint.isHidden = false
+        modeChrome.setBusy(true); cancel.isHidden = modeChrome.isShown
         spinner.isHidden = false; spinner.startAnimation(nil); needsLayout = true; needsDisplay = true
         updateKeyLoop(); setAccessibilityValue("Capturing image")
     }
@@ -659,7 +676,7 @@ final class PageCaptureOverlay: NSView {
         committedPixels = image
         picture.image = NSImage(cgImage: image, size: .zero); imageSize = NSSize(width: image.width, height: image.height)
         picture.isHidden = false; pictureFrame.isHidden = false; hint.isHidden = true
-        viewport.isHidden = true; cancel.isHidden = true; spinner.stopAnimation(nil); spinner.isHidden = true
+        modeChrome.hide(animated: true); cancel.isHidden = true; spinner.stopAnimation(nil); spinner.isHidden = true
         if shown { palette.reset() }
         setPaletteShown(shown); updateKeyLoop()
         needsLayout = true; needsDisplay = true; window?.invalidateCursorRects(for: self)
@@ -680,15 +697,15 @@ final class PageCaptureOverlay: NSView {
     private func updateAppearance() {
         let dark = CaptureAppearance.dark(effectiveAppearance)
         pictureFrame.layer?.backgroundColor = CaptureAppearance.imageBackground(dark).cgColor
-        viewport.contentTintColor = .white; cancel.contentTintColor = .white
+        cancel.contentTintColor = .white
         needsDisplay = true
     }
     override func layout() {
         super.layout()
-        let width = min(430, max(1, bounds.width - 20))
-        let hintHeight = hint.height(for: width)
-        hint.frame = NSRect(x: (bounds.width - width) / 2, y: max(8, bounds.height - hintHeight - 52), width: width, height: hintHeight)
-        viewport.frame = NSRect(x: max(4, (bounds.width - 180) / 2), y: max(64, bounds.height - 40), width: min(180, max(1, bounds.width - 8)), height: 28)
+        let barBefore = modeChrome.barFrame
+        modeChrome.layout(in: bounds, hintVisible: !hint.isHidden)
+        if modeChrome.barFrame != barBefore { window?.invalidateCursorRects(for: self) }
+        let hintHeight = hint.isHidden ? 0 : hint.frame.height
         cancel.frame = NSRect(x: max(4, bounds.width - 90), y: 10, width: min(80, max(1, bounds.width - 8)), height: 28)
         spinner.frame = NSRect(x: bounds.midX - 16, y: bounds.midY - 16, width: 32, height: 32)
         let geometry = CapturePresentation.layout(bounds: bounds, pixels: imageSize, source: previewSourceRect,
@@ -714,6 +731,7 @@ final class PageCaptureOverlay: NSView {
         dragging = false; start = nil; selection = nil; selectionShade.region = nil
         selectionShade.dimmingRect = nil
         elementLens.setTarget(nil, animated: false); elementLens.isHidden = true
+        readoutSize = nil; modeChrome.readout.hide()
         updateTargetAccessibility(false)
         onHover?(nil)
         window?.invalidateCursorRects(for: self)
@@ -722,20 +740,60 @@ final class PageCaptureOverlay: NSView {
         target = nil
         updateTargetAccessibility(false)
     }
-    func setTarget(_ target: PCNativePageCaptureTarget?, rect: NSRect?) {
-        guard selecting, !editing, !dragging, start == nil else { return }
+    func setTarget(_ target: PCNativePageCaptureTarget?, rect: NSRect?, size: CGSize? = nil) {
+        guard selecting, !editing, !dragging, start == nil, target == nil || selectionMode == .element else { return }
         self.target = target
+        readoutSize = target == nil ? nil : size
+        if readoutSize == nil { modeChrome.readout.hide() }
         elementLens.isHidden = false
         elementLens.setTarget(rect, animated: target != nil)
-        if !busy {
-            hint.stringValue = target == nil ? "Drag to capture a portion of this page" : "Click to capture this area, or drag to select a portion of the page"
-        }
+        if !busy { hint.stringValue = CaptureModeHint.text(mode: selectionMode, targeted: target != nil, dragging: false) }
         updateTargetAccessibility(target != nil)
+    }
+    private func followFocus(_ focus: NSRect?) {
+        guard selecting, !editing, !dragging, let focus, let readoutSize else { modeChrome.readout.hide(); return }
+        modeChrome.readout.show(readoutSize, around: focus, in: bounds, avoiding: modeChrome.readoutObstacle)
+    }
+    private func showDragReadout(_ selection: NSRect) {
+        let page = CaptureSizeReadout.viewportRect(selection, overlay: bounds.size,
+            viewport: pageSize.width > 0 && pageSize.height > 0 ? pageSize : bounds.size) ?? selection
+        modeChrome.readout.show(CaptureSizeReadout.pointSize(page), around: selection.insetBy(dx: -4, dy: -4), in: bounds,
+                                avoiding: modeChrome.readoutObstacle)
+    }
+    private func restoreAfterTinyDrag() {
+        modeChrome.setDragging(false); modeChrome.readout.hide()
+        hint.stringValue = CaptureModeHint.text(mode: selectionMode, targeted: false, dragging: false)
+    }
+    private func choose(_ item: CaptureModeItem) {
+        switch item {
+        case .element, .region:
+            if let mode = item.mode { setSelectionMode(mode) }
+        case .visibleArea:
+            guard selecting, !editing, start == nil else { return }
+            onViewport?()
+        case .fullPage:
+            guard selecting, !editing, start == nil else { return }
+            onFullPage?()
+        case .cancel:
+            onCancel?()
+        }
+    }
+    private func setSelectionMode(_ mode: CaptureSelectionMode) {
+        guard selecting, !editing, !busy, start == nil else { return }
+        modeChrome.bar.setMode(mode)
+        guard mode != selectionMode else { return }
+        selectionMode = mode
+        if mode == .region { pointer = nil; onHover?(nil) }
+        hint.stringValue = CaptureModeHint.text(mode: mode, targeted: false, dragging: false)
+        setAccessibilityValue(CaptureModeHint.accessibilityValue(mode: mode, targeted: false))
+        NSAccessibility.post(element: self, notification: .valueChanged)
+        window?.invalidateCursorRects(for: self)
+        if mode == .element, let window { updateHover(convert(window.mouseLocationOutsideOfEventStream, from: nil)) }
     }
     private func updateTargetAccessibility(_ available: Bool) {
         guard accessibilityTarget != available else { return }
         accessibilityTarget = available
-        setAccessibilityValue(available ? "Area selected. Press Return to capture it." : "Drag to select an area, or capture the visible area.")
+        setAccessibilityValue(CaptureModeHint.accessibilityValue(mode: selectionMode, targeted: available))
         setAccessibilityCustomActions(available ? [NSAccessibilityCustomAction(name: "Capture selected area", handler: { [weak self] in
             guard let self, let target = self.target, let pointer = self.pointer,
                   self.selecting, !self.editing, !self.busy else { return false }
@@ -752,10 +810,8 @@ final class PageCaptureOverlay: NSView {
     }
     private func updateHover(_ point: NSPoint) {
         guard selecting, !editing, !busy, start == nil else { return }
-        let onControl = (!cancel.isHidden && cancel.frame.contains(point)) ||
-            (!viewport.isHidden && viewport.frame.contains(point)) ||
-            (!hint.isHidden && hint.frame.contains(point))
-        guard bounds.contains(point), !onControl else {
+        let onControl = (!cancel.isHidden && cancel.frame.contains(point)) || modeChrome.blocks(point)
+        guard bounds.contains(point), !onControl, selectionMode == .element else {
             pointer = nil; onHover?(nil); return
         }
         elementLens.isHidden = false
@@ -769,8 +825,8 @@ final class PageCaptureOverlay: NSView {
     }
     override func resetCursorRects() {
         if selecting {
-            addCursorRect(editing ? imageRect : bounds, cursor: editing ? .crosshair : captureCursor)
-            if !viewport.isHidden { addCursorRect(viewport.frame, cursor: .arrow) }
+            addCursorRect(editing ? imageRect : bounds, cursor: editing || selectionMode == .region ? .crosshair : captureCursor)
+            if !editing, modeChrome.isShown { addCursorRect(modeChrome.barFrame, cursor: .arrow) }
             if !cancel.isHidden { addCursorRect(cancel.frame, cursor: .arrow) }
         }
     }
@@ -797,7 +853,12 @@ final class PageCaptureOverlay: NSView {
         dragging = true; mouseDownTarget = nil; target = nil
         selection = NSRect(x: min(start.x, p.x), y: min(start.y, p.y), width: abs(start.x - p.x), height: abs(start.y - p.y))
         if editing { selectionShade.region = selection }
-        else { elementLens.isHidden = false; elementLens.setSelection(selection) }
+        else {
+            elementLens.isHidden = false; elementLens.setSelection(selection)
+            modeChrome.setDragging(true)
+            hint.stringValue = CaptureModeHint.text(mode: selectionMode, targeted: false, dragging: true)
+            if let selection { showDragReadout(selection) }
+        }
         needsDisplay = true
     }
     func handleCaptureGesture(state: NSGestureRecognizer.State, point: NSPoint) {
@@ -814,7 +875,7 @@ final class PageCaptureOverlay: NSView {
         case .ended:
             updateDrag(to: p); start = nil
             if let selection, selection.width >= 2, selection.height >= 2 { onRegion?(selection) }
-            else { selection = nil; selectionShade.region = nil; dragging = false
+            else { selection = nil; selectionShade.region = nil; dragging = false; restoreAfterTinyDrag()
                 elementLens.setTarget(nil, animated: false); updateHover(p); needsDisplay = true }
         default: break
         }
@@ -826,8 +887,12 @@ final class PageCaptureOverlay: NSView {
         self.start = nil; mouseDownTarget = nil
         if wasDragging {
             if let selection, selection.width >= 2, selection.height >= 2 { onRegion?(selection) }
-            else { self.selection = nil; selectionShade.region = nil; dragging = false; updateHover(point(event)); needsDisplay = true }
-        } else if !editing { onElement?(clickedTarget, start) }
+            else {
+                self.selection = nil; selectionShade.region = nil; dragging = false
+                if !editing { restoreAfterTinyDrag() }
+                updateHover(point(event)); needsDisplay = true
+            }
+        } else if !editing, selectionMode == .element { onElement?(clickedTarget, start) }
     }
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
@@ -842,6 +907,9 @@ final class PageCaptureOverlay: NSView {
         } else if event.keyCode == 48 {
             if event.modifierFlags.contains(.shift) { window?.selectPreviousKeyView(self) }
             else { window?.selectNextKeyView(self) }
+        } else if selecting, !editing, start == nil, !event.isARepeat,
+                  let item = CaptureModeKeys.item(typed: event.charactersIgnoringModifiers, keyCode: event.keyCode) {
+            choose(item)
         } else { super.keyDown(with: event) }
     }
     override func cancelOperation(_ sender: Any?) { onCancel?() }
@@ -875,7 +943,7 @@ final class PageCaptureOverlay: NSView {
     private func updateKeyLoop() {
         nextKeyView = nil
         let controls: [NSView] = !paletteShown
-            ? ([self] + (viewport.isHidden ? [] : [viewport]) + (cancel.isHidden ? [] : [cancel]))
+            ? ([self] + (modeChrome.isShown ? modeChrome.bar.keyViews : []) + (cancel.isHidden ? [] : [cancel]))
             : []
         guard let first = controls.first else { return }
         for (index, control) in controls.enumerated() { control.nextKeyView = index + 1 < controls.count ? controls[index + 1] : first }
@@ -886,9 +954,19 @@ final class PageCaptureOverlay: NSView {
     }
     private func settlePresentation() {
         picture.layer?.removeAnimation(forKey: "captureReveal")
-        hint.settleMotion()
+        if hint.superview === self { hint.settleMotion() }
     }
-    func retirePresentation() { endSelection(); settlePresentation(); elementLens.retire() }
+    func retirePresentation() {
+        settlePresentation()
+        let fading = modeChrome.isShown && superview != nil && window?.isVisible == true
+        if fading {
+            let ghost = elementLens.ghost(); addSubview(ghost, positioned: .above, relativeTo: elementLens)
+            CaptureModeMotion.fadeAway(ghost, from: self)
+            if !hint.isHidden { hint.retire(); CaptureModeMotion.fadeAway(hint, from: self) }
+        }
+        modeChrome.retire(fading: fading)
+        endSelection(); elementLens.retire()
+    }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let motionObserver { NSWorkspace.shared.notificationCenter.removeObserver(motionObserver) }; motionObserver = nil
@@ -917,7 +995,9 @@ private final class CapturePreviewImageView: NSImageView {
 private final class CaptureElementLens: CaptureFlippedView {
     private let grayscale = CAShapeLayer()
     private let veil = CAShapeLayer()
+    private let halo = CAShapeLayer()
     private let outline = CAShapeLayer()
+    var onFocusChange: ((NSRect?) -> Void)?
     private var focusRect: NSRect?
     private var motion = CaptureLensMotion()
     private var timer: Timer?
@@ -931,14 +1011,16 @@ private final class CaptureElementLens: CaptureFlippedView {
         grayscale.fillRule = .evenOdd; grayscale.compositingFilter = "colorBlendMode"
         veil.fillColor = NSColor.black.withAlphaComponent(0.25).cgColor
         veil.fillRule = .evenOdd
+        halo.fillColor = NSColor.clear.cgColor
+        halo.strokeColor = NSColor.white.cgColor
+        halo.lineWidth = 4
+        halo.shadowColor = NSColor.black.cgColor
+        halo.shadowOpacity = 0.25
+        halo.shadowRadius = 12
+        halo.shadowOffset = CGSize(width: 0, height: 8)
         outline.fillColor = NSColor.clear.cgColor
-        outline.strokeColor = NSColor.white.cgColor
-        outline.lineWidth = 4
-        outline.shadowColor = NSColor.black.cgColor
-        outline.shadowOpacity = 0.25
-        outline.shadowRadius = 12
-        outline.shadowOffset = CGSize(width: 0, height: 8)
-        layer?.addSublayer(grayscale); layer?.addSublayer(veil); layer?.addSublayer(outline)
+        outline.lineWidth = 2
+        layer?.addSublayer(grayscale); layer?.addSublayer(veil); layer?.addSublayer(halo); layer?.addSublayer(outline)
         setAccessibilityElement(false)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -946,7 +1028,7 @@ private final class CaptureElementLens: CaptureFlippedView {
     override func layout() {
         super.layout()
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        grayscale.frame = bounds; veil.frame = bounds; outline.frame = bounds
+        grayscale.frame = bounds; veil.frame = bounds; halo.frame = bounds; outline.frame = bounds
         CATransaction.commit()
         if previousBounds != bounds { previousBounds = bounds; settleMotion() }
         updatePaths()
@@ -972,6 +1054,7 @@ private final class CaptureElementLens: CaptureFlippedView {
         guard next != focusRect else { return }
         focusRect = next
         updatePaths()
+        onFocusChange?(next)
     }
     private func startFrames() {
         guard timer == nil else { return }
@@ -987,6 +1070,13 @@ private final class CaptureElementLens: CaptureFlippedView {
         applyMotionPresentation()
     }
     func retire() { stopFrames(); motion.clear(); focusRect = nil; updatePaths() }
+    func ghost() -> CaptureElementLens {
+        let ghost = CaptureElementLens(frame: frame)
+        ghost.appearance = effectiveAppearance
+        ghost.focusRect = focusRect; ghost.previousBounds = ghost.bounds
+        ghost.updatePaths()
+        return ghost
+    }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil { retire() }; super.viewWillMove(toWindow: newWindow)
     }
@@ -1002,9 +1092,10 @@ private final class CaptureElementLens: CaptureFlippedView {
             shade.addRoundedRect(in: outer.insetBy(dx: 4, dy: 4), cornerWidth: 3, cornerHeight: 3)
             border = CGPath(roundedRect: outer.insetBy(dx: 2, dy: 2), cornerWidth: 5, cornerHeight: 5, transform: nil)
         }
-        outline.strokeColor = CaptureAppearance.imageBackground(CaptureAppearance.dark(effectiveAppearance)).cgColor
+        halo.strokeColor = CaptureAppearance.imageBackground(CaptureAppearance.dark(effectiveAppearance)).cgColor
+        outline.strokeColor = NoteTheme.resolved(NoteTheme.accent, in: self)
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        grayscale.path = shade; veil.path = shade; outline.path = border
+        grayscale.path = shade; veil.path = shade; halo.path = border; outline.path = border
         CATransaction.commit()
     }
     override func viewDidChangeEffectiveAppearance() {
@@ -1032,60 +1123,4 @@ private final class CaptureSelectionShade: CaptureFlippedView {
             CaptureAppearance.imageBackground(CaptureAppearance.dark(effectiveAppearance)).setStroke(); let border = NSBezierPath(rect: region); border.lineWidth = 4; border.stroke()
         }
     }
-}
-
-@MainActor
-private final class CaptureHintView: NSView {
-    var stringValue = "" { didSet {
-        guard stringValue != oldValue else { return }
-        needsDisplay = true; superview?.needsLayout = true
-        if window != nil, !isHidden, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            let transition = CATransition(); transition.type = .fade; transition.duration = 0.2
-            transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            layer?.add(transition, forKey: "captureHintText")
-        }
-    } }
-    private var tracking: NSTrackingArea?
-    override init(frame: NSRect) { super.init(frame: frame); wantsLayer = true }
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    override func updateTrackingAreas() {
-        if let tracking { removeTrackingArea(tracking) }
-        let tracking = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
-        self.tracking = tracking; addTrackingArea(tracking); super.updateTrackingAreas()
-    }
-    override func mouseEntered(with event: NSEvent) { setHovered(true) }
-    override func mouseExited(with event: NSEvent) { setHovered(false) }
-    private func setHovered(_ hovered: Bool) {
-        guard let layer else { return }
-        let from = layer.presentation()?.opacity ?? layer.opacity
-        CATransaction.begin(); CATransaction.setDisableActions(true); layer.opacity = hovered ? 0.1 : 1; CATransaction.commit()
-        layer.removeAnimation(forKey: "captureHintHover")
-        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            let animation = CABasicAnimation(keyPath: "opacity"); animation.fromValue = from; animation.toValue = layer.opacity
-            animation.duration = 0.2; animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            layer.add(animation, forKey: "captureHintHover")
-        }
-    }
-    func settleMotion() { layer?.removeAllAnimations(); layer?.opacity = 1 }
-    override var isFlipped: Bool { true }
-    private var attributes: [NSAttributedString.Key: Any] {
-        let paragraph = NSMutableParagraphStyle(); paragraph.alignment = .center
-        return [.font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: CaptureAppearance.hint,
-                .paragraphStyle: paragraph]
-    }
-    func height(for width: CGFloat) -> CGFloat {
-        ceil((stringValue as NSString).boundingRect(with: NSSize(width: max(1, width - 50), height: 300),
-            options: [.usesLineFragmentOrigin], attributes: attributes).height) + 50
-    }
-    override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 16, yRadius: 16)
-        NSColor.white.setFill(); path.fill()
-        NSGradient(starting: NSColor(displayP3Red: 0, green: 0.278, blue: 1, alpha: 0.08),
-                   ending: NSColor(displayP3Red: 1, green: 0.6, blue: 0.6, alpha: 0.08))?.draw(in: path, angle: 20)
-        NSColor.white.withAlphaComponent(0.7).setStroke(); path.lineWidth = 1; path.stroke()
-        (stringValue as NSString).draw(in: bounds.insetBy(dx: 25, dy: 25), withAttributes: attributes)
-    }
-    override func isAccessibilityElement() -> Bool { true }
-    override func accessibilityRole() -> NSAccessibility.Role? { .staticText }
-    override func accessibilityLabel() -> String? { stringValue }
 }
