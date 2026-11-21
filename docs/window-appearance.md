@@ -90,6 +90,6 @@ existing shadow with the pane.
 
 ## Checks
 
-`tests/EmptyWindow`, `ContentFocusRequestTests`, `tests/SidebarMotion` and
-`tests/SidebarPacing` exercise colors, input/accessibility exclusion, focus,
+`tests/EmptyWindow`, `ContentFocusRequestTests`, `SidebarMotionControllerTests` and
+`SidebarPacingTests` exercise colors, input/accessibility exclusion, focus,
 shadow geometry and bounded animation work.
