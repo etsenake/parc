@@ -662,11 +662,7 @@ extension BrowserWindowController {
         })
         guard command.isAvailable else { return false }
         item.representedObject = command; item.isHidden = false
-        item.title = "Open in " + space.name
-        let icon = (space.customIcon?.image(size: 12)
-            ?? NSImage(systemSymbolName: space.symbol, accessibilityDescription: nil))?.copy() as? NSImage
-        icon?.size = NSSize(width: 12, height: 12)
-        item.showImage(icon)
+        PeekOpenCommand.applyDestination(space, to: item)
         return true
     }
 
