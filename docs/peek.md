@@ -286,6 +286,20 @@ default for new users; this is a settled product decision. Either can be
 switched off in Settings → Links. The engine's default-off policy flag is
 enabled for registered pages.
 
+A note has no site of its own, so every web link followed in a note counts as a
+link to another site. Clicking an inline link, a link mention, a bookmark card
+or the link hover card's Open shows it in a Peek over the note while links to
+other sites peek, and a Shift-click does so while Shift-click Peek is on; in a
+note being edited, Shift-click still extends the selection.
+`NoteLinkClick` decides the route. Other modifier clicks, buttons and links to
+notes keep their routes, and a link that can't get a Peek, such as with the
+Library or a sheet open, opens as before. The page opens parked and becomes a
+Peek with no parent page, as an
+[archive preview over a note](archive-preview.md) does; Expand makes a Today
+tab that refers back to the note. Closing, archiving or moving the note's tab
+closes the Peek through its page's own close, and a refused close leaves it as
+a Today tab.
+
 Parent transfer, orphan preservation, promotion and new-tab provenance already
 use the original page and parent identity. Model/native components cover those
 transactions, confirmation timers, renderer acknowledgments and focus

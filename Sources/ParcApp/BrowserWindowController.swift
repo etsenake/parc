@@ -182,6 +182,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var peeks: [String: PeekController] = [:] { didSet { noteReturnGate() } }
     let tabPeeks = TabPeekSlot()
     var archivePreviewRequest: (parent: String?, lease: ArchivePreviewLease, token: UUID)?
+    var noteLinkPeekRequest: UUID?
     var archivePreviews: [UUID: ArchivePreviewLease] = [:]
     var queuedArchivePreview: (id: UUID, profileID: UUID)?
     var archivePreviewRemnants = Set<UUID>()

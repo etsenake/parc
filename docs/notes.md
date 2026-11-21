@@ -208,7 +208,9 @@ menu routes to the note and its shortcuts follow the note's keys.
 Selecting text, with the pointer or the keyboard, floats a format bar above it:
 Turn into, Link, bold, italic, underline, strikethrough, code, equation, colour
 and mention. ⌘K opens the link editor, which also finds notes to link, and
-hovering a link shows a card to open, copy, edit or remove it.
+hovering a link shows a card to open, copy, edit or remove it. Following a web
+link opens it in a [Peek](peek.md#presentation-and-remaining-scope) over the
+note when Settings → Links allows it.
 
 Selections cross blocks like one page. Dragging from the margin, or pressing
 Escape, selects whole blocks, which can then be moved, coloured, duplicated,

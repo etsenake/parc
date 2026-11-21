@@ -22,6 +22,8 @@ final class NotePageEditor {
     private(set) var synced: NoteSyncedController!
     private(set) lazy var math = NotePageMath(editor: self)
     var onOpenURL: ((URL) -> Void)?
+    var onFollowURL: ((URL, NoteLinkClick) -> Void)?
+    var allowsShiftClickPeek: () -> Bool = { false }
     var onOpenNote: ((URL) -> Void)?
     var onError: ((Error) -> Void)?
     var onFocusTitle: (() -> Void)?
@@ -165,6 +167,19 @@ final class NotePageEditor {
     func open(_ url: URL) {
         guard NoteLinkPolicy.allowsOpening(url) else { return }
         if url.isFileURL, NoteFileKind(url: url) != nil { onOpenNote?(url) } else { onOpenURL?(url) }
+    }
+
+    func follow(_ url: URL, event: NSEvent?) {
+        guard NoteLinkPolicy.allowsOpening(url) else { return }
+        guard !url.isFileURL, let onFollowURL else { return open(url) }
+        onFollowURL(url, Self.linkClick(for: event))
+    }
+
+    static func linkClick(for event: NSEvent?) -> NoteLinkClick {
+        guard let event, [.leftMouseDown, .leftMouseUp].contains(event.type) else { return .plain }
+        let flags = event.modifierFlags
+        return NoteLinkClick(shift: flags.contains(.shift), command: flags.contains(.command),
+                             option: flags.contains(.option), control: flags.contains(.control))
     }
 
     func appearanceDidChange() {

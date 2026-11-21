@@ -177,6 +177,16 @@ extension BrowserWindowController {
                   self.currentTabID == tabID, self.activeProfileID == profileID, !self.isClosing else { return }
             self.openInput(url.absoluteString)
         }
+        editor.onFollowURL = { [weak self, weak editor] url, click in
+            guard let self, let editor, self.noteEditors[tabID]?.editor === editor,
+                  self.currentTabID == tabID, self.activeProfileID == profileID, !self.isClosing else { return }
+            if self.openNoteLinkInPeek(url, click: click, over: tabID, profileID: profileID) { return }
+            self.openInput(url.absoluteString)
+        }
+        editor.allowsShiftClickPeek = { [weak self] in
+            guard let self, !self.isPopupWindow else { return false }
+            return self.store.state.settings.shiftPeekEnabled
+        }
         editor.onOpenNote = { [weak self, weak editor] url in
             guard let self, let editor, self.noteEditors[tabID]?.editor === editor,
                   self.currentTabID == tabID, self.activeProfileID == profileID, !self.isClosing else { return }

@@ -124,7 +124,7 @@ class NoteLinkBlockView: NoteCaptionedBlockView {
 
     func openLink() {
         guard let url else { return }
-        editor?.open(url)
+        editor?.follow(url, event: NSApp.currentEvent)
     }
 
     private func copyLink() {

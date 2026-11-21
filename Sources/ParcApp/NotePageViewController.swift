@@ -8,6 +8,8 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
     var onTitleChange: ((String) -> Void)?
     var onURLChange: ((URL) -> Void)?
     var onOpenURL: ((URL) -> Void)?
+    var onFollowURL: ((URL, NoteLinkClick) -> Void)?
+    var allowsShiftClickPeek: () -> Bool = { false }
     var onOpenNote: ((URL) -> Void)?
     var onToast: ((ParcToastContent) -> Void)?
     var onTrashed: ((URL) -> Void)?
@@ -51,6 +53,11 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         let editor = NotePageEditor(session: file.page, environment: file.environment)
         self.editor = editor
         editor.onOpenURL = { [weak self] url in self?.onOpenURL?(url) }
+        editor.onFollowURL = { [weak self] url, click in
+            guard let self else { return }
+            if let follow = self.onFollowURL { follow(url, click) } else { self.onOpenURL?(url) }
+        }
+        editor.allowsShiftClickPeek = { [weak self] in self?.allowsShiftClickPeek() ?? false }
         editor.onOpenNote = { [weak self] url in self?.onOpenNote?(url) }
         editor.onOpenFolder = { [weak self] url in self?.onOpenFolder?(url) }
         editor.notesFolder = { [weak self] in self?.notesFolder?() }

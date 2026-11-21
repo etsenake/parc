@@ -40,8 +40,27 @@ for token in ("containsTab($0, where: { $0.archivedAt == nil })", "showsStartPag
     assert token in backdrop, f"the backdrop lost {token!r}"
 
 opening = body(window, "    private func openHostedArchivePreview(")
-assert "binding.open(url, profilePath: path, container: parkedPages)" in opening, \
+assert "openHostedPeekPage(url, profileID: lease.profileID, binding: binding)" in opening, \
+    "an archive preview opens its page through the shared hosted route"
+hosted = body(window, "    private func openHostedPeekPage(")
+assert "binding.open(url, profilePath: path, container: parkedPages)" in hosted, \
     "the hosted page is created hidden in this window, with no parent page"
+note = body(window, "    func openNoteLinkInPeek(", "\n    }\n\n")
+for token in ("click.route(for: url, automaticPeek: settings.automaticPeekEnabled, shiftPeek: settings.shiftPeekEnabled) == .peek",
+              "noteLinkPeekRequest == nil", "archivePreviewRequest == nil", "noteLinkCanHostPeek(host, profileID: profileID, binding: binding)",
+              "openHostedPeekPage(url, profileID: profileID, binding: binding)", "self.noteLinkPeekRequest == token"):
+    assert token in note, f"a note link's Peek lost {token!r}"
+admits = body(window, "    private func noteLinkCanHostPeek(")
+for token in ("activePeek == nil", "tabPeeks.current == nil", "peekBackdrop == .pagelessTab(tabID: host)", "noteEditors[host] != nil",
+              "ownership.canUse(host, owner: presentationID)", "windowAdmitsPeek(binding)"):
+    assert token in admits, f"a note link's Peek admission lost {token!r}"
+noteAdopt = body(window, "    private func adoptNoteLinkPeek(", "\n    }\n\n")
+for token in ("noteLinkPeekRequest == token", "PCNativeBrowserApplication.owner(of: page) === binding",
+              "page.profilePath == store.independentEngineProfilePath(for: profileID)", "ownership.canAdopt(page.identifier)",
+              "PeekController(page: page, parent: nil, parentTabID: host", "ownership.claim(peek.identity, owner: presentationID",
+              "wirePeek(peek, binding: binding)", "presentAdoptedPeek(peek, shown: true, entryFocus: entryFocus)",
+              "openNoteLinkWithoutPeek(url, host: host, profileID: profileID)"):
+    assert token in noteAdopt, f"a note link's Peek adoption lost {token!r}"
 adopt = body(window, "    private func adoptHostedArchivePreview(")
 for token in ("request.token == token", "PeekController(page: page, parent: parent, parentTabID: host",
               "peekHostID == host", "adoptableHostPage(host, profilePath: $0.profilePath)",
@@ -81,10 +100,10 @@ for token in ("PCNativeBrowserApplication.owner(of: page) === binding", "page.pr
               "!closingTabIDs.contains(id)", "!transferringTabIDs.contains(id)", "!peeks.values.contains(where: { $0.parentPage === page })",
               "!tabPeekHolds(page)"):
     assert token in adoptable, f"adopting the tab's page lost the Peek ownership check {token!r}"
-lost = body(window, "    private func hostlessPreviewLost(_ peek: PeekController) -> Bool {")
-for token in ("archivePreviews[peek.identity] != nil", "!peekHostLives(peek)", "!peek.closePending"):
+lost = body(window, "    private func hostlessPeekLost(_ peek: PeekController) -> Bool {")
+for token in ("peek.parentPage == nil", "!peekHostLives(peek)", "!peek.closePending"):
     assert token in lost, f"the automatic close lost {token!r}: after one refusal it must not ask again"
-assert "where peek.view.isHidden && self.hostlessPreviewLost(peek)" in window, "only a hidden preview closes by itself"
+assert "where peek.view.isHidden && self.hostlessPeekLost(peek)" in window, "only a hidden hosted Peek closes by itself"
 assert "requestDismiss" not in body(window, "    func preserveHostlessPeeks() {"), \
     "an automatic close never repeats a dismissal that could confirm Hang up"
 assert "openPeek(url:))), peek.parentPage != nil," in window, "a hosted preview never leaves a closed-Peek record it can't reopen"

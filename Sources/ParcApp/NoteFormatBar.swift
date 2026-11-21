@@ -611,6 +611,11 @@ final class NoteFormatBarController {
         editor.open(url)
     }
 
+    func follow(_ link: String) {
+        guard Self.canOpen(link), let url = resolve(link), !NoteLinkInput.isUnsafe(url.absoluteString) else { return }
+        editor.follow(url, event: NSApp.currentEvent)
+    }
+
     func copy(_ link: String) {
         let url = resolve(link)
         let pasteboard = NSPasteboard.general
@@ -817,7 +822,7 @@ final class NoteLinkHoverController: NSResponder {
     private func perform(_ action: NoteLinkHoverCard.Action, on target: Target) {
         hide(animated: true)
         switch action {
-        case .open: controller.open(target.link)
+        case .open: controller.follow(target.link)
         case .copy: controller.copy(target.link)
         case .edit: controller.editLink(target)
         case .remove:

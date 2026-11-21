@@ -539,7 +539,7 @@ class NoteTextView: NSTextView {
                 break
             }
         }
-        if event.clickCount == 1, opensOnClick(event.modifierFlags), let hit = clickTarget(at: point) {
+        if event.clickCount == 1, let hit = clickTarget(at: point), opensOnClick(event.modifierFlags, target: hit.target) {
             trackClick(on: hit.target, from: event)
             return
         }
@@ -553,7 +553,7 @@ class NoteTextView: NSTextView {
             guard let next = window.nextEvent(matching: [.leftMouseUp, .leftMouseDragged], until: .distantFuture,
                                               inMode: .eventTracking, dequeue: true) else { return }
             if next.type == .leftMouseUp {
-                open(target)
+                open(target, event: event)
                 return
             }
             if hypot(next.locationInWindow.x - start.x, next.locationInWindow.y - start.y) > 3 {
@@ -564,11 +564,24 @@ class NoteTextView: NSTextView {
         }
     }
 
-    func opensOnClick(_ modifiers: NSEvent.ModifierFlags) -> Bool {
+    func opensOnClick(_ modifiers: NSEvent.ModifierFlags, target: ClickTarget?) -> Bool {
         let relevant = modifiers.intersection([.command, .shift, .option, .control])
         if relevant == .command { return true }
+        if relevant == .shift { return (!isEditable || !isFocused) && target.map(peeksOnShiftClick) == true }
         guard relevant.isEmpty else { return false }
         return !isEditable || !isFocused
+    }
+
+    private func peeksOnShiftClick(_ target: ClickTarget) -> Bool {
+        guard let editor, editor.allowsShiftClickPeek(), let url = webURL(target) else { return false }
+        return NoteLinkClick.shift.route(for: url, automaticPeek: false, shiftPeek: true) == .peek
+    }
+
+    private func webURL(_ target: ClickTarget) -> URL? {
+        switch target {
+        case .link(let value), .atom(.link(let value, _)): return URL(string: value).flatMap { $0.scheme == nil ? nil : $0 }
+        case .atom: return nil
+        }
     }
 
     func clickTarget(at point: NSPoint) -> (target: ClickTarget, range: Range<Int>)? {
@@ -604,16 +617,16 @@ class NoteTextView: NSTextView {
         return index < (string as NSString).length ? index : nil
     }
 
-    func open(_ target: ClickTarget) {
+    func open(_ target: ClickTarget, event: NSEvent?) {
         guard let editor else { return }
         switch target {
         case .link(let value):
-            if let url = URL(string: value), url.scheme != nil { editor.open(url) }
+            if let url = URL(string: value), url.scheme != nil { editor.follow(url, event: event) }
             else if let url = editor.environment.resolveNoteLink(value) { editor.open(url) }
         case .atom(.page(let target, _)):
             if let url = editor.environment.resolveNoteLink(target) { editor.open(url) }
         case .atom(.link(let value, _)):
-            if let url = URL(string: value) { editor.open(url) }
+            if let url = URL(string: value) { editor.follow(url, event: event) }
         case .atom:
             break
         }
@@ -659,14 +672,14 @@ class NoteTextView: NSTextView {
             }
             hoveredRange = range
         }
-        if hit != nil, opensOnClick(modifiers) { NSCursor.pointingHand.set() }
+        if let hit, opensOnClick(modifiers, target: hit.target) { NSCursor.pointingHand.set() }
     }
 
     private func updateHoverCursor(modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags) {
         guard let window, hoveredRange != nil else { return }
         let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
         guard bounds.contains(point) else { return }
-        if opensOnClick(modifiers), clickTarget(at: point) != nil { NSCursor.pointingHand.set() } else { NSCursor.iBeam.set() }
+        if let hit = clickTarget(at: point), opensOnClick(modifiers, target: hit.target) { NSCursor.pointingHand.set() } else { NSCursor.iBeam.set() }
     }
 
     private func resetHover() {
