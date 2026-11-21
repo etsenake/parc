@@ -6,9 +6,31 @@ so an Easel takes the Space's gradient, grain and light or dark exactly as a
 note does. Ink, placeholders, selection, guides and floating controls come from
 `NoteTheme` through `EaselAppearance`: selection, handles and the marquee use
 the Notes accent, alignment guides use tertiary ink, link and webpage cards use
-the Notes panel fill, and the empty-Easel prompt uses the Notes placeholder inks
-in Nunito. Only corner resize marks are painted; all eligible edge resize
-targets retain their native pointer and accessibility actions.
+the Notes panel fill. Only corner resize marks are painted; all eligible edge
+resize targets retain their native pointer and accessibility actions. A hovered
+corner handle grows on the Notes highlight spring ([motion](easel-motion.md)).
+
+## First run
+
+An empty Easel greets you on the paper, 40 points in from the top left: "A
+place for your ideas" in Nunito ExtraBold with the Notes title placeholder ink,
+one line of Notes placeholder text, then a row of Notes-style chips that teach
+the keys (Sticky S, Shape R or O, Connector X, Text T, Draw M, Find anything
+⌘/). Each chip draws its keys as Notes keycaps beside a secondary-ink label,
+shows the Notes hover and pressed washes and the pointing hand, carries a
+tooltip with its shortcut and is a VoiceOver button; clicking one picks that
+tool, or opens Find anything. The key labels come from the Easel key map, so
+they follow any rebinding, and Find anything only appears where ⌘/ works. The
+group lives on the canvas, so it zooms and scrolls with the paper, and only its
+chips take clicks: clicking anywhere else places or selects as usual. It fades
+out when the first object lands and fades back if the board is emptied.
+
+The first time someone selects a single sticky or shape outside the capture
+editor, a Notes menu-card chip pops in at the bottom centre of the canvas:
+"Tip: click a + beside it to make the next one, or press ⌘Return". It is
+announced to VoiceOver, ignores the pointer, leaves when the selection changes,
+on any press or after eight seconds, and never shows again
+(`easel.quickCreateHintSeen` in user defaults, like the Make it Live education).
 
 The selection toolbar is the Notes format bar's card: a 36-point menu card with
 28-point Notes toolbar buttons, one-point spacing and hairline dividers between
