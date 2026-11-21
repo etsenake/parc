@@ -56,10 +56,8 @@ struct SidebarRowActionButtonTests {
         }
     }
 
-    private func withoutModifiers<T>(_ body: () -> T) -> T {
-        InputOverrides.install()
-        InputOverrides.modifierFlags = []
-        defer { InputOverrides.modifierFlags = nil }
+    private func withoutModifiers<T>(_ owner: Owner, _ body: () -> T) -> T {
+        owner.reset.modifierFlags = { [] }
         return body()
     }
 
@@ -317,13 +315,13 @@ struct SidebarRowActionButtonTests {
     @Test func hoverIsTheResetSubtitleWithoutCommand() {
         let owner = Owner()
         owner.attachReset()
-        withoutModifiers { owner.reset.mouseEntered(with: owner.rightMouseDown()) }
+        withoutModifiers(owner) { owner.reset.mouseEntered(with: owner.rightMouseDown()) }
         #expect(owner.reset.hoverSubtitle == .reset)
     }
 
     private func hovered(_ owner: Owner) {
         owner.attachReset()
-        withoutModifiers { owner.reset.mouseEntered(with: owner.rightMouseDown()) }
+        withoutModifiers(owner) { owner.reset.mouseEntered(with: owner.rightMouseDown()) }
     }
 
     @Test func holdingCommandSwitchesToSeparateWithoutPointerMotion() {
@@ -419,16 +417,14 @@ struct SidebarRowActionButtonTests {
     @Test func withoutASeparateOwnerCommandLeavesTheClickToTheRow() {
         let owner = Owner()
         owner.attachReset()
-        InputOverrides.install()
-        InputOverrides.modifierFlags = .command
-        defer { InputOverrides.modifierFlags = nil }
+        owner.reset.modifierFlags = { .command }
         #expect(owner.reset.hitTest(NSPoint(x: 50, y: 20)) == nil)
     }
 
     @Test func anAvailableResetRegionTakesAPlainClick() {
         let owner = Owner()
         owner.attachReset()
-        #expect(withoutModifiers { owner.reset.hitTest(NSPoint(x: 50, y: 20)) } === owner.reset)
+        #expect(withoutModifiers(owner) { owner.reset.hitTest(NSPoint(x: 50, y: 20)) } === owner.reset)
     }
 
     private final class Separations {

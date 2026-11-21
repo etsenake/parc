@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import QuartzCore
 import Testing
 @testable import Parc
@@ -19,6 +20,20 @@ private final class FakeClick: NSClickGestureRecognizer {
     override var state: NSGestureRecognizer.State { get { fakeState } set { fakeState = newValue } }
 }
 
+@MainActor private final class ManualClock {
+    private var now: TimeInterval = 0
+    private var pending: [(at: TimeInterval, work: () -> Void)] = []
+
+    func schedule(after delay: TimeInterval, _ work: @escaping () -> Void) { pending.append((now + delay, work)) }
+
+    func advance(by seconds: TimeInterval) {
+        now += seconds
+        while let index = pending.indices.filter({ pending[$0].at <= now }).min(by: { pending[$0].at < pending[$1].at }) {
+            pending.remove(at: index).work()
+        }
+    }
+}
+
 @MainActor
 struct SidebarResizeRegionTests {
     typealias R = SidebarResizeRegionView
@@ -32,9 +47,20 @@ struct SidebarResizeRegionTests {
         var haptics = 0
         var pans: [(NSGestureRecognizer.State, CGFloat, CGFloat)] = []
         let pan = FakePan(target: nil, action: nil)
+        let clock = ManualClock()
 
         init() {
             window.isReleasedWhenClosed = false
+            region.reducesMotion = { false }
+            region.delay = { [clock] seconds in
+                let subject = PassthroughSubject<Void, Never>()
+                clock.schedule(after: seconds) { subject.send(()); subject.send(completion: .finished) }
+                return subject.eraseToAnyPublisher()
+            }
+            region.runFadeOut = { [clock, indicator = region.indicatorLayer] animations, completion in
+                animations()
+                clock.schedule(after: indicator.animation(forKey: "opacity")?.duration ?? 0, completion)
+            }
             root.wantsLayer = true
             window.contentView = root
             region.performHaptic = { [weak self] in self?.haptics += 1 }
@@ -176,6 +202,94 @@ struct SidebarResizeRegionTests {
         #expect(s.indicator.isHidden)
     }
 
+    @Test func hoverIsStillWaitingAtPointOneFiveSeconds() {
+        let s = Strip()
+        s.region.mouseEntered(with: s.event(.mouseEntered))
+        s.clock.advance(by: 0.15)
+        #expect(s.indicator.isHidden)
+        #expect(s.fade() == nil)
+    }
+
+    @Test func hoverShowsTheIndicatorAfterAQuarterSecond() {
+        let s = Strip()
+        s.region.mouseEntered(with: s.event(.mouseEntered))
+        s.clock.advance(by: 0.25)
+        #expect(!s.indicator.isHidden)
+        #expect(s.indicator.opacity == 0.5)
+    }
+
+    @Test func theRevealFadesFromZeroToHalfOverPointTwoSeconds() throws {
+        let s = Strip()
+        s.region.mouseEntered(with: s.event(.mouseEntered))
+        s.clock.advance(by: 0.25)
+        let fade = try #require(s.fade())
+        #expect(fade.fromValue as? Double == 0)
+        #expect(fade.toValue as? Double == 0.5)
+        #expect(fade.duration == 0.2)
+        #expect(fade.fillMode == .forwards)
+    }
+
+    private func shown() -> Strip {
+        let s = Strip()
+        s.region.mouseEntered(with: s.event(.mouseEntered))
+        s.clock.advance(by: 0.25)
+        return s
+    }
+
+    @Test func leavingAShownIndicatorFadesItFromHalfToZero() throws {
+        let s = shown()
+        s.region.mouseExited(with: s.event(.mouseExited))
+        let fade = try #require(s.fade())
+        #expect(fade.fromValue as? Double == 0.5)
+        #expect(fade.toValue as? Double == 0)
+        #expect(fade.duration == 0.2)
+    }
+
+    @Test func theIndicatorStaysVisibleWhileItFadesOut() {
+        let s = shown()
+        s.region.mouseExited(with: s.event(.mouseExited))
+        s.clock.advance(by: 0.1)
+        #expect(!s.indicator.isHidden)
+    }
+
+    @Test func afterItsFadeOutTheIndicatorIsHiddenAtModelOpacityHalf() {
+        let s = shown()
+        s.region.mouseExited(with: s.event(.mouseExited))
+        s.clock.advance(by: 0.2)
+        #expect(s.indicator.isHidden)
+        #expect(s.indicator.opacity == 0.5)
+        #expect(s.fade() == nil)
+    }
+
+    @Test func hoverEndingBeforeAQuarterSecondCancelsTheShow() {
+        let s = Strip()
+        s.region.mouseEntered(with: s.event(.mouseEntered))
+        s.clock.advance(by: 0.1)
+        s.region.mouseExited(with: s.event(.mouseExited))
+        s.clock.advance(by: 0.4)
+        #expect(s.indicator.isHidden)
+        #expect(s.fade() == nil)
+    }
+
+    @Test func anInterruptedFadeCannotHideAResizingIndicator() {
+        let s = Strip()
+        s.region.isResizing = true
+        s.region.mouseEntered(with: s.event(.mouseEntered))
+        s.region.isResizing = false
+        s.region.mouseExited(with: s.event(.mouseExited))
+        s.region.isResizing = true
+        s.clock.advance(by: 0.35)
+        #expect(!s.indicator.isHidden)
+    }
+
+    @Test func anUnhoveredEndOfResizingFadeOutCompletes() {
+        let s = Strip()
+        s.region.isResizing = true
+        s.region.isResizing = false
+        s.clock.advance(by: 0.35)
+        #expect(s.indicator.isHidden)
+    }
+
     @Test func movementInsideReestablishesHover() {
         let s = Strip()
         let entered = s.event(.mouseEntered)
@@ -272,9 +386,6 @@ struct SidebarResizeRegionTests {
     }
 
     @Test func engageScalesTheLineXOneToOnePointSeven() throws {
-        SystemOverrides.install()
-        SystemOverrides.reduceMotion = false
-        defer { SystemOverrides.reduceMotion = nil }
         let s = Strip()
         s.region.isResizing = true
         s.region.present([.snapEngaged])
@@ -289,9 +400,6 @@ struct SidebarResizeRegionTests {
 
     @Test(arguments: [(1, [Float]([0.215, 0.61])), (2, [Float]([0.355, 1]))])
     func thePulseTimingHasItsControlPoints(index: Int, expected: [Float]) throws {
-        SystemOverrides.install()
-        SystemOverrides.reduceMotion = false
-        defer { SystemOverrides.reduceMotion = nil }
         let s = Strip()
         s.region.isResizing = true
         s.region.present([.snapEngaged])
