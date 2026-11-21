@@ -1108,7 +1108,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         if kind == .arrow { item.points = [EaselPoint(x: 0, y: item.frame.height), EaselPoint(x: item.frame.width, y: 0)] }
         if kind == .arrow, fixedCanvasSize == nil, let style = EaselConnectorCanvasState.styles[session.document.id] { style.apply(to: &item) }
-        guard withObjectMotion(.appear, { commit("Add \(kind.rawValue)", { $0.items.append(item) }) }) else { return false }
+        guard withObjectMotion(.appear, { commit("Add " + (kind == .arrow ? "connector" : kind == .circle ? "ellipse" : kind == .sticky ? "sticky note" : kind.rawValue), { $0.items.append(item) }) }) else { return false }
         selection = [item.id]; window?.makeFirstResponder(self)
         if edit { beginEditing(item) }
         return true

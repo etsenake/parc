@@ -70,8 +70,8 @@ Several objects add align and distribute, tidy up, group, create section and
 lock; a locked selection shows Locked with Unlock, or Unlock Group when every
 object belongs to one group. A ••• button ends every toolbar with the four
 layer moves, Flip Horizontal (⇧H), Flip Vertical (⇧V), Rotate 90° Left and
-Right, Duplicate, Copy as Image, Lock and Delete, plus a section's Lock all,
-Lock background only, Hide contents and Delete, keep contents. VoiceOver
+Right, Duplicate, Copy as Image, Lock and Delete, plus a section's Lock All,
+Lock Background Only, Hide Contents and Delete Section Only. VoiceOver
 reaches the toolbar right after the selected object. Its buttons never take keyboard focus from a click, so
 formatting never ends text editing. Menus are Notes menus opened under their
 button that close on a pick, Escape or an outside click; the style picker

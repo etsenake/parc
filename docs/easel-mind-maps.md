@@ -10,7 +10,7 @@ export as anything else on the board. This guide sits beside the
 ## Starting a map
 
 - **Shapes menu.** The toolbar's shapes menu ends with **Mind map**.
-- **Quick actions.** ⌘/ lists **Mind map** under Inserts.
+- **Quick actions.** ⌘/ lists **Mind map** under Add.
 - **Canvas menu.** Right-click empty canvas for **Add Mind Map Here**, which
   centres the root on the click.
 - **From text.** Right-click a text object (or use its VoiceOver actions) for
@@ -59,8 +59,8 @@ attaches it as that node's last child, so an existing map's root brings its
 whole map along. A node can't drop into its own subtree. Let go away from any
 slot and the node glides back into the tree.
 
-Each change is one undo step, named for what it did ("Add child", "Move node
-in", "Move node", "Attach to mind map", "Collapse branch").
+Each change is one undo step, named for what it did ("Add child", "Move topic
+in", "Move topic", "Attach to mind map", "Collapse branch").
 
 ## Layout
 

@@ -783,7 +783,7 @@ struct EaselMermaidFlowchartParser {
             if scanner.atEnd { return }
             skipEdgeID(&scanner)
             guard let link = try link(&scanner, spaced: spaced, line: line) else {
-                throw syntax(line, "Parc expected an arrow like --> after \(previous.last ?? "a node")")
+                throw syntax(line, "Parc expected an arrow like --> after \(previous.last ?? "a shape")")
             }
             scanner.skipSpaces()
             guard !scanner.atEnd else { throw syntax(line, "this arrow needs something on the other end") }
@@ -824,7 +824,7 @@ struct EaselMermaidFlowchartParser {
     private mutating func node(_ scanner: inout EaselMermaidScanner, line: Int) throws -> String {
         guard let id = scanner.readIdentifier() else {
             let found = scanner.peek().map { "“\($0)”" } ?? "the end of the line"
-            throw syntax(line, "Parc expected a node name but found \(found)")
+            throw syntax(line, "Parc expected a shape name but found \(found)")
         }
         var label: String?, shape: EaselMermaidShape?
         if scanner.matches("@{") {
