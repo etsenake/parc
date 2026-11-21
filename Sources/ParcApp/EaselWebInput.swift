@@ -18,6 +18,7 @@ final class EaselWebInput: NSViewController, NSTextFieldDelegate, NSPopoverDeleg
     private var observations: [NSObjectProtocol] = []
     private var ended = false
     var onClose: (() -> Void)?
+    private static let borderKey = NoteAnimation.keyPrefix + "easel.web.border"
 
     init(draft: EaselWebNavigation.Draft = .init(), submitTitle: String = "Open", allowsSearch: Bool = true,
          validOwner: @escaping () -> Bool, submit: @escaping (URL, EaselWebNavigation.Draft) -> Bool) {
@@ -105,7 +106,8 @@ final class EaselWebInput: NSViewController, NSTextFieldDelegate, NSPopoverDeleg
         errorLabel.stringValue = draft.mode == .search ? "Search with DuckDuckGo" : ""
     }
     func controlTextDidChange(_ notification: Notification) {
-        errorLabel.stringValue = ""; errorLabel.textColor = .secondaryLabelColor; field.layer?.borderWidth = 0
+        errorLabel.stringValue = ""; errorLabel.textColor = .secondaryLabelColor
+        if let layer = field.layer { NoteAnimation.spring(layer, "borderWidth", to: CGFloat(0), spring: .highlight, key: Self.borderKey) }
     }
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         guard !textView.hasMarkedText() else { return false }
@@ -121,7 +123,12 @@ final class EaselWebInput: NSViewController, NSTextFieldDelegate, NSPopoverDeleg
             errorLabel.stringValue = draft.mode == .address ? "Enter an http or https webpage address." : "Enter a search query."
             errorLabel.textColor = EaselAppearance.error
             field.effectiveAppearance.performAsCurrentDrawingAppearance { field.layer?.borderColor = EaselAppearance.error.cgColor }
-            field.layer?.borderWidth = 2
+            if let layer = field.layer {
+                NoteAnimation.spring(layer, "borderWidth", to: CGFloat(2), spring: .pop, key: Self.borderKey)
+                EaselControlSurface.shake(layer, distance: 5)
+            }
+            errorLabel.wantsLayer = true
+            EaselControlSurface.crossfade(errorLabel, pops: nil)
             NSAccessibility.post(element: errorLabel, notification: .valueChanged); return
         }
         if submit(url, draft) { cancel() }

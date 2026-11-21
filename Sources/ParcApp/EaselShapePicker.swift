@@ -145,7 +145,7 @@ final class EaselShapePickerView: NSView, NoteFloatingPanelContent {
         let chosen = slot.flatMap { cell(at: $0) }
         for row in cells { for cell in row { cell.isHighlighted = cell === chosen } }
         refreshPlateColor()
-        if let slot, let target = chosen {
+        if let target = chosen {
             let frame = target.frame.insetBy(dx: -2, dy: -2)
             if previous != nil, animated, plate.opacity > 0, !NoteAnimation.reduceMotion {
                 NoteAnimation.slideLayer(plate, to: frame, spring: .glide)

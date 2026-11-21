@@ -408,12 +408,18 @@ final class EaselSelectionToolbarView: NSView, NoteFloatingPanelContent {
         for model in models {
             guard let button = buttons[model.control] else { continue }
             let old = previous.first { $0.control == model.control }
+            let content = button.content
             if case .text(let title) = model.face, button.content != .text(title) { button.content = .text(title) }
             if case .symbolAndText(let symbol, let title) = model.face, button.content != .iconAndText(.symbol(symbol), title) {
                 button.content = .iconAndText(.symbol(symbol), title)
             }
             if case .symbol(let symbol) = model.face, button.content != .icon(.symbol(symbol)) { button.content = .icon(.symbol(symbol)) }
-            if button.iconTint != model.tint { button.iconTint = model.tint }
+            if button.content != content, old != nil { EaselControlSurface.crossfade(button, duration: NoteAnimation.hoverDuration, pops: nil) }
+            if button.iconTint != model.tint {
+                let recolored = button.iconTint != nil && model.tint != nil && old != nil
+                button.iconTint = model.tint
+                if recolored, button.window != nil { NoteAnimation.pop(button, from: 0.78, spring: .check) }
+            }
             button.isEnabled = model.isEnabled
             if old?.value != model.value || old == nil { button.setAccessibilityValue(model.value) }
             guard old?.name != model.name || old?.shortcut != model.shortcut || old?.commandID != model.commandID || old?.face != model.face else { continue }

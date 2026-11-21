@@ -51,7 +51,7 @@ final class EaselEmojiCompletion: EaselTextCompletion {
     func dismiss() {
         start = nil
         guard let panel, panel.isPresented else { return }
-        panel.dismiss(animated: !NoteAnimation.reduceMotion)
+        panel.dismiss(animated: true)
     }
 
     private func selectionDidChange() {
@@ -88,7 +88,7 @@ final class EaselEmojiCompletion: EaselTextCompletion {
         self.start = start
         panel.contentSizeDidChange(animated: false)
         if panel.isPresented, panel.superview === host { panel.reposition(anchor: anchor, edge: .below, animated: false) }
-        else { panel.present(in: host, anchor: anchor, edge: .below, animated: !NoteAnimation.reduceMotion) }
+        else { panel.present(in: host, anchor: anchor, edge: .below, animated: true) }
     }
 
     private func completionHost(for view: EaselStyledTextView) -> NSView? {
