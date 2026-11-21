@@ -5,30 +5,41 @@ import SwiftUI
 
 @MainActor enum SiteControlCenterArtwork {
     static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("SiteControlCenter", isDirectory: true)
-    private static var cache: [String: NSImage] = [:]
+    private static let bundled = Library(directory: directory)
 
-    static var controlCenter: NSImage? { image("icon-control-center") }
+    static var controlCenter: NSImage? { bundled.controlCenter }
 
-    static func image(_ name: String) -> NSImage? {
-        if let image = cache[name] { return image }
-        guard let directory,
-              let data = try? Data(contentsOf: directory.appendingPathComponent(name + ".png")),
-              let base = NSBitmapImageRep(data: data) else { return nil }
-        let size = NSSize(width: base.pixelsWide, height: base.pixelsHigh)
-        base.size = size
-        let image = NSImage(size: size)
-        image.addRepresentation(base)
-        if let data = try? Data(contentsOf: directory.appendingPathComponent(name + "@2x.png")),
-           let double = NSBitmapImageRep(data: data) {
-            double.size = NSSize(width: CGFloat(double.pixelsWide) / 2, height: CGFloat(double.pixelsHigh) / 2)
-            image.addRepresentation(double)
+    static func image(_ name: String) -> NSImage? { bundled.image(name) }
+
+    @MainActor final class Library {
+        let directory: URL?
+        private var cache: [String: NSImage] = [:]
+
+        init(directory: URL?) { self.directory = directory }
+
+        var controlCenter: NSImage? { image("icon-control-center") }
+
+        func image(_ name: String) -> NSImage? {
+            if let image = cache[name] { return image }
+            guard let directory,
+                  let data = try? Data(contentsOf: directory.appendingPathComponent(name + ".png")),
+                  let base = NSBitmapImageRep(data: data) else { return nil }
+            let size = NSSize(width: base.pixelsWide, height: base.pixelsHigh)
+            base.size = size
+            let image = NSImage(size: size)
+            image.addRepresentation(base)
+            if let data = try? Data(contentsOf: directory.appendingPathComponent(name + "@2x.png")),
+               let double = NSBitmapImageRep(data: data) {
+                double.size = NSSize(width: CGFloat(double.pixelsWide) / 2, height: CGFloat(double.pixelsHigh) / 2)
+                image.addRepresentation(double)
+            }
+            if let vector = NSImage(contentsOf: directory.appendingPathComponent(name + ".pdf")) {
+                for representation in vector.representations { image.addRepresentation(representation) }
+            }
+            image.isTemplate = true
+            cache[name] = image
+            return image
         }
-        if let vector = NSImage(contentsOf: directory.appendingPathComponent(name + ".pdf")) {
-            for representation in vector.representations { image.addRepresentation(representation) }
-        }
-        image.isTemplate = true
-        cache[name] = image
-        return image
     }
 }
 
@@ -322,11 +333,23 @@ struct SiteControlCenterSeparator: View {
     }
 }
 
+private struct SiteControlCenterArtworkKey: EnvironmentKey {
+    static var defaultValue: SiteControlCenterArtwork.Library? { nil }
+}
+
+extension EnvironmentValues {
+    var siteControlCenterArtwork: SiteControlCenterArtwork.Library? {
+        get { self[SiteControlCenterArtworkKey.self] }
+        set { self[SiteControlCenterArtworkKey.self] = newValue }
+    }
+}
+
 struct SiteControlCenterActionButton: View {
     let button: SiteControlCenterModel.Button
     let colors: SiteControlCenterColors
     let help: String
     let action: () -> Void
+    @Environment(\.siteControlCenterArtwork) private var artworkLibrary
 
     var body: some View {
         SwiftUI.Button(action: action) {
@@ -350,7 +373,7 @@ struct SiteControlCenterActionButton: View {
         }
     }
     @ViewBuilder private func artwork(_ name: String, height: CGFloat) -> some View {
-        if let image = SiteControlCenterArtwork.image(name) {
+        if let image = artworkLibrary.map({ $0.image(name) }) ?? SiteControlCenterArtwork.image(name) {
             Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(height: height)
         }
     }
@@ -876,6 +899,10 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
     private var pendingShow: UUID?
     private let scheduleShow: (DispatchTimeInterval, @escaping @MainActor () -> Void) -> Void
     private let orderPanel: @MainActor (NSWindow, NSWindow) -> Void
+    private let currentEvent: @MainActor () -> NSEvent?
+    private let pressedMouseButtons: @MainActor () -> Int
+    private let checkFocusSoon: (@escaping @MainActor () -> Void) -> Void
+    private let addSizeCheck: @MainActor (Timer) -> Void
     var onClose: (() -> Void)?
     var onDidClose: (() -> Void)?
     var onDetach: (() -> Void)?
@@ -892,10 +919,18 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
          }, orderPanel: @escaping @MainActor (NSWindow, NSWindow) -> Void = { panel, parent in
              parent.addChildWindow(panel, ordered: .above)
              panel.makeKeyAndOrderFront(nil)
-         }) {
+         }, currentEvent: @escaping @MainActor () -> NSEvent? = { NSApp.currentEvent },
+         pressedMouseButtons: @escaping @MainActor () -> Int = { NSEvent.pressedMouseButtons },
+         checkFocusSoon: @escaping (@escaping @MainActor () -> Void) -> Void = { work in
+             DispatchQueue.main.async { work() }
+         }, addSizeCheck: @escaping @MainActor (Timer) -> Void = { RunLoop.main.add($0, forMode: .common) }) {
         self.model = model
         self.scheduleShow = scheduleShow
         self.orderPanel = orderPanel
+        self.currentEvent = currentEvent
+        self.pressedMouseButtons = pressedMouseButtons
+        self.checkFocusSoon = checkFocusSoon
+        self.addSizeCheck = addSizeCheck
         host = NSHostingController(rootView: SiteControlCenterView(model: model))
         host.sizingOptions = []
         card = SiteControlCenterCard(content: host.view, colors: model.colors.menu)
@@ -983,7 +1018,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
               after delay: DispatchTimeInterval? = nil, expectedWindow: NSWindow?, when valid: @escaping () -> Bool) {
         guard !closing, view.window === expectedWindow, valid() else { close(); return }
         if let expectedWindow, let press = Self.closingPresses.removeValue(forKey: ObjectIdentifier(expectedWindow)),
-           NSApp.currentEvent.map({ Self.isMouse($0) && $0.eventNumber == press }) == true {
+           currentEvent().map({ Self.isMouse($0) && $0.eventNumber == press }) == true {
             close(); return
         }
         let originalWindow = expectedWindow
@@ -1050,7 +1085,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
                 self?.updateSize()
             }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        addSizeCheck(timer)
         sizeCheck = timer
     }
 
@@ -1100,7 +1135,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         panel.makeFirstResponder(host.view)
         panel.hasShadow = true
         onDetach?()
-        if NSEvent.pressedMouseButtons & 1 != 0 { panel.performDrag(with: press) }
+        if pressedMouseButtons() & 1 != 0 { panel.performDrag(with: press) }
     }
 
     private func observe(_ parent: NSWindow) {
@@ -1121,11 +1156,11 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
 
     private func lostFocus() {
         guard let panel, !closing, !isDetached, keptOpen == 0 else { return }
-        if let event = NSApp.currentEvent, event.type == .leftMouseDown, let anchor = anchorView, let window = anchor.window,
+        if let event = currentEvent(), event.type == .leftMouseDown, let anchor = anchorView, let window = anchor.window,
            event.window === window, anchor.bounds.contains(anchor.convert(event.locationInWindow, from: nil)) {
             Self.closingPresses[ObjectIdentifier(window)] = event.eventNumber
         }
-        DispatchQueue.main.async { [weak self, weak panel] in
+        checkFocusSoon { [weak self, weak panel] in
             guard let self, let panel, self.panel === panel, !self.closing, !self.isDetached, self.keptOpen == 0,
                   !Self.holdsKey(panel) else { return }
             self.close()
