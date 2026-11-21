@@ -440,6 +440,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         }
         if NoteFormatShortcut.lastColor.matches(event) { return onRepeatLastTint?() ?? false }
         if NoteFormatShortcut.code.matches(event) { toggleInlineCode(); return true }
+        if NoteFormatShortcut.equation.matches(event), completion?.perform(.inlineEquation, in: self) == true { return true }
         return super.performKeyEquivalent(with: event)
     }
     override func alignLeft(_ sender: Any?) { if let onAlign { onAlign(.left) } else { super.alignLeft(sender) } }

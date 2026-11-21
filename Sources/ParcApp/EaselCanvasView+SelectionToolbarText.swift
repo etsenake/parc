@@ -11,7 +11,7 @@ extension EaselCanvasView {
     func selectionToolbarTextSupports(_ control: EaselToolbarControl, selected: [EaselItem]) -> Bool? {
         switch control {
         case .highlight: return editor != nil && selected.count == 1 && adaptsInk && !editingLabel
-        case .code: return editor != nil && selected.count == 1 && !editingLabel
+        case .code, .mention, .equation: return editor != nil && selected.count == 1 && !editingLabel
         default: return nil
         }
     }
@@ -33,6 +33,11 @@ extension EaselCanvasView {
         case .code:
             return .init(control: control, face: .symbol("chevron.left.forwardslash.chevron.right"), name: "Code",
                          shortcut: NoteFormatShortcut.code.display, isChecked: editor?.hasInlineCode() == true, isEnabled: ready)
+        case .mention:
+            return .init(control: control, face: .glyph("@"), name: "Mention", isEnabled: ready)
+        case .equation:
+            return .init(control: control, face: .symbol("x.squareroot"), name: "Equation", shortcut: NoteFormatShortcut.equation.display,
+                         isEnabled: ready)
         default:
             return nil
         }
@@ -43,6 +48,14 @@ extension EaselCanvasView {
         case .code:
             guard highlightReady, let editor, editor.selectedRanges.count == 1 else { return false }
             editor.toggleInlineCode()
+            return true
+        case .mention:
+            guard highlightReady, let editor, editor.selectedRanges.count == 1 else { return false }
+            editor.beginMention()
+            return true
+        case .equation:
+            guard highlightReady, let editor, editor.selectedRanges.count == 1 else { return false }
+            editor.insertInlineEquation()
             return true
         default:
             return nil
