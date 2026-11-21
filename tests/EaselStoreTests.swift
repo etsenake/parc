@@ -90,9 +90,21 @@ struct EaselStoreTests {
             arrow.startHead = .circle; arrow.endHead = .triangle; arrow.routing = .elbow
             arrow.startConnection = EaselConnection(itemID: diamond.id, side: .right)
             arrow.endConnection = EaselConnection(itemID: sticky.id, side: nil)
-            try session.perform("Add board objects") { $0.items += [diamond, sticky, section, arrow] }
+            arrow.endConnection?.anchor = EaselPoint(x: 0.25, y: 1)
+            arrow.text = "yes"; arrow.labelPosition = 0.3; arrow.labelBackground = true
+            arrow.waypoints = [EaselPoint(x: 60, y: 10)]
+            diamond.flipHorizontal = true; diamond.flipVertical = false
+            var junction = EaselItem(kind: .rectangle, frame: frame, zIndex: 4)
+            junction.shape = .summingJunction
+            var highlight = EaselItem(kind: .freehand, frame: frame, zIndex: 5, points: [.init(x: 0, y: 0), .init(x: 9, y: 9)])
+            highlight.brush = .highlighter; highlight.attachedTo = sticky.id
+            var tape = EaselItem(kind: .freehand, frame: frame, zIndex: 6, points: [.init(x: 0, y: 0), .init(x: 9, y: 0)])
+            tape.brush = .washi; tape.pattern = "candy-stripe"
+            var solid = arrow; solid.id = UUID(); solid.zIndex = 7; solid.endHead = .solidArrow; solid.startHead = .erdZeroOrMore
+            try session.perform("Add board objects") { $0.items += [diamond, sticky, section, arrow, junction, highlight, tape, solid] }
             let reopened = try EaselStore(directory: directory).load(session.document.id)
-            expect(reopened.document.items == [diamond, sticky, section, arrow], "Board object fields survive a save and reopen")
+            expect(reopened.document.items == [diamond, sticky, section, arrow, junction, highlight, tape, solid], "Board object fields survive a save and reopen")
+            expect(highlight.resolvedBrush == .highlighter && junction.resolvedBrush == .marker && arrow.resolvedLabelPosition == 0.3, "Brush and label helpers read stored values with defaults")
             expect(diamond.resolvedShape == .diamond && diamond.isLocked && diamond.resolvedRotation == 15, "Shape helpers read the stored outline, lock and rotation")
             let circle = EaselItem(kind: .circle, frame: frame)
             let plain = EaselItem(kind: .rectangle, frame: frame)
@@ -125,6 +137,20 @@ struct EaselStoreTests {
             refuses("Arrowheads belong to arrows") { $0.endHead = .triangle }
             refuses("Routing belongs to arrows") { $0.routing = .curved }
             refuses("Connections belong to arrows") { $0.startConnection = EaselConnection(itemID: diamond.id) }
+            refuses("Labels belong to arrows") { $0.labelPosition = 0.5 }
+            refuses("Bends belong to arrows") { $0.waypoints = [EaselPoint(x: 1, y: 1)] }
+            refuses("Brushes belong to drawings") { $0.brush = .highlighter }
+            refuses("Tape patterns are simple names") { item in
+                item.kind = .freehand; item.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]; item.pattern = "../escape"
+            }
+            refuses("Pinned connection points stay on the object") { item in
+                item.kind = .arrow; item.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
+                item.endConnection = EaselConnection(itemID: diamond.id, anchor: EaselPoint(x: 1.5, y: 0))
+            }
+            refuses("Label positions stay along the line") { item in
+                item.kind = .arrow; item.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]; item.labelPosition = 2
+            }
+            refuses("An object cannot stick to itself") { $0.attachedTo = $0.id }
             refuses("An arrow cannot connect to itself") { item in
                 item.kind = .arrow; item.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
                 item.endConnection = EaselConnection(itemID: item.id)

@@ -264,9 +264,13 @@ objects are ellipses. `fill`, `fillOpacity`, `strokeWidth` and `strokeDash`
 style shapes, stickies and sections; absent values keep the original look. Only
 arrows carry arrowheads (`startHead`, `endHead`; absent means none at the start
 and an arrow at the end), `routing` (absent means straight) and connections to
-other objects. `groupID`, `locked` and `rotation` (degrees around the frame's
-centre) apply to any object. Text, shapes and stickies hold rich text; sections
-keep a plain title. Validation refuses each field on objects it doesn't belong
+other objects, which may pin a point on the object (`anchor`), plus a label
+(`text`, `labelPosition`, `labelBackground`) and manual bends (`waypoints`).
+Drawings may use a highlighter or washi `brush` with a tape `pattern`.
+`groupID`, `locked`, `rotation` (degrees around the frame's centre),
+`flipHorizontal`, `flipVertical` and `attachedTo` (an object it sticks to and
+moves with) apply to any object. Text, shapes and stickies hold rich text;
+sections keep a plain title. Validation refuses each field on objects it doesn't belong
 to, so a malformed file is rejected whole rather than half drawn.
 
 ## Checks and limits

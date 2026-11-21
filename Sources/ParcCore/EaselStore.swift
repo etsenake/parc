@@ -11,19 +11,26 @@ enum EaselItemKind: String, Codable, CaseIterable {
 enum EaselShape: String, Codable, CaseIterable {
     case rectangle, roundedRectangle, ellipse, diamond, triangle, triangleDown, parallelogram, trapezoid,
          pentagon, hexagon, octagon, star, plus, speechBubble, arrowLeft, arrowRight, arrowUp, arrowDown,
-         chevron, cylinder
+         chevron, cylinder, parallelogramLeft, cylinderHorizontal, file, folder, document, documents,
+         predefinedProcess, shield, manualInput, internalStorage, or, summingJunction
 }
 
 enum EaselStrokeDash: String, Codable, CaseIterable { case solid, dashed, dotted }
 
-enum EaselArrowHead: String, Codable, CaseIterable { case none, arrow, triangle, circle, diamond, bar }
+enum EaselArrowHead: String, Codable, CaseIterable {
+    case none, arrow, triangle, circle, diamond, bar, solidArrow,
+         erdOne, erdMany, erdExactlyOne, erdZeroOrOne, erdOneOrMore, erdZeroOrMore
+}
 
 enum EaselConnectorRouting: String, Codable, CaseIterable { case straight, elbow, curved }
+
+enum EaselBrush: String, Codable, CaseIterable { case marker, highlighter, washi }
 
 struct EaselConnection: Codable, Equatable {
     enum Side: String, Codable, CaseIterable { case top, right, bottom, left }
     var itemID: UUID
     var side: Side?
+    var anchor: EaselPoint?
 }
 
 struct EaselPoint: Codable, Equatable {
@@ -184,6 +191,14 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var groupID: UUID?
     var locked: Bool?
     var rotation: Double?
+    var flipHorizontal: Bool?
+    var flipVertical: Bool?
+    var labelPosition: Double?
+    var labelBackground: Bool?
+    var waypoints: [EaselPoint]?
+    var brush: EaselBrush?
+    var pattern: String?
+    var attachedTo: UUID?
     var ownsEmbeddedPage: Bool { kind == .browser || (kind == .webCard && captureLayout != nil && liveCapture == true) }
     var resolvedShape: EaselShape? {
         switch kind {
@@ -197,6 +212,8 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var resolvedStartHead: EaselArrowHead { startHead ?? .none }
     var resolvedEndHead: EaselArrowHead { endHead ?? .arrow }
     var resolvedRouting: EaselConnectorRouting { routing ?? .straight }
+    var resolvedBrush: EaselBrush { brush ?? .marker }
+    var resolvedLabelPosition: Double { labelPosition ?? 0.5 }
 }
 
 struct EaselDocument: Codable, Identifiable, Equatable {
@@ -452,7 +469,7 @@ final class EaselStore {
                 throw EaselStoreError.invalidDocument("object geometry or appearance")
             }
             if let richText = item.richText {
-                guard item.kind.holdsText else { throw EaselStoreError.invalidDocument("rich text on an object without text") }
+                guard item.kind.holdsText || item.kind == .arrow else { throw EaselStoreError.invalidDocument("rich text on an object without text") }
                 try richText.validate(text: item.text)
             }
             try validateStyle(item)
@@ -491,6 +508,20 @@ final class EaselStore {
         if item.startConnection?.itemID == item.id || item.endConnection?.itemID == item.id {
             throw EaselStoreError.invalidDocument("an arrow connected to itself")
         }
+        let unit: (EaselPoint) -> Bool = { $0.x.isFinite && $0.y.isFinite && $0.x >= 0 && $0.x <= 1 && $0.y >= 0 && $0.y <= 1 }
+        guard [item.startConnection?.anchor, item.endConnection?.anchor].allSatisfy({ $0.map(unit) != false }),
+              item.labelPosition.map({ $0.isFinite && $0 >= 0 && $0 <= 1 }) != false,
+              item.waypoints.map({ $0.count <= 64 && $0.allSatisfy { $0.x.isFinite && $0.y.isFinite && abs($0.x) <= 1_000_000 && abs($0.y) <= 1_000_000 } }) != false,
+              item.pattern.map({ $0.count <= 64 && $0.range(of: "^[a-z0-9-]+$", options: .regularExpression) != nil }) != false else {
+            throw EaselStoreError.invalidDocument("connector or brush geometry")
+        }
+        if (item.labelPosition != nil || item.labelBackground != nil || item.waypoints != nil) && item.kind != .arrow {
+            throw EaselStoreError.invalidDocument("connector label or bend on a non-arrow object")
+        }
+        if (item.brush != nil || item.pattern != nil) && item.kind != .freehand {
+            throw EaselStoreError.invalidDocument("brush on a non-drawing object")
+        }
+        if item.attachedTo == item.id { throw EaselStoreError.invalidDocument("an object attached to itself") }
     }
 
     private func documentURL(_ id: UUID) -> URL {
