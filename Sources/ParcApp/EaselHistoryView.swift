@@ -61,7 +61,7 @@ final class EaselHistoryView: NSView, NoteFloatingPanelContent {
     static let size = NSSize(width: 680, height: 470)
     static let listWidth: CGFloat = 240
 
-    unowned let editor: EaselEditorViewController
+    weak var editor: EaselEditorViewController?
     let history: EaselHistory
     var onClose: (() -> Void)?
     var preferredSizeDidChange: (() -> Void)?
@@ -145,6 +145,7 @@ final class EaselHistoryView: NSView, NoteFloatingPanelContent {
     private static func objects(_ count: Int) -> String { count == 1 ? "1 object" : "\(count) objects" }
 
     func reload() {
+        guard let editor else { return }
         let document = editor.session.document
         versions = [EaselVersion(id: "", savedAt: document.modifiedAt, itemCount: document.items.count)] + history.versions(of: document.id)
         let now = Date()
@@ -166,7 +167,7 @@ final class EaselHistoryView: NSView, NoteFloatingPanelContent {
     }
 
     func select(index: Int) {
-        guard versions.indices.contains(index) else { return }
+        guard versions.indices.contains(index), let editor else { return }
         selected = index
         list.setItems(list.items.enumerated().map { offset, item in
             var copy = item
@@ -203,6 +204,7 @@ final class EaselHistoryView: NSView, NoteFloatingPanelContent {
 
     private func restoreSelected() {
         guard versions.indices.contains(selected), selected > 0 else { return }
+        guard let editor, !editor.session.isClosed else { onClose?(); return }
         do {
             try EaselHistoryPanel.restore(versions[selected], editor: editor, history: history)
             onClose?()
