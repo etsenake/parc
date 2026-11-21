@@ -598,8 +598,8 @@ final class EaselStyledTextView: LocalContentDropTextView {
     private func applyMarkdown(_ admission: EaselMarkdownEditing.Admission) {
         guard isEditable, !suppressMarkdown, !hasMarkedText(), selectedRanges.count == 1,
               !localUndo.isUndoing, !localUndo.isRedoing,
-              let edit = EaselMarkdownEditing.transform(attributedString(), admission: admission,
-                  selection: selectedRange(), typing: typingAttributes, base: objectStyle) else { return }
+              let edit = authoredEdit({ EaselMarkdownEditing.transform($0, admission: admission,
+                  selection: selectedRange(), typing: $1, base: objectStyle) }) else { return }
         suppressMarkdown = true; defer { suppressMarkdown = false }
         commitParagraph(edit, name: "Format Markdown")
     }
@@ -706,7 +706,17 @@ final class EaselStyledTextView: LocalContentDropTextView {
         let ranges = suppliedRanges ?? [selectedRange()]
         guard isEditable, !hasMarkedText(), suppliedRanges != nil || selectedRanges.count == 1,
               Self.validFormattingRanges(ranges, length: attributedString().length) else { return }
-        commitParagraph(EaselParagraphEditing.apply(kind, to: attributedString(), selections: ranges, typing: typingAttributes, base: objectStyle, bodyPointSize: paragraphBodyPointSize), name: kind.rawValue)
+        guard let edit = authoredEdit({ EaselParagraphEditing.apply(kind, to: $0, selections: ranges, typing: $1, base: objectStyle, bodyPointSize: paragraphBodyPointSize) }) else { return }
+        commitParagraph(edit, name: kind.rawValue)
+    }
+    private func authoredEdit(_ make: (NSAttributedString, [NSAttributedString.Key: Any]) -> EaselParagraphEditing.Edit?) -> EaselParagraphEditing.Edit? {
+        let scale = fontScale
+        guard scale.isFinite, scale > 0, abs(scale - 1) > 0.0005 else { return make(attributedString(), typingAttributes) }
+        guard var edit = make(EaselStickyText.unscaled(attributedString(), by: scale),
+                              EaselStickyText.scaledAttributes(typingAttributes, by: 1 / scale)) else { return nil }
+        edit.text = NSMutableAttributedString(attributedString: EaselStickyText.scaled(edit.text, by: scale))
+        edit.typing = EaselStickyText.scaledAttributes(edit.typing, by: scale)
+        return edit
     }
     private func commitParagraph(_ edit: EaselParagraphEditing.Edit, name: String) {
         do { _ = try EaselRichTextCodec.snapshot(edit.text) } catch { onClipboardError?(error); return }
@@ -744,7 +754,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
     }
     func changeListIndent(outdent: Bool) -> Bool {
         guard isEditable, !hasMarkedText(), selectedRanges.count == 1 else { return false }
-        if let edit = EaselParagraphEditing.indent(attributedString(), selection: selectedRange(), typing: typingAttributes, outdent: outdent, base: objectStyle) {
+        if let edit = authoredEdit({ EaselParagraphEditing.indent($0, selection: selectedRange(), typing: $1, outdent: outdent, base: objectStyle) }) {
             commitParagraph(edit, name: outdent ? "Decrease list indent" : "Increase list indent"); return true
         }
         return [.bullets, .numbers, .quote].contains(paragraphKind())
@@ -761,7 +771,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         let markdown = markdownAdmission("\n", replacement: selectedRange())
         defer { if let markdown { applyMarkdown(markdown) } }
         guard isEditable, !hasMarkedText(), selectedRanges.count == 1,
-              let edit = EaselParagraphEditing.newline(attributedString(), selection: selectedRange(), typing: typingAttributes, base: objectStyle, bodyPointSize: paragraphBodyPointSize) else {
+              let edit = authoredEdit({ EaselParagraphEditing.newline($0, selection: selectedRange(), typing: $1, base: objectStyle, bodyPointSize: paragraphBodyPointSize) }) else {
             super.insertNewline(sender); return
         }
         commitParagraph(edit, name: "New paragraph")

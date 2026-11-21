@@ -39,7 +39,9 @@ editor, the drawn text, the height refit and HTML export all take their insets
 from `EaselTextLayout.inset(scale:)` and `fragmentPadding(scale:)`, so a big
 sticky stays roomy and grows exactly as far as its text. Format bar sizes and
 size steps read and change the unscaled size, so making text larger in a
-doubled sticky shows the doubled larger size.
+doubled sticky shows the doubled larger size. Headings, lists and typed
+markdown are built at the regular size and scaled the same way, and text
+copied out of a scaled sticky or pasted into one keeps its regular size.
 
 ## Sticky size
 
