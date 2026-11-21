@@ -44,6 +44,17 @@ Scrolling that starts over a page scrolls the page and carries on into the note
 once the page hits its edge. The pages nap after four hours out of sight, follow the tab
 between windows and ask before leaving, like an Easel's pages ([embedded pages](embedded-pages.md#live-embeds-in-notes)).
 
+Captures sent from Parc's capture tool to a note (New Note or one of the
+Space's recent notes) land as image blocks at the caret, or at the end when the
+note has no caret, with the PNG in the note's Attachments folder. Their header
+shows the page's favicon, title and domain with an Easel-style label such as
+"Snapshot · captured today" and Make live, which frames the live page to the
+captured region in the note's Profile; Back to snapshot returns to the original
+image once the page agrees to close. Make live depends only on the block's saved
+region, never on the source tab. Captures without one (full page, cropped,
+marked up or Portrait-framed) say "Snapshot only". Plain-text notes refuse
+captures. The rules are [Easel live captures](easel-live-captures.md#live-captures-in-notes).
+
 Easel blocks (`/easel`, also `canvas`, `board` or `whiteboard`) put an Easel in
 the note. The block starts as a search of the Profile's Easels with New Easel,
 titled from the search; pasting a `parc://easel/…` link offers Easel too. The block shows the real canvas with the Easel tab's editor and

@@ -79,3 +79,19 @@ inline style rather than replacing the body's entire CSS text.
 
 Injected page-pool checks cover geometry ownership, retirement and immutable
 image persistence.
+
+## Live captures in notes
+
+A capture sent to a note becomes an image block carrying the same PNG, source
+URL, acquisition time and optional geometry
+([file format](notes-format.md#media-bookmarks-and-page-links)). Its labels and
+can-go-live rule come from `EaselWebItemChrome` by mapping the block onto a web
+card (`NoteCaptureLive`), and its header is the shared `EmbeddedPageHeader`.
+Make live presents the same first-use education and stores `live` in the block,
+so it follows Undo. The live page is a member of the note's `NoteEmbeddedPages`
+pool, keyed by URL plus geometry, and takes the note's first-click, scroll
+chaining and Escape rules. `EmbeddedLiveCapturePositioner` owns positioning with
+the native API's validation and deadlines. Back to snapshot asks the page to
+close before committing; a refused close keeps live mode. Navigation never
+rewrites the saved source. `NoteCaptureTests` covers the format, exports,
+labels, destination catalog and delivery into note files.

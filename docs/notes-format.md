@@ -115,7 +115,7 @@ after it:
 The comment always starts with `parc`, followed by words and `name="value"`
 pairs. Parc writes `color`, `icon`, `width`, `height` (an embed's or Easel's height),
 `align`, `crop` and `mask` (an image's framing), `caption`, `wrap` (code that wraps), `view` (`code` or `split` for a Mermaid block; Preview writes nothing), the table flags `no-header-row`, `header-column` and
-`widths="120,,80"`, the table's `merge` and `colors` (see below), the bookmark fields, and a block kind (`paragraph`,
+`widths="120,,80"`, the table's `merge` and `colors` (see below), the bookmark and capture fields, and a block kind (`paragraph`,
 `image`, `video`, `audio`, `file`, `pdf`, `embed`, `easel` or `bookmark`) when the file
 wouldn't otherwise make the kind clear. An empty paragraph that has a colour is
 written as `<!-- parc paragraph color="…" -->` on its own line.
@@ -376,6 +376,11 @@ reads as a PDF too and is saved in the image form. Plain-text notes keep only
 the file's path on its own line. HTML export shows the PDF in an `<object>`
 (embedded in the file when it's under 25 MB) with a link to the original.
 
+A **capture** is an image sent from Parc's capture tool, flagged with its page:
+`![Story](Attachments/Story.png) <!-- parc capture="https://…" captured="2026-11-20T15:04:05Z" viewport="1280,800" scroll="0,1200" region="10,20,400,300" -->`.
+`viewport`, `scroll` and `region` (CSS pixels) let it go live, and `live` marks it
+showing the live page. Exports show the image with a "Captured from" link.
+
 A **bookmark** is a link on its own line plus its cached preview:
 
 ```markdown
@@ -457,8 +462,7 @@ and the emoji come along.
 
 ## What changes when Parc saves
 
-Parc keeps the meaning of your file and as much of its style as it can track.
-These normalizations are deliberate:
+Parc keeps your file's meaning and as much style as it can. Deliberate changes:
 
 - Emphasis is written `*italic*` and `**bold**`. Underscore forms are read but
   not kept.
@@ -482,18 +486,14 @@ These normalizations are deliberate:
   example `<div>` left behind by an empty tag) gets an empty `<b></b>` in
   front, so it stays text.
 
-Everything else, including HTML and constructs Parc doesn't model, comes back
-the way it was read.
+Everything else, including HTML Parc doesn't model, comes back as it was read.
 
 ## For developers
 
-The codec lives in `Sources/ParcCore/NoteMarkdown*.swift`. A CommonMark block
-parser and an inline parser using the spec's delimiter algorithm read the file
-into a `NotePage`. The writer produces Markdown and checks each run of inline
-text by parsing it back, switching to HTML tags and full escaping if the check
-fails. Parsing a 5,000-line file stays well under 100 ms. The windowless tests
-cover hand-written fixtures, real README, changelog and note samples, and
-randomly generated pages that must survive a save and reload unchanged:
+The codec in `Sources/ParcCore/NoteMarkdown*.swift` reads a file into a
+`NotePage` with CommonMark block and inline parsers; the writer checks each run
+of inline text by parsing it back. Windowless tests cover fixtures, real
+samples and random pages that must survive a save and reload unchanged:
 
 ```sh
 bash scripts/test-notes-editor.sh Markdown

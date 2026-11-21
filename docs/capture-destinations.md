@@ -43,6 +43,15 @@ completion, cancellation and failure; completion is not proof of recipient
 delivery. Original lease invalidation detaches the callback. AppKit owns an
 already-open composer and exposes no public retraction API.
 
+Notes are the other document destination. `CaptureNoteDestination.catalog`
+joins the Space Profile's notes with Sidebar activity like Easels, keyed by the
+file's identity so selection survives renames; notes without activity follow by
+modification date, and the catalog keeps the 50 most recent. New Note creates a
+note titled from the page. `NoteCaptureDelivery` copies the PNG into the note's
+Attachments folder and inserts the capture at the open note's caret (replacing
+an empty line) or at the end, as one Undo step; missing, locked and plain-text
+notes fail without a substitute. Private and popup windows offer no notes.
+
 ## Ownership and checks
 
 The capture lease owns the exact page, document, Profile, Space and window.

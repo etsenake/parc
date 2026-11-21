@@ -91,6 +91,10 @@ bar, as in an Easel, and Find and Replace is off.
 Easel blocks in notes reuse this scroll latch for their canvas, but host no
 live pages: their webpage objects show saved cards.
 
+Live capture blocks share the note pool: their page loads the capture's saved
+source without the app Referer and is framed to the captured region; see
+[live captures in notes](easel-live-captures.md#live-captures-in-notes).
+
 Navigation inside a note embed doesn't rewrite the file. Deleting the block
 closes its page with the page's usual leave-page check; if someone chooses to
 stay, the page parks out of sight until Undo brings the block back or the note
