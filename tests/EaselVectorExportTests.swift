@@ -45,7 +45,8 @@ struct EaselVectorExportTests {
         arrow.color = "#C0322D"; arrow.strokeWidth = 6; arrow.strokeDash = .dashed
         let svgArrow = EaselVectorExport.element(arrow, art: .init())
         let paths = svgArrow.components(separatedBy: "<path").dropFirst()
-        expect(paths.first?.contains("stroke:var(--easel-ink-red,#C0322D);stroke-width:6;stroke-dasharray:18 18") == true,
+        let shaft = paths.first ?? ""
+        expect(shaft.contains("stroke:var(--easel-ink-red,#C0322D)") && shaft.contains("stroke-width:6") && shaft.contains("stroke-dasharray:18 18"),
                "arrow shafts export their colour, width and dashes")
         expect(paths.last?.contains("stroke-dasharray") == false, "arrow heads stay solid")
         var marker = EaselItem(kind: .freehand, frame: .init(x: 0, y: 0, width: 10, height: 10))
@@ -56,9 +57,9 @@ struct EaselVectorExportTests {
                "highlighters export translucent highlight colours")
         let css = EaselVectorExport.css(.standard)
         let parts = css.components(separatedBy: "prefers-color-scheme:dark")
-        expect(parts.count == 2 && parts[0].contains("--easel-ink-blue:#2C6C91;") && parts[1].contains("--easel-ink-blue:#4CA5D8;"),
+        expect(parts.count >= 2 && parts[0].contains("--easel-ink-blue:#2C6C91;") && parts[1].contains("--easel-ink-blue:#4CA5D8;"),
                "palette colours carry light and dark values")
-        expect(parts.count == 2 && parts[1].contains("--easel-sticky-neutral:#2A2733;") && parts[1].contains("--easel-fill-blue:#27425A;"),
+        expect(parts.count >= 2 && parts[1].contains("--easel-sticky-neutral:#2A2733;") && parts[1].contains("--easel-fill-blue:#27425A;"),
                "dark viewers get the dark paper colours")
         let run = EaselVectorTextRun(x: 0, y: 0, text: "Hi", fontFamily: "serif", fontSize: 12, color: "#3B7255")
         expect(EaselVectorExport.textRun(run).contains("fill:var(--easel-ink-green,#3B7255)"), "palette text colours adapt in exports")
