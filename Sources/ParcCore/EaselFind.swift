@@ -42,6 +42,13 @@ enum EaselFinder {
         }
     }
 
+    static func richText(of item: EaselItem, part: EaselFindMatch.Part) -> EaselRichText? {
+        switch part {
+        case .text: return item.richText
+        case .cell(let row, let column): return item.table?.cell(EaselTableCoordinate(row: row, column: column))?.richText
+        }
+    }
+
     static func replaceability(of item: EaselItem) -> EaselReplaceability {
         switch item.kind {
         case .text, .sticky, .rectangle, .circle, .arrow, .section, .code, .table: return item.isLocked ? .locked : .replaceable
@@ -80,7 +87,13 @@ enum EaselFinder {
         var result: [EaselFindMatch] = []
         for item in EaselPages.pageDocuments(document).flatMap({ readingOrder(visibleItems(in: $0)) }) {
             for (part, text) in searchableParts(of: item) {
-                for range in NotePageFinder.ranges(of: query, in: text, options: options) {
+                let map = EaselRichText.readableMap(text, rich: richText(of: item, part: part))
+                var last: Range<Int>?
+                for found in NotePageFinder.ranges(of: query, in: map.text, options: options) {
+                    guard found.lowerBound < map.starts.count, found.upperBound >= 1, found.upperBound <= map.ends.count else { continue }
+                    let range = map.starts[found.lowerBound]..<map.ends[found.upperBound - 1]
+                    guard range != last else { continue }
+                    last = range
                     result.append(EaselFindMatch(itemID: item.id, part: part, range: range))
                 }
             }
@@ -198,7 +211,7 @@ enum EaselFinder {
         let source = text as NSString
         guard range.lowerBound >= 0, range.upperBound <= source.length, !range.isEmpty else { return .failed }
         let nsRange = NSRange(location: range.lowerBound, length: range.count)
-        if let rich, rich.runs.contains(where: { $0.attributes.image != nil && $0.location < range.upperBound && range.lowerBound < $0.location + $0.length }) {
+        if let rich, rich.runs.contains(where: { $0.attributes.isAtomic && $0.location < range.upperBound && range.lowerBound < $0.location + $0.length }) {
             return .failed
         }
         guard source.substring(with: nsRange) != replacement else { return .unchanged }
@@ -213,7 +226,7 @@ extension EaselRichText {
     func replacing(_ range: Range<Int>, with insertedLength: Int) -> EaselRichText? {
         guard insertedLength >= 0,
               let source = runs.first(where: { $0.location <= range.lowerBound && range.lowerBound < $0.location + $0.length }),
-              !runs.contains(where: { $0.attributes.image != nil && $0.location < range.upperBound && range.lowerBound < $0.location + $0.length }) else {
+              !runs.contains(where: { $0.attributes.isAtomic && $0.location < range.upperBound && range.lowerBound < $0.location + $0.length }) else {
             return nil
         }
         var segments: [(length: Int, attributes: Attributes)] = []
@@ -222,7 +235,7 @@ extension EaselRichText {
         }
         if insertedLength > 0 {
             var attributes = source.attributes
-            attributes.image = nil
+            attributes.image = nil; attributes.inline = nil
             segments.append((insertedLength, attributes))
         }
         for run in runs where run.location + run.length > range.upperBound {
@@ -232,7 +245,7 @@ extension EaselRichText {
         var merged: [Run] = []
         var location = 0
         for segment in segments where segment.length > 0 {
-            if let last = merged.last, last.attributes == segment.attributes, segment.attributes.image == nil {
+            if let last = merged.last, last.attributes == segment.attributes, !segment.attributes.isAtomic {
                 merged[merged.count - 1].length += segment.length
             } else {
                 merged.append(Run(location: location, length: segment.length, attributes: segment.attributes))

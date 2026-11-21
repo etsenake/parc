@@ -42,6 +42,15 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/Sources/ParcApp/EaselStickyText.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
+  "$repo_root/Sources/ParcApp/EaselInlineText.swift" \
+  "$repo_root/Sources/ParcApp/NoteTextAttachments.swift" \
+  "$repo_root/Sources/ParcApp/NoteFloatingPanel.swift" \
+  "$repo_root/Sources/ParcApp/DocumentDefaultIcon.swift" \
+  "$repo_root/Sources/ParcApp/LibraryArtwork.swift" \
+  "$repo_root/Sources/ParcApp/SidebarIconCatalog.swift" \
+  "$repo_root/Sources/ParcApp/MenuItemImage.swift" \
+  "$repo_root/Sources/ParcApp/ParcBrandMark.swift" \
+  "$repo_root/tests/NotesEditor/NoteDesignSystemStubs.swift" \
   "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
   "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \

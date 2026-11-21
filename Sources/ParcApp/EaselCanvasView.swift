@@ -2458,7 +2458,7 @@ private final class EaselAccessibleObject: NSView {
         if item.kind.isMedia { value = item.altText ?? item.fileName ?? item.url }
         else if let table = item.table { value = table.accessibilitySummary }
         else if item.kind == .section { value = canvas?.sectionSummary(item) }
-        else { value = item.text.isEmpty ? item.url : item.text }
+        else { value = item.text.isEmpty ? item.url : EaselInlineText.spoken(item.text, rich: item.richText) }
         return item.isLocked ? ["Locked", value].compactMap { $0 }.joined(separator: ", ") : value
     }
     override func isAccessibilityEnabled() -> Bool { acceptsFirstResponder }

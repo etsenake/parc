@@ -327,7 +327,7 @@ enum EaselTableData {
         return area.rows.map { row in
             area.columns.map { column -> String in
                 let cell = EaselTableCoordinate(row: row, column: column)
-                return field(table.isCovered(cell) ? "" : (table.cell(cell)?.text ?? ""), separator: separator)
+                return field(table.isCovered(cell) ? "" : (table.cell(cell).map { EaselRichText.readable($0.text, rich: $0.richText) } ?? ""), separator: separator)
             }.joined(separator: String(separator))
         }.joined(separator: lineEnding) + lineEnding
     }
@@ -355,7 +355,7 @@ enum EaselTableData {
                     if columns > 1 { attributes += " colspan=\"\(columns)\"" }
                 }
                 if let fill = value.fill { attributes += " style=\"background-color:" + fill + "\"" }
-                let text = EaselVectorExport.escape(value.text.replacingOccurrences(of: "\u{FFFC}", with: ""))
+                let text = EaselVectorExport.escape(EaselRichText.readable(value.text, rich: value.richText))
                     .replacingOccurrences(of: "\n", with: "<br>")
                 result += "<td" + attributes + ">" + text + "</td>"
             }

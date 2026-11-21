@@ -53,6 +53,72 @@ struct EaselRichText: Codable, Equatable {
         var lists: [List]
         var heading: Int? = nil
     }
+    struct Inline: Codable, Equatable {
+        enum Kind: String, Codable { case note, date, equation, emoji }
+        struct Moment: Codable, Equatable {
+            var year: Int
+            var month: Int
+            var day: Int
+            var hour: Int?
+            var minute: Int?
+            var isValid: Bool {
+                guard (1...9999).contains(year), (1...12).contains(month), (1...31).contains(day),
+                      hour.map({ (0...23).contains($0) }) ?? (minute == nil), minute.map({ (0...59).contains($0) }) ?? true else { return false }
+                var calendar = Calendar(identifier: .gregorian)
+                calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+                return DateComponents(calendar: calendar, year: year, month: month, day: day).isValidDate
+            }
+        }
+        static let dateFormats: Set<String> = ["full", "short", "mdy", "dmy", "ymd"]
+        static let timeFormats: Set<String> = ["12h", "24h"]
+        static let maximumImageBytes = 1_048_576
+        var kind: Kind
+        var target: String?
+        var title: String?
+        var tex: String?
+        var start: Moment?
+        var end: Moment?
+        var remind: Bool?
+        var remindBefore: Int?
+        var timeZone: String?
+        var format: String?
+        var timeFormat: String?
+        var image: Data?
+
+        static func validTarget(_ value: String) -> Bool {
+            guard value.utf8.count <= 4_096, let url = URL(string: value), let scheme = url.scheme?.lowercased() else { return false }
+            if scheme == "file" { return url.path.hasPrefix("/") && url.path.count > 1 }
+            return scheme == "parc" && url.host == "easel" && url.pathComponents.count == 2
+                && UUID(uuidString: url.lastPathComponent) != nil
+        }
+        static func validEmojiName(_ name: String) -> Bool {
+            let bytes = Array(name.utf8)
+            guard !bytes.isEmpty, bytes.count <= 48 else { return false }
+            return bytes.allSatisfy { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) || $0 == 95 || $0 == 45 || $0 == 43 }
+                && bytes.contains { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) }
+        }
+        func validate() throws {
+            let dateFields = start != nil || end != nil || remind != nil || remindBefore != nil || timeZone != nil || format != nil || timeFormat != nil
+            let valid: Bool
+            switch kind {
+            case .note:
+                valid = target.map(Self.validTarget) == true && (title?.utf8.count ?? 0) <= 1_024
+                    && tex == nil && image == nil && !dateFields
+            case .equation:
+                valid = (tex?.utf8.count ?? 0) <= 4_096 && target == nil && title == nil && image == nil && !dateFields
+            case .emoji:
+                valid = title.map(Self.validEmojiName) == true && target == nil && tex == nil && !dateFields
+                    && image.map { !$0.isEmpty && $0.count <= Self.maximumImageBytes && $0.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]) } ?? true
+            case .date:
+                valid = target == nil && title == nil && tex == nil && image == nil
+                    && start?.isValid == true && end.map(\.isValid) ?? true
+                    && remindBefore.map { remind == true && (0...10_080).contains($0) } ?? true
+                    && timeZone.map { $0.utf8.count <= 64 && TimeZone(identifier: $0) != nil } ?? true
+                    && format.map(Self.dateFormats.contains) ?? true && timeFormat.map(Self.timeFormats.contains) ?? true
+            }
+            guard valid else { throw EaselStoreError.invalidDocument("inline rich text run") }
+        }
+    }
     enum SemanticInk: String, Codable { case noteBody }
     struct Attributes: Codable, Equatable {
         var font: Font
@@ -68,6 +134,8 @@ struct EaselRichText: Codable, Equatable {
         var baseline: Double = 0
         var paragraph: Paragraph?
         var image: Image? = nil
+        var inline: Inline? = nil
+        var isAtomic: Bool { image != nil || inline != nil }
     }
     struct Run: Codable, Equatable {
         var location: Int
@@ -124,6 +192,14 @@ struct EaselRichText: Codable, Equatable {
                     throw EaselStoreError.invalidDocument("inline image range")
                 }
                 imageBytes += image.data.count
+                guard imageBytes <= 4_194_304 else { throw EaselStoreError.tooLarge }
+            }
+            if let inline = a.inline {
+                try inline.validate()
+                guard a.image == nil, run.length == 1, units[run.location] == 0xFFFC else {
+                    throw EaselStoreError.invalidDocument("inline rich text range")
+                }
+                imageBytes += inline.image?.count ?? 0
                 guard imageBytes <= 4_194_304 else { throw EaselStoreError.tooLarge }
             }
             if let p = a.paragraph {

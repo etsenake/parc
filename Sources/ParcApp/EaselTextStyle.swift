@@ -307,7 +307,7 @@ struct EaselStyledText: Codable, Equatable {
     @MainActor func write(to pasteboard: NSPasteboard) throws {
         try validate()
         let encoded = try JSONEncoder().encode(self)
-        let value = attributed
+        let value = EaselInlineText.readable(attributed)
         let images = EaselTextAttachments.hasImages(value)
         let native = try value.data(from: NSRange(location: 0, length: value.length),
             documentAttributes: [.documentType: images ? NSAttributedString.DocumentType.rtfd : NSAttributedString.DocumentType.rtf])
@@ -315,7 +315,7 @@ struct EaselStyledText: Codable, Equatable {
         let item = NSPasteboardItem()
         item.setData(encoded, forType: Self.pasteboardType)
         item.setData(native, forType: images ? .rtfd : .rtf)
-        item.setString(EaselTextAttachments.plainString(text), forType: .string)
+        item.setString(EaselRichText.readable(text, rich: richText), forType: .string)
         pasteboard.clearContents()
         guard pasteboard.writeObjects([item]) else { throw CocoaError(.fileWriteUnknown) }
     }
@@ -622,7 +622,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         do {
             guard let selected = try selectedPayload() else { return false }
             try selected.validate()
-            if type == .string { return board.setString(EaselTextAttachments.plainString(selected.text), forType: type) }
+            if type == .string { return board.setString(EaselRichText.readable(selected.text, rich: selected.richText), forType: type) }
             if type == .html || type == NoteClipboard.markdownType {
                 let blocks = EaselMarkdown.blocks(text: selected.text, richText: selected.richText)
                 let item = NSPasteboardItem()
@@ -633,7 +633,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
             let data: Data
             if type == EaselStyledText.pasteboardType { data = try JSONEncoder().encode(selected) }
             else if type == .rtfd || (type == .rtf && !EaselTextAttachments.hasImages(selected.attributed)) {
-                let value = selected.attributed
+                let value = EaselInlineText.readable(selected.attributed)
                 data = try value.data(from: NSRange(location: 0, length: value.length),
                     documentAttributes: [.documentType: type == .rtfd ? NSAttributedString.DocumentType.rtfd : NSAttributedString.DocumentType.rtf])
             } else { return false }

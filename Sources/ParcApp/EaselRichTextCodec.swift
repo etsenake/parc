@@ -70,7 +70,10 @@ enum EaselRichTextCodec {
                           (value.string as NSString).substring(with: range) == "\u{FFFC}" else {
                         throw EaselTextClipboardError.unsupportedFormatting
                     }
-                    a.image = try EaselTextAttachments.source(attachment)
+                    if let inline = (attachment as? EaselInlineAttachment)?.inline {
+                        try inline.validate()
+                        a.inline = inline
+                    } else { a.image = try EaselTextAttachments.source(attachment) }
                 }
                 a.background = try (attrs[.backgroundColor] as? NSColor).map { try EaselTextHighlight.stored($0) ?? hex($0) }
                 a.underlineColor = try (attrs[.underlineColor] as? NSColor).map(hex)
@@ -98,7 +101,7 @@ enum EaselRichTextCodec {
                         heading: p.headerLevel == 0 ? nil : p.headerLevel)
                     if p == NSParagraphStyle.default { a.paragraph = nil }
                 }
-                if a.image == nil, let last = runs.last, last.attributes == a, last.location + last.length == range.location {
+                if !a.isAtomic, let last = runs.last, last.attributes == a, last.location + last.length == range.location {
                     runs[runs.count - 1].length += range.length
                 } else { runs.append(.init(location: range.location, length: range.length, attributes: a)) }
             } catch let failure { error = failure; stop.pointee = true }
@@ -109,6 +112,7 @@ enum EaselRichTextCodec {
     static func attributes(_ a: EaselRichText.Attributes) -> [NSAttributedString.Key: Any] {
         var result: [NSAttributedString.Key: Any] = [.font: font(a.font), .foregroundColor: a.semanticInk == .noteBody ? noteBodyColor : color(a.ink)]
         if let image = a.image { result[.attachment] = EaselImageAttachment(source: image) }
+        else if let inline = a.inline { result[.attachment] = EaselInlineAttachment(inline: inline) }
         if let c = a.background { result[.backgroundColor] = color(c) }
         if a.underline != 0 { result[.underlineStyle] = a.underline }
         if a.strike != 0 { result[.strikethroughStyle] = a.strike }
