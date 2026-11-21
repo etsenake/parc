@@ -10,7 +10,35 @@ struct EaselLinkHit: Equatable {
     var key: String { "\(itemID.uuidString)-\(range.location)-\(range.length)-\(link)" }
 }
 
+struct EaselAtomHit: Equatable {
+    var itemID: UUID
+    var index: Int
+    var rect: NSRect
+}
+
+struct EaselRestingText {
+    var manager: NSLayoutManager
+    var container: NSTextContainer
+    var storage: NSTextStorage
+    var origin: NSPoint
+}
+
 enum EaselLinkHitTest {
+    @MainActor
+    static func atom(at point: NSPoint, manager: NSLayoutManager, container: NSTextContainer, storage: NSTextStorage,
+                     origin: NSPoint, itemID: UUID) -> EaselAtomHit? {
+        guard manager.numberOfGlyphs > 0, storage.length > 0 else { return nil }
+        let local = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
+        var fraction: CGFloat = 0
+        let glyph = manager.glyphIndex(for: local, in: container, fractionOfDistanceThroughGlyph: &fraction)
+        guard glyph < manager.numberOfGlyphs else { return nil }
+        let box = manager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+        guard box.insetBy(dx: -1, dy: 0).contains(local) else { return nil }
+        let index = manager.characterIndexForGlyph(at: glyph)
+        guard let inline = EaselInlineText.inline(at: index, in: storage), EaselAtomClick.opens(inline.kind) else { return nil }
+        return EaselAtomHit(itemID: itemID, index: index, rect: box.offsetBy(dx: origin.x, dy: origin.y))
+    }
+
     @MainActor
     static func hit(at point: NSPoint, manager: NSLayoutManager, container: NSTextContainer, storage: NSTextStorage,
                     origin: NSPoint, itemID: UUID) -> EaselLinkHit? {
@@ -64,24 +92,28 @@ extension EaselCanvasView {
         return hit
     }
 
-    private func restingLinkHit(_ item: EaselItem, at point: NSPoint) -> EaselLinkHit? {
-        guard (item.rotation ?? 0) == 0, item.flipHorizontal != true, item.flipVertical != true else { return nil }
+    func restingText(_ item: EaselItem, at point: NSPoint?) -> EaselRestingText? {
+        guard EaselAtomClick.isUpright(item) else { return nil }
         if item.kind == .arrow {
-            guard let rect = connectorLabelRect(item), rect.contains(point) else { return nil }
+            guard let rect = connectorLabelRect(item), point.map(rect.contains) ?? true else { return nil }
             let layout = connectorLabelLayout(item)
             let used = layout.used
             let origin = NSPoint(x: rect.minX + CGFloat(EaselConnectorLabel.paddingX) - used.minX,
                                  y: rect.minY + CGFloat(EaselConnectorLabel.paddingY) - used.minY)
-            return EaselLinkHitTest.hit(at: point, manager: layout.manager, container: layout.container, storage: layout.storage,
-                                        origin: origin, itemID: item.id)
+            return EaselRestingText(manager: layout.manager, container: layout.container, storage: layout.storage, origin: origin)
         }
         let frame = NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height)
-        guard frame.contains(point), editingID != item.id else { return nil }
+        guard point.map(frame.contains) ?? true, editingID != item.id else { return nil }
         let layout = cachedTextLayout(for: item)
         let placed = EaselTextPlacement.origin(for: item, textHeight: Double(layout.height), overflowing: false)
         let origin = NSPoint(x: placed.x + layout.inset.width, y: placed.y + layout.inset.height)
-        return EaselLinkHitTest.hit(at: point, manager: layout.manager, container: layout.container, storage: layout.storage,
-                                    origin: origin, itemID: item.id)
+        return EaselRestingText(manager: layout.manager, container: layout.container, storage: layout.storage, origin: origin)
+    }
+
+    private func restingLinkHit(_ item: EaselItem, at point: NSPoint) -> EaselLinkHit? {
+        guard let text = restingText(item, at: point) else { return nil }
+        return EaselLinkHitTest.hit(at: point, manager: text.manager, container: text.container, storage: text.storage,
+                                    origin: text.origin, itemID: item.id)
     }
 
     func updateLinkHover(at point: NSPoint?, allowed: Bool) {

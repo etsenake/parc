@@ -201,6 +201,18 @@ and disappear when it's deleted. Typing `$x^2$` or picking Inline equation
 makes an inline equation typeset by the Notes math renderer; clicking it opens
 the Notes equation editor, and an empty one that's left empty goes away.
 
+On the canvas the same clicks work without double-clicking into the text: once
+an unlocked text object, sticky, shape or connector label is selected, a click
+on a date or inline equation puts the object into editing with the caret after
+it and opens the same date picker or equation editor under it, so the change is
+one native Undo step exactly as while typing. An unselected object keeps the
+select-first rule, so its first click only selects it. Locked objects, Easels
+in locked notes, view-only boards and capture boards stay read-only (dates
+still show, no picker). The atom is found in the cached text layout the canvas
+draws from, and the pointing hand shows over each one in the selected object.
+Like the link card, rotated or flipped objects skip it: edit them to change an
+atom.
+
 Inline runs are saved as typed payloads on a U+FFFC character (see
 [Easels](easels.md#range-formatting-and-persistence)). Find matches their words
 and highlights the whole pill, Replace leaves them alone, VoiceOver reads them
