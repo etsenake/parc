@@ -69,6 +69,7 @@ extension EaselCanvasView {
         let placed = Self.emphasizingHeadings(base.moved(by: x, y))
         do { try session.perform("Add Mermaid diagram") { $0.items.append(contentsOf: placed.items) } }
         catch { onError?(error); return false }
+        revealConnectors(placed.items.map(\.id))
         selection = Set(placed.items.map(\.id))
         resizeCanvas(viewport: enclosingScrollView?.contentSize ?? visible.size)
         window?.makeFirstResponder(self)
