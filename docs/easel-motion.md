@@ -52,9 +52,9 @@ focus is outside the canvas, and it returns when that ends. The same
 handle eligibility governs drawing, pointer hits, cursors, accessibility
 children and retained accessibility actions. Gesture visibility changes notify
 the existing keyboard/accessibility structure without changing focus. Selection
-outlines, marquee geometry, guides, object transforms and live renderer frames
-follow the current input directly. They do not acquire invented animations or
-haptic pulses. The two original captured-card modes keep actual page
+outlines, marquee geometry, object transforms and live renderer frames follow
+the current input directly; guides fade in and tick as described under Snaps
+and live feedback. The two original captured-card modes keep actual page
 positioning/retirement and the immutable screenshot; motion never substitutes
 a snapshot for a live renderer or changes its crop frame.
 
@@ -157,6 +157,63 @@ stays behind. The scale, shadow, roll direction and pulse maths live in
 `EaselControlSurface` and `EaselRollingText` in `EaselCanvasControlMotion.swift` apply
 them.
 
+## Snaps and live feedback
+
+Snapping clicks under your fingertip. Each kind of snap taps
+`EaselCanvasHaptics.snap()` once when it engages, through its own
+`EaselSnapTicker`, and stays quiet while it holds: an alignment or spacing
+guide during a drag or resize (keyed by anchor and line), a rotation landing on
+a new 15° step (primed with the starting angle so grabbing the handle is
+silent, and quiet while Command turns freely), and a connector end taking a
+shape's side magnet, automatic outline or pinned point, and a resize landing
+on another object's size. Keyboard nudges,
+programmatic changes and undo never tick, and every ticker resets when the
+pointer gesture ends.
+
+A guide fades in over 0.08 seconds as it engages and its marks along the moving
+object pop from 35% on the pop spring; a guide that holds doesn't replay.
+Resizing one shape, section, image, video or web item snaps its width or height
+to a visible unrotated one within 6 points on screen, keeping the opposite edge
+(or the centre with Option) still; an alignment guide on that axis wins, and
+Command or a kept aspect ratio skips it. Matching sizes show a dimension line
+with end ticks over each object, faded in and popped like guides.
+Dragging a connector end over an object gives the object a soft glow ring that
+fades in on the highlight spring, and the magnet the end will take grows to its
+larger dot on the same spring.
+
+Connectors made for you draw themselves from start to end over 0.25 seconds and
+pop their arrowhead and label at the end: quick create, new mind maps, children,
+siblings and attached topics, Mermaid imports, templates, pasted and inserted
+connectors, and branches revealed by expanding a mind map (deeper ones a beat
+later). A connector you drag out pops its arrowhead when you let go, and an end
+you drop onto an object pops its head there. Duplicates keep gliding instead.
+
+Carrying objects over a section they would join brightens its tray: a tint and
+a heavier border fade in over 0.1 seconds and fade back out when they leave.
+Dropping them in flashes the border once. Moving things within the section
+they're already in stays quiet.
+
+Collapsing a mind-map branch folds its topics into the collapsed topic, gliding,
+shrinking and fading in 0.2 seconds; expanding glides them back out of it. A new
+child or sibling grows out of its parent while its neighbours glide aside.
+Changing page with Page Up, Page Down, the switcher or a page link slides the
+board 24 points in the direction of travel while the old page cross-fades away
+(0.22 seconds). A sticky that grows or shrinks while you type eases to its new
+height on the settle spring. Inserted or duplicated table rows and columns
+slide open and deleted ones close up. Erased strokes poof like deleted
+objects.
+
+The rules match object motion: effects play only on screen, read Reduce Motion
+when they start and settle on any pointer press, pinch, window change or
+hiding. Under Reduce Motion guides and drawn connectors only fade, pages only
+fade, and folds, slides, growth and pops don't move. Boards with live pages
+fade between pages without sliding, and the page cross-fade never snapshots a
+board with live pages. `EaselCanvasFeedback.swift` owns the state and its own
+display link, which stops when the last effect ends; `EaselSnapFeedback` in
+ParcCore holds the curves, connector trimming, rotation steps, equal-size
+matching and the section a carried selection would join. Exports and previews
+draw the document, never these frames.
+
 ## Checks
 
 `scripts/test-easel-motion.sh` covers both threshold directions, inclusive
@@ -165,9 +222,11 @@ notifications, source replacement and immediate visibility reversal. Feedback
 is injected, so the component does not emit physical haptics. The windowless
 `EaselObjectMotionTests` suite covers pop, fade, glide, lift and Reduce Motion
 curves, chained glides, ghost bookkeeping and the document diffs,
-`EaselFloatingBarTests` the tool bar flourishes and `EaselControlMotionTests` the
+`EaselFloatingBarTests` the tool bar flourishes, `EaselControlMotionTests` the
 hover and press scales, hover shadow, digit roll columns and directions and the
-pulse keyframes. Shared capture
-checks protect original pixels and independent in-memory history. The Easel
-canvas suite zooms a real canvas in its scroll view 3,000 times while resizing
-from every bounds change and requires each step to settle.
+pulse keyframes, and `EaselSnapFeedbackTests` the guide, reveal, highlight,
+tray, flash, fold, growth and table curves, connector trimming, rotation steps,
+section drop targets and equal-size snapping. Shared capture checks protect
+original pixels and independent in-memory history. The Easel canvas suite zooms
+a real canvas in its scroll view 3,000 times while resizing from every bounds
+change and requires each step to settle.
