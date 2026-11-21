@@ -1,6 +1,8 @@
 import AppKit
 import Metal
 import SceneKit
+@testable import Parc
+import ParcCore
 
 @MainActor final class SilentCrankOutput: WindowFrameCrankSoundOutput {
     func warm() {}

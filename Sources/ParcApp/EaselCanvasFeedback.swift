@@ -67,8 +67,7 @@ final class EaselCanvasFeedbackState {
     var pageOverlay: EaselCanvasPageFlipOverlay?
     var extendedSurfaces: Set<UUID> = []
 
-    var animating: Bool {
-        let now = CACurrentMediaTime()
+    func animating(at now: CFTimeInterval) -> Bool {
         let highlighting = [glow?.start, dot?.start].contains { $0.map { now - $0 < EaselFeedbackCurve.highlight } == true }
         return !guideStarts.isEmpty || !reveals.isEmpty || highlighting || !trays.isEmpty || !flashes.isEmpty
             || !folds.isEmpty || !growths.isEmpty || !tables.isEmpty
@@ -93,7 +92,7 @@ extension EaselCanvasView {
     }
 
     func startCanvasFeedback() {
-        guard canvasFeedback.animating else { return }
+        guard canvasFeedback.animating(at: motionTime) else { return }
         if canvasFeedback.driver == nil {
             canvasFeedback.driver = EaselCanvasFrameDriver { [weak self] in self?.canvasFeedbackFrame() ?? false }
         }
@@ -103,14 +102,14 @@ extension EaselCanvasView {
 
     @discardableResult
     func canvasFeedbackFrame() -> Bool {
-        let now = CACurrentMediaTime()
+        let now = motionTime
         pruneCanvasFeedback(at: now)
         refreshFeedbackSurfaces()
         updateStickyEditorMask()
         let current = canvasFeedbackEnvelope()
         presentCanvasFeedbackDirty(canvasFeedback.envelope.union(current))
         canvasFeedback.envelope = current
-        let active = canvasFeedback.animating
+        let active = canvasFeedback.animating(at: motionTime)
         if !active { canvasFeedback.envelope = .null }
         return active
     }
@@ -250,7 +249,7 @@ extension EaselCanvasView {
     func noteGuideFeedback(_ lines: [EaselAlignmentGuides.Line]) {
         let keys = Set(lines.map(EaselGuideSnapKey.init))
         canvasFeedback.guideTicker.update(keys)
-        let now = CACurrentMediaTime()
+        let now = motionTime
         var started = false
         for key in keys.subtracting(canvasFeedback.guideEngaged) {
             canvasFeedback.guideStarts[key] = now; started = true
@@ -304,7 +303,7 @@ extension EaselCanvasView {
     }
 
     func drawGuideLines(_ lines: [EaselAlignmentGuides.Line]) {
-        let now = CACurrentMediaTime()
+        let now = motionTime
         let reduced = canvasFeedback.guideReduced
         for line in lines {
             let started = canvasFeedback.guideStarts[EaselGuideSnapKey(line)]

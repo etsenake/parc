@@ -1,4 +1,6 @@
 import AppKit
+@testable import Parc
+import ParcCore
 
 @MainActor final class StandInPageSurface: NSView {
     let page: NSImage?
@@ -114,6 +116,7 @@ import AppKit
         ])
         session = try! EaselSession(inMemory: document, assets: ["picnic-crop": picnicCrop])
         canvas = EaselCanvasView(session: session)
+        canvas.objectMotion.frameTime = { FilmClock.now }
         web = StandInPageSurface(page: kite, host: "kites.example")
         pages.surfaces[webID] = web
         canvas.pageObjects = pages

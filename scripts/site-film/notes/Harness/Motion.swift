@@ -1,6 +1,7 @@
 import AppKit
 import ObjectiveC
 import QuartzCore
+@testable import Parc
 
 @MainActor final class FilmMotion {
     static let shared = FilmMotion()
@@ -59,18 +60,25 @@ import QuartzCore
         }
         _ = swap("removeAllAnimations", removeAll)
         let lookup: @convention(block) (CALayer, NSString) -> CAAnimation? = { layer, key in
-            MainActor.assumeIsolated { FilmMotion.shared.track(layer)?.entries.last { $0.key == key as String }?.animation }
+            var animation: CAAnimation?
+            MainActor.assumeIsolated {
+                animation = FilmMotion.shared.track(layer)?.entries.last { $0.key == key as String }?.animation
+            }
+            return animation
         }
         _ = swap("animationForKey:", lookup)
         let keys: @convention(block) (CALayer) -> NSArray? = { layer in
-            MainActor.assumeIsolated {
+            let names: [String]? = MainActor.assumeIsolated {
                 guard let entries = FilmMotion.shared.track(layer)?.entries, !entries.isEmpty else { return nil }
-                return entries.map(\.key) as NSArray
+                return entries.map(\.key)
             }
+            return names.map { $0 as NSArray }
         }
         _ = swap("animationKeys", keys)
         let presentation: @convention(block) (CALayer) -> CALayer? = { layer in
-            MainActor.assumeIsolated { FilmMotion.shared.presentation(of: layer) }
+            var result: CALayer?
+            MainActor.assumeIsolated { result = FilmMotion.shared.presentation(of: layer) }
+            return result
         }
         _ = swap("presentationLayer", presentation)
         var actionIMP: IMP?

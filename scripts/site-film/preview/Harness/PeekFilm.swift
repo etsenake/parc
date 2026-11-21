@@ -1,4 +1,5 @@
 import AppKit
+@testable import Parc
 
 enum Ease {
     static func bezier(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double, _ t: Double) -> Double {

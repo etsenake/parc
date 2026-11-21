@@ -8,16 +8,17 @@ editor, Mini Player, capture tools, Library and window crank. Nothing launches
 the app, opens a window or records the screen. The web pages inside the window
 are the demo pages in `pages/`, because Chromium can't run here.
 
-These tools never run as part of the checks. See the [website guide](../../docs/website.md)
-for how the videos sit on the site.
+The package can compile the renderers during development checks. Rendering is
+manual. See the [website guide](../../docs/website.md) for how the videos sit on
+the site.
 
 ## Layout
 
 - `base/`: the starting render harness that every scene folder copied.
-- One folder per scene: `spaces`, `collapse`, `crank`, `peek`, `preview`,
-  `split`, `commandbar-easel`, `notes`, `capture-archive`, `mini-card`, `startpage`.
-  Each has a `build.py` that compiles Parc's sources plus its `Harness/` into a
-  `render` binary, and generates patched copies of a few sources into `gen/`.
+- Each scene's `Harness/` builds as a `parc-film-<folder>` SwiftPM executable,
+  including `parc-film-base`. It links the Parc, ParcCore and ParcEngineDoubles
+  targets. The engine doubles live in [Stubs](../../Stubs/ParcEngineDoubles)
+  and supply the class names needed to load Parc without Chromium.
 - `canon/Model.swift`: the shared Spaces, tabs and themes every scene uses. Each
   scene's `Harness/Model.swift` is a copy of it; keep them in sync.
 - `film/`: the cutter. `Hero/main.swift` and `cuts.json` plan the film;
@@ -25,41 +26,67 @@ for how the videos sit on the site.
 - `pages/`: the demo pages as HTML and the PNGs the scenes read. The PNGs come
   from a browser render of the HTML, outside these tools.
 
-Builds and renders write into each folder's `gen/`, `out/` and `build/`, which
-git ignores. Parc loads some artwork from resource folders beside the binary:
-link them into a scene folder with
-`for d in ../../../Resources/*/; do ln -sfn "$d" .; done` before rendering, and
-give `preview` a real copy of `Resources/SidebarPreview`.
-
 ## Render a scene
 
-From the scene's folder, build once, then render:
+From the repository root, build the scene you want in SwiftPM's default debug
+configuration so the harness can access Parc's internal views. Link the
+artwork next to the executable, where Parc normally looks for its resources.
 
-| Folder | Render |
+```sh
+(
+set -e
+scene=spaces
+timeout 900 swift build -j 4 --disable-keychain --product "parc-film-$scene"
+bin=$(timeout 60 swift build -j 4 --disable-keychain --show-bin-path)
+for resource in "$PWD"/Resources/*/; do
+    resource=${resource%/}
+    if [ "${resource##*/}" = SidebarPreview ]; then
+        ditto "$resource" "$bin/SidebarPreview"
+    elif [ ! -e "$bin/${resource##*/}" ]; then
+        ln -s "$resource" "$bin/${resource##*/}"
+    fi
+done
+cd "scripts/site-film/$scene"
+timeout 900 "$bin/parc-film-$scene" out spaces ../pages/png/article.png ../pages/png/picnic.png ../pages/png/kite.png
+)
+```
+
+Change `scene` and pass the corresponding arguments below. Keep the working
+directory in the scene folder so relative paths resolve and the film cutter can
+find the output. `parc-film-base` accepts the proof modes `still`, `video`,
+`compare` and `all`.
+
+| Folder | Arguments |
 |---|---|
-| `spaces` | `./render out spaces ../pages/png/article.png ../pages/png/picnic.png ../pages/png/kite.png` |
-| `collapse` | `./render out collapse ../pages/png/article.png` |
-| `crank` | `./render out crank ../pages/png/article.png` |
-| `peek` | `./render out peek ../pages/png/article.png ../pages/png/kite.png` |
-| `preview` | `./render out preview ../pages/png/article.png ../pages/png/kite.png` |
-| `split` | `./render out split` (the film) and `./render out stacks` (the card) |
-| `commandbar-easel` | `./render out commandbar ../pages/png` and `./render out easel ../pages/png` |
-| `notes` | `./render out notes` (`notes-still` writes only the key frames and the strip) |
-| `capture-archive` | `./render out capture` and `./render out archive` |
-| `mini-card` | `./render out mini ../pages/png` and `./render out card 10 "Sam Rivera"` |
-| `startpage` | `./render out startpage ../pages/png/kite.png` |
+| `spaces` | `out spaces ../pages/png/article.png ../pages/png/picnic.png ../pages/png/kite.png` |
+| `collapse` | `out collapse ../pages/png/article.png` |
+| `crank` | `out crank ../pages/png/article.png` |
+| `peek` | `out peek ../pages/png/article.png ../pages/png/kite.png` |
+| `preview` | `out preview ../pages/png/article.png ../pages/png/kite.png` |
+| `split` | `out split` (the film) and `out stacks` (the card) |
+| `commandbar-easel` | `out commandbar ../pages/png` and `out easel ../pages/png` |
+| `notes` | `out notes` (`notes-still` writes only the key frames and the strip) |
+| `capture-archive` | `out capture` and `out archive` |
+| `mini-card` | `out mini ../pages/png` and `out card 10 "Sam Rivera"` |
+| `startpage` | `out startpage ../pages/png/kite.png` |
 
-`python3 build.py` builds in about a minute. Each scene writes
-`out/<scene>.mov` (HEVC with alpha, 2880 × 1800, 60 fps, the window at
-160, 36, 2560, 1680) plus a frame strip and a beats file.
+The full-window scenes write `out/<scene>.mov` (HEVC with alpha, 2880 × 1800,
+60 fps, the window at 160, 36, 2560, 1680) plus a frame strip and a beats file.
+Scene output and SwiftPM build products are ignored by Git.
 
 ## Cut the film and the card videos
 
 From `film/`:
 
 ```sh
-xcrun swiftc -O -parse-as-library Engine/*.swift Hero/main.swift -o build/hero && build/hero .
-xcrun swiftc -O -parse-as-library Engine/*.swift Plates/main.swift -o build/plates && build/plates plates.json
+(
+set -e
+mkdir -p build
+timeout 300 xcrun swiftc -O -parse-as-library Engine/*.swift Hero/main.swift -o build/hero
+timeout 900 build/hero .
+timeout 300 xcrun swiftc -O -parse-as-library Engine/*.swift Plates/main.swift -o build/plates
+timeout 900 build/plates plates.json
+)
 ```
 
 The film reads `../<scene>/out/<scene>.mov` and writes `out/hero-web.mp4`,

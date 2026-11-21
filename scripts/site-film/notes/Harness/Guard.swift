@@ -30,7 +30,11 @@ import ObjectiveC
             guard let method = class_getClassMethod(cls, NSSelectorFromString(name)) else { fatalError("no +\(name)") }
             method_setImplementation(method, imp_implementationWithBlock(block))
         }
-        let current: @convention(block) (NSApplication) -> NSEvent? = { _ in MainActor.assumeIsolated { FilmInput.shared.currentEvent } }
+        let current: @convention(block) (NSApplication) -> NSEvent? = { _ in
+            var event: NSEvent?
+            MainActor.assumeIsolated { event = FilmInput.shared.currentEvent }
+            return event
+        }
         instance(NSApplication.self, "currentEvent", current)
         let pressed: @convention(block) (AnyClass) -> Int = { _ in MainActor.assumeIsolated { FilmInput.shared.pressed ? 1 : 0 } }
         type(NSEvent.self, "pressedMouseButtons", pressed)

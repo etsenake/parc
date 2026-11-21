@@ -1,4 +1,6 @@
 import AppKit
+@testable import Parc
+import ParcCore
 
 let windowCornerRadius = WindowFrameThickness.windowCornerRadius
 let frameThickness = CGFloat(WindowFrameThickness.standard)

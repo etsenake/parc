@@ -1,5 +1,6 @@
 import AppKit
 import CoreImage
+@testable import Parc
 
 func drawFlipped(_ image: CGImage, in rect: NSRect, _ context: CGContext) {
     context.saveGState()

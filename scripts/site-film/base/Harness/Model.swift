@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 struct FaviconSpec {
     let symbol: String

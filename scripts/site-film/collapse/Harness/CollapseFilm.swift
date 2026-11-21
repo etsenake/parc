@@ -1,5 +1,7 @@
 import AppKit
 import QuartzCore
+@testable import Parc
+import ParcCore
 
 enum AnchoredCurve {
     static let duration = 0.08

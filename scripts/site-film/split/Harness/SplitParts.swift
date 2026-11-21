@@ -1,5 +1,7 @@
 import AppKit
 import SwiftUI
+@testable import Parc
+import ParcCore
 
 func bezier(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double, _ t: Double) -> Double {
     let x = min(1, max(0, t))
@@ -293,7 +295,7 @@ struct MenuRow {
         state.showing = true
         state.reduceMotion = true
         let actions = ParcToastActions(tap: nil, accessory: nil, dismiss: {}, share: { _ in }, frames: { _ in }, retry: nil)
-        let view = ParcToastCard(state: state, actions: actions)
+        let view = ParcToastCard(state: state, actions: actions, backgroundFill: Color(white: 0.94), buttonPointer: false)
             .environment(\.colorScheme, .light)
             .frame(width: size.width, height: size.height)
         let renderer = ImageRenderer(content: view)

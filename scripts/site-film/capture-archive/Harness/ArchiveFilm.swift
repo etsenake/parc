@@ -1,4 +1,6 @@
 import AppKit
+@testable import Parc
+@testable import ParcCore
 
 @MainActor final class PeekStandIn: NSView {
     var alpha: CGFloat = 0 { didSet { needsDisplay = true } }
@@ -271,7 +273,7 @@ import AppKit
                 if let sidebarLights { scene.lights.frame = sidebarLights }
                 peek.alpha = 0
                 scene.surface.pageCard = pageHome
-                if let restoredID { _ = store.selectTab(restoredID) }
+                if let restoredID { store.selectTab(restoredID) }
                 showPicnic = true
                 renderSidebar(store.state, focus: restoredID ?? scene.scenario.selected.id)
                 path = PointerPath(keys: [(7.8, toastPoint), (9.3, NSPoint(x: toastPoint.x - 160, y: toastPoint.y + 120))])

@@ -17,11 +17,17 @@ let facadeFlags: [CSetting] = nativeFlags + [
     .headerSearchPath("../../../Engine/ParcNative"), .headerSearchPath("../../../Sources/ParcEngine"),
 ]
 let engineImport: [SwiftSetting] = [.unsafeFlags(["-Xcc", "-I", "-Xcc", nativeHeaders])]
+let siteFilmScenes = [
+    "base", "spaces", "collapse", "crank", "peek", "preview", "split",
+    "commandbar-easel", "notes", "capture-archive", "mini-card", "startpage",
+]
 
 let package = Package(
     name: "Parc",
     platforms: [.macOS(.v13)],
-    products: [.executable(name: "Parc", targets: ["ParcMain"])],
+    products: [.executable(name: "Parc", targets: ["ParcMain"])] + siteFilmScenes.map { scene in
+        .executable(name: "parc-film-\(scene)", targets: ["parc-film-\(scene)"])
+    },
     dependencies: [.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1")],
     targets: [
         .target(name: "ParcCore", path: "Sources/ParcCore", swiftSettings: strict),
@@ -96,10 +102,25 @@ let package = Package(
                 permissions: [.writeToPackageDirectory(reason: "Writes Stubs/Chromium Embedded Framework.framework")]
             )
         ),
-        .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: "."),
+        .target(name: "ParcEngineDoubles", path: "Stubs/ParcEngineDoubles", publicHeadersPath: "."),
         .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles"], path: "tests/ParcTests",
                     swiftSettings: strict + engineImport),
-    ],
+        .target(
+            name: "SiteFilmMedia",
+            dependencies: ["ParcEngine"],
+            path: "scripts/site-film/mini-card/Media",
+            cSettings: nativeFlags + [.headerSearchPath("../../../../Engine/ParcNative")]
+        ),
+    ] + siteFilmScenes.map { scene in
+        let dependencies: [Target.Dependency] = ["Parc", "ParcCore", "ParcEngineDoubles"]
+        return .executableTarget(
+            name: "parc-film-\(scene)",
+            dependencies: scene == "mini-card" ? dependencies + ["SiteFilmMedia"] : dependencies,
+            path: "scripts/site-film/\(scene)/Harness",
+            swiftSettings: strict + engineImport,
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-fatal_warnings"])]
+        )
+    },
     swiftLanguageModes: [.v5],
     cxxLanguageStandard: .cxx20
 )

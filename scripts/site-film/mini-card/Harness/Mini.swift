@@ -1,4 +1,8 @@
 import AppKit
+import ParcEngine
+import SiteFilmMedia
+@testable import Parc
+import ParcCore
 
 func springProgress(_ t: Double, response: Double, damping: Double) -> Double {
     guard t > 0 else { return 0 }
@@ -212,8 +216,6 @@ struct PointerPath {
     var selected: UUID
     var audio: [UUID: SidebarTabAudio] = [:]
     let videoPage: NSImage, kitePage: NSImage
-    let page = PCNativePage()
-    let media = PCNativeMediaState(identifier: "reel-golden-hour")
     var item: MiniPlayerItem!
     let deck: MiniPlayerDeck
     let pointer: StagePointer
@@ -243,25 +245,16 @@ struct PointerPath {
         pip = PiPStandIn(frame: NSRect(origin: .zero, size: size), panel: pipPanel)
         pip.appearance = NSAppearance(named: .aqua)
         pip.isHidden = true
-        pip.title = media.title
         scene.stage.addSubview(pip)
         pointer = StagePointer(frame: NSRect(origin: .zero, size: size))
         scene.stage.addSubview(pointer)
-        media.title = video.title
-        media.sourceURL = video.url
-        media.playing = true
-        media.canPlayPause = true
-        media.hasPreviousTrack = true
-        media.hasNextTrack = true
-        media.canSetVolume = true
-        media.canEnterPictureInPicture = true
-        media.castState = .available
-        page.mediaState = media
+        let page = PCSiteFilmMediaPage("reel-golden-hour", video.title, video.url)
+        let media = page.mediaState!
         pip.title = media.title
         let icon = Favicons.image(for: video)
         pip.favicon = icon
         pip.video = Self.videoFrame(videoPage)
-        item = MiniPlayerItem(page: page, state: media, icon: icon, host: MiniPlayerHostLease(nil), valid: { true }, reveal: {})
+        item = MiniPlayerItem(page: page, state: media, icon: icon, host: MiniPlayerHostLease(), valid: { true }, reveal: {})
         deck.after = { [unowned self] delay, body in self.pending.append((self.clock + delay, body)) }
         showPage()
     }

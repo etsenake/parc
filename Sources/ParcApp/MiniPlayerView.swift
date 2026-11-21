@@ -16,6 +16,7 @@ enum MiniPlayerLayoutFlushSkip {
 final class MiniPlayerHostLease {
     weak var window: NSWindow?
     init(_ window: NSWindow) { self.window = window }
+    init() {}
 }
 
 @MainActor

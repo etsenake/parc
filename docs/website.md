@@ -137,10 +137,10 @@ Every frame of Parc on the site is rendered from Parc's own interface code:
 the real sidebar, themes, Peek, splits, command bar, Easel canvas, Mini Player,
 capture tools, Library and window crank, drawn offscreen without launching the
 app, with demo web pages standing in for Chromium's content. Nothing is a screen
-recording or a mockup. The renderer and the film cutter live in
-[scripts/site-film](../scripts/site-film/README.md); their outputs stay in the
-ignored `build/` folder until a reviewed cut is installed into
-`site/src/assets/media`.
+recording or a mockup. Each scene renderer is a SwiftPM executable that links
+the Parc libraries. Follow the [site film guide](../scripts/site-film/README.md)
+to build a renderer, draw its frames and cut the clips. The outputs stay in
+ignored `out/` folders until a reviewed cut is copied into `site/src/assets/media`.
 
 - `media/hero.mp4` (H.264) and `media/hero-hevc.mp4` (HEVC) are the silent
   film under the headline, with `media/hero.jpg` as its poster. The frame is the

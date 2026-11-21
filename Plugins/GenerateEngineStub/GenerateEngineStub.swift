@@ -55,7 +55,7 @@ struct GenerateEngineStub: CommandPlugin {
         text.append(0x0A)
         try FileManager.default.createDirectory(at: stub.deletingLastPathComponent(), withIntermediateDirectories: true)
         try text.write(to: stub)
-        let doubles = root.appending(path: "tests/ParcEngineDoubles/EngineDoubles.m")
+        let doubles = root.appending(path: "Stubs/ParcEngineDoubles/EngineDoubles.m")
         try FileManager.default.createDirectory(at: doubles.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(try doubleSource(classes: exportedClasses(value), headers: headers.sorted()).utf8).write(to: doubles)
         print("Wrote \(stub.path) and \(doubles.path) from \(headers.count) engine headers")

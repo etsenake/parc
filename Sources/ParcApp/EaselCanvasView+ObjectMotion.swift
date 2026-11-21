@@ -17,6 +17,7 @@ final class EaselCanvasObjectMotionState {
     static let chromeDuration: TimeInterval = 0.1
     static let handleGrowth: CGFloat = 1.35
     static let crowd = 40
+    var frameTime: (() -> CFTimeInterval)?
     var timeline = EaselObjectMotion()
     var intent: EaselObjectMotionIntent?
     var pendingSurfaces: Set<UUID> = []
@@ -42,8 +43,10 @@ final class EaselCanvasObjectMotionState {
 extension EaselCanvasView {
     private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
+    var motionTime: CFTimeInterval { objectMotion.frameTime?() ?? CACurrentMediaTime() }
+
     var canAnimateObjects: Bool {
-        window != nil && !isHiddenOrHasHiddenAncestor && canPresentMotion && !motion.isInteracting
+        (window != nil || objectMotion.frameTime != nil) && !isHiddenOrHasHiddenAncestor && canPresentMotion && !motion.isInteracting
     }
 
     @discardableResult
@@ -58,7 +61,7 @@ extension EaselCanvasView {
         guard let intent = objectMotion.intent else { return }
         objectMotion.intent = nil
         guard canAnimateObjects else { return }
-        let now = CACurrentMediaTime(), reduced = reduceMotion
+        let now = motionTime, reduced = reduceMotion
         var frames: [UUID: EaselItem] = [:]
         for item in before.items { frames[item.id] = item }
         for item in after.items { frames[item.id] = item }
@@ -173,7 +176,7 @@ extension EaselCanvasView {
         let chosen = shown.count > EaselCanvasObjectMotionState.crowd ? shown.filter { displayBounds(of: $0).intersects(visible) } : shown
         let reduced = reduceMotion
         let movable = chosen.filter { !$0.ownsEmbeddedPage }.map(\.id)
-        objectMotion.timeline.pulse(movable, at: CACurrentMediaTime(), reduced: reduced)
+        objectMotion.timeline.pulse(movable, at: motionTime, reduced: reduced)
         for item in chosen.prefix(EaselBurstPlan.perCommand) {
             playCanvasBurst(.glow, around: EaselCanvasRotation.bounds(item), tint: EaselAppearance.selection)
         }
@@ -188,7 +191,7 @@ extension EaselCanvasView {
         guard canAnimateObjects, !reduceMotion else { return }
         let shaken = items.filter { ids.contains($0.id) && !$0.ownsEmbeddedPage }.map(\.id)
         guard !shaken.isEmpty else { return }
-        objectMotion.timeline.shake(shaken, at: CACurrentMediaTime(), reduced: false)
+        objectMotion.timeline.shake(shaken, at: motionTime, reduced: false)
         objectMotion.pendingSurfaces.formUnion(shaken)
         startObjectMotionDriver()
         needsLayout = true
@@ -223,7 +226,7 @@ extension EaselCanvasView {
         guard canAnimateObjects, rect.width.isFinite, rect.height.isFinite, !rect.isNull else { return }
         let reduced = reduceMotion
         guard !reduced || style == .glow else { return }
-        let seed = UInt64(truncatingIfNeeded: Int(rect.midX * 31 + rect.midY * 17)) &+ UInt64(truncatingIfNeeded: Int(CACurrentMediaTime() * 1000))
+        let seed = UInt64(truncatingIfNeeded: Int(rect.midX * 31 + rect.midY * 17)) &+ UInt64(truncatingIfNeeded: Int(motionTime * 1000))
         burstSurface().play(style, around: rect, tint: tint ?? EaselAppearance.selection, scale: CGFloat(canvasScale), reduced: reduced,
                             seed: seed, delay: reduced ? 0 : delay)
     }
@@ -295,7 +298,7 @@ extension EaselCanvasView {
 
     @discardableResult
     func objectMotionFrame() -> Bool {
-        let now = CACurrentMediaTime()
+        let now = motionTime
         objectMotion.timeline.forget(missing: Set(session.document.items.map(\.id)))
         objectMotion.timeline.carry?.advance(to: now)
         let current = objectMotionEnvelope()
@@ -333,7 +336,7 @@ extension EaselCanvasView {
             var lookup: [UUID: EaselItem] = [:]
             for ghost in objectMotion.timeline.ghosts { lookup[ghost.id] = ghost }
             for item in items { lookup[item.id] = item }
-            let now = CACurrentMediaTime()
+            let now = motionTime
             for id in objectMotion.timeline.ids {
                 guard let item = lookup[id] else { continue }
                 var box = displayBounds(of: item)
@@ -397,7 +400,7 @@ extension EaselCanvasView {
             for item in shown where displayBounds(of: item).intersects(dirtyRect) { drawObject(item) }
             return
         }
-        let now = CACurrentMediaTime()
+        let now = motionTime
         var ordered = shown
         for ghost in objectMotion.timeline.ghosts where !shown.contains(where: { $0.id == ghost.id }) {
             let slot = ordered.firstIndex { $0.zIndex > ghost.zIndex } ?? ordered.endIndex
@@ -556,7 +559,7 @@ extension EaselCanvasView {
             if shown.opacity < 0.999 { fades = true }
             if shown.shadow > 0.001 { shades = true }
         }
-        let begin = delay > 0 ? layer.convertTime(CACurrentMediaTime(), from: nil) + delay : 0
+        let begin = delay > 0 ? layer.convertTime(motionTime, from: nil) + delay : 0
         func keyframes(_ path: String, _ values: [Any], additive: Bool = false) -> CAKeyframeAnimation {
             let animation = CAKeyframeAnimation(keyPath: path)
             animation.values = values
@@ -588,7 +591,7 @@ extension EaselCanvasView {
             objectMotion.retiring.removeValue(forKey: id)
         }
         guard usesObjectSurfaces, !objectMotion.pendingSurfaces.isEmpty else { return }
-        let now = CACurrentMediaTime(), key = Self.surfaceKey
+        let now = motionTime, key = Self.surfaceKey
         var lookup: [UUID: EaselItem] = [:]
         for item in items { lookup[item.id] = item }
         for id in objectMotion.pendingSurfaces {
@@ -628,7 +631,7 @@ extension EaselCanvasView {
                 if let self, self.objectMotion.retiring[id] === view { self.objectMotion.retiring.removeValue(forKey: id) }
             }
         }
-        let now = CACurrentMediaTime()
+        let now = motionTime
         var animations = surfaceFrame(for: ghost, layer: layer).map {
             surfaceAnimations(transition, item: ghost, layer: layer, frame: $0, now: now, keepsEnd: true)
         } ?? [:]
@@ -645,7 +648,7 @@ extension EaselCanvasView {
 
     func glideObjects(_ offsets: [UUID: EaselPoint], delays: [UUID: TimeInterval], fades: Bool) {
         guard canAnimateObjects, !offsets.isEmpty else { return }
-        objectMotion.timeline.glide(offsets, fades: fades, delays: delays, at: CACurrentMediaTime(), reduced: reduceMotion)
+        objectMotion.timeline.glide(offsets, fades: fades, delays: delays, at: motionTime, reduced: reduceMotion)
         objectMotion.pendingSurfaces.formUnion(offsets.keys)
         needsLayout = true
         startObjectMotionDriver()
@@ -654,7 +657,7 @@ extension EaselCanvasView {
 
     func raiseStampDraft(_ id: UUID) {
         guard canAnimateObjects else { return }
-        objectMotion.timeline.raise(id, at: CACurrentMediaTime(), reduced: reduceMotion)
+        objectMotion.timeline.raise(id, at: motionTime, reduced: reduceMotion)
         guard objectMotion.timeline.isRaised(id) else { return }
         startObjectMotionDriver()
     }
@@ -671,7 +674,7 @@ extension EaselCanvasView {
     }
 
     func carryDraggedObjects(rotating: Bool, velocity: EaselPoint) {
-        let now = CACurrentMediaTime()
+        let now = motionTime
         if objectMotion.timeline.carry != nil {
             objectMotion.timeline.carry?.pointer(speed: velocity.x * canvasScale, at: now)
             return
@@ -690,7 +693,7 @@ extension EaselCanvasView {
     func dropCarriedObjects() {
         objectMotion.lockedPress = nil
         guard objectMotion.timeline.carry != nil else { return }
-        let landed = objectMotion.timeline.drop(at: CACurrentMediaTime())
+        let landed = objectMotion.timeline.drop(at: motionTime)
         resetHeldSurfaces()
         objectMotion.pendingSurfaces.formUnion(landed)
         needsLayout = true
@@ -734,7 +737,7 @@ extension EaselCanvasView {
     }
 
     func noteObjectChrome() {
-        let now = CACurrentMediaTime()
+        let now = motionTime
         let shown = displayedSelection
         if shown != objectMotion.chromeSelection {
             let fresh = shown.subtracting(objectMotion.chromeSelection)
@@ -759,7 +762,7 @@ extension EaselCanvasView {
     }
 
     func objectChromeOpacity(for id: UUID) -> CGFloat {
-        let now = CACurrentMediaTime()
+        let now = motionTime
         if displayedSelection.contains(id) {
             guard objectMotion.chromeFading.contains(id), let start = objectMotion.chromeStart else { return 1 }
             return CGFloat(EaselObjectTransition.easeOut((now - start) / EaselCanvasObjectMotionState.chromeDuration))
@@ -770,7 +773,7 @@ extension EaselCanvasView {
 
     var handleChromeOpacity: CGFloat {
         guard let start = objectMotion.chromeStart, !objectMotion.chromeFading.isDisjoint(with: displayedSelection) else { return 1 }
-        return CGFloat(EaselObjectTransition.easeOut((CACurrentMediaTime() - start) / EaselCanvasObjectMotionState.chromeDuration))
+        return CGFloat(EaselObjectTransition.easeOut((motionTime - start) / EaselCanvasObjectMotionState.chromeDuration))
     }
 
     func withObjectChrome(opacity: CGFloat, _ body: () -> Void) {
@@ -785,7 +788,7 @@ extension EaselCanvasView {
 
     func updateHandleHover(_ handle: EaselResizeHandle?) {
         guard handle != objectMotion.hoveredHandle else { return }
-        let now = CACurrentMediaTime()
+        let now = motionTime
         let previous = objectMotion.hoveredHandle
         objectMotion.hoveredHandle = handle
         guard canAnimateObjects, !reduceMotion else {
@@ -806,7 +809,8 @@ extension EaselCanvasView {
         return NSRect(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height).insetBy(dx: -pad, dy: -pad)
     }
 
-    func handleScale(_ handle: EaselResizeHandle, at now: TimeInterval = CACurrentMediaTime()) -> CGFloat {
+    func handleScale(_ handle: EaselResizeHandle, at time: TimeInterval? = nil) -> CGFloat {
+        let now = time ?? motionTime
         if let growth = objectMotion.handleGrowth[handle] {
             let progress = CGFloat(EaselObjectSpring.hover.progress(at: now - growth.start))
             return growth.from + (growth.to - growth.from) * progress

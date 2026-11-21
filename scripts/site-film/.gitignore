@@ -3,7 +3,8 @@
 !.gitignore
 !README.md
 !*.swift
-!*.py
+!*.h
+!*.m
 !*.json
 !*.html
 !pages/png/*.png
