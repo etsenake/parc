@@ -566,6 +566,7 @@ final class NoteMediaScrubber: NSView {
         setAccessibilityLabel("Playback position")
         setAccessibilityMinValue(0)
         setAccessibilityMaxValue(1)
+        addCursorUpdateArea()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -591,7 +592,10 @@ final class NoteMediaScrubber: NSView {
         needsLayout = true
     }
 
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+    override func cursorUpdate(with event: NSEvent) {
+        if applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
+    }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 

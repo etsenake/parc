@@ -11,6 +11,7 @@ final class NoteEmbedBlockView: NoteCaptionedBlockView {
     private var dragStart: Double?
     private var liveHeight: Double?
     private var tracking: NSTrackingArea?
+    private var pageZone = NoteZoneCursor()
 
     override init(block: NoteBlock, editor: NotePageEditor?) {
         super.init(block: block, editor: editor)
@@ -72,7 +73,7 @@ final class NoteEmbedBlockView: NoteCaptionedBlockView {
         }
         handle.isHidden = address == nil || !canEdit
         refreshCaption()
-        window?.invalidateCursorRects(for: self)
+        refreshCursorIfPointerOwned()
         if notify { invalidateMeasuredHeight() } else { needsLayout = true }
     }
 
@@ -190,9 +191,14 @@ final class NoteEmbedBlockView: NoteCaptionedBlockView {
         standby?.selected = selected
     }
 
-    override func resetCursorRects() {
-        guard let surface, surface.superview === self, !surface.interactive else { return }
-        addCursorRect(convert(surface.pageRect, from: surface), cursor: .pointingHand)
+    private func pageCursor(for event: NSEvent) -> NSCursor? {
+        guard let surface, surface.superview === self, !surface.interactive,
+              convert(surface.pageRect, from: surface).contains(convert(event.locationInWindow, from: nil)) else { return nil }
+        return .pointingHand
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !pageZone.cursorUpdate(pageCursor(for: event), in: self, event: event) { super.cursorUpdate(with: event) }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -202,20 +208,31 @@ final class NoteEmbedBlockView: NoteCaptionedBlockView {
             return
         }
         pages.activate(blockID)
-        window?.invalidateCursorRects(for: self)
+        refreshCursorIfPointerOwned()
         if surface.interactive { window?.postEvent(event, atStart: true) }
     }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.cursorUpdate, .mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         tracking = area
     }
 
-    override func mouseEntered(with event: NSEvent) { handle.setVisible(!handle.isHidden) }
-    override func mouseExited(with event: NSEvent) { handle.setVisible(false) }
+    override func mouseEntered(with event: NSEvent) {
+        handle.setVisible(!handle.isHidden && NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        handle.setVisible(!handle.isHidden && NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+        pageZone.moved(pageCursor(for: event), in: self, event: event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        handle.setVisible(false)
+        pageZone.exited()
+    }
 }
 
 @MainActor

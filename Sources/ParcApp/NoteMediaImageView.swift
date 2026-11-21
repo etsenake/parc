@@ -40,12 +40,14 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
     private var framingPopover: NotePagePopover?
     private(set) var cropEditor: NoteImageCropEditor?
     private var animatesNextLayout = false
+    private var imageZone = NoteZoneCursor()
     private var clickAwayMonitor: Any?
     private weak var responderBeforeCrop: NSResponder?
     static let cropMaximumHeight: CGFloat = 560
 
     override init(host: NoteMediaBlockView) {
         super.init(host: host)
+        addCursorZoneArea()
         frameLayer.masksToBounds = true
         frameLayer.cornerRadius = NoteMediaStyle.imageRadius
         frameLayer.cornerCurve = .continuous
@@ -430,9 +432,20 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
         super.mouseDown(with: event)
     }
 
-    override func resetCursorRects() {
-        if image != nil, cropEditor == nil { addCursorRect(imageRect, cursor: .pointingHand) }
+    private func imageCursor(for event: NSEvent) -> NSCursor? {
+        guard image != nil, cropEditor == nil, imageRect.contains(convert(event.locationInWindow, from: nil)) else { return nil }
+        return .pointingHand
     }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !imageZone.cursorUpdate(imageCursor(for: event), in: self, event: event) { super.cursorUpdate(with: event) }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        imageZone.moved(imageCursor(for: event), in: self, event: event)
+    }
+
+    override func mouseExited(with event: NSEvent) { imageZone.exited() }
 
     func presentZoom() -> Bool {
         guard let image, let host, cropEditor == nil else { return false }
@@ -627,7 +640,7 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
         layoutSubtreeIfNeeded()
         editor.appear()
         window?.makeFirstResponder(editor)
-        window?.invalidateCursorRects(for: self)
+        refreshCursorIfPointerOwned()
         installClickAwayMonitor()
     }
 
@@ -647,7 +660,7 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
             else if let host { window.makeFirstResponder(host) }
         }
         responderBeforeCrop = nil
-        window?.invalidateCursorRects(for: self)
+        refreshCursorIfPointerOwned()
         setSelected(host?.isBlockSelected == true)
         setHovered(hovered)
     }
@@ -768,6 +781,7 @@ final class NoteMediaResizeHandle: NSView, ResizeHandleView {
         setAccessibilityElement(true)
         setAccessibilityRole(.handle)
         setAccessibilityLabel(edge == .leading ? "Resize from the left" : "Resize from the right")
+        addCursorUpdateArea()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -797,11 +811,12 @@ final class NoteMediaResizeHandle: NSView, ResizeHandleView {
             guard let self, !self.revealed else { return }
             self.isHidden = true
         }
-        window?.invalidateCursorRects(for: self)
+        refreshCursorIfPointerOwned()
     }
 
-    override func resetCursorRects() {
-        if revealed { addCursorRect(bounds, cursor: .resizeLeftRight) }
+    override func cursorUpdate(with event: NSEvent) {
+        if revealed, applyNoteCursor(.resizeLeftRight, for: event) { return }
+        super.cursorUpdate(with: event)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }

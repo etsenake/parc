@@ -24,7 +24,7 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
             guard interactive != oldValue else { return }
             refresh()
             refreshRing(animated: true)
-            if let superview { window?.invalidateCursorRects(for: superview) }
+            superview?.refreshCursorIfPointerOwned()
         }
     }
     var selected = false { didSet { if selected != oldValue { refreshRing(animated: true) } } }
@@ -306,7 +306,11 @@ final class NoteEmbedFallbackView: NSView {
         tracking = area
     }
 
-    override func mouseMoved(with event: NSEvent) { card.setHovered(card.frame.contains(convert(event.locationInWindow, from: nil))) }
+    override func mouseMoved(with event: NSEvent) {
+        card.setHovered(card.frame.contains(convert(event.locationInWindow, from: nil))
+                        && NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+    }
+
     override func mouseExited(with event: NSEvent) { card.setHovered(false) }
 }
 
@@ -333,6 +337,7 @@ final class NoteEmbedResizeHandle: NSView {
         setAccessibilityRole(.splitter)
         setAccessibilityLabel("Resize live page")
         setAccessibilityHelp("Drag up or down to change the height.")
+        addCursorUpdateArea()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -359,7 +364,10 @@ final class NoteEmbedResizeHandle: NSView {
         needsLayout = true
     }
 
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeUpDown) }
+    override func cursorUpdate(with event: NSEvent) {
+        if applyNoteCursor(.resizeUpDown, for: event) { return }
+        super.cursorUpdate(with: event)
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -369,7 +377,11 @@ final class NoteEmbedResizeHandle: NSView {
         tracking = area
     }
 
-    override func mouseEntered(with event: NSEvent) { hovered = true; setVisible(true) }
+    override func mouseEntered(with event: NSEvent) {
+        hovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        setVisible(hovered)
+    }
+
     override func mouseExited(with event: NSEvent) { hovered = false; setVisible(false) }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 

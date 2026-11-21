@@ -210,7 +210,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         heightHandle.isHidden = !showsHandles
         if !showsHandles { setWidthHandlesVisible(false) }
         surface.canAlign = showsHandles
-        window?.invalidateCursorRects(for: self)
         if notify { invalidateMeasuredHeight() } else { needsLayout = true }
     }
 
@@ -330,7 +329,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         host?.keyLoopChanged()
         canvas.needsLayout = true
         window.makeFirstResponder(canvas)
-        window.invalidateCursorRects(for: self)
         if let event { window.postEvent(event, atStart: true) }
     }
 
@@ -357,7 +355,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         pages?.release()
         host?.keyLoopChanged()
         guard let window else { return }
-        window.invalidateCursorRects(for: self)
         let focusInside = (window.firstResponder as? NSView).map { $0 === surface || $0.isDescendant(of: surface) } ?? false
         guard restoreFocus || focusInside, let editor, window.attachedSheet == nil else { return }
         window.makeFirstResponder(editor.canvas)
@@ -520,11 +517,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         surface.selected = selected
     }
 
-    override func resetCursorRects() {
-        guard surface.isLive, !surface.active, !surface.viewOnly else { return }
-        addCursorRect(convert(surface.canvasRect, from: surface), cursor: .pointingHand)
-    }
-
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
@@ -540,8 +532,9 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        heightHandle.setVisible(!heightHandle.isHidden)
-        setWidthHandlesVisible(true)
+        let allowed = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        heightHandle.setVisible(allowed && !heightHandle.isHidden)
+        setWidthHandlesVisible(allowed)
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -690,7 +683,10 @@ final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary {
     private func refresh() {
         let live = canvas != nil
         scroll.isHidden = !live
+        let shieldWasHidden = shield.isHidden
         shield.isHidden = !live || active
+        shield.showsHand = live && !viewOnly
+        if shieldWasHidden, !shield.isHidden { refreshCursorIfPointerOwned() }
         absence.isHidden = live
         openButton.isHidden = !live
         alignButton.isHidden = !canAlign
@@ -785,8 +781,22 @@ private final class NoteEaselScrollView: NSScrollView, EmbeddedKeyLoopMember {
 private final class NoteEaselShield: NSView {
     var onPress: ((NSEvent) -> Void)?
     var scrollTarget: () -> NSScrollView? = { nil }
+    var showsHand = false
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        addCursorUpdateArea()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var isFlipped: Bool { true }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if showsHand, applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { isHidden ? nil : super.hitTest(point) }
     override func mouseDown(with event: NSEvent) { onPress?(event) }
@@ -853,7 +863,7 @@ final class NoteEaselPickerView: NoteMediaContentHostlessCard, NSTextFieldDelega
     var overlay: () -> NSView? = { nil }
     var editable = true { didSet { applyMode() } }
     private let icon = NSImageView()
-    private let field = NSTextField()
+    private let field = NoteInputField()
     private let readOnlyLabel: NSTextField
     private var list: NoteMenuList?
     private var panel: NoteFloatingPanel?

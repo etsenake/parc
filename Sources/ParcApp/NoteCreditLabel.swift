@@ -11,6 +11,7 @@ final class NoteCreditLabel: NSView {
     private var hovered: Int? { didSet { if hovered != oldValue { needsDisplay = true } } }
     private var pressed: Int?
     private var tracking: NSTrackingArea?
+    private var linkZone = NoteZoneCursor()
     private var linkElements: [NoteCreditLinkElement]?
 
     override init(frame: NSRect) {
@@ -58,7 +59,7 @@ final class NoteCreditLabel: NSView {
         linkElements = nil
         invalidateIntrinsicContentSize()
         needsDisplay = true
-        window?.invalidateCursorRects(for: self)
+        refreshCursorIfPointerOwned()
         setAccessibilityLabel(sentence)
     }
 
@@ -133,21 +134,38 @@ final class NoteCreditLabel: NSView {
         return span(at: convert(point, from: superview)) == nil ? nil : self
     }
 
-    override func resetCursorRects() {
-        for span in linkSpans() { addCursorRect(span.rect, cursor: .pointingHand) }
+    private func linkCursor(for event: NSEvent) -> NSCursor? {
+        span(at: convert(event.locationInWindow, from: nil)) == nil ? nil : .pointingHand
+    }
+
+    private func hoveredIndex(for event: NSEvent) -> Int? {
+        guard NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow) else { return nil }
+        return span(at: convert(event.locationInWindow, from: nil))?.index
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !linkZone.cursorUpdate(linkCursor(for: event), in: self, event: event) { super.cursorUpdate(with: event) }
     }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.cursorUpdate, .mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         tracking = area
     }
 
-    override func mouseMoved(with event: NSEvent) { hovered = span(at: convert(event.locationInWindow, from: nil))?.index }
-    override func mouseEntered(with event: NSEvent) { hovered = span(at: convert(event.locationInWindow, from: nil))?.index }
-    override func mouseExited(with event: NSEvent) { hovered = nil }
+    override func mouseMoved(with event: NSEvent) {
+        hovered = hoveredIndex(for: event)
+        linkZone.moved(linkCursor(for: event), in: self, event: event)
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovered = hoveredIndex(for: event) }
+
+    override func mouseExited(with event: NSEvent) {
+        hovered = nil
+        linkZone.exited()
+    }
 
     override func mouseDown(with event: NSEvent) {
         pressed = span(at: convert(event.locationInWindow, from: nil))?.index

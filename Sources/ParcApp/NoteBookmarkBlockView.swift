@@ -252,6 +252,7 @@ final class NoteLinkCardView: NSView {
         summary.cell?.truncatesLastVisibleLine = true
         site = NoteMediaStyle.label("", font: NoteTheme.nunitoRegular(12.5), color: NoteTheme.tertiaryInk)
         super.init(frame: .zero)
+        addCursorUpdateArea()
         wantsLayer = true
         card.cornerRadius = NoteMediaStyle.cardRadius
         card.cornerCurve = .continuous
@@ -423,8 +424,9 @@ final class NoteLinkCardView: NSView {
         NoteMediaMotion.instant { ring.isHidden = !selected }
     }
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
+    override func cursorUpdate(with event: NSEvent) {
+        if applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -463,7 +465,7 @@ final class NoteLinkEntryView: NoteMediaContentHostlessCard, NSTextFieldDelegate
     var onSubmit: ((URL) -> Void)?
     var editable = true { didSet { applyMode() } }
     private let icon = NSImageView()
-    private let field = NSTextField()
+    private let field = NoteInputField()
     private let submit: NoteChip
     private let readOnlyLabel: NSTextField
     private let hint: NSTextField
@@ -608,6 +610,7 @@ final class NotePageLinkBlockView: NoteBlockView {
     private var target: URL?
     private var broken = false
     private var tracking: NSTrackingArea?
+    private var linkZone = NoteZoneCursor(includesDescendants: true)
     private var hovered = false
     private var pressed = false
     private static let height: CGFloat = 34
@@ -677,7 +680,7 @@ final class NotePageLinkBlockView: NoteBlockView {
         }
         removeChip.isHidden = !(broken && canEdit)
         badge.isHidden = broken
-        window?.invalidateCursorRects(for: self)
+        refreshCursorIfPointerOwned()
         needsLayout = true
     }
 
@@ -730,13 +733,30 @@ final class NotePageLinkBlockView: NoteBlockView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.cursorUpdate, .mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         tracking = area
     }
 
     override func mouseEntered(with event: NSEvent) { setHovered(!broken && isTopmost(atWindowPoint: event.locationInWindow)) }
-    override func mouseExited(with event: NSEvent) { setHovered(false) }
+
+    override func mouseMoved(with event: NSEvent) {
+        setHovered(!broken && isTopmost(atWindowPoint: event.locationInWindow))
+        linkZone.moved(linkCursor(for: event), in: self, event: event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setHovered(false)
+        linkZone.exited()
+    }
+
+    private func linkCursor(for event: NSEvent) -> NSCursor? {
+        !broken && fill.frame.contains(convert(event.locationInWindow, from: nil)) ? .pointingHand : nil
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !linkZone.cursorUpdate(linkCursor(for: event), in: self, event: event) { super.cursorUpdate(with: event) }
+    }
 
     private func setHovered(_ value: Bool) {
         guard value != hovered else { return }
@@ -750,11 +770,6 @@ final class NotePageLinkBlockView: NoteBlockView {
         fade.toValue = target
         fade.duration = 0.1
         fill.add(fade, forKey: "pagelink.hover")
-    }
-
-    override func resetCursorRects() {
-        guard !broken else { return }
-        addCursorRect(fill.frame, cursor: .pointingHand)
     }
 
     override func mouseDown(with event: NSEvent) {

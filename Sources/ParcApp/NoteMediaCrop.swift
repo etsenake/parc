@@ -20,6 +20,7 @@ final class NoteImageCropEditor: NSView {
     private var drag: Drag?
     private var popover: NotePagePopover?
     private var dismissing = false
+    private var pointerZone = NoteZoneCursor()
     var imageRect: NSRect = .zero { didSet { if oldValue != imageRect { needsLayout = true } } }
 
     private let dim = CAShapeLayer()
@@ -45,6 +46,7 @@ final class NoteImageCropEditor: NSView {
         self.mask = mask
         aspect = mask?.isSquare == true ? .square : .free
         super.init(frame: .zero)
+        addCursorZoneArea()
         wantsLayer = true
         alphaValue = 0
         dim.fillRule = .evenOdd
@@ -180,7 +182,7 @@ final class NoteImageCropEditor: NSView {
             outline.opacity = mask == nil ? 1 : 0.45
             shapeOutline.isHidden = mask == nil
         }
-        window?.invalidateCursorRects(for: self)
+        if drag == nil { refreshCursorIfPointerOwned() }
     }
 
     private static func handlePath(for rect: CGRect) -> CGPath {
@@ -251,15 +253,27 @@ final class NoteImageCropEditor: NSView {
         return handle.movesTop || handle.movesBottom ? .resizeUpDown : .resizeLeftRight
     }
 
-    override func resetCursorRects() {
-        guard !dismissing else { return }
-        let rect = cropRect
-        addCursorRect(rect.insetBy(dx: Self.handleReach, dy: Self.handleReach), cursor: drag == nil ? .openHand : .closedHand)
-        for handle in NoteImageCropHandle.allCases.reversed() {
-            addCursorRect(hitRect(of: handle, in: rect), cursor: Self.cursor(for: handle))
+    private func pointerCursor(for event: NSEvent) -> NSCursor? {
+        guard !dismissing else { return nil }
+        switch drag {
+        case .move: return .closedHand
+        case .resize(let handle, _, _): return Self.cursor(for: handle)
+        case nil: break
         }
-        for card in [leftCard, rightCard] { addCursorRect(card.frame, cursor: .arrow) }
+        let point = convert(event.locationInWindow, from: nil)
+        if let handle = handle(at: point) { return Self.cursor(for: handle) }
+        return cropRect.contains(point) ? .openHand : nil
     }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !pointerZone.cursorUpdate(pointerCursor(for: event), in: self, event: event) { super.cursorUpdate(with: event) }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        pointerZone.moved(pointerCursor(for: event), in: self, event: event)
+    }
+
+    override func mouseExited(with event: NSEvent) { pointerZone.exited() }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard !dismissing else { return nil }
@@ -303,7 +317,7 @@ final class NoteImageCropEditor: NSView {
         drag = nil
         NoteAnimation.fade(grid, to: 0, duration: 0.2)
         refreshControls()
-        window?.invalidateCursorRects(for: self)
+        refreshCursorIfPointerOwned()
     }
 
     private func setDraft(_ rect: CGRect, animated: Bool = false) {

@@ -16,6 +16,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     private var mode: Mode?
     private var content: NoteMediaContentView?
     private var tracking: NSTrackingArea?
+    private var pageZone = NoteZoneCursor()
     private var observers: [NSObjectProtocol] = []
     private var failure: (source: String, problem: NoteMediaProblem)?
     private var importWatch: AnyCancellable?
@@ -265,14 +266,18 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
             return
         }
         pages.activate(blockID)
-        window?.invalidateCursorRects(for: self)
+        refreshCursorIfPointerOwned()
         if liveSurface.interactive { window?.postEvent(event, atStart: true) }
     }
 
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        guard let liveSurface, liveSurface.superview === self, !liveSurface.interactive else { return }
-        addCursorRect(convert(liveSurface.pageRect, from: liveSurface), cursor: .pointingHand)
+    private func pageCursor(for event: NSEvent) -> NSCursor? {
+        guard let liveSurface, liveSurface.superview === self, !liveSurface.interactive,
+              convert(liveSurface.pageRect, from: liveSurface).contains(convert(event.locationInWindow, from: nil)) else { return nil }
+        return .pointingHand
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !pageZone.cursorUpdate(pageCursor(for: event), in: self, event: event) { super.cursorUpdate(with: event) }
     }
 
     override func layout() {
@@ -321,14 +326,22 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.cursorUpdate, .mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         tracking = area
     }
 
     override func mouseEntered(with event: NSEvent) { setHovering(isTopmost(atWindowPoint: event.locationInWindow)) }
-    override func mouseMoved(with event: NSEvent) { setHovering(isTopmost(atWindowPoint: event.locationInWindow)) }
-    override func mouseExited(with event: NSEvent) { setHovering(false) }
+
+    override func mouseMoved(with event: NSEvent) {
+        setHovering(isTopmost(atWindowPoint: event.locationInWindow))
+        pageZone.moved(pageCursor(for: event), in: self, event: event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setHovering(false)
+        pageZone.exited()
+    }
 
     private func setHovering(_ hovering: Bool) {
         guard hovering != isHovering else { return }
@@ -819,7 +832,7 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
     private let title: NSTextField
     private let uploadChip: NoteChip
     private let linkChip: NoteChip
-    private let field = NSTextField()
+    private let field = NoteInputField()
     private let embedChip: NoteChip
     private let fieldUploadChip: NoteChip
     private let unsplashChip = NoteChip("Unsplash", icon: .symbol("photo.on.rectangle.angled"))
@@ -836,6 +849,7 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
         fieldUploadChip = NoteChip("Upload", icon: .symbol(kind == .file || kind == .pdf ? "arrow.up.doc" : "square.and.arrow.up"))
         hint = NoteMediaStyle.label("That doesn’t look like a link.", font: NoteMediaStyle.smallFont, color: NoteMediaStyle.warningInk)
         super.init(host: host)
+        addCursorUpdateArea()
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.contentTintColor = NoteTheme.tertiaryInk
         icon.image = NoteMediaStyle.symbol(NoteMediaCopy.symbol(for: kind), size: 17, weight: .medium)
@@ -890,7 +904,7 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
         fieldUploadChip.isHidden = !linking
         hint.isHidden = true
         setAccessibilityRole(editable && !linking ? .button : .group)
-        window?.invalidateCursorRects(for: self)
+        refreshCursorIfPointerOwned()
         needsLayout = true
     }
 
@@ -990,9 +1004,9 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
 
     override func setHovered(_ hovered: Bool) { cardHovered = hovered && editable && !enteringLink }
 
-    override func resetCursorRects() {
-        guard editable, !enteringLink else { return }
-        addCursorRect(bounds, cursor: .pointingHand)
+    override func cursorUpdate(with event: NSEvent) {
+        if editable, !enteringLink, applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -1187,6 +1201,7 @@ final class NoteFileContentView: NoteMediaContentView {
         name.lineBreakMode = .byTruncatingMiddle
         size = NoteMediaStyle.label("", font: NoteMediaStyle.detailFont, color: NoteTheme.tertiaryInk)
         super.init(host: host)
+        addCursorUpdateArea()
         fill.cornerRadius = NoteTheme.controlRadius
         fill.cornerCurve = .continuous
         fill.opacity = 0
@@ -1287,8 +1302,9 @@ final class NoteFileContentView: NoteMediaContentView {
         needsLayout = true
     }
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
+    override func cursorUpdate(with event: NSEvent) {
+        if applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
     }
 
     override func mouseDown(with event: NSEvent) {
