@@ -1,19 +1,20 @@
 import AppKit
 
 @MainActor
-final class EaselMermaidSheet: NSObject, NSTextViewDelegate {
-    static let title = "Insert Mermaid Diagram…"
+final class EaselMermaidSheet: NSObject, NSTextViewDelegate, EaselMermaidSheetPresenting {
+    static let title = "Add Mermaid Diagram…"
     static let example = "flowchart LR\n    A[Idea] --> B{Worth it?}\n    B -->|Yes| C[Ship it]\n    B -->|No| D[Nap on it]"
 
     private let panel: NSPanel
     private let source = EaselMermaidSourceView(frame: .zero)
     private let status = NSTextField(labelWithString: "")
-    private let insertButton = ParcDialogButton(title: "Insert", primary: true, hint: false)
+    private let insertButton = ParcDialogButton(title: "Add", primary: true, hint: false)
     private let cancelButton = ParcDialogButton(title: "Cancel", primary: false)
     private weak var canvas: EaselCanvasView?
     private weak var parent: NSWindow?
     private let documentID: UUID
     private var ended = false
+    private var pendingRefresh: DispatchWorkItem?
 
     init(canvas: EaselCanvasView, text: String) {
         self.canvas = canvas
@@ -32,7 +33,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate {
         let width: CGFloat = 540, inset: CGFloat = 38, body = width - 2 * inset
         let root = EaselMermaidSheetView(frame: .zero)
         var y = inset
-        let title = ParcDialogStyle.label([("Insert a Mermaid diagram", false)], size: 18, weight: .medium,
+        let title = ParcDialogStyle.label([("Add a Mermaid diagram", false)], size: 18, weight: .medium,
                                           color: ParcDialogStyle.popoverTitle, lineSpacing: 4)
         root.addSubview(title)
         y += ParcDialogStyle.place(title, x: inset, y: y, width: body) + 8
@@ -64,7 +65,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate {
         source.string = text
         source.delegate = self
         source.setAccessibilityLabel("Mermaid diagram source")
-        source.setAccessibilityHelp("Command-Return inserts the diagram")
+        source.setAccessibilityHelp("Command-Return adds, Escape cancels.")
         scroll.documentView = source
         card.addSubview(scroll); card.field = source
         root.addSubview(card)
@@ -77,7 +78,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate {
 
         insertButton.target = self; insertButton.action = #selector(insert(_:))
         insertButton.keyEquivalent = "\r"; insertButton.keyEquivalentModifierMask = [.command]
-        insertButton.toolTip = "Insert (⌘↩)"
+        insertButton.toolTip = "Add (⌘↩)"
         cancelButton.target = self; cancelButton.action = #selector(cancel(_:)); cancelButton.keyEquivalent = "\u{1b}"
         var right = width - 28
         for button in [insertButton, cancelButton] {
@@ -91,7 +92,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate {
         panel.setContentSize(NSSize(width: width, height: y))
         panel.initialFirstResponder = source
         panel.setAccessibilityDefaultButton(insertButton)
-        panel.setAccessibilityLabel("Insert a Mermaid diagram")
+        panel.setAccessibilityLabel("Add a Mermaid diagram")
         refresh()
     }
 
@@ -100,6 +101,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate {
         parent = window
         window.beginSheet(panel) { [self] _ in
             ended = true
+            pendingRefresh?.cancel(); pendingRefresh = nil
             if let canvas, canvas.window === window { window.makeFirstResponder(canvas) }
         }
         panel.makeFirstResponder(source)
@@ -116,7 +118,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate {
     private func refresh() {
         let text = source.string
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            status.stringValue = "Tip: paste a mermaid code block, fences and all."
+            status.stringValue = "Tip: paste a Mermaid code block, fences and all."
             status.textColor = ParcDialogStyle.popoverMessage
             insertButton.isEnabled = false
             return
@@ -134,7 +136,14 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate {
         status.toolTip = status.stringValue
     }
 
-    func textDidChange(_ notification: Notification) { refresh() }
+    func textDidChange(_ notification: Notification) {
+        pendingRefresh?.cancel()
+        let size = source.string.utf16.count
+        guard size > 4_000 else { refresh(); return }
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.refresh() } }
+        pendingRefresh = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + (size > 60_000 ? 0.5 : 0.25), execute: work)
+    }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         guard !textView.hasMarkedText() else { return false }
@@ -146,6 +155,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate {
     @objc private func insert(_ sender: Any?) {
         guard !ended, !source.hasMarkedText() else { return }
         guard canvasIsCurrent(in: parent), let canvas else { finish(); return }
+        pendingRefresh?.cancel(); pendingRefresh = nil
         refresh()
         guard insertButton.isEnabled else {
             NSSound.beep()
@@ -154,7 +164,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate {
             return
         }
         guard canvas.insertMermaid(source.string) else {
-            status.stringValue = "That diagram couldn't be added here. Try again."
+            status.stringValue = "Parc couldn't add that diagram to this Easel."
             status.textColor = EaselAppearance.error
             return
         }
@@ -169,6 +179,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate {
     private func finish() {
         guard !ended else { return }
         ended = true
+        pendingRefresh?.cancel(); pendingRefresh = nil
         if let parent { parent.endSheet(panel) } else { panel.orderOut(nil) }
     }
 }
