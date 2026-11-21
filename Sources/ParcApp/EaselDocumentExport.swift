@@ -118,6 +118,15 @@ enum EaselDocumentExport {
         return EaselVectorImage(data: converted, mimeType: "image/png")
     }
 
+    static func mediaArt(_ item: EaselItem, session: EaselSession, scale: CGFloat, into art: inout EaselVectorArt) {
+        guard let id = item.assetID else { return }
+        art.mediaDetails[item.id] = EaselMediaArt.detail(for: item) { try? session.assetData(id) }
+        let size = NSSize(width: item.frame.width, height: item.frame.height)
+        if let page = EaselMediaArt.firstPage(id, size: size, scale: max(2, scale), data: { try? session.assetData(id) }) {
+            art.images[item.id] = EaselMediaArt.png(page)
+        }
+    }
+
     static func art(session: EaselSession, canvas: EaselCanvasView, pages: [UUID: EaselPageSnapshot]) -> EaselVectorArt {
         var art = EaselVectorArt()
         let scale = EaselImageExport.pixelDensity()
@@ -155,7 +164,11 @@ enum EaselDocumentExport {
                 connectorArt(item, lookup: lookup, into: &art)
             case .rectangle, .circle:
                 if !item.text.isEmpty { art.texts[item.id] = vectorText(item) }
-            case .freehand, .link, .audio, .file, .pdf, .equation:
+            case .audio, .file:
+                art.mediaDetails[item.id] = EaselMediaArt.detail(for: item) { item.assetID.flatMap { try? session.assetData($0) } }
+            case .pdf:
+                mediaArt(item, session: session, scale: scale, into: &art)
+            case .freehand, .link, .equation:
                 break
             }
         }

@@ -49,6 +49,7 @@ struct EaselVectorArt {
     var connectorRoutes: [UUID: EaselConnectorRoute] = [:]
     var connectorLabels: [UUID: EaselConnectorLabelArt] = [:]
     var sectionTitles: [UUID: EaselVectorSectionTitle] = [:]
+    var mediaDetails: [UUID: String] = [:]
 }
 
 enum EaselVectorExport {
@@ -129,7 +130,8 @@ enum EaselVectorExport {
 
     static func element(_ item: EaselItem, art: EaselVectorArt) -> String {
         guard !item.isEmptyPlaceholder else { return "" }
-        return transformed(item, kindElement(item, art: art))
+        let credit = item.kind == .image && art.images[item.id] != nil ? creditElement(item) : ""
+        return transformed(item, kindElement(item, art: art)) + credit
     }
 
     static func transformed(_ item: EaselItem, _ body: String) -> String {
@@ -164,8 +166,9 @@ enum EaselVectorExport {
         case .table: return table(item, art.texts[item.id])
         case .code: return codeBlock(item, art.texts[item.id])
         case .stamp: return stamp(item, art.images[item.id])
-        case .video: return art.images[item.id].map { poster(item, $0) } ?? ""
-        case .audio, .file, .pdf, .equation: return ""
+        case .video: return art.images[item.id].map { poster(item, $0) } ?? linkedVideoElement(item)
+        case .audio, .file, .pdf: return mediaElement(item, art: art)
+        case .equation: return ""
         }
     }
 
