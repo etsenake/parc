@@ -252,9 +252,10 @@ enum NoteClipboard {
         return type.conforms(to: .image)
     }
 
-    static func isPDFLink(_ url: URL) -> Bool {
-        guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return false }
-        return url.pathExtension.lowercased() == "pdf"
+    static func linkedMediaKind(_ url: URL) -> NoteBlockKind? {
+        guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return nil }
+        let kind = mediaKind(for: url)
+        return kind == .file ? nil : kind
     }
 
     static func mediaKind(for url: URL) -> NoteBlockKind {
