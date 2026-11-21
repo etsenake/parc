@@ -90,7 +90,12 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   return token;
 }
 
-static void TestRealObservation(void) {
+@interface FocusManagerTests : ParcNativeTestCase
+@end
+
+@implementation FocusManagerTests
+
+- (void)observeFocus:(void (^)(NSWindow*, FocusView*, FocusView*, PCNativeFocusManager*, NSMutableArray*))check {
   NSWindow* window = Window();
   FocusView *a = View(window), *b = View(window);
   PCNativeFocusManager* manager =
@@ -112,34 +117,60 @@ static void TestRealObservation(void) {
       didResign:^{
         [events addObject:@"B-"];
       }];
-  Check([manager requestFocusForKey:@"page:A"] == PCNativeFocusRequestAccepted,
-        "real window accepts registered page focus");
-  Check(window.firstResponder == a,
-        "actual AppKit first responder becomes target");
-  Check([manager.focusedKey isEqual:@"page:A"],
-        "focused identity reflects actual responder");
-  Check([events isEqual:@[ @"A+" ]], "real firstResponder KVO announces focus");
-  NSUInteger requests = a.requests;
-  Check([manager requestFocusForKey:@"page:A"] ==
-            PCNativeFocusRequestAlreadyFocused,
-        "duplicate actual focus is preserved");
-  Check(a.requests == requests,
-        "already-focused request does not reset native responder");
-  Check([window makeFirstResponder:b], "external native control changes focus");
-  Check([events isEqual:@[ @"A+", @"A-", @"B+" ]],
-        "external native focus gives old resign before new become without "
-        "polling");
-  [manager reconcileFirstResponder];
-  Check(events.count == 3, "reconciliation suppresses duplicate callbacks");
-  Check([manager requestFocusForKey:@"missing"] == PCNativeFocusRequestRejected,
-        "unknown responder identity is rejected");
+  check(window, a, b, manager, events);
   [ta invalidate];
   [tb invalidate];
   [manager invalidate];
   [window close];
 }
 
-static void TestWindowIdentityAndChains(void) {
+- (void)testRequestsReportTheActualFirstResponder {
+  [self observeFocus:^(NSWindow* window, FocusView* a, FocusView* , PCNativeFocusManager* manager, NSMutableArray* events) {
+    Check([manager requestFocusForKey:@"page:A"] == PCNativeFocusRequestAccepted,
+          "real window accepts registered page focus");
+    Check(window.firstResponder == a,
+          "actual AppKit first responder becomes target");
+    Check([manager.focusedKey isEqual:@"page:A"],
+          "focused identity reflects actual responder");
+    Check([events isEqual:@[ @"A+" ]], "real firstResponder KVO announces focus");
+  }];
+}
+
+- (void)testRequestingTheFocusedViewKeepsItsResponder {
+  [self observeFocus:^(NSWindow* , FocusView* a, FocusView* , PCNativeFocusManager* manager, NSMutableArray* ) {
+    [manager requestFocusForKey:@"page:A"];
+    NSUInteger requests = a.requests;
+    Check([manager requestFocusForKey:@"page:A"] ==
+              PCNativeFocusRequestAlreadyFocused,
+          "duplicate actual focus is preserved");
+    Check(a.requests == requests,
+          "already-focused request does not reset native responder");
+  }];
+}
+
+- (void)testExternalFocusDeliversResignBeforeBecome {
+  [self observeFocus:^(NSWindow* window, FocusView* , FocusView* b, PCNativeFocusManager* manager, NSMutableArray* events) {
+    [manager requestFocusForKey:@"page:A"];
+    Check([window makeFirstResponder:b], "external native control changes focus");
+    Check([events isEqual:@[ @"A+", @"A-", @"B+" ]],
+          "external native focus gives old resign before new become without "
+          "polling");
+    [manager reconcileFirstResponder];
+    Check(events.count == 3, "reconciliation suppresses duplicate callbacks");
+  }];
+}
+
+- (void)testUnknownResponderKeysAreRejected {
+  NSWindow* window = Window();
+  PCNativeFocusManager* manager =
+      [[PCNativeFocusManager alloc] initWithWindow:window];
+  Check([manager requestFocusForKey:@"missing"] == PCNativeFocusRequestRejected,
+        "unknown responder identity is rejected");
+  [manager invalidate];
+  [window close];
+}
+
+- (void)testDetachingTheTargetRejectsFocus {
   NSWindow *a = Window(), *b = Window();
   FocusView *target = View(a), *sentinel = View(a);
   [a makeFirstResponder:sentinel];
@@ -149,15 +180,53 @@ static void TestWindowIdentityAndChains(void) {
   [target removeFromSuperview];
   Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestRejected,
         "detached responder is rejected");
+  [token invalidate];
+  [manager invalidate];
+  [a close];
+  [b close];
+}
+
+- (void)testWrongWindowRequestsPreserveExistingFocus {
+  NSWindow *a = Window(), *b = Window();
+  FocusView *target = View(a), *sentinel = View(a);
+  [a makeFirstResponder:sentinel];
+  PCNativeFocusManager* manager =
+      [[PCNativeFocusManager alloc] initWithWindow:a];
+  PCNativeFocusRegistration* token = Register(manager, target, @"page");
   [b.contentView addSubview:target];
   Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestRejected,
         "same live target in another actual window is rejected");
   Check(a.firstResponder == sentinel,
         "wrong-window request leaves native focus intact");
+  [token invalidate];
+  [manager invalidate];
+  [a close];
+  [b close];
+}
+
+- (void)testReattachedTargetsAreEligible {
+  NSWindow *a = Window(), *b = Window();
+  FocusView *target = View(a), *sentinel = View(a);
+  [a makeFirstResponder:sentinel];
+  PCNativeFocusManager* manager =
+      [[PCNativeFocusManager alloc] initWithWindow:a];
+  PCNativeFocusRegistration* token = Register(manager, target, @"page");
+  [target removeFromSuperview];
+  [b.contentView addSubview:target];
   [target removeFromSuperview];
   [a.contentView addSubview:target];
   Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestAccepted,
         "reattached same-window target is eligible");
+  [token invalidate];
+  [manager invalidate];
+  [a close];
+  [b close];
+}
+
+- (void)testCyclicResponderChainsAreRejected {
+  NSWindow* window = Window();
+  PCNativeFocusManager* manager =
+      [[PCNativeFocusManager alloc] initWithWindow:window];
   NSResponder *one = [NSResponder new], *two = [NSResponder new];
   one.nextResponder = two;
   two.nextResponder = one;
@@ -167,13 +236,11 @@ static void TestWindowIdentityAndChains(void) {
   one.nextResponder = nil;
   two.nextResponder = nil;
   [cycle invalidate];
-  [token invalidate];
   [manager invalidate];
-  [a close];
-  [b close];
+  [window close];
 }
 
-static void TestDescendantAndTextEditing(void) {
+- (void)testRequestingAnAncestorPreservesItsFocusedChild {
   NSWindow* window = Window();
   FocusView* parent = View(window);
   FocusView* child = [[FocusView alloc] initWithFrame:parent.bounds];
@@ -190,6 +257,15 @@ static void TestDescendantAndTextEditing(void) {
         "preserving descendant does not restart page focus");
   Check(manager.focusedKey == nil,
         "ancestor preservation is not a false completion callback");
+  [parentToken invalidate];
+  [manager invalidate];
+  [window close];
+}
+
+- (void)testRequestingTheFieldPreservesItsActiveSelection {
+  NSWindow* window = Window();
+  PCNativeFocusManager* manager =
+      [[PCNativeFocusManager alloc] initWithWindow:window];
   NSTextField* field =
       [[NSTextField alloc] initWithFrame:NSMakeRect(10, 70, 200, 24)];
   field.stringValue = @"selection stays";
@@ -214,16 +290,15 @@ static void TestDescendantAndTextEditing(void) {
         "text selection survives normalized responder request");
   Check([manager.focusedKey isEqual:@"find"] && fieldEvents == 1,
         "field-editor normalization reports one field focus identity");
-  [parentToken invalidate];
   [fieldToken invalidate];
   [manager invalidate];
   [window close];
 }
 
-static void TestPendingBoundary(void) {
+- (void)withRefusedTarget:(void (^)(GateWindow*, FocusView*, PCNativeFocusManager*, NSTimeInterval*))check {
   GateWindow* window = (GateWindow*)Window(GateWindow.class);
-  FocusView *sentinel = View(window), *target = View(window),
-            *other = View(window);
+  FocusView* sentinel = View(window);
+  FocusView* target = View(window);
   [window makeFirstResponder:sentinel];
   __block NSTimeInterval now = 100;
   PCNativeFocusManager* manager =
@@ -232,43 +307,65 @@ static void TestPendingBoundary(void) {
                                                return now;
                                              }];
   PCNativeFocusRegistration* token = Register(manager, target, @"page");
-  PCNativeFocusRegistration* otherToken = Register(manager, other, @"other");
   window.blockedTarget = target;
-  Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestRejected,
-        "reported AppKit refusal is not success");
-  Check(window.firstResponder == sentinel,
-        "refused request preserves actual focus");
-  Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestPending,
-        "same refused target is pending until threshold");
-  now = 101.999;
-  Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestPending,
-        "strictly less than two seconds suppresses resend");
-  Check(window.blockedRequests == 1, "suppression sends no native request");
-  now = 102;
-  Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestRejected,
-        "exactly two seconds permits another native attempt");
-  Check(window.blockedRequests == 2,
-        "boundary retries only when explicitly requested");
-  window.acceptWithoutChanging = YES;
-  now = 104;
-  Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestAccepted,
-        "native acceptance is distinct from observed focus");
-  Check(manager.focusedKey == nil && window.firstResponder == sentinel,
-        "accepted deferred request does not invent actual focus");
-  Check([manager requestFocusForKey:@"other"] == PCNativeFocusRequestAccepted,
-        "different target can supersede pending request");
-  Check([manager.focusedKey isEqual:@"other"],
-        "new real focus determines identity");
-  window.blockedTarget = nil;
-  Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestAccepted,
-        "old pending state does not prevent later genuine focus");
+  check(window, sentinel, manager, &now);
   [token invalidate];
-  [otherToken invalidate];
   [manager invalidate];
   [window close];
 }
 
-static void TestRegistrationLifetime(void) {
+- (void)testRefusalPreservesTheActualResponder {
+  [self withRefusedTarget:^(GateWindow* window, FocusView* sentinel, PCNativeFocusManager* manager, NSTimeInterval* ) {
+    Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestRejected,
+          "reported AppKit refusal is not success");
+    Check(window.firstResponder == sentinel,
+          "refused request preserves actual focus");
+  }];
+}
+
+- (void)testPendingRequestsRetryOnlyAtTheTwoSecondBoundary {
+  [self withRefusedTarget:^(GateWindow* window, FocusView* , PCNativeFocusManager* manager, NSTimeInterval* now) {
+    [manager requestFocusForKey:@"page"];
+    Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestPending,
+          "same refused target is pending until threshold");
+    *now = 101.999;
+    Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestPending,
+          "strictly less than two seconds suppresses resend");
+    Check(window.blockedRequests == 1, "suppression sends no native request");
+    *now = 102;
+    Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestRejected,
+          "exactly two seconds permits another native attempt");
+    Check(window.blockedRequests == 2,
+          "boundary retries only when explicitly requested");
+  }];
+}
+
+- (void)testAppKitAcceptanceDoesNotInventObservedFocus {
+  [self withRefusedTarget:^(GateWindow* window, FocusView* sentinel, PCNativeFocusManager* manager, NSTimeInterval* ) {
+    window.acceptWithoutChanging = YES;
+    Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestAccepted,
+          "native acceptance is distinct from observed focus");
+    Check(manager.focusedKey == nil && window.firstResponder == sentinel,
+          "accepted deferred request does not invent actual focus");
+  }];
+}
+
+- (void)testFocusingAnotherTargetSupersedesAPendingRequest {
+  [self withRefusedTarget:^(GateWindow* window, FocusView* , PCNativeFocusManager* manager, NSTimeInterval* ) {
+    PCNativeFocusRegistration* other = Register(manager, View(window), @"other");
+    [manager requestFocusForKey:@"page"];
+    Check([manager requestFocusForKey:@"other"] == PCNativeFocusRequestAccepted,
+          "different target can supersede pending request");
+    Check([manager.focusedKey isEqual:@"other"],
+          "new real focus determines identity");
+    window.blockedTarget = nil;
+    Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestAccepted,
+          "old pending state does not prevent later genuine focus");
+    [other invalidate];
+  }];
+}
+
+- (void)testStaleTokensCannotUnregisterTheirReplacement {
   NSWindow* window = Window();
   PCNativeFocusManager* manager =
       [[PCNativeFocusManager alloc] initWithWindow:window];
@@ -280,8 +377,26 @@ static void TestRegistrationLifetime(void) {
             window.firstResponder == replacement,
         "stale token cannot remove replacement generation");
   [newToken invalidate];
+  [manager invalidate];
+  [window close];
+}
+
+- (void)testInvalidatingATokenRemovesItsResponder {
+  NSWindow* window = Window();
+  PCNativeFocusManager* manager =
+      [[PCNativeFocusManager alloc] initWithWindow:window];
+  PCNativeFocusRegistration* newToken = Register(manager, View(window), @"page");
+  [newToken invalidate];
   Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestRejected,
         "explicit token removal ends registration");
+  [manager invalidate];
+  [window close];
+}
+
+- (void)testRegistrationsHoldTheirRespondersWeakly {
+  NSWindow* window = Window();
+  PCNativeFocusManager* manager =
+      [[PCNativeFocusManager alloc] initWithWindow:window];
   __weak FocusView* weakView;
   PCNativeFocusRegistration* weakToken;
   @autoreleasepool {
@@ -293,6 +408,15 @@ static void TestRegistrationLifetime(void) {
   Check([manager requestFocusForKey:@"weak"] == PCNativeFocusRequestRejected,
         "deallocated weak responder cannot be focused");
   [weakToken invalidate];
+  [manager invalidate];
+  [window close];
+}
+
+- (void)testReleasingTheTokenUnregistersItsResponder {
+  NSWindow* window = Window();
+  PCNativeFocusManager* manager =
+      [[PCNativeFocusManager alloc] initWithWindow:window];
+  FocusView* old = View(window);
   @autoreleasepool {
     PCNativeFocusRegistration* releasedToken =
         Register(manager, old, @"released");
@@ -303,6 +427,9 @@ static void TestRegistrationLifetime(void) {
       "token deallocation unregisters without explicit call");
   [manager invalidate];
   [window close];
+}
+
+- (void)testClosingAWindowReleasesItsFocusManagerAttachment {
   __weak NSWindow* weakWindow;
   PCNativeFocusManager* orphan;
   @autoreleasepool {
@@ -316,7 +443,7 @@ static void TestRegistrationLifetime(void) {
         "manager does not retain closed window");
 }
 
-static void TestReentrantCallbacksAndTeardown(void) {
+- (void)testResignCallbacksCanSupersedeTheIntermediateResponder {
   NSWindow* window = Window();
   FocusView *a = View(window), *b = View(window), *c = View(window);
   PCNativeFocusManager* manager =
@@ -357,6 +484,16 @@ static void TestReentrantCallbacksAndTeardown(void) {
   [ta invalidate];
   [tb invalidate];
   [tc invalidate];
+  [window close];
+}
+
+- (void)testARegisteringOwnerCanInvalidateDuringItsBecomeCallback {
+  NSWindow* window = Window();
+  FocusView *a = View(window), *b = View(window);
+  PCNativeFocusManager* manager =
+      [[PCNativeFocusManager alloc] initWithWindow:window];
+  __weak PCNativeFocusManager* weakManager = manager;
+  NSMutableArray* events = [NSMutableArray array];
   PCNativeFocusRegistration* closing = [manager registerResponder:a
       forKey:@"closing"
       didBecome:^{
@@ -379,80 +516,109 @@ static void TestReentrantCallbacksAndTeardown(void) {
   [window close];
 }
 
-static void TestDeferredPageHost(void) {
-  NSWindow *window = Window(), *destination = Window();
+- (void)withPageHost:(void (^)(NSWindow*, PCNativePageHost*, NSView*, FocusView*))check {
+  NSWindow* window = Window();
   NSView* page = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 200, 100)];
   FocusView* renderer = [[FocusView alloc] initWithFrame:page.bounds];
   [page addSubview:renderer];
   PCNativePageHost* host = [PCNativePageHost hostWithContentView:page
                                                         observer:nil];
   [window.contentView addSubview:host];
-  FocusView* sentinel = View(window);
-  [window makeFirstResponder:sentinel];
-  PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
-  PCNativeFocusRegistration* token = Register(manager, host, @"page");
-  Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestAccepted,
-        "manager requests the real deferred page host");
-  Drain();
-  Check(window.firstResponder == renderer,
-        "page host focuses renderer through actual queued work");
-  Check([manager requestFocusForKey:@"page"] ==
-            PCNativeFocusRequestAlreadyFocused,
-        "manager preserves renderer descendant focus");
-  [host removeFromSuperview];
-  [destination.contentView addSubview:host];
-  Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestRejected,
-        "old window manager rejects the live reparented host");
-  [token invalidate];
-  [manager invalidate];
+  check(window, host, page, renderer);
   [host invalidate];
   [window close];
-  [destination close];
 }
 
-static void TestDeferredFocusSupersession(void) {
-  NSWindow *window = Window(), *destination = Window();
-  NSView* page = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 200, 100)];
-  FocusView* renderer = [[FocusView alloc] initWithFrame:page.bounds];
-  [page addSubview:renderer];
-  PCNativePageHost* host = [PCNativePageHost hostWithContentView:page observer:nil];
-  [window.contentView addSubview:host];
-  FocusView *control = View(window), *otherControl = View(destination);
-  Check([window makeFirstResponder:host], "real page host queues native focus");
-  Check([window makeFirstResponder:control], "native control supersedes queued page focus");
-  Drain();
-  Check(window.firstResponder == control && renderer.requests == 0,
-        "deferred renderer request cannot steal from a later native control");
-  Check([window makeFirstResponder:host], "original page can request focus again");
-  [host removeFromSuperview];
-  [destination.contentView addSubview:host];
-  Check([destination makeFirstResponder:otherControl], "destination window owns its own responder");
-  Drain();
-  Check(destination.firstResponder == otherControl && renderer.requests == 0,
-        "queued work never retargets a moved page to its new physical window");
-  [host removeFromSuperview]; [window.contentView addSubview:host];
-  Check([window makeFirstResponder:control], "original window returns to native control");
-  Check([window makeFirstResponder:host], "page accepts another explicit request");
-  [renderer removeFromSuperview];
-  FocusView* replacement = [[FocusView alloc] initWithFrame:page.bounds];
-  [page addSubview:replacement];
-  Drain();
-  Check(replacement.requests == 0, "replacement renderer cannot inherit a queued focus request");
-  Check([window makeFirstResponder:control], "control remains available after renderer replacement");
-  Check([window makeFirstResponder:host], "fresh original-owner request admits actual new renderer");
-  Drain();
-  Check(window.firstResponder == replacement && replacement.requests == 1,
-        "fresh request reaches actual renderer through original host");
-  Check([window makeFirstResponder:control], "another genuine native transition succeeds");
-  Check([window makeFirstResponder:host], "host can queue before terminal teardown");
-  [host invalidate];
-  Drain();
-  Check(replacement.requests == 1, "terminal teardown cancels queued renderer work");
-  [window close]; [destination close];
+- (void)testDeferredPageFocusResolvesToTheRenderer {
+  [self withPageHost:^(NSWindow* window, PCNativePageHost* host, NSView* , FocusView* renderer) {
+    FocusView* sentinel = View(window);
+    [window makeFirstResponder:sentinel];
+    PCNativeFocusManager* manager =
+        [[PCNativeFocusManager alloc] initWithWindow:window];
+    PCNativeFocusRegistration* token = Register(manager, host, @"page");
+    Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestAccepted,
+          "manager requests the real deferred page host");
+    Drain();
+    Check(window.firstResponder == renderer,
+          "page host focuses renderer through actual queued work");
+    Check([manager requestFocusForKey:@"page"] ==
+              PCNativeFocusRequestAlreadyFocused,
+          "manager preserves renderer descendant focus");
+    [token invalidate];
+    [manager invalidate];
+  }];
 }
 
-static void TestFallbackAndPendingCleanup(void) {
+- (void)testManagersRejectAHostMovedToAnotherWindow {
+  [self withPageHost:^(NSWindow* window, PCNativePageHost* host, NSView* , FocusView* ) {
+    NSWindow* destination = Window();
+    PCNativeFocusManager* manager =
+        [[PCNativeFocusManager alloc] initWithWindow:window];
+    PCNativeFocusRegistration* token = Register(manager, host, @"page");
+    [host removeFromSuperview];
+    [destination.contentView addSubview:host];
+    Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestRejected,
+          "old window manager rejects the live reparented host");
+    [token invalidate];
+    [manager invalidate];
+    [destination close];
+  }];
+}
+
+- (void)testAControlCanSupersedeQueuedPageFocus {
+  [self withPageHost:^(NSWindow* window, PCNativePageHost* host, NSView* , FocusView* renderer) {
+    FocusView* control = View(window);
+    Check([window makeFirstResponder:host], "real page host queues native focus");
+    Check([window makeFirstResponder:control], "native control supersedes queued page focus");
+    Drain();
+    Check(window.firstResponder == control && renderer.requests == 0,
+          "deferred renderer request cannot steal from a later native control");
+  }];
+}
+
+- (void)testQueuedFocusCannotMigrateToAnotherWindow {
+  [self withPageHost:^(NSWindow* window, PCNativePageHost* host, NSView* , FocusView* renderer) {
+    NSWindow* destination = Window();
+    FocusView* otherControl = View(destination);
+    Check([window makeFirstResponder:host], "original page can request focus again");
+    [host removeFromSuperview];
+    [destination.contentView addSubview:host];
+    Check([destination makeFirstResponder:otherControl], "destination window owns its own responder");
+    Drain();
+    Check(destination.firstResponder == otherControl && renderer.requests == 0,
+          "queued work never retargets a moved page to its new physical window");
+    [destination close];
+  }];
+}
+
+- (void)testAReplacementRendererNeedsAFreshRequest {
+  [self withPageHost:^(NSWindow* window, PCNativePageHost* host, NSView* page, FocusView* renderer) {
+    FocusView* control = View(window);
+    Check([window makeFirstResponder:control], "original window returns to native control");
+    Check([window makeFirstResponder:host], "page accepts another explicit request");
+    [renderer removeFromSuperview];
+    FocusView* replacement = [[FocusView alloc] initWithFrame:page.bounds];
+    [page addSubview:replacement];
+    Drain();
+    Check(replacement.requests == 0, "replacement renderer cannot inherit a queued focus request");
+    Check([window makeFirstResponder:control], "control remains available after renderer replacement");
+    Check([window makeFirstResponder:host], "fresh original-owner request admits actual new renderer");
+    Drain();
+    Check(window.firstResponder == replacement && replacement.requests == 1,
+          "fresh request reaches actual renderer through original host");
+  }];
+}
+
+- (void)testInvalidationCancelsQueuedRendererFocus {
+  [self withPageHost:^(NSWindow* window, PCNativePageHost* host, NSView* , FocusView* renderer) {
+    [window makeFirstResponder:host];
+    [host invalidate];
+    Drain();
+    XCTAssertEqual(renderer.requests, 0u);
+  }];
+}
+
+- (void)withFallback:(void (^)(GateWindow*, FocusView*, FocusView*, FocusView*, PCNativeFocusManager*, NSTimeInterval*))check {
   GateWindow* window = (GateWindow*)Window(GateWindow.class);
   FocusView *sentinel = View(window), *target = View(window),
             *fallback = View(window);
@@ -467,33 +633,51 @@ static void TestFallbackAndPendingCleanup(void) {
   PCNativeFocusRegistration* fallbackToken =
       Register(manager, fallback, @"fallback");
   manager.fallbackKey = @"fallback";
-  [manager reconcileFirstResponder];
-  Check(window.firstResponder == sentinel,
-        "fallback never steals nonnil native focus");
-  window.blockedTarget = target;
-  [manager requestFocusForKey:@"page"];
-  [window simulateMissingFirstResponder];
-  Check(
-      window.firstResponder == nil && fallback.requests == 0,
-      "controlled nil focus preserves a fresh pending target without fallback");
-  now = 102;
-  [manager reconcileFirstResponder];
-  Check(window.firstResponder == fallback,
-        "explicit nil-focus reconcile uses selected fallback after pending "
-        "expires");
-  Check([manager.focusedKey isEqual:@"fallback"],
-        "fallback identity is actual native focus");
-  [window makeFirstResponder:sentinel];
-  [manager requestFocusForKey:@"page"];
-  [target removeFromSuperview];
-  [window simulateMissingFirstResponder];
-  Check(window.firstResponder == fallback,
-        "detached pending target cannot block valid fallback");
+  check(window, sentinel, target, fallback, manager, &now);
   [token invalidate];
   [fallbackToken invalidate];
   [manager invalidate];
   [window close];
+}
 
+- (void)testFallbackPreservesAnExistingResponder {
+  [self withFallback:^(GateWindow* window, FocusView* sentinel, FocusView* , FocusView* , PCNativeFocusManager* manager, NSTimeInterval* ) {
+    [manager reconcileFirstResponder];
+    Check(window.firstResponder == sentinel,
+          "fallback never steals nonnil native focus");
+  }];
+}
+
+- (void)testFallbackWaitsForThePendingRequestToExpire {
+  [self withFallback:^(GateWindow* window, FocusView* , FocusView* target, FocusView* fallback, PCNativeFocusManager* manager, NSTimeInterval* now) {
+    window.blockedTarget = target;
+    [manager requestFocusForKey:@"page"];
+    [window simulateMissingFirstResponder];
+    Check(
+        window.firstResponder == nil && fallback.requests == 0,
+        "controlled nil focus preserves a fresh pending target without fallback");
+    *now = 102;
+    [manager reconcileFirstResponder];
+    Check(window.firstResponder == fallback,
+          "explicit nil-focus reconcile uses selected fallback after pending "
+          "expires");
+    Check([manager.focusedKey isEqual:@"fallback"],
+          "fallback identity is actual native focus");
+  }];
+}
+
+- (void)testDetachingAPendingTargetAllowsFallback {
+  [self withFallback:^(GateWindow* window, FocusView* , FocusView* target, FocusView* fallback, PCNativeFocusManager* manager, NSTimeInterval* ) {
+    window.blockedTarget = target;
+    [manager requestFocusForKey:@"page"];
+    [target removeFromSuperview];
+    [window simulateMissingFirstResponder];
+    Check(window.firstResponder == fallback,
+          "detached pending target cannot block valid fallback");
+  }];
+}
+
+- (void)testUnregisteringAPendingTargetReleasesIt {
   GateWindow* retentionWindow = (GateWindow*)Window(GateWindow.class);
   PCNativeFocusManager* retentionManager =
       [[PCNativeFocusManager alloc] initWithWindow:retentionWindow];
@@ -512,6 +696,13 @@ static void TestFallbackAndPendingCleanup(void) {
   [pendingToken invalidate];
   Check(weakPending == nil,
         "registration removal releases pending target during teardown");
+  [retentionWindow close];
+}
+
+- (void)testObserversReleaseTheirFocusManager {
+  GateWindow* retentionWindow = (GateWindow*)Window(GateWindow.class);
+  PCNativeFocusManager* retentionManager =
+      [[PCNativeFocusManager alloc] initWithWindow:retentionWindow];
   __weak PCNativeFocusManager* weakManager = retentionManager;
   retentionManager = nil;
   Check(weakManager == nil, "KVO and close observer do not retain manager");
@@ -521,7 +712,7 @@ static void TestFallbackAndPendingCleanup(void) {
   [retentionWindow close];
 }
 
-static void TestCallbackReleasesOwner(void) {
+- (void)testAResignCallbackCanReleaseItsManagerDuringDelivery {
   NSWindow* window = Window();
   FocusView *a = View(window), *b = View(window), *sentinel = View(window);
   [window makeFirstResponder:sentinel];
@@ -555,10 +746,16 @@ static void TestCallbackReleasesOwner(void) {
         "finish");
   [ta invalidate];
   [tb invalidate];
+  [window close];
+}
 
+- (void)testABecomeCallbackCanReleaseItsManagerDuringDelivery {
+  NSWindow* window = Window();
+  FocusView *a = View(window), *b = View(window), *sentinel = View(window);
   [window makeFirstResponder:sentinel];
-  owner = [[PCNativeFocusManager alloc] initWithWindow:window];
-  weakOwner = owner;
+  __block PCNativeFocusManager* owner =
+      [[PCNativeFocusManager alloc] initWithWindow:window];
+  __weak PCNativeFocusManager* weakOwner = owner;
   __block BOOL aliveDuringBecome = NO;
   PCNativeFocusRegistration* becomeToken =
       [owner registerResponder:a
@@ -577,51 +774,6 @@ static void TestCallbackReleasesOwner(void) {
   Check([window makeFirstResponder:b],
         "native window remains usable after callback-driven teardown");
   [window close];
-}
-
-@interface FocusManagerTests : ParcNativeTestCase
-@end
-
-@implementation FocusManagerTests
-
-- (void)testRealObservation {
-  TestRealObservation();
-}
-
-- (void)testWindowIdentityAndChains {
-  TestWindowIdentityAndChains();
-}
-
-- (void)testDescendantAndTextEditing {
-  TestDescendantAndTextEditing();
-}
-
-- (void)testPendingBoundary {
-  TestPendingBoundary();
-}
-
-- (void)testRegistrationLifetime {
-  TestRegistrationLifetime();
-}
-
-- (void)testReentrantCallbacksAndTeardown {
-  TestReentrantCallbacksAndTeardown();
-}
-
-- (void)testDeferredPageHost {
-  TestDeferredPageHost();
-}
-
-- (void)testDeferredFocusSupersession {
-  TestDeferredFocusSupersession();
-}
-
-- (void)testFallbackAndPendingCleanup {
-  TestFallbackAndPendingCleanup();
-}
-
-- (void)testCallbackReleasesOwner {
-  TestCallbackReleasesOwner();
 }
 
 @end
