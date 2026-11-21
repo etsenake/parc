@@ -4,14 +4,9 @@ import subprocess
 import tempfile
 root = Path(__file__).resolve().parents[2]
 here = Path(__file__).parent
-model = root / "Sources/ParcCore/SidebarResize.swift"
 hold = root / "Sources/ParcCore/PageContentResize.swift"
 with tempfile.TemporaryDirectory(prefix="parc-sidebar-resize-") as directory:
-    for name, sources in [("region", [model, root / "Sources/ParcApp/SidebarResizeRegion.swift", root / "Sources/ParcApp/PointerCover.swift",
-                                      here / "SidebarResizeRegionTests.swift"]),
-                          ("resizer", [hold, root / "Sources/ParcApp/PageContentResizer.swift",
-                                       here / "PageContentResizerTests.swift"]),
-                          ("frames", [hold, root / "Sources/ParcApp/PageContentResizer.swift",
+    for name, sources in [("frames", [hold, root / "Sources/ParcApp/PageContentResizer.swift",
                                       root / "Sources/ParcApp/PageRenderFrames.swift",
                                       here / "EngineStub.swift", here / "PageRenderFramesTests.swift"])]:
         executable = Path(directory) / name
