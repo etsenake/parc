@@ -25,6 +25,7 @@ struct EaselBoardFeaturesTests {
         historyNames()
         historyPolicy()
         historyRecording()
+        countdown()
         print("EaselBoardFeaturesTests: \(assertions) assertions passed")
     }
 
@@ -366,6 +367,47 @@ struct EaselBoardFeaturesTests {
         } catch {
             expect(false, "history recording failed: \(error)")
         }
+    }
+
+    @MainActor static func countdown() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        var timer = EaselCountdown()
+        expect(timer.phase == .idle && timer.remaining(at: start) == 300, "a new timer offers five minutes")
+        timer.adjust(minutes: 1, at: start)
+        timer.adjust(minutes: 5, at: start)
+        expect(timer.duration == 660, "up and Shift-up add one and five minutes")
+        timer.adjust(minutes: -20, at: start)
+        expect(timer.duration == 0, "the timer never goes below zero")
+        timer.set(minutes: 120)
+        expect(timer.duration == EaselCountdown.maximum && EaselCountdown.label(timer.duration) == "99:59", "the timer tops out at 99:59")
+        timer.adjust(minutes: -1, at: start)
+        expect(timer.duration == 99 * 60, "stepping down from 99:59 lands on the whole minute below")
+        timer.set(minutes: 3)
+        timer.start(at: start)
+        expect(timer.phase == .running && timer.remaining(at: start.addingTimeInterval(61)) == 119, "a running timer counts down")
+        timer.adjust(minutes: -1, at: start.addingTimeInterval(61))
+        expect(timer.remaining(at: start.addingTimeInterval(61)) == 119, "a running timer can't be shortened")
+        timer.addMinute(at: start.addingTimeInterval(61))
+        expect(timer.remaining(at: start.addingTimeInterval(61)) == 179, "+1 min adds a minute while running")
+        timer.pause(at: start.addingTimeInterval(91))
+        expect(timer.phase == .paused && timer.remaining(at: start.addingTimeInterval(500)) == 149, "pausing freezes the time left")
+        timer.addMinute(at: start.addingTimeInterval(500))
+        expect(timer.remaining(at: start.addingTimeInterval(500)) == 209, "+1 min works while paused")
+        timer.toggle(at: start.addingTimeInterval(600))
+        expect(timer.phase == .running && timer.remaining(at: start.addingTimeInterval(700)) == 109, "resuming carries on from the pause")
+        expect(!timer.isDue(at: start.addingTimeInterval(808)) && timer.isDue(at: start.addingTimeInterval(809)), "the timer is due right at zero")
+        timer.finish()
+        expect(timer.phase == .finished && timer.remaining(at: start) == 0, "a finished timer reads zero")
+        timer.start(at: start.addingTimeInterval(900))
+        expect(timer.phase == .running && timer.remaining(at: start.addingTimeInterval(900)) == 180, "starting again runs the same length")
+        timer.reset()
+        expect(timer.phase == .idle && timer.remaining(at: start) == 180, "reset goes back to the set length")
+        expect(EaselCountdown.label(65.2) == "01:06" && EaselCountdown.label(0) == "00:00", "labels round up to whole seconds")
+        expect(EaselCountdown.spoken(65) == "1 minute 5 seconds" && EaselCountdown.spoken(120) == "2 minutes", "VoiceOver hears plain words")
+        var empty = EaselCountdown()
+        empty.set(minutes: 0)
+        empty.start(at: start)
+        expect(empty.phase == .idle, "a zero timer doesn't start")
     }
 
     @MainActor static func objectLinks() {
