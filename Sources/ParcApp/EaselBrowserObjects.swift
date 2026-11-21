@@ -9,6 +9,7 @@ final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHosting {
     private var canvas: EaselCanvasView? { hostView as? EaselCanvasView }
     private var replacementObserver: UUID?
     private var documentObserver: AnyCancellable?
+    var loadsLinkPreviews = true
 
     init(session: EaselSession, canvas: EaselCanvasView, binding: PCNativeBrowserWindow,
          profilePath: String, validOwner: @escaping () -> Bool,
@@ -95,7 +96,7 @@ final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHosting {
         let profilePath = self.profilePath, layout = item.captureLayout
         let address = URL(string: url) ?? URL(string: "about:blank")!
         guard let entry = surface(id: item.id, url: url, variant: Self.variant(item), make: {
-            EaselBrowserSurface(profilePath: profilePath, address: address, captureLayout: layout)
+            EaselBrowserSurface(profilePath: profilePath, address: address, captureLayout: layout, loadsLinkPreview: loadsLinkPreviews)
         }) else { return nil }
         guard entry.surface.onDone == nil, let view = entry.surface as? EaselBrowserSurface else { return entry.surface }
         view.onDone = { [weak self, weak entry] in
@@ -219,7 +220,7 @@ final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
         interactive && (browser.nativePage?.isClosed != false || browser.nativePage?.embeddedOwnerValid == true)
     }
     override var isFlipped: Bool { true }
-    init(profilePath: String, address: URL, captureLayout: EaselCaptureLayout?) {
+    init(profilePath: String, address: URL, captureLayout: EaselCaptureLayout?, loadsLinkPreview: Bool = true) {
         self.captureLayout = captureLayout
         self.address = address
         browser = PCBrowserView(frame: .zero, profilePath: profilePath)
@@ -252,9 +253,11 @@ final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
             header.buttons = [backButton, reloadButton, openButton, moreButton, doneButton]
             header.onTitle = { [weak self] in self?.editAddress() }
         }
-        header.loadPreview(for: address) { [weak self] preview in
-            if let preview { self?.fallback.configure(preview: preview) }
-            self?.refresh()
+        if loadsLinkPreview {
+            header.loadPreview(for: address) { [weak self] preview in
+                if let preview { self?.fallback.configure(preview: preview) }
+                self?.refresh()
+            }
         }
         setAccessibilityElement(false)
         refresh()
