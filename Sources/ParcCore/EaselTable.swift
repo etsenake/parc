@@ -931,7 +931,7 @@ extension EaselVectorExport {
         result += "<g clip-path=\"url(#" + clip + ")\"><rect " + box(f) + " style=\"fill:var(--easel-card)\"/>"
         for cell in model.visibleCells {
             guard let fill = model.cell(cell)?.fill, let r = grid.rect(of: cell, in: model) else { continue }
-            result += "<rect " + box(r) + " style=\"fill:" + paint(fill) + "\"/>"
+            result += "<rect " + box(r) + " style=\"fill:" + paint(fill, role: .fill) + "\"/>"
         }
         let segments = grid.borderSegments(in: model)
         if !segments.isEmpty {

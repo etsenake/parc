@@ -402,7 +402,8 @@ struct EaselTableTests {
         var item = EaselTableGeometry.item(columns: 2, rows: 2, frame: EaselRect(x: 0, y: 0, width: 200, height: 72), zIndex: 1)
         item.table = table
         let svg = EaselVectorExport.element(item, art: EaselVectorArt())
-        expect(svg.contains("easel-table") && svg.contains("clipPath") && svg.contains("fill:#FAE7D5") && svg.contains("<path d=\"M"), "Tables export as SVG with fills and grid lines")
+        expect(svg.contains("easel-table") && svg.contains("clipPath") && svg.contains("<path d=\"M"), "Tables export as SVG with a grid")
+        expect(svg.contains(EaselVectorExport.paint("#FAE7D5", role: .fill)), "Cell fills export with their light and dark palette colours")
         expect(svg.contains("var(--easel-card)") && svg.contains("var(--easel-card-line)"), "Table chrome follows light and dark")
     }
 
