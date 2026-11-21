@@ -6,6 +6,49 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class PCNativePageHost;
 
+@protocol PCNativePresentation <NSObject>
+- (nullable NSWindow *)attachedSheetOfWindow:(nullable NSWindow *)window;
+- (nullable NSWindow *)sheetParentOfWindow:(nullable NSWindow *)window;
+- (nullable NSWindow *)parentWindowOfWindow:(nullable NSWindow *)window;
+- (nullable NSArray<NSWindow *> *)childWindowsOfWindow:(nullable NSWindow *)window;
+- (BOOL)isWindowVisible:(nullable NSWindow *)window;
+- (void)window:(nullable NSWindow *)window
+           beginSheet:(NSWindow *)sheet
+    completionHandler:(nullable void (^)(NSModalResponse))handler;
+- (void)window:(nullable NSWindow *)window endSheet:(nullable NSWindow *)sheet;
+- (void)window:(nullable NSWindow *)window
+      endSheet:(nullable NSWindow *)sheet
+    returnCode:(NSModalResponse)code;
+- (void)endApplicationSheet:(nullable NSWindow *)sheet;
+- (void)window:(nullable NSWindow *)window
+    addChildWindow:(NSWindow *)child
+           ordered:(NSWindowOrderingMode)place;
+- (void)window:(nullable NSWindow *)window removeChildWindow:(nullable NSWindow *)child;
+- (void)orderFrontWindow:(nullable NSWindow *)window;
+- (void)makeKeyAndOrderFrontWindow:(nullable NSWindow *)window;
+- (void)makeKeyWindow:(nullable NSWindow *)window;
+- (void)orderOutWindow:(nullable NSWindow *)window;
+- (void)closeWindow:(nullable NSWindow *)window;
+- (NSPopover *)makePopover;
+@end
+
+@protocol PCNativeScheduling <NSObject>
+@property(nonatomic, readonly) NSTimeInterval systemUptime;
+@property(nonatomic, readonly) NSDate *currentDate;
+- (NSTimeInterval)timeIntervalSinceNowForDate:(nullable NSDate *)date;
+- (NSTimer *)timerWithTimeInterval:(NSTimeInterval)interval
+                          repeats:(BOOL)repeats
+                            block:(void (^)(NSTimer *))block;
+- (NSTimer *)scheduledTimerWithTimeInterval:(NSTimeInterval)interval
+                                   repeats:(BOOL)repeats
+                                     block:(void (^)(NSTimer *))block;
+- (void)addTimer:(NSTimer *)timer forMode:(NSRunLoopMode)mode;
+- (void)performInModes:(NSArray<NSRunLoopMode> *)modes block:(void (^)(void))block;
+- (void)dispatchToMainQueue:(dispatch_block_t)block;
+- (void)runAnimationGroup:(void (^)(NSAnimationContext *))changes
+        completionHandler:(nullable void (^)(void))completion;
+@end
+
 @protocol PCNativePageHostObserver <NSObject>
 // The actual view hierarchy's window, including nil on detachment. This does
 // not transfer browser ownership or declare the page visible to Chromium.
@@ -31,6 +74,8 @@ __attribute__((visibility("default")))
                           observer:(nullable id<PCNativePageHostObserver>)observer;
 
 @property(nonatomic, strong, readonly, nullable) NSView *contentView;
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
+@property(nonatomic, strong) id<PCNativeScheduling> scheduler;
 
 // Replaces the existing managed view only. nil, hierarchy cycles, a missing
 // current view or an invalidated host return NO without changing containment.

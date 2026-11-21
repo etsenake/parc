@@ -703,11 +703,13 @@ static const CGFloat kFieldPadding = 12;
 }
 @synthesize icon = _icon;
 @synthesize escapeButton = _escapeButton;
+@synthesize presentation = _presentation;
 - (instancetype)initWithTitle:(NSString*)title message:(NSString*)message {
   if ((self = [super init])) {
     _title = [title copy];
     _message = [message copy];
     _buttons = [NSMutableArray array];
+    _presentation = PCNativeSystemPresentation.sharedPresentation;
   }
   return self;
 }
@@ -738,8 +740,10 @@ static const CGFloat kFieldPadding = 12;
   __attribute__((objc_precise_lifetime)) PCDialogPrompt* keep = self;
   (void)keep;
   NSWindow* window = _window;
-  if (sender.window == window && window.sheetParent) {
-    [window.sheetParent endSheet:window returnCode:sender.tag];
+  if (sender.window == window && [_presentation sheetParentOfWindow:window]) {
+    [_presentation window:[_presentation sheetParentOfWindow:window]
+                 endSheet:window
+               returnCode:sender.tag];
   }
 }
 - (NSWindow*)window {
@@ -806,12 +810,112 @@ static const CGFloat kFieldPadding = 12;
                completionHandler:(void (^)(NSModalResponse))handler {
   NSWindow* window = self.window;
   void (^completion)(NSModalResponse) = [handler copy];
-  // The completion retains this prompt (and its button targets) until the
-  // sheet ends.
-  [parent beginSheet:window
+  [_presentation window:parent
+             beginSheet:window
       completionHandler:^(NSModalResponse response) {
         (void)self;
         if (completion) completion(response);
       }];
+}
+@end
+
+@implementation PCNativeSystemPresentation
++ (PCNativeSystemPresentation*)sharedPresentation {
+  static PCNativeSystemPresentation* shared = [[PCNativeSystemPresentation alloc] init];
+  return shared;
+}
+- (NSWindow*)attachedSheetOfWindow:(NSWindow*)window {
+  return window.attachedSheet;
+}
+- (NSWindow*)sheetParentOfWindow:(NSWindow*)window {
+  return window.sheetParent;
+}
+- (NSWindow*)parentWindowOfWindow:(NSWindow*)window {
+  return window.parentWindow;
+}
+- (NSArray<NSWindow*>*)childWindowsOfWindow:(NSWindow*)window {
+  return window.childWindows;
+}
+- (BOOL)isWindowVisible:(NSWindow*)window {
+  return window.visible;
+}
+- (void)window:(NSWindow*)window
+           beginSheet:(NSWindow*)sheet
+    completionHandler:(void (^)(NSModalResponse))handler {
+  [window beginSheet:sheet completionHandler:handler];
+}
+- (void)window:(NSWindow*)window endSheet:(NSWindow*)sheet {
+  [window endSheet:sheet];
+}
+- (void)window:(NSWindow*)window endSheet:(NSWindow*)sheet returnCode:(NSModalResponse)code {
+  [window endSheet:sheet returnCode:code];
+}
+- (void)endApplicationSheet:(NSWindow*)sheet {
+  [NSApp endSheet:sheet];
+}
+- (void)window:(NSWindow*)window
+    addChildWindow:(NSWindow*)child
+           ordered:(NSWindowOrderingMode)place {
+  [window addChildWindow:child ordered:place];
+}
+- (void)window:(NSWindow*)window removeChildWindow:(NSWindow*)child {
+  [window removeChildWindow:child];
+}
+- (void)orderFrontWindow:(NSWindow*)window {
+  [window orderFront:nil];
+}
+- (void)makeKeyAndOrderFrontWindow:(NSWindow*)window {
+  [window makeKeyAndOrderFront:nil];
+}
+- (void)makeKeyWindow:(NSWindow*)window {
+  [window makeKeyWindow];
+}
+- (void)orderOutWindow:(NSWindow*)window {
+  [window orderOut:nil];
+}
+- (void)closeWindow:(NSWindow*)window {
+  [window close];
+}
+- (NSPopover*)makePopover {
+  return [NSPopover new];
+}
+@end
+
+@implementation PCNativeSystemScheduling
++ (PCNativeSystemScheduling*)sharedScheduling {
+  static PCNativeSystemScheduling* shared = [[PCNativeSystemScheduling alloc] init];
+  return shared;
+}
+- (NSTimeInterval)systemUptime {
+  return NSProcessInfo.processInfo.systemUptime;
+}
+- (NSDate*)currentDate {
+  return NSDate.date;
+}
+- (NSTimeInterval)timeIntervalSinceNowForDate:(NSDate*)date {
+  return date.timeIntervalSinceNow;
+}
+- (NSTimer*)timerWithTimeInterval:(NSTimeInterval)interval
+                          repeats:(BOOL)repeats
+                            block:(void (^)(NSTimer*))block {
+  return [NSTimer timerWithTimeInterval:interval repeats:repeats block:block];
+}
+- (NSTimer*)scheduledTimerWithTimeInterval:(NSTimeInterval)interval
+                                   repeats:(BOOL)repeats
+                                     block:(void (^)(NSTimer*))block {
+  return [NSTimer scheduledTimerWithTimeInterval:interval repeats:repeats block:block];
+}
+- (void)addTimer:(NSTimer*)timer forMode:(NSRunLoopMode)mode {
+  [NSRunLoop.mainRunLoop addTimer:timer forMode:mode];
+}
+- (void)performInModes:(NSArray<NSRunLoopMode>*)modes block:(void (^)(void))block {
+  [NSRunLoop.mainRunLoop performInModes:modes block:block];
+}
+- (void)dispatchToMainQueue:(dispatch_block_t)block {
+  dispatch_async(dispatch_get_main_queue(), block);
+}
+- (void)runAnimationGroup:(void (^)(NSAnimationContext*))changes
+        completionHandler:(void (^)(void))completion {
+  [NSAnimationContext runAnimationGroup:changes completionHandler:completion];
 }
 @end
