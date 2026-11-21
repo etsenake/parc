@@ -13,33 +13,102 @@ enum EaselInk {
         }
     }()
 
+    private static let paletteNamePrefix = "Parc.Easel.Palette."
+    private static var paletteColors: [NSColor.Name: NSColor] = [:]
+
     static func isAutomatic(_ hex: String) -> Bool {
         let value = hex.uppercased()
         return value == automatic || value == automatic + "FF"
     }
 
-    static func isAdaptive(_ color: NSColor) -> Bool {
-        color.type == .catalog && color.colorNameComponent == adaptiveName
+    static func isAdaptive(_ color: NSColor) -> Bool { canonicalHex(of: color) != nil }
+
+    static func canonicalHex(of color: NSColor) -> String? {
+        guard color.type == .catalog else { return nil }
+        let name = color.colorNameComponent
+        if name == adaptiveName { return automatic }
+        guard name.hasPrefix(paletteNamePrefix), let hex = name.split(separator: ".").last else { return nil }
+        return EaselPalette.normalized(String(hex))
     }
 
-    static func color(_ hex: String, adaptive adapts: Bool) -> NSColor {
-        if adapts, isAutomatic(hex) { return adaptive }
+    static func storedInk(_ color: NSColor) -> String? { canonicalHex(of: color).map { $0 + "FF" } }
+
+    static func color(_ hex: String, adaptive adapts: Bool, role: EaselColorRole = .ink) -> NSColor {
+        if adapts {
+            if role == .ink, isAutomatic(hex) { return adaptive }
+            if let variants = EaselPalette.variants(hex, role: role), variants.adapts { return paletteColor(variants, role: role) }
+        }
+        return fixed(hex)
+    }
+
+    static func fixed(_ hex: String) -> NSColor {
         let value = UInt32(hex.dropFirst().prefix(6), radix: 16) ?? 0x252525
         return NSColor(srgbRed: Double(value >> 16 & 255) / 255, green: Double(value >> 8 & 255) / 255,
                        blue: Double(value & 255) / 255, alpha: 1)
     }
 
+    private static func paletteColor(_ variants: EaselColorVariants, role: EaselColorRole) -> NSColor {
+        let name = NSColor.Name(paletteNamePrefix + role.rawValue + "." + variants.canonical)
+        if let cached = paletteColors[name] { return cached }
+        let light = fixed(variants.light), dark = fixed(variants.dark)
+        let made = NSColor(name: name) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        }
+        paletteColors[name] = made
+        return made
+    }
+
     static func adapting(_ value: NSAttributedString) -> NSAttributedString {
         let result = NSMutableAttributedString(attributedString: value)
         value.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: value.length)) { color, range, _ in
-            guard let color = color as? NSColor, !isAdaptive(color), color.type != .catalog,
-                  let rgb = color.usingColorSpace(.sRGB),
-                  isAutomatic(String(format: "#%02X%02X%02X%02X", Int((rgb.redComponent * 255).rounded()),
-                      Int((rgb.greenComponent * 255).rounded()), Int((rgb.blueComponent * 255).rounded()),
-                      Int((rgb.alphaComponent * 255).rounded()))) else { return }
-            result.addAttribute(.foregroundColor, value: adaptive, range: range)
+            guard let color = color as? NSColor, color.type != .catalog, let rgb = color.usingColorSpace(.sRGB) else { return }
+            let hex = String(format: "#%02X%02X%02X%02X", Int((rgb.redComponent * 255).rounded()),
+                             Int((rgb.greenComponent * 255).rounded()), Int((rgb.blueComponent * 255).rounded()),
+                             Int((rgb.alphaComponent * 255).rounded()))
+            let shown = self.color(hex, adaptive: true)
+            guard isAdaptive(shown) else { return }
+            result.addAttribute(.foregroundColor, value: shown, range: range)
         }
         return result
+    }
+}
+
+@MainActor
+struct EaselPaint {
+    let inkColor: NSColor
+    let fillColor: NSColor?
+    let lineWidth: CGFloat
+    let dash: [CGFloat]
+
+    init(_ item: EaselItem, adaptive: Bool) {
+        let ink = EaselInk.color(item.color, adaptive: adaptive)
+        let width = EaselPaintRules.strokeWidth(item)
+        inkColor = ink
+        lineWidth = CGFloat(width)
+        dash = EaselPaintRules.dashPattern(item.strokeDash, width: width).map { CGFloat($0) }
+        switch EaselPaintRules.fill(item) {
+        case .none: fillColor = nil
+        case .wash(let opacity): fillColor = ink.withAlphaComponent(CGFloat(opacity))
+        case .color(let hex, let role, let opacity):
+            fillColor = EaselInk.color(hex, adaptive: adaptive, role: role).withAlphaComponent(CGFloat(opacity))
+        }
+    }
+
+    var arrowHeadLength: CGFloat { CGFloat(EaselPaintRules.arrowHeadLength(width: Double(lineWidth))) }
+
+    func fill(_ path: NSBezierPath) {
+        guard let fillColor else { return }
+        fillColor.setFill(); path.fill()
+    }
+
+    func stroke(_ path: NSBezierPath, dashed: Bool = true) {
+        guard lineWidth > 0 else { return }
+        path.lineWidth = lineWidth
+        if dashed, !dash.isEmpty {
+            path.lineCapStyle = .round
+            path.setLineDash(dash, count: dash.count, phase: 0)
+        }
+        inkColor.setStroke(); path.stroke()
     }
 }
 

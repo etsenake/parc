@@ -63,7 +63,7 @@ enum EaselRichTextCodec {
                 let foreground = (attrs[.foregroundColor] as? NSColor) ?? .textColor
                 let semantic = semanticInk(foreground)
                 var a = EaselRichText.Attributes(font: snapshotFont(face),
-                    ink: semantic == .noteBody ? "#000000FF" : EaselInk.isAdaptive(foreground) ? EaselInk.automatic + "FF" : try hex(foreground),
+                    ink: semantic == .noteBody ? "#000000FF" : try EaselInk.storedInk(foreground) ?? hex(foreground),
                     semanticInk: semantic)
                 if let object = attrs[.attachment] {
                     guard let attachment = object as? NSTextAttachment, range.length == 1,

@@ -537,7 +537,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     private var usesObjectSurfaces: Bool { pageObjects != nil && items.contains { $0.ownsEmbeddedPage } }
     private func displayBounds(of item: EaselItem) -> NSRect {
-        let pad = 16 / max(canvasScale, 0.2) + 16
+        let pad = 16 / max(canvasScale, 0.2) + 16 + CGFloat(EaselPaintRules.strokeWidth(item)) * 1.5
         return rect(item).insetBy(dx: -pad, dy: -pad)
     }
     private func guideDirtyBounds() -> NSRect {
@@ -554,18 +554,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return dirty
     }
     private func contentRedrawRequired(_ previous: EaselItem, _ item: EaselItem) -> Bool {
-        previous.kind != item.kind
-            || previous.text != item.text
-            || previous.richText != item.richText
-            || previous.textStyle != item.textStyle
-            || previous.color != item.color
-            || previous.url != item.url
-            || previous.assetID != item.assetID
-            || previous.points != item.points
-            || previous.frame.width != item.frame.width
-            || previous.frame.height != item.frame.height
-            || previous.liveCapture != item.liveCapture
-            || previous.captureLayout != item.captureLayout
+        var placed = previous
+        placed.frame.x = item.frame.x; placed.frame.y = item.frame.y
+        placed.zIndex = item.zIndex; placed.movedToFrontAt = item.movedToFrontAt; placed.capturedAt = item.capturedAt
+        return placed != item
     }
     private func cachedTextLayout(for item: EaselItem) -> EaselTextLayout.Layout {
         let size = NSSize(width: item.frame.width, height: item.frame.height)
@@ -787,15 +779,16 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 ink.withAlphaComponent(0.09).setFill(); path.fill(); ink.setStroke(); path.lineWidth = 2.5; path.stroke()
             case .arrow, .freehand:
                 guard let first = item.points.first else { return }
+                let paint = EaselPaint(item, adaptive: adaptsInk)
                 let path = NSBezierPath(); path.move(to: NSPoint(x: r.minX + first.x, y: r.minY + first.y))
                 for p in item.points.dropFirst() { path.line(to: NSPoint(x: r.minX + p.x, y: r.minY + p.y)) }
-                path.lineWidth = 3; path.lineCapStyle = .round; path.lineJoinStyle = .round; path.stroke()
+                path.lineCapStyle = .round; path.lineJoinStyle = .round; paint.stroke(path)
                 if item.kind == .arrow, let last = item.points.last, item.points.count >= 2 {
                     let previous = item.points[item.points.count - 2], angle = atan2(last.y - previous.y, last.x - previous.x)
-                    let end = NSPoint(x: r.minX + last.x, y: r.minY + last.y), head = NSBezierPath()
-                    head.move(to: NSPoint(x: end.x - cos(angle - 0.5) * 16, y: end.y - sin(angle - 0.5) * 16))
-                    head.line(to: end); head.line(to: NSPoint(x: end.x - cos(angle + 0.5) * 16, y: end.y - sin(angle + 0.5) * 16))
-                    head.lineWidth = 3; head.lineCapStyle = .round; head.stroke()
+                    let end = NSPoint(x: r.minX + last.x, y: r.minY + last.y), head = NSBezierPath(), length = paint.arrowHeadLength
+                    head.move(to: NSPoint(x: end.x - cos(angle - 0.5) * length, y: end.y - sin(angle - 0.5) * length))
+                    head.line(to: end); head.line(to: NSPoint(x: end.x - cos(angle + 0.5) * length, y: end.y - sin(angle + 0.5) * length))
+                    head.lineCapStyle = .round; head.lineJoinStyle = .round; paint.stroke(head, dashed: false)
                 }
             case .image:
                 if let id = item.assetID { image(id)?.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil) }
