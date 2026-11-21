@@ -385,6 +385,13 @@ extension BrowserWindowController {
                       ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
                 self.openInput(url.absoluteString)
             }
+            editor.onOpenNote = { [weak self] url in
+                guard let self, self.currentTabID == tab.id, self.activeProfileID == tab.profileID,
+                      self.easelEditors[tab.id]?.documentID == documentID,
+                      !self.isClosing, !self.wholeWindowClose else { return }
+                _ = self.openNote(url: url)
+            }
+            editor.notesFolder = { NoteFolderPreferences.folder(for: tab.profileID) }
             editor.exportAdmission = { [weak self, weak editor] in
                 guard let self, let editor else { return false }
                 return self.currentEaselEditor === editor

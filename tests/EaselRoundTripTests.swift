@@ -78,6 +78,7 @@ struct EaselRoundTripTests {
         for name in corpus { try storeRoundTrip(name) }
         try storeEditAndUndo()
         try storeListing()
+        noteLinks()
         print("EaselRoundTrip: \(assertions) assertions passed (\(corpus.count) saved Easels)")
     }
 
@@ -268,6 +269,16 @@ struct EaselRoundTripTests {
             expect(summaries.count == corpus.count, "every main-format file shows up in the Easel list")
             expect(summaries.allSatisfy { expected[$0.id] == $0.itemCount }, "listed object counts match the files")
             expect(summaries.first(where: { $0.title == "Web" })?.modifiedAt == Date(timeIntervalSinceReferenceDate: 700_300_900), "listed dates match the files")
+        }
+    }
+
+    @MainActor static func noteLinks() {
+        expect(EaselRichText.noteLinkExtensions == NoteFileKind.markdownExtensions.union(NoteFileKind.plainTextExtensions),
+               "Easel note links accept exactly the file types Notes opens")
+        expect(EaselRichText.validLink("file:///Users/me/Parc%20Notes/Plan.md"), "A link to a note file is a valid text link")
+        expect(EaselRichText.validLink("file:///Users/me/Notes/ideas.TXT#top"), "Note links keep fragments and any extension case")
+        for refused in ["file:///etc/passwd", "file:///Applications/Parc.app", "file://server/share/a.md", "file:relative/a.md", "file:///tmp/a.md/.."] {
+            expect(!EaselRichText.validLink(refused), "Non-note file link refused: \(refused)")
         }
     }
 }

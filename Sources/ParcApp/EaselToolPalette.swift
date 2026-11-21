@@ -340,10 +340,20 @@ private final class EaselPaletteScroller: NSScrollView {
 }
 
 @MainActor
-final class EaselZoomMenuView: NSView, NoteFloatingPanelContent {
+final class EaselFieldMenuView: NSView, NoteFloatingPanelContent {
     var preferredSizeDidChange: (() -> Void)?
     let field = NoteSearchField(placeholder: "100%")
     let list = NoteMenuList()
+    private let noticeLabel = NSTextField(labelWithString: "")
+    var notice: String? {
+        didSet {
+            noticeLabel.stringValue = notice ?? ""
+            noticeLabel.isHidden = notice == nil
+            invalidateIntrinsicContentSize()
+            needsLayout = true
+            preferredSizeDidChange?()
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -351,7 +361,11 @@ final class EaselZoomMenuView: NSView, NoteFloatingPanelContent {
         field.textField.setAccessibilityLabel("Zoom percentage")
         list.minimumWidth = 236
         list.preferredSizeDidChange = { [weak self] in self?.preferredSizeDidChange?() }
+        noticeLabel.font = NoteTheme.captionFont()
+        noticeLabel.textColor = NoteTheme.destructiveInk
+        noticeLabel.isHidden = true
         addSubview(field)
+        addSubview(noticeLabel)
         addSubview(list)
         setAccessibilityElement(false)
     }
@@ -360,9 +374,11 @@ final class EaselZoomMenuView: NSView, NoteFloatingPanelContent {
 
     override var isFlipped: Bool { true }
 
+    private var noticeHeight: CGFloat { notice == nil ? 0 : 20 }
+
     override var intrinsicContentSize: NSSize {
         let menu = list.intrinsicContentSize
-        return NSSize(width: max(236, menu.width), height: NoteTheme.menuInset * 2 + NoteTheme.fieldHeight + menu.height)
+        return NSSize(width: max(236, menu.width), height: NoteTheme.menuInset * 2 + NoteTheme.fieldHeight + noticeHeight + menu.height)
     }
 
     override var fittingSize: NSSize { intrinsicContentSize }
@@ -371,7 +387,9 @@ final class EaselZoomMenuView: NSView, NoteFloatingPanelContent {
         super.layout()
         let inset = NoteTheme.menuInset
         field.frame = NSRect(x: inset * 2, y: inset * 2, width: max(0, bounds.width - inset * 4), height: NoteTheme.fieldHeight)
-        list.frame = NSRect(x: 0, y: field.frame.maxY, width: bounds.width, height: max(0, bounds.height - field.frame.maxY))
+        noticeLabel.frame = NSRect(x: inset * 2 + 4, y: field.frame.maxY + 2, width: max(0, bounds.width - inset * 4 - 8), height: 16)
+        let top = field.frame.maxY + noticeHeight
+        list.frame = NSRect(x: 0, y: top, width: bounds.width, height: max(0, bounds.height - top))
     }
 }
 
@@ -831,7 +849,7 @@ final class EaselToolPalette: NSView {
             content = menuList
             list = menuList
         case .zoom:
-            let zoom = EaselZoomMenuView(frame: .zero)
+            let zoom = EaselFieldMenuView(frame: .zero)
             zoom.field.placeholder = "\(zoomPercent)%"
             zoom.field.textField.setAccessibilityLabel("Zoom percentage")
             zoom.list.items = zoomItems()

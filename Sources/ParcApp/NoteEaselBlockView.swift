@@ -242,6 +242,13 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
                     self?.editor?.formatBar.showToast($0)
                 }
             }
+            let panels = EaselPanels(container: { [weak self] in self?.editor?.canvas.overlayView },
+                                     search: { [weak self] query, limit in self?.editor?.environment.searchNotes(query, limit: limit) ?? [] })
+            panels.follow = { [weak canvas] link in canvas?.followLink(link) }
+            panels.copy = { [weak canvas] link in canvas?.copyLink(link) }
+            panels.toast = { [weak self] content in (self?.window?.windowController as? BrowserWindowController)?.showToast(content) }
+            canvas.panels = panels
+            canvas.onOpenNote = { [weak self] url in self?.editor?.open(url) }
             surface.show(canvas, viewOnly: !canEdit)
             watch = next.objectWillChange.sink { [weak self] (_: Void) in
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.sessionDidChange() } }

@@ -76,9 +76,15 @@ struct EaselRichText: Codable, Equatable {
     }
     var runs: [Run]
 
+    static let noteLinkExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdtxt", "mdtext", "txt", "text"]
+
     static func validLink(_ value: String) -> Bool {
         guard value.utf8.count <= 16_384, let url = URL(string: value),
-              let scheme = url.scheme?.lowercased(), ["https", "http", "mailto", "tel"].contains(scheme) else { return false }
+              let scheme = url.scheme?.lowercased(), ["https", "http", "mailto", "tel", "file"].contains(scheme) else { return false }
+        if scheme == "file" {
+            return url.host?.isEmpty != false && url.path.hasPrefix("/") && url.user == nil && url.password == nil
+                && noteLinkExtensions.contains(url.pathExtension.lowercased())
+        }
         return scheme == "mailto" || scheme == "tel" || url.host?.isEmpty == false
     }
     func validate(text: String) throws {
