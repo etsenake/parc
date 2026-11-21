@@ -796,138 +796,7 @@ extension TextFormatCommand {
     }
 }
 
-final class EaselTextStyleBar: NSView {
-    var onVisibilityChange: ((Bool) -> Void)?
-    private let details = EaselSurfaceView(frame: .zero)
-    private let railSurface = EaselToolbarPill(frame: .zero)
-    private let fontButton = EaselPaletteButton(title: "Aa", target: nil, action: nil)
-    private var expanded = false
-    var onLayoutChange: (() -> Void)?
-    private let families = PointingHandPopUpButton(frame: .zero, pullsDown: false)
-    private let sizes = PointingHandPopUpButton(frame: .zero, pullsDown: false)
-    private let smaller = EaselPaletteButton(title: "−", target: nil, action: nil)
-    private let larger = EaselPaletteButton(title: "+", target: nil, action: nil)
-    private var emphasisButtons: [NSButton] = []
-    private let link = EaselPaletteButton(title: "Link…", target: nil, action: nil)
-    private let paragraphs = PointingHandPopUpButton(frame: .zero, pullsDown: false)
-    private let fill = PointingHandButton(checkboxWithTitle: "Text fill", target: nil, action: nil)
-    private var displayedFillState: NSControl.StateValue = .off
-    var onFill: ((EaselTextStyle.Fill) -> Void)?
-    private var isEditing = false
-    var onParagraph: ((EaselParagraphEditing.Kind) -> Void)?
-    var onEmphasis: ((EaselStyledTextView.Emphasis) -> Void)?
-    var onLink: ((NSView) -> Void)?
-    var onFamily: ((EaselTextStyle.Family) -> Void)?
-    var onSize: ((EaselTextStyle.Size) -> Void)?
-    var onResize: ((Int) -> Void)?
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        addSubview(railSurface)
-        addSubview(details); details.isHidden = true
-        fontButton.target = self; fontButton.action = #selector(toggleDetails)
-        fontButton.setAccessibilityLabel("Text formatting"); fontButton.setAccessibilityHelp("Show font, size, fill and range formatting controls")
-        fontButton.setButtonType(.pushOnPushOff); addSubview(fontButton)
-        fill.target = self; fill.action = #selector(selectFill); fill.allowsMixedState = true
-        fill.setAccessibilityLabel("Content-hugging text fill"); details.addSubview(fill)
-        families.addItems(withTitles: ["Mono", "Fancy", "Hip", "Clean"])
-        sizes.addItems(withTitles: ["Body", "Heading 2", "Heading 1", "Title", "Display"])
-        families.target = self; families.action = #selector(selectFamily)
-        sizes.target = self; sizes.action = #selector(selectSize)
-        smaller.target = self; smaller.action = #selector(decrease)
-        larger.target = self; larger.action = #selector(increase)
-        for button in [smaller, larger] { button.font = NoteTheme.chromeFont(14) }
-        for popup in [families, sizes, paragraphs] { popup.isBordered = false; popup.font = .systemFont(ofSize: 12) }
-        families.setAccessibilityLabel("Text family"); sizes.setAccessibilityLabel("Text size")
-        smaller.setAccessibilityLabel("Decrease text size"); larger.setAccessibilityLabel("Increase text size")
-        [families, sizes].forEach(details.addSubview)
-        [smaller, larger].forEach(addSubview)
-        for (index, emphasis) in EaselStyledTextView.Emphasis.allCases.enumerated() {
-            let button = EaselPaletteButton(title: ["B", "I", "U", "S̶"][index], target: self, action: #selector(formatSelection(_:)))
-            button.tag = index; button.bezelStyle = .texturedRounded; button.setButtonType(.pushOnPushOff)
-            button.setAccessibilityLabel(emphasis.rawValue.capitalized); button.toolTip = emphasis.rawValue.capitalized
-            details.addSubview(button); emphasisButtons.append(button)
-        }
-        link.bezelStyle = .texturedRounded; link.target = self; link.action = #selector(editLink)
-        link.setAccessibilityLabel("Edit link for selected text"); details.addSubview(link)
-        paragraphs.addItems(withTitles: EaselParagraphEditing.Kind.allCases.map(\.rawValue))
-        paragraphs.target = self; paragraphs.action = #selector(chooseParagraph)
-        paragraphs.setAccessibilityLabel("Paragraph format"); paragraphs.toolTip = "Format current paragraphs. Tab and Shift-Tab change list indentation."; details.addSubview(paragraphs)
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    override var wantsUpdateLayer: Bool { true }
-    override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.clear.cgColor
-        }
-    }
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance(); needsDisplay = true
-    }
-    override func layout() {
-        super.layout()
-        let railY = (bounds.height - 88) / 2
-        railSurface.frame = NSRect(x: 7, y: railY, width: 36, height: 88)
-        larger.frame = NSRect(x: 13, y: railY + 60, width: 24, height: 24)
-        fontButton.frame = NSRect(x: 13, y: railY + 32, width: 24, height: 24)
-        smaller.frame = NSRect(x: 13, y: railY + 4, width: 24, height: 24)
-        details.frame = NSRect(x: 54, y: 0, width: isEditing ? 280 : 200, height: isEditing ? 124 : 85)
-        families.frame = NSRect(x: 6, y: isEditing ? 94 : 50, width: isEditing ? 116 : 90, height: 25)
-        sizes.frame = NSRect(x: isEditing ? 132 : 100, y: isEditing ? 94 : 50, width: isEditing ? 142 : 94, height: 25)
-        fill.frame = NSRect(x: 8, y: isEditing ? 69 : 12, width: isEditing ? 264 : 184, height: 25)
-        for (index, button) in emphasisButtons.enumerated() { button.frame = NSRect(x: 6 + index * 37, y: 37, width: 33, height: 25) }
-        link.frame = NSRect(x: 164, y: 37, width: 110, height: 25)
-        paragraphs.frame = NSRect(x: 6, y: 5, width: 268, height: 25)
-    }
-    var preferredWidth: CGFloat { expanded ? (isEditing ? 334 : 254) : 50 }
-    var preferredHeight: CGFloat { expanded && isEditing ? 124 : 88 }
-    func collapse() {
-        guard expanded else { return }
-        if let responder = window?.firstResponder as? NSView, responder === details || responder.isDescendant(of: details) {
-            window?.makeFirstResponder(superview)
-        }
-        expanded = false; details.isHidden = true; fontButton.state = .off; needsLayout = true
-    }
-    @objc private func toggleDetails() {
-        if expanded { collapse() }
-        else { expanded = true; details.isHidden = false; fontButton.state = .on; needsLayout = true }
-        onLayoutChange?()
-    }
-    func update(styles: [EaselTextStyle], editor: EaselStyledTextView? = nil) {
-        isEditing = editor != nil
-        paragraphs.isHidden = !isEditing
-        paragraphs.isEnabled = editor?.hasMarkedText() == false && editor?.selectedRanges.count == 1
-        paragraphs.selectItem(at: editor?.paragraphKind().flatMap { EaselParagraphEditing.Kind.allCases.firstIndex(of: $0) } ?? -1)
-        for (index, button) in emphasisButtons.enumerated() {
-            button.isHidden = !isEditing; button.isEnabled = editor?.hasMarkedText() == false
-            button.state = editor?.hasEmphasis(EaselStyledTextView.Emphasis.allCases[index]) == true ? .on : .off
-        }
-        link.isHidden = !isEditing; link.isEnabled = editor != nil && editor!.selectedRange().length > 0 && !editor!.hasMarkedText()
-        needsLayout = true
-        if let onVisibilityChange { onVisibilityChange(styles.isEmpty) }
-        else { isHidden = styles.isEmpty }
-        if styles.isEmpty { collapse() }
-        guard let first = styles.first else { return }
-        fill.state = styles.allSatisfy { $0.resolvedFill == first.resolvedFill } ? (first.resolvedFill == .contentHugging ? .on : .off) : .mixed
-        displayedFillState = fill.state
-        fill.isEnabled = editor?.hasMarkedText() != true
-        families.selectItem(at: styles.allSatisfy { $0.family == first.family } ? EaselTextStyle.Family.allCases.firstIndex(of: first.family)! : -1)
-        sizes.selectItem(at: styles.allSatisfy { $0.size == first.size } ? first.size.index : -1)
-        smaller.isEnabled = Self.canResize(by: -1, styles: styles, editor: editor)
-        larger.isEnabled = Self.canResize(by: 1, styles: styles, editor: editor)
-        if let editor {
-            let selected = Self.selectedStyles(in: editor)
-            let range = editor.selectedRange()
-            let first = selected.first.flatMap { $0 }
-            var selectedFamilies: [EaselTextStyle.Family?] = []
-            if range.length == 0 { selectedFamilies = [(editor.typingAttributes[.font] as? NSFont).flatMap(EaselTextAppearance.paletteFamily)] }
-            else { editor.attributedString().enumerateAttribute(.font, in: range) { face, _, _ in selectedFamilies.append((face as? NSFont).flatMap(EaselTextAppearance.paletteFamily)) } }
-            let family = selectedFamilies.first.flatMap { $0 }
-            families.selectItem(at: family != nil && selectedFamilies.allSatisfy({ $0 == family }) ? EaselTextStyle.Family.allCases.firstIndex(of: family!)! : -1)
-            sizes.selectItem(at: first != nil && selected.allSatisfy({ $0?.size == first!.size }) ? first!.size.index : -1)
-            families.isEnabled = !editor.hasMarkedText(); sizes.isEnabled = !editor.hasMarkedText()
-        } else { families.isEnabled = true; sizes.isEnabled = true }
-    }
+enum EaselTextStyleState {
     static func selectedStyles(in editor: EaselStyledTextView) -> [EaselTextStyle?] {
         let range = editor.selectedRange()
         if range.length == 0 { return [(editor.typingAttributes[.font] as? NSFont).flatMap(EaselTextAppearance.paletteStyle)] }
@@ -940,15 +809,33 @@ final class EaselTextStyleBar: NSView {
         guard let editor else { return styles.contains { $0.size != limit } }
         return !editor.hasMarkedText() && !selectedStyles(in: editor).allSatisfy { $0?.size == limit }
     }
-    @objc private func selectFill() {
-        onFill?(displayedFillState == .on ? .none : .contentHugging)
-        fill.state = displayedFillState
+    static func family(of styles: [EaselTextStyle], editor: EaselStyledTextView?) -> EaselTextStyle.Family? {
+        guard let editor else {
+            guard let first = styles.first, styles.allSatisfy({ $0.family == first.family }) else { return nil }
+            return first.family
+        }
+        let range = editor.selectedRange()
+        var families: [EaselTextStyle.Family?] = []
+        if range.length == 0 { families = [(editor.typingAttributes[.font] as? NSFont).flatMap(EaselTextAppearance.paletteFamily)] }
+        else { editor.attributedString().enumerateAttribute(.font, in: range) { face, _, _ in families.append((face as? NSFont).flatMap(EaselTextAppearance.paletteFamily)) } }
+        guard let first = families.first, let family = first, families.allSatisfy({ $0 == family }) else { return nil }
+        return family
     }
-    @objc private func formatSelection(_ sender: NSButton) { onEmphasis?(EaselStyledTextView.Emphasis.allCases[sender.tag]) }
-    @objc private func editLink() { onLink?(link) }
-    @objc private func chooseParagraph() { guard paragraphs.indexOfSelectedItem >= 0 else { return }; onParagraph?(EaselParagraphEditing.Kind.allCases[paragraphs.indexOfSelectedItem]) }
-    @objc private func selectFamily() { guard families.indexOfSelectedItem >= 0 else { return }; onFamily?(EaselTextStyle.Family.allCases[families.indexOfSelectedItem]) }
-    @objc private func selectSize() { guard sizes.indexOfSelectedItem >= 0 else { return }; onSize?(EaselTextStyle.Size.allCases[sizes.indexOfSelectedItem]) }
-    @objc private func decrease() { onResize?(-1) }
-    @objc private func increase() { onResize?(1) }
+    static func size(of styles: [EaselTextStyle], editor: EaselStyledTextView?) -> EaselTextStyle.Size? {
+        guard let editor else {
+            guard let first = styles.first, styles.allSatisfy({ $0.size == first.size }) else { return nil }
+            return first.size
+        }
+        let selected = selectedStyles(in: editor)
+        guard let first = selected.first, let style = first, selected.allSatisfy({ $0?.size == style.size }) else { return nil }
+        return style.size
+    }
+    static func fill(of styles: [EaselTextStyle]) -> NSControl.StateValue {
+        guard let first = styles.first else { return .off }
+        guard styles.allSatisfy({ $0.resolvedFill == first.resolvedFill }) else { return .mixed }
+        return first.resolvedFill == .contentHugging ? .on : .off
+    }
+    static func toggledFill(_ styles: [EaselTextStyle]) -> EaselTextStyle.Fill {
+        fill(of: styles) == .on ? .none : .contentHugging
+    }
 }

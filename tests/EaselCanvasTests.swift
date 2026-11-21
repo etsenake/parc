@@ -204,7 +204,6 @@ struct EaselCanvasTests {
         expect(validate(.bold) == false && validate(.bigger) == false, "Nothing is formatted before a text object is selected")
         expect(canvas.insert(kind: .text, text: "Format me", edit: true), "A text object enters native editing")
         let editor = canvas.subviews.compactMap { $0 as? EaselStyledTextView }.first!
-        let bar = canvas.subviews.compactMap { $0 as? EaselTextStyleBar }.first!
         editor.localUndo.groupsByEvent = false
         func run(_ command: TextFormatCommand) { editor.localUndo.beginUndoGrouping(); perform(command); editor.localUndo.endUndoGrouping() }
         let all = NSRange(location: 0, length: 9)
@@ -214,8 +213,8 @@ struct EaselCanvasTests {
         let menuBold = NSAttributedString(attributedString: editor.attributedString()), menuUndo = editor.localUndo.undoActionName
         expect(editor.hasEmphasis(.bold) && state(.bold) == .on && menuUndo == "Bold", "Menu Bold formats the selection and shows its checkmark")
         editor.undo(nil)
-        editor.localUndo.beginUndoGrouping(); bar.onEmphasis?(.bold); editor.localUndo.endUndoGrouping()
-        expect(editor.attributedString().isEqual(to: menuBold) && editor.localUndo.undoActionName == menuUndo, "Menu Bold and the style bar's B button produce the same text and Undo")
+        editor.localUndo.beginUndoGrouping(); canvas.performSelectionToolbar(.bold); editor.localUndo.endUndoGrouping()
+        expect(editor.attributedString().isEqual(to: menuBold) && editor.localUndo.undoActionName == menuUndo, "Menu Bold and the selection toolbar's B button produce the same text and Undo")
         run(.bold)
         expect(!editor.hasEmphasis(.bold) && state(.bold) == .off, "Menu Bold toggles back off")
         for command in [TextFormatCommand.italic, .underline, .strikethrough] {
@@ -224,13 +223,13 @@ struct EaselCanvasTests {
             run(command)
             expect(!editor.hasEmphasis(command.emphasis!), "Menu \(command.title) toggles off")
         }
-        expect(validate(.bigger) && !validate(.smaller), "Body-size text offers only Bigger, like the style bar")
+        expect(validate(.bigger) && !validate(.smaller), "Body-size text offers only Bigger, like the selection toolbar")
         run(.bigger)
         let menuBigger = NSAttributedString(attributedString: editor.attributedString())
         expect(validate(.smaller) && menuBigger.attribute(.font, at: 0, effectiveRange: nil) as? NSFont != EaselTextAppearance.font(EaselTextStyle()), "Bigger steps the selected text up a size")
         editor.undo(nil)
-        editor.localUndo.beginUndoGrouping(); bar.onResize?(1); editor.localUndo.endUndoGrouping()
-        expect(editor.attributedString().isEqual(to: menuBigger), "Menu Bigger matches the style bar's + button")
+        editor.localUndo.beginUndoGrouping(); canvas.performSelectionToolbar(.larger); editor.localUndo.endUndoGrouping()
+        expect(editor.attributedString().isEqual(to: menuBigger), "Menu Bigger matches the selection toolbar's bigger button")
         run(.smaller)
         expect(!validate(.smaller), "Smaller returns the text to body size")
         expect(!validate(.increaseIndent), "List indent waits for a list paragraph")

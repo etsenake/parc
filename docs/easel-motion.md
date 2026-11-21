@@ -31,17 +31,21 @@ an interaction or persist zoom into an Easel document.
 
 ## Annotation transitions
 
-The text palette uses a 0.1-second native implicit-animation
-group when logical visibility changes. Hidden input and accessibility state
-change immediately. There is no delayed hide completion, explicit opacity
-curve, translation or spring. Reversal therefore cannot revive an obsolete
-palette. Its geometry and content remain the static appearance owner's work.
-Native popovers and sheets retain their existing AppKit presentation.
+The selection toolbar presents like the Notes format bar: it pops from 95% to
+full size with a short fade about the edge nearest the selection and leaves the
+same way, and Reduce Motion keeps only the fade. A new selection pops it again
+in place, a moved or resized selection glides it, and scrolling or zooming moves
+it without animation. Its geometry and content remain the static appearance
+owner's work. Native popovers and sheets retain their existing AppKit
+presentation.
 
 Body dragging hides passive annotations and single-object handles. A
 single-object resize retains only the active handle, while a group transform
 keeps its control points. A pinch hides
-handles and passive palettes while native magnification proceeds. The same
+handles and the selection toolbar while native magnification proceeds. The
+toolbar also hides while objects are dragged, resized or drawn, during a
+marquee, while the press that made a new selection is still down and while
+focus is outside the canvas, and it returns when that ends. The same
 handle eligibility governs drawing, pointer hits, cursors, accessibility
 children and retained accessibility actions. Gesture visibility changes notify
 the existing keyboard/accessibility structure without changing focus. Selection
@@ -51,8 +55,8 @@ haptic pulses. The two original captured-card modes keep actual page
 positioning/retirement and the immutable screenshot; motion never substitutes
 a snapshot for a live renderer or changes its crop frame.
 
-Parc reads Reduce Motion before each native annotation group and settles its
-owned palette layer animations immediately when the preference turns on.
+Parc reads Reduce Motion before each annotation transition and settles the
+toolbar's layer animations immediately when the preference turns on.
 Owner retirement suppresses new annotation animation and settles those layers
 after its synchronous visibility refresh. Normal eligible pinch completion may
 still reveal current annotations. These are explicit accessibility

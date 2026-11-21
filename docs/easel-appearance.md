@@ -7,20 +7,28 @@ note does. Ink, placeholders, selection, guides and floating controls come from
 `NoteTheme` through `EaselAppearance`: selection, handles and the marquee use
 the Notes accent, alignment guides use tertiary ink, link and webpage cards use
 the Notes panel fill, and the empty-Easel prompt uses the Notes placeholder inks
-in Nunito. The text menu is a 50×88-point rail beside the selection,
-with three 24-point plus/font/minus controls and a four-point gap from the
-object. Its frame and native hit targets remain measured in screen points while
-the canvas magnifies. Only corner resize marks are painted; all eligible edge
-resize targets retain their native pointer and accessibility actions.
+in Nunito. Only corner resize marks are painted; all eligible edge resize
+targets retain their native pointer and accessibility actions.
 
-The Font control reveals the existing font, size and text-fill controls in a
-200×85 panel. During native rich-text editing, that disclosure expands to
-280×124 for the existing paragraph, emphasis and link controls. It stays within
-the rail's native responder subtree, so no delayed action or detached inspector
-can follow another document, selection or window. Selection replacement,
-annotation hiding and owner retirement collapse it. The original text storage,
-glyph layout, fill contour, typing history and document transactions remain the
-only text owners. Palette callbacks reject a closed session.
+The selection toolbar is the Notes format bar's card: a 36-point menu card with
+28-point Notes toolbar buttons, one-point spacing and hairline dividers between
+groups. It floats eight points above the selection's bounds, centred on them,
+drops below when there is no room above and pins to the top of the view only
+when the selection is taller than the view, so it never covers what it edits
+otherwise. It lives in a pass-through layer above the canvas's scroll view
+instead of inside the magnified canvas, so it keeps its screen size at every
+zoom, follows scrolling and zooming, and stays inside the canvas viewport. For
+text it offers the typeface and size menus, smaller and bigger steps and the
+text-fill toggle; while text is being edited the steppers give way to bold,
+italic, underline, strikethrough, the paragraph menu and Link, all acting on
+the selected range. A ••• button ends every toolbar with Bring to Front,
+Duplicate and Delete. Its buttons never take keyboard focus from a click, so
+formatting never ends text editing. Menus are Notes menus opened under their
+button that close on a pick, Escape or an outside click. Every button calls a
+canvas command, so the toolbar, the Format menu and shortcuts make the same
+change as one Undo step, and a closed or deleted Easel refuses them. The
+original text storage, glyph layout, fill contour, typing history and document
+transactions remain the only text owners.
 
 The tool strip is the Notes format bar: a 36-point Notes menu card with its
 hairline and shadow, holding seven icon-only 28-point tools in
@@ -29,8 +37,7 @@ Notes button states: secondary ink at rest, hover and pressed washes, and the
 checked fill and ink for the current tool. It sits centered under the title,
 which is Nunito ExtraBold in the Notes title ink over a caption-style status
 line. Link, webpage, undo and redo are 28-point Notes chrome buttons on the
-title row so those actions remain reachable without joining the strip. The text
-rail's three controls sit on the same card. The ••• button ends that
+title row so those actions remain reachable without joining the strip. The ••• button ends that
 row; it opens the [page menu](easels.md#page-menu-and-exports). The strip still follows the actual drawing mode and
 scrolls horizontally when the window is narrower than the controls. Its explicit overlay scrollbar preserves the full control
 height even under the system legacy-scrollbar preference. The ordinary Add Link action now presents the existing
@@ -64,11 +71,9 @@ Document paper, title ink and floating controls resolve from the enclosing
 Space `contentOverBackgroundAppearance`, the same Aqua/DarkAqua override Notes
 inherit.
 
-The rail's disclosed family/size selectors and checkbox are native AppKit
-controls; the expanded range inspector carries Parc's already-delivered rich
-formatting actions. Inline disclosure replaces a second popup window to retain
-the original native editing responder lifetime. `Aa` and SF Symbols substitute
-for bundled image glyphs. Selected/pressed/disabled washes and native focus
+The toolbar's typeface, size, paragraph and ••• menus are Notes menu lists
+rather than native pop-up buttons, and its buttons draw SF Symbols or letter
+glyphs. Selected/pressed/disabled washes and native focus
 rings are explicit AppKit feedback adaptations; their drawing never changes
 logical state. The rich-link editor's Remove/Apply actions and the webpage
 Address/Search controls retain their existing semantic layout. These are
@@ -82,7 +87,8 @@ by `EaselMotion`. Embedded live-page crop/mask/loading pixels and beforeunload
 retirement remain owned by the delivered page pool. No engine change is needed.
 
 The windowless `EaselInkTests` suite in `tests/NotesEditor` checks ink
-resolution, chosen colours and token round trips. Inert checks cover all font/fill/history behavior, native rail/disclosure bounds,
+resolution, chosen colours and token round trips; `EaselSelectionToolbarTests` checks which controls each
+selection gets. Inert checks cover all font/fill/history behavior, the toolbar's text state helpers,
 non-overlapping controls, actual selected/disabled states, light/dark drawing,
 unchanged attributed text, scaled corner/edge admission, retained edge refusal after zoom, narrow toolbar
 content height under legacy preferences and the compact native

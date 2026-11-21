@@ -108,33 +108,21 @@ struct EaselTextStyleTests {
         toolbar.tile()
         expect(toolbar.scrollerStyle == .overlay, "Tool strip explicitly overrides legacy scrollbars with overlay presentation")
         expect(toolbar.contentSize.height >= 44 && toolbar.contentSize.width < 448, "Narrow native toolbar preserves full control height while requiring horizontal scrolling")
-        let bar = EaselTextStyleBar(frame: NSRect(x: 20, y: 20, width: 50, height: 88)); root.addSubview(bar)
-        func sizeBar() { bar.setFrameSize(NSSize(width: bar.preferredWidth, height: bar.preferredHeight)); bar.layoutSubtreeIfNeeded() }
-        bar.onLayoutChange = { sizeBar() }
-        bar.update(styles: [.init()]); sizeBar()
-        let rail = bar.subviews.compactMap { $0 as? NSButton }
-        expect(rail.count == 3 && rail.allSatisfy { $0.frame.size == NSSize(width: 24, height: 24) }, "Compact rail keeps three native24pt controls")
-        expect(bar.preferredWidth == 50 && bar.preferredHeight == 88, "Closed disclosure uses recovered rail extent")
-        let smaller = rail.first { $0.title == "−" }!, larger = rail.first { $0.title == "+" }!
-        expect(!smaller.isEnabled && larger.isEnabled, "Body style visibly disables only decrease")
-        let font = rail.first { $0.title == "Aa" }!
-        font.performClick(nil)
-        expect(font.state == .on && bar.preferredWidth == 254, "Font action exposes native disclosure without moving controls into another owner")
-        let details = bar.subviews.first { $0 is EaselSurfaceView }!
-        expect(!details.isHidden && details.frame.size == NSSize(width: 200, height: 85), "Object style disclosure keeps original font-panel extent")
-        expect(details.subviews.filter { !$0.isHidden }.allSatisfy { details.bounds.contains($0.frame) }, "Visible object controls stay inside disclosure")
+        expect(!EaselTextStyleState.canResize(by: -1, styles: [.init()], editor: nil)
+               && EaselTextStyleState.canResize(by: 1, styles: [.init()], editor: nil), "Body style offers only the bigger step")
+        expect(EaselTextStyleState.canResize(by: -1, styles: [.init(size: .ultra)], editor: nil)
+               && !EaselTextStyleState.canResize(by: 1, styles: [.init(size: .ultra)], editor: nil), "Largest text style offers only the smaller step")
+        expect(EaselTextStyleState.family(of: [.init(family: .mono), .init(family: .mono)], editor: nil) == .mono
+               && EaselTextStyleState.family(of: [.init(family: .mono), .init(family: .hip)], editor: nil) == nil, "Typeface shows only when every object shares it")
+        expect(EaselTextStyleState.size(of: [.init(size: .h1)], editor: nil) == .h1
+               && EaselTextStyleState.size(of: [.init(size: .h1), .init()], editor: nil) == nil, "Size shows only when every object shares it")
         let editor = EaselStyledTextView(frame: NSRect(x: 400, y: 20, width: 300, height: 100))
-        editor.textStorage?.setAttributedString(EaselTextAppearance.attributed("Keep original text", style: .init(), color: "#194B93"))
+        editor.textStorage?.setAttributedString(EaselTextAppearance.attributed("Keep original text", style: .init(family: .fancy), color: "#194B93"))
         editor.setSelectedRange(NSRange(location: 0, length: 4)); root.addSubview(editor)
         let before = try EaselRichTextCodec.snapshot(editor.attributedString())
-        bar.update(styles: [.init()], editor: editor); sizeBar()
-        expect(details.subviews.filter { !$0.isHidden }.allSatisfy { details.bounds.contains($0.frame) }, "Rich disclosure contains every actual range control")
-        let allFrames = details.subviews.filter { !$0.isHidden }.map(\.frame)
-        expect(allFrames.enumerated().allSatisfy { index, frame in allFrames.dropFirst(index + 1).allSatisfy { !$0.intersects(frame) } }, "Native inspector controls never overlap")
-        bar.collapse(); sizeBar()
-        expect(details.isHidden && font.state == .off, "Collapsing removes disclosure controls from visible native subtree")
-        bar.update(styles: [.init(size: .ultra)])
-        expect(smaller.isEnabled && !larger.isEnabled, "Largest text style disables increase")
+        expect(EaselTextStyleState.family(of: [.init()], editor: editor) == .fancy, "Editing reads the selected range's typeface, not the object's")
+        expect(EaselTextStyleState.size(of: [.init(size: .ultra)], editor: editor) == .body, "Editing reads the selected range's size")
+        expect(!EaselTextStyleState.canResize(by: -1, styles: [.init(size: .ultra)], editor: editor), "Body-size ranges cannot shrink further")
         let pill = EaselToolbarPill(frame: NSRect(x: 20, y: 220, width: 260, height: EaselAppearance.toolbarHeight))
         root.addSubview(pill)
         let selectedTool = EaselPaletteButton(title: "A", target: nil, action: nil)
@@ -163,7 +151,6 @@ struct EaselTextStyleTests {
                "The selected tool cell takes the Notes checked fill")
         let link = EaselLinkEditor(value: "https://example.com")
         link.view.frame.origin = NSPoint(x: 400, y: 160); root.addSubview(link.view)
-        font.performClick(nil); sizeBar()
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             root.appearance = NSAppearance(named: appearance)
             root.layoutSubtreeIfNeeded(); root.displayIfNeeded()
@@ -175,9 +162,7 @@ struct EaselTextStyleTests {
                 try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("controls-" + name + ".png"))
             }
         }
-        expect(try! EaselRichTextCodec.snapshot(editor.attributedString()) == before, "Appearance and disclosure transitions leave authored ranges unchanged")
-        bar.update(styles: [])
-        expect(bar.isHidden && details.isHidden, "Owner retirement hides the full disclosure")
+        expect(try! EaselRichTextCodec.snapshot(editor.attributedString()) == before, "Appearance transitions leave authored ranges unchanged")
         root.inheritSpaceContentAppearance(nil)
         expect(root.appearance == nil, "Easel paper inherits owner appearance without forcing Aqua")
         let dark = NSAppearance(named: .darkAqua)!
@@ -250,17 +235,11 @@ struct EaselTextStyleTests {
             NSRect(x: $0.element, y: $0.offset * 20, width: 100 - $0.element, height: 25)
         }, radius: 6)
         expect(cascade.map(\.minX) == [5, 5, 5, 0, 0, 0], "Each smoothing pass compares original adjacent edges before accumulating extrema")
-        let palette = EaselTextStyleBar(frame: .zero)
-        let checkbox = palette.subviews.flatMap { [$0] + $0.subviews }.compactMap { $0 as? NSButton }.first { $0.title == "Text fill" }!
-        var changedFill: EaselTextStyle.Fill?
-        palette.onFill = { changedFill = $0 }
-        palette.update(styles: [.init(fill: .contentHugging)])
-        checkbox.performClick(nil)
-        expect(changedFill == EaselTextStyle.Fill.none, "Clicking an on tristate control turns fill off instead of accepting AppKit's mixed transition")
-        palette.update(styles: [.init()]); checkbox.performClick(nil)
-        expect(changedFill == .contentHugging, "Clicking off turns fill on")
-        palette.update(styles: [.init(), .init(fill: .contentHugging)]); checkbox.performClick(nil)
-        expect(changedFill == .contentHugging, "Clicking mixed fills the complete selection")
+        expect(EaselTextStyleState.fill(of: [.init(fill: .contentHugging)]) == .on
+               && EaselTextStyleState.toggledFill([.init(fill: .contentHugging)]) == EaselTextStyle.Fill.none, "Toggling a filled selection turns fill off")
+        expect(EaselTextStyleState.fill(of: [.init()]) == .off && EaselTextStyleState.toggledFill([.init()]) == .contentHugging, "Toggling an unfilled selection turns fill on")
+        expect(EaselTextStyleState.fill(of: [.init(), .init(fill: .contentHugging)]) == .mixed
+               && EaselTextStyleState.toggledFill([.init(), .init(fill: .contentHugging)]) == .contentHugging, "Toggling a mixed selection fills all of it")
         for string in ["👩🏽‍💻", "漢字", "مرحبا"] {
             let fallback = EaselTextLayout.Layout(EaselTextAppearance.attributed(string, style: .init(family: .mono), color: "#252525"), width: 500)
             let fallbackRects = EaselTextLayout.lineRects(manager: fallback.manager, container: fallback.container)

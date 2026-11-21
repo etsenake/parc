@@ -24,7 +24,7 @@ paste choices in notes.
 
 ## Object-wide text styles
 
-The whole-selection palette offers four families and five sizes:
+The [selection toolbar](#selection-toolbar)'s typeface and size menus offer four families and five sizes:
 
 | Family | Typeface | Sizes |
 | --- | --- | --- |
@@ -38,6 +38,23 @@ and caret formatting updates typing attributes. Native text Undo precedes
 canvas/document Undo. Composition is never serialized as a finished edit.
 Durable saves coalesce within the editing UUID while native Undo retains its
 own transactions; another owner's edits invalidate obsolete local history.
+
+## Selection toolbar
+
+Selecting objects floats a toolbar over them, styled and animated like the
+Notes format bar ([look](easel-appearance.md), [motion](easel-motion.md)).
+`EaselSelectionToolbarPlan` in ParcCore decides its controls from what is
+selected: text, stickies, shapes, connectors, sections, images and drawings
+each get their own set, several objects of one kind keep that kind's set,
+mixed selections keep only the controls every kind shares, and several objects
+add arrange, tidy up, group, section and lock tools. A fully locked selection
+shows only Unlock. A single webpage, captured card or link keeps its own page
+header instead. A control appears only once its canvas command exists, and the
+••• menu always ends the bar. Each button shows the pointing hand and a tooltip
+with its name and live shortcut, VoiceOver reads it inside a "Selection tools"
+toolbar, and the toolbar is a Tab stop where the arrow keys move between
+buttons, Return or Space presses one and Escape returns to the canvas or the
+text being edited.
 
 ## Content-hugging text fill and native metrics
 

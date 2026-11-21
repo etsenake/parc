@@ -38,9 +38,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             self.window = window; self.command = command; self.generation = generation
         }
     }
-    private let session: EaselSession
+    let session: EaselSession
     private var motionInteractionActive = false
-    private lazy var motion: EaselCanvasMotion = EaselCanvasMotion(owner: self,
+    lazy var motion: EaselCanvasMotion = EaselCanvasMotion(owner: self,
         validOwner: { [weak self] in self?.canPresentMotion == true },
         changed: { [weak self] in
             guard let self else { return }
@@ -56,14 +56,14 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         },
         settleAnnotations: { [weak self] in
             guard let self else { return }
-            EaselCanvasMotion.settle(self.textStyleBar)
+            self.selectionToolbar?.settle()
         })
     weak var pageObjects: EaselBrowserObjectHosting? { didSet { needsLayout = true } }
     private var artwork: [UUID: NSView] = [:]
     private var accessibleObjects: [UUID: EaselAccessibleObject] = [:]
     var onKeyboardStructureChange: (() -> Void)?
     private var keyboardStructurePending = false
-    private func keyboardStructureChanged() {
+    func keyboardStructureChanged() {
         guard !keyboardStructurePending else { return }
         keyboardStructurePending = true
         DispatchQueue.main.async { [weak self] in
@@ -89,7 +89,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
 
     private var menuGeneration: UInt64 = 0
     private var subscription: AnyCancellable?
-    private var selection = Set<UUID>() {
+    var selection = Set<UUID>() {
         didSet {
             if selection != oldValue {
                 menuGeneration &+= 1
@@ -102,17 +102,17 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     private var draft: [EaselItem]?
-    private var start: NSPoint?
+    var start: NSPoint?
     private var original: [EaselItem] = []
     private var resizeHandle: EaselResizeHandle?
     private var arrowEndpoint: EaselArrowEndpoint?
-    private var resizing: Bool { resizeHandle != nil || arrowEndpoint != nil }
+    var resizing: Bool { resizeHandle != nil || arrowEndpoint != nil }
     private var lastGeometryPoint: NSPoint?
     private var lastDragLocation: NSPoint?
-    private var dragDistance: CGFloat = 0
+    var dragDistance: CGFloat = 0
     private var geometryEdit: EaselGeometryEdit?
-    private var selectionBeforeGesture = Set<UUID>()
-    private var marqueeRect: NSRect?
+    var selectionBeforeGesture = Set<UUID>()
+    var marqueeRect: NSRect?
     private var marqueeEnd: NSPoint?
     private var tentativeSelection: Set<UUID>?
     private var hoveredObjectID: UUID?
@@ -122,12 +122,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private var alignmentGuidesEnabled = true
     private var lastDragTimestamp: TimeInterval?
     private var dragVelocity = EaselPoint(x: 0, y: 0)
-    private var editor: EaselStyledTextView?
+    var editor: EaselStyledTextView?
     private var textUndoGroup: UUID?
     private var synchronizingEditor = false
     private var finishingEditor = false
-    private let textStyleBar = EaselTextStyleBar(frame: .zero)
-    private var textPaletteSelection: Set<UUID> = []
+    lazy var selectionToolbar: EaselSelectionToolbarPresenting? = Self.selectionToolbarFactory?()
     private var snapshotHeader: NSView?
     private var snapshotHeaderItem: UUID?
     private weak var headerScrollClip: NSClipView?
@@ -322,24 +321,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 1800))
         setAccessibilityElement(true); setAccessibilityRole(.group); setAccessibilityLabel("Easel canvas")
         registerForDraggedTypes([.URL, EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType, .rtfd, .rtf, .fileURL, .png, .tiff, .string])
-        textStyleBar.isHidden = true; addSubview(textStyleBar)
-        textStyleBar.wantsLayer = true
-        textStyleBar.onVisibilityChange = { [weak self] hidden in
-            guard let self else { return }
-            EaselCanvasMotion.setAnnotationHidden(hidden, view: self.textStyleBar,
-                animated: self.canPresentMotion && self.motion.allowsAnnotationAnimation &&
-                    self.window?.isKeyWindow == true && !self.isHiddenOrHasHiddenAncestor)
-        }
-        textStyleBar.onLayoutChange = { [weak self] in
-            self?.refreshTextControls(); self?.keyboardStructureChanged()
-        }
-        textStyleBar.onFamily = { [weak self] family in self?.changeTextStyle(preservingSize: true) { $0.family = family } }
-        textStyleBar.onSize = { [weak self] size in self?.changeTextStyle { $0.size = size } }
-        textStyleBar.onResize = { [weak self] delta in self?.resizeText(by: delta) }
-        textStyleBar.onFill = { [weak self] fill in self?.setTextFill(fill) }
-        textStyleBar.onParagraph = { [weak self] kind in self?.applyParagraph(kind) }
-        textStyleBar.onEmphasis = { [weak self] emphasis in self?.applyEmphasis(emphasis) }
-        textStyleBar.onLink = { [weak self] anchor in self?.editLink(relativeTo: anchor) }
         subscription = session.$document.receive(on: DispatchQueue.main).sink { [weak self] _ in
             guard let self else { return }
             let document = self.session.document
@@ -403,7 +384,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     override func accessibilityChildren() -> [Any]? {
         synchronizeAccessibleObjects()
         var result: [Any] = items.compactMap { accessibleObjects[$0.id] }
-        if !textStyleBar.isHidden { result.append(textStyleBar) }
         if let snapshotHeader { result.append(snapshotHeader) }
         result.append(contentsOf: accessibleManipulationControls())
         return result
@@ -743,7 +723,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         ordered.append(decoration)
         if let editor { ordered.append(editor) }
         ordered.append(contentsOf: items.compactMap { accessibleObjects[$0.id] })
-        ordered.append(textStyleBar)
         if let snapshotHeader { ordered.append(snapshotHeader) }
         if subviews.map(ObjectIdentifier.init) != ordered.map(ObjectIdentifier.init) {
             for view in ordered { addSubview(view, positioned: .above, relativeTo: nil) }
@@ -923,8 +902,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let scale = enclosingScrollView?.magnification ?? 1
         return scale.isFinite && scale > 0 ? scale : 1
     }
-    private var canPresentMotion: Bool { !session.isDeleted && !session.isClosed }
-    private var hidesPassiveAnnotations: Bool { motion.isInteracting || (geometryEdit != nil && draft != nil) }
+    var canPresentMotion: Bool { !session.isDeleted && !session.isClosed }
+    var hidesPassiveAnnotations: Bool { motion.isInteracting || (geometryEdit != nil && draft != nil) }
     private func showsFrameAnnotation(_ handle: EaselResizeHandle) -> Bool {
         !motion.isInteracting && (!hidesPassiveAnnotations || displayedSelection.count > 1 || resizeHandle == handle)
     }
@@ -1124,7 +1103,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         DispatchQueue.main.async { [weak self, weak text] in
             guard let self, let text, self.editor === text, !text.hasPendingRangeAction,
                   let responder = self.window?.firstResponder, responder !== text else { return }
-            if let view = responder as? NSView, view === self.textStyleBar || view.isDescendant(of: self.textStyleBar) { return }
+            if self.selectionToolbar?.owns(responder) == true { return }
             self.finishEditing()
         }
     }
@@ -1170,7 +1149,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         refreshTextControls()
     }
-    private func changeTextStyle(preservingSize: Bool = false, _ mutation: (inout EaselTextStyle) -> Void) {
+    func changeTextStyle(preservingSize: Bool = false, _ mutation: (inout EaselTextStyle) -> Void) {
         guard !session.isClosed else { return }
         if let editor { editor.changeStyle(preservingSize: preservingSize, mutation); refreshTextControls(); return }
         let ids = selection
@@ -1193,16 +1172,16 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         refreshTextControls()
     }
-    private func resizeText(by delta: Int) { changeTextStyle { $0.size = $0.size.shifted(by: delta) } }
-    private func applyParagraph(_ kind: EaselParagraphEditing.Kind) {
+    func resizeText(by delta: Int) { changeTextStyle { $0.size = $0.size.shifted(by: delta) } }
+    func applyParagraph(_ kind: EaselParagraphEditing.Kind) {
         guard !session.isClosed else { return }
         editor?.changeParagraph(kind); refreshTextControls()
     }
-    private func applyEmphasis(_ emphasis: EaselStyledTextView.Emphasis) {
+    func applyEmphasis(_ emphasis: EaselStyledTextView.Emphasis) {
         guard !session.isClosed else { return }
         editor?.toggle(emphasis); refreshTextControls()
     }
-    private func editLink(relativeTo anchor: NSView, rect: NSRect? = nil) {
+    func editLink(relativeTo anchor: NSView, rect: NSRect? = nil) {
         guard !session.isClosed else { return }
         editor?.editLink(relativeTo: anchor, rect: rect)
     }
@@ -1210,7 +1189,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard let editor, let window, window.isKeyWindow, window.attachedSheet == nil,
               !session.isClosed, !session.isDeleted else { return nil }
         let responder = window.firstResponder
-        guard responder === editor || (responder as? NSView)?.isDescendant(of: textStyleBar) == true else { return nil }
+        guard responder === editor || selectionToolbar?.owns(responder) == true else { return nil }
         return editor
     }
     private func canFormat(_ command: TextFormatCommand) -> Bool {
@@ -1219,10 +1198,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             let responder = window.firstResponder
             let selected = session.document.items.filter { selection.contains($0.id) }
             let canvasFocus = responder === self || (responder as? EaselAccessibleObject)?.canvas === self
-                || (responder as? NSView)?.isDescendant(of: textStyleBar) == true
+                || selectionToolbar?.owns(responder) == true
             guard !hidesPassiveAnnotations, !selected.isEmpty, selected.allSatisfy({ $0.kind == .text }),
                   formattingEditor != nil || (editor == nil && canvasFocus) else { return false }
-            return EaselTextStyleBar.canResize(by: command == .bigger ? 1 : -1, styles: selected.map(\.resolvedTextStyle), editor: editor)
+            return EaselTextStyleState.canResize(by: command == .bigger ? 1 : -1, styles: selected.map(\.resolvedTextStyle), editor: editor)
         }
         guard let editor = formattingEditor, editor.isEditable, !editor.hasMarkedText() else { return false }
         switch command {
@@ -1243,21 +1222,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if let kind = command.paragraph { applyParagraph(kind) }
         }
     }
-    private func refreshTextControls() {
-        if textPaletteSelection != selection { textStyleBar.collapse(); textPaletteSelection = selection }
-        let selected = session.document.items.filter { selection.contains($0.id) }
-        let textOnly = !selected.isEmpty && selected.allSatisfy { $0.kind == .text }
-        textStyleBar.update(styles: textOnly && !hidesPassiveAnnotations && canPresentMotion ? selected.map(\.resolvedTextStyle) : [], editor: editor)
-        guard textOnly else { return }
-        let x = selected.map { $0.frame.x }.min() ?? 0, y = selected.map { $0.frame.y }.min() ?? 0
-        let area = visibleRect
-        let scale = canvasScale, size = NSSize(width: textStyleBar.preferredWidth / scale, height: textStyleBar.preferredHeight / scale)
-        let margin = 4 / scale
-        textStyleBar.frame = NSRect(x: max(area.minX + margin, min(x - 50 / scale - margin, area.maxX - size.width - margin)),
-                                    y: max(area.minY + margin, min(y, area.maxY - size.height - margin)), width: size.width, height: size.height)
-        textStyleBar.bounds = NSRect(x: 0, y: 0, width: textStyleBar.preferredWidth, height: textStyleBar.preferredHeight)
-        if subviews.last !== textStyleBar { addSubview(textStyleBar, positioned: .above, relativeTo: nil) }
-    }
+    func refreshTextControls() { refreshSelectionToolbar() }
     func textDidChange(_ notification: Notification) {
         guard !synchronizingEditor, let id = editingID, let text = editor,
               notification.object as? EaselStyledTextView === text else { return }
@@ -1312,6 +1277,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: window)
         }
         if newWindow !== window { hoveredObjectID = nil; menuGeneration &+= 1; motion.cancel(); cancelPointerInteraction() }
+        if newWindow !== window { selectionToolbar?.detach() }
         if let newWindow {
             NotificationCenter.default.addObserver(self, selector: #selector(ownerResignedKey),
                                                    name: NSWindow.didResignKeyNotification, object: newWindow)
@@ -1342,8 +1308,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let hit = super.hitTest(point)
         guard usesObjectSurfaces, let hit, hit !== self else { return hit }
         if let snapshotHeader, hit === snapshotHeader || hit.isDescendant(of: snapshotHeader) { return hit }
-        if hit === editor || editor.map({ hit.isDescendant(of: $0) }) == true
-            || hit === textStyleBar || hit.isDescendant(of: textStyleBar) { return hit }
+        if hit === editor || editor.map({ hit.isDescendant(of: $0) }) == true { return hit }
         let local = convert(point, from: superview)
         guard resizeHandle(at: local) == nil, arrowEndpoint(at: local) == nil,
               let item = object(at: local), item.ownsEmbeddedPage, selection == [item.id],
@@ -1557,7 +1522,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard let command, command.ids == selection, command.isCurrent(in: session.document) else { return nil }
         return command
     }
-    @objc private func deleteObjects(_ sender: Any?) {
+    @objc func deleteObjects(_ sender: Any?) {
         cancelPointerInteraction(); guard finishEditing() else { return }
         guard let command = command(for: sender) else { return }
         var next = session.document; next.items.removeAll { command.ids.contains($0.id) }
@@ -1577,13 +1542,13 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if let pageObjects { pageObjects.prepareReplacement(next, valid: valid) { allowed in if allowed && valid() { commit() } } }
         else if valid() { commit() }
     }
-    @objc @discardableResult private func duplicateObjects(_ sender: Any?) -> Bool {
+    @objc @discardableResult func duplicateObjects(_ sender: Any?) -> Bool {
         cancelPointerInteraction(); guard finishEditing() else { return false }
         guard let command = command(for: sender), let copies = command.duplicates(in: session.document) else { return false }
         guard commit("Duplicate objects", { $0.items.append(contentsOf: copies) }) else { return false }
         selection = Set(copies.map(\.id)); return true
     }
-    @objc @discardableResult private func bringToFront(_ sender: Any?) -> Bool {
+    @objc @discardableResult func bringToFront(_ sender: Any?) -> Bool {
         cancelPointerInteraction(); guard finishEditing() else { return false }
         guard let command = command(for: sender),
               (session.document.items.map(\.zIndex).max() ?? 0) <= Int.max - command.originals.count else { return false }
