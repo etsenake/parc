@@ -39,6 +39,7 @@ struct EaselMermaidTests {
         mapping()
         entityMapping()
         validation()
+        hostileInput()
         print("EaselMermaidTests passed")
     }
 
@@ -58,11 +59,11 @@ struct EaselMermaidTests {
         expect(refusal("```swift\nlet a = 1\n```") == .notMermaid, "Other fenced languages aren't Mermaid")
         expect(refusal("Hello there, this is a note") == .notMermaid, "Prose isn't Mermaid")
         expect(refusal("") == .notMermaid, "Empty text isn't Mermaid")
-        expect(refusal("sequenceDiagram\nA->>B: Hi") == .unsupported("Sequence"), "Sequence diagrams are refused by name")
-        expect(refusal("pie title Pets\n\"Dogs\": 3") == .unsupported("Pie"), "Pie charts are refused by name")
-        expect(refusal("classDiagram\nA <|-- B") == .unsupported("Class"), "Class diagrams are refused by name")
+        expect(refusal("sequenceDiagram\nA->>B: Hi") == .unsupported("Sequence diagrams"), "Sequence diagrams are refused by name")
+        expect(refusal("pie title Pets\n\"Dogs\": 3") == .unsupported("Pie charts"), "Pie charts are refused by name")
+        expect(refusal("classDiagram\nA <|-- B") == .unsupported("Class diagrams"), "Class diagrams are refused by name")
         expect(refusal("flowchart TD\n%% nothing") == .empty, "A header alone is empty")
-        expect(refusal("flowchart XY\nA-->B") == .syntax(line: 1, detail: "Parc knows the TB, TD, BT, LR and RL directions"),
+        expect(refusal("flowchart XY\nA-->B") == .syntax(line: 1, detail: "the direction should be TB, TD, BT, LR or RL"),
                "An unknown direction is a syntax error on line one")
         expect(EaselMermaid.canParse("graph TD\nA-->B") && !EaselMermaid.canParse("graph TD\nA-->"), "canParse mirrors parse")
         let big = "flowchart TD\n" + String(repeating: "A --> B\n", count: 60_000)
@@ -257,7 +258,7 @@ struct EaselMermaidTests {
     static func failures() {
         expect(refusal("flowchart TD\nA --> B\nC[Unclosed --> D") == .syntax(line: 3, detail: "the label for C is missing its closing bracket"),
                "Unclosed labels name their line")
-        expect(refusal("flowchart TD\nA -- yes B") == .syntax(line: 2, detail: "an arrow label needs its arrow, like -- yes -->"),
+        expect(refusal("flowchart TD\nA -- yes B") == .syntax(line: 2, detail: "an arrow label needs the rest of its arrow, like -- yes -->"),
                "Labels without arrows are refused")
         expect(refusal("flowchart TD\nA -->") == .syntax(line: 2, detail: "this arrow needs something on the other end"),
                "Dangling arrows are refused")
@@ -268,7 +269,7 @@ struct EaselMermaidTests {
         guard case .syntax(let line, _)? = refusal("flowchart TD\nA\nB\n---> C") else { failTest("A leading arrow is refused") }
         expect(line == 4, "The error points at the bad line")
         expect(EaselMermaidRefusal.syntax(line: 4, detail: "oops").message == "Line 4: oops.", "Syntax messages lead with the line")
-        expect(EaselMermaidRefusal.unsupported("Gantt").message.hasPrefix("Gantt diagrams"), "Refusals name the diagram type")
+        expect(EaselMermaidRefusal.unsupported("Gantt charts").message.hasPrefix("Gantt charts can't"), "Refusals name the diagram type")
         let many = "flowchart TD\n" + (0..<501).map { "N\($0)" }.joined(separator: "\n")
         expect(refusal(many) == .tooLarge, "More than 500 nodes is too large")
     }
@@ -479,7 +480,7 @@ struct EaselMermaidTests {
         expect(first.endConnection?.itemID == choose.id && first.routing == .elbow, "Arrows connect their shapes with elbow routing")
         expect(first.startConnection?.side == .bottom && first.endConnection?.side == .top, "Downward arrows leave the bottom and enter the top")
         expect(first.startHead == nil && first.endHead == nil, "Plain arrows use the default heads")
-        let start0 = first.points[0], end0 = first.points[1]
+        guard let start0 = first.points.first, let end0 = first.points.last else { failTest("Arrows have a route") }
         let startPoint = EaselPoint(x: first.frame.x + start0.x, y: first.frame.y + start0.y)
         let endPoint = EaselPoint(x: first.frame.x + end0.x, y: first.frame.y + end0.y)
         expect(abs(startPoint.y - (start.frame.y + start.frame.height)) < 0.5, "The route starts on the shape's bottom edge")
@@ -507,6 +508,15 @@ struct EaselMermaidTests {
         let groupArrow = toGroup.items.first { $0.kind == .arrow }
         let sectionID = toGroup.items.first { $0.kind == .section }?.id
         expect(groupArrow?.endConnection?.itemID == sectionID && groupArrow?.endConnection?.side == .left, "Links can end on a section")
+        let sideways = EaselMermaid.drawing(diagram("flowchart TD\nsubgraph S\ndirection LR\nA --> B\nend\nS --> C"))
+        let inner = sideways.items.first { $0.kind == .arrow && $0.startConnection?.itemID == sideways.items.first(where: { $0.text == "A" })?.id }
+        expect(inner?.startConnection?.side == .right && inner?.endConnection?.side == .left, "Arrows inside a sideways section run sideways")
+        let outer = sideways.items.first { $0.kind == .arrow && $0.startConnection?.itemID == sideways.items.first(where: { $0.kind == .section })?.id }
+        expect(outer?.startConnection?.side == .bottom && outer?.endConnection?.side == .top, "Arrows between levels follow the outer flow")
+        let stretched = diagram("flowchart TD\nA " + String(repeating: "-", count: 5000) + "> B")
+        expect(stretched.edges.first?.length == EaselMermaid.maximumLength, "Very long links are capped")
+        let stretchedDrawing = EaselMermaid.drawing(stretched)
+        expect(stretchedDrawing.height < 2000, "A capped link keeps the layout reasonable")
         let measured = EaselMermaid.drawing(diagram("flowchart TD\nA[Hello]")) { text, _ in EaselMermaidSize(width: Double(text.count) * 30, height: 40) }
         expect((measured.items.first?.frame.width ?? 0) >= 150, "Shapes grow to fit measured text")
         if let shape = measured.items.first, let rect = EaselShapeGeometry.textRect(for: shape) {
@@ -531,11 +541,61 @@ struct EaselMermaidTests {
         let customer = drawing.items.first { $0.text.hasPrefix("CUSTOMER") }
         expect(customer?.kind == .rectangle && customer?.textStyle?.alignment == .left, "Entities with attributes read left aligned")
         expect(customer?.text == "CUSTOMER\nstring name PK", "Entities show their attributes")
+        expect(drawing.headings == Set([customer?.id].compactMap { $0 }), "Only entities with attributes get a heading line")
         let places = drawing.items.first { $0.kind == .arrow && $0.text == "places" }
         expect(places?.startHead == .erdExactlyOne && places?.endHead == .erdZeroOrMore, "Crow's feet carry over")
         let billed = drawing.items.first { $0.kind == .arrow && $0.text == "billed" }
         expect(billed?.startHead == .erdOneOrMore && billed?.endHead == .erdExactlyOne && billed?.strokeDash == .dashed,
                "Non-identifying relationships are dashed")
+    }
+
+    static func quickly<T>(_ name: String, _ work: () -> T) -> T {
+        let start = Date()
+        let value = work()
+        expect(Date().timeIntervalSince(start) < 10, "\(name) finishes quickly")
+        return value
+    }
+
+    static func hostileInput() {
+        let wide = (0..<1500).map { "a\($0)" }.joined(separator: "&") + " --> " + (0..<1500).map { "b\($0)" }.joined(separator: "&")
+        expect(quickly("A huge & product") { refusal("flowchart TD\n" + wide) } == .tooLarge, "Huge & groups are refused")
+        let square = (0..<41).map { "a\($0)" }.joined(separator: "&") + " --> " + (0..<41).map { "b\($0)" }.joined(separator: "&")
+        expect(quickly("A modest & product") { refusal("flowchart TD\n" + square) } == .tooLarge, "& products past the arrow limit are refused")
+        let repeated = "flowchart TD\n" + String(repeating: "subgraph a\nend\n", count: 3000)
+        expect(quickly("Repeated subgraphs") { refusal(repeated) } == .tooLarge, "Too many subgraphs are refused early")
+        let twins = diagram("flowchart TD\nsubgraph a\nx\nend\nsubgraph a\ny\nend\nsubgraph a\nz\nend")
+        expect(twins.groups.map(\.id) == ["a", "a_2", "a_3"], "Repeated subgraph names get numbered")
+        let looped = "flowchart TD\n" + Array(repeating: "A(-x)", count: 900).joined(separator: " --> ")
+        let loop = quickly("Fallback label scans") { diagram(looped) }
+        expect(loop.nodes.count == 1 && loop.node("A")?.label == "-x" && loop.edges.count == 899, "Fallback labels stay cheap and right")
+        let ampersands = "flowchart TD\n" + Array(repeating: "A(-x)", count: 12_000).joined(separator: "&")
+        expect(quickly("A long & list") { refusal(ampersands) } == .tooLarge, "Endless & lists are refused")
+        let chain = "flowchart TD\n" + (0..<5000).map { "n\($0)" }.joined(separator: " --> ")
+        expect(quickly("A long chain") { refusal(chain) } == .tooLarge, "Chains past the arrow limit are refused")
+        let styled = "flowchart TD\n" + String(repeating: "a --> b\n", count: 900) + String(repeating: "linkStyle default stroke:red\n", count: 4000)
+        let restyled = quickly("Repeated linkStyle default") { diagram(styled) }
+        expect(restyled.edges.allSatisfy { $0.style.stroke == EaselPalette.hex(.note(.red), role: .ink) }, "Repeated default styles still apply")
+        let lines = "flowchart TD\n" + (0..<600).map { "n\($0)" }.joined(separator: "\n")
+        expect(quickly("Too many nodes") { refusal(lines) } == .tooLarge, "More nodes than the limit are refused early")
+        let entities = "erDiagram\n" + (0..<600).map { "E\($0)" }.joined(separator: "\n")
+        expect(quickly("Too many entities") { refusal(entities) } == .tooLarge, "More entities than the limit are refused")
+        let attributes = "erDiagram\nA {\n" + String(repeating: "string name\n", count: 150) + "}"
+        expect(quickly("Too many attributes") { refusal(attributes) } == .tooLarge, "More attributes than the limit are refused")
+        let relationships = "erDiagram\n" + String(repeating: "A ||--o{ B : has\n", count: 1500)
+        expect(quickly("Too many relationships") { refusal(relationships) } == .tooLarge, "More relationships than the limit are refused")
+        let unclosed = "flowchart TD\nA(-" + String(repeating: "(", count: 100_000)
+        expect(quickly("An unclosed label") { refusal(unclosed) }.map { if case .syntax = $0 { return true } else { return false } } == true,
+               "Unclosed nesting is a quick syntax error")
+        expect(refusal("Graph\nLogin\nDashboard") == .notMermaid && refusal("Flowchart TD\nA-->B") == .notMermaid
+               && refusal("ErDiagram\nA") == .notMermaid, "Diagram keywords are case-sensitive like Mermaid's")
+        var spine = (0..<400).map { "n\($0)" }.joined(separator: " ---------> ") + "\n"
+        spine += String(repeating: "n0 --> n399\n", count: 500)
+        let tall = quickly("Long links over a long spine") { EaselMermaid.drawing(diagram("flowchart TD\n" + spine)) }
+        expect(tall.height < EaselRect.maximumCoordinate / 2 && tall.items.allSatisfy { $0.frame.y + $0.frame.height < tall.height + 1 },
+               "Long links over a long spine stay inside the Easel")
+        let label = "flowchart TD\nA[\"" + String(repeating: "**a** ", count: 50_000) + "\"]"
+        expect(quickly("A giant label") { diagram(label) }.node("A").map { $0.label.count <= EaselMermaidText.maximumLength } == true,
+               "Giant labels are cut short")
     }
 
     static func validation() {

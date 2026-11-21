@@ -149,12 +149,17 @@ enum EaselMermaidRefusal: Error, Equatable {
     var message: String {
         switch self {
         case .notMermaid: return "Start with flowchart, graph or erDiagram and Parc draws the rest."
-        case .unsupported(let name): return "\(name) diagrams can't become Easel objects yet. Flowcharts and ER diagrams can."
-        case .empty: return "There's nothing to draw yet. Add a node or two."
+        case .unsupported(let name): return "\(name) can't become Easel objects. Flowcharts and ER diagrams can."
+        case .empty: return "There's nothing to draw yet. Add a shape or two."
         case .syntax(let line, let detail): return line > 0 ? "Line \(line): \(detail)." : detail.prefix(1).uppercased() + detail.dropFirst() + "."
-        case .tooLarge: return "That's a big one. Easels draw diagrams of up to \(EaselMermaid.maximumNodes) shapes."
+        case .tooLarge:
+            return "That's a big one. Easels draw diagrams of up to \(EaselMermaid.maximumNodes) shapes and \(EaselMermaid.maximumEdges.formatted()) arrows."
         }
     }
+}
+
+extension EaselMermaidRefusal: LocalizedError {
+    var errorDescription: String? { message }
 }
 
 enum EaselMermaid {
@@ -162,6 +167,7 @@ enum EaselMermaid {
     static let maximumEdges = 1000
     static let maximumGroups = 200
     static let maximumAttributes = 100
+    static let maximumLength = 6
     static let maximumSourceBytes = 400_000
 
     static func canParse(_ text: String) -> Bool {
@@ -177,9 +183,9 @@ enum EaselMermaid {
         }
         let keyword = EaselMermaidSource.firstWord(lines[header].text.trimmingCharacters(in: .whitespaces))
         let kind: EaselMermaidDiagram.Kind
-        switch keyword.lowercased() {
+        switch keyword {
         case "flowchart", "graph", "flowchart-elk": kind = .flowchart
-        case "erdiagram": kind = .entityRelationship
+        case "erDiagram": kind = .entityRelationship
         default: return .failure(unsupportedName(keyword).map(EaselMermaidRefusal.unsupported) ?? .notMermaid)
         }
         guard probe.utf8.count == text.utf8.count else { return .failure(.tooLarge) }
@@ -200,28 +206,28 @@ enum EaselMermaid {
     }
 
     static func unsupportedName(_ keyword: String) -> String? {
-        switch keyword.lowercased() {
-        case "sequencediagram": return "Sequence"
-        case "classdiagram", "classdiagram-v2": return "Class"
-        case "statediagram", "statediagram-v2": return "State"
-        case "gantt": return "Gantt"
-        case "pie": return "Pie"
-        case "journey": return "User journey"
-        case "gitgraph": return "Git"
-        case "mindmap": return "Mind map"
-        case "timeline": return "Timeline"
-        case "quadrantchart": return "Quadrant"
-        case "requirementdiagram": return "Requirement"
-        case "c4context", "c4container", "c4component", "c4dynamic", "c4deployment": return "C4"
-        case "sankey", "sankey-beta": return "Sankey"
-        case "xychart", "xychart-beta": return "XY chart"
-        case "block", "block-beta": return "Block"
-        case "packet", "packet-beta": return "Packet"
-        case "kanban": return "Kanban"
-        case "architecture", "architecture-beta": return "Architecture"
-        case "radar", "radar-beta": return "Radar"
-        case "treemap", "treemap-beta": return "Treemap"
-        case "zenuml": return "ZenUML"
+        switch keyword {
+        case "sequenceDiagram": return "Sequence diagrams"
+        case "classDiagram", "classDiagram-v2": return "Class diagrams"
+        case "stateDiagram", "stateDiagram-v2": return "State diagrams"
+        case "gantt": return "Gantt charts"
+        case "pie": return "Pie charts"
+        case "journey": return "User journeys"
+        case "gitGraph": return "Git graphs"
+        case "mindmap": return "Mind maps"
+        case "timeline": return "Timelines"
+        case "quadrantChart": return "Quadrant charts"
+        case "requirementDiagram": return "Requirement diagrams"
+        case "C4Context", "C4Container", "C4Component", "C4Dynamic", "C4Deployment": return "C4 diagrams"
+        case "sankey", "sankey-beta": return "Sankey diagrams"
+        case "xychart", "xychart-beta": return "XY charts"
+        case "block", "block-beta": return "Block diagrams"
+        case "packet", "packet-beta": return "Packet diagrams"
+        case "kanban": return "Kanban boards"
+        case "architecture", "architecture-beta": return "Architecture diagrams"
+        case "radar", "radar-beta": return "Radar charts"
+        case "treemap", "treemap-beta": return "Treemaps"
+        case "zenuml": return "ZenUML diagrams"
         default: return nil
         }
     }
@@ -431,7 +437,7 @@ struct EaselMermaidScanner {
                 return (collected, closer)
             }
             let character = characters[index]
-            if character == open { depth += 1 } else if character == family, depth > 0 { depth -= 1 }
+            if character == open { depth += 1 } else if character == family { if depth == 0 { break }; depth -= 1 }
             collected.append(character)
             advance()
         }
@@ -475,7 +481,7 @@ enum EaselMermaidText {
     static let maximumLength = 2000
 
     static func clean(_ raw: String) -> String {
-        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        var text = String(raw.prefix(maximumLength * 2)).trimmingCharacters(in: .whitespacesAndNewlines)
         if text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") {
             text = String(text.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
         }
@@ -683,7 +689,7 @@ struct EaselMermaidFlowchartParser {
         let words = header.text.split(whereSeparator: \.isWhitespace).map(String.init)
         if words.count > 1 {
             guard let direction = EaselMermaidDirection(keyword: words[1]) else {
-                throw syntax(header.number, "Parc knows the TB, TD, BT, LR and RL directions")
+                throw syntax(header.number, "the direction should be TB, TD, BT, LR or RL")
             }
             diagram.direction = direction
             directionGiven = true
@@ -705,11 +711,11 @@ struct EaselMermaidFlowchartParser {
         let word = EaselMermaidSource.firstWord(text)
         let rest = String(text.dropFirst(word.count)).trimmingCharacters(in: .whitespaces)
         switch word {
-        case "subgraph": beginGroup(rest)
+        case "subgraph": try beginGroup(rest)
         case "end" where rest.isEmpty: try endGroup(line: statement.number)
         case "direction" where !rest.isEmpty:
             guard let direction = EaselMermaidDirection(keyword: rest) else {
-                throw syntax(statement.number, "Parc knows the TB, TD, BT, LR and RL directions")
+                throw syntax(statement.number, "the direction should be TB, TD, BT, LR or RL")
             }
             if let top = stack.last, let index = groupIndex[top.id] { diagram.groups[index].direction = direction }
             else if !directionGiven { diagram.direction = direction; directionGiven = true }
@@ -746,10 +752,11 @@ struct EaselMermaidFlowchartParser {
             scanner.skipSpaces()
             guard !scanner.atEnd else { throw syntax(line, "this arrow needs something on the other end") }
             let next = try nodeGroup(&scanner, line: line)
+            guard diagram.edges.count + previous.count * next.count <= EaselMermaid.maximumEdges else { throw EaselMermaidRefusal.tooLarge }
             for from in previous {
                 for to in next {
-                    diagram.edges.append(EaselMermaidEdge(from: from, to: to, label: link.label, line: link.line,
-                                                          startHead: link.start, endHead: link.end, length: max(1, link.length)))
+                    diagram.edges.append(EaselMermaidEdge(from: from, to: to, label: link.label, line: link.line, startHead: link.start,
+                                                          endHead: link.end, length: min(EaselMermaid.maximumLength, max(1, link.length))))
                 }
             }
             previous = next
@@ -773,6 +780,7 @@ struct EaselMermaidFlowchartParser {
             guard scanner.peek() == "&" else { scanner.index = save; return ids }
             scanner.advance()
             scanner.skipSpaces()
+            guard ids.count < EaselMermaid.maximumNodes else { throw EaselMermaidRefusal.tooLarge }
             ids.append(try node(&scanner, line: line))
         }
     }
@@ -810,7 +818,7 @@ struct EaselMermaidFlowchartParser {
             guard let name = scanner.readIdentifier() else { throw syntax(line, "::: needs a class name after it") }
             nodeClasses[id, default: []].append(name)
         }
-        touch(id, label: label, shape: shape)
+        try touch(id, label: label, shape: shape)
         return id
     }
 
@@ -921,7 +929,7 @@ struct EaselMermaidFlowchartParser {
             if found != nil { break }
             position += 1
         }
-        guard let end = found else { throw syntax(line, "an arrow label needs its arrow, like -- yes -->") }
+        guard let end = found else { throw syntax(line, "an arrow label needs the rest of its arrow, like -- yes -->") }
         let label = EaselMermaidText.clean(String(characters[begin..<end]))
         scanner.index = end
         switch kind {
@@ -936,12 +944,13 @@ struct EaselMermaidFlowchartParser {
         }
     }
 
-    private mutating func touch(_ id: String, label: String?, shape: EaselMermaidShape?) {
+    private mutating func touch(_ id: String, label: String?, shape: EaselMermaidShape?) throws {
         if label == nil, shape == nil, nodeIndex[id] == nil, groupIndex[id] != nil { return }
         if let index = nodeIndex[id] {
             if let label { diagram.nodes[index].label = label }
             if let shape { diagram.nodes[index].shape = shape }
         } else {
+            guard diagram.nodes.count < EaselMermaid.maximumNodes + EaselMermaid.maximumGroups else { throw EaselMermaidRefusal.tooLarge }
             nodeIndex[id] = diagram.nodes.count
             diagram.nodes.append(EaselMermaidNode(id: id, label: label ?? id, shape: shape ?? .rectangle))
         }
@@ -949,7 +958,8 @@ struct EaselMermaidFlowchartParser {
         if !stack.isEmpty { stack[stack.count - 1].members.append(id) }
     }
 
-    private mutating func beginGroup(_ rest: String) {
+    private mutating func beginGroup(_ rest: String) throws {
+        guard diagram.groups.count < EaselMermaid.maximumGroups else { throw EaselMermaidRefusal.tooLarge }
         counter += 1
         var id: String?, title: String
         if let open = rest.firstIndex(of: "["), rest.hasSuffix("]") {
@@ -959,8 +969,9 @@ struct EaselMermaidFlowchartParser {
             title = EaselMermaidText.clean(rest)
             id = rest.contains(where: \.isWhitespace) || rest.hasPrefix("\"") ? nil : rest
         }
-        var groupID = (id?.isEmpty ?? true) ? "subGraph\(counter)" : id ?? ""
-        while groupIndex[groupID] != nil || explicitNodes.contains(groupID) { groupID += "_" }
+        let base = (id?.isEmpty ?? true) ? "subGraph\(counter)" : id ?? ""
+        var groupID = base, suffix = 1
+        while groupIndex[groupID] != nil || explicitNodes.contains(groupID) { suffix += 1; groupID = base + "_\(suffix)" }
         groupIndex[groupID] = diagram.groups.count
         diagram.groups.append(EaselMermaidGroup(id: groupID, title: title, parent: stack.last?.id))
         stack.append((groupID, []))
@@ -1011,6 +1022,8 @@ struct EaselMermaidFlowchartParser {
         while !stack.isEmpty { try endGroup(line: 0) }
         let groupIDs = Set(diagram.groups.map(\.id))
         diagram.nodes.removeAll { groupIDs.contains($0.id) && !explicitNodes.contains($0.id) }
+        guard diagram.nodes.count <= EaselMermaid.maximumNodes, diagram.edges.count <= EaselMermaid.maximumEdges,
+              diagram.groups.count <= EaselMermaid.maximumGroups else { throw EaselMermaidRefusal.tooLarge }
         let fallback = classes["default"] ?? EaselMermaidStyle()
         for index in diagram.nodes.indices {
             let id = diagram.nodes[index].id
@@ -1026,17 +1039,17 @@ struct EaselMermaidFlowchartParser {
             if let found = styles[id] { style = style.merged(with: found) }
             diagram.groups[index].style = style
         }
-        for entry in linkStyles where entry.indices == nil {
-            for index in diagram.edges.indices { diagram.edges[index].style = diagram.edges[index].style.merged(with: entry.style) }
-        }
+        var shared = EaselMermaidStyle(), picked: [Int: EaselMermaidStyle] = [:]
         for entry in linkStyles {
-            for index in entry.indices ?? [] where diagram.edges.indices.contains(index) {
-                diagram.edges[index].style = diagram.edges[index].style.merged(with: entry.style)
+            guard let indices = entry.indices else { shared = shared.merged(with: entry.style); continue }
+            for index in indices where diagram.edges.indices.contains(index) {
+                picked[index] = (picked[index] ?? EaselMermaidStyle()).merged(with: entry.style)
             }
         }
+        for index in diagram.edges.indices {
+            diagram.edges[index].style = shared.merged(with: picked[index] ?? EaselMermaidStyle())
+        }
         guard !diagram.nodes.isEmpty || !diagram.groups.isEmpty else { throw EaselMermaidRefusal.empty }
-        guard diagram.nodes.count <= EaselMermaid.maximumNodes, diagram.edges.count <= EaselMermaid.maximumEdges,
-              diagram.groups.count <= EaselMermaid.maximumGroups else { throw EaselMermaidRefusal.tooLarge }
         return diagram
     }
 }
@@ -1081,7 +1094,7 @@ struct EaselMermaidEntityParser {
             switch word {
             case "direction" where !rest.isEmpty:
                 guard let direction = EaselMermaidDirection(keyword: rest) else {
-                    throw syntax(line.number, "Parc knows the TB, TD, BT, LR and RL directions")
+                    throw syntax(line.number, "the direction should be TB, TD, BT, LR or RL")
                 }
                 diagram.direction = direction
                 continue
@@ -1113,7 +1126,7 @@ struct EaselMermaidEntityParser {
             readClass(&scanner, for: entity.name)
             scanner.skipSpaces()
             if scanner.atEnd {
-                touch(entity.name, alias: entity.alias)
+                try touch(entity.name, alias: entity.alias)
                 continue
             }
             guard scanner.peek() == "{" else { throw syntax(line.number, "Parc couldn't read this as an entity or a relationship") }
@@ -1134,7 +1147,7 @@ struct EaselMermaidEntityParser {
                 }
             }
             guard closed else { throw syntax(line.number, "the { after \(entity.name) needs a closing }") }
-            touch(entity.name, alias: entity.alias, attributes: try attributes(body, line: line.number))
+            try touch(entity.name, alias: entity.alias, attributes: try attributes(body, line: line.number))
         }
         return try finish()
     }
@@ -1185,8 +1198,9 @@ struct EaselMermaidEntityParser {
         } else if !scanner.atEnd {
             throw syntax(line, "a relationship's label goes after a colon")
         }
-        touch(first.name, alias: first.alias)
-        touch(second.name, alias: second.alias)
+        try touch(first.name, alias: first.alias)
+        try touch(second.name, alias: second.alias)
+        guard diagram.edges.count < EaselMermaid.maximumEdges else { throw EaselMermaidRefusal.tooLarge }
         diagram.edges.append(EaselMermaidEdge(from: first.name, to: second.name, label: label,
                                               line: spec.identifying ? .solid : .dotted,
                                               startHead: spec.left, endHead: spec.right))
@@ -1251,7 +1265,7 @@ struct EaselMermaidEntityParser {
         var result: [EaselMermaidAttribute] = []
         var position = 0
         while position < tokens.count {
-            guard case .word(let type) = tokens[position] else { throw syntax(line, "an attribute starts with its type, like string name") }
+            guard case .word(let type) = tokens[position] else { throw syntax(line, "an attribute starts with its type, like “string name”") }
             guard position + 1 < tokens.count, case .word(let name) = tokens[position + 1] else {
                 throw syntax(line, "the \(type) attribute needs a name")
             }
@@ -1274,11 +1288,17 @@ struct EaselMermaidEntityParser {
         return result
     }
 
-    private mutating func touch(_ name: String, alias: String?, attributes: [EaselMermaidAttribute]? = nil) {
+    private mutating func touch(_ name: String, alias: String?, attributes: [EaselMermaidAttribute]? = nil) throws {
         if let index = nodeIndex[name] {
             if let alias { diagram.nodes[index].label = alias }
-            if let attributes { diagram.nodes[index].attributes += attributes }
+            if let attributes {
+                guard diagram.nodes[index].attributes.count + attributes.count <= EaselMermaid.maximumAttributes else {
+                    throw EaselMermaidRefusal.tooLarge
+                }
+                diagram.nodes[index].attributes += attributes
+            }
         } else {
+            guard diagram.nodes.count < EaselMermaid.maximumNodes else { throw EaselMermaidRefusal.tooLarge }
             nodeIndex[name] = diagram.nodes.count
             diagram.nodes.append(EaselMermaidNode(id: name, label: alias ?? name, shape: .entity, attributes: attributes ?? []))
         }

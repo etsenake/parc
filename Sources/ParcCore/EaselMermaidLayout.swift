@@ -19,6 +19,7 @@ struct EaselMermaidDrawing: Equatable {
     var items: [EaselItem]
     var width: Double
     var height: Double
+    var headings: Set<UUID> = []
 
     func moved(by dx: Double, _ dy: Double) -> EaselMermaidDrawing {
         var copy = self
@@ -37,6 +38,7 @@ enum EaselMermaidLayoutEngine {
     static let sectionPadding = 32.0
     static let sectionTitleBand = 48.0
     static let minimumSection = EaselMermaidSize(width: 200, height: 120)
+    static let dummyBudget = 12_000
 
     struct Edge: Equatable {
         var from: Int
@@ -54,6 +56,7 @@ enum EaselMermaidLayoutEngine {
         var topLevel: [Int] = []
         var nodeLookup: [String: Int] = [:]
         var groupLookup: [String: Int] = [:]
+        var edgesByLevel: [Int: [(index: Int, from: Int, to: Int)]] = [:]
 
         init(_ diagram: EaselMermaidDiagram) {
             self.diagram = diagram
@@ -78,6 +81,22 @@ enum EaselMermaidLayoutEngine {
             let rank = order
             topLevel.sort { rank[$0] < rank[$1] }
             for key in children.keys { children[key]?.sort { rank[$0] < rank[$1] } }
+            for (index, edge) in diagram.edges.enumerated() {
+                guard let a = resolve(edge.from), let b = resolve(edge.to) else { continue }
+                let above = Set(ancestors(of: b))
+                guard let level = ancestors(of: a).first(where: { above.contains($0) }),
+                      let first = representative(a, in: level), let second = representative(b, in: level) else { continue }
+                edgesByLevel[level ?? -1, default: []].append((index, first, second))
+            }
+        }
+
+        func ancestors(of element: Int) -> [Int?] {
+            var result: [Int?] = [], current = container[element], steps = 0
+            while let group = current, steps <= container.count {
+                result.append(group); current = container[group]; steps += 1
+            }
+            result.append(nil)
+            return result
         }
 
         func resolve(_ id: String) -> Int? { nodeLookup[id] ?? groupLookup[id] }
@@ -130,13 +149,10 @@ enum EaselMermaidLayoutEngine {
             }
         }
         var edges: [Edge] = []
-        for (index, edge) in graph.diagram.edges.enumerated() {
-            guard let a = graph.resolve(edge.from), let b = graph.resolve(edge.to),
-                  let first = graph.representative(a, in: group), let second = graph.representative(b, in: group),
-                  let from = position[first], let to = position[second] else { continue }
-            directions[index] = direction
-            guard from != to else { continue }
-            edges.append(Edge(from: from, to: to, length: edge.length, label: labelSizes[index]))
+        for entry in graph.edgesByLevel[group ?? -1] ?? [] {
+            directions[entry.index] = direction
+            guard entry.from != entry.to, let from = position[entry.from], let to = position[entry.to] else { continue }
+            edges.append(Edge(from: from, to: to, length: graph.diagram.edges[entry.index].length, label: labelSizes[entry.index]))
         }
         let placed = layered(sizes: sizes, edges: edges, direction: direction)
         var frames: [Int: EaselRect] = [:]
@@ -232,7 +248,12 @@ enum EaselMermaidLayoutEngine {
         var sizeCross = cross, sizeRank = rank, dummy = Array(repeating: false, count: count), layerOf = level
         var segments: [(upper: Int, lower: Int, weight: Double)] = []
         func weight(_ a: Int, _ b: Int) -> Double { dummy[a] && dummy[b] ? 8 : dummy[a] || dummy[b] ? 2 : 1 }
-        for edge in dag {
+        let spans = dag.map { max(0, level[$0.to] - level[$0.from] - 1) }
+        var kept = Set<Int>(), budget = dummyBudget
+        for index in dag.indices.sorted(by: { (spans[$0], $0) < (spans[$1], $1) }) where spans[index] <= budget {
+            kept.insert(index); budget -= spans[index]
+        }
+        for (edgeIndex, edge) in dag.enumerated() where kept.contains(edgeIndex) {
             let start = layerOf[edge.from], end = layerOf[edge.to]
             var previous = edge.from
             if end - start > 1 {
@@ -334,8 +355,9 @@ enum EaselMermaidLayoutEngine {
         }
 
         var best = layers, bestCount = crossings(), stall = 0
+        let large = total > 4_000
         if bestCount > 0 {
-            for iteration in 0..<24 {
+            for iteration in 0..<(large ? 8 : 24) {
                 if iteration % 2 == 0 {
                     for layer in stride(from: 1, to: layerCount, by: 1) { reorder(layer, fromAbove: true) }
                 } else {
@@ -362,7 +384,7 @@ enum EaselMermaidLayoutEngine {
             }
             for node in nodes { coordinate[node] -= x / 2 }
         }
-        for iteration in 0..<18 {
+        for iteration in 0..<(large ? 9 : 18) {
             let mode = iteration % 3
             let sweep = mode == 1 ? Array((0..<layerCount).reversed()) : Array(0..<layerCount)
             for layer in sweep where !layers[layer].isEmpty {
@@ -524,12 +546,13 @@ extension EaselMermaid {
         }
         let layout = EaselMermaidLayoutEngine.layout(diagram, nodeSizes: nodeSizes, labelSizes: labelSizes)
         var z = zIndex, sections: [EaselItem] = [], connectors: [EaselItem] = [], shapes: [EaselItem] = []
-        var nodeItems: [String: EaselItem] = [:], groupItems: [String: EaselItem] = [:]
+        var nodeItems: [String: EaselItem] = [:], groupItems: [String: EaselItem] = [:], headings = Set<UUID>()
 
-        var depth: [String: Int] = [:]
+        var depth: [String: Int] = [:], parents: [String: String] = [:]
+        for group in diagram.groups where parents[group.id] == nil { parents[group.id] = group.parent ?? "" }
         for group in diagram.groups {
             var level = 0, parent = group.parent
-            while let current = parent, level <= diagram.groups.count { level += 1; parent = diagram.group(current)?.parent }
+            while let current = parent, !current.isEmpty, level <= diagram.groups.count { level += 1; parent = parents[current] }
             depth[group.id] = level
         }
         for group in diagram.groups.sorted(by: { depth[$0.id] ?? 0 < depth[$1.id] ?? 0 }) {
@@ -556,6 +579,7 @@ extension EaselMermaid {
                 var style = EaselTextStyle()
                 style.alignment = .left
                 item.textStyle = style
+                headings.insert(item.id)
             }
             nodeItems[node.id] = item
             shapes.append(item)
@@ -567,7 +591,12 @@ extension EaselMermaid {
         }
         var items = sections + connectors + shapes
         for index in items.indices { items[index].zIndex = z; z += 1 }
-        return EaselMermaidDrawing(items: items, width: layout.width, height: layout.height)
+        var lookup: [UUID: EaselItem] = [:]
+        for item in items where item.kind != .arrow { lookup[item.id] = item }
+        for index in items.indices where items[index].kind == .arrow {
+            items[index] = EaselConnectorRouter.settled(items[index], lookup: { lookup[$0] })
+        }
+        return EaselMermaidDrawing(items: items, width: layout.width, height: layout.height, headings: headings)
     }
 
     static func sides(from a: EaselRect, to b: EaselRect, direction: EaselMermaidDirection,
