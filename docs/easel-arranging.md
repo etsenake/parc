@@ -175,7 +175,6 @@ the selection has changed under an open menu.
 suite for alignment, distribution, Tidy Up, layer order, groups, locks,
 duplicate remapping, the clipboard payload, paste placement, click and marquee
 rules and the chord table; `NoteKeyEquivalentBoundaryTests` covers the note
-stepping aside for an Easel block. `python3 tests/EaselArrangeCanvas/run.py`
-builds a real canvas without a window (from the canvas bundle's file list in
-`scripts/test-easels.sh`) and checks Option-drag undo and cancel, Select All,
-group clicks and chord fall-through, including ⌘G going to an open find bar.
+stepping aside for an Easel block. `EaselArrangeCanvasTests` checks Option-drag
+Undo and cancellation, Select All, group clicks and chord fall-through,
+including ⌘G going to an open find bar.
