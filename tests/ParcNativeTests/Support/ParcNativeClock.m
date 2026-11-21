@@ -213,7 +213,6 @@ void ParcNativeAdvance(NSTimeInterval seconds) {
   }
   NSTimeInterval now = ParcNativeNow();
   if (target > now) clockOffset += target - now;
-  ParcNativeSettle();
 }
 
 @interface ParcNativeClockObserver : NSObject <XCTestObservation>
