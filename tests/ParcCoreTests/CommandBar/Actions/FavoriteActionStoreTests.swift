@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct FavoriteActionStoreTests {
     typealias Fixture = FavoriteActionTests.Fixture
 
@@ -26,7 +25,7 @@ struct FavoriteActionStoreTests {
         func cleanUp() { try? FileManager.default.removeItem(at: directory) }
     }
 
-    @Test func aDurableStoreTransactionSucceeds() throws {
+    @Test @MainActor func aDurableStoreTransactionSucceeds() throws {
         let persisted = try Persisted()
         defer { persisted.cleanUp() }
         let store = try persisted.store()
@@ -34,7 +33,7 @@ struct FavoriteActionStoreTests {
         #expect(try store.performFavoriteAction(action))
     }
 
-    @Test func exactOrderAndMembershipSurviveAReload() throws {
+    @Test @MainActor func exactOrderAndMembershipSurviveAReload() throws {
         let persisted = try Persisted()
         defer { persisted.cleanUp() }
         let fixture = persisted.fixture
@@ -44,7 +43,7 @@ struct FavoriteActionStoreTests {
         #expect(reopened.state.tabs.filter { $0.kind == .favorite }.map(\.id) == [fixture.existing.id, fixture.first.id, fixture.second.id])
     }
 
-    @Test func aPinnedHomeSurvivesAReload() throws {
+    @Test @MainActor func aPinnedHomeSurvivesAReload() throws {
         let persisted = try Persisted()
         defer { persisted.cleanUp() }
         let fixture = persisted.fixture
@@ -53,7 +52,7 @@ struct FavoriteActionStoreTests {
         #expect(try persisted.store().state.tabs.first { $0.id == fixture.second.id }?.savedURL == fixture.second.savedURL)
     }
 
-    @Test func theRealStoreRefusesConsumedMembership() throws {
+    @Test @MainActor func theRealStoreRefusesConsumedMembership() throws {
         let persisted = try Persisted()
         defer { persisted.cleanUp() }
         let fixture = persisted.fixture
@@ -63,7 +62,7 @@ struct FavoriteActionStoreTests {
         #expect(try !store.performFavoriteAction(action))
     }
 
-    @Test func aFailedAtomicWritePublishesNoPartialMembership() throws {
+    @Test @MainActor func aFailedAtomicWritePublishesNoPartialMembership() throws {
         let persisted = try Persisted()
         defer { persisted.cleanUp() }
         let fixture = persisted.fixture

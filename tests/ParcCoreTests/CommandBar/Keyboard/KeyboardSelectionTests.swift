@@ -38,7 +38,7 @@ struct KeyboardSelectionTests {
             hidden = tab("hidden", .pinned, folder: collapsed.id)
             today = tab("today")
             var archived = tab("archived")
-            archived.archivedAt = Date()
+            archived.archivedAt = .distantPast
             var foreign = tab("foreign")
             foreign.profileID = UUID()
             state.tabs = [today, favorite, pinned, folderTab, nestedTab, hidden, archived, foreign]
@@ -140,30 +140,30 @@ struct KeyboardSelectionTests {
         #expect(NumberedTarget.destination(f.items(), number: 9, ninthItemEnabled: true) == nil)
     }
 
-    @Test func onlyTagsOneThroughNineJump() {
-        let f = Fixture()
-        #expect(NumberedTarget.destination(f.items(), number: 0, ninthItemEnabled: false) == nil)
-        #expect(NumberedTarget.destination(f.items(), number: 10, ninthItemEnabled: false) == nil)
+    @Test(arguments: [0, 10])
+    func onlyTagsOneThroughNineJump(number: Int) {
+        let fixture = Fixture()
+        #expect(NumberedTarget.destination(fixture.items(), number: number, ninthItemEnabled: false) == nil)
     }
 
-    @Test func bindingIDsParseToTheirNumbers() {
-        #expect(NumberedTarget.itemNumber("item9") == 9)
-        #expect(NumberedTarget.itemNumber("item10") == nil)
-        #expect(NumberedTarget.itemNumber("item01") == nil)
-        #expect(NumberedTarget.spaceNumber("space3") == 3)
-        #expect(NumberedTarget.spaceNumber("space10") == 10)
-        #expect(NumberedTarget.spaceNumber("space0") == nil)
+    @Test(arguments: [("item9", 9), ("item10", nil), ("item01", nil)] as [(String, Int?)])
+    func itemBindingsParseOnlySupportedNumbers(id: String, expected: Int?) {
+        #expect(NumberedTarget.itemNumber(id) == expected)
     }
 
-    @Test func descriptionsExplainTheJump() {
-        #expect(NumberedTarget.description(for: "item2", excludeFavorites: false, ninthItemEnabled: false)
-                == "Jumps to the second item in your Sidebar, starting with your Favorites at the top.")
-        #expect(NumberedTarget.description(for: "item9", excludeFavorites: true, ninthItemEnabled: false)
-                == "Jumps to the last item at the bottom of your Sidebar.")
-        #expect(NumberedTarget.description(for: "item9", excludeFavorites: true, ninthItemEnabled: true)
-                == "Jumps to the ninth item in your Sidebar, after your Favorites at the top.")
-        #expect(NumberedTarget.description(for: "space1", excludeFavorites: false, ninthItemEnabled: false)
-                == "Jumps over to your 1st Space without needing to swipe.")
+    @Test(arguments: [("space3", 3), ("space10", 10), ("space0", nil)] as [(String, Int?)])
+    func spaceBindingsParseOnlySupportedNumbers(id: String, expected: Int?) {
+        #expect(NumberedTarget.spaceNumber(id) == expected)
+    }
+
+    @Test(arguments: [
+        ("item2", false, false, "Jumps to the second item in your Sidebar, starting with your Favorites at the top."),
+        ("item9", true, false, "Jumps to the last item at the bottom of your Sidebar."),
+        ("item9", true, true, "Jumps to the ninth item in your Sidebar, after your Favorites at the top."),
+        ("space1", false, false, "Jumps over to your 1st Space without needing to swipe."),
+    ])
+    func descriptionsExplainTheJump(id: String, excludeFavorites: Bool, ninth: Bool, expected: String) {
+        #expect(NumberedTarget.description(for: id, excludeFavorites: excludeFavorites, ninthItemEnabled: ninth) == expected)
     }
 
     @Test func aSplitIsOnePositionalItemOccupyingItsFirstConstituentPosition() {

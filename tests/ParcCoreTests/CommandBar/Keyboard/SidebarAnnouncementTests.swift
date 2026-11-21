@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct SidebarAnnouncementTests {
     typealias Announcement = SidebarKeyboardAnnouncement
 
@@ -88,12 +87,12 @@ struct SidebarAnnouncementTests {
         }
     }
 
-    @Test func everyHighlightableItemSpeaksTheNameTheSidebarShows() {
+    @Test @MainActor func everyHighlightableItemSpeaksTheNameTheSidebarShows() {
         let f = Fixture()
         #expect(f.items().compactMap { Announcement.text($0, state: f.state) } == f.names)
     }
 
-    @Test func aSplitShowingOnlyItsIconSpeaksWhatItsRowSaysNotItsPageTitles() {
+    @Test @MainActor func aSplitShowingOnlyItsIconSpeaksWhatItsRowSaysNotItsPageTitles() {
         let f = Fixture()
         var iconOnly = f.state
         iconOnly.splitLayouts[0].customIcon = .symbol("star")
@@ -101,26 +100,26 @@ struct SidebarAnnouncementTests {
                 == "Split View, 2 tabs")
     }
 
-    @Test func enteringTheModeSpeaksTheItemHighlightedAtTheStart() {
+    @Test @MainActor func enteringTheModeSpeaksTheItemHighlightedAtTheStart() {
         let f = Fixture()
         f.enter()
         #expect(Announcement.highlight(f.cursor, in: f.items(), state: f.state) == "Renamed")
     }
 
-    @Test func enteringWithoutAHighlightedItemAsksForNoAnnouncement() {
+    @Test @MainActor func enteringWithoutAHighlightedItemAsksForNoAnnouncement() {
         let f = Fixture()
         #expect(Announcement.highlight(SidebarKeyboardCursor(highlightedID: nil), in: f.items(), state: f.state) == nil)
         #expect(Announcement.highlight(nil, in: f.items(), state: f.state) == nil)
     }
 
-    @Test func downAsksForExactlyOneAnnouncementNamingTheNextItem() {
+    @Test @MainActor func downAsksForExactlyOneAnnouncementNamingTheNextItem() {
         let f = Fixture()
         f.enter()
         f.press(1)
         #expect(f.requests == ["New tab"])
     }
 
-    @Test func steppingPastTheLastItemAsksForOneEndOfListAnnouncement() {
+    @Test @MainActor func steppingPastTheLastItemAsksForOneEndOfListAnnouncement() {
         let f = Fixture()
         f.enter()
         f.press(1)
@@ -130,27 +129,15 @@ struct SidebarAnnouncementTests {
         #expect(f.requests.count == 2)
     }
 
-    @Test func downReEntersAtTheTopAndWalksEveryItemWithOneAnnouncementPerPress() {
-        let f = Fixture()
-        for expected in f.names {
-            let before = f.requests.count
-            f.press(1)
-            #expect(f.requests.count == before + 1)
-            #expect(f.requests.last == expected)
-        }
+    @Test(arguments: [1, -1])
+    @MainActor func enteringFromAnEdgeAnnouncesEachItemOnce(direction: Int) {
+        let fixture = Fixture()
+        let expected = direction > 0 ? fixture.names : Array(fixture.names.reversed())
+        expected.forEach { _ in fixture.press(direction) }
+        #expect(fixture.requests == expected)
     }
 
-    @Test func upReEntersAtTheBottomAndWalksBackWithOneAnnouncementPerPress() {
-        let f = Fixture()
-        for expected in f.names.reversed() {
-            let before = f.requests.count
-            f.press(-1)
-            #expect(f.requests.count == before + 1)
-            #expect(f.requests.last == expected)
-        }
-    }
-
-    @Test func steppingPastTheFirstItemAsksForOneTopOfListAnnouncement() {
+    @Test @MainActor func steppingPastTheFirstItemAsksForOneTopOfListAnnouncement() {
         let f = Fixture()
         for _ in f.names { f.press(-1) }
         f.press(-1)
@@ -159,7 +146,7 @@ struct SidebarAnnouncementTests {
         #expect(f.requests.count == f.names.count + 1)
     }
 
-    @Test func aLoadFinishingATitleChangeOrABackgroundTabClosingKeepsTheHighlight() {
+    @Test @MainActor func aLoadFinishingATitleChangeOrABackgroundTabClosingKeepsTheHighlight() {
         let f = Fixture()
         f.cursor = SidebarKeyboardCursor(highlightedID: f.highlightable(.tab(f.favorite.id))?.id)
         var refreshed = f.state
@@ -170,7 +157,7 @@ struct SidebarAnnouncementTests {
         #expect(f.cursor.highlightedID == f.items().first?.id)
     }
 
-    @Test func theNextArrowPressSpeaksTheRefreshedTitle() {
+    @Test @MainActor func theNextArrowPressSpeaksTheRefreshedTitle() {
         let f = Fixture()
         f.cursor = SidebarKeyboardCursor(highlightedID: f.highlightable(.tab(f.favorite.id))?.id)
         var refreshed = f.state
@@ -182,7 +169,7 @@ struct SidebarAnnouncementTests {
         #expect(f.requests.suffix(2) == ["Outer, folder, expanded", "Favorite, loaded"])
     }
 
-    @Test func aHighlightedTabClosingInTheBackgroundClearsTheHighlight() {
+    @Test @MainActor func aHighlightedTabClosingInTheBackgroundClearsTheHighlight() {
         let f = Fixture()
         f.cursor = SidebarKeyboardCursor(highlightedID: f.highlightable(.tab(f.blank.id))?.id)
         var closing = f.state
@@ -191,7 +178,7 @@ struct SidebarAnnouncementTests {
         #expect(f.cursor.highlightedID == nil)
     }
 
-    @Test func upAfterThatRemovalSpeaksTheNewLastItem() {
+    @Test @MainActor func upAfterThatRemovalSpeaksTheNewLastItem() {
         let f = Fixture()
         var closing = f.state
         closing.tabs.removeAll { $0.id == f.blank.id }
@@ -199,11 +186,11 @@ struct SidebarAnnouncementTests {
         #expect(f.requests.last == "Renamed")
     }
 
-    func highlightedFolder(_ f: Fixture, in store: BrowserStore) throws -> BrowserFolder {
+    @MainActor func highlightedFolder(_ f: Fixture, in store: BrowserStore) throws -> BrowserFolder {
         try #require(f.items(store.state).first { $0.id == f.cursor.highlightedID }?.folder)
     }
 
-    func storeWithHighlightedInner(_ f: Fixture) throws -> BrowserStore {
+    @MainActor func storeWithHighlightedInner(_ f: Fixture) throws -> BrowserStore {
         try FileManager.default.createDirectory(at: f.directory, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -213,7 +200,7 @@ struct SidebarAnnouncementTests {
         return store
     }
 
-    @Test func afterReturnOpensAFolderItsNewStateIsSpoken() throws {
+    @Test @MainActor func afterReturnOpensAFolderItsNewStateIsSpoken() throws {
         let f = Fixture()
         let store = try storeWithHighlightedInner(f)
         let folder = try highlightedFolder(f, in: store)
@@ -222,7 +209,7 @@ struct SidebarAnnouncementTests {
         #expect(Announcement.highlight(f.cursor, in: f.items(store.state), state: store.state) == "Inner, folder, expanded")
     }
 
-    @Test func afterReturnClosesAFolderItsNewStateIsSpoken() throws {
+    @Test @MainActor func afterReturnClosesAFolderItsNewStateIsSpoken() throws {
         let f = Fixture()
         let store = try storeWithHighlightedInner(f)
         let folder = try highlightedFolder(f, in: store)
@@ -233,14 +220,14 @@ struct SidebarAnnouncementTests {
         #expect(Announcement.highlight(f.cursor, in: f.items(store.state), state: store.state) == "Inner, folder, collapsed")
     }
 
-    @Test func arrowsInAnEmptySidebarStillAnswerOncePerPress() {
+    @Test @MainActor func arrowsInAnEmptySidebarStillAnswerOncePerPress() {
         let f = Fixture()
         var empty = SidebarKeyboardCursor(highlightedID: nil)
         #expect(Announcement.move(1, cursor: &empty, in: [], state: f.state) == Announcement.emptyList)
         #expect(Announcement.move(-1, cursor: &empty, in: [], state: f.state) == Announcement.emptyList)
     }
 
-    @Test func aHighlightedRowWithoutAReadableNameNeverClaimsTheListEnded() {
+    @Test @MainActor func aHighlightedRowWithoutAReadableNameNeverClaimsTheListEnded() {
         let f = Fixture()
         let stale = SidebarKeyboardNavigation.Item(reference: .tab(UUID()), selection: nil, folder: nil)
         var lost = SidebarKeyboardCursor(highlightedID: nil)

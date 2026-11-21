@@ -21,10 +21,11 @@ struct FavoriteActionTests {
             space = BrowserSpace(id: UUID(), name: "Origin", symbol: "circle", color: "ABCDEF", profileID: profile.id)
             other = BrowserSpace(id: UUID(), name: "Other Space", symbol: "circle", color: "ABCDEF", profileID: profile.id)
             folder = BrowserFolder(id: UUID(), spaceID: space.id, name: "Folder", isExpanded: false)
+            let spaceID = space.id, profileID = profile.id, folderID = folder.id
             func tab(_ kind: TabKind, _ title: String) -> BrowserTab {
-                BrowserTab(id: UUID(), spaceID: space.id, profileID: profile.id,
+                BrowserTab(id: UUID(), spaceID: spaceID, profileID: profileID,
                     url: "https://example.test/" + title, title: title, kind: kind,
-                    folderID: kind == .pinned ? folder.id : nil,
+                    folderID: kind == .pinned ? folderID : nil,
                     createdAt: Date(timeIntervalSince1970: 100), lastAccessed: Date(timeIntervalSince1970: 100),
                     savedURL: "https://home.test/" + title, savedTitle: "Home " + title)
             }

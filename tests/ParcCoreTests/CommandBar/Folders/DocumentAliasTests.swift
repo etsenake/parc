@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct DocumentAliasTests {
     @MainActor final class Fixture {
         let root = CommandBarFixtures.temporaryDirectory("document-alias")
@@ -127,38 +126,38 @@ struct DocumentAliasTests {
         }
     }
 
-    @Test func originalTypedStoresValidateTheCompleteMixedSet() throws {
+    @Test @MainActor func originalTypedStoresValidateTheCompleteMixedSet() throws {
         let f = try Fixture()
         #expect(SidebarCopySources(destinations: f.urls, documents: f.references).validates(f.initial.tabs))
     }
 
-    @Test func aLocalURLAloneIsNotATypedReference() throws {
+    @Test @MainActor func aLocalURLAloneIsNotATypedReference() throws {
         let f = try Fixture()
         #expect(!SidebarCopySources(destinations: f.urls).validates(f.initial.tabs))
     }
 
-    @Test func theSameFileInAnotherProfileCannotAuthorizeAReference() throws {
+    @Test @MainActor func theSameFileInAnotherProfileCannotAuthorizeAReference() throws {
         let f = try Fixture()
         var wrong = f.references
         wrong[f.noteTab.id] = SidebarDocumentReference(page: .note(f.noteURL), profileID: UUID(), validate: f.validateNote)
         #expect(!SidebarCopySources(destinations: f.urls, documents: wrong).validates(f.initial.tabs))
     }
 
-    @Test func aTypedDestinationCannotChangeTheDocumentOrItsKind() throws {
+    @Test @MainActor func aTypedDestinationCannotChangeTheDocumentOrItsKind() throws {
         let f = try Fixture()
         var wrongURLs = f.urls
         wrongURLs[f.noteTab.id] = InternalPage.easel(f.easel.document.id).urlString
         #expect(!SidebarCopySources(destinations: wrongURLs, documents: f.references).validates(f.initial.tabs))
     }
 
-    @Test func anOrdinaryWebItemCannotTurnIntoADocumentReference() throws {
+    @Test @MainActor func anOrdinaryWebItemCannotTurnIntoADocumentReference() throws {
         let f = try Fixture()
         var wrongURLs = f.urls
         wrongURLs[f.webTab.id] = f.noteTab.savedURL
         #expect(!SidebarCopySources(destinations: wrongURLs, documents: f.references).validates(f.initial.tabs))
     }
 
-    @Test func duplicatingGivesFreshSidebarIdentitiesForTheFullMixedTree() throws {
+    @Test @MainActor func duplicatingGivesFreshSidebarIdentitiesForTheFullMixedTree() throws {
         let f = try Fixture()
         let result = try f.duplicate()
         let copied = result.tabIDs.compactMap { id in f.store.state.tabs.first { $0.id == id } }
@@ -166,7 +165,7 @@ struct DocumentAliasTests {
         #expect(Set(result.tabIDs).isDisjoint(with: f.initial.tabs.map(\.id)))
     }
 
-    @Test func actualTypedDocumentsAndTheRealWebDestinationStaySeparate() throws {
+    @Test @MainActor func actualTypedDocumentsAndTheRealWebDestinationStaySeparate() throws {
         let f = try Fixture()
         let target = FolderDuplicateTarget(folderID: f.folder.id, spaceID: f.space.id, profileID: f.profile.id, state: f.initial)!
         let result = try f.duplicate()
@@ -174,26 +173,26 @@ struct DocumentAliasTests {
         #expect(copied.map(\.savedURL) == target.tabs.map { f.urls[$0.id]! })
     }
 
-    @Test func theNoteAliasPointsAtTheVeryFileOfTheOriginal() throws {
+    @Test @MainActor func theNoteAliasPointsAtTheVeryFileOfTheOriginal() throws {
         let f = try Fixture()
         let result = try f.duplicate()
         let copied = result.tabIDs.compactMap { id in f.store.state.tabs.first { $0.id == id } }
         #expect(copied.contains { InternalPage(urlString: $0.url)?.noteURL.flatMap(InternalPage.noteFile) == f.noteURL })
     }
 
-    @Test func theEaselAliasRetainsTheExactDocumentID() throws {
+    @Test @MainActor func theEaselAliasRetainsTheExactDocumentID() throws {
         let f = try Fixture()
         let result = try f.duplicate()
         let copied = result.tabIDs.compactMap { id in f.store.state.tabs.first { $0.id == id } }
         #expect(copied.contains { InternalPage(urlString: $0.url)?.easelID == f.originalEasel.id })
     }
 
-    @Test func typedSplitChildrenNeverCreateRendererPages() throws {
+    @Test @MainActor func typedSplitChildrenNeverCreateRendererPages() throws {
         let f = try Fixture()
         #expect(try f.duplicate().openTabIDs.isEmpty)
     }
 
-    @Test func theAliasSplitPreservesItsActualLayout() throws {
+    @Test @MainActor func theAliasSplitPreservesItsActualLayout() throws {
         let f = try Fixture()
         _ = try f.duplicate()
         let copiedSplit = try #require(f.store.state.splitLayouts.first { $0.id != f.split.id })
@@ -201,7 +200,7 @@ struct DocumentAliasTests {
         #expect(copiedSplit.orientation == f.split.orientation)
     }
 
-    @Test func theAliasTransactionWritesNoNoteAttachmentOrAssetFiles() throws {
+    @Test @MainActor func theAliasTransactionWritesNoNoteAttachmentOrAssetFiles() throws {
         let f = try Fixture()
         let originalFiles = try f.files(f.profileDirectory), originalNoteFiles = try f.files(f.notesFolder)
         _ = try f.duplicate()
@@ -209,33 +208,33 @@ struct DocumentAliasTests {
         #expect(try f.files(f.notesFolder) == originalNoteFiles)
     }
 
-    @Test func theOriginalEaselSessionAndRevisionAreUntouched() throws {
+    @Test @MainActor func theOriginalEaselSessionAndRevisionAreUntouched() throws {
         let f = try Fixture()
         _ = try f.duplicate()
         #expect(f.easel.document == f.originalEasel)
     }
 
-    @Test func theOriginalSidebarRecordsAndSelectionAreUntouched() throws {
+    @Test @MainActor func theOriginalSidebarRecordsAndSelectionAreUntouched() throws {
         let f = try Fixture()
         _ = try f.duplicate()
         #expect(f.store.state.tabs.prefix(f.initial.tabs.count).elementsEqual(f.initial.tabs))
         #expect(f.store.state.selectedTabIDs == f.initial.selectedTabIDs)
     }
 
-    @Test func everyNoteAliasSharesTheOneOriginalFile() throws {
+    @Test @MainActor func everyNoteAliasSharesTheOneOriginalFile() throws {
         let f = try Fixture()
         _ = try f.duplicate()
         let aliasFiles = Set(f.store.state.tabs.compactMap { InternalPage(urlString: $0.savedURL)?.noteURL.flatMap(InternalPage.noteFile)?.path })
         #expect(aliasFiles == [f.noteURL.path])
     }
 
-    @Test func easelAliasesShareTheRealOriginalSession() throws {
+    @Test @MainActor func easelAliasesShareTheRealOriginalSession() throws {
         let f = try Fixture()
         _ = try f.duplicate()
         #expect(try f.easels.load(f.originalEasel.id) === f.easel)
     }
 
-    @Test func originalEditsAreWhatEveryAliasOpens() throws {
+    @Test @MainActor func originalEditsAreWhatEveryAliasOpens() throws {
         let f = try Fixture()
         _ = try f.duplicate()
         let editedBytes = Data("# Plans, shared\n\n![pixel](Attachments/pixel.png)\n".utf8)
@@ -245,20 +244,20 @@ struct DocumentAliasTests {
         #expect(try f.easels.load(f.originalEasel.id).document.items[0].frame.x == 15)
     }
 
-    @Test func theOriginalAssetAndAttachmentBytesRemainOwned() throws {
+    @Test @MainActor func theOriginalAssetAndAttachmentBytesRemainOwned() throws {
         let f = try Fixture()
         _ = try f.duplicate()
         #expect(try Data(contentsOf: f.easel.assetURL(f.asset)) == f.png)
         #expect(try Data(contentsOf: f.notesFolder.appendingPathComponent("Attachments/pixel.png")) == f.png)
     }
 
-    @Test func easelContentAndEmbeddedPageObjectIDsAreSharedNotCloned() throws {
+    @Test @MainActor func easelContentAndEmbeddedPageObjectIDsAreSharedNotCloned() throws {
         let f = try Fixture()
         _ = try f.duplicate()
         #expect(try f.easels.load(f.originalEasel.id).document.items.map(\.id) == f.originalEasel.items.map(\.id))
     }
 
-    @Test func contextualFolderCopySharesTypedReferencesAndKeepsOrdinaryChildrenLazy() throws {
+    @Test @MainActor func contextualFolderCopySharesTypedReferencesAndKeepsOrdinaryChildrenLazy() throws {
         let f = try Fixture()
         _ = try f.duplicate()
         let command = try f.copyToDestination()
@@ -266,14 +265,14 @@ struct DocumentAliasTests {
         #expect(command.openTabIDs.isEmpty)
     }
 
-    @Test func aSameProfileDestinationSpaceOwnsAllFreshRecords() throws {
+    @Test @MainActor func aSameProfileDestinationSpaceOwnsAllFreshRecords() throws {
         let f = try Fixture()
         _ = try f.duplicate()
         let command = try f.copyToDestination()
         #expect(command.tabs.allSatisfy { $0.spaceID == f.away.id && $0.profileID == f.profile.id })
     }
 
-    @Test func aliasSidebarIDsSurviveARealDiskReloadAndReadTheSameOriginalNote() throws {
+    @Test @MainActor func aliasSidebarIDsSurviveARealDiskReloadAndReadTheSameOriginalNote() throws {
         let f = try Fixture()
         _ = try f.duplicate()
         let command = try f.copyToDestination()
@@ -284,7 +283,7 @@ struct DocumentAliasTests {
         #expect(try Data(contentsOf: f.noteURL) == editedBytes)
     }
 
-    @Test func aFailedSidebarSavePublishesNoAliasesAndMutatesNoDocuments() throws {
+    @Test @MainActor func aFailedSidebarSavePublishesNoAliasesAndMutatesNoDocuments() throws {
         let f = try Fixture()
         try f.prepared()
         let stable = f.store.state, stableFiles = try f.files(f.profileDirectory)
@@ -295,7 +294,7 @@ struct DocumentAliasTests {
         #expect(try f.files(f.profileDirectory) == stableFiles)
     }
 
-    @Test func aMissingNoteFileInvalidatesTheCapturedCapabilityAndRefusesAllMixedCopies() throws {
+    @Test @MainActor func aMissingNoteFileInvalidatesTheCapturedCapabilityAndRefusesAllMixedCopies() throws {
         let f = try Fixture()
         try f.prepared()
         let stable = f.store.state
@@ -309,7 +308,7 @@ struct DocumentAliasTests {
         #expect(f.noteReference.isCurrent())
     }
 
-    @Test func aMissingOriginalAssetRejectsTheEaselReferenceUntilRecovered() throws {
+    @Test @MainActor func aMissingOriginalAssetRejectsTheEaselReferenceUntilRecovered() throws {
         let f = try Fixture()
         let assetURL = try f.easel.assetURL(f.asset)
         let assetBytes = try Data(contentsOf: assetURL)
@@ -319,7 +318,7 @@ struct DocumentAliasTests {
         #expect(f.easelReference.isCurrent())
     }
 
-    @Test func aSharedEmbeddedOwnerVetoPreservesEveryAliasOriginalDocument() throws {
+    @Test @MainActor func aSharedEmbeddedOwnerVetoPreservesEveryAliasOriginalDocument() throws {
         let f = try Fixture()
         let blocked = f.easel.observeReplacement { _ in false }
         #expect(throws: (any Error).self) { try f.easels.delete(f.originalEasel.id) }
@@ -333,7 +332,7 @@ struct DocumentAliasTests {
         var error: Error?
     }
 
-    func deleteNote(_ f: Fixture, _ deletion: inout Deletion) {
+    @MainActor func deleteNote(_ f: Fixture, _ deletion: inout Deletion) {
         var didDelete = false, error: Error?
         let noteURL = f.noteURL
         f.store.deleteLocalDocument(.note(noteURL), profileID: f.profile.id, ownerValid: { true }, deleteDocument: {
@@ -344,11 +343,11 @@ struct DocumentAliasTests {
         deletion.error = error
     }
 
-    func noteAliasIDs(_ f: Fixture) -> Set<UUID> {
+    @MainActor func noteAliasIDs(_ f: Fixture) -> Set<UUID> {
         Set(f.store.state.tabs.filter { InternalPage(urlString: $0.savedURL) == .note(f.noteURL) }.map(\.id))
     }
 
-    @Test func documentDeletionRetiresEveryOriginalAndCopiedAliasAcrossSpacesAndOneRefusalPreservesAll() throws {
+    @Test @MainActor func documentDeletionRetiresEveryOriginalAndCopiedAliasAcrossSpacesAndOneRefusalPreservesAll() throws {
         let f = try Fixture()
         try f.prepared()
         let noteIDs = noteAliasIDs(f)
@@ -365,7 +364,7 @@ struct DocumentAliasTests {
         #expect(f.noteReference.isCurrent())
     }
 
-    @Test func anAliasRemovalSaveFailureKeepsTheDocumentRetryableAndEveryModelReferenceIntact() throws {
+    @Test @MainActor func anAliasRemovalSaveFailureKeepsTheDocumentRetryableAndEveryModelReferenceIntact() throws {
         let f = try Fixture()
         try f.prepared()
         f.store.requestPageRetirement = { _, authorize, done in done(authorize()) }
@@ -379,7 +378,7 @@ struct DocumentAliasTests {
         #expect(f.noteReference.isCurrent())
     }
 
-    @Test func approvedWholeSetDeletionRemovesTheOneSharedFileAndEveryAlias() throws {
+    @Test @MainActor func approvedWholeSetDeletionRemovesTheOneSharedFileAndEveryAlias() throws {
         let f = try Fixture()
         try f.prepared()
         let noteIDs = noteAliasIDs(f)
@@ -397,7 +396,7 @@ struct DocumentAliasTests {
         #expect(!FileManager.default.fileExists(atPath: f.noteURL.path))
     }
 
-    @Test func actualEaselDeletionInvalidatesEveryAliasCapabilityAndBlocksEditsButKeepsTheAsset() throws {
+    @Test @MainActor func actualEaselDeletionInvalidatesEveryAliasCapabilityAndBlocksEditsButKeepsTheAsset() throws {
         let f = try Fixture()
         let assetURL = try f.easel.assetURL(f.asset)
         try f.easels.delete(f.originalEasel.id)

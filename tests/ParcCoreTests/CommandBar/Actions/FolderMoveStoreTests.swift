@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct FolderMoveStoreTests {
     typealias Fixture = FolderMoveTests.Fixture
 
@@ -27,14 +26,14 @@ struct FolderMoveStoreTests {
         func cleanUp() { try? FileManager.default.removeItem(at: directory) }
     }
 
-    @Test func aDurableStoreTransactionAccepts() throws {
+    @Test @MainActor func aDurableStoreTransactionAccepts() throws {
         let persisted = try Persisted()
         defer { persisted.cleanUp() }
         let store = try persisted.store()
         #expect(try store.performCommandBarFolderMove(persisted.move(persisted.fixture.first.id, in: store)))
     }
 
-    @Test func theExactFolderPlacementSurvivesAReload() throws {
+    @Test @MainActor func theExactFolderPlacementSurvivesAReload() throws {
         let persisted = try Persisted()
         defer { persisted.cleanUp() }
         let store = try persisted.store()
@@ -43,7 +42,7 @@ struct FolderMoveStoreTests {
         #expect(reopened.state.tabs.first { $0.id == persisted.fixture.first.id }?.folderID == persisted.fixture.there.id)
     }
 
-    @Test func aPersistenceFailurePublishesNoPartialMove() throws {
+    @Test @MainActor func aPersistenceFailurePublishesNoPartialMove() throws {
         let persisted = try Persisted()
         defer { persisted.cleanUp() }
         let failed = try persisted.store()

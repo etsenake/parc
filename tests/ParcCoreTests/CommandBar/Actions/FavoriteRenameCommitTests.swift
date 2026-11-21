@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct FavoriteRenameCommitTests {
     @MainActor struct Fixture {
         let directory = CommandBarFixtures.temporaryDirectory("rename-action")
@@ -23,7 +22,7 @@ struct FavoriteRenameCommitTests {
         }
     }
 
-    @Test func savingTheTitleChangesOnlyTheOriginalTitle() throws {
+    @Test @MainActor func savingTheTitleChangesOnlyTheOriginalTitle() throws {
         let fixture = try Fixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
         let action = try fixture.prepared()

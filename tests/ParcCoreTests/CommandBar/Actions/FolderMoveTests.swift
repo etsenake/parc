@@ -33,8 +33,9 @@ struct FolderMoveTests {
             here = BrowserFolder(id: UUID(), spaceID: origin.id, name: "Destination", isExpanded: false)
             there = BrowserFolder(id: UUID(), spaceID: away.id, name: "Destination", isExpanded: false)
             wrong = BrowserFolder(id: UUID(), spaceID: other.id, name: "Destination", isExpanded: false)
+            let originID = origin.id, profileID = profile.id
             func tab(_ title: String, kind: TabKind = .today, folder: UUID? = nil) -> BrowserTab {
-                BrowserTab(id: UUID(), spaceID: origin.id, profileID: profile.id, url: "https://current.test/" + title,
+                BrowserTab(id: UUID(), spaceID: originID, profileID: profileID, url: "https://current.test/" + title,
                     title: title, kind: kind, folderID: folder, createdAt: Date(timeIntervalSince1970: 100),
                     lastAccessed: Date(timeIntervalSince1970: 100), savedURL: "https://home.test/" + title, savedTitle: "Home")
             }
