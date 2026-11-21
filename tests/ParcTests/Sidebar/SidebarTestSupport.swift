@@ -47,3 +47,32 @@ enum SidebarApplicationActivity {
 extension NSApplication {
     @objc dynamic var sidebarObservedIsActive: Bool { SidebarApplicationActivity.override ?? self.sidebarObservedIsActive }
 }
+
+enum SidebarCursorSets {
+    nonisolated(unsafe) static var log: [NSCursor]?
+    nonisolated(unsafe) private static var installed = false
+
+    static func install() {
+        guard !installed else { return }
+        installed = true
+        guard let original = class_getInstanceMethod(NSCursor.self, #selector(NSCursor.set)),
+              let replacement = class_getInstanceMethod(NSCursor.self, #selector(NSCursor.sidebarObservedSet)) else {
+            preconditionFailure("missing -[NSCursor set]")
+        }
+        method_exchangeImplementations(original, replacement)
+    }
+
+    @MainActor static func during(_ body: () -> Void) -> [NSCursor] {
+        install()
+        log = []
+        defer { log = nil }
+        body()
+        return log ?? []
+    }
+}
+
+extension NSCursor {
+    @objc dynamic func sidebarObservedSet() {
+        if SidebarCursorSets.log != nil { SidebarCursorSets.log?.append(self) } else { sidebarObservedSet() }
+    }
+}
