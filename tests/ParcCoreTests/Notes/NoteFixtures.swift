@@ -5,17 +5,12 @@ import Testing
 protocol NoteFixtures {}
 
 extension NoteFixtures {
-    func onLargeStack<Result>(_ work: @escaping () -> Result) -> Result {
-        let box = NoteStackBox<Result>()
-        let done = DispatchSemaphore(value: 0)
-        let thread = Thread {
-            box.value = work()
-            done.signal()
+    func onLargeStack<Result: Sendable>(_ work: @escaping @Sendable () -> Result) async -> Result {
+        await withCheckedContinuation { continuation in
+            let thread = Thread { continuation.resume(returning: work()) }
+            thread.stackSize = 512 << 20
+            thread.start()
         }
-        thread.stackSize = 512 << 20
-        thread.start()
-        done.wait()
-        return box.value!
     }
 
     func block(_ kind: NoteBlockKind, _ text: String = "", _ children: [NoteBlock] = [],
@@ -168,8 +163,4 @@ extension NotePageSession {
 struct NoteTestFailure: Error, CustomStringConvertible {
     let description: String
     init(_ description: String) { self.description = description }
-}
-
-final class NoteStackBox<Value>: @unchecked Sendable {
-    var value: Value?
 }
