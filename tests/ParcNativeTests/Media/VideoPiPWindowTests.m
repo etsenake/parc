@@ -70,334 +70,470 @@ static void Hover(PCVideoPiPPresenter* presenter) {
   [presenter.panel.contentView mouseMoved:[NSEvent new]];
   ParcNativeAdvance(0.02);
 }
+static NSView* Captions(NSView* content) {
+  NSView* captions = nil;
+  for (NSView* child in content.subviews) {
+    if ([NSStringFromClass(child.class) isEqual:@"PCVideoPiPCaptions"]) captions = child;
+  }
+  return captions;
+}
+static NSImage* Cue(void) {
+  return [NSImage imageWithSize:NSMakeSize(512, 36)
+                        flipped:NO
+                 drawingHandler:^BOOL(NSRect rect) {
+                   return YES;
+                 }];
+}
+
 @interface VideoPiPWindowTests : ParcNativeTestCase
 @end
 
-@implementation VideoPiPWindowTests
+@implementation VideoPiPWindowTests {
+  NSView* _video;
+  PCVideoPiPPresenter* _presenter;
+  int _actions;
+  int _changes;
+  PCVideoPiPAction _last;
+}
 
-- (void)testPresentsPanelAndControls {
-  @autoreleasepool {
-    __block int actions = 0, changes = 0;
-    __block PCVideoPiPAction last = PCVideoPiPClose;
-    NSView* video = [NSView new];
-    PCVideoPiPPresenter* presenter =
-        [[PCVideoPiPPresenter alloc] initWithVideoView:video
-            sourceFrame:NSMakeRect(20, 20, 640, 360)
-            action:^(PCVideoPiPAction action, double value) {
-              ++actions;
-              last = action;
-            }
-            changed:^{
-              ++changes;
-            }];
-    EXPECT(presenter.videoView == video);
-    EXPECT(video.superview == presenter.panel.contentView);
-    EXPECT(!presenter.panel.visible);
-    EXPECT(!presenter.panel.keyWindow);
-    EXPECT(!presenter.panel.canBecomeKeyWindow);
-    EXPECT(presenter.panel.styleMask & NSWindowStyleMaskNonactivatingPanel);
-    EXPECT(presenter.panel.styleMask & NSWindowStyleMaskResizable);
-    EXPECT(presenter.panel.level == NSFloatingWindowLevel);
-    EXPECT(!presenter.panel.hidesOnDeactivate);
-    EXPECT(presenter.panel.collectionBehavior &
-           NSWindowCollectionBehaviorCanJoinAllSpaces);
-    EXPECT(presenter.panel.contentView.layer.cornerRadius == 16);
-    EXPECT(Button(presenter.panel.contentView, PCVideoPiPSkipAd) == nil);
-    EXPECT(Button(presenter.panel.contentView, PCVideoPiPNextTrack) == nil);
-    EXPECT(Button(presenter.panel.contentView, PCVideoPiPPreviousTrack) == nil);
-    NSButton* closeButton =
-        Button(presenter.panel.contentView, PCVideoPiPClose);
-    EXPECT(closeButton != nil);
-    EXPECT(!closeButton.bordered);
-    if (@available(macOS 26.0, *)) {
-      NSView* closeHost = closeButton;
-      while (closeHost.superview &&
-             ![closeHost isKindOfClass:NSGlassEffectView.class] &&
-             closeHost != presenter.panel.contentView) {
-        closeHost = closeHost.superview;
+- (void)setUp {
+  [super setUp];
+  _video = [NSView new];
+  _last = PCVideoPiPClose;
+  __weak VideoPiPWindowTests* weak = self;
+  _presenter = [[PCVideoPiPPresenter alloc] initWithVideoView:_video
+      sourceFrame:NSMakeRect(20, 20, 640, 360)
+      action:^(PCVideoPiPAction action, double value) {
+        VideoPiPWindowTests* test = weak;
+        ++test->_actions;
+        test->_last = action;
       }
-      EXPECT([closeHost isKindOfClass:NSGlassEffectView.class]);
-      EXPECT(fabs(closeHost.bounds.size.width - closeHost.bounds.size.height) <
-             0.5);
-      EXPECT(((NSGlassEffectView*)closeHost).cornerRadius >=
-             closeHost.bounds.size.width * 0.45);
-    } else {
-      EXPECT(fabs(closeButton.bounds.size.width - closeButton.bounds.size.height) <
-             0.5);
+      changed:^{
+        VideoPiPWindowTests* test = weak;
+        ++test->_changes;
+      }];
+}
+
+- (void)tearDown {
+  [_presenter invalidate];
+  PCPictureInPicturePointAtControl(NO);
+  [super tearDown];
+}
+
+- (NSView*)content {
+  return _presenter.panel.contentView;
+}
+
+- (void)showHovering {
+  [_presenter setControlsVisible:YES];
+  [_presenter showInactive];
+  [_presenter.panel setContentSize:NSMakeSize(640, 360)];
+  ParcNativeSettle();
+  Hover(_presenter);
+}
+
+- (NSButton*)hoveredPlayButton {
+  [_presenter setAction:PCVideoPiPPlayPause visible:YES];
+  [self showHovering];
+  return Button(self.content, PCVideoPiPPlayPause);
+}
+
+- (NSView*)captionsShownAt640 {
+  [_presenter showInactive];
+  [_presenter.panel setContentSize:NSMakeSize(640, 360)];
+  [_presenter setControlsVisible:NO];
+  [_presenter setCaptions:Cue() bounds:NSMakeRect(0.1, 0.8, 0.8, 0.1)];
+  return Captions(self.content);
+}
+
+- (void)testThePanelFloatsOverSpacesWithoutTakingKeyFocus {
+  EXPECT(_presenter.videoView == _video);
+  EXPECT(_video.superview == self.content);
+  EXPECT(!_presenter.panel.visible);
+  EXPECT(!_presenter.panel.keyWindow);
+  EXPECT(!_presenter.panel.canBecomeKeyWindow);
+  EXPECT(_presenter.panel.styleMask & NSWindowStyleMaskNonactivatingPanel);
+  EXPECT(_presenter.panel.styleMask & NSWindowStyleMaskResizable);
+  EXPECT(_presenter.panel.level == NSFloatingWindowLevel);
+  EXPECT(!_presenter.panel.hidesOnDeactivate);
+  EXPECT(_presenter.panel.collectionBehavior & NSWindowCollectionBehaviorCanJoinAllSpaces);
+  EXPECT(self.content.layer.cornerRadius == 16);
+}
+
+- (void)testOnlyARoundCloseChipShowsByDefault {
+  EXPECT(Button(self.content, PCVideoPiPSkipAd) == nil);
+  EXPECT(Button(self.content, PCVideoPiPNextTrack) == nil);
+  EXPECT(Button(self.content, PCVideoPiPPreviousTrack) == nil);
+  NSButton* closeButton = Button(self.content, PCVideoPiPClose);
+  EXPECT(closeButton != nil);
+  EXPECT(!closeButton.bordered);
+  if (@available(macOS 26.0, *)) {
+    NSView* closeHost = closeButton;
+    while (closeHost.superview && ![closeHost isKindOfClass:NSGlassEffectView.class] && closeHost != self.content) {
+      closeHost = closeHost.superview;
     }
-    [presenter setControlsVisible:YES];
-    NSSlider* slider = Slider(presenter.panel.contentView);
-    EXPECT(slider != nil);
-    EXPECT(slider.hidden);
-    [presenter setPosition:5 duration:20];
-    EXPECT(slider.hidden);
-    [presenter showInactive];
-    Hover(presenter);
-    EXPECT(!slider.hidden);
-    EXPECT(slider.doubleValue == 5);
-    [presenter setPosition:5 duration:20 playbackRate:1];
-    ParcNativeAdvance(0.12);
-    EXPECT(slider.doubleValue > 5);
-    [presenter setPosition:8 duration:20 playbackRate:0];
-    EXPECT(slider.doubleValue == 8);
-    [presenter setPosition:0 duration:0];
-    EXPECT(slider.hidden);
-    [presenter.panel.contentView mouseExited:[NSEvent new]];
-    NSPoint away = NSMakePoint(-2000, -2000);
-    [presenter.panel setFrameOrigin:away];
-    ParcNativeAdvance(0.05);
-    [presenter setNaturalSize:NSMakeSize(1920, 1080)];
-    NSRect frame = presenter.panel.frame;
-    NSRect work = NSScreen.mainScreen.visibleFrame;
-    EXPECT(NSWidth(frame) >= 480);
-    EXPECT(fabs(NSWidth(frame) / NSHeight(frame) - 16.0 / 9.0) < 0.05);
-    EXPECT(NSMaxX(frame) <= NSMaxX(work) + 1);
-    EXPECT(NSMinY(frame) >= NSMinY(work) - 1);
-    EXPECT(presenter.panel.visible);
-    EXPECT(!presenter.panel.keyWindow);
-    [presenter.panel makeKeyAndOrderFront:nil];
-    EXPECT(!presenter.panel.canBecomeKeyWindow);
-    EXPECT(!presenter.panel.keyWindow);
-    EXPECT(presenter.panel.styleMask & NSWindowStyleMaskNonactivatingPanel);
-    [presenter.panel setContentSize:NSMakeSize(640, 360)];
-    EXPECT(NSWidth(video.bounds) == 640);
-    EXPECT(changes > 0);
-    NSView* content = presenter.panel.contentView;
-    NSView* captions = nil;
-    for (NSView* child in content.subviews) {
-      if ([NSStringFromClass(child.class) isEqual:@"PCVideoPiPCaptions"]) {
-        captions = child;
-      }
-    }
-    EXPECT(captions != nil);
-    EXPECT(captions.hidden);
-    NSImage* cue = [NSImage imageWithSize:NSMakeSize(512, 36)
-                                  flipped:NO
-                           drawingHandler:^BOOL(NSRect rect) {
-                             return YES;
-                           }];
-    [presenter setControlsVisible:NO];
-    [presenter setCaptions:cue bounds:NSMakeRect(0.1, 0.8, 0.8, 0.1)];
-    EXPECT(!captions.hidden);
-    EXPECT(Near(captions.frame, NSMakeRect(64, 36, 512, 36)));
-    NSUInteger captionsIndex = [content.subviews indexOfObject:captions];
-    EXPECT(captionsIndex > [content.subviews indexOfObject:video]);
-    EXPECT(captionsIndex == content.subviews.count - 2);
-    NSView* hit = [content hitTest:NSMakePoint(100, 40)];
-    EXPECT(hit != nil && hit != captions);
-    [captions displayIfNeeded];
-    EXPECT(captions.layer.contents == cue);
-    [presenter.panel setContentSize:NSMakeSize(320, 180)];
-    EXPECT(Near(captions.frame, NSMakeRect(32, 18, 256, 18)));
-    [presenter setControlsVisible:YES];
-    Hover(presenter);
-    EXPECT(slider.hidden);
-    EXPECT(Near(captions.frame, NSMakeRect(32, 18, 256, 18)));
-    [presenter setPosition:5 duration:20];
-    EXPECT(!slider.hidden);
-    EXPECT(NSMinY(captions.frame) >= NSMaxY(slider.frame));
-    EXPECT(NSWidth(captions.frame) == 256);
-    [presenter setControlsVisible:NO];
-    EXPECT(Near(captions.frame, NSMakeRect(32, 18, 256, 18)));
-    [presenter setControlsVisible:YES];
-    [presenter setPosition:0 duration:0];
-    [presenter setCaptions:cue bounds:NSMakeRect(0.5, 0.9, 0.8, 0.2)];
-    EXPECT(Near(captions.frame, NSMakeRect(160, 0, 160, 18)));
-    [presenter setCaptions:cue bounds:NSMakeRect(1e308, -1e308, 1e308, 1e308)];
-    EXPECT(captions.hidden);
-    [presenter setCaptions:cue bounds:NSMakeRect(NAN, 0.8, 0.8, 0.1)];
-    EXPECT(captions.hidden);
-    [presenter setCaptions:cue bounds:NSMakeRect(0.1, 0.8, 0.8, 0.1)];
-    [presenter setCaptions:nil bounds:NSZeroRect];
-    EXPECT(captions.hidden);
-    [presenter.panel setContentSize:NSMakeSize(640, 360)];
-    Hover(presenter);
-    [presenter setAction:PCVideoPiPPlayPause visible:YES];
-    [Button(presenter.panel.contentView, PCVideoPiPPlayPause) performClick:nil];
-    EXPECT(actions == 1);
-    EXPECT(last == PCVideoPiPPlayPause);
-    EXPECT(!presenter.panel.keyWindow);
-    [presenter setControlsVisible:NO];
-    [Button(presenter.panel.contentView, PCVideoPiPPlayPause) performClick:nil];
-    EXPECT(actions == 1);
-    [presenter setControlsVisible:YES];
-    Hover(presenter);
-    [presenter setAction:PCVideoPiPPlayPause visible:NO];
-    [Button(presenter.panel.contentView, PCVideoPiPPlayPause) performClick:nil];
-    EXPECT(actions == 1);
-    NSButton* play = Button(presenter.panel.contentView, PCVideoPiPPlayPause);
-    EXPECT(play.alphaValue < 1);
-    [presenter setAction:PCVideoPiPPlayPause visible:YES];
-    EXPECT(play.alphaValue == 1);
-    EXPECT(Host(play).layer.transform.m11 > 1.09);
-    EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
-    EXPECT(!NSApp.active);
-    EXPECT(Shows(NSCursor.pointingHandCursor));
-    EXPECT(!presenter.panel.keyWindow);
-    [presenter setControlsVisible:NO];
-    EXPECT([NSCursor currentCursor] == NSCursor.arrowCursor);
-    EXPECT(Shows(NSCursor.arrowCursor));
-    EXPECT(play.alphaValue < 1);
-    EXPECT(Host(play).layer.transform.m11 == 1);
-    [presenter setControlsVisible:YES];
-    EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
-    EXPECT(play.alphaValue == 1);
-    EXPECT(Shows(NSCursor.pointingHandCursor));
-    NSRect off = presenter.panel.frame;
-    off.origin.x += 60;
-    [presenter.panel setFrame:off display:YES];
-    [presenter.panel.contentView mouseMoved:[NSEvent new]];
-    EXPECT([NSCursor currentCursor] == NSCursor.arrowCursor);
-    EXPECT(play.alphaValue < 1);
-    Hover(presenter);
-    EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
-    PCPictureInPicturePointAtControl(YES);
-    [presenter setControlsVisible:NO];
-    EXPECT(Shows(NSCursor.pointingHandCursor));
-    PCPictureInPicturePointAtControl(NO);
-    EXPECT(Shows(NSCursor.arrowCursor));
-    [presenter setControlsVisible:YES];
-    EXPECT(Shows(NSCursor.pointingHandCursor));
-    for (NSNumber* tag in @[ @(PCVideoPiPReturn), @(PCVideoPiPMinimize),
-                             @(PCVideoPiPClose) ]) {
-      NSButton* chip = Button(presenter.panel.contentView, tag.integerValue);
-      EXPECT(Near(chip.frame, NSMakeRect(0, 0, 28, 28)));
-      if (@available(macOS 26.0, *)) {
-        EXPECT(((NSGlassEffectView*)Host(chip)).cornerRadius == 14);
-      }
-    }
-    [presenter setAction:PCVideoPiPMute title:@"Unmute"];
-    EXPECT(
-        [Button(presenter.panel.contentView, PCVideoPiPMute).accessibilityLabel
-            isEqual:@"Unmute"]);
-    [presenter hide];
-    EXPECT(!presenter.panel.visible);
-    EXPECT(actions == 1);
-    [presenter showInactive];
-    EXPECT(presenter.panel.visible);
-    EXPECT(!presenter.panel.canBecomeKeyWindow);
-    EXPECT(!presenter.panel.keyWindow);
-    [presenter invalidate];
-    EXPECT(presenter.invalidated);
-    EXPECT(!presenter.panel.visible);
-    EXPECT(video.superview == nil);
-    [presenter showInactive];
-    EXPECT(!presenter.panel.visible);
-    [presenter invalidate];
-    EXPECT(actions == 1);
-    __block PCVideoPiPPresenter* closing;
-    closing = [[PCVideoPiPPresenter alloc]
-        initWithVideoView:[NSView new]
-              sourceFrame:NSZeroRect
-                   action:^(PCVideoPiPAction action, double value) {
-                     ++actions;
-                     last = action;
-                     [closing invalidate];
-                     closing = nil;
-                   }
-                  changed:^{
-                  }];
-    NSPanel* panel = closing.panel;
-    [closing showInactive];
-    [panel close];
-    EXPECT(closing == nil);
-    EXPECT(last == PCVideoPiPSystemClose);
-    EXPECT(actions == 2);
-    EXPECT(!panel.visible);
-    __block PCVideoPiPPresenter* reentrant;
-    reentrant = [[PCVideoPiPPresenter alloc] initWithVideoView:[NSView new]
-        sourceFrame:NSZeroRect
-        action:^(PCVideoPiPAction action, double value) {
-        }
-        changed:^{
-          [reentrant invalidate];
-          reentrant = nil;
-        }];
-    [reentrant showInactive];
-    EXPECT(reentrant == nil);
-    __block int resized = 0;
-    NSView* fitted = [NSView new];
-    PCVideoPiPPresenter* fitting =
-        [[PCVideoPiPPresenter alloc] initWithVideoView:fitted
-                                           sourceFrame:NSZeroRect
-                                                action:^(PCVideoPiPAction a,
-                                                         double v) {
-                                                }
-                                               changed:^{
-                                                 ++resized;
-                                               }];
-    NSPanel* fitPanel = fitting.panel;
-    [fitting setNaturalSize:NSMakeSize(1920, 1080)];
-    EXPECT(Aspect(fitPanel.frame, 16.0 / 9.0));
-    EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
-    const NSRect corner = fitPanel.frame;
-    [fitting setNaturalSize:NSMakeSize(1920, 804)];
-    EXPECT(Aspect(fitPanel.frame, 1920.0 / 804.0));
-    EXPECT(NSWidth(fitPanel.frame) == NSWidth(corner));
-    EXPECT(fabs(NSMaxX(fitPanel.frame) - NSMaxX(corner)) < 1);
-    EXPECT(fabs(NSMinY(fitPanel.frame) - NSMinY(corner)) < 1);
-    EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
-    [fitting setNaturalSize:NSMakeSize(1440, 1080)];
-    EXPECT(Aspect(fitPanel.frame, 4.0 / 3.0));
-    EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
-    [fitPanel setContentSize:NSMakeSize(640, 360)];
-    EXPECT(Near(fitted.frame, NSMakeRect(80, 0, 480, 360)));
-    EXPECT(fitted.layer.cornerRadius == 0);
-    [fitting setCaptions:cue bounds:NSMakeRect(0.1, 0.8, 0.8, 0.1)];
-    NSView* fitCaptions = nil;
-    for (NSView* child in fitPanel.contentView.subviews) {
-      if ([NSStringFromClass(child.class) isEqual:@"PCVideoPiPCaptions"]) {
-        fitCaptions = child;
-      }
-    }
-    EXPECT(Near(fitCaptions.frame, NSMakeRect(128, 36, 384, 36)));
-    [fitting setCaptions:nil bounds:NSZeroRect];
-    [fitting hide];
-    [fitPanel setContentSize:NSMakeSize(640, 360)];
-    resized = 0;
-    [fitting setNaturalSize:NSMakeSize(1920, 800)];
-    [fitting showInactive];
-    EXPECT(Aspect(fitPanel.frame, 2.4));
-    EXPECT(NSWidth(fitPanel.frame) == 640);
-    EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
-    EXPECT(resized > 0);
-    EXPECT(fitted.layer.cornerRadius == 16);
-    [fitPanel setContentSize:NSMakeSize(640, 266.4)];
-    EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
-    class_addMethod(object_getClass(fitPanel), @selector(inLiveResize),
-                    (IMP)LiveResize, "c@:");
-    const NSRect dragged = fitPanel.frame;
-    gLiveResize = YES;
-    [fitting setNaturalSize:NSMakeSize(1920, 1080)];
-    EXPECT(Near(fitPanel.frame, dragged));
-    EXPECT(Aspect(fitted.frame, 2.4));
-    [[NSNotificationCenter defaultCenter]
-        postNotificationName:NSWindowDidEndLiveResizeNotification
-                      object:fitPanel];
-    gLiveResize = NO;
-    EXPECT(Aspect(fitPanel.frame, 16.0 / 9.0));
-    EXPECT(NSWidth(fitPanel.frame) == NSWidth(dragged));
-    EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
-    [fitting setNaturalSize:NSMakeSize(1920, 800)];
-    [fitting setNaturalSize:NSMakeSize(0, 0)];
-    [fitting setNaturalSize:NSMakeSize(NAN, 1)];
-    EXPECT(Aspect(fitted.frame, 2.4));
-    [fitting invalidate];
-    __block PCVideoPiPPresenter* releasing;
-    releasing = [[PCVideoPiPPresenter alloc] initWithVideoView:[NSView new]
-        sourceFrame:NSZeroRect
-        action:^(PCVideoPiPAction action, double value) {
-        }
-        changed:^{
-          if (releasing.panel.frame.size.width / releasing.panel.frame.size.height > 2) {
-            [releasing invalidate];
-            releasing = nil;
-          }
-        }];
-    [releasing setNaturalSize:NSMakeSize(1920, 1080)];
-    [releasing setNaturalSize:NSMakeSize(1920, 804)];
-    EXPECT(releasing == nil);
+    EXPECT([closeHost isKindOfClass:NSGlassEffectView.class]);
+    EXPECT(fabs(closeHost.bounds.size.width - closeHost.bounds.size.height) < 0.5);
+    EXPECT(((NSGlassEffectView*)closeHost).cornerRadius >= closeHost.bounds.size.width * 0.45);
+  } else {
+    EXPECT(fabs(closeButton.bounds.size.width - closeButton.bounds.size.height) < 0.5);
   }
+}
+
+- (void)testTheProgressSliderShowsAKnownDurationWhileHovered {
+  [_presenter setControlsVisible:YES];
+  NSSlider* slider = Slider(self.content);
+  EXPECT(slider != nil);
+  EXPECT(slider.hidden);
+  [_presenter setPosition:5 duration:20];
+  EXPECT(slider.hidden);
+  [_presenter showInactive];
+  Hover(_presenter);
+  EXPECT(!slider.hidden);
+  EXPECT(slider.doubleValue == 5);
+  [_presenter setPosition:0 duration:0];
+  EXPECT(slider.hidden);
+}
+
+- (void)testTheSliderAdvancesWhilePlayingAndHoldsWhilePaused {
+  [self showHovering];
+  NSSlider* slider = Slider(self.content);
+  [_presenter setPosition:5 duration:20 playbackRate:1];
+  ParcNativeAdvance(0.12);
+  EXPECT(slider.doubleValue > 5);
+  [_presenter setPosition:8 duration:20 playbackRate:0];
+  EXPECT(slider.doubleValue == 8);
+}
+
+- (void)testANaturalSizeFitsThePanelInsideTheWorkArea {
+  [_presenter showInactive];
+  [_presenter.panel setFrameOrigin:NSMakePoint(-2000, -2000)];
+  ParcNativeAdvance(0.05);
+  [_presenter setNaturalSize:NSMakeSize(1920, 1080)];
+  NSRect frame = _presenter.panel.frame;
+  NSRect work = NSScreen.mainScreen.visibleFrame;
+  EXPECT(NSWidth(frame) >= 480);
+  EXPECT(fabs(NSWidth(frame) / NSHeight(frame) - 16.0 / 9.0) < 0.05);
+  EXPECT(NSMaxX(frame) <= NSMaxX(work) + 1);
+  EXPECT(NSMinY(frame) >= NSMinY(work) - 1);
+  EXPECT(_presenter.panel.visible);
+  EXPECT(!_presenter.panel.keyWindow);
+}
+
+- (void)testThePanelRefusesKeyStatusAndResizesTheVideo {
+  [_presenter showInactive];
+  [_presenter.panel makeKeyAndOrderFront:nil];
+  EXPECT(!_presenter.panel.canBecomeKeyWindow);
+  EXPECT(!_presenter.panel.keyWindow);
+  EXPECT(_presenter.panel.styleMask & NSWindowStyleMaskNonactivatingPanel);
+  [_presenter.panel setContentSize:NSMakeSize(640, 360)];
+  EXPECT(NSWidth(_video.bounds) == 640);
+  EXPECT(_changes > 0);
+}
+
+- (void)testCaptionsDrawAboveTheVideoWithoutTakingClicks {
+  NSView* captions = Captions(self.content);
+  EXPECT(captions != nil);
+  EXPECT(captions.hidden);
+  NSImage* cue = Cue();
+  [_presenter showInactive];
+  [_presenter.panel setContentSize:NSMakeSize(640, 360)];
+  [_presenter setControlsVisible:NO];
+  [_presenter setCaptions:cue bounds:NSMakeRect(0.1, 0.8, 0.8, 0.1)];
+  EXPECT(!captions.hidden);
+  EXPECT(Near(captions.frame, NSMakeRect(64, 36, 512, 36)));
+  NSUInteger captionsIndex = [self.content.subviews indexOfObject:captions];
+  EXPECT(captionsIndex > [self.content.subviews indexOfObject:_video]);
+  EXPECT(captionsIndex == self.content.subviews.count - 2);
+  NSView* hit = [self.content hitTest:NSMakePoint(100, 40)];
+  EXPECT(hit != nil && hit != captions);
+  [captions displayIfNeeded];
+  EXPECT(captions.layer.contents == cue);
+}
+
+- (void)testCaptionsScaleWithThePanel {
+  NSView* captions = [self captionsShownAt640];
+  [_presenter.panel setContentSize:NSMakeSize(320, 180)];
+  EXPECT(Near(captions.frame, NSMakeRect(32, 18, 256, 18)));
+}
+
+- (void)testCaptionsRiseAboveTheSliderOnlyWhileItShows {
+  NSView* captions = [self captionsShownAt640];
+  [_presenter.panel setContentSize:NSMakeSize(320, 180)];
+  [_presenter setControlsVisible:YES];
+  Hover(_presenter);
+  NSSlider* slider = Slider(self.content);
+  EXPECT(slider.hidden);
+  EXPECT(Near(captions.frame, NSMakeRect(32, 18, 256, 18)));
+  [_presenter setPosition:5 duration:20];
+  EXPECT(!slider.hidden);
+  EXPECT(NSMinY(captions.frame) >= NSMaxY(slider.frame));
+  EXPECT(NSWidth(captions.frame) == 256);
+  [_presenter setControlsVisible:NO];
+  EXPECT(Near(captions.frame, NSMakeRect(32, 18, 256, 18)));
+}
+
+- (void)testCaptionsClampToThePanelAndHideForInvalidBounds {
+  NSView* captions = [self captionsShownAt640];
+  NSImage* cue = Cue();
+  [_presenter.panel setContentSize:NSMakeSize(320, 180)];
+  [_presenter setControlsVisible:YES];
+  [_presenter setPosition:0 duration:0];
+  [_presenter setCaptions:cue bounds:NSMakeRect(0.5, 0.9, 0.8, 0.2)];
+  EXPECT(Near(captions.frame, NSMakeRect(160, 0, 160, 18)));
+  [_presenter setCaptions:cue bounds:NSMakeRect(1e308, -1e308, 1e308, 1e308)];
+  EXPECT(captions.hidden);
+  [_presenter setCaptions:cue bounds:NSMakeRect(NAN, 0.8, 0.8, 0.1)];
+  EXPECT(captions.hidden);
+  [_presenter setCaptions:cue bounds:NSMakeRect(0.1, 0.8, 0.8, 0.1)];
+  [_presenter setCaptions:nil bounds:NSZeroRect];
+  EXPECT(captions.hidden);
+}
+
+- (void)testActionButtonsActOnlyWhileShownAndEnabled {
+  [self hoveredPlayButton];
+  [Button(self.content, PCVideoPiPPlayPause) performClick:nil];
+  EXPECT(_actions == 1);
+  EXPECT(_last == PCVideoPiPPlayPause);
+  EXPECT(!_presenter.panel.keyWindow);
+  [_presenter setControlsVisible:NO];
+  [Button(self.content, PCVideoPiPPlayPause) performClick:nil];
+  EXPECT(_actions == 1);
+  [_presenter setControlsVisible:YES];
+  Hover(_presenter);
+  [_presenter setAction:PCVideoPiPPlayPause visible:NO];
+  [Button(self.content, PCVideoPiPPlayPause) performClick:nil];
+  EXPECT(_actions == 1);
+  NSButton* play = Button(self.content, PCVideoPiPPlayPause);
+  EXPECT(play.alphaValue < 1);
+  [_presenter setAction:PCVideoPiPPlayPause visible:YES];
+  EXPECT(play.alphaValue == 1);
+}
+
+- (void)testHoveredControlsShowThePointingHandWithoutActivatingParc {
+  NSButton* play = [self hoveredPlayButton];
+  EXPECT(Host(play).layer.transform.m11 > 1.09);
+  EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
+  EXPECT(!NSApp.active);
+  EXPECT(Shows(NSCursor.pointingHandCursor));
+  EXPECT(!_presenter.panel.keyWindow);
+}
+
+- (void)testHidingTheControlsRestoresTheArrow {
+  NSButton* play = [self hoveredPlayButton];
+  [_presenter setControlsVisible:NO];
+  EXPECT([NSCursor currentCursor] == NSCursor.arrowCursor);
+  EXPECT(Shows(NSCursor.arrowCursor));
+  EXPECT(play.alphaValue < 1);
+  EXPECT(Host(play).layer.transform.m11 == 1);
+  [_presenter setControlsVisible:YES];
+  EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
+  EXPECT(play.alphaValue == 1);
+  EXPECT(Shows(NSCursor.pointingHandCursor));
+}
+
+- (void)testMovingThePanelFromUnderThePointerRestoresTheArrow {
+  NSButton* play = [self hoveredPlayButton];
+  NSRect off = _presenter.panel.frame;
+  off.origin.x += 60;
+  [_presenter.panel setFrame:off display:YES];
+  [self.content mouseMoved:[NSEvent new]];
+  EXPECT([NSCursor currentCursor] == NSCursor.arrowCursor);
+  EXPECT(play.alphaValue < 1);
+  Hover(_presenter);
+  EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
+}
+
+- (void)testPointingAtAControlKeepsTheHandWhileControlsAreHidden {
+  [self hoveredPlayButton];
+  PCPictureInPicturePointAtControl(YES);
+  [_presenter setControlsVisible:NO];
+  EXPECT(Shows(NSCursor.pointingHandCursor));
+  PCPictureInPicturePointAtControl(NO);
+  EXPECT(Shows(NSCursor.arrowCursor));
+  [_presenter setControlsVisible:YES];
+  EXPECT(Shows(NSCursor.pointingHandCursor));
+}
+
+- (void)testWindowChipsAreRoundAndActionsTakeTheirTitles {
+  [self showHovering];
+  for (NSNumber* tag in @[ @(PCVideoPiPReturn), @(PCVideoPiPMinimize), @(PCVideoPiPClose) ]) {
+    NSButton* chip = Button(self.content, tag.integerValue);
+    EXPECT(Near(chip.frame, NSMakeRect(0, 0, 28, 28)));
+    if (@available(macOS 26.0, *)) {
+      EXPECT(((NSGlassEffectView*)Host(chip)).cornerRadius == 14);
+    }
+  }
+  [_presenter setAction:PCVideoPiPMute title:@"Unmute"];
+  EXPECT([Button(self.content, PCVideoPiPMute).accessibilityLabel isEqual:@"Unmute"]);
+}
+
+- (void)testHidingShowsAgainAndInvalidationIsFinal {
+  [self showHovering];
+  [_presenter hide];
+  EXPECT(!_presenter.panel.visible);
+  EXPECT(_actions == 0);
+  [_presenter showInactive];
+  EXPECT(_presenter.panel.visible);
+  EXPECT(!_presenter.panel.canBecomeKeyWindow);
+  EXPECT(!_presenter.panel.keyWindow);
+  [_presenter invalidate];
+  EXPECT(_presenter.invalidated);
+  EXPECT(!_presenter.panel.visible);
+  EXPECT(_video.superview == nil);
+  [_presenter showInactive];
+  EXPECT(!_presenter.panel.visible);
+  [_presenter invalidate];
+  EXPECT(_actions == 0);
+}
+
+- (void)testClosingThePanelReportsASystemClose {
+  __block int actions = 0;
+  __block PCVideoPiPAction last = PCVideoPiPClose;
+  __block PCVideoPiPPresenter* closing;
+  closing = [[PCVideoPiPPresenter alloc] initWithVideoView:[NSView new]
+      sourceFrame:NSZeroRect
+      action:^(PCVideoPiPAction action, double value) {
+        ++actions;
+        last = action;
+        [closing invalidate];
+        closing = nil;
+      }
+      changed:^{
+      }];
+  NSPanel* panel = closing.panel;
+  [closing showInactive];
+  [panel close];
+  EXPECT(closing == nil);
+  EXPECT(last == PCVideoPiPSystemClose);
+  EXPECT(actions == 1);
+  EXPECT(!panel.visible);
+}
+
+- (void)testInvalidatingFromAChangeCallbackIsSafe {
+  __block PCVideoPiPPresenter* reentrant;
+  reentrant = [[PCVideoPiPPresenter alloc] initWithVideoView:[NSView new]
+      sourceFrame:NSZeroRect
+      action:^(PCVideoPiPAction action, double value) {
+      }
+      changed:^{
+        [reentrant invalidate];
+        reentrant = nil;
+      }];
+  [reentrant showInactive];
+  EXPECT(reentrant == nil);
+}
+
+- (PCVideoPiPPresenter*)fittingPresenterFor:(NSView*)fitted resized:(int*)resized {
+  return [[PCVideoPiPPresenter alloc] initWithVideoView:fitted
+      sourceFrame:NSZeroRect
+      action:^(PCVideoPiPAction a, double v) {
+      }
+      changed:^{
+        if (resized) ++*resized;
+      }];
+}
+
+- (void)testThePanelTakesEachVideoAspectAndKeepsItsCorner {
+  NSView* fitted = [NSView new];
+  PCVideoPiPPresenter* fitting = [self fittingPresenterFor:fitted resized:NULL];
+  NSPanel* fitPanel = fitting.panel;
+  [fitting setNaturalSize:NSMakeSize(1920, 1080)];
+  EXPECT(Aspect(fitPanel.frame, 16.0 / 9.0));
+  EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
+  const NSRect corner = fitPanel.frame;
+  [fitting setNaturalSize:NSMakeSize(1920, 804)];
+  EXPECT(Aspect(fitPanel.frame, 1920.0 / 804.0));
+  EXPECT(NSWidth(fitPanel.frame) == NSWidth(corner));
+  EXPECT(fabs(NSMaxX(fitPanel.frame) - NSMaxX(corner)) < 1);
+  EXPECT(fabs(NSMinY(fitPanel.frame) - NSMinY(corner)) < 1);
+  EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
+  [fitting setNaturalSize:NSMakeSize(1440, 1080)];
+  EXPECT(Aspect(fitPanel.frame, 4.0 / 3.0));
+  EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
+  [fitting invalidate];
+}
+
+- (void)testAForcedPanelSizeLetterboxesTheVideoAndItsCaptions {
+  NSView* fitted = [NSView new];
+  PCVideoPiPPresenter* fitting = [self fittingPresenterFor:fitted resized:NULL];
+  NSPanel* fitPanel = fitting.panel;
+  [fitting setNaturalSize:NSMakeSize(1440, 1080)];
+  [fitPanel setContentSize:NSMakeSize(640, 360)];
+  EXPECT(Near(fitted.frame, NSMakeRect(80, 0, 480, 360)));
+  EXPECT(fitted.layer.cornerRadius == 0);
+  [fitting setCaptions:Cue() bounds:NSMakeRect(0.1, 0.8, 0.8, 0.1)];
+  EXPECT(Near(Captions(fitPanel.contentView).frame, NSMakeRect(128, 36, 384, 36)));
+  [fitting invalidate];
+}
+
+- (void)testAHiddenPanelTakesTheNewAspectWhenShown {
+  NSView* fitted = [NSView new];
+  int resized = 0;
+  PCVideoPiPPresenter* fitting = [self fittingPresenterFor:fitted resized:&resized];
+  NSPanel* fitPanel = fitting.panel;
+  [fitting setNaturalSize:NSMakeSize(1440, 1080)];
+  [fitting hide];
+  [fitPanel setContentSize:NSMakeSize(640, 360)];
+  resized = 0;
+  [fitting setNaturalSize:NSMakeSize(1920, 800)];
+  [fitting showInactive];
+  EXPECT(Aspect(fitPanel.frame, 2.4));
+  EXPECT(NSWidth(fitPanel.frame) == 640);
+  EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
+  EXPECT(resized > 0);
+  EXPECT(fitted.layer.cornerRadius == 16);
+  [fitPanel setContentSize:NSMakeSize(640, 266.4)];
+  EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
+  [fitting invalidate];
+}
+
+- (void)testALiveResizeDefersRefittingUntilItEnds {
+  NSView* fitted = [NSView new];
+  PCVideoPiPPresenter* fitting = [self fittingPresenterFor:fitted resized:NULL];
+  NSPanel* fitPanel = fitting.panel;
+  [fitting setNaturalSize:NSMakeSize(1920, 800)];
+  [fitting showInactive];
+  [fitPanel setContentSize:NSMakeSize(640, 266.4)];
+  class_addMethod(object_getClass(fitPanel), @selector(inLiveResize), (IMP)LiveResize, "c@:");
+  const NSRect dragged = fitPanel.frame;
+  gLiveResize = YES;
+  [fitting setNaturalSize:NSMakeSize(1920, 1080)];
+  EXPECT(Near(fitPanel.frame, dragged));
+  EXPECT(Aspect(fitted.frame, 2.4));
+  [[NSNotificationCenter defaultCenter] postNotificationName:NSWindowDidEndLiveResizeNotification object:fitPanel];
+  gLiveResize = NO;
+  EXPECT(Aspect(fitPanel.frame, 16.0 / 9.0));
+  EXPECT(NSWidth(fitPanel.frame) == NSWidth(dragged));
+  EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
+  [fitting invalidate];
+}
+
+- (void)testEmptyOrInvalidNaturalSizesAreIgnored {
+  NSView* fitted = [NSView new];
+  PCVideoPiPPresenter* fitting = [self fittingPresenterFor:fitted resized:NULL];
+  [fitting setNaturalSize:NSMakeSize(1920, 800)];
+  [fitting setNaturalSize:NSMakeSize(0, 0)];
+  [fitting setNaturalSize:NSMakeSize(NAN, 1)];
+  EXPECT(Aspect(fitted.frame, 2.4));
+  [fitting invalidate];
+}
+
+- (void)testInvalidatingDuringARefitIsSafe {
+  __block PCVideoPiPPresenter* releasing;
+  releasing = [[PCVideoPiPPresenter alloc] initWithVideoView:[NSView new]
+      sourceFrame:NSZeroRect
+      action:^(PCVideoPiPAction action, double value) {
+      }
+      changed:^{
+        if (releasing.panel.frame.size.width / releasing.panel.frame.size.height > 2) {
+          [releasing invalidate];
+          releasing = nil;
+        }
+      }];
+  [releasing setNaturalSize:NSMakeSize(1920, 1080)];
+  [releasing setNaturalSize:NSMakeSize(1920, 804)];
+  EXPECT(releasing == nil);
 }
 
 @end
