@@ -251,7 +251,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let displayed: [EaselItem]
         if let geometryEdit, let draft, let preview = geometryEdit.applying(draft, to: current) {
             displayed = preview.items
-        } else if drawing, start != nil, let draft { displayed = current.items + draft }
+        } else if drawing, start != nil, let draft {
+            let saved = Set(current.items.map(\.id))
+            displayed = current.items + draft.filter { !saved.contains($0.id) }
+        }
         else { displayed = current.items }
         return displayed.sorted { $0.zIndex < $1.zIndex }
     }
