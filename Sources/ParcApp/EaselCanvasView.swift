@@ -1627,6 +1627,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 if fixedCanvasSize == nil { return insertLink(url.absoluteString) }
                 return insert(kind: .text, text: url.absoluteString)
             }
+            if pasteMermaid(from: pasteboard) { return true }
             if let text = try EaselStyledText.read(from: pasteboard) {
                 return insert(kind: .text, text: text.text, styledText: text)
             }
