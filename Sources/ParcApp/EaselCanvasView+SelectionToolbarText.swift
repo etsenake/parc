@@ -34,9 +34,9 @@ extension EaselCanvasView {
             return .init(control: control, face: .symbol("chevron.left.forwardslash.chevron.right"), name: "Code",
                          shortcut: NoteFormatShortcut.code.display, isChecked: editor?.hasInlineCode() == true, isEnabled: ready)
         case .mention:
-            return .init(control: control, face: .glyph("@"), name: "Mention", isEnabled: ready)
+            return .init(control: control, face: .glyph("@"), name: "Mention a note or date", isEnabled: ready)
         case .equation:
-            return .init(control: control, face: .symbol("x.squareroot"), name: "Equation", shortcut: NoteFormatShortcut.equation.display,
+            return .init(control: control, face: .symbol("x.squareroot"), name: "Inline equation", shortcut: NoteFormatShortcut.equation.display,
                          isEnabled: ready)
         default:
             return nil
