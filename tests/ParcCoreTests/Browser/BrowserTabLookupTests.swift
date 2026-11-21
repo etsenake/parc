@@ -39,28 +39,34 @@ struct BrowserTabLookupTests {
     }
 
     func verify(_ state: BrowserState, probes extra: [UUID] = [], _ context: String) {
-        let probes = state.tabs.map(\.id) + strangers + extra
+        let tabs = state.tabs
         let predicates: [(BrowserTab) -> Bool] = [{ $0.archivedAt == nil }, { $0.archivedAt != nil }, { $0.kind == .pinned }, { _ in false }]
-        check(state.openTabs == state.tabs.filter { $0.archivedAt == nil }, "\(context): open tabs")
+        check(state.openTabs == tabs.filter { $0.archivedAt == nil }, "\(context): open tabs")
         for matches in predicates {
-            check(state.openTabs(where: matches) == state.tabs.filter { $0.archivedAt == nil && matches($0) },
-                    "\(context): filtered open tabs")
-            check(state.containsOpenTab(where: matches) == state.tabs.contains { $0.archivedAt == nil && matches($0) },
-                    "\(context): contains open tab")
-            check(state.archivedTabs(where: matches) == state.tabs.filter { $0.archivedAt != nil && matches($0) },
-                    "\(context): filtered archived tabs")
+            check(state.openTabs(where: matches) == tabs.filter { $0.archivedAt == nil && matches($0) },
+                  "\(context): filtered open tabs")
+            check(state.containsOpenTab(where: matches) == tabs.contains { $0.archivedAt == nil && matches($0) },
+                  "\(context): contains open tab")
+            check(state.archivedTabs(where: matches) == tabs.filter { $0.archivedAt != nil && matches($0) },
+                  "\(context): filtered archived tabs")
         }
-        for id in probes {
-            check(state.tabIndex(id) == state.tabs.firstIndex { $0.id == id }, "\(context): index of \(id)")
-            check(state.tab(id) == state.tabs.first { $0.id == id }, "\(context): tab \(id)")
-            check(state.containsTab(id) == state.tabs.contains { $0.id == id }, "\(context): contains \(id)")
-            for matches in predicates {
-                check(state.tabIndex(id, where: matches) == state.tabs.firstIndex { $0.id == id && matches($0) },
-                        "\(context): filtered index of \(id)")
-                check(state.tab(id, where: matches) == state.tabs.first { $0.id == id && matches($0) },
-                        "\(context): filtered tab \(id)")
-                check(state.containsTab(id, where: matches) == state.tabs.contains { $0.id == id && matches($0) },
-                        "\(context): filtered contains \(id)")
+        func firstIndices(where matches: (BrowserTab) -> Bool) -> [UUID: Int] {
+            var indices: [UUID: Int] = [:]
+            for (index, tab) in tabs.enumerated() where indices[tab.id] == nil && matches(tab) { indices[tab.id] = index }
+            return indices
+        }
+        let first = firstIndices { _ in true }
+        let firstMatching = predicates.map { firstIndices(where: $0) }
+        for id in Set(tabs.map(\.id) + strangers + extra) {
+            let index = first[id]
+            check(state.tabIndex(id) == index, "\(context): index of \(id)")
+            check(state.tab(id) == index.map { tabs[$0] }, "\(context): tab \(id)")
+            check(state.containsTab(id) == (index != nil), "\(context): contains \(id)")
+            for (matches, indices) in zip(predicates, firstMatching) {
+                let matching = indices[id]
+                check(state.tabIndex(id, where: matches) == matching, "\(context): filtered index of \(id)")
+                check(state.tab(id, where: matches) == matching.map { tabs[$0] }, "\(context): filtered tab \(id)")
+                check(state.containsTab(id, where: matches) == (matching != nil), "\(context): filtered contains \(id)")
             }
         }
     }
@@ -84,7 +90,7 @@ struct BrowserTabLookupTests {
         var random = Generator(state: 0x5EED)
         var published = state(tabs: 60, archivedEvery: 4).attachingTabLookup(after: nil)
         var next = 60
-        for step in 0..<100 {
+        for step in 0..<150 {
             var changed = published
             switch Int.random(in: 0..<9, using: &random) {
             case 0: changed.tabs.append(tab(next, archived: Bool.random(using: &random))); next += 1

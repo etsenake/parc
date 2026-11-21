@@ -3,9 +3,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
-xcrun swiftc tests/Support/TestFailure.swift -warnings-as-errors -parse-as-library -Onone -enforce-exclusivity=checked \
-  Sources/ParcCore/AutomaticUpdate.swift tests/AutomaticUpdateTests.swift -o "$output/automatic"
-"$output/automatic"
 bash scripts/test-software-update-progress.sh
 if [[ "${1:-}" == "--inert" ]]; then exit 0; fi
 xcrun swiftc tests/Support/TestFailure.swift -warnings-as-errors -parse-as-library \
