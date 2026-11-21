@@ -15,6 +15,7 @@ protocol NoteFindBarController: AnyObject {
     var countLabel: String { get }
     var hasMatches: Bool { get }
     var canReplace: Bool { get }
+    var canReplaceCurrent: Bool { get }
     var isVisible: Bool { get }
     func show(replacing: Bool)
     func hide()
@@ -25,6 +26,10 @@ protocol NoteFindBarController: AnyObject {
     func toggleReplacing()
     func replaceCurrent()
     func replaceAll()
+}
+
+extension NoteFindBarController {
+    var canReplaceCurrent: Bool { canReplace }
 }
 
 @MainActor
@@ -557,7 +562,7 @@ final class NoteFindBar: NSView {
         let hasMatches = controller.hasMatches
         previous.isEnabled = hasMatches
         next.isEnabled = hasMatches
-        replaceOne.isEnabled = hasMatches && controller.canReplace
+        replaceOne.isEnabled = hasMatches && controller.canReplaceCurrent
         replaceEvery.isEnabled = hasMatches && controller.canReplace
         matchCase.isChecked = controller.options.matchCase
         if findField.text != controller.query && findField.textField.currentEditor() == nil {
