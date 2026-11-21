@@ -1007,10 +1007,8 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         let help: OnboardingPasswordHelp
         if let existing = passwordHelp { help = existing }
         else {
-            help = OnboardingPasswordHelp(frame: root.bounds)
-            help.onDismiss = { [weak self] in self?.setupCard.setAccessibilityHidden(false) }
+            help = OnboardingPasswordHelp.install(in: root) { [weak self] in self?.setupCard.setAccessibilityHidden(false) }
             passwordHelp = help
-            root.addSubview(help, positioned: .above, relativeTo: nil)
         }
         setupCard.setAccessibilityHidden(true)
         help.export = browserImport?.passwordExport ?? .safari
