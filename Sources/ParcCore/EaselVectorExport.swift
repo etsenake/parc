@@ -180,7 +180,7 @@ enum EaselVectorExport {
         case .webCard, .browser:
             if let picture = art.images[item.id] { return linked(image(item, picture, corner: 8), item.url) }
             return card(item)
-        case .link: return card(item)
+        case .link: return bookmark(item)
         case .sticky, .section: return board(item, art.texts[item.id], title: art.sectionTitles[item.id])
         case .table: return table(item, art.texts[item.id])
         case .code: return codeBlock(item, art.texts[item.id])
@@ -316,6 +316,45 @@ enum EaselVectorExport {
                 + escape(url) + "</text>"
         }
         return linked(result + "</g></g>", item.url)
+    }
+
+    static func bookmark(_ item: EaselItem) -> String {
+        guard let url = item.url, !url.isEmpty else { return "" }
+        let f = item.frame
+        let clip = "bookmark-" + item.id.uuidString.lowercased()
+        var result = "<g class=\"easel-bookmark\"><rect x=\"" + number(f.x) + "\" y=\"" + number(f.y) + "\" width=\"" + number(f.width)
+            + "\" height=\"" + number(f.height) + "\" rx=\"10\" ry=\"10\" style=\"fill:var(--easel-card);stroke:var(--easel-card-line);stroke-width:1\"/>"
+        result += "<clipPath id=\"" + clip + "\"><rect x=\"" + number(f.x + 16) + "\" y=\"" + number(f.y + 8) + "\" width=\""
+            + number(max(0, f.width - 32)) + "\" height=\"" + number(max(0, f.height - 16)) + "\"/></clipPath><g clip-path=\"url(#" + clip + ")\">"
+        result += "<text x=\"" + number(f.x + 16) + "\" y=\"" + number(f.y + 31) + "\" style=\"font-family:var(--font);font-size:14.5px;font-weight:700;fill:"
+            + paint(item.color) + "\">" + escape(EaselBookmarkCard.title(of: item)) + "</text>"
+        if let summary = EaselBookmarkCard.summary(of: item) {
+            let perLine = max(8, Int((f.width - 32) / 6.6))
+            for (index, line) in wrap(summary, perLine: perLine, lines: 2).enumerated() {
+                result += "<text x=\"" + number(f.x + 16) + "\" y=\"" + number(f.y + 52 + Double(index) * 18) + "\" style=\"font-family:var(--font);font-size:13px;fill:var(--easel-muted)\">"
+                    + escape(line) + "</text>"
+            }
+        }
+        result += "<text x=\"" + number(f.x + 16) + "\" y=\"" + number(f.y + f.height - 18) + "\" style=\"font-family:var(--font);font-size:12.5px;fill:var(--easel-muted)\">"
+            + escape(EaselBookmarkCard.siteLine(of: item)) + "</text>"
+        return linked(result + "</g></g>", url)
+    }
+
+    static func wrap(_ text: String, perLine: Int, lines: Int) -> [String] {
+        guard perLine > 1, lines > 0 else { return [] }
+        var result: [String] = [], current = "", truncated = false
+        for word in text.split(whereSeparator: \.isWhitespace).map(String.init) {
+            let candidate = current.isEmpty ? word : current + " " + word
+            if candidate.count <= perLine { current = candidate; continue }
+            if !current.isEmpty { result.append(current) }
+            if result.count == lines { truncated = true; current = ""; break }
+            current = String(word.prefix(perLine))
+        }
+        if !current.isEmpty {
+            if result.count < lines { result.append(current) } else { truncated = true }
+        }
+        if truncated, let last = result.last { result[result.count - 1] = String(last.prefix(perLine - 1)) + "…" }
+        return result
     }
 
     static func text(_ item: EaselItem, _ layout: EaselVectorText?) -> String {

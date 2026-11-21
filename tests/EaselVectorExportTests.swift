@@ -206,6 +206,19 @@ struct EaselVectorExportTests {
         let link = EaselItem(kind: .link, frame: .init(x: 0, y: 0, width: 220, height: 160), text: "A <b>", url: "https://example.com")
         let svgLink = EaselVectorExport.element(link, art: .init())
         expect(svgLink.contains("A &lt;b&gt;") && svgLink.contains("var(--easel-card)"), "link cards show an escaped title on the card fill")
+        var bookmark = EaselItem(kind: .link, frame: .init(x: 0, y: 0, width: 480, height: 120), text: "example.com", url: "https://www.example.com/post/")
+        bookmark.preview = EaselBookmarkCard.preview(title: " A <post> ", summary: String(repeating: "word ", count: 80), siteName: nil,
+                                                     imageURL: "javascript:alert(1)", iconURL: "https://example.com/i.png")
+        expect(bookmark.preview?.title == "A <post>" && bookmark.preview?.image == nil && bookmark.preview?.icon == "https://example.com/i.png",
+               "fetched previews are trimmed and keep only web addresses")
+        let svgBookmark = EaselVectorExport.element(bookmark, art: .init())
+        expect(svgBookmark.hasPrefix("<a href=\"https://www.example.com/post/\"") && svgBookmark.contains("A &lt;post&gt;")
+               && svgBookmark.contains(">www.example.com/post</text>") && svgBookmark.components(separatedBy: "font-size:13px").count == 3,
+               "bookmarks export as a linked card with title, two summary lines and the site")
+        expect(EaselVectorExport.wrap("one two three four five", perLine: 9, lines: 2) == ["one two", "three…"], "summaries wrap to two lines and trail off")
+        expect(EaselVectorExport.element(EaselItem(kind: .link, frame: .init(x: 0, y: 0, width: 480, height: 52)), art: .init()).isEmpty,
+               "an empty bookmark placeholder exports nothing")
+        expect(EaselBookmarkCard.preview(title: "  ", summary: nil, siteName: nil, imageURL: nil, iconURL: nil) == nil, "an empty preview is not saved")
         expect(EaselVectorExport.imageMimeType(png) == "image/png", "PNG bytes are recognised")
         expect(EaselVectorExport.imageMimeType(Data([0xFF, 0xD8, 0xFF, 0xE0])) == "image/jpeg", "JPEG bytes are recognised")
         expect(EaselVectorExport.imageMimeType(Data([1, 2, 3])) == nil, "unknown bytes need converting")

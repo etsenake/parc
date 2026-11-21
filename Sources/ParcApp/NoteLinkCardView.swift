@@ -5,6 +5,7 @@ final class NoteLinkCardView: NSView {
     enum Layout { case bookmark }
 
     var onOpen: (() -> Void)?
+    var showsPointer = true { didSet { window?.invalidateCursorRects(for: self) } }
     var onHeightChange: (() -> Void)?
     private let card = CALayer()
     private let preview = CALayer()
@@ -202,6 +203,7 @@ final class NoteLinkCardView: NSView {
     }
 
     override func resetCursorRects() {
+        guard showsPointer else { return }
         addCursorRect(bounds, cursor: .pointingHand)
     }
 
