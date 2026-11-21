@@ -642,8 +642,7 @@ extension EaselCanvasView {
     }
 
     func setImageAltText(_ text: String, for id: UUID) {
-        var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        while value.utf8.count > 4096 { value.removeLast() }
+        let value = EaselTableData.clipped(text.trimmingCharacters(in: .whitespacesAndNewlines), bytes: 4096)
         let alt: String? = value.isEmpty ? nil : value
         guard let item = session.document.items.first(where: { $0.id == id && ($0.kind == .image || $0.kind == .video) }), !item.isLocked,
               item.altText != alt else { return }
