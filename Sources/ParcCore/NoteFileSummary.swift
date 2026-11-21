@@ -99,8 +99,27 @@ struct NoteFileSummary: Hashable, Sendable {
         text = replacing(text, #"</?[A-Za-z][^>]*>"#, with: "")
         text = replacing(text, #"(\*\*|~~|==|\*|`)"#, with: "")
         text = replacing(text, #"(?<![\p{L}\p{N}])_+|_+(?![\p{L}\p{N}])"#, with: "")
-        text = replacing(text, #"\\([\\`*_{}\[\]()#+\-.!|~<>=$])"#, with: "$1")
-        return collapsed(text)
+        return collapsed(unescaped(text))
+    }
+
+    private static func unescaped(_ text: String) -> String {
+        let escapable = Set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~".utf8)
+        let bytes = Array(text.utf8)
+        var output: [UInt8] = []
+        var index = 0
+        while index < bytes.count {
+            if bytes[index] == UInt8(ascii: "\\"), index + 1 < bytes.count, escapable.contains(bytes[index + 1]) {
+                output.append(bytes[index + 1])
+                index += 2
+            } else if bytes[index] == UInt8(ascii: "&"), let (decoded, length) = NoteMDEntities.decode(bytes, at: index) {
+                output.append(contentsOf: decoded.utf8)
+                index += length
+            } else {
+                output.append(bytes[index])
+                index += 1
+            }
+        }
+        return String(decoding: output, as: UTF8.self)
     }
 
     private static func replacing(_ text: String, _ pattern: String, with template: String) -> String {

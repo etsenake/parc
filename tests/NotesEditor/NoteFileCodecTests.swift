@@ -217,6 +217,10 @@ struct NoteFileCodecTests {
         expectEqual(NoteFileSummary.make(fromHead: "---\nicon: 📚 # books\n---\n", kind: .markdown).icon, "📚", "trailing YAML comments go")
         expectEqual(NoteFileSummary.make(fromHead: "---\n  icon: x\ntitle: y\n", kind: .markdown).icon, nil, "unterminated front matter has no icon")
         expectEqual(NoteFileSummary.make(fromHead: "---\nicon: x\n---\nhi", kind: .plainText).snippet, "--- icon: x --- hi", "text files are verbatim")
+        expectEqual(NoteFileSummary.make(fromHead: "# Testing 123&#32;\nTom &amp; Jerry&#9;", kind: .markdown).snippet, "Testing 123 Tom & Jerry",
+                    "character references show as the characters they stand for")
+        expectEqual(NoteFileSummary.make(fromHead: "\\&amp; and &lt;b&gt;", kind: .markdown).snippet, "&amp; and <b>",
+                    "an escaped ampersand stays literal")
         let long = NoteFileSummary.make(fromHead: String(repeating: "word ", count: 100), kind: .markdown).snippet
         expect(long.count <= NoteFileSummary.snippetLength + 1 && long.hasSuffix("…"), "long snippets are clipped")
         expectEqual(NoteFileSummary.make(fromHead: "```swift\nlet x = 1\n```\n| a | b |\n|---|---|", kind: .markdown).snippet,
