@@ -194,6 +194,7 @@ final class EaselTimerButton: PointingHandButton {
         readout.update(text: label, font: timeFont, color: phase == .paused ? NoteTheme.menuSecondaryInk : activeInk,
                        animated: !resized && showsTime)
         readout.isHidden = !showsTime
+        if previousPhase == .finished, phase != .finished { EaselControlSurface.clearFinish(self, shaking: layer) }
         if previousPhase != phase || resized { placePauseLook(from: previousPhase, animated: !resized) }
         if resized { invalidateIntrinsicContentSize(); superview?.needsLayout = true; onResize?() }
         switch phase {
@@ -210,7 +211,7 @@ final class EaselTimerButton: PointingHandButton {
 
     private func finished() {
         refresh()
-        guard window != nil, !isHiddenOrHasHiddenAncestor, let layer else { return }
+        guard phase == .finished, window != nil, !isHiddenOrHasHiddenAncestor, let layer else { return }
         EaselControlSurface.shake(layer)
         EaselControlSurface.glow(self, color: NoteTheme.accent)
     }
@@ -414,6 +415,7 @@ final class EaselTimerView: NSView, NoteFloatingPanelContent {
     }
 
     private func phaseChanged(from previous: EaselCountdown.Phase, to phase: EaselCountdown.Phase) {
+        if previous == .finished, phase != .finished { EaselControlSurface.clearFinish(self, shaking: clock.layer) }
         guard window != nil, let layer = clock.layer else { return }
         switch (previous, phase) {
         case (.running, .paused): EaselControlSurface.blink(layer)

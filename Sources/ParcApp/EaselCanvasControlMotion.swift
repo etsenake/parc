@@ -196,6 +196,11 @@ enum EaselControlSurface {
         _ = NoteAnimation.run(animation, on: glow, key: glowKey) { [weak glow] _ in glow?.removeFromSuperlayer() }
     }
 
+    static func clearFinish(_ view: NSView, shaking layer: CALayer?) {
+        clearGlow(view)
+        layer?.removeAnimation(forKey: shakeKey)
+    }
+
     static func clearGlow(_ view: NSView) {
         view.layer?.sublayers?.filter { $0.name == glowName }.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }
     }
@@ -313,14 +318,18 @@ final class EaselRollingText: NSView {
     private func roll(_ glyph: Glyph, direction: EaselDigitRoll.Direction, entering: Bool, completion: (() -> Void)? = nil) {
         guard let layer = glyph.layer else { completion?(); return }
         let length = NoteAnimation.reduceMotion ? NoteAnimation.reducedFadeDuration : Self.fadeLength
+        let live = layer.animation(forKey: NoteAnimation.fadeKey) != nil || layer.animation(forKey: Self.rollKey) != nil
+        let presented = live ? layer.presentation() : nil
+        let fromOpacity = presented?.opacity ?? (entering ? 0 : 1)
+        let fromShift = presented.flatMap { ($0.value(forKeyPath: "transform.translation.y") as? NSNumber).map { CGFloat($0.floatValue) } }
         NoteAnimation.withoutAnimation { layer.opacity = entering ? 1 : 0 }
-        let fade = NoteAnimation.basic("opacity", from: entering ? 0 : 1, to: entering ? 1 : 0, duration: length)
+        let fade = NoteAnimation.basic("opacity", from: fromOpacity, to: entering ? 1 : 0, duration: length)
         _ = NoteAnimation.run(fade, on: layer, key: NoteAnimation.fadeKey) { _ in completion?() }
         guard !NoteAnimation.reduceMotion else { return }
         let travel = CGFloat(EaselDigitRoll.offsetBelowIsPositive(of: direction, height: Double(lineHeight), entering: entering))
         let roll = entering
-            ? NoteAnimation.spring("transform.translation.y", .settle, from: travel, to: 0)
-            : NoteAnimation.basic("transform.translation.y", from: 0, to: travel, duration: length, curve: NoteCurve.easeOut)
+            ? NoteAnimation.spring("transform.translation.y", .settle, from: fromShift ?? travel, to: 0)
+            : NoteAnimation.basic("transform.translation.y", from: fromShift ?? 0, to: travel, duration: length, curve: NoteCurve.easeOut)
         _ = NoteAnimation.run(roll, on: layer, key: Self.rollKey)
     }
 
