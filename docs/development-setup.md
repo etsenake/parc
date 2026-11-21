@@ -290,19 +290,29 @@ engine facade against test doubles of the native classes. Each set of doubles
 gets its own target, so the old-engine target fails to link if the facade names
 a class older engines lack.
 
-Write one behaviour per `@Test`, named as a plain sentence in camelCase, and
-build only the fixture that behaviour needs. Check with `#expect`, and use
-`try #require` when later lines depend on a value. Loops that make thousands of
-checks use the target's `check(_:_:)`, which records an issue only on failure.
-Keep randomized tests seeded and fast in a debug build.
+Every test here is a unit test: a small, isolated check of one behaviour that
+runs in milliseconds. Keep logic in models, stores and pure functions so it can
+be tested without any view. Write one behaviour per `@Test`, named as a plain
+sentence in camelCase, and build only the fixture that behaviour needs. Check
+with `#expect`, and use `try #require` when later lines depend on a value. Give
+inputs to a parameterized `@Test(arguments:)` instead of looping inside a test,
+so each case runs and reports on its own. Randomized tests keep a fixed seed.
 
-Tests run concurrently, so they share no mutable state: give each test its own
-temporary directory and `UserDefaults(suiteName:)`, inject clocks instead of
-sleeping, and mark a suite `.serialized` only when the code under test uses
-process-wide state. Mark a test `@MainActor` only when the code needs it.
-Tests may create windows, including offscreen ones; they never launch the app
-or a browser. Nest helpers in the suite or make them `private`, because each
-target is one module.
+Unit tests never put a window on screen, never wait for drawing or animation,
+and never wait on real time. Construct and lay out a view directly. When
+responder or key handling needs a window, host the view in a borderless window
+that is never ordered front. Inject time through Swift's `Clock` protocol, or a
+scheduler, and advance it in the test instead of sleeping or polling. End-to-end
+checks of the running app are UI tests, which this suite doesn't contain.
+
+Tests run in parallel by default, so they share no mutable state: give each test
+its own temporary directory and `UserDefaults(suiteName:)`. Mark a suite
+`.serialized` only when the code under test touches process-wide state that
+can't be injected, and mark a test `@MainActor` only when the code needs the
+main actor. Test fixtures are resources on the test target (`resources:` in the
+manifest), loaded through `Bundle.module`, never paths built from `#filePath`.
+Nest helpers in the suite or make them `private`, because each target is one
+module.
 
 Test behaviour, not wording: never assert that source files contain particular
 code. Warnings are errors in every target (`treatAllWarnings`), matching the
