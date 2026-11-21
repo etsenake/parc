@@ -159,6 +159,6 @@ moving an Easel to another Profile copies posters along with the assets.
   Easel blocks in notes don't, so they crop with the menu and keys only.
 - `EaselStore` checks asset bytes (`EaselAssetType`) and validates the fields.
 
-`tests/EaselImageFramingTests.swift`, run by `scripts/test-easels.sh`, covers
-the crop geometry, turns, presets, masking, replacement, validation, asset
-sniffing, the saved format and the SVG output without opening a window.
+`tests/ParcCoreTests/Easels/EaselImageFramingTests.swift`, run by `swift test`,
+covers the crop geometry, turns, presets, masking, replacement, validation,
+asset sniffing, the saved format and the SVG output.
