@@ -124,8 +124,8 @@ starts its history afresh there.
 The panel lists the current version and each snapshot with when it was saved
 and how many objects it had, and previews the selected one drawn exactly as
 the canvas would draw it, on the Easel's own light or dark paper. Restore
-first keeps the current state as a snapshot, then brings back the old one as
-a single undo step, so ⌘Z returns to where you were. ↑ and ↓ move through the
+first keeps the current state as a snapshot, then brings back the old one,
+with its title, icon, pages and objects, as a single undo step, so ⌘Z returns to where you were. ↑ and ↓ move through the
 list and Return restores. A version whose pictures are missing can't be
 previewed and won't restore, and the Easel stays as it was.
 
