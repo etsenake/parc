@@ -114,6 +114,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     private var draft: [EaselItem]?
     private var textPreview: [UUID: EaselItem] = [:]
+    private var textSizeBadge: (label: String, rect: NSRect)?
     var start: NSPoint?
     private var original: [EaselItem] = []
     private var resizeHandle: EaselResizeHandle?
@@ -867,6 +868,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             }
         }
         drawArrangeDecorations(in: dirtyRect)
+        if let badge = textSizeBadge, badge.rect.intersects(dirtyRect) { EaselTextLayout.drawSizeBadge(badge.label, in: badge.rect, scale: canvasScale) }
         if session.document.items.isEmpty && editor == nil {
             let placeholder = NSRect(x: 40, y: 50, width: max(180, bounds.width - 80), height: 106)
             if placeholder.intersects(dirtyRect) {
@@ -1026,6 +1028,25 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     func setOverlayNeedsDisplay(_ rect: NSRect) {
         if usesObjectSurfaces { decoration.setNeedsDisplay(rect) } else { setNeedsDisplay(rect) }
+    }
+    @discardableResult
+    func insertText(at point: NSPoint, width: Double? = nil) -> Bool {
+        guard let width, width.isFinite else { return insert(kind: .text, edit: true, at: point) }
+        cancelPointerInteraction(); guard finishEditing() else { return false }; drawing = false
+        var item = EaselItem(kind: .text, frame: EaselRect(x: max(0, point.x), y: max(0, point.y),
+                             width: max(EaselTextSizing.minimumWidth, width), height: 28),
+                             zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1,
+                             text: EaselTextEditing.defaultText, color: insertionColor)
+        if let size = fixedCanvasSize {
+            item.frame.width = min(item.frame.width, size.width)
+            item.frame.x = max(0, min(item.frame.x, size.width - item.frame.width))
+        }
+        item.frame = fittedTextFrame(item)
+        if let size = fixedCanvasSize { item.frame.y = max(0, min(item.frame.y, size.height - item.frame.height)) }
+        guard commit("Add text", { $0.items.append(item) }) else { return false }
+        selection = [item.id]; window?.makeFirstResponder(self)
+        beginEditing(item)
+        return true
     }
     func selectBrowserObject(_ id: UUID) {
         guard let item = session.document.items.first(where: { $0.id == id && $0.ownsEmbeddedPage }) else { return }
@@ -1211,7 +1232,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         refreshTextControls()
     }
-    func resizeText(by delta: Int) { changeTextStyle { $0.size = $0.size.shifted(by: delta) } }
+    func resizeText(by delta: Int) { changeTextStyle { $0 = EaselTextSizing.stepped($0, by: delta) ?? $0 } }
     func applyParagraph(_ kind: EaselParagraphEditing.Kind) {
         guard !session.isClosed else { return }
         editor?.changeParagraph(kind); refreshTextControls()
@@ -1365,6 +1386,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         resetSectionGesture()
         lastDragTimestamp = nil; dragVelocity = .init(x: 0, y: 0)
         lastGeometryPoint = nil; lastDragLocation = nil; dragDistance = 0
+        updateTextSizeBadge()
         if hadPointerOwner { synchronizePageSelection(); keyboardStructureChanged() }
         window?.invalidateCursorRects(for: self)
         invalidateIncrementalDisplay(layout: true)
@@ -1516,31 +1538,87 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             default: break
             }
         }
+        let scalingText = EaselTextSizing.scalesText(edit.originals, handle: resizeHandle)
         let proposal = guides?.proposal(edit: edit, document: session.document, translation: translation,
                                      velocity: dragVelocity, scale: canvasScale, handle: resizeHandle, centered: flags.contains(.option),
-                                     enabled: alignmentGuidesEnabled && !flags.contains(.command),
-                                     preserveAspect: edit.preservesAspect(shift: flags.contains(.shift), command: flags.contains(.command)),
+                                     enabled: alignmentGuidesEnabled && !flags.contains(.command) && !scalingText,
+                                     preserveAspect: scalingText || edit.preservesAspect(shift: flags.contains(.shift), command: flags.contains(.command)),
                                      aspectGuideRatio: intrinsicGuideRatio, viewport: .init(x: visibleRect.minX, y: visibleRect.minY,
                                                      width: visibleRect.width, height: visibleRect.height), endpoint: arrowEndpoint)
         (draft, textPreview) = textGeometry(proposal, edit: edit, handle: resizeHandle, centered: flags.contains(.option))
         if let proposal = draft { draft = fittedBoardGeometry(proposal, edit: edit, handle: resizeHandle) }
         draft = settledCodeBlocks(draft, edit: edit)
+        updateTextSizeBadge()
         window?.invalidateCursorRects(for: self); invalidateIncrementalDisplay(layout: true)
     }
     private func textGeometry(_ proposal: [EaselItem]?, edit: EaselGeometryEdit, handle: EaselResizeHandle?,
                               centered: Bool) -> (proposal: [EaselItem]?, text: [UUID: EaselItem]) {
-        guard var proposal, EaselTextSizing.setsTextWidth(handle) else { return (proposal, [:]) }
+        let scaling = EaselTextSizing.scalesText(edit.originals, handle: handle)
+        guard var proposal, let handle, scaling || EaselTextSizing.setsTextWidth(handle) else { return (proposal, [:]) }
         let originals = Dictionary(edit.originals.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         var changes: [UUID: EaselItem] = [:]
         for index in proposal.indices {
-            guard var item = originals[proposal[index].id], item.kind == .text else { continue }
-            item.frame = proposal[index].frame
-            let value = textMeasure(item)
-            let next = EaselTextSizing.widthResized(item) { Double(EaselTextLayout.Layout(value, width: $0).height) }
+            guard let original = originals[proposal[index].id], original.kind == .text else { continue }
+            var next: EaselItem
+            if scaling {
+                let factor = original.frame.width > 0 ? proposal[index].frame.width / original.frame.width : 1
+                guard let scaled = EaselTextSizing.scaled(original, factor: factor) else { continue }
+                let value = textMeasure(scaled)
+                let natural = EaselTextSizing.isAutoWidth(scaled) ? Double(EaselTextLayout.naturalWidth(value)) : 0
+                next = scaled
+                next.frame = EaselTextSizing.scaledFrame(scaled, original: original.frame, proposed: proposal[index].frame, handle: handle,
+                                                         centered: centered, single: edit.originals.count == 1, naturalWidth: natural) {
+                    Double(EaselTextLayout.Layout(value, width: $0).height)
+                }
+            } else {
+                var item = original
+                item.frame = proposal[index].frame
+                let value = textMeasure(item)
+                next = EaselTextSizing.widthResized(item) { Double(EaselTextLayout.Layout(value, width: $0).height) }
+            }
             proposal[index].frame = next.frame
             changes[next.id] = next
         }
         return (proposal, changes)
+    }
+    private func updateTextSizeBadge() {
+        let previous = textSizeBadge?.rect
+        textSizeBadge = nil
+        let scaled = Array(textPreview.values)
+        if resizeHandle?.isCorner == true, let top = scaled.max(by: { $0.zIndex < $1.zIndex }),
+           let bounds = EaselGeometryEdit.bounds(of: scaled) {
+            let label = EaselTextSizing.sizeLabel(for: top.resolvedTextStyle)
+            let area = NSRect(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height)
+            textSizeBadge = (label, EaselTextLayout.sizeBadgeRect(label, below: area, scale: canvasScale))
+        }
+        for rect in [previous, textSizeBadge?.rect].compactMap({ $0 }) {
+            setNeedsDisplay(rect.insetBy(dx: -2, dy: -2))
+            if decoration.superview === self { decoration.setNeedsDisplay(rect.insetBy(dx: -2, dy: -2)) }
+        }
+    }
+    func setTextSize(_ size: EaselTextStyle.Size) { changeTextStyle { $0 = EaselTextSizing.preset($0, size: size) } }
+    func setCustomTextSize(_ points: Double) {
+        guard points.isFinite else { return }
+        changeTextStyle { $0 = EaselTextSizing.customSized($0, points: points) ?? $0 }
+    }
+    func editCustomTextSize(relativeTo anchor: NSView? = nil, rect: NSRect? = nil) {
+        guard !session.isClosed, !session.isDeleted, editor?.hasMarkedText() != true else { return }
+        let styles = session.document.items.filter { selection.contains($0.id) && $0.kind == .text }.map(\.resolvedTextStyle)
+        guard !styles.isEmpty else { return }
+        let owner = editor, ranges = editor?.selectedRanges, ids = selection
+        let controller = EaselTextSizeEditor(value: EaselTextStyleState.points(of: styles, editor: owner))
+        let popover = NSPopover(); popover.behavior = .transient; popover.contentViewController = controller
+        controller.onCommit = { [weak self, weak popover] points in
+            popover?.close()
+            guard let self, self.selection == ids, self.editor === owner else { return }
+            if let owner, let ranges { owner.selectedRanges = ranges }
+            self.setCustomTextSize(points)
+        }
+        owner?.pendingPopover = popover
+        let host = anchor ?? self
+        let place = rect ?? (anchor == nil ? EaselGeometryEdit.bounds(of: session.document.items.filter { ids.contains($0.id) })
+            .map { NSRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height) } ?? host.bounds : host.bounds)
+        popover.show(relativeTo: place, of: host, preferredEdge: host.isFlipped ? .maxY : .minY)
     }
     private func strokeItem() -> EaselItem {
         let minX = stroke.map(\.x).min() ?? 0, minY = stroke.map(\.y).min() ?? 0

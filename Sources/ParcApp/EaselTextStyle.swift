@@ -107,6 +107,23 @@ enum EaselTextLayout {
         }
     }
 
+    static func sizeBadgeRect(_ label: String, below area: NSRect, scale: CGFloat) -> NSRect {
+        let scale = max(scale, 0.05)
+        let width = ceil((label as NSString).size(withAttributes: [.font: NoteTheme.chromeFont(11)]).width) + 18
+        let size = NSSize(width: width / scale, height: 22 / scale)
+        return NSRect(x: area.midX - size.width / 2, y: area.maxY + 10 / scale, width: size.width, height: size.height)
+    }
+
+    static func drawSizeBadge(_ label: String, in rect: NSRect, scale: CGFloat) {
+        let scale = max(scale, 0.05)
+        let pill = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
+        EaselAppearance.surface.setFill(); pill.fill()
+        EaselAppearance.outline.setStroke(); pill.lineWidth = 1 / scale; pill.stroke()
+        let attributes: [NSAttributedString.Key: Any] = [.font: NoteTheme.chromeFont(11 / scale), .foregroundColor: EaselAppearance.text]
+        let size = (label as NSString).size(withAttributes: attributes)
+        (label as NSString).draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2), withAttributes: attributes)
+    }
+
     static func drawWidthHandle(at point: NSPoint, scale: CGFloat) {
         let mark = NSRect(x: point.x - 3 / scale, y: point.y - 8 / scale, width: 6 / scale, height: 16 / scale)
         EaselAppearance.selection.setFill(); NSBezierPath(roundedRect: mark, xRadius: 3 / scale, yRadius: 3 / scale).fill()
@@ -342,7 +359,8 @@ final class EaselStyledTextView: LocalContentDropTextView {
     override var undoManager: UndoManager? { localUndo }
     var onEditBoundary: (() -> Void)?
     private var linkPopover: NSPopover?
-    var hasPendingRangeAction: Bool { linkPopover?.isShown == true }
+    weak var pendingPopover: NSPopover?
+    var hasPendingRangeAction: Bool { linkPopover?.isShown == true || pendingPopover?.isShown == true }
     private var editRevision = UUID()
     private var suppressMarkdown = false
     var onAlign: ((EaselTextStyle.Alignment) -> Void)?
@@ -733,7 +751,8 @@ final class EaselStyledTextView: LocalContentDropTextView {
             var next = attrs
             let current = (attrs[.font] as? NSFont) ?? EaselTextAppearance.font(self.objectStyle)
             let matched = EaselTextAppearance.paletteStyle(current)
-            var style = matched ?? EaselTextStyle(family: EaselTextAppearance.paletteFamily(current) ?? self.objectStyle.family, size: .body)
+            var style = matched ?? EaselTextStyle(family: EaselTextAppearance.paletteFamily(current) ?? self.objectStyle.family, size: .body,
+                                                  customSize: current.pointSize)
             mutation(&style)
             let replacement = try EaselTextAppearance.font(style, preservingEmphasisFrom: current)
             next[.font] = matched == nil && preservingSize
@@ -857,7 +876,7 @@ enum EaselTextStyleState {
     }
     static func canResize(by delta: Int, styles: [EaselTextStyle], editor: EaselStyledTextView?) -> Bool {
         let limit: EaselTextStyle.Size = delta < 0 ? .body : .ultra
-        guard let editor else { return styles.contains { $0.size != limit } }
+        guard let editor else { return styles.contains { EaselTextSizing.stepped($0, by: delta) != nil } }
         return !editor.hasMarkedText() && !selectedStyles(in: editor).allSatisfy { $0?.size == limit }
     }
     static func family(of styles: [EaselTextStyle], editor: EaselStyledTextView?) -> EaselTextStyle.Family? {
@@ -874,12 +893,29 @@ enum EaselTextStyleState {
     }
     static func size(of styles: [EaselTextStyle], editor: EaselStyledTextView?) -> EaselTextStyle.Size? {
         guard let editor else {
-            guard let first = styles.first, styles.allSatisfy({ $0.size == first.size }) else { return nil }
+            guard let first = styles.first, styles.allSatisfy({ $0.size == first.size && $0.customSize == nil }) else { return nil }
             return first.size
         }
         let selected = selectedStyles(in: editor)
         guard let first = selected.first, let style = first, selected.allSatisfy({ $0?.size == style.size }) else { return nil }
         return style.size
+    }
+    static func points(of styles: [EaselTextStyle], editor: EaselStyledTextView?) -> Double? {
+        var sizes: [Double] = []
+        if let editor {
+            let range = editor.selectedRange()
+            if range.length == 0 { sizes = [Double((editor.typingAttributes[.font] as? NSFont)?.pointSize ?? 0)] }
+            else { editor.attributedString().enumerateAttribute(.font, in: range) { face, _, _ in sizes.append(Double((face as? NSFont)?.pointSize ?? 0)) } }
+        } else { sizes = styles.map(\.pointSize) }
+        guard let first = sizes.first, first > 0, sizes.allSatisfy({ abs($0 - first) < 0.01 }) else { return nil }
+        return first
+    }
+    static func sizeTitle(of styles: [EaselTextStyle], editor: EaselStyledTextView?) -> String {
+        if let size = size(of: styles, editor: editor) { return size.title }
+        return points(of: styles, editor: editor).map { "\(Int($0.rounded())) pt" } ?? "Mixed"
+    }
+    static func isCustomSize(_ styles: [EaselTextStyle], editor: EaselStyledTextView?) -> Bool {
+        size(of: styles, editor: editor) == nil && points(of: styles, editor: editor) != nil
     }
     static func fill(of styles: [EaselTextStyle]) -> NSControl.StateValue {
         guard let first = styles.first else { return .off }

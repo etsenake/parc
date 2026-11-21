@@ -241,3 +241,44 @@ final class EaselLinkEditor: NSViewController, NSTextFieldDelegate {
     }
     @objc private func remove() { onCommit?(nil) }
 }
+
+@MainActor
+final class EaselTextSizeEditor: NSViewController, NSTextFieldDelegate {
+    private let field = NSTextField()
+    private let message = NSTextField(labelWithString: "")
+    private let value: Double?
+    var onCommit: ((Double) -> Void)?
+    init(value: Double?) { self.value = value; super.init(nibName: nil, bundle: nil) }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    override func loadView() {
+        view = EaselSurfaceView(frame: NSRect(x: 0, y: 0, width: 232, height: 96))
+        let label = NSTextField(labelWithString: "Custom size")
+        label.frame = NSRect(x: 12, y: 68, width: 208, height: 18); view.addSubview(label)
+        field.stringValue = value.map { String(Int($0.rounded())) } ?? ""
+        field.placeholderString = "8 to 400"
+        field.delegate = self; field.focusRingType = .exterior
+        field.isBezeled = false; field.drawsBackground = false; field.wantsLayer = true
+        field.layer?.cornerRadius = 8; field.layer?.cornerCurve = .continuous
+        field.setAccessibilityLabel("Text size in points"); field.frame = NSRect(x: 12, y: 38, width: 120, height: 24)
+        field.target = self; field.action = #selector(apply); view.addSubview(field)
+        let unit = NSTextField(labelWithString: "pt")
+        unit.textColor = EaselAppearance.secondaryText; unit.frame = NSRect(x: 136, y: 41, width: 20, height: 18); view.addSubview(unit)
+        let apply = EaselPaletteButton(title: "Apply", target: self, action: #selector(apply))
+        apply.bezelStyle = .rounded; apply.keyEquivalent = "\r"; apply.frame = NSRect(x: 160, y: 36, width: 62, height: 26); view.addSubview(apply)
+        message.textColor = EaselAppearance.error; message.font = .systemFont(ofSize: 10)
+        message.frame = NSRect(x: 12, y: 12, width: 208, height: 18); view.addSubview(message)
+    }
+    override func viewDidAppear() { super.viewDidAppear(); view.window?.makeFirstResponder(field); field.selectText(nil) }
+    @objc private func apply() {
+        let text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let points = Double(text), points.isFinite, EaselTextStyle.customSizes.contains(points.rounded()) else {
+            message.stringValue = "Pick a size from 8 to 400."
+            field.layer?.borderWidth = 2; field.layer?.borderColor = EaselAppearance.error.cgColor
+            return
+        }
+        onCommit?(points.rounded())
+    }
+    func controlTextDidChange(_ notification: Notification) {
+        message.stringValue = ""; field.layer?.borderWidth = 0
+    }
+}

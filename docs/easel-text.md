@@ -27,6 +27,26 @@ while you drag. Double-clicking a width handle returns the text to auto width
 in one Undo step. Text has no top or bottom handles, because its height follows
 the words. Mixed selections keep every handle and resize as before.
 
+## Corner scaling and custom sizes
+
+Dragging a corner of selected text scales it instead of stretching the box: the
+font follows the drag continuously, snapping to whole points between 8 and
+400, every run keeps its proportion (headings stay bigger than body text) and
+list indents, tab stops, spacing and letter spacing scale with it. Area text
+keeps its line breaks because its width scales too; point text refits its
+width. The opposite corner stays put (the centre with Option), alignment guides
+step aside while you scale, and a small badge under the text shows the size:
+the preset's name when you land back on it (“Body · 15”), otherwise the points
+(“36 pt”). Several selected text objects scale together; mixed selections
+resize as before. The whole drag is one Undo step.
+
+A scaled size is stored as the text style's `customSize` and keeps the preset's
+family and weight. Landing exactly on the preset's own size clears it again.
+The floating toolbar's size menu offers the five presets plus **Custom…**, a
+small field that takes 8 to 400 points for the selected objects, or for the
+selected range while editing. Picking a preset clears a custom size, and Bigger
+and Smaller step from a custom size to the next preset above or below it.
+
 ## Alignment
 
 Text, shapes and stickies align their whole text left, centre or right. Shapes

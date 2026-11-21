@@ -109,8 +109,7 @@ extension EaselCanvasView {
             return .init(control: control, face: .text(family.map(Self.familyTitle) ?? "Mixed"), name: "Typeface",
                          isEnabled: !composing, opensMenu: true, showsDisclosure: true)
         case .textSize:
-            let size = EaselTextStyleState.size(of: styles, editor: editor)
-            return .init(control: control, face: .text(size.map(Self.sizeTitle) ?? "Mixed"), name: "Text size",
+            return .init(control: control, face: .text(EaselTextStyleState.sizeTitle(of: styles, editor: editor)), name: "Text size",
                          isEnabled: !composing, opensMenu: true, showsDisclosure: true)
         case .smaller, .larger:
             let delta = control == .larger ? 1 : -1
@@ -155,7 +154,8 @@ extension EaselCanvasView {
             let current = EaselTextStyleState.size(of: styles, editor: editor)
             return EaselTextStyle.Size.allCases.map {
                 EaselToolbarMenuEntry(id: $0.rawValue, title: Self.sizeTitle($0), isChecked: $0 == current)
-            }
+            } + [EaselToolbarMenuEntry(id: "custom", title: "Custom…", isChecked: EaselTextStyleState.isCustomSize(styles, editor: editor),
+                                       separatorBefore: true)]
         case .paragraph:
             let current = editor?.paragraphKind()
             return EaselParagraphEditing.Kind.allCases.map { kind in
@@ -210,8 +210,9 @@ extension EaselCanvasView {
             guard let family = EaselTextStyle.Family(rawValue: id) else { return false }
             changeTextStyle(preservingSize: true) { $0.family = family }
         case .textSize:
+            if id == "custom" { editCustomTextSize(); return true }
             guard let size = EaselTextStyle.Size(rawValue: id) else { return false }
-            changeTextStyle { $0.size = size }
+            setTextSize(size)
         case .paragraph:
             guard let kind = EaselParagraphEditing.Kind(rawValue: id), editor?.hasMarkedText() == false else { return false }
             applyParagraph(kind)
