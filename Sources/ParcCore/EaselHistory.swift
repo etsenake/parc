@@ -91,7 +91,7 @@ final class EaselHistory {
         guard (values.fileSize ?? Int.max) <= Self.maximumDocumentBytes else { throw EaselStoreError.tooLarge }
         let document = try JSONDecoder().decode(EaselDocument.self, from: Data(contentsOf: url))
         guard document.id == id else { throw EaselStoreError.invalidDocument("the version belongs to another Easel") }
-        return EaselStore.repairingDuplicateIDs(document)
+        return EaselStore.repairingStackOrder(EaselStore.repairingDuplicateIDs(document))
     }
 
     func documentDidChange(from previous: EaselDocument, to next: EaselDocument, now: Date) {

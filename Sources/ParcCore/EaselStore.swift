@@ -638,7 +638,7 @@ final class EaselStore {
         let url = documentURL(id)
         guard FileManager.default.fileExists(atPath: url.path) else { throw EaselStoreError.missingDocument }
         try ensureRegularFile(url, maximumBytes: Self.maximumDocumentBytes)
-        let document = Self.repairingDuplicateIDs(try JSONDecoder().decode(EaselDocument.self, from: Data(contentsOf: url)))
+        let document = Self.repairingStackOrder(Self.repairingDuplicateIDs(try JSONDecoder().decode(EaselDocument.self, from: Data(contentsOf: url))))
         guard document.id == id else { throw EaselStoreError.invalidDocument("document ID does not match its file") }
         try validate(document)
         return document
@@ -662,6 +662,16 @@ final class EaselStore {
             seen.insert(id)
             next.items[index].id = id
         }
+        return next
+    }
+
+    static let maximumStackIndex = 1_000_000_000
+
+    static func repairingStackOrder(_ document: EaselDocument) -> EaselDocument {
+        guard document.items.contains(where: { $0.zIndex > maximumStackIndex || $0.zIndex < -maximumStackIndex }) else { return document }
+        var next = document
+        let order = document.items.indices.sorted { (document.items[$0].zIndex, $0) < (document.items[$1].zIndex, $1) }
+        for (rank, index) in order.enumerated() { next.items[index].zIndex = rank }
         return next
     }
 

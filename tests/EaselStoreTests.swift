@@ -70,7 +70,29 @@ struct EaselStoreTests {
         try identicalBytePersistSkip()
         webInputDestinations()
         try boardObjectFields()
-        print("EaselStore: \(assertions) assertions passed (23 test groups)")
+        try damagedStackOrder()
+        print("EaselStore: \(assertions) assertions passed (24 test groups)")
+    }
+
+    @MainActor static func damagedStackOrder() throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
+            try session.perform("Stack") {
+                $0.items = [EaselItem(kind: .text, frame: frame, text: "Top"), EaselItem(kind: .text, frame: frame, text: "Bottom"),
+                            EaselItem(kind: .text, frame: frame, text: "Middle")]
+            }
+            var raw = try JSONSerialization.jsonObject(with: Data(contentsOf: file(directory, session.document.id))) as! [String: Any]
+            var items = raw["items"] as! [[String: Any]]
+            items[0]["zIndex"] = Int.max; items[1]["zIndex"] = Int.min; items[2]["zIndex"] = 7
+            raw["items"] = items
+            try JSONSerialization.data(withJSONObject: raw).write(to: file(directory, session.document.id))
+            let loaded = try EaselStore(directory: directory).load(session.document.id).document
+            expect(loaded.items.map(\.text) == ["Top", "Bottom", "Middle"], "Stack repair keeps every object in place")
+            expect(loaded.items.map(\.zIndex) == [2, 0, 1], "Giant stack numbers are renumbered in their original paint order")
+            expect((loaded.items.map(\.zIndex).max() ?? 0) + 1 == 3, "Adding on top of a repaired Easel can't overflow")
+            let calm = EaselStore.repairingStackOrder(session.document)
+            expect(calm == session.document, "Ordinary stack numbers are left alone")
+        }
     }
 
     @MainActor static func boardObjectFields() throws {
