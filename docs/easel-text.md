@@ -160,8 +160,10 @@ and dark values. **Code** (⌘E) toggles the Notes inline code look, a monospace
 face over a soft grey fill; turning it off restores the object's typeface.
 ⇧⌘H repeats the last colour or highlight, shared with Notes for highlights.
 **Turn Into** is the toolbar's paragraph menu, showing the Notes rows and icons
-for Text, Headings, lists and Quote. Equation and Mention buttons appear once
-those inline runs exist.
+for Text, Headings, lists and Quote. The @ button starts a mention in place of the
+selection and the equation button (⇧⌘E) turns it into an inline equation, both
+the same ones typing `@` or `$` makes. To-do and Divider rows and the Turn Into
+to-do wait for checklists and dividers in Easel text.
 
 ## Emoji
 
