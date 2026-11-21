@@ -480,7 +480,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
 }
 
 @MainActor
-final class NoteEaselSurface: NSView {
+final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary {
     static let headerHeight: CGFloat = 38
     var onOpen: (() -> Void)?
     var onDone: (() -> Void)?

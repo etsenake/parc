@@ -263,6 +263,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
                 KeyboardShortcuts.shared.activeShortcut(for: format.bindingID).map { TextFormatKeyEquivalent(key: $0.key, modifiers: $0.flags) }
             } != nil
         }
+        if responder.isInsideNoteKeyEquivalentBoundary { return false }
         guard let command = NoteKeyCommands.command(for: event) else { return false }
         switch command {
         case .find, .findAndReplace, .findNext, .findPrevious, .print:
