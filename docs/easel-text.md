@@ -31,14 +31,17 @@ the words. Mixed selections keep every handle and resize as before.
 
 Dragging a corner of selected text scales it instead of stretching the box: the
 font follows the drag continuously, snapping to whole points between 8 and
-400, every run keeps its proportion (headings stay bigger than body text) and
+400, every run keeps its proportion on whole points too (headings stay bigger
+than body text) and
 list indents, tab stops, spacing and letter spacing scale with it. Area text
 keeps its line breaks because its width scales too; point text refits its
 width. The opposite corner stays put (the centre with Option), alignment guides
 step aside while you scale, and a small badge under the text shows the size:
 the preset's name when you land back on it (“Body · 15”), otherwise the points
 (“36 pt”). Several selected text objects scale together; mixed selections
-resize as before. The whole drag is one Undo step.
+resize as before. The whole drag is one Undo step. On the capture editor's
+fixed board, scaled or narrowed text stays inside the board, shrinking the
+scale if it has to, and there's no auto width there.
 
 A scaled size is stored as the text style's `customSize` and keeps the preset's
 family and weight. Landing exactly on the preset's own size clears it again.
@@ -98,5 +101,7 @@ Typing `:` and two or more letters of a shortcode in any Easel text opens the
 Notes emoji suggestions (the same search, ranking, recents and skin tone) under
 the caret; ↑ and ↓ move, Return or Tab picks and Esc closes the list without
 leaving the text. Typing a complete `:shortcode:` swaps it for the emoji right
-away. Each emoji insertion is its own Undo step. Custom emoji from the Notes
+away. Only typing counts: pasted, dropped, dictated or autocorrected text
+never converts, and nothing happens inside inline code. Each emoji insertion is
+its own Undo step. Custom emoji from the Notes
 library aren't offered, because Easel text stores only characters.
