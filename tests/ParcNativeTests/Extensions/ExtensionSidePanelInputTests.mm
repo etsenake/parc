@@ -76,10 +76,23 @@ static PanelInputWindow* MakeWindow() {
   EXPECT(!NativeExtensionSidePanelDismissesForKey(Key(_original, 53, 0, NSEventTypeKeyUp), _original));
 }
 
-- (void)testOnlyCapsLockMayAccompanyTheEscape {
-  for (auto modifier : {NSEventModifierFlagCommand, NSEventModifierFlagControl, NSEventModifierFlagOption,
-                        NSEventModifierFlagShift})
-    EXPECT(!NativeExtensionSidePanelDismissesForKey(Key(_original, 53, modifier), _original));
+- (void)testCommandEscapeKeepsThePanelOpen {
+  EXPECT(!NativeExtensionSidePanelDismissesForKey(Key(_original, 53, NSEventModifierFlagCommand), _original));
+}
+
+- (void)testControlEscapeKeepsThePanelOpen {
+  EXPECT(!NativeExtensionSidePanelDismissesForKey(Key(_original, 53, NSEventModifierFlagControl), _original));
+}
+
+- (void)testOptionEscapeKeepsThePanelOpen {
+  EXPECT(!NativeExtensionSidePanelDismissesForKey(Key(_original, 53, NSEventModifierFlagOption), _original));
+}
+
+- (void)testShiftEscapeKeepsThePanelOpen {
+  EXPECT(!NativeExtensionSidePanelDismissesForKey(Key(_original, 53, NSEventModifierFlagShift), _original));
+}
+
+- (void)testCapsLockEscapeDismissesThePanel {
   EXPECT(NativeExtensionSidePanelDismissesForKey(Key(_original, 53, NSEventModifierFlagCapsLock), _original));
 }
 
