@@ -2228,9 +2228,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
-    private func abandonApplicationTermination(_ message: String) {
-        PCNativeBrowserApplication.cancelQuit()
-        cancelApplicationRestart(message)
+    func abandonApplicationTermination(_ message: String,
+                                       cancelNativeQuit: @MainActor () -> Void = { PCNativeBrowserApplication.cancelQuit() },
+                                       cancelRestart: ((String) -> Void)? = nil) {
+        cancelNativeQuit()
+        (cancelRestart ?? cancelApplicationRestart)(message)
     }
 
     private func cancelApplicationRestart(_ message: String) {
