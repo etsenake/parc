@@ -41,16 +41,15 @@ final class NoteSlashMenuController {
     private var currentQuery: String?
     private var results: [NoteCatalogItem] = []
     private var mentionChoices: [String: NoteMentionMenu.Choice] = [:]
-    private let list = NoteMenuList()
-    private lazy var listPanel = makePanel(list)
+    private let presenter: NoteSlashListPresenter
+    private var list: NoteMenuList { presenter.list }
+    private var listPanel: NoteFloatingPanel { presenter.panel }
     private var emojiList: NoteEmojiSuggestionList?
     private var emojiPanel: NoteFloatingPanel?
     private var pickerPanel: NoteFloatingPanel?
     private var datePicker: NoteDatePickerView?
     private var datePanel: NoteFloatingPanel?
     private var datePosition: NotePosition?
-    private var preview: NoteBlockPreviewCard?
-    private var ghost: NoteMenuGhostView?
     private var previousText: (key: TextKey, text: String)?
     private var latestText: (key: TextKey, text: String)?
     private var subscription: AnyCancellable?
@@ -64,6 +63,7 @@ final class NoteSlashMenuController {
 
     init(editor: NotePageEditor) {
         self.editor = editor
+        presenter = NoteSlashListPresenter(overlay: { [unowned editor] in editor.canvas.overlayView })
         list.maximumHeight = 372
         list.onActivate = { [weak self] item in self?.activate(item) }
         list.onCancel = { [weak self] in self?.cancel() }
@@ -250,9 +250,7 @@ final class NoteSlashMenuController {
         currentQuery = nil
         datePosition = nil
         list.filterText = ""
-        ghost?.removeFromSuperview()
-        ghost = nil
-        hidePreview(animated: animated)
+        presenter.clearVisuals(animated: animated)
         for panel in [listPanel, emojiPanel, pickerPanel, datePanel] {
             guard let panel, panel.isPresented else { continue }
             panel.dismiss(animated: animated)
@@ -409,40 +407,15 @@ final class NoteSlashMenuController {
     }
 
     private func show(_ items: [NoteMenuList.Item], detailed: Bool, highlightFirst: Bool) {
-        crossfade {
-            list.rowStyle = detailed ? .detailed : .compact
-            list.items = items
-            if highlightFirst, list.highlightedIndex == nil, let first = items.firstIndex(where: \.isEnabled) {
-                list.highlightedIndex = first
-            }
-        }
-        if !detailed { hidePreview(animated: true) }
-        guard !listPanel.isPresented, let rect = menuAnchor() else { return }
-        listPanel.present(in: editor.canvas.overlayView, anchor: rect, edge: .below, animated: true)
+        presenter.show(items, detailed: detailed, highlightFirst: highlightFirst, anchor: { [weak self] in self?.menuAnchor() })
     }
 
-    private func crossfade(_ update: () -> Void) {
-        guard listPanel.isPresented, !NoteAnimation.reduceMotion, let clip = list.superview, let listLayer = list.layer,
-              list.bounds.width > 1, list.bounds.height > 1, let rep = list.bitmapImageRepForCachingDisplay(in: list.bounds) else {
-            update()
+    private func highlightDidChange(_ item: NoteMenuList.Item?) {
+        guard case .blocks = mode, let item else {
+            presenter.highlightDidChange(nil, block: nil)
             return
         }
-        list.cacheDisplay(in: list.bounds, to: rep)
-        let image = NSImage(size: list.bounds.size)
-        image.addRepresentation(rep)
-        ghost?.removeFromSuperview()
-        let fading = NoteMenuGhostView(frame: list.frame)
-        fading.image = image
-        clip.addSubview(fading, positioned: .above, relativeTo: list)
-        ghost = fading
-        update()
-        NoteAnimation.withoutAnimation { listLayer.opacity = 0 }
-        NoteAnimation.spring(listLayer, "opacity", to: Float(1), spring: .highlight, key: NoteAnimation.keyPrefix + "slash.in")
-        guard let ghostLayer = fading.layer else { fading.removeFromSuperview(); return }
-        NoteAnimation.spring(ghostLayer, "opacity", to: Float(0), spring: .highlight, key: NoteAnimation.keyPrefix + "slash.out") { [weak self, weak fading] in
-            fading?.removeFromSuperview()
-            if self?.ghost === fading { self?.ghost = nil }
-        }
+        presenter.highlightDidChange(item, block: results.first(where: { $0.id == item.id })?.block)
     }
 
     private func refreshEmoji() {
@@ -760,67 +733,6 @@ final class NoteSlashMenuController {
         editor.focus(NotePosition(position.block, position.offset + 1, field: position.field))
     }
 
-    private func highlightDidChange(_ item: NoteMenuList.Item?) {
-        guard case .blocks = mode, list.rowStyle == .detailed, let item,
-              let block = results.first(where: { $0.id == item.id })?.block else {
-            hidePreview(animated: true)
-            return
-        }
-        showPreview(for: block, item: item)
-    }
-
-    private func showPreview(for block: NoteCatalogBlock, item: NoteMenuList.Item) {
-        guard listPanel.isPresented, let overlay = listPanel.superview else { return }
-        let card = preview ?? NoteBlockPreviewCard()
-        preview = card
-        card.show(block, title: item.title, summary: item.subtitle ?? "")
-        let size = card.fittingSize
-        let gap = NoteTheme.menuGap
-        let panelFrame = NoteFloatingPanel.topDown(listPanel.frame, in: overlay)
-        let visible = NoteFloatingPanel.topDown(overlay.visibleRect, in: overlay)
-        var x = panelFrame.maxX + gap
-        if x + size.width > visible.maxX - NoteTheme.menuScreenMargin { x = panelFrame.minX - gap - size.width }
-        guard x >= visible.minX + NoteTheme.menuScreenMargin else { hidePreview(animated: false); return }
-        let rowY = list.highlightedIndex.flatMap { _ in highlightedRowTop() } ?? 0
-        var y = panelFrame.minY + rowY - 8
-        y = min(max(y, visible.minY + NoteTheme.menuScreenMargin), visible.maxY - NoteTheme.menuScreenMargin - size.height)
-        let target = NoteFloatingPanel.topDown(NSRect(x: x, y: y, width: size.width, height: size.height), in: overlay).integral
-        if card.superview !== overlay {
-            card.frame = target
-            overlay.addSubview(card)
-            NoteAnimation.presentHUD(card, about: NSPoint(x: x > panelFrame.maxX ? 0 : size.width, y: size.height / 2))
-        } else if card.frame != target {
-            NoteAnimation.slide(card, to: target, spring: .glide)
-        }
-    }
-
-    private func highlightedRowTop() -> CGFloat? {
-        guard let index = list.highlightedIndex, list.items.indices.contains(index) else { return nil }
-        let header = NoteTheme.menuHeaderHeight, separator = NoteTheme.menuSeparatorSlot
-        var y = NoteTheme.menuInset
-        var section: String?
-        for position in 0...index {
-            let item = list.items[position]
-            if let next = item.section, next != section {
-                if position > 0 { y += separator }
-                y += header
-                section = next
-            }
-            if position < index { y += list.rowHeight }
-        }
-        let scroll = list.enclosingScrollViewOffset
-        return max(0, y - scroll)
-    }
-
-    private func hidePreview(animated: Bool) {
-        guard let card = preview, card.superview != nil else { return }
-        guard animated, !NoteAnimation.reduceMotion else { card.removeFromSuperview(); return }
-        NoteAnimation.dismissHUD(card, about: NSPoint(x: 0, y: card.bounds.midY)) { [weak card] in
-            card?.removeFromSuperview()
-            card?.layer?.opacity = 1
-        }
-    }
-
     private func sessionDidChange(_ change: NotePageChange) {
         recordText()
         releaseCancelledAnchor()
@@ -980,9 +892,7 @@ final class NoteSlashMenuController {
     }
 
     private func closePanels(except keep: NoteFloatingPanel?) {
-        ghost?.removeFromSuperview()
-        ghost = nil
-        hidePreview(animated: false)
+        presenter.clearVisuals(animated: false)
         for panel in [listPanel, emojiPanel, pickerPanel, datePanel] {
             guard let panel, panel !== keep, panel.isPresented else { continue }
             panel.dismiss(animated: false)
@@ -992,27 +902,6 @@ final class NoteSlashMenuController {
 
     private func row(for item: NoteCatalogItem, filtering: Bool) -> NoteMenuList.Item {
         NoteSlashMenuRows.item(for: item, filtering: filtering)
-    }
-}
-
-@MainActor
-private final class NoteMenuGhostView: NSImageView {
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        imageScaling = .scaleNone
-        imageAlignment = .alignTopLeft
-        wantsLayer = true
-        setAccessibilityElement(false)
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-private extension NoteMenuList {
-    var enclosingScrollViewOffset: CGFloat {
-        subviews.compactMap { $0 as? NSScrollView }.first?.contentView.bounds.origin.y ?? 0
     }
 }
 
