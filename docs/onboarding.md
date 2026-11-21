@@ -453,7 +453,6 @@ Relevant existing checks include:
 
 - `tests/ParcCoreTests/Presentation/Onboarding` (Swift Testing): draft migration,
   defaults, ordering, commits, replay and the import step counter.
-- `scripts/test-onboarding.sh`: replay lifecycle and the welcome video hand-off.
 - `tests/ParcTests/Presentation/OnboardingPresentationTests.swift`: setup cards,
   frame and theme layout, confetti samples and replay consent.
 - `test-onboarding-keyboard.sh` and `test-onboarding-video.sh`: component behavior.

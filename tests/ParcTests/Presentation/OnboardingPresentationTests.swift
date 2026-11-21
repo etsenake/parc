@@ -50,6 +50,99 @@ struct OnboardingReplayTransitionTests {
     }
 }
 
+extension OnboardingReplayTransitionTests {
+    private final class Owner {
+        var id = UUID()
+        var ready = true
+        var standard = true
+    }
+
+    @MainActor private func restore(savedID: UUID? = nil, returning owner: Owner? = nil,
+                                    among candidates: [Owner], make: () throws -> Owner) rethrows -> Owner {
+        try OnboardingReplayTransition.restoreOwner(savedID: savedID, returning: owner,
+            owners: candidates, sessionID: { $0.id }, ready: { $0.ready }, standard: { $0.standard }, make: make)
+    }
+
+    @Test @MainActor func aSavedReplayReturnsToItsExactWindowRecord() {
+        let other = Owner()
+        let exact = Owner()
+        let restored = restore(savedID: exact.id, among: [other, exact]) {
+            Issue.record("Created a second window for the same saved record")
+            return Owner()
+        }
+        #expect(restored === exact)
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func anAuxiliaryReplayReturnsToItsOriginalWindowWhileItStillExists(departed: Bool) {
+        let fallback = Owner()
+        let original = Owner()
+        original.standard = false
+        let restored = restore(returning: original, among: departed ? [fallback] : [fallback, original]) {
+            Issue.record("Created a window even though one could be restored")
+            return Owner()
+        }
+        #expect(restored === (departed ? fallback : original))
+    }
+
+    @Test @MainActor func aReplayWithoutAUsableWindowCreatesAStandardOne() {
+        let unavailable = Owner()
+        unavailable.ready = false
+        let auxiliary = Owner()
+        auxiliary.standard = false
+        let created = Owner()
+        let restored = restore(among: [unavailable, auxiliary]) { created }
+        #expect(restored === created)
+    }
+
+    @Test @MainActor func aRestorationFailureCanBeRetriedBeforeReleasingThePendingQuit() {
+        var replay = closingReplay()
+        var quits = 0
+        _ = replay.deferTerminationWhileClosing { quits += 1 }
+        _ = replay.closeResolved(approved: true)
+        #expect(throws: CocoaError(.fileReadNoSuchFile)) {
+            try restore(among: []) { throw CocoaError(.fileReadNoSuchFile) }
+        }
+        #expect(replay.isActive && quits == 0)
+        let replacement = Owner()
+        #expect(restore(among: []) { replacement } === replacement)
+        replay.restored()
+        replay.takeDeferredTermination()?()
+        #expect(quits == 1)
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func notesAreTemporarilyReadOnlyAndGetTheirOriginalEditingStateBack(alreadyReadOnly: Bool) {
+        let page = NotePageSession(page: NotePage(blocks: [.paragraph()]))
+        page.isReadOnly = alreadyReadOnly
+        let frozen = OnboardingReadOnly([page, page], isReadOnly: \.isReadOnly)
+        #expect(page.isReadOnly)
+        frozen.restore()
+        #expect(page.isReadOnly == alreadyReadOnly)
+    }
+
+    @Test @MainActor func duplicatePagesCannotEnterAnAuxiliaryConsentRequest() {
+        let page = NSObject()
+        #expect(OnboardingAuxiliaryConsent([page, page]) == nil)
+    }
+
+    @Test @MainActor func auxiliaryConsentDoesNotCloseTheApprovedPages() throws {
+        let first = NSObject(), second = NSObject(), third = NSObject()
+        let consent = try #require(OnboardingAuxiliaryConsent([first, second, third]))
+        #expect(!consent.recordConsent(current: consent.matches([third, first, second]) { _ in true }))
+        #expect(consent.approved(consent.matches([first, second, third]) { _ in true }))
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func auxiliaryConsentRejectsPagesAddedOrMovedDuringApproval(added: Bool) throws {
+        let first = NSObject(), second = NSObject()
+        let consent = try #require(OnboardingAuxiliaryConsent([first, second]))
+        _ = consent.recordConsent(current: true)
+        let candidates = added ? [first, second, NSObject()] : [first, second]
+        #expect(!consent.approved(consent.matches(candidates) { page in added || page === first }))
+    }
+}
+
 struct OnboardingWindowFrameTests {
     private let copyBounds = CGRect(x: 0, y: 0, width: 560, height: 380)
 
