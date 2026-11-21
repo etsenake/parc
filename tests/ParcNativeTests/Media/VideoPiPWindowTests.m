@@ -133,8 +133,12 @@ static NSImage* Cue(void) {
 
 - (NSButton*)hoveredPlayButton {
   [_presenter setAction:PCVideoPiPPlayPause visible:YES];
+  NSButton* play = Button(self.content, PCVideoPiPPlayPause);
+  NSView* host = Host(play);
+  host.wantsLayer = YES;
+  if (!host.layer) host.layer = [CALayer layer];
   [self showHovering];
-  return Button(self.content, PCVideoPiPPlayPause);
+  return play;
 }
 
 - (NSView*)captionsShownAt640 {

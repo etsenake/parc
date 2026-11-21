@@ -403,8 +403,7 @@ static PCExtensionInstallPresenter* Make(
   EXPECT(_results == 1 && _choice == PCExtensionInstallCancel);
 }
 
-- (void)testEducationListsPermissionsAndFollowsTheAppearance {
-  _w.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+- (void)testEducationListsTheRequestedPermissions {
   PCExtensionInstallPresenter* p = [self shownEducation];
   EXPECT(Text(p.sheet.contentView, @"It can:"));
   EXPECT(Text(p.sheet.contentView, @"Read browsing history"));
@@ -413,12 +412,22 @@ static PCExtensionInstallPresenter* Make(
   EXPECT(scroll.frame.size.height > 0 && scroll.frame.size.height < 113);
   EXPECT(View(p.sheet.contentView, @"PCDialogFade").hidden);
   ExpectDialogFrame(p.sheet, scroll);
-  const NSSize panel = p.sheet.contentView.bounds.size;
+  [p invalidate];
+}
+
+- (void)testTheEducationSheetFillsItsDarkBackground {
+  PCExtensionInstallPresenter* p = [self shownEducation];
+  p.sheet.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+  NSSize panel = p.sheet.contentView.bounds.size;
   EXPECT(Fill(p.sheet, 2, 2, 21, 28, 48));
   EXPECT(Fill(p.sheet, panel.width - 2, panel.height - 2, 21, 28, 48));
-  _w.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
-  EXPECT(Fill(p.sheet, 2, panel.height - 2, 250, 251, 255));
-  _w.appearance = nil;
+  [p invalidate];
+}
+
+- (void)testTheEducationSheetFillsItsLightBackground {
+  PCExtensionInstallPresenter* p = [self shownEducation];
+  p.sheet.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+  EXPECT(Fill(p.sheet, 2, NSHeight(p.sheet.contentView.bounds) - 2, 250, 251, 255));
   [p invalidate];
 }
 
