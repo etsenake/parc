@@ -25,7 +25,7 @@ enum EaselSectionArt {
         return tab
     }
 
-    static func vectorTitle(_ section: EaselItem) -> EaselVectorSectionTitle {
+    static func vectorTitle(_ section: EaselItem, in items: [EaselItem]) -> EaselVectorSectionTitle {
         let font = titleFont(scale: 1), attributes: [NSAttributedString.Key: Any] = [.font: font]
         let room = max(0, section.frame.width - 2 * EaselBoardObjects.sectionTitlePadding)
         var title = EaselBoardObjects.displayTitle(section)
@@ -35,7 +35,8 @@ enum EaselSectionArt {
             while !characters.isEmpty, width(String(characters) + "…") > room { characters.removeLast() }
             title = String(characters).trimmingCharacters(in: .whitespaces) + "…"
         }
-        return EaselVectorSectionTitle(text: title, width: width(title), baseline: Double(font.ascender + font.descender) / 2)
+        return EaselVectorSectionTitle(text: title, width: width(title), baseline: Double(font.ascender + font.descender) / 2,
+            hiddenCount: section.contentsHidden == true ? EaselBoardObjects.contents(of: section, in: items).count : nil)
     }
 
     static func border(_ section: EaselItem, adaptive: Bool) -> NSColor {
@@ -228,7 +229,8 @@ extension EaselCanvasView {
     private func addSection(_ frame: EaselRect, action: String) -> Bool {
         guard !session.isClosed, !session.isDeleted, fixedCanvasSize == nil else { return false }
         cancelPointerInteraction(); guard finishEditing() else { return false }; drawing = false
-        let item = EaselBoardObjects.section(frame: frame, in: session.document.items, zIndex: nextZIndex)
+        var item = EaselBoardObjects.section(frame: frame, in: session.document.items, zIndex: nextZIndex)
+        stampRememberedStyle(on: &item)
         guard commit(action, { $0.items.append(item) }) else { return false }
         selection = [item.id]; window?.makeFirstResponder(self)
         return true

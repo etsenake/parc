@@ -262,18 +262,19 @@ extension EaselCanvasView {
 
     @discardableResult
     func insertSticky(at point: NSPoint, wide: Bool = false) -> Bool {
-        insertSticky(EaselBoardObjects.sticky(centeredAt: EaselPoint(x: point.x, y: point.y), wide: wide, zIndex: nextZIndex))
+        insertSticky(EaselBoardObjects.sticky(centeredAt: EaselPoint(x: point.x, y: point.y), wide: wide, zIndex: nextZIndex), remembered: true)
     }
 
     @discardableResult
     func insertSticky(origin: NSPoint, like source: EaselItem) -> Bool {
-        insertSticky(EaselBoardObjects.sticky(origin: EaselPoint(x: origin.x, y: origin.y), like: source, zIndex: nextZIndex))
+        insertSticky(EaselBoardObjects.sticky(origin: EaselPoint(x: origin.x, y: origin.y), like: source, zIndex: nextZIndex), remembered: false)
     }
 
-    private func insertSticky(_ proposed: EaselItem) -> Bool {
+    private func insertSticky(_ proposed: EaselItem, remembered: Bool) -> Bool {
         guard !session.isClosed, !session.isDeleted else { return false }
         cancelPointerInteraction(); guard finishEditing() else { return false }; drawing = false
         var item = proposed
+        if remembered { stampRememberedStyle(on: &item) }
         if let size = fixedCanvasSize {
             item.frame = EaselToolGeometry.constrained(item.frame, to: EaselRect(x: 0, y: 0, width: size.width, height: size.height))
         }

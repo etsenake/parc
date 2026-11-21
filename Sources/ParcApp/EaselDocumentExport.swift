@@ -122,7 +122,7 @@ enum EaselDocumentExport {
             case .text, .sticky:
                 art.texts[item.id] = vectorText(item)
             case .section:
-                art.sectionTitles[item.id] = EaselSectionArt.vectorTitle(item)
+                art.sectionTitles[item.id] = EaselSectionArt.vectorTitle(item, in: session.document.items)
             case .code:
                 art.texts[item.id] = EaselCodeLayout.vectorText(item)
             case .image:
