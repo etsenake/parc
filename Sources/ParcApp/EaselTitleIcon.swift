@@ -126,7 +126,7 @@ final class EaselTitleIcon: NSView {
         guard !session.isClosed, let emoji = NoteEmojiCatalog.shared.random() else { return }
         let character = NoteEmojiCatalog.shared.character(for: emoji)
         NoteEmojiCatalog.shared.recordUse(character)
-        apply(EaselPageIcon.emoji(character), name: "Add Icon")
+        apply(EaselPageIcon.emoji(character), name: "Add icon")
     }
 
     private func apply(_ icon: EaselPageIcon?, name: String, discarding fresh: String? = nil) {
@@ -146,7 +146,7 @@ final class EaselTitleIcon: NSView {
         popover.exempt(iconView)
         picker.onPick = { [weak self, weak popover] value in
             NoteEmojiCatalog.shared.recordUse(value)
-            self?.apply(EaselPageIcon(raw: value), name: "Change Icon")
+            self?.apply(EaselPageIcon(raw: value), name: "Change icon")
             popover?.close()
         }
         picker.onImage = { [weak self, weak popover] source in
@@ -154,7 +154,7 @@ final class EaselTitleIcon: NSView {
             popover?.close()
         }
         picker.onRemove = { [weak self, weak popover] in
-            self?.apply(nil, name: "Remove Icon")
+            self?.apply(nil, name: "Remove icon")
             popover?.close()
         }
         picker.onCancel = { [weak popover] in popover?.close() }
@@ -167,7 +167,7 @@ final class EaselTitleIcon: NSView {
 
     private func useImage(_ source: String) {
         if EaselAssetType.of(assetID: source) != nil {
-            apply(EaselPageIcon.image(assetID: source), name: "Change Icon", discarding: source)
+            apply(EaselPageIcon.image(assetID: source), name: "Change icon", discarding: source)
             return
         }
         guard !loading, let url = URL(string: source) else { return }
@@ -181,7 +181,7 @@ final class EaselTitleIcon: NSView {
             }
             do {
                 let asset = try self.session.importAsset(png, type: .png)
-                self.apply(EaselPageIcon.image(assetID: asset), name: "Change Icon", discarding: asset)
+                self.apply(EaselPageIcon.image(assetID: asset), name: "Change icon", discarding: asset)
             } catch {
                 self.onError?(error)
             }
