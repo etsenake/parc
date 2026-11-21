@@ -138,6 +138,18 @@ struct EaselRichTextInlineTests {
                && EaselReminderOwner(file: file)?.profile == profile, "reminder owners are recognised from the Easel file")
         expect(EaselReminderOwner(file: URL(fileURLWithPath: "/Users/someone/Parc Notes/Roadmap.md")) == nil, "notes are not Easel owners")
 
+        let stray = "a\u{FFFC}b \u{FFFC}"
+        expect(EaselRichText.readable(stray, rich: rich(stray, inlineAt: 4, note)) == "ab Roadmap", "orphan U+FFFC never leaks into words")
+        expect(EaselRichText.readable("x\u{FFFC}y", rich: nil) == "xy", "plain text drops U+FFFC too")
+        let easelTarget = "parc://easel/" + UUID().uuidString.lowercased()
+        expect(valid(.init(kind: .note, target: easelTarget.replacingOccurrences(of: "easel", with: "EASEL"), title: "B")), "Easel hosts compare without case")
+        expect(!valid(.init(kind: .note, target: easelTarget + "?x=1", title: "B")), "Easel targets refuse queries")
+        let many = String(repeating: "\u{FFFC}", count: 80)
+        let heavy = EaselRichText(runs: (0..<80).map { .init(location: $0, length: 1, attributes: attributes(.equation(String(repeating: "x", count: 4_000)))) })
+        expect((try? heavy.validate(text: many)) == nil, "inline payloads have a total cap per text")
+        let light = EaselRichText(runs: (0..<60).map { .init(location: $0, length: 1, attributes: attributes(.equation(String(repeating: "x", count: 4_000)))) })
+        expect((try? light.validate(text: String(repeating: "\u{FFFC}", count: 60))) != nil, "ordinary inline payloads fit")
+
         print("EaselRichTextInlineTests passed \(assertions) assertions")
     }
 }

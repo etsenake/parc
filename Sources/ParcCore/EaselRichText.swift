@@ -85,12 +85,9 @@ struct EaselRichText: Codable, Equatable {
         var timeFormat: String?
         var image: Data?
 
-        static func validTarget(_ value: String) -> Bool {
-            guard value.utf8.count <= 4_096, let url = URL(string: value), let scheme = url.scheme?.lowercased() else { return false }
-            if scheme == "file" { return url.path.hasPrefix("/") && url.path.count > 1 }
-            return scheme == "parc" && url.host == "easel" && url.pathComponents.count == 2
-                && UUID(uuidString: url.lastPathComponent) != nil
-        }
+        static let maximumPayloadBytes = 262_144
+        static func validTarget(_ value: String) -> Bool { value.utf8.count <= 4_096 && EaselRichText.isInternalLink(value) }
+        var payloadBytes: Int { (target?.utf8.count ?? 0) + (title?.utf8.count ?? 0) + (tex?.utf8.count ?? 0) + (timeZone?.utf8.count ?? 0) }
         static func validEmojiName(_ name: String) -> Bool {
             let bytes = Array(name.utf8)
             guard !bytes.isEmpty, bytes.count <= 48 else { return false }
@@ -171,7 +168,7 @@ struct EaselRichText: Codable, Equatable {
         func color(_ value: String?) -> Bool {
             value == nil || value!.range(of: "^#[0-9A-Fa-f]{8}$", options: .regularExpression) != nil
         }
-        var end = 0, imageBytes = 0
+        var end = 0, imageBytes = 0, inlineBytes = 0
         for run in runs {
             let a = run.attributes
             guard run.location == end, run.length > 0, run.length <= units.count - end,
@@ -200,7 +197,8 @@ struct EaselRichText: Codable, Equatable {
                     throw EaselStoreError.invalidDocument("inline rich text range")
                 }
                 imageBytes += inline.image?.count ?? 0
-                guard imageBytes <= 4_194_304 else { throw EaselStoreError.tooLarge }
+                inlineBytes += inline.payloadBytes
+                guard imageBytes <= 4_194_304, inlineBytes <= Inline.maximumPayloadBytes else { throw EaselStoreError.tooLarge }
             }
             if let p = a.paragraph {
                 guard (0...4).contains(p.alignment), (-1...1).contains(p.direction), (0...5).contains(p.lineBreak),
