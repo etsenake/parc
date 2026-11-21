@@ -156,11 +156,13 @@ final class NotePropertiesView: NSView {
             self?.update("Rename Property") { NotePropertyEditing.renaming($0, at: index, to: name) }
         }
         menu.onKind = { [weak self, weak popover] kind in
+            self?.endValueEditing()
             self?.update("Change Property Type") { NotePropertyEditing.changingKind($0, at: index, to: kind) }
             popover?.close()
         }
         menu.onDelete = { [weak self, weak popover] in
             popover?.close(animated: false)
+            self?.endValueEditing(discardingAt: index)
             self?.update("Delete Property") { NotePropertyEditing.removing($0, at: index) }
         }
         menu.onDone = { [weak popover] in popover?.close() }
@@ -171,6 +173,10 @@ final class NotePropertiesView: NSView {
         }
         present(popover, from: rows[index].keyButton)
         if renaming { menu.focusName() }
+    }
+
+    private func endValueEditing(discardingAt discarded: Int? = nil) {
+        for (position, row) in rows.enumerated() { row.endValueEditing(committing: position != discarded) }
     }
 
     func presentDatePicker(for index: Int, from anchor: NSView) {
@@ -258,6 +264,7 @@ final class NotePropertyRowView: NSView, NSTextFieldDelegate {
     private var isLifted = false
     private var hoverArea: NSTrackingArea?
     private var editingOriginal: String?
+    private var discardsEdit = false
 
     init(owner: NotePropertiesView) {
         self.owner = owner
@@ -445,7 +452,15 @@ final class NotePropertyRowView: NSView, NSTextFieldDelegate {
 
     func controlTextDidEndEditing(_ notification: Notification) {
         defer { editingOriginal = nil }
+        guard !discardsEdit else { return }
         commitField()
+    }
+
+    func endValueEditing(committing: Bool) {
+        guard valueField.currentEditor() != nil else { return }
+        discardsEdit = !committing
+        defer { discardsEdit = false }
+        if window?.makeFirstResponder(nil) != true { valueField.abortEditing() }
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
