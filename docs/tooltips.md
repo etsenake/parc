@@ -142,5 +142,8 @@ when no tooltip is showing.
 
 ## Checks
 
-`python3 tests/Tooltip/check.py` covers configuration, layout, live bindings,
-placement, timing and invalidation through native components and injected events.
+`swift test --filter Tooltip` runs `TooltipModelTests`, `TooltipKeyPressTests`,
+`TooltipPresentationStateTests`, `TooltipViewLayoutTests`, `TooltipViewDrawingTests`,
+`TooltipViewConfigurationTests` and `TooltipRoutingTests`. They cover configuration,
+layout, live bindings, placement, timing and invalidation through native components
+and injected events, with each window's controller on a test clock.
