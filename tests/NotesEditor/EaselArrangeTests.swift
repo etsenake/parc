@@ -32,6 +32,7 @@ struct EaselArrangeTests {
         duplication()
         pastePlacement()
         clipboard()
+        selectionRules()
         chords()
         print("EaselArrangeTests passed")
     }
@@ -282,6 +283,44 @@ struct EaselArrangeTests {
                "Pasted groups get a group of their own")
         expect(copies.count == 3 && Set(pasted.document.items.map(\.id)).count == 7, "Pasting never reuses an ID")
         expect(EaselArrange.duplicating([d.id], in: document([d])) != nil, "A lone object duplicates")
+    }
+
+    static func selectionRules() {
+        let group = UUID()
+        var a = box(0, 0), b = box(200, 0), locked = box(400, 0)
+        a.groupID = group; b.groupID = group; locked.groupID = group; locked.locked = true
+        let loose = box(600, 0)
+        let board = document([a, b, locked, loose])
+        let click = EaselArrange.clickSelection(hit: a, selection: [], entered: nil, extending: false, clickCount: 1, in: board)
+        expect(click.selection == [a.id, b.id] && !click.enteredByClick, "A click picks the group's unlocked members")
+        let enter = EaselArrange.clickSelection(hit: b, selection: click.selection, entered: nil, extending: false, clickCount: 2, in: board)
+        expect(enter.selection == [b.id] && enter.enteredGroup == group && enter.enteredByClick, "Double-click opens the group on one member")
+        let inside = EaselArrange.clickSelection(hit: a, selection: enter.selection, entered: group, extending: true, clickCount: 1, in: board)
+        expect(inside.selection == [a.id, b.id] && inside.enteredGroup == group, "Inside an open group Shift-click adds single members")
+        let leave = EaselArrange.clickSelection(hit: loose, selection: inside.selection, entered: group, extending: false, clickCount: 1, in: board)
+        expect(leave.selection == [loose.id] && leave.enteredGroup == nil, "Clicking outside closes the group")
+        let stale = EaselArrange.clickSelection(hit: a, selection: [loose.id], entered: group, extending: false, clickCount: 1, in: board)
+        expect(stale.selection == [a.id, b.id], "A group left long ago is closed again when nothing in it is selected")
+        let unlocking = EaselArrange.clickSelection(hit: locked, selection: [], entered: nil, extending: true, clickCount: 1, in: board)
+        expect(unlocking.selection == [a.id, b.id, locked.id], "Shift-clicking a locked member picks it along with its group for unlocking")
+        let toggled = EaselArrange.clickSelection(hit: a, selection: [a.id, b.id], entered: nil, extending: true, clickCount: 1, in: board)
+        expect(toggled.selection.isEmpty, "Shift-click on a selected group drops the whole group")
+        let swept = EaselArrange.marqueeSelection(hits: [a.id, locked.id], original: [], operation: .replace, entered: nil, in: board)
+        expect(swept == [a.id, b.id], "A marquee widens to the group and leaves its locked member behind")
+        let added = EaselArrange.marqueeSelection(hits: [loose.id], original: [locked.id], operation: .add, entered: nil, in: board)
+        expect(added == [locked.id, loose.id], "Shift-marquee keeps a locked object picked earlier")
+        let opened = EaselArrange.marqueeSelection(hits: [a.id], original: [], operation: .replace, entered: group, in: board)
+        expect(opened == [a.id], "Inside an open group a marquee picks single members")
+        expect(EaselChords.consults(canvasFocus: true, editorFocus: false) && EaselChords.consults(canvasFocus: false, editorFocus: true)
+               && !EaselChords.consults(canvasFocus: false, editorFocus: false), "Chords only apply with Easel focus")
+        expect(!EaselChords.applies(.duplicate, selection: [UUID()], in: board), "A stale selection lets ⌘D reach Parc")
+        expect(EaselChords.applies(.duplicate, selection: [locked.id], in: board), "Locked objects can still be duplicated")
+        expect(!EaselChords.applies(.group, selection: [a.id], in: board) && EaselChords.applies(.group, selection: [loose.id, a.id], in: board),
+               "⌘G only claims two or more objects")
+        expect(EaselChords.applies(.ungroup, selection: [a.id], in: board) && !EaselChords.applies(.ungroup, selection: [loose.id], in: board),
+               "⇧⌘G only claims a group")
+        expect(!EaselChords.applies(.layer(.forward), selection: [locked.id], in: board), "Locked objects leave ⌘] to Parc")
+        expect(!EaselChords.applies(.alignText(.left), selection: [a.id], in: board), "Other features' chords decide for themselves")
     }
 
     static func chords() {

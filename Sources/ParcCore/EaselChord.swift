@@ -95,3 +95,18 @@ enum EaselChords {
         }
     }
 }
+
+extension EaselChords {
+    static func consults(canvasFocus: Bool, editorFocus: Bool) -> Bool { canvasFocus || editorFocus }
+
+    static func applies(_ command: EaselChordCommand, selection: Set<UUID>, in document: EaselDocument) -> Bool {
+        let live = selection.intersection(Set(document.items.map(\.id)))
+        switch command {
+        case .duplicate, .toggleLock: return !live.isEmpty
+        case .group: return EaselArrange.canGroup(live, in: document)
+        case .ungroup, .unwrap: return EaselArrange.canUngroup(live, in: document)
+        case .layer: return EaselArrange.canMoveLayer(live, in: document)
+        default: return false
+        }
+    }
+}

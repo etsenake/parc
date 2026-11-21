@@ -4,7 +4,7 @@ struct EaselCanvasArrangeState {
     var enteredGroup: UUID?
     var lastDuplicate: (sources: [UUID], copies: [UUID])?
     var duplicateDragArmed = false
-    var duplicateDrag: (group: UUID, before: EaselDocument, sources: [UUID], copies: [UUID])?
+    var duplicateDrag: (group: UUID, before: EaselDocument, selected: Set<UUID>, sources: [UUID], copies: [UUID])?
     var lastPaste: (fingerprint: Int, step: Int, pointer: EaselPoint?)?
     var menu: EaselCanvasMenuPresenting?
 }
@@ -124,47 +124,26 @@ extension EaselCanvasView {
     }
 
     func isInside(group: UUID) -> Bool {
-        arrangeState.enteredGroup == group && !selection.isDisjoint(with: EaselArrange.members(of: group, in: session.document))
+        EaselArrange.isInside(group, entered: arrangeState.enteredGroup, selection: selection, in: session.document)
     }
 
     func selectForClick(_ hit: EaselItem, extending: Bool, clickCount: Int) -> Bool {
-        guard let group = hit.groupID, !isInside(group: group) else {
-            if arrangeState.enteredGroup != hit.groupID { arrangeState.enteredGroup = nil }
-            if extending { if !selection.insert(hit.id).inserted { selection.remove(hit.id) } }
-            else if !selection.contains(hit.id) { selection = [hit.id] }
-            return false
-        }
-        arrangeState.enteredGroup = nil
-        if clickCount >= 2, !extending {
-            arrangeState.enteredGroup = group
-            selection = [hit.id]
-            refreshDecorations()
-            return true
-        }
-        let members = EaselArrange.members(of: group, in: session.document)
-        if extending {
-            if members.isSubset(of: selection) { selection.subtract(members) } else { selection.formUnion(members) }
-        } else if !members.isSubset(of: selection) {
-            selection = members
-        }
-        return false
+        let result = EaselArrange.clickSelection(hit: hit, selection: selection, entered: arrangeState.enteredGroup,
+                                                 extending: extending, clickCount: clickCount, in: session.document)
+        let changedGroup = result.enteredGroup != arrangeState.enteredGroup
+        arrangeState.enteredGroup = result.enteredGroup
+        selection = result.selection
+        if changedGroup { refreshDecorations() }
+        return result.enteredByClick
     }
 
     func marqueeSelection(in rect: EaselRect, items candidates: [EaselItem], original: Set<UUID>,
                           operation: EaselCanvasSelection.Operation) -> Set<UUID> {
-        let document = session.document
         if operation == .replace, arrangeState.enteredGroup != nil { arrangeState.enteredGroup = nil; refreshDecorations() }
         let hits = EaselCanvasSelection.selecting(in: rect, items: candidates.filter { !$0.isLocked },
                                                   original: original, operation: .replace)
-        let entered = arrangeState.enteredGroup
-        let inside = Set(document.items.filter { hits.contains($0.id) && entered != nil && $0.groupID == entered }.map(\.id))
-        let caught = EaselArrange.expandingGroups(hits.subtracting(inside), in: document).union(inside)
-        let available = Set(document.items.map(\.id))
-        switch operation {
-        case .replace: return caught
-        case .add: return original.union(caught).intersection(available)
-        case .subtract: return original.subtracting(caught).intersection(available)
-        }
+        return EaselArrange.marqueeSelection(hits: hits, original: original, operation: operation,
+                                             entered: arrangeState.enteredGroup, in: session.document)
     }
 
     func handleArrangeKey(_ event: NSEvent) -> Bool {
@@ -196,27 +175,27 @@ extension EaselCanvasView {
         if performQuickCreateKey(event) { return true }
         guard event.type == .keyDown, window?.isKeyWindow == true else { return super.performKeyEquivalent(with: event) }
         if canvasOwnsKeyFocus, performZoomKeyEquivalent(event) { return true }
-        let editing = textEditorOwnsKeyFocus
-        guard editing || canvasOwnsKeyFocus,
+        guard EaselChords.consults(canvasFocus: canvasOwnsKeyFocus, editorFocus: textEditorOwnsKeyFocus),
               let command = EaselChords.command(characters: event.charactersIgnoringModifiers, keyCode: event.keyCode,
                                                 modifiers: easelChordModifiers(event.modifierFlags)),
-              performChord(command, editing: editing) else { return super.performKeyEquivalent(with: event) }
+              performChord(command) else { return super.performKeyEquivalent(with: event) }
         return true
     }
 
-    func performChord(_ command: EaselChordCommand, editing: Bool) -> Bool {
+    func performChord(_ command: EaselChordCommand) -> Bool {
         let document = session.document
         let ready = canFinishEditingForTransfer
+        let applies = ready && EaselChords.applies(command, selection: selection, in: document)
         switch command {
-        case .duplicate: return claim(ready && !selection.isEmpty) { duplicateSelection() }
-        case .group: return claim(ready && EaselArrange.canGroup(selection, in: document)) { groupSelection() }
-        case .ungroup: return claim(ready && EaselArrange.canUngroup(selection, in: document)) { ungroupSelection() }
+        case .duplicate: return claim(applies) { duplicateSelection() }
+        case .group: return claim(applies) { groupSelection() }
+        case .ungroup: return claim(applies) { ungroupSelection() }
         case .unwrap:
             if selectionContainsSection { return claim(ready && selectedSections.contains { !$0.isLocked }) { deleteSectionsKeepingContents() } }
-            return claim(ready && EaselArrange.canUngroup(selection, in: document)) { ungroupSelection() }
-        case .toggleLock: return claim(ready && !selection.isEmpty) { toggleLock() }
-        case .layer(let move): return claim(ready && EaselArrange.canMoveLayer(selection, in: document)) { moveLayer(move) }
-        case .alignText(let alignment): return alignText(alignment, editing: editing)
+            return claim(applies) { ungroupSelection() }
+        case .toggleLock: return claim(applies) { toggleLock() }
+        case .layer(let move): return claim(applies) { moveLayer(move) }
+        case .alignText(let alignment): return alignText(alignment, editing: textEditorOwnsKeyFocus)
         case .focusSelectionToolbar: return selectionToolbar?.focusFromKeyboard() == true
         }
     }
@@ -235,7 +214,7 @@ extension EaselCanvasView {
         guard commit("Duplicate objects", coalescing: group, { $0 = duplication.document }) else { return false }
         let expanded = EaselArrange.withFollowers(ids, in: before)
         let sources = EaselArrange.paintOrder(before).filter { expanded.contains($0.id) }.map(\.id)
-        arrangeState.duplicateDrag = (group, before, sources, duplication.copies)
+        arrangeState.duplicateDrag = (group, before, selection, sources, duplication.copies)
         selection = Set(duplication.copies)
         return true
     }
@@ -252,7 +231,8 @@ extension EaselCanvasView {
         guard let drag = arrangeState.duplicateDrag else { return }
         arrangeState.duplicateDrag = nil
         guard session.undoDestination == drag.before else { return }
-        do { try session.undo() } catch { onError?(error) }
+        do { try session.undo() } catch { onError?(error); return }
+        selection = drag.selected.intersection(Set(session.document.items.map(\.id)))
     }
 
     func lockBadgeRect(for item: EaselItem) -> NSRect {

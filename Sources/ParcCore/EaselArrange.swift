@@ -193,6 +193,52 @@ enum EaselArrange {
         return group
     }
 
+    struct ClickResult: Equatable {
+        var selection: Set<UUID>
+        var enteredGroup: UUID?
+        var enteredByClick: Bool
+    }
+
+    static func unlocked(_ ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
+        Set(document.items.filter { ids.contains($0.id) && !$0.isLocked }.map(\.id))
+    }
+
+    static func isInside(_ group: UUID, entered: UUID?, selection: Set<UUID>, in document: EaselDocument) -> Bool {
+        entered == group && !selection.isDisjoint(with: members(of: group, in: document))
+    }
+
+    static func clickSelection(hit: EaselItem, selection current: Set<UUID>, entered: UUID?, extending: Bool,
+                               clickCount: Int, in document: EaselDocument) -> ClickResult {
+        guard let group = hit.groupID, !isInside(group, entered: entered, selection: current, in: document) else {
+            var next = current
+            if extending { if !next.insert(hit.id).inserted { next.remove(hit.id) } }
+            else if !next.contains(hit.id) { next = [hit.id] }
+            return ClickResult(selection: next, enteredGroup: entered != nil && entered == hit.groupID ? entered : nil, enteredByClick: false)
+        }
+        if clickCount >= 2, !extending { return ClickResult(selection: [hit.id], enteredGroup: group, enteredByClick: true) }
+        let reach = unlocked(members(of: group, in: document), in: document).union([hit.id])
+        var next = current
+        if extending {
+            if reach.isSubset(of: next) { next.subtract(reach) } else { next.formUnion(reach) }
+        } else if !reach.isSubset(of: next) {
+            next = reach
+        }
+        return ClickResult(selection: next, enteredGroup: nil, enteredByClick: false)
+    }
+
+    static func marqueeSelection(hits: Set<UUID>, original: Set<UUID>, operation: EaselCanvasSelection.Operation,
+                                 entered: UUID?, in document: EaselDocument) -> Set<UUID> {
+        let caughtHits = unlocked(hits, in: document)
+        let inside = Set(document.items.filter { caughtHits.contains($0.id) && entered != nil && $0.groupID == entered }.map(\.id))
+        let caught = unlocked(expandingGroups(caughtHits.subtracting(inside), in: document), in: document).union(inside)
+        let available = Set(document.items.map(\.id))
+        switch operation {
+        case .replace: return caught
+        case .add: return original.union(caught).intersection(available)
+        case .subtract: return original.subtracting(caught).intersection(available)
+        }
+    }
+
     static func follows(_ item: EaselItem, present: Set<UUID>) -> Bool {
         if let target = item.attachedTo, present.contains(target) { return true }
         guard item.kind == .arrow else { return false }
