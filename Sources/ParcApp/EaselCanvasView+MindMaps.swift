@@ -221,7 +221,7 @@ extension EaselCanvasView {
         return true
     }
 
-    private func mindMapChromeBounds(pressing: Bool = false) -> NSRect {
+    func mindMapChromeBounds(pressing: Bool = false) -> NSRect {
         mindMapChromeBounds(of: mindMapControls(pressing: pressing))
     }
 

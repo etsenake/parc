@@ -97,6 +97,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private var trackedHidesAnnotations = false
     private var trackedEditingID: UUID?
     private var trackedHiddenCounts: [UUID: Int] = [:]
+    private var trackedChrome = NSRect.null
     private var textLayouts: [UUID: CachedTextLayout] = [:]
     private(set) var presentationNoOpSkipCount = 0
     private(set) var presentationDirtyCount = 0
@@ -622,7 +623,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                                                 rich: item.richText, style: item.textStyle, color: item.color, layout: layout)
         return layout
     }
-    private func rememberPaintedArtwork() {
+    private func rememberPaintedArtwork(chrome: NSRect? = nil) {
         trackedItems = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         trackedSelection = displayedSelection
         trackedHover = hoveredObjectID
@@ -632,7 +633,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         trackedHidesAnnotations = hidesPassiveAnnotations
         trackedEditingID = paintedEditingID
         trackedHiddenCounts = hiddenSectionCounts
+        trackedChrome = chrome ?? controlChromeBounds
     }
+    private var controlChromeBounds: NSRect { mindMapChromeBounds().union(connectorChromeBounds()) }
     private var paintedEditingID: UUID? { editor == nil ? nil : editingID }
     private var hiddenSectionCounts: [UUID: Int] {
         let all = session.document.items
@@ -642,14 +645,15 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         return counts
     }
-    private func presentationMatchesPaintedArtwork() -> Bool {
+    private func presentationMatchesPaintedArtwork(chrome: NSRect) -> Bool {
         guard let trackedCanvasScale, trackedCanvasScale == canvasScale,
               trackedHidesAnnotations == hidesPassiveAnnotations,
               trackedEditingID == paintedEditingID,
               trackedHover == hoveredObjectID,
               trackedMarquee == marqueeRect,
               trackedSelection == displayedSelection,
-              trackedGuideBounds == guideDirtyBounds() else { return false }
+              trackedGuideBounds == guideDirtyBounds(),
+              trackedChrome == chrome else { return false }
         let current = items
         guard trackedItems.count == current.count else { return false }
         for item in current {
@@ -659,7 +663,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     func invalidateIncrementalDisplay(layout: Bool = false) {
         if layout { needsLayout = true }
-        if presentationMatchesPaintedArtwork() {
+        let chrome = controlChromeBounds
+        if presentationMatchesPaintedArtwork(chrome: chrome) {
             presentationNoOpSkipCount += 1
             return
         }
@@ -709,6 +714,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             add(displayBounds(of: section))
             artwork[id]?.needsDisplay = true
         }
+        if trackedChrome != chrome {
+            overlayChanged = true
+            add(trackedChrome)
+            add(chrome)
+        }
         func addSelectionChrome(_ ids: Set<UUID>, _ source: [EaselItem]) {
             let selected = source.filter { ids.contains($0.id) }
             for item in selected { add(displayBounds(of: item)) }
@@ -733,7 +743,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if let rect = marqueeRect { add(rect.insetBy(dx: -marqueePad, dy: -marqueePad)) }
         add(trackedGuideBounds)
         add(guideDirtyBounds())
-        rememberPaintedArtwork()
+        rememberPaintedArtwork(chrome: chrome)
         if usesObjectSurfaces {
             if overlayChanged {
                 presentationDirtyCount += 1
