@@ -118,7 +118,7 @@ extension EaselCanvasView {
             entries.append(EaselToolbarMenuEntry(id: "rotate.right", title: "Rotate 90° Right", symbol: "rotate.right", isEnabled: turns))
         }
         entries.append(EaselToolbarMenuEntry(id: "duplicate", title: "Duplicate", symbol: "plus.square.on.square", shortcut: "⌘D",
-                                             isEnabled: ready && !allLocked, separatorBefore: true))
+                                             isEnabled: ready, separatorBefore: true))
         entries.append(EaselToolbarMenuEntry(id: "copy-image", title: "Copy as Image", symbol: "photo.on.rectangle", isEnabled: ready))
         if selected.count == 1, !allLocked {
             entries.append(EaselToolbarMenuEntry(id: "lock", title: "Lock", symbol: "lock", shortcut: "⇧⌘L", isEnabled: ready))
