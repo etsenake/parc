@@ -19,7 +19,8 @@ struct SidebarPreviewHeaderTests {
     }
 
     private func card(_ row: SidebarPreviewRow, width: CGFloat = 288, offers: ((SidebarPreviewRow) -> Bool)?) -> SidebarPreviewCard {
-        let card = SidebarPreviewCard(title: title, domain: nil, providerURL: url, picture: NSImage(size: NSSize(width: 320, height: 200)), site: "coastalfieldnotes.org")
+        let card = SidebarPreviewCard(title: title, domain: nil, providerURL: url, picture: NSImage(size: NSSize(width: 320, height: 200)),
+                                      site: "coastalfieldnotes.org", resources: .module)
         card.offersPeek = offers
         card.setRows([row])
         card.frame = NSRect(x: 0, y: 0, width: width, height: card.preferredHeight(width: width))
@@ -63,8 +64,30 @@ struct SidebarPreviewHeaderTests {
         #expect(button(c, "Open in Split View")?.frame == todaySplit)
     }
 
+    @Test func theOpenInPeekArtworkIsASixteenPointTemplate() throws {
+        let artwork = try #require(SidebarPreviewArtwork.openInPeek(in: .module))
+        #expect(artwork.isTemplate)
+        #expect(artwork.size == NSSize(width: 16, height: 16))
+    }
+
+    @Test func theArtworkCombinesTheOneAndTwoTimesBitmapsWithTheVector() throws {
+        let representations = try #require(SidebarPreviewArtwork.openInPeek(in: .module)).representations
+        #expect(representations.contains { $0.pixelsWide == 16 })
+        #expect(representations.contains { $0.pixelsWide == 32 })
+        #expect(representations.contains { $0 is NSPDFImageRep })
+    }
+
+    @Test func aBundleWithoutTheArtworkGivesNone() throws {
+        let empty = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: empty) }
+        let bundle = try #require(Bundle(url: empty))
+        #expect(SidebarPreviewArtwork.openInPeek(in: bundle) == nil)
+    }
+
     @Test func openInPeekShowsTheArtworkAlone() {
         let peek = button(card(row, offers: { _ in true }), "Open in Peek")
+        #expect(peek?.image === SidebarPreviewArtwork.openInPeek(in: .module))
         #expect(peek?.imagePosition == .imageOnly)
         #expect(peek?.title == "")
         #expect(peek?.accessibilityLabel() == "Open in Peek")
