@@ -109,7 +109,7 @@ struct SettingsPresentationTests {
     @Test func anAcceptedClickReachesTheExistingClosureOnce() {
         var activations = 0
         let action = SettingsCommandButton(title: "Native action", symbol: "lock.fill", color: .systemBlue) { activations += 1 }
-        _ = action.sendAction(action.action, to: action.target)
+        action.performClick(nil)
         #expect(activations == 1)
     }
 
@@ -160,7 +160,7 @@ struct SettingsPresentationTests {
     @Test func choosingASpaceRowOpensItOnce() {
         var opened = 0
         let profile = SettingsSpaceButton { opened += 1 }
-        _ = profile.sendAction(profile.action, to: profile.target)
+        profile.performClick(nil)
         #expect(opened == 1)
     }
 
