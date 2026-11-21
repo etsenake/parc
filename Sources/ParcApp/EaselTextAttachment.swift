@@ -96,7 +96,7 @@ enum EaselTextAttachments {
         let result = NSMutableAttributedString(attributedString: value)
         var failure: Error?
         value.enumerateAttribute(.attachment, in: NSRange(location: 0, length: value.length)) { object, range, stop in
-            guard let object else { return }
+            guard let object, !(object is EaselInlineAttachment) else { return }
             do {
                 guard let attachment = object as? NSTextAttachment, range.length == 1,
                       (value.string as NSString).substring(with: range) == "\u{FFFC}" else {
@@ -118,7 +118,7 @@ enum EaselTextAttachments {
     static func hasImages(_ value: NSAttributedString) -> Bool {
         var found = false
         value.enumerateAttribute(.attachment, in: NSRange(location: 0, length: value.length)) { object, _, stop in
-            if object != nil { found = true; stop.pointee = true }
+            if object != nil, !(object is EaselInlineAttachment) { found = true; stop.pointee = true }
         }
         return found
     }

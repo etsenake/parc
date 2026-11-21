@@ -86,7 +86,7 @@ extension EaselCanvasView {
             let joined = NSMutableAttributedString()
             for (index, object) in worded.enumerated() {
                 if index > 0 { joined.append(NSAttributedString(string: "\n\n")) }
-                joined.append(EaselRichTextCodec.attributed(object))
+                joined.append(EaselInlineText.readable(EaselRichTextCodec.attributed(object)))
             }
             let images = EaselTextAttachments.hasImages(joined)
             let native = try joined.data(from: NSRange(location: 0, length: joined.length),
@@ -100,7 +100,7 @@ extension EaselCanvasView {
 
     private func clipboardWords(_ item: EaselItem) -> String? {
         if item.kind == .equation { return EaselEquationArtwork.plainText(item) }
-        let words = EaselTextAttachments.plainString(item.text).trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = EaselRichText.readable(item.text, rich: item.richText).trimmingCharacters(in: .whitespacesAndNewlines)
         if [.link, .webCard, .browser].contains(item.kind), let url = item.url {
             return words.isEmpty || words == url ? url : words + "\n" + url
         }

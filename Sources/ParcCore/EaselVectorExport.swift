@@ -24,8 +24,17 @@ struct EaselVectorMark: Equatable {
     var color: String
 }
 
+struct EaselVectorInlineImage: Equatable {
+    var x: Double
+    var y: Double
+    var width: Double
+    var height: Double
+    var image: EaselVectorImage
+}
+
 struct EaselVectorText: Equatable {
     var runs: [EaselVectorTextRun] = []
+    var images: [EaselVectorInlineImage] = []
     var fillPath: String?
     var fillColor: String = "#000000"
 }
@@ -310,13 +319,19 @@ enum EaselVectorExport {
     }
 
     static func text(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
-        guard let layout, !layout.runs.isEmpty || layout.fillPath != nil else { return "" }
+        guard let layout, !layout.runs.isEmpty || !layout.images.isEmpty || layout.fillPath != nil else { return "" }
         var result = "<g transform=\"translate(" + number(item.frame.x) + " " + number(item.frame.y) + ")\">"
         if let fill = layout.fillPath, !fill.isEmpty {
             result += "<path d=\"" + escape(fill) + "\" style=\"fill:" + (color(layout.fillColor) ?? "#000000") + "\"/>"
         }
         for run in layout.runs where !run.text.isEmpty { result += textRun(run) }
+        for placed in layout.images { result += inlineImage(placed) }
         return result + "</g>"
+    }
+
+    static func inlineImage(_ placed: EaselVectorInlineImage) -> String {
+        "<image x=\"" + number(placed.x) + "\" y=\"" + number(placed.y) + "\" width=\"" + number(placed.width) + "\" height=\""
+            + number(placed.height) + "\" preserveAspectRatio=\"xMidYMid meet\" href=\"" + escape(placed.image.dataURI) + "\"/>"
     }
 
     static func textRun(_ run: EaselVectorTextRun) -> String {

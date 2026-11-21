@@ -68,6 +68,12 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
+  "$repo_root/tests/EaselRichTextInlineTests.swift" \
+  -o "$scratch/easel-rich-text-inline"
+"$scratch/easel-rich-text-inline"
+
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
+  "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/tests/EaselPagesTests.swift" \
   -o "$scratch/easel-pages"
 "$scratch/easel-pages"
@@ -125,6 +131,21 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselClipboardText.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
+  "$repo_root/Sources/ParcApp/EaselInlineText.swift" \
+  "$repo_root/Sources/ParcApp/NoteTextAttachments.swift" \
+  "$repo_root/Sources/ParcApp/NoteMathRenderer.swift" \
+  "$repo_root/Sources/ParcApp/NoteMathLayout.swift" \
+  "$repo_root/Sources/ParcApp/NoteMathFont.swift" \
+  "$repo_root/Sources/ParcApp/NoteCustomEmojiImages.swift" \
+  "$repo_root/Sources/ParcApp/NoteFloatingPanel.swift" \
+  "$repo_root/Sources/ParcApp/NoteAnimation.swift" \
+  "$repo_root/Sources/ParcApp/NoteControls.swift" \
+  "$repo_root/Sources/ParcApp/DocumentDefaultIcon.swift" \
+  "$repo_root/Sources/ParcApp/LibraryArtwork.swift" \
+  "$repo_root/Sources/ParcApp/SidebarIconCatalog.swift" \
+  "$repo_root/Sources/ParcApp/MenuItemImage.swift" \
+  "$repo_root/Sources/ParcApp/ParcBrandMark.swift" \
+  "$repo_root/tests/NotesEditor/NoteDesignSystemStubs.swift" \
   "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
   "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
@@ -148,6 +169,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselClipboardText.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
+  "$repo_root/Sources/ParcApp/EaselInlineText.swift" \
+  "$repo_root/Sources/ParcApp/NoteTextAttachments.swift" \
   "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
   "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
@@ -197,6 +220,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselClipboardText.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
+  "$repo_root/Sources/ParcApp/EaselInlineText.swift" \
+  "$repo_root/Sources/ParcApp/NoteTextAttachments.swift" \
   "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
   "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
@@ -289,6 +314,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselClipboardText.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
+  "$repo_root/Sources/ParcApp/EaselInlineText.swift" \
+  "$repo_root/Sources/ParcApp/NoteTextAttachments.swift" \
   "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
   "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \

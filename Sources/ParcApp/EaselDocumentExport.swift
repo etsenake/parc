@@ -25,7 +25,7 @@ enum EaselDocumentExport {
         manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { rect, _, _, glyphs, _ in
             let characters = manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
             storage.enumerateAttributes(in: characters) { attributes, range, _ in
-                var value = text.substring(with: range).replacingOccurrences(of: "\u{FFFC}", with: "")
+                var value = EaselInlineText.exportText(attributes, text.substring(with: range), images: true)
                 while let last = value.last, last.isNewline { value.removeLast() }
                 guard !value.isEmpty else { return }
                 let glyphRange = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
@@ -48,6 +48,7 @@ enum EaselDocumentExport {
                 result.runs.append(run)
             }
         }
+        result.images = EaselInlineText.exportImages(layout, offset: CGPoint(x: placed.x - item.frame.x, y: placed.y - item.frame.y))
         return result
     }
 
