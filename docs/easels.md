@@ -118,8 +118,11 @@ multiple selections refuse without partial edits.
 
 ## Clipboard boundary
 
-Copy publishes the private version-3 rich carrier plus RTF/RTFD and plain text;
-versions 1 and 2 remain readable. Cut mutates only after publication succeeds.
+Copy publishes the private version-3 rich carrier plus RTF/RTFD, plain text,
+HTML and Markdown; versions 1 and 2 remain readable. Pasting HTML, Markdown or
+a Notes copy into text keeps headings, lists, links, bold, italic, strike and
+code, using the Notes readers mapped onto the Easel's paragraph and font
+attributes; the private carrier still wins when it is present. Cut mutates only after publication succeeds.
 Private ranges are rebased. Explicit plain paste keeps receiving attributes.
 
 The private rich carrier takes precedence over its fallback, even when fallback
@@ -298,9 +301,14 @@ from the same floating menu, rows, highlight, motion and keyboard handling as
 the Notes page menu: Copy Link (the Easel's `parc://easel/…` address), Copy as
 Image (a PNG on the pasteboard), Export (Image…, HTML File…, PDF…), Show in
 Library, [Easel History](easel-board-features.md#easel-history), Duplicate, and
-Delete Easel…, with the object count and last edit
-underneath. Easels have no lock. Exports are named after the Easel's title and
-end with the Notes "Exported …" toast.
+Delete Easel…, with the object count, word count, reading time and last edit
+underneath. Lock Easel makes the canvas view-only
+([board features](easel-board-features.md#lock-easel)), and Copy as Markdown and
+Export → Markdown File… write the Easel in reading order. The four Notes font
+cards at the top set the default text for new objects (Default, Serif, Mono and
+Wide map to Clean, Fancy, Mono and Hip); existing objects keep their own. File ›
+Print prints the PDF the export draws, one sheet per page. Exports are named
+after the Easel's title and end with the Notes "Exported …" toast.
 
 HTML exports are one self-contained file in the Notes export style: the title
 over the Easel drawn as SVG sized to the content bounds plus margins. Shapes,
@@ -357,6 +365,9 @@ optional `language`. [Block equations](easel-equations.md#saved-format) keep the
 link ([mind maps](easel-mind-maps.md#saved-format)). A text style may carry `alignment`, `customSize` (8 to 400
 points, overriding the preset size) and, on text objects only, `autoWidth` for
 point text; absent means the preset size and fixed-width area text.
+The document may carry `locked` (a locked Easel) and `defaultFamily` (the text
+family for new objects); both stay out of the file until used. Text and
+object links may be note addresses (`file://`) or Easel addresses.
 An Easel with more than one page keeps a `pages` list (`id`, `name`) on the
 document and a `page` ID on each object; both stay out of the file until a
 second page exists, and an object without one belongs to the first page

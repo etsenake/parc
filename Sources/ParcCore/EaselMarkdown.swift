@@ -29,6 +29,17 @@ enum EaselMarkdown {
         return NotePage(blocks: blocks)
     }
 
+    static func blocks(text: String, richText: EaselRichText?) -> [NoteBlock] {
+        var item = EaselItem(kind: .text, frame: EaselRect(x: 0, y: 0, width: 1, height: 1))
+        item.text = text
+        item.richText = richText
+        return nest(paragraphs(of: item))
+    }
+
+    static func blocks(for items: [EaselItem], options: Options = Options()) -> [NoteBlock] {
+        pageBlocks(items, headingLevel: 2, options: options)
+    }
+
     static func pageBlocks(_ items: [EaselItem], headingLevel: Int, options: Options) -> [NoteBlock] {
         let hidden = EaselBoardObjects.hiddenIDs(in: items)
         let visible = hidden.isEmpty ? items : items.filter { !hidden.contains($0.id) }

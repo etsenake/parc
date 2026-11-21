@@ -246,7 +246,7 @@ extension EaselCanvasView {
         }
         let locking = EaselArrange.shouldLock(ids, in: document)
         arrange.append(row("lock", locking ? "Lock" : "Unlock", locking ? "lock" : "lock.open", "⇧⌘L") { $0.toggleLock() })
-        arrange += sectionMenuRows(context) + shapeMenuRows(context) + transformMenuRows(context) + pageMenuRows(context)
+        arrange += sectionMenuRows(context) + shapeMenuRows(context) + transformMenuRows(context) + pageMenuRows(context) + sendMenuRows(context)
         var object: [EaselMenuRow] = []
         if context.target == .object, let item = context.items.first, let raw = item.url, !item.kind.holdsText {
             if pageObjects != nil, fixedCanvasSize == nil, EaselWebItemChrome.canMakeLive(item) {

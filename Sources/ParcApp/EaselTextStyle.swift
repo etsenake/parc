@@ -492,6 +492,9 @@ final class EaselStyledTextView: LocalContentDropTextView {
             if !plain, let url = try EaselClipboardURL.read(from: board) {
                 return try pasteLink(url)
             }
+            if !plain, let styled = EaselClipboardText.attributed(from: board, typing: typingAttributes, base: objectStyle) {
+                return try pastePlainText(styled.string, styled: styled)
+            }
             if !plain, let payload = try EaselStyledText.read(from: board) {
                 insertText(adaptsInk ? EaselInk.adapting(payload.attributed) : payload.attributed, replacementRange: selectedRange()); return true
             }
@@ -504,12 +507,12 @@ final class EaselStyledTextView: LocalContentDropTextView {
         } catch { onClipboardError?(error) }
         return false
     }
-    private func pastePlainText(_ text: String) throws -> Bool {
+    private func pastePlainText(_ text: String, styled: NSAttributedString? = nil) throws -> Bool {
         let before = attributedString(), range = selectedRange()
         guard Self.validFormattingRanges([range], length: before.length) else { return false }
         var typing = typingAttributes
         typing.removeValue(forKey: .attachment); typing.removeValue(forKey: .link)
-        let input = NSAttributedString(string: text, attributes: typing)
+        let input = styled ?? NSAttributedString(string: text, attributes: typing)
         var replacement = range
         if (before.string as NSString).substring(with: range).contains("\n"), NSMaxRange(range) < before.length {
             let ending = (before.string as NSString).paragraphRange(for: NSRange(location: NSMaxRange(range), length: 0))
@@ -612,13 +615,21 @@ final class EaselStyledTextView: LocalContentDropTextView {
     }
     override var writablePasteboardTypes: [NSPasteboard.PasteboardType] {
         guard let selected = try? selectedPayload() else { return [] }
-        return [EaselStyledText.pasteboardType, EaselTextAttachments.hasImages(selected.attributed) ? .rtfd : .rtf, .string]
+        return [EaselStyledText.pasteboardType, EaselTextAttachments.hasImages(selected.attributed) ? .rtfd : .rtf, .string,
+                .html, NoteClipboard.markdownType]
     }
     override func writeSelection(to board: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
         do {
             guard let selected = try selectedPayload() else { return false }
             try selected.validate()
             if type == .string { return board.setString(EaselTextAttachments.plainString(selected.text), forType: type) }
+            if type == .html || type == NoteClipboard.markdownType {
+                let blocks = EaselMarkdown.blocks(text: selected.text, richText: selected.richText)
+                let item = NSPasteboardItem()
+                EaselClipboardText.writeFlavours(for: blocks, into: item)
+                guard let value = item.string(forType: type) else { return false }
+                return board.setString(value, forType: type)
+            }
             let data: Data
             if type == EaselStyledText.pasteboardType { data = try JSONEncoder().encode(selected) }
             else if type == .rtfd || (type == .rtf && !EaselTextAttachments.hasImages(selected.attributed)) {

@@ -298,17 +298,19 @@ or text. The note's own file keeps everything.
 Note History keeps versions through macOS file versions and restores one as a
 single undo step, and File › Print prints the real page.
 
-Under the title, "3 backlinks" counts the notes that link to or mention this
-one: Markdown links to its file, page links and note mentions, from the Space's
-Notes folder and every other folder Parc has opened notes from. Clicking it
+Under the title, "3 backlinks" counts the notes and Easels that link to or
+mention this one: Markdown links to its file, page links and note mentions, from
+the Space's Notes folder and every other folder Parc has opened notes from, and
+text or object links in the Profile's Easels. An Easel's row shows the Easel
+mark and title and opens the Easel at the linking object. Clicking it
 opens a list of those notes with their icon and the sentence around the link;
 picking one opens it at the linking section. The menu's Backlinks item shows the
 list inline under the title instead (Expanded) or hides it (Off), saved in the
 note's front matter. The index reads files off the main thread and follows
 folder changes, so counts update as other notes are edited. Renaming or moving a
 note, in Parc or in Finder (recognised by the file's identity), keeps its count
-steady and rewrites the links to it in other notes, changing only the link in
-files that aren't open.
+steady and rewrites the links to it in other notes and in Easels, changing only
+the link in files that aren't open.
 
 ⌘F finds and replaces across the whole note, including its title, captions and
 table cells; inside a focused live embed it searches that page instead. `.txt`

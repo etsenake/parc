@@ -16,6 +16,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     }
 
     let session: EaselSession
+    let easelStore: EaselStore
     let titleField = NSTextField()
     private let status = NSTextField(labelWithString: "Saved on this Mac")
     private let scroll = NSScrollView()
@@ -92,7 +93,8 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private var panels: EaselPanels?
 
     init(directory: URL, documentID: UUID) throws {
-        session = try Self.sharedStore(directory: directory).load(documentID)
+        easelStore = try Self.sharedStore(directory: directory)
+        session = try easelStore.load(documentID)
         canvas = EaselCanvasView(session: session)
         canvas.imageEditing.chrome = EaselImageChrome()
         super.init(nibName: nil, bundle: nil)
@@ -228,6 +230,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         canvas.onError = { [weak self] error in self?.show(error) }
         canvas.onOpenURL = { [weak self] url in self?.onOpenURL?(url) }
         canvas.onExportImage = { [weak self] in self?.exportImage() }
+        installSendProvider()
         canvas.onCopiedImage = { [weak self] in self?.showExportToast(.copiedImage) }
         canvas.onExportSelection = { [weak self] ids, format in self?.exportSelection(ids, as: format) }
         canvas.onKeyEquivalent = { [weak self] event in self?.performBoardKeyEquivalent(event) ?? false }
