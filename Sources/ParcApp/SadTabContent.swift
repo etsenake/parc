@@ -57,7 +57,7 @@ import AppKit
         return cachedNavigationArtwork
     }
 
-    private static func templateImage(in directory: URL?, named name: String) -> NSImage? {
+    static func templateImage(in directory: URL?, named name: String) -> NSImage? {
         guard let directory,
               let data = try? Data(contentsOf: directory.appendingPathComponent("\(name).png")),
               let base = NSBitmapImageRep(data: data) else { return nil }

@@ -28,15 +28,23 @@ final class PageFailureView: NSView {
     var onRetryRenderer: ((RendererCrashPresentation) -> Void)?
     var onRendererPresented: ((RendererCrashPresentation) -> Bool)?
     private var acknowledged: RendererCrashPresentation?
+    private let rendererArtwork: () -> NSImage?
+    private let navigationArtwork: () -> NSImage?
     let artwork = NSImageView()
     let sentence = PageFailureText()
     let corner = PageFailureText()
 
     override var isFlipped: Bool { true }
 
-    override init(frame frameRect: NSRect) {
+    override convenience init(frame frameRect: NSRect) {
+        self.init(frame: frameRect, rendererArtwork: { SadTabContent.artwork }, navigationArtwork: { SadTabContent.navigationArtwork })
+    }
+
+    init(frame frameRect: NSRect, rendererArtwork: @escaping () -> NSImage?, navigationArtwork: @escaping () -> NSImage?) {
+        self.rendererArtwork = rendererArtwork
+        self.navigationArtwork = navigationArtwork
         super.init(frame: frameRect)
-        artwork.image = SadTabContent.artwork
+        artwork.image = rendererArtwork()
         artwork.imageScaling = .scaleProportionallyUpOrDown
         artwork.contentTintColor = SadTabContent.foreground
         artwork.setAccessibilityElement(false)
@@ -57,7 +65,7 @@ final class PageFailureView: NSView {
         acknowledged = nil
         presentation = .navigation(message)
         hidePage()
-        artwork.image = SadTabContent.navigationArtwork
+        artwork.image = navigationArtwork()
         artwork.isHidden = artwork.image == nil
         sentence.segments = [SadTabContent.Segment(text: "This page couldn’t open. ", isLink: false),
                              SadTabContent.Segment(text: "Try again", isLink: true)]
@@ -70,7 +78,7 @@ final class PageFailureView: NSView {
         if presentation != .renderer(crash) { acknowledged = nil }
         presentation = .renderer(crash)
         hidePage()
-        artwork.image = SadTabContent.artwork
+        artwork.image = rendererArtwork()
         artwork.isHidden = false
         sentence.segments = SadTabContent.segments(SadTabContent.message)
         corner.segments = [SadTabContent.Segment(text: SadTabContent.errorCode(crash.errorCode), isLink: false)]
