@@ -554,7 +554,7 @@ struct SidebarHeaderGlyphTests {
     @Test func anotherPopoverClosingKeepsTheHold() {
         let center = NotificationCenter.default
         var ended = 0
-        let hold = AddressPopoverRevealHold { ended += 1 }
+        let hold = AddressPopoverRevealHold(nextTurn: { _ in }) { ended += 1 }
         let prompt = NSPopover()
         let other = NSPopover()
         center.post(name: NSPopover.willShowNotification, object: prompt)
@@ -569,12 +569,57 @@ struct SidebarHeaderGlyphTests {
     @Test func endedHoldsIgnoreLaterPopovers() {
         let center = NotificationCenter.default
         var ended = 0
-        let hold = AddressPopoverRevealHold { ended += 1 }
+        let hold = AddressPopoverRevealHold(nextTurn: { _ in }) { ended += 1 }
         let prompt = NSPopover()
         center.post(name: NSPopover.willShowNotification, object: prompt)
         center.post(name: NSPopover.didCloseNotification, object: prompt)
         center.post(name: NSPopover.willShowNotification, object: prompt)
         center.post(name: NSPopover.didCloseNotification, object: prompt)
+        #expect(ended == 1)
+        withExtendedLifetime(hold) {}
+    }
+
+    @MainActor private final class Turns {
+        var pending: [@MainActor () -> Void] = []
+        func run() {
+            let due = pending
+            pending.removeAll()
+            due.forEach { $0() }
+        }
+    }
+
+    @Test func aPromptThatNeverShowsKeepsItsHoldUntilTheNextTurn() {
+        let turns = Turns()
+        var ended = 0
+        let hold = AddressPopoverRevealHold(nextTurn: { turns.pending.append($0) }) { ended += 1 }
+        #expect(ended == 0)
+        #expect(turns.pending.count == 1)
+        withExtendedLifetime(hold) {}
+    }
+
+    @Test func aPromptThatNeverShowsEndsItsHoldOnTheNextTurnOnce() {
+        let turns = Turns()
+        var ended = 0
+        let hold = AddressPopoverRevealHold(nextTurn: { turns.pending.append($0) }) { ended += 1 }
+        turns.run()
+        #expect(ended == 1)
+        let prompt = NSPopover()
+        NotificationCenter.default.post(name: NSPopover.willShowNotification, object: prompt)
+        NotificationCenter.default.post(name: NSPopover.didCloseNotification, object: prompt)
+        turns.run()
+        #expect(ended == 1)
+        withExtendedLifetime(hold) {}
+    }
+
+    @Test func aPromptShownBeforeTheNextTurnKeepsItsHoldPastIt() {
+        let turns = Turns()
+        var ended = 0
+        let hold = AddressPopoverRevealHold(nextTurn: { turns.pending.append($0) }) { ended += 1 }
+        let prompt = NSPopover()
+        NotificationCenter.default.post(name: NSPopover.willShowNotification, object: prompt)
+        turns.run()
+        #expect(ended == 0)
+        NotificationCenter.default.post(name: NSPopover.didCloseNotification, object: prompt)
         #expect(ended == 1)
         withExtendedLifetime(hold) {}
     }
@@ -678,7 +723,7 @@ struct SidebarHeaderGlyphTests {
     @Test func aPopupSweepLeavesTheSitePanelsPopoverHoldAlone() {
         let p = Popup()
         var ended = 0
-        let hold = AddressPopoverRevealHold { ended += 1 }
+        let hold = AddressPopoverRevealHold(nextTurn: { _ in }) { ended += 1 }
         let panel = NSPopover()
         p.center.post(name: NSPopover.willShowNotification, object: panel)
         hold.endIfWindowClosed()
