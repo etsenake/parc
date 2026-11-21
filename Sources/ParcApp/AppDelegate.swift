@@ -2841,7 +2841,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @discardableResult
-    func buildMenus(shortcuts: KeyboardShortcuts = .shared, install: Bool = true) -> NSMenu {
+    func buildMenus(shortcuts: KeyboardShortcuts? = nil, install: Bool = true) -> NSMenu {
+        let shortcuts = shortcuts ?? .shared
         let main = ShortcutMainMenu()
         func menu(_ title: String) -> NSMenu {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
