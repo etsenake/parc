@@ -204,6 +204,7 @@ struct ShortcutSmileyArtwork {
     private let artwork: ShortcutSmileyArtwork?
     private let reduceMotion: () -> Bool
     private let schedule: (Timer) -> Void
+    private let redraw: (NSView) -> Void
     private var timer: Timer?
     var now: () -> CFTimeInterval = { CACurrentMediaTime() }
     private var startedAt = 0.0
@@ -221,10 +222,11 @@ struct ShortcutSmileyArtwork {
     }
 
     init(frame: NSRect, artwork: ShortcutSmileyArtwork?, reduceMotion: @escaping () -> Bool,
-         schedule: @escaping (Timer) -> Void) {
+         schedule: @escaping (Timer) -> Void, redraw: @escaping @MainActor (NSView) -> Void = { $0.needsDisplay = true }) {
         self.artwork = artwork
         self.reduceMotion = reduceMotion
         self.schedule = schedule
+        self.redraw = redraw
         super.init(frame: frame); setAccessibilityElement(false)
         motionObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
             object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.restartPlayback() } }
@@ -272,7 +274,7 @@ struct ShortcutSmileyArtwork {
     }
     private func stopFrames() { timer?.invalidate(); timer = nil }
     private func invalidateDisplay() {
-        needsDisplay = true
+        redraw(self)
     }
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
