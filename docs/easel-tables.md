@@ -61,8 +61,10 @@ Hovering a selected table shows its controls, drawn from the Notes table:
 - Grips sit on the top edge over the hovered column and on the left edge beside
   the hovered row. Click a grip to select the whole column or row,
   Shift-click another grip to extend, and drag a grip to move the selected
-  columns or rows; an accent line shows where they'll land. Moving a block that
-  would split a merged cell unmerges it.
+  columns or rows; an accent line shows where they'll land. Moves never split a
+  merged cell: a drop inside one snaps to the nearest spot outside it, and
+  Option-arrows hop over the whole merged block, as in Numbers. Duplicating
+  works on whole merged blocks only.
 - Drag a border between two columns or rows to resize it. Columns stop at 48
   points and rows never get shorter than their text. Borders hidden inside a
   merged cell can't be grabbed.
@@ -99,14 +101,18 @@ variant on dark paper and back.
 ## Data in and out
 
 - **Paste spreadsheet cells** from Numbers, Excel or Google Sheets onto the
-  canvas to make a table. Parc reads HTML tables first (keeping merged cells),
-  then tab-separated text where every line has the same number of cells, then
+  canvas to make a table. Parc reads the HTML table those apps put on the
+  clipboard (keeping merged cells) when their plain text is tab-separated, so
+  mail and web pages laid out with tables still paste as text. Otherwise it
+  reads tab-separated text where every line has the same number of cells, then
   comma-separated text. Dropping or pasting a single `.csv` or `.tsv` file works
-  too. Imports keep the first 500 cells and the first 100 columns, and columns
-  get widths that fit their text.
+  too. A pasted table keeps the first 500 cells and 100 columns, columns get
+  widths that fit their text, and a "Kept what fits" toast says when anything
+  was left behind.
 - **Paste into a table** with a cell selected and the cells fill from there,
-  growing the table as needed. A single value fills every selected cell. Plain
-  text and Easel text paste into the selected cell with their formatting.
+  growing the table up to its limits (with the same toast if some cells don't
+  fit). A single value fills every selected cell. Plain text and Easel text
+  paste into the selected cell with their formatting.
 - **Copy** with cells selected (or just the table) puts the block on the
   clipboard as an Easel table, an HTML table and tab-separated text, so it
   pastes as a table in another Easel and as cells in spreadsheets.

@@ -97,6 +97,10 @@ enum EaselTableDirection: CaseIterable {
     case up, down, left, right
 }
 
+enum EaselTableAxis {
+    case rows, columns
+}
+
 struct EaselTable: Codable, Equatable {
     static let maximumRows = 100
     static let maximumColumns = 100
@@ -372,9 +376,52 @@ struct EaselTable: Codable, Equatable {
         return rest
     }
 
+    private func span(of merge: EaselTableMerge, along axis: EaselTableAxis) -> ClosedRange<Int> {
+        axis == .rows ? merge.range.rows : merge.range.columns
+    }
+
+    func keepsMerges(moving block: ClosedRange<Int>, to destination: Int, along axis: EaselTableAxis) -> Bool {
+        let count = axis == .rows ? rowCount : columnCount
+        guard let order = Self.order(count: count, moving: block, to: destination) else { return false }
+        var position = [Int](repeating: 0, count: count)
+        for (new, old) in order.enumerated() { position[old] = new }
+        return merges.allSatisfy { merge in
+            let lines = span(of: merge, along: axis)
+            if lines.overlaps(block), !(block.contains(lines.lowerBound) && block.contains(lines.upperBound)) { return false }
+            let mapped = lines.map { position[$0] }
+            guard let low = mapped.min(), let high = mapped.max() else { return false }
+            return high - low + 1 == lines.count && position[lines.lowerBound] == low
+        }
+    }
+
+    func destination(moving block: ClosedRange<Int>, by step: Int, along axis: EaselTableAxis) -> Int? {
+        let count = axis == .rows ? rowCount : columnCount
+        guard step != 0 else { return nil }
+        var candidate = block.lowerBound + step
+        while candidate >= 0, candidate <= count - block.count {
+            if keepsMerges(moving: block, to: candidate, along: axis) { return candidate }
+            candidate += step > 0 ? 1 : -1
+        }
+        return nil
+    }
+
+    func nearestDestination(moving block: ClosedRange<Int>, to desired: Int, along axis: EaselTableAxis) -> Int {
+        let count = axis == .rows ? rowCount : columnCount
+        let limit = count - block.count
+        guard limit >= 0 else { return block.lowerBound }
+        let target = min(max(0, desired), limit)
+        for distance in 0...limit {
+            for candidate in [target - distance, target + distance] where candidate >= 0 && candidate <= limit {
+                if candidate == block.lowerBound || keepsMerges(moving: block, to: candidate, along: axis) { return candidate }
+            }
+        }
+        return block.lowerBound
+    }
+
     @discardableResult
     mutating func moveRows(_ block: ClosedRange<Int>, to destination: Int) -> Bool {
-        guard let order = Self.order(count: rowCount, moving: block, to: destination), order != Array(0..<rowCount) else { return false }
+        guard keepsMerges(moving: block, to: destination, along: .rows),
+              let order = Self.order(count: rowCount, moving: block, to: destination), order != Array(0..<rowCount) else { return false }
         var position = [Int](repeating: 0, count: rowCount)
         for (new, old) in order.enumerated() { position[old] = new }
         cells = order.map { cells[$0] }
@@ -391,7 +438,8 @@ struct EaselTable: Codable, Equatable {
 
     @discardableResult
     mutating func moveColumns(_ block: ClosedRange<Int>, to destination: Int) -> Bool {
-        guard let order = Self.order(count: columnCount, moving: block, to: destination), order != Array(0..<columnCount) else { return false }
+        guard keepsMerges(moving: block, to: destination, along: .columns),
+              let order = Self.order(count: columnCount, moving: block, to: destination), order != Array(0..<columnCount) else { return false }
         var position = [Int](repeating: 0, count: columnCount)
         for (new, old) in order.enumerated() { position[old] = new }
         cells = cells.map { row in order.map { row[$0] } }
@@ -408,7 +456,8 @@ struct EaselTable: Codable, Equatable {
 
     @discardableResult
     mutating func duplicateRows(_ block: ClosedRange<Int>) -> Bool {
-        guard block.lowerBound >= 0, block.upperBound < rowCount else { return false }
+        guard block.lowerBound >= 0, block.upperBound < rowCount,
+              expanded(EaselTableRange(rows: block, columns: all.columns)).rows == block else { return false }
         let copies = Array(cells[block]), heights = Array(rowHeights[block])
         let copiedMerges = merges.filter { block.contains($0.row) && block.contains($0.range.rows.upperBound) }
         guard insertRows(at: block.upperBound + 1, count: block.count) else { return false }
@@ -416,7 +465,6 @@ struct EaselTable: Codable, Equatable {
             cells[block.upperBound + 1 + offset] = row
             rowHeights[block.upperBound + 1 + offset] = heights[offset]
         }
-        merges.removeAll { $0.range.rows.overlaps((block.upperBound + 1)...(block.upperBound + block.count)) && !block.contains($0.row) }
         merges += copiedMerges.map { EaselTableMerge(row: $0.row + block.count, column: $0.column, rowSpan: $0.rowSpan, columnSpan: $0.columnSpan) }
         clearCovered()
         return true
@@ -424,7 +472,8 @@ struct EaselTable: Codable, Equatable {
 
     @discardableResult
     mutating func duplicateColumns(_ block: ClosedRange<Int>) -> Bool {
-        guard block.lowerBound >= 0, block.upperBound < columnCount else { return false }
+        guard block.lowerBound >= 0, block.upperBound < columnCount,
+              expanded(EaselTableRange(rows: all.rows, columns: block)).columns == block else { return false }
         let copies = cells.map { Array($0[block]) }, widths = Array(columnWidths[block])
         let copiedMerges = merges.filter { block.contains($0.column) && block.contains($0.range.columns.upperBound) }
         guard insertColumns(at: block.upperBound + 1, count: block.count) else { return false }
@@ -432,7 +481,6 @@ struct EaselTable: Codable, Equatable {
             for offset in 0..<block.count { cells[row][block.upperBound + 1 + offset] = copies[row][offset] }
         }
         for offset in 0..<block.count { columnWidths[block.upperBound + 1 + offset] = widths[offset] }
-        merges.removeAll { $0.range.columns.overlaps((block.upperBound + 1)...(block.upperBound + block.count)) && !block.contains($0.column) }
         merges += copiedMerges.map { EaselTableMerge(row: $0.row, column: $0.column + block.count, rowSpan: $0.rowSpan, columnSpan: $0.columnSpan) }
         clearCovered()
         return true

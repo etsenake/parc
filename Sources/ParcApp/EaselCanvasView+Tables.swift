@@ -140,6 +140,7 @@ extension EaselCanvasView {
     }
 
     func cancelTableInteraction() {
+        cancelTablePlacement()
         let id = tableState.dragTable ?? tableState.preview?.id
         tableState.drag = nil
         tableState.dragTable = nil
@@ -828,10 +829,10 @@ extension EaselCanvasView {
             preview.frame.height = next.height
             tableState.preview = preview
         case .columns(let block, let destination):
-            let next = grid.dropIndex(for: Double(point.x), edges: grid.columnEdges, moving: block)
+            let next = table.nearestDestination(moving: block, to: grid.dropIndex(for: Double(point.x), edges: grid.columnEdges, moving: block), along: .columns)
             if next != destination { tableState.drag = .columns(block, destination: next) }
         case .rows(let block, let destination):
-            let next = grid.dropIndex(for: Double(point.y), edges: grid.rowEdges, moving: block)
+            let next = table.nearestDestination(moving: block, to: grid.dropIndex(for: Double(point.y), edges: grid.rowEdges, moving: block), along: .rows)
             if next != destination { tableState.drag = .rows(block, destination: next) }
         }
         autoscroll(with: event)
@@ -1108,17 +1109,13 @@ extension EaselCanvasView {
         case 36, 76:
             if shift { insertTableColumns(id, at: range.columns.upperBound + 1) } else { insertTableRows(id, at: range.rows.upperBound + 1) }
         case 125, 126:
-            let destination = range.rows.lowerBound + (keyCode == 126 ? -1 : 1)
-            guard destination >= 0, destination <= table.rowCount - range.rows.count,
-                  table.expanded(EaselTableRange(rows: range.rows, columns: table.all.columns)).rows == range.rows else { NSSound.beep(); return true }
+            guard let destination = table.destination(moving: range.rows, by: keyCode == 126 ? -1 : 1, along: .rows) else { NSSound.beep(); return true }
             if commitTable(range.rows.count == 1 ? "Move Row" : "Move Rows", id, { $0.moveRows(range.rows, to: destination) }) {
                 selectTableCells(id, anchor: EaselTableCoordinate(row: destination, column: range.columns.lowerBound),
                                  head: EaselTableCoordinate(row: destination + range.rows.count - 1, column: range.columns.upperBound))
             }
         case 123, 124:
-            let destination = range.columns.lowerBound + (keyCode == 123 ? -1 : 1)
-            guard destination >= 0, destination <= table.columnCount - range.columns.count,
-                  table.expanded(EaselTableRange(rows: table.all.rows, columns: range.columns)).columns == range.columns else { NSSound.beep(); return true }
+            guard let destination = table.destination(moving: range.columns, by: keyCode == 123 ? -1 : 1, along: .columns) else { NSSound.beep(); return true }
             if commitTable(range.columns.count == 1 ? "Move Column" : "Move Columns", id, { $0.moveColumns(range.columns, to: destination) }) {
                 selectTableCells(id, anchor: EaselTableCoordinate(row: range.rows.lowerBound, column: destination),
                                  head: EaselTableCoordinate(row: range.rows.upperBound, column: destination + range.columns.count - 1))
@@ -1275,25 +1272,29 @@ extension EaselCanvasView {
                          head: EaselTableCoordinate(row: selected.table.rowCount - 1, column: columns.upperBound + columns.count))
     }
 
-    func tableSource(from pasteboard: NSPasteboard, intoCells: Bool) -> (table: EaselTable, measured: Bool)? {
+    func tableSource(from pasteboard: NSPasteboard, intoCells: Bool) -> (table: EaselTable, measured: Bool, trimmed: Bool)? {
         if let data = pasteboard.data(forType: EaselTableMetrics.clipboardType), data.count <= EaselStore.maximumDocumentBytes,
            let table = try? JSONDecoder().decode(EaselTable.self, from: data), (try? table.validate()) != nil {
-            return (table, true)
+            return (table, true, false)
         }
+        let limit = intoCells ? EaselTable.maximumCells : EaselTable.maximumPastedCells
         let styled = pasteboard.availableType(from: [EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType,
                                                      EaselStyledText.legacyPasteboardType]) != nil
         if !styled {
+            let plain = pasteboard.string(forType: .string)
             let html = pasteboard.string(forType: .html) ?? pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
-            if let html, html.utf8.count <= EaselTableData.maximumInputCharacters, let grid = EaselTableData.html(html),
-               intoCells || grid.rowCount * grid.columnCount >= 2, let table = EaselTableData.table(from: grid) {
-                return (table, false)
+            if let html, EaselTableData.readsHTMLTable(plainText: plain, intoCells: intoCells),
+               html.utf8.count <= EaselTableData.maximumInputCharacters, let grid = EaselTableData.html(html),
+               intoCells || grid.rowCount * grid.columnCount >= 2, let imported = EaselTableData.imported(grid, limit: limit) {
+                return (imported.table, false, imported.trimmed)
             }
-            if let text = pasteboard.string(forType: .string), let grid = EaselTableData.spreadsheetText(text), let table = EaselTableData.table(from: grid) {
-                return (table, false)
+            if let plain, let grid = EaselTableData.spreadsheetText(plain), let imported = EaselTableData.imported(grid, limit: limit) {
+                return (imported.table, false, imported.trimmed)
             }
             if let data = pasteboard.data(forType: EaselTableMetrics.csvType), data.count <= EaselTableData.maximumInputCharacters,
-               let text = String(data: data, encoding: .utf8), let grid = EaselTableData.csv(text), let table = EaselTableData.table(from: grid) {
-                return (table, false)
+               let text = String(data: data, encoding: .utf8), let grid = EaselTableData.csv(text),
+               let imported = EaselTableData.imported(grid, limit: limit) {
+                return (imported.table, false, imported.trimmed)
             }
             if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
                urls.count == 1, let url = urls.first, ["csv", "tsv"].contains(url.pathExtension.lowercased()),
@@ -1301,22 +1302,29 @@ extension EaselCanvasView {
                (values.fileSize ?? Int.max) <= EaselTableData.maximumInputCharacters,
                let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) {
                 let grid: EaselTableGrid? = url.pathExtension.lowercased() == "tsv" ? EaselTableData.delimited(text, separator: "\t") : EaselTableData.csv(text)
-                if let grid, let table = EaselTableData.table(from: grid) { return (table, false) }
+                if let grid, let imported = EaselTableData.imported(grid, limit: limit) { return (imported.table, false, imported.trimmed) }
             }
         }
         guard intoCells else { return nil }
         if let styledText = try? EaselStyledText.read(from: pasteboard) {
             var table = EaselTable.blank(columns: 1, rows: 1)
+            let fits = styledText.text.utf8.count <= EaselTable.maximumCellBytes
             table.cells[0][0] = EaselTableCell(text: EaselTableData.clipped(styledText.text, bytes: EaselTable.maximumCellBytes),
-                                               richText: styledText.text.utf8.count <= EaselTable.maximumCellBytes ? styledText.richText : nil)
-            return (table, false)
+                                               richText: fits ? styledText.richText : nil)
+            return (table, false, !fits)
         }
         if let plain = try? EaselStyledText.plainText(from: pasteboard) {
             var table = EaselTable.blank(columns: 1, rows: 1)
             table.cells[0][0].text = EaselTableData.clipped(plain, bytes: EaselTable.maximumCellBytes)
-            return (table, false)
+            return (table, false, table.cells[0][0].text.utf8.count < plain.utf8.count)
         }
         return nil
+    }
+
+    private func announceTableTrim(_ detail: String) {
+        (window?.windowController as? BrowserWindowController)?.showToast(.standard("Kept what fits", subLabel: detail))
+        NSAccessibility.post(element: self, notification: .announcementRequested,
+                             userInfo: [.announcement: "Kept what fits. " + detail, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     func readTablePasteboard(_ pasteboard: NSPasteboard) -> Bool {
@@ -1330,6 +1338,9 @@ extension EaselCanvasView {
             }), let placed {
                 selectTableCells(selected.item.id, anchor: placed.topLeft,
                                  head: EaselTableCoordinate(row: placed.rows.upperBound, column: placed.columns.upperBound))
+                if source.trimmed || placed.rows.count < source.table.rowCount || placed.columns.count < source.table.columnCount {
+                    announceTableTrim("Tables hold up to 100 rows, 100 columns and 10,000 cells.")
+                }
             }
             return true
         }
@@ -1342,7 +1353,9 @@ extension EaselCanvasView {
                               width: table.width, height: table.height)
         var item = EaselItem(kind: .table, frame: frame, zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1)
         item.table = table
-        return addTable(item, name: "Paste table", selectFirstCell: false)
+        guard addTable(item, name: "Paste table", selectFirstCell: false) else { return false }
+        if source.trimmed { announceTableTrim("A pasted table keeps up to 500 cells and 100 columns.") }
+        return true
     }
 
     private func measureTableColumns(_ table: inout EaselTable) {

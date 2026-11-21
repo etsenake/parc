@@ -164,6 +164,13 @@ struct EaselTableTests {
         expect(merged.removeColumns(0...0), "Deleting a merge's anchor column works")
         expect(merged.merges == [EaselTableMerge(row: 0, column: 0, rowSpan: 1, columnSpan: 2)] && merged.cells[0][0].text == "a", "The merge keeps its text")
         expect(merged.removeColumns(0...0) && merged.merges.isEmpty && merged.cells[0][0].text == "a", "A merge shrunk to one cell disappears")
+        var cut = filled([["a", "x"], ["b", "y"], ["", "z"]])
+        cut.merges = [EaselTableMerge(row: 1, column: 0, rowSpan: 2, columnSpan: 1)]
+        expect(!cut.duplicateRows(1...1) && !cut.duplicateRows(0...1), "Duplicating half a merged block is refused")
+        expect(cut.duplicateRows(1...2) && cut.merges.count == 2 && (try? cut.validate()) != nil, "Duplicating whole merged rows copies the merge")
+        var across = filled([["a", "", "c"]])
+        across.merges = [EaselTableMerge(row: 0, column: 0, rowSpan: 1, columnSpan: 2)]
+        expect(!across.duplicateColumns(1...1) && across.duplicateColumns(0...1) && (try? across.validate()) != nil, "Columns duplicate only whole merges")
         var copy = filled([["a", "b"], ["c", "d"]])
         expect(copy.duplicateRows(0...0) && copy.rowCount == 3 && copy.cells[1][0].text == "a" && copy.cells[2][0].text == "c", "Rows duplicate below")
         expect(copy.duplicateColumns(1...1) && copy.columnCount == 3 && copy.cells[0][2].text == "b", "Columns duplicate to the right")
@@ -183,7 +190,26 @@ struct EaselTableTests {
         expect(merged.moveRows(0...0, to: 2) && merged.merges == [EaselTableMerge(row: 2, column: 0, rowSpan: 1, columnSpan: 2)], "Merges travel with their row")
         var split = filled([["a", "x"], ["", "y"], ["c", "z"]])
         split.merges = [EaselTableMerge(row: 0, column: 0, rowSpan: 2, columnSpan: 1)]
-        expect(split.moveRows(2...2, to: 1) && split.merges.isEmpty && split.cells[0][0].text == "a", "A move that splits a merge unmerges it")
+        expect(!split.moveRows(2...2, to: 1) && split.merges.count == 1 && split.cells[2][0].text == "c", "A move into a merged block is refused")
+        var block = filled([["0"], ["1"], ["2"], ["3"], [""]])
+        block.merges = [EaselTableMerge(row: 3, column: 0, rowSpan: 2, columnSpan: 1)]
+        expect(!block.keepsMerges(moving: 2...2, to: 3, along: .rows), "Landing inside rows 4–5 would split their merge")
+        expect(block.destination(moving: 2...2, by: 1, along: .rows) == 4, "Option-Down hops over the whole merged block")
+        expect(block.moveRows(2...2, to: 4) && block.merges == [EaselTableMerge(row: 2, column: 0, rowSpan: 2, columnSpan: 1)]
+               && block.cells.map { $0[0].text } == ["0", "1", "3", "", "2"], "Moving past a merge keeps it whole")
+        expect(block.destination(moving: 4...4, by: -1, along: .rows) == 2, "Option-Up hops back over it")
+        expect(block.destination(moving: 1...1, by: -1, along: .rows) == 0 && block.destination(moving: 0...0, by: -1, along: .rows) == nil,
+               "Moves stop at the edge")
+        expect(block.destination(moving: 2...2, by: -1, along: .rows) == nil, "Half a merged block never moves on its own")
+        expect(!block.moveRows(2...2, to: 0) && !block.keepsMerges(moving: 3...3, to: 0, along: .rows), "A block can't cut a merge in half")
+        let snapped = block.nearestDestination(moving: 4...4, to: 3, along: .rows)
+        expect(snapped != 3 && (snapped == 4 || block.keepsMerges(moving: 4...4, to: snapped, along: .rows)), "Drags inside a merge snap to a safe spot")
+        expect(block.nearestDestination(moving: 0...0, to: 3, along: .rows) == 3, "Drags that keep merges whole land where dropped")
+        var sideways = filled([["a", "b", "", "d"]])
+        sideways.merges = [EaselTableMerge(row: 0, column: 1, rowSpan: 1, columnSpan: 2)]
+        expect(sideways.destination(moving: 0...0, by: 1, along: .columns) == 2, "Columns hop over merged blocks too")
+        expect(!sideways.moveColumns(0...0, to: 1) && sideways.moveColumns(0...0, to: 2) && sideways.cells[0].map(\.text) == ["b", "", "a", "d"]
+               && sideways.merges == [EaselTableMerge(row: 0, column: 0, rowSpan: 1, columnSpan: 2)], "Column moves keep merges whole")
     }
 
     static func merging() {
@@ -337,10 +363,25 @@ struct EaselTableTests {
         let table = grid.flatMap(EaselTableData.table(from:))
         expect(table?.rowCount == 3 && table?.columnCount == 3 && table?.merges.count == 2 && (try? table?.validate()) != nil, "Imported grids become valid tables")
         let big = EaselTableGrid(cells: Array(repeating: Array(repeating: "x", count: 7), count: 400))
-        let capped = EaselTableData.table(from: big)
-        expect(capped?.columnCount == 7 && capped?.rowCount == 71 && (capped?.rowCount ?? 0) * 7 <= EaselTable.maximumPastedCells, "Imports keep the first 500 cells")
-        let wide = EaselTableData.table(from: EaselTableGrid(cells: [Array(repeating: "y", count: 300)]))
-        expect(wide?.columnCount == 100, "Imports keep the first 100 columns")
+        let capped = EaselTableData.imported(big)
+        expect(capped?.table.columnCount == 7 && capped?.table.rowCount == 71 && capped?.trimmed == true, "New tables keep the first 500 cells and say so")
+        let roomy = EaselTableData.imported(big, limit: EaselTable.maximumCells)
+        expect(roomy?.table.rowCount == 100 && roomy?.trimmed == true, "Pasting into a table can go up to the 100-row limit and says what stayed behind")
+        let small = EaselTableData.imported(EaselTableGrid(cells: [["a", "b"], ["c", "d"]]))
+        expect(small?.trimmed == false, "Small pastes are kept whole")
+        let wide = EaselTableData.imported(EaselTableGrid(cells: [Array(repeating: "y", count: 300)]), limit: EaselTable.maximumCells)
+        expect(wide?.table.columnCount == 100 && wide?.trimmed == true, "Imports keep the first 100 columns and say so")
+        let long = EaselTableData.imported(EaselTableGrid(cells: [[String(repeating: "z", count: EaselTable.maximumCellBytes + 10), "ok"]]))
+        expect(long?.table.cells[0][0].text.utf8.count == EaselTable.maximumCellBytes && long?.trimmed == true, "Overlong cells are clipped and reported")
+        let lines = String(repeating: "a\tb\n", count: EaselTableData.maximumParsedRows + 5)
+        expect(EaselTableData.delimited(lines, separator: "\t").truncated && !EaselTableData.delimited("a\tb\n", separator: "\t").truncated,
+               "Parsing notes when it stops early")
+        let tall = "<table>" + String(repeating: "<tr><td>r</td></tr>", count: 120) + "</table>"
+        expect(EaselTableData.html(tall)?.rowCount == 100 && EaselTableData.html(tall)?.truncated == true, "HTML tables stop at 100 rows and say so")
+        expect(EaselTableData.readsHTMLTable(plainText: nil, intoCells: false) && EaselTableData.readsHTMLTable(plainText: "a\tb", intoCells: false),
+               "Spreadsheet copies read their HTML table")
+        expect(!EaselTableData.readsHTMLTable(plainText: "Hi Ada,\nthe newsletter", intoCells: false), "Mail and web pages with layout tables stay text")
+        expect(EaselTableData.readsHTMLTable(plainText: "words", intoCells: true), "Pasting into cells always reads HTML tables")
         expect(EaselTableData.decodeEntities("&bogus; &amp;amp; &#65;") == "&bogus; &amp; A", "Entities decode once and unknown ones stay")
         expect(EaselTableData.clipped("héllo", bytes: 2) == "h", "Clipping never splits a character")
     }

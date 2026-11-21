@@ -3,6 +3,7 @@ import Foundation
 struct EaselTableGrid: Equatable {
     var cells: [[String]]
     var merges: [EaselTableMerge] = []
+    var truncated = false
 
     var rowCount: Int { cells.count }
     var columnCount: Int { cells.map(\.count).max() ?? 0 }
@@ -16,6 +17,7 @@ enum EaselTableData {
         var rows: [[String]] = [], row: [String] = [], field = ""
         var quoted = false, fieldStarted = false
         let characters = Array(text.prefix(maximumInputCharacters))
+        var truncated = characters.count == maximumInputCharacters && text.count > maximumInputCharacters
         var index = 0
         while index < characters.count, rows.count < maximumParsedRows {
             let character = characters[index]
@@ -52,8 +54,14 @@ enum EaselTableData {
         if rows.count < maximumParsedRows, fieldStarted || !field.isEmpty || !row.isEmpty {
             row.append(field)
             rows.append(row)
+        } else if index < characters.count {
+            truncated = true
         }
-        return EaselTableGrid(cells: rows)
+        return EaselTableGrid(cells: rows, truncated: truncated)
+    }
+
+    static func readsHTMLTable(plainText: String?, intoCells: Bool) -> Bool {
+        intoCells || plainText == nil || plainText?.contains("\t") == true
     }
 
     static func spreadsheetText(_ text: String) -> EaselTableGrid? {
@@ -71,6 +79,7 @@ enum EaselTableData {
 
     static func html(_ html: String) -> EaselTableGrid? {
         let scalars = Array(html.unicodeScalars.prefix(maximumInputCharacters))
+        let clippedInput = scalars.count == maximumInputCharacters && html.unicodeScalars.count > maximumInputCharacters
         var rows: [[(text: String, rowSpan: Int, columnSpan: Int)]] = []
         var row: [(text: String, rowSpan: Int, columnSpan: Int)]?
         var cell: (text: String.UnicodeScalarView, rowSpan: Int, columnSpan: Int)?
@@ -150,7 +159,9 @@ enum EaselTableData {
             }
         }
         finishRow()
-        return layout(rows)
+        guard var grid = layout(rows) else { return nil }
+        if clippedInput { grid.truncated = true }
+        return grid
     }
 
     private static func span(_ name: String, in tag: Substring) -> Int {
@@ -170,14 +181,15 @@ enum EaselTableData {
         var placed: [EaselTableCoordinate: String] = [:]
         var occupied = Set<EaselTableCoordinate>()
         var merges: [EaselTableMerge] = []
-        var width = 0, height = 0
-        for (rowIndex, row) in rows.enumerated() where rowIndex < EaselTable.maximumPastedCells {
+        var width = 0, height = 0, truncated = rows.count > EaselTable.maximumRows
+        for (rowIndex, row) in rows.enumerated() where rowIndex < EaselTable.maximumRows {
             var column = 0
             for cell in row {
                 while occupied.contains(EaselTableCoordinate(row: rowIndex, column: column)) { column += 1 }
-                guard column < EaselTable.maximumColumns else { break }
-                let rowSpan = min(cell.rowSpan, EaselTable.maximumPastedCells - rowIndex)
+                guard column < EaselTable.maximumColumns else { truncated = true; break }
+                let rowSpan = min(cell.rowSpan, EaselTable.maximumRows - rowIndex)
                 let columnSpan = min(cell.columnSpan, EaselTable.maximumColumns - column)
+                if rowSpan < cell.rowSpan || columnSpan < cell.columnSpan { truncated = true }
                 placed[EaselTableCoordinate(row: rowIndex, column: column)] = cell.text
                 for r in rowIndex..<(rowIndex + rowSpan) {
                     for c in column..<(column + columnSpan) { occupied.insert(EaselTableCoordinate(row: r, column: c)) }
@@ -193,7 +205,7 @@ enum EaselTableData {
         }
         guard width > 0, height > 0 else { return nil }
         let cells = (0..<height).map { row in (0..<width).map { placed[EaselTableCoordinate(row: row, column: $0)] ?? "" } }
-        return EaselTableGrid(cells: cells, merges: merges)
+        return EaselTableGrid(cells: cells, merges: merges, truncated: truncated)
     }
 
     static func normalizedCellText(_ raw: String) -> String {
@@ -257,16 +269,21 @@ enum EaselTableData {
         return result
     }
 
-    static func table(from grid: EaselTableGrid) -> EaselTable? {
-        let width = min(EaselTable.maximumColumns, grid.columnCount)
+    static func table(from grid: EaselTableGrid) -> EaselTable? { imported(grid)?.table }
+
+    static func imported(_ grid: EaselTableGrid, limit: Int = EaselTable.maximumPastedCells) -> (table: EaselTable, trimmed: Bool)? {
+        let width = min(EaselTable.maximumColumns, grid.columnCount, max(1, limit))
         guard width > 0, grid.rowCount > 0 else { return nil }
-        let height = min(grid.rowCount, EaselTable.maximumRows, max(1, EaselTable.maximumPastedCells / width))
+        let height = min(grid.rowCount, EaselTable.maximumRows, max(1, min(limit, EaselTable.maximumCells) / width))
+        var trimmed = grid.truncated || width < grid.columnCount || height < grid.rowCount
         var table = EaselTable.blank(columns: width, rows: height)
         var bytes = 0
         for row in 0..<table.rowCount {
             for column in 0..<table.columnCount {
                 guard grid.cells.indices.contains(row), grid.cells[row].indices.contains(column) else { continue }
-                let text = clipped(grid.cells[row][column], bytes: min(EaselTable.maximumCellBytes, EaselTable.maximumTextBytes - bytes))
+                let original = grid.cells[row][column]
+                let text = clipped(original, bytes: min(EaselTable.maximumCellBytes, EaselTable.maximumTextBytes - bytes))
+                if text.utf8.count < original.utf8.count { trimmed = true }
                 bytes += text.utf8.count
                 table.cells[row][column].text = text
             }
@@ -282,7 +299,7 @@ enum EaselTableData {
             for cell in cells where cell != clippedMerge.anchor { table.cells[cell.row][cell.column] = EaselTableCell() }
             table.merges.append(clippedMerge)
         }
-        return table
+        return (table, trimmed)
     }
 
     static func clipped(_ text: String, bytes limit: Int) -> String {
