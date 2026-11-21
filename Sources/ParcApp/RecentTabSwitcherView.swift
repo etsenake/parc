@@ -56,6 +56,7 @@ final class RecentTabSwitcherView: NSView {
     private var host: RecentSwitcherHost!
     private var generation = UUID()
     private var retired = false
+    private let schedulePublication: (DispatchWorkItem) -> Void
     private var publication: DispatchWorkItem?
     private var workspaceObserver: NSObjectProtocol?
     private(set) var itemFrames: [String: CGRect] = [:]
@@ -64,7 +65,12 @@ final class RecentTabSwitcherView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
 
-    override init(frame: NSRect) {
+    override convenience init(frame: NSRect) {
+        self.init(frame: frame, schedulePublication: { DispatchQueue.main.async(execute: $0) })
+    }
+
+    init(frame: NSRect, schedulePublication: @escaping (DispatchWorkItem) -> Void) {
+        self.schedulePublication = schedulePublication
         super.init(frame: frame)
         catalog.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         host = RecentSwitcherHost(rootView: RecentSwitcherContent(catalog: catalog, focus: focusState,
@@ -175,7 +181,7 @@ final class RecentTabSwitcherView: NSView {
         guard available, let index = index(id) else { return }
         onChoose?(index)
     }
-    private func publish(frames: [String: CGRect]) {
+    func publish(frames: [String: CGRect]) {
         publication?.cancel()
         let token = generation
         let work = DispatchWorkItem { [weak self, weak originalWindow = window] in
@@ -195,7 +201,7 @@ final class RecentTabSwitcherView: NSView {
             }
         }
         publication = work
-        DispatchQueue.main.async(execute: work)
+        schedulePublication(work)
     }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow !== window { generation = UUID(); publication?.cancel(); publication = nil }

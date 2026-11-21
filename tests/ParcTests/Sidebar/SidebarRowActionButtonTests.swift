@@ -113,7 +113,7 @@ struct SidebarRowActionButtonTests {
 
     @Test func theNativeTargetActionPathGetsAFreshOwnedCommand() {
         let owner = Owner()
-        owner.button.performClick(nil)
+        owner.button.sendClick()
         #expect(owner.dispatches == 1)
     }
 
@@ -286,7 +286,7 @@ struct SidebarRowActionButtonTests {
     @Test func theResetTargetActionPathGetsAFreshOwnedCommand() {
         let owner = Owner()
         owner.attachReset()
-        owner.reset.performClick(nil)
+        owner.reset.sendClick()
         #expect(owner.dispatches == 1)
     }
 

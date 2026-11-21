@@ -259,7 +259,7 @@ neither focus nor selection, and only a running screen reader speaks them.
 | Check | Coverage |
 |---|---|
 | `SidebarAccessibilityTests` (run by `swift test`) | Exposed labels, chain ordering, focus guards and saved responder rules |
-| `scripts/test-keyboard-navigation.sh` | Control-Space announcement text, one per arrow press, list ends and folder state |
+| [Sidebar keyboard suites](../tests/ParcCoreTests/CommandBar/Keyboard) | Control-Space announcements, list ends and folder state |
 | `SidebarOutlineTests`, `SidebarOutlineSelectionTests` | Row/cell hierarchy, geometry, stable identities, disclosure, selection and accessibility selection |
 | `SidebarWindowKeyLoopTests` | Bidirectional traversal, renderer replacement, hidden sidebar, Peek and closed-loop exclusions |
 | `tests/SidebarMiniPlayerFocus/check.py` | Mini-player keyboard actions and visible rings |

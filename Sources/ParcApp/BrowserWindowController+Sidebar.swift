@@ -261,8 +261,8 @@ extension BrowserWindowController {
     }
 
     func wireSidebar() {
-        sidebar.onAddress = { [weak self] in
-            guard let self else { return }; self.focusAddress(anchor: self.sidebar.addressEditorAnchor)
+        CommandBarAddressSource.connect(sidebar) { [weak self] source in
+            self?.focusAddress(from: source)
         }
         sidebar.onNewTab = { [weak self] in self?.newTab() }
         sidebar.onNavigation = { [weak self] kind in self?.prepareNavigationInteraction(kind) }

@@ -3,7 +3,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct SplitSubmissionTests {
     @MainActor struct Split {
         let directory: URL
@@ -30,7 +29,7 @@ struct SplitSubmissionTests {
         func tab(_ id: UUID) -> BrowserTab? { store.state.tabs.first { $0.id == id } }
     }
 
-    @Test func newTokenMetadataPublishesWithItsFinalDestinationInOneTransaction() throws {
+    @Test @MainActor func newTokenMetadataPublishesWithItsFinalDestinationInOneTransaction() throws {
         let split = try Split()
         defer { try? FileManager.default.removeItem(at: split.directory) }
         let target = UUID()
@@ -50,14 +49,14 @@ struct SplitSubmissionTests {
         #expect(publications == 1)
     }
 
-    @Test func insertGoesImmediatelyAfterTheFocusedPaneNotAtTheEnd() throws {
+    @Test @MainActor func insertGoesImmediatelyAfterTheFocusedPaneNotAtTheEnd() throws {
         let split = try Split()
         defer { try? FileManager.default.removeItem(at: split.directory) }
         let target = split.insertNewTab()
         #expect(split.store.state.selectedTabIDs == [split.source, target, split.right])
     }
 
-    @Test func insertedTabKeepsTheRequestURLAndTheActiveProfile() throws {
+    @Test @MainActor func insertedTabKeepsTheRequestURLAndTheActiveProfile() throws {
         let split = try Split()
         defer { try? FileManager.default.removeItem(at: split.directory) }
         let target = split.insertNewTab()
@@ -65,7 +64,7 @@ struct SplitSubmissionTests {
         #expect(split.tab(target)?.profileID == split.store.activeSpace.profileID)
     }
 
-    @Test func insertKeepsTheExistingOrientationAndPaneProportion() throws {
+    @Test @MainActor func insertKeepsTheExistingOrientationAndPaneProportion() throws {
         let split = try Split()
         defer { try? FileManager.default.removeItem(at: split.directory) }
         _ = split.insertNewTab()
@@ -74,7 +73,7 @@ struct SplitSubmissionTests {
         #expect(abs(layout.widthFactors[0] / layout.widthFactors[2] - 3) < 0.0001)
     }
 
-    @Test func staleSelectionCannotCommitAndDoesNotMutate() throws {
+    @Test @MainActor func staleSelectionCannotCommitAndDoesNotMutate() throws {
         let split = try Split()
         defer { try? FileManager.default.removeItem(at: split.directory) }
         _ = split.insertNewTab()
@@ -84,14 +83,14 @@ struct SplitSubmissionTests {
         #expect(split.store.state == before)
     }
 
-    @Test func missingOriginalFocusCannotCommit() throws {
+    @Test @MainActor func missingOriginalFocusCannotCommit() throws {
         let split = try Split()
         defer { try? FileManager.default.removeItem(at: split.directory) }
         #expect(!split.store.insertCommandBarSplit(after: UUID(), expectedSelection: split.store.state.selectedTabIDs,
                                                    tabID: UUID(), newURL: split.url))
     }
 
-    @Test func newRequestCannotReplaceAnExistingIdentity() throws {
+    @Test @MainActor func newRequestCannotReplaceAnExistingIdentity() throws {
         let split = try Split()
         defer { try? FileManager.default.removeItem(at: split.directory) }
         let target = split.insertNewTab()
@@ -99,7 +98,7 @@ struct SplitSubmissionTests {
                                                    tabID: target, newURL: split.url))
     }
 
-    @Test func existingTabEntersTheSplitAfterTheFocusedMiddlePaneWithoutCloning() throws {
+    @Test @MainActor func existingTabEntersTheSplitAfterTheFocusedMiddlePaneWithoutCloning() throws {
         let split = try Split()
         defer { try? FileManager.default.removeItem(at: split.directory) }
         let target = split.insertNewTab()
@@ -112,7 +111,7 @@ struct SplitSubmissionTests {
         #expect(split.store.state.tabs.count == tabCount)
     }
 
-    @Test func fullSplitRejectsBeforeCreatingATabAndPreservesAllState() throws {
+    @Test @MainActor func fullSplitRejectsBeforeCreatingATabAndPreservesAllState() throws {
         let split = try Split()
         defer { try? FileManager.default.removeItem(at: split.directory) }
         let target = split.insertNewTab()
@@ -125,7 +124,7 @@ struct SplitSubmissionTests {
         #expect(split.store.state == full)
     }
 
-    @Test func alreadyVisibleOriginalTabStaysEligibleWithoutReorderingOrDuplicatingPanes() throws {
+    @Test @MainActor func alreadyVisibleOriginalTabStaysEligibleWithoutReorderingOrDuplicatingPanes() throws {
         let split = try Split()
         defer { try? FileManager.default.removeItem(at: split.directory) }
         let target = split.insertNewTab()
@@ -137,7 +136,7 @@ struct SplitSubmissionTests {
         #expect(split.store.state == full)
     }
 
-    @Test func aTodayNoteJoinsAsALaterPaneWithoutBeingPromoted() throws {
+    @Test @MainActor func aTodayNoteJoinsAsALaterPaneWithoutBeingPromoted() throws {
         let split = try Split()
         defer { try? FileManager.default.removeItem(at: split.directory) }
         let host = split.store.openResolvedURL(URL(string: "https://example.test/later-host")!)
@@ -150,7 +149,7 @@ struct SplitSubmissionTests {
         #expect(split.store.state.tabs.filter { InternalPage(urlString: $0.url)?.noteURL != nil }.count == 1)
     }
 
-    @Test func aTodayEaselJoinsAsALaterPaneWithoutBeingPromoted() throws {
+    @Test @MainActor func aTodayEaselJoinsAsALaterPaneWithoutBeingPromoted() throws {
         let split = try Split()
         defer { try? FileManager.default.removeItem(at: split.directory) }
         let host = split.store.openResolvedURL(URL(string: "https://example.test/easel-host")!)
@@ -183,7 +182,7 @@ struct SplitSubmissionTests {
         }
     }
 
-    @Test func aForeignSpaceTabMovesIntoThisSpaceWithoutASpaceSwitch() throws {
+    @Test @MainActor func aForeignSpaceTabMovesIntoThisSpaceWithoutASpaceSwitch() throws {
         let fixture = try Foreign()
         defer { try? FileManager.default.removeItem(at: fixture.split.directory) }
         let store = fixture.split.store
@@ -194,7 +193,7 @@ struct SplitSubmissionTests {
         #expect(fixture.split.tab(fixture.foreign)?.spaceID == fixture.sourceSpace)
     }
 
-    @Test func aSameProfileFavoriteFromAnotherSpaceJoinsTheTodaySplitAndKeepsItsTrayHome() throws {
+    @Test @MainActor func aSameProfileFavoriteFromAnotherSpaceJoinsTheTodaySplitAndKeepsItsTrayHome() throws {
         let fixture = try Foreign()
         defer { try? FileManager.default.removeItem(at: fixture.split.directory) }
         let store = fixture.split.store
@@ -209,7 +208,7 @@ struct SplitSubmissionTests {
         #expect(favoriteHome?.spaceID == fixture.otherSpace)
     }
 
-    @Test func splitSelectionAndLayoutPersistAfterAFavoriteJoins() throws {
+    @Test @MainActor func splitSelectionAndLayoutPersistAfterAFavoriteJoins() throws {
         let fixture = try Foreign()
         defer { try? FileManager.default.removeItem(at: fixture.split.directory) }
         let store = fixture.split.store

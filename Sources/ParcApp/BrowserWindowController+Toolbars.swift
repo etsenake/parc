@@ -500,11 +500,8 @@ extension BrowserWindowController {
     var canOpenTaskManager: Bool { taskManagerRoute != nil }
 
     @discardableResult func openTaskManager() -> Bool {
-        switch taskManagerRoute {
-        case .page: return currentBrowser?.performPageTool(.taskManager) == true
-        case .window: return nativeBinding?.openTaskManager() == true
-        case nil: return false
-        }
+        taskManagerRoute?.perform(openPage: { currentBrowser?.performPageTool(.taskManager) == true },
+                                  openWindow: { nativeBinding?.openTaskManager() == true }) ?? false
     }
 
     private func runPageTool(_ tool: PCNativePageTool, in browser: PCBrowserView) {

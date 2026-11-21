@@ -455,7 +455,9 @@ Relevant existing checks include:
   defaults, ordering, commits, replay and the import step counter.
 - `tests/ParcTests/Presentation/OnboardingPresentationTests.swift`: setup cards,
   frame and theme layout, confetti samples and replay consent.
-- `test-onboarding-keyboard.sh` and `OnboardingVideoHandoffTests`: component behavior.
+- `OnboardingKeyboardTests` in [ParcTests](../tests/ParcTests/CommandBar/OnboardingKeyboardTests.swift)
+  covers Close Setup ownership and the theme editor’s Tab order.
+- `OnboardingVideoHandoffTests`: the welcome video hand-off.
 - Browser-import coordinator/access/password checks and replay lifecycle checks.
 - The whole-module Swift check for material application changes.
 

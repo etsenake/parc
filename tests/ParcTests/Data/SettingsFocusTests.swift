@@ -103,7 +103,7 @@ struct SettingsFocusTests {
         fixture.button.target = target
         fixture.button.action = #selector(Target.invoke)
         fixture.button.isEnabled = false
-        fixture.button.performClick(nil)
+        fixture.button.sendClick()
         #expect(target.count == 0)
         #expect(!fixture.button.isAccessibilityEnabled())
     }

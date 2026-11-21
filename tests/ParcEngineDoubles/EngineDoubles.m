@@ -252,34 +252,12 @@
 @implementation PCNativeNavigationHistory
 @end
 
-@interface PCNativeOmnibox : NSObject
-@end
-
-@implementation PCNativeOmnibox
-@end
-
-@interface PCNativeOmniboxExtensionAction : NSObject
-@end
-
-@implementation PCNativeOmniboxExtensionAction
-@end
-
-@interface PCNativeOmniboxScope : NSObject
-@end
-
-@implementation PCNativeOmniboxScope
-@end
+#include "CommandBarSearchDoubles.inc"
 
 @interface PCNativeOmniboxScopeMenu : NSObject
 @end
 
 @implementation PCNativeOmniboxScopeMenu
-@end
-
-@interface PCNativeOmniboxSnapshot : NSObject
-@end
-
-@implementation PCNativeOmniboxSnapshot
 @end
 
 @interface PCNativeOpenAppAction : NSObject
@@ -372,12 +350,6 @@
 @implementation PCNativeSearchEngine
 @end
 
-@interface PCNativeSearchNavigation : NSObject
-@end
-
-@implementation PCNativeSearchNavigation
-@end
-
 @interface PCNativeSearchPreferences : NSObject
 @end
 
@@ -396,13 +368,7 @@
 @implementation PCNativeSharedQuoteSelection
 @end
 
-@interface PCNativeShortcutCommand : NSObject
-+ (void)bindingsDidChange;
-@end
-
-@implementation PCNativeShortcutCommand
-+ (void)bindingsDidChange {}
-@end
+#include "ShortcutCommandDouble.inc"
 
 @interface PCNativeTabPreview : NSObject
 @end

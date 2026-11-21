@@ -2,132 +2,143 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct ProfileSettingsTests {
-    let directory = CommandBarFixtures.temporaryDirectory("profile-settings")
-    let store: BrowserStore
-    let original: BrowserState
-    let id: UUID
+    @MainActor private final class Fixture {
+        let directory = CommandBarFixtures.temporaryDirectory("profile-settings")
+        let store: BrowserStore
+        let original: BrowserState
+        let id: UUID
 
-    var sessionFile: URL { directory.appendingPathComponent("session.json") }
+        var sessionFile: URL { directory.appendingPathComponent("session.json") }
 
-    init() throws {
-        store = try BrowserStore(directory: directory)
-        original = store.state
-        id = original.profiles[0].id
+        init() throws {
+            store = try BrowserStore(directory: directory)
+            store.scheduleDeferredSave = { _, _ in }
+            original = store.state
+            id = original.profiles[0].id
+        }
+
+        deinit { try? FileManager.default.removeItem(at: directory) }
+
+        func renamed() throws {
+            try store.saveProfileName(id, expectedName: "Default", name: "  Personal — 夜空  ")
+        }
+
+        func breakSessionFile() throws {
+            try? FileManager.default.removeItem(at: sessionFile)
+            try FileManager.default.createDirectory(at: sessionFile, withIntermediateDirectories: false)
+        }
     }
 
-    func cleanUp() { try? FileManager.default.removeItem(at: directory) }
-
-    func renamed() throws {
-        try store.saveProfileName(id, expectedName: "Default", name: "  Personal — 夜空  ")
+    @Test @MainActor func renameTrimsOnlyOuterWhitespace() throws {
+        let fixture = try Fixture()
+        try fixture.renamed()
+        #expect(fixture.store.state.profiles[0].name == "Personal — 夜空")
     }
 
-    func breakSessionFile() throws {
-        try? FileManager.default.removeItem(at: sessionFile)
-        try FileManager.default.createDirectory(at: sessionFile, withIntermediateDirectories: false)
+    @Test @MainActor func renamePreservesEverySpaceAndTab() throws {
+        let fixture = try Fixture()
+        try fixture.renamed()
+        #expect(fixture.store.state.spaces == fixture.original.spaces)
+        #expect(fixture.store.state.tabs == fixture.original.tabs)
     }
 
-    @Test func renameTrimsOnlyOuterWhitespace() throws {
-        defer { cleanUp() }
-        try renamed()
-        #expect(store.state.profiles[0].name == "Personal — 夜空")
+    @Test @MainActor func renamePreservesNativeIdentity() throws {
+        let fixture = try Fixture()
+        let nativePath = fixture.store.independentEngineProfilePath(for: fixture.id)
+        try fixture.renamed()
+        #expect(fixture.store.independentEngineProfilePath(for: fixture.id) == nativePath)
     }
 
-    @Test func renamePreservesEverySpaceAndTab() throws {
-        defer { cleanUp() }
-        try renamed()
-        #expect(store.state.spaces == original.spaces)
-        #expect(store.state.tabs == original.tabs)
+    enum RejectedEdit: CaseIterable { case stale, blank, missing }
+
+    @Test(arguments: RejectedEdit.allCases)
+    @MainActor func rejectedEditsKeepThePublishedAndSavedSession(edit: RejectedEdit) throws {
+        let fixture = try Fixture()
+        try fixture.renamed()
+        let saved = try Data(contentsOf: fixture.sessionFile)
+        let afterRename = fixture.store.state
+        let id = edit == .missing ? UUID() : fixture.id
+        let expected = edit == .stale ? "Default" : "Personal — 夜空"
+        let name = edit == .blank ? " \n " : "New"
+        #expect(throws: (any Error).self) { try fixture.store.saveProfileName(id, expectedName: expected, name: name) }
+        #expect(fixture.store.state == afterRename)
+        #expect(try Data(contentsOf: fixture.sessionFile) == saved)
     }
 
-    @Test func renamePreservesNativeIdentity() throws {
-        defer { cleanUp() }
-        let nativePath = store.independentEngineProfilePath(for: id)
-        try renamed()
-        #expect(store.independentEngineProfilePath(for: id) == nativePath)
-    }
-
-    @Test func rejectedEditsDoNotPublishAChangedModelOrTouchTheSavedSession() throws {
-        defer { cleanUp() }
-        try renamed()
-        let saved = try Data(contentsOf: sessionFile)
-        let afterRename = store.state
-        #expect(throws: (any Error).self) { try store.saveProfileName(id, expectedName: "Default", name: "Stale overwrite") }
-        #expect(throws: (any Error).self) { try store.saveProfileName(id, expectedName: "Personal — 夜空", name: " \n ") }
-        #expect(throws: (any Error).self) { try store.saveProfileName(UUID(), expectedName: "Missing", name: "New") }
-        #expect(store.state == afterRename)
-        #expect(try Data(contentsOf: sessionFile) == saved)
-    }
-
-    @Test func paneAndIndependentProfileSelectionSurviveANewStore() throws {
-        defer { cleanUp() }
-        try store.saveSettingsSelection(pane: "Profiles", profileID: id)
-        let restarted = try BrowserStore(directory: directory)
+    @Test @MainActor func paneAndIndependentProfileSelectionSurviveANewStore() throws {
+        let fixture = try Fixture()
+        try fixture.store.saveSettingsSelection(pane: "Profiles", profileID: fixture.id)
+        let restarted = try BrowserStore(directory: fixture.directory)
         #expect(restarted.state.settings.settingsPane == "Profiles")
-        #expect(restarted.state.settings.settingsProfileID == id)
-        #expect(restarted.state.spaces == original.spaces)
+        #expect(restarted.state.settings.settingsProfileID == fixture.id)
+        #expect(restarted.state.spaces == fixture.original.spaces)
     }
 
-    @Test func aSelectionForAnUnknownProfileIsRejected() throws {
-        defer { cleanUp() }
-        #expect(throws: (any Error).self) { try store.saveSettingsSelection(pane: "Profiles", profileID: UUID()) }
+    @Test @MainActor func aSelectionForAnUnknownProfileIsRejected() throws {
+        let fixture = try Fixture()
+        #expect(throws: (any Error).self) { try fixture.store.saveSettingsSelection(pane: "Profiles", profileID: UUID()) }
     }
 
-    @Test func explicitGeneralAndSidebarControlsPersistBeforeReturning() throws {
-        defer { cleanUp() }
-        try store.saveRestoreSession(false)
-        try store.saveSidebarWidth(310)
-        let restored = try BrowserStore(directory: directory)
+    @Test @MainActor func theSessionRestorePreferencePersistsBeforeReturning() throws {
+        let fixture = try Fixture()
+        try fixture.store.saveRestoreSession(false)
+        let restored = try BrowserStore(directory: fixture.directory)
         #expect(!restored.state.settings.restoreSession)
+    }
+
+    @Test @MainActor func theSidebarWidthPreferencePersistsBeforeReturning() throws {
+        let fixture = try Fixture()
+        try fixture.store.saveSidebarWidth(310)
+        let restored = try BrowserStore(directory: fixture.directory)
         #expect(restored.state.settings.sidebarWidth == 310)
     }
 
-    @Test func theSidebarPreferenceKeepsTheProductionBounds() throws {
-        defer { cleanUp() }
-        try store.saveSidebarWidth(900)
-        #expect(store.state.settings.sidebarWidth == 500)
+    @Test @MainActor func theSidebarPreferenceKeepsTheProductionBounds() throws {
+        let fixture = try Fixture()
+        try fixture.store.saveSidebarWidth(900)
+        #expect(fixture.store.state.settings.sidebarWidth == 500)
     }
 
-    @Test func invalidWidthsNeverContaminateDurableState() throws {
-        defer { cleanUp() }
-        try store.saveSidebarWidth(900)
-        #expect(throws: (any Error).self) { try store.saveSidebarWidth(.nan) }
-        #expect(store.state.settings.sidebarWidth == 500)
+    @Test @MainActor func invalidWidthsNeverContaminateDurableState() throws {
+        let fixture = try Fixture()
+        try fixture.store.saveSidebarWidth(900)
+        #expect(throws: (any Error).self) { try fixture.store.saveSidebarWidth(.nan) }
+        #expect(fixture.store.state.settings.sidebarWidth == 500)
     }
 
-    @Test func profileCommandsPreferTheirOriginalSpace() {
-        defer { cleanUp() }
-        let originalSpace = original.spaces[0]
-        #expect(store.settingsPageSpace(profileID: id, originatingSpaceID: originalSpace.id)?.id == originalSpace.id)
+    @Test @MainActor func profileCommandsPreferTheirOriginalSpace() throws {
+        let fixture = try Fixture()
+        let originalSpace = fixture.original.spaces[0]
+        #expect(fixture.store.settingsPageSpace(profileID: fixture.id, originatingSpaceID: originalSpace.id)?.id == originalSpace.id)
     }
 
-    @Test func anUnassignedEditingProfileCannotBorrowTheCurrentProfilesPage() {
-        defer { cleanUp() }
-        let other = store.createProfile(name: "Other")
-        #expect(store.settingsPageSpace(profileID: other, originatingSpaceID: original.spaces[0].id) == nil)
+    @Test @MainActor func anUnassignedEditingProfileCannotBorrowTheCurrentProfilesPage() throws {
+        let fixture = try Fixture()
+        let other = fixture.store.createProfile(name: "Other")
+        #expect(fixture.store.settingsPageSpace(profileID: other, originatingSpaceID: fixture.original.spaces[0].id) == nil)
     }
 
-    @Test func independentProfileSelectionResolvesItsActualSpaceWithoutReassigningTheOriginal() {
-        defer { cleanUp() }
-        let originalSpace = original.spaces[0]
-        let other = store.createProfile(name: "Other")
-        let otherSpace = store.createSpace(name: "Other Space")
-        store.assignProfile(other, toSpace: otherSpace)
-        #expect(store.settingsPageSpace(profileID: other, originatingSpaceID: originalSpace.id)?.id == otherSpace)
-        #expect(store.state.spaces.first { $0.id == originalSpace.id }?.profileID == id)
+    @Test @MainActor func independentProfileSelectionResolvesItsActualSpaceWithoutReassigningTheOriginal() throws {
+        let fixture = try Fixture()
+        let originalSpace = fixture.original.spaces[0]
+        let other = fixture.store.createProfile(name: "Other")
+        let otherSpace = fixture.store.createSpace(name: "Other Space")
+        fixture.store.assignProfile(other, toSpace: otherSpace)
+        #expect(fixture.store.settingsPageSpace(profileID: other, originatingSpaceID: originalSpace.id)?.id == otherSpace)
+        #expect(fixture.store.state.spaces.first { $0.id == originalSpace.id }?.profileID == fixture.id)
     }
 
-    @Test func removedAndStaleProfilesRefusePageCommands() {
-        defer { cleanUp() }
-        #expect(store.settingsPageSpace(profileID: UUID(), originatingSpaceID: original.spaces[0].id) == nil)
+    @Test @MainActor func removedAndStaleProfilesRefusePageCommands() throws {
+        let fixture = try Fixture()
+        #expect(fixture.store.settingsPageSpace(profileID: UUID(), originatingSpaceID: fixture.original.spaces[0].id) == nil)
     }
 
-    @Test func aRetiringProfileNeverAdmitsASettingsPage() throws {
-        defer { cleanUp() }
-        let unused = store.createProfile(name: "Removing")
-        _ = try store.stageProfileRemoval(unused, expectedName: "Removing")
-        #expect(store.settingsPageSpace(profileID: unused, originatingSpaceID: nil) == nil)
+    @Test @MainActor func aRetiringProfileNeverAdmitsASettingsPage() throws {
+        let fixture = try Fixture()
+        let unused = fixture.store.createProfile(name: "Removing")
+        _ = try fixture.store.stageProfileRemoval(unused, expectedName: "Removing")
+        #expect(fixture.store.settingsPageSpace(profileID: unused, originatingSpaceID: nil) == nil)
     }
 
     @Test func credentialDetailEditsStayWithTheOriginalPasswordManagerPage() {
@@ -159,49 +170,49 @@ struct ProfileSettingsTests {
         #expect(legacy.settingsProfileID == nil)
     }
 
-    @Test func aFailedRenameKeepsStateAndReportsTheFailure() throws {
-        defer { cleanUp() }
-        try renamed()
-        try breakSessionFile()
-        let before = store.state
-        #expect(throws: (any Error).self) { try store.saveProfileName(id, expectedName: "Personal — 夜空", name: "Unsaved") }
-        #expect(store.state == before)
-        #expect(store.persistenceError != nil)
+    @Test @MainActor func aFailedRenameKeepsStateAndReportsTheFailure() throws {
+        let fixture = try Fixture()
+        try fixture.renamed()
+        try fixture.breakSessionFile()
+        let before = fixture.store.state
+        #expect(throws: (any Error).self) { try fixture.store.saveProfileName(fixture.id, expectedName: "Personal — 夜空", name: "Unsaved") }
+        #expect(fixture.store.state == before)
+        #expect(fixture.store.persistenceError != nil)
     }
 
-    @Test func aFailedSelectionDoesNotBecomeTheSavedOrCurrentSelection() throws {
-        defer { cleanUp() }
-        try breakSessionFile()
-        let before = store.state
-        #expect(throws: (any Error).self) { try store.saveSettingsSelection(pane: "General", profileID: id) }
-        #expect(store.state == before)
+    @Test @MainActor func aFailedSelectionDoesNotBecomeTheSavedOrCurrentSelection() throws {
+        let fixture = try Fixture()
+        try fixture.breakSessionFile()
+        let before = fixture.store.state
+        #expect(throws: (any Error).self) { try fixture.store.saveSettingsSelection(pane: "General", profileID: fixture.id) }
+        #expect(fixture.store.state == before)
     }
 
-    @Test func failedExplicitPreferenceWritesPreserveThePublishedControlValues() throws {
-        defer { cleanUp() }
-        try breakSessionFile()
-        let before = store.state
-        #expect(throws: (any Error).self) { try store.saveRestoreSession(false) }
-        #expect(throws: (any Error).self) { try store.saveSidebarWidth(220) }
-        #expect(store.state == before)
+    @Test @MainActor func failedExplicitPreferenceWritesPreserveThePublishedControlValues() throws {
+        let fixture = try Fixture()
+        try fixture.breakSessionFile()
+        let before = fixture.store.state
+        #expect(throws: (any Error).self) { try fixture.store.saveRestoreSession(false) }
+        #expect(throws: (any Error).self) { try fixture.store.saveSidebarWidth(220) }
+        #expect(fixture.store.state == before)
     }
 
-    @Test func failedCommitsCleanTheirTemporaryFile() throws {
-        defer { cleanUp() }
-        try breakSessionFile()
-        #expect(throws: (any Error).self) { try store.saveRestoreSession(false) }
-        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["session.json"])
+    @Test @MainActor func failedCommitsCleanTheirTemporaryFile() throws {
+        let fixture = try Fixture()
+        try fixture.breakSessionFile()
+        #expect(throws: (any Error).self) { try fixture.store.saveRestoreSession(false) }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.directory.path) == ["session.json"])
     }
 
-    @Test func aSuccessfulRetryClearsTheWriteErrorAndKeepsPrivatePermissions() throws {
-        defer { cleanUp() }
-        try renamed()
-        try breakSessionFile()
-        #expect(throws: (any Error).self) { try store.saveProfileName(id, expectedName: "Personal — 夜空", name: "Unsaved") }
-        try FileManager.default.removeItem(at: sessionFile)
-        try store.saveProfileName(id, expectedName: "Personal — 夜空", name: "Retry works")
-        #expect(store.persistenceError == nil)
-        let attributes = try FileManager.default.attributesOfItem(atPath: sessionFile.path)
+    @Test @MainActor func aSuccessfulRetryClearsTheWriteErrorAndKeepsPrivatePermissions() throws {
+        let fixture = try Fixture()
+        try fixture.renamed()
+        try fixture.breakSessionFile()
+        #expect(throws: (any Error).self) { try fixture.store.saveProfileName(fixture.id, expectedName: "Personal — 夜空", name: "Unsaved") }
+        try FileManager.default.removeItem(at: fixture.sessionFile)
+        try fixture.store.saveProfileName(fixture.id, expectedName: "Personal — 夜空", name: "Retry works")
+        #expect(fixture.store.persistenceError == nil)
+        let attributes = try FileManager.default.attributesOfItem(atPath: fixture.sessionFile.path)
         #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
     }
 }

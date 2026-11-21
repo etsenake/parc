@@ -233,7 +233,7 @@ struct FavoriteRenameTests {
         let commits = Commits()
         let dialog = dialog(commits)
         type("Literal 🪐", into: dialog)
-        dialog.dialog.confirmButton.performClick(nil)
+        dialog.dialog.confirmButton.sendClick()
         dialog.cancel()
         #expect(commits.values == ["Literal 🪐"])
         #expect(commits.finishes == 1)
@@ -260,7 +260,7 @@ struct FavoriteRenameTests {
         let dialog = FavoriteRenameDialog(title: "Draft")
         dialog.isCurrent = { true }
         dialog.onCommit = { _ in throw NSError(domain: "Storage unavailable", code: 1) }
-        dialog.dialog.confirmButton.performClick(nil)
+        dialog.dialog.confirmButton.sendClick()
         #expect(!dialog.finished)
         #expect(dialog.field.stringValue == "Draft")
     }
@@ -274,9 +274,9 @@ struct FavoriteRenameTests {
             if fails { throw NSError(domain: "Storage unavailable", code: 1) }
             commits.values.append(value)
         }
-        dialog.dialog.confirmButton.performClick(nil)
+        dialog.dialog.confirmButton.sendClick()
         fails = false
-        dialog.dialog.confirmButton.performClick(nil)
+        dialog.dialog.confirmButton.sendClick()
         #expect(dialog.finished)
         #expect(commits.values == ["Draft"])
     }

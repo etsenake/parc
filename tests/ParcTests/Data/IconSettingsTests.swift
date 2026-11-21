@@ -340,7 +340,7 @@ struct IconSettingsTests {
         let blocker = fixture.directory.appendingPathComponent("not-a-directory")
         try Data([1]).write(to: blocker)
         fixture.icons.configure(preferenceURL: blocker.appendingPathComponent("choice.json")) { _ in nil }
-        fixture.sorbet.performClick(nil)
+        fixture.sorbet.sendClick()
         #expect(fixture.icons.selectedID == "Original")
         #expect(fixture.original.state == .on)
         #expect(fixture.sorbet.state == .off)
@@ -352,7 +352,7 @@ struct IconSettingsTests {
         let blocker = fixture.directory.appendingPathComponent("not-a-directory")
         try Data([1]).write(to: blocker)
         fixture.icons.configure(preferenceURL: blocker.appendingPathComponent("choice.json")) { _ in nil }
-        fixture.sorbet.performClick(nil)
+        fixture.sorbet.sendClick()
         #expect(fixture.icons.message != nil)
         #expect(!fixture.icons.canRetry)
     }

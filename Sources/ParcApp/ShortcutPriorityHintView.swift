@@ -7,14 +7,17 @@ final class ShortcutPriorityHintView: NSView {
     var onEdit: (() -> Void)?
     var onDismiss: (() -> Void)?
     private(set) weak var originalWindow: NSWindow?
-    private weak var toastWindow: ShortcutHintWindow?
+    private weak var toastWindow: NSWindow?
     let state: ParcToastState
     private var host: NSHostingView<ParcToastCard>!
     private var observers: [NSObjectProtocol] = []
     private var workspaceObserver: NSObjectProtocol?
     private var scrollMonitor: Any?
-    private var revealWork: DispatchWorkItem?
-    private var closeWork: DispatchWorkItem?
+    private let clock: ParcToastClock
+    private let makeWindow: @MainActor (NSRect) -> NSWindow
+    private let reduceMotion: @MainActor () -> Bool
+    private var cancelReveal: (() -> Void)?
+    private var cancelClose: (() -> Void)?
     private var generation = UUID()
     private(set) var isRetiring = false
     private(set) var bodyRect = NSRect.zero
@@ -35,7 +38,14 @@ final class ShortcutPriorityHintView: NSView {
         dismiss(animated: false)
     }
 
-    init(title: String, shortcut: String, canEdit: Bool, theme: SpaceTheme, basicBackground: NSColor?) {
+    init(title: String, shortcut: String, canEdit: Bool, theme: SpaceTheme, basicBackground: NSColor?,
+         clock: ParcToastClock = .system, makeWindow: (@MainActor (NSRect) -> NSWindow)? = nil,
+         reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
+        self.clock = clock
+        self.makeWindow = makeWindow ?? {
+            ShortcutHintWindow(contentRect: $0, styleMask: .borderless, backing: .buffered, defer: false)
+        }
+        self.reduceMotion = reduceMotion
         state = ParcToastState(content: .pressAgain(shortcut: shortcut, title: title),
             accessory: canEdit ? ParcToastAccessory(text: "Edit the shortcut", image: "arrow.up.right",
                                                    accessibilityLabel: "Edit the shortcut for " + title) : nil,
@@ -54,7 +64,7 @@ final class ShortcutPriorityHintView: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     deinit {
-        revealWork?.cancel(); closeWork?.cancel()
+        cancelReveal?(); cancelClose?()
         observers.forEach(NotificationCenter.default.removeObserver)
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
@@ -65,13 +75,12 @@ final class ShortcutPriorityHintView: NSView {
     func present(in parent: NSWindow) -> Bool {
         guard !isRetiring, originalWindow == nil, parent.isKeyWindow, parent.isVisible,
               !parent.isMiniaturized, parent.attachedSheet == nil else { return false }
-        let panel = ShortcutHintWindow(contentRect: Self.frame(for: parent.frame), styleMask: .borderless,
-                                       backing: .buffered, defer: false)
+        let panel = makeWindow(Self.frame(for: parent.frame))
         panel.isReleasedWhenClosed = false; panel.isOpaque = false
         panel.backgroundColor = .clear; panel.hasShadow = false
         panel.contentView = self; panel.acceptsMouseMovedEvents = true
         originalWindow = parent; toastWindow = panel
-        state.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        state.reduceMotion = reduceMotion()
         panel.appearance = parent.effectiveAppearance
         parent.addChildWindow(panel, ordered: .above)
         panel.setFrame(Self.frame(for: parent.frame), display: true)
@@ -83,12 +92,10 @@ final class ShortcutPriorityHintView: NSView {
             guard let self, self.generation == token, self.toastWindow === panel, self.isAvailable else { return }
             self.state.show()
         }
-        let reveal = DispatchWorkItem { [weak self, weak panel] in
+        cancelReveal = clock.after(ParcToastTiming.accessoryDelay) { [weak self, weak panel] in
             guard let self, self.generation == token, self.toastWindow === panel, self.isAvailable else { return }
             self.state.showAccessory = true
         }
-        revealWork = reveal
-        DispatchQueue.main.asyncAfter(deadline: .now() + ParcToastTiming.accessoryDelay, execute: reveal)
         return true
     }
 
@@ -128,21 +135,19 @@ final class ShortcutPriorityHintView: NSView {
         let shouldAnimate = animated && isAvailable && !state.reduceMotion
         isRetiring = true; generation = UUID()
         onEdit = nil; onDismiss = nil
-        revealWork?.cancel(); revealWork = nil
+        cancelReveal?(); cancelReveal = nil
         toastWindow?.ignoresMouseEvents = true
         state.hide(animated: shouldAnimate)
         guard shouldAnimate else { closePresentation(); return }
         let token = generation
-        let work = DispatchWorkItem { [weak self] in
+        cancelClose = clock.after(ParcToastTiming.retirement) { [weak self] in
             guard let self, self.generation == token, self.isRetiring else { return }
             self.closePresentation()
         }
-        closeWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + ParcToastTiming.retirement, execute: work)
     }
     private func closePresentation() {
         generation = UUID(); isRetiring = true
-        revealWork?.cancel(); revealWork = nil; closeWork?.cancel(); closeWork = nil
+        cancelReveal?(); cancelReveal = nil; cancelClose?(); cancelClose = nil
         observers.forEach(NotificationCenter.default.removeObserver); observers.removeAll()
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
         workspaceObserver = nil
@@ -170,7 +175,7 @@ final class ShortcutPriorityHintView: NSView {
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    self.state.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                    self.state.reduceMotion = self.reduceMotion()
                     if self.state.reduceMotion && self.isRetiring { self.closePresentation() }
                 }
             }

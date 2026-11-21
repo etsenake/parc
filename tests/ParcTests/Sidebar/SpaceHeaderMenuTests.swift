@@ -41,7 +41,7 @@ struct SpaceHeaderMenuTests {
         _ = header.beginEditing()
         let editor = try #require(header.view.nameField.currentEditor() as? NSTextView)
         editor.setMarkedText("仮", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
-        header.view.editButton.performClick(nil)
+        header.view.editButton.sendClick()
         #expect(header.view.isEditing)
         #expect(header.results.isEmpty)
         #expect(editor.hasMarkedText())

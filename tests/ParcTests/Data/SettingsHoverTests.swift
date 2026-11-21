@@ -117,7 +117,7 @@ struct SettingsHoverTests {
     @Test func aDisabledActionIsNotAccepted() {
         let fixture = Fixture().hovering()
         fixture.control.isEnabled = false
-        fixture.control.performClick(nil)
+        fixture.control.sendClick()
         #expect(fixture.counter.count == 0)
     }
 

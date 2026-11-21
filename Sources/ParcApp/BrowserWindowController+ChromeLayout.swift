@@ -2,6 +2,49 @@ import AppKit
 import Combine
 import ParcCore
 
+@MainActor
+enum CommandBarAddressSource {
+    case keyboard
+    case sidebar(SidebarView)
+    case popup(PopupChromeView)
+
+    static func connect(_ sidebar: SidebarView, focus: @escaping (Self) -> Void) {
+        sidebar.onAddress = { [weak sidebar] in
+            if let sidebar { focus(.sidebar(sidebar)) }
+        }
+    }
+
+    static func connect(_ popup: PopupChromeView, focus: @escaping (Self) -> Void) {
+        popup.onAddress = { [weak popup] in
+            if let popup { focus(.popup(popup)) }
+        }
+    }
+
+    var anchor: NSView? {
+        switch self {
+        case .keyboard: nil
+        case .sidebar(let sidebar): sidebar.addressEditorAnchor
+        case .popup(let popup): popup.addressAnchor
+        }
+    }
+}
+
+enum WindowPaneFocus {
+    static func currentTab(fullscreen: UUID?, focused: UUID?, selection: [UUID]) -> UUID? {
+        if let fullscreen { return fullscreen }
+        if let focused, selection.contains(focused) { return focused }
+        return selection.first
+    }
+
+    @MainActor
+    static func visitHits<Pane: NSView>(at point: NSPoint, panes: [UUID: Pane], isRendered: (UUID) -> Bool,
+                                        focus: (UUID) -> Void) {
+        for (id, pane) in panes where isRendered(id) {
+            if pane.bounds.contains(pane.convert(point, from: nil)) { focus(id) }
+        }
+    }
+}
+
 extension BrowserWindowController {
     func layoutChrome() {
         let fingerprint = chromeGeometryFingerprint()
@@ -377,9 +420,9 @@ extension BrowserWindowController {
         if focusResidentCommandBar() { return }
         presentCommandBar(newTab: true)
     }
-    func focusAddress(anchor: NSView? = nil) {
+    func focusAddress(from source: CommandBarAddressSource = .keyboard) {
         if !isPopupWindow, focusResidentCommandBar() { return }
-        presentCommandBar(newTab: false, addressAnchor: anchor)
+        presentCommandBar(newTab: false, addressAnchor: source.anchor)
     }
 
     var showsStartPage: Bool {

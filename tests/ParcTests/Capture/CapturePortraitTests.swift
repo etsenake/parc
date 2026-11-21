@@ -530,7 +530,7 @@ struct PortraitCaptureViewTests {
     ])
     func eachTileChoosesItsBackground(_ label: String, _ background: PortraitCaptureOptions.Background) throws {
         let page = try PortraitViewFixture(background: label == "Use a Color" ? .page : .color)
-        try #require(page.button(label)).performClick(nil)
+        try #require(page.button(label)).sendClick()
         #expect(page.view.composition.options.background == background)
     }
 
@@ -557,7 +557,7 @@ struct PortraitCaptureViewTests {
         slider.sendAction(slider.action!, to: slider.target)
         var applied = false
         page.view.onCapture = { applied = true }
-        page.view.captureButton.performClick(nil)
+        page.view.captureButton.sendClick()
         #expect(applied && page.view.composition.options.fraction == 0.7)
     }
 
@@ -592,14 +592,14 @@ struct PortraitCaptureViewTests {
 
     @MainActor @Test func theWatermarkToggleAndBackingChangesDoNotEnableApplyWithoutAWallpaper() throws {
         let page = try PortraitViewFixture(background: .desktop, desktop: false)
-        try #require(page.button("Parc watermark")).performClick(nil)
+        try #require(page.button("Parc watermark")).sendClick()
         page.view.viewDidChangeBackingProperties()
         #expect(!page.view.captureButton.isEnabled)
     }
 
     @MainActor @Test func choosingTheWebsiteColorReplacesAnUnavailableWallpaper() throws {
         let page = try PortraitViewFixture(background: .desktop, desktop: false)
-        try #require(page.button("Use Website Color")).performClick(nil)
+        try #require(page.button("Use Website Color")).sendClick()
         #expect(page.view.captureButton.isEnabled && page.view.composition.options.background == .page)
     }
 }

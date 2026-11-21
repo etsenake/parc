@@ -2,9 +2,8 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct SidebarKeyboardHierarchyTests {
-    @MainActor final class Fixture {
+    private final class Fixture {
         var state = BrowserState.initial()
         let space: BrowserSpace
         let profile: UUID
@@ -60,7 +59,7 @@ struct SidebarKeyboardHierarchyTests {
 
         var file: URL { directory.appendingPathComponent("session.json") }
 
-        func persistedStore(collapsingInner: Bool = true) throws -> BrowserStore {
+        @MainActor func persistedStore(collapsingInner: Bool = true) throws -> BrowserStore {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             if collapsingInner { state.folders[1].isExpanded = false }
             let encoder = JSONEncoder()
@@ -162,7 +161,7 @@ struct SidebarKeyboardHierarchyTests {
         #expect(positional.count == 4)
     }
 
-    @Test func returnExpansionCommitsAndPreservesPageAndSpaceSelection() throws {
+    @Test @MainActor func returnExpansionCommitsAndPreservesPageAndSpaceSelection() throws {
         let f = Fixture()
         let store = try f.persistedStore()
         let original = store.state
@@ -171,7 +170,7 @@ struct SidebarKeyboardHierarchyTests {
         #expect(store.state.activeSpaceID == original.activeSpaceID)
     }
 
-    @Test func disclosurePreservesOriginalRecordsAndSplitGeometry() throws {
+    @Test @MainActor func disclosurePreservesOriginalRecordsAndSplitGeometry() throws {
         let f = Fixture()
         let store = try f.persistedStore()
         let original = store.state
@@ -180,7 +179,7 @@ struct SidebarKeyboardHierarchyTests {
         #expect(store.state.splitLayouts == original.splitLayouts)
     }
 
-    @Test func disclosureIsDurableBeforePublication() throws {
+    @Test @MainActor func disclosureIsDurableBeforePublication() throws {
         let f = Fixture()
         let store = try f.persistedStore()
         _ = try store.setFolderExpanded(true, expected: f.inner, profileID: f.profile)
@@ -188,7 +187,7 @@ struct SidebarKeyboardHierarchyTests {
         #expect(loaded.state.folders.first { $0.id == f.inner.id }?.isExpanded == true)
     }
 
-    @Test func aStaleDisclosureTokenCannotReverseANewerAction() throws {
+    @Test @MainActor func aStaleDisclosureTokenCannotReverseANewerAction() throws {
         let f = Fixture()
         let store = try f.persistedStore()
         _ = try store.setFolderExpanded(true, expected: f.inner, profileID: f.profile)
@@ -197,7 +196,7 @@ struct SidebarKeyboardHierarchyTests {
         #expect(store.state.folders.first { $0.id == f.inner.id }?.isExpanded == true)
     }
 
-    @Test func aForeignProfileCannotMutateDisclosure() throws {
+    @Test @MainActor func aForeignProfileCannotMutateDisclosure() throws {
         let f = Fixture()
         let store = try f.persistedStore()
         _ = try store.setFolderExpanded(true, expected: f.inner, profileID: f.profile)
@@ -206,7 +205,7 @@ struct SidebarKeyboardHierarchyTests {
         #expect(!(try store.setFolderExpanded(false, expected: current, profileID: UUID())))
     }
 
-    @Test func aSecondReturnCollapsesTheExactFolder() throws {
+    @Test @MainActor func aSecondReturnCollapsesTheExactFolder() throws {
         let f = Fixture()
         let store = try f.persistedStore()
         _ = try store.setFolderExpanded(true, expected: f.inner, profileID: f.profile)
@@ -216,13 +215,13 @@ struct SidebarKeyboardHierarchyTests {
         #expect(store.state.folders.first { $0.id == f.inner.id }?.isExpanded == false)
     }
 
-    @Test func anEmptyFolderUsesTheSameActualDisclosureTransaction() throws {
+    @Test @MainActor func anEmptyFolderUsesTheSameActualDisclosureTransaction() throws {
         let f = Fixture()
         let store = try f.persistedStore()
         #expect(try store.setFolderExpanded(true, expected: f.empty, profileID: f.profile))
     }
 
-    @Test func aFailedSaveCannotPublishDisclosureOrAnyBrowserStateChange() throws {
+    @Test @MainActor func aFailedSaveCannotPublishDisclosureOrAnyBrowserStateChange() throws {
         let f = Fixture()
         let store = try f.persistedStore()
         let prior = store.state
@@ -232,7 +231,7 @@ struct SidebarKeyboardHierarchyTests {
         #expect(store.state == prior)
     }
 
-    @Test func anEphemeralOwnerNeverWritesNormalFolderState() throws {
+    @Test @MainActor func anEphemeralOwnerNeverWritesNormalFolderState() throws {
         let f = Fixture()
         let privateStore = BrowserStore(privateParentProfileID: f.profile, engineProfilePath: "/unused-original-context",
             directory: f.directory.appendingPathComponent("must-not-exist"), settings: f.state.settings)

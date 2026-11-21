@@ -2798,8 +2798,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return
         }
         guard menu === spacesMenu, !spacesMenuIsTracking else { return }
-        let owner = spaceCommandWindow
-        let spaces = stateSpaces
+        populateSpacesMenu(menu, spaces: stateSpaces, owner: spaceCommandWindow, shortcuts: .shared)
+    }
+
+    private func populateSpacesMenu(_ menu: NSMenu, spaces: [BrowserSpace], owner: BrowserWindowController?,
+                                    shortcuts: KeyboardShortcuts) {
         let source = SpacesMenuSource(owner: owner, activeSpaceID: owner?.activeSpaceID, spaceIDs: spaces.map(\.id),
                                       names: spaces.map(\.name), profileIDs: spaces.map(\.profileID))
         if source == spacesMenuSource, !menu.items.isEmpty { return }
@@ -2809,7 +2812,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                   ("Rename Space", #selector(renameFocusedSpace))] {
             let entry = NSMenuItem(title: title, action: selector, keyEquivalent: "")
             entry.target = self; menu.addItem(entry)
-            KeyboardShortcuts.shared.register(entry, group: "Spaces")
+            shortcuts.register(entry, group: "Spaces")
         }
         menu.addItem(.separator())
         var numberedIDs = Set<String>()
@@ -2823,19 +2826,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 entry.keyEquivalent = String(number); entry.keyEquivalentModifierMask = .control
             }
             numberedIDs.insert(bindingID)
-            KeyboardShortcuts.shared.register(entry, group: "Spaces", bindingID: bindingID, title: space.name)
+            shortcuts.register(entry, group: "Spaces", bindingID: bindingID, title: space.name)
         }
-        KeyboardShortcuts.shared.retireCommands(Array(registeredSpaceCommandIDs.subtracting(numberedIDs)))
+        shortcuts.retireCommands(Array(registeredSpaceCommandIDs.subtracting(numberedIDs)))
         registeredSpaceCommandIDs = numberedIDs
         menu.addItem(.separator())
         for (name, selector, key) in [("Next Space", #selector(nextSpace), "\u{F703}"), ("Previous Space", #selector(previousSpace), "\u{F702}")] {
             let entry = NSMenuItem(title: name, action: selector, keyEquivalent: key)
             entry.keyEquivalentModifierMask = [.command, .option]; entry.target = self; menu.addItem(entry)
-            KeyboardShortcuts.shared.register(entry, group: "Spaces")
+            shortcuts.register(entry, group: "Spaces")
         }
     }
 
-    private func buildMenus() {
+    @discardableResult
+    func buildMenus(shortcuts: KeyboardShortcuts? = nil, install: Bool = true, initialSpaces: [BrowserSpace]? = nil) -> NSMenu {
+        let shortcuts = shortcuts ?? .shared
         let main = ShortcutMainMenu()
         func menu(_ title: String) -> NSMenu {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
@@ -2849,7 +2854,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             entry.keyEquivalentModifierMask = modifiers
             entry.target = target ?? self
             menu.addItem(entry)
-            KeyboardShortcuts.shared.register(entry, group: menu.title, discoverable: discoverable)
+            shortcuts.register(entry, group: menu.title, discoverable: discoverable)
         }
         func alternate(_ title: String, _ selector: Selector, _ key: String, in menu: NSMenu,
                        modifiers: NSEvent.ModifierFlags, bindingID: String? = nil, equivalentOf: String? = nil) {
@@ -2857,8 +2862,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             entry.keyEquivalentModifierMask = modifiers; entry.target = self
             entry.isHidden = true; entry.allowsKeyEquivalentWhenHidden = true
             menu.addItem(entry)
-            if let equivalentOf { KeyboardShortcuts.shared.registerEquivalent(entry, for: equivalentOf, shortcut: .init(key: key, flags: modifiers)) }
-            else { KeyboardShortcuts.shared.register(entry, group: menu.title, bindingID: bindingID, discoverable: false) }
+            if let equivalentOf { shortcuts.registerEquivalent(entry, for: equivalentOf, shortcut: .init(key: key, flags: modifiers)) }
+            else { shortcuts.register(entry, group: menu.title, bindingID: bindingID, discoverable: false) }
         }
         func hideKeepingShortcut(_ menu: NSMenu) {
             menu.items.last?.isHidden = true; menu.items.last?.allowsKeyEquivalentWhenHidden = true
@@ -2873,7 +2878,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         app.addItem(.separator())
         let services = NSMenu(title: "Services")
         let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
-        servicesItem.submenu = services; app.addItem(servicesItem); NSApp.servicesMenu = services
+        servicesItem.submenu = services; app.addItem(servicesItem)
+        if install { NSApp.servicesMenu = services }
         app.addItem(.separator())
         item("Hide Parc", #selector(NSApplication.hide(_:)), "h", in: app, target: NSApp)
         item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", in: app, modifiers: [.command, .option], target: NSApp)
@@ -2914,7 +2920,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             if selector == "undo:" { entry.identifier = NSUserInterfaceItemIdentifier("ParcWindowUndo") }
             if selector == "redo:" { entry.identifier = NSUserInterfaceItemIdentifier("ParcWindowRedo") }
             edit.addItem(entry)
-            KeyboardShortcuts.shared.register(entry, group: "Edit")
+            shortcuts.register(entry, group: "Edit")
             if selector == "redo:" { edit.addItem(.separator()) }
             if selector == "copy:" {
                 item("Copy URL", #selector(copyCurrentURL), "c", in: edit, modifiers: [.command, .shift])
@@ -2925,12 +2931,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 let style = NSMenuItem(title: "Paste and Match Style", action: WebpageEditCommands.pasteMatchingStyle, keyEquivalent: "v")
                 style.keyEquivalentModifierMask = [.command, .shift]
                 edit.addItem(style)
-                KeyboardShortcuts.shared.register(style, group: "Edit")
+                shortcuts.register(style, group: "Edit")
                 let hidden = NSMenuItem(title: "Paste and Match Style", action: WebpageEditCommands.pasteMatchingStyle, keyEquivalent: "v")
                 hidden.keyEquivalentModifierMask = [.command, .option, .shift]
                 hidden.isHidden = true; hidden.allowsKeyEquivalentWhenHidden = true
                 edit.addItem(hidden)
-                KeyboardShortcuts.shared.registerEquivalent(hidden, for: "pasteAsPlainText:",
+                shortcuts.registerEquivalent(hidden, for: "pasteAsPlainText:",
                                                             shortcut: .init(key: "v", flags: [.command, .option, .shift]))
             }
         }
@@ -2949,7 +2955,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         edit.addItem(.separator())
         TextFormatMenu.add(to: edit) { entry, command in
-            KeyboardShortcuts.shared.register(entry, group: "Format", bindingID: command.bindingID,
+            shortcuts.register(entry, group: "Format", bindingID: command.bindingID,
                                               title: command.commandTitle, discoverable: false)
         }
 
@@ -2967,7 +2973,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             entry.target = self
             entry.isHidden = hidden; entry.allowsKeyEquivalentWhenHidden = hidden
             view.addItem(entry)
-            KeyboardShortcuts.shared.register(entry, group: view.title, title: setting)
+            shortcuts.register(entry, group: view.title, title: setting)
         }
         item("Adjust Window Frame…", #selector(adjustWindowFrame), in: view)
         item("Show Toolbar", #selector(toggleShowToolbar), "d", in: view, modifiers: [.command, .shift])
@@ -3049,7 +3055,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         view.items.last?.isHidden = true
         view.items.last?.allowsKeyEquivalentWhenHidden = true
         let spaces = menu("Spaces")
-        spacesMenu = spaces; spaces.delegate = self; menuNeedsUpdate(spaces)
+        spacesMenu = spaces; spaces.delegate = self
+        if let initialSpaces { populateSpacesMenu(spaces, spaces: initialSpaces, owner: nil, shortcuts: shortcuts) }
+        else { menuNeedsUpdate(spaces) }
         let tabs = menu("Tabs")
         clearTodayCommandsMenu = tabs; tabs.delegate = self
         item("New Folder…", #selector(createFolder), in: tabs)
@@ -3093,7 +3101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             entry.keyEquivalentModifierMask = .command; entry.tag = number; entry.target = self
             entry.isHidden = true; entry.allowsKeyEquivalentWhenHidden = true
             tabs.addItem(entry)
-            KeyboardShortcuts.shared.register(entry, group: tabs.title, bindingID: NumberedTarget.itemBindingID(number))
+            shortcuts.register(entry, group: tabs.title, bindingID: NumberedTarget.itemBindingID(number))
         }
         let archiveMenu = menu("Archive")
         item("Go Back", #selector(goBack), "[", in: archiveMenu)
@@ -3118,8 +3126,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         stayOnTop.target = self; stayOnTop.isHidden = true
         window.addItem(stayOnTop)
         let minimize = NSMenuItem(title: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        window.addItem(minimize); NSApp.windowsMenu = window
-        KeyboardShortcuts.shared.register(minimize, group: "Window")
+        window.addItem(minimize)
+        if install { NSApp.windowsMenu = window }
+        shortcuts.register(minimize, group: "Window")
         window.addItem(NSMenuItem(title: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: ""))
         window.addItem(.separator())
         item("Manage Spaces…", #selector(openSpaceManager), in: window)
@@ -3127,14 +3136,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         item("View Downloads", #selector(downloads), "j", in: window, modifiers: [.command, .shift])
         item("View Media", #selector(captureLibrary), in: window)
         item("View Easels & Notes", #selector(showDocuments), in: window)
-        TaskManagerMenu.add(to: window, target: self, shortcuts: .shared)
+        TaskManagerMenu.add(to: window, target: self, shortcuts: shortcuts)
         window.addItem(.separator())
         window.addItem(NSMenuItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: ""))
         let help = menu("Help")
         item("Essential Keyboard Shortcuts", #selector(showEssentialShortcuts), in: help)
         item("Release Notes", #selector(showReleaseNotes), in: help)
-        NSApp.helpMenu = help
-        NSApp.mainMenu = main
+        if install { NSApp.helpMenu = help; NSApp.mainMenu = main }
+        return main
     }
 }
 

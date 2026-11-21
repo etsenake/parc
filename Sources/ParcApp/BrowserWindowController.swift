@@ -169,7 +169,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var frameCrank: WindowFrameCrankView?
     static weak var frameCrankOwner: BrowserWindowController?
     var onFrameCrankFinished: (() -> Void)?
-    private var lastAppliedShortcutTooltipDiscovery: String?
+    private let shortcutTooltipDiscovery = ShortcutTooltipDiscovery()
     var browsers: [UUID: PCBrowserView] = [:] {
         didSet {
             for id in browsers.keys where oldValue[id] == nil {
@@ -735,16 +735,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         shortcutDiscoverySubscription = NotificationCenter.default.publisher(for: LiveShortcutToolTip.didChange).sink { [weak self] _ in
             guard let self else { return }
-            let discovery = self.shortcutTooltipDiscoveryFingerprint()
-            if ShortcutTooltipDiscoverySkip.shouldSkip(
-                previous: self.lastAppliedShortcutTooltipDiscovery, next: discovery
-            ) {
-                return
-            }
-            self.toasts.dismissShortcutToasts()
-            self.popupChrome.updateCopyTooltip()
-            self.updateSiteControlCenterShortcuts()
-            self.lastAppliedShortcutTooltipDiscovery = discovery
+            self.shortcutTooltipDiscovery.apply(self.shortcutTooltipDiscoveryFingerprint(),
+                dismissToasts: { self.toasts.dismissShortcutToasts() },
+                refreshCopyTooltip: { self.popupChrome.updateCopyTooltip() },
+                refreshSiteControlShortcuts: { self.updateSiteControlCenterShortcuts() })
         }
         window.delegate = self
         window.contentView = rootView
@@ -835,8 +829,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         popupChrome.prepareSiteControls = { [weak self] in self?.preparePopupSiteControls(requireExtensions: false) }
         popupChrome.prepareBlocked = { [weak self] anchor in self?.preparePopupSiteControls(requireExtensions: false, from: anchor) }
         sidebar.onBlockedContent = { [weak self] anchor in self?.showSiteControlCenter(from: anchor) }
-        popupChrome.onAddress = { [weak self] in
-            guard let self else { return }; self.focusAddress(anchor: self.popupChrome.addressAnchor)
+        CommandBarAddressSource.connect(popupChrome) { [weak self] source in
+            self?.focusAddress(from: source)
         }
         popupChrome.onPageMenu = { [weak self] in
             guard let self else { return }; self.showPageMenu(from: self.popupChrome.addressAnchor)
@@ -1011,8 +1005,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     self.sidebarPointerDown = self.sidebarPresentation == .floating && self.sidebarContainer.frame.contains(point)
                     if self.sidebarPresentation == .floating && !self.sidebarPointerDown { self.setSidebarPresentation(.hidden) }
                     if self.sidebarPresentation == .hidden || !self.sidebarContainer.frame.contains(point) {
-                        for (id, pane) in self.panes where self.renderedPaneIDs.contains(id) {
-                            if pane.bounds.contains(pane.convert(event.locationInWindow, from: nil)) { self.focusedTabID = id; self.updateNavigation(); self.requestNativeSelection() }
+                        WindowPaneFocus.visitHits(at: event.locationInWindow, panes: self.panes,
+                                                  isRendered: { self.renderedPaneIDs.contains($0) }) { id in
+                            self.focusedTabID = id; self.updateNavigation(); self.requestNativeSelection()
                         }
                     }
                 }

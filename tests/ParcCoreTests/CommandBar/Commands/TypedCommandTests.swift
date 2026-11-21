@@ -48,9 +48,9 @@ struct TypedCommandTests {
         #expect(Command(kind: .pinToNewFolder).matches(query: "pin new"))
     }
 
-    @Test func airTrafficControlMatchesItsNameAndItsRoutes() {
-        #expect(Command(kind: .airTrafficControl).matches(query: "air traffic"))
-        #expect(Command(kind: .airTrafficControl).matches(query: "routes"))
+    @Test(arguments: ["air traffic", "routes"])
+    func airTrafficControlMatchesSearchPhrases(query: String) {
+        #expect(Command(kind: .airTrafficControl).matches(query: query))
     }
 
     @Test func matchingFoldsCase() {
@@ -65,18 +65,20 @@ struct TypedCommandTests {
         #expect(!Command(kind: .searchSettings).matches(query: "split"))
     }
 
-    @Test func menuCommandsTakeTheirCommandBarTitles() {
-        #expect(Command.commandBarTitle(forMenuCommand: "toggleSidebar:", menuTitle: "Show / Hide Sidebar") == "Toggle Sidebar")
-        #expect(Command.commandBarTitle(forMenuCommand: "resetTab:", menuTitle: "Reset Tab to Original URL") == "Reset Tab")
+    @Test(arguments: [
+        ("toggleSidebar:", "Show / Hide Sidebar", "Toggle Sidebar"),
+        ("resetTab:", "Reset Tab to Original URL", "Reset Tab"),
+        ("split:", "Add Split View", "Add Split View"),
+        ("createNote:", "New Note", "New Parc Note"),
+        ("newTab:", "New Tab", "New Tab"),
+        ("sharePage:", "Share…", "Share URL"),
+    ])
+    func menuCommandsUseTheirPaletteTitles(id: String, menuTitle: String, expected: String) {
+        #expect(Command.commandBarTitle(forMenuCommand: id, menuTitle: menuTitle) == expected)
     }
 
-    @Test func addSplitViewKeepsItsMenuTitleAndTheStackedAddIsNamed() {
-        #expect(Command.commandBarTitle(forMenuCommand: "split:", menuTitle: "Add Split View") == "Add Split View")
+    @Test func theStackedAddHasItsOwnTitle() {
         #expect(Command(kind: .addVerticalSplit).title == "Add Vertical Split View")
-    }
-
-    @Test func newNoteTakesParcsName() {
-        #expect(Command.commandBarTitle(forMenuCommand: "createNote:", menuTitle: "New Note") == "New Parc Note")
     }
 
     @Test func parcNoteFindsItByItsTitleAndItsOwnTriggersStillWork() {
@@ -90,10 +92,6 @@ struct TypedCommandTests {
         let noteSearch = Command.commandBarSearchText(forMenuCommand: "createNote:")
         let words = (noteSearch + " " + Command.rankingPhrases(forMenuCommand: "createNote:").joined(separator: " ")).lowercased()
         #expect(!words.split(separator: " ").contains("arc"))
-    }
-
-    @Test func otherMenuTitlesAreUnchanged() {
-        #expect(Command.commandBarTitle(forMenuCommand: "newTab:", menuTitle: "New Tab") == "New Tab")
     }
 
     @Test func theCatalogHasElevenRecoveredDocumentTypes() {
@@ -148,10 +146,9 @@ struct TypedCommandTests {
             "Edit Keyboard Shortcuts", "Open Link Preferences", "Open App Icon", "Open Advanced Preferences"])
     }
 
-    @Test func paneTriggerPhrasesMatch() {
-        #expect(Command(kind: .settingsPane(.shortcuts)).matches(query: "hotkeys"))
-        #expect(Command(kind: .settingsPane(.general)).matches(query: "autofill"))
-        #expect(Command(kind: .settingsPane(.account)).matches(query: "membership"))
+    @Test(arguments: [(Command.SettingsPane.shortcuts, "hotkeys"), (.general, "autofill"), (.account, "membership")])
+    func preferencesMatchTheirSearchPhrases(pane: Command.SettingsPane, query: String) {
+        #expect(Command(kind: .settingsPane(pane)).matches(query: query))
     }
 
     @Test func wordsForTheExcludedMiniBrowserWindowAreNotOffered() {
@@ -214,20 +211,14 @@ struct TypedCommandTests {
         #expect(Command(kind: .settingsPane(.profiles)).matches(query: "profile"))
     }
 
-    @Test func menuItemBumpsAreKept() {
-        #expect(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "toggleSidebar:") == 0.5)
-        #expect(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "showNotesFolder:") == 1.5)
-        #expect(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "newTab:") == nil)
+    @Test(arguments: [("toggleSidebar:", 0.5), ("showNotesFolder:", 1.5), ("newTab:", nil)] as [(String, Double?)])
+    func menuItemRankingBumpsMatchTheirPriority(id: String, expected: Double?) {
+        #expect(CommandBarMenuItemInfo.candidateBump(forMenuCommand: id) == expected)
     }
 
-    @Test func menuItemsKeepTheirSearchTriggers() {
-        #expect(CommandBarMenuItemInfo.searchText(forMenuCommand: "clearToday:").contains("Close Unpinned Tabs"))
-        #expect(CommandBarMenuItemInfo.searchText(forMenuCommand: "showReleaseNotes:").contains("Changelog"))
-        #expect(Command.commandBarSearchText(forMenuCommand: "createEasel:").contains("Mood Board"))
-    }
-
-    @Test func shareTakesTheTypeTravelTitle() {
-        #expect(Command.commandBarTitle(forMenuCommand: "sharePage:", menuTitle: "Share…") == "Share URL")
+    @Test(arguments: [("clearToday:", "Close Unpinned Tabs"), ("showReleaseNotes:", "Changelog"), ("createEasel:", "Mood Board")])
+    func menuItemsMatchTheirSearchTriggers(id: String, trigger: String) {
+        #expect(Command.commandBarSearchText(forMenuCommand: id).contains(trigger))
     }
 
     @Test func theLargestBumpCannotLiftAnExactCommandOverAnExactTab() {

@@ -107,7 +107,7 @@ struct SidebarPreviewHeaderTests {
         let c = card(row, offers: { _ in true })
         var actions: [SidebarPreviewAction] = []
         c.onAction = { value, action in if value == row { actions.append(action) } }
-        button(c, "Open in Peek")?.performClick(nil)
+        button(c, "Open in Peek")?.sendClick()
         #expect(actions == [.peek])
     }
 
@@ -116,7 +116,7 @@ struct SidebarPreviewHeaderTests {
         let c = card(row, offers: { _ in true })
         var actions: [SidebarPreviewAction] = []
         c.onAction = { value, action in if value == row { actions.append(action) } }
-        button(c, "Open in Split View")?.performClick(nil)
+        button(c, "Open in Split View")?.sendClick()
         #expect(actions == [.split])
     }
 
@@ -128,7 +128,7 @@ struct SidebarPreviewHeaderTests {
         c.onAction = { _, action in actions.append(action) }
         let peek = button(c, "Open in Peek")
         offer.offered = false
-        peek?.performClick(nil)
+        peek?.sendClick()
         c.layoutSubtreeIfNeeded()
         #expect(actions.isEmpty)
         #expect(button(c, "Open in Peek") == nil)
@@ -204,7 +204,7 @@ struct SidebarPreviewHeaderTests {
         c.onAction = { _, action in actions.append(action) }
         let peek = button(c, "Open in Peek")
         c.retire()
-        peek?.performClick(nil)
+        peek?.sendClick()
         c.refreshPeek()
         c.layoutSubtreeIfNeeded()
         #expect(actions.isEmpty)
@@ -270,8 +270,8 @@ struct SidebarPreviewHeaderTests {
         let note = documentCard(offers: { _ in true })
         var actions: [SidebarPreviewAction] = []
         note.onAction = { _, action in actions.append(action) }
-        button(note, "Open in Peek")?.performClick(nil)
-        button(note, "Open in Split View")?.performClick(nil)
+        button(note, "Open in Peek")?.sendClick()
+        button(note, "Open in Split View")?.sendClick()
         #expect(actions == [.peek, .split])
     }
 

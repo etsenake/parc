@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct ReplaceSavedHomeTests {
     let profile = BrowserProfile(id: UUID(), name: "Original")
     let origin: BrowserSpace
@@ -24,7 +23,7 @@ struct ReplaceSavedHomeTests {
                    savedURL: "https://home.test/", savedTitle: "Home")
     }
 
-    func makeStore(extra: [BrowserTab] = []) throws -> BrowserStore {
+    @MainActor func makeStore(extra: [BrowserTab] = []) throws -> BrowserStore {
         var state = BrowserState(profiles: [profile], spaces: [origin], activeSpaceID: origin.id)
         state.tabs = [pinned, today, atHome] + extra
         state.selectedTabIDs = [pinned.id]
@@ -35,25 +34,25 @@ struct ReplaceSavedHomeTests {
         return try BrowserStore(directory: directory)
     }
 
-    @Test func aTodayTabHasNoPinToReplace() throws {
+    @Test @MainActor func aTodayTabHasNoPinToReplace() throws {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try makeStore()
         #expect(!store.replaceSavedHome(today, url: today.url, title: "Today"))
     }
 
-    @Test func aPinAtItsHomeIsUnchanged() throws {
+    @Test @MainActor func aPinAtItsHomeIsUnchanged() throws {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try makeStore()
         #expect(!store.replaceSavedHome(atHome, url: atHome.url, title: "Home"))
     }
 
-    @Test func aLocalDocumentCannotBecomeAWebHome() throws {
+    @Test @MainActor func aLocalDocumentCannotBecomeAWebHome() throws {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try makeStore()
         #expect(!store.replaceSavedHome(pinned, url: "parc://note/\(UUID().uuidString)", title: "Note"))
     }
 
-    @Test func anAwayPinTakesItsCurrentPageInPlaceKeepingIdentityAndKind() throws {
+    @Test @MainActor func anAwayPinTakesItsCurrentPageInPlaceKeepingIdentityAndKind() throws {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try makeStore()
         #expect(store.replaceSavedHome(pinned, url: pinned.url, title: "Away Page"))
@@ -64,14 +63,14 @@ struct ReplaceSavedHomeTests {
         #expect(replaced?.resetDestination == nil)
     }
 
-    @Test func aStaleExpectedRecordIsRefused() throws {
+    @Test @MainActor func aStaleExpectedRecordIsRefused() throws {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try makeStore()
         _ = store.replaceSavedHome(pinned, url: pinned.url, title: "Away Page")
         #expect(!store.replaceSavedHome(pinned, url: pinned.url, title: "Again"))
     }
 
-    @Test func aWebUIPageCanBecomeAPinsHomeUnderItsPublicAddress() throws {
+    @Test @MainActor func aWebUIPageCanBecomeAPinsHomeUnderItsPublicAddress() throws {
         defer { try? FileManager.default.removeItem(at: directory) }
         let settingsPin = Self.tab(.pinned, url: "chrome://settings/searchEngines", space: origin.id, profile: profile.id)
         let store = try makeStore(extra: [settingsPin])
@@ -91,14 +90,14 @@ struct ReplaceSavedHomeTests {
         return (spaces, away, move)
     }
 
-    @Test func aSidebarDragKeepsItsTodaySection() throws {
+    @Test @MainActor func aSidebarDragKeepsItsTodaySection() throws {
         let fixture = try spaceMoveFixture()
         let kept = fixture.move.applying(to: fixture.state)?.tabs.first { $0.id == today.id }
         #expect(kept?.kind == .today)
         #expect(kept?.spaceID == fixture.away.id)
     }
 
-    @Test func pinToSpaceMovesTheTabIntoPinnedWithTheCurrentPageAsItsHome() throws {
+    @Test @MainActor func pinToSpaceMovesTheTabIntoPinnedWithTheCurrentPageAsItsHome() throws {
         var fixture = try spaceMoveFixture()
         fixture.move.pinsToday = true
         let pinnedState = fixture.move.applying(to: fixture.state)

@@ -264,7 +264,7 @@ struct FavoritesEmptyStateViewTests {
         tray.windows[0].contentView?.addSubview(stop)
         SidebarAccessibility.link([tray.button, stop], within: tray.windows[0].contentView!, exit: nil, bypassed: false)
         _ = tray.windows[0].makeFirstResponder(tray.button)
-        tray.button.performClick(nil)
+        tray.button.sendClick()
         tray.render()
         return stop
     }
