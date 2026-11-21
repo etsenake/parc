@@ -273,7 +273,10 @@ final class PageCaptureController: NSObject {
             catch { view.showError(error.localizedDescription); self.parent?.makeFirstResponder(view) }
         }
         view.onCancel = { [weak self] in self?.cancelEditingOrDismiss() }
-        view.onPreview = { [weak self] image in self?.overlay.showDraft(image) }
+        view.onPreview = { [weak self, weak view] image in
+            guard let self, let view, self.state == .configuringPortrait, self.portrait === view else { return }
+            self.overlay.showDraft(image)
+        }
         view.onResize = { [weak self] in self?.overlay.palette.view.frameContentSizeChanged() }
         portrait = view; state = .configuringPortrait
         overlay.showFramePage(view, preview: view.previewImage)
@@ -670,7 +673,7 @@ final class PageCaptureOverlay: NSView {
     func showFramePage(_ page: NSView, preview: CGImage?) {
         palette.showFramePage(page)
         showDraft(preview)
-        setAccessibilityValue("Frame the captured image. The preview shows the framed result.")
+        setAccessibilityValue("Pick a frame. The big preview shows how it'll look.")
     }
     func showDraft(_ image: CGImage?) {
         guard let shown = image ?? committedPixels else { return }
@@ -704,7 +707,8 @@ final class PageCaptureOverlay: NSView {
         cancel.frame = NSRect(x: max(4, bounds.width - 90), y: 10, width: min(80, max(1, bounds.width - 8)), height: 28)
         spinner.frame = NSRect(x: bounds.midX - 16, y: bounds.midY - 16, width: 32, height: 32)
         let geometry = CapturePresentation.layout(bounds: bounds, pixels: imageSize, source: previewSourceRect,
-            paletteHeight: palette.view.naturalHeight, editing: editing, editingFooterHeight: hintHeight + 60)
+            paletteHeight: palette.view.naturalHeight, editing: editing, editingFooterHeight: hintHeight + 60,
+            fullPalette: palette.view.showsFramePage)
         imageRect = geometry.image; picture.frame = imageRect
         pictureFrame.frame = imageRect.insetBy(dx: -CapturePresentation.imageBorder, dy: -CapturePresentation.imageBorder)
         elementLens.frame = bounds; selectionShade.frame = bounds

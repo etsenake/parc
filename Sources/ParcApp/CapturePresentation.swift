@@ -12,7 +12,7 @@ enum CapturePresentation {
     }
 
     static func layout(bounds: NSRect, pixels: NSSize, source: NSRect?, paletteHeight: CGFloat,
-                       editing: Bool, editingFooterHeight: CGFloat = 110) -> Layout {
+                       editing: Bool, editingFooterHeight: CGFloat = 110, fullPalette: Bool = false) -> Layout {
         guard bounds.width > 0, bounds.height > 0 else { return Layout(image: .zero, palette: .zero) }
         let margin = min(paletteInset, bounds.width / 4, bounds.height / 4)
         let safe = bounds.insetBy(dx: margin, dy: margin)
@@ -24,7 +24,7 @@ enum CapturePresentation {
         let compact = !editing && bounds.width < 2 * paletteWidth + 30
         var menu = NSRect(origin: safe.origin, size: paletteSize)
         if compact {
-            menu.size.height = min(menu.height, safe.height * 0.62)
+            menu.size.height = fullPalette ? menu.height : min(menu.height, safe.height * 0.62)
             menu.origin.y = safe.maxY - menu.height
             menu.origin.x = safe.midX - menu.width / 2
             imageArea.size.height = max(1, menu.minY - imageArea.minY - margin)

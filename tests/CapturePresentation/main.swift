@@ -39,6 +39,13 @@ import AppKit
                 }
             }
         }
+        let narrow = NSRect(x: 0, y: 0, width: 400, height: 500)
+        let capped = CapturePresentation.layout(bounds: narrow, pixels: NSSize(width: 800, height: 600), source: nil,
+                                                paletteHeight: 400, editing: false)
+        let page = CapturePresentation.layout(bounds: narrow, pixels: NSSize(width: 800, height: 600), source: nil,
+                                              paletteHeight: 400, editing: false, fullPalette: true)
+        precondition(capped.palette.height < 300 && page.palette.height == 400 && narrow.contains(page.palette)
+                     && page.image.maxY <= page.palette.minY, "Narrow panes keep the whole Frame page, with the image above it")
         let light = CaptureAppearance.imageBackground(false).usingColorSpace(.sRGB)!
         let dark = CaptureAppearance.imageBackground(true).usingColorSpace(.sRGB)!
         precondition(light.redComponent == 1 && dark.blueComponent > dark.redComponent)

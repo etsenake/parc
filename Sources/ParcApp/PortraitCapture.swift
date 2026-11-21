@@ -244,9 +244,9 @@ final class PortraitCaptureView: NSView {
     var onResize: (() -> Void)?
     let captureButton = ParcDialogButton(title: "Apply", primary: true)
     let cancelButton = ParcDialogButton(title: "Cancel", primary: false)
-    private let back = NoteToolbarButton(icon: .symbol("chevron.left"), label: "Back to capture actions")
+    private let back = NoteToolbarButton(icon: .symbol("chevron.left"), label: "Back")
     private let titleLabel = NSTextField(labelWithString: "Portrait Frame")
-    private let colorTile = PortraitBackgroundTile(title: "Color", label: "Use a color")
+    private let colorTile = PortraitBackgroundTile(title: "Color", label: "Use a Color")
     private let websiteTile = PortraitBackgroundTile(title: "Website", label: "Use Website Color")
     private let wallpaperTile = PortraitBackgroundTile(title: "Wallpaper", label: "Use Desktop Wallpaper")
     private let slider = NSSlider(value: 0.95, minValue: 0, maxValue: 1, target: nil, action: nil)
@@ -298,7 +298,7 @@ final class PortraitCaptureView: NSView {
         wallpaperTile.placeholderSymbol = "desktopcomputer"
         wallpaperTile.thumbnail = desktop; wallpaperTile.isEnabled = desktop != nil
         wallpaperTile.setAccessibilityIdentifier("Portrait Capture Desktop Wallpaper Button")
-        wallpaperTile.setToolTip(desktop == nil ? "Desktop wallpaper has not been loaded." : "Use Desktop Wallpaper")
+        wallpaperTile.setToolTip(desktop == nil ? "Wallpaper isn't ready yet." : "Use Desktop Wallpaper")
         let sliderCell = PortraitColorSliderCell(); sliderCell.palette = palette
         slider.cell = sliderCell; slider.minValue = 0; slider.maxValue = 1
         slider.target = self; slider.action = #selector(changeColor); slider.doubleValue = options.fraction; slider.isContinuous = true
@@ -422,6 +422,7 @@ final class PortraitCaptureView: NSView {
         }
     }
     override func cancelOperation(_ sender: Any?) { onCancel?() }
+    override func insertNewline(_ sender: Any?) { applyOrReturn() }
 
     private func applyOrReturn() {
         switch applyState {

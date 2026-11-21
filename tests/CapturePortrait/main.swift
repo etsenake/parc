@@ -195,7 +195,7 @@ struct PortraitChecks {
         let buttons = view.subviews.compactMap { $0 as? NSButton }
         let websiteButton = buttons.first { $0.accessibilityLabel() == "Use Website Color" }!
         let desktopButton = buttons.first { $0.accessibilityLabel() == "Use Desktop Wallpaper" }!
-        let colorButton = buttons.first { $0.accessibilityLabel() == "Use a color" }!
+        let colorButton = buttons.first { $0.accessibilityLabel() == "Use a Color" }!
         websiteButton.performClick(nil)
         precondition(view.composition.options.background == .page)
         desktopButton.performClick(nil)

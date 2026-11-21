@@ -25,7 +25,7 @@ use 46-point detailed rows with an Edited subtitle.
 
 Narrow split panes below twice the palette width plus 30 use separate image and
 palette bands. The palette occupies at most 62% of available height and scrolls
-its rows. The crop editor maps its clipped selection back to an
+its rows; the Frame page keeps its full height and the image band shrinks instead. The crop editor maps its clipped selection back to an
 outward-rounded pixel rectangle; only `CapturedImage` commits the result.
 
 The selection lens uses two live-page layers: grayscale/color blending and a
