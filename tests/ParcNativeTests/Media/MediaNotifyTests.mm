@@ -1,20 +1,12 @@
 #include "native_media_notify.h"
 
 #import "ParcNativeTest.h"
-#include <iostream>
 
-@interface MediaNotifyTests : ParcNativeTestCase
-@end
+using parc::MediaNotifyPayloadChanged;
+using parc::NativeMediaNotifyState;
+using parc::ShouldNotifyMediaPayloadChange;
 
-@implementation MediaNotifyTests
-
-- (void)testFiltersMediaNotifyPayloads {
-  @autoreleasepool {
-  using parc::MediaNotifyPayloadChanged;
-  using parc::NativeMediaNotifyState;
-  using parc::ShouldNotifyMediaPayloadChange;
-
-  NativeMediaNotifyState unpublished;
+static NativeMediaNotifyState Published() {
   NativeMediaNotifyState published;
   published.eligible = true;
   published.active = true;
@@ -35,80 +27,102 @@
   published.artwork_present = true;
   published.artwork_url = "https://music.example/art.png";
   published.published = true;
+  return published;
+}
 
-  NativeMediaNotifyState same = published;
+static NativeMediaNotifyState Same() {
+  NativeMediaNotifyState same = Published();
   same.published = false;
+  return same;
+}
 
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(unpublished, published));
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(unpublished, same));
+@interface MediaNotifyTests : ParcNativeTestCase
+@end
 
-  PARC_CHECK(!ShouldNotifyMediaPayloadChange(published, same));
-  PARC_CHECK(!MediaNotifyPayloadChanged(published, same));
+@implementation MediaNotifyTests
 
-  NativeMediaNotifyState paused = same;
+- (void)testTheFirstPayloadIsAlwaysNotified {
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(NativeMediaNotifyState(), Published()));
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(NativeMediaNotifyState(), Same()));
+}
+
+- (void)testAnUnchangedPayloadIsNotNotified {
+  PARC_CHECK(!ShouldNotifyMediaPayloadChange(Published(), Same()));
+  PARC_CHECK(!MediaNotifyPayloadChanged(Published(), Same()));
+}
+
+- (void)testPausingIsNotified {
+  NativeMediaNotifyState paused = Same();
   paused.playing = false;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, paused));
-  PARC_CHECK(MediaNotifyPayloadChanged(published, paused));
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), paused));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), paused));
+}
 
-  NativeMediaNotifyState muted = same;
+- (void)testMutingAndSilenceAreNotified {
+  NativeMediaNotifyState muted = Same();
   muted.muted = true;
   muted.can_admit = false;
   muted.mute_revision = 1;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, muted));
-  NativeMediaNotifyState silent = same;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), muted));
+  NativeMediaNotifyState silent = Same();
   silent.audible = false;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, silent));
-  NativeMediaNotifyState mute_rev = same;
-  mute_rev.mute_revision = 2;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, mute_rev));
-  PARC_CHECK(MediaNotifyPayloadChanged(published, mute_rev));
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), silent));
+  NativeMediaNotifyState revision = Same();
+  revision.mute_revision = 2;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), revision));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), revision));
+}
 
-  NativeMediaNotifyState retitled = same;
+- (void)testTitleAndArtworkChangesAreNotified {
+  NativeMediaNotifyState retitled = Same();
   retitled.title = u"Other";
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, retitled));
-  NativeMediaNotifyState art = same;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), retitled));
+  NativeMediaNotifyState art = Same();
   art.artwork_url = "https://music.example/other.png";
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, art));
-  NativeMediaNotifyState missing_art = same;
-  missing_art.artwork_present = false;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, missing_art));
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), art));
+  NativeMediaNotifyState missing = Same();
+  missing.artwork_present = false;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), missing));
+}
 
-  NativeMediaNotifyState ineligible = same;
+- (void)testEligibilitySessionAndAdmissionChangesAreNotified {
+  NativeMediaNotifyState ineligible = Same();
   ineligible.eligible = false;
   ineligible.active = false;
   ineligible.can_admit = false;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, ineligible));
-  NativeMediaNotifyState status = same;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), ineligible));
+  NativeMediaNotifyState status = Same();
   status.session_status = 3;
   status.session_state_active = false;
   status.can_admit = false;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, status));
-  NativeMediaNotifyState admit = same;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), status));
+  NativeMediaNotifyState admit = Same();
   admit.can_admit = false;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, admit));
-  NativeMediaNotifyState actions = same;
-  actions.has_next_track = true;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, actions));
-  NativeMediaNotifyState volume = same;
-  volume.volume_hundredths = 50;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, volume));
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), admit));
+}
 
-  NativeMediaNotifyState mic = same;
+- (void)testActionsVolumeMicrophoneAndPictureInPictureAreNotified {
+  NativeMediaNotifyState actions = Same();
+  actions.has_next_track = true;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), actions));
+  NativeMediaNotifyState volume = Same();
+  volume.volume_hundredths = 50;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), volume));
+  NativeMediaNotifyState mic = Same();
   mic.can_toggle_microphone = true;
   mic.microphone_on = true;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, mic));
-
-  NativeMediaNotifyState pip = same;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), mic));
+  NativeMediaNotifyState pip = Same();
   pip.can_enter_picture_in_picture = true;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(published, pip));
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), pip));
+}
 
-  NativeMediaNotifyState published_paused = paused;
-  published_paused.published = true;
-  NativeMediaNotifyState same_paused = paused;
-  same_paused.published = false;
-  PARC_CHECK(!ShouldNotifyMediaPayloadChange(published_paused, same_paused));
-
-  }
+- (void)testAnUnchangedPausedPayloadIsNotNotified {
+  NativeMediaNotifyState paused = Same();
+  paused.playing = false;
+  NativeMediaNotifyState published = paused;
+  published.published = true;
+  PARC_CHECK(!ShouldNotifyMediaPayloadChange(published, paused));
 }
 
 @end
