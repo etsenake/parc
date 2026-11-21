@@ -66,6 +66,7 @@ extension EaselCanvasView {
         guard target != session.currentPage || session.page != target else { return false }
         if finishing {
             cancelPointerInteraction()
+            finishImageCrop(save: true)
             guard finishEditing() else { return false }
         }
         if rememberingViewport { rememberViewport() }
