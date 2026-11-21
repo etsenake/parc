@@ -133,7 +133,7 @@ final class ActionButton: PointingHandButton {
         super.viewWillMove(toWindow: newWindow)
     }
     func refreshHover() {
-        guard let window, isEnabled, NSApp.isActive, !isHiddenOrHasHiddenAncestor else { hovered = false; return }
+        guard let window, isEnabled, window.applicationIsActive, !isHiddenOrHasHiddenAncestor else { hovered = false; return }
         let point = window.mouseLocationOutsideOfEventStream
         hovered = bounds.contains(convert(point, from: nil)) && isTopmost(atWindowPoint: point)
     }
@@ -1629,7 +1629,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         updateAddressButtonsReveal()
     }
     private var pointerOverOwnWindow: Bool {
-        guard let window, NSApp.isActive else { return false }
+        guard let window, window.applicationIsActive else { return false }
         return NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0) == window.windowNumber
     }
     private var voiceOverRunning = NSWorkspace.shared.isVoiceOverEnabled {
