@@ -401,8 +401,7 @@ extension EaselCanvasView {
     }
 
     private func erase(from a: EaselPoint, to b: EaselPoint) {
-        let candidates = session.document.items.filter { !brushes.erasing.contains($0.id) }
-        let hits = EaselDrawing.erased(candidates, from: a, to: b, scale: canvasScale)
+        let hits = EaselDrawing.erased(session.document.items, from: a, to: b, scale: canvasScale, skipping: brushes.erasing)
         guard !hits.isEmpty else { return }
         brushes.erasing.formUnion(hits)
         repaintDrawings(hits)

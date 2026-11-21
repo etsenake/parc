@@ -210,7 +210,7 @@ enum EaselPaintRules {
     static let maximumWidth = 64.0
     static let minimumLineWidth = 1.0
 
-    static func isHighlighter(_ item: EaselItem) -> Bool { item.kind == .freehand && item.brush == .highlighter }
+    static func isHighlighter(_ item: EaselItem) -> Bool { item.kind == .freehand && item.resolvedBrush == .highlighter }
 
     static func ink(_ item: EaselItem) -> (hex: String, role: EaselColorRole) {
         guard isHighlighter(item) else { return (item.color, .ink) }

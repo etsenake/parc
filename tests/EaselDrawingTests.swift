@@ -15,6 +15,7 @@ struct EaselDrawingTests {
         tape()
         highlight()
         curves()
+        erasing()
         print("EaselDrawingTests: \(assertions) assertions passed")
     }
 
@@ -85,5 +86,28 @@ struct EaselDrawingTests {
         expect(!(EaselVectorExport.drawingPath(item) ?? "").contains("Q"), "legacy pen strokes stay straight segments")
         item.points = []
         expect(EaselVectorExport.drawingPath(item) == nil, "an empty stroke has no path")
+    }
+
+    @MainActor static func erasing() {
+        var near = template(.marker), far = template(.marker), locked = template(.marker)
+        for index in 0..<3 {
+            let y = Double(index) * 500
+            let item = [near, far, locked][index]
+            var shaped = item
+            shaped.points = [EaselPoint(x: 0, y: 0), EaselPoint(x: 60, y: 0)]
+            shaped.frame = .init(x: 0, y: y, width: 60, height: 1)
+            if index == 0 { near = shaped } else if index == 1 { far = shaped } else { locked = shaped }
+        }
+        locked.locked = true
+        let items = [near, far, locked]
+        let hits = EaselDrawing.erased(items, from: EaselPoint(x: 10, y: 0), to: EaselPoint(x: 20, y: 0), scale: 1)
+        expect(hits == [near.id], "the eraser takes only the stroke it touches and spares locked ones")
+        let skipped = EaselDrawing.erased(items, from: EaselPoint(x: 10, y: 0), to: EaselPoint(x: 20, y: 0), scale: 1, skipping: [near.id])
+        expect(skipped.isEmpty, "strokes already erased are skipped")
+        expect(EaselPaintRules.isHighlighter(template(.highlighter)) && !EaselPaintRules.isHighlighter(template(.marker)), "one helper recognises highlighters")
+        var legacy = template(.marker)
+        legacy.brush = nil
+        expect(!EaselPaintRules.isHighlighter(legacy), "strokes with no brush are not highlighters")
+        expect(EaselVectorExport.drawingStyles([template(.highlighter)]).contains("easel-highlight"), "highlighters add the blend style")
     }
 }

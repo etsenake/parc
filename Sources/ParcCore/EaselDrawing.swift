@@ -217,8 +217,10 @@ enum EaselDrawing {
         return false
     }
 
-    static func erased(_ items: [EaselItem], from a: EaselPoint, to b: EaselPoint, scale: Double) -> Set<UUID> {
-        Set(items.filter { touches($0, from: a, to: b, scale: scale) }.map(\.id))
+    static func erased(_ items: [EaselItem], from a: EaselPoint, to b: EaselPoint, scale: Double, skipping: Set<UUID> = []) -> Set<UUID> {
+        var hits = Set<UUID>()
+        for item in items where !skipping.contains(item.id) && touches(item, from: a, to: b, scale: scale) { hits.insert(item.id) }
+        return hits
     }
 
     static func tapeDistance(from a: EaselPoint, to b: EaselPoint, start: EaselPoint, end: EaselPoint) -> Double {

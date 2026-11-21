@@ -16,10 +16,8 @@ extension EaselVectorExport {
     static let highlightBlend = "mix-blend-mode:var(--easel-highlight-blend,multiply)"
     static let highlightCSS = "@media screen and (prefers-color-scheme:dark){.easel-highlight{--easel-highlight-blend:normal}}"
 
-    static func isHighlight(_ item: EaselItem) -> Bool { item.kind == .freehand && item.resolvedBrush == .highlighter }
-
     static func drawingStyles(_ items: [EaselItem]) -> String {
-        items.contains(where: isHighlight) ? "<style>" + highlightCSS + "</style>" : ""
+        items.contains(where: EaselPaintRules.isHighlighter) ? "<style>" + highlightCSS + "</style>" : ""
     }
 
     static func drawing(_ item: EaselItem) -> String {
