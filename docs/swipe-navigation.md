@@ -254,10 +254,11 @@ restarts the wait, and a resting hand's tremor can't cancel it.
 - It works in background windows, like the plain swipe. The Back/Forward
   chooser remains the keyboard and VoiceOver path to the same history.
 
-`tests/HistorySwipeOverlay` model-tests the overlay's geometry and motion,
+Run `swift test --filter HistorySwipeOverlayTests` for the overlay's geometry and motion,
 including the fold back into the circle and the reopen, the lean, Reduce Motion,
-narrow panes, long lists and runs through the real recognizer, and checks the
-view's pane clip, click-through, accessibility, material, shadow and ring.
+narrow panes, long lists and input from the recognizer. Run
+`swift test --filter HistorySwipeOverlayViewTests` for the view's pane clip,
+click-through, accessibility, material, shadow and ring.
 
 ## Peek dismissal
 
@@ -303,7 +304,7 @@ boundary.
 - `swift test --filter HistorySwipeDriverTests` drives the forwarder's Swift half:
   sessions, commits and list picks, refused and late navigation, engine
   cancels, clock ticks, AppKit tracking and Peek dismissals.
-- `tests/HistorySwipeTargets` covers which panes can swipe.
+- `swift test --filter HistorySwipeTargetsTests` covers which panes can swipe.
 - `PeekSwipeDismissalTests` covers the Peek's drag, close,
   refusal, Hang up and motion on the real recognizer.
 - Swift typecheck and whole-module SIL cover the app; the engine build compiles
