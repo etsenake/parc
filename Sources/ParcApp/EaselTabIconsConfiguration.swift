@@ -3,8 +3,9 @@ import Foundation
 extension EaselTabIcons {
     func configure(store browser: BrowserStore) {
         directory = { [weak browser] profile in browser?.easelsDirectory(for: profile) }
+        let availability = EaselStoreAvailability()
         store = { directory in
-            guard FileManager.default.fileExists(atPath: directory.path) else { return nil }
+            guard availability.contains(directory) else { return nil }
             return try? EaselEditorViewController.sharedStore(directory: directory)
         }
         notesFolder = { [weak browser] directory in

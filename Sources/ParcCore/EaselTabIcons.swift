@@ -38,6 +38,10 @@ final class EaselTabIcons {
                 guard let id = note.object as? UUID else { return }
                 self?.forget(id)
             },
+            NotificationCenter.default.publisher(for: .easelAssetsRemoved).sink { [weak self] note in
+                guard let directory = note.object as? URL else { return }
+                self?.resolveAgain(directory: directory)
+            },
         ]
     }
 
@@ -136,14 +140,38 @@ final class EaselTabIcons {
         }
     }
 
-    private func resolveAgain() {
+    private func resolveAgain(directory: URL? = nil) {
         var changed = Set<String>()
-        for (key, entry) in known where entry.icon?.kind == .custom {
+        let path = directory?.standardizedFileURL.path
+        for (key, entry) in known where entry.icon != nil && (path == nil ? entry.icon?.kind != .emoji : entry.icon?.kind == .image) {
+            if let path, entry.directory.standardizedFileURL.path != path { continue }
             let resolved = resolve(entry.icon, directory: entry.directory)
             guard resolved != entry.resolved else { continue }
             known[key]?.resolved = resolved
             changed.insert(key)
         }
         if !changed.isEmpty { changes.send(changed) }
+    }
+}
+
+@MainActor
+final class EaselStoreAvailability {
+    private var present: Set<String> = []
+    private var subscriptions: [AnyCancellable] = []
+    private let exists: (String) -> Bool
+
+    init(exists: @escaping (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) {
+        self.exists = exists
+        subscriptions = [
+            NotificationCenter.default.publisher(for: .easelDocumentRemoved).sink { [weak self] _ in self?.present.removeAll() },
+        ]
+    }
+
+    func contains(_ directory: URL) -> Bool {
+        let path = directory.standardizedFileURL.path
+        if present.contains(path) { return true }
+        guard exists(path) else { return false }
+        present.insert(path)
+        return true
     }
 }
