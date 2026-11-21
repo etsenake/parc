@@ -919,13 +919,22 @@ final class NoteCalendarGridView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(area)
         tracking = area
     }
 
+    private func pointerCursor(at point: NSPoint) -> NSCursor {
+        NSRect(x: 0, y: Self.weekdayHeight, width: bounds.width, height: Self.cellHeight * 6).contains(point) ? .pointingHand : .arrow
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(pointerCursor(at: convert(event.locationInWindow, from: nil)), for: event) { super.cursorUpdate(with: event) }
+    }
+
     override func mouseMoved(with event: NSEvent) {
-        guard NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow) else { return }
+        guard applyNoteCursor(pointerCursor(at: convert(event.locationInWindow, from: nil)), for: event) else { return }
         let next = index(at: convert(event.locationInWindow, from: nil))
         guard next != hovered else { return }
         hovered = next
@@ -956,10 +965,6 @@ final class NoteCalendarGridView: NSView {
 
     fileprivate func choose(_ index: Int) {
         onPick?(parser.calendar.dateComponents([.year, .month, .day], from: day(at: index)))
-    }
-
-    override func resetCursorRects() {
-        addCursorRect(NSRect(x: 0, y: Self.weekdayHeight, width: bounds.width, height: Self.cellHeight * 6), cursor: .pointingHand)
     }
 
     private func rebuildAccessibility() {

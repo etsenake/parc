@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 @MainActor
 final class NoteCustomEmojiWell: NSView {
     var image: NSImage? { didSet { needsDisplay = true; setAccessibilityValue(image == nil ? "Empty" : "Image chosen") } }
-    var isChangeable = true { didSet { window?.invalidateCursorRects(for: self); needsDisplay = true } }
+    var isChangeable = true { didSet { if isChangeable != oldValue { refreshPointingHand(isChangeable) }; needsDisplay = true } }
     var onImage: ((Data, String) -> Void)?
     var onError: ((String) -> Void)?
     private var isTargeted = false { didSet { needsDisplay = true } }
@@ -64,16 +64,24 @@ final class NoteCustomEmojiWell: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInActiveApp, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(area)
         tracking = area
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true }
-    override func mouseExited(with event: NSEvent) { isHovered = false }
+    override func mouseEntered(with event: NSEvent) { trackPointer(event) }
+    override func mouseMoved(with event: NSEvent) { trackPointer(event) }
+    override func mouseExited(with event: NSEvent) { if isHovered { isHovered = false } }
 
-    override func resetCursorRects() {
-        if isChangeable { addCursorRect(bounds, cursor: .pointingHand) }
+    private func trackPointer(_ event: NSEvent) {
+        let hovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        if hovered != isHovered { isHovered = hovered }
+        if isChangeable { applyNoteCursor(.pointingHand, for: event) }
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !(isChangeable && applyNoteCursor(.pointingHand, for: event)) { super.cursorUpdate(with: event) }
     }
 
     override func mouseDown(with event: NSEvent) {

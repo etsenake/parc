@@ -122,7 +122,7 @@ class NoteFloatingPanel: NSView {
             NoteAnimation.presentHUD(self, about: scaleOrigin)
         }
         NotificationCenter.default.post(name: Self.didChangePresentationNotification, object: self)
-        window?.invalidateCursorRects(for: self)
+        window?.refreshCursorUnderPointer()
     }
 
     func reposition(anchor: NSRect, edge: Edge = .below, animated: Bool = true) {
@@ -150,7 +150,9 @@ class NoteFloatingPanel: NSView {
             guard let self else { completion?(); return }
             guard !self.isPresented else { completion?(); return }
             NoteAnimation.settle(self)
+            let window = self.window
             self.removeFromSuperview()
+            window?.refreshCursorUnderPointer()
             NoteAnimation.withoutAnimation { self.layer?.opacity = 1 }
             NotificationCenter.default.post(name: Self.didChangePresentationNotification, object: self)
             self.onDismiss?()
@@ -172,6 +174,7 @@ class NoteFloatingPanel: NSView {
                                        maximumHeight: maximumHeight, sideOffset: sideAlignmentOffset)
         resolvedEdge = placement.edge
         let target = Self.topDown(placement.frame, in: host).integral
+        let moved = target != frame
         let glide = animated && isPresented && frame.size != .zero && !NoteAnimation.reduceMotion && target != frame
         if glide {
             NoteAnimation.slide(self, to: target, spring: .glide)
@@ -182,6 +185,7 @@ class NoteFloatingPanel: NSView {
             if let layer { NoteAnimation.settle(layer, keys: [NoteAnimation.positionKey, NoteAnimation.boundsKey]) }
         }
         layoutChrome()
+        if moved, isPresented { window?.refreshCursorUnderPointer() }
     }
 
     override func layout() {
@@ -302,12 +306,8 @@ class NoteFloatingPanel: NSView {
     override func otherMouseDown(with event: NSEvent) {}
     override func mouseMoved(with event: NSEvent) {}
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .arrow)
-    }
-
     override func cursorUpdate(with event: NSEvent) {
-        NSCursor.arrow.set()
+        if !applyNoteCursor(.arrow, for: event) { super.cursorUpdate(with: event) }
     }
 
     override func updateTrackingAreas() {
@@ -317,7 +317,12 @@ class NoteFloatingPanel: NSView {
     }
 
     static func allowsHover(for view: NSView, at windowPoint: NSPoint) -> Bool {
-        view.window == nil || view.isTopmost(atWindowPoint: windowPoint)
+        guard let content = view.window?.contentView else { return true }
+        guard view.isTopmost(atWindowPoint: windowPoint) else { return false }
+        guard let hit = content.hitTest(content.superview?.convert(windowPoint, from: nil) ?? windowPoint),
+              let cover = sequence(first: hit, next: \.superview).first(where: { $0 is NoteFloatingPanel })
+        else { return true }
+        return view.isDescendant(of: cover)
     }
 }
 
@@ -677,6 +682,7 @@ final class NoteMenuList: NSView, NoteFloatingPanelContent {
         needsLayout = true
         documentView.needsDisplay = true
         if intrinsicContentSize != previousSize { preferredSizeDidChange?() }
+        documentView.refreshPointerCursor()
     }
 
     private func naturalWidth(_ rows: [Placed]) -> CGFloat {
@@ -934,11 +940,18 @@ final class NoteMenuDocumentView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        applyNoteCursor(pointerCursor(at: convert(event.locationInWindow, from: nil)), for: event)
         list?.pointerMoved(to: convert(event.locationInWindow, from: nil), windowPoint: event.locationInWindow)
     }
 
     override func mouseEntered(with event: NSEvent) {
+        applyNoteCursor(pointerCursor(at: convert(event.locationInWindow, from: nil)), for: event)
         list?.pointerMoved(to: convert(event.locationInWindow, from: nil), windowPoint: event.locationInWindow)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        super.scrollWheel(with: event)
+        refreshPointerCursor()
     }
 
     override func mouseExited(with event: NSEvent) { list?.pointerExited() }
@@ -948,24 +961,19 @@ final class NoteMenuDocumentView: NSView {
     override func rightMouseDown(with event: NSEvent) {}
 
     override func cursorUpdate(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        if let list, let index = list.placedRows.lazy.compactMap({ row -> Int? in
-            if case .item(let index) = row.row, row.frame.contains(point) { return index }
-            return nil
-        }).first, list.items[index].isEnabled {
-            NSCursor.pointingHand.set()
-        } else {
-            NSCursor.arrow.set()
-        }
+        if !applyNoteCursor(pointerCursor(at: convert(event.locationInWindow, from: nil)), for: event) { super.cursorUpdate(with: event) }
     }
 
-    override func resetCursorRects() {
-        guard let list else { return }
-        for row in list.placedRows {
-            if case .item(let index) = row.row, list.items[index].isEnabled {
-                addCursorRect(row.frame, cursor: .pointingHand)
-            }
-        }
+    private func pointerCursor(at point: NSPoint) -> NSCursor {
+        guard let list, let index = list.item(at: point), list.items[index].isEnabled else { return .arrow }
+        return .pointingHand
+    }
+
+    fileprivate func refreshPointerCursor() {
+        guard let window, window.isKeyWindow else { return }
+        let point = window.mouseLocationOutsideOfEventStream
+        guard ownsPointer(atWindowPoint: point) else { return }
+        pointerCursor(at: convert(point, from: nil)).set()
     }
 
     override func draw(_ dirtyRect: NSRect) {

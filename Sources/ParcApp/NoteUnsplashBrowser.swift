@@ -540,13 +540,28 @@ final class NoteUnsplashThumb: PointingHandButton {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { isHovered = false; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { trackPointer(event) }
+    override func mouseMoved(with event: NSEvent) { trackPointer(event) }
+
+    override func mouseExited(with event: NSEvent) {
+        guard isHovered else { return }
+        isHovered = false
+        needsDisplay = true
+    }
+
+    private func trackPointer(_ event: NSEvent) {
+        let hovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        if hovered != isHovered {
+            isHovered = hovered
+            needsDisplay = true
+        }
+        if showsPointingHand { applyNoteCursor(.pointingHand, for: event) }
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard isEnabled else { return }
