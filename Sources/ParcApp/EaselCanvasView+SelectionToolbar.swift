@@ -104,7 +104,10 @@ extension EaselCanvasView {
         let textOnly = selected.allSatisfy { $0.kind == .text }
         switch control {
         case .typeface, .textSize, .smaller, .larger, .textFill: return textOnly
-        case .bold, .italic, .underline, .strikethrough, .paragraph, .link: return textOnly && editor != nil
+        case .bold, .italic, .underline, .strikethrough, .paragraph: return textOnly && editor != nil
+        case .link:
+            if editor != nil { return textOnly }
+            return selected.count == 1 && selected.allSatisfy { EaselObjectLink.canLink($0) && !$0.isLocked }
         case .more: return true
         case .codeLanguage: return selected.allSatisfy { $0.kind == .code } && selected.contains { !$0.isLocked }
         default: return selectionToolbarBoardSupports(control, selected: selected) ?? false
@@ -142,8 +145,13 @@ extension EaselCanvasView {
             return .init(control: control, face: .symbol("highlighter"), name: "Text fill",
                          isChecked: EaselTextStyleState.fill(of: styles) == .on, isEnabled: !composing)
         case .link:
-            let range = editor?.selectedRange() ?? NSRange(location: 0, length: 0)
-            return .init(control: control, face: .symbol("link"), name: editor?.hasLink() == true ? "Edit link" : "Add a link",
+            guard let editor else {
+                let linked = selected.first?.url != nil
+                return .init(control: control, face: .symbol("link"), name: linked ? "Edit link" : "Add a link",
+                             commandID: TextFormatCommand.link.bindingID, isChecked: linked, isEnabled: objectLinkTarget != nil)
+            }
+            let range = editor.selectedRange()
+            return .init(control: control, face: .symbol("link"), name: editor.hasLink() ? "Edit link" : "Add a link",
                          commandID: TextFormatCommand.link.bindingID, isEnabled: !composing && range.length > 0)
         case .codeLanguage:
             let languages = selectedCodeLanguages
@@ -203,7 +211,8 @@ extension EaselCanvasView {
             guard !styles.isEmpty else { return false }
             setTextFill(EaselTextStyleState.toggledFill(styles))
         case .link:
-            guard let editor, editor.selectedRange().length > 0, !editor.hasMarkedText() else { return false }
+            guard let editor else { return editObjectLink(relativeTo: anchor) }
+            guard editor.selectedRange().length > 0, !editor.hasMarkedText() else { return false }
             editLink(relativeTo: anchor ?? editor, rect: anchor == nil ? editor.revealedSelectionRect() : nil)
         default:
             guard performSelectionToolbarBoard(control, anchor: anchor) == true else { return false }

@@ -44,8 +44,8 @@ struct EaselSelectionToolbarCanvasTests {
         canvas.selection = [text.id]
         expect(fake.refreshes == 0, "A canvas outside a window never asks its toolbar to show")
         expect(canvas.selectionToolbarContent == nil, "Only a canvas in a window presents the toolbar")
-        expect(controls(canvas) == [.typeface, .textSize, .smaller, .larger, .textFill, .more],
-               "Text gets typeface, size, quick steps, fill and the ••• menu")
+        expect(controls(canvas) == [.typeface, .textSize, .smaller, .larger, .textFill, .alignment, .link, .more],
+               "Text gets typeface, size, quick steps, fill, alignment, a link and the ••• menu")
         guard let model = canvas.selectionToolbarModel else { failTest("Text selections build a toolbar") }
         expect(model.anchor == NSRect(x: 40, y: 40, width: 280, height: 28), "The toolbar anchors on the selected frames")
         let buttons = model.groups.joined()
@@ -74,10 +74,14 @@ struct EaselSelectionToolbarCanvasTests {
         expect(canvas.performSelectionToolbarMenu(.textSize, entry: "h1"), "Picking a size applies it")
         expect(style(session, text.id)?.size == .h1, "The size menu sets the size")
         expect(!canvas.performSelectionToolbar(.bold), "Range emphasis waits for text editing")
+        expect(canvas.performSelectionToolbarMenu(.alignment, entry: "center"), "Alignment applies from its menu")
+        expect(style(session, text.id)?.alignment == .center, "Centre alignment sticks to the text")
+        expect(canvas.selectionToolbarMenu(for: .alignment).first { $0.id == "center" }?.isChecked == true, "The menu checks the current alignment")
 
         canvas.selection = [text.id, shape.id]
         let pair = controls(canvas)
-        expect(pair.last == .more && !pair.contains(.typeface), "Mixed selections drop text-only controls")
+        expect(pair.last == .more && !pair.contains(.textFill) && !pair.contains(.smaller), "Mixed selections drop text-only controls")
+        expect(!pair.contains(.link), "Links belong to one object at a time")
         expect([.arrange, .tidyUp, .group, .createSection, .lock].allSatisfy(pair.contains), "Two objects get arrange, group, section and lock tools")
         let arrangeMenu = canvas.selectionToolbarMenu(for: .arrange)
         expect(arrangeMenu.count == 8 && arrangeMenu.prefix(6).allSatisfy(\.isEnabled) && arrangeMenu.suffix(2).allSatisfy { !$0.isEnabled },
