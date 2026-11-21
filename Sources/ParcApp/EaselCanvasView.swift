@@ -390,6 +390,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     func documentDidChange() {
         let document = self.session.document
         self.hoveredObjectID = nil
+        self.settleStaleFeedback(in: document)
         self.selection.formIntersection(document.items.map(\.id))
         if let edit = self.geometryEdit, !edit.isCurrent(in: document) { self.cancelPointerInteraction() }
         self.imageDocumentChanged()

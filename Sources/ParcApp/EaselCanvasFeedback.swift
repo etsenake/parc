@@ -38,6 +38,7 @@ final class EaselCanvasFeedbackState {
         var from: Double
         var to: Double
         var start: TimeInterval
+        var result: EaselItem
     }
 
     var guideTicker = EaselSnapTicker<EaselGuideSnapKey>()
@@ -50,6 +51,7 @@ final class EaselCanvasFeedbackState {
     var reveals: [UUID: Reveal] = [:]
     var handDrawn: EaselConnectorPop?
     var revealsNew = false
+    var movingMagnet: EaselConnectorCanvasState.Magnet?
     var glow: (target: UUID, start: TimeInterval)?
     var dot: (target: UUID, side: EaselConnection.Side, start: TimeInterval, from: Double)?
     var trayTarget: UUID?
@@ -103,6 +105,7 @@ extension EaselCanvasView {
         let now = CACurrentMediaTime()
         pruneCanvasFeedback(at: now)
         refreshFeedbackSurfaces()
+        updateStickyEditorMask()
         let current = canvasFeedbackEnvelope()
         presentCanvasFeedbackDirty(canvasFeedback.envelope.union(current))
         canvasFeedback.envelope = current
@@ -123,6 +126,7 @@ extension EaselCanvasView {
         canvasFeedback.growths.removeAll()
         canvasFeedback.tables.removeAll()
         refreshFeedbackSurfaces()
+        updateStickyEditorMask()
         canvasFeedback.driver?.stop()
         canvasFeedback.driver = nil
         canvasFeedback.envelope = .null
@@ -134,6 +138,7 @@ extension EaselCanvasView {
         canvasFeedback.guideTicker.reset()
         canvasFeedback.rotationTicker.reset()
         canvasFeedback.magnetTicker.reset()
+        canvasFeedback.movingMagnet = nil
         canvasFeedback.glow = nil
         canvasFeedback.dot = nil
         canvasFeedback.guideStarts.removeAll()
@@ -159,6 +164,10 @@ extension EaselCanvasView {
     func feedbackSurfaceExtent(_ item: EaselItem) -> NSRect {
         var extent = NSRect.null
         if let slide = canvasFeedback.tables[item.id] { extent = extent.union(slide.previousBounds) }
+        if item.kind == .section, canvasFeedback.trayTarget == item.id || canvasFeedback.trays[item.id] != nil
+            || canvasFeedback.flashes[item.id] != nil {
+            extent = extent.union(rect(item).insetBy(dx: -6, dy: -6))
+        }
         if let growth = canvasFeedback.growths[item.id] {
             var box = displayBounds(of: item)
             let tallest = max(growth.from, growth.to) * 1.02 + 2
@@ -214,6 +223,27 @@ extension EaselCanvasView {
         guard before.id == after.id else { return }
         noteNewConnectors(from: before, to: after)
         noteStickyGrowth(from: before, to: after)
+        settleStaleFeedback(in: after)
+    }
+
+    func settleStaleFeedback(in document: EaselDocument? = nil) {
+        guard !canvasFeedback.tables.isEmpty || !canvasFeedback.growths.isEmpty else { return }
+        let current = Dictionary((document ?? session.document).items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        let staleTables = canvasFeedback.tables.filter { current[$0.key] != $0.value.result }.map(\.key)
+        let staleGrowths = canvasFeedback.growths.filter { current[$0.key]?.frame != $0.value.result.frame }.map(\.key)
+        guard !staleTables.isEmpty || !staleGrowths.isEmpty else { return }
+        var dirty = NSRect.null
+        for id in staleTables {
+            if let item = current[id] { dirty = dirty.union(displayBounds(of: item)).union(feedbackSurfaceExtent(item)) }
+            if let slide = canvasFeedback.tables.removeValue(forKey: id) { dirty = dirty.union(slide.previousBounds) }
+        }
+        for id in staleGrowths {
+            if let item = current[id] { dirty = dirty.union(feedbackSurfaceExtent(item)) }
+            canvasFeedback.growths.removeValue(forKey: id)
+        }
+        refreshFeedbackSurfaces()
+        updateStickyEditorMask()
+        presentCanvasFeedbackDirty(dirty)
     }
 
     func noteGuideFeedback(_ lines: [EaselAlignmentGuides.Line]) {
