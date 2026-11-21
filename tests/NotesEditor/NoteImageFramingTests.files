@@ -1,1 +1,5 @@
 Sources/ParcCore/Note*.swift
+Sources/ParcCore/CaptureNoteDestinations.swift
+Sources/ParcCore/EaselStore.swift
+Sources/ParcCore/EaselRichText.swift
+Sources/ParcCore/EaselWebItemChrome.swift
