@@ -5,9 +5,10 @@ Read [the working contract](../../AGENTS.md) before running checks.
 `swift test --filter ExternalSplitDropTests` checks the durable model transaction
 using a temporary session and a failed atomic replacement.
 
-`python3 tests/NativeContentDrop/run_components.py router` or `session` checks
-the native components. `--receipt /absolute/path.json` records the checked source
-and output. Both use hidden disposable AppKit windows and unique pasteboards.
+`swift test --filter ContentDropRouterTests` runs the router cases.
+`python3 tests/NativeContentDrop/run_components.py` runs the Swift session
+fixture. Its optional `--receipt /absolute/path.json` records the inputs and
+output.
 
 The router component compiles the production Objective-C++ source and drives its
 admission, update, prepare, commit and teardown methods through injected

@@ -11,7 +11,7 @@ swift test --filter WebUIBrandingTests
 ```
 
 - The rule tests parse the mark's path, check its two outlines sit inside the
-  24-unit box, about 20 units tall like the PNG, and run every rule on
+  24-unit box and run every rule on
   Chromium-shaped text: each applies in full, a missing, extra, unclosed or
   nested match leaves the text untouched, groups that don't depend on each other
   still apply, and overlapping matches apply nothing.
@@ -20,6 +20,11 @@ swift test --filter WebUIBrandingTests
   logo (with its padded copy for the first-run animation) and the product icon
   the engine serves to be valid SVG drawing that path.
 
-A rule that no longer matches a rebuilt Chromium page is skipped and logged at
-runtime, never half applied. Checking each rule against the built pages needs a
-Chromium build, so it belongs with the engine's own build checks.
+During a Chromium upgrade, check that the rules still apply to the generated
+resources in the completed shipping build. The checker uses the production edit
+function on each resource and reports missing groups, stale inputs and newly
+generated bundles that carry their own unbranded product icon.
+
+```sh
+python3 tests/WebUIBranding/check.py --chromium "$chromium_src" --require-engine
+```
