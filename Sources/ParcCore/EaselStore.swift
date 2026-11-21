@@ -696,6 +696,7 @@ enum EaselStoreError: Error, LocalizedError {
 extension Notification.Name {
     static let easelDocumentRemoved = Notification.Name("ParcEaselDocumentRemoved")
     static let easelDocumentChanged = Notification.Name("ParcEaselDocumentChanged")
+    static let easelAssetsRemoved = Notification.Name("ParcEaselAssetsRemoved")
 }
 
 @MainActor
@@ -890,6 +891,7 @@ final class EaselStore {
 
     func removeAssets(_ ids: [String]) {
         for asset in ids { try? FileManager.default.removeItem(at: assetsDirectory.appendingPathComponent(asset)) }
+        NotificationCenter.default.post(name: .easelAssetsRemoved, object: directory)
         if !ids.isEmpty { syncDirectory(assetsDirectory) }
     }
 
@@ -1331,10 +1333,29 @@ final class EaselSession: ObservableObject {
         return true
     }
 
+    func updateLinks(_ rewrite: (EaselDocument) -> EaselDocument?) throws {
+        try requireWritable()
+        func relinked(_ snapshot: EaselDocument) -> EaselDocument? {
+            guard let rewritten = rewrite(snapshot), rewritten.items != snapshot.items else { return nil }
+            var copy = snapshot
+            copy.items = rewritten.items
+            return copy
+        }
+        guard var next = relinked(document) else { return }
+        next.modifiedAt = (store?.timestamp() ?? Date())
+        try validateReplacement(next)
+        try persist(next)
+        for index in undoStack.indices { if let copy = relinked(undoStack[index]) { undoStack[index] = copy } }
+        for index in redoStack.indices { if let copy = relinked(redoStack[index]) { redoStack[index] = copy } }
+        document = next
+        updateHistoryState()
+    }
+
     func undo() throws {
         lastUndoGroup = nil
         try requireWritable()
         guard var previous = undoStack.last else { return }
+        guard !document.isLocked || Self.differsOnlyInLock(previous, document) else { throw EaselStoreError.lockedDocument }
         previous.modifiedAt = (store?.timestamp() ?? Date())
         try validateReplacement(previous)
         try persist(previous)
@@ -1344,10 +1365,18 @@ final class EaselSession: ObservableObject {
         updateHistoryState()
     }
 
+    func retractLastStep() throws {
+        try undo()
+        guard !redoStack.isEmpty else { return }
+        redoStack.removeLast()
+        updateHistoryState()
+    }
+
     func redo() throws {
         lastUndoGroup = nil
         try requireWritable()
         guard var next = redoStack.last else { return }
+        guard !document.isLocked || Self.differsOnlyInLock(next, document) else { throw EaselStoreError.lockedDocument }
         next.modifiedAt = (store?.timestamp() ?? Date())
         try validateReplacement(next)
         try persist(next)
@@ -1372,6 +1401,17 @@ final class EaselSession: ObservableObject {
         guard memoryAssets.values.reduce(data.count, { $0 + $1.count }) <= Self.maximumMemoryAssetBytes else { throw EaselStoreError.tooLarge }
         let id = EaselAssetType.assetID(UUID(), type: type, fileExtension: fileExtension); memoryAssets[id] = data
         return id
+    }
+
+    func hasAsset(_ id: String) -> Bool {
+        if let store { return (try? store.assetURL(id)) != nil }
+        return memoryAssets[id] != nil
+    }
+
+    func restorableIcon(_ icon: EaselPageIcon?) -> EaselPageIcon? {
+        guard let icon else { return nil }
+        if icon.kind == .image, !hasAsset(icon.value) { return document.icon }
+        return icon
     }
 
     func assetURL(_ assetID: String) throws -> URL {
@@ -1418,9 +1458,18 @@ final class EaselSession: ObservableObject {
         }
     }
 
+    private static func differsOnlyInLock(_ a: EaselDocument, _ b: EaselDocument) -> Bool {
+        guard a.isLocked != b.isLocked else { return false }
+        var probe = a
+        probe.locked = b.locked
+        probe.modifiedAt = b.modifiedAt
+        return probe == b
+    }
+
     private func updateHistoryState() {
-        canUndo = !undoStack.isEmpty
-        canRedo = !redoStack.isEmpty
+        let editable = !document.isLocked
+        canUndo = undoStack.last.map { editable || Self.differsOnlyInLock($0, document) } ?? false
+        canRedo = redoStack.last.map { editable || Self.differsOnlyInLock($0, document) } ?? false
         NotificationCenter.default.post(name: .easelDocumentChanged, object: document.id)
     }
 }

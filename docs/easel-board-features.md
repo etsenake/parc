@@ -104,9 +104,12 @@ moving. A locked Easel isn't offered as a destination or a source.
 Lock Easel, in the page menu like Lock Note, makes the canvas view-only: no
 tools in the bar except Select, Hand and zoom, no typing, dropping, pasting or
 moving, and no context menu. Panning, zooming, copying, opening links and the
-live pages inside the Easel still work, and Undo undoes the lock. The document
-refuses every other change while locked, so nothing else can edit it by
-accident. `EaselDocument.locked` is left out of the file when unlocked.
+live pages inside the Easel still work. Undo works only when the step it
+undoes is the lock itself, and Redo only when it re-applies a lock or unlock;
+the document refuses every other change, undo and redo while locked, so
+nothing else can edit it by accident. Renaming or moving a note still updates
+the links on a locked Easel, without touching anything else.
+`EaselDocument.locked` is left out of the file when unlocked.
 
 ## Easel History
 
@@ -125,7 +128,8 @@ The panel lists the current version and each snapshot with when it was saved
 and how many objects it had, and previews the selected one drawn exactly as
 the canvas would draw it, on the Easel's own light or dark paper. Restore
 first keeps the current state as a snapshot, then brings back the old one,
-with its title, icon, pages and objects, as a single undo step, so ⌘Z returns to where you were. ↑ and ↓ move through the
+with its title, icon, pages and objects, as a single undo step, so ⌘Z returns to where you were. An image icon whose
+picture is gone keeps the Easel's current icon instead. ↑ and ↓ move through the
 list and Return restores. A version whose pictures are missing can't be
 previewed and won't restore, and the Easel stays as it was.
 

@@ -80,7 +80,8 @@ extension EaselCanvasView {
                 let next = EaselArrange.dissolvingSingletonGroups(EaselDependents.removing(doomed, from: session.document))
                 let removed = withObjectMotion(.vanish) { commit("Send to Easel", { $0 = next }) }
                 guard removed else {
-                    try? target.undo()
+                    try? target.retractLastStep()
+                    target.discardUnusedAssets(created)
                     return false
                 }
                 selection.subtract(doomed)

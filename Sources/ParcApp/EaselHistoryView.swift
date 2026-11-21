@@ -25,9 +25,10 @@ enum EaselHistoryPanel {
         guard editor.canvas.finishEditingForTransfer() else { throw EaselStoreError.invalidDocument("finish the current edit first") }
         let current = editor.session.document
         history.record(current, savedAt: Date(), wait: true)
+        let icon = editor.session.restorableIcon(snapshot.icon)
         var next = current
         next.title = snapshot.title
-        next.icon = snapshot.icon
+        next.icon = icon
         next.items = snapshot.items
         next.pages = snapshot.pages
         guard next != current else { return }
@@ -36,7 +37,7 @@ enum EaselHistoryPanel {
             do {
                 try editor.session.perform("Restore Version") { document in
                     document.title = snapshot.title
-                    document.icon = snapshot.icon
+                    document.icon = icon
                     document.items = snapshot.items
                     document.pages = snapshot.pages
                 }

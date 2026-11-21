@@ -2071,7 +2071,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     @objc func undo(_ sender: Any?) {
         if let editor, editor.localUndo.canUndo { editor.localUndo.undo(); return }
         cancelPointerInteraction(); guard finishEditing(removingEmpty: false) else { return }
-        guard let next = session.undoDestination else { return }
+        guard session.canUndo, let next = session.undoDestination else { return }
         prepareReplacement(next) { [weak self] in
             guard let self else { return }; do { try self.applyHistory { try self.session.undo() } } catch { self.onError?(error) }
         }
@@ -2079,7 +2079,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     @objc func redo(_ sender: Any?) {
         if let editor, editor.localUndo.canRedo { editor.localUndo.redo(); return }
         cancelPointerInteraction(); guard finishEditing(removingEmpty: false) else { return }
-        guard let next = session.redoDestination else { return }
+        guard session.canRedo, let next = session.redoDestination else { return }
         prepareReplacement(next) { [weak self] in
             guard let self else { return }; do { try self.applyHistory { try self.session.redo() } } catch { self.onError?(error) }
         }
