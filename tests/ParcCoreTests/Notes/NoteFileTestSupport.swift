@@ -42,7 +42,18 @@ final class NoteLockedBox<Value>: @unchecked Sendable {
     func set(_ value: Value?) { lock.withLock { stored = value } }
 }
 
+struct NoteRealTrashRefused: Error {}
+
 enum NoteFileTestSupport {
+    @MainActor
+    static func files(clock: NoteFileClock, worker: NoteFileWorker = .inline,
+                      hopToMain: @escaping NoteFileSettings.MainHop = { _ in },
+                      trashMover: @escaping NoteFileSettings.TrashMover = { _ in throw NoteRealTrashRefused() },
+                      notesFolders: @escaping @MainActor () -> [URL] = { [] }) -> NoteFiles {
+        NoteFiles(settings: NoteFileSettings(clock: clock, worker: worker, hopToMain: hopToMain, trashMover: trashMover,
+                                             notesFolders: notesFolders))
+    }
+
     static func isPresented(_ url: URL) -> Bool {
         NSFileCoordinator.filePresenters.contains { presenter in
             presenter.presentedItemURL.map { NoteFilePaths.sameItem($0, url) } ?? false
@@ -91,15 +102,5 @@ enum NoteFileTestSupport {
     static func inode(_ url: URL) -> UInt64 {
         var info = stat()
         return stat(url.path, &info) == 0 ? UInt64(info.st_ino) : 0
-    }
-
-    @MainActor
-    static func spin(timeout: TimeInterval, until condition: () -> Bool) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() {
-            if Date() > deadline { return false }
-            try? await Task.sleep(nanoseconds: 20_000_000)
-        }
-        return true
     }
 }
