@@ -622,7 +622,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                         artwork[item.id]?.needsDisplay = true
                     }
                     if displayedSelection.contains(item.id) || item.id == hoveredObjectID
-                        || EaselObjectLink.link(of: item) != nil || EaselObjectLink.link(of: previous) != nil { overlayChanged = true }
+                        || EaselObjectLink.hasLink(item) || EaselObjectLink.hasLink(previous) { overlayChanged = true }
                 }
             } else {
                 add(displayBounds(of: item))
@@ -852,7 +852,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             }
         }
         drawArrangeDecorations(in: dirtyRect)
-        for item in items where EaselObjectLink.link(of: item) != nil {
+        for item in items where EaselObjectLink.hasLink(item) {
             let r = EaselObjectLink.badgeRect(for: item.frame, scale: canvasScale), badge = NSRect(x: r.x, y: r.y, width: r.width, height: r.height)
             if badge.intersects(dirtyRect) { EaselTextLayout.drawLinkBadge(in: badge, scale: canvasScale) }
         }
@@ -1687,7 +1687,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         addTableCursorRects()
         addSectionCursorRects()
         if !drawing, onOpenURL != nil {
-            for item in items where EaselObjectLink.link(of: item) != nil {
+            for item in items where EaselObjectLink.hasLink(item) {
                 let r = EaselObjectLink.badgeRect(for: item.frame, scale: canvasScale)
                 addCursorRect(NSRect(x: r.x, y: r.y, width: r.width, height: r.height), cursor: .pointingHand)
             }

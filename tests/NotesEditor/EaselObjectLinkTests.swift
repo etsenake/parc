@@ -52,6 +52,8 @@ struct EaselObjectLinkTests {
         expect(EaselObjectLink.linking(removed, id: text.id, to: nil) == nil, "Removing a missing link changes nothing")
         expect(EaselObjectLink.link(of: item(.text, url: "https://example.com"))?.host == "example.com", "Linked text opens its link")
         expect(EaselObjectLink.link(of: item(.link, url: "https://example.com")) == nil, "Link cards are not object links")
+        expect(EaselObjectLink.hasLink(item(.sticky, url: "https://example.com")) && !EaselObjectLink.hasLink(item(.sticky)), "A sticky with a url has a link")
+        expect(!EaselObjectLink.hasLink(item(.webCard, url: "https://example.com")), "Captured pages keep their source, not a badge")
         let exported = EaselVectorExport.objectLinked(item(.sticky, url: "https://example.com/a?b=1&c=2"), "<g></g>")
         expect(exported.hasPrefix("<a href=\"https://example.com/a?b=1&amp;c=2\"") && exported.hasSuffix("</a>"),
                "Exported pages make linked objects clickable")

@@ -6,6 +6,8 @@ enum EaselObjectLink {
 
     static func canLink(_ item: EaselItem) -> Bool { item.kind.holdsText }
 
+    static func hasLink(_ item: EaselItem) -> Bool { item.url != nil && canLink(item) }
+
     static func link(of item: EaselItem) -> URL? {
         guard canLink(item), let raw = item.url, let url = URL(string: raw),
               ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
@@ -47,14 +49,14 @@ enum EaselObjectLink {
     }
 
     static func badgeAllowance(_ item: EaselItem, scale: Double) -> Double {
-        guard link(of: item) != nil else { return 0 }
+        guard hasLink(item) else { return 0 }
         let scale = scale.isFinite && scale > 0 ? scale : 1
         return (badgeOffset + badgeSize) / scale
     }
 
     static func item(at point: EaselPoint, in items: [EaselItem], scale: Double) -> EaselItem? {
         items.reversed().first { item in
-            link(of: item) != nil && EaselContentHitTest.contains(point, rect: badgeRect(for: item.frame, scale: scale))
+            hasLink(item) && EaselContentHitTest.contains(point, rect: badgeRect(for: item.frame, scale: scale)) && link(of: item) != nil
         }
     }
 }
