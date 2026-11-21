@@ -42,7 +42,7 @@ enum EaselDocumentExport {
                 run.underline = (attributes[.underlineStyle] as? Int ?? 0) != 0
                 run.strikethrough = (attributes[.strikethroughStyle] as? Int ?? 0) != 0
                 run.dimmed = parts.dimmed.contains { NSIntersectionRange($0, range).length > 0 }
-                if let fill = attributes[.backgroundColor] as? NSColor, let stored = try? EaselRichTextCodec.hex(fill) {
+                if let fill = attributes[.backgroundColor] as? NSColor, let stored = EaselTextHighlight.stored(fill) ?? (try? EaselRichTextCodec.hex(fill)) {
                     let box = manager.boundingRect(forGlyphRange: glyphRange, in: container)
                     run.mark = EaselVectorMark(x: Double(inset.width + box.minX), y: Double(inset.height + rect.minY),
                                                width: Double(box.width), height: Double(rect.height), color: stored)

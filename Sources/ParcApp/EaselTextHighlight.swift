@@ -70,8 +70,11 @@ extension EaselStyledTextView {
     func applyHighlight(_ color: NoteColor?) {
         format("Highlight") { attributes in
             var next = attributes
+            let code = EaselTextAppearance.isInlineCode(attributes)
             if let color { next[.backgroundColor] = EaselTextHighlight.color(color) }
-            else if (next[.backgroundColor] as? NSColor).flatMap(EaselTextHighlight.note(of:)) != nil { next.removeValue(forKey: .backgroundColor) }
+            else if (next[.backgroundColor] as? NSColor).flatMap(EaselTextHighlight.note(of:)) != nil {
+                if code { next[.backgroundColor] = EaselTextAppearance.inlineCodeFill } else { next.removeValue(forKey: .backgroundColor) }
+            }
             return next
         }
     }
@@ -99,11 +102,13 @@ extension EaselStyledTextView {
                 if font.fontDescriptor.symbolicTraits.contains(.bold) { traits.insert(.boldFontMask) }
                 if font.fontDescriptor.symbolicTraits.contains(.italic) { traits.insert(.italicFontMask) }
                 next[.font] = traits.isEmpty ? plain : NSFontManager.shared.convert(plain, toHaveTrait: traits)
-                next.removeValue(forKey: .backgroundColor)
+                if (attributes[.backgroundColor] as? NSColor).flatMap(EaselTextHighlight.note(of:)) == nil { next.removeValue(forKey: .backgroundColor) }
             } else {
                 let bold = font.fontDescriptor.symbolicTraits.contains(.bold)
                 next[.font] = NSFont.monospacedSystemFont(ofSize: font.pointSize, weight: bold ? .bold : .regular)
-                next[.backgroundColor] = EaselTextAppearance.inlineCodeFill
+                if (attributes[.backgroundColor] as? NSColor).flatMap(EaselTextHighlight.note(of:)) == nil {
+                    next[.backgroundColor] = EaselTextAppearance.inlineCodeFill
+                }
             }
             return next
         }
