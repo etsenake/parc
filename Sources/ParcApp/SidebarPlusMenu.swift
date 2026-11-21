@@ -7,6 +7,12 @@ import ParcCore
 
     static func image(_ name: String) -> NSImage? {
         if let image = cache[name] { return image }
+        guard let image = image(name, in: directory) else { return nil }
+        cache[name] = image
+        return image
+    }
+
+    static func image(_ name: String, in directory: URL?) -> NSImage? {
         guard let directory,
               let data = try? Data(contentsOf: directory.appendingPathComponent(name + ".png")),
               let base = NSBitmapImageRep(data: data) else { return nil }
@@ -23,7 +29,6 @@ import ParcCore
             for representation in vector.representations { image.addRepresentation(representation) }
         }
         image.isTemplate = true
-        cache[name] = image
         return image
     }
 }
@@ -204,6 +209,10 @@ final class SidebarPlusMenuController: NSObject {
     }
 
     var onVisibilityChange: ((Bool) -> Void)?
+    var present: (NSWindow, SidebarPlusMenuWindow) -> Void = { parent, panel in
+        parent.addChildWindow(panel, ordered: .above)
+        panel.makeKeyAndOrderFront(nil)
+    }
     var theme = SpaceTheme() {
         didSet { if theme != oldValue { chrome?.colors = ParcMenuColors(theme: theme) } }
     }
@@ -251,8 +260,7 @@ final class SidebarPlusMenuController: NSObject {
         self.anchor = button
         Self.shown[ObjectIdentifier(parent)] = self
         announce(true)
-        parent.addChildWindow(panel, ordered: .above)
-        panel.makeKeyAndOrderFront(nil)
+        present(parent, panel)
         panel.makeFirstResponder(menu)
         observe(parent)
         SidebarPlusMenuMotion.animateOpen(chrome, about: chrome.tailTip)
