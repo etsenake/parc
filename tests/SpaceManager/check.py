@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-from pathlib import Path
-import subprocess
-import tempfile
-root = Path(__file__).resolve().parents[2]
-app = root / "Sources/ParcApp"
 names = """ParcDialog.swift
 ParcMenuColors.swift
 SidebarBannerHost.swift
@@ -87,29 +82,3 @@ TranslucentButtonFace.swift
 UpdateCompleteCard.swift
 UpdateReadyCard.swift
 WindowStandardButtons.swift""".splitlines()
-with tempfile.TemporaryDirectory(prefix="parc-space-manager-") as directory:
-    scratch = Path(directory)
-    excerpts = [
-        ("SidebarPreviewController.swift", None, "struct SidebarPreviewRow: Equatable {", ""),
-        ("NavigationControls.swift", None, "enum NavigationHistoryMenuMetrics", ""),
-        ("SiteControlCenter.swift", None, "enum SiteControlCenterMetrics", ""),
-        ("DownloadLibraryView.swift", "@MainActor enum DownloadRowSubtitle", "@MainActor enum DownloadRowArtwork {", "import AppKit\nimport UniformTypeIdentifiers\n"),
-        ("OnboardingProgressionButton.swift", "struct ParcButtonSpinner", "extension NSColor", "import SwiftUI\n"),
-    ]
-    extracted = []
-    for name, start, end, prefix in excerpts:
-        text = (app / name).read_text()
-        path = scratch / name
-        path.write_text(prefix + text[text.index(start) if start else 0:text.index(end)])
-        extracted.append(path)
-    text = (app / "DownloadLibraryView.swift").read_text()
-    path = scratch / "DownloadFileActivation.swift"
-    path.write_text("import AppKit\nimport UniformTypeIdentifiers\n" + text[text.index("enum DownloadFileActivation"):])
-    extracted.append(path)
-    sources = list((root / "Sources/ParcCore").glob("*.swift")) + [app / name for name in names] + extracted
-    sources += [root / "tests/KeyboardNavigation/NativeShortcutStub.swift",
-                Path(__file__).with_name("NativeHostStub.swift"), Path(__file__).with_name("SpaceManagerTests.swift")]
-    executable = scratch / "checks"
-    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
-                    *map(str, sources), "-o", str(executable)], check=True)
-    subprocess.run([str(executable)], check=True)

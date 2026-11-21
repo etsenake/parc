@@ -247,7 +247,7 @@ Auto-Archive, atomic creation, change sharing, which warning each situation gets
 unused-Profile reporting and the Note and Easel refusal explained before the warning.
 Space-management/store/inter-Profile components cover title migration, exact
 leases, failed saves, deletion/Undo, document relocation and owner preservation.
-`tests/SpaceManager/check.py` exercises real inert cards/sidebar controls and
-accessibility wiring. `tests/LibraryWidth/check.py` and sidebar motion/layout
+`SpaceManagerSelectionTests` and `SpaceManagerCardTests` (run by `swift test`) exercise
+real inert cards/sidebar controls and accessibility wiring. `tests/LibraryWidth/check.py` and sidebar motion/layout
 checks cover page-change and Space-count reporting, clamps, cancellation, Reduce
 Motion and geometry.
