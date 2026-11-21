@@ -139,6 +139,12 @@ struct EaselArrangeTests {
         let groupBoard = document([g1, g2, between, top])
         expect(order(EaselArrange.layered(groupBoard, ids: [g1.id, g2.id], .front)) == [between.id, top.id, g1.id, g2.id],
                "A group moves through the stack together and keeps its own order")
+        var stuck = box(55, 55, 10, 10, kind: .freehand, z: 3)
+        stuck.points = [EaselPoint(x: 0, y: 0), EaselPoint(x: 10, y: 10)]
+        stuck.attachedTo = b.id
+        let stuckBoard = document([a, b, stuck, c, box(60, 60, z: 5)])
+        let raised = order(EaselArrange.layered(stuckBoard, ids: [b.id], .front))
+        expect(raised.suffix(2) == [b.id, stuck.id], "Things stuck on an object come along to the front and stay on top of it")
     }
 
     static func grouping() {
@@ -208,7 +214,10 @@ struct EaselArrangeTests {
         expect(topCopies > board.items.map(\.zIndex).max() ?? 0, "Copies land on top of the board")
         expect(copies.sorted { $0.zIndex < $1.zIndex }.first?.frame.x == 224, "Copies keep the stacking order of their originals")
         guard let partial = EaselArrange.duplicating([a.id], in: board) else { failTest("Duplicating one member works") }
-        expect(partial.document.items.first { partial.copies.contains($0.id) }?.groupID == group, "Duplicating inside a group grows that group")
+        expect(partial.document.items.first { partial.copies.contains($0.id) && $0.kind == .sticky }?.groupID == group,
+               "Duplicating inside a group grows that group")
+        expect(partial.copies.count == 2 && partial.document.items.contains { partial.copies.contains($0.id) && $0.kind == .image },
+               "Duplicating an object brings what's stuck to it")
         let offset = EaselArrange.repeatOffset(sources: [a.id], copies: [b.id], in: board)
         expect(offset == EaselPoint(x: 200, y: 0), "Repeating a duplicate reuses the last step")
         expect(EaselArrange.repeatOffset(sources: [a.id], copies: [UUID()], in: board) == nil, "A missing copy forgets the step")

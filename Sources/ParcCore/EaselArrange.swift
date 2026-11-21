@@ -76,11 +76,13 @@ struct EaselClipboardPayload: Codable, Equatable {
     var items: [EaselItem]
     var assets: [String: Data] = [:]
 
-    static func assetIDs(of ids: Set<UUID>, in document: EaselDocument) -> Set<String> {
-        Set(document.items.filter { ids.contains($0.id) }.compactMap(\.assetID))
+    static func assetIDs(of selected: Set<UUID>, in document: EaselDocument) -> Set<String> {
+        let ids = EaselArrange.withFollowers(selected, in: document)
+        return Set(document.items.filter { ids.contains($0.id) }.compactMap(\.assetID))
     }
 
-    static func capturing(_ ids: Set<UUID>, in document: EaselDocument, assets available: [String: Data]) throws -> EaselClipboardPayload? {
+    static func capturing(_ selected: Set<UUID>, in document: EaselDocument, assets available: [String: Data]) throws -> EaselClipboardPayload? {
+        let ids = EaselArrange.withFollowers(selected, in: document)
         let chosen = EaselArrange.paintOrder(document).filter { ids.contains($0.id) }
         guard !chosen.isEmpty else { return nil }
         let whole = EaselArrange.completeGroups(ids, in: document)
@@ -345,7 +347,13 @@ enum EaselArrange {
             }
             units.append([item.id])
         }
-        return units
+        let locked = Set(document.items.filter(\.isLocked).map(\.id))
+        var claimed = units.reduce(into: ids) { $0.formUnion($1) }
+        return units.map { unit in
+            let followers = EaselAttachments.dependents(of: unit, in: document).subtracting(claimed).subtracting(locked)
+            claimed.formUnion(followers)
+            return unit.union(followers)
+        }
     }
 
     static func canMoveLayer(_ ids: Set<UUID>, in document: EaselDocument) -> Bool { !layerUnits(ids, in: document).isEmpty }
@@ -373,7 +381,8 @@ enum EaselArrange {
                       let bounds = union(unit.compactMap { frames[$0] }) else { continue }
                 let candidates = up ? Array(order.indices.dropFirst(edge + 1)) : Array(order.indices.prefix(edge).reversed())
                 guard let hit = candidates.first(where: { index in
-                    !ids.contains(order[index]) && frames[order[index]].map { EaselContentHitTest.intersects(bounds, $0) } == true
+                    !ids.contains(order[index]) && !chosen.contains(order[index])
+                        && frames[order[index]].map { EaselContentHitTest.intersects(bounds, $0) } == true
                 }) else { continue }
                 let target = order[hit]
                 let moving = order.filter(unit.contains)
@@ -494,8 +503,13 @@ enum EaselArrange {
         return EaselDuplication(document: dissolvingSingletonGroups(base), copies: copies.map(\.id))
     }
 
-    static func duplicating(_ ids: Set<UUID>, in document: EaselDocument,
+    static func withFollowers(_ ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
+        ids.union(EaselAttachments.dependents(of: ids, in: document))
+    }
+
+    static func duplicating(_ selected: Set<UUID>, in document: EaselDocument,
                             offset: EaselPoint = EaselPoint(x: duplicateOffset, y: duplicateOffset)) -> EaselDuplication? {
+        let ids = withFollowers(selected, in: document)
         let originals = paintOrder(document).filter { ids.contains($0.id) }
         let whole = completeGroups(ids, in: document)
         let partial = Set(originals.compactMap(\.groupID)).subtracting(whole)
