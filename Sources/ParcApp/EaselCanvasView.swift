@@ -167,6 +167,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var onToolChange: ((EaselTool) -> Void)?
     let toolState = EaselCanvasToolState()
     let stamps = EaselCanvasStampState()
+    let mindMaps = EaselMindMapCanvasState()
     var tool: EaselTool = .select {
         didSet {
             if tool != oldValue { cancelPointerInteraction(); keyboardStructureChanged(); toolDidChange() }
@@ -508,7 +509,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         case "Open source":
             guard onOpenURL != nil else { return false }
             openObjectSource(sender)
-        default: return performBoardAction(name, item: item)
+        default: return performBoardAction(name, item: item) || performMindMapAction(name, item: item)
         }
         return true
     }
@@ -887,6 +888,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             } }
         }
         drawConnectorChrome(in: dirtyRect)
+        drawMindMapChrome(in: dirtyRect)
         if let rotationTurn, let point = lastGeometryPoint, rotationDirty.intersects(dirtyRect) {
             EaselCanvasRotation.drawBadge(EaselRotation.turnLabel(rotationTurn), at: point, scale: canvasScale)
         }
@@ -973,6 +975,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         updateHandleHover(start == nil && !toolOwnsPointer ? resizeHandle(at: point) : nil)
         updateTableHover(at: point)
         updateConnectorHover(at: point)
+        updateMindMapHover(at: point)
         updatePlacementPreview(at: isTopmost(atWindowPoint: event.locationInWindow) ? point : nil)
         super.mouseMoved(with: event)
     }
@@ -1486,7 +1489,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         frame.height = height
         return frame
     }
-    private func fittedTextFrame(_ item: EaselItem, measuring value: NSAttributedString? = nil) -> EaselRect {
+    func fittedTextFrame(_ item: EaselItem, measuring value: NSAttributedString? = nil) -> EaselRect {
         let value = value ?? textMeasure(item)
         let natural = EaselTextSizing.isAutoWidth(item) ? Double(EaselTextLayout.naturalWidth(value)) : 0
         return EaselTextSizing.fittedFrame(item, naturalWidth: natural) { Double(EaselTextLayout.Layout(value, width: $0).height) }
@@ -1581,6 +1584,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if tableTextCommand(textView, commandSelector) { return true }
+        if mindMapTextCommand(textView, commandSelector) { return true }
         if commandSelector == #selector(NSResponder.cancelOperation(_:)), textView === editor {
             if finishEditing() { selection.removeAll(); window?.makeFirstResponder(self) }
             return true
@@ -1603,6 +1607,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         updateTextSizeBadge()
         cancelBrushStroke()
         cancelToolGesture()
+        clearMindMapDrop()
         if hadPointerOwner { synchronizePageSelection(); keyboardStructureChanged() }
         window?.invalidateCursorRects(for: self)
         invalidateIncrementalDisplay(layout: true)
@@ -1670,6 +1675,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if tool == .eraser { beginErasing(at: point); return }
         if beginToolGesture(at: point, event: event) { return }
         if offerUnlock(at: point) { cancelPointerInteraction(); return }
+        if mindMapControlPress(at: point) { cancelPointerInteraction(); return }
         if beginConnectorGesture(at: point, event: event) { return }
         if let handle = resizeHandle(at: point) {
             if event.clickCount == 2, EaselTextSizing.setsTextWidth(handle), restoreTextAutoWidth() { cancelPointerInteraction(); return }
@@ -1794,6 +1800,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if let proposal = draft { draft = fittedBoardGeometry(proposal, edit: edit, handle: resizeHandle) }
         draft = settledCodeBlocks(draft, edit: edit)
         for item in draft ?? [] where textPreview[item.id] != nil { textPreview[item.id]?.frame = item.frame }
+        let dragged = resizeHandle == nil && edit.ids.count == 1 ? draft?.first(where: { edit.ids.contains($0.id) }) : nil
+        refreshMindMapDrop(id: dragged?.id, frame: dragged?.frame, pointer: point)
         updateTextSizeBadge()
         window?.invalidateCursorRects(for: self); invalidateIncrementalDisplay(layout: true)
     }
@@ -1905,6 +1913,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         } else if let edit = geometryEdit, edit.ids == movableSelection, edit.isCurrent(in: session.document),
                   guides?.matchesCanvas(width: bounds.width) == true {
             guard resizing || dragDistance > 3 else { return }
+            if rotationDrag == nil, !resizing, commitMindMapDrop() { return }
             commit(rotationDrag != nil ? "Rotate objects" : resizing ? "Resize objects" : "Move objects", coalescing: finishDuplicateDrag(), moved: edit.ids) { document in
                 guard let next = edit.applying(draft, to: document) else { return }
                 let fitted = fittedTables(textPreview.isEmpty ? next : EaselTextSizing.merging(Array(textPreview.values), into: next), ids: edit.ids)
@@ -1931,6 +1940,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             }
         }
         addConnectorCursorRects()
+        addMindMapCursorRects()
         guard let chrome = selectionChrome else { return }
         let selected = items.filter { displayedSelection.contains($0.id) }
         if showsRotateZones {
@@ -1966,6 +1976,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if imageKeyDown(event) { return }
         if tableKeyDown(with: event) { return }
         if event.keyCode == 48, event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+            if performMindMapTab(backward: event.modifierFlags.contains(.shift)) { return }
             if event.modifierFlags.contains(.shift) { window?.selectPreviousKeyView(window?.firstResponder) }
             else { window?.selectNextKeyView(window?.firstResponder) }
             return
@@ -2407,7 +2418,7 @@ private final class EaselAccessibleObject: NSView {
         if !item.isLocked, EaselRotation.canRotate(item) { names += ["Rotate left", "Rotate right"] }
         if !item.isLocked, EaselRotation.canFlip(item) { names += ["Flip horizontal", "Flip vertical"] }
         if item.url != nil { names.insert("Open source", at: 0) }
-        names += canvas.boardActionNames(item)
+        names += canvas.boardActionNames(item) + canvas.mindMapActionNames(item)
         if item.kind == .code { names.insert(contentsOf: ["Copy code", "Change language"], at: 0) }
         if item.kind == .arrow, !item.isLocked { names.insert("Edit label", at: 0) }
         if canvas.quickCreates(item), canvas.fixedCanvasSize == nil { names.insert("Add next", at: 0) }

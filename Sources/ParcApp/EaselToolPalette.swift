@@ -255,6 +255,8 @@ final class EaselToolPalette: NSView {
 
     var onTool: ((EaselTool, NSView?) -> Void)?
     var onShape: ((EaselShape) -> Void)?
+    var onMindMap: (() -> Void)?
+    static let mindMapSymbol = "point.3.connected.trianglepath.dotted"
     var onInsert: ((Insert, NSButton) -> Void)?
     var onZoom: ((EaselZoomCommand) -> Void)?
     var onZoomTo: ((Double) -> Void)?
@@ -608,12 +610,14 @@ final class EaselToolPalette: NSView {
     private func menuItems(_ menu: Menu) -> [NoteMenuList.Item] {
         switch menu {
         case .shapes:
-            return Self.shapeTools.map { shape in
+            let shapes = Self.shapeTools.map { shape in
                 let tool: EaselTool = shape == .ellipse ? .ellipse : .rectangle
                 return NoteMenuList.Item(id: shape.rawValue, title: shape == .ellipse ? tool.title : Self.shapeTitle(shape),
                                          icon: Self.icon(for: shape), shortcut: tool.key?.label,
                                          isChecked: self.shape == shape && isActive(.shapes))
             }
+            guard onMindMap != nil else { return shapes }
+            return shapes + [NoteMenuList.Item(id: "mind-map", title: "Mind map", icon: .symbol(Self.mindMapSymbol), separatorBefore: true)]
         case .connectors:
             return Self.connectorTools.map { tool in
                 NoteMenuList.Item(id: tool.rawValue, title: tool.title, icon: Self.icon(for: tool), shortcut: tool.key?.label,
@@ -631,7 +635,8 @@ final class EaselToolPalette: NSView {
         closeMenu()
         switch menu {
         case .shapes:
-            if let shape = EaselShape(rawValue: item.id) { onShape?(shape) }
+            if item.id == "mind-map" { onMindMap?() }
+            else if let shape = EaselShape(rawValue: item.id) { onShape?(shape) }
         case .connectors, .draw:
             if let tool = EaselTool(rawValue: item.id) { onTool?(tool, nil) }
         }

@@ -197,7 +197,7 @@ extension EaselCanvasView {
             return [
                 [row("paste-here", pastesHere ? "Paste Here" : "Paste", "doc.on.clipboard", "⌘V", enabled: pasteable) { $0.pasteHere(point) },
                  row("paste-plain", "Paste as Plain Text", "doc.plaintext", enabled: plain) { $0.pastePlainText(at: point) }],
-                [selectAll] + zoomMenuRows(context) + boardMenuRows(context),
+                [selectAll] + zoomMenuRows(context) + boardMenuRows(context) + mindMapMenuRows(context),
                 [guides],
             ]
         }
@@ -263,7 +263,7 @@ extension EaselCanvasView {
         if let connector = makeConnectorMenu() {
             object += EaselMenuRow.bridging(connector.submenu?.items ?? [], prefix: "connector", anchors: [connector])
         }
-        object += textMenuRows(context) + linkMenuRows(context) + mediaMenuRows(context) + tableMenuRows(context)
+        object += mindMapMenuRows(context) + textMenuRows(context) + linkMenuRows(context) + mediaMenuRows(context) + tableMenuRows(context)
             + codeMenuRows(context) + connectorMenuRows(context) + styleMenuRows(context) + drawingMenuRows(context)
             + stampMenuRows(context)
         let view = [row("copy-image", "Copy as Image", "photo.on.rectangle") { $0.copySelectionAsImage() }, exportSelectionMenuRow(), selectAll]

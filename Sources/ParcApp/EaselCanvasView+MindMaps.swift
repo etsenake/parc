@@ -1,0 +1,426 @@
+import AppKit
+
+enum EaselMindMapControl: Equatable {
+    case add(EaselMindMapLink.Side)
+    case collapse
+    case expand
+}
+
+@MainActor
+final class EaselMindMapCanvasState {
+    var hover: (id: UUID, control: EaselMindMapControl)?
+    var drop: (id: UUID, drop: EaselMindMapDrop)?
+    var dropRect = NSRect.null
+}
+
+extension EaselCanvasView {
+    static let mindMapButtonOffset: CGFloat = 18
+
+    func isMindMapNode(_ id: UUID) -> Bool {
+        session.document.items.contains { $0.id == id && EaselMindMap.isNode($0) }
+    }
+
+    private var mindMapsWritable: Bool { fixedCanvasSize == nil && !session.isClosed && !session.isDeleted }
+
+    private func mindMapText(_ text: String, size: EaselTextStyle.Size, zIndex: Int) -> EaselItem {
+        var item = EaselItem(kind: .text, frame: EaselRect(x: 0, y: 0, width: 280, height: 28), zIndex: zIndex, text: text, color: insertionColor)
+        item.textStyle = EaselTextStyle(size: size, autoWidth: true)
+        item.frame = fittedTextFrame(item)
+        return item
+    }
+
+    private func focusMindMapNode(_ id: UUID, editing: Bool) {
+        selection = [id]
+        window?.makeFirstResponder(self)
+        guard let stored = session.document.items.first(where: { $0.id == id }) else { return }
+        scrollToVisible(rect(stored))
+        if editing { beginEditing(stored) }
+        NSAccessibility.post(element: self, notification: .layoutChanged)
+    }
+
+    @discardableResult
+    func insertMindMap(at point: NSPoint? = nil) -> Bool {
+        guard mindMapsWritable else { return false }
+        cancelPointerInteraction(); guard finishEditing() else { return false }; drawing = false
+        let top = session.document.items.map(\.zIndex).max() ?? 0
+        guard top < Int.max - 8 else { return false }
+        var root = mindMapText(EaselMindMap.rootText, size: .h2, zIndex: top + 1)
+        if let point {
+            root.frame.x = max(0, Double(point.x) - root.frame.width / 2)
+            root.frame.y = max(0, Double(point.y) - root.frame.height / 2)
+        } else {
+            root.frame.x = max(30, (Double(visibleRect.midX) - root.frame.width - EaselMindMap.rootGap).rounded())
+            root.frame.y = max(30, (Double(visibleRect.midY) - root.frame.height / 2).rounded())
+        }
+        let kids = EaselMindMap.starterTexts.enumerated().map { mindMapText($1, size: .body, zIndex: top + 2 + $0) }
+        guard let next = EaselMindMap.creatingMap(root: root, children: kids, in: session.document),
+              commit("Add mind map", { $0 = next }) else { return false }
+        focusMindMapNode(root.id, editing: true)
+        return true
+    }
+
+    @discardableResult
+    func startMindMap(from id: UUID) -> Bool {
+        guard mindMapsWritable, let source = session.document.items.first(where: { $0.id == id }), EaselMindMap.canStart(from: source) else { return false }
+        cancelPointerInteraction(); guard finishEditing(removingEmpty: false) else { return false }
+        guard let root = session.document.items.first(where: { $0.id == id }), EaselMindMap.canStart(from: root) else { return false }
+        let top = session.document.items.map(\.zIndex).max() ?? 0
+        guard top < Int.max - 8 else { return false }
+        let kids = EaselMindMap.starterTexts.enumerated().map { mindMapText($1, size: .body, zIndex: top + 1 + $0) }
+        guard let next = EaselMindMap.creatingMap(root: root, children: kids, in: session.document),
+              commit("Make mind map", { $0 = next }) else { return false }
+        focusMindMapNode(kids[0].id, editing: true)
+        return true
+    }
+
+    @discardableResult
+    func addMindMapNode(to id: UUID, side: EaselMindMapLink.Side? = nil, sibling: Bool = false) -> Bool {
+        guard mindMapsWritable, editor?.hasMarkedText() != true else { return false }
+        let before = EaselMindMap.tree(of: session.document.items)
+        guard let node = before.nodes[id], !sibling || node.parent != nil else { return false }
+        let slot = node.parent.flatMap { parent in
+            before.children(of: parent, side: node.side).firstIndex(of: id).map { (parent: parent, index: $0) }
+        }
+        cancelPointerInteraction(); guard finishEditing() else { return false }
+        let document = session.document
+        let present = document.items.contains { $0.id == id }
+        let parentID: UUID
+        let index: Int?
+        if present, !sibling {
+            parentID = id
+            index = nil
+        } else if let slot {
+            parentID = slot.parent
+            index = present ? slot.index + 1 : slot.index
+        } else { return false }
+        let wantedSide = parentID == id ? side : node.side
+        let top = document.items.map(\.zIndex).max() ?? 0
+        guard top < Int.max - 4, var template = EaselMindMap.template(forChildOf: parentID, side: wantedSide, in: document) else { return false }
+        template.zIndex = top + 1
+        if template.kind == .text { template.frame = fittedTextFrame(template) }
+        if template.kind == .sticky { template.frame.height = min(template.frame.height, EaselBoardObjects.stickyMinimumHeight(template)) }
+        guard let next = EaselMindMap.adding(template, to: parentID, side: wantedSide, at: index, in: document),
+              commit(sibling ? "Add sibling" : "Add child", { $0 = next }) else { return false }
+        focusMindMapNode(template.id, editing: true)
+        return true
+    }
+
+    @discardableResult
+    func reparentMindMapNode(_ id: UUID, outdent: Bool) -> Bool {
+        guard mindMapsWritable, isMindMapNode(id), editor?.hasMarkedText() != true else { return false }
+        let editing = editingID == id
+        guard (outdent ? EaselMindMap.outdenting(id, in: session.document) : EaselMindMap.indenting(id, in: session.document)) != nil else { return false }
+        cancelPointerInteraction(); guard finishEditing(removingEmpty: false) else { return false }
+        let document = session.document
+        guard let next = outdent ? EaselMindMap.outdenting(id, in: document) : EaselMindMap.indenting(id, in: document),
+              commit(outdent ? "Move node out" : "Move node in", { $0 = next }) else { return false }
+        focusMindMapNode(id, editing: editing)
+        return true
+    }
+
+    @discardableResult
+    func setMindMapCollapsed(_ collapsed: Bool, ids: Set<UUID>) -> Bool {
+        guard mindMapsWritable else { return false }
+        cancelPointerInteraction(); guard finishEditing() else { return false }
+        guard let next = EaselMindMap.settingCollapsed(collapsed, ids, in: session.document),
+              commit(collapsed ? "Collapse branch" : "Expand branch", { $0 = next }) else { return false }
+        if collapsed { selection.subtract(EaselBoardObjects.hiddenIDs(in: session.document.items)) }
+        NSAccessibility.post(element: self, notification: .layoutChanged)
+        return true
+    }
+
+    var mindMapKeyTarget: UUID? {
+        let id = editingID ?? (selection.count == 1 ? selection.first : nil)
+        guard let id, let item = session.document.items.first(where: { $0.id == id }), EaselMindMap.isNode(item), !item.isLocked else { return nil }
+        return id
+    }
+
+    func performMindMapChord(_ command: EaselChordCommand) -> Bool {
+        guard window?.isKeyWindow == true, start == nil, editor?.hasMarkedText() != true, let id = mindMapKeyTarget else { return false }
+        switch command {
+        case .quickCreate: _ = addMindMapNode(to: id)
+        case .mindMapSibling:
+            guard EaselMindMap.tree(of: session.document.items).nodes[id]?.parent != nil else { _ = addMindMapNode(to: id); return true }
+            _ = addMindMapNode(to: id, sibling: true)
+        default: return false
+        }
+        return true
+    }
+
+    func performMindMapTab(backward: Bool) -> Bool {
+        guard start == nil, let id = mindMapKeyTarget else { return false }
+        if !reparentMindMapNode(id, outdent: backward) { NSSound.beep() }
+        return true
+    }
+
+    func mindMapTextCommand(_ textView: NSTextView, _ selector: Selector) -> Bool {
+        guard textView === editor, let id = editingID, isMindMapNode(id) else { return false }
+        switch selector {
+        case #selector(NSResponder.insertTab(_:)): return performMindMapTab(backward: false)
+        case #selector(NSResponder.insertBacktab(_:)): return performMindMapTab(backward: true)
+        default: return false
+        }
+    }
+
+    func mindMapControls() -> [(id: UUID, control: EaselMindMapControl, point: NSPoint)] {
+        guard fixedCanvasSize == nil, !drawing, marqueeRect == nil, !hidesPassiveAnnotations, start == nil,
+              connectors.gesture == nil, tool == .select else { return [] }
+        let shown = items
+        guard shown.contains(where: { $0.mindMap != nil }) else { return [] }
+        let tree = EaselMindMap.tree(of: session.document.items)
+        var result: [(id: UUID, control: EaselMindMapControl, point: NSPoint)] = []
+        let step = 24 / CGFloat(canvasScale)
+        for item in shown {
+            guard let node = tree.nodes[item.id] else { continue }
+            if node.collapsed {
+                result.append((item.id, .expand, mindMapButtonPoint(for: item, side: node.side)))
+                continue
+            }
+            guard editor == nil, displayedSelection == [item.id], !item.isLocked else { continue }
+            for side in EaselMindMap.childSides(of: item.id, in: tree) {
+                let point = mindMapButtonPoint(for: item, side: side)
+                result.append((item.id, .add(side), point))
+                if EaselMindMap.canCollapse(item.id, in: tree), side == node.side {
+                    result.append((item.id, .collapse, NSPoint(x: point.x, y: point.y + step)))
+                }
+            }
+        }
+        return result
+    }
+
+    private func mindMapButtonPoint(for item: EaselItem, side: EaselMindMapLink.Side) -> NSPoint {
+        let bounds = EaselShapeGeometry.visualBounds(of: item)
+        let offset = Self.mindMapButtonOffset / CGFloat(canvasScale)
+        let y = CGFloat(bounds.y + bounds.height / 2)
+        return side == .right ? NSPoint(x: CGFloat(bounds.x + bounds.width) + offset, y: y) : NSPoint(x: CGFloat(bounds.x) - offset, y: y)
+    }
+
+    private func mindMapControlRadius(_ control: EaselMindMapControl) -> CGFloat {
+        (control == .expand ? 13 : 11) / CGFloat(canvasScale)
+    }
+
+    func mindMapControl(at point: NSPoint) -> (id: UUID, control: EaselMindMapControl)? {
+        mindMapControls().last { hypot($0.point.x - point.x, $0.point.y - point.y) <= mindMapControlRadius($0.control) }.map { ($0.id, $0.control) }
+    }
+
+    func mindMapControlPress(at point: NSPoint) -> Bool {
+        guard let hit = mindMapControl(at: point) else { return false }
+        mindMaps.hover = nil
+        switch hit.control {
+        case .add(let side): addMindMapNode(to: hit.id, side: side)
+        case .collapse: setMindMapCollapsed(true, ids: [hit.id])
+        case .expand: setMindMapCollapsed(false, ids: [hit.id])
+        }
+        return true
+    }
+
+    private func mindMapChromeBounds() -> NSRect {
+        let pad = 26 / max(CGFloat(canvasScale), 0.2)
+        return mindMapControls().reduce(NSRect.null) { $0.union(NSRect(x: $1.point.x - pad, y: $1.point.y - pad, width: pad * 2, height: pad * 2)) }
+    }
+
+    func updateMindMapHover(at point: NSPoint) {
+        let next = start == nil && editor == nil ? mindMapControl(at: point) : nil
+        guard next?.id != mindMaps.hover?.id || next?.control != mindMaps.hover?.control else { return }
+        mindMaps.hover = next
+        refreshMindMapChrome()
+    }
+
+    func refreshMindMapChrome() {
+        let dirty = mindMapChromeBounds()
+        guard !dirty.isNull else { return }
+        if usesObjectSurfaces { refreshDecorations() } else { setNeedsDisplay(dirty) }
+    }
+
+    func addMindMapCursorRects() {
+        for entry in mindMapControls() {
+            let radius = mindMapControlRadius(entry.control)
+            addCursorRect(NSRect(x: entry.point.x - radius, y: entry.point.y - radius, width: radius * 2, height: radius * 2), cursor: .pointingHand)
+        }
+    }
+
+    func drawMindMapChrome(in dirtyRect: NSRect) {
+        let scale = CGFloat(canvasScale)
+        drawMindMapDrop(scale: scale)
+        let controls = mindMapControls()
+        guard !controls.isEmpty else { return }
+        let tree = EaselMindMap.tree(of: session.document.items)
+        for entry in controls {
+            let reach = 30 / scale
+            guard NSRect(x: entry.point.x - reach, y: entry.point.y - reach, width: reach * 2, height: reach * 2).intersects(dirtyRect) else { continue }
+            let hovered = mindMaps.hover.map { $0.id == entry.id && $0.control == entry.control } == true
+            switch entry.control {
+            case .add: drawQuickCreateDot(at: entry.point, hovered: hovered, scale: scale)
+            case .collapse: drawMindMapCollapseDot(at: entry.point, hovered: hovered, scale: scale)
+            case .expand: drawMindMapCountChip(EaselMindMap.hiddenCount(of: entry.id, in: tree), at: entry.point, hovered: hovered, scale: scale)
+            }
+        }
+    }
+
+    private func drawMindMapCollapseDot(at point: NSPoint, hovered: Bool, scale: CGFloat) {
+        let radius = (hovered ? 8 : 6) / scale
+        let disc = NSBezierPath(ovalIn: NSRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2))
+        disc.lineWidth = 1.5 / scale
+        (hovered ? EaselAppearance.selection : EaselAppearance.surface).setFill(); disc.fill()
+        EaselAppearance.selection.setStroke(); disc.stroke()
+        let arm = (hovered ? 3.5 : 2.5) / scale
+        let bar = NSBezierPath()
+        bar.move(to: NSPoint(x: point.x - arm, y: point.y)); bar.line(to: NSPoint(x: point.x + arm, y: point.y))
+        bar.lineWidth = 1.5 / scale; bar.lineCapStyle = .round
+        (hovered ? EaselAppearance.surface : EaselAppearance.selection).setStroke(); bar.stroke()
+    }
+
+    private func drawMindMapCountChip(_ count: Int, at point: NSPoint, hovered: Bool, scale: CGFloat) {
+        let label = NSAttributedString(string: count > 99 ? "99+" : "\(count)", attributes: [
+            .font: NoteTheme.nunitoBold(11 / scale), .foregroundColor: hovered ? EaselAppearance.surface : EaselAppearance.selection,
+        ])
+        let size = label.size()
+        let height = 18 / scale, width = max(height, size.width + 10 / scale)
+        let chip = NSRect(x: point.x - width / 2, y: point.y - height / 2, width: width, height: height)
+        let path = NSBezierPath(roundedRect: chip, xRadius: height / 2, yRadius: height / 2)
+        path.lineWidth = 1.5 / scale
+        (hovered ? EaselAppearance.selection : EaselAppearance.surface).setFill(); path.fill()
+        EaselAppearance.selection.setStroke(); path.stroke()
+        label.draw(at: NSPoint(x: chip.midX - size.width / 2, y: chip.midY - size.height / 2))
+    }
+
+    func refreshMindMapDrop(id: UUID?, frame: EaselRect?, pointer: NSPoint?) {
+        var next: (id: UUID, drop: EaselMindMapDrop)?
+        if let id, let frame, let pointer, mindMapsWritable, arrangeState.duplicateDrag == nil, dragDistance > 3,
+           let item = session.document.items.first(where: { $0.id == id }), EaselMindMap.isNodeKind(item.kind), !item.isLocked,
+           let drop = EaselMindMap.drop(for: id, frame: frame, pointer: EaselPoint(x: pointer.x, y: pointer.y), in: session.document) {
+            next = (id, drop)
+        }
+        guard next?.id != mindMaps.drop?.id || next?.drop != mindMaps.drop?.drop else { return }
+        let previous = mindMaps.dropRect
+        mindMaps.drop = next
+        mindMaps.dropRect = mindMapDropRect()
+        let dirty = previous.union(mindMaps.dropRect)
+        guard !dirty.isNull else { return }
+        if usesObjectSurfaces { refreshDecorations() } else { setNeedsDisplay(dirty) }
+    }
+
+    func clearMindMapDrop() {
+        guard mindMaps.drop != nil else { return }
+        let dirty = mindMaps.dropRect
+        mindMaps.drop = nil
+        mindMaps.dropRect = .null
+        if dirty.isNull { return }
+        if usesObjectSurfaces { refreshDecorations() } else { setNeedsDisplay(dirty) }
+    }
+
+    func commitMindMapDrop() -> Bool {
+        guard let pending = mindMaps.drop else { return false }
+        clearMindMapDrop()
+        let attaching = !isMindMapNode(pending.id)
+        guard let next = EaselMindMap.moving(pending.id, to: pending.drop, in: session.document) else { return false }
+        guard commit(attaching ? "Attach to mind map" : "Move node", { $0 = next }) else { return false }
+        selection = [pending.id]
+        NSAccessibility.post(element: self, notification: .layoutChanged)
+        return true
+    }
+
+    private func mindMapDropTarget() -> (rect: NSRect, drop: EaselMindMapDrop)? {
+        guard let pending = mindMaps.drop, let parent = session.document.items.first(where: { $0.id == pending.drop.parent }) else { return nil }
+        let bounds = EaselShapeGeometry.visualBounds(of: parent)
+        return (NSRect(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height), pending.drop)
+    }
+
+    private func mindMapDropRect() -> NSRect {
+        guard let target = mindMapDropTarget() else { return .null }
+        let pad = 12 / max(CGFloat(canvasScale), 0.2)
+        let slot = NSRect(x: target.drop.slot.x - 40, y: target.drop.slot.y - 8, width: 80, height: 16)
+        return target.rect.union(slot).insetBy(dx: -pad, dy: -pad)
+    }
+
+    private func drawMindMapDrop(scale: CGFloat) {
+        guard let target = mindMapDropTarget() else { return }
+        EaselAppearance.selection.setStroke()
+        if target.drop.onto {
+            let ring = NSBezierPath(roundedRect: target.rect.insetBy(dx: -5 / scale, dy: -5 / scale), xRadius: 6 / scale, yRadius: 6 / scale)
+            ring.lineWidth = 2 / scale
+            ring.stroke()
+            return
+        }
+        let right = target.drop.side == .right
+        let from = NSPoint(x: right ? target.rect.maxX : target.rect.minX, y: target.rect.midY)
+        let to = NSPoint(x: target.drop.slot.x, y: target.drop.slot.y)
+        let line = NSBezierPath()
+        line.move(to: from)
+        let bend = (to.x - from.x) / 2
+        line.curve(to: to, controlPoint1: NSPoint(x: from.x + bend, y: from.y), controlPoint2: NSPoint(x: to.x - bend, y: to.y))
+        line.lineWidth = 2 / scale
+        line.setLineDash([4 / scale, 4 / scale], count: 2, phase: 0)
+        line.lineCapStyle = .round
+        line.stroke()
+        let bar = NSBezierPath()
+        bar.move(to: to)
+        bar.line(to: NSPoint(x: to.x + (right ? 28 : -28) / scale, y: to.y))
+        bar.lineWidth = 3 / scale
+        bar.lineCapStyle = .round
+        bar.stroke()
+        let radius = 4 / scale
+        EaselAppearance.selection.setFill()
+        NSBezierPath(ovalIn: NSRect(x: to.x - radius, y: to.y - radius, width: radius * 2, height: radius * 2)).fill()
+    }
+
+    func mindMapMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] {
+        guard mindMapsWritable else { return [] }
+        func row(_ id: String, _ title: String, _ symbol: String, _ shortcut: String? = nil, _ action: @escaping (EaselCanvasView) -> Void) -> EaselMenuRow {
+            EaselMenuRow(id: id, title: title, symbol: symbol, shortcut: shortcut, perform: guardedMenuAction(action))
+        }
+        if context.target == .canvas {
+            let point = NSPoint(x: context.point.x, y: context.point.y)
+            return [row("mind-map-add", "Add Mind Map Here", "point.3.connected.trianglepath.dotted") { $0.insertMindMap(at: point) }]
+        }
+        guard context.target == .object, let item = context.items.first, !item.isLocked else { return [] }
+        if EaselMindMap.canStart(from: item) {
+            return [row("mind-map-start", "Make Mind Map", "point.3.connected.trianglepath.dotted") { $0.startMindMap(from: item.id) }]
+        }
+        let tree = EaselMindMap.tree(of: session.document.items)
+        guard let node = tree.nodes[item.id] else { return [] }
+        var rows = [row("mind-map-child", "Add Child", "arrow.turn.down.right", "⌘↩") { $0.addMindMapNode(to: item.id) }]
+        if node.parent != nil {
+            rows.append(row("mind-map-sibling", "Add Sibling", "arrow.down", "⇧⌘↩") { $0.addMindMapNode(to: item.id, sibling: true) })
+        }
+        if EaselMindMap.indenting(item.id, in: session.document) != nil {
+            rows.append(row("mind-map-indent", "Move In", "increase.indent", "⇥") { $0.reparentMindMapNode(item.id, outdent: false) })
+        }
+        if EaselMindMap.outdenting(item.id, in: session.document) != nil {
+            rows.append(row("mind-map-outdent", "Move Out", "decrease.indent", "⇧⇥") { $0.reparentMindMapNode(item.id, outdent: true) })
+        }
+        if EaselMindMap.canCollapse(item.id, in: tree) {
+            let collapsed = node.collapsed
+            rows.append(row("mind-map-collapse", collapsed ? "Expand Branch" : "Collapse Branch",
+                            collapsed ? "chevron.down.circle" : "chevron.up.circle") { $0.setMindMapCollapsed(!collapsed, ids: [item.id]) })
+        }
+        return rows
+    }
+
+    func mindMapActionNames(_ item: EaselItem) -> [String] {
+        guard mindMapsWritable, !item.isLocked else { return [] }
+        if EaselMindMap.canStart(from: item) { return ["Make mind map"] }
+        let tree = EaselMindMap.tree(of: session.document.items)
+        guard let node = tree.nodes[item.id] else { return [] }
+        var names = ["Add child"]
+        if node.parent != nil { names.append("Add sibling") }
+        if EaselMindMap.indenting(item.id, in: session.document) != nil { names.append("Move in") }
+        if EaselMindMap.outdenting(item.id, in: session.document) != nil { names.append("Move out") }
+        if EaselMindMap.canCollapse(item.id, in: tree) { names.append(node.collapsed ? "Expand branch" : "Collapse branch") }
+        return names
+    }
+
+    func performMindMapAction(_ name: String, item: EaselItem) -> Bool {
+        guard selection == [item.id] else { return false }
+        switch name {
+        case "Make mind map": return startMindMap(from: item.id)
+        case "Add child": return addMindMapNode(to: item.id)
+        case "Add sibling": return addMindMapNode(to: item.id, sibling: true)
+        case "Move in": return reparentMindMapNode(item.id, outdent: false)
+        case "Move out": return reparentMindMapNode(item.id, outdent: true)
+        case "Collapse branch": return setMindMapCollapsed(true, ids: [item.id])
+        case "Expand branch": return setMindMapCollapsed(false, ids: [item.id])
+        default: return false
+        }
+    }
+}

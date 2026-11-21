@@ -202,7 +202,8 @@ extension EaselCanvasView {
         case .alignText(let alignment):
             if isEditingTableCell || (editor == nil && selectedTable != nil) { return setTableCellsAlignment(Self.textAlignment(alignment)) }
             return alignText(alignment, editing: textEditorOwnsKeyFocus)
-        case .quickCreate: return performQuickCreate()
+        case .quickCreate: return performMindMapChord(command) || performQuickCreate()
+        case .mindMapSibling: return performMindMapChord(command)
         case .focusSelectionToolbar: return selectionToolbar?.focusFromKeyboard() == true
         case .exportSelection: return claim(applies && canvasOwnsKeyFocus) { presentExportSelectionMenu() }
         }

@@ -125,6 +125,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             self.canvas.activateTool(tool, from: control); self.focusCanvas()
         }
         palette.onShape = { [weak self] shape in self?.canvas.armShape(shape); self?.focusCanvas() }
+        palette.onMindMap = { [weak self] in _ = self?.canvas.insertMindMap() }
         palette.onInsert = { [weak self] insert, control in self?.insert(insert, from: control) }
         palette.onZoom = { [weak self] command in self?.canvas.zoom(command) }
         palette.onZoomTo = { [weak self] value in self?.canvas.zoom(toMagnification: value) }

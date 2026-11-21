@@ -60,6 +60,7 @@ enum EaselChordCommand: Hashable {
     case focusSelectionToolbar
     case quickCreate
     case exportSelection
+    case mindMapSibling
 }
 
 enum EaselChords {
@@ -77,6 +78,7 @@ enum EaselChords {
         EaselChord("/", [.command, .shift]): .focusSelectionToolbar,
         EaselChord(.returnKey, .command): .quickCreate,
         EaselChord("e", [.command, .shift]): .exportSelection,
+        EaselChord(.returnKey, [.command, .shift]): .mindMapSibling,
     ]
 
     static let reserved: [EaselChord] = [

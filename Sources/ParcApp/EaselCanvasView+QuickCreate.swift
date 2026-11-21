@@ -5,7 +5,7 @@ extension EaselCanvasView {
     static let quickCreateDotOffset: CGFloat = 18
 
     func quickCreates(_ item: EaselItem) -> Bool {
-        (item.kind == .sticky || item.kind == .rectangle || item.kind == .circle) && !item.isLocked
+        (item.kind == .sticky || item.kind == .rectangle || item.kind == .circle) && !item.isLocked && item.mindMap == nil
     }
 
     var quickCreateSource: EaselItem? {

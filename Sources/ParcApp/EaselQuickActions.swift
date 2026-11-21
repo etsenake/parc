@@ -136,6 +136,12 @@ extension EaselQuickActions {
         tool(.hand, ["pan", "scroll", "move", "grab"], section: "Tools")
         actions += inserts
         tool(.codeBlock, ["code", "snippet", "monospace", "program"], section: "Inserts")
+        if canvas.fixedCanvasSize == nil {
+            actions.append(.init(id: "mind-map", title: "Mind map", icon: .symbol(EaselToolPalette.mindMapSymbol), shortcut: nil,
+                                 keywords: ["mindmap", "tree", "brainstorm", "ideas", "branches"], section: "Inserts") { [weak canvas] in
+                _ = canvas?.insertMindMap()
+            })
+        }
         let zoomSymbols: [EaselZoomCommand: String] = [.zoomIn: "plus.magnifyingglass", .zoomOut: "minus.magnifyingglass",
                                                        .fit: "viewfinder", .selection: "scope", .actualSize: "1.magnifyingglass"]
         for command in [EaselZoomCommand.zoomIn, .zoomOut, .fit, .selection, .actualSize] {
