@@ -64,6 +64,15 @@ by the emoji selector (U+FE0F). It adds the selector to bare text-style forms
 such as ❤ and refuses anything else, so a bad pick never reaches the document
 and can't block saving. Saved files must already hold the tidy form.
 
+The Emoji tab is the Notes picker including its custom emoji section, with `+`
+and Edit, from the Notes folder's emoji library (the first notes folder that has
+any). A custom emoji stamps like any emoji and is saved by name as its
+`:name:` text. It draws from the library's picture, so renaming keeps working
+through the library's aliases; if the emoji is deleted, the stamp shows its
+`:name:` text instead and keeps the name. PNG, PDF and Copy as Image use the
+canvas drawing; HTML and SVG export embed the picture, or the text when it is
+gone.
+
 ## Drawing and export
 
 `EaselStampArtwork` caches each design's layers, emoji measurements and SF

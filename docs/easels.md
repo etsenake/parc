@@ -61,7 +61,11 @@ and stickies get an alignment menu, text a palette colour menu, and, one at a
 time, a Link button that edits
 the object's own link (or the selected words' link while typing), washi tape a pattern menu, and a table its
 typeface, size, bold, strike, text and cell colour, alignment and Merge or
-Unmerge cells, switching to range formatting while a cell is edited. A fully locked
+Unmerge cells, switching to range formatting while a cell is edited. While text
+is edited the bar also carries the Notes format bar's Highlight (Notion's nine
+backgrounds), Code and Turn Into, with ⇧⌘H repeating the last colour; see
+[Easel text](easel-text.md#highlight-code-and-turn-into). `/` in text opens the
+Notes block menu ([slash menu](easel-text.md#slash-menu)). A fully locked
 selection shows only a Locked button whose menu unlocks it, a section with its
 contents. A single webpage, captured card or link keeps its own page
 header instead. A control appears only once its canvas command exists, and the

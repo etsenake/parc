@@ -120,6 +120,47 @@ follows the pointer's link, stays while the pointer is over it, and goes away on
 a scroll, a key press or a click elsewhere. Links in rotated or flipped objects
 don't show the card.
 
+## Slash menu
+
+Typing `/` at the start of a line or after a space, in a text object, sticky
+or shape, opens the Notes block menu under the caret: the
+same list view, keywords, ranking, preview card, keyboard handling and motion as
+a note (`NoteSlashMenuController` and the Easel's `EaselSlashCompletion` share
+`NoteSlashListPresenter`). Typing keeps filtering, ↑ and ↓ move, Return or Tab
+picks and Escape closes the list and leaves the typed slash as text. Backspacing
+into a closed query reopens it, and clicking away closes it. Code spans, table
+cells and connector labels never open it.
+
+The rows are the Notes catalog rows that make sense in text: Text, Heading 1–3,
+Bulleted and Numbered list, Quote and Emoji, plus To-do, Divider, Mention,
+Date and Inline equation once those exist in Easel text. Picking a row removes
+the typed `/query` and turns the paragraph into it as one native Undo step;
+Emoji opens the Notes emoji picker at the caret. Below them, **Add to the
+Easel** places a Sticky, Shape, Image, Video, Audio, File, PDF, Embed,
+Bookmark, Block equation, Table or Code block beside the text, to its right or
+below it when something is already there (`EaselSlashPlacement`), selected and
+as one Undo step, using the same empty placeholders as the toolbar's Add menus.
+The object rows come from `EaselSlashCatalog`, whose windowless tests cover the
+rows, search and placement.
+
+## Highlight, code and Turn Into
+
+While editing, the selection toolbar carries the Notes format bar's marks. **Highlight**
+opens the Notes colour grid with only its nine backgrounds and Last Used row; the
+choice paints the selected words, or the next typed ones, as one native Undo
+step. A highlight is the run's `background`, saved as the Notes colour's light
+value at its light tint (for example `#E8B53A29` for yellow). On dark paper it
+reads as that colour's dark tint, because the editor and every drawing map the
+stored value onto a colour that follows the appearance, and copying or saving
+always goes back to the light value. HTML and SVG exports draw a rounded
+rectangle behind the words filled with a `--easel-mark-*` variable that has light
+and dark values. **Code** (⌘E) toggles the Notes inline code look, a monospaced
+face over a soft grey fill; turning it off restores the object's typeface.
+⇧⌘H repeats the last colour or highlight, shared with Notes for highlights.
+**Turn Into** is the toolbar's paragraph menu, showing the Notes rows and icons
+for Text, Headings, lists and Quote. Equation and Mention buttons appear once
+those inline runs exist.
+
 ## Emoji
 
 Typing `:` and two or more letters of a shortcode in any Easel text opens the
