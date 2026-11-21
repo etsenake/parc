@@ -128,10 +128,10 @@ struct EaselSelectionToolbarCanvasTests {
         expect(controls(canvas).first == .sectionTitle, "Sections lead with Rename")
         let sectionMenu = canvas.selectionToolbarMenu(for: .more).map(\.id)
         expect(["section.lockAll", "section.lockBackground", "section.hide", "section.deleteKeepingContents"].allSatisfy(sectionMenu.contains),
-               "A section's ••• menu holds Lock all, Lock background only, Hide contents and Delete, keep contents")
+               "A section's ••• menu holds Lock All, Lock Background Only, Hide Contents and Delete Section Only")
         expect(canvas.performSelectionToolbarMenu(.more, entry: "section.hide"), "Hide contents runs")
         expect(session.document.items.first { $0.id == section.id }?.contentsHidden == true, "Hide contents hides them")
-        expect(canvas.selectionToolbarMenu(for: .more).first { $0.id == "section.hide" }?.title == "Show contents", "The row flips to Show contents")
+        expect(canvas.selectionToolbarMenu(for: .more).first { $0.id == "section.hide" }?.title == "Show Contents", "The row flips to Show Contents")
 
         canvas.selection = [shape.id]
         canvas.selectionBeforeGesture = [shape.id]

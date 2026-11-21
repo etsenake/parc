@@ -341,7 +341,7 @@ final class EaselColorPicker: NSView, NoteFloatingPanelContent {
 
     private func submitHex(_ text: String) {
         guard let hex = EaselPalette.parseHex(text) else {
-            showNotice("That's not a hex color. Try #2C6C91.")
+            showNotice("That’s not a hex color. Try #2C6C91.")
             return
         }
         hexField.text = hex

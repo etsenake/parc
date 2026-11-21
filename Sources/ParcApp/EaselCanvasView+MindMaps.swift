@@ -113,7 +113,7 @@ extension EaselCanvasView {
         cancelPointerInteraction(); guard finishEditing(removingEmpty: false) else { return false }
         let document = session.document
         guard let next = outdent ? EaselMindMap.outdenting(id, in: document) : EaselMindMap.indenting(id, in: document),
-              commit(outdent ? "Move node out" : "Move node in", { $0 = next }) else { return false }
+              commit(outdent ? "Move topic out" : "Move topic in", { $0 = next }) else { return false }
         focusMindMapNode(id, editing: editing)
         return true
     }
@@ -314,7 +314,7 @@ extension EaselCanvasView {
         clearMindMapDrop()
         let attaching = !isMindMapNode(pending.id)
         guard let next = EaselMindMap.moving(pending.id, to: pending.drop, in: session.document) else { return false }
-        guard commit(attaching ? "Attach to mind map" : "Move node", { $0 = next }) else { return false }
+        guard commit(attaching ? "Attach to mind map" : "Move topic", { $0 = next }) else { return false }
         selection = [pending.id]
         NSAccessibility.post(element: self, notification: .layoutChanged)
         return true

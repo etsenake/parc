@@ -269,7 +269,7 @@ struct EaselMermaidTests {
         guard case .syntax(let line, _)? = refusal("flowchart TD\nA\nB\n---> C") else { failTest("A leading arrow is refused") }
         expect(line == 4, "The error points at the bad line")
         expect(EaselMermaidRefusal.syntax(line: 4, detail: "oops").message == "Line 4: oops.", "Syntax messages lead with the line")
-        expect(EaselMermaidRefusal.unsupported("Gantt charts").message.hasPrefix("Gantt charts can't"), "Refusals name the diagram type")
+        expect(EaselMermaidRefusal.unsupported("Gantt charts").message.hasPrefix("Gantt charts can’t"), "Refusals name the diagram type")
         let many = "flowchart TD\n" + (0..<501).map { "N\($0)" }.joined(separator: "\n")
         expect(refusal(many) == .tooLarge, "More than 500 nodes is too large")
     }

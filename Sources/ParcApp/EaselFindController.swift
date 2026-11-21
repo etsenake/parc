@@ -382,7 +382,7 @@ final class EaselFindController: NoteFindBarController {
     }
 
     private func makeBar() -> NoteFindBar {
-        let bar = NoteFindBar(controller: self, placeholder: "Find on this Easel", label: "Find on Easel")
+        let bar = NoteFindBar(controller: self, placeholder: "Find in Easel", label: "Find in Easel")
         self.bar = bar
         return bar
     }

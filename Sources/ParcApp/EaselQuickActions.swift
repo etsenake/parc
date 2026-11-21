@@ -135,10 +135,10 @@ extension EaselQuickActions {
         tool(.select, ["move", "pointer", "cursor", "arrow"], section: "Tools")
         tool(.hand, ["pan", "scroll", "move", "grab"], section: "Tools")
         actions += inserts
-        tool(.codeBlock, ["code", "snippet", "monospace", "program"], section: "Inserts")
+        tool(.codeBlock, ["code", "snippet", "monospace", "program"], section: "Add")
         if canvas.fixedCanvasSize == nil {
             actions.append(.init(id: "mind-map", title: "Mind map", icon: .symbol(EaselToolPalette.mindMapSymbol), shortcut: nil,
-                                 keywords: ["mindmap", "tree", "brainstorm", "ideas", "branches"], section: "Inserts") { [weak canvas] in
+                                 keywords: ["mindmap", "tree", "brainstorm", "ideas", "branches"], section: "Add") { [weak canvas] in
                 _ = canvas?.insertMindMap()
             })
         }

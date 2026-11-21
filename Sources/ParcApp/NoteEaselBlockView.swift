@@ -356,11 +356,11 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
               !canvas.session.isClosed, !canvas.session.isDeleted else { return }
         var inserts: [EaselQuickActions.Action] = [
             .init(id: "insert-image", title: EaselToolPalette.title(for: .image), icon: EaselToolPalette.icon(for: .image), shortcut: nil,
-                  keywords: ["picture", "photo", "file"], section: "Inserts") { [weak self] in self?.chooseImages() },
+                  keywords: ["picture", "photo", "file"], section: "Add") { [weak self] in self?.chooseImages() },
         ]
         if canvas.acceptsMermaid {
             inserts.append(.init(id: "insert-mermaid", title: EaselToolPalette.title(for: .mermaid), icon: EaselToolPalette.icon(for: .mermaid),
-                                 shortcut: nil, keywords: ["flowchart", "diagram", "chart", "er"], section: "Inserts") { [weak canvas] in
+                                 shortcut: nil, keywords: ["flowchart", "diagram", "chart", "er"], section: "Add") { [weak canvas] in
                 _ = canvas?.showMermaidSheet()
             })
         }

@@ -25,7 +25,7 @@ enum EaselTemplate: String, CaseIterable, Identifiable {
         case .flowchart: return "Start, steps and a yes-or-no fork"
         case .weeklyPlan: return "Goals up top, a column per weekday"
         case .mindMap: return "A topic with branches to grow"
-        case .moodboard: return "Pictures, colours and words in one place"
+        case .moodboard: return "Pictures, colors and words in one place"
         }
     }
 
@@ -216,7 +216,7 @@ enum EaselTemplates {
 
         mutating func weeklyPlan() {
             title("Weekly Plan", x: 0, y: 0)
-            sticky("This week's goals", x: 0, y: 96, color: .purple, wide: true)
+            sticky("This week’s goals", x: 0, y: 96, color: .purple, wide: true)
             let days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
             let colors: [NoteColor] = [.yellow, .orange, .pink, .blue, .green]
             for (index, day) in days.enumerated() {
@@ -255,7 +255,7 @@ enum EaselTemplates {
             for frame in frames {
                 shape(.roundedRectangle, "Drop a picture", x: frame.0, y: frame.1, width: frame.2, height: frame.3, color: .gray, dash: .dashed)
             }
-            section("Colours", x: 752, y: 112, width: 296, height: 248)
+            section("Colors", x: 752, y: 112, width: 296, height: 248)
             let swatches: [NoteColor] = [.pink, .orange, .yellow, .green, .blue, .purple]
             for (index, color) in swatches.enumerated() {
                 let x = 784 + Double(index % 3) * 84, y = 152 + Double(index / 3) * 92
@@ -265,7 +265,7 @@ enum EaselTemplates {
                 add(swatch)
             }
             section("Words", x: 752, y: 384, width: 296, height: 248)
-            sticky("Cosy, bright, playful", x: 790, y: 404, color: .yellow)
+            sticky("Cozy, bright, playful", x: 790, y: 404, color: .yellow)
         }
     }
 }

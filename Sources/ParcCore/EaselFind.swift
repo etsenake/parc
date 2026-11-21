@@ -332,7 +332,7 @@ struct EaselFindSession: Equatable {
         var parts: [String] = []
         if outcome.skippedLocked > 0 { parts.append("\(outcome.skippedLocked) locked") }
         if outcome.skippedReadOnly > 0 { parts.append("\(outcome.skippedReadOnly) read-only") }
-        if outcome.skippedOther > 0 { parts.append("\(outcome.skippedOther) couldn’t change") }
+        if outcome.skippedOther > 0 { parts.append("\(outcome.skippedOther) that couldn’t change") }
         guard !parts.isEmpty else { return "" }
         return "Skipped " + parts.joined(separator: ", ")
     }

@@ -557,7 +557,7 @@ enum EaselShapeGeometry {
         switch shape {
         case .rectangle: return "Rectangle"
         case .roundedRectangle: return "Rounded rectangle"
-        case .ellipse: return "Circle"
+        case .ellipse: return "Ellipse"
         case .diamond: return "Diamond"
         case .triangle: return "Triangle"
         case .triangleDown: return "Upside-down triangle"

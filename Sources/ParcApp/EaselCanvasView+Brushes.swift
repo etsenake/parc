@@ -244,7 +244,7 @@ extension EaselCanvasView {
         switch brush {
         case .marker: name = "Draw"
         case .highlighter: name = "Highlight"
-        case .washi: name = "Washi Tape"
+        case .washi: name = "Washi tape"
         }
         if commit(name, { $0.items.append(item) }) { selectionBeforeGesture = [] }
     }

@@ -291,7 +291,7 @@ struct EaselBoardFeaturesTests {
         expect(EaselFindSession.summary(EaselFindReplacement(document: board)).isEmpty, "nothing skipped means no summary")
         var odd = EaselFindReplacement(document: board)
         odd.skippedOther = 2
-        expect(EaselFindSession.summary(odd) == "Skipped 2 couldn’t change", "unchangeable objects are reported too")
+        expect(EaselFindSession.summary(odd) == "Skipped 2 that couldn’t change", "unchangeable objects are reported too")
     }
 
     @MainActor static func viewportFocus() {

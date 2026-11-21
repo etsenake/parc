@@ -450,7 +450,7 @@ enum EaselStoreError: Error, LocalizedError {
         case .unsafePath: return "The Easel storage path is unsafe."
         case .invalidImage: return "The image could not be imported."
         case .tooLarge: return "The Easel or image exceeds the local storage limit."
-        case .invalidVideo: return "That video can't play on an Easel. MP4 and MOV videos can."
+        case .invalidVideo: return "That video can’t play on an Easel. MP4 and MOV videos can."
         case .videoTooLarge: return "That video is a bit big for an Easel. Videos up to 30 MB fit."
         case .missingDocument: return "The Easel does not exist."
         case .deletedDocument: return "This Easel was deleted."

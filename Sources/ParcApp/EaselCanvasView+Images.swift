@@ -657,7 +657,7 @@ extension EaselCanvasView {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
-        panel.message = "Pick a picture to swap in. It keeps this one's size and spot."
+        panel.message = "Pick a picture to swap in. It keeps this one’s size and spot."
         panel.beginSheetModal(for: window) { [weak self, weak window] response in
             guard response == .OK, let url = panel.url else { return }
             MainActor.assumeIsolated {

@@ -229,7 +229,7 @@ final class EaselTimerButton: PointingHandButton {
             setAccessibilityLabel("Timer, paused")
             setAccessibilityValue(EaselCountdown.spoken(remaining) + " left")
         case .finished:
-            setAccessibilityLabel("Timer, time's up")
+            setAccessibilityLabel("Timer, time’s up")
             setAccessibilityValue(nil)
         }
         needsDisplay = true
@@ -463,7 +463,7 @@ final class EaselTimerView: NSView, NoteFloatingPanelContent {
             caption.stringValue = "Paused"
         case .finished:
             start.chipTitle = "Again"; start.icon = .symbol("play.fill")
-            caption.stringValue = "Time's up!"
+            caption.stringValue = "Time’s up!"
         }
         start.isEnabled = countdown.phase != .idle || countdown.duration > 0
         start.setAccessibilityLabel(start.chipTitle)
@@ -513,8 +513,8 @@ extension EaselEditorViewController {
 
     private func timerFinished() {
         guard isViewLoaded, let window = view.window, window.isVisible, !view.isHiddenOrHasHiddenAncestor else { return }
-        showExportToast(.standard("Time's up", icon: "timer"))
+        showExportToast(.standard("Time’s up", icon: "timer"))
         NSAccessibility.post(element: view, notification: .announcementRequested,
-                             userInfo: [.announcement: "Time's up", .priority: NSAccessibilityPriorityLevel.high.rawValue])
+                             userInfo: [.announcement: "Time’s up", .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 }

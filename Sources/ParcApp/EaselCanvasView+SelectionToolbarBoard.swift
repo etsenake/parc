@@ -51,7 +51,7 @@ extension EaselCanvasView {
             return .init(control: control, face: .symbol("circle.square"), name: "Mask", isEnabled: ready && canEditSelectedImage,
                          showsDisclosure: true)
         case .replaceImage:
-            return .init(control: control, face: .symbol("photo.on.rectangle"), name: "Replace picture",
+            return .init(control: control, face: .symbol("photo.on.rectangle"), name: "Replace image",
                          isEnabled: ready && canEditSelectedImage)
         case .altText:
             let item = selected.first
@@ -95,10 +95,10 @@ extension EaselCanvasView {
         var entries: [EaselToolbarMenuEntry] = []
         if !sections.isEmpty, !allLocked {
             let hidden = sections.allSatisfy { $0.contentsHidden == true }
-            entries.append(EaselToolbarMenuEntry(id: "section.lockAll", title: "Lock all", symbol: "lock", isEnabled: ready))
-            entries.append(EaselToolbarMenuEntry(id: "section.lockBackground", title: "Lock background only", symbol: "lock.rectangle",
+            entries.append(EaselToolbarMenuEntry(id: "section.lockAll", title: "Lock All", symbol: "lock", isEnabled: ready))
+            entries.append(EaselToolbarMenuEntry(id: "section.lockBackground", title: "Lock Background Only", symbol: "lock.rectangle",
                                                  isEnabled: ready))
-            entries.append(EaselToolbarMenuEntry(id: "section.hide", title: hidden ? "Show contents" : "Hide contents",
+            entries.append(EaselToolbarMenuEntry(id: "section.hide", title: hidden ? "Show Contents" : "Hide Contents",
                                                  symbol: hidden ? "eye" : "eye.slash", isEnabled: ready))
         }
         let layers = ready && EaselArrange.canMoveLayer(ids, in: document)
@@ -124,7 +124,7 @@ extension EaselCanvasView {
             entries.append(EaselToolbarMenuEntry(id: "lock", title: "Lock", symbol: "lock", shortcut: "⇧⌘L", isEnabled: ready))
         }
         if !sections.isEmpty, !allLocked {
-            entries.append(EaselToolbarMenuEntry(id: "section.deleteKeepingContents", title: "Delete, keep contents",
+            entries.append(EaselToolbarMenuEntry(id: "section.deleteKeepingContents", title: "Delete Section Only",
                                                  symbol: "rectangle.dashed", isEnabled: ready, separatorBefore: true))
         }
         entries.append(EaselToolbarMenuEntry(id: "delete", title: "Delete", symbol: "trash", shortcut: "⌫", isEnabled: ready && !allLocked,

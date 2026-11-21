@@ -18,7 +18,7 @@ final class EaselCanvasOnboardingState {
 
 @MainActor
 final class EaselQuickCreateHintView: NSView {
-    static let text = "Tip: click a + beside it to make the next one, or press ⌘Return"
+    static let text = "Tip: click a + beside it to make the next one, or press ⌘↩"
     private static let font = NoteTheme.chromeFont(13)
     private static let height: CGFloat = 32
 

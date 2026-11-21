@@ -254,7 +254,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         if canvas.acceptsTemplates { inserts.append((.templates, ["template", "starter", "kanban", "retro", "brainstorm", "board"])) }
         let actions = inserts.map { insert, keywords in
             EaselQuickActions.Action(id: "insert-" + insert.rawValue, title: EaselToolPalette.title(for: insert),
-                                     icon: EaselToolPalette.icon(for: insert), shortcut: nil, keywords: keywords, section: "Inserts",
+                                     icon: EaselToolPalette.icon(for: insert), shortcut: nil, keywords: keywords, section: "Add",
                                      isEnabled: insert != .webpage || pageObjects != nil) { [weak self] in
                 guard let self, let control = self.palette?.button(for: insert) else { return }
                 self.insert(insert, from: control)

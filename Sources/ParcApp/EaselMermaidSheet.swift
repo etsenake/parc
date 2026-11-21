@@ -38,7 +38,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate, EaselMermaidSheetPr
                                           color: ParcDialogStyle.popoverTitle, lineSpacing: 4)
         root.addSubview(title)
         y += ParcDialogStyle.place(title, x: inset, y: y, width: body) + 8
-        let message = ParcDialogStyle.label([("Paste or type a flowchart or an ER diagram. It lands as shapes, arrows and sections you can keep editing.", false)],
+        let message = ParcDialogStyle.label([("Paste or type a flowchart or an ER diagram. It lands as shapes, connectors and sections you can keep editing.", false)],
                                             size: 14, weight: .regular, color: ParcDialogStyle.popoverMessage, lineSpacing: 1)
         root.addSubview(message)
         y += ParcDialogStyle.place(message, x: inset, y: y, width: body) + 16
@@ -165,7 +165,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate, EaselMermaidSheetPr
             return
         }
         guard canvas.insertMermaid(source.string) else {
-            status.stringValue = "Parc couldn't add that diagram to this Easel."
+            status.stringValue = "Parc couldn’t add that diagram to this Easel."
             status.textColor = EaselAppearance.error
             return
         }

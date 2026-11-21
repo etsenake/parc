@@ -160,7 +160,7 @@ extension EaselCanvasView {
         case .cellFill:
             let dark = NoteTheme.isDark(effectiveAppearance)
             let current = tableSelectionFill
-            let none = EaselToolbarMenuEntry(id: "none", title: "No color", symbol: "circle.slash", isChecked: current == .some(nil))
+            let none = EaselToolbarMenuEntry(id: "none", title: "No Color", symbol: "circle.slash", isChecked: current == .some(nil))
             return [none] + EaselPalette.colors(for: .fill).compactMap { color in
                 guard let hex = EaselPalette.hex(color, role: .fill) else { return nil }
                 return EaselToolbarMenuEntry(id: hex, title: color.title(dark: dark), symbol: "circle.fill",

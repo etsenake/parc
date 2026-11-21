@@ -132,8 +132,8 @@ struct EaselMermaidDiagram: Equatable {
         let arrows = edges.filter { $0.line != .invisible }.count
         var parts = [count(nodes.count, kind == .entityRelationship ? "entity" : "shape",
                            kind == .entityRelationship ? "entities" : "shapes")]
-        if arrows > 0 { parts.append(count(arrows, kind == .entityRelationship ? "relationship" : "arrow",
-                                           kind == .entityRelationship ? "relationships" : "arrows")) }
+        if arrows > 0 { parts.append(count(arrows, kind == .entityRelationship ? "relationship" : "connector",
+                                           kind == .entityRelationship ? "relationships" : "connectors")) }
         if !groups.isEmpty { parts.append(count(groups.count, "section", "sections")) }
         return (kind == .entityRelationship ? "ER diagram" : "Flowchart") + " · " + parts.joined(separator: ", ")
     }
@@ -149,11 +149,11 @@ enum EaselMermaidRefusal: Error, Equatable {
     var message: String {
         switch self {
         case .notMermaid: return "Start with flowchart, graph or erDiagram and Parc draws the rest."
-        case .unsupported(let name): return "\(name) can't become Easel objects. Flowcharts and ER diagrams can."
-        case .empty: return "There's nothing to draw yet. Add a shape or two."
+        case .unsupported(let name): return "\(name) can’t become Easel objects. Flowcharts and ER diagrams can."
+        case .empty: return "There’s nothing to draw yet. Add a shape or two."
         case .syntax(let line, let detail): return line > 0 ? "Line \(line): \(detail)." : detail.prefix(1).uppercased() + detail.dropFirst() + "."
         case .tooLarge:
-            return "That's a big one. Easels draw diagrams of up to \(EaselMermaid.maximumNodes) shapes and \(EaselMermaid.maximumEdges.formatted()) arrows."
+            return "That’s a big one. Easels draw diagrams of up to \(EaselMermaid.maximumNodes) shapes and \(EaselMermaid.maximumEdges.formatted()) connectors."
         }
     }
 }
@@ -1014,7 +1014,7 @@ struct EaselMermaidFlowchartParser {
     }
 
     private mutating func endGroup(line: Int) throws {
-        guard let top = stack.popLast() else { throw syntax(line, "there's an end without a subgraph to close") }
+        guard let top = stack.popLast() else { throw syntax(line, "there’s an end without a subgraph to close") }
         for member in top.members {
             if let index = nodeIndex[member], diagram.nodes[index].group == nil { diagram.nodes[index].group = top.id }
         }
@@ -1157,7 +1157,7 @@ struct EaselMermaidEntityParser {
             if try relationship(text, line: line.number) { continue }
             var scanner = EaselMermaidScanner(text)
             guard let entity = entityReference(&scanner) else {
-                throw syntax(line.number, "Parc couldn't read this as an entity or a relationship")
+                throw syntax(line.number, "Parc couldn’t read this as an entity or a relationship")
             }
             readClass(&scanner, for: entity.name)
             scanner.skipSpaces()
@@ -1165,7 +1165,7 @@ struct EaselMermaidEntityParser {
                 try touch(entity.name, alias: entity.alias)
                 continue
             }
-            guard scanner.peek() == "{" else { throw syntax(line.number, "Parc couldn't read this as an entity or a relationship") }
+            guard scanner.peek() == "{" else { throw syntax(line.number, "Parc couldn’t read this as an entity or a relationship") }
             scanner.advance()
             var body = scanner.rest, closed = false
             if let close = body.firstIndex(of: "}") {
@@ -1232,7 +1232,7 @@ struct EaselMermaidEntityParser {
             scanner.advance()
             label = EaselMermaidText.clean(scanner.rest)
         } else if !scanner.atEnd {
-            throw syntax(line, "a relationship's label goes after a colon")
+            throw syntax(line, "a relationship’s label goes after a colon")
         }
         try touch(first.name, alias: first.alias)
         try touch(second.name, alias: second.alias)
