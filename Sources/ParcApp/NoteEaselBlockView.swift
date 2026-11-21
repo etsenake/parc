@@ -683,10 +683,10 @@ final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary {
     private func refresh() {
         let live = canvas != nil
         scroll.isHidden = !live
-        let shieldWasHidden = shield.isHidden
+        let wasHidden = shield.isHidden, hadHand = shield.showsHand
         shield.isHidden = !live || active
         shield.showsHand = live && !viewOnly
-        if shieldWasHidden, !shield.isHidden { refreshCursorIfPointerOwned() }
+        if wasHidden != shield.isHidden || hadHand != shield.showsHand { refreshCursorIfPointerOwned() }
         absence.isHidden = live
         openButton.isHidden = !live
         alignButton.isHidden = !canAlign

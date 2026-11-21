@@ -682,7 +682,6 @@ final class NoteMenuList: NSView, NoteFloatingPanelContent {
         needsLayout = true
         documentView.needsDisplay = true
         if intrinsicContentSize != previousSize { preferredSizeDidChange?() }
-        documentView.refreshPointerCursor()
     }
 
     private func naturalWidth(_ rows: [Placed]) -> CGFloat {
@@ -728,6 +727,7 @@ final class NoteMenuList: NSView, NoteFloatingPanelContent {
         }
         if let highlighted { scrollToReveal(highlighted) }
         documentView.needsDisplay = true
+        documentView.refreshPointerCursor()
     }
 
     fileprivate var placedRows: [Placed] { placed }
@@ -818,6 +818,7 @@ final class NoteMenuList: NSView, NoteFloatingPanelContent {
         guard origin != clip.bounds.origin else { return }
         clip.scroll(to: origin)
         scrollView.reflectScrolledClipView(clip)
+        documentView.refreshPointerCursor()
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -970,7 +971,7 @@ final class NoteMenuDocumentView: NSView {
     }
 
     fileprivate func refreshPointerCursor() {
-        guard let window, window.isKeyWindow else { return }
+        guard let window, window.isKeyWindow, NSEvent.pressedMouseButtons == 0 else { return }
         let point = window.mouseLocationOutsideOfEventStream
         guard ownsPointer(atWindowPoint: point) else { return }
         pointerCursor(at: convert(point, from: nil)).set()

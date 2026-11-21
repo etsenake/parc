@@ -934,8 +934,8 @@ final class NoteCalendarGridView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard applyNoteCursor(pointerCursor(at: convert(event.locationInWindow, from: nil)), for: event) else { return }
-        let next = index(at: convert(event.locationInWindow, from: nil))
+        let owned = applyNoteCursor(pointerCursor(at: convert(event.locationInWindow, from: nil)), for: event)
+        let next = owned ? index(at: convert(event.locationInWindow, from: nil)) : nil
         guard next != hovered else { return }
         hovered = next
         ink.needsDisplay = true

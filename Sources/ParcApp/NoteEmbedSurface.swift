@@ -372,14 +372,19 @@ final class NoteEmbedResizeHandle: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         tracking = area
     }
 
-    override func mouseEntered(with event: NSEvent) {
-        hovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
-        setVisible(hovered)
+    override func mouseEntered(with event: NSEvent) { refreshHover(at: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) { refreshHover(at: event.locationInWindow) }
+
+    private func refreshHover(at windowPoint: NSPoint) {
+        let next = NoteFloatingPanel.allowsHover(for: self, at: windowPoint)
+        guard next != hovered else { return }
+        hovered = next
+        setVisible(next)
     }
 
     override func mouseExited(with event: NSEvent) { hovered = false; setVisible(false) }

@@ -8,7 +8,7 @@ extension NSView {
 
     @discardableResult
     func applyNoteCursor(_ cursor: NSCursor?, for event: NSEvent) -> Bool {
-        guard let cursor, ownsPointer(atWindowPoint: event.locationInWindow) else { return false }
+        guard let cursor, window?.isKeyWindow == true, ownsPointer(atWindowPoint: event.locationInWindow) else { return false }
         cursor.set()
         return true
     }
@@ -16,7 +16,7 @@ extension NSView {
 
 extension NSWindow {
     func refreshCursorUnderPointer() {
-        guard isKeyWindow, let content = contentView else { return }
+        guard isKeyWindow, NSEvent.pressedMouseButtons == 0, let content = contentView else { return }
         let point = mouseLocationOutsideOfEventStream
         guard content.frame.contains(content.superview?.convert(point, from: nil) ?? point),
               let hit = content.hitTest(content.superview?.convert(point, from: nil) ?? point),
@@ -24,6 +24,7 @@ extension NSWindow {
                                                  timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: windowNumber,
                                                  context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)
         else { return }
+        NSCursor.arrow.set()
         hit.cursorUpdate(with: event)
     }
 }
