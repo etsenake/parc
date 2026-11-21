@@ -61,11 +61,29 @@ bool KeepsForm(const OpenParams& params) {
 @interface ShiftLinkTests : ParcNativeTestCase
 @end
 
+static constexpr NSEventModifierFlags shift = NSEventModifierFlagShift;
+
+static PCNativeStatusLinkOutcome hint(bool in_shown_peek, bool frame_can_navigate_page) {
+  auto click = Click(shift, in_shown_peek);
+  click.frame_can_navigate_page = frame_can_navigate_page;
+  return NativeShiftLinkOutcome(ClassifyNativeShiftLink(click));
+}
+
+static NativeShiftCreatedPage opened(NSEventModifierFlags modifiers, bool in_shown_peek) {
+  return NativeShiftCreatedPage{.click = Click(modifiers, in_shown_peek), .user_gesture = true, .web_url = true,
+                                .new_window = true};
+}
+
+static NativeShiftLink route(const NativeShiftCreatedPage& page) {
+  return ClassifyNativeShiftCreatedPage(page);
+}
+
+static const NativeHeldShiftNavigation held_post{.web_url = true, .from_opener = true, .post = true,
+                                                 .has_body = true, .peek_takes_link = true};
+
 @implementation ShiftLinkTests
 
-- (void)testClassifiesShiftClicksAndHints {
-  @autoreleasepool {
-  constexpr auto shift = NSEventModifierFlagShift;
+- (void)testAShiftClickOpensAPeekAndOtherClicksStayOrdinary {
   Check(ClassifyNativeShiftLink(Click(shift, true)) == NativeShiftLink::kSamePeek,
         "Shift-click inside the shown Peek navigates that Peek");
   Check(ClassifyNativeShiftLink(Click(shift, false)) == NativeShiftLink::kPeek,
@@ -89,7 +107,9 @@ bool KeepsForm(const OpenParams& params) {
     Check(ClassifyNativeShiftLink(disabled) == NativeShiftLink::kOrdinary,
           "turning off Shift-click Peek restores the ordinary route");
   }
+}
 
+- (void)testAPeekThatCannotTakeTheClickKeepsTheOrdinaryRoute {
   auto stacked = Click(shift, true);
   stacked.can_open_peek = true;
   Check(ClassifyNativeShiftLink(stacked) == NativeShiftLink::kSamePeek,
@@ -105,7 +125,9 @@ bool KeepsForm(const OpenParams& params) {
   refused.can_open_peek = false;
   Check(ClassifyNativeShiftLink(refused) == NativeShiftLink::kOrdinary,
         "a window that cannot present a Peek right now keeps the ordinary route");
+}
 
+- (void)testTheFrameSandboxDecidesWhetherAFrameCanNavigateThePage {
   Check(NativeFrameCanNavigatePage(true, true, true),
         "the page's own frame can always navigate the page");
   Check(NativeFrameCanNavigatePage(false, false, false),
@@ -116,12 +138,9 @@ bool KeepsForm(const OpenParams& params) {
         "a sandboxed frame allowed to navigate the page can take the click there");
   Check(!NativeFrameCanNavigatePage(false, true, true),
         "a frame sandboxed against navigating the page cannot take the click there");
+}
 
-  const auto hint = [](bool in_shown_peek, bool frame_can_navigate_page) {
-    auto click = Click(shift, in_shown_peek);
-    click.frame_can_navigate_page = frame_can_navigate_page;
-    return NativeShiftLinkOutcome(ClassifyNativeShiftLink(click));
-  };
+- (void)testTheHintSaysWhereAShiftClickInAFrameGoes {
   Check(hint(true, NativeFrameCanNavigatePage(false, true, true)) ==
             PCNativeStatusLinkOutcomeNewWindow,
         "inside a Peek, the hint over a frame sandboxed against navigating the page says a new window");
@@ -134,7 +153,9 @@ bool KeepsForm(const OpenParams& params) {
   Check(hint(false, NativeFrameCanNavigatePage(false, true, true)) ==
             PCNativeStatusLinkOutcomePeek,
         "outside a Peek, the hint over a sandboxed frame still promises a Peek");
+}
 
+- (void)testShiftSubmittedFormsKeepTheirBody {
   auto direct_post = DirectPost();
   RetargetNativeShiftLink(direct_post, ClassifyNativeShiftLink(Click(shift, false)), kCurrentTab,
                           kForegroundTab);
@@ -163,14 +184,9 @@ bool KeepsForm(const OpenParams& params) {
             KeepsForm(direct_post_off),
         "with Shift-click Peek off, a Shift-submitted POST form keeps Chromium's new window "
         "untouched");
+}
 
-  const auto opened = [&](NSEventModifierFlags modifiers, bool in_shown_peek) {
-    return NativeShiftCreatedPage{.click = Click(modifiers, in_shown_peek), .user_gesture = true,
-                                  .web_url = true, .new_window = true};
-  };
-  const auto route = [](const NativeShiftCreatedPage& page) {
-    return ClassifyNativeShiftCreatedPage(page);
-  };
+- (void)testScriptOpenedPagesFollowTheShiftClickThatOpenedThem {
   Check(route(opened(shift, false)) == NativeShiftLink::kPeek,
         "a page a site opens in a new window from a Shift-click opens in a Peek");
   Check(route(opened(shift | NSEventModifierFlagCapsLock, false)) == NativeShiftLink::kPeek,
@@ -225,7 +241,9 @@ bool KeepsForm(const OpenParams& params) {
   opened_refused.click.can_open_peek = false;
   Check(route(opened_refused) == NativeShiftLink::kOrdinary,
         "a window that cannot present a Peek keeps a script-opened page's window");
+}
 
+- (void)testScriptOpenedPagesFromSandboxedFrames {
   auto sandboxed_opener = opened(shift, false);
   sandboxed_opener.click.frame_can_navigate_page = NativeFrameCanNavigatePage(false, true, true);
   Check(route(sandboxed_opener) == NativeShiftLink::kPeek,
@@ -236,7 +254,9 @@ bool KeepsForm(const OpenParams& params) {
   Check(route(sandboxed_opener_in_peek) == NativeShiftLink::kOrdinary,
         "inside a Peek, a page opened from a frame sandboxed against navigating the page keeps "
         "its window");
+}
 
+- (void)testLateForegroundTabOpensFollowTheShiftClick {
   auto late = opened(shift, false);
   late.new_window = false;
   late.foreground_tab = true;
@@ -251,14 +271,16 @@ bool KeepsForm(const OpenParams& params) {
   late_refused.click.can_open_peek = false;
   Check(route(late_refused) == NativeShiftLink::kOrdinary,
         "a late open from a window that cannot present a Peek keeps its tab");
+}
 
+- (void)testAScriptSubmittedPostOutsideAPeekBecomesThePeek {
   Check(route(opened(shift, false)) == NativeShiftLink::kPeek &&
             ChooseNativeCreatedPageRoute(shift, false, true) == NativeCreatedPageRoute::kShift,
         "a page a site's script submits a POST form into outside a Peek becomes the Peek itself, "
         "so the form's own submission lands there with its body");
+}
 
-  const NativeHeldShiftNavigation held_post{.web_url = true, .from_opener = true, .post = true,
-                                            .has_body = true, .peek_takes_link = true};
+- (void)testScriptSubmittedNavigationsInsideAPeekJoinIt {
   Check(route(opened(shift, true)) == NativeShiftLink::kSamePeek &&
             NativeHeldShiftNavigationJoinsPeek(held_post),
         "a POST form a site's script submits into a new window inside a Peek joins that Peek");
@@ -301,7 +323,9 @@ bool KeepsForm(const OpenParams& params) {
   held_other_scheme.web_url = false;
   Check(!NativeHeldShiftNavigationJoinsPeek(held_other_scheme),
         "a held window that navigates somewhere other than HTTP(S) keeps Chromium's window");
+}
 
+- (void)testCreatedPagesFollowTheShiftRouteOnlyForShiftOnItsOwn {
   Check(ChooseNativeCreatedPageRoute(shift, false, true) == NativeCreatedPageRoute::kShift,
         "a page opened while only Shift is held follows the Shift-click link rules");
   Check(ChooseNativeCreatedPageRoute(shift | NSEventModifierFlagCapsLock, false, true) ==
@@ -330,7 +354,9 @@ bool KeepsForm(const OpenParams& params) {
   Check(NativeShiftHeld(shift) && !NativeShiftHeld(shift | NSEventModifierFlagControl) &&
             !NativeShiftHeld(0),
         "only Shift on its own counts as a Shift-click");
+}
 
+- (void)testTheHintPromisesWhatAScriptOpenedPageDoes {
   for (const bool in_shown_peek : {false, true}) {
     for (const bool frame_can_navigate_page : {false, true}) {
       auto page = opened(shift, in_shown_peek);
@@ -344,14 +370,15 @@ bool KeepsForm(const OpenParams& params) {
       }
     }
   }
+}
 
+- (void)testEachRouteHasItsHint {
   Check(NativeShiftLinkOutcome(NativeShiftLink::kSamePeek) == PCNativeStatusLinkOutcomeThisPeek,
         "the hint says a same-Peek link opens in this Peek");
   Check(NativeShiftLinkOutcome(NativeShiftLink::kPeek) == PCNativeStatusLinkOutcomePeek,
         "the hint promises a Peek outside one");
   Check(NativeShiftLinkOutcome(NativeShiftLink::kOrdinary) == PCNativeStatusLinkOutcomeNewWindow,
         "the hint says a new window otherwise");
-  }
 }
 
 @end
