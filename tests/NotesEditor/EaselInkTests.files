@@ -10,3 +10,5 @@ Sources/ParcApp/EaselRichTextCodec.swift
 Sources/ParcApp/EaselTextAttachment.swift
 Sources/ParcApp/EaselParagraphEditing.swift
 Sources/ParcApp/EaselMarkdownEditing.swift
+Sources/ParcApp/EaselCanvasTextPresentation.swift
+Sources/ParcApp/EaselStickyText.swift
