@@ -7,6 +7,7 @@ protocol EaselStampPanelsPresenting: AnyObject {
     var isPickerOpen: Bool { get }
     var onPick: ((EaselStampFace) -> Void)? { get set }
     var onPickerClose: (() -> Void)? { get set }
+    var emojiLibrary: NoteEmojiLibrary? { get set }
     func presentWheel(in host: NSView, at point: NSPoint, below control: NSRect?, recents: [EaselStampFace], current: EaselStampFace)
     func presentPicker(in host: NSView, at point: NSPoint)
     func close(animated: Bool)
@@ -45,11 +46,11 @@ final class EaselCanvasStampState {
         set { UserDefaults.standard.set(newValue, forKey: Self.recentsKey) }
     }
 
-    func cursor(for face: EaselStampFace) -> NSCursor {
+    func cursor(for face: EaselStampFace, library: NoteEmojiLibrary?) -> NSCursor {
         if let cached = cursors[face.token] { return cached }
         let side: CGFloat = 30
         let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { rect in
-            EaselStampArtwork.draw(face, in: rect.insetBy(dx: 4, dy: 4), ink: NoteTheme.menuInk)
+            EaselStampArtwork.draw(face, in: rect.insetBy(dx: 4, dy: 4), ink: NoteTheme.menuInk, library: library)
             return true
         }
         let made = NSCursor(image: image, hotSpot: NSPoint(x: side / 2, y: side / 2))
@@ -60,7 +61,9 @@ final class EaselCanvasStampState {
 }
 
 extension EaselCanvasView {
-    var stampCursor: NSCursor { stamps.cursor(for: stamps.face) }
+    var stampCursor: NSCursor { stamps.cursor(for: stamps.face, library: stampEmojiLibrary) }
+
+    var stampEmojiLibrary: NoteEmojiLibrary? { EaselNoteEnvironment(folder: notesFolder?()).emojiLibrary }
 
     static var stampPanelsFactory: (@MainActor () -> EaselStampPanelsPresenting)?
 
@@ -99,6 +102,7 @@ extension EaselCanvasView {
     func openStampWheel(from control: NSView? = nil) {
         guard tool == .stamp, window != nil, let panels = stampPanels else { return }
         let host = menuHost
+        panels.emojiLibrary = stampEmojiLibrary
         let below: NSRect? = control.flatMap { $0.window === window ? host.convert($0.bounds, from: $0) : nil }
         panels.presentWheel(in: host, at: host.convert(stampAnchor(), from: self), below: below,
                             recents: EaselStamps.hubFaces(stamps.recents), current: stamps.face)
@@ -108,6 +112,7 @@ extension EaselCanvasView {
     func openStampPicker() {
         guard tool == .stamp, window != nil, let panels = stampPanels else { return }
         let host = menuHost
+        panels.emojiLibrary = stampEmojiLibrary
         panels.presentPicker(in: host, at: host.convert(stampAnchor(), from: self))
     }
 

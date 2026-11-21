@@ -966,7 +966,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             case .table:
                 drawTable(item, showsEditor: showsEditor)
             case .stamp:
-                EaselStampArtwork.draw(item, in: r, ink: ink)
+                EaselStampArtwork.draw(item, in: r, ink: ink, library: stampEmojiLibrary)
             case .audio, .file, .pdf:
                 drawMediaObject(item, in: r)
             case .equation:
