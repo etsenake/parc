@@ -13,8 +13,8 @@ final class EaselExportKeys: @unchecked Sendable {
 }
 
 extension EaselVectorExport {
-    static let highlightCSS = ".easel-highlight{mix-blend-mode:multiply}"
-        + "@media screen and (prefers-color-scheme:dark){.easel-highlight{mix-blend-mode:normal}}"
+    static let highlightBlend = "mix-blend-mode:var(--easel-highlight-blend,multiply)"
+    static let highlightCSS = "@media screen and (prefers-color-scheme:dark){.easel-highlight{--easel-highlight-blend:normal}}"
 
     static func isHighlight(_ item: EaselItem) -> Bool { item.kind == .freehand && item.resolvedBrush == .highlighter }
 
@@ -46,7 +46,7 @@ extension EaselVectorExport {
         guard let path = drawingPath(item) else { return "" }
         let highlight = item.resolvedBrush == .highlighter
         return "<path" + (highlight ? " class=\"easel-highlight\"" : "") + " d=\"" + path + "\" style=\"fill:none;"
-            + strokeStyle(item, dashed: !highlight, rounded: true) + "\"/>"
+            + strokeStyle(item, dashed: !highlight, rounded: true) + (highlight ? ";" + highlightBlend : "") + "\"/>"
     }
 
     static func tape(_ item: EaselItem) -> String {

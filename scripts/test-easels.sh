@@ -39,6 +39,12 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/tests/EaselVectorExportTests.swift" \
   -o "$scratch/easel-vector-export"
+
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
+  "$repo_root/Sources/ParcCore/"*.swift \
+  "$repo_root/tests/EaselDrawingTests.swift" \
+  -o "$scratch/easel-drawing"
+"$scratch/easel-drawing"
 "$scratch/easel-vector-export"
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
