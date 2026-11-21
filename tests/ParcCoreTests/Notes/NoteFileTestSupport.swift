@@ -94,11 +94,11 @@ enum NoteFileTestSupport {
     }
 
     @MainActor
-    static func spin(timeout: TimeInterval, until condition: () -> Bool) -> Bool {
+    static func spin(timeout: TimeInterval, until condition: () -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() {
             if Date() > deadline { return false }
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            try? await Task.sleep(nanoseconds: 20_000_000)
         }
         return true
     }
