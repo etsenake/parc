@@ -252,34 +252,12 @@
 @implementation PCNativeNavigationHistory
 @end
 
-@interface PCNativeOmnibox : NSObject
-@end
-
-@implementation PCNativeOmnibox
-@end
-
-@interface PCNativeOmniboxExtensionAction : NSObject
-@end
-
-@implementation PCNativeOmniboxExtensionAction
-@end
-
-@interface PCNativeOmniboxScope : NSObject
-@end
-
-@implementation PCNativeOmniboxScope
-@end
+#include "CommandBarSearchDoubles.inc"
 
 @interface PCNativeOmniboxScopeMenu : NSObject
 @end
 
 @implementation PCNativeOmniboxScopeMenu
-@end
-
-@interface PCNativeOmniboxSnapshot : NSObject
-@end
-
-@implementation PCNativeOmniboxSnapshot
 @end
 
 @interface PCNativeOpenAppAction : NSObject
@@ -370,12 +348,6 @@
 @end
 
 @implementation PCNativeSearchEngine
-@end
-
-@interface PCNativeSearchNavigation : NSObject
-@end
-
-@implementation PCNativeSearchNavigation
 @end
 
 @interface PCNativeSearchPreferences : NSObject

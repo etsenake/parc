@@ -83,8 +83,12 @@ struct GenerateEngineStub: CommandPlugin {
             ordered.append(name)
         }
         classes.forEach(visit)
-        let body = ordered.map { name in
+        let searchDoubles: Set = ["PCNativeOmniboxExtensionAction", "PCNativeOmniboxScope",
+                                  "PCNativeOmniboxSnapshot", "PCNativeSearchNavigation"]
+        let body = ordered.compactMap { name -> String? in
             if name == "PCNativeShortcutCommand" { return "#include \"ShortcutCommandDouble.inc\"\n" }
+            if name == "PCNativeOmnibox" { return "#include \"CommandBarSearchDoubles.inc\"\n" }
+            if searchDoubles.contains(name) { return nil }
             return "@interface \(name) : \(superclasses[name] ?? "NSObject")\n@end\n\n@implementation \(name)\n@end\n"
         }
         return "#import <AppKit/AppKit.h>\n\n" + body.joined(separator: "\n")
