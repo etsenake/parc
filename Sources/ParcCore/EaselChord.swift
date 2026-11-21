@@ -58,6 +58,7 @@ enum EaselChordCommand: Hashable {
     case layer(EaselLayerMove)
     case alignText(EaselTextStyle.Alignment)
     case focusSelectionToolbar
+    case quickCreate
 }
 
 enum EaselChords {
@@ -73,6 +74,7 @@ enum EaselChords {
         EaselChord("t", [.command, .option]): .alignText(.center),
         EaselChord("r", [.command, .option]): .alignText(.right),
         EaselChord("/", [.command, .shift]): .focusSelectionToolbar,
+        EaselChord(.returnKey, .command): .quickCreate,
     ]
 
     static let reserved: [EaselChord] = [

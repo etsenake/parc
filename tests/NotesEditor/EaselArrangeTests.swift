@@ -334,6 +334,8 @@ struct EaselArrangeTests {
         expect(chord("L", 37, [.command, .shift]) == .toggleLock, "⇧⌘L locks and unlocks")
         expect(chord("]", 30, .command) == .layer(.forward) && chord("[", 33, .command) == .layer(.backward), "⌘] and ⌘[ step through layers")
         expect(chord("ж", 30, .command) == .layer(.forward), "Layer chords follow the physical key on other layouts")
+        expect(chord("", 36, .command) == .quickCreate && chord("", 76, .command) == .quickCreate, "⌘Return quick creates from either Return key")
+        expect(chord("", 36, [.command, .shift]) == nil && chord("", 36, []) == nil, "Other Return chords stay out of quick create")
         expect(chord("d", 2, [.command, .option]) == nil, "Extra modifiers don't trigger Duplicate")
         expect(EaselChords.reserved.allSatisfy { EaselChords.table[$0] == nil }, "Easels never take Parc's reserved chords")
         expect(EaselKeyCommands.command(characters: "]", keyCode: 30, modifiers: []) == .layer(.front), "Bare ] brings to front")

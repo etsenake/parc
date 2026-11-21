@@ -159,11 +159,9 @@ extension EaselCanvasView {
         return true
     }
 
-    func performQuickCreateKey(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown, [UInt16(36), UInt16(76)].contains(event.keyCode),
-              event.modifierFlags.intersection([.command, .shift, .option, .control]) == [.command],
-              window?.isKeyWindow == true, canvasOwnsKeyFocus || textEditorOwnsKeyFocus, start == nil, fixedCanvasSize == nil,
-              !session.isClosed, !session.isDeleted else { return false }
+    func performQuickCreate() -> Bool {
+        guard start == nil, fixedCanvasSize == nil, !session.isClosed, !session.isDeleted else { return false }
+        if editor?.hasMarkedText() == true { return true }
         let id = editingID ?? (selection.count == 1 ? selection.first : nil)
         guard let id, let source = session.document.items.first(where: { $0.id == id }) else { return false }
         if source.kind == .code, editor == nil, !source.isLocked { return insertCodeBlockBelow(source.id) }
