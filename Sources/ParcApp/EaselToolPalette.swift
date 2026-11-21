@@ -501,24 +501,25 @@ final class EaselToolPalette: NSView {
         let target = NSRect(x: box.x, y: box.y, width: box.width, height: box.height)
         let appearing = current.isHidden || current.alphaValue < 1
         current.isHidden = false
-        if appearing || !animated || window == nil {
-            NoteAnimation.withoutAnimation { current.frame = target }
-            if let layer = current.layer { NoteAnimation.settle(layer, keys: [NoteAnimation.positionKey, NoteAnimation.boundsKey]) }
-            if appearing {
-                if animated, window != nil { NoteAnimation.fade(current, visible: true) }
-                else {
-                    if let layer = current.layer { NoteAnimation.settle(layer, keys: [NoteAnimation.fadeKey]) }
-                    NoteAnimation.withoutAnimation { current.alphaValue = 1; current.layer?.opacity = 1 }
-                }
-            }
+        if appearing {
+            jumpCurrent(to: target)
+            if animated, window != nil { NoteAnimation.fade(current, visible: true); return }
+            if let layer = current.layer { NoteAnimation.settle(layer, keys: [NoteAnimation.fadeKey]) }
+            NoteAnimation.withoutAnimation { current.alphaValue = 1; current.layer?.opacity = 1 }
             return
         }
         guard current.frame != target else { return }
+        guard animated, window != nil else { jumpCurrent(to: target); return }
         NoteAnimation.slide(current, to: target, spring: .pill)
         if NoteAnimation.reduceMotion, let layer = current.layer {
             _ = NoteAnimation.run(NoteAnimation.basic("opacity", from: 0, to: 1, duration: NoteAnimation.reducedFadeDuration),
                                   on: layer, key: Self.currentFadeKey)
         }
+    }
+
+    private func jumpCurrent(to target: NSRect) {
+        NoteAnimation.withoutAnimation { current.frame = target }
+        if let layer = current.layer { NoteAnimation.settle(layer, keys: [NoteAnimation.positionKey, NoteAnimation.boundsKey]) }
     }
 
     func playEntrance() {
