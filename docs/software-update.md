@@ -198,8 +198,10 @@ published versioned artifacts.
 
 ## Validation
 
-`bash scripts/test-software-update.sh --inert` covers the session, restart policy,
-byte counting and actual status controls without windows/web views. The full
+The Swift Testing suites in `tests/ParcCoreTests/Presentation/Updates` cover the
+session, restart policy and release-notes launch record.
+`bash scripts/test-software-update.sh --inert` covers byte counting and actual
+status controls without windows/web views. The full
 script's notes-layout check creates a WKWebView and is outside the current inert
 check scope. Page-generation and native-host regressions cover bundled resources
 and layout ownership.
