@@ -419,7 +419,7 @@ final class ExternalMediaLibrary: ObservableObject {
 
 final class ExternalMediaWatcher {
     enum Batch: Sendable { case rescan, paths(Set<String>) }
-    private final class Sink {
+    final class Sink {
         private let roots: [String: String]
         private let handler: @Sendable (Batch) -> Void
         init(aliases: [String: String], handler: @escaping @Sendable (Batch) -> Void) { roots = aliases; self.handler = handler }
