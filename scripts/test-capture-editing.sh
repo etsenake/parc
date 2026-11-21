@@ -16,6 +16,12 @@ import AppKit
     required init?(coder: NSCoder) { nil }
 }
 SWIFT
+cat > "$check_root/EaselTooltipStub.swift" <<'SWIFT'
+import AppKit
+extension NSView {
+    func setEaselTooltip(_ title: String, shortcut: String? = nil) { toolTip = title }
+}
+SWIFT
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/Sources/ParcApp/NoteTheme.swift" \
@@ -24,6 +30,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/PointerCover.swift" \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
+  "$repo_root/Sources/ParcApp/EaselStickyText.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
@@ -31,7 +38,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvas"*.swift \
-  "$repo_root/Sources/ParcApp/EaselStampArtwork.swift" "$check_root/EaselShapePickerStub.swift" \
+  "$repo_root/Sources/ParcApp/EaselStampArtwork.swift" "$check_root/EaselShapePickerStub.swift" "$check_root/EaselTooltipStub.swift" \
   "$repo_root/Sources/ParcApp/ParcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/EaselMotion.swift" \
   "$repo_root/Sources/ParcApp/CaptureLibrarySharing.swift" \

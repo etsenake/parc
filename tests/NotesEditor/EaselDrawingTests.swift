@@ -366,7 +366,7 @@ struct EaselDrawingTests {
                "Highlights export translucent and wide with the multiply blend class")
         expect(!highlight.contains("var(--easel-ink)"), "An automatic highlighter exports in the default highlight colour, not ink")
         let lit = EaselVectorExport.svg([stroke([p(0, 0), p(80, 0)], brush: .highlighter)], art: EaselVectorArt(), title: "Board")
-        expect(lit.contains("<style>.easel-highlight{mix-blend-mode:multiply}") && lit.contains("{.easel-highlight{mix-blend-mode:normal}}"),
+        expect(lit.contains("mix-blend-mode:var(--easel-highlight-blend,multiply)") && lit.contains("prefers-color-scheme:dark){.easel-highlight{--easel-highlight-blend:normal}}"),
                "A standalone SVG carries its own highlight blend for light and dark viewers")
         expect(!EaselVectorExport.svg([doodle], art: EaselVectorArt(), title: "Board").contains("<style>"), "Boards without highlights add no styles")
         expect(!EaselVectorExport.css(.standard).contains(".easel-highlight{"), "Page CSS leaves highlight blending to the SVG")
