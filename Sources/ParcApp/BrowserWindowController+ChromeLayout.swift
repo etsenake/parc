@@ -2,6 +2,21 @@ import AppKit
 import Combine
 import ParcCore
 
+@MainActor
+enum CommandBarAddressSource {
+    case keyboard
+    case sidebar(SidebarView)
+    case popup(PopupChromeView)
+
+    var anchor: NSView? {
+        switch self {
+        case .keyboard: nil
+        case .sidebar(let sidebar): sidebar.addressEditorAnchor
+        case .popup(let popup): popup.addressAnchor
+        }
+    }
+}
+
 extension BrowserWindowController {
     func layoutChrome() {
         let fingerprint = chromeGeometryFingerprint()
@@ -377,9 +392,9 @@ extension BrowserWindowController {
         if focusResidentCommandBar() { return }
         presentCommandBar(newTab: true)
     }
-    func focusAddress(anchor: NSView? = nil) {
+    func focusAddress(from source: CommandBarAddressSource = .keyboard) {
         if !isPopupWindow, focusResidentCommandBar() { return }
-        presentCommandBar(newTab: false, addressAnchor: anchor)
+        presentCommandBar(newTab: false, addressAnchor: source.anchor)
     }
 
     var showsStartPage: Bool {

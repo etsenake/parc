@@ -825,7 +825,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         popupChrome.prepareBlocked = { [weak self] anchor in self?.preparePopupSiteControls(requireExtensions: false, from: anchor) }
         sidebar.onBlockedContent = { [weak self] anchor in self?.showSiteControlCenter(from: anchor) }
         popupChrome.onAddress = { [weak self] in
-            guard let self else { return }; self.focusAddress(anchor: self.popupChrome.addressAnchor)
+            guard let self else { return }; self.focusAddress(from: .popup(self.popupChrome))
         }
         popupChrome.onPageMenu = { [weak self] in
             guard let self else { return }; self.showPageMenu(from: self.popupChrome.addressAnchor)
