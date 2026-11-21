@@ -387,7 +387,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     var windowCloseApproved = false
     var onboardingCloseRequested = false
-    var onboardingCloseNotes: [(file: NoteFileSession, wasReadOnly: Bool)]?
+    var onboardingCloseNotes: OnboardingReadOnly<NoteFileSession>?
     var wholeWindowClose = false {
         didSet {
             if !wholeWindowClose, oldValue { onReturnUnblocked?() }

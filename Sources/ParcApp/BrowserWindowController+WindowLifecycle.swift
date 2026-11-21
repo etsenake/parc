@@ -133,25 +133,19 @@ extension BrowserWindowController {
         }
         guard hasStableOwners() else { completion(false); return }
         let originals = pages()
-        let identities = Set(originals.map(ObjectIdentifier.init))
-        guard identities.count == originals.count else { completion(false); return }
+        guard let consent = OnboardingAuxiliaryConsent(originals) else { completion(false); return }
         windowClosePending = true
         func isCurrent() -> Bool {
             self.window === window && self.nativeBinding === binding && !isClosing && !wholeWindowClose
                 && windowClosePending && hasStableOwners()
-                && Set(pages().map(ObjectIdentifier.init)) == identities
-                && originals.allSatisfy { !$0.isClosed && PCNativeBrowserApplication.owner(of: $0) === binding }
+                && consent.matches(pages()) { !$0.isClosed && PCNativeBrowserApplication.owner(of: $0) === binding }
         }
-        var consented = false
         PCNativeBrowserApplication.requestClosePages(originals, shouldCommit: {
-            MainActor.assumeIsolated {
-                consented = isCurrent()
-                return false
-            }
+            MainActor.assumeIsolated { consent.recordConsent(current: isCurrent()) }
         }, completion: { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { completion(false); return }
-                let approved = consented && isCurrent()
+                let approved = consent.approved(isCurrent())
                 self.windowClosePending = false
                 completion(approved)
             }
@@ -164,7 +158,7 @@ extension BrowserWindowController {
         onboardingCloseRequested = true
         scriptingWindowCloseCompletions.append { [weak self] approved in
             if let self {
-                for saved in self.onboardingCloseNotes ?? [] { saved.file.page.isReadOnly = saved.wasReadOnly }
+                self.onboardingCloseNotes?.restore()
                 self.onboardingCloseNotes = nil
                 self.onboardingCloseRequested = false
             }
@@ -201,13 +195,7 @@ extension BrowserWindowController {
         }
         if onboardingCloseRequested {
             guard prepareNotesToClose() else { return refuse() }
-            var files: [ObjectIdentifier: NoteFileSession] = [:]
-            for note in noteEditors.values { files[ObjectIdentifier(note.editor.file)] = note.editor.file }
-            onboardingCloseNotes = files.values.map { file in
-                let saved = (file: file, wasReadOnly: file.page.isReadOnly)
-                file.page.isReadOnly = true
-                return saved
-            }
+            onboardingCloseNotes = OnboardingReadOnly(noteEditors.values.map { $0.editor.file }, isReadOnly: \.page.isReadOnly)
         }
         windowClosePending = true
         wholeWindowClose = true

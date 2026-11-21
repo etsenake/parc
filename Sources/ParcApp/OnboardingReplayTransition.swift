@@ -48,3 +48,48 @@ struct OnboardingReplayTransition {
         return try owners.first { standard($0) && ready($0) } ?? make()
     }
 }
+
+@MainActor
+struct OnboardingReadOnly<Owner: AnyObject> {
+    private let originals: [(Owner, Bool)]
+    private let isReadOnly: ReferenceWritableKeyPath<Owner, Bool>
+
+    init(_ owners: [Owner], isReadOnly: ReferenceWritableKeyPath<Owner, Bool>) {
+        self.isReadOnly = isReadOnly
+        var seen = Set<ObjectIdentifier>()
+        originals = owners.compactMap { owner in
+            guard seen.insert(ObjectIdentifier(owner)).inserted else { return nil }
+            let wasReadOnly = owner[keyPath: isReadOnly]
+            owner[keyPath: isReadOnly] = true
+            return (owner, wasReadOnly)
+        }
+    }
+
+    func restore() {
+        for (owner, wasReadOnly) in originals { owner[keyPath: isReadOnly] = wasReadOnly }
+    }
+}
+
+@MainActor
+final class OnboardingAuxiliaryConsent<Page: AnyObject> {
+    private let identities: Set<ObjectIdentifier>
+    private let originals: [Page]
+    private var consented = false
+
+    init?(_ pages: [Page]) {
+        identities = Set(pages.map(ObjectIdentifier.init))
+        guard identities.count == pages.count else { return nil }
+        originals = pages
+    }
+
+    func matches(_ pages: [Page], stillOwned: (Page) -> Bool) -> Bool {
+        Set(pages.map(ObjectIdentifier.init)) == identities && originals.allSatisfy(stillOwned)
+    }
+
+    func recordConsent(current: Bool) -> Bool {
+        consented = current
+        return false
+    }
+
+    func approved(_ current: @autoclosure () -> Bool) -> Bool { consented && current() }
+}
