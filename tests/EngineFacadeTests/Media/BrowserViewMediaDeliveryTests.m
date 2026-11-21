@@ -52,34 +52,57 @@ int parc_engine_shutdown_if_idle(void) { return 0; }
 @interface BrowserViewMediaDeliveryTests : ParcNativeTestCase
 @end
 
-@implementation BrowserViewMediaDeliveryTests
+@implementation BrowserViewMediaDeliveryTests {
+  PCNativePage* _page;
+  PCBrowserView* _view;
+  Delegate* _delegate;
+}
 
-- (void)testMediaAndTitleChangesReachTheDelegateOnce {
-  @autoreleasepool {
-    PCNativePage* page = [[PCNativePage alloc] initForTest];
-    page.testTitle = @"Track";
-    PCBrowserView* view = [[PCBrowserView alloc] initWithFrame:NSZeroRect adoptingNativePage:page];
-    Delegate* delegate = [Delegate new];
-    view.delegate = delegate;
-    PARC_CHECK(delegate.media == 1 && delegate.titles == 1);
+- (void)setUp {
+  [super setUp];
+  _page = [[PCNativePage alloc] initForTest];
+  _page.testTitle = @"Track";
+  _view = [[PCBrowserView alloc] initWithFrame:NSZeroRect adoptingNativePage:_page];
+  _delegate = [Delegate new];
+  _view.delegate = _delegate;
+}
 
-    [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    PARC_CHECK(delegate.media == 1 && delegate.titles == 1);
+- (void)notifyChange {
+  [(id<PCNativePageObserver>)_view nativePageDidChange:_page];
+}
 
-    page.testMediaRevision = 1;
-    [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    PARC_CHECK(delegate.media == 2 && delegate.titles == 1);
-    [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    PARC_CHECK(delegate.media == 2);
+- (void)testANewDelegateReceivesTheCurrentMediaAndTitle {
+  PARC_CHECK(_delegate.media == 1 && _delegate.titles == 1);
+}
 
-    page.testTitle = @"Next Track";
-    [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    PARC_CHECK(delegate.media == 2 && delegate.titles == 2);
+- (void)testAnUnchangedPageDoesNotNotifyAgain {
+  [self notifyChange];
+  PARC_CHECK(_delegate.media == 1 && _delegate.titles == 1);
+}
 
-    Delegate* next = [Delegate new];
-    view.delegate = next;
-    PARC_CHECK(next.media == 1);
-  }
+- (void)testANewMediaRevisionOnlyDeliversMedia {
+  _page.testMediaRevision = 1;
+  [self notifyChange];
+  PARC_CHECK(_delegate.media == 2 && _delegate.titles == 1);
+}
+
+- (void)testARepeatedMediaRevisionIsDeliveredOnce {
+  _page.testMediaRevision = 1;
+  [self notifyChange];
+  [self notifyChange];
+  PARC_CHECK(_delegate.media == 2);
+}
+
+- (void)testATitleChangeOnlyDeliversTheTitle {
+  _page.testTitle = @"Next Track";
+  [self notifyChange];
+  PARC_CHECK(_delegate.media == 1 && _delegate.titles == 2);
+}
+
+- (void)testAReplacementDelegateReceivesTheCurrentMedia {
+  Delegate* next = [Delegate new];
+  _view.delegate = next;
+  PARC_CHECK(next.media == 1);
 }
 
 @end

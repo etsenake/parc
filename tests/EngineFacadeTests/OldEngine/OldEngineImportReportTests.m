@@ -23,6 +23,10 @@ static BOOL NameOnly(PCImportedExtensionFailure* failure, NSString* name) {
   Completion((PCNativeImportExtensionResult*)old);
   PARC_CHECK(Reported.count == 2 && NameOnly(Reported[0], @"uBlock Origin") &&
              NameOnly(Reported[1], @"Grammarly"));
+}
+
+- (void)testBackgroundNamesAreReportedWithoutARestriction {
+  Install();
   Background((NSArray*)@[ @"Grammarly" ]);
   PARC_CHECK(Late.count == 1 && NameOnly(Late[0], @"Grammarly"));
 }

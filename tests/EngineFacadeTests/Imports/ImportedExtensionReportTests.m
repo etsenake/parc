@@ -44,25 +44,33 @@
   RestrictionAsked = nil;
 }
 
+- (PCNativeImportExtensionFailure*)failureWithRestriction:(PCNativeExtensionRestriction)restriction {
+  return [[PCNativeImportExtensionFailure alloc] initWithIdentifier:@"grammarly"
+                                                               name:@"Grammarly"
+                                                        profilePath:@"/profiles/Work"
+                                                        restriction:restriction];
+}
+
 - (void)testFailuresCarryIdentityProfileAndKnownRestriction {
   Install();
-  PCNativeImportExtensionFailure* blocked = [[PCNativeImportExtensionFailure alloc]
-      initWithIdentifier:@"grammarly"
-                    name:@"Grammarly"
-             profilePath:@"/profiles/Work"
-             restriction:PCNativeExtensionRestrictionAdministrator];
-  PCNativeImportExtensionFailure* odd = [[PCNativeImportExtensionFailure alloc]
-      initWithIdentifier:@"odd"
-                    name:@"Odd"
-             profilePath:@"/profiles/Work"
-             restriction:(PCNativeExtensionRestriction)99];
-  Completion([[PCNativeImportExtensionResult alloc] initWithFailures:@[ blocked, odd ]]);
-  PARC_CHECK(Reported.count == 2 && [Reported[0].name isEqualToString:@"Grammarly"] &&
+  PCNativeImportExtensionFailure* blocked = [self failureWithRestriction:PCNativeExtensionRestrictionAdministrator];
+  Completion([[PCNativeImportExtensionResult alloc] initWithFailures:@[ blocked ]]);
+  PARC_CHECK(Reported.count == 1 && [Reported[0].name isEqualToString:@"Grammarly"] &&
              [Reported[0].identifier isEqualToString:@"grammarly"] &&
              [Reported[0].profilePath isEqualToString:@"/profiles/Work"] &&
-             Reported[0].restriction == PCNativeExtensionRestrictionAdministrator &&
-             [Reported[1].identifier isEqualToString:@"odd"] &&
-             Reported[1].restriction == PCNativeExtensionRestrictionNone);
+             Reported[0].restriction == PCNativeExtensionRestrictionAdministrator);
+}
+
+- (void)testAnUnknownRestrictionIsReportedAsNone {
+  Install();
+  PCNativeImportExtensionFailure* odd = [self failureWithRestriction:(PCNativeExtensionRestriction)99];
+  Completion([[PCNativeImportExtensionResult alloc] initWithFailures:@[ odd ]]);
+  PARC_CHECK(Reported.count == 1 && Reported[0].restriction == PCNativeExtensionRestrictionNone);
+}
+
+- (void)testBackgroundFailuresIgnoreMalformedEntries {
+  Install();
+  PCNativeImportExtensionFailure* blocked = [self failureWithRestriction:PCNativeExtensionRestrictionAdministrator];
   Background((NSArray*)@[ blocked, @3, [NSNull null] ]);
   PARC_CHECK(Late.count == 1 && [Late[0].identifier isEqualToString:@"grammarly"]);
 }
