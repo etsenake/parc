@@ -157,11 +157,11 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         chrome.setClippingResistancePriority(.init(999), for: .horizontal)
         chrome.setClippingResistancePriority(.init(999), for: .vertical)
         let chromeSize = NoteTheme.toolbarButtonSize.width
-        func chromeButton(_ label: String, _ symbol: String, _ action: Selector) -> NSButton {
+        func chromeButton(_ label: String, _ symbol: String, _ action: Selector, shortcut: String? = nil) -> NSButton {
             let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
                 .withSymbolConfiguration(.init(pointSize: 14, weight: .medium)) ?? NSImage()
             let b = EaselPaletteButton(image: glyph, target: self, action: action)
-            b.toolTip = label; b.setAccessibilityLabel(label)
+            b.setEaselTooltip(label, shortcut: shortcut); b.setAccessibilityLabel(label)
             b.widthAnchor.constraint(equalToConstant: chromeSize).isActive = true
             b.heightAnchor.constraint(equalToConstant: chromeSize).isActive = true
             chrome.addArrangedSubview(b); return b
@@ -170,8 +170,8 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         webpageButton?.isEnabled = pageObjects != nil
         let timer = makeTimerButton()
         chrome.addArrangedSubview(timer)
-        undoButton = chromeButton("Undo Easel change", "arrow.uturn.backward", #selector(undoChange))
-        redoButton = chromeButton("Redo Easel change", "arrow.uturn.forward", #selector(redoChange))
+        undoButton = chromeButton("Undo Easel change", "arrow.uturn.backward", #selector(undoChange), shortcut: "⌘Z")
+        redoButton = chromeButton("Redo Easel change", "arrow.uturn.forward", #selector(redoChange), shortcut: "⇧⌘Z")
         let options = chromeButton("Easel Options", "ellipsis", #selector(showPageMenu(_:)))
         options.setAccessibilityRole(.menuButton)
         root.addSubview(palette)

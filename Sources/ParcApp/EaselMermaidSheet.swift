@@ -79,7 +79,7 @@ final class EaselMermaidSheet: NSObject, NSTextViewDelegate, EaselMermaidSheetPr
 
         insertButton.target = self; insertButton.action = #selector(insert(_:))
         insertButton.keyEquivalent = "\r"; insertButton.keyEquivalentModifierMask = [.command]
-        insertButton.toolTip = "Add (⌘↩)"
+        insertButton.setEaselTooltip("Add", shortcut: "⌘↩")
         cancelButton.target = self; cancelButton.action = #selector(cancel(_:)); cancelButton.keyEquivalent = "\u{1b}"
         var right = width - 28
         for button in [insertButton, cancelButton] {

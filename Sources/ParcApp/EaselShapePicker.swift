@@ -97,7 +97,7 @@ final class EaselShapePickerView: NSView, NoteFloatingPanelContent {
     private func refreshPin() {
         pin.state = isPinned ? .on : .off
         pin.image = NSImage(systemSymbolName: isPinned ? "pin.fill" : "pin", accessibilityDescription: nil)
-        pin.toolTip = isPinned ? "Stays open while you place shapes" : "Keep open to place several shapes"
+        pin.setEaselTooltip(isPinned ? "Stays open while you place shapes" : "Keep open to place several shapes")
         pin.setAccessibilityLabel("Keep open")
         pin.setAccessibilityValue(isPinned ? "On" : "Off")
     }
@@ -225,7 +225,7 @@ private final class EaselShapeCell: NSView {
         super.init(frame: NSRect(x: 0, y: 0, width: EaselShapePickerView.cellSide, height: EaselShapePickerView.cellSide))
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
-        toolTip = EaselShapeGeometry.displayName(shape)
+        setEaselTooltip(EaselShapeGeometry.displayName(shape))
         setAccessibilityElement(true)
         setAccessibilityRole(.radioButton)
         setAccessibilityLabel(EaselShapeGeometry.displayName(shape))

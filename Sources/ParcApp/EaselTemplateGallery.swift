@@ -34,7 +34,7 @@ final class EaselTemplateCard: PointingHandButton {
         title = ""
         focusRingType = .none
         setButtonType(.momentaryChange)
-        toolTip = template.blurb
+        setEaselTooltip(template.blurb)
         setAccessibilityRole(.button)
         setAccessibilityLabel(template.title + " template")
         setAccessibilityHelp(template.blurb)
@@ -235,6 +235,7 @@ enum EaselTemplatePanel {
 @MainActor
 extension EaselEditorViewController {
     func installEmptyTemplates(in root: NSView) {
+        EaselEmptyStateChip.installTooltip = { view, hint in view.setEaselTooltip(hint.name, shortcut: hint.shortcut) }
         guard canvas.acceptsTemplates, emptyTemplates == nil else { return }
         let gallery = EaselTemplateGallery(columns: 4, showsHeader: false)
         gallery.onPick = { [weak self] template in self?.canvas.insertTemplate(template) }

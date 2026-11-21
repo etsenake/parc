@@ -17,6 +17,8 @@ struct EaselEmptyStateHint: Equatable {
     let title: String
     let keys: [String]
     let help: String
+    let name: String
+    let shortcut: String?
     let action: EaselEmptyStateAction
 
     static var all: [EaselEmptyStateHint] {
@@ -24,7 +26,7 @@ struct EaselEmptyStateHint: Equatable {
         func hint(_ title: String, _ tools: [EaselTool], _ help: String) -> EaselEmptyStateHint {
             let keys = tools.map(key).filter { !$0.isEmpty }
             return EaselEmptyStateHint(title: title, keys: keys, help: help + (keys.isEmpty ? "" : " (" + keys.joined(separator: " or ") + ")"),
-                                       action: .tool(tools[0]))
+                                       name: help, shortcut: keys.first, action: .tool(tools[0]))
         }
         return [
             hint("Sticky", [.sticky], "Sticky note"),
@@ -32,7 +34,8 @@ struct EaselEmptyStateHint: Equatable {
             hint("Connector", [.elbowConnector], "Connector"),
             hint("Text", [.text], "Text"),
             hint("Draw", [.marker], "Marker"),
-            EaselEmptyStateHint(title: "Find anything", keys: ["⌘", "/"], help: "Find any tool or command (⌘/)", action: .findAnything),
+            EaselEmptyStateHint(title: "Find anything", keys: ["⌘", "/"], help: "Find any tool or command (⌘/)",
+                                name: "Find any tool or command", shortcut: "⌘/", action: .findAnything),
         ]
     }
 }
@@ -202,6 +205,7 @@ final class EaselEmptyStateChip: NSView {
     private static let keyFont = NoteTheme.nunitoBold(11)
     private static let padding: CGFloat = 8
     private static let keySide = NoteTheme.keycapSide
+    static var installTooltip: ((NSView, EaselEmptyStateHint) -> Void)?
     let hint: EaselEmptyStateHint
     var onPress: (() -> Void)?
     private var hovered = false { didSet { if hovered != oldValue { needsDisplay = true } } }
@@ -221,6 +225,15 @@ final class EaselEmptyStateChip: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var isFlipped: Bool { true }
+
+    private var tooltipInstalled = false
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard !tooltipInstalled, window != nil, let install = Self.installTooltip else { return }
+        tooltipInstalled = true
+        install(self, hint)
+    }
 
     private var keysWidth: CGFloat {
         hint.keys.isEmpty ? 0 : hint.keys.map { keyWidth($0) }.reduce(0, +) + CGFloat(hint.keys.count - 1) * 3 + 7
