@@ -602,7 +602,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private func cachedTextLayout(for item: EaselItem) -> EaselTextLayout.Layout {
         let box = EaselTextPlacement.box(for: item), size = NSSize(width: box.width, height: box.height)
         if let cached = textLayouts[item.id], cached.matches(item, size: size) { return cached.layout }
-        let layout = EaselTextLayout.Layout(displayedText(item), width: size.width, height: size.height)
+        let layout = EaselTextLayout.Layout(displayedText(item), width: size.width, height: size.height, scale: EaselTextLayout.scale(for: item))
         textLayouts[item.id] = CachedTextLayout(width: size.width, height: size.height, text: item.text,
                                                 rich: item.richText, style: item.textStyle, color: item.color, layout: layout)
         return layout
@@ -1268,6 +1268,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         text.hasLoadedDocument = true
         text.objectStyle = item.resolvedTextStyle; text.objectColor = item.color
         text.fontScale = item.kind == .sticky ? EaselBoardObjects.textScale(item) : 1
+        if item.kind == .sticky { EaselStickyText.applyInsets(item, to: text) }
         placeEditor(text, for: item)
         let length = (text.string as NSString).length
         text.selectedRanges = selected.map { value in

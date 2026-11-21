@@ -32,7 +32,11 @@ sticky keeps it on the board; Escape finishes editing.
 Stickies scale as a whole (see below). Their text is stored at the regular
 size and shown through `EaselStickyText.presented`, which multiplies every
 font and spacing by the sticky's scale; typing saves back through
-`EaselStickyText.stored`, which divides it out again. Format bar sizes and
+`EaselStickyText.stored`, which divides it out again. The text margin (the
+sticky's padding plus the text inset and line padding) scales too, and the
+editor, the drawn text, the height refit and HTML export all take their insets
+from `EaselTextLayout.inset(scale:)` and `fragmentPadding(scale:)`, so a big
+sticky stays roomy and grows exactly as far as its text. Format bar sizes and
 size steps read and change the unscaled size, so making text larger in a
 doubled sticky shows the doubled larger size.
 

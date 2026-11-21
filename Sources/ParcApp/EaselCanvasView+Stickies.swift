@@ -169,7 +169,7 @@ extension EaselCanvasView {
         let key = EaselStickyLayoutKey(text: item.text, rich: item.richText, style: item.textStyle, color: item.color,
                                        width: width, adapts: adaptsInk)
         if let cached = boardState.stickyLayouts[item.id], cached.key == key { return cached.layout }
-        let layout = EaselTextLayout.Layout(EaselStickyText.presented(item, adaptive: adaptsInk), width: CGFloat(width))
+        let layout = EaselStickyText.layout(EaselStickyText.presented(item, adaptive: adaptsInk), for: item, width: width)
         boardState.stickyLayouts[item.id] = (key, layout)
         if boardState.stickyLayouts.count > max(64, session.document.items.count * 2) {
             let live = Set(session.document.items.map(\.id))

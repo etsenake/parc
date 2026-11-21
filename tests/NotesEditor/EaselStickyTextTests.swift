@@ -28,6 +28,48 @@ struct EaselStickyTextTests {
         try roundTrip()
         typing()
         editorScale()
+        margins()
+        refit()
+    }
+
+    static func margins() {
+        let plain = EaselTextLayout.Layout(NSAttributedString(string: "Hi"), width: 100)
+        expect(plain.inset == NSSize(width: 5, height: 4) && plain.container.lineFragmentPadding == 5,
+               "Unscaled text keeps today's inset and padding")
+        for scale in [1.0, 2.0, 3.0] {
+            let item = sticky(scale: scale == 1 ? nil : scale, text: "Margins")
+            let layout = EaselStickyText.layout(EaselStickyText.presented(item, adaptive: false), for: item,
+                                                width: EaselBoardObjects.stickyTextBox(item).width)
+            let side = EaselBoardObjects.stickyInset(item) + Double(layout.inset.width + layout.container.lineFragmentPadding)
+            let top = EaselBoardObjects.stickyInset(item) + Double(layout.inset.height)
+            expect(abs(side - 28 * scale) < 0.001 && abs(top - 22 * scale) < 0.001,
+                   "A \(scale)x sticky's text margin grows with it, got \(side) by \(top)")
+            let editor = EaselStyledTextView(frame: .zero)
+            EaselStickyText.applyInsets(item, to: editor)
+            expect(editor.textContainerInset == layout.inset && editor.textContainer?.lineFragmentPadding == layout.container.lineFragmentPadding,
+                   "The \(scale)x editor uses the same insets as the drawn text")
+        }
+    }
+
+    static func refit() {
+        let words = String(repeating: "Big stickies keep roomy margins as they grow. ", count: 12)
+        for scale in [1.0, 2.0, 3.0, 1.37] {
+            let item = sticky(scale: scale == 1 ? nil : scale, text: words)
+            let box = EaselBoardObjects.stickyTextBox(item)
+            let editor = EaselStyledTextView(frame: NSRect(x: 0, y: 0, width: box.width, height: box.height))
+            editor.textContainer?.widthTracksTextView = true
+            EaselStickyText.applyInsets(item, to: editor)
+            editor.textStorage?.setAttributedString(EaselStickyText.presented(item, adaptive: false))
+            guard let manager = editor.layoutManager, let container = editor.textContainer else {
+                expect(false, "The editor has a layout"); continue
+            }
+            manager.ensureLayout(for: container)
+            let edited = ceil(max(manager.usedRect(for: container).maxY, manager.extraLineFragmentRect.maxY)) + editor.textContainerInset.height * 2
+            let measured = EaselStickyText.height(item)
+            expect(abs(Double(edited) - measured) < 0.001, "A \(scale)x sticky measures \(measured) and edits at \(edited)")
+            expect(EaselTextPlacement.fittedFrameHeight(item, textHeight: measured) == EaselBoardObjects.stickyHeight(item, textHeight: Double(edited)),
+                   "A \(scale)x sticky refits to the height its editor shows")
+        }
     }
 
     static func placement() {
@@ -57,7 +99,7 @@ struct EaselStickyTextTests {
                "Lots of words measure taller than the square and refit through the shared height rule")
         let pad = 2 * Double(EaselTextLayout.inset.height)
         let line = EaselStickyText.height(sticky(scale: nil, text: "One line")) - pad
-        let ratio = (EaselStickyText.height(sticky(scale: 2, text: "One line")) - pad) / line
+        let ratio = (EaselStickyText.height(sticky(scale: 2, text: "One line")) - 2 * pad) / line
         expect(line > 0 && abs(ratio - 2) < 0.15, "Doubling a sticky's scale doubles a line's height, got \(ratio)")
         expect(EaselStickyText.height(square) == 0, "An empty sticky measures no text")
     }

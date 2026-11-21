@@ -295,13 +295,13 @@ final class EaselFindController: NoteFindBarController {
         if let cached = layouts[item.id], cached.item == item {
             layout = cached.layout
         } else {
-            layout = EaselTextLayout.Layout(text(), width: width, height: height)
+            layout = EaselTextLayout.Layout(text(), width: width, height: height, scale: EaselTextLayout.scale(for: item))
             layouts[item.id] = (item, layout)
         }
         guard range.upperBound <= layout.storage.length else { return nil }
         let glyphs = layout.manager.glyphRange(forCharacterRange: NSRange(location: range.lowerBound, length: range.count), actualCharacterRange: nil)
         var rects: [NSRect] = []
-        let inset = EaselTextLayout.inset
+        let inset = layout.inset
         layout.manager.enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
                                                in: layout.container) { rect, _ in
             guard rect.width.isFinite, rect.height.isFinite, !rect.isEmpty else { return }

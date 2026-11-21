@@ -7,12 +7,12 @@ enum EaselDocumentExport {
         let box = EaselTextPlacement.box(for: item)
         let source = item.kind == .sticky ? EaselStickyText.presented(item, adaptive: false)
             : EaselTextPresentation.displayed(EaselRichTextCodec.attributed(item), for: item)
-        let layout = EaselTextLayout.Layout(source, width: box.width, height: box.height)
+        let layout = EaselTextLayout.Layout(source, width: box.width, height: box.height, scale: EaselTextLayout.scale(for: item))
         let manager = layout.manager, storage = layout.storage, container = layout.container
         let shown = manager.characterRange(forGlyphRange: manager.glyphRange(for: container), actualGlyphRange: nil)
         let placed = EaselTextPlacement.origin(for: item, textHeight: Double(layout.height),
                                                overflowing: EaselTextPlacement.clipsOverflow(item) && NSMaxRange(shown) < storage.length)
-        let inset = NSSize(width: EaselTextLayout.inset.width + placed.x - item.frame.x, height: EaselTextLayout.inset.height + placed.y - item.frame.y)
+        let inset = NSSize(width: layout.inset.width + placed.x - item.frame.x, height: layout.inset.height + placed.y - item.frame.y)
         let hugging = item.resolvedTextStyle.resolvedFill == .contentHugging
         var result = EaselVectorText()
         if hugging {

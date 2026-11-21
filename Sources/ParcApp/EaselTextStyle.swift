@@ -83,16 +83,22 @@ enum EaselTextAppearance {
 enum EaselTextLayout {
     static let inset = NSSize(width: 5, height: 4)
     static let fragmentPadding: CGFloat = 5
+    static func scale(for item: EaselItem) -> Double { item.kind == .sticky ? EaselBoardObjects.textScale(item) : 1 }
+    static func inset(scale: Double) -> NSSize { NSSize(width: inset.width * scale, height: inset.height * scale) }
+    static func fragmentPadding(scale: Double) -> CGFloat { fragmentPadding * scale }
     static func radius(_ style: EaselTextStyle) -> CGFloat { [6, 8, 10, 10, 10][style.size.index] }
 
     @MainActor final class Layout {
         let storage: NSTextStorage
         let manager = NSLayoutManager()
         let container: NSTextContainer
-        init(_ value: NSAttributedString, width: CGFloat, height: CGFloat = 1_000_000) {
+        let inset: NSSize
+        init(_ value: NSAttributedString, width: CGFloat, height: CGFloat = 1_000_000, scale: Double = 1) {
             storage = NSTextStorage(attributedString: value)
+            let inset = EaselTextLayout.inset(scale: scale)
+            self.inset = inset
             container = NSTextContainer(size: NSSize(width: max(1, width - inset.width * 2), height: max(1, height - inset.height * 2)))
-            container.lineFragmentPadding = fragmentPadding
+            container.lineFragmentPadding = EaselTextLayout.fragmentPadding(scale: scale)
             manager.addTextContainer(container); storage.addLayoutManager(manager)
             EaselTextAttachments.bind(storage, container: container)
             manager.ensureLayout(for: container)

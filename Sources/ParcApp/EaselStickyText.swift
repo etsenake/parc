@@ -81,6 +81,17 @@ enum EaselStickyText {
     static func height(_ item: EaselItem) -> Double {
         let box = EaselBoardObjects.stickyTextBox(item)
         let value = item.text.isEmpty ? NSAttributedString() : presented(item, adaptive: false)
-        return value.length == 0 ? 0 : Double(EaselTextLayout.Layout(value, width: box.width).height)
+        return value.length == 0 ? 0 : Double(layout(value, for: item, width: box.width).height)
+    }
+
+    static func layout(_ value: NSAttributedString, for item: EaselItem, width: Double) -> EaselTextLayout.Layout {
+        EaselTextLayout.Layout(value, width: CGFloat(width), scale: EaselBoardObjects.textScale(item))
+    }
+
+    static func applyInsets(_ item: EaselItem, to text: NSTextView) {
+        let scale = EaselBoardObjects.textScale(item)
+        let inset = EaselTextLayout.inset(scale: scale), padding = EaselTextLayout.fragmentPadding(scale: scale)
+        if text.textContainerInset != inset { text.textContainerInset = inset }
+        if let container = text.textContainer, container.lineFragmentPadding != padding { container.lineFragmentPadding = padding }
     }
 }
