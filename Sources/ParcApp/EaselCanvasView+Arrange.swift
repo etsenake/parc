@@ -192,6 +192,7 @@ extension EaselCanvasView {
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if onKeyEquivalent?(event) == true { return true }
+        if performQuickCreateKey(event) { return true }
         guard event.type == .keyDown, window?.isKeyWindow == true else { return super.performKeyEquivalent(with: event) }
         let editing = textEditorOwnsKeyFocus
         guard editing || canvasOwnsKeyFocus,

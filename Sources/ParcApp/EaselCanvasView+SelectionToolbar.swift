@@ -110,7 +110,7 @@ extension EaselCanvasView {
             return selected.count == 1 && selected.allSatisfy { EaselObjectLink.canLink($0) && !$0.isLocked }
         case .more: return true
         case .codeLanguage: return selected.allSatisfy { $0.kind == .code } && selected.contains { !$0.isLocked }
-        default: return selectionToolbarBoardSupports(control, selected: selected) ?? false
+        default: return selectionToolbarBoardSupports(control, selected: selected) ?? connectorToolbarSupports(control, selected: selected) ?? false
         }
     }
 
@@ -158,7 +158,7 @@ extension EaselCanvasView {
             let title = languages.count == 1 ? languages.first.map { EaselCodeBlock.displayName($0) } ?? "Mixed" : "Mixed"
             return .init(control: control, face: .text(title), name: "Language", opens: .menu, showsDisclosure: true)
         default:
-            return selectionToolbarBoardButton(control, selected: selected)
+            return selectionToolbarBoardButton(control, selected: selected) ?? connectorToolbarButton(control, selected: selected)
                 ?? .init(control: control, face: .symbol("ellipsis"), name: "More", opens: .menu)
         }
     }
@@ -188,7 +188,7 @@ extension EaselCanvasView {
             let current = selectedCodeLanguages
             return NoteCodeLanguage.all.map { EaselToolbarMenuEntry(id: $0.id, title: $0.name, isChecked: current == [$0.id]) }
         default:
-            return selectionToolbarBoardMenu(control) ?? []
+            return selectionToolbarBoardMenu(control) ?? connectorToolbarMenu(for: control) ?? []
         }
     }
 
@@ -215,7 +215,7 @@ extension EaselCanvasView {
             guard editor.selectedRange().length > 0, !editor.hasMarkedText() else { return false }
             editLink(relativeTo: anchor ?? editor, rect: anchor == nil ? editor.revealedSelectionRect() : nil)
         default:
-            guard performSelectionToolbarBoard(control, anchor: anchor) == true else { return false }
+            guard performSelectionToolbarBoard(control, anchor: anchor) == true || performConnectorToolbar(control) == true else { return false }
         }
         refreshTextControls()
         return true
@@ -243,7 +243,7 @@ extension EaselCanvasView {
             guard let language = NoteCodeLanguage.all.first(where: { $0.id == id }) else { return false }
             return setCodeLanguage(EaselCodeBlock.stored(language))
         default:
-            guard performSelectionToolbarBoardMenu(control, entry: id) == true else { return false }
+            guard performSelectionToolbarBoardMenu(control, entry: id) == true || performConnectorToolbarMenu(control, entry: id) == true else { return false }
         }
         refreshTextControls()
         return true

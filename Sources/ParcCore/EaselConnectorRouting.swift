@@ -1093,3 +1093,62 @@ extension EaselConnectorRouter {
         return settled(item, lookup: lookup)
     }
 }
+
+struct EaselConnectorLabelArt: Equatable {
+    var text: EaselVectorText
+    var width: Double
+    var height: Double
+}
+
+extension EaselVectorExport {
+    static func connector(_ item: EaselItem, art: EaselVectorArt) -> String {
+        guard let route = art.connectorRoutes[item.id] ?? EaselConnectorRouter.storedRoute(item) else { return "" }
+        let label = art.connectorLabels[item.id]
+        let drawing = EaselConnectorDrawing(route: route, item: item, labelSize: label.map { (width: $0.width, height: $0.height) })
+        let width = EaselPaintRules.strokeWidth(item), ink = paint(item.color)
+        var result = "<g class=\"easel-connector\">"
+        if width > 0, !drawing.pieces.isEmpty {
+            var style = "fill:none;stroke:" + ink + ";stroke-width:" + number(width) + ";stroke-linecap:round;stroke-linejoin:round"
+            let dash = EaselPaintRules.dashPattern(item.strokeDash, width: width)
+            if !dash.isEmpty { style += ";stroke-dasharray:" + dash.map(number).joined(separator: " ") }
+            result += "<path d=\"" + drawing.linePathData + "\" style=\"" + style + "\"/>"
+        }
+        for head in [drawing.startHead, drawing.endHead] where !head.isEmpty {
+            let filled = head.filledPathData, open = head.openPathData
+            if !filled.isEmpty {
+                result += "<path d=\"" + filled + "\" style=\"fill:" + ink + ";stroke:" + ink + ";stroke-width:" + number(width)
+                    + ";stroke-linejoin:round\"/>"
+            }
+            if !open.isEmpty, width > 0 {
+                result += "<path d=\"" + open + "\" style=\"fill:none;stroke:" + ink + ";stroke-width:" + number(width)
+                    + ";stroke-linecap:round;stroke-linejoin:round\"/>"
+            }
+        }
+        if let rect = drawing.label, let label {
+            let background = item.labelBackground == true
+            if background {
+                let radius = min(8, rect.height / 2)
+                result += "<rect x=\"" + number(rect.x) + "\" y=\"" + number(rect.y) + "\" width=\"" + number(rect.width) + "\" height=\""
+                    + number(rect.height) + "\" rx=\"" + number(radius) + "\" ry=\"" + number(radius) + "\" style=\"fill:" + ink + "\"/>"
+            }
+            let fill = background ? labelInk(on: item.color) : nil
+            result += "<g transform=\"translate(" + number(rect.x + EaselConnectorLabel.paddingX) + " "
+                + number(rect.y + EaselConnectorLabel.paddingY) + ")\">"
+            for run in label.text.runs where !run.text.isEmpty {
+                var shown = run
+                if fill != nil { shown.color = nil }
+                let body = textRun(shown)
+                result += fill.map { body.replacingOccurrences(of: "fill:var(--easel-ink)", with: "fill:" + $0) } ?? body
+            }
+            result += "</g>"
+        }
+        return result + "</g>"
+    }
+
+    static func labelInk(on hex: String) -> String {
+        if isAutomatic(hex) { return "var(--easel-card)" }
+        guard let value = color(hex), let rgb = UInt32(value.dropFirst(), radix: 16) else { return "#FFFFFF" }
+        let r = Double(rgb >> 16 & 255) / 255, g = Double(rgb >> 8 & 255) / 255, b = Double(rgb & 255) / 255
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.6 ? EaselPalette.inkLight : EaselPalette.neutralLight
+    }
+}

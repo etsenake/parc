@@ -115,6 +115,7 @@ enum EaselDocumentExport {
     static func art(session: EaselSession, canvas: EaselCanvasView, pages: [UUID: EaselPageSnapshot]) -> EaselVectorArt {
         var art = EaselVectorArt()
         let scale = EaselImageExport.pixelDensity()
+        let lookup = Dictionary(session.document.items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         for item in session.document.items {
             switch item.kind {
             case .text, .sticky, .section:
@@ -136,7 +137,9 @@ enum EaselDocumentExport {
                 if case .icon(let name)? = EaselStampFace(item: item) {
                     art.images[item.id] = EaselStampArtwork.iconMask(name, size: NSSize(width: item.frame.width, height: item.frame.height), scale: max(4, scale))
                 }
-            case .rectangle, .circle, .arrow, .freehand, .link:
+            case .arrow:
+                connectorArt(item, lookup: lookup, into: &art)
+            case .rectangle, .circle, .freehand, .link:
                 break
             }
         }

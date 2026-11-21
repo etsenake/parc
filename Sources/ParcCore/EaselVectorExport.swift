@@ -46,6 +46,8 @@ struct EaselVectorPalette: Equatable {
 struct EaselVectorArt {
     var texts: [UUID: EaselVectorText] = [:]
     var images: [UUID: EaselVectorImage] = [:]
+    var connectorRoutes: [UUID: EaselConnectorRoute] = [:]
+    var connectorLabels: [UUID: EaselConnectorLabelArt] = [:]
 }
 
 enum EaselVectorExport {
@@ -126,7 +128,7 @@ enum EaselVectorExport {
         switch item.kind {
         case .text: return text(item, art.texts[item.id])
         case .rectangle, .circle: return shape(item)
-        case .arrow: return stroke(item)
+        case .arrow: return connector(item, art: art)
         case .freehand: return drawing(item)
         case .image: return art.images[item.id].map { framedImage(item, $0) } ?? ""
         case .webCard, .browser:

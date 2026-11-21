@@ -55,6 +55,7 @@ struct EaselConnectorRoutingTests {
         pathData()
         settling()
         dependents()
+        exportSVG()
         print("EaselConnectorRoutingTests passed")
     }
 
@@ -422,6 +423,36 @@ struct EaselConnectorRoutingTests {
         let resettled = EaselDependents.settle(removed, previous: removed, moved: [])
         expect(resettled == removed, "A freed connector stays put afterwards")
         pipeline()
+    }
+
+    static func exportSVG() {
+        let a = box(100, 100), b = box(400, 300)
+        var item = connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .elbow,
+                             startConnection: EaselConnection(itemID: a.id, side: .right), endConnection: EaselConnection(itemID: b.id, side: .left))
+        item.startHead = .circle
+        item.endHead = .diamond
+        item.strokeDash = .dashed
+        item.text = "yes"
+        item.labelBackground = true
+        item = EaselConnectorRouter.settled(item, lookup: lookup([a, b]))
+        var art = EaselVectorArt()
+        art.connectorRoutes[item.id] = EaselConnectorRouter.route(for: item, lookup: lookup([a, b]))
+        art.connectorLabels[item.id] = EaselConnectorLabelArt(text: EaselVectorText(runs: [EaselVectorTextRun(x: 0, y: 12, text: "yes",
+                                                                                                             fontFamily: "sans-serif", fontSize: 15)]),
+                                                              width: 24, height: 18)
+        let svg = EaselVectorExport.element(item, art: art)
+        expect(svg.hasPrefix("<g class=\"easel-connector\">") && svg.hasSuffix("</g>"), "Connectors export as one group")
+        expect(svg.contains("stroke-dasharray:9 9"), "Dashed connectors keep their dashes")
+        expect(svg.components(separatedBy: "<path").count == 4, "The line and each filled head are separate paths")
+        expect(svg.contains("A") && svg.contains("<rect") && svg.contains(">yes</text>"), "Circle heads, label pills and label text all export")
+        expect(svg.contains("fill:var(--easel-card)"), "Label text on an automatic-ink pill uses the paper-side colour in both themes")
+        expect(EaselVectorExport.labelInk(on: "#FFE299") == EaselPalette.inkLight && EaselVectorExport.labelInk(on: "#2C6C91") == EaselPalette.neutralLight,
+               "Label text picks dark ink on light pills and white on dark ones")
+        var legacy = EaselItem(kind: .arrow, frame: .init(x: 10, y: 10, width: 100, height: 1))
+        legacy.points = [.init(x: 0, y: 0), .init(x: 100, y: 0)]
+        let plain = EaselVectorExport.element(legacy, art: EaselVectorArt())
+        expect(plain.contains("M10 10L110 10") && plain.contains("M95.959 17.671L110 10L95.959 2.329"),
+               "Legacy arrows export the same straight line and open V")
     }
 
     static func pipeline() {
