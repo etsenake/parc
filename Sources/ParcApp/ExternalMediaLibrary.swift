@@ -97,21 +97,28 @@ final class ExternalMediaCloudStatus: ExternalMediaCloudObservation, @unchecked 
         }
     }
     private let handler: @Sendable (Set<String>) -> Void
-    private let queue = DispatchQueue(label: "org.parc.media-cloud-status")
+    typealias Schedule = @Sendable (TimeInterval, @escaping @Sendable () -> Void) -> Void
+    private let schedule: Schedule
     private let registry: PresenterRegistry
     private let callbacks = OperationQueue()
     private var presenters: [String: Presenter] = [:]
     private var changed = Set<String>()
-    init(handler: @escaping @Sendable (Set<String>) -> Void, registry: PresenterRegistry = .system) {
+    init(handler: @escaping @Sendable (Set<String>) -> Void, registry: PresenterRegistry = .system,
+         schedule: Schedule? = nil) {
+        let queue = DispatchQueue(label: "org.parc.media-cloud-status")
+        self.schedule = schedule ?? { delay, work in
+            if delay == 0 { queue.async(execute: work) }
+            else { queue.asyncAfter(deadline: .now() + delay, execute: work) }
+        }
         self.registry = registry
         self.handler = handler; callbacks.maxConcurrentOperationCount = 1; callbacks.qualityOfService = .utility
     }
     deinit {
         let retired = Array(presenters.values)
-        queue.async { [registry] in retired.forEach { registry.remove($0) } }
+        schedule(0) { [registry] in retired.forEach { registry.remove($0) } }
     }
     func present(_ folders: Set<String>) {
-        queue.async { [self] in
+        schedule(0) { [self] in
             for (folder, presenter) in presenters where !folders.contains(folder) {
                 registry.remove(presenter); presenters[folder] = nil
             }
@@ -135,12 +142,12 @@ final class ExternalMediaCloudStatus: ExternalMediaCloudObservation, @unchecked 
         return String(cString: real)
     }
     private func retire(_ presenter: Presenter, folder: String) {
-        queue.async { [self] in if presenters[folder] === presenter { presenters[folder] = nil } }
+        schedule(0) { [self] in if presenters[folder] === presenter { presenters[folder] = nil } }
     }
     private func note(_ path: String) {
-        queue.async { [weak self] in
+        schedule(0) { [weak self] in
             guard let self, self.changed.insert(path).inserted, self.changed.count == 1 else { return }
-            self.queue.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self.schedule(0.3) { [weak self] in
                 guard let self, !self.changed.isEmpty else { return }
                 let batch = self.changed; self.changed = []; self.handler(batch)
             }
