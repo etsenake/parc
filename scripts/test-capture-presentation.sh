@@ -8,8 +8,3 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/tests/CapturePresentation/main.swift" -o "$check_root/CapturePresentationChecks"
 cp -R "$repo_root/Resources/Capture" "$check_root/Capture"
 "$check_root/CapturePresentationChecks"
-
-xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library \
-  "$repo_root/Sources/ParcCore/CaptureMode.swift" \
-  "$repo_root/tests/CaptureModeTests.swift" -o "$check_root/CaptureModeChecks"
-"$check_root/CaptureModeChecks"

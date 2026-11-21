@@ -71,17 +71,9 @@ and current modal queue before continuation. No BrowserView is fabricated.
 Model checks:
 
 ```sh
-bash tests/NativeDownloads/run-model.sh
+swift test --filter NativeDownloadRecordTests
 ```
 
-With the current reviewed overlay applied and genuine targets generated:
-
-```sh
-python3 tests/NativeDownloads/check-chromium.py /absolute/chromium/src
-```
-
-The compiler checker verifies source/output hashes and exact generated object
-membership/flags. It does not generate, link or execute Chromium tests.
 `download_unit_tests` uses real DownloadItemImpl/controller paths, including
 notification reentry and shutdown. `file_dialog_browser_tests` covers actual
 chooser ownership, cancellation, policy refusal, competing leases, nested loops

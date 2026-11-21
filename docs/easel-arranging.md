@@ -171,7 +171,7 @@ the selection has changed under an open menu.
 
 ## Checks
 
-`bash scripts/test-notes-editor.sh EaselArrangeTests` runs the windowless
+`swift test --filter EaselArrangeTests` runs the windowless
 suite for alignment, distribution, Tidy Up, layer order, groups, locks,
 duplicate remapping, the clipboard payload, paste placement, click and marquee
 rules and the chord table; `NoteKeyEquivalentBoundaryTests` covers the note

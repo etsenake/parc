@@ -349,8 +349,8 @@ to, so a malformed file is rejected whole rather than half drawn.
 
 ## Checks and limits
 
-`bash scripts/test-easels.sh` and the focused editor/pool/capture components
-exercise atomic saves, rich-text validation, native Undo, ownership, geometry,
+`swift test`, `bash scripts/test-easels.sh` and the focused editor/pool/capture
+components exercise atomic saves, rich-text validation, native Undo, ownership, geometry,
 clipboard conversion, export bytes and the SVG/HTML serialiser.
 
 The canvas bundles (`test-easels.sh` window suites, `test-easel-motion.sh`,

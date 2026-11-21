@@ -179,7 +179,7 @@ live in `EaselCanvasView+Tables.swift`; the toast and the SVG text runs live in
 
 ## Checks
 
-`bash scripts/test-notes-editor.sh EaselTableTests` runs the windowless model
+`swift test --filter EaselTableTests` runs the windowless model
 suite: limits, saving, validation, row and column edits, moves, merges,
 navigation, pasting, sizing, layout, parsing CSV, TSV and HTML, CSV and HTML
 export, SVG output and sticky conversion.

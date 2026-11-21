@@ -133,7 +133,7 @@ at its edge.
 
 ## Checks
 
-`scripts/test-notes-editor.sh EaselShapeGeometry` is windowless. It covers every
+`swift test --filter EaselShapeGeometryTests` is windowless. It covers every
 shape across frames from one point to very long and thin (bounds, containment,
 the text area inside the outline, inner lines, SVG data), path maths, rotation,
 flips, transforms, hit bands at different zooms, marquee rules, edge points,

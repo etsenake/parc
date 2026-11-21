@@ -31,12 +31,11 @@ engines on a catalog keyword count as the user's own and which block a repair
 learned shortcuts, used or not, don't). A catalog site going with at most one
 engine is a removal; a catalog site going while several engines are removed, as
 Reset settings does, is a reset; engines going without a catalog site, a skipped
-site and its later repair record nothing. `scripts/test.sh`
+site and its later repair record nothing. `swift test`
 runs it; on its own:
 
 ```sh
-xcrun clang++ -std=c++20 -Wall -Wextra -Werror tests/NativeSearch/CatalogTests.cc \
-  -o build/tests/native-search-catalog && build/tests/native-search-catalog
+swift test --filter SearchCatalogTests
 ```
 
 Run the readiness and shortcut fixtures using the existing matching Chromium

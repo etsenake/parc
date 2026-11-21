@@ -247,60 +247,58 @@ scripts first. The current user instructions and working contract determine
 which checks are authorized; a setup guide is not permission to run a browser
 fixture or change a real profile.
 
-## Write test executables
+## Run and write tests
 
-`scripts/test.sh` and `scripts/test-python.py` put
-[`tests/Support/compilers`](../tests/Support/compilers/xcrun) first on `PATH`.
-Its `xcrun` passes compiler and linker calls to the real one with both output
-streams intact and fails any that print a warning, even a compile without
-`-warnings-as-errors` or `-Werror`; other tools go straight through. A runner
-started on its own gets the same check with
-`PATH="$PWD/tests/Support/compilers:$PATH"`.
+Parc's tests are Swift Testing suites in the Swift package at the repository
+root. `swift test` builds what changed and runs every suite in parallel in one
+process; `swift test --filter EaselStoreTests` runs one suite and
+`swift build --build-tests` only compiles. Builds are incremental and cached
+in `.build`, so a run after a small edit recompiles only that file and what
+depends on it.
 
-A failing check must exit, never crash. A trap or abort in a test binary that
-links AppKit makes macOS show a "quit unexpectedly" dialog and write a crash
-report, and negative controls fail on purpose on every run.
+`ParcCoreTests` (in `tests/ParcCoreTests`) tests the `ParcCore` library, which has
+no AppKit or engine dependency. `ParcTests` (in `tests/ParcTests`) tests the `Parc`
+app module with `@testable import Parc`; it links the engine framework from
+`PARC_ENGINE_FRAMEWORKS` (default: the local engine build on the Parc volume) and
+Sparkle from `PARC_SPARKLE_FRAMEWORKS` (default: the `build/sparkle` cache). The
+engine is loaded, never started. Put a test in the lowest target that can reach
+the code under test, in a folder named for its feature area.
 
-Swift test runners compile
-[`tests/Support/TestFailure.swift`](../tests/Support/TestFailure.swift) with the
-test's own sources; a new runner lists it in its `swiftc` command. Inside the
-test module the file replaces `precondition`, `preconditionFailure`,
-`fatalError`, `assert` and `assertionFailure` with versions that print
-`file:line: Precondition failed: message` to standard error and exit with
-status 1. Per-test `check` and `expect` helpers that call `precondition` go
-through it unchanged; give each check a specific message.
+Engine components that build without Chromium are in the `ParcNative` library:
+an explicit list of `Engine/ParcNative` sources compiled as Objective-C++ with
+ARC and warnings as errors. `ParcNativeTests` (in `tests/ParcNativeTests`) tests
+them with Objective-C XCTest cases built on `ParcNativeTestCase`; check with
+`PARC_CHECK` or the suite's `Check(condition, message)`, which stop the test at
+the first failure. Name these tests with the `Tests` class suffix and filter by
+class, for example `swift test --filter PageHostTests`. To test another
+Chromium-free source, add it to the `ParcNative` source list. Never edit an
+engine input for a test. The `EngineFacade*Tests` targets compile the app's
+engine facade against test doubles of the native classes. Each set of doubles
+gets its own target, so the old-engine target fails to link if the facade names
+a class older engines lack.
 
-Start each `@main` type with `static func main() { exitOnFailure(runChecks) }`
-and put the checks in `runChecks()`, which may throw. An `async` test uses
-`@MainActor static func main() async { await exitOnFailure(runChecks) }` with a
-`@MainActor` `runChecks()`, keeping the main-actor isolation an `async` main
-has. The wrapper turns an escaped Swift error, or an uncaught Objective-C
-exception, into the same clean failure with the error's description or the
-exception's name and reason. A top-level `main.swift` script wraps its entry
-call or throwing block the same way, for example
-`MainActor.assumeIsolated { exitOnFailure(run) }`.
+Write one behaviour per `@Test`, named as a plain sentence in camelCase, and
+build only the fixture that behaviour needs. Check with `#expect`, and use
+`try #require` when later lines depend on a value. Loops that make thousands of
+checks use the target's `check(_:_:)`, which records an issue only on failure.
+Keep randomized tests seeded and fast in a debug build.
 
-C, C++ and Objective-C harnesses include
-[`tests/Support/TestFailure.h`](../tests/Support/TestFailure.h) and check with
-`PARC_EXPECT(condition)`; a harness's own check macro prints its message and
-calls `exit(1)`. Objective-C harnesses call `ParcExitOnUncaughtExceptions()`
-first in `main`. None of them use `assert` or `abort`.
+Tests run concurrently, so they share no mutable state: give each test its own
+temporary directory and `UserDefaults(suiteName:)`, inject clocks instead of
+sleeping, and mark a suite `.serialized` only when the code under test uses
+process-wide state. Mark a test `@MainActor` only when the code needs it.
+Tests may create windows, including offscreen ones; they never launch the app
+or a browser. Nest helpers in the suite or make them `private`, because each
+target is one module.
 
-A check that compiles app sources can run its `swiftc` command through
-[`tests/Support/app_sources.py`](../tests/Support/app_sources.py), either by
-calling `compile_swift` from Python or by prefixing the command with
-`python3 tests/Support/app_sources.py` in a shell script. When the compiler
-reports a missing name or extension member, the helper adds the one app or core
-file that declares it, says so on standard error and compiles again, so a new
-source file in the app no longer breaks the check. Keep the explicit list complete
-anyway and add any file the helper reports; it never resolves a name that more than
-one file declares, and a slice or stub that the added file would duplicate still
-fails the compile.
+Test behaviour, not wording: never assert that source files contain particular
+code. Warnings are errors in every target (`treatAllWarnings`), matching the
+release compile.
 
-Negative controls build a deliberately broken copy and pass only when it exits
-with a non-zero status and the expected message. A signal death (Python's
-negative return code, a shell status above 128) is a genuine crash, so runners
-report it as one and fail.
+Python `unittest` suites exist only for the Python tooling they exercise:
+`tests/BuildTools` (build and release scripts), `tests/Site` (the website, also
+run by GitHub CI), `tests/Documentation` (the docs checker) and the release
+tooling suites beside them.
 
 ## What to carry over from the old Mac
 

@@ -87,10 +87,10 @@ its view is removed, so no fading card lingers over a newer Peek or tab and
 nothing flashes. `PeekDismissalMotion` is the pure spring, slide and fade model,
 and `PeekDismissalAnimator` applies it to any card stage and wash view for reuse
 by other Peek hosts; the host sets its geometry and resting wash and leaves the
-stage's transform and opacity to it. `python3 tests/PeekSwipeDismissal/check.py`
+stage's transform and opacity to it. `tests/PeekSwipeDismissal/main.swift`
 checks `PeekCloseTransition` and `PeekDismissalMotion` with the real recognizer
 and confirmation rules, including the keyboard handover and the wait for a
-closing tab or window, plus the controller and window wiring.
+closing tab or window.
 
 ## Promotion return ownership
 
@@ -154,13 +154,13 @@ normal transfer first, or isn't offered when it can't move. If a Peek is
 showing, it closes through its own close and consent, confirmation pill
 included, and the tab opens once it is gone; a refused close or an expired
 confirmation drops the request. While in Peek the tab neither
-sleeps nor auto-archives. `tests/TabPeekTests.swift` covers admission, refusals,
+sleeps nor auto-archives. `swift test --filter TabPeekTests` covers admission, refusals,
 replacement, the Split button's rule and the round trips, checking that the same
 page comes back, that only a tab with no page loads, and that every way out of
 the card removes it or plays its exit in the same step, so a hand-back never
 finds a stranded card.
-`tests/PeekPresentationSkip/check.py` checks that the card and the Peek share
-the Split View action and that ordinary Peeks keep their Split rule.
+`swift test --filter PeekPresentationSkipTests` checks when the card's presentation
+changes and skips.
 
 ## Open in current Space command
 

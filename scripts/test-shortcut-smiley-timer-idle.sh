@@ -10,4 +10,3 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   -o "$check_dir/shortcut-smiley-timer-idle"
 cp -R "$repo_root/Resources/Shortcuts" "$check_dir/Shortcuts"
 "$check_dir/shortcut-smiley-timer-idle"
-python3 "$repo_root/tests/ShortcutSmileyTimerIdle/check.py"

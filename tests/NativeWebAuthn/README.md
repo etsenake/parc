@@ -23,16 +23,3 @@ bubble; controller/model destruction disconnects it.
 Recovery keeps the original Chromium Browser and WebContents, original-profile cookies, account index, recovery URL, response/origin checks, RAPT and reset observers, and original model events. The registered Parc profile route creates the actual native popup. Its presentation lease binds the original caller and releases before the subsequent PIN dialog acquires its security reservation. Deferred window teardown avoids destruction during model/navigation notification. Settings starts a distinct native generation only from the genuine `ChangePinControllerImpl::StartChangePin` action; PIN success still comes only from `EnclaveManager::ChangePIN`.
 
 Conditional/autofill credentials, another-device choices and inline QR already use the genuine `PasswordAutofillManager` and `ChromeWebAuthnCredentialsDelegate`. `CanShowRootPopup` and `PopupBaseView::DoShow` explicitly support a Cocoa parent without a Views BrowserWindow. No replacement popup or fabricated passkey result is introduced.
-
-## Focused check
-
-```sh
-python3 tests/NativeWebAuthn/check-chromium.py /absolute/path/to/chromium/src
-```
-
-Use an already applied complete reviewed overlay and generated targets. The
-checker verifies the source hashes and actual object membership, then syntax
-checks the seven native/upstream units using their generated compiler flags.
-It does not generate, build, link or execute tests and has no compatibility mode.
-Engine apply/build and browser execution remain subject to
-[the working contract](../../AGENTS.md).

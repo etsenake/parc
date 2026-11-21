@@ -496,5 +496,5 @@ of inline text by parsing it back. Windowless tests cover fixtures, real
 samples and random pages that must survive a save and reload unchanged:
 
 ```sh
-bash scripts/test-notes-editor.sh Markdown
+swift test --filter Markdown
 ```

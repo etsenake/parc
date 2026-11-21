@@ -13,7 +13,7 @@ Enterprise justification extends the same native consent presentation with
 Chromium's actual controller and limits. Parent approval uses its own upstream
 policy; ordinary acceptance cannot substitute for it.
 
-Run `bash tests/NativeExtensionInstall/run.sh` for standalone AppKit checks using real NSWindow sheets and the main run loop. It covers 108 assertions, including EXT11 ordinary education, long details and legacy-scrollbar layout, and the special-request sheet's justification card, live counter, footer position, unambiguous layout, parent password card, growing error, cleared credential and input-method Escape. The test opens its own local windows; it neither launches a browser nor installs an extension.
+Run `swift test --filter ExtensionInstallTests` for standalone AppKit checks using real NSWindow sheets and the main run loop. It covers 108 assertions, including EXT11 ordinary education, long details and legacy-scrollbar layout, and the special-request sheet's justification card, live counter, footer position, unambiguous layout, parent password card, growing error, cleared credential and input-method Escape. The test opens its own local windows; it neither launches a browser nor installs an extension.
 
 `install_browsertest.mm` contains thirteen genuine Chromium Browser/Profile/ExtensionInstallPrompt cases. The overlay registers `//parc/tests/parc_native_extensions:install_browser_tests` in Chrome's macOS `browser_tests`; run filter `NativeExtensionInstallTest.*` only after the reviewed source overlay is applied and built. Execution requires a valid Chromium process/context. They exercise consent outcomes, not a fabricated grant/installer implementation.
 

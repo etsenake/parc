@@ -19,7 +19,7 @@ contract is maintained in [web interactions](../../docs/web-interactions.md).
 ## Executable AppKit checks
 
 ```sh
-bash tests/NativeJavaScriptDialogs/run.sh
+swift test --filter JavaScriptDialogTests
 ```
 
 The suite compiles source against real AppKit and opens offscreen test windows.
@@ -48,22 +48,6 @@ with false; the original request is unchanged. Independent windows can each
 present a dialog. The contention policy is covered by component tests. The canonical native window/application close
 coordinator and exact-page retirement coordinator serialize genuine Chromium
 beforeunload decisions. Busy rejection returns refusal rather than consent to close.
-
-The source checker compiles both implementations with the pinned Clang,
-generated headers and the ObjC++ flags of their own `parc/native` targets, with
-ARC and warnings treated as errors. Use an already generated checkout:
-
-```sh
-python3 tests/NativeJavaScriptDialogs/check-chromium.py /path/to/chromium/src
-```
-
-The default output is `Release_GN_arm64`; `--output-name` selects another existing
-output. This reuses the NativeLocationBar Ninja flags reader with `cflags_objcc`,
-and writes logs, source/flags digests and exact commands only to
-`build/tests/native-javascript-dialogs/chromium-syntax/`. It never generates,
-builds or modifies the external source checkout. A missing generated header is
-a failed check, not replaced with a stub. This command provides syntax-only
-evidence.
 
 ## Source integration
 
