@@ -83,12 +83,21 @@ final class EaselEmojiCompletion: EaselTextCompletion {
     private func show(start: Int, query: String, in view: EaselStyledTextView) {
         let suggestions = list ?? makeList()
         suggestions.query = query
-        guard suggestions.hasResults, let panel, let host = view.enclosingScrollView?.superview ?? view.superview,
+        guard suggestions.hasResults, let panel, let host = completionHost(for: view),
               let anchor = anchorRect(at: start, in: view, host: host) else { dismiss(); return }
         self.start = start
         panel.contentSizeDidChange(animated: false)
         if panel.isPresented, panel.superview === host { panel.reposition(anchor: anchor, edge: .below, animated: false) }
         else { panel.present(in: host, anchor: anchor, edge: .below, animated: !NoteAnimation.reduceMotion) }
+    }
+
+    private func completionHost(for view: EaselStyledTextView) -> NSView? {
+        var ancestor = view.superview
+        while let current = ancestor {
+            if let canvas = current as? EaselCanvasView { return canvas.menuHost }
+            ancestor = current.superview
+        }
+        return view.enclosingScrollView?.superview ?? view.superview
     }
 
     private func makeList() -> NoteEmojiSuggestionList {
