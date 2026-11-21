@@ -8,7 +8,9 @@ feature described in [Easels](easels.md#inline-images-in-rich-text).
 
 ## Adding pictures
 
-The Add image button, paste and drops take PNG, JPEG, TIFF, HEIC, WebP and GIF.
+Image in the toolbar's Media ▾ menu places an empty image, like a note's empty
+image block, whose Upload chip, paste and drops take PNG, JPEG, TIFF, HEIC, WebP
+and GIF; pasting or dropping a picture anywhere else adds it straight away.
 Every picture is copied into the Easel's own storage, never linked by path:
 still pictures are stored as PNG with the camera's rotation already applied, so
 a portrait iPhone photo stands up straight, and animated GIFs keep their own
@@ -92,8 +94,8 @@ GIF itself on the pasteboard.
 
 ## Videos
 
-MP4 and MOV videos (including M4V) come in through the Add image button, a
-pasted file or a drop, up to 30 MB; anything bigger gets a friendly "a bit big"
+MP4 and MOV videos (including M4V) come in through Video in the Media ▾ menu,
+a pasted file or a drop, up to 30 MB; anything bigger gets a friendly "a bit big"
 message instead. Parc checks the file's first box (an MP4 or QuickTime ftyp
 that isn't a HEIC or AVIF still, or an older QuickTime movie's first box),
 asks macOS's video player whether it can play it, reads its size and grabs a poster frame from just after
