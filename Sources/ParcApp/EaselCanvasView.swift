@@ -140,6 +140,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private var marqueeEnd: NSPoint?
     private var tentativeSelection: Set<UUID>?
     var hoveredObjectID: UUID?
+    var barHoverID: UUID?
     private var appearanceTracking: NSTrackingArea?
     var stroke: [NSPoint] = []
     let brushes = EaselCanvasBrushes()
@@ -160,6 +161,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     let onboarding = EaselCanvasOnboardingState()
     private var snapshotHeader: NSView?
     private var snapshotHeaderItem: UUID?
+    private var snapshotHeaderDriven = false
     private weak var headerScrollClip: NSClipView?
     private var headerScrollObserver: NSObjectProtocol?
     private var liveCaptureEducation: ParcDialog?
@@ -744,17 +746,54 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             setNeedsDisplay(dirty)
         }
     }
+    var objectBarHoverOpen: Bool {
+        !toolOwnsPointer && start == nil && editor == nil && !session.isClosed && !hidesPassiveAnnotations && window?.isKeyWindow == true
+    }
+    func updateObjectBarHover(at point: NSPoint?, windowPoint: NSPoint?) {
+        var next: UUID?
+        if let point, let windowPoint, objectBarHoverOpen, isTopmost(atWindowPoint: windowPoint) {
+            if let id = barHoverID, barHoverReach(id).contains(point) { next = id }
+            else if let id = hoveredObjectID, items.contains(where: { $0.id == id && ($0.kind == .code || EaselWebItemChrome.isSnapshot($0)) }) { next = id }
+        }
+        guard next != barHoverID else { return }
+        barHoverID = next
+        refreshSnapshotHeader()
+        refreshCodeBlockChrome(hidden: hidesPassiveAnnotations || !canPresentMotion)
+    }
+    private func barHoverReach(_ id: UUID) -> NSRect {
+        var reach = NSRect.null
+        let bar = codeBlocks.bar
+        if bar.itemID == id, !bar.isHidden, bar.superview === self { reach = reach.union(bar.frame) }
+        if snapshotHeaderItem == id, let snapshotHeader { reach = reach.union(snapshotHeader.frame) }
+        return reach
+    }
     private func refreshSnapshotHeader() {
-        let snapshot = selection.count == 1 ? items.first { selection.contains($0.id) && EaselWebItemChrome.isSnapshot($0) } : nil
+        let selected = selection.count == 1 ? items.first { selection.contains($0.id) && EaselWebItemChrome.isSnapshot($0) } : nil
+        let hovered = objectBarHoverOpen ? items.first { $0.id == barHoverID && EaselWebItemChrome.isSnapshot($0) } : nil
+        let snapshot = hovered ?? selected
         let dragging = start != nil && (dragDistance > 3 || resizing || marqueeRect != nil)
         let hidden = dragging || tool != .select || editor != nil || fixedCanvasSize != nil || motion.isInteracting
         let header = hidden ? nil : snapshot.flatMap { pageObjects?.snapshotHeader(for: $0) }
+        let appearing = header != nil && snapshotHeader !== header
         if snapshotHeader !== header {
-            snapshotHeader?.removeFromSuperview(); snapshotHeader = header
+            let previous = snapshotHeader
+            snapshotHeader = header
+            if let previous {
+                NoteAnimation.fade(previous, visible: false, duration: snapshotHeaderDriven && !hidden ? NoteAnimation.hoverDuration : 0) { [weak self, weak previous] in
+                    guard let previous, self?.snapshotHeader !== previous else { return }
+                    previous.removeFromSuperview()
+                }
+            }
             NSAccessibility.post(element: self, notification: .layoutChanged)
         }
         snapshotHeaderItem = header == nil ? nil : snapshot?.id
-        guard let header else { return }
+        guard let header else { snapshotHeaderDriven = false; return }
+        let driven = snapshot?.id != selected?.id
+        if appearing || (snapshotHeaderDriven && !driven) {
+            if appearing, driven, header.superview == nil { header.alphaValue = 0 }
+            NoteAnimation.fade(header, visible: true, duration: appearing && driven ? NoteAnimation.hoverDuration : 0)
+        }
+        snapshotHeaderDriven = driven
         bindHeaderScroll()
         positionSnapshotHeader()
         if subviews.last !== header { addSubview(header, positioned: .above, relativeTo: nil) }
@@ -1011,6 +1050,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             && isTopmost(atWindowPoint: event.locationInWindow)
             ? hoverTarget(at: point, hit: object(at: point) ?? object(at: point, includingLocked: true)) : nil
         if hoveredObjectID != next { hoveredObjectID = next; invalidateIncrementalDisplay(); window?.invalidateCursorRects(for: self) }
+        updateObjectBarHover(at: point, windowPoint: event.locationInWindow)
         updateHandleHover(start == nil && !toolOwnsPointer ? resizeHandle(at: point) : nil)
         updateTableHover(at: point)
         updateConnectorHover(at: point)
@@ -1018,7 +1058,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         updatePlacementPreview(at: isTopmost(atWindowPoint: event.locationInWindow) ? point : nil)
         super.mouseMoved(with: event)
     }
-    override func mouseExited(with event: NSEvent) { hoveredObjectID = nil; updateHandleHover(nil); updateTableHover(at: nil); invalidateIncrementalDisplay(); updatePlacementPreview(at: nil); super.mouseExited(with: event) }
+    override func mouseExited(with event: NSEvent) { hoveredObjectID = nil; updateObjectBarHover(at: nil, windowPoint: nil); updateHandleHover(nil); updateTableHover(at: nil); invalidateIncrementalDisplay(); updatePlacementPreview(at: nil); super.mouseExited(with: event) }
     private var easelSelectionColor: NSColor {
         EaselAppearance.selection
     }

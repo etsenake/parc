@@ -283,15 +283,18 @@ extension EaselCanvasView {
     func refreshCodeBlockChrome(hidden: Bool) {
         synchronizeCodeEditor()
         let bar = codeBlocks.bar
-        let editing = codeItem(codeBlocks.editingID)
-        let selected = selection.count == 1 ? codeItem(selection.first) : nil
-        guard let item = editing ?? selected, !hidden, !drawing, !session.isClosed else {
-            bar.isHidden = true
+        let pinned = codeItem(codeBlocks.editingID) ?? (selection.count == 1 ? codeItem(selection.first) : nil)
+        let hovered = objectBarHoverOpen ? codeItem(barHoverID) : nil
+        let held = bar.copy.isFlashing ? codeItem(bar.itemID) : nil
+        let suppressed = hidden || drawing || session.isClosed
+        guard let item = hovered ?? pinned ?? held, !suppressed else {
+            setCodeBarShown(false, animated: !suppressed)
             return
         }
         if bar.superview !== self { addSubview(bar, positioned: .above, relativeTo: nil) }
         bar.copy.setAccessibilityLabel("Copy code")
         if bar.itemID != item.id || bar.copy.onPress == nil {
+            if bar.itemID != item.id { bar.copy.cancelFlash() }
             bar.itemID = item.id
             let id = item.id
             bar.copy.onPress = { [weak self, weak bar] in
@@ -305,13 +308,30 @@ extension EaselCanvasView {
         let scale = codeScale, size = bar.preferredSize
         let width = size.width / scale, height = size.height / scale
         let inset = 4 / scale
-        guard item.frame.width * scale >= size.width + 24 else { bar.isHidden = true; return }
+        guard item.frame.width * scale >= size.width + 24 else { setCodeBarShown(false, animated: false); return }
         let header = EaselCodeBlock.headerHeight
         let y = header * scale >= size.height + 4 ? item.frame.y + (header - height) / 2 : item.frame.y + inset
         bar.frame = NSRect(x: item.frame.x + item.frame.width - inset - width, y: y, width: width, height: height)
         bar.bounds = NSRect(origin: .zero, size: size)
         bar.needsLayout = true
-        bar.isHidden = false
+        setCodeBarShown(true, animated: item.id != pinned?.id)
+    }
+
+    private func setCodeBarShown(_ shown: Bool, animated: Bool) {
+        let state = codeBlocks, bar = state.bar
+        if shown {
+            bar.isHidden = false
+            guard !state.barShown else { return }
+            state.barShown = true
+            NoteAnimation.fade(bar, visible: true, duration: animated ? NoteAnimation.hoverDuration : 0)
+        } else {
+            guard state.barShown || (!animated && !bar.isHidden) else { return }
+            state.barShown = false
+            NoteAnimation.fade(bar, visible: false, duration: animated ? NoteAnimation.hoverDuration : 0) { [weak state] in
+                guard let state, !state.barShown else { return }
+                state.bar.isHidden = true
+            }
+        }
     }
 
     func codeMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] {

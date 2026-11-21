@@ -1,8 +1,11 @@
 # Live captured regions
 
 A captured WebCard keeps its original PNG, URL, acquisition time and optional
-renderer geometry. **Make Live**, on the selected card and its context menu,
+renderer geometry. **Make Live**, on the card's header and its context menu,
 opens a real auxiliary Chromium page in that Easel editor's window and Profile.
+The snapshot header with Make live and Open shows while the card is selected or
+hovered, fading in and out and staying while the pointer travels onto it; its
+buttons act on that card without selecting it first.
 The first use presents the Make it Live/Cancel education, explaining that sites can change and the original screenshot remains available through Back to snapshot. Its callback is bound to the same window, selection and document. The page is framed to the captured region. Its own renderer continues to update;
 there is no screenshot timer or image relabeling. **Back to snapshot** returns to the
 same original image after the live page actually agrees to close.

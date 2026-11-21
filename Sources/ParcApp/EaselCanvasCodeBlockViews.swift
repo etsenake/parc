@@ -465,7 +465,7 @@ final class EaselCodeChip: PointingHandButton {
     var onPress: (() -> Void)?
     private var shownTitle: String { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
     private var shownSymbol: String { didSet { needsDisplay = true } }
-    private var isFlashing = false
+    private(set) var isFlashing = false
     private var flashGeneration = 0
     private var hovering = false { didSet { if hovering != oldValue { needsDisplay = true } } }
     private var hoverArea: NSTrackingArea?
@@ -551,6 +551,14 @@ final class EaselCodeChip: PointingHandButton {
         }
     }
 
+    func cancelFlash() {
+        guard isFlashing else { return }
+        flashGeneration += 1
+        isFlashing = false
+        shownTitle = chipTitle
+        shownSymbol = symbol
+    }
+
     var onSizeChange: (() -> Void)?
 }
 
@@ -576,6 +584,7 @@ final class EaselCodeBlockBar: NSView {
         setAccessibilityRole(.toolbar)
         setAccessibilityLabel("Code block")
         isHidden = true
+        alphaValue = 0
         refreshColors()
     }
 
@@ -629,5 +638,6 @@ final class EaselCodeBlockState {
     var undoGroup: UUID?
     var committedText: String?
     var finishing = false
+    var barShown = false
     let bar = EaselCodeBlockBar()
 }

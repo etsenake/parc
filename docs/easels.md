@@ -214,8 +214,8 @@ their optional live page is a separate owner. Selection, cancellation,
 
 Webpage objects and captured cards wear the Notes embed block's header
 (`EmbeddedPageHeader`): favicon, page title and host, then labelled state and
-actions. A selected captured card floats that header over the top of its image,
-above every other object; it pins to the visible top while the card scrolls
+actions. A selected or hovered captured card floats that header over the top of
+its image, above every other object; it pins to the visible top while the card scrolls
 past and sits just outside cards shorter than the header. It says “Snapshot ·
 captured <day>” and offers **Make live** plus Open in a tab. A card without
 saved region geometry (full-page, cropped, marked-up, Portrait-framed or older)

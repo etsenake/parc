@@ -59,9 +59,13 @@ The header always names the language. With code blocks selected, the floating
 toolbar leads with a language menu listing every language, the current one
 checked (Mixed when the selection disagrees); choosing one relabels every
 selected unlocked block in one Undo step (`setCodeLanguage(_:for:)`). A selected
-or edited block also shows Copy in its header's top-right corner, which puts the
-code on the clipboard with trailing blank lines trimmed and briefly says
-Copied!. VoiceOver reads the block as "Code block, TypeScript" and offers Edit
+or edited block shows Copy in its header's top-right corner, and so does a block
+you hover, fading in and out like Notes' code block bar and staying while the
+pointer moves onto it. Hovering a different block while one is selected shows the
+hovered block's Copy; the selected one's returns when the pointer leaves. Copy
+acts on the block it sits on, selected or not, puts the code on the clipboard
+with trailing blank lines trimmed and briefly says Copied!, holding the bar up
+until that fades. VoiceOver reads the block as "Code block, TypeScript" and offers Edit
 code, Copy code and Change language actions. Locked blocks can be copied but not
 edited or relabelled.
 
