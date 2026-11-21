@@ -120,6 +120,7 @@ enum EaselVectorExport {
         svg += " role=\"img\" aria-label=\"" + escape(title) + "\""
         svg += " width=\"" + number(bounds.width) + "\" height=\"" + number(bounds.height) + "\""
         svg += " viewBox=\"" + [bounds.x, bounds.y, bounds.width, bounds.height].map(number).joined(separator: " ") + "\">"
+        svg += drawingStyles(shown)
         for item in shown {
             svg += objectLinked(item, element(item, art: art))
         }
@@ -324,7 +325,6 @@ enum EaselVectorExport {
             + ".easel-canvas{margin:0;overflow-x:auto;line-height:0}\n"
             + ".easel-svg{display:block;max-width:100%;height:auto;margin:0 auto}\n"
             + ".easel-svg a{cursor:pointer}\n" + codeCSS(palette.code)
-            + highlightCSS
     }
 
     static func htmlDocument(_ document: EaselDocument, art: EaselVectorArt, palette: EaselVectorPalette = .standard) -> String {

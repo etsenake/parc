@@ -26,8 +26,10 @@ struct EaselDrawingTests {
                       createdAt: Date(timeIntervalSinceReferenceDate: 0), modifiedAt: Date(timeIntervalSinceReferenceDate: 0), items: items)
     }
 
+    @MainActor
     static func main() {
         capture()
+        strokes()
         smoothingAndSimplifying()
         straightLines()
         paths()
@@ -353,15 +355,21 @@ struct EaselDrawingTests {
     }
 
     static func exporting() {
-        let doodle = stroke([p(0, 0), p(10, 0), p(10, 10)])
-        let marker = EaselVectorExport.element(doodle, art: EaselVectorArt())
+        let doodle = stroke([p(0, 0), p(10, 0), p(10, 10)], brush: .marker)
+        let marker = EaselVectorExport.drawing(doodle)
         expect(marker.contains("Q") && marker.contains("stroke-linecap:round") && !marker.contains("easel-highlight"),
-               "Doodles export as smooth curves with round ends")
-        let highlight = EaselVectorExport.element(stroke([p(0, 0), p(80, 0)], brush: .highlighter), art: EaselVectorArt())
-        expect(highlight.contains("class=\"easel-highlight\""), "Highlights export with the multiply blend class")
-        let css = EaselVectorExport.css(.standard)
-        expect(css.contains(".easel-highlight{mix-blend-mode:multiply}") && css.contains("{.easel-highlight{mix-blend-mode:normal}}"),
-               "Highlights multiply on light pages and paint normally in dark ones")
+               "New doodles export as smooth curves with round ends")
+        let legacy = EaselVectorExport.element(stroke([p(0, 0), p(10, 0), p(10, 10)]), art: EaselVectorArt())
+        expect(!legacy.contains("Q") && legacy.contains("M0 0L10 0L10 10"), "Doodles saved before smoothing export their exact straight segments")
+        let highlight = EaselVectorExport.drawing(stroke([p(0, 0), p(80, 0)], brush: .highlighter))
+        expect(highlight.contains("class=\"easel-highlight\"") && highlight.contains("stroke-opacity:0.35") && highlight.contains("stroke-width:16"),
+               "Highlights export translucent and wide with the multiply blend class")
+        expect(!highlight.contains("var(--easel-ink)"), "An automatic highlighter exports in the default highlight colour, not ink")
+        let lit = EaselVectorExport.svg([stroke([p(0, 0), p(80, 0)], brush: .highlighter)], art: EaselVectorArt(), title: "Board")
+        expect(lit.contains("<style>.easel-highlight{mix-blend-mode:multiply}") && lit.contains("{.easel-highlight{mix-blend-mode:normal}}"),
+               "A standalone SVG carries its own highlight blend for light and dark viewers")
+        expect(!EaselVectorExport.svg([doodle], art: EaselVectorArt(), title: "Board").contains("<style>"), "Boards without highlights add no styles")
+        expect(!EaselVectorExport.css(.standard).contains(".easel-highlight{"), "Page CSS leaves highlight blending to the SVG")
         var strip = stroke([p(10, 10), p(110, 10)], brush: .washi)
         strip.pattern = "dots"
         let tape = EaselVectorExport.element(strip, art: EaselVectorArt())
@@ -370,6 +378,51 @@ struct EaselDrawingTests {
         expect(tape.contains("opacity=\"0.9\"") && tape.contains("translate(10 10) rotate(0)"), "Tape keeps its translucency and placement")
         let svg = EaselVectorExport.svg([strip, doodle], art: EaselVectorArt(), title: "Board")
         expect(svg.components(separatedBy: "<pattern").count == 2, "Each strip carries one pattern")
+        func ids(_ text: String) -> [String] {
+            text.components(separatedBy: "id=\"").dropFirst().compactMap { $0.components(separatedBy: "\"").first }
+        }
+        let twice = EaselVectorExport.svg([strip], art: EaselVectorArt(), title: "One") + EaselVectorExport.svg([strip], art: EaselVectorArt(), title: "Two")
+        let tapeIDs = ids(twice).filter { $0.hasPrefix("washi") }
+        expect(tapeIDs.count == 4 && Set(tapeIDs).count == 4, "The same strip exported twice on one page never reuses a pattern or clip id")
+        var twin = strip
+        twin.frame.y += 60
+        let pair = ids(EaselVectorExport.svg([strip, twin], art: EaselVectorArt(), title: "Pair")).filter { $0.hasPrefix("washi") }
+        expect(Set(pair).count == pair.count && pair.count == 4, "Strips that share an id still get their own pattern and clip")
+    }
+
+    @MainActor
+    static func strokes() {
+        var template = EaselItem(kind: .freehand, frame: EaselRect(x: 0, y: 0, width: 1, height: 1), zIndex: 7, color: "#2C6C91")
+        template.brush = .marker
+        guard let tap = EaselDrawing.strokeItem([p(40, 50)], like: template, straight: false, strict: false, scale: 1) else { failTest("A tap draws") }
+        expect(tap.points.count == 2 && tap.points[0] == tap.points[1] && tap.frame.x == 40 && tap.frame.y == 50, "A tap leaves a dot of two equal points")
+        expect(tap.brush == .marker && tap.zIndex == 7 && tap.color == "#2C6C91", "New strokes keep the brush, layer and colour they started with")
+        let wobble = [p(0, 0), p(30, 1.5), p(60, -1), p(100, 3)]
+        guard let line = EaselDrawing.strokeItem(wobble, like: template, straight: true, strict: false, scale: 1) else { failTest("Shift draws") }
+        expect(line.points.count == 2 && line.frame.height == 1 && near(line.points[1].x, hypot(100, 3)),
+               "Shift turns a wobbly stroke into one level line from where it started")
+        guard let curve = EaselDrawing.strokeItem((0...120).map { p(Double($0), sin(Double($0) / 9) * 30) }, like: template,
+                                                  straight: false, strict: false, scale: 1) else { failTest("Freehand draws") }
+        expect(curve.points.count > 2 && curve.points.count < 121, "Freehand strokes are smoothed and simplified when they finish")
+        expect(EaselDrawing.pathElements(curve).contains { if case .quad = $0 { return true } else { return false } },
+               "New strokes draw through smooth curves")
+        let legacy = stroke([p(0, 0), p(5, 15), p(10, 0)])
+        expect(EaselDrawing.pathElements(legacy) == [.move(p(0, 0)), .line(p(5, 15)), .line(p(10, 0))],
+               "Doodles saved before smoothing keep their sharp corners")
+        var tapeTemplate = template
+        tapeTemplate.brush = .washi
+        expect(EaselDrawing.strokeItem([p(0, 0), p(2, 1)], like: tapeTemplate, straight: false, strict: false, scale: 1) == nil,
+               "A nudge too short for tape lays nothing")
+        guard let tape = EaselDrawing.strokeItem([p(0, 0), p(40, 3), p(90, 52)], like: tapeTemplate, straight: false, strict: true, scale: 1) else {
+            failTest("Tape draws")
+        }
+        expect(tape.points.count == 2 && near(tape.points[1].x - tape.points[0].x, tape.points[1].y - tape.points[0].y),
+               "Tape is always straight and Shift snaps it to 45 degrees")
+        guard let session = try? EaselSession(inMemory: document([]), assets: [:]) else { failTest("Session opens") }
+        try? session.perform("Draw") { $0.items.append(curve) }
+        expect(session.document.items.count == 1 && session.canUndo, "A finished stroke lands in one change")
+        try? session.undo()
+        expect(session.document.items.isEmpty && !session.canUndo, "One Undo takes the whole stroke back")
     }
 
     static func washi() {

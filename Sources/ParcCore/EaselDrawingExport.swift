@@ -1,8 +1,26 @@
 import Foundation
 
+final class EaselExportKeys: @unchecked Sendable {
+    static let shared = EaselExportKeys()
+    private let lock = NSLock()
+    private var last = 0
+
+    func next() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        last += 1
+        return last
+    }
+}
+
 extension EaselVectorExport {
-    static let highlightCSS = ".easel-highlight{mix-blend-mode:multiply}\n"
-        + "@media screen and (prefers-color-scheme:dark){.easel-highlight{mix-blend-mode:normal}}\n"
+    static let highlightCSS = ".easel-highlight{mix-blend-mode:multiply}"
+        + "@media screen and (prefers-color-scheme:dark){.easel-highlight{mix-blend-mode:normal}}"
+
+    static func isHighlight(_ item: EaselItem) -> Bool { item.kind == .freehand && item.resolvedBrush == .highlighter }
+
+    static func drawingStyles(_ items: [EaselItem]) -> String {
+        items.contains(where: isHighlight) ? "<style>" + highlightCSS + "</style>" : ""
+    }
 
     static func drawing(_ item: EaselItem) -> String {
         switch item.resolvedBrush {
@@ -11,10 +29,10 @@ extension EaselVectorExport {
         }
     }
 
-    static func smoothStrokePath(_ item: EaselItem) -> String? {
+    static func drawingPath(_ item: EaselItem) -> String? {
         let f = item.frame
         func point(_ p: EaselPoint) -> String { number(f.x + p.x) + " " + number(f.y + p.y) }
-        let path = EaselDrawing.smoothPath(item.points).map { element -> String in
+        let path = EaselDrawing.pathElements(item).map { element -> String in
             switch element {
             case .move(let p): return "M" + point(p)
             case .line(let p): return "L" + point(p)
@@ -25,19 +43,16 @@ extension EaselVectorExport {
     }
 
     static func brushStroke(_ item: EaselItem) -> String {
-        guard let path = smoothStrokePath(item) else { return "" }
+        guard let path = drawingPath(item) else { return "" }
         let highlight = item.resolvedBrush == .highlighter
-        let width = EaselPaintRules.strokeWidth(item)
-        var style = "fill:none;stroke:" + paint(item.color) + ";stroke-width:" + number(width) + ";stroke-linecap:round;stroke-linejoin:round"
-        let dash = EaselPaintRules.dashPattern(item.strokeDash, width: width)
-        if !highlight, !dash.isEmpty { style += ";stroke-dasharray:" + dash.map(number).joined(separator: " ") }
-        return "<path" + (highlight ? " class=\"easel-highlight\"" : "") + " d=\"" + path + "\" style=\"" + style + "\"/>"
+        return "<path" + (highlight ? " class=\"easel-highlight\"" : "") + " d=\"" + path + "\" style=\"fill:none;"
+            + strokeStyle(item, dashed: !highlight, rounded: true) + "\"/>"
     }
 
     static func tape(_ item: EaselItem) -> String {
         guard let placement = EaselWashi.placement(item) else { return "" }
         let tile = EaselWashi.tile(EaselWashi.pattern(item), color: item.color)
-        let key = item.id.uuidString.lowercased(), half = EaselWashi.width / 2
+        let key = String(EaselExportKeys.shared.next()) + "-" + item.id.uuidString.lowercased(), half = EaselWashi.width / 2
         let outline = EaselWashi.outline(length: placement.length, seed: EaselWashi.seed(item.id))
             .map { number($0.x) + "," + number($0.y) }.joined(separator: " ")
         let edge = EaselWashi.tooth * 2, span = number(placement.length + 2 * edge)

@@ -113,7 +113,36 @@ enum EaselDrawing {
         return (frame, absolute.map { EaselPoint(x: $0.x - minX, y: $0.y - minY) })
     }
 
+    static let minimumTape = 4.0
+
     static func isStraight(_ item: EaselItem) -> Bool { item.kind == .freehand && item.points.count == 2 }
+
+    static func strokeItem(_ raw: [EaselPoint], like template: EaselItem, straight: Bool, strict: Bool, scale: Double) -> EaselItem? {
+        let clean = raw.filter { $0.x.isFinite && $0.y.isFinite }
+        guard let start = clean.first, let last = clean.last else { return nil }
+        let brush = template.resolvedBrush
+        let absolute: [EaselPoint]
+        if brush.alwaysStraight || straight {
+            let end = straightEnd(from: start, to: last, strict: strict)
+            if brush == .washi && hypot(end.x - start.x, end.y - start.y) < minimumTape { return nil }
+            absolute = [start, end]
+        } else {
+            absolute = finished(clean, scale: scale)
+        }
+        guard let placed = geometry(absolute) else { return nil }
+        var item = template
+        item.kind = .freehand
+        item.brush = brush
+        item.frame = placed.frame
+        item.points = placed.points
+        return item
+    }
+
+    static func pathElements(_ item: EaselItem) -> [PathElement] {
+        guard item.brush == nil else { return smoothPath(item.points) }
+        guard let first = item.points.first else { return [] }
+        return [.move(first)] + (item.points.count > 1 ? item.points.dropFirst().map { .line($0) } : [.line(first)])
+    }
 
     static func smoothPath(_ points: [EaselPoint]) -> [PathElement] {
         guard let first = points.first else { return [] }
