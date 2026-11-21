@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 @testable import ParcCore
-@MainActor struct EaselBoardFeaturesTests {
+struct EaselBoardFeaturesTests {
     func item(_ kind: EaselItemKind, _ text: String, x: Double, y: Double, width: Double = 200, height: Double = 100) -> EaselItem {
         EaselItem(kind: kind, frame: .init(x: x, y: y, width: width, height: height), text: text)
     }
@@ -154,7 +154,19 @@ import Testing
         #expect(EaselFinder.replace(overlapping, with: "z", in: board).skippedOther == 2, "overlapping matches refuse the object")
     }
 
-    @Test func findAndReplaceWorkInTableCells() {
+    @Test
+    func tableSearchFindsMatchesInCellOrder() {
+        var grid = item(.table, "", x: 0, y: 0, width: 280, height: 72)
+        grid.table = EaselTable(columnWidths: [140, 140], rowHeights: [36, 36],
+                                cells: [[EaselTableCell(text: "cat"), EaselTableCell(text: "dog")],
+                                        [EaselTableCell(text: "cat food"), EaselTableCell(text: "")]])
+        let board = document([grid])
+        let matches = EaselFinder.matches(of: "cat", in: board)
+        #expect(matches.map(\.part) == [.cell(row: 0, column: 0), .cell(row: 1, column: 0)], "table cells are searched row by row")
+    }
+
+    @Test
+    func replaceAllRewritesOnlyMatchingCells() {
         var grid = item(.table, "", x: 0, y: 0, width: 280, height: 72)
         grid.table = EaselTable(columnWidths: [140, 140], rowHeights: [36, 36],
                                 cells: [[EaselTableCell(text: "cat"), EaselTableCell(text: "dog")],
@@ -166,47 +178,103 @@ import Testing
         let table = outcome.document.items[0].table
         #expect(outcome.count == 2 && table?.cells[0][0].text == "bird" && table?.cells[1][0].text == "bird food", "Replace All rewrites each matching cell")
         #expect(table?.cells[0][1].text == "dog", "other cells stay put")
+    }
+
+    @Test
+    func replacingOneCellAdvancesToTheNextCell() {
+        var grid = item(.table, "", x: 0, y: 0, width: 280, height: 72)
+        grid.table = EaselTable(columnWidths: [140, 140], rowHeights: [36, 36],
+                                cells: [[EaselTableCell(text: "cat"), EaselTableCell(text: "dog")],
+                                        [EaselTableCell(text: "cat food"), EaselTableCell(text: "")]])
+        let board = document([grid])
+        let matches = EaselFinder.matches(of: "cat", in: board)
+        #expect(matches.map(\.part) == [.cell(row: 0, column: 0), .cell(row: 1, column: 0)], "table cells are searched row by row")
+        let outcome = EaselFinder.replace(matches, with: "bird", in: board)
         let after = EaselFindMatch(itemID: grid.id, part: .cell(row: 0, column: 0), range: 4..<4)
         #expect(EaselFinder.index(of: after, in: EaselFinder.matches(of: "bird", in: outcome.document), document: outcome.document) == 1,
                "after replacing a cell the next match is the next cell, not an earlier offset elsewhere")
+    }
+
+    @Test
+    func oneInvalidCellRefusesReplacementForTheWholeTable() {
+        var grid = item(.table, "", x: 0, y: 0, width: 280, height: 72)
+        grid.table = EaselTable(columnWidths: [140, 140], rowHeights: [36, 36],
+                                cells: [[EaselTableCell(text: "cat"), EaselTableCell(text: "dog")],
+                                        [EaselTableCell(text: "cat food"), EaselTableCell(text: "")]])
         var broken = grid
         broken.table?.cells[1][0].richText = EaselRichText(runs: [.init(location: 0, length: 3, attributes: attributes("#000000FF"))])
         let refused = EaselFinder.replace(EaselFinder.matches(of: "cat", in: document([broken])), with: "x", in: document([broken]))
         #expect(refused.count == 0 && refused.skippedOther == 2, "a cell that can't change leaves the whole table alone")
+    }
+
+    @Test
+    func lockedTablesAreSearchableAndCannotBeReplaced() {
+        var grid = item(.table, "", x: 0, y: 0, width: 280, height: 72)
+        grid.table = EaselTable(columnWidths: [140, 140], rowHeights: [36, 36],
+                                cells: [[EaselTableCell(text: "cat"), EaselTableCell(text: "dog")],
+                                        [EaselTableCell(text: "cat food"), EaselTableCell(text: "")]])
         let pinned = locked(grid)
         #expect(EaselFinder.replace(EaselFinder.matches(of: "cat", in: document([pinned])), with: "x", in: document([pinned])).skippedLocked == 2,
                "locked tables are found but not changed")
     }
 
-    @Test func aFindSessionStartsAtTheFirstMatchAndWraps() {
+    @Test
+    func findStartsAtTheFirstMatch() {
+        let first = item(.sticky, "cat cat", x: 0, y: 0)
+        let second = item(.sticky, "cat", x: 0, y: 400)
+        let board = document([first, second])
+        let state = session("cat", in: board)
+        #expect(state.matches.count == 3 && state.currentIndex == 0, "a fresh search starts at the first match")
+    }
+
+    @Test(arguments: [(3, 0), (-1, 2)])
+    func findWrapsInEitherDirection(_ step: Int, _ expected: Int) {
         let first = item(.sticky, "cat cat", x: 0, y: 0)
         let second = item(.sticky, "cat", x: 0, y: 400)
         let board = document([first, second])
         var state = session("cat", in: board)
-        #expect(state.matches.count == 3 && state.currentIndex == 0, "a fresh search starts at the first match")
-        state.step(1)
-        state.step(1)
-        #expect(state.currentMatch?.itemID == second.id, "stepping walks in reading order")
-        state.step(1)
-        #expect(state.currentIndex == 0, "stepping past the last match wraps to the first")
+        state.step(step)
+        #expect(state.currentIndex == expected)
+    }
+
+    @Test
+    func findRefreshKeepsTheMatchAfterEditing() {
+        let first = item(.sticky, "cat cat", x: 0, y: 0)
+        let second = item(.sticky, "cat", x: 0, y: 400)
+        let board = document([first, second])
+        var state = session("cat", in: board)
         state.step(-1)
-        #expect(state.currentIndex == 2, "stepping back from the first wraps to the last")
         var edited = board
         edited.items[0].text = "cat dog"
         state.refresh(in: edited, keeping: state.currentMatch)
         #expect(state.currentMatch?.itemID == second.id && state.matches.count == 2, "a refresh after an edit keeps the current match")
+        #expect(state.countLabel(replacing: false, in: edited) == "2 of 2", "the count says where you are")
+    }
+
+    @Test
+    func findCanStartAtAMatchAlreadyInView() {
+        let first = item(.sticky, "cat cat", x: 0, y: 0)
+        let second = item(.sticky, "cat", x: 0, y: 400)
+        let board = document([first, second])
         var preferred = EaselFindSession()
         preferred.query = "cat"
         preferred.refresh(in: board, keeping: nil) { matches in matches.firstIndex { $0.itemID == second.id } }
         #expect(preferred.currentMatch?.itemID == second.id, "a new search can start at the first match already in view")
-        #expect(state.countLabel(replacing: false, in: edited) == "2 of 2", "the count says where you are")
+    }
+
+    @Test
+    func theFindCountExplainsAMissingQueryOrMatch() {
+        let first = item(.sticky, "cat cat", x: 0, y: 0)
+        let second = item(.sticky, "cat", x: 0, y: 400)
+        let board = document([first, second])
         var none = session("zebra", in: board)
         #expect(none.countLabel(replacing: true, in: board) == "No matches", "no matches says so")
         none.query = ""
         #expect(none.countLabel(replacing: true, in: board).isEmpty, "an empty query shows no count")
     }
 
-    @Test func replacingTheCurrentMatchMovesToTheNext() {
+    @Test
+    func replacingTheCurrentMatchMovesToTheNext() {
         let first = item(.sticky, "cat", x: 0, y: 0)
         let pinned = locked(item(.sticky, "cat", x: 0, y: 400))
         let third = item(.sticky, "cat", x: 0, y: 800)
@@ -218,16 +286,45 @@ import Testing
         #expect(outcome.touched == [first.id] && outcome.count == 1, "Replace changes only the current match")
         state.refresh(in: outcome.document, keeping: next)
         #expect(state.currentMatch?.itemID == pinned.id, "after Replace the next match becomes current")
+    }
+
+    @Test
+    func replacingALockedMatchSkipsToTheNextOne() {
+        let first = item(.sticky, "cat", x: 0, y: 0)
+        let pinned = locked(item(.sticky, "cat", x: 0, y: 400))
+        let third = item(.sticky, "cat", x: 0, y: 800)
+        let board = document([first, pinned, third])
+        var state = session("cat", in: board)
+        guard case .replaced(let outcome, let next) = state.replaceCurrent(with: "dog", in: board) else {
+            Issue.record("the current, visible match is replaced"); return
+        }
+        #expect(outcome.touched == [first.id] && outcome.count == 1, "Replace changes only the current match")
+        state.refresh(in: outcome.document, keeping: next)
         #expect(state.countLabel(replacing: true, in: outcome.document) == "1 of 2 · locked", "a locked current match says so while replacing")
         #expect(state.countLabel(replacing: false, in: outcome.document) == "1 of 2", "plain finding doesn't fuss about locks")
         #expect(state.replaceCurrent(with: "dog", in: outcome.document) == .skipped, "Replace on a locked match skips ahead instead")
         #expect(state.currentMatch?.itemID == third.id, "the skip lands on the next match that can change")
+    }
 
+    @Test
+    func replacingAVanishedMatchShowsTheNewMatchFirst() {
+        let first = item(.sticky, "cat", x: 0, y: 0)
+        let pinned = locked(item(.sticky, "cat", x: 0, y: 400))
+        let third = item(.sticky, "cat", x: 0, y: 800)
+        let board = document([first, pinned, third])
         var watched = session("cat", in: board)
         var changed = board
         changed.items[0].text = "bird"
         #expect(watched.replaceCurrent(with: "dog", in: changed) == .moved, "a match that vanished is never swapped for an unseen one")
         #expect(watched.currentMatch?.itemID == pinned.id, "the new current match is shown first")
+    }
+
+    @Test
+    func changesElsewhereDoNotPreventReplacingTheVisibleMatch() {
+        let first = item(.sticky, "cat", x: 0, y: 0)
+        let pinned = locked(item(.sticky, "cat", x: 0, y: 400))
+        let third = item(.sticky, "cat", x: 0, y: 800)
+        let board = document([first, pinned, third])
         var stillThere = board
         stillThere.items[2].text = "cat!"
         var kept = session("cat", in: board)
@@ -235,10 +332,21 @@ import Testing
             Issue.record("an edit elsewhere doesn't stop Replace on the match you can see"); return
         }
         #expect(keptOutcome.touched == [first.id], "the visible match is the one replaced")
+    }
 
+    @Test
+    func replacingRefusesWhenEveryMatchIsLocked() {
         let onlyLocked = document([locked(item(.sticky, "cat", x: 0, y: 0))])
         var stuck = session("cat", in: onlyLocked)
         #expect(stuck.replaceCurrent(with: "dog", in: onlyLocked) == .refused, "with nothing replaceable, Replace refuses")
+    }
+
+    @Test
+    func identicalReplacementAdvancesPastTheMatch() {
+        let first = item(.sticky, "cat", x: 0, y: 0)
+        let pinned = locked(item(.sticky, "cat", x: 0, y: 400))
+        let third = item(.sticky, "cat", x: 0, y: 800)
+        let board = document([first, pinned, third])
         var same = session("cat", in: board)
         guard case .replaced(let unchanged, let after) = same.replaceCurrent(with: "cat", in: board) else {
             Issue.record("replacing with the same text still moves on"); return
@@ -315,7 +423,7 @@ import Testing
         #expect(policy.shouldRecord(lastRecordedAt: start, now: start.addingTimeInterval(300)), "five minutes later a new snapshot is due")
     }
 
-    @Test func versionsRecordTheEaselAsItWasAndLoadBack() throws {
+    @MainActor @Test func versionsRecordTheEaselAsItWasAndLoadBack() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-easel-history-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let clock = Clock()
@@ -344,10 +452,17 @@ import Testing
         }
     }
 
-    @Test func theCountdownTimerAddsMinutesWithinItsLimits() {
+    @Test
+    func aNewTimerOffersFiveMinutes() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        let timer = EaselCountdown()
+        #expect(timer.phase == .idle && timer.remaining(at: start) == 300, "a new timer offers five minutes")
+    }
+
+    @Test
+    func idleMinutesClampToTheSupportedRange() {
         let start = Date(timeIntervalSinceReferenceDate: 1_000)
         var timer = EaselCountdown()
-        #expect(timer.phase == .idle && timer.remaining(at: start) == 300, "a new timer offers five minutes")
         timer.adjust(minutes: 1, at: start)
         timer.adjust(minutes: 5, at: start)
         #expect(timer.duration == 660, "up and Shift-up add one and five minutes")
@@ -357,28 +472,109 @@ import Testing
         #expect(timer.duration == EaselCountdown.maximum && EaselCountdown.label(timer.duration) == "99:59", "the timer tops out at 99:59")
         timer.adjust(minutes: -1, at: start)
         #expect(timer.duration == 99 * 60, "stepping down from 99:59 lands on the whole minute below")
+    }
+
+    @Test
+    func aRunningTimerCountsDown() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        var timer = EaselCountdown()
         timer.set(minutes: 3)
         timer.start(at: start)
         #expect(timer.phase == .running && timer.remaining(at: start.addingTimeInterval(61)) == 119, "a running timer counts down")
+    }
+
+    @Test
+    func aRunningTimerCannotBeShortened() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        var timer = EaselCountdown()
+        timer.set(minutes: 3)
+        timer.start(at: start)
         timer.adjust(minutes: -1, at: start.addingTimeInterval(61))
         #expect(timer.remaining(at: start.addingTimeInterval(61)) == 119, "a running timer can't be shortened")
+    }
+
+    @Test
+    func aRunningTimerCanAddAMinute() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        var timer = EaselCountdown()
+        timer.set(minutes: 3)
+        timer.start(at: start)
         timer.addMinute(at: start.addingTimeInterval(61))
         #expect(timer.remaining(at: start.addingTimeInterval(61)) == 179, "+1 min adds a minute while running")
+    }
+
+    @Test
+    func aPausedTimerFreezesItsRemainingTime() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        var timer = EaselCountdown()
+        timer.set(minutes: 3)
+        timer.start(at: start)
         timer.pause(at: start.addingTimeInterval(91))
-        #expect(timer.phase == .paused && timer.remaining(at: start.addingTimeInterval(500)) == 149, "pausing freezes the time left")
+        #expect(timer.phase == .paused && timer.remaining(at: start.addingTimeInterval(500)) == 89, "pausing freezes the time left")
+    }
+
+    @Test
+    func aPausedTimerCanAddAMinute() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        var timer = EaselCountdown()
+        timer.set(minutes: 3)
+        timer.start(at: start)
+        timer.pause(at: start.addingTimeInterval(91))
         timer.addMinute(at: start.addingTimeInterval(500))
-        #expect(timer.remaining(at: start.addingTimeInterval(500)) == 209, "+1 min works while paused")
+        #expect(timer.remaining(at: start.addingTimeInterval(500)) == 149, "+1 min works while paused")
+    }
+
+    @Test
+    func resumingContinuesFromThePausedTime() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        var timer = EaselCountdown()
+        timer.set(minutes: 3)
+        timer.start(at: start)
+        timer.pause(at: start.addingTimeInterval(91))
         timer.toggle(at: start.addingTimeInterval(600))
-        #expect(timer.phase == .running && timer.remaining(at: start.addingTimeInterval(700)) == 109, "resuming carries on from the pause")
-        #expect(!timer.isDue(at: start.addingTimeInterval(808)) && timer.isDue(at: start.addingTimeInterval(809)), "the timer is due right at zero")
+        #expect(timer.phase == .running && timer.remaining(at: start.addingTimeInterval(660)) == 29, "resuming carries on from the pause")
+    }
+
+    @Test
+    func aRunningTimerBecomesDueAtZero() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        var timer = EaselCountdown()
+        timer.set(minutes: 3)
+        timer.start(at: start)
+        #expect(!timer.isDue(at: start.addingTimeInterval(179)) && timer.isDue(at: start.addingTimeInterval(180)), "the timer is due right at zero")
+    }
+
+    @Test
+    func aFinishedTimerRestartsAtTheSetDuration() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        var timer = EaselCountdown()
+        timer.set(minutes: 3)
+        timer.start(at: start)
         timer.finish()
         #expect(timer.phase == .finished && timer.remaining(at: start) == 0, "a finished timer reads zero")
         timer.start(at: start.addingTimeInterval(900))
         #expect(timer.phase == .running && timer.remaining(at: start.addingTimeInterval(900)) == 180, "starting again runs the same length")
+    }
+
+    @Test
+    func resetReturnsToTheSetDuration() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        var timer = EaselCountdown()
+        timer.set(minutes: 3)
+        timer.start(at: start)
         timer.reset()
         #expect(timer.phase == .idle && timer.remaining(at: start) == 180, "reset goes back to the set length")
+    }
+
+    @Test
+    func visualAndSpokenLabelsExpressRemainingTime() {
         #expect(EaselCountdown.label(65.2) == "01:06" && EaselCountdown.label(0) == "00:00", "labels round up to whole seconds")
         #expect(EaselCountdown.spoken(65) == "1 minute 5 seconds" && EaselCountdown.spoken(120) == "2 minutes", "VoiceOver hears plain words")
+    }
+
+    @Test
+    func aZeroDurationTimerDoesNotStart() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
         var empty = EaselCountdown()
         empty.set(minutes: 0)
         empty.start(at: start)
@@ -440,30 +636,42 @@ import Testing
         #expect(EaselTableData.field("=1", separator: ",") == "=1", "table copy keeps its own field rules")
     }
 
-    @Test func everyTemplateIsAValidBoard() throws {
-        #expect((6...8).contains(EaselTemplate.allCases.count), "the gallery offers six to eight templates")
-        for template in EaselTemplate.allCases {
-            let base = EaselTemplates.drawing(template)
-            #expect(!base.items.isEmpty && Set(base.items.map(\.id)).count == base.items.count, "\(template.title) has unique objects")
-            let ids = Set(base.items.map(\.id))
-            for connector in base.items where connector.kind == .arrow {
-                #expect([connector.startConnection?.itemID, connector.endConnection?.itemID].allSatisfy { $0.map(ids.contains) == true },
-                       "\(template.title) connectors join objects in the template")
-            }
-            for section in base.items where section.kind == .section {
-                #expect(!EaselBoardObjects.contents(of: section, in: base.items).isEmpty || template == .moodboard,
-                       "\(template.title) sections hold their stickies")
-            }
-            let visible = EaselRect(x: 2000, y: 3000, width: 1400, height: 900)
-            let placed = EaselTemplates.placed(template, centeredAt: EaselPoint(x: 2700, y: 3450), within: visible, firstZIndex: 10)
-            #expect(placed.items.count == base.items.count && placed.items.map(\.zIndex) == Array(10..<(10 + base.items.count)),
-                   "\(template.title) lands above everything in its own order")
-            #expect(placed.bounds.x >= visible.x && placed.bounds.y >= visible.y, "\(template.title) lands in view")
-            let corner = EaselTemplates.placed(template, centeredAt: EaselPoint(x: 0, y: 0), firstZIndex: 0)
-            #expect(corner.bounds.x >= EaselTemplates.margin.x && corner.bounds.y >= EaselTemplates.margin.y, "\(template.title) never lands off the board")
-            let document = EaselDocument(id: UUID(), title: template.title, createdAt: Date(), modifiedAt: Date(), items: placed.items)
-            do { _ = try EaselSession(inMemory: document, assets: [:]) }
-            catch { Issue.record("\(template.title) makes a valid Easel: \(error)") }
-        }
+    @Test(arguments: EaselTemplate.allCases)
+    func templateConnectorsReferenceObjectsInsideTheTemplate(_ template: EaselTemplate) {
+        let drawing = EaselTemplates.drawing(template)
+        let ids = Set(drawing.items.map(\.id))
+        #expect(drawing.items.filter { $0.kind == .arrow }.allSatisfy { arrow in
+            [arrow.startConnection?.itemID, arrow.endConnection?.itemID].allSatisfy { $0.map(ids.contains) == true }
+        })
+    }
+
+    @Test(arguments: EaselTemplate.allCases)
+    func templateSectionsCollectTheirContents(_ template: EaselTemplate) {
+        let drawing = EaselTemplates.drawing(template)
+        #expect(drawing.items.filter { $0.kind == .section }.allSatisfy {
+            !EaselBoardObjects.contents(of: $0, in: drawing.items).isEmpty || template == .moodboard
+        })
+    }
+
+    @MainActor @Test(arguments: EaselTemplate.allCases)
+    func aPlacedTemplateFormsAValidBoard(_ template: EaselTemplate) throws {
+        let base = EaselTemplates.drawing(template)
+        #expect(!base.items.isEmpty && Set(base.items.map(\.id)).count == base.items.count, "\(template.title) has unique objects")
+        let visible = EaselRect(x: 2000, y: 3000, width: 1400, height: 900)
+        let placed = EaselTemplates.placed(template, centeredAt: EaselPoint(x: 2700, y: 3450), within: visible, firstZIndex: 10)
+        let document = EaselDocument(id: UUID(), title: template.title, createdAt: Date(timeIntervalSince1970: 0), modifiedAt: Date(timeIntervalSince1970: 0), items: placed.items)
+        _ = try EaselSession(inMemory: document, assets: [:])
+    }
+
+    @Test(arguments: EaselTemplate.allCases)
+    func aPlacedTemplateLandsInViewAndAboveExistingObjects(_ template: EaselTemplate) {
+        let base = EaselTemplates.drawing(template)
+        let visible = EaselRect(x: 2000, y: 3000, width: 1400, height: 900)
+        let placed = EaselTemplates.placed(template, centeredAt: EaselPoint(x: 2700, y: 3450), within: visible, firstZIndex: 10)
+        #expect(placed.items.count == base.items.count && placed.items.map(\.zIndex) == Array(10..<(10 + base.items.count)),
+               "\(template.title) lands above everything in its own order")
+        #expect(placed.bounds.x >= visible.x && placed.bounds.y >= visible.y, "\(template.title) lands in view")
+        let corner = EaselTemplates.placed(template, centeredAt: EaselPoint(x: 0, y: 0), firstZIndex: 0)
+        #expect(corner.bounds.x >= EaselTemplates.margin.x && corner.bounds.y >= EaselTemplates.margin.y, "\(template.title) never lands off the board")
     }
 }

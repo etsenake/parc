@@ -2,7 +2,7 @@ import Foundation
 import CoreGraphics
 import Testing
 @testable import ParcCore
-@MainActor struct EaselImageFramingTests {
+struct EaselImageFramingTests {
     func close(_ a: CGFloat, _ b: CGFloat, _ tolerance: CGFloat = 0.01) -> Bool { abs(a - b) <= tolerance }
     func close(_ a: CGRect, _ b: CGRect, _ tolerance: CGFloat = 0.01) -> Bool {
         close(a.minX, b.minX, tolerance) && close(a.minY, b.minY, tolerance) && close(a.width, b.width, tolerance) && close(a.height, b.height, tolerance)
@@ -19,12 +19,14 @@ import Testing
         EaselItem(kind: .image, frame: frame, assetID: UUID().uuidString.lowercased() + ".png")
     }
 
+    @Test(arguments: 0...3) func quarterTurnsRoundTripACrop(_ turns: Int) {
+        let crop = EaselRect(x: 0.1, y: 0.2, width: 0.3, height: 0.5)
+        let turned = EaselImageFraming.turnedCrop(crop, turns: turns)
+        #expect(close(EaselImageFraming.sourceCrop(turned, turns: turns), crop))
+    }
+
     @Test func quarterTurnsRotateACropAndSwapTheSides() {
         let crop = EaselRect(x: 0.1, y: 0.2, width: 0.3, height: 0.5)
-        for turns in 0...3 {
-            let turned = EaselImageFraming.turnedCrop(crop, turns: turns)
-            #expect(close(EaselImageFraming.sourceCrop(turned, turns: turns), crop), "a crop survives a round trip through \(turns) quarter turns")
-        }
         let quarter = EaselImageFraming.turnedCrop(crop, turns: 1)
         #expect(abs(quarter.x - 0.3) < 0.0001 && abs(quarter.y - 0.1) < 0.0001 && abs(quarter.width - 0.5) < 0.0001 && abs(quarter.height - 0.3) < 0.0001,
                "a clockwise turn moves the source's left edge to the top")
@@ -152,16 +154,16 @@ import Testing
         #expect(EaselImageMask.allCases.allSatisfy { NoteImageMask(rawValue: $0.rawValue) != nil }, "every Easel mask is a Notes mask")
     }
 
-    func session(_ items: [EaselItem], assets: [String: Data] = [:]) throws -> EaselSession {
+    @MainActor func session(_ items: [EaselItem], assets: [String: Data] = [:]) throws -> EaselSession {
         let date = Date(timeIntervalSinceReferenceDate: 0)
         return try EaselSession(inMemory: EaselDocument(id: UUID(), title: "Images", createdAt: date, modifiedAt: date, items: items), assets: assets)
     }
 
-    func accepts(_ item: EaselItem) -> Bool {
+    @MainActor func accepts(_ item: EaselItem) -> Bool {
         (try? session([item], assets: item.assetID.map { [$0: png] } ?? [:])) != nil
     }
 
-    @Test func framingFieldsAreValidatedWhenADocumentOpens() {
+    @MainActor @Test func framingFieldsAreValidatedWhenADocumentOpens() {
         var item = image()
         item.crop = EaselRect(x: 0.1, y: 0.1, width: 0.5, height: 0.5)
         item.mask = .star
@@ -195,7 +197,7 @@ import Testing
         #expect(!accepts(card), "GIFs only live in images")
     }
 
-    @Test func videoObjectsNeedAMovieAndOptionallyAPoster() throws {
+    @MainActor @Test func videoObjectsNeedAMovieAndOptionallyAPoster() throws {
         let movie = UUID().uuidString.lowercased() + ".mp4", poster = UUID().uuidString.lowercased() + ".png"
         var video = EaselItem(kind: .video, frame: .init(x: 0, y: 0, width: 320, height: 180), assetID: movie)
         video.poster = poster
@@ -226,7 +228,7 @@ import Testing
         #expect((try? board.assetData(stored)) == nil, "an unused imported movie can be thrown away")
     }
 
-    @Test func imageAndMovieAssetsAreRecognisedByTheirBytes() throws {
+    @MainActor @Test func imageAndMovieAssetsAreRecognisedByTheirBytes() throws {
         #expect(EaselAssetType.sniff(png) == .png && EaselAssetType.sniff(gif) == .gif, "PNG and GIF are recognised by their bytes")
         var mp4 = Data([0, 0, 0, 0x18]); mp4.append(contentsOf: Array("ftypisom".utf8)); mp4.append(Data(count: 12))
         var mov = Data([0, 0, 0, 0x14]); mov.append(contentsOf: Array("ftypqt  ".utf8)); mov.append(Data(count: 12))
@@ -255,7 +257,7 @@ import Testing
         #expect(EaselStoreError.videoTooLarge.errorDescription?.contains("30 MB") == true, "the size message says how big videos can be")
     }
 
-    @Test func framingFieldsRoundTripAndUnframedImagesSaveAsBefore() throws {
+    @MainActor @Test func framingFieldsRoundTripAndUnframedImagesSaveAsBefore() throws {
         var item = image()
         item.crop = EaselRect(x: 0.1, y: 0.2, width: 0.3, height: 0.4)
         item.mask = .squircle

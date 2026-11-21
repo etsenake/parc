@@ -1,17 +1,17 @@
 import Foundation
 import Testing
 @testable import ParcCore
-@MainActor struct EaselCodeBlockTests {
+struct EaselCodeBlockTests {
     func document(_ items: [EaselItem]) -> EaselDocument {
         EaselDocument(id: UUID(), title: "Code", createdAt: Date(timeIntervalSinceReferenceDate: 0),
                       modifiedAt: Date(timeIntervalSinceReferenceDate: 0), items: items)
     }
 
-    func accepts(_ items: [EaselItem]) -> Bool {
+    @MainActor func accepts(_ items: [EaselItem]) -> Bool {
         (try? EaselSession(inMemory: document(items), assets: [:])) != nil
     }
 
-    @Test func aNewCodeBlockStartsEmptyWithItsLanguageSaved() throws {
+    @MainActor @Test func aNewCodeBlockStartsEmptyWithItsLanguageSaved() throws {
         let block = EaselCodeBlock.item(at: .init(x: 10, y: 20), language: "typescript", zIndex: 3)
         #expect(block.kind == .code && block.text == "\n\n\n", "a new code block starts with four empty lines")
         #expect(block.frame.height == EaselCodeBlock.height(lines: 4), "a new code block is four lines tall")
@@ -31,7 +31,7 @@ import Testing
         #expect(!EaselItemKind.code.holdsText, "code blocks keep plain text, never rich text")
     }
 
-    @Test func codeBlockLanguagesAreValidatedWhenADocumentOpens() {
+    @MainActor @Test func codeBlockLanguagesAreValidatedWhenADocumentOpens() {
         let block = EaselCodeBlock.item(at: .init(x: 0, y: 0), language: "python", zIndex: 0)
         #expect(accepts([block]), "a code block with a language saves")
         var plain = block
