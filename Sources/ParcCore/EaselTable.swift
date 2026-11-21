@@ -190,7 +190,7 @@ package struct EaselTable: Codable, Equatable {
                 try cell.richText?.validate(text: cell.text)
             }
         }
-        guard bytes <= Self.maximumTextBytes else { throw EaselStoreError.tooLarge }
+        guard bytes <= Self.maximumTextBytes else { throw EaselStoreError.tableTooLarge }
         var covered = Set<EaselTableCoordinate>()
         for merge in merges {
             guard merge.row >= 0, merge.row < rowCount, merge.column >= 0, merge.column < columnCount,

@@ -15,7 +15,7 @@ file's name. A note's front-matter emoji icon is its tab icon in the sidebar,
 Favorites, the folded Pinned peek, the tab switcher and the command bar; a local
 image icon shows as a small rounded thumbnail. A note without an icon of its own,
 plain text included, shows the Library card's coral note mark there and in note
-links, mentions and backlinks, from one shared source. An open note's icon
+links, mentions and backlinks, from one shared source that Easel icons use too. An open note's icon
 updates as it's edited, and other notes reread their front matter off the main
 thread when their folder changes. Any regular Profile can open any
 note file, so moving a tab to another Profile leaves the file where it is.
@@ -112,6 +112,12 @@ animated one at a time:
 - Overlays (the format bar, slash menu, block menu, pickers, find bar and link
   cards) are views inside the page, never separate windows, so the text keeps
   focus and input methods keep working.
+- Cursors follow stacking (`NoteCursor.swift`). A focused text view receives every
+  mouse move in the window, so every Notes text view subclasses
+  `NoteCursorTextView` and every input field is a `NoteInputField`; both set a
+  cursor only while they're the topmost view under the pointer. Notes views use
+  cursor updates, never cursor rectangles, which fire through the menus above
+  them, and they check `ownsPointer` before setting a cursor or showing hover.
 
 ## Blocks
 
@@ -286,7 +292,14 @@ default.
 A note can have a cover (twelve built-in covers, an upload, a link or an
 Unsplash photo, with reposition), an emoji or image icon, front-matter properties (text, number,
 checkbox, date and tags), and one of four fonts: Nunito, EB Garamond, Space Mono
-or ParcWide. The menu at the top right of a note offers Small Text, Full Width,
+or ParcWide. Every new note starts with a random built-in cover already in its
+front matter, stored once per style in `Attachments`; it isn't an undo step, and
+a note still starts empty if the cover can't be written. Add icon adds a random
+emoji and opens the icon picker under it. In the icon and cover pickers, each
+choice (an emoji, Random, an upload, a link, a gallery cover or a photo) applies
+at once and the picker stays open, following the icon or cover, until a click
+outside, Escape or Remove; Recents reorder the next time it opens. The menu at the
+top right of a note, on a solid plate that is always visible, offers Small Text, Full Width,
 Lock Note, Copy as Markdown, Copy Link, export (Markdown, HTML and PDF), Show in
 Library, Show in Finder, Note History and Move to Trash, with a word count and
 reading time.
@@ -298,17 +311,19 @@ or text. The note's own file keeps everything.
 Note History keeps versions through macOS file versions and restores one as a
 single undo step, and File › Print prints the real page.
 
-Under the title, "3 backlinks" counts the notes that link to or mention this
-one: Markdown links to its file, page links and note mentions, from the Space's
-Notes folder and every other folder Parc has opened notes from. Clicking it
+Under the title, "3 backlinks" counts the notes and Easels that link to or
+mention this one: Markdown links to its file, page links and note mentions, from
+the Space's Notes folder and every other folder Parc has opened notes from, and
+text or object links in the Profile's Easels. An Easel's row shows the Easel
+mark and title and opens the Easel at the linking object. Clicking it
 opens a list of those notes with their icon and the sentence around the link;
 picking one opens it at the linking section. The menu's Backlinks item shows the
 list inline under the title instead (Expanded) or hides it (Off), saved in the
 note's front matter. The index reads files off the main thread and follows
 folder changes, so counts update as other notes are edited. Renaming or moving a
 note, in Parc or in Finder (recognised by the file's identity), keeps its count
-steady and rewrites the links to it in other notes, changing only the link in
-files that aren't open.
+steady and rewrites the links to it in other notes and in Easels, changing only
+the link in files that aren't open.
 
 ⌘F finds and replaces across the whole note, including its title, captions and
 table cells; inside a focused live embed it searches that page instead. `.txt`
@@ -338,7 +353,11 @@ failed save shows Retry and blocks closing, and quitting flushes every note.
 Notes sit on the Notes paper over the Space theme and take light or dark from the
 Space. Ink is Parc's indigo, and selection, block washes and drop lines can take
 the Space's colour. Menus are Parc's opaque cards with continuous corners; every
-clickable control shows the pointing hand.
+clickable control, from checkboxes and toggles to block handles and table grips,
+shows the pointing hand, and table column edges show the resize cursor. Menus,
+pickers and popovers hold their cursor: the hand on rows and buttons, the typing
+cursor only in their fields, and nothing they cover changes the cursor or lights
+up; block handles come back on their own when a menu closes.
 
 Menus and toolbars pop open (scale 0.95 to 1 with a short fade) and close
 quickly, highlights glide on a short spring, blocks fade and rise when inserted,

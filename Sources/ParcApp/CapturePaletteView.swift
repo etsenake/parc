@@ -341,7 +341,9 @@ final class CapturePalette: NSObject {
         case .notes: return .noteMark
         case .document(let document):
             switch document.target {
-            case .easel: return .easelMark
+            case .easel(let id):
+                guard let profile = document.profileID, let directory = EaselTabIcons.shared.directory(profile) else { return .easelMark }
+                return NoteIcon.easel(id, directory: directory)
             case .note(let url): return NoteIcon.note(document.icon, at: url)
             }
         default: return .symbol(action.symbol)

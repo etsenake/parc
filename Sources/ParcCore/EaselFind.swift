@@ -9,7 +9,6 @@ package struct EaselFindMatch: Hashable {
     package var itemID: UUID
     package var part: Part
     package var range: Range<Int>
-
     package init(itemID: UUID, part: Part, range: Range<Int>) {
         self.itemID = itemID
         self.part = part
@@ -26,9 +25,6 @@ package struct EaselFindReplacement: Equatable {
     package var skippedLocked = 0
     package var skippedReadOnly = 0
     package var skippedOther = 0
-
-    package var skipped: Int { skippedLocked + skippedReadOnly + skippedOther }
-
     package init(document: EaselDocument, count: Int = 0, touched: Set<UUID> = Set<UUID>(), skippedLocked: Int = 0, skippedReadOnly: Int = 0, skippedOther: Int = 0) {
         self.document = document
         self.count = count
@@ -37,6 +33,8 @@ package struct EaselFindReplacement: Equatable {
         self.skippedReadOnly = skippedReadOnly
         self.skippedOther = skippedOther
     }
+
+    package var skipped: Int { skippedLocked + skippedReadOnly + skippedOther }
 }
 
 package enum EaselFinder {
@@ -52,15 +50,22 @@ package enum EaselFinder {
                 guard let text = table.cell(coordinate)?.text, !text.isEmpty else { return nil }
                 return (.cell(row: coordinate.row, column: coordinate.column), text)
             }
-        case .image, .freehand, .browser, .stamp, .video:
+        case .image, .freehand, .browser, .stamp, .video, .audio, .file, .pdf, .equation:
             return []
+        }
+    }
+
+    package static func richText(of item: EaselItem, part: EaselFindMatch.Part) -> EaselRichText? {
+        switch part {
+        case .text: return item.richText
+        case .cell(let row, let column): return item.table?.cell(EaselTableCoordinate(row: row, column: column))?.richText
         }
     }
 
     package static func replaceability(of item: EaselItem) -> EaselReplaceability {
         switch item.kind {
         case .text, .sticky, .rectangle, .circle, .arrow, .section, .code, .table: return item.isLocked ? .locked : .replaceable
-        case .image, .freehand, .link, .webCard, .browser, .stamp, .video: return .readOnly
+        case .image, .freehand, .link, .webCard, .browser, .stamp, .video, .audio, .file, .pdf, .equation: return .readOnly
         }
     }
 
@@ -95,7 +100,13 @@ package enum EaselFinder {
         var result: [EaselFindMatch] = []
         for item in EaselPages.pageDocuments(document).flatMap({ readingOrder(visibleItems(in: $0)) }) {
             for (part, text) in searchableParts(of: item) {
-                for range in NotePageFinder.ranges(of: query, in: text, options: options) {
+                let map = EaselRichText.readableMap(text, rich: richText(of: item, part: part))
+                var last: Range<Int>?
+                for found in NotePageFinder.ranges(of: query, in: map.text, options: options) {
+                    guard found.lowerBound < map.starts.count, found.upperBound >= 1, found.upperBound <= map.ends.count else { continue }
+                    let range = map.starts[found.lowerBound]..<map.ends[found.upperBound - 1]
+                    guard range != last else { continue }
+                    last = range
                     result.append(EaselFindMatch(itemID: item.id, part: part, range: range))
                 }
             }
@@ -213,7 +224,7 @@ package enum EaselFinder {
         let source = text as NSString
         guard range.lowerBound >= 0, range.upperBound <= source.length, !range.isEmpty else { return .failed }
         let nsRange = NSRange(location: range.lowerBound, length: range.count)
-        if let rich, rich.runs.contains(where: { $0.attributes.image != nil && $0.location < range.upperBound && range.lowerBound < $0.location + $0.length }) {
+        if let rich, rich.runs.contains(where: { $0.attributes.isAtomic && $0.location < range.upperBound && range.lowerBound < $0.location + $0.length }) {
             return .failed
         }
         guard source.substring(with: nsRange) != replacement else { return .unchanged }
@@ -228,7 +239,7 @@ extension EaselRichText {
     package func replacing(_ range: Range<Int>, with insertedLength: Int) -> EaselRichText? {
         guard insertedLength >= 0,
               let source = runs.first(where: { $0.location <= range.lowerBound && range.lowerBound < $0.location + $0.length }),
-              !runs.contains(where: { $0.attributes.image != nil && $0.location < range.upperBound && range.lowerBound < $0.location + $0.length }) else {
+              !runs.contains(where: { $0.attributes.isAtomic && $0.location < range.upperBound && range.lowerBound < $0.location + $0.length }) else {
             return nil
         }
         var segments: [(length: Int, attributes: Attributes)] = []
@@ -237,7 +248,7 @@ extension EaselRichText {
         }
         if insertedLength > 0 {
             var attributes = source.attributes
-            attributes.image = nil
+            attributes.image = nil; attributes.inline = nil
             segments.append((insertedLength, attributes))
         }
         for run in runs where run.location + run.length > range.upperBound {
@@ -247,7 +258,7 @@ extension EaselRichText {
         var merged: [Run] = []
         var location = 0
         for segment in segments where segment.length > 0 {
-            if let last = merged.last, last.attributes == segment.attributes, segment.attributes.image == nil {
+            if let last = merged.last, last.attributes == segment.attributes, !segment.attributes.isAtomic {
                 merged[merged.count - 1].length += segment.length
             } else {
                 merged.append(Run(location: location, length: segment.length, attributes: segment.attributes))
@@ -270,7 +281,6 @@ package struct EaselFindSession: Equatable {
     package var options = NoteFindOptions()
     package private(set) var matches: [EaselFindMatch] = []
     package private(set) var currentIndex: Int?
-
     package init(query: String = "", options: NoteFindOptions = NoteFindOptions(), matches: [EaselFindMatch] = [], currentIndex: Int? = nil) {
         self.query = query
         self.options = options
@@ -364,7 +374,6 @@ package enum EaselViewportFocus {
     package struct Plan: Equatable {
         package var magnification: Double
         package var center: EaselPoint
-
         package init(magnification: Double, center: EaselPoint) {
             self.magnification = magnification
             self.center = center

@@ -70,7 +70,7 @@ import AppKit
     let pages = StandInPageObjects()
     let web: StandInPageSurface
     let ids: (web: UUID, sticky: UUID, card: UUID, arrow: UUID)
-    var canvasOrigin: NSPoint { NSPoint(x: scene.surface.pageCard.minX, y: scene.surface.pageCard.minY + 108) }
+    var canvasOrigin: NSPoint { NSPoint(x: scene.surface.pageCard.minX, y: scene.surface.pageCard.minY + Self.canvasTop) }
 
     static func scenario() -> Scenario {
         var made = ScenarioBuilder.make()
@@ -138,79 +138,63 @@ import AppKit
         return NSBitmapImageRep(cgImage: cropped).representation(using: .png, properties: [:]) ?? Data()
     }
 
+    static let canvasTop: CGFloat = 64
+    let palette = EaselToolPalette(frame: .zero)
+
     func buildChrome() {
         let titleField = NSTextField()
         titleField.stringValue = session.document.title
-        titleField.font = .systemFont(ofSize: 20, weight: .semibold)
-        titleField.textColor = EaselAppearance.text
+        titleField.font = NoteTheme.nunitoExtraBold(24)
+        titleField.textColor = NoteTheme.titleInk
         titleField.isBezeled = false; titleField.drawsBackground = false
         root.addSubview(titleField)
-        let status = NSTextField(labelWithString: "")
-        status.font = .systemFont(ofSize: 11); status.textColor = .secondaryLabelColor
+        let count = session.document.items.count
+        let status = NSTextField(labelWithString: "Saved on this Mac · \(count) object\(count == 1 ? "" : "s")")
+        status.font = NoteTheme.captionFont(); status.textColor = NoteTheme.secondaryInk
         root.addSubview(status)
         scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true
         scroll.allowsMagnification = true; scroll.minMagnification = 0.3333; scroll.maxMagnification = 4
         scroll.autohidesScrollers = true; scroll.drawsBackground = false
         scroll.documentView = canvas; root.addSubview(scroll)
-        let tools = NSStackView()
-        tools.orientation = .horizontal; tools.spacing = 4
-        tools.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
-        let toolSurface = EaselToolbarPill(frame: .zero)
-        let toolScroll = NSScrollView()
-        EaselAppearance.configureToolbarScroll(toolScroll)
-        toolScroll.documentView = tools; toolSurface.addSubview(toolScroll)
-        let buttonSize = EaselAppearance.toolbarButton
-        func tool(_ label: String, _ symbol: String?, title: String? = nil) -> EaselPaletteButton {
-            let b: EaselPaletteButton
-            if let symbol {
-                let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
-                    .withSymbolConfiguration(.init(pointSize: 15, weight: .regular)) ?? NSImage()
-                b = EaselPaletteButton(image: glyph, target: nil, action: nil)
-            } else {
-                b = EaselPaletteButton(title: title ?? "", target: nil, action: nil)
-                b.font = .systemFont(ofSize: 16, weight: .medium)
-                b.imagePosition = .noImage
-            }
-            b.usesToolbarInk = true; b.toolTip = label
-            b.widthAnchor.constraint(equalToConstant: buttonSize).isActive = true
-            b.heightAnchor.constraint(equalToConstant: buttonSize).isActive = true
-            tools.addArrangedSubview(b); return b
-        }
-        let select = tool("Select objects", "cursorarrow")
-        select.setButtonType(.pushOnPushOff); select.state = .on
-        _ = tool("Add image", "photo")
-        _ = tool("Add text", nil, title: "A")
-        _ = tool("Add circle", "circle")
-        _ = tool("Add rectangle", "square")
-        _ = tool("Add arrow", "arrow.up.right")
-        let draw = tool("Draw", "scribble")
-        draw.setButtonType(.pushOnPushOff)
+        palette.scrollPassthrough = { [weak canvas] in canvas }
+        palette.update(tool: canvas.tool, shape: canvas.toolState.shape)
+        palette.showsMermaid = canvas.acceptsMermaid
+        palette.showsTemplates = canvas.acceptsTemplates
+        palette.setZoom(percent: EaselZoom.percent(Double(scroll.magnification)))
         let chrome = NSStackView()
         chrome.orientation = .horizontal; chrome.spacing = 2
-        for (label, symbol) in [("Add link", "link"), ("Add webpage", "globe"), ("Undo Easel change", "arrow.uturn.backward"),
-                                ("Redo Easel change", "arrow.uturn.forward"), ("Share", "square.and.arrow.up")] {
+        let chromeSize = NoteTheme.toolbarButtonSize.width
+        func chromeButton(_ label: String, _ symbol: String, shortcut: String? = nil) -> NSButton {
             let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
-                .withSymbolConfiguration(.init(pointSize: 13, weight: .regular)) ?? NSImage()
+                .withSymbolConfiguration(.init(pointSize: 14, weight: .medium)) ?? NSImage()
             let b = EaselPaletteButton(image: glyph, target: nil, action: nil)
-            b.toolTip = label
-            b.widthAnchor.constraint(equalToConstant: 24).isActive = true
-            b.heightAnchor.constraint(equalToConstant: 24).isActive = true
-            if label == "Redo Easel change" { b.isEnabled = false }
-            chrome.addArrangedSubview(b)
+            b.setEaselTooltip(label, shortcut: shortcut); b.setAccessibilityLabel(label)
+            b.widthAnchor.constraint(equalToConstant: chromeSize).isActive = true
+            b.heightAnchor.constraint(equalToConstant: chromeSize).isActive = true
+            chrome.addArrangedSubview(b); return b
         }
-        root.addSubview(toolSurface)
+        let pageButton = EaselPageSwitcherButton()
+        pageButton.pageName = canvas.currentPageName
+        pageButton.heightAnchor.constraint(equalToConstant: chromeSize).isActive = true
+        chrome.addArrangedSubview(pageButton)
+        let timer = EaselTimerButton(documentID: session.document.id)
+        chrome.addArrangedSubview(timer)
+        _ = chromeButton("Undo Easel change", "arrow.uturn.backward", shortcut: "⌘Z")
+        chromeButton("Redo Easel change", "arrow.uturn.forward", shortcut: "⇧⌘Z").isEnabled = false
+        _ = chromeButton("Easel Options", "ellipsis")
         root.addSubview(chrome)
-        let width = root.bounds.width, height = root.bounds.height
-        let toolWidth: CGFloat = 6 + 7 * buttonSize + 6 * 4 + 6
-        let chromeWidth: CGFloat = 5 * 24 + 4 * 2
-        titleField.frame = NSRect(x: 24, y: 12, width: max(80, width - chromeWidth - 52), height: 28)
-        chrome.frame = NSRect(x: max(24, width - chromeWidth - 20), y: 14, width: chromeWidth, height: 24)
-        status.frame = NSRect(x: 26, y: 40, width: max(100, width - 52), height: 14)
-        let strip = min(width - 24, toolWidth)
-        toolSurface.frame = NSRect(x: (width - strip) / 2, y: 56, width: strip, height: EaselAppearance.toolbarHeight)
-        toolScroll.frame = toolSurface.bounds
-        tools.frame = NSRect(x: 0, y: 0, width: toolWidth, height: EaselAppearance.toolbarHeight)
-        let canvasTop = toolSurface.frame.maxY + 8
+        root.addSubview(palette)
+        let width = root.bounds.width, height = root.bounds.height, canvasTop = Self.canvasTop
+        let bar = EaselFloatingBar.frame(containerWidth: Double(width), containerHeight: Double(height),
+                                         preferredWidth: Double(palette.preferredWidth), height: Double(EaselAppearance.toolbarHeight),
+                                         top: Double(canvasTop + 8))
+        palette.frame = NSRect(x: bar.x, y: bar.y, width: bar.width, height: bar.height)
+        canvas.setCoveredBottom(CGFloat(EaselFloatingBar.coveredBottom(containerHeight: Double(height), bar: bar)))
+        let pageWidth = pageButton.intrinsicContentSize.width
+        let chromeWidth: CGFloat = 3 * chromeSize + 4 * 2 + timer.intrinsicContentSize.width + pageWidth
+        titleField.frame = NSRect(x: 24, y: 10, width: max(80, width - chromeWidth - 52), height: 32)
+        chrome.frame = NSRect(x: max(24, width - chromeWidth - 14), y: 12, width: chromeWidth, height: chromeSize)
+        status.frame = NSRect(x: 26, y: 40, width: max(100, width - 52), height: 18)
         scroll.frame = NSRect(x: 0, y: canvasTop, width: width, height: max(80, height - canvasTop))
         canvas.resizeCanvas(viewport: scroll.contentSize)
     }
@@ -228,13 +212,76 @@ import AppKit
                            windowNumber: 0, context: nil, eventNumber: 0, clickCount: clicks, pressure: type == .leftMouseUp ? 0 : 1)!
     }
 
+    func snapshot(_ view: NSView) -> NSBitmapImageRep {
+        let scale: CGFloat = 2
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(ceil(view.bounds.width * scale)),
+                                   pixelsHigh: Int(ceil(view.bounds.height * scale)), bitsPerSample: 8, samplesPerPixel: 4,
+                                   hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        rep.size = view.bounds.size
+        view.cacheDisplay(in: view.bounds, to: rep)
+        return rep
+    }
+
     func renderEditor() {
         settle()
+        let size = root.bounds.size
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 2084, pixelsHigh: 1640, bitsPerSample: 8, samplesPerPixel: 4,
                                    hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-        rep.size = root.bounds.size
-        NSAppearance(named: .aqua)!.performAsCurrentDrawingAppearance { root.cacheDisplay(in: root.bounds, to: rep) }
-        let image = NSImage(size: root.bounds.size)
+        rep.size = size
+        let now = FilmClock.now
+        let moving: [(item: EaselItem, view: NSView, shown: EaselObjectPresentation)] = session.document.items
+            .sorted { $0.zIndex < $1.zIndex }.compactMap { item in
+                guard !item.ownsEmbeddedPage, let view = canvas.artwork[item.id], !view.isHidden else { return nil }
+                let shown = canvas.objectMotion.timeline.presentation(for: item.id, at: now)
+                return shown.isIdentity ? nil : (item, view, shown)
+            }
+        func place(_ view: NSView) -> NSRect {
+            let box = view.convert(view.bounds, to: root)
+            return NSRect(x: box.minX, y: size.height - box.maxY, width: box.width, height: box.height)
+        }
+        NSAppearance(named: .aqua)!.performAsCurrentDrawingAppearance {
+            scroll.isHidden = true
+            root.cacheDisplay(in: root.bounds, to: rep)
+            scroll.isHidden = false
+            for entry in moving { entry.view.isHidden = true }
+            canvas.decoration.isHidden = !moving.isEmpty
+            let board = snapshot(scroll)
+            for entry in moving { entry.view.isHidden = false }
+            canvas.decoration.isHidden = false
+            let lifted = moving.map { ($0, snapshot($0.view)) }
+            let marks = moving.isEmpty ? nil : snapshot(canvas.decoration)
+            let bar = snapshot(palette)
+            NSGraphicsContext.saveGraphicsState()
+            let graphics = NSGraphicsContext(bitmapImageRep: rep)!
+            NSGraphicsContext.current = graphics
+            let context = graphics.cgContext
+            let pixels = CGFloat(rep.pixelsWide) / size.width
+            board.draw(in: place(scroll), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: false, hints: nil)
+            for (entry, image) in lifted {
+                let shown = entry.shown, box = EaselCanvasRotation.bounds(entry.item)
+                let middle = canvas.convert(NSPoint(x: box.midX, y: box.midY), to: root)
+                let centre = NSPoint(x: middle.x + CGFloat(shown.offset.x), y: size.height - middle.y - CGFloat(shown.offset.y))
+                let frame = place(entry.view)
+                let flippedMiddle = NSPoint(x: middle.x, y: size.height - middle.y)
+                context.saveGState()
+                context.setAlpha(CGFloat(min(1, max(0, shown.opacity))))
+                if shown.shadow > 0 {
+                    let amount = min(1, shown.shadow)
+                    context.setShadow(offset: CGSize(width: 0, height: -6 * pixels), blur: CGFloat(6 + 22 * amount) * pixels,
+                                      color: NSColor.black.withAlphaComponent(CGFloat(amount * 0.24)).cgColor)
+                }
+                context.translateBy(x: centre.x, y: centre.y)
+                context.rotate(by: -CGFloat(shown.rotation * Double.pi / 180))
+                context.scaleBy(x: CGFloat(shown.scaleX), y: CGFloat(shown.scaleY))
+                context.translateBy(x: -flippedMiddle.x, y: -flippedMiddle.y)
+                image.draw(in: frame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: false, hints: nil)
+                context.restoreGState()
+            }
+            marks?.draw(in: place(canvas.decoration), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: false, hints: nil)
+            bar.draw(in: place(palette), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: false, hints: nil)
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        let image = NSImage(size: size)
         image.addRepresentation(rep)
         editorImage = image
         scene.surface.needsDisplay = true
@@ -283,7 +330,7 @@ import AppKit
         let writer = still ? nil : try! AlphaVideoWriter(path: out + "/easel.mov", width: 2880, height: 1800)
         var pressed = false, endPressed = false
         var arrowClicked = false, blankClicked = false, released = false, endReleased = false
-        let renderFrames = still ? [20, 175, 200, 260, 270, 285, 310, 345, 400, 440, 520] : Array(0..<frames)
+        let renderFrames = still ? [20, 175, 200, 260, 270, 285, 306, 310, 345, 400, 440, 520] : Array(0..<frames)
         var lastPointer = rest
         func pointerAt(_ time: Double) -> NSPoint {
             func lerp(_ a: NSPoint, _ b: NSPoint, _ p: Double) -> NSPoint {
@@ -309,6 +356,8 @@ import AppKit
         probe.append("canvas visibleRect \(canvas.visibleRect) frame \(canvas.frame) scroll content \(scroll.contentSize)")
         for frame in renderFrames {
             let time = Double(frame) / Film.fps
+            FilmClock.now = 1000 + time
+            scroll.contentView.postsBoundsChangedNotifications = false
             let scrollValue: Double
             if time < 7.9 { scrollValue = 96 * Film.easeInOut(Film.progress(time, 0.5, 2.3)) }
             else { scrollValue = 96 + 26 * Film.easeInOut(Film.progress(time, 7.9, 8.9)) }
@@ -353,6 +402,9 @@ import AppKit
             let overEndpoint = arrowClicked && !blankClicked && hypot(point.x - (endPressed ? point.x : arrowEnd0.x), point.y - (endPressed ? point.y : arrowEnd0.y)) < 10
             scene.pointer.cursor = overEndpoint ? .pointingHand : .arrow
             scene.pointer.location = NSPoint(x: canvasOrigin.x + point.x, y: canvasOrigin.y + point.y)
+            canvas.objectMotionFrame()
+            _ = canvas.canvasFeedbackFrame()
+            if frame % 15 == 0 { probe.append("t \(time) card \(canvas.objectMotion.timeline.presentation(for: ids.card, at: FilmClock.now))") }
             let image = renderStage()
             writer?.append(image)
             if still { Film.writePNG(image, out + "/easel-still-\(frame).png") }

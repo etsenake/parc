@@ -23,10 +23,12 @@ enum EaselDocumentExport {
             if let moved = path.copy(using: &shift) { result.fillPath = svgPath(moved) }
         }
         let text = storage.string as NSString
+        let parts = EaselChecklistText.exportParts(manager: manager, storage: storage, offset: inset)
         manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { rect, _, _, glyphs, _ in
             let characters = manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
-            storage.enumerateAttributes(in: characters) { attributes, range, _ in
-                var value = text.substring(with: range).replacingOccurrences(of: "\u{FFFC}", with: "")
+            storage.enumerateAttributes(in: characters) { attributes, whole, _ in
+                guard let range = EaselChecklistText.trimmed(whole, excluding: parts.exclusions) else { return }
+                var value = EaselInlineText.exportText(attributes, text.substring(with: range), images: true)
                 while let last = value.last, last.isNewline { value.removeLast() }
                 guard !value.isEmpty else { return }
                 let glyphRange = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
@@ -40,10 +42,19 @@ enum EaselDocumentExport {
                 run.color = hugging ? "#FFFFFF" : (attributes[.foregroundColor] as? NSColor).flatMap(hex)
                 run.underline = (attributes[.underlineStyle] as? Int ?? 0) != 0
                 run.strikethrough = (attributes[.strikethroughStyle] as? Int ?? 0) != 0
+                run.dimmed = parts.dimmed.contains { NSIntersectionRange($0, range).length > 0 }
+                if let fill = attributes[.backgroundColor] as? NSColor, let stored = EaselTextHighlight.stored(fill) ?? (try? EaselRichTextCodec.hex(fill)) {
+                    let box = manager.boundingRect(forGlyphRange: glyphRange, in: container)
+                    run.mark = EaselVectorMark(x: Double(inset.width + box.minX), y: Double(inset.height + rect.minY),
+                                               width: Double(box.width), height: Double(rect.height), color: stored)
+                }
                 if let link = attributes[.link] as? URL { run.link = link.absoluteString } else { run.link = attributes[.link] as? String }
                 result.runs.append(run)
             }
         }
+        result.rules = parts.rules
+        result.checkboxes = parts.boxes
+        result.images = EaselInlineText.exportImages(layout, offset: CGPoint(x: placed.x - item.frame.x, y: placed.y - item.frame.y))
         return result
     }
 
@@ -119,6 +130,15 @@ enum EaselDocumentExport {
         return EaselVectorImage(data: converted, mimeType: "image/png")
     }
 
+    static func mediaArt(_ item: EaselItem, session: EaselSession, scale: CGFloat, into art: inout EaselVectorArt) {
+        guard let id = item.assetID else { return }
+        art.mediaDetails[item.id] = EaselMediaArt.detail(for: item) { try? session.assetData(id) }
+        let size = NSSize(width: item.frame.width, height: item.frame.height)
+        if let page = EaselMediaArt.firstPage(id, size: size, scale: max(2, scale), data: { try? session.assetData(id) }) {
+            art.images[item.id] = EaselMediaArt.png(page)
+        }
+    }
+
     static func art(session: EaselSession, canvas: EaselCanvasView, pages: [UUID: EaselPageSnapshot]) -> EaselVectorArt {
         var art = EaselVectorArt()
         let scale = EaselImageExport.pixelDensity()
@@ -151,15 +171,50 @@ enum EaselDocumentExport {
             case .stamp:
                 if case .icon(let name)? = EaselStampFace(item: item) {
                     art.images[item.id] = EaselStampArtwork.iconMask(name, size: NSSize(width: item.frame.width, height: item.frame.height), scale: max(4, scale))
+                } else if let name = EaselStampFace(item: item)?.customEmojiName, let image = EaselStampArtwork.customEmojiImage(name, library: canvas.stampEmojiLibrary),
+                          let data = image.tiffRepresentation.flatMap({ NSBitmapImageRep(data: $0) })?.representation(using: .png, properties: [:]) {
+                    art.images[item.id] = EaselVectorImage(data: data, mimeType: "image/png")
                 }
             case .arrow:
                 connectorArt(item, lookup: lookup, into: &art)
             case .rectangle, .circle:
                 if !item.text.isEmpty { art.texts[item.id] = vectorText(item) }
+            case .audio, .file:
+                art.mediaDetails[item.id] = EaselMediaArt.detail(for: item) { item.assetID.flatMap { try? session.assetData($0) } }
+            case .pdf:
+                mediaArt(item, session: session, scale: scale, into: &art)
+            case .equation:
+                art.equations[item.id] = equationArt(item.text)
             case .freehand, .link:
                 break
             }
         }
         return art
+    }
+}
+
+extension EaselDocumentExport {
+    static func equationArt(_ tex: String) -> EaselVectorEquation? {
+        guard !EaselEquation.isBlank(tex) else { return nil }
+        if let failure = EaselEquationArtwork.error(of: tex) {
+            return EaselVectorEquation(width: 0, height: 0, parts: [], error: failure.message)
+        }
+        guard let rendering = EaselEquationArtwork.rendering(tex, ink: .black) else { return nil }
+        var flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: rendering.size.height)
+        let parts = rendering.outlines().compactMap { outline -> EaselVectorEquationPart? in
+            guard let flipped = outline.path.copy(using: &flip) else { return nil }
+            let data = svgPath(flipped)
+            guard !data.isEmpty else { return nil }
+            switch outline.color {
+            case .inherited: return EaselVectorEquationPart(path: data)
+            case .link: return EaselVectorEquationPart(path: data, opacity: 0.42)
+            case .muted:
+                let muted = NSColor(cgColor: NoteMathRendering.mutedInk(for: .black))
+                return EaselVectorEquationPart(path: data, color: muted.flatMap(hex), opacity: 0.85)
+            case .custom(let color):
+                return EaselVectorEquationPart(path: data, color: NSColor(cgColor: color).flatMap(hex))
+            }
+        }
+        return EaselVectorEquation(width: Double(rendering.size.width), height: Double(rendering.size.height), parts: parts)
     }
 }

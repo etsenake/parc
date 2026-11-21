@@ -8,10 +8,11 @@ package struct CapturePaletteDocument: Equatable {
     package let title: String
     package let icon: String?
     package let modifiedAt: Date?
+    package let profileID: UUID?
     package let id: String
 
-    package init(target: Target, title: String, icon: String? = nil, modifiedAt: Date? = nil) {
-        self.target = target; self.title = title; self.icon = icon; self.modifiedAt = modifiedAt
+    package init(target: Target, title: String, icon: String? = nil, modifiedAt: Date? = nil, profileID: UUID? = nil) {
+        self.target = target; self.title = title; self.icon = icon; self.modifiedAt = modifiedAt; self.profileID = profileID
         switch target {
         case .easel(let id): self.id = "easel:" + id.uuidString
         case .note(let url): self.id = CaptureNoteTarget.note(url).id
@@ -19,7 +20,7 @@ package struct CapturePaletteDocument: Equatable {
     }
 
     package init(_ easel: CaptureEaselDestination) {
-        self.init(target: .easel(easel.id), title: easel.title, modifiedAt: easel.modifiedAt)
+        self.init(target: .easel(easel.id), title: easel.title, modifiedAt: easel.modifiedAt, profileID: easel.profileID)
     }
 
     package init(_ note: CaptureNoteDestination) {
@@ -118,10 +119,6 @@ package struct CapturePaletteRow: Equatable {
     package var separatorBefore = false
     package var isEnabled = true
     package var isChecked = false
-
-    package var id: String { action.id }
-    package var hasSubmenu: Bool { action.submenu != nil }
-
     package init(action: CapturePaletteAction, title: String, subtitle: String? = nil, section: String? = nil, separatorBefore: Bool = false, isEnabled: Bool = true, isChecked: Bool = false) {
         self.action = action
         self.title = title
@@ -131,6 +128,9 @@ package struct CapturePaletteRow: Equatable {
         self.isEnabled = isEnabled
         self.isChecked = isChecked
     }
+
+    package var id: String { action.id }
+    package var hasSubmenu: Bool { action.submenu != nil }
 }
 
 package struct CapturePaletteContext: Equatable {
@@ -143,10 +143,6 @@ package struct CapturePaletteContext: Equatable {
     package var notesAvailable = false
     package var messageAvailable = true
     package var busy = false
-
-    package var offersEasels: Bool { libraryAvailable && easelsAvailable }
-    package var offersNotes: Bool { notesAvailable }
-
     package init(easels: [CaptureEaselDestination] = [], notes: [CaptureNoteDestination] = [], framed: Bool = false, librarySaved: Bool = false, libraryAvailable: Bool = true, easelsAvailable: Bool = true, notesAvailable: Bool = false, messageAvailable: Bool = true, busy: Bool = false) {
         self.easels = easels
         self.notes = notes
@@ -158,6 +154,9 @@ package struct CapturePaletteContext: Equatable {
         self.messageAvailable = messageAvailable
         self.busy = busy
     }
+
+    package var offersEasels: Bool { libraryAvailable && easelsAvailable }
+    package var offersNotes: Bool { notesAvailable }
 }
 
 package enum CapturePaletteMenu {
@@ -301,7 +300,6 @@ package struct CaptureFrameSettings: Equatable {
     package var background: Background
     package var fraction: Double
     package var watermark: Bool
-
     package init(background: Background, fraction: Double, watermark: Bool) {
         self.background = background
         self.fraction = fraction

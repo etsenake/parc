@@ -151,12 +151,24 @@ enum NoteInputRules {
         Delimiter(token: "$", name: "Equation", boundary: true, apply: { _ in }, clear: { _ in }, isEquation: true),
     ]
 
-    private static func inlineConversion(typed: Character, text: NoteText, caret: Int) -> NoteInlineConversion? {
-        let units = Array(text.string.utf16)
+    struct InlineMatch: Hashable {
+        var token: String
+        var name: String
+        var isEquation: Bool
+        var open: Int
+        var contentStart: Int
+        var closeStart: Int
+        var caret: Int
+        var content: Range<Int> { contentStart..<closeStart }
+    }
+
+    static func inlineMatch(typed: Character, units: [UInt16], caret: Int,
+                            accepts: (_ token: String, _ isEquation: Bool, _ content: Range<Int>) -> Bool) -> InlineMatch? {
+        guard caret <= units.count else { return nil }
         for delimiter in delimiters {
             let token = Array(delimiter.token.utf16)
             let length = token.count
-            guard typed == Character(delimiter.token.unicodeScalars.last!), caret >= length * 2 + 1,
+            guard let last = delimiter.token.unicodeScalars.last, typed == Character(last), caret >= length * 2 + 1,
                   Array(units[(caret - length)..<caret]) == token else { continue }
             let tokenUnit = token[0]
             let closeStart = caret - length
@@ -170,30 +182,42 @@ enum NoteInputRules {
                 guard contentStart < closeStart else { continue }
                 let content = Array(units[contentStart..<closeStart])
                 if content.contains(10) || content.contains(13) { break }
-                guard !isSpace(content.first!), !isSpace(content.last!) else { continue }
-                if content.first == tokenUnit || content.last == tokenUnit { continue }
+                guard let first = content.first, let final = content.last, !isSpace(first), !isSpace(final) else { continue }
+                if first == tokenUnit || final == tokenUnit { continue }
                 if delimiter.boundary, isWordCharacter(endingAt: open, in: units) { continue }
-                let contentRange = contentStart..<closeStart
-                let segment = text.slice(contentRange)
-                if segment.spans.contains(where: { $0.marks.code }) && !delimiter.isEquation { continue }
-                if (delimiter.isEquation || delimiter.token == "`") && segment.spans.contains(where: { $0.marks.atom != nil }) { continue }
-                var result = text
-                result.delete(closeStart..<caret)
-                result.delete(open..<contentStart)
-                let range = open..<(open + content.count)
-                if delimiter.isEquation {
-                    let marks = text.marks(at: open).withoutAtom
-                    result.replace(range, with: NoteText.atom(.equation(segment.string), marks: marks))
-                    let end = open + 1
-                    return NoteInlineConversion(text: result, caret: end, typingMarks: marks, name: delimiter.name)
-                }
-                result.updateMarks(in: range, delimiter.apply)
-                var typing = result.typingMarks(at: range.upperBound)
-                delimiter.clear(&typing)
-                return NoteInlineConversion(text: result, caret: range.upperBound, typingMarks: typing, name: delimiter.name)
+                guard accepts(delimiter.token, delimiter.isEquation, contentStart..<closeStart) else { continue }
+                return InlineMatch(token: delimiter.token, name: delimiter.name, isEquation: delimiter.isEquation,
+                                   open: open, contentStart: contentStart, closeStart: closeStart, caret: caret)
             }
         }
         return nil
+    }
+
+    private static func inlineConversion(typed: Character, text: NoteText, caret: Int) -> NoteInlineConversion? {
+        let units = Array(text.string.utf16)
+        let found = inlineMatch(typed: typed, units: units, caret: caret) { token, isEquation, range in
+            let segment = text.slice(range)
+            if segment.spans.contains(where: { $0.marks.code }) && !isEquation { return false }
+            if (isEquation || token == "`") && segment.spans.contains(where: { $0.marks.atom != nil }) { return false }
+            return true
+        }
+        guard let found, let delimiter = delimiters.first(where: { $0.token == found.token }) else { return nil }
+        let open = found.open, contentStart = found.contentStart, closeStart = found.closeStart
+        let segment = text.slice(found.content)
+        var result = text
+        result.delete(closeStart..<caret)
+        result.delete(open..<contentStart)
+        let range = open..<(open + found.content.count)
+        if delimiter.isEquation {
+            let marks = text.marks(at: open).withoutAtom
+            result.replace(range, with: NoteText.atom(.equation(segment.string), marks: marks))
+            let end = open + 1
+            return NoteInlineConversion(text: result, caret: end, typingMarks: marks, name: delimiter.name)
+        }
+        result.updateMarks(in: range, delimiter.apply)
+        var typing = result.typingMarks(at: range.upperBound)
+        delimiter.clear(&typing)
+        return NoteInlineConversion(text: result, caret: range.upperBound, typingMarks: typing, name: delimiter.name)
     }
 
     private struct Symbol {
@@ -214,29 +238,43 @@ enum NoteInputRules {
         Symbol(typed: "--", shown: "\u{2014}", name: "Em Dash", literal: nil),
     ]
 
-    private static func symbolConversion(typed: Character, text: NoteText, caret: Int) -> NoteInlineConversion? {
-        let string = text.string as NSString
+    struct SymbolMatch: Hashable {
+        var shown: String
+        var name: String
+        var literal: String?
+        var range: Range<Int>
+    }
+
+    static func symbolMatch(typed: Character, string: NSString, caret: Int, blocked: (Range<Int>) -> Bool) -> SymbolMatch? {
         for symbol in symbols {
             let length = (symbol.typed as NSString).length
-            guard let last = symbol.typed.last, last == typed, caret >= length,
+            guard let last = symbol.typed.last, last == typed, caret >= length, caret <= string.length,
                   string.substring(with: NSRange(location: caret - length, length: length)) == symbol.typed else { continue }
             let range = (caret - length)..<caret
             if range.lowerBound > 0, string.character(at: range.lowerBound - 1) == (symbol.typed as NSString).character(at: 0) { continue }
-            guard !text.runs(in: range).contains(where: { $0.marks.code || $0.marks.atom != nil }) else { continue }
-            let marks = text.marks(at: range.lowerBound).withoutAtom
-            var result = text
-            result.replace(range, with: NoteText(symbol.shown, marks: marks))
-            let end = range.lowerBound + (symbol.shown as NSString).length
-            var conversion = NoteInlineConversion(text: result, caret: end, typingMarks: result.typingMarks(at: end), name: symbol.name)
-            if let literal = symbol.literal {
-                var original = text
-                original.replace(range, with: NoteText(literal, marks: marks))
-                conversion.literal = original
-                conversion.literalCaret = range.lowerBound + (literal as NSString).length
-            }
-            return conversion
+            guard !blocked(range) else { continue }
+            return SymbolMatch(shown: symbol.shown, name: symbol.name, literal: symbol.literal, range: range)
         }
         return nil
+    }
+
+    private static func symbolConversion(typed: Character, text: NoteText, caret: Int) -> NoteInlineConversion? {
+        guard let found = symbolMatch(typed: typed, string: text.string as NSString, caret: caret, blocked: { range in
+            text.runs(in: range).contains(where: { $0.marks.code || $0.marks.atom != nil })
+        }) else { return nil }
+        let range = found.range
+        let marks = text.marks(at: range.lowerBound).withoutAtom
+        var result = text
+        result.replace(range, with: NoteText(found.shown, marks: marks))
+        let end = range.lowerBound + (found.shown as NSString).length
+        var conversion = NoteInlineConversion(text: result, caret: end, typingMarks: result.typingMarks(at: end), name: found.name)
+        if let literal = found.literal {
+            var original = text
+            original.replace(range, with: NoteText(literal, marks: marks))
+            conversion.literal = original
+            conversion.literalCaret = range.lowerBound + (literal as NSString).length
+        }
+        return conversion
     }
 
     private static func autolink(text: NoteText, caret: Int) -> NoteInlineConversion? {

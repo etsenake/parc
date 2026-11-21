@@ -32,7 +32,7 @@ extension BrowserWindowController {
             canCopy: selected ? canCopyCurrentURL : browser.url != nil && page.canCopyLink(as: .plain),
             canShowSiteInfo: true,
             canSplit: activePeek?.canSplit?() ?? true,
-            close: activePeek?.browser !== browser && activeSplitLayout != nil,
+            close: activePagePeek?.browser !== browser && activeSplitLayout != nil,
             showSidebar: leading && sidebarPresentation != .locked,
             insecure: page.responds(to: #selector(getter: PCNativePage.secureContextState))
                 && page.secureContextState == .insecure,
@@ -126,7 +126,7 @@ extension BrowserWindowController {
     private func paneTitleMenu(browser: PCBrowserView?, tab: BrowserTab? = nil, admit: @escaping () -> Bool) -> NSMenu? {
         guard presentation.isReady, !isClosing, !wholeWindowClose, !windowClosePending,
               commandBar == nil, libraryView == nil, let window, window.isKeyWindow else { return nil }
-        if let peek = activePeek, peek.browser !== browser { return nil }
+        if activePeek != nil, activePagePeek.map({ $0.browser !== browser }) ?? true { return nil }
         let content = PaneMenuContent(livePage: browser?.nativePage.map { !$0.isClosed } == true, tabURL: tab?.url,
                                       localDocument: tab.map { InternalPage.isInternal($0.url) } == true)
         guard content != .none else { return nil }
@@ -265,7 +265,7 @@ extension BrowserWindowController {
               browser.nativePage === page, !page.isClosed, browser.readerRevision == revision,
               let window, browser.window === window, window.isKeyWindow,
               PCNativeBrowserApplication.canPresentTabSwitcher(in: window) else { return false }
-        if let peek = activePeek { return peek.browser === browser && !peek.closePending }
+        if let peek = activePeek { return activePagePeek?.browser === browser && !peek.closePending }
         guard let id = browsers.first(where: { $0.value === browser })?.key,
               selectedTabIDs.contains(id), panes[id]?.browser === browser,
               !closingTabIDs.contains(id), !store.retiringTabIDs.contains(id),
@@ -523,8 +523,8 @@ extension BrowserWindowController {
     var canExportEaselImage: Bool { currentEaselEditor?.canExportImage == true }
     func exportEaselImage() { currentEaselEditor?.exportImage() }
     var currentEaselEditor: EaselEditorViewController? {
-        guard presentation.isReady, !isClosing, !wholeWindowClose, activePeek == nil, window?.isKeyWindow == true,
-              let id = currentTabID, !transferringTabIDs.contains(id), renderedPaneIDs.contains(id) else { return nil }
+        guard presentation.isReady, !isClosing, !wholeWindowClose, window?.isKeyWindow == true,
+              let id = documentInputTabID, !transferringTabIDs.contains(id) else { return nil }
         return easelEditors[id]?.editor
     }
 

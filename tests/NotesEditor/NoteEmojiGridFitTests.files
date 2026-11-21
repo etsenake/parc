@@ -2,6 +2,7 @@ Sources/ParcCore/*.swift
 Sources/ParcApp/NoteTheme.swift
 Sources/ParcApp/NoteAnimation.swift
 Sources/ParcApp/NoteFloatingPanel.swift
+Sources/ParcApp/NoteCursor.swift
 Sources/ParcApp/NoteControls.swift
 Sources/ParcApp/NoteEmojiPicker.swift
 Sources/ParcApp/NoteCustomEmojiEditor.swift

@@ -3,13 +3,25 @@ import ParcCore
 
 @MainActor
 final class NoteDateRefresher {
-    private weak var editor: NotePageEditor?
+    private let mentions: () -> [NoteDateMention]?
+    private let onRefresh: () -> Bool
     private var timer: Timer?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var stopped = false
 
-    init(editor: NotePageEditor) {
-        self.editor = editor
+    convenience init(editor: NotePageEditor) {
+        self.init(mentions: { [weak editor] in editor.map { Self.mentions(in: $0.session.page) } }, refresh: { [weak editor] in
+            guard let editor else { return false }
+            for view in editor.canvas.materializedViews {
+                for host in view.textHosts where Self.hasDate(host.textView.noteText) { host.textView.refreshRendering() }
+            }
+            return true
+        })
+    }
+
+    init(mentions: @escaping () -> [NoteDateMention]?, refresh: @escaping () -> Bool) {
+        self.mentions = mentions
+        onRefresh = refresh
         let center = NotificationCenter.default
         for name in [Notification.Name.NSCalendarDayChanged, .NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
             observers.append((center, center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -34,8 +46,7 @@ final class NoteDateRefresher {
     func reschedule() {
         timer?.invalidate()
         timer = nil
-        guard !stopped, let editor else { return }
-        let mentions = Self.mentions(in: editor.session.page)
+        guard !stopped, let mentions = mentions() else { return }
         guard let next = NoteDateText.nextChange(of: mentions, after: Date(), calendar: .autoupdatingCurrent) else { return }
         let fire = Timer(fire: next.addingTimeInterval(0.5), interval: 0, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
@@ -46,10 +57,7 @@ final class NoteDateRefresher {
     }
 
     func refresh() {
-        guard !stopped, let editor else { return }
-        for view in editor.canvas.materializedViews {
-            for host in view.textHosts where Self.hasDate(host.textView.noteText) { host.textView.refreshRendering() }
-        }
+        guard !stopped, onRefresh() else { return }
         reschedule()
     }
 

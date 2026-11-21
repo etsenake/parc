@@ -67,8 +67,8 @@ extension BrowserWindowController {
             switch SidebarDocumentKind(url: url) {
             case .note(let file)?:
                 NoteTabIconArt.shared.requestImage(forNote: file, completion: completion); return
-            case .easel?:
-                completion(DocumentDefaultIcon.easel.image(size: NoteTabIconArt.side)); return
+            case .easel(let id)?:
+                NoteTabIconArt.shared.requestImage(for: .easel(directory: self.store.easelsDirectory(for: profileID), id: id), completion: completion); return
             case nil: break
             }
             PCNativeBrowserApplication.favicon(for: url, profilePath: self.store.independentEngineProfilePath(for: profileID)) { image in

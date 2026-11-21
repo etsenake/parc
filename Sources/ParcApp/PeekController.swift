@@ -4,17 +4,13 @@ import ParcEngine
 import QuartzCore
 
 @MainActor
-final class PeekController: NSObject, PCBrowserViewDelegate {
+class PeekCard: NSObject {
     let identity = UUID()
     let parentTabID: UUID
     let sourceSpaceID: UUID
     private(set) var parentPage: PCNativePage?
-    let page: PCNativePage
-    let browser: PCBrowserView
     let returnsPage: Bool
     let view = PeekHostView()
-    private let failure = PageFailureView()
-    var showsFailure: Bool { failure.presentation != nil }
     private var swipeMonitor: Any?
     private var reduceMotionObserver: NSObjectProtocol?
     private let dismissConfirmation = PeekDismissalConfirmation()
@@ -22,14 +18,12 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     private var closeTransition = PeekCloseTransition()
     private var exitTimer: Timer?
     private var sheetObserver: NSObjectProtocol?
-    private var closeInFlight = false
+    fileprivate var closeInFlight = false
     private var announcedLeaving = false
     private var parentNotice = 0
-    private var finished = false
+    fileprivate private(set) var finished = false
     private(set) var closePending = false
     private var lastPresentedFingerprint: String?
-    private(set) var dismissedURL: URL?
-    private(set) var dismissedNavigationState: NSObject?
     var onClose: (() -> Void)?
     var onCloseRefused: (() -> Void)?
     var onReturn: (() -> Void)?
@@ -44,38 +38,16 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     var splitToolTip: (() -> String?)?
     var canExpand: (() -> Bool)?
 
-    init(page: PCNativePage, parent: PCNativePage?, parentTabID: UUID, sourceSpaceID: UUID, holding held: PCBrowserView? = nil) {
-        self.page = page; parentPage = parent; self.parentTabID = parentTabID; self.sourceSpaceID = sourceSpaceID
-        browser = held ?? PCBrowserView(frame: .zero, adoptingNativePage: page)
-        returnsPage = held != nil
+    init(parent: PCNativePage?, parentTabID: UUID, sourceSpaceID: UUID, returnsPage: Bool) {
+        parentPage = parent; self.parentTabID = parentTabID; self.sourceSpaceID = sourceSpaceID
+        self.returnsPage = returnsPage
         super.init()
-        if !returnsPage { browser.delegate = self }
-        view.content.addSubview(browser)
-        view.content.addSubview(failure)
-        failure.pageView = browser
-        failure.onReload = { [weak self] in self?.browser.reload() }
-        failure.onRetryRenderer = { [weak self] expected in
-            guard let self, let crash = self.browser.rendererCrash,
-                  expected.identity === crash else { return }
-            _ = self.browser.performRendererCrashAction(crash)
-        }
-        failure.onRendererPresented = { [weak self] expected in
-            guard let self, let crash = self.browser.rendererCrash,
-                  expected.identity === crash else { return false }
-            return self.browser.rendererCrashDidPresent(crash)
-        }
-        view.onLayout = { [weak self] in
-            guard let self else { return }
-            self.browser.frame = self.view.content.bounds
-            self.failure.frame = self.view.content.bounds
-        }
         view.onNativeCancel = { [weak self] in
             guard let self, self.canHandleEscape,
                   let responder = self.view.window?.firstResponder as? NSView,
-                  (responder === self.view || responder.isDescendant(of: self.view)),
-                  responder !== self.page.nativeView,
-                  !responder.isDescendant(of: self.page.nativeView) else { return false }
-            self.requestDismiss(.exit)
+                  responder === self.view || responder.isDescendant(of: self.view),
+                  let dismissal = self.nativeCancelDismissal(from: responder) else { return false }
+            self.requestDismiss(dismissal)
             return true
         }
         view.onClose = { [weak self] in self?.requestDismiss(.closeButton) }
@@ -85,8 +57,20 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         reduceMotionObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.view.settleMotion(); self?.onMotionPreference?() } }
-        refresh()
     }
+
+    var title: String { "Peek" }
+    var contentIsClosed: Bool { false }
+    var capturesMediaInput: Bool { false }
+    func nativeCancelDismissal(from responder: NSView) -> Dismissal? { .exit }
+    func contentWillClose() {}
+    func contentCloseRefused() {}
+    func requestContentClose() { refuseClose() }
+    func focusContent() {}
+    func ownsContentResponder(_ responder: NSView) -> Bool { false }
+    func contentFingerprint() -> String { title }
+    func applyContentPresentation() {}
+    func contentDidFinish() {}
 
     typealias Dismissal = PeekDismissalConfirmation.Dismissal
 
@@ -186,8 +170,8 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
                 exitTimer = timer
             case .requestClose: requestPageClose()
             case .cancelClose:
-                if !page.isClosed {
-                    dismissedURL = nil; dismissedNavigationState = nil
+                if !contentIsClosed {
+                    contentCloseRefused()
                     refuseClose()
                 }
             case .vanish:
@@ -210,8 +194,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     func requestDismiss(_ mechanism: Dismissal) {
         guard !finished, !closePending, canInteract?() == true,
               let window = view.window, window.attachedSheet == nil else { return }
-        let mediaInput = browser.captureState.map { $0.camera || $0.microphone } ?? false
-        if let reason = dismissConfirmation.request(mechanism, mediaInput: mediaInput, onExpiry: { [weak self] in
+        if let reason = dismissConfirmation.request(mechanism, mediaInput: capturesMediaInput, onExpiry: { [weak self] in
                 self?.view.confirmationTitle = nil
                 self?.onUpdate?()
             }) {
@@ -233,21 +216,20 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     }
 
     func closeWhileHidden() {
-        guard !finished, !closePending, view.isHidden, !page.isClosed else { return }
+        guard !finished, !closePending, view.isHidden, !contentIsClosed else { return }
         closeConfirmed()
     }
 
     private func closeAfterConfirmation(exit: PeekCloseTransition.Exit) {
-        guard !finished, !closePending, canInteract?() == true, !page.isClosed else { return }
+        guard !finished, !closePending, canInteract?() == true, !contentIsClosed else { return }
         clearDismissConfirmation()
         closeFocusReturn = PeekFocusReturn(source: view)
         closeConfirmed(exit: exit)
     }
 
     private func closeConfirmed(exit: PeekCloseTransition.Exit = .fade) {
-        closePending = true; dismissedURL = browser.url
-        dismissedNavigationState = page.responds(to: #selector(PCNativePage.captureNavigationState))
-            ? page.captureNavigationState() : nil
+        closePending = true
+        contentWillClose()
         refresh()
         observeSheets()
         let effects = closeTransition.close(visible: !view.isHidden && view.window != nil, exit: exit)
@@ -257,25 +239,23 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
 
     private func requestPageClose() {
         exitTimer?.invalidate(); exitTimer = nil
-        guard !finished, closePending, !closeInFlight, !page.isClosed else { return }
+        guard !finished, closePending, !closeInFlight, !contentIsClosed else { return }
         if returnsPage {
             if let onReturn { onReturn() } else { refuseClose() }
             return
         }
         if closeTransition.holdForParent(visible: !view.isHidden) { return }
-        closeInFlight = true
-        browser.requestClose { [weak self] result in
-            guard let self, !self.finished else { return }
-            self.closeInFlight = false
-            if result == .closed {
-                self.closePending = false
-                self.stopObservingSheets()
-                self.onClose?()
-            } else if !self.closeTransition.holdForParent(visible: !self.view.isHidden) {
-                self.dismissedURL = nil; self.dismissedNavigationState = nil
-                self.refuseClose()
-            }
-        }
+        requestContentClose()
+    }
+
+    fileprivate func contentClosed() {
+        closePending = false
+        stopObservingSheets()
+        onClose?()
+    }
+
+    fileprivate func holdsForParent() -> Bool {
+        closeTransition.holdForParent(visible: !view.isHidden)
     }
 
     func adoptParent(_ page: PCNativePage) {
@@ -291,11 +271,6 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         publishPresentationIfChanged()
         restoreFocusAfterRefusal(focusReturn)
         onCloseRefused?()
-    }
-
-    func handBackBrowser() {
-        guard returnsPage else { return }
-        failure.pageView = nil
     }
 
     func playHandoffExit() -> TimeInterval {
@@ -363,8 +338,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
 
     func focus() {
         guard canFocus else { return }
-        if case .renderer(let crash)? = failure.presentation { _ = failure.focusRendererAction(crash) }
-        else { _ = PCNativeBrowserApplication.owner(of: page)?.requestFocus(for: page) }
+        focusContent()
     }
 
     private func restoreFocusAfterRefusal(_ focusReturn: PeekFocusReturn?) {
@@ -372,7 +346,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         focusReturn?.perform(in: window, ownerIsAvailable: { self.canFocus }) { [self] original in
             guard window.firstResponder !== original, let original = original as? NSView,
                   original.window === window, !original.isHiddenOrHasHiddenAncestor else { return }
-            if original === page.nativeView || original.isDescendant(of: page.nativeView) {
+            if ownsContentResponder(original) {
                 focus()
             } else if original === view || original.isDescendant(of: view) {
                 _ = window.makeFirstResponder(original)
@@ -383,7 +357,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     @discardableResult
     func refresh() -> Bool {
         guard !finished else { return false }
-        let fingerprint = presentationFingerprint()
+        let fingerprint = contentFingerprint()
         if PeekPresentationSkip.shouldSkip(previous: lastPresentedFingerprint, next: fingerprint) {
             return false
         }
@@ -392,11 +366,146 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         return true
     }
 
-    private func publishPresentationIfChanged() {
+    func publishPresentationIfChanged() {
         if refresh() { onUpdate?() }
     }
 
-    private func presentationFingerprint() -> String {
+    var presentedCanExpand: Bool { !closePending && canExpand?() == true }
+    var presentedCanSplit: Bool { !closePending && canSplit?() == true }
+    var presentedSplitToolTip: String? { closePending ? nil : splitToolTip?() }
+
+    private func applyPresentation() {
+        view.title = title
+        view.isBusy = closePending
+        view.canExpand = presentedCanExpand
+        view.canSplit = presentedCanSplit
+        view.splitToolTip = presentedSplitToolTip
+        applyContentPresentation()
+    }
+
+    private func promote(split: Bool) {
+        guard canRequestExit, canExpand?() == true, !split || canSplit?() == true else { return }
+        onPromote?(split)
+    }
+
+    func finish() {
+        guard !finished else { return }
+        finished = true
+        closeFocusReturn?.cancel(); closeFocusReturn = nil
+        exitTimer?.invalidate(); exitTimer = nil
+        stopObservingSheets()
+        apply(closeTransition.finish())
+        removeSwipeMonitor()
+        if let reduceMotionObserver { NSWorkspace.shared.notificationCenter.removeObserver(reduceMotionObserver) }
+        reduceMotionObserver = nil
+        clearDismissConfirmation()
+        view.onNativeCancel = nil
+        view.loadingIndicator.reset()
+        view.settleMotion(); view.removeFromSuperview()
+        contentDidFinish()
+        onClose = nil; onCloseRefused = nil; onReturn = nil; onLeavingChange = nil; onPromote = nil; onUpdate = nil; onMediaChange = nil; onContextImage = nil; onMotionPreference = nil; canInteract = nil; canSplit = nil; splitToolTip = nil; canExpand = nil
+    }
+
+    private func installSwipeMonitor() {
+        guard swipeMonitor == nil else { return }
+        swipeMonitor = NSEvent.addLocalMonitorForEvents(matching: .swipe) { [weak self] event in
+            let consumed: Bool = MainActor.assumeIsolated {
+                guard let self, !self.view.isHidden, event.window === self.view.window,
+                      self.canInteract?() == true, self.view.window?.attachedSheet == nil,
+                      self.contains(event), event.deltaX > 0,
+                      abs(event.deltaX) > abs(event.deltaY) else { return false }
+                self.requestDismiss(.swipe)
+                return true
+            }
+            return consumed ? nil : event
+        }
+    }
+    private func removeSwipeMonitor() { if let swipeMonitor { NSEvent.removeMonitor(swipeMonitor) }; swipeMonitor = nil }
+}
+
+@MainActor
+final class PeekController: PeekCard, PCBrowserViewDelegate {
+    let page: PCNativePage
+    let browser: PCBrowserView
+    private let failure = PageFailureView()
+    var showsFailure: Bool { failure.presentation != nil }
+    private(set) var dismissedURL: URL?
+    private(set) var dismissedNavigationState: NSObject?
+
+    init(page: PCNativePage, parent: PCNativePage?, parentTabID: UUID, sourceSpaceID: UUID, holding held: PCBrowserView? = nil) {
+        self.page = page
+        browser = held ?? PCBrowserView(frame: .zero, adoptingNativePage: page)
+        super.init(parent: parent, parentTabID: parentTabID, sourceSpaceID: sourceSpaceID, returnsPage: held != nil)
+        if !returnsPage { browser.delegate = self }
+        view.content.addSubview(browser)
+        view.content.addSubview(failure)
+        failure.pageView = browser
+        failure.onReload = { [weak self] in self?.browser.reload() }
+        failure.onRetryRenderer = { [weak self] expected in
+            guard let self, let crash = self.browser.rendererCrash,
+                  expected.identity === crash else { return }
+            _ = self.browser.performRendererCrashAction(crash)
+        }
+        failure.onRendererPresented = { [weak self] expected in
+            guard let self, let crash = self.browser.rendererCrash,
+                  expected.identity === crash else { return false }
+            return self.browser.rendererCrashDidPresent(crash)
+        }
+        view.onLayout = { [weak self] in
+            guard let self else { return }
+            self.browser.frame = self.view.content.bounds
+            self.failure.frame = self.view.content.bounds
+        }
+        refresh()
+    }
+
+    override var title: String { PeekPresentationSkip.displayTitle(browserTitle: browser.title, urlHost: browser.url?.host) }
+    override var contentIsClosed: Bool { page.isClosed }
+    override var capturesMediaInput: Bool { browser.captureState.map { $0.camera || $0.microphone } ?? false }
+
+    override func nativeCancelDismissal(from responder: NSView) -> Dismissal? {
+        responder === page.nativeView || responder.isDescendant(of: page.nativeView) ? nil : .exit
+    }
+
+    override func contentWillClose() {
+        dismissedURL = browser.url
+        dismissedNavigationState = page.responds(to: #selector(PCNativePage.captureNavigationState))
+            ? page.captureNavigationState() : nil
+    }
+
+    override func contentCloseRefused() {
+        dismissedURL = nil; dismissedNavigationState = nil
+    }
+
+    override func requestContentClose() {
+        closeInFlight = true
+        browser.requestClose { [weak self] result in
+            guard let self, !self.finished else { return }
+            self.closeInFlight = false
+            if result == .closed {
+                self.contentClosed()
+            } else if !self.holdsForParent() {
+                self.dismissedURL = nil; self.dismissedNavigationState = nil
+                self.refuseClose()
+            }
+        }
+    }
+
+    func handBackBrowser() {
+        guard returnsPage else { return }
+        failure.pageView = nil
+    }
+
+    override func focusContent() {
+        if case .renderer(let crash)? = failure.presentation { _ = failure.focusRendererAction(crash) }
+        else { _ = PCNativeBrowserApplication.owner(of: page)?.requestFocus(for: page) }
+    }
+
+    override func ownsContentResponder(_ responder: NSView) -> Bool {
+        responder === page.nativeView || responder.isDescendant(of: page.nativeView)
+    }
+
+    override func contentFingerprint() -> String {
         let capture: String
         if let state = browser.captureState {
             capture = PeekPresentationSkip.captureToken(
@@ -418,26 +527,21 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
             crash = PeekPresentationSkip.crashToken(identity: nil, terminationStatus: 0, errorCode: 0)
         }
         return PeekPresentationSkip.fingerprint(
-            title: PeekPresentationSkip.displayTitle(browserTitle: browser.title, urlHost: browser.url?.host),
+            title: title,
             url: browser.url?.absoluteString ?? "",
             loading: browser.isLoading,
             canGoBack: browser.canGoBack,
             canGoForward: browser.canGoForward,
             closePending: closePending,
-            canExpand: !closePending && canExpand?() == true,
-            canSplit: !closePending && canSplit?() == true,
+            canExpand: presentedCanExpand,
+            canSplit: presentedCanSplit,
             splitToolTip: presentedSplitToolTip,
             capture: capture,
             crash: crash,
             favicon: PeekPresentationSkip.faviconToken(page.favicon?.tiffRepresentation))
     }
 
-    private func applyPresentation() {
-        view.title = PeekPresentationSkip.displayTitle(browserTitle: browser.title, urlHost: browser.url?.host)
-        view.isBusy = closePending
-        view.canExpand = !closePending && canExpand?() == true
-        view.canSplit = !closePending && canSplit?() == true
-        view.splitToolTip = presentedSplitToolTip
+    override func applyContentPresentation() {
         view.loadingIndicator.setLoading(browser.isLoading)
         if let crash = browser.rendererCrash {
             failure.showRendererFailure(RendererCrashPresentation(pageIdentifier: page.identifier,
@@ -447,47 +551,11 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         }
     }
 
-    private var presentedSplitToolTip: String? { closePending ? nil : splitToolTip?() }
-
-    private func promote(split: Bool) {
-        guard canRequestExit, canExpand?() == true, !split || canSplit?() == true else { return }
-        onPromote?(split)
-    }
-
-    func finish() {
-        guard !finished else { return }
-        finished = true
-        closeFocusReturn?.cancel(); closeFocusReturn = nil
-        exitTimer?.invalidate(); exitTimer = nil
-        stopObservingSheets()
-        apply(closeTransition.finish())
-        removeSwipeMonitor()
-        if let reduceMotionObserver { NSWorkspace.shared.notificationCenter.removeObserver(reduceMotionObserver) }
-        reduceMotionObserver = nil
-        clearDismissConfirmation()
-        view.onNativeCancel = nil
-        view.loadingIndicator.reset()
-        view.settleMotion(); view.removeFromSuperview()
+    override func contentDidFinish() {
         if browser.delegate === self { browser.delegate = nil }
         failure.pageView = nil
-        onClose = nil; onCloseRefused = nil; onReturn = nil; onLeavingChange = nil; onPromote = nil; onUpdate = nil; onMediaChange = nil; onContextImage = nil; onMotionPreference = nil; canInteract = nil; canSplit = nil; splitToolTip = nil; canExpand = nil
     }
 
-    private func installSwipeMonitor() {
-        guard swipeMonitor == nil else { return }
-        swipeMonitor = NSEvent.addLocalMonitorForEvents(matching: .swipe) { [weak self] event in
-            let consumed: Bool = MainActor.assumeIsolated {
-                guard let self, !self.view.isHidden, event.window === self.view.window,
-                      self.canInteract?() == true, self.view.window?.attachedSheet == nil,
-                      self.contains(event), event.deltaX > 0,
-                      abs(event.deltaX) > abs(event.deltaY) else { return false }
-                self.requestDismiss(.swipe)
-                return true
-            }
-            return consumed ? nil : event
-        }
-    }
-    private func removeSwipeMonitor() { if let swipeMonitor { NSEvent.removeMonitor(swipeMonitor) }; swipeMonitor = nil }
     func browserView(_ view: PCBrowserView, addContextImageToEasel image: PCNativeContextImage) { onContextImage?(image) }
     func browserViewDidRequestClose(_ view: PCBrowserView) { if view === browser, page.isClosed { onClose?() } }
     func browserView(_ view: PCBrowserView, didChangeTitle title: String) { publishPresentationIfChanged() }
@@ -511,6 +579,61 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         failure.showNavigationFailure(error.localizedDescription)
         browserViewDidChangePageColor(view)
     }
+}
+
+@MainActor
+final class DocumentPeekController: PeekCard {
+    let document: NSView
+    private let documentTitle: () -> String
+    private let focusDocument: () -> Void
+
+    init(document: NSView, parent: PCNativePage, parentTabID: UUID, sourceSpaceID: UUID,
+         title: @escaping () -> String, focus: @escaping () -> Void) {
+        self.document = document; documentTitle = title; focusDocument = focus
+        super.init(parent: parent, parentTabID: parentTabID, sourceSpaceID: sourceSpaceID, returnsPage: true)
+        document.autoresizingMask = [.width, .height]
+        document.frame = view.content.bounds
+        document.isHidden = false
+        view.content.addSubview(document)
+        view.onLayout = { [weak self] in
+            guard let self, self.holdsDocument else { return }
+            self.document.frame = self.view.content.bounds
+        }
+        refresh()
+    }
+
+    var holdsDocument: Bool { document.superview === view.content }
+
+    override var title: String {
+        let name = documentTitle().trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Peek" : name
+    }
+
+    override func nativeCancelDismissal(from responder: NSView) -> Dismissal? {
+        guard let text = responder as? NSTextView, text.isEditable else { return .exit }
+        return .escape(prefersConfirmation: true)
+    }
+
+    override func focusContent() { focusDocument() }
+
+    override func contentFingerprint() -> String {
+        PeekPresentationSkip.fingerprint(
+            title: title, url: "", loading: false, canGoBack: false, canGoForward: false,
+            closePending: closePending, canExpand: presentedCanExpand, canSplit: presentedCanSplit,
+            splitToolTip: presentedSplitToolTip,
+            capture: PeekPresentationSkip.captureToken(active: false, camera: false, microphone: false, tab: false,
+                                                       window: false, display: false, mirrored: false, shared: false),
+            crash: PeekPresentationSkip.crashToken(identity: nil, terminationStatus: 0, errorCode: 0),
+            favicon: PeekPresentationSkip.faviconToken(nil))
+    }
+
+    override func applyContentPresentation() { view.loadingIndicator.setLoading(false) }
+
+    func releaseDocument() {
+        if holdsDocument { document.removeFromSuperview() }
+    }
+
+    override func contentDidFinish() { releaseDocument() }
 }
 
 @MainActor

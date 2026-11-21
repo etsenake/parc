@@ -2,10 +2,41 @@ import AppKit
 import ParcCore
 
 @MainActor
+private final class EaselToolGlyphView: NSView {
+    var paint: ((NSRect) -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        setAccessibilityElement(false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) { paint?(bounds) }
+}
+
+@MainActor
 final class EaselToolButton: NoteControlButton {
-    var content: NoteToolbarButton.Content { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
-    var showsDisclosure = false { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
-    var iconPointSize: CGFloat = 14 { didSet { needsDisplay = true } }
+    var content: NoteToolbarButton.Content { didSet { invalidateIntrinsicContentSize(); redrawFace() } }
+    var showsDisclosure = false { didSet { invalidateIntrinsicContentSize(); layoutGlyph(); redrawFace() } }
+    var iconPointSize: CGFloat = 14 { didSet { redrawFace() } }
+    var isCurrent = false {
+        didSet {
+            guard isCurrent != oldValue else { return }
+            refreshFace(animated: true)
+            setAccessibilityValue(isCurrent || isChecked ? "on" : nil)
+        }
+    }
+    override var isChecked: Bool { didSet { if isCurrent, !isChecked { setAccessibilityValue("on") } } }
+    private let lift = EaselToolGlyphView()
+    private let glyph = EaselToolGlyphView()
+    private var lifted = false
+    private static let liftKey = NoteAnimation.keyPrefix + "easel.tool.lift"
+    private static let flourishKey = NoteAnimation.keyPrefix + "easel.tool.flourish"
     var onDragMoved: ((NSPoint) -> Void)?
     var onDragEnded: ((NSPoint?) -> Void)?
     var onShowMenu: (() -> Void)?
@@ -20,8 +51,12 @@ final class EaselToolButton: NoteControlButton {
     init(_ content: NoteToolbarButton.Content, label: String) {
         self.content = content
         super.init(frame: NSRect(origin: .zero, size: NoteTheme.toolbarButtonSize))
+        lift.addSubview(glyph)
+        addSubview(lift)
+        glyph.paint = { [weak self] rect in self?.drawGlyph(in: rect) }
         setAccessibilityLabel(label)
         setFrameSize(intrinsicContentSize)
+        NoteAnimation.observeReduceMotion(self) { [weak self] in self?.settleGlyph() }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -42,15 +77,87 @@ final class EaselToolButton: NoteControlButton {
         NSAttributedString(string: text, attributes: [.font: textFont]).size().width
     }
 
-    override func drawContent(in bounds: NSRect, ink: NSColor) {
-        var area = bounds
-        if showsDisclosure {
-            let chevronBox = NSRect(x: bounds.maxX - 16, y: bounds.minY, width: 10, height: bounds.height)
-            if let chevron = NoteIconRenderer.symbol("chevron.down", pointSize: 8, weight: .bold) {
-                NoteIconRenderer.drawTemplate(chevron, centeredIn: chevronBox, tint: NoteTheme.menuTertiaryInk)
-            }
-            area.size.width -= 12
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        layoutGlyph()
+    }
+
+    private func layoutGlyph() {
+        let area = NSRect(x: 0, y: 0, width: max(0, bounds.width - (showsDisclosure ? 12 : 0)), height: bounds.height)
+        guard lift.frame != area else { return }
+        NoteAnimation.withoutAnimation {
+            lift.frame = area
+            glyph.frame = lift.bounds
         }
+        glyph.needsDisplay = true
+    }
+
+    private func redrawFace() {
+        needsDisplay = true
+        glyph.needsDisplay = true
+    }
+
+    override func fill(hovered: Bool, pressed: Bool, checked: Bool) -> NSColor? {
+        isCurrent ? nil : super.fill(hovered: hovered, pressed: pressed, checked: checked)
+    }
+
+    override func ink(hovered: Bool, pressed: Bool, checked: Bool) -> NSColor {
+        super.ink(hovered: hovered, pressed: pressed, checked: checked || isCurrent)
+    }
+
+    override func refreshFace(animated: Bool) {
+        super.refreshFace(animated: animated)
+        glyph.needsDisplay = true
+        let wantsLift = isHovered && isEnabled && window != nil
+        guard wantsLift != lifted else { return }
+        lifted = wantsLift
+        guard let layer = lift.layer else { return }
+        let rise = wantsLift && !NoteAnimation.reduceMotion ? -CGFloat(EaselFloatingBar.hoverLift) : 0
+        NoteAnimation.spring(layer, "transform", to: NSValue(caTransform3D: CATransform3DMakeTranslation(0, rise, 0)),
+                             spring: .highlight, key: Self.liftKey)
+    }
+
+    func playFlourish(_ flourish: EaselToolFlourish) {
+        guard window != nil, !isHiddenOrHasHiddenAncestor, !NoteAnimation.reduceMotion, let layer = glyph.layer else { return }
+        let centre = NoteAnimation.layerCenter(layer)
+        let values = flourish.frames().map { frame -> NSValue in
+            var transform = CATransform3DMakeTranslation(centre.x + CGFloat(frame.dx), centre.y + CGFloat(frame.dy), 0)
+            transform = CATransform3DRotate(transform, CGFloat(frame.rotation) * .pi / 180, 0, 0, 1)
+            transform = CATransform3DScale(transform, CGFloat(frame.scaleX), CGFloat(frame.scaleY), 1)
+            return NSValue(caTransform3D: CATransform3DTranslate(transform, -centre.x, -centre.y, 0))
+        }
+        let animation = CAKeyframeAnimation(keyPath: "transform")
+        animation.values = values
+        animation.duration = flourish.duration
+        animation.calculationMode = .linear
+        NoteAnimation.withoutAnimation { layer.transform = CATransform3DIdentity }
+        _ = NoteAnimation.run(animation, on: layer, key: Self.flourishKey)
+    }
+
+    private func settleGlyph() {
+        lifted = false
+        for view in [lift, glyph] {
+            guard let layer = view.layer else { continue }
+            NoteAnimation.settle(layer, keys: [Self.liftKey, Self.flourishKey])
+            NoteAnimation.withoutAnimation { layer.transform = CATransform3DIdentity }
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { settleGlyph() }
+    }
+
+    override func drawContent(in bounds: NSRect, ink: NSColor) {
+        guard showsDisclosure else { return }
+        let chevronBox = NSRect(x: bounds.maxX - 16, y: bounds.minY, width: 10, height: bounds.height)
+        if let chevron = NoteIconRenderer.symbol("chevron.down", pointSize: 8, weight: .bold) {
+            NoteIconRenderer.drawTemplate(chevron, centeredIn: chevronBox, tint: NoteTheme.menuTertiaryInk)
+        }
+    }
+
+    private func drawGlyph(in area: NSRect) {
+        let ink = currentInk
         switch content {
         case .icon(let icon):
             NoteIconRenderer.draw(icon, in: NSRect(x: area.midX - 10, y: area.midY - 10, width: 20, height: 20), tint: ink,
@@ -197,10 +304,57 @@ private final class EaselPaletteStrip: NSView {
 }
 
 @MainActor
-final class EaselZoomMenuView: NSView, NoteFloatingPanelContent {
+private final class EaselToolCurrentPill: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = NoteTheme.controlRadius
+        layer?.cornerCurve = .continuous
+        setAccessibilityElement(false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+    override var wantsUpdateLayer: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func updateLayer() { layer?.backgroundColor = NoteTheme.resolved(NoteTheme.checkedFill, in: self) }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
+}
+
+@MainActor
+private final class EaselPaletteScroller: NSScrollView {
+    var passthrough: (() -> NSView?)?
+    private var routesOut = false
+
+    override func scrollWheel(with event: NSEvent) {
+        let overflows = (documentView?.frame.width ?? 0) > contentView.bounds.width + 0.5
+        if event.phase == .began || (event.phase.isEmpty && event.momentumPhase.isEmpty) {
+            routesOut = !overflows || abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX)
+        }
+        if routesOut, let target = passthrough?() {
+            target.scrollWheel(with: event)
+            return
+        }
+        super.scrollWheel(with: event)
+    }
+}
+
+@MainActor
+final class EaselFieldMenuView: NSView, NoteFloatingPanelContent {
     var preferredSizeDidChange: (() -> Void)?
     let field = NoteSearchField(placeholder: "100%")
     let list = NoteMenuList()
+    private let noticeLabel = NSTextField(labelWithString: "")
+    var notice: String? {
+        didSet {
+            noticeLabel.stringValue = notice ?? ""
+            noticeLabel.isHidden = notice == nil
+            invalidateIntrinsicContentSize()
+            needsLayout = true
+            preferredSizeDidChange?()
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -208,7 +362,11 @@ final class EaselZoomMenuView: NSView, NoteFloatingPanelContent {
         field.textField.setAccessibilityLabel("Zoom percentage")
         list.minimumWidth = 236
         list.preferredSizeDidChange = { [weak self] in self?.preferredSizeDidChange?() }
+        noticeLabel.font = NoteTheme.captionFont()
+        noticeLabel.textColor = NoteTheme.destructiveInk
+        noticeLabel.isHidden = true
         addSubview(field)
+        addSubview(noticeLabel)
         addSubview(list)
         setAccessibilityElement(false)
     }
@@ -217,9 +375,11 @@ final class EaselZoomMenuView: NSView, NoteFloatingPanelContent {
 
     override var isFlipped: Bool { true }
 
+    private var noticeHeight: CGFloat { notice == nil ? 0 : 20 }
+
     override var intrinsicContentSize: NSSize {
         let menu = list.intrinsicContentSize
-        return NSSize(width: max(236, menu.width), height: NoteTheme.menuInset * 2 + NoteTheme.fieldHeight + menu.height)
+        return NSSize(width: max(236, menu.width), height: NoteTheme.menuInset * 2 + NoteTheme.fieldHeight + noticeHeight + menu.height)
     }
 
     override var fittingSize: NSSize { intrinsicContentSize }
@@ -228,14 +388,27 @@ final class EaselZoomMenuView: NSView, NoteFloatingPanelContent {
         super.layout()
         let inset = NoteTheme.menuInset
         field.frame = NSRect(x: inset * 2, y: inset * 2, width: max(0, bounds.width - inset * 4), height: NoteTheme.fieldHeight)
-        list.frame = NSRect(x: 0, y: field.frame.maxY, width: bounds.width, height: max(0, bounds.height - field.frame.maxY))
+        noticeLabel.frame = NSRect(x: inset * 2 + 4, y: field.frame.maxY + 2, width: max(0, bounds.width - inset * 4 - 8), height: 16)
+        let top = field.frame.maxY + noticeHeight
+        list.frame = NSRect(x: 0, y: top, width: bounds.width, height: max(0, bounds.height - top))
     }
 }
 
 @MainActor
 final class EaselToolPalette: NSView {
-    enum Insert: String { case image, link, webpage, mermaid, templates }
-    enum Menu { case shapes, connectors, draw }
+    enum Insert: String { case mermaid, templates }
+    enum Menu {
+        case shapes, connectors, draw, media, web, code
+
+        var group: EaselInsertKind.Group? {
+            switch self {
+            case .media: return .media
+            case .web: return .web
+            case .code: return .code
+            case .shapes, .connectors, .draw: return nil
+            }
+        }
+    }
 
     private enum Entry: Hashable {
         case tool(EaselTool)
@@ -259,6 +432,8 @@ final class EaselToolPalette: NSView {
     var onMindMap: (() -> Void)?
     static let mindMapSymbol = "point.3.connected.trianglepath.dotted"
     var onInsert: ((Insert, NSButton) -> Void)?
+    var onInsertKind: ((EaselInsertKind) -> Void)?
+    var canInsert: (EaselInsertKind) -> Bool = { _ in true }
     var onZoom: ((EaselZoomCommand) -> Void)?
     var onZoomTo: ((Double) -> Void)?
     var onDrag: ((EaselTool, NSPoint?, Bool) -> Void)?
@@ -268,6 +443,10 @@ final class EaselToolPalette: NSView {
     var shapePicker: ((@escaping (EaselShape) -> Void) -> NSView)?
     var shapePickerKeepsOpen = false { didSet { if shapePickerKeepsOpen { exemptPinnedViews() } } }
     var keepOpenViews: () -> [NSView] = { [] }
+    var scrollPassthrough: (() -> NSView?)? {
+        get { scroller.passthrough }
+        set { scroller.passthrough = newValue }
+    }
     var showsTemplates = false { didSet { if showsTemplates != oldValue { rebuild() } } }
     var showsMermaid = false { didSet { if showsMermaid != oldValue { rebuild() } } }
 
@@ -275,10 +454,22 @@ final class EaselToolPalette: NSView {
     private var shape: EaselShape = .rectangle
     private var connector: EaselTool = .elbowConnector
     private var brush: EaselTool = .marker
+    private var lastKind: [EaselInsertKind.Group: EaselInsertKind] = [.media: .image, .web: .embed, .code: .codeBlock]
     private var zoomPercent = 100
     private let pill = EaselToolbarPill(frame: .zero)
-    private let scroller = NSScrollView()
+    private let scroller = EaselPaletteScroller()
     private let strip = EaselPaletteStrip()
+    private let current = EaselToolCurrentPill(frame: .zero)
+    private var dimTracking: NSTrackingArea?
+    private var dimMonitor: Any?
+    private var dimObservers: [NSObjectProtocol] = []
+    private var dimmed = false
+    private var draggingTool = false
+    private var tracksTool = false
+    private static let dimKey = NoteAnimation.keyPrefix + "easel.bar.dim"
+    private static let entranceFadeKey = NoteAnimation.keyPrefix + "easel.bar.entrance.fade"
+    private static let entranceRiseKey = NoteAnimation.keyPrefix + "easel.bar.entrance.rise"
+    private static let currentFadeKey = NoteAnimation.keyPrefix + "easel.bar.current.fade"
     private var placed: [Placed] = []
     private var dividers: [NSView] = []
     private var popover: NotePagePopover?
@@ -290,14 +481,23 @@ final class EaselToolPalette: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        wantsLayer = true
         EaselAppearance.configureToolbarScroll(scroller)
         scroller.documentView = strip
+        current.isHidden = true
+        strip.addSubview(current)
         pill.addSubview(scroller)
         addSubview(pill)
         setAccessibilityElement(true)
         setAccessibilityRole(.toolbar)
         setAccessibilityLabel("Easel tools")
         rebuild()
+        NoteAnimation.observeReduceMotion(self) { [weak self] in
+            guard let self, let layer = self.layer else { return }
+            NoteAnimation.settle(layer, keys: [Self.entranceFadeKey, Self.entranceRiseKey])
+            NoteAnimation.withoutAnimation { layer.opacity = 1; layer.transform = CATransform3DIdentity }
+            if let marker = self.current.layer { NoteAnimation.settle(marker, keys: [NoteAnimation.positionKey, NoteAnimation.boundsKey, Self.currentFadeKey]) }
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -305,16 +505,123 @@ final class EaselToolPalette: NSView {
     override var isFlipped: Bool { true }
 
     private(set) var preferredWidth: CGFloat = 0
+    var isViewOnly = false { didSet { if isViewOnly != oldValue { closeMenu(animated: false); rebuild() } } }
 
     func button(for insert: Insert) -> NSButton? { placed.first { $0.entry == .insert(insert) }?.button }
 
     func update(tool: EaselTool, shape: EaselShape) {
+        let changed = tracksTool && tool != self.tool
+        tracksTool = true
         self.tool = tool
         if tool == .rectangle { self.shape = shape }
         if tool == .ellipse { self.shape = .ellipse }
         if tool.drawsConnector { connector = tool }
         if Self.drawTools.contains(tool) { brush = tool }
         refreshStates()
+        placeCurrent(animated: changed)
+        guard changed, let button = currentButton else { return }
+        strip.scrollToVisible(button.frame.insetBy(dx: -Self.padding, dy: 0))
+        if let flourish = EaselToolFlourish.flourish(for: tool) { button.playFlourish(flourish) }
+    }
+
+    private var currentButton: EaselToolButton? { placed.first { $0.button.isCurrent }?.button }
+
+    private func placeCurrent(animated: Bool) {
+        guard let button = currentButton else {
+            if !current.isHidden { NoteAnimation.fade(current, visible: false) { [weak self] in self?.current.isHidden = true } }
+            return
+        }
+        let frame = button.frame
+        let box = EaselFloatingBar.pillFrame(button: EaselRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height))
+        let target = NSRect(x: box.x, y: box.y, width: box.width, height: box.height)
+        let appearing = current.isHidden || current.alphaValue < 1
+        current.isHidden = false
+        if appearing {
+            jumpCurrent(to: target)
+            if animated, window != nil { NoteAnimation.fade(current, visible: true); return }
+            if let layer = current.layer { NoteAnimation.settle(layer, keys: [NoteAnimation.fadeKey]) }
+            NoteAnimation.withoutAnimation { current.alphaValue = 1; current.layer?.opacity = 1 }
+            return
+        }
+        guard current.frame != target else { return }
+        guard animated, window != nil else { jumpCurrent(to: target); return }
+        NoteAnimation.slide(current, to: target, spring: .pill)
+        if NoteAnimation.reduceMotion, let layer = current.layer {
+            _ = NoteAnimation.run(NoteAnimation.basic("opacity", from: 0, to: 1, duration: NoteAnimation.reducedFadeDuration),
+                                  on: layer, key: Self.currentFadeKey)
+        }
+    }
+
+    private func jumpCurrent(to target: NSRect) {
+        NoteAnimation.withoutAnimation { current.frame = target }
+        if let layer = current.layer { NoteAnimation.settle(layer, keys: [NoteAnimation.positionKey, NoteAnimation.boundsKey]) }
+    }
+
+    func playEntrance() {
+        guard let layer, window != nil else { return }
+        let reduced = NoteAnimation.reduceMotion
+        NoteAnimation.withoutAnimation { layer.opacity = 1; layer.transform = CATransform3DIdentity }
+        _ = NoteAnimation.run(NoteAnimation.basic("opacity", from: 0, to: 1,
+                                                  duration: reduced ? NoteAnimation.reducedFadeDuration : NoteAnimation.insertDuration),
+                              on: layer, key: Self.entranceFadeKey)
+        guard !reduced else { return }
+        let rise = NoteAnimation.spring("transform", .open,
+                                        from: NSValue(caTransform3D: CATransform3DMakeTranslation(0, CGFloat(EaselFloatingBar.entranceRise), 0)),
+                                        to: NSValue(caTransform3D: CATransform3DIdentity))
+        _ = NoteAnimation.run(rise, on: layer, key: Self.entranceRiseKey)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let dimTracking { removeTrackingArea(dimTracking) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .enabledDuringMouseDrag, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
+        addTrackingArea(area)
+        dimTracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard event.trackingArea === dimTracking else { super.mouseEntered(with: event); return }
+        setDimmed(NSEvent.pressedMouseButtons & 1 != 0 && !draggingTool && popover?.isOpen != true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard event.trackingArea === dimTracking else { super.mouseExited(with: event); return }
+        setDimmed(false)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        for observer in dimObservers { NotificationCenter.default.removeObserver(observer) }
+        dimObservers = []
+        guard let window else { setDimmed(false); return }
+        let center = NotificationCenter.default
+        dimObservers = [
+            center.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setDimmed(false) }
+            },
+            center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setDimmed(false) }
+            },
+        ]
+    }
+
+    private func setDimmed(_ value: Bool) {
+        guard value != dimmed else { return }
+        dimmed = value
+        if value, dimMonitor == nil {
+            dimMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp, .leftMouseDown]) { [weak self] event in
+                MainActor.assumeIsolated { self?.setDimmed(false) }
+                return event
+            }
+        } else if !value, let dimMonitor {
+            NSEvent.removeMonitor(dimMonitor)
+            self.dimMonitor = nil
+        }
+        guard let layer = pill.layer else { return }
+        let target = Float(value ? EaselFloatingBar.dimmedOpacity : 1)
+        if window == nil { NoteAnimation.settle(layer, keys: [Self.dimKey]); NoteAnimation.withoutAnimation { layer.opacity = target }; return }
+        NoteAnimation.fade(layer, to: target, duration: NoteAnimation.reducedFadeDuration, key: Self.dimKey)
     }
 
     func setZoom(percent: Int) {
@@ -335,6 +642,7 @@ final class EaselToolPalette: NSView {
         pill.frame = bounds
         scroller.frame = pill.bounds
         strip.frame = NSRect(x: 0, y: 0, width: max(preferredWidth, bounds.width), height: EaselAppearance.toolbarHeight)
+        placeCurrent(animated: false)
     }
 
     private func wantedEntries() -> [(Entry, Int)] {
@@ -346,14 +654,13 @@ final class EaselToolPalette: NSView {
         for tool in [EaselTool.text, .section, .table] where tool.isAvailable { result.append((.tool(tool), 1)) }
         if Self.drawTools.contains(where: \.isAvailable) { result.append((.menu(.draw), 2)) }
         if EaselTool.stamp.isAvailable { result.append((.tool(.stamp), 2)) }
-        result.append((.insert(.image), 3))
-        result.append((.insert(.link), 3))
-        result.append((.insert(.webpage), 3))
-        if EaselTool.codeBlock.isAvailable { result.append((.tool(.codeBlock), 3)) }
+        result.append((.menu(.media), 3))
+        result.append((.menu(.web), 3))
+        if !offeredKinds(.code).isEmpty { result.append((.menu(.code), 3)) }
         if showsMermaid { result.append((.insert(.mermaid), 3)) }
         if showsTemplates { result.append((.insert(.templates), 3)) }
         result.append((.zoom, 4))
-        return result
+        return isViewOnly ? result.filter { $0.1 == 0 || $0.1 == 4 } : result
     }
 
     private func rebuild() {
@@ -392,6 +699,7 @@ final class EaselToolPalette: NSView {
                 self.toggle(.menu(menu), from: button)
             }
             if menu == .shapes { attachDrag(to: button) { [weak self] in self?.shape == .ellipse ? .ellipse : .rectangle } }
+            if menu == .code { attachDrag(to: button) { [weak self] in self?.primaryKind(.code) == .codeBlock ? .codeBlock : nil } }
         case .insert:
             break
         case .zoom:
@@ -412,13 +720,17 @@ final class EaselToolPalette: NSView {
 
     private func attachDrag(to button: EaselToolButton, tool: @escaping () -> EaselTool?) {
         button.onDragMoved = { [weak self] point in
-            guard let self, let current = tool() else { return }
+            guard let self, let dragged = tool() else { return }
+            self.draggingTool = true
+            self.setDimmed(false)
             self.closeMenu()
-            self.onDrag?(current, point, false)
+            self.onDrag?(dragged, point, false)
         }
         button.onDragEnded = { [weak self] point in
-            guard let self, let current = tool() else { return }
-            self.onDrag?(current, point, true)
+            guard let self else { return }
+            self.draggingTool = false
+            guard let dragged = tool() else { return }
+            self.onDrag?(dragged, point, true)
         }
     }
 
@@ -437,6 +749,8 @@ final class EaselToolPalette: NSView {
             case .shapes: onShape?(shape)
             case .connectors: onTool?(connector, button)
             case .draw: onTool?(brush.isAvailable ? brush : .marker, button)
+            case .media, .web, .code:
+                if let group = menu.group, let kind = primaryKind(group) { perform(kind, from: button) }
             }
         case .insert(let insert):
             closeMenu()
@@ -446,8 +760,24 @@ final class EaselToolPalette: NSView {
         }
     }
 
+    private func offeredKinds(_ group: EaselInsertKind.Group) -> [EaselInsertKind] {
+        group.kinds.filter { $0 != .codeBlock || EaselTool.codeBlock.isAvailable }
+    }
+
+    private func primaryKind(_ group: EaselInsertKind.Group) -> EaselInsertKind? {
+        let offered = offeredKinds(group)
+        if let last = lastKind[group], offered.contains(last), canInsert(last) { return last }
+        return offered.first(where: canInsert)
+    }
+
+    private func perform(_ kind: EaselInsertKind, from button: NSButton?) {
+        if kind == .codeBlock { onTool?(.codeBlock, button) } else { onInsertKind?(kind) }
+    }
+
     private func isActive(_ menu: Menu) -> Bool {
         switch menu {
+        case .media, .web: return false
+        case .code: return tool == .codeBlock
         case .shapes: return tool == .rectangle || tool == .ellipse
         case .connectors: return tool.drawsConnector
         case .draw: return Self.drawTools.contains(tool)
@@ -461,29 +791,40 @@ final class EaselToolPalette: NSView {
             case .tool(let tool):
                 button.content = .icon(Self.icon(for: tool))
                 button.setAccessibilityLabel(tool.title)
-                button.setToolTip(tool.title, shortcut: tool.key?.label)
-                button.isChecked = self.tool == tool
+                button.setToolTip(tool.title, shortcut: tool.key?.label, anchor: .top)
+                button.isChecked = false
+                button.isCurrent = self.tool == tool
+            case .menu(let menu) where menu.group != nil:
+                guard let group = menu.group else { continue }
+                let last = primaryKind(group) ?? lastKind[group] ?? group.firstKind
+                button.content = .icon(group.icon)
+                button.setAccessibilityLabel(group.title)
+                button.setToolTip("Add " + last.title, shortcut: last == .codeBlock ? EaselTool.codeBlock.key?.label : nil, anchor: .top)
+                button.isChecked = openEntry == item.entry
+                button.isCurrent = isActive(menu)
             case .menu(let menu):
                 let variant: EaselTool
                 switch menu {
                 case .shapes: variant = shape == .ellipse ? .ellipse : .rectangle
                 case .connectors: variant = connector
-                case .draw: variant = brush
+                case .draw, .media, .web, .code: variant = brush
                 }
                 let title: String
                 switch menu {
                 case .shapes: title = shape == .ellipse ? EaselTool.ellipse.title : Self.shapeTitle(shape)
-                case .connectors, .draw: title = variant.title
+                case .connectors, .draw, .media, .web, .code: title = variant.title
                 }
                 button.content = .icon(menu == .shapes ? Self.icon(for: shape) : Self.icon(for: variant))
                 button.setAccessibilityLabel(title)
-                button.setToolTip(title, shortcut: variant.key?.label)
-                button.isChecked = isActive(menu) || openEntry == item.entry
+                button.setToolTip(title, shortcut: variant.key?.label, anchor: .top)
+                button.isChecked = openEntry == item.entry
+                button.isCurrent = isActive(menu)
             case .insert(let insert):
                 button.content = .icon(Self.icon(for: insert))
                 button.setAccessibilityLabel(Self.title(for: insert))
-                button.setToolTip(Self.title(for: insert))
+                button.setToolTip(Self.title(for: insert), anchor: .top)
                 button.isChecked = false
+                button.isCurrent = false
             case .zoom:
                 button.isChecked = openEntry == .zoom
                 button.setAccessibilityValue("\(zoomPercent)%")
@@ -496,7 +837,7 @@ final class EaselToolPalette: NSView {
         button.content = .text("\(zoomPercent)%")
         button.setAccessibilityLabel("Zoom")
         button.setAccessibilityValue("\(zoomPercent)%")
-        button.setToolTip("Zoom")
+        button.setToolTip("Zoom", anchor: .top)
     }
 
     private func relayout() {
@@ -545,12 +886,13 @@ final class EaselToolPalette: NSView {
         case .menu(let menu):
             let menuList = NoteMenuList()
             menuList.items = menuItems(menu)
+            if menu.group != nil { menuList.rowStyle = .detailed }
             menuList.onActivate = { [weak self] item in self?.activate(menu: menu, item: item) }
             menuList.onCancel = { [weak self] in self?.closeMenu() }
             content = menuList
             list = menuList
         case .zoom:
-            let zoom = EaselZoomMenuView(frame: .zero)
+            let zoom = EaselFieldMenuView(frame: .zero)
             zoom.field.placeholder = "\(zoomPercent)%"
             zoom.field.textField.setAccessibilityLabel("Zoom percentage")
             zoom.list.items = zoomItems()
@@ -597,7 +939,7 @@ final class EaselToolPalette: NSView {
         popover = next
         openEntry = entry
         if entry == .menu(.shapes) { exemptPinnedViews() }
-        next.present(in: host, anchor: host.convert(button.bounds, from: button), edge: .below)
+        next.present(in: host, anchor: host.convert(button.bounds, from: button), edge: .above)
         list?.prepare(origin: keyboard ? .keyboard : .pointer)
         field?.focus()
         refreshStates()
@@ -619,6 +961,13 @@ final class EaselToolPalette: NSView {
             }
             guard onMindMap != nil else { return shapes }
             return shapes + [NoteMenuList.Item(id: "mind-map", title: "Mind map", icon: .symbol(Self.mindMapSymbol), separatorBefore: true)]
+        case .media, .web, .code:
+            guard let group = menu.group else { return [] }
+            return offeredKinds(group).map { kind in
+                NoteMenuList.Item(id: kind.rawValue, title: kind.title, subtitle: kind.summary, icon: kind.icon,
+                                  shortcut: kind == .codeBlock ? EaselTool.codeBlock.key?.label : nil,
+                                  isChecked: primaryKind(group) == kind, isEnabled: canInsert(kind))
+            }
         case .connectors:
             return Self.connectorTools.map { tool in
                 NoteMenuList.Item(id: tool.rawValue, title: tool.title, icon: Self.icon(for: tool), shortcut: tool.key?.label,
@@ -640,6 +989,11 @@ final class EaselToolPalette: NSView {
             else if let shape = EaselShape(rawValue: item.id) { onShape?(shape) }
         case .connectors, .draw:
             if let tool = EaselTool(rawValue: item.id) { onTool?(tool, nil) }
+        case .media, .web, .code:
+            guard let group = menu.group, let kind = EaselInsertKind(rawValue: item.id), canInsert(kind) else { return }
+            lastKind[group] = kind
+            refreshStates()
+            perform(kind, from: nil)
         }
     }
 
@@ -718,9 +1072,6 @@ final class EaselToolPalette: NSView {
 
     static func icon(for insert: Insert) -> NoteIcon {
         switch insert {
-        case .image: return .symbol("photo")
-        case .link: return .symbol("link")
-        case .webpage: return .symbol("globe")
         case .mermaid: return .symbol("flowchart")
         case .templates: return .symbol("square.grid.2x2")
         }
@@ -728,9 +1079,6 @@ final class EaselToolPalette: NSView {
 
     static func title(for insert: Insert) -> String {
         switch insert {
-        case .image: return "Add image"
-        case .link: return "Add link"
-        case .webpage: return "Add webpage"
         case .mermaid: return "Add Mermaid diagram"
         case .templates: return "Templates"
         }

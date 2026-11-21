@@ -23,17 +23,26 @@ The wheel always fits inside the visible canvas.
   or Space picks the highlighted one, and Escape closes it. VoiceOver reads
   each slot as a button.
 
-Picking a face closes the wheel, and the pointer becomes that stamp. The tool
-stays armed until V, Escape or another tool, so you can keep stamping. The
-last face you picked is remembered across Easels.
+The wheel's faces fan out from the pointer one after another on the pop
+spring, and the face under the pointer grows on the highlight spring. Picking a
+face flies it to the pointer as the rest of the wheel tucks away, and the
+pointer becomes that stamp. The tool stays armed until V, Escape or another
+tool, so you can keep stamping. The last face you picked is remembered across
+Easels.
 
 ## Stamping
 
 A click stamps at the pointer, with a slight random tilt of 3–10° either way.
-Hold the click and the stamp grows through four sizes (64, 96, 136 and 184
-points), one step every 0.3 seconds, and it follows the pointer until you let
-go. With Reduce Motion on it jumps between sizes without the smooth grow.
-Return stamps the middle of the view.
+While the button is down the stamp hovers over the board, slightly larger and
+see-through with a soft shadow, and breathes gently. Hold it and the stamp grows
+through four sizes (64, 96, 136 and 184 points), one step every 0.3 seconds;
+each step pops past its size on the press spring and ticks the alignment
+haptic. It follows the pointer until you let go, then slams down with an ink
+ring, a burst of specks in its colour and a thud haptic. Stamps added without
+the pointer (Return, ⌘Return, paste) slam in from 160% without the haptic. The
+[motion guide](easel-motion.md#object-motion) has the curves. With Reduce Motion
+on the stamp jumps between sizes and fades in without hovering, specks or
+slam. Return stamps the middle of the view.
 
 ⌘Return with the stamp tool armed stamps every selected object, lining stamps
 up from its top-right corner (turned objects get them on their turned corner).
@@ -63,6 +72,15 @@ exactly one emoji, either one that looks like emoji by default or one followed
 by the emoji selector (U+FE0F). It adds the selector to bare text-style forms
 such as ❤ and refuses anything else, so a bad pick never reaches the document
 and can't block saving. Saved files must already hold the tidy form.
+
+The Emoji tab is the Notes picker including its custom emoji section, with `+`
+and Edit, from the Notes folder's emoji library (the first notes folder that has
+any). A custom emoji stamps like any emoji and is saved by name as its
+`:name:` text. It draws from the library's picture, so renaming keeps working
+through the library's aliases; if the emoji is deleted, the stamp shows its
+`:name:` text instead and keeps the name. PNG, PDF and Copy as Image use the
+canvas drawing; HTML and SVG export embed the picture, or the text when it is
+gone.
 
 ## Drawing and export
 

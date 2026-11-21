@@ -64,13 +64,68 @@ enum NoteUnsplashImport {
         var alt: String?
     }
 
-    static func importPhoto(_ photo: NoteUnsplashPhoto, width: Int, environment: NoteEnvironment) async throws -> Imported {
+    struct Downloaded {
+        var data: Data
+        var fileExtension: String
+        var suggestedName: String
+        var credit: NoteMediaCredit
+        var alt: String?
+    }
+
+    static func download(_ photo: NoteUnsplashPhoto, width: Int) async throws -> Downloaded {
         let data = try await NoteUnsplashClient.shared.download(photo, width: width)
         try Task.checkCancellation()
         guard let fileExtension = NoteUnsplash.fileExtension(for: data) else { throw NoteUnsplashError.unreadable }
-        let source = try NoteMediaImport.source(importing: data, fileExtension: fileExtension,
-                                                suggestedName: NoteUnsplash.suggestedName(for: photo), environment: environment)
-        return Imported(source: source, credit: NoteUnsplash.credit(for: photo), alt: NoteUnsplash.altText(for: photo))
+        return Downloaded(data: data, fileExtension: fileExtension, suggestedName: NoteUnsplash.suggestedName(for: photo),
+                          credit: NoteUnsplash.credit(for: photo), alt: NoteUnsplash.altText(for: photo))
+    }
+
+    static func importPhoto(_ photo: NoteUnsplashPhoto, width: Int, environment: NoteEnvironment) async throws -> Imported {
+        let downloaded = try await download(photo, width: width)
+        let source = try NoteMediaImport.source(importing: downloaded.data, fileExtension: downloaded.fileExtension,
+                                                suggestedName: downloaded.suggestedName, environment: environment)
+        return Imported(source: source, credit: downloaded.credit, alt: downloaded.alt)
+    }
+}
+
+@MainActor
+enum NoteMediaPanels {
+    static func presentReplaceMenu(from anchor: NSView, in overlay: NSView, upload: @escaping () -> Void,
+                                   unsplash: @escaping (NSView?) -> Void, closed: @escaping () -> Void) -> NotePagePopover {
+        let list = NoteMenuList(items: [
+            NoteMenuList.Item(id: "upload", title: "Upload…", icon: .symbol("square.and.arrow.up")),
+            NoteMenuList.Item(id: "unsplash", title: "Unsplash…", icon: .symbol("photo.on.rectangle.angled")),
+        ])
+        list.minimumWidth = 180
+        let popover = NotePagePopover(content: list)
+        popover.exempt(anchor)
+        list.onActivate = { [weak popover, weak anchor] item in
+            popover?.close(animated: false)
+            if item.id == "unsplash" { unsplash(anchor) } else { upload() }
+        }
+        list.onCancel = { [weak popover] in popover?.close() }
+        popover.onKeyDown = { [weak list] event in list?.handleKeyDown(event) ?? false }
+        popover.onClose = closed
+        popover.present(in: overlay, anchor: overlay.convert(anchor.bounds, from: anchor), edge: .below, alignment: .trailing)
+        return popover
+    }
+
+    static func presentUnsplash(from anchor: NSView, in overlay: NSView, alignment: NoteFloatingPanel.Alignment,
+                                open: @escaping (URL) -> Void,
+                                pick: @escaping (NoteUnsplashPhoto, NoteUnsplashBrowser, NotePagePopover?) -> Void,
+                                closed: @escaping () -> Void) -> NotePagePopover {
+        let browser = NoteUnsplashBrowser(orientation: nil)
+        let popover = NotePagePopover(content: browser)
+        popover.exempt(anchor)
+        browser.onOpen = open
+        browser.onPick = { [weak browser, weak popover] photo in
+            guard let browser else { return }
+            pick(photo, browser, popover)
+        }
+        popover.onClose = closed
+        popover.present(in: overlay, anchor: overlay.convert(anchor.bounds, from: anchor), edge: .below, alignment: alignment)
+        browser.focus()
+        return popover
     }
 }
 
@@ -541,13 +596,28 @@ final class NoteUnsplashThumb: PointingHandButton {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { isHovered = false; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { trackPointer(event) }
+    override func mouseMoved(with event: NSEvent) { trackPointer(event) }
+
+    override func mouseExited(with event: NSEvent) {
+        guard isHovered else { return }
+        isHovered = false
+        needsDisplay = true
+    }
+
+    private func trackPointer(_ event: NSEvent) {
+        let hovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        if hovered != isHovered {
+            isHovered = hovered
+            needsDisplay = true
+        }
+        if showsPointingHand { applyNoteCursor(.pointingHand, for: event) }
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard isEnabled else { return }

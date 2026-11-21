@@ -2,6 +2,14 @@ import Foundation
 
 package struct EaselTransform: Equatable {
     package var a = 1.0, b = 0.0, c = 0.0, d = 1.0, tx = 0.0, ty = 0.0
+    package init(a: Double = 1.0, b: Double = 0.0, c: Double = 0.0, d: Double = 1.0, tx: Double = 0.0, ty: Double = 0.0) {
+        self.a = a
+        self.b = b
+        self.c = c
+        self.d = d
+        self.tx = tx
+        self.ty = ty
+    }
 
     package static let identity = EaselTransform()
 
@@ -63,7 +71,7 @@ package enum EaselRotation {
 
     package static func isRotatable(_ kind: EaselItemKind) -> Bool {
         switch kind {
-        case .text, .image, .rectangle, .circle, .freehand, .stamp: return true
+        case .text, .image, .rectangle, .circle, .freehand, .stamp, .equation: return true
         default: return false
         }
     }

@@ -99,6 +99,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     private var sessionDirectory: URL?
     private var pages: NoteEaselPages?
     private var watch: AnyCancellable?
+    private var iconWatch: AnyCancellable?
     private var heightStart: Double?
     private var liveHeight: Double?
     private var widthStart: (width: CGFloat, column: CGFloat)?
@@ -107,7 +108,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     private var pointerMonitor: Any?
     private var alignmentMenu: NoteFloatingPanel?
     private let quickActions = EaselQuickActions()
-    private var imagePanel: NSOpenPanel?
 
     override init(block: NoteBlock, editor: NotePageEditor?) {
         super.init(block: block, editor: editor)
@@ -200,6 +200,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
             let view = picker ?? NoteEaselPickerView()
             if picker == nil {
                 view.candidates = { [weak self] in self?.host?.candidates() ?? [] }
+                view.directory = { [weak self] in self?.host?.directory }
                 view.onChoose = { [weak self] choice in self?.choose(choice) }
                 view.overlay = { [weak self] in self?.editor?.canvas.overlayView }
                 addSubview(view)
@@ -211,7 +212,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         heightHandle.isHidden = !showsHandles
         if !showsHandles { setWidthHandlesVisible(false) }
         surface.canAlign = showsHandles
-        window?.invalidateCursorRects(for: self)
         if notify { invalidateMeasuredHeight() } else { needsLayout = true }
     }
 
@@ -234,6 +234,8 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
             session = next
             sessionDirectory = host.directory
             let canvas = EaselCanvasView(session: next)
+            EaselWebObjects.install(on: canvas)
+            canvas.hostedObjects.append(EaselMediaObjects.inNote(canvas) { [weak self] in self?.editor })
             canvas.toolState.onQuickActions = { [weak self] in self?.toggleQuickActions() }
             canvas.onError = { [weak self] error in self?.editor?.onError?(error) }
             canvas.onCopiedImage = { [weak self] in self?.editor?.formatBar.showToast(.copiedImage) }
@@ -244,11 +246,20 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
                     self?.editor?.formatBar.showToast($0)
                 }
             }
+            let panels = EaselPanels(container: { [weak self] in self?.editor?.canvas.overlayView },
+                                     search: { [weak self] query, limit in self?.editor?.environment.searchNotes(query, limit: limit) ?? [] })
+            panels.follow = { [weak canvas] link in canvas?.followLink(link) }
+            panels.copy = { [weak canvas] link in canvas?.copyLink(link) }
+            panels.toast = { [weak self] content in (self?.window?.windowController as? BrowserWindowController)?.showToast(content) }
+            canvas.panels = panels
+            canvas.onOpenNote = { [weak self] url in self?.editor?.open(url) }
+            canvas.notesFolder = { [weak self] in self?.editor?.environment.documentURL?.deletingLastPathComponent() }
             surface.show(canvas, viewOnly: !canEdit)
             watch = next.objectWillChange.sink { [weak self] (_: Void) in
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.sessionDidChange() } }
             }
             refreshTitle()
+            bindIcon(next.document.id, directory: host.directory)
             bindPages()
         case .failure(let absence):
             surface.showAbsence(absence, title: NoteEaselAddress.title(of: block), removable: canEdit)
@@ -259,6 +270,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         finish(restoreFocus: false)
         pages = nil
         watch = nil
+        iconWatch = nil
         session = nil
         sessionDirectory = nil
         surface.clear()
@@ -276,6 +288,21 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     private func refreshTitle() {
         guard let session else { return }
         surface.title = session.document.title
+        showIcon()
+    }
+
+    private func bindIcon(_ id: UUID, directory: URL) {
+        let subject = NoteTabIconArt.Subject.easel(directory: directory, id: id)
+        iconWatch = NoteTabIconArt.shared.changes
+            .filter { NoteTabIconArt.shared.touches($0, subject) }
+            .sink { [weak self] _ in self?.showIcon() }
+        showIcon()
+    }
+
+    private func showIcon() {
+        guard let session, let directory = sessionDirectory else { return }
+        EaselTabIcons.shared.follow(session)
+        surface.setIcon(NoteTabIconArt.shared.image(for: .easel(directory: directory, id: session.document.id)))
     }
 
     private func choose(_ choice: NoteEaselChoice) {
@@ -331,7 +358,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         host?.keyLoopChanged()
         canvas.needsLayout = true
         window.makeFirstResponder(canvas)
-        window.invalidateCursorRects(for: self)
         if let event { window.postEvent(event, atStart: true) }
     }
 
@@ -346,8 +372,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         pointerMonitor = nil
         guard surface.active else { return }
         quickActions.close()
-        if let imagePanel, let window, window.attachedSheet === imagePanel { window.endSheet(imagePanel, returnCode: .cancel) }
-        imagePanel = nil
         if let canvas = surface.canvas {
             _ = canvas.finishEditing()
             canvas.selection = []
@@ -358,7 +382,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         pages?.release()
         host?.keyLoopChanged()
         guard let window else { return }
-        window.invalidateCursorRects(for: self)
         let focusInside = (window.firstResponder as? NSView).map { $0 === surface || $0.isDescendant(of: surface) } ?? false
         guard restoreFocus || focusInside, let editor, window.attachedSheet == nil else { return }
         window.makeFirstResponder(editor.canvas)
@@ -368,10 +391,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     private func toggleQuickActions() {
         guard surface.active, !surface.viewOnly, canEdit, let canvas = surface.canvas, let window, window.attachedSheet == nil,
               !canvas.session.isClosed, !canvas.session.isDeleted else { return }
-        var inserts: [EaselQuickActions.Action] = [
-            .init(id: "insert-image", title: EaselToolPalette.title(for: .image), icon: EaselToolPalette.icon(for: .image), shortcut: nil,
-                  keywords: ["picture", "photo", "file"], section: "Add") { [weak self] in self?.chooseImages() },
-        ]
+        var inserts = EaselQuickActions.catalogInserts(canvas: canvas) { [weak self] in self?.focusCanvas() }
         if canvas.acceptsMermaid {
             inserts.append(.init(id: "insert-mermaid", title: EaselToolPalette.title(for: .mermaid), icon: EaselToolPalette.icon(for: .mermaid),
                                  shortcut: nil, keywords: ["flowchart", "diagram", "chart", "er"], section: "Add") { [weak canvas] in
@@ -389,23 +409,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     private func focusCanvas() {
         guard surface.active, let canvas = surface.canvas, let window = canvas.window else { return }
         window.makeFirstResponder(canvas)
-    }
-
-    private func chooseImages() {
-        guard surface.active, canEdit, let window, window.attachedSheet == nil else { return }
-        let chooser = NSOpenPanel()
-        chooser.allowedContentTypes = [.image]
-        chooser.allowsMultipleSelection = true
-        imagePanel = chooser
-        chooser.beginSheetModal(for: window) { [weak self, weak chooser] response in
-            MainActor.assumeIsolated {
-                guard let self, let chooser, self.imagePanel === chooser else { return }
-                self.imagePanel = nil
-                guard response == .OK, self.surface.active, self.canEdit, let canvas = self.surface.canvas else { return }
-                do { for url in chooser.urls { try canvas.importImageFile(url) } } catch { self.editor?.onError?(error) }
-                self.focusCanvas()
-            }
-        }
     }
 
     private func resizeHeight(by delta: CGFloat, commit: Bool) {
@@ -521,11 +524,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         surface.selected = selected
     }
 
-    override func resetCursorRects() {
-        guard surface.isLive, !surface.active, !surface.viewOnly else { return }
-        addCursorRect(convert(surface.canvasRect, from: surface), cursor: .pointingHand)
-    }
-
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
@@ -541,8 +539,9 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        heightHandle.setVisible(!heightHandle.isHidden)
-        setWidthHandlesVisible(true)
+        let allowed = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        heightHandle.setVisible(allowed && !heightHandle.isHidden)
+        setWidthHandlesVisible(allowed)
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -584,6 +583,10 @@ final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary {
         }
     }
     var isLive: Bool { canvas != nil }
+
+    func setIcon(_ image: NSImage?) {
+        icon.image = image ?? DocumentDefaultIcon.easel.image(size: 16)
+    }
     private let content = NSView()
     private let ring = CALayer()
     private let headerRule = CALayer()
@@ -691,7 +694,10 @@ final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary {
     private func refresh() {
         let live = canvas != nil
         scroll.isHidden = !live
+        let wasHidden = shield.isHidden, hadHand = shield.showsHand
         shield.isHidden = !live || active
+        shield.showsHand = live && !viewOnly
+        if wasHidden != shield.isHidden || hadHand != shield.showsHand { refreshCursorIfPointerOwned() }
         absence.isHidden = live
         openButton.isHidden = !live
         alignButton.isHidden = !canAlign
@@ -786,8 +792,22 @@ private final class NoteEaselScrollView: NSScrollView, EmbeddedKeyLoopMember {
 private final class NoteEaselShield: NSView {
     var onPress: ((NSEvent) -> Void)?
     var scrollTarget: () -> NSScrollView? = { nil }
+    var showsHand = false
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        addCursorUpdateArea()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var isFlipped: Bool { true }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if showsHand, applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { isHidden ? nil : super.hitTest(point) }
     override func mouseDown(with event: NSEvent) { onPress?(event) }
@@ -850,11 +870,12 @@ private final class NoteEaselAbsenceView: NSView {
 final class NoteEaselPickerView: NoteMediaContentHostlessCard, NSTextFieldDelegate {
     static let height: CGFloat = 52
     var candidates: () -> [NoteEaselPicker.Candidate] = { [] }
+    var directory: () -> URL? = { nil }
     var onChoose: ((NoteEaselChoice) -> Void)?
     var overlay: () -> NSView? = { nil }
     var editable = true { didSet { applyMode() } }
     private let icon = NSImageView()
-    private let field = NSTextField()
+    private let field = NoteInputField()
     private let readOnlyLabel: NSTextField
     private var list: NoteMenuList?
     private var panel: NoteFloatingPanel?
@@ -902,9 +923,16 @@ final class NoteEaselPickerView: NoteMediaContentHostlessCard, NSTextFieldDelega
         choices = NoteEaselPicker.choices(known, query: field.stringValue)
         let items = choices.enumerated().map { index, choice -> NoteMenuList.Item in
             let isNew: Bool
-            if case .create = choice.action { isNew = true } else { isNew = false }
+            var rowIcon = NoteIcon.easelMark
+            switch choice.action {
+            case .create:
+                isNew = true
+            case .existing(let id):
+                isNew = false
+                if let folder = directory() { rowIcon = NoteIcon.easel(id, directory: folder) }
+            }
             return NoteMenuList.Item(id: String(index), title: choice.title, subtitle: choice.subtitle,
-                                     icon: isNew ? .symbol("plus") : .easelMark,
+                                     icon: isNew ? .symbol("plus") : rowIcon,
                                      section: isNew ? nil : "Easels in this Profile", separatorBefore: isNew && index > 0)
         }
         if let list, panel != nil {

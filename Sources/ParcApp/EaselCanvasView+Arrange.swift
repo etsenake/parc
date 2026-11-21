@@ -7,7 +7,7 @@ struct EaselCanvasArrangeState {
     var duplicateDragArmed = false
     var duplicateDrag: (group: UUID, before: EaselDocument, selected: Set<UUID>, sources: [UUID], copies: [UUID])?
     var lastPaste: (fingerprint: Int, step: Int, pointer: EaselPoint?)?
-    var nudge: (ids: Set<UUID>, group: UUID)?
+    var nudge: (ids: Set<UUID>, group: UUID, at: TimeInterval)?
     var menu: EaselCanvasMenuPresenting?
 }
 
@@ -128,9 +128,13 @@ extension EaselCanvasView {
     }
 
     func nudgeUndoGroup(for ids: Set<UUID>) -> UUID {
-        if let nudge = arrangeState.nudge, nudge.ids == ids { return nudge.group }
+        let now = ProcessInfo.processInfo.systemUptime
+        if let nudge = arrangeState.nudge, nudge.ids == ids, now - nudge.at < 1 {
+            arrangeState.nudge = (ids, nudge.group, now)
+            return nudge.group
+        }
         let group = UUID()
-        arrangeState.nudge = (ids, group)
+        arrangeState.nudge = (ids, group, now)
         return group
     }
 
@@ -195,6 +199,7 @@ extension EaselCanvasView {
         if onKeyEquivalent?(event) == true { return true }
         guard event.type == .keyDown, window?.isKeyWindow == true else { return super.performKeyEquivalent(with: event) }
         if canvasOwnsKeyFocus, performZoomKeyEquivalent(event) { return true }
+        if isDocumentLocked { return super.performKeyEquivalent(with: event) }
         guard EaselChords.consults(canvasFocus: canvasOwnsKeyFocus, editorFocus: textEditorOwnsKeyFocus),
               let command = EaselChords.command(characters: event.charactersIgnoringModifiers, keyCode: event.keyCode,
                                                 modifiers: easelChordModifiers(event.modifierFlags),

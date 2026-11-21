@@ -277,6 +277,14 @@ extension EaselCanvasView {
     }
 
     func drawTable(_ item: EaselItem, showsEditor: Bool) {
+        if showsEditor, paintsLiveFeedback, let slide = canvasFeedback.tables[item.id] {
+            drawSlidingTable(item, slide: slide)
+            return
+        }
+        drawTableBody(item, showsEditor: showsEditor)
+    }
+
+    private func drawTableBody(_ item: EaselItem, showsEditor: Bool) {
         guard let table = item.table else { return }
         let frame = rect(item)
         guard frame.width > 0, frame.height > 0 else { return }
@@ -693,7 +701,7 @@ extension EaselCanvasView {
     }
 
     @discardableResult
-    private func addTable(_ item: EaselItem, name: String, selectFirstCell: Bool = true) -> Bool {
+    func addTable(_ item: EaselItem, name: String, selectFirstCell: Bool = true) -> Bool {
         guard let table = item.table else { return false }
         let placed = normalizedTable(item, table)
         drawing = false
@@ -1039,7 +1047,7 @@ extension EaselCanvasView {
         do { payload = try EaselStyledText.capture(text.attributedString(), style: text.objectStyle, color: text.objectColor) }
         catch { onError?(error); updateTableCellEditor(item); return true }
         guard payload.text.utf8.count <= EaselTable.maximumCellBytes else {
-            onError?(EaselStoreError.tooLarge)
+            onError?(EaselStoreError.cellTooLarge)
             updateTableCellEditor(item)
             return true
         }
@@ -1213,9 +1221,11 @@ extension EaselCanvasView {
     }
 
     func insertTableColumns(_ id: UUID, at index: Int, count: Int = 1) {
-        guard let table = tableItem(id)?.table else { return }
+        guard let before = tableItem(id), let table = before.table else { return }
         let width = table.columnWidths.indices.contains(index - 1) ? table.columnWidths[index - 1] : (table.columnWidths.first ?? EaselTable.defaultColumnWidth)
-        guard commitTable(count == 1 ? "Add Column" : "Add Columns", id, { $0.insertColumns(at: index, count: count, width: width) }) else {
+        guard slidingTable(before, .init(axis: .columns, band: index..<(index + count), opening: true), {
+            commitTable(count == 1 ? "Add Column" : "Add Columns", id, { $0.insertColumns(at: index, count: count, width: width) })
+        }) else {
             if table.columnCount + count > EaselTable.maximumColumns || table.rowCount * (table.columnCount + count) > EaselTable.maximumCells {
                 NSSound.beep()
             }
@@ -1225,8 +1235,10 @@ extension EaselCanvasView {
     }
 
     func insertTableRows(_ id: UUID, at index: Int, count: Int = 1) {
-        guard let table = tableItem(id)?.table else { return }
-        guard commitTable(count == 1 ? "Add Row" : "Add Rows", id, { $0.insertRows(at: index, count: count) }) else {
+        guard let before = tableItem(id), let table = before.table else { return }
+        guard slidingTable(before, .init(axis: .rows, band: index..<(index + count), opening: true), {
+            commitTable(count == 1 ? "Add Row" : "Add Rows", id, { $0.insertRows(at: index, count: count) })
+        }) else {
             if table.rowCount + count > EaselTable.maximumRows || (table.rowCount + count) * table.columnCount > EaselTable.maximumCells {
                 NSSound.beep()
             }
@@ -1296,7 +1308,9 @@ extension EaselCanvasView {
     func deleteTableRows() {
         guard let selected = tableCellSelection, selected.range.rows.count < selected.table.rowCount else { return }
         let rows = selected.range.rows
-        guard commitTable(rows.count == 1 ? "Delete Row" : "Delete Rows", selected.item.id, { $0.removeRows(rows) }),
+        guard slidingTable(selected.item, .init(axis: .rows, band: rows.lowerBound..<(rows.upperBound + 1), opening: false), {
+                  commitTable(rows.count == 1 ? "Delete Row" : "Delete Rows", selected.item.id, { $0.removeRows(rows) })
+              }),
               let table = tableItem(selected.item.id)?.table else { return }
         selectTableCells(selected.item.id, anchor: EaselTableCoordinate(row: min(rows.lowerBound, table.rowCount - 1), column: selected.range.columns.lowerBound))
     }
@@ -1304,14 +1318,18 @@ extension EaselCanvasView {
     func deleteTableColumns() {
         guard let selected = tableCellSelection, selected.range.columns.count < selected.table.columnCount else { return }
         let columns = selected.range.columns
-        guard commitTable(columns.count == 1 ? "Delete Column" : "Delete Columns", selected.item.id, { $0.removeColumns(columns) }),
+        guard slidingTable(selected.item, .init(axis: .columns, band: columns.lowerBound..<(columns.upperBound + 1), opening: false), {
+                  commitTable(columns.count == 1 ? "Delete Column" : "Delete Columns", selected.item.id, { $0.removeColumns(columns) })
+              }),
               let table = tableItem(selected.item.id)?.table else { return }
         selectTableCells(selected.item.id, anchor: EaselTableCoordinate(row: selected.range.rows.lowerBound, column: min(columns.lowerBound, table.columnCount - 1)))
     }
 
     func duplicateTableRows() {
         guard let rows = tableSelectedRows(), let selected = tableCellSelection else { return }
-        guard commitTable(rows.count == 1 ? "Duplicate Row" : "Duplicate Rows", selected.item.id, { $0.duplicateRows(rows) }) else { return }
+        guard slidingTable(selected.item, .init(axis: .rows, band: (rows.upperBound + 1)..<(rows.upperBound + 1 + rows.count), opening: true), {
+            commitTable(rows.count == 1 ? "Duplicate Row" : "Duplicate Rows", selected.item.id, { $0.duplicateRows(rows) })
+        }) else { return }
         selectTableCells(selected.item.id, anchor: EaselTableCoordinate(row: rows.upperBound + 1, column: 0),
                          head: EaselTableCoordinate(row: rows.upperBound + rows.count, column: selected.table.columnCount - 1))
     }
@@ -1326,7 +1344,9 @@ extension EaselCanvasView {
 
     func duplicateTableColumns() {
         guard let columns = tableSelectedColumns(), let selected = tableCellSelection else { return }
-        guard commitTable(columns.count == 1 ? "Duplicate Column" : "Duplicate Columns", selected.item.id, { $0.duplicateColumns(columns) }) else { return }
+        guard slidingTable(selected.item, .init(axis: .columns, band: (columns.upperBound + 1)..<(columns.upperBound + 1 + columns.count), opening: true), {
+            commitTable(columns.count == 1 ? "Duplicate Column" : "Duplicate Columns", selected.item.id, { $0.duplicateColumns(columns) })
+        }) else { return }
         selectTableCells(selected.item.id, anchor: EaselTableCoordinate(row: 0, column: columns.upperBound + 1),
                          head: EaselTableCoordinate(row: selected.table.rowCount - 1, column: columns.upperBound + columns.count))
     }
@@ -1935,5 +1955,60 @@ extension EaselCanvasView {
                                  isEnabled: !locked && table.visibleCells.contains { !(table.cell($0)?.text.isEmpty ?? true) },
                                  perform: guardedMenuAction { $0.convertTableToStickies() }))
         return rows
+    }
+}
+
+struct EaselTableSlide {
+    enum Axis { case rows, columns }
+    var axis: Axis
+    var band: Range<Int>
+    var opening: Bool
+    var start: TimeInterval = 0
+    var original: EaselItem?
+    var previousBounds = NSRect.null
+    var result: EaselItem?
+}
+
+extension EaselCanvasView {
+    func slidingTable(_ before: EaselItem, _ slide: EaselTableSlide, _ body: () -> Bool) -> Bool {
+        guard body() else { return false }
+        guard canAnimateObjects, !feedbackReducesMotion, !slide.band.isEmpty,
+              let after = session.document.items.first(where: { $0.id == before.id }), after.table != nil else { return true }
+        var next = slide
+        next.start = CACurrentMediaTime()
+        next.original = slide.opening ? nil : before
+        next.previousBounds = displayBounds(of: before)
+        next.result = after
+        canvasFeedback.tables[before.id] = next
+        startCanvasFeedback()
+        return true
+    }
+
+    func drawSlidingTable(_ item: EaselItem, slide: EaselTableSlide) {
+        let shown = slide.original ?? item
+        guard let table = shown.table, let context = NSGraphicsContext.current?.cgContext else { drawTableBody(item, showsEditor: true); return }
+        let grid = EaselTableLayout(table: table, frame: shown.frame)
+        let edges = slide.axis == .rows ? grid.rowEdges : grid.columnEdges
+        guard slide.band.lowerBound >= 0, slide.band.upperBound < edges.count else { drawTableBody(item, showsEditor: true); return }
+        let progress = EaselFeedbackCurve.tableSlideProgress(CACurrentMediaTime() - slide.start)
+        let open = slide.opening ? progress : 1 - progress
+        let low = CGFloat(edges[slide.band.lowerBound]), high = CGFloat(edges[slide.band.upperBound])
+        let band = high - low, shift = band * CGFloat(1 - open)
+        let frame = displayBounds(of: shown).union(rect(shown))
+        let rows = slide.axis == .rows
+        func region(_ from: CGFloat, _ to: CGFloat) -> NSRect {
+            rows ? NSRect(x: frame.minX, y: from, width: frame.width, height: max(0, to - from))
+                : NSRect(x: from, y: frame.minY, width: max(0, to - from), height: frame.height)
+        }
+        let far = rows ? frame.maxY + band : frame.maxX + band
+        let near = rows ? frame.minY : frame.minX
+        for (clip, offset) in [(region(near, low), CGFloat(0)), (region(low, low + band * CGFloat(open)), 0), (region(high - shift, far), -shift)] {
+            guard clip.width > 0, clip.height > 0 else { continue }
+            context.saveGState()
+            context.clip(to: clip)
+            context.translateBy(x: rows ? 0 : offset, y: rows ? offset : 0)
+            drawTableBody(shown, showsEditor: true)
+            context.restoreGState()
+        }
     }
 }

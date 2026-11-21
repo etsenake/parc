@@ -28,7 +28,7 @@ canvas somewhere else.
 
 Return and ⇧Return, the arrows, and ⌘G and ⇧⌘G step through matches while the
 bar is open (with the bar closed they keep their usual meaning).
-Each step glides the canvas to the match, keeping it clear of the bar, zooming
+Each step pops the matched object with a brief glow and glides the canvas to the match, keeping it clear of the bar, zooming
 out when the object is bigger than the view and in to 100% when the board is
 zoomed too far out to read it; a match already in view doesn't move anything.
 Reduce Motion makes the move instant.
@@ -75,6 +75,42 @@ the canvas to it at up to 100%. If the object has since been deleted, the
 Easel still opens and a toast says the object isn't there anymore. Tabs keep
 the plain Easel address, and any other fragment is not an Easel link.
 
+## Links to notes and Easels
+
+Text links and object links in an Easel can point at a note (a `file://`
+address of the note) or at another Easel (`parc://easel/<id>`), besides web
+addresses. Clicking one opens the note or Easel the way note links do.
+Notes list the Easels that link to them under "N backlinks", and renaming or
+moving a note rewrites those links in the Easel documents, changing only the
+link, as one undo step in each Easel. `EaselBacklinkScanner` and
+`EaselBacklinkRewriter` in ParcCore read and rewrite Easel documents;
+`NoteBacklinkIndex` lists the Profile's Easel files off the main thread and
+re-reads the ones that changed.
+
+Dragging a note or an Easel from the sidebar onto the canvas puts a text
+object with its title as a link where the drop lands, as one undo step.
+
+## Send to Easel
+
+Send to Easel and Copy to Easel, in the right-click menu of a selection, list
+the Profile's other Easels (the twelve most recently edited) and New Easel. Send
+moves the objects, Copy leaves them, and both take their pictures and other
+assets along. The objects land beside what the other Easel already holds, on its
+first page, and each Easel gets one undo step. Locked objects stay behind when
+moving. A locked Easel isn't offered as a destination or a source.
+
+## Lock Easel
+
+Lock Easel, in the page menu like Lock Note, makes the canvas view-only: no
+tools in the bar except Select, Hand and zoom, no typing, dropping, pasting or
+moving, and no context menu. Panning, zooming, copying, opening links and the
+live pages inside the Easel still work. Undo works only when the step it
+undoes is the lock itself, and Redo only when it re-applies a lock or unlock;
+the document refuses every other change, undo and redo while locked, so
+nothing else can edit it by accident. Renaming or moving a note still updates
+the links on a locked Easel, without touching anything else.
+`EaselDocument.locked` is left out of the file when unlocked.
+
 ## Easel History
 
 Easel History, in the ••• page menu, keeps restorable versions of an Easel the
@@ -91,8 +127,9 @@ starts its history afresh there.
 The panel lists the current version and each snapshot with when it was saved
 and how many objects it had, and previews the selected one drawn exactly as
 the canvas would draw it, on the Easel's own light or dark paper. Restore
-first keeps the current state as a snapshot, then brings back the old one as
-a single undo step, so ⌘Z returns to where you were. ↑ and ↓ move through the
+first keeps the current state as a snapshot, then brings back the old one,
+with its title, icon, pages and objects, as a single undo step, so ⌘Z returns to where you were. An image icon whose
+picture is gone keeps the Easel's current icon instead. ↑ and ↓ move through the
 list and Return restores. A version whose pictures are missing can't be
 previewed and won't restore, and the Easel stays as it was.
 
@@ -109,6 +146,15 @@ menu follows the same rules and puts a PNG on the clipboard. An Easel inside
 a note offers the same exports and toasts. While text is being edited, ⇧⌘E
 stays with the text.
 
+Copy as Markdown in the page menu and Export → Markdown File… write the Easel in
+reading order: pages become headings, sections become headings with their
+contents under them, then text (headings, lists, quotes, bold, italic, strike,
+code and links), stickies as list items, tables as Markdown tables, code
+blocks as fences, links, bookmarks and embeds as links, and pictures and videos
+as links to files saved in a "<name> Files" folder beside the file (a copy
+carries their alt text instead). `EaselMarkdown` in ParcCore builds a note page
+from the Easel and the note Markdown writer does the rest.
+
 Stickies as CSV (in Export Selection when the pick has stickies, and in the •••
 menu's Export list for the whole Easel) saves one Content column, a row per
 sticky in reading order, as UTF-8 with a byte order mark so spreadsheets read
@@ -124,7 +170,8 @@ search, and its cards sit in the [empty Easel's welcome](easel-appearance.md#fir
 under the key chips. Each card
 shows the board drawn by the canvas itself, on the Easel's light or dark
 paper. Arrow keys move between cards, Return or Space adds one and Escape
-closes the panel.
+closes the panel. Cards lift and cast a shadow under the pointer or the keyboard
+highlight and squish when pressed (see [Easel motion](easel-motion.md#controls)).
 
 Adding a template is one undo step. It lands centred in the view above
 everything already there, never off the board's top or left edge, and comes
@@ -143,8 +190,10 @@ minute at a time, ⇧ makes that five, up to 99:59. Start runs it, Space or
 Return pauses and resumes, +1 min adds a minute while it runs or is paused
 (it never takes time away mid-run) and Reset goes back to the set length.
 While it runs or is paused the chrome button shows the time left in the
-accent colour, so the panel can stay closed. At 00:00 the button gives a
-gentle shake (a soft fade with Reduce Motion), a quiet "Time's up" toast
+accent colour, so the panel can stay closed. The digits roll as they change
+(up when time is added, down as it counts), Start and Pause cross-fade, and
+pausing blinks the clock. At 00:00 the button shakes and glows in three soft
+pulses (a single soft fade with Reduce Motion), a quiet "Time's up" toast
 appears and VoiceOver announces it.
 
 There is one timer per Easel, shared by every tab showing it. It lives only

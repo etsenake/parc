@@ -962,6 +962,11 @@ final class NoteTableBlockView: NoteBlockView {
         super.updateTrackingAreas()
     }
 
+    func isResizeBoundary(atWindowPoint point: NSPoint) -> Bool {
+        let local = surface.convert(point, from: nil)
+        return surface.resizeBoundaries.contains { $0.contains(local) }
+    }
+
     override func mouseEntered(with event: NSEvent) { pointerMoved(event) }
     override func mouseMoved(with event: NSEvent) { pointerMoved(event) }
 
@@ -980,6 +985,10 @@ final class NoteTableBlockView: NoteBlockView {
 
     private func pointerMoved(_ event: NSEvent) {
         guard !isReadOnly, drag == nil, resizingColumn == nil, !isCornerDragging else { return }
+        guard NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow) else {
+            if isHovering { hideHoverChrome(animated: true) }
+            return
+        }
         if !isHovering {
             isHovering = true
             for bar in [addRowBar, addColumnBar, cornerHandle] as [NSView] { NoteAnimation.fade(bar, visible: true, duration: 0.12) }

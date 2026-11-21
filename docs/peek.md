@@ -147,20 +147,41 @@ tooltip. Switching tabs or Spaces, or closing, archiving or moving the tab,
 puts the page back at once without a motion; closing the window closes it with
 the window's other pages.
 
-The item is offered only for a web tab in the current Space and Profile that
-isn't on screen, closing, moving or failed, over a live web page in this window
-that can host a Peek. A tab held by another window comes here through the
+The item is offered only for a web, note or Easel tab in the current Space and
+Profile that isn't on screen, closing, moving or failed, over a live web page in
+this window that can host a Peek. A tab held by another window comes here through the
 normal transfer first, or isn't offered when it can't move. If a Peek is
 showing, it closes through its own close and consent, confirmation pill
 included, and the tab opens once it is gone; a refused close or an expired
 confirmation drops the request. While in Peek the tab neither
-sleeps nor auto-archives. `swift test --filter TabPeekTests` covers admission, refusals,
+sleeps nor auto-archives. `swift test --filter TabPeekTests` covers admission of web,
+note and Easel tabs, refusals,
 replacement, the Split button's rule and the round trips, checking that the same
 page comes back, that only a tab with no page loads, and that every way out of
 the card removes it or plays its exit in the same step, so a hand-back never
 finds a stranded card.
 `swift test --filter PeekPresentationSkipTests` checks when the card's presentation
 changes and skips.
+
+### Notes and Easels
+
+A note or Easel tab peeks the same way: Open in Peek on its card or folder row
+moves the tab's own editor into the card, so it stays fully editable with its
+selection, undo history and embedded pages, and closing hands the same editor
+back to the tab. One that isn't open yet opens straight into the card.
+`PeekCard` owns the card, its buttons and every way of closing it for web
+pages and documents alike; `PeekController` adds the web page and
+`DocumentPeekController` the editor.
+
+While it's in the card, Find, Print, Export and an Easel's page links act on
+it, its embedded pages stay awake, a web link in it opens a new tab, and the
+command bar opens a new tab rather than replacing the page underneath. Escape
+steps out as it does in the tab (text, then the block, then nothing) and then
+closes the Peek; an idle Easel canvas passes Escape on for this, as a note with
+nothing selected already does. A two-finger swipe toward Back closes it
+unless the spot under the fingers scrolls sideways itself, so a wide Easel,
+table or code block keeps its own panning. Expand opens the tab and Split adds
+it to a split with your page, both with the editor already back in its pane.
 
 ## Open in current Space command
 

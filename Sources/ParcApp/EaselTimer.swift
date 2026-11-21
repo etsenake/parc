@@ -104,45 +104,15 @@ final class EaselTimers {
 }
 
 @MainActor
-final class EaselTimerReadout: NSView {
-    private var text = ""
-    private var font = NSFont.systemFont(ofSize: 13)
-    private var color = NSColor.labelColor
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
-
-    func update(text: String, font: NSFont, color: NSColor) {
-        self.text = text
-        self.font = font
-        self.color = color
-        needsDisplay = true
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
-        let string = text as NSString
-        let height = string.size(withAttributes: attributes).height
-        string.draw(at: NSPoint(x: 0, y: ((bounds.height - height) / 2).rounded()), withAttributes: attributes)
-    }
-}
-
-@MainActor
 final class EaselTimerButton: PointingHandButton {
     let documentID: UUID
     var onFinished: (() -> Void)?
     private var shown = ""
     private var phase: EaselCountdown.Phase = .idle
     private var pointerInside = false
-    private let readout = EaselTimerReadout()
+    private let readout = EaselRollingText()
     private var hoverTracking: NSTrackingArea?
+    private static let pauseKey = NoteAnimation.keyPrefix + "easel.timer.pause"
     private let glyph = NSImage(systemSymbolName: "timer", accessibilityDescription: "Timer")?
         .withSymbolConfiguration(.init(pointSize: 14, weight: .medium)) ?? NSImage()
 
@@ -155,6 +125,7 @@ final class EaselTimerButton: PointingHandButton {
         wantsLayer = true
         setEaselTooltip("Timer")
         setAccessibilityRole(.button)
+        readout.alignment = .left
         addSubview(readout)
         let center = NotificationCenter.default
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(motionPreferenceChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
@@ -171,7 +142,13 @@ final class EaselTimerButton: PointingHandButton {
         MainActor.assumeIsolated { EaselTimers.shared.detachDocument(id) }
     }
 
-    @objc private func motionPreferenceChanged() { updatePulse() }
+    @objc private func motionPreferenceChanged() {
+        guard NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        if let layer { NoteAnimation.settle(layer) }
+        readout.settle()
+        EaselControlSurface.clearGlow(self)
+        placePauseLook(from: phase, animated: false)
+    }
 
     @objc private func timerChanged(_ notification: Notification) {
         guard notification.object as? UUID == documentID else { return }
@@ -215,9 +192,11 @@ final class EaselTimerButton: PointingHandButton {
         let previousPhase = phase
         phase = countdown.phase
         shown = label
-        readout.update(text: label, font: timeFont, color: phase == .paused ? NoteTheme.menuSecondaryInk : activeInk)
+        readout.update(text: label, font: timeFont, color: phase == .paused ? NoteTheme.menuSecondaryInk : activeInk,
+                       animated: !resized && showsTime)
         readout.isHidden = !showsTime
-        if previousPhase != phase || resized { updatePulse() }
+        if previousPhase == .finished, phase != .finished { EaselControlSurface.clearFinish(self, shaking: layer) }
+        if previousPhase != phase || resized { placePauseLook(from: previousPhase, animated: !resized) }
         if resized { invalidateIntrinsicContentSize(); superview?.needsLayout = true; onResize?() }
         switch phase {
         case .idle: setAccessibilityValue(nil)
@@ -233,21 +212,9 @@ final class EaselTimerButton: PointingHandButton {
 
     private func finished() {
         refresh()
-        guard window != nil, !isHiddenOrHasHiddenAncestor, let layer else { return }
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 0.35
-            fade.toValue = 1
-            fade.duration = 0.45
-            layer.add(fade, forKey: "easel-timer-done")
-        } else {
-            let shake = CAKeyframeAnimation(keyPath: "transform.translation.x")
-            shake.values = [0, -5, 5, -4, 4, -2, 2, 0]
-            shake.keyTimes = [0, 0.14, 0.28, 0.42, 0.56, 0.7, 0.85, 1]
-            shake.duration = 0.5
-            shake.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            layer.add(shake, forKey: "easel-timer-done")
-        }
+        guard phase == .finished, window != nil, !isHiddenOrHasHiddenAncestor, let layer else { return }
+        EaselControlSurface.shake(layer)
+        EaselControlSurface.glow(self, color: NoteTheme.accent)
     }
 
     override func updateTrackingAreas() {
@@ -258,11 +225,19 @@ final class EaselTimerButton: PointingHandButton {
         super.updateTrackingAreas()
     }
 
-    override func mouseEntered(with event: NSEvent) { pointerInside = true; needsDisplay = true; refreshReadoutColor() }
-    override func mouseExited(with event: NSEvent) { pointerInside = false; needsDisplay = true; refreshReadoutColor() }
+    override func mouseEntered(with event: NSEvent) { hoverChanged(true) }
+    override func mouseExited(with event: NSEvent) { hoverChanged(false) }
+
+    private func hoverChanged(_ inside: Bool) {
+        guard inside != pointerInside else { return }
+        pointerInside = inside
+        needsDisplay = true
+        refreshReadoutColor()
+        EaselControlSurface.crossfade(self, duration: NoteAnimation.hoverDuration, pops: nil)
+    }
 
     private func refreshReadoutColor() {
-        readout.update(text: shown, font: timeFont, color: phase == .paused ? NoteTheme.menuSecondaryInk : activeInk)
+        readout.update(text: shown, font: timeFont, color: phase == .paused ? NoteTheme.menuSecondaryInk : activeInk, animated: false)
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -277,27 +252,31 @@ final class EaselTimerButton: PointingHandButton {
         readout.frame = NSRect(x: side - 4, y: 0, width: max(0, bounds.width - side + 4), height: bounds.height)
     }
 
-    private func updatePulse() {
+    private func placePauseLook(from previous: EaselCountdown.Phase, animated: Bool) {
         guard let layer = readout.layer else { return }
-        layer.removeAnimation(forKey: "easel-timer-paused")
-        layer.opacity = 1
-        guard phase == .paused else { return }
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            layer.opacity = 0.55
+        let resting: Float = phase == .paused ? 0.55 : 1
+        NoteAnimation.settle(layer, keys: [Self.pauseKey])
+        guard animated, window != nil, previous != phase else {
+            NoteAnimation.withoutAnimation { layer.opacity = resting }
             return
         }
-        let pulse = CABasicAnimation(keyPath: "opacity")
-        pulse.fromValue = 1
-        pulse.toValue = 0.3
-        pulse.duration = 0.9
-        pulse.autoreverses = true
-        pulse.repeatCount = .infinity
-        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        layer.add(pulse, forKey: "easel-timer-paused")
+        if phase == .paused, previous == .running {
+            EaselControlSurface.blink(layer, resting: resting, key: Self.pauseKey)
+        } else {
+            NoteAnimation.fade(layer, to: resting, duration: 0.2, key: Self.pauseKey)
+        }
     }
+
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
     override var state: NSControl.StateValue { didSet { needsDisplay = true; refreshReadoutColor() } }
-    override func highlight(_ flag: Bool) { super.highlight(flag); needsDisplay = true; refreshReadoutColor() }
+
+    override func highlight(_ flag: Bool) {
+        let released = !flag && isHighlighted
+        super.highlight(flag)
+        needsDisplay = true
+        refreshReadoutColor()
+        EaselControlSurface.apply(self, hovered: false, pressed: flag, released: released, casts: false)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let radius = NoteTheme.controlRadius
@@ -339,7 +318,8 @@ final class EaselTimerView: NSView, NoteFloatingPanelContent {
     let documentID: UUID
     var preferredSizeDidChange: (() -> Void)?
     var onClose: (() -> Void)?
-    private let clock = NSTextField(labelWithString: "05:00")
+    private let clock = EaselRollingText()
+    private var lastPhase: EaselCountdown.Phase?
     private let caption = NSTextField(labelWithString: "")
     private let minus = NoteChip("", icon: .symbol("minus"))
     private let plus = NoteChip("", icon: .symbol("plus"))
@@ -353,9 +333,11 @@ final class EaselTimerView: NSView, NoteFloatingPanelContent {
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Timer")
-        clock.font = EaselTimerButton.monospacedDigits(NoteTheme.nunitoExtraBold(40))
         clock.alignment = .center
-        clock.textColor = NoteTheme.menuInk
+        clock.clips = true
+        clock.setAccessibilityElement(true)
+        clock.setAccessibilityRole(.staticText)
+        caption.wantsLayer = true
         caption.font = NoteTheme.nunitoRegular(12)
         caption.textColor = NoteTheme.menuTertiaryInk
         caption.alignment = .center
@@ -389,7 +371,7 @@ final class EaselTimerView: NSView, NoteFloatingPanelContent {
     override func layout() {
         super.layout()
         let width = bounds.width
-        let clockHeight = ceil(clock.intrinsicContentSize.height)
+        let clockHeight = ceil(clock.intrinsicContentSize.height) + 4
         let stepSize = NSSize(width: 34, height: NoteTheme.chipHeight)
         clock.frame = NSRect(x: 14 + stepSize.width, y: 14, width: width - 28 - 2 * stepSize.width, height: clockHeight)
         minus.frame = NSRect(x: 14, y: 14 + (clockHeight - stepSize.height) / 2, width: stepSize.width, height: stepSize.height)
@@ -433,31 +415,47 @@ final class EaselTimerView: NSView, NoteFloatingPanelContent {
         return false
     }
 
+    private func phaseChanged(from previous: EaselCountdown.Phase, to phase: EaselCountdown.Phase) {
+        if previous == .finished, phase != .finished { EaselControlSurface.clearFinish(self, shaking: clock.layer) }
+        guard window != nil, let layer = clock.layer else { return }
+        switch (previous, phase) {
+        case (.running, .paused): EaselControlSurface.blink(layer)
+        case (.running, .finished):
+            EaselControlSurface.shake(layer, distance: 7)
+            EaselControlSurface.glow(self, color: NoteTheme.accent, radius: 14, around: clock.frame.insetBy(dx: 10, dy: 2))
+        default: break
+        }
+    }
+
     private func refresh() {
         let countdown = self.countdown
         let remaining = countdown.remaining(at: EaselTimers.shared.now())
-        clock.stringValue = EaselCountdown.label(remaining)
-        clock.textColor = countdown.phase == .running || countdown.phase == .finished ? NoteTheme.accent : NoteTheme.menuInk
+        let previous = lastPhase
+        lastPhase = countdown.phase
+        clock.update(text: EaselCountdown.label(remaining), font: EaselTimerButton.monospacedDigits(NoteTheme.nunitoExtraBold(40)),
+                     color: countdown.phase == .running || countdown.phase == .finished ? NoteTheme.accent : NoteTheme.menuInk,
+                     animated: window != nil)
         clock.setAccessibilityLabel(EaselCountdown.spoken(remaining))
+        if let previous, previous != countdown.phase { phaseChanged(from: previous, to: countdown.phase) }
         let adjustable = countdown.phase == .idle || countdown.phase == .finished
         minus.isEnabled = adjustable && countdown.duration > 0
         plus.isEnabled = adjustable && countdown.duration < EaselCountdown.maximum
         addMinute.isEnabled = (countdown.phase == .running || countdown.phase == .paused)
             && remaining < EaselCountdown.maximum
         reset.isEnabled = countdown.phase != .idle
+        let face: (title: String, symbol: String, caption: String)
         switch countdown.phase {
-        case .idle:
-            start.chipTitle = "Start"; start.icon = .symbol("play.fill")
-            caption.stringValue = "↑ ↓ for a minute, ⇧ for five"
-        case .running:
-            start.chipTitle = "Pause"; start.icon = .symbol("pause.fill")
-            caption.stringValue = "Just for you, not saved in the Easel"
-        case .paused:
-            start.chipTitle = "Resume"; start.icon = .symbol("play.fill")
-            caption.stringValue = "Paused"
-        case .finished:
-            start.chipTitle = "Again"; start.icon = .symbol("play.fill")
-            caption.stringValue = "Time’s up!"
+        case .idle: face = ("Start", "play.fill", "↑ ↓ for a minute, ⇧ for five")
+        case .running: face = ("Pause", "pause.fill", "Just for you, not saved in the Easel")
+        case .paused: face = ("Resume", "play.fill", "Paused")
+        case .finished: face = ("Again", "play.fill", "Time’s up!")
+        }
+        if start.chipTitle != face.title {
+            EaselControlSurface.morph(start) { start.chipTitle = face.title; start.icon = .symbol(face.symbol) }
+        }
+        if caption.stringValue != face.caption {
+            caption.stringValue = face.caption
+            EaselControlSurface.crossfade(caption, pops: nil)
         }
         start.isEnabled = countdown.phase != .idle || countdown.duration > 0
         start.setAccessibilityLabel(start.chipTitle)

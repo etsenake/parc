@@ -4,6 +4,10 @@ import Foundation
 package struct NoteBacklinkSnippet: Hashable, Sendable {
     package var text: String
     package var highlight: Range<Int>?
+    package init(text: String, highlight: Range<Int>? = nil) {
+        self.text = text
+        self.highlight = highlight
+    }
 
     package static let leadingContext = 40
     package static let maximumLength = 150
@@ -77,6 +81,12 @@ package struct NoteOutgoingLink: Hashable, Sendable {
     package var kind: Kind
     package var snippet: NoteBacklinkSnippet
     package var anchor: String?
+    package init(target: String, kind: Kind, snippet: NoteBacklinkSnippet, anchor: String? = nil) {
+        self.target = target
+        self.kind = kind
+        self.snippet = snippet
+        self.anchor = anchor
+    }
 }
 
 package struct NoteBacklink: Hashable, Identifiable, Sendable {
@@ -86,9 +96,6 @@ package struct NoteBacklink: Hashable, Identifiable, Sendable {
     package var snippet: NoteBacklinkSnippet
     package var anchor: String?
     package var links: Int
-
-    package var id: URL { source }
-
     package init(source: URL, title: String, icon: String? = nil, snippet: NoteBacklinkSnippet, anchor: String? = nil, links: Int) {
         self.source = source
         self.title = title
@@ -97,6 +104,10 @@ package struct NoteBacklink: Hashable, Identifiable, Sendable {
         self.anchor = anchor
         self.links = links
     }
+
+    package var id: URL { source }
+
+    package var isEasel: Bool { source.scheme?.lowercased() == "parc" }
 
     package var destination: URL {
         guard let anchor, !anchor.isEmpty, var components = URLComponents(url: source, resolvingAgainstBaseURL: false) else { return source }
@@ -109,6 +120,11 @@ package struct NoteBacklinkMove: Hashable, Sendable {
     package var fromKey: String
     package var from: URL
     package var to: URL
+    package init(fromKey: String, from: URL, to: URL) {
+        self.fromKey = fromKey
+        self.from = from
+        self.to = to
+    }
 }
 
 package enum NoteBacklinkScanner {
@@ -118,6 +134,11 @@ package enum NoteBacklinkScanner {
         package var target: String
         package var kind: NoteOutgoingLink.Kind
         package var range: Range<Int>
+        package init(target: String, kind: NoteOutgoingLink.Kind, range: Range<Int>) {
+            self.target = target
+            self.kind = kind
+            self.range = range
+        }
     }
 
     package static func mayLink(_ text: String) -> Bool {
@@ -260,31 +281,28 @@ package final class NoteBacklinkIndex {
         var identity: String?
         var node: NoteFileNode?
         var links: [NoteOutgoingLink]?
+        var easel: EaselSourceInfo?
+    }
 
-        package init(url: URL, title: String, icon: String? = nil, modifiedAt: Date, size: Int, identity: String? = nil, node: NoteFileNode? = nil, links: [NoteOutgoingLink]? = nil) {
-            self.url = url
-            self.title = title
-            self.icon = icon
-            self.modifiedAt = modifiedAt
-            self.size = size
-            self.identity = identity
-            self.node = node
-            self.links = links
-        }
+    private struct EaselSourceInfo: Equatable {
+        var store: ObjectIdentifier
+        var id: UUID
+        var file: URL
+    }
+
+    private struct EaselListing: Sendable {
+        var path: String
+        var id: UUID
+        var modifiedAt: Date
+        var size: Int
     }
 
     private struct Job {
         var path: String
         var url: URL
+        var isEasel = false
         var modifiedAt: Date
         var size: Int
-
-        package init(path: String, url: URL, modifiedAt: Date, size: Int) {
-            self.path = path
-            self.url = url
-            self.modifiedAt = modifiedAt
-            self.size = size
-        }
     }
 
     private struct Reading: Sendable {
@@ -294,15 +312,7 @@ package final class NoteBacklinkIndex {
         var identity: String
         var node: NoteFileNode?
         var links: [NoteOutgoingLink]
-
-        package init(path: String, modifiedAt: Date, size: Int, identity: String, node: NoteFileNode? = nil, links: [NoteOutgoingLink]) {
-            self.path = path
-            self.modifiedAt = modifiedAt
-            self.size = size
-            self.identity = identity
-            self.node = node
-            self.links = links
-        }
+        var title: String?
     }
 
     private struct Departure {
@@ -315,6 +325,7 @@ package final class NoteBacklinkIndex {
     package static var clock: NoteFileClock = NoteFileSystemClock.shared
     package static var followDelay: TimeInterval = 1.5
     package static var departureWindow: TimeInterval = 10
+    package static var easelDelay: TimeInterval = 1
     package static let chunkSize = 200
 
     package let changes = PassthroughSubject<Void, Never>()
@@ -333,11 +344,15 @@ package final class NoteBacklinkIndex {
     private var aliases: [String: String] = [:]
     private var followTimer: NoteFileTimer?
     private var rewriting = 0
-
-    package init() {}
+    private var easelStores: [ObjectIdentifier: EaselStore] = [:]
+    private var easelObservers: [NSObjectProtocol] = []
+    private var easelListing = false
+    private var easelListingAgain = false
+    private var easelTimer: NoteFileTimer?
 
     package var isSettled: Bool {
         !isReading && queue.isEmpty && refreshTimer == nil && followTimer == nil && rewriting == 0 && moves.isEmpty
+            && easelTimer == nil && !easelListing
     }
 
     package func activate() {
@@ -350,6 +365,22 @@ package final class NoteBacklinkIndex {
     package func include(_ library: NoteLibrary) {
         activate()
         track(library)
+    }
+
+    package func include(_ store: EaselStore) {
+        activate()
+        let id = ObjectIdentifier(store)
+        guard easelStores[id] == nil else { return }
+        easelStores[id] = store
+        if easelObservers.isEmpty {
+            let names: [Notification.Name] = [.easelDocumentChanged, .easelDocumentRemoved]
+            easelObservers = names.map { name in
+                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.scheduleEaselListing() }
+                }
+            }
+        }
+        scheduleEaselListing(after: 0)
     }
 
     package func backlinks(to note: URL) -> [NoteBacklink] {
@@ -411,6 +442,77 @@ package final class NoteBacklinkIndex {
         scheduleRefresh()
     }
 
+    private func scheduleEaselListing(after delay: TimeInterval? = nil) {
+        guard !easelStores.isEmpty, easelTimer == nil else { return }
+        easelTimer = Self.clock.schedule(after: delay ?? Self.easelDelay) { [weak self] in
+            self?.easelTimer = nil
+            self?.listEaselsNow()
+        }
+    }
+
+    private func listEaselsNow() {
+        if easelListing {
+            easelListingAgain = true
+            return
+        }
+        easelListing = true
+        let directories = easelStores.map { (key: $0.key, directory: $0.value.documentsDirectory) }
+        Self.worker.perform({
+            directories.map { entry in (entry.key, Self.listEasels(in: entry.directory)) }
+        }) { [weak self] listings in
+            self?.finishEaselListing(listings)
+        }
+    }
+
+    nonisolated private static func listEasels(in directory: URL) -> [EaselListing] {
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
+        guard let urls = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys,
+                                                                       options: [.skipsHiddenFiles]) else { return [] }
+        return urls.compactMap { url in
+            guard url.pathExtension == "json", let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent),
+                  let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { return nil }
+            return EaselListing(path: url.path, id: id, modifiedAt: values.contentModificationDate ?? .distantPast,
+                                size: values.fileSize ?? 0)
+        }
+    }
+
+    private func finishEaselListing(_ listings: [(ObjectIdentifier, [EaselListing])]) {
+        easelListing = false
+        var present: Set<String> = []
+        var changed = false
+        for (storeKey, entries) in listings where easelStores[storeKey] != nil {
+            for entry in entries {
+                present.insert(entry.path)
+                let file = URL(fileURLWithPath: entry.path)
+                if var source = sources[entry.path] {
+                    if source.modifiedAt != entry.modifiedAt || source.size != entry.size {
+                        source.modifiedAt = entry.modifiedAt
+                        source.size = entry.size
+                        sources[entry.path] = source
+                        enqueue(entry.path)
+                    }
+                } else {
+                    sources[entry.path] = Source(url: URL(string: InternalPage.easel(entry.id).urlString) ?? file, title: "Untitled Easel",
+                                                 icon: nil, modifiedAt: entry.modifiedAt, size: entry.size, identity: "easel:" + entry.id.uuidString,
+                                                 node: nil, links: nil, easel: EaselSourceInfo(store: storeKey, id: entry.id, file: file))
+                    enqueue(entry.path)
+                }
+            }
+        }
+        for (path, source) in sources where source.easel != nil && !present.contains(path) {
+            sources[path] = nil
+            queued.remove(path)
+            changed = true
+        }
+        queue.removeAll { !queued.contains($0) }
+        if changed { rebuild() }
+        readNext()
+        if easelListingAgain {
+            easelListingAgain = false
+            scheduleEaselListing()
+        }
+    }
+
     private func scheduleRefresh() {
         guard refreshTimer == nil else { return }
         refreshTimer = Self.clock.schedule(after: 0) { [weak self] in self?.refresh() }
@@ -431,7 +533,7 @@ package final class NoteBacklinkIndex {
         if complete {
             let now = Self.clock.now
             departed = departed.filter { now.timeIntervalSince($0.value.at) < Self.departureWindow }
-            for path in Array(sources.keys) where listed[path] == nil {
+            for path in Array(sources.keys) where listed[path] == nil && sources[path]?.easel == nil {
                 guard let source = sources.removeValue(forKey: path) else { continue }
                 if source.node != nil { departed[path] = Departure(source: source, at: now) }
                 queued.remove(path)
@@ -492,7 +594,10 @@ package final class NoteBacklinkIndex {
         while jobs.count < Self.chunkSize, !queue.isEmpty {
             let path = queue.removeFirst()
             queued.remove(path)
-            if let source = sources[path] { jobs.append(Job(path: path, url: source.url, modifiedAt: source.modifiedAt, size: source.size)) }
+            if let source = sources[path] {
+                jobs.append(Job(path: path, url: source.easel?.file ?? source.url, isEasel: source.easel != nil,
+                                modifiedAt: source.modifiedAt, size: source.size))
+            }
         }
         guard !jobs.isEmpty else {
             if settling { settle() }
@@ -501,8 +606,13 @@ package final class NoteBacklinkIndex {
         isReading = true
         Self.worker.perform({
             jobs.map { job in
-                Reading(path: job.path, modifiedAt: job.modifiedAt, size: job.size, identity: NoteFilePaths.key(for: job.url),
-                        node: NoteFileNode(path: job.path), links: NoteBacklinkScanner.outgoing(fileAt: job.url))
+                if job.isEasel {
+                    let read = EaselBacklinkScanner.read(fileAt: job.url)
+                    return Reading(path: job.path, modifiedAt: job.modifiedAt, size: job.size, identity: "",
+                                   node: nil, links: read?.links ?? [], title: read?.title)
+                }
+                return Reading(path: job.path, modifiedAt: job.modifiedAt, size: job.size, identity: NoteFilePaths.key(for: job.url),
+                               node: NoteFileNode(path: job.path), links: NoteBacklinkScanner.outgoing(fileAt: job.url), title: nil)
             }
         }) { [weak self] readings in
             self?.finishReading(readings)
@@ -514,6 +624,13 @@ package final class NoteBacklinkIndex {
         var changed = false
         for reading in readings {
             guard var source = sources[reading.path], source.modifiedAt == reading.modifiedAt, source.size == reading.size else { continue }
+            if source.easel != nil {
+                if source.links != reading.links || (reading.title.map { $0 != source.title } ?? false) { changed = true }
+                source.links = reading.links
+                if let title = reading.title { source.title = title }
+                sources[reading.path] = source
+                continue
+            }
             if source.links != reading.links || source.identity != reading.identity { changed = true }
             source.links = reading.links
             source.identity = reading.identity
@@ -604,6 +721,7 @@ package final class NoteBacklinkIndex {
                 guard Self.rewrite(session.page, resolvingFrom: resolving, writingFrom: folder, move: move) else { continue }
                 for (path, source) in sources where source.identity == identity { retarget(path, from: item.key, to: toKey) }
             }
+            rewriteEasels(move, toKey: toKey)
             var closed: [(path: String, url: URL)] = []
             for (path, source) in sources where source.identity == toKey || source.links?.contains(where: { $0.target == item.key }) == true {
                 guard let identity = source.identity, !handled.contains(identity), NoteFileSession.session(for: source.url) == nil,
@@ -630,6 +748,25 @@ package final class NoteBacklinkIndex {
                 NoteLibrary.filesRewritten(closed.map(\.url))
                 self.finishFollowing(move)
             }
+        }
+    }
+
+    private func rewriteEasels(_ move: NoteBacklinkMove, toKey: String) {
+        for (path, source) in sources {
+            guard let info = source.easel, let store = easelStores[info.store],
+                  source.links?.contains(where: { $0.target == move.fromKey }) == true,
+                  let session = try? store.load(info.id), !session.isClosed, !session.isDeleted,
+                  let next = EaselBacklinkRewriter.rewrite(session.document, move: move) else { continue }
+            do {
+                if session.document.isLocked {
+                    try session.updateLinks { EaselBacklinkRewriter.rewrite($0, move: move) }
+                } else {
+                    try session.perform("Update links") { $0 = next }
+                }
+            } catch {
+                continue
+            }
+            retarget(path, from: move.fromKey, to: toKey)
         }
     }
 

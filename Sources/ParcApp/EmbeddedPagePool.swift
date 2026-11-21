@@ -291,9 +291,14 @@ class EmbeddedPagePool: NSObject, PCBrowserViewDelegate {
         if entry.request == nil { entry.surface.setStatus("This webpage owner is unavailable.", retry: true); releaseIfIdle() }
     }
 
-    func loadURL(for url: URL, entry: EmbeddedPageEntry) -> URL { url }
+    func loadURL(for url: URL, entry: EmbeddedPageEntry) -> URL {
+        (entry.surface as? NoteEmbedSurface)?.liveAddress ?? url
+    }
 
-    func referrer(for entry: EmbeddedPageEntry) -> URL? { nil }
+    func referrer(for entry: EmbeddedPageEntry) -> URL? {
+        guard (entry.surface as? NoteEmbedSurface)?.sendsAppReferrer == true else { return nil }
+        return NoteEmbedAddress.embedderReferrer(appID: Bundle.main.bundleIdentifier)
+    }
 
     func synchronize(wanted: (UUID, EmbeddedPageEntry) -> Bool, selection: UUID?, interacting: Bool) {
         let before = selectedPage
@@ -398,9 +403,13 @@ class EmbeddedPagePool: NSObject, PCBrowserViewDelegate {
         guard !gate.isDisposed, !gate.isRetiring, validOwner(), let page = view.nativePage, !page.isClosed,
               page.embeddedOwnerValid, selectedPage === page, let url = page.url,
               let (id, entry) = entries.first(where: { $0.value.surface.browser === view && $0.value.page === page }),
-              entry.request == nil, entry.variant == nil else { return }
+              entry.request == nil, entry.variant == nil, !playsEmbed(entry, at: url) else { return }
         do { try owner.recordEmbeddedPageNavigation(url, for: id, expectedURL: entry.originalURL) }
         catch { onError?(error) }
+    }
+    private func playsEmbed(_ entry: EmbeddedPageEntry, at url: URL) -> Bool {
+        guard let surface = entry.surface as? NoteEmbedSurface, surface.liveAddress != surface.address else { return false }
+        return url.absoluteString == surface.liveAddress.absoluteString
     }
     func browserView(_ view: PCBrowserView, didChangeLoading loading: Bool, canGoBack back: Bool, canGoForward forward: Bool) {
         if let entry = entries.values.first(where: { $0.surface.browser === view }) {

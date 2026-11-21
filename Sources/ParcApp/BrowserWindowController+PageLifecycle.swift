@@ -152,7 +152,7 @@ extension BrowserWindowController {
         navigationHistory?.validate()
         guard !applyingNativeSelection else { return }
         if let peek = activePeek, !peek.view.isHidden, !isClosing, !wholeWindowClose,
-           !windowClosePending, !peek.page.isClosed {
+           !windowClosePending, !peek.contentIsClosed {
             pendingNativeSelection = nil
             pushNativeSelection()
             refreshNavigationControls()
@@ -278,6 +278,7 @@ extension BrowserWindowController {
             MainActor.assumeIsolated {
                 guard let self, let objects, let current = self.easelEditors[id], current.editor.pageObjects === objects else { return false }
                 let shown = self.renderedPaneIDs.contains(id) || self.selectedTabIDs.contains(id) || self.pendingNativeSelection?.tabID == id
+                    || self.tabPeeks.current?.tabID == id
                 return !self.isClosing && !self.wholeWindowClose && !shown && !self.transferringTabIDs.contains(id)
                     && self.store.state.tab(id) == expected && self.easelPagesCanSleep(current)
             }

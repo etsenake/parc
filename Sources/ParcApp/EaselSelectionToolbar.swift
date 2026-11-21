@@ -162,7 +162,11 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
         fitHost(to: scroll)
         let size = bar.fittingSize
         let selection = host.convert(content.anchor, from: canvas)
-        let area = host.convert(scroll.bounds, from: scroll).intersection(host.bounds)
+        var open = scroll.bounds
+        let covered = CGFloat(EaselFloatingBar.cover(Double(canvas.toolState.coveredBottom), viewportHeight: Double(open.height)))
+        open.size.height -= covered
+        if !scroll.isFlipped { open.origin.y += covered }
+        let area = host.convert(open, from: scroll).intersection(host.bounds)
         let clipped = host.visibleRect.intersection(area)
         let visible = clipped.isEmpty ? area : clipped
         guard let placement = EaselSelectionToolbarPlacement.place(selection: Self.easelRect(selection), width: size.width,
@@ -222,6 +226,7 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
         case .menu: openMenu(model.control, from: button, origin: origin)
         case .stylePicker: openStylePicker(model.control, from: button, origin: origin)
         case .shapePicker: openShapePicker(model.control, from: button, origin: origin)
+        case .highlightPicker: openHighlightPicker(model.control, from: button, origin: origin)
         case .nothing: canvas.performSelectionToolbar(model.control, anchor: button)
         }
     }
@@ -231,6 +236,29 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
         picker.onCancel = { [weak self] in self?.closeMenu(animated: true) }
         picker.prepare(origin: origin)
         present(picker, control: control, from: button, isList: false) { [weak picker] event in picker?.handleKeyDown(event) ?? false }
+    }
+
+    private func openHighlightPicker(_ control: EaselToolbarControl, from button: NoteToolbarButton, origin: NoteMenuList.Origin) {
+        guard let canvas, canvas.highlightMenuState != nil else { return }
+        let picker = NoteColorMenuView(model: highlightModel(for: canvas))
+        picker.onPick = { [weak self, weak canvas] choice in
+            self?.closeMenu(animated: true)
+            canvas?.applyHighlight(choice.color)
+            canvas?.returnFocusFromSelectionToolbar()
+        }
+        picker.onCancel = { [weak self] in self?.closeMenu(animated: true) }
+        picker.prepare(origin: origin)
+        present(picker, control: control, from: button, isList: false) { [weak picker] event in picker?.handleKeyDown(event) ?? false }
+    }
+
+    private func highlightModel(for canvas: EaselCanvasView) -> NoteColorMenuModel {
+        let summary: NoteColorSummary
+        switch canvas.highlightMenuState {
+        case .color(let color)?: summary = NoteColorSummary(background: color, uniform: .background(color))
+        case .mixed?: summary = NoteColorSummary(isBackgroundMixed: true)
+        default: summary = .plain
+        }
+        return NoteColorMenuModel(recents: NoteColorRecents.load(), summary: summary, backgroundsOnly: true)
     }
 
     private func openShapePicker(_ control: EaselToolbarControl, from button: NoteToolbarButton, origin: NoteMenuList.Origin) {
@@ -250,7 +278,9 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
         let entries = canvas.selectionToolbarMenu(for: control)
         guard !entries.isEmpty else { return }
         let list = NoteMenuList(items: entries.map { entry in
-            var item = NoteMenuList.Item(id: entry.id, title: entry.title, icon: entry.symbol.map { .symbol($0) }, shortcut: entry.shortcut,
+            let turnInto = control == .paragraph ? EaselParagraphEditing.Kind(rawValue: entry.id)?.turnInto : nil
+            var item = NoteMenuList.Item(id: entry.id, title: entry.title,
+                                         icon: turnInto.map(NoteTurnIntoMenu.icon(for:)) ?? entry.symbol.map { .symbol($0) }, shortcut: entry.shortcut,
                                          isChecked: entry.isChecked, isEnabled: entry.isEnabled, isDestructive: entry.isDestructive)
             item.separatorBefore = entry.separatorBefore
             item.iconTint = entry.tint
@@ -409,12 +439,18 @@ final class EaselSelectionToolbarView: NSView, NoteFloatingPanelContent {
         for model in models {
             guard let button = buttons[model.control] else { continue }
             let old = previous.first { $0.control == model.control }
+            let content = button.content
             if case .text(let title) = model.face, button.content != .text(title) { button.content = .text(title) }
             if case .symbolAndText(let symbol, let title) = model.face, button.content != .iconAndText(.symbol(symbol), title) {
                 button.content = .iconAndText(.symbol(symbol), title)
             }
             if case .symbol(let symbol) = model.face, button.content != .icon(.symbol(symbol)) { button.content = .icon(.symbol(symbol)) }
-            if button.iconTint != model.tint { button.iconTint = model.tint }
+            if button.content != content, old != nil { EaselControlSurface.crossfade(button, duration: NoteAnimation.hoverDuration, pops: nil) }
+            if button.iconTint != model.tint {
+                let recolored = button.iconTint != nil && model.tint != nil && old != nil
+                button.iconTint = model.tint
+                if recolored, button.window != nil { NoteAnimation.pop(button, from: 0.78, spring: .check) }
+            }
             button.isEnabled = model.isEnabled
             if old?.value != model.value || old == nil { button.setAccessibilityValue(model.value) }
             guard old?.name != model.name || old?.shortcut != model.shortcut || old?.commandID != model.commandID || old?.face != model.face else { continue }
@@ -620,5 +656,21 @@ private final class EaselSelectionToolbarDivider: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         needsDisplay = true
+    }
+}
+
+extension EaselParagraphEditing.Kind {
+    var turnInto: NoteTurnIntoOption {
+        switch self {
+        case .text: return .text
+        case .heading1: return .heading1
+        case .heading2: return .heading2
+        case .heading3: return .heading3
+        case .heading4: return .heading4
+        case .bullets: return .bulletedList
+        case .numbers: return .numberedList
+        case .checklist: return .todoList
+        case .quote: return .quote
+        }
     }
 }

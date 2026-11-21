@@ -209,7 +209,8 @@ extension BrowserWindowController {
         return (forward ? visit.ahead : visit.behind).map { step in
             let entry = step.page.flatMap { shown in live.first { !shown.id.isEmpty && $0.persistentIdentifier == shown.id } }
             let title = entry.map { $0.title.isEmpty ? step.title : $0.title } ?? step.title
-            return (step, title, step.document.map(Self.noteVisitIcon) ?? entry?.favicon)
+            let profile = activeProfileID
+            return (step, title, step.document.map { Self.noteVisitIcon($0, profile: profile) } ?? entry?.favicon)
         }
     }
 
@@ -295,9 +296,11 @@ extension BrowserWindowController {
         NoteFileSession.session(for: file)?.title ?? file.deletingPathExtension().lastPathComponent
     }
 
-    static func noteVisitIcon(_ entry: TabNoteVisit.Entry) -> NSImage? {
-        if let file = TabNoteVisit.noteFile(entry) { return NoteTabIconArt.shared.image(forNote: file) }
-        return TabNoteVisit.document(entry).flatMap { DocumentDefaultIcon.fallback(named: $0.sidebarFallbackSymbol) }
+    static func noteVisitIcon(_ entry: TabNoteVisit.Entry, profile: UUID) -> NSImage? {
+        guard let subject = NoteTabIconArt.Subject(address: entry.url, profile: profile) else { return nil }
+        let image = NoteTabIconArt.shared.image(for: subject)
+        if case .easel = subject { return image ?? subject.mark.image(size: NoteTabIconArt.side) }
+        return image
     }
 
     func openDocumentOverPage(_ document: InternalPage, title: String, sourceID: UUID, page: PCNativePage?,

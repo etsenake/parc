@@ -1,6 +1,17 @@
 import Combine
 import Foundation
 
+package struct NoteNewCover: Sendable {
+    package var data: Data
+    package var fileExtension: String
+    package var suggestedName: String
+    package init(data: Data, fileExtension: String, suggestedName: String) {
+        self.data = data
+        self.fileExtension = fileExtension
+        self.suggestedName = suggestedName
+    }
+}
+
 @MainActor
 package final class NoteLibrary {
     package struct Entry: Hashable, Sendable {
@@ -12,7 +23,6 @@ package final class NoteLibrary {
         package var size: Int
         package var foldedTitle: String
         package var summarized = true
-
         package init(url: URL, title: String, icon: String? = nil, snippet: String, modifiedAt: Date, size: Int, foldedTitle: String, summarized: Bool = true) {
             self.url = url
             self.title = title
@@ -33,6 +43,11 @@ package final class NoteLibrary {
         package var modifiedAt: Date
         package var size: Int
         package var folded: String
+        package init(modifiedAt: Date, size: Int, folded: String) {
+            self.modifiedAt = modifiedAt
+            self.size = size
+            self.folded = folded
+        }
     }
 
     private static var libraries: [String: NoteLibrary] = [:]
@@ -40,6 +55,7 @@ package final class NoteLibrary {
     package static var worker: NoteFileWorker = .index
     package static var clock: NoteFileClock = NoteFileSystemClock.shared
     package static var refreshDelay: TimeInterval = 0.2
+    package static var newNoteCover: (@MainActor () -> NoteNewCover?)?
     package nonisolated static let maximumDepth = 12
     package nonisolated static let maximumNotes = 20_000
     package nonisolated static let quickListBudget = 1_000
@@ -179,10 +195,20 @@ package final class NoteLibrary {
             } catch CocoaError.fileWriteFileExists {
                 continue
             }
+            writeNewCover(into: candidate)
             invalidateLibraries(containing: [candidate])
             return candidate
         }
         throw NoteFileError.nameTaken(base)
+    }
+
+    private static func writeNewCover(into note: URL) {
+        guard NoteFileKind(url: note) == .markdown, let cover = newNoteCover?() else { return }
+        guard let placement = try? NoteAttachments.placeData(cover.data, fileExtension: cover.fileExtension,
+                                                             suggestedName: cover.suggestedName, into: note, date: clock.now) else { return }
+        var page = NotePage()
+        page.settings.cover = NoteCover(source: placement.path)
+        try? Data(NoteMarkdown.serialize(page).utf8).write(to: note, options: .atomic)
     }
 
     package func notes() throws -> [NoteReference] {

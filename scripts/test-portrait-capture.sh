@@ -9,7 +9,7 @@ cp "$repo_root/Resources/ThemeEditor/presets.json" "$app/Resources/ThemeEditor/"
 cp -R "$repo_root/Resources/AppIcons/Marks" "$app/Resources/AppIcons/"
 source_dir="$repo_root/Sources/ParcApp"
 sources=("$repo_root/Sources/ParcCore/"*.swift "$source_dir/CapturePresentation.swift" "$source_dir/NoteTheme.swift"
-  "$source_dir/NoteAnimation.swift" "$source_dir/NoteFloatingPanel.swift" "$source_dir/NoteControls.swift"
+  "$source_dir/NoteAnimation.swift" "$source_dir/NoteFloatingPanel.swift" "$source_dir/NoteCursor.swift" "$source_dir/NoteControls.swift"
   "$source_dir/NoteCustomEmojiImages.swift" "$source_dir/DocumentDefaultIcon.swift" "$source_dir/LibraryArtwork.swift"
   "$source_dir/ParcDialog.swift")
 python3 -c 'import sys; t = open(sys.argv[1]).read(); open(sys.argv[2], "w").write("import SwiftUI\n" + t[t.index("struct ParcButtonSpinner"):t.index("extension NSColor")])' \

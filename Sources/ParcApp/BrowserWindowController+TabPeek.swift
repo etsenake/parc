@@ -10,24 +10,79 @@ final class TabPeekSlot {
 }
 
 @MainActor
+enum TabPeekDocument {
+    case note(NotePageViewController)
+    case easel(EaselEditorViewController)
+
+    var view: NSView {
+        switch self {
+        case .note(let editor): return editor.view
+        case .easel(let editor): return editor.view
+        }
+    }
+
+    func focus() {
+        switch self {
+        case .note(let editor): editor.focusContent()
+        case .easel(let editor): editor.focusContent()
+        }
+    }
+
+    func adopt(_ palette: ThemeChromePalette) {
+        switch self {
+        case .note(let editor):
+            if editor.isViewLoaded, editor.view.appearance != palette.contentAppearance {
+                editor.inheritSpaceContentAppearance(palette.contentAppearance)
+            }
+            editor.spaceFocus = palette.focus
+        case .easel(let editor):
+            (editor.view as? EaselDocumentView)?.inheritSpaceContentAppearance(palette.contentAppearance)
+        }
+    }
+
+    func handleUnhandledEscape(_ handler: (() -> Bool)?) {
+        guard case .note(let editor) = self, editor.isViewLoaded else { return }
+        editor.editor.onUnhandledEscape = handler
+    }
+
+    func isSame(as other: TabPeekDocument?) -> Bool {
+        switch (self, other) {
+        case (.note(let a), .note(let b)?): return a === b
+        case (.easel(let a), .easel(let b)?): return a === b
+        default: return false
+        }
+    }
+}
+
+@MainActor
+enum TabPeekContent {
+    case page(PCBrowserView)
+    case document(TabPeekDocument)
+}
+
+@MainActor
 final class TabPeekPresentation {
     var session: TabPeekSession
-    let browser: PCBrowserView
+    let content: TabPeekContent
     let parentTabID: UUID
     weak var parentPage: PCNativePage?
     let relay = TabPeekRelay()
-    var controller: PeekController?
+    var controller: PeekCard?
     var entryFocus: PeekFocusReturn?
     var loadTimeout: DispatchWorkItem?
     var exitTimer: Timer?
 
-    init(session: TabPeekSession, browser: PCBrowserView, parentTabID: UUID, parentPage: PCNativePage) {
-        self.session = session; self.browser = browser
+    init(session: TabPeekSession, content: TabPeekContent, parentTabID: UUID, parentPage: PCNativePage) {
+        self.session = session; self.content = content
         self.parentTabID = parentTabID; self.parentPage = parentPage
     }
 
     var tabID: UUID { session.tabID }
-    var shownController: PeekController? { session.holdsPage ? controller : nil }
+    var browser: PCBrowserView? { if case .page(let browser) = content { return browser }; return nil }
+    var document: TabPeekDocument? { if case .document(let document) = content { return document }; return nil }
+    var shownController: PeekCard? { session.holdsPage ? controller : nil }
+    var pageController: PeekController? { controller as? PeekController }
+    var documentController: DocumentPeekController? { controller as? DocumentPeekController }
 }
 
 @MainActor
@@ -97,18 +152,54 @@ extension BrowserWindowController {
 
     func presentedPeek(for page: PCNativePage) -> PeekController? {
         if let peek = peeks[page.identifier] { return peek }
-        guard let controller = tabPeeks.current?.shownController, controller.page === page else { return nil }
+        guard let controller = tabPeeks.current?.shownController as? PeekController, controller.page === page else { return nil }
         return controller
     }
 
     var presentedPeeks: [PeekController] {
-        Array(peeks.values) + [tabPeeks.current?.shownController].compactMap { $0 }
+        Array(peeks.values) + [tabPeeks.current?.shownController as? PeekController].compactMap { $0 }
     }
 
     func tabPeekHolds(_ page: PCNativePage) -> Bool {
-        guard let current = tabPeeks.current else { return false }
-        return current.browser.nativePage === page && current.session.phase != .finished
+        guard let current = tabPeeks.current, let browser = current.browser else { return false }
+        return browser.nativePage === page && current.session.phase != .finished
     }
+
+    var peekedDocumentTabID: UUID? {
+        guard let current = tabPeeks.current, current.document != nil, current.session.phase == .shown,
+              let controller = current.documentController, activePeek === controller, !controller.isLeaving else { return nil }
+        return current.tabID
+    }
+
+    func documentTakesInput(_ id: UUID) -> Bool {
+        (currentTabID == id && activePeek == nil) || peekedDocumentTabID == id
+    }
+
+    var documentInputTabID: UUID? {
+        if let id = peekedDocumentTabID { return id }
+        guard activePeek == nil, let id = currentTabID, renderedPaneIDs.contains(id) else { return nil }
+        return id
+    }
+
+    private func peekDocument(_ id: UUID) -> TabPeekDocument? {
+        guard let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
+              let address = InternalPage(urlString: tab.url) else { return nil }
+        if address.noteURL != nil, let note = noteEditors[id], note.profileID == tab.profileID, note.editor.isViewLoaded,
+           address == .note(note.url) || address == InternalPage(urlString: note.originalTab.url) {
+            return .note(note.editor)
+        }
+        if let easelID = address.easelID, let easel = easelEditors[id], easel.documentID == easelID,
+           easel.profileID == tab.profileID, easel.editor.isViewLoaded {
+            return .easel(easel.editor)
+        }
+        return nil
+    }
+
+    private func peekDocumentFailed(_ id: UUID) -> Bool {
+        noteFailures[id] != nil || easelFailures[id] != nil
+    }
+
+    private func documentKey(_ id: UUID) -> String { "document:" + id.uuidString }
 
     func tabPeekCandidate(_ id: UUID) -> TabPeekCandidate? {
         guard let binding = nativeBinding, let tab = store.state.tab(id, where: { $0.archivedAt == nil }) else { return nil }
@@ -134,13 +225,23 @@ extension BrowserWindowController {
         candidate.busy = closingTabIDs.contains(id) || modelRetirementIDs.contains(id) || transferringTabIDs.contains(id)
             || resolvingTransfers.contains(id) || store.retiringTabIDs.contains(id) || transferRecoveries[id] != nil
             || pendingSearchNavigations[id] != nil || nativeFullscreenTabID == id
-        candidate.document = InternalPage.isInternal(tab.url) || noteEditors[id] != nil || easelEditors[id] != nil
+        if let address = InternalPage(urlString: tab.url) {
+            let document = address.noteURL != nil || address.easelID != nil
+            candidate.content = document && !isPrivateBrowsing && !isPopupWindow
+                && !store.isProfileRemovalPending(tab.profileID) ? .document : .unsupported
+        } else {
+            candidate.content = InternalPage.isInternal(tab.url) || noteEditors[id] != nil || easelEditors[id] != nil
+                ? .unsupported : .web
+        }
         if ownership.canUse(id, owner: presentationID) {
             candidate.holder = ownership.isClaimed(id) ? .here : .nobody
         } else {
             candidate.holder = .elsewhere(movable: canMovePageHere(id))
         }
-        if let browser = browsers[id] {
+        if candidate.content == .document {
+            if peekDocument(id) != nil { candidate.page = .live(documentKey(id)) }
+            else { candidate.page = peekDocumentFailed(id) ? .failed : .unloaded(loadable: true) }
+        } else if let browser = browsers[id] {
             if let page = browser.nativePage {
                 candidate.page = page.isClosed ? .closed : failures[id] != nil ? .failed : .live(page.identifier)
             } else {
@@ -195,6 +296,7 @@ extension BrowserWindowController {
             guard activePeek !== shown || shown.modalPhase != .presented else { tabPeeks.queued = nil; return false }
             return true
         case .present, .load:
+            if candidate.content == .document { return beginDocumentPeek(id) }
             return beginTabPeek(id, plan: plan)
         }
     }
@@ -212,8 +314,25 @@ extension BrowserWindowController {
             guard browsers[id] == nil, URL(string: tab.url) != nil, ownership.claim(id, owner: presentationID) else { return false }
             browser = PCBrowserView(frame: pageHost.bounds, profilePath: store.independentEngineProfilePath(for: tab.profileID))
         }
-        let held = TabPeekPresentation(session: session, browser: browser, parentTabID: parentID, parentPage: parentPage)
+        let held = TabPeekPresentation(session: session, content: .page(browser), parentTabID: parentID, parentPage: parentPage)
         held.relay.tab = self
+        held.entryFocus = PeekFocusReturn(source: pageHost)
+        tabPeeks.current = held
+        sidebarPreviews?.dismiss(); tabSwitcher?.cancel()
+        applyTabPeek(session.opening, held)
+        return tabPeeks.current === held
+    }
+
+    private func beginDocumentPeek(_ id: UUID) -> Bool {
+        guard let parentID = currentTabID, let parentPage = browsers[parentID]?.nativePage,
+              let tab = store.state.tab(id, where: { $0.archivedAt == nil }) else { return false }
+        if peekDocument(id) == nil {
+            guard ownership.claim(id, owner: presentationID) else { return false }
+            showInternalPage(tab, in: tabPeekPane(tab))
+        }
+        guard let document = peekDocument(id),
+              let session = TabPeekSession(tabID: id, plan: .present(documentKey(id))) else { return false }
+        let held = TabPeekPresentation(session: session, content: .document(document), parentTabID: parentID, parentPage: parentPage)
         held.entryFocus = PeekFocusReturn(source: pageHost)
         tabPeeks.current = held
         sidebarPreviews?.dismiss(); tabSwitcher?.cancel()
@@ -232,8 +351,8 @@ extension BrowserWindowController {
     }
 
     private func createTabPeekPage(_ held: TabPeekPresentation) -> Bool {
-        let id = held.tabID, browser = held.browser
-        guard browsers[id] == nil, let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
+        let id = held.tabID
+        guard let browser = held.browser, browsers[id] == nil, let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
               let url = URL(string: tab.url) else { return false }
         let pane = tabPeekPane(tab)
         browser.frame = pane.contentBounds
@@ -265,7 +384,7 @@ extension BrowserWindowController {
         guard tabPeeks.current === held, held.session.phase == .loading else { return }
         held.loadTimeout?.cancel(); held.loadTimeout = nil
         held.relay.onFailure = nil
-        guard let page = held.browser.nativePage, !page.isClosed,
+        guard let page = held.browser?.nativePage, !page.isClosed,
               TabPeekHold.resolve(tabPeekFacts(held, displayed: nil)) == .keep else {
             abandonTabPeek(held); return
         }
@@ -276,22 +395,30 @@ extension BrowserWindowController {
         held.loadTimeout?.cancel(); held.loadTimeout = nil
         held.relay.onPage = nil; held.relay.onFailure = nil
         _ = held.session.resolve(.putBack)
-        if held.browser.delegate === held.relay, browsers[held.tabID] === held.browser {
-            held.browser.delegate = self
+        if let browser = held.browser, browser.delegate === held.relay, browsers[held.tabID] === browser {
+            browser.delegate = self
         }
         if tabPeeks.current === held { tabPeeks.current = nil }
     }
 
     private func tabPeekFacts(_ held: TabPeekPresentation, displayed: [UUID]?) -> TabPeekHoldFacts {
         let id = held.tabID, parent = held.parentTabID, loading = held.session.phase == .loading
-        let page = held.browser.nativePage
-        let pageOpen = page.map { !$0.isClosed } ?? loading
         var facts = TabPeekHoldFacts()
-        facts.pageInCard = loading || (browsers[id] === held.browser && pageOpen
-            && held.controller.map { held.browser.isDescendant(of: $0.view) } == true)
-        facts.windowOpen = !isClosing && !wholeWindowClose && !windowClosePending && !windowCloseApproved
         let tab = store.state.tab(id, where: { $0.archivedAt == nil })
-        facts.tabUsable = browsers[id] === held.browser && pageOpen && tab?.profileID == activeProfileID
+        let contentUsable: Bool
+        switch held.content {
+        case .page(let browser):
+            let pageOpen = browser.nativePage.map { !$0.isClosed } ?? loading
+            facts.pageInCard = loading || (browsers[id] === browser && pageOpen
+                && held.controller.map { browser.isDescendant(of: $0.view) } == true)
+            contentUsable = browsers[id] === browser && pageOpen
+        case .document(let document):
+            let current = document.isSame(as: peekDocument(id))
+            facts.pageInCard = current && held.documentController?.holdsDocument == true
+            contentUsable = current && !modelRetirementIDs.contains(id) && !closingTabIDs.contains(id)
+        }
+        facts.windowOpen = !isClosing && !wholeWindowClose && !windowClosePending && !windowCloseApproved
+        facts.tabUsable = contentUsable && tab?.profileID == activeProfileID
             && (tab?.spaceID == activeSpaceID || tab?.kind == .favorite)
             && switcherCanUse(id) && !resolvingTransfers.contains(id) && nativeFullscreenTabID != id
         facts.tabDisplayed = (displayed ?? presentation.displayedTabIDs).contains(id)
@@ -317,6 +444,8 @@ extension BrowserWindowController {
                 if tabPeeks.current === current, let controller = current.controller {
                     placePeek(controller)
                     controller.view.adoptWindowTheme(rootView)
+                    current.document?.adopt(rootView.palette)
+                    _ = controller.refresh()
                 }
             case .promoting, .finished:
                 break
@@ -328,7 +457,7 @@ extension BrowserWindowController {
     private func reconcileQueuedTabPeek() {
         guard let queued = tabPeeks.queued else { return }
         guard currentTabID == queued.parentTabID else { tabPeeks.queued = nil; return }
-        let old = peeks.values.first { $0.identity == queued.replacing }
+        let old: PeekCard? = peeks.values.first { $0.identity == queued.replacing }
             ?? tabPeeks.current?.controller.flatMap { $0.identity == queued.replacing ? $0 : nil }
         if let old {
             if old.modalPhase == .presented { tabPeeks.queued = nil }
@@ -354,11 +483,23 @@ extension BrowserWindowController {
             case .createPage:
                 if !createTabPeekPage(held) { abandonTabPeek(held); return }
             case .presentPage(let id):
-                guard held.browser.nativePage?.identifier == id, presentTabPeekCard(held) else {
-                    abandonTabPeek(held); return
+                switch held.content {
+                case .page(let browser):
+                    guard browser.nativePage?.identifier == id, presentTabPeekCard(held) else {
+                        abandonTabPeek(held); return
+                    }
+                case .document:
+                    guard id == documentKey(held.tabID), presentDocumentPeekCard(held) else {
+                        abandonTabPeek(held); return
+                    }
                 }
             case .returnPage(let id):
-                if held.browser.nativePage?.identifier == id { _ = handTabPageBack(held) }
+                switch held.content {
+                case .page(let browser):
+                    if browser.nativePage?.identifier == id { _ = handTabPageBack(held) }
+                case .document:
+                    if id == documentKey(held.tabID) { _ = handDocumentBack(held) }
+                }
             case .exit:
                 playTabPeekExit(held)
             case .finish:
@@ -368,8 +509,8 @@ extension BrowserWindowController {
     }
 
     private func presentTabPeekCard(_ held: TabPeekPresentation) -> Bool {
-        let id = held.tabID, browser = held.browser
-        guard let binding = nativeBinding, let page = browser.nativePage, !page.isClosed,
+        let id = held.tabID
+        guard let binding = nativeBinding, let browser = held.browser, let page = browser.nativePage, !page.isClosed,
               let parentPage = held.parentPage, !parentPage.isClosed, browsers[id] === browser,
               let tab = store.state.tab(id, where: { $0.archivedAt == nil }) else { return false }
         let pane = tabPeekPane(tab)
@@ -395,13 +536,47 @@ extension BrowserWindowController {
         }
         attachedPageIDs.insert(page.identifier)
         held.controller = controller
-        wireTabPeek(controller, held, binding: binding)
+        wireTabPeek(controller, held)
         controller.setVisible(true)
+        revealTabPeekCard(controller, held) { !page.isClosed }
+        return true
+    }
+
+    private func presentDocumentPeekCard(_ held: TabPeekPresentation) -> Bool {
+        let id = held.tabID
+        guard let document = held.document, document.isSame(as: peekDocument(id)),
+              let parentPage = held.parentPage, !parentPage.isClosed,
+              let tab = store.state.tab(id, where: { $0.archivedAt == nil }) else { return false }
+        let pane = tabPeekPane(tab)
+        pane.clearNativeContent()
+        document.adopt(rootView.palette)
+        let controller = DocumentPeekController(document: document.view, parent: parentPage, parentTabID: held.parentTabID,
+            sourceSpaceID: activeSpaceID, title: { [weak self] in
+                guard let tab = self?.store.state.tab(id) else { return "" }
+                return tab.customTitle.flatMap { $0.isEmpty ? nil : $0 } ?? tab.title
+            }, focus: { document.focus() })
+        wirePeekPresentation(controller)
+        peekLayer.addSubview(controller.view, positioned: .above, relativeTo: nil)
+        placePeek(controller); controller.view.layoutSubtreeIfNeeded()
+        held.controller = controller
+        wireTabPeek(controller, held)
+        document.handleUnhandledEscape { [weak controller] in
+            guard let controller, controller.canHandleEscape else { return false }
+            controller.requestDismiss(.exit)
+            return true
+        }
+        controller.setVisible(true)
+        revealTabPeekCard(controller, held) { document.isSame(as: self.peekDocument(id)) }
+        windowKeyViews.relink()
+        return true
+    }
+
+    private func revealTabPeekCard(_ controller: PeekCard, _ held: TabPeekPresentation, contentLive: @escaping () -> Bool) {
         let entryFocus = held.entryFocus
         held.entryFocus = nil
         DispatchQueue.main.async { [weak self, weak controller, weak held] in
             guard let self, let controller, let held, self.tabPeeks.current === held,
-                  held.shownController === controller, !page.isClosed else { return }
+                  held.shownController === controller, contentLive() else { return }
             self.placePeek(controller); controller.view.layoutSubtreeIfNeeded()
             controller.view.animatePresentation()
             self.nativeBinding?.synchronizeSelectionAndLayout()
@@ -413,19 +588,43 @@ extension BrowserWindowController {
             }
         }
         updateNavigation(); refreshLivePageChromeOrRender()
-        return true
     }
 
-    private func wireTabPeek(_ controller: PeekController, _ held: TabPeekPresentation, binding: PCNativeBrowserWindow) {
-        let page = controller.page, heldID = held.tabID, parent = held.parentTabID
+    private func wireTabPeek(_ controller: PeekCard, _ held: TabPeekPresentation) {
+        let heldID = held.tabID, parent = held.parentTabID
+        let contentLive: () -> Bool
+        switch held.content {
+        case .page:
+            guard let pageController = controller as? PeekController, let binding = nativeBinding else { return }
+            let page = pageController.page
+            contentLive = { [weak self, weak pageController, weak binding] in
+                guard let self, let pageController, let binding else { return false }
+                return !page.isClosed && PCNativeBrowserApplication.owner(of: page) === binding
+                    && pageController.browser.window === self.window && binding.window === self.window
+            }
+            controller.onClose = { [weak self, weak held] in
+                guard let self, let held, page.isClosed else { return }
+                self.applyTabPeek(held.session.pageClosed(), held)
+            }
+            controller.onMediaChange = { [weak self] in self?.scheduleMediaRefresh() }
+            controller.onContextImage = { [weak self, weak pageController] image in
+                guard let self, let pageController else { return }
+                self.browserView(pageController.browser, addContextImageToEasel: image)
+            }
+        case .document(let document):
+            contentLive = { [weak self, weak controller] in
+                guard let self, let controller = controller as? DocumentPeekController else { return false }
+                return controller.holdsDocument && document.isSame(as: self.peekDocument(heldID))
+                    && controller.view.window === self.window
+            }
+        }
         controller.canInteract = { [weak self, weak controller, weak held] in
             guard let self, let controller, let held else { return false }
             return self.tabPeeks.current === held && held.shownController === controller
                 && self.activePeek === controller && !self.isClosing && !self.wholeWindowClose && !self.windowClosePending
                 && !self.closingTabIDs.contains(parent) && !self.closingTabIDs.contains(heldID)
                 && !self.transferringTabIDs.contains(parent) && !self.transferringTabIDs.contains(heldID)
-                && !page.isClosed && PCNativeBrowserApplication.owner(of: page) === binding
-                && controller.browser.window === self.window && binding.window === self.window
+                && contentLive()
         }
         controller.canExpand = { [weak self, weak controller] in
             guard let self, let controller, controller.canInteract?() == true else { return false }
@@ -439,10 +638,6 @@ extension BrowserWindowController {
             guard let self, let controller else { return nil }
             return self.tabPeekSplitRefusal(controller, tabID: heldID, parentID: parent)?.toolTip
         }
-        controller.onClose = { [weak self, weak held] in
-            guard let self, let held, page.isClosed else { return }
-            self.applyTabPeek(held.session.pageClosed(), held)
-        }
         controller.onReturn = { [weak self, weak held, weak controller] in
             guard let self, let held, let controller, held.session.phase == .shown else { return }
             let effects = held.session.returnRequested()
@@ -453,14 +648,9 @@ extension BrowserWindowController {
         }
         controller.onPromote = { [weak self] split in self?.promoteTabPeek(split: split) }
         controller.onUpdate = { [weak self] in self?.refreshLivePageChromeOrRender() }
-        controller.onMediaChange = { [weak self] in self?.scheduleMediaRefresh() }
-        controller.onContextImage = { [weak self, weak controller] image in
-            guard let self, let controller else { return }
-            self.browserView(controller.browser, addContextImageToEasel: image)
-        }
     }
 
-    private func tabPeekSplitRefusal(_ controller: PeekController, tabID: UUID, parentID: UUID) -> TabPeekSplitRefusal? {
+    private func tabPeekSplitRefusal(_ controller: PeekCard, tabID: UUID, parentID: UUID) -> TabPeekSplitRefusal? {
         var facts = TabPeekSplitFacts()
         facts.peekInteractive = controller.canInteract?() == true
         facts.tabUsable = switcherCanUse(tabID) && visibleTabs.contains { $0.id == tabID }
@@ -473,29 +663,38 @@ extension BrowserWindowController {
 
     func promoteTabPeek(split: Bool) {
         guard let held = tabPeeks.current, let controller = held.shownController,
-              controller.canRequestExit, controller.canExpand?() == true, !split || controller.canSplit?() == true,
-              let binding = nativeBinding else { return }
-        let page = controller.page, id = held.tabID
+              controller.canRequestExit, controller.canExpand?() == true, !split || controller.canSplit?() == true else { return }
+        let id = held.tabID
         let focusReturn = PeekFocusReturn(source: controller.view)
         let selected = split ? openTabInSplitView(id) : selectTab(id)
         guard selected, held.session.phase != .shown else { focusReturn?.cancel(); return }
-        if let window {
+        guard let window else { focusReturn?.cancel(); return }
+        let available = {
+            self.activePeek == nil && self.commandBar == nil
+                && !self.closingTabIDs.contains(id) && !self.modelRetirementIDs.contains(id)
+                && !self.store.retiringTabIDs.contains(id) && !self.transferringTabIDs.contains(id)
+                && !self.isClosing && !self.wholeWindowClose && !self.windowClosePending
+                && PCNativeBrowserApplication.canUseWindowUndo(in: window)
+        }
+        switch held.content {
+        case .page:
+            guard let page = (controller as? PeekController)?.page, let binding = nativeBinding else { focusReturn?.cancel(); return }
             focusReturn?.perform(in: window, ownerIsAvailable: {
-                self.nativeBinding === binding && self.currentBrowser?.nativePage === page
-                    && self.activePeek == nil && self.commandBar == nil
-                    && !self.closingTabIDs.contains(id) && !self.modelRetirementIDs.contains(id)
-                    && !self.store.retiringTabIDs.contains(id) && !self.transferringTabIDs.contains(id)
-                    && !self.isClosing && !self.wholeWindowClose && !self.windowClosePending
-                    && PCNativeBrowserApplication.canUseWindowUndo(in: window)
+                self.nativeBinding === binding && self.currentBrowser?.nativePage === page && available()
             }) { _ in _ = binding.requestFocus(for: page) }
+        case .document(let document):
+            focusReturn?.perform(in: window, ownerIsAvailable: {
+                self.currentTabID == id && document.isSame(as: self.peekDocument(id)) && available()
+            }) { _ in document.focus() }
         }
     }
 
     @discardableResult
     private func handTabPageBack(_ held: TabPeekPresentation) -> Bool {
-        let id = held.tabID, browser = held.browser
+        let id = held.tabID
+        guard let browser = held.browser else { return false }
         held.relay.peek = nil
-        held.controller?.handBackBrowser()
+        held.pageController?.handBackBrowser()
         guard browsers[id] === browser, let page = browser.nativePage, !page.isClosed else {
             if browser.delegate === held.relay { browser.delegate = browsers[id] === browser ? self : nil }
             return false
@@ -512,6 +711,24 @@ extension BrowserWindowController {
         if binding?.pageDidAttach(page, container: browser) == true { attachedPageIDs.insert(page.identifier) }
         else { attachedPageIDs.remove(page.identifier) }
         refreshPagePresentation(id)
+        return true
+    }
+
+    @discardableResult
+    private func handDocumentBack(_ held: TabPeekPresentation) -> Bool {
+        let id = held.tabID
+        guard let document = held.document else { return false }
+        document.handleUnhandledEscape(nil)
+        let card = held.documentController
+        guard document.isSame(as: peekDocument(id)), let pane = panes[id] ?? store.state.tab(id).map(tabPeekPane) else {
+            card?.releaseDocument()
+            return false
+        }
+        switch document {
+        case .note(let editor): pane.showNote(editor)
+        case .easel(let editor): pane.showNativeContent(editor.view)
+        }
+        windowKeyViews.relink()
         return true
     }
 
@@ -537,8 +754,9 @@ extension BrowserWindowController {
         held.loadTimeout?.cancel(); held.loadTimeout = nil
         held.exitTimer?.invalidate(); held.exitTimer = nil
         held.relay.peek = nil; held.relay.onPage = nil; held.relay.onFailure = nil
-        if held.browser.delegate === held.relay {
-            held.browser.delegate = browsers[held.tabID] === held.browser ? self : nil
+        held.document?.handleUnhandledEscape(nil)
+        if let browser = held.browser, browser.delegate === held.relay {
+            browser.delegate = browsers[held.tabID] === browser ? self : nil
         }
         held.controller?.finish()
         tabPeeks.leaving.removeAll { $0 === held }
@@ -581,7 +799,7 @@ extension BrowserWindowController {
     }
 
     func handleTabPeekSelection(_ page: PCNativePage, browser: PCNativeBrowserWindow) -> Bool {
-        guard let current = tabPeeks.current, current.browser.nativePage === page else { return false }
+        guard let current = tabPeeks.current, let held = current.browser, held.nativePage === page else { return false }
         if let controller = current.shownController, !page.isClosed {
             guard !applyingNativeSelection, !isClosing, !wholeWindowClose else { return true }
             if currentTabID != current.parentTabID {
@@ -597,7 +815,7 @@ extension BrowserWindowController {
     }
 
     func promoteTabPeekForFullscreen(_ page: PCNativePage) -> Bool {
-        guard let current = tabPeeks.current, let controller = current.shownController, controller.page === page,
+        guard let current = tabPeeks.current, let controller = current.shownController as? PeekController, controller.page === page,
               activePeek === controller else { return false }
         promoteTabPeek(split: false)
         return current.session.phase != .shown

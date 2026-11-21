@@ -524,6 +524,13 @@ package struct EaselStampLayer: Equatable {
     package var opacity: Double = 1
     package var filled = true
     package var outline: Double?
+    package init(path: EaselStampPath, tone: EaselStampTone, opacity: Double = 1, filled: Bool = true, outline: Double? = nil) {
+        self.path = path
+        self.tone = tone
+        self.opacity = opacity
+        self.filled = filled
+        self.outline = outline
+    }
 }
 
 package struct EaselStampColors: Equatable {
@@ -533,6 +540,14 @@ package struct EaselStampColors: Equatable {
     package var glyph = "#FFFFFF"
     package var detail = "#FFFFFF"
     package var accent = "#FFFFFF"
+    package init(base: String, shade: String, light: String = "#FFFFFF", glyph: String = "#FFFFFF", detail: String = "#FFFFFF", accent: String = "#FFFFFF") {
+        self.base = base
+        self.shade = shade
+        self.light = light
+        self.glyph = glyph
+        self.detail = detail
+        self.accent = accent
+    }
 }
 
 package enum EaselStampArt {
@@ -703,9 +718,15 @@ extension EaselVectorExport {
             return result + "</g>"
         case .emoji(let character):
             let size = min(f.width, f.height) * EaselStamps.emojiScale
+            if EaselStampFace.customName(in: character) != nil, let picture {
+                let geometry = "x=\"" + number(f.x + (f.width - size) / 2) + "\" y=\"" + number(f.y + (f.height - size) / 2) + "\" width=\""
+                    + number(size) + "\" height=\"" + number(size) + "\""
+                return "<image " + geometry + " preserveAspectRatio=\"xMidYMid meet\" href=\"" + picture.dataURI + "\"/>"
+            }
+            let shown = EaselStampFace.customName(in: character) == nil ? size : min(size, f.width * 0.9 / (Double(character.count) * 0.55))
             return "<text x=\"" + number(f.x + f.width / 2) + "\" y=\"" + number(f.y + f.height / 2)
                 + "\" text-anchor=\"middle\" dominant-baseline=\"central\" style=\"font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif;font-size:"
-                + number(size) + "px\">" + escape(character) + "</text>"
+                + number(shown) + "px\">" + escape(character) + "</text>"
         case .icon:
             guard let picture else { return "" }
             let id = "stamp-" + item.id.uuidString.lowercased()

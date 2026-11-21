@@ -25,7 +25,7 @@ package enum EaselSelectionExport {
     }
 
     package static func stickyCSV(_ stickies: [EaselItem]) -> String {
-        let rows = ["Content"] + stickies.map { stickyCSVField($0.text) }
+        let rows = ["Content"] + stickies.map { stickyCSVField(EaselRichText.readable($0.text, rich: $0.richText)) }
         return rows.joined(separator: "\r\n") + "\r\n"
     }
 

@@ -28,7 +28,7 @@ import AppKit
         return card
     }
     func button(_ card: SidebarPreviewCard, _ label: String) -> ActionButton? {
-        all(card, ActionButton.self).first { $0.toolTip == label }
+        all(card, ActionButton.self).first { $0.accessibilityLabel() == label }
     }
     func text(_ card: SidebarPreviewCard, _ value: String) -> NSTextField? {
         all(card, NSTextField.self).first { $0.stringValue == value }
@@ -41,7 +41,7 @@ import AppKit
              "artwork combines the 1× and 2× bitmaps with the vector")
 
     let plain = card(offers: nil)
-    c.expect(button(plain, "Open in Peek") == nil && all(plain, ActionButton.self).map(\.toolTip) == ["Open in Split View"],
+    c.expect(button(plain, "Open in Peek") == nil && all(plain, ActionButton.self).map { $0.accessibilityLabel() } == ["Open in Split View"],
              "without a Peek offer the header has only Split View")
     let declined = card(offers: { _ in false })
     c.expect(button(declined, "Open in Peek") == nil, "a declined offer shows no Open in Peek button")
@@ -64,6 +64,9 @@ import AppKit
              "Open in Peek sits directly left of Split View, on the Recents header's 26 pt pitch")
     c.expect(peek?.image === artwork && peek?.imagePosition == .imageOnly && peek?.title == "", "Open in Peek shows the artwork alone")
     c.expect(peek?.accessibilityLabel() == "Open in Peek", "VoiceOver reads Open in Peek")
+    c.expect(peek?.parcTooltip?.label == "Open in Peek" && peek?.parcTooltip?.anchor == .bottom && peek?.toolTip == nil
+             && split?.parcTooltip?.label == "Open in Split View" && split?.parcTooltip?.anchor == .bottom && split?.toolTip == nil,
+             "the Peek and Split View buttons use Parc's own tooltip, not the system one")
     c.expect(peek?.focusRingType == .exterior && peek?.focusRingCornerRadius == split?.focusRingCornerRadius
              && peek?.contentTintColor == split?.contentTintColor, "Open in Peek matches Split View's focus ring and tint")
     c.expect(peek?.showsHoverFill == true && split?.showsHoverFill == true, "both header buttons show the hover plate")
@@ -117,8 +120,47 @@ import AppKit
     let recents = SidebarPreviewCard(title: "Notion", domain: .notion, providerURL: URL(string: "https://www.notion.so")!)
     recents.offersPeek = { _ in true }
     recents.setRows([SidebarPreviewRow(id: "page", tabID: nil, title: "Plan", url: URL(string: "https://www.notion.so/Plan-1")!, visitedAt: nil)])
-    c.expect(Set(all(recents, ActionButton.self).compactMap(\.toolTip)) == ["New Page", "Previews Settings"]
+    c.expect(Set(all(recents, ActionButton.self).compactMap { $0.accessibilityLabel() }) == ["New Page", "Previews Settings"]
              && all(recents, ActionButton.self).allSatisfy { !$0.showsHoverFill }, "the Recents header is unchanged")
+    c.expect(Set(all(recents, ActionButton.self).compactMap { $0.parcTooltip?.label }) == ["New Page", "Previews Settings"]
+             && all(recents, ActionButton.self).allSatisfy { $0.toolTip == nil && $0.parcTooltip?.anchor == .bottom },
+             "the Recents header buttons use Parc's own tooltip")
+    let noteURL = URL(fileURLWithPath: "/tmp/Plan.md")
+    let kind = SidebarDocumentKind(url: noteURL)!
+    func documentCard(width: CGFloat = 288, offers: ((SidebarPreviewRow) -> Bool)?, available: Bool = true) -> SidebarPreviewCard {
+        let card = SidebarPreviewCard(title: "Plan", domain: nil, providerURL: nil, site: "Note", document: kind)
+        card.offersPeek = offers
+        card.setRows([row])
+        card.setDocument(.init(availability: available ? .available : .missing, snippet: "Hello"), picture: nil)
+        card.frame = NSRect(x: 0, y: 0, width: width, height: card.preferredHeight(width: width))
+        card.layoutSubtreeIfNeeded()
+        return card
+    }
+    var documentOffered = true
+    let documentPeek = documentCard(offers: { _ in documentOffered })
+    let documentLabels = all(documentPeek, ActionButton.self).compactMap { $0.accessibilityLabel() }
+    c.expect(documentLabels.sorted() == ["Open in Peek", "Open in Split View"], "a note card shows Open in Peek and Open in Split View, no Copy Link")
+    c.expect(button(documentPeek, "Open in Peek")?.frame == NSRect(x: 230, y: 16, width: 24, height: 24)
+             && button(documentPeek, "Open in Split View")?.frame == todaySplit, "a note card's buttons sit where a web card's do")
+    c.expect(text(documentPeek, "Plan")?.frame.maxX == 222, "a note card's title ends 8 pt before Open in Peek")
+    c.expect(all(documentPeek, ActionButton.self).allSatisfy { $0.toolTip == nil && $0.parcTooltip?.label == $0.accessibilityLabel() },
+             "a note card's buttons use Parc's own tooltip, not the system one")
+    var documentActions: [SidebarPreviewAction] = []
+    documentPeek.onAction = { _, action in documentActions.append(action) }
+    button(documentPeek, "Open in Peek")?.performClick(nil)
+    button(documentPeek, "Open in Split View")?.performClick(nil)
+    c.expect(documentActions == [.peek, .split], "a note card's buttons open a Peek and Split View")
+    documentOffered = false
+    documentPeek.refreshPeek(); documentPeek.layoutSubtreeIfNeeded()
+    c.expect(button(documentPeek, "Open in Peek") == nil && text(documentPeek, "Plan")?.frame.maxX == 248,
+             "a note card drops Open in Peek when the tab can't open in a Peek and the title takes the space")
+    documentOffered = true
+    documentPeek.refreshPeek(); documentPeek.layoutSubtreeIfNeeded()
+    c.expect(button(documentPeek, "Open in Peek") != nil, "a note card brings Open in Peek back when it is offered again")
+    let documentDeclined = documentCard(offers: nil)
+    c.expect(all(documentDeclined, ActionButton.self).map { $0.accessibilityLabel() } == ["Open in Split View"], "a note card without a Peek offer has only Split View")
+    let documentMissing = documentCard(offers: { _ in true }, available: false)
+    c.expect(all(documentMissing, ActionButton.self).isEmpty, "a missing note shows no buttons, Peek offered or not")
     let folder = SidebarPreviewCard(title: "Docs", domain: nil, providerURL: nil)
     folder.offersPeek = { _ in true }
     folder.setRows([row])

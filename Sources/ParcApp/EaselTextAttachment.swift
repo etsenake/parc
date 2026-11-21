@@ -66,7 +66,7 @@ enum EaselTextAttachments {
             guard values.isRegularFile == true, let size = values.fileSize, size <= 4_194_304 else { throw EaselStoreError.invalidImage }
             let handle = try FileHandle(forReadingFrom: url)
             defer { try? handle.close() }
-            guard let data = try handle.read(upToCount: 4_194_305), data.count <= 4_194_304 else { throw EaselStoreError.tooLarge }
+            guard let data = try handle.read(upToCount: 4_194_305), data.count <= 4_194_304 else { throw EaselStoreError.textPictureTooLarge }
             _ = try attachmentImage(data)
             return data
         }
@@ -97,7 +97,7 @@ enum EaselTextAttachments {
         let result = NSMutableAttributedString(attributedString: value)
         var failure: Error?
         value.enumerateAttribute(.attachment, in: NSRange(location: 0, length: value.length)) { object, range, stop in
-            guard let object else { return }
+            guard let object, !(object is EaselInlineAttachment) else { return }
             do {
                 guard let attachment = object as? NSTextAttachment, range.length == 1,
                       (value.string as NSString).substring(with: range) == "\u{FFFC}" else {
@@ -119,7 +119,7 @@ enum EaselTextAttachments {
     static func hasImages(_ value: NSAttributedString) -> Bool {
         var found = false
         value.enumerateAttribute(.attachment, in: NSRange(location: 0, length: value.length)) { object, _, stop in
-            if object != nil { found = true; stop.pointee = true }
+            if object != nil, !(object is EaselInlineAttachment) { found = true; stop.pointee = true }
         }
         return found
     }
@@ -133,7 +133,7 @@ enum EaselClipboardURL {
             EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType]) == nil,
               board.availableType(from: [.fileURL]) == nil,
               let raw = board.string(forType: .URL) ?? board.string(forType: .string) else { return nil }
-        guard raw.utf8.count <= 1_048_576 else { throw EaselStoreError.tooLarge }
+        guard raw.utf8.count <= 1_048_576 else { throw EaselStoreError.pasteTooLarge }
         guard raw.utf8.count <= 16_384, !raw.contains(where: { $0.isWhitespace }),
               let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
               url.host?.isEmpty == false, url.user == nil, url.password == nil else { return nil }

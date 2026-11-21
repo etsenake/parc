@@ -65,7 +65,9 @@ anywhere else, and they keep the Tab, arrow and command chords exactly as
 they were. The switcher's tooltip names them.
 
 Switching ends any text editing, clears the selection and leaves an entered
-group, then VoiceOver announces the page's name.
+group, then VoiceOver announces the page's name. The new page slides 24 points
+in from the direction of travel while the old one cross-fades away; boards with
+live pages and Reduce Motion fade only.
 
 ## One page at a time
 

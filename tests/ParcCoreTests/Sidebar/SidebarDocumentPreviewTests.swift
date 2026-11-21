@@ -51,10 +51,10 @@ struct SidebarDocumentPreviewTests {
         #expect(SidebarDocumentPreviewText.body(easel, content: .init(objectCount: 0)) == "No objects yet", "empty Easel body")
     }
 
-    @Test func previewButtonsFollowAvailabilityAndPeekAdmission() {
-        #expect(SidebarDocumentPreviewButtons.buttons(availability: .available, peekAdmitsDocuments: false) == [.copyLink, .split], "documents offer Copy Link and Split View")
-        #expect(SidebarDocumentPreviewButtons.buttons(availability: .available, peekAdmitsDocuments: true) == [.peek, .copyLink, .split], "Peek only when it admits documents")
-        #expect(SidebarDocumentPreviewButtons.buttons(availability: .missing, peekAdmitsDocuments: true).isEmpty, "a missing document offers nothing")
+    @Test func previewButtonsFollowAvailabilityAndPeekOffer() {
+        #expect(SidebarDocumentPreviewButtons.buttons(availability: .available, offersPeek: false) == [.split], "documents offer Split View alone when Peek isn't offered")
+        #expect(SidebarDocumentPreviewButtons.buttons(availability: .available, offersPeek: true) == [.peek, .split], "documents offer Peek then Split View when Peek is offered")
+        #expect(SidebarDocumentPreviewButtons.buttons(availability: .missing, offersPeek: true).isEmpty, "a missing document offers nothing")
     }
 
     @Test func theThumbnailCacheServesFreshHitsAndKeepsStaleOnesShowable() {

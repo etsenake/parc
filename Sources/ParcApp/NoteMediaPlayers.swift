@@ -159,7 +159,7 @@ final class NoteVideoContentView: NoteMediaContentView {
     private var posterRequested = false
     private var hovered = false
 
-    override init(host: NoteMediaBlockView) {
+    override init(host: NoteMediaHost) {
         super.init(host: host)
         poster.contentsGravity = .resizeAspectFill
         poster.masksToBounds = true
@@ -272,7 +272,7 @@ final class NoteVideoContentView: NoteMediaContentView {
     private func configureToolbar() {
         var chips: [NoteControlButton] = []
         if editable {
-            if host?.captionVisible != true { chips.append(captionChip) }
+            if host?.offersCaption == true { chips.append(captionChip) }
             chips.append(replaceChip)
         }
         chips.append(downloadChip)
@@ -297,7 +297,12 @@ final class NoteVideoContentView: NoteMediaContentView {
 
     override func readOnlyDidChange() { configureToolbar() }
 
-    private func play() {
+    var isPlaying: Bool { (playerView?.player?.rate ?? 0) > 0 }
+
+    func pause() { playerView?.player?.pause() }
+
+    func play() {
+        if let player = playerView?.player { player.play(); return }
         guard playerView == nil, let url = source.url else { return }
         let view = AVPlayerView(frame: videoRect)
         view.controlsStyle = .inline
@@ -318,7 +323,7 @@ final class NoteVideoContentView: NoteMediaContentView {
         player.play()
     }
 
-    private func stop() {
+    func stop() {
         playerView?.player?.pause()
         playerView?.player = nil
         playerView?.removeFromSuperview()
@@ -360,7 +365,7 @@ final class NoteAudioContentView: NoteMediaCardView {
     private var hovered = false
     private static let height: CGFloat = 62
 
-    override init(host: NoteMediaBlockView) {
+    override init(host: NoteMediaHost) {
         name = NoteMediaStyle.label("", font: NoteMediaStyle.nunito(14, weight: .bold), color: NoteTheme.ink)
         name.lineBreakMode = .byTruncatingMiddle
         time = NoteMediaStyle.label("0:00", font: NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium), color: NoteTheme.tertiaryInk)
@@ -396,7 +401,7 @@ final class NoteAudioContentView: NoteMediaCardView {
             teardown()
             position = 0
             duration = source.url.flatMap { NoteMediaAssets.cachedFacts($0)?.duration }
-            name.stringValue = source.fileName
+            name.stringValue = host?.mediaFileName ?? source.fileName
             if let url = source.url {
                 let expected = source
                 NoteMediaAssets.loadFacts(url) { [weak self] facts in
@@ -441,7 +446,7 @@ final class NoteAudioContentView: NoteMediaCardView {
     override func readOnlyDidChange() { setChipsVisible(hovered) }
 
     private func setChipsVisible(_ visible: Bool) {
-        captionChip.isHidden = !(visible && editable && host?.captionVisible != true)
+        captionChip.isHidden = !(visible && editable && host?.offersCaption == true)
         replaceChip.isHidden = !(visible && editable)
         downloadChip.isHidden = !visible
         deleteChip.isHidden = !(visible && editable)
@@ -567,6 +572,7 @@ final class NoteMediaScrubber: NSView {
         setAccessibilityLabel("Playback position")
         setAccessibilityMinValue(0)
         setAccessibilityMaxValue(1)
+        addCursorUpdateArea()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -592,7 +598,10 @@ final class NoteMediaScrubber: NSView {
         needsLayout = true
     }
 
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+    override func cursorUpdate(with event: NSEvent) {
+        if applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
+    }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 

@@ -5,10 +5,12 @@ import ParcCore
 final class EaselStampPanels: EaselStampPanelsPresenting {
     var onPick: ((EaselStampFace) -> Void)?
     var onPickerClose: (() -> Void)?
+    var emojiLibrary: NoteEmojiLibrary?
     private var wheel: NotePagePopover?
     private var picker: NotePagePopover?
+    private weak var wheelView: EaselStampWheel?
 
-    var isWheelOpen: Bool { wheel?.isOpen == true }
+    var isWheelOpen: Bool { wheel?.isOpen == true && wheelView?.isTucking != true }
     var isPickerOpen: Bool { picker?.isOpen == true }
 
     func close(animated: Bool) {
@@ -18,7 +20,8 @@ final class EaselStampPanels: EaselStampPanelsPresenting {
 
     func presentWheel(in host: NSView, at point: NSPoint, below control: NSRect?, recents: [EaselStampFace], current: EaselStampFace) {
         close(animated: false)
-        let view = EaselStampWheel(recents: recents, current: current)
+        let view = EaselStampWheel(recents: recents, current: current, library: emojiLibrary)
+        wheelView = view
         let popover = NotePagePopover(content: view)
         popover.panel.cornerRadius = EaselStampWheel.diameter / 2
         popover.panel.gap = 0
@@ -53,7 +56,7 @@ final class EaselStampPanels: EaselStampPanelsPresenting {
     func presentPicker(in host: NSView, at point: NSPoint) {
         let origin = wheel?.panel.frame
         close(animated: false)
-        let view = EaselStampPicker()
+        let view = EaselStampPicker(library: emojiLibrary)
         let popover = NotePagePopover(content: view)
         popover.onClose = { [weak self, weak popover] in
             guard let self, self.picker === popover else { return }
@@ -70,6 +73,12 @@ final class EaselStampPanels: EaselStampPanelsPresenting {
     }
 
     private func pick(_ face: EaselStampFace) {
+        if let popover = wheel, popover.isOpen, let view = wheelView,
+           view.tuckAway(picking: face, done: { [weak popover] in popover?.close(animated: true) }) {
+            picker?.close(animated: true)
+            onPick?(face)
+            return
+        }
         close(animated: true)
         onPick?(face)
     }
@@ -93,14 +102,20 @@ final class EaselStampWheel: NSView, NoteFloatingPanelContent {
     var onMore: (() -> Void)?
     let recents: [EaselStampFace]
     let current: EaselStampFace
-    private var highlighted: Slot? { didSet { if highlighted != oldValue { needsDisplay = true } } }
+    private let library: NoteEmojiLibrary?
+    private var highlighted: Slot? { didSet { if highlighted != oldValue { highlightMoved(from: oldValue); needsDisplay = true } } }
     private var pressed: Slot? { didSet { if pressed != oldValue { needsDisplay = true } } }
     private var tracking: NSTrackingArea?
     private var elements: [Slot: EaselStampWheelElement] = [:]
+    private var openedAt: CFTimeInterval?
+    private var growth: [Slot: (from: CGFloat, to: CGFloat, start: CFTimeInterval)] = [:]
+    private var flight: (slot: Slot, target: NSPoint, start: CFTimeInterval, done: () -> Void)?
+    private var driver: EaselCanvasFrameDriver?
 
-    init(recents: [EaselStampFace], current: EaselStampFace) {
+    init(recents: [EaselStampFace], current: EaselStampFace, library: NoteEmojiLibrary? = nil) {
         self.recents = recents
         self.current = current
+        self.library = library
         super.init(frame: NSRect(x: 0, y: 0, width: Self.diameter, height: Self.diameter))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -184,31 +199,137 @@ final class EaselStampWheel: NSView, NoteFloatingPanelContent {
         }
     }
 
+    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { driver?.stop(); driver = nil; openedAt = nil; growth.removeAll(); finishFlight(); return }
+        guard !reduceMotion else { return }
+        openedAt = CACurrentMediaTime()
+        startDriver()
+    }
+
+    private func startDriver() {
+        if driver == nil { driver = EaselCanvasFrameDriver { [weak self] in self?.frameTick() ?? false } }
+        driver?.start(in: self)
+    }
+
+    private func frameTick() -> Bool {
+        let now = CACurrentMediaTime()
+        if let opened = openedAt, now - opened >= EaselStampWheelMotion.duration(count: slots.count) { openedAt = nil }
+        for (slot, grow) in growth where now - grow.start >= 0.35 && grow.to == 1 { growth.removeValue(forKey: slot) }
+        if let flight, now - flight.start >= EaselStampWheelMotion.tuck { finishFlight() }
+        needsDisplay = true
+        return openedAt != nil || flight != nil || growth.contains { now - $0.value.start < 0.35 }
+    }
+
+    private func finishFlight() {
+        guard let done = flight?.done else { return }
+        flight = nil
+        done()
+    }
+
+    private func highlightMoved(from previous: Slot?) {
+        guard window != nil, !reduceMotion, flight == nil else { growth.removeAll(); return }
+        let now = CACurrentMediaTime()
+        if let previous { growth[previous] = (hoverScale(previous, at: now), 1, now) }
+        if let highlighted { growth[highlighted] = (hoverScale(highlighted, at: now), CGFloat(EaselStampWheelMotion.hoverScale), now) }
+        startDriver()
+    }
+
+    private func hoverScale(_ slot: Slot, at now: CFTimeInterval) -> CGFloat {
+        if let grow = growth[slot] {
+            return grow.from + (grow.to - grow.from) * CGFloat(EaselObjectSpring.highlight.progress(at: now - grow.start))
+        }
+        return slot == highlighted && !reduceMotion ? CGFloat(EaselStampWheelMotion.hoverScale) : 1
+    }
+
+    var isTucking: Bool { flight != nil }
+
+    func tuckAway(picking face: EaselStampFace, done: @escaping () -> Void) -> Bool {
+        guard window != nil, !reduceMotion, flight == nil, let slot = slots.first(where: { self.face(for: $0) == face }) else { return false }
+        var target = NSPoint(x: bounds.midX, y: bounds.midY)
+        if let window {
+            let pointer = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+            if bounds.contains(pointer) { target = pointer }
+        }
+        let limit = Self.diameter / 2 - Self.itemSide / 2
+        let dx = target.x - bounds.midX, dy = target.y - bounds.midY, distance = hypot(dx, dy)
+        if distance > limit { target = NSPoint(x: bounds.midX + dx / distance * limit, y: bounds.midY + dy / distance * limit) }
+        flight = (slot, target, CACurrentMediaTime(), done)
+        startDriver()
+        return true
+    }
+
+    private func presentation(for slot: Slot, at now: CFTimeInterval) -> (offset: CGPoint, scale: CGFloat, opacity: CGFloat) {
+        let box = rect(for: slot)
+        let reach = CGPoint(x: box.midX - bounds.midX, y: box.midY - bounds.midY)
+        var face = EaselStampWheelMotion.Face(reach: 1, scale: 1, opacity: 1)
+        if let opened = openedAt, let index = slots.firstIndex(of: slot) { face = EaselStampWheelMotion.fan(slot: index, elapsed: now - opened) }
+        let grow = hoverScale(slot, at: now)
+        if let flight {
+            let elapsed = now - flight.start
+            if flight.slot == slot {
+                let travel = EaselStampWheelMotion.flight(elapsed: elapsed)
+                let from = CGPoint(x: reach.x * CGFloat(face.reach), y: reach.y * CGFloat(face.reach))
+                let to = CGPoint(x: flight.target.x - bounds.midX, y: flight.target.y - bounds.midY)
+                let t = CGFloat(travel.travel)
+                return (CGPoint(x: from.x + (to.x - from.x) * t - reach.x, y: from.y + (to.y - from.y) * t - reach.y),
+                        CGFloat(travel.scale) * grow, CGFloat(travel.opacity))
+            }
+            face = EaselStampWheelMotion.tucked(face, elapsed: elapsed)
+        }
+        return (CGPoint(x: reach.x * (CGFloat(face.reach) - 1), y: reach.y * (CGFloat(face.reach) - 1)), CGFloat(face.scale) * grow, CGFloat(face.opacity))
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         let centre = NSPoint(x: bounds.midX, y: bounds.midY)
+        let now = CACurrentMediaTime()
         let hub = NSBezierPath(ovalIn: NSRect(x: centre.x - Self.hubRadius, y: centre.y - Self.hubRadius,
                                               width: Self.hubRadius * 2, height: Self.hubRadius * 2))
+        let hubFade = flight.map { 1 - CGFloat(EaselObjectTransition.easeInOut((now - $0.start) / EaselStampWheelMotion.tuck)) } ?? 1
+        let context = NSGraphicsContext.current?.cgContext
+        context?.saveGState()
+        context?.setAlpha(hubFade)
         NoteTheme.menuHighlight.setFill()
         hub.fill()
         NoteTheme.menuSeparator.setStroke()
         hub.lineWidth = 1
         hub.stroke()
+        context?.restoreGState()
+        var flown: Slot?
         for slot in slots {
-            let box = rect(for: slot)
-            let plate = NSBezierPath(ovalIn: box.insetBy(dx: -1, dy: -1))
-            if pressed == slot { NoteTheme.menuPressed.setFill(); plate.fill() }
-            else if highlighted == slot { NoteTheme.menuHighlight.setFill(); plate.fill() }
-            if let face = face(for: slot) {
-                if face == current {
-                    NoteTheme.accent.setStroke()
-                    plate.lineWidth = 1.5
-                    plate.stroke()
-                }
-                let inset: CGFloat = slot == .more ? 0 : (box.width > 30 ? 6 : 2)
-                EaselStampArtwork.draw(face, in: box.insetBy(dx: inset, dy: inset), ink: NoteTheme.menuInk)
-            } else {
-                EaselStampArtwork.draw(.icon("plus"), in: box.insetBy(dx: box.width * 0.24, dy: box.width * 0.24), ink: NoteTheme.menuSecondaryInk)
+            if flight?.slot == slot { flown = slot; continue }
+            drawSlot(slot, at: now, in: context)
+        }
+        if let flown { drawSlot(flown, at: now, in: context) }
+    }
+
+    private func drawSlot(_ slot: Slot, at now: CFTimeInterval, in context: CGContext?) {
+        let shown = presentation(for: slot, at: now)
+        guard shown.opacity > 0.001 else { return }
+        let box = rect(for: slot)
+        context?.saveGState()
+        defer { context?.restoreGState() }
+        if let context, shown.offset != .zero || shown.scale != 1 || shown.opacity < 1 {
+            context.translateBy(x: box.midX + shown.offset.x, y: box.midY + shown.offset.y)
+            context.scaleBy(x: shown.scale, y: shown.scale)
+            context.translateBy(x: -box.midX, y: -box.midY)
+            context.setAlpha(shown.opacity)
+        }
+        let plate = NSBezierPath(ovalIn: box.insetBy(dx: -1, dy: -1))
+        if pressed == slot { NoteTheme.menuPressed.setFill(); plate.fill() }
+        else if highlighted == slot { NoteTheme.menuHighlight.setFill(); plate.fill() }
+        if let face = face(for: slot) {
+            if face == current {
+                NoteTheme.accent.setStroke()
+                plate.lineWidth = 1.5
+                plate.stroke()
             }
+            let inset: CGFloat = slot == .more ? 0 : (box.width > 30 ? 6 : 2)
+            EaselStampArtwork.draw(face, in: box.insetBy(dx: inset, dy: inset), ink: NoteTheme.menuInk, library: library)
+        } else {
+            EaselStampArtwork.draw(.icon("plus"), in: box.insetBy(dx: box.width * 0.24, dy: box.width * 0.24), ink: NoteTheme.menuSecondaryInk)
         }
     }
 
@@ -295,11 +416,12 @@ final class EaselStampPicker: NSView, NoteFloatingPanelContent {
     private let emojiTab = NoteToolbarButton(.text("Emoji"), label: "Emoji")
     private let iconsTab = NoteToolbarButton(.text("Icons"), label: "Icons")
     private let separator = NSView()
-    private let emoji = NoteEmojiPicker(showsRandom: true)
+    private let emoji: NoteEmojiPicker
     private let field = NoteSearchField(placeholder: "Search icons…")
     private let list = NoteMenuList()
 
-    override init(frame frameRect: NSRect) {
+    init(library: NoteEmojiLibrary?) {
+        emoji = NoteEmojiPicker(showsRandom: true, library: library ?? EaselStampArtwork.customEmojiLibrary)
         super.init(frame: NSRect(x: 0, y: 0, width: NoteEmojiPicker.preferredSize.width,
                                  height: NoteEmojiPicker.preferredSize.height + Self.tabHeight))
         wantsLayer = true
@@ -339,8 +461,6 @@ final class EaselStampPicker: NSView, NoteFloatingPanelContent {
         select(.emoji)
         refreshAppearance()
     }
-
-    convenience init() { self.init(frame: .zero) }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 

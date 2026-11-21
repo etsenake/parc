@@ -70,7 +70,7 @@ enum EaselInk {
             guard isAdaptive(shown) else { return }
             result.addAttribute(.foregroundColor, value: shown, range: range)
         }
-        return result
+        return EaselTextHighlight.adapting(result)
     }
 }
 
@@ -154,6 +154,23 @@ enum EaselAppearance {
         layer?.shadowOpacity = dark ? 0.32 : 0.12
         layer?.shadowRadius = 7
         layer?.shadowOffset = CGSize(width: 0, height: -2)
+    }
+}
+
+@MainActor
+protocol EaselCoveredViewport: AnyObject {
+    func keepClearOfCover(_ rect: NSRect, from view: NSView) -> Bool
+}
+
+@MainActor
+enum EaselCaretReveal {
+    static func keepClear(_ rect: NSRect, of view: NSView) -> Bool {
+        var ancestor = view.superview
+        while let current = ancestor {
+            if let viewport = current as? EaselCoveredViewport { return viewport.keepClearOfCover(rect, from: view) }
+            ancestor = current.superview
+        }
+        return false
     }
 }
 

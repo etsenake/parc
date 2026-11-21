@@ -165,6 +165,14 @@ enum NoteTheme {
     static let todoDoneInk = adaptive("TodoDone", light: rgb(0x1F1B2E, 0.45), dark: rgb(0xEDEBFA, 0.45))
     static let todoBox = adaptive("TodoBox", light: rgb(0x1F1B2E, 0.55), dark: rgb(0xEDEBFA, 0.6))
     static let todoCheckFill = adaptive("TodoCheckFill", light: rgb(0x2702C2), dark: rgb(0x9380E0))
+    static func todoGlyph(checked: Bool, pointSize: CGFloat = todoBoxSize) -> NSImage? {
+        let name = checked ? "checkmark.circle.fill" : "circle"
+        let colors: [NSColor] = checked ? [.white, todoCheckFill] : [todoBox]
+        let resolved = colors.map { NSColor(cgColor: $0.cgColor) ?? $0 }
+        let configuration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(paletteColors: resolved))
+        return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+    }
     static let mentionInk = adaptive("MentionInk", light: rgb(0x1F1B2E, 0.82), dark: rgb(0xEDEBFA, 0.85))
     static let mentionUnderline = adaptive("MentionUnderline", light: rgb(0x1F1B2E, 0.22), dark: rgb(0xEDEBFA, 0.28))
     static let mediaPlaceholderFill = adaptive("MediaPlaceholder", light: rgb(0x1F1B2E, 0.045), dark: rgb(0xFFFFFF, 0.06))

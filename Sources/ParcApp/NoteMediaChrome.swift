@@ -182,7 +182,7 @@ enum NoteMediaMotion {
 @MainActor
 class NoteMediaControl: NSView {
     var onPress: (() -> Void)?
-    var isEnabled = true { didSet { if oldValue != isEnabled { refresh(); window?.invalidateCursorRects(for: self) } } }
+    var isEnabled = true { didSet { if oldValue != isEnabled { refresh(); refreshCursorIfPointerOwned() } } }
     private(set) var isHovered = false
     private(set) var isPressed = false
     private var tracking: NSTrackingArea?
@@ -192,6 +192,7 @@ class NoteMediaControl: NSView {
         wantsLayer = true
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
+        addCursorUpdateArea()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -206,8 +207,9 @@ class NoteMediaControl: NSView {
         tracking = area
     }
 
-    override func resetCursorRects() {
-        if isEnabled { addCursorRect(bounds, cursor: .pointingHand) }
+    override func cursorUpdate(with event: NSEvent) {
+        if isEnabled, applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }

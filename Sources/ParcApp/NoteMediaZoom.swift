@@ -23,6 +23,7 @@ final class NoteMediaZoomOverlay: NSView {
         self.source = source
         originRect = origin
         super.init(frame: .zero)
+        addCursorUpdateArea()
         wantsLayer = true
         layer?.masksToBounds = true
         backdrop.opacity = 0
@@ -53,9 +54,8 @@ final class NoteMediaZoomOverlay: NSView {
 
     @discardableResult
     static func present(image: NoteMediaImage, source: URL?, from rect: NSRect, of view: NSView,
-                        in canvas: NotePageCanvasView, onClose: (() -> Void)? = nil,
+                        in canvas: NSView, overlay host: NSView, onClose: (() -> Void)? = nil,
                         crop: NoteImageCrop? = nil, mask: NoteImageMask? = nil) -> NoteMediaZoomOverlay {
-        let host = canvas.overlayView
         let visible = canvas.visibleRect.isEmpty ? canvas.bounds : canvas.visibleRect
         let frame = host.convert(visible, from: canvas)
         let overlay = NoteMediaZoomOverlay(image: image, source: source, origin: .zero)
@@ -224,8 +224,9 @@ final class NoteMediaZoomOverlay: NSView {
         NoteMediaMotion.instant { backdrop.backgroundColor = NoteMediaStyle.cg(NoteMediaStyle.backdrop, in: self) }
     }
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
+    override func cursorUpdate(with event: NSEvent) {
+        if applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
     }
 
     override func mouseDown(with event: NSEvent) { close() }

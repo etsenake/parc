@@ -5,18 +5,26 @@ import ParcCore
 enum EaselParagraphEditing {
     enum Kind: String, CaseIterable {
         case text = "Text", heading1 = "Heading 1", heading2 = "Heading 2", heading3 = "Heading 3", heading4 = "Heading 4"
-        case bullets = "Bulleted List", numbers = "Numbered List", quote = "Quote"
+        case bullets = "Bulleted List", numbers = "Numbered List", checklist = "To-do List", quote = "Quote"
         var level: Int { switch self { case .heading1: 1; case .heading2: 2; case .heading3: 3; case .heading4: 4; default: 0 } }
         var marker: NSTextList.MarkerFormat? {
             switch self {
             case .bullets: .disc
             case .numbers: NSTextList.MarkerFormat(rawValue: "{decimal}.")
             case .quote: EaselParagraphEditing.quoteMarker
+            case .checklist: EaselParagraphEditing.openMarker
             default: nil
             }
         }
     }
     nonisolated static let quoteMarker = NSTextList.MarkerFormat(rawValue: "\u{258E}")
+    nonisolated static let openMarker = NSTextList.MarkerFormat(rawValue: EaselChecklist.openMarker)
+    nonisolated static let doneMarker = NSTextList.MarkerFormat(rawValue: EaselChecklist.doneMarker)
+    nonisolated static let dividerMarker = NSTextList.MarkerFormat(rawValue: EaselChecklist.dividerMarker)
+    static func checklistMarker(_ list: NSTextList) -> EaselChecklist.Marker? { EaselChecklist.marker(list.markerFormat.rawValue) }
+    static func isDivider(_ attrs: [NSAttributedString.Key: Any]) -> Bool {
+        style(attrs).textLists.last.flatMap(checklistMarker) == .divider
+    }
     static let headingSizes: [CGFloat] = [32, 26, 22, 19]
     static func isQuote(_ list: NSTextList) -> Bool { list.markerFormat == quoteMarker }
     struct Edit {
@@ -57,6 +65,7 @@ enum EaselParagraphEditing {
             if list.markerFormat == .disc { return .bullets }
             if isNumbered(list) { return .numbers }
             if isQuote(list) { return .quote }
+            if checklistMarker(list)?.isItem == true { return .checklist }
             return nil
         }
         switch paragraph.headerLevel {
@@ -80,7 +89,7 @@ enum EaselParagraphEditing {
         }
         let prefix = String(value[match]), marker = String(prefix.dropFirst().dropLast())
         let isMarker: Bool
-        if list.markerFormat == .disc || isQuote(list) {
+        if list.markerFormat == .disc || isQuote(list) || checklistMarker(list) != nil {
             isMarker = marker == list.marker(forItemNumber: 1)
         } else if isNumbered(list) {
             let digits = list.markerFormat == .decimal ? marker : String(marker.dropLast())
@@ -187,7 +196,7 @@ enum EaselParagraphEditing {
         let paragraphs = ranges(original.string, selection: selection)
         return !paragraphs.isEmpty && paragraphs.allSatisfy { range in
             let p = style(range.location < original.length ? original.attributes(at: range.location, effectiveRange: nil) : typing)
-            return !p.textLists.isEmpty && (outdent || p.textLists.count < 7)
+            return !p.textLists.isEmpty && (outdent || (p.textLists.count < 7 && p.textLists.last.flatMap(checklistMarker) != .divider))
         }
     }
     static func indent(_ original: NSAttributedString, selection: NSRange, typing: [NSAttributedString.Key: Any],
@@ -221,6 +230,9 @@ enum EaselParagraphEditing {
         let content = (original.string as NSString).substring(with: NSRange(location: NSMaxRange(prefix), length: NSMaxRange(range) - NSMaxRange(prefix)))
         if !p.textLists.isEmpty, content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return indent(original, selection: selection, typing: typing, outdent: true, base: base)
+        }
+        if let list = p.textLists.last, checklistMarker(list) == .done {
+            p.textLists = Array(p.textLists.dropLast()) + [NSTextList(markerFormat: openMarker, options: Int(list.listOptions.rawValue))]
         }
         var next = typing
         next[.paragraphStyle] = p

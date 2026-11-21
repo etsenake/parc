@@ -14,10 +14,12 @@ extension EaselDocumentExport {
         let used = layout.used, manager = layout.manager, storage = layout.storage
         let text = storage.string as NSString
         var runs: [EaselVectorTextRun] = []
+        let parts = EaselChecklistText.exportParts(manager: manager, storage: storage, offset: CGSize(width: -used.minX, height: -used.minY))
         manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: layout.container)) { rect, _, _, glyphs, _ in
             let characters = manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
-            storage.enumerateAttributes(in: characters) { attributes, range, _ in
-                var value = text.substring(with: range).replacingOccurrences(of: "\u{FFFC}", with: "")
+            storage.enumerateAttributes(in: characters) { attributes, whole, _ in
+                guard let range = EaselChecklistText.trimmed(whole, excluding: parts.exclusions) else { return }
+                var value = EaselInlineText.exportText(attributes, text.substring(with: range), images: false)
                 while let last = value.last, last.isNewline { value.removeLast() }
                 guard !value.isEmpty else { return }
                 let glyphRange = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
@@ -29,10 +31,11 @@ extension EaselDocumentExport {
                                              weight: cssWeight(font), italic: font.fontDescriptor.symbolicTraits.contains(.italic))
                 run.color = (attributes[.foregroundColor] as? NSColor).flatMap(hex)
                 run.strikethrough = (attributes[.strikethroughStyle] as? Int ?? 0) != 0
+                run.dimmed = parts.dimmed.contains { NSIntersectionRange($0, range).length > 0 }
                 runs.append(run)
             }
         }
-        art.connectorLabels[item.id] = EaselConnectorLabelArt(text: EaselVectorText(runs: runs),
+        art.connectorLabels[item.id] = EaselConnectorLabelArt(text: EaselVectorText(runs: runs, rules: parts.rules, checkboxes: parts.boxes),
                                                               width: Double(ceil(used.width)), height: Double(ceil(used.height)))
     }
 }

@@ -19,10 +19,9 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     private let settings = ActionButton("Previews Settings", symbol: "gearshape")
     private let split = ActionButton("Open in Split View", symbol: "rectangle.split.2x1")
     private let peek = ActionButton("Open in Peek")
-    private let copyLink = ActionButton("Copy Link", symbol: "link")
     private let fallback = NSTextField(wrappingLabelWithString: "")
     private let document: SidebarDocumentKind?
-    private var documentButtons: [SidebarDocumentButton] = []
+    private var documentAvailability: SidebarDocumentAvailability?
     private let site = NSTextField(labelWithString: "")
     private let picture = SidebarPreviewPicture()
     private let showsPicture: Bool
@@ -56,7 +55,7 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
             heading.stringValue = title
             self.site.stringValue = site
             self.site.font = .systemFont(ofSize: 11); self.site.textColor = secondary; self.site.lineBreakMode = .byTruncatingTail
-            for (button, label) in [(split, "Open in Split View"), (peek, "Open in Peek"), (copyLink, "Copy Link")] {
+            for (button, label) in [(split, "Open in Split View"), (peek, "Open in Peek")] {
                 Self.styleHeaderButton(button, label: label, tint: secondary)
                 button.showsHoverFill = true
             }
@@ -69,10 +68,6 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
                 guard let self, let row = self.rows.first else { return }
                 guard self.offersPeek?(row) == true else { self.refreshPeek(); return }
                 self.onAction?(row, .peek)
-            }
-            copyLink.actionBlock = { [weak self] in
-                guard let self, let row = self.rows.first else { return }
-                self.onAction?(row, .copyURL)
             }
             picture.image = image
             for view in [icon, heading, self.site, picture] as [NSView] { content.addSubview(view) }
@@ -139,7 +134,7 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     private static func styleHeaderButton(_ button: ActionButton, label: String, tint: NSColor) {
-        button.title = ""; button.imagePosition = .imageOnly; button.toolTip = label
+        button.title = ""; button.imagePosition = .imageOnly; LiveShortcutToolTip.set(button, label, anchor: .bottom)
         button.image = button.image?.withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
         button.setAccessibilityLabel(label); button.contentTintColor = tint
         button.focusRingCornerRadius = 5
@@ -170,9 +165,8 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
             let inset = SidebarPreviewMetrics.pictureInset, top = ((header - 31) / 2).rounded(.down)
             icon.frame = NSRect(x: 13, y: (header - 16) / 2, width: 16, height: 16)
             split.frame = NSRect(x: width - 32, y: (header - 24) / 2, width: 24, height: 24)
-            copyLink.frame = split.frame.offsetBy(dx: -26, dy: 0)
-            peek.frame = (copyLink.superview == nil ? split.frame : copyLink.frame).offsetBy(dx: -26, dy: 0)
-            let trailing = [peek, copyLink, split].first { $0.superview != nil }?.frame.minX ?? width - 8
+            peek.frame = split.frame.offsetBy(dx: -26, dy: 0)
+            let trailing = [peek, split].first { $0.superview != nil }?.frame.minX ?? width - 8
             let textX = icon.frame.maxX + 8, textWidth = max(0, trailing - textX - 8)
             heading.frame = NSRect(x: textX, y: top, width: textWidth, height: 17)
             site.frame = NSRect(x: textX, y: top + 17, width: textWidth, height: 14)
@@ -230,18 +224,17 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
         fallback.stringValue = SidebarDocumentPreviewText.body(document, content: value)
         picture.setAccessibilityLabel(heading.stringValue + ", " + fallback.stringValue)
         let missing = value.availability == .missing
-        documentButtons = SidebarDocumentPreviewButtons.buttons(availability: value.availability, peekAdmitsDocuments: false)
+        documentAvailability = value.availability
         if missing { picture.image = nil }
         else if let image { picture.image = image }
         fallback.isHidden = picture.image != nil
         picture.setAccessibilityElement(picture.image != nil)
-        for (button, kind) in [(copyLink, SidebarDocumentButton.copyLink), (split, .split)] {
-            let shown = documentButtons.contains(kind)
-            guard shown != (button.superview != nil) else { continue }
-            if shown { content.addSubview(button) }
+        let splitShown = SidebarDocumentPreviewButtons.buttons(availability: value.availability, offersPeek: false).contains(.split)
+        if splitShown != (split.superview != nil) {
+            if splitShown { content.addSubview(split) }
             else {
-                if window?.firstResponder === button { window?.makeFirstResponder(nil) }
-                button.removeFromSuperview()
+                if window?.firstResponder === split { window?.makeFirstResponder(nil) }
+                split.removeFromSuperview()
             }
         }
         refreshPeek()
@@ -268,7 +261,9 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     }
     func refreshPeek() {
         guard showsPicture, !isRetired else { return }
-        let offered = (document == nil || documentButtons.contains(.split)) && (rows.first.map { offersPeek?($0) == true } ?? false)
+        let rowOffers = rows.first.map { offersPeek?($0) == true } ?? false
+        let offered = document == nil ? rowOffers
+            : documentAvailability.map { SidebarDocumentPreviewButtons.buttons(availability: $0, offersPeek: rowOffers).contains(.peek) } ?? false
         guard offered != (peek.superview != nil) else { return }
         if offered {
             content.addSubview(peek)

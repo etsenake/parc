@@ -495,10 +495,12 @@ class NoteControlButton: PointingHandButton {
     override func mouseEntered(with event: NSEvent) {
         guard event.trackingArea === hoverArea else { super.mouseEntered(with: event); return }
         setHovered(isEnabled && NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+        if showsPointingHand { applyNoteCursor(.pointingHand, for: event) }
     }
 
     override func mouseMoved(with event: NSEvent) {
         setHovered(isEnabled && NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+        if showsPointingHand { applyNoteCursor(.pointingHand, for: event) }
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -740,7 +742,7 @@ final class NoteChip: NoteControlButton {
 
 @MainActor
 final class NoteSearchField: NSView {
-    let textField = NSTextField()
+    let textField = NoteInputField()
     var onChange: ((String) -> Void)?
     var onCommand: ((Selector) -> Bool)?
     var onSubmit: ((String) -> Void)?
@@ -785,6 +787,7 @@ final class NoteSearchField: NSView {
         addSubview(icon)
         addSubview(textField)
         addSubview(clear)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.cursorUpdate, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self))
         setAccessibilityElement(false)
         textField.setAccessibilityLabel(placeholder)
         refreshPlaceholder()
@@ -823,7 +826,18 @@ final class NoteSearchField: NSView {
 
     override func mouseDown(with event: NSEvent) { focus() }
 
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .iBeam) }
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(pointerCursor(for: event), for: event) { super.cursorUpdate(with: event) }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        applyNoteCursor(pointerCursor(for: event), for: event)
+    }
+
+    private func pointerCursor(for event: NSEvent) -> NSCursor? {
+        guard clear.isHidden || !clear.frame.contains(convert(event.locationInWindow, from: nil)) else { return nil }
+        return .iBeam
+    }
 
     private func refreshFill() {
         NoteAnimation.withoutAnimation { layer?.backgroundColor = NoteTheme.resolved(NoteTheme.fieldFill, in: self) }

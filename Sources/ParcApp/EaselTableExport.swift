@@ -14,6 +14,7 @@ extension EaselDocumentExport {
             let layout = EaselTextLayout.Layout(attributed, width: box.width)
             let offset = CGPoint(x: box.x - item.frame.x, y: box.y - item.frame.y + Double(EaselTableMetrics.cellPadding))
             result.runs += vectorRuns(layout, style: item.resolvedTextStyle, offset: offset)
+            result.images += EaselInlineText.exportImages(layout, offset: offset)
         }
         return result
     }
@@ -25,7 +26,7 @@ extension EaselDocumentExport {
         manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { rect, _, _, glyphs, _ in
             let characters = manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
             storage.enumerateAttributes(in: characters) { attributes, range, _ in
-                var value = text.substring(with: range).replacingOccurrences(of: "\u{FFFC}", with: "")
+                var value = EaselInlineText.exportText(attributes, text.substring(with: range), images: true)
                 while let last = value.last, last.isNewline { value.removeLast() }
                 guard !value.isEmpty else { return }
                 let glyphRange = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)

@@ -93,7 +93,7 @@ extension EaselCanvasView {
         let selected = document.items.filter { ids.contains($0.id) }
         let allLocked = !selected.isEmpty && selected.allSatisfy(\.isLocked)
         let sections = selectedSections
-        var entries: [EaselToolbarMenuEntry] = []
+        var entries: [EaselToolbarMenuEntry] = equationToolbarEntries(selected, ready: ready)
         if !sections.isEmpty, !allLocked {
             let hidden = sections.allSatisfy { $0.contentsHidden == true }
             entries.append(EaselToolbarMenuEntry(id: "section.lockAll", title: "Lock All", symbol: "lock", isEnabled: ready))
@@ -118,6 +118,7 @@ extension EaselCanvasView {
             entries.append(EaselToolbarMenuEntry(id: "rotate.left", title: "Rotate 90° Left", symbol: "rotate.left", isEnabled: turns))
             entries.append(EaselToolbarMenuEntry(id: "rotate.right", title: "Rotate 90° Right", symbol: "rotate.right", isEnabled: turns))
         }
+        entries += mediaToolbarEntries(ready: ready && !allLocked)
         entries.append(EaselToolbarMenuEntry(id: "duplicate", title: "Duplicate", symbol: "plus.square.on.square", shortcut: "⌘D",
                                              isEnabled: ready, separatorBefore: true))
         entries.append(EaselToolbarMenuEntry(id: "copy-image", title: "Copy as Image", symbol: "photo.on.rectangle", isEnabled: ready))
@@ -148,6 +149,7 @@ extension EaselCanvasView {
         case .crop: return beginImageCrop()
         case .replaceImage:
             guard canEditSelectedImage else { return false }
+            if let item = selectedImage, performHostedAction(.replace, on: item.id) { return true }
             chooseReplacementImage()
             return true
         case .altText:
@@ -187,7 +189,9 @@ extension EaselCanvasView {
     }
 
     private func performSelectionToolbarMore(_ id: String) -> Bool {
+        if let equation = performEquationToolbar(id) { return equation }
         if id.hasPrefix("layer."), let move = EaselLayerMove(rawValue: String(id.dropFirst("layer.".count))) { return moveLayer(move) }
+        if let handled = performMediaToolbarEntry(id) { return handled }
         switch id {
         case "duplicate": return duplicateSelection()
         case "copy-image": return copySelectionAsImage()

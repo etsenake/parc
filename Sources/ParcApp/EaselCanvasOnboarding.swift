@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 @MainActor
 final class EaselCanvasOnboardingState {
@@ -89,6 +90,10 @@ extension EaselCanvasView {
             let visible = visibleRect.isEmpty ? bounds : visibleRect
             let width = max(180, min(EaselCanvasEmptyStateView.maximumWidth, visible.width - 80))
             let origin = EaselCanvasEmptyStateView.origin
+            let scale = max(CGFloat(magnification), 0.01)
+            let viewport = enclosingScrollView?.contentSize.height ?? visible.height * scale
+            let covered = CGFloat(EaselFloatingBar.cover(Double(toolState.coveredBottom), viewportHeight: Double(viewport)))
+            view.availableHeight = max(0, (viewport - covered) / scale - origin.y)
             let next = NSRect(x: origin.x, y: origin.y, width: EaselCanvasEmptyStateView.frameWidth(content: width), height: view.fittedHeight(width: width))
             if view.frame != next { view.frame = next }
             if !view.isPresented { keyboardStructureChanged() }
@@ -126,7 +131,9 @@ extension EaselCanvasView {
         let hint = EaselQuickCreateHintView(frame: .zero)
         let size = hint.preferredSize
         let area = scroll.frame
-        let y = container.isFlipped ? area.maxY - size.height - 20 : area.minY + 20
+        let covered = toolState.coveredBottom
+        let lift = covered > 0 ? covered - CGFloat(EaselFloatingBar.clearance) + CGFloat(EaselFloatingBar.chipGap) : 20
+        let y = container.isFlipped ? area.maxY - size.height - lift : area.minY + lift
         hint.frame = NSRect(x: (area.midX - size.width / 2).rounded(), y: y.rounded(), width: size.width, height: size.height)
         hint.autoresizingMask = container.isFlipped ? [.minXMargin, .maxXMargin, .minYMargin] : [.minXMargin, .maxXMargin, .maxYMargin]
         container.addSubview(hint, positioned: .above, relativeTo: scroll)
