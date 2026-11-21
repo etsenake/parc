@@ -12,16 +12,14 @@ private final class Flipped: NSView { override var isFlipped: Bool { true } }
     let grabber = WebpageWindowGrabber()
     let owner = NSObject()
     var eligible = true, current = true
-    var currentProbes = 0, eligibilityProbes = 0
+    var currentProbes = 0, eligibilityProbes = 0, cursorReads = 0
     var drags: [NSEvent] = []
     var duringDrag: (() -> Void)?
-    var event: NSEvent? { didSet { WebpageWindowDragOverrides.currentEvent = event } }
-    var arrow = true { didSet { WebpageWindowDragOverrides.cursor = arrow ? .arrow : .iBeam } }
+    var event: NSEvent?
+    var arrow = true
 
     init() {
         _ = NSApplication.shared
-        WebpageWindowDragOverrides.install()
-        WebpageWindowDragOverrides.reset()
         window = NSWindow(contentRect: rect, styleMask: [], backing: .buffered, defer: false)
         otherWindow = NSWindow(contentRect: rect, styleMask: [], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -30,10 +28,15 @@ private final class Flipped: NSView { override var isFlipped: Bool { true } }
         window.contentView = root
         page = NSView(frame: rect)
         root.addSubview(page)
-        WebpageWindowDragOverrides.cursor = .arrow
         root.addSubview(grabber)
         grabber.frame = WebpageWindowDragState.region(in: rect, topStripHeight: 0)
-        WebpageWindowDragOverrides.windowDrag = { [weak self] target, event in
+        grabber.currentEvent = { [weak self] in self?.event }
+        grabber.currentCursor = { [weak self] in
+            guard let self else { return .arrow }
+            cursorReads += 1
+            return arrow ? .arrow : .iBeam
+        }
+        grabber.performDrag = { [weak self] target, event in
             guard let self else { return }
             #expect(target === window)
             drags.append(event)
@@ -44,7 +47,6 @@ private final class Flipped: NSView { override var isFlipped: Bool { true } }
 
     deinit {
         MainActor.assumeIsolated {
-            WebpageWindowDragOverrides.reset()
             window.contentView = nil
         }
     }
@@ -71,15 +73,15 @@ private final class Flipped: NSView { override var isFlipped: Bool { true } }
     }
 
     func resetProbes() {
-        WebpageWindowDragOverrides.cursorReads = 0
+        cursorReads = 0
         currentProbes = 0
         eligibilityProbes = 0
     }
 
-    var probed: Bool { WebpageWindowDragOverrides.cursorReads + currentProbes + eligibilityProbes > 0 }
+    var probed: Bool { cursorReads + currentProbes + eligibilityProbes > 0 }
 }
 
-@Suite(.serialized) struct WebpageWindowGrabberTests {
+struct WebpageWindowGrabberTests {
     @MainActor @Test func anOriginalDownPassesIntoThePage() {
         let s = DragScene()
         #expect(s.hit(.leftMouseDown) === s.page)
@@ -252,11 +254,11 @@ private final class Flipped: NSView { override var isFlipped: Bool { true } }
     @MainActor @Test func anArmedDragStillProbesEligibilityBeforeCommit() {
         let s = DragScene()
         s.hit(.leftMouseDown)
-        let reads = WebpageWindowDragOverrides.cursorReads, current = s.currentProbes, eligibility = s.eligibilityProbes
+        let reads = s.cursorReads, current = s.currentProbes, eligibility = s.eligibilityProbes
         s.eligible = false
         #expect(s.hit(.leftMouseDragged) === s.page)
         #expect(s.grabber.drag.phase == .inactive)
-        #expect(WebpageWindowDragOverrides.cursorReads > reads)
+        #expect(s.cursorReads > reads)
         #expect(s.currentProbes > current)
         #expect(s.eligibilityProbes > eligibility)
     }
