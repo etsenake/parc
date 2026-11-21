@@ -76,7 +76,7 @@ Git retains the original approved input artwork.
 
 - `scripts/test-brand-marks.sh`: resource loading, matching alpha, missing-mark
   behavior and light/dark template drawing.
-- `scripts/test-portrait-capture.sh`: the real portrait compositor and resources.
+- The Portrait Swift Testing suites exercise the compositor and its resources.
 - `python3 -m unittest discover -s tests/BrandMarks -v`: approved-master RGB and
   protected-pixel fingerprints, alpha cleanup, contours and interior colors.
 - `python3 tests/WebUIBranding/check.py`: the engine's vector against

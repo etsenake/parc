@@ -60,6 +60,6 @@ the capture owner, as do current output bytes and the approved Parc mark.
 Portrait composition, destination ordering, editing and motion have separate
 focused guides.
 
-`scripts/test-capture-presentation.sh` covers backing-scale anchoring, side and
+`CapturePresentationTests` covers backing-scale anchoring, side and
 bottom placement, pixel-crop clipping, compact/tall layouts, appearance states
 and cursor resources.

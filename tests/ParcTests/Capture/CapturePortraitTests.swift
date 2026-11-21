@@ -584,8 +584,8 @@ struct PortraitCaptureViewTests {
 
     @MainActor @Test func aDeniedWallpaperExplainsScreenRecordingAndKeepsApplyDisabled() async throws {
         let page = try PortraitViewFixture(background: .desktop, desktop: false)
-        page.view.loadDesktop(screen: nil, provider: { _ in throw PortraitDesktopSnapshot.Failure.permission })
-        await Task.yield()
+        let load = try #require(page.view.loadDesktop(screen: nil, provider: { _ in throw PortraitDesktopSnapshot.Failure.permission }))
+        await load.value
         let messages = page.view.subviews.compactMap { $0 as? NSTextField }.map(\.stringValue)
         #expect(!page.view.captureButton.isEnabled && messages.contains { $0.contains("Screen Recording") })
     }

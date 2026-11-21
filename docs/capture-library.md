@@ -47,7 +47,7 @@ actual output results. Shared motion/focus lives in [capture motion](capture-mot
 context payloads and Messages/AirDrop actions live in
 [capture editing](capture-editing.md).
 
-`tests/CaptureLibraryTests.swift` covers real disposable PNG persistence, shared
+The capture Library Swift Testing suites cover real disposable PNG persistence, shared
 ownership, revision replacement, stale/wrong-Profile refusal, exact-byte exports,
 asset deletion and corrupt-data preservation.
 

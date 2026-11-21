@@ -132,13 +132,17 @@ struct CaptureEaselPlacementTests {
     }
 
     @MainActor @Test func realUndoRemovesTheImage() throws {
-        let session = try DestinationFixture().placed().session
+        let fixture = try DestinationFixture()
+        defer { withExtendedLifetime(fixture) {} }
+        let session = try fixture.placed().session
         try session.undo()
         #expect(session.document.items.isEmpty)
     }
 
     @MainActor @Test func realRedoRestoresTheImage() throws {
-        let session = try DestinationFixture().placed().session
+        let fixture = try DestinationFixture()
+        defer { withExtendedLifetime(fixture) {} }
+        let session = try fixture.placed().session
         try session.undo()
         try session.redo()
         #expect(session.document.items.count == 1)
@@ -215,27 +219,35 @@ struct CaptureEaselPlacementTests {
     }
 
     @MainActor @Test func liveAdmissionRetainsTheSourceAndImmutableImage() throws {
-        let (session, card, _) = try DestinationFixture().card()
+        let fixture = try DestinationFixture()
+        defer { withExtendedLifetime(fixture) {} }
+        let (session, card, _) = try fixture.card()
         try session.perform("Make live") { $0.items[$0.items.count - 1].liveCapture = true }
         let live = try #require(session.document.items.last)
         #expect(live.ownsEmbeddedPage && live.assetID == card.assetID && live.captureLayout == DestinationFixture.layout && live.url == card.url)
     }
 
     @MainActor @Test func undoingLiveModeRestoresTheCapturedImageRecord() throws {
-        let (session, card, _) = try DestinationFixture().card()
+        let fixture = try DestinationFixture()
+        defer { withExtendedLifetime(fixture) {} }
+        let (session, card, _) = try fixture.card()
         try session.perform("Make live") { $0.items[$0.items.count - 1].liveCapture = true }
         try session.undo()
         #expect(session.document.items.last == card)
     }
 
     @MainActor @Test func aSnapshotUndoPreservesTheOrdinaryImageImport() throws {
-        let (session, card, _) = try DestinationFixture().card()
+        let fixture = try DestinationFixture()
+        defer { withExtendedLifetime(fixture) {} }
+        let (session, card, _) = try fixture.card()
         try session.undo()
         #expect(!session.document.items.contains { $0.id == card.id } && session.document.items.first?.kind == .image)
     }
 
     @MainActor @Test func redoRestoresTheExactCapturedCard() throws {
-        let (session, card, _) = try DestinationFixture().card()
+        let fixture = try DestinationFixture()
+        defer { withExtendedLifetime(fixture) {} }
+        let (session, card, _) = try fixture.card()
         try session.undo()
         try session.redo()
         #expect(session.document.items.last == card)

@@ -48,42 +48,51 @@ struct CapturePresentationTests {
         #expect(crop == nil)
     }
 
-    @Test(arguments: [160.0, 320, 480, 600, 1000], [200.0, 400, 800],
-          [NSSize(width: 400, height: 200), NSSize(width: 300, height: 9000)])
-    func theImageAndPaletteStayInsideThePane(_ width: Double, _ height: Double, _ pixels: NSSize) {
-        let area = NSRect(x: 0, y: 0, width: width, height: height)
+    @Test(arguments: LayoutSample.all)
+    func theImageAndPaletteStayInsideThePane(_ sample: LayoutSample) {
+        let (area, pixels) = (sample.area, sample.pixels)
         let result = Self.layout(source: area, in: area, pixels: pixels, paletteHeight: 450)
         #expect(area.contains(result.image) && area.contains(result.palette))
     }
 
-    @Test(arguments: [160.0, 320, 480, 600, 1000], [200.0, 400, 800],
-          [NSSize(width: 400, height: 200), NSSize(width: 300, height: 9000)])
-    func theImageKeepsItsAspectRatio(_ width: Double, _ height: Double, _ pixels: NSSize) {
-        let area = NSRect(x: 0, y: 0, width: width, height: height)
+    @Test(arguments: LayoutSample.all)
+    func theImageKeepsItsAspectRatio(_ sample: LayoutSample) {
+        let (area, pixels) = (sample.area, sample.pixels)
         let image = Self.layout(source: area, in: area, pixels: pixels, paletteHeight: 450).image
         #expect(image.width > 0 && image.height > 0 && abs(image.width / image.height - pixels.width / pixels.height) < 0.0001)
     }
 
-    @Test(arguments: [160.0, 320, 480], [200.0, 400, 800],
-          [NSSize(width: 400, height: 200), NSSize(width: 300, height: 9000)])
-    func compactPanesKeepThePreviewClearOfThePalette(_ width: Double, _ height: Double, _ pixels: NSSize) {
-        let area = NSRect(x: 0, y: 0, width: width, height: height)
+    @Test(arguments: LayoutSample.all.filter { $0.area.width < 576 })
+    func compactPanesKeepThePreviewClearOfThePalette(_ sample: LayoutSample) {
+        let (area, pixels) = (sample.area, sample.pixels)
         let result = Self.layout(source: area, in: area, pixels: pixels, paletteHeight: 450)
         #expect(!result.image.intersects(result.palette))
     }
 
-    @Test(arguments: [160.0, 320, 480, 600, 1000], [200.0, 400, 800],
-          [NSSize(width: 400, height: 200), NSSize(width: 300, height: 9000)])
-    func editingKeepsTheImageInsideThePane(_ width: Double, _ height: Double, _ pixels: NSSize) {
-        let area = NSRect(x: 0, y: 0, width: width, height: height)
+    @Test(arguments: LayoutSample.all)
+    func editingKeepsTheImageInsideThePane(_ sample: LayoutSample) {
+        let (area, pixels) = (sample.area, sample.pixels)
         #expect(area.contains(Self.layout(source: area, in: area, pixels: pixels, paletteHeight: 450, editing: true).image))
+    }
+
+    struct LayoutSample: Sendable {
+        let area: NSRect
+        let pixels: NSSize
+
+        static let all = [160.0, 320, 480, 600, 1000].flatMap { width in
+            [200.0, 400, 800].flatMap { height in
+                [NSSize(width: 400, height: 200), NSSize(width: 300, height: 9000)].map { pixels in
+                    LayoutSample(area: NSRect(x: 0, y: 0, width: width, height: height), pixels: pixels)
+                }
+            }
+        }
     }
 
     private static let narrow = NSRect(x: 0, y: 0, width: 400, height: 500)
 
     @Test func aNarrowPaneCapsThePaletteHeight() {
         let capped = Self.layout(source: nil, in: Self.narrow, pixels: NSSize(width: 800, height: 600), paletteHeight: 400)
-        #expect(capped.palette.height < 400)
+        #expect(capped.palette.height < 300)
     }
 
     @Test func aNarrowPaneCanShowTheWholeFramePage() {
@@ -113,6 +122,6 @@ struct CapturePresentationTests {
 
     @MainActor @Test func theCursorArtworkCarriesRetinaRenditions() throws {
         let cursor = try #require(CaptureArtwork.image("camera-cross-cursor", in: Bundle.module.url(forResource: "CaptureArtwork", withExtension: nil)))
-        #expect(cursor.representations.contains { $0 is NSBitmapImageRep } && !cursor.isTemplate)
+        #expect(cursor.representations.compactMap { ($0 as? NSBitmapImageRep)?.pixelsHigh }.sorted() == [50, 100] && !cursor.isTemplate)
     }
 }

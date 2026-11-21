@@ -73,7 +73,7 @@ name. The importer commits exact PNG bytes and metadata to the selected UUID.
 
 `tests/ParcCoreTests/Capture` runs the palette model under `swift test`: structure, submenus,
 search, private availability, highlight retention, keys and the frame Apply
-state. `CaptureDestinationTests` exercises the real payload builder, importer,
-persistent Easel store and Undo session with generated PNGs and a disposable
-directory: activity ordering, profile isolation, source payloads, output
-failure and preservation of existing documents.
+state, activity ordering and profile isolation. `CaptureMessagePayloadTests`
+and `CaptureEaselPlacementTests` exercise the payload builder, importer,
+persistent Easel store and Undo session with generated PNGs. They cover source
+payloads, output failure and preservation of existing documents.

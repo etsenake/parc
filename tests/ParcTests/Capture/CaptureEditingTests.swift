@@ -23,7 +23,7 @@ private struct CaptureEditingFixture {
         sourceImage = pattern.makeImage()!
         png = NSBitmapImageRep(cgImage: sourceImage).representation(using: .png, properties: [:])!
         source = EaselItem(kind: .image, frame: .init(x: 0, y: 0, width: 20, height: 10), assetID: id)
-        let date = Date()
+        let date = Date(timeIntervalSince1970: 1_600_000_000)
         original = EaselDocument(id: UUID(), title: "Capture", createdAt: date, modifiedAt: date, items: [source])
         draft = try EaselSession(inMemory: original, assets: [id: png])
         canvas = EaselCanvasView(session: draft)

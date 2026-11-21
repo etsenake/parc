@@ -100,6 +100,9 @@ let package = Package(
         .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles"], path: "tests/ParcTests",
                     resources: [
                         .copy("Capture/ThemeEditor"),
+                        .copy("Capture/CaptureArtwork"),
+                        .copy("Capture/SadTab"),
+                        .copy("Capture/PageFailure"),
                     ],
                     swiftSettings: strict + engineImport),
     ],

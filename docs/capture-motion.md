@@ -77,8 +77,7 @@ capability checks and guarded success/cancel/failure callbacks.
 
 ## Checks
 
-`scripts/test-capture-motion.sh` covers latest-target replacement, interruption,
-Reduce Motion, once-only focus return, shared field-editor replacement, enabled
-key loops, marked text, busy rows and owner retirement using inert doubles.
-`scripts/test-portrait-capture.sh` covers the actual compositor and reversible
-image state.
+The capture motion suites exercise latest-target replacement, interruption,
+Reduce Motion, once-only focus return, shared field-editor replacement, key
+loops, marked text, busy rows and preview retirement. The Portrait suites
+exercise the compositor and reversible image state.
