@@ -412,7 +412,7 @@ final class EaselStampPicker: NSView, NoteFloatingPanelContent {
     private let emojiTab = NoteToolbarButton(.text("Emoji"), label: "Emoji")
     private let iconsTab = NoteToolbarButton(.text("Icons"), label: "Icons")
     private let separator = NSView()
-    private let emoji = NoteEmojiPicker(showsRandom: true)
+    private let emoji = NoteEmojiPicker(showsRandom: true, library: EaselStampArtwork.customEmojiLibrary)
     private let field = NoteSearchField(placeholder: "Search icons…")
     private let list = NoteMenuList()
 

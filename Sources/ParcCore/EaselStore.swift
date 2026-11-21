@@ -279,6 +279,10 @@ enum EaselStampFace: Hashable {
     }
 
     init?(emoji text: String) {
+        if Self.customName(in: text) != nil {
+            self = .emoji(text)
+            return
+        }
         var scalars = Array(text.unicodeScalars)
         if let first = scalars.first, !first.isASCII, first.properties.isEmoji, !first.properties.isEmojiPresentation,
            scalars.count == 1 || !Self.qualifies(scalars[1]) {
@@ -294,7 +298,22 @@ enum EaselStampFace: Hashable {
         scalar.value == 0xFE0F || (0x1F3FB...0x1F3FF).contains(scalar.value)
     }
 
+    static func customName(in text: String) -> String? {
+        let bytes = Array(text.utf8)
+        guard bytes.count >= 3, bytes.count <= 50, bytes.first == 58, bytes.last == 58 else { return nil }
+        let name = bytes.dropFirst().dropLast()
+        func alphanumeric(_ byte: UInt8) -> Bool { (byte >= 97 && byte <= 122) || (byte >= 48 && byte <= 57) }
+        guard name.allSatisfy({ alphanumeric($0) || $0 == 95 || $0 == 45 || $0 == 43 }), name.contains(where: alphanumeric) else { return nil }
+        return String(decoding: name, as: UTF8.self)
+    }
+
+    var customEmojiName: String? {
+        if case .emoji(let text) = self { return Self.customName(in: text) }
+        return nil
+    }
+
     static func isEmoji(_ text: String) -> Bool {
+        if customName(in: text) != nil { return true }
         guard !text.isEmpty, text.utf8.count <= maximumEmojiBytes, text.count == 1 else { return false }
         let scalars = Array(text.unicodeScalars)
         guard let first = scalars.first,

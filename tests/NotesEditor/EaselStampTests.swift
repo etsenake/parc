@@ -99,6 +99,14 @@ struct EaselStampTests {
         for bad in ["", "A", "1", "hi", "🎉🎉", "\u{FE0F}"] {
             expect(EaselStampFace(emoji: bad) == nil, "\(bad.debugDescription) never becomes an emoji stamp")
         }
+        let custom = EaselStampFace.emoji(":party-parrot:")
+        expect(EaselStampFace(emoji: ":party-parrot:") == custom && EaselStampFace(text: ":party-parrot:") == custom && EaselStampFace(token: "emoji::party-parrot:") == custom,
+               "A custom emoji stamps by its name")
+        expect(custom.customEmojiName == "party-parrot" && EaselStampFace.emoji("🎉").customEmojiName == nil, "Only references name a custom emoji")
+        expect(custom.text == ":party-parrot:" && custom.token == "emoji::party-parrot:", "A custom emoji saves as its :name: text")
+        for bad in [":", "::", ":a", "a:", ":UPPER:", ":two words:", ":-:", ":" + String(repeating: "a", count: 49) + ":", ":bad/name:"] {
+            expect(!EaselStampFace.isEmoji(bad) && EaselStampFace(emoji: bad) == nil, "\(bad) is not a custom emoji name")
+        }
         expect(EaselStampFace(text: "❤") == nil && EaselStampFace(token: "emoji:❤") == nil, "Saved stamps must already be tidy")
         for good in ["cloud", "server.rack", "chevron.left.forwardslash.chevron.right", "cylinder.split.1x2"] {
             expect(EaselStampFace.isSymbolName(good), "\(good) is a symbol name")
@@ -366,6 +374,12 @@ struct EaselStampTests {
         expect(heartSVG.contains("#F2506A") && heartSVG.contains("stroke:#FFFFFF"), "Their colours and rim come along")
         let party = EaselVectorExport.element(stamp(.emoji("🎉")), art: art)
         expect(party.contains(">🎉</text>") && party.contains("text-anchor=\"middle\""), "Emoji export as text")
+        let parrot = stamp(.emoji(":party-parrot:"))
+        expect(EaselVectorExport.element(parrot, art: art).contains(">:party-parrot:</text>"), "A deleted custom emoji falls back to its :name: text")
+        var parrotArt = EaselVectorArt()
+        parrotArt.images[parrot.id] = EaselVectorImage(data: Data([0x89, 0x50, 0x4E, 0x47]), mimeType: "image/png")
+        let parrotSVG = EaselVectorExport.element(parrot, art: parrotArt)
+        expect(parrotSVG.contains("<image") && parrotSVG.contains("data:image/png;base64,") && !parrotSVG.contains("<text"), "A custom emoji exports as its picture")
         var cloud = stamp(.icon("cloud"))
         expect(EaselVectorExport.element(cloud, art: art).isEmpty, "Icons without a picture export nothing rather than junk")
         var withPicture = EaselVectorArt()
