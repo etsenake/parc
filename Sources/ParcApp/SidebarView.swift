@@ -2197,7 +2197,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         } else {
             if page.pendingBuild?.key != key {
                 page.pendingBuild = (key, startBuild(page, state: shown, focusedTabID: focused, placeholder: false, key: key))
-                if let deadline, CACurrentMediaTime() >= deadline { return false }
+                if let deadline, preparationClock() >= deadline { return false }
             }
             guard page.pendingBuild?.run(deadline) ?? true else { return false }
             patchLive(page, state: shown, focusedTabID: focused)
@@ -2275,6 +2275,14 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         case layout(UUID, Int)
     }
     private var neighborPreparation: Timer?
+    var preparationClock: () -> CFTimeInterval = { CACurrentMediaTime() }
+    var secondsSinceInput: @MainActor () -> CFTimeInterval = { SidebarInputClock.secondsSinceInput }
+    var hasPendingEvents: @MainActor () -> Bool = { NSApp.nextEvent(matching: .any, until: nil, inMode: .default, dequeue: false) != nil }
+    var scheduleTimer: (TimeInterval, RunLoop.Mode, @escaping @MainActor () -> Void) -> Timer = { interval, mode, body in
+        let timer = Timer(timeInterval: interval, repeats: false) { _ in MainActor.assumeIsolated { body() } }
+        RunLoop.main.add(timer, forMode: mode)
+        return timer
+    }
     private var pendingPreparation: [PreparationStep] = []
     private static let preparationSlice: CFTimeInterval = 0.003
     private static let rowsPerTurn = 5
@@ -2282,13 +2290,11 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private func scheduleNeighborPreparation(after delay: TimeInterval = 0.25) {
         neighborPreparation?.invalidate(); neighborPreparation = nil
         guard window != nil, !pendingPreparation.isEmpty || !retiredLists.isEmpty || !retiredPageViews.isEmpty else { return }
-        let timer = Timer(timeInterval: max(delay, Self.preparationQuiet - SidebarInputClock.secondsSinceInput), repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.prepareNeighborPage() }
+        neighborPreparation = scheduleTimer(max(delay, Self.preparationQuiet - secondsSinceInput()), .default) { [weak self] in
+            self?.prepareNeighborPage()
         }
-        RunLoop.main.add(timer, forMode: .default)
-        neighborPreparation = timer
     }
-    private var inputRecent: Bool { SidebarInputClock.secondsSinceInput < Self.preparationQuiet }
+    private var inputRecent: Bool { secondsSinceInput() < Self.preparationQuiet }
     var isPreparingNeighborPages: Bool {
         neighborPreparation != nil || !pendingPreparation.isEmpty || !retiredLists.isEmpty || !retiredPageViews.isEmpty
     }
@@ -2297,13 +2303,13 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         guard window != nil else { pendingPreparation = []; return }
         let canBuild = isPresented && !isSpaceManagement && creationView == nil && !contentSurface.isHidden && hierarchyState != nil
         guard !spacePager.isTracking, !spacePager.isAnimating, !inputRecent,
-              NSApp.nextEvent(matching: .any, until: nil, inMode: .default, dequeue: false) == nil else {
+              !hasPendingEvents() else {
             scheduleNeighborPreparation(); return
         }
-        let deadline = CACurrentMediaTime() + Self.preparationSlice
+        let deadline = preparationClock() + Self.preparationSlice
         if !retireLists(until: deadline) { scheduleNeighborPreparation(after: 0.008); return }
         var built = 0
-        turn: while CACurrentMediaTime() < deadline, !inputRecent, let step = pendingPreparation.first {
+        turn: while preparationClock() < deadline, !inputRecent, let step = pendingPreparation.first {
             if built > 0, case .page = step { break }
             switch step {
             case .page(let id):
@@ -2351,7 +2357,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     }
     private func retireLists(until deadline: CFTimeInterval) -> Bool {
         var removed = 0
-        while let retired = retiredLists.last, CACurrentMediaTime() < deadline, removed < Self.rowsPerTurn {
+        while let retired = retiredLists.last, preparationClock() < deadline, removed < Self.rowsPerTurn {
             if retired.removeLastRow() { removed += 1 } else { retiredLists.removeLast() }
         }
         guard retiredLists.isEmpty else { return false }
@@ -2363,7 +2369,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         if index == 0, page.list.needsLayout { page.list.layout() }
         let rows = page.list.subviews
         var next = index
-        while next < rows.count, CACurrentMediaTime() < deadline {
+        while next < rows.count, preparationClock() < deadline {
             let row = rows[next]; next += 1
             guard row.needsLayout || row.subviews.contains(where: { $0.needsLayout || $0.subviews.contains(where: \.needsLayout) }) else { continue }
             row.layoutSubtreeIfNeeded()
@@ -3219,8 +3225,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         }
         var phase = 0, prepared = 0
         var outline: [SidebarOutlineEntry] = [], previousFrames: [AnyHashable: NSRect] = [:], disclosureChanged = false, pinnedChanged = false
+        let clock = preparationClock
         return { [self] deadline in
-            func expired() -> Bool { deadline.map { CACurrentMediaTime() >= $0 } ?? false }
+            func expired() -> Bool { deadline.map { clock() >= $0 } ?? false }
             if phase == 0 {
                 while let next = work.popLast() {
                     process(next)
@@ -4893,16 +4900,13 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         guard springPinned?.spaceID != spaceID else { return }
         springPinned?.timer.invalidate(); springPinned = nil
         guard let spaceID else { return }
-        let timer = Timer(timeInterval: Self.springLoadingDelay, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.springPinned?.spaceID == spaceID else { return }
-                self.springPinned = nil
-                guard self.pinnedFolded(spaceID) else { return }
-                self.onSetPinnedSection?(spaceID, false)
-                self.sprungPinned = spaceID
-            }
+        let timer = scheduleTimer(Self.springLoadingDelay, .common) { [weak self] in
+            guard let self, self.springPinned?.spaceID == spaceID else { return }
+            self.springPinned = nil
+            guard self.pinnedFolded(spaceID) else { return }
+            self.onSetPinnedSection?(spaceID, false)
+            self.sprungPinned = spaceID
         }
-        RunLoop.main.add(timer, forMode: .common)
         springPinned = (spaceID, timer)
     }
     private func collapseSprungPinned() {
@@ -4937,17 +4941,14 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         springFolder = nil
         guard let id else { return }
         shownPage.folderRow(id)?.dropTarget = true
-        let timer = Timer(timeInterval: Self.springLoadingDelay, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.springFolder?.id == id else { return }
-                self.springFolder = nil
-                self.shownPage.folderRow(id)?.dropTarget = false
-                guard self.hierarchyState?.folders.first(where: { $0.id == id })?.isExpanded == false else { return }
-                self.onToggleFolder?(id)
-                self.sprungFolders.append(id)
-            }
+        let timer = scheduleTimer(Self.springLoadingDelay, .common) { [weak self] in
+            guard let self, self.springFolder?.id == id else { return }
+            self.springFolder = nil
+            self.shownPage.folderRow(id)?.dropTarget = false
+            guard self.hierarchyState?.folders.first(where: { $0.id == id })?.isExpanded == false else { return }
+            self.onToggleFolder?(id)
+            self.sprungFolders.append(id)
         }
-        RunLoop.main.add(timer, forMode: .common)
         springFolder = (id, timer)
     }
     private func proposeDrop(_ sender: NSDraggingInfo) -> NSDragOperation {
