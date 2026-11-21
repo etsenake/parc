@@ -11,7 +11,7 @@ private final class EaselImageDestinationView: NSView, NoteFloatingPanelContent 
     let list = NoteMenuList()
     private let picture = NSImageView()
     private let origin = NSTextField(labelWithString: "")
-    private let status = NSTextField(labelWithString: "Saved locally.")
+    private let status = NSTextField(labelWithString: "Saved on this Mac.")
 
     init(preview: NSImage, origin text: String) {
         super.init(frame: NSRect(x: 0, y: 0, width: Self.width, height: 240))
@@ -45,7 +45,7 @@ private final class EaselImageDestinationView: NSView, NoteFloatingPanelContent 
     override var isFlipped: Bool { true }
 
     func show(error message: String?) {
-        status.stringValue = message ?? "Saved locally."
+        status.stringValue = message ?? "Saved on this Mac."
         status.textColor = message == nil ? NoteTheme.menuTertiaryInk : NoteTheme.destructiveInk
     }
 
@@ -144,7 +144,7 @@ final class EaselImageDestinationController {
     }
 
     private func refreshRows() {
-        var items = [NoteMenuList.Item(id: "new", title: "New Easel “\(newName)”", icon: .symbol("plus"), section: "Add to")]
+        var items = [NoteMenuList.Item(id: "new", title: "New Easel “\(newName)”", icon: .symbol("plus"), section: "Add to Easel")]
         let query = edited ? view.field.text.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         for destination in destinations where query.isEmpty || destination.title.localizedCaseInsensitiveContains(query) {
             var item = NoteMenuList.Item(id: "easel." + destination.id.uuidString, title: destination.title.isEmpty ? "Untitled Easel" : destination.title,

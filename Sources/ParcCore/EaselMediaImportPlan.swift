@@ -19,6 +19,16 @@ enum EaselMediaImportPlan {
             }
         }
 
+        static func forKind(_ kind: EaselItemKind) -> Source {
+            switch kind {
+            case .image: return .image
+            case .video: return .video(.mp4)
+            case .audio: return .audio(.mp3)
+            case .pdf: return .pdf
+            default: return .file
+            }
+        }
+
         var needsFacts: Bool {
             switch self {
             case .video, .audio: return true

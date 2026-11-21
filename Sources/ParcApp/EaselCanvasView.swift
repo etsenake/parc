@@ -1200,7 +1200,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             recordObjectMotion(from: before, to: session.document)
             return true
         }
-        catch { onError?(error); return false }
+        catch {
+            if case EaselStoreError.staleObject = error { return false }
+            onError?(error)
+            return false
+        }
     }
     @discardableResult
     func insert(kind: EaselItemKind, text: String = "", edit: Bool = false, styledText: EaselStyledText? = nil, at point: NSPoint? = nil) -> Bool {
