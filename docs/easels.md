@@ -213,9 +213,29 @@ keys must not become canvas Delete or movement commands. Keyboard handle
 movement changes exact geometry by one point and remains one Undo transaction.
 Every entry/return action validates the original document/window owner.
 
-## Export as Image
+## Page menu and exports
 
-Share → Export as Image and Command–Shift–S export a saved document snapshot.
+The ••• button at the end of the title row opens the Easel's page menu, built
+from the same floating menu, rows, highlight, motion and keyboard handling as
+the Notes page menu: Copy Link (the Easel's `parc://easel/…` address), Copy as
+Image (a PNG on the pasteboard), Export (Image…, HTML File…, PDF…), Show in
+Library, Duplicate, and Delete Easel…, with the object count and last edit
+underneath. Easels have no lock. Exports are named after the Easel's title and
+end with the Notes "Exported …" toast.
+
+HTML exports are one self-contained file in the Notes export style: the title
+over the Easel drawn as SVG sized to the content bounds plus margins. Shapes,
+arrows and strokes are vector paths, text runs keep the Easel's fonts,
+emphasis, links and fills, images and web snapshots are embedded as data URIs,
+and web cards link to their source. Automatic ink and card colours follow the
+viewer's light or dark preference with both palettes inlined, while chosen
+colours stay exact. PDF exports draw the canvas into a single vector PDF page
+the size of the content bounds plus margins (scaled down past PDF's 200-inch
+limit), so text and shapes stay sharp. `EaselVectorExport` in ParcCore owns
+bounds, escaping and the SVG and HTML; its per-kind switch, and the canvas
+drawing switch the PDF reuses, are where a new object kind adds its case.
+
+Export → Image… and Command–Shift–S export a saved document snapshot.
 The canvas uses its width and height `max(lowest object bottom, width) + 60`;
 fixed capture canvases use exact capture bounds. Selection, guides and carets
 are excluded. Background is white or black from the Easel's own light or dark
@@ -236,7 +256,7 @@ queue behind an existing sheet.
 
 `bash scripts/test-easels.sh` and the focused editor/pool/capture components
 exercise atomic saves, rich-text validation, native Undo, ownership, geometry,
-clipboard conversion and export bytes.
+clipboard conversion, export bytes and the SVG/HTML serialiser.
 
 Private windows deliberately offer no Easels or Notes and send no captures to
 Easels; the reason is in [capture Library](capture-library.md#private-media-ownership).

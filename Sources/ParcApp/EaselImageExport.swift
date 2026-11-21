@@ -10,18 +10,6 @@ protocol EaselImageExporting: AnyObject {
 
 @MainActor
 enum EaselImageExport {
-    static let menuTitle = "Export as Image"
-
-    static func shareMenu(export: @escaping () -> Void) -> NSMenu {
-        let menu = NSMenu()
-        let action = Action(export)
-        let item = NSMenuItem(title: menuTitle, action: #selector(Action.choose(_:)), keyEquivalent: "")
-        item.target = action; item.representedObject = action
-        item.showImage(SidebarIconCatalog.featherImage(0xE9CA, size: 14))
-        menu.addItem(item)
-        return menu
-    }
-
     static func run(canvas: EaselCanvasView, title: String?, in window: NSWindow, valid: @escaping () -> Bool) {
         _ = canvas.collectExportPages { [weak canvas, weak window] pages in
             DispatchQueue.main.async {
@@ -44,7 +32,7 @@ enum EaselImageExport {
         init(_ window: NSWindow) { self.window = window }
     }
     private static var failures: [Failure] = []
-    private static func showFailure(in window: NSWindow) {
+    static func showFailure(in window: NSWindow) {
         RunLoop.main.perform(inModes: [.common, .modalPanel]) { [weak window] in
             MainActor.assumeIsolated {
                 failures.removeAll { $0.window == nil }
@@ -90,11 +78,5 @@ enum EaselImageExport {
         ParcDialog(.init(title: [("Exporting Easel", false)],
                         message: [("Encountered problem exporting easel. Please try again later.", false)],
                         icon: ParcBrandMark.image(.borderless), confirm: "OK"))
-    }
-
-    private final class Action: NSObject {
-        let run: () -> Void
-        init(_ run: @escaping () -> Void) { self.run = run }
-        @objc func choose(_ sender: Any?) { run() }
     }
 }

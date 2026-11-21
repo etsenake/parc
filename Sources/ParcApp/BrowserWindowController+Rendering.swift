@@ -383,6 +383,7 @@ extension BrowserWindowController {
                 guard let self, let editor else { return false }
                 return self.currentEaselEditor === editor
             }
+            configureEaselPageMenu(editor, tab: tab, documentID: documentID)
             if let binding = nativeBinding, !isPrivateBrowsing {
                 return editor.configurePages(binding: binding,
                     profilePath: store.independentEngineProfilePath(for: tab.profileID),

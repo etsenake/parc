@@ -141,18 +141,6 @@ struct EaselImageExportTests {
         expect(fixedRequests == 1, "The capture editor's canvas exports too")
         window.contentView = canvas
 
-        var chosen = 0
-        let menu = EaselImageExport.shareMenu { chosen += 1 }
-        menu.update()
-        expect(menu.items.count == 1, "A local Easel's Share menu has only Export as Image")
-        let row = menu.items[0]
-        expect(row.title == "Export as Image" && row.keyEquivalent.isEmpty && row.isEnabled, "the row title, with no shortcut, enabled")
-        expect(row.image?.size == NSSize(width: 14, height: 14) && row.image?.isTemplate == true, "The row shows a 14-point template glyph")
-        expect(SidebarIconCatalog.font(.feather, size: 14).fontName == "feather", "The glyph comes from the bundled Feather font")
-        if #available(macOS 27, *) { expect(row.preferredImageVisibility == .visible, "macOS 27 is asked to show the row's image") }
-        menu.performActionForItem(at: 0)
-        expect(chosen == 1, "Choosing the row exports")
-
         let panel = EaselImageExport.savePanel(title: session.document.title)
         expect(panel.title == "Export Easel" && panel.allowedContentTypes == [.png, .jpeg], "the panel title and PNG-then-JPEG types")
         expect(panel.nameFieldStringValue == "Export board", "The default name is the Easel's title")

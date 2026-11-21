@@ -230,6 +230,50 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             NSGraphicsContext.restoreGraphicsState()
         }
     }
+    func exportPDF(title: String, pages: [UUID: EaselPageSnapshot] = [:]) -> Data? {
+        let content = session.document.items.sorted { $0.zIndex < $1.zIndex }
+        let area = EaselVectorExport.contentBounds(content)
+        let scale = min(1, 14_400 / max(area.width, area.height))
+        var box = CGRect(x: 0, y: 0, width: (area.width * scale).rounded(.up), height: (area.height * scale).rounded(.up))
+        let data = NSMutableData()
+        guard scale.isFinite, scale > 0, let consumer = CGDataConsumer(data: data as CFMutableData),
+              let context = CGContext(consumer: consumer, mediaBox: &box,
+                                      [kCGPDFContextTitle as String: title, kCGPDFContextCreator as String: "Parc"] as CFDictionary) else { return nil }
+        let appearance = effectiveAppearance
+        let backing: NSColor = NoteTheme.isDark(appearance) ? .black : .white
+        context.beginPDFPage(nil)
+        context.translateBy(x: 0, y: box.height); context.scaleBy(x: scale, y: -scale)
+        context.translateBy(x: -area.x, y: -area.y)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        appearance.performAsCurrentDrawingAppearance {
+            backing.setFill(); NSRect(x: area.x, y: area.y, width: area.width, height: area.height).fill()
+            for item in content {
+                if let page = pages[item.id] { drawLivePage(page, in: rect(item)) } else { drawObject(item, showsEditor: false) }
+            }
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        context.endPDFPage()
+        context.closePDF()
+        return data as Data
+    }
+    func exportObjectImage(_ item: EaselItem, page: EaselPageSnapshot?, backingScale: CGFloat) -> CGImage? {
+        let frame = rect(item)
+        let width = Int((frame.width * backingScale).rounded()), height = Int((frame.height * backingScale).rounded())
+        guard backingScale.isFinite, backingScale > 0, width > 0, height > 0, width * height <= 64_000_000,
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.translateBy(x: 0, y: CGFloat(height)); context.scaleBy(x: backingScale, y: -backingScale)
+        context.translateBy(x: -frame.minX, y: -frame.minY)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            if let page { drawLivePage(page, in: frame) } else { drawObject(item, showsEditor: false) }
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        return context.makeImage()
+    }
     private func drawLivePage(_ page: EaselPageSnapshot, in frame: NSRect) {
         let shape = NSBezierPath(roundedRect: frame, xRadius: 8, yRadius: 8)
         EaselAppearance.cardFill.setFill(); shape.fill()

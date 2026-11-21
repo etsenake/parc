@@ -14,11 +14,12 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         return store
     }
 
-    private let session: EaselSession
+    let session: EaselSession
     private let titleField = NSTextField()
     private let status = NSTextField(labelWithString: "Saved on this Mac")
     private let scroll = NSScrollView()
-    private let canvas: EaselCanvasView
+    let canvas: EaselCanvasView
+    private(set) lazy var pageMenu = EaselPageMenu(editor: self)
     private var subscription: AnyCancellable?
     private var undoButton: NSButton!
     private var redoButton: NSButton!
@@ -168,7 +169,8 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         webpageButton.isEnabled = pageObjects != nil
         undoButton = chromeButton("Undo Easel change", "arrow.uturn.backward", #selector(undoChange))
         redoButton = chromeButton("Redo Easel change", "arrow.uturn.forward", #selector(redoChange))
-        _ = chromeButton("Share", "square.and.arrow.up", #selector(showShareMenu))
+        let options = chromeButton("Easel Options", "ellipsis", #selector(showPageMenu(_:)))
+        options.setAccessibilityRole(.menuButton)
         root.addSubview(toolSurface)
         root.addSubview(chrome)
         let toolWidth: CGFloat = 2 * toolInset + 7 * buttonSize + 6 * tools.spacing
@@ -217,9 +219,9 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     @objc private func addShape(_ sender: NSButton) { canvas.insert(kind: [.rectangle, .circle, .arrow][sender.tag]) }
     @objc private func undoChange() { canvas.undo(nil) }
     @objc private func redoChange() { canvas.redo(nil) }
-    @objc private func showShareMenu() {
+    @objc private func showPageMenu(_ sender: NSButton) {
         guard canExportImage else { return }
-        EaselImageExport.shareMenu { [weak self] in self?.exportImage() }.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        pageMenu.toggle(from: sender)
     }
     var exportAdmission: (() -> Bool)?
     var canExportImage: Bool {

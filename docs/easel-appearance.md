@@ -30,8 +30,8 @@ checked fill and ink for the current tool. It sits centered under the title,
 which is Nunito ExtraBold in the Notes title ink over a caption-style status
 line. Link, webpage, undo and redo are 28-point Notes chrome buttons on the
 title row so those actions remain reachable without joining the strip. The text
-rail's three controls sit on the same card. The Share button (`square.and.arrow.up`) ends that
-row; it opens the [Export as Image](easels.md#export-as-image) menu. The strip still follows the actual drawing mode and
+rail's three controls sit on the same card. The ••• button ends that
+row; it opens the [page menu](easels.md#page-menu-and-exports). The strip still follows the actual drawing mode and
 scrolls horizontally when the window is narrower than the controls. Its explicit overlay scrollbar preserves the full control
 height even under the system legacy-scrollbar preference. The ordinary Add Link action now presents the existing
 window-owned URL editor, with a compact address-only layout. Its original
