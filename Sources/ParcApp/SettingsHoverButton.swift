@@ -7,13 +7,14 @@ class SettingsHoverButton: PointingHandButton {
     private var observers: [NSObjectProtocol] = []
     private var windowRetired = false
     private var sheetPresented = false
+    var applicationIsActive: () -> Bool = { NSApp.isActive }
 
     var isHovered: Bool { hovered && canShowHover }
 
     private var canShowHover: Bool {
         guard isEnabled, !isHiddenOrHasHiddenAncestor, !windowRetired, !sheetPresented,
               let window else { return false }
-        return window.isVisible && window.isKeyWindow && NSApp.isActive && window.attachedSheet == nil
+        return window.isVisible && window.isKeyWindow && applicationIsActive() && window.attachedSheet == nil
     }
 
     override var isEnabled: Bool {
