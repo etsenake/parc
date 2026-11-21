@@ -243,10 +243,16 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard let output = context.makeImage() else { throw EaselStoreError.invalidImage }
         return output
     }
-    func exportImage(backingScale requested: CGFloat, pages: [UUID: EaselPageSnapshot] = [:]) -> CGImage? {
+    func exportImage(backingScale requested: CGFloat, pages: [UUID: EaselPageSnapshot] = [:], hugsContent: Bool = false) -> CGImage? {
         let content = EaselBoardObjects.displayed(session.document.items)
         let width = bounds.width
-        let size = fixedCanvasSize ?? NSSize(width: width, height: max(width, content.map { EaselCanvasRotation.bounds($0).maxY }.max() ?? 0) + 60)
+        var origin = NSPoint.zero
+        var size = fixedCanvasSize ?? NSSize(width: width, height: max(width, content.map { EaselCanvasRotation.bounds($0).maxY }.max() ?? 0) + 60)
+        if hugsContent, fixedCanvasSize == nil, !content.isEmpty {
+            let area = EaselVectorExport.contentBounds(content)
+            origin = NSPoint(x: area.x, y: area.y)
+            size = NSSize(width: area.width, height: area.height)
+        }
         let backingScale = CGFloat(EaselExportScale.capped(Double(requested), width: Double(size.width), height: Double(size.height)))
         let pixels = NSSize(width: (size.width * backingScale).rounded(), height: (size.height * backingScale).rounded())
         guard backingScale > 0, pixels.width >= 1, pixels.height >= 1, pixels.width < 1e9, pixels.height < 1e9 else { return nil }
@@ -254,9 +260,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let appearance = effectiveAppearance
         let backing: NSColor = NoteTheme.isDark(appearance) ? .black : .white
         return EaselExportStrips.image(width: Int(pixels.width), height: Int(pixels.height)) { [self] context, firstRow, rows in
-            let strip = NSRect(x: 0, y: CGFloat(firstRow) / backingScale, width: size.width, height: CGFloat(rows) / backingScale)
+            let strip = NSRect(x: origin.x, y: origin.y + CGFloat(firstRow) / backingScale, width: size.width, height: CGFloat(rows) / backingScale)
             context.translateBy(x: 0, y: CGFloat(rows)); context.scaleBy(x: backingScale, y: -backingScale)
-            context.translateBy(x: 0, y: -strip.minY)
+            context.translateBy(x: -strip.minX, y: -strip.minY)
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
             appearance.performAsCurrentDrawingAppearance {

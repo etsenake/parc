@@ -91,6 +91,8 @@ struct EaselImageExportTests {
         try far.perform("Seed") { $0.items = [EaselItem(kind: .circle, frame: .init(x: 20, y: 2400, width: 80, height: 90))] }
         let farCanvas = EaselCanvasView(session: far)
         expect(farCanvas.exportImage(backingScale: 1)?.height == 2400 + 90 + 60, "Content below the width-square extends the export to its bottom plus 60 points")
+        let hugged = EaselVectorExport.contentBounds(EaselBoardObjects.displayed(far.document.items))
+        expect(farCanvas.exportImage(backingScale: 1, hugsContent: true).map { $0.width == Int(hugged.width.rounded()) && $0.height == Int(hugged.height.rounded()) } == true, "Hugging the content crops the export to the board's content bounds")
         let empty = try store.create(title: "Empty")
         let emptyCanvas = EaselCanvasView(session: empty)
         expect(emptyCanvas.exportImage(backingScale: 1)?.height == Int(emptyCanvas.bounds.width + 60), "An empty Easel exports the width-square plus 60 points")

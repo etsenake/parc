@@ -17,7 +17,7 @@ enum EaselImageExport {
                     guard let window, let canvas, canvas.window === window else { return }
                     guard valid() else { return showFailure(in: window) }
                     let scale = pixelDensity()
-                    guard let image = canvas.exportImage(backingScale: scale, pages: pages) else { return showFailure(in: window) }
+                    guard let image = canvas.exportImage(backingScale: scale, pages: pages, hugsContent: true) else { return showFailure(in: window) }
                     let panel = savePanel(title: title)
                     guard panel.runModal() == .OK else { return }
                     guard let url = panel.url else { return showFailure(in: window) }

@@ -184,7 +184,7 @@ extension EaselEditorViewController {
         withExportPages(in: window) { [weak self] pages in
             guard let self else { return }
             let scale = EaselImageExport.pixelDensity()
-            guard let image = self.canvas.exportImage(backingScale: scale, pages: pages),
+            guard let image = self.canvas.exportImage(backingScale: scale, pages: pages, hugsContent: true),
                   let png = EaselDocumentExport.png(image) else { return EaselImageExport.showFailure(in: window) }
             let board = NSPasteboard.general
             board.clearContents()
