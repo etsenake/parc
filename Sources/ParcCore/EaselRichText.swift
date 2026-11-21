@@ -76,8 +76,6 @@ struct EaselRichText: Codable, Equatable {
     }
     var runs: [Run]
 
-    static let noteLinkExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdtxt", "mdtext", "txt", "text"]
-
     static func validLink(_ value: String) -> Bool {
         if isInternalLink(value) { return true }
         guard value.utf8.count <= 16_384, let url = URL(string: value),
@@ -90,7 +88,7 @@ struct EaselRichText: Codable, Equatable {
               url.user == nil, url.password == nil, url.port == nil else { return false }
         if scheme == "file" {
             return [nil, "", "localhost"].contains(url.host?.lowercased()) && url.path.hasPrefix("/")
-                && noteLinkExtensions.contains(url.pathExtension.lowercased())
+                && NoteFileKind(pathExtension: url.pathExtension) != nil
         }
         guard scheme == "parc", url.host?.lowercased() == "easel", url.query == nil, url.path.hasPrefix("/"),
               UUID(uuidString: String(url.path.dropFirst())) != nil else { return false }

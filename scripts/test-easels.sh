@@ -8,6 +8,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
+  "$repo_root/Sources/ParcCore/NoteFileKind.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/EaselCanvasInteraction.swift" \
   "$repo_root/Sources/ParcCore/EaselShapeGeometry.swift" \
@@ -23,6 +24,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
+  "$repo_root/Sources/ParcCore/NoteFileKind.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/EaselWebItemChrome.swift" \
   "$repo_root/tests/EaselWebItemChromeTests.swift" \
@@ -33,6 +35,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
+  "$repo_root/Sources/ParcCore/NoteFileKind.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/EaselLiveCaptureFraming.swift" \
   "$repo_root/tests/EaselLiveCaptureFramingTests.swift" \
@@ -118,6 +121,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/PointerCover.swift" \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
+  "$repo_root/Sources/ParcApp/NoteClipboardReading.swift" \
+  "$repo_root/Sources/ParcApp/EaselClipboardText.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
   "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
@@ -139,6 +144,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/PointerCover.swift" \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
+  "$repo_root/Sources/ParcApp/NoteClipboardReading.swift" \
+  "$repo_root/Sources/ParcApp/EaselClipboardText.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
   "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
@@ -186,6 +193,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/PointerCover.swift" \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
+  "$repo_root/Sources/ParcApp/NoteClipboardReading.swift" \
+  "$repo_root/Sources/ParcApp/EaselClipboardText.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
   "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
@@ -276,6 +285,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/PointerCover.swift" \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
+  "$repo_root/Sources/ParcApp/NoteClipboardReading.swift" \
+  "$repo_root/Sources/ParcApp/EaselClipboardText.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
   "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
@@ -319,6 +330,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
+  "$repo_root/Sources/ParcCore/NoteFileKind.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/CaptureDestinations.swift" \
   "$repo_root/Sources/ParcApp/EaselImagePlacement.swift" \
