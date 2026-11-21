@@ -985,7 +985,7 @@ final class PageCaptureOverlay: NSView {
 }
 
 @MainActor
-private class CaptureFlippedView: NSView { override var isFlipped: Bool { true } }
+class CaptureFlippedView: NSView { override var isFlipped: Bool { true } }
 
 @MainActor
 private final class CapturePreviewImageView: NSImageView {
@@ -993,7 +993,7 @@ private final class CapturePreviewImageView: NSImageView {
 }
 
 @MainActor
-private final class CaptureElementLens: CaptureFlippedView {
+final class CaptureElementLens: CaptureFlippedView {
     private let grayscale = CAShapeLayer()
     private let veil = CAShapeLayer()
     private let halo = CAShapeLayer()
@@ -1003,8 +1003,21 @@ private final class CaptureElementLens: CaptureFlippedView {
     private var motion = CaptureLensMotion()
     private var timer: Timer?
     private var previousBounds = NSRect.zero
+    private let now: () -> TimeInterval
+    private let reduceMotion: () -> Bool
+    private let scheduleFrames: (Timer) -> Void
 
-    override init(frame: NSRect) {
+    override convenience init(frame: NSRect) {
+        self.init(frame: frame, now: { ProcessInfo.processInfo.systemUptime },
+                  reduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
+                  scheduleFrames: { RunLoop.main.add($0, forMode: .common) })
+    }
+
+    init(frame: NSRect, now: @escaping () -> TimeInterval, reduceMotion: @escaping () -> Bool,
+         scheduleFrames: @escaping (Timer) -> Void) {
+        self.now = now
+        self.reduceMotion = reduceMotion
+        self.scheduleFrames = scheduleFrames
         super.init(frame: frame)
         wantsLayer = true
         layer?.isGeometryFlipped = true
@@ -1040,13 +1053,13 @@ private final class CaptureElementLens: CaptureFlippedView {
             stopFrames()
             return
         }
-        motion.target(inset, at: ProcessInfo.processInfo.systemUptime,
-            animated: animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        motion.target(inset, at: now(),
+            animated: animated && !reduceMotion())
         applyMotionPresentation()
         if motion.isAnimating { startFrames() } else { stopFrames() }
     }
     private func tick() {
-        motion.tick(at: ProcessInfo.processInfo.systemUptime)
+        motion.tick(at: now())
         applyMotionPresentation()
         if !motion.isAnimating { stopFrames() }
     }
@@ -1062,12 +1075,12 @@ private final class CaptureElementLens: CaptureFlippedView {
         let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
-        self.timer = timer; RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer; scheduleFrames(timer)
     }
     private func stopFrames() { timer?.invalidate(); timer = nil }
     func settleMotion() {
         stopFrames()
-        motion.settle(at: ProcessInfo.processInfo.systemUptime)
+        motion.settle(at: now())
         applyMotionPresentation()
     }
     func retire() { stopFrames(); motion.clear(); focusRect = nil; updatePaths() }
