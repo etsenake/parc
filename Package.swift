@@ -9,7 +9,13 @@ let engineStubs = root + "/Stubs"
 
 let strict: [SwiftSetting] = [.treatAllWarnings(as: .error)]
 let nativeFlags: [CSetting] = [.enableWarning("all"), .enableWarning("extra"), .treatAllWarnings(as: .error)]
-let presentationFlags: [CSetting] = [.unsafeFlags(["-include", root + "/tests/ParcNativeTests/Support/ParcNativePresentation.h"])]
+let nativeLibrarySources = [
+    "autofill_save_presenter.mm", "certificate_viewer_presenter.mm", "content_drop_router.mm", "devtools_pane_view.mm",
+    "dialog_style.mm", "extension_install_presenter.mm", "extension_popup_presenter.mm", "extension_uninstall_presenter.mm",
+    "external_protocol_presenter.mm", "find_bar_view.mm", "focus_manager.mm", "http_auth_presenter.mm",
+    "javascript_dialog_presenter.mm", "page_host.mm", "pane_compositor_view.mm", "site_permission_presenter.mm",
+    "status_text.mm", "window_security_reservation.mm",
+]
 let facadeFlags: [CSetting] = nativeFlags + [
     .disableWarning("unused-parameter"), .disableWarning("incomplete-implementation"),
     .disableWarning("objc-property-implementation"), .disableWarning("objc-protocol-property-synthesis"),
@@ -73,15 +79,15 @@ let package = Package(
         .testTarget(name: "ParcCoreTests", dependencies: ["ParcCore"], path: "tests/ParcCoreTests",
                     resources: [.copy("Notes/Fixtures"), .copy("Easels/Fixtures/EaselRoundTrip"), .copy("Resources/ArcSidebar")],
                     swiftSettings: strict),
-        .target(name: "ParcNative", path: "tests/ParcNativeLibrary",
-                cSettings: presentationFlags + nativeFlags + [.disableWarning("unused-parameter"),
-                                          .headerSearchPath("../../Engine/ParcNative")],
+        .target(name: "ParcNative", path: ".", sources: nativeLibrarySources.map { "Engine/ParcNative/" + $0 },
+                publicHeadersPath: "tests/ParcNativeShims",
+                cSettings: nativeFlags + [.disableWarning("unused-parameter"), .headerSearchPath("Engine/ParcNative")],
                 linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("QuartzCore"),
                                  .linkedFramework("Security"), .linkedFramework("SecurityInterface")]),
         .testTarget(name: "ParcNativeTests", dependencies: ["ParcNative"], path: "tests/ParcNativeTests",
                     exclude: ["Artwork/Borderless.png", "Artwork/Monochrome.png"],
                     resources: [.copy("Dialogs/certificate-fixture.pem"), .copy("Artwork/Monochrome.svg")],
-                    cSettings: presentationFlags + nativeFlags + [.disableWarning("unused-parameter"), .headerSearchPath("Support"), .headerSearchPath("../../Engine/ParcNative"),
+                    cSettings: nativeFlags + [.disableWarning("unused-parameter"), .headerSearchPath("Support"), .headerSearchPath("../../Engine/ParcNative"),
                                               .headerSearchPath("../../Engine/ParcHost/native"), .headerSearchPath("../../Engine/ParcRenderer"), .headerSearchPath("../../Engine/ParcChromium"),
                                               .headerSearchPath("Media/FairPlayIdentityDoubles/include"),
                                               .headerSearchPath("../../Sources/ParcEngine")]),

@@ -62,6 +62,15 @@
 }
 @end
 
+static PCNativeFocusManager* Offscreen(PCNativeFocusManager* manager) NS_RETURNS_RETAINED {
+  manager.scheduler = ParcNativeScheduler();
+  return manager;
+}
+static PCNativePageHost* Offscreen(PCNativePageHost* host) NS_RETURNS_RETAINED {
+  host.presentation = ParcNativePresentation();
+  host.scheduler = ParcNativeScheduler();
+  return host;
+}
 static NSWindow* Window(Class cls = NSWindow.class) {
   NSWindow* window = [[cls alloc]
       initWithContentRect:NSMakeRect(0, 0, 480, 320)
@@ -99,7 +108,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   NSWindow* window = Window();
   FocusView *a = View(window), *b = View(window);
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
   NSMutableArray* events = [NSMutableArray array];
   PCNativeFocusRegistration* ta = [manager registerResponder:a
       forKey:@"page:A"
@@ -121,7 +130,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   [ta invalidate];
   [tb invalidate];
   [manager invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testRequestsReportTheActualFirstResponder {
@@ -163,11 +172,11 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
 - (void)testUnknownResponderKeysAreRejected {
   NSWindow* window = Window();
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
   Check([manager requestFocusForKey:@"missing"] == PCNativeFocusRequestRejected,
         "unknown responder identity is rejected");
   [manager invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testDetachingTheTargetRejectsFocus {
@@ -175,15 +184,15 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   FocusView *target = View(a), *sentinel = View(a);
   [a makeFirstResponder:sentinel];
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:a];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:a]);
   PCNativeFocusRegistration* token = Register(manager, target, @"page");
   [target removeFromSuperview];
   Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestRejected,
         "detached responder is rejected");
   [token invalidate];
   [manager invalidate];
-  [a close];
-  [b close];
+  ParcNativeClose(a);
+  ParcNativeClose(b);
 }
 
 - (void)testWrongWindowRequestsPreserveExistingFocus {
@@ -191,7 +200,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   FocusView *target = View(a), *sentinel = View(a);
   [a makeFirstResponder:sentinel];
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:a];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:a]);
   PCNativeFocusRegistration* token = Register(manager, target, @"page");
   [b.contentView addSubview:target];
   Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestRejected,
@@ -200,8 +209,8 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
         "wrong-window request leaves native focus intact");
   [token invalidate];
   [manager invalidate];
-  [a close];
-  [b close];
+  ParcNativeClose(a);
+  ParcNativeClose(b);
 }
 
 - (void)testReattachedTargetsAreEligible {
@@ -209,7 +218,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   FocusView *target = View(a), *sentinel = View(a);
   [a makeFirstResponder:sentinel];
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:a];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:a]);
   PCNativeFocusRegistration* token = Register(manager, target, @"page");
   [target removeFromSuperview];
   [b.contentView addSubview:target];
@@ -219,14 +228,14 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
         "reattached same-window target is eligible");
   [token invalidate];
   [manager invalidate];
-  [a close];
-  [b close];
+  ParcNativeClose(a);
+  ParcNativeClose(b);
 }
 
 - (void)testCyclicResponderChainsAreRejected {
   NSWindow* window = Window();
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
   NSResponder *one = [NSResponder new], *two = [NSResponder new];
   one.nextResponder = two;
   two.nextResponder = one;
@@ -237,7 +246,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   two.nextResponder = nil;
   [cycle invalidate];
   [manager invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testRequestingAnAncestorPreservesItsFocusedChild {
@@ -246,7 +255,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   FocusView* child = [[FocusView alloc] initWithFrame:parent.bounds];
   [parent addSubview:child];
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
   PCNativeFocusRegistration* parentToken = Register(manager, parent, @"page");
   Check([window makeFirstResponder:child],
         "real descendant receives native focus");
@@ -259,13 +268,13 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
         "ancestor preservation is not a false completion callback");
   [parentToken invalidate];
   [manager invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testRequestingTheFieldPreservesItsActiveSelection {
   NSWindow* window = Window();
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
   NSTextField* field =
       [[NSTextField alloc] initWithFrame:NSMakeRect(10, 70, 200, 24)];
   field.stringValue = @"selection stays";
@@ -292,7 +301,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
         "field-editor normalization reports one field focus identity");
   [fieldToken invalidate];
   [manager invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)withRefusedTarget:(void (^)(GateWindow*, FocusView*, PCNativeFocusManager*, NSTimeInterval*))check {
@@ -302,16 +311,16 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   [window makeFirstResponder:sentinel];
   __block NSTimeInterval now = 100;
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window
                                              clock:^{
                                                return now;
-                                             }];
+                                             }]);
   PCNativeFocusRegistration* token = Register(manager, target, @"page");
   window.blockedTarget = target;
   check(window, sentinel, manager, &now);
   [token invalidate];
   [manager invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testRefusalPreservesTheActualResponder {
@@ -368,7 +377,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
 - (void)testStaleTokensCannotUnregisterTheirReplacement {
   NSWindow* window = Window();
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
   FocusView *old = View(window), *replacement = View(window);
   PCNativeFocusRegistration* oldToken = Register(manager, old, @"page");
   PCNativeFocusRegistration* newToken = Register(manager, replacement, @"page");
@@ -378,25 +387,25 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
         "stale token cannot remove replacement generation");
   [newToken invalidate];
   [manager invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testInvalidatingATokenRemovesItsResponder {
   NSWindow* window = Window();
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
   PCNativeFocusRegistration* newToken = Register(manager, View(window), @"page");
   [newToken invalidate];
   Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestRejected,
         "explicit token removal ends registration");
   [manager invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testRegistrationsHoldTheirRespondersWeakly {
   NSWindow* window = Window();
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
   __weak FocusView* weakView;
   PCNativeFocusRegistration* weakToken;
   @autoreleasepool {
@@ -409,13 +418,13 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
         "deallocated weak responder cannot be focused");
   [weakToken invalidate];
   [manager invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testReleasingTheTokenUnregistersItsResponder {
   NSWindow* window = Window();
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
   FocusView* old = View(window);
   @autoreleasepool {
     PCNativeFocusRegistration* releasedToken =
@@ -426,7 +435,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
       [manager requestFocusForKey:@"released"] == PCNativeFocusRequestRejected,
       "token deallocation unregisters without explicit call");
   [manager invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testClosingAWindowReleasesItsFocusManagerAttachment {
@@ -435,8 +444,8 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   @autoreleasepool {
     NSWindow* temporary = Window();
     weakWindow = temporary;
-    orphan = [[PCNativeFocusManager alloc] initWithWindow:temporary];
-    [temporary close];
+    orphan = Offscreen([[PCNativeFocusManager alloc] initWithWindow:temporary]);
+    ParcNativeClose(temporary);
   }
   Check(orphan.isInvalidated, "window close automatically tears down manager");
   Check(weakWindow == nil && orphan.window == nil,
@@ -447,7 +456,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   NSWindow* window = Window();
   FocusView *a = View(window), *b = View(window), *c = View(window);
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
   __weak PCNativeFocusManager* weakManager = manager;
   NSMutableArray* events = [NSMutableArray array];
   PCNativeFocusRegistration* ta = [manager registerResponder:a
@@ -484,14 +493,14 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   [ta invalidate];
   [tb invalidate];
   [tc invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testARegisteringOwnerCanInvalidateDuringItsBecomeCallback {
   NSWindow* window = Window();
   FocusView *a = View(window), *b = View(window);
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
   __weak PCNativeFocusManager* weakManager = manager;
   NSMutableArray* events = [NSMutableArray array];
   PCNativeFocusRegistration* closing = [manager registerResponder:a
@@ -513,7 +522,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   Check([manager requestFocusForKey:@"C"] == PCNativeFocusRequestRejected,
         "terminal manager cannot request focus");
   [closing invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)withPageHost:(void (^)(NSWindow*, PCNativePageHost*, NSView*, FocusView*))check {
@@ -521,12 +530,12 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   NSView* page = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 200, 100)];
   FocusView* renderer = [[FocusView alloc] initWithFrame:page.bounds];
   [page addSubview:renderer];
-  PCNativePageHost* host = [PCNativePageHost hostWithContentView:page
-                                                        observer:nil];
+  PCNativePageHost* host = Offscreen([PCNativePageHost hostWithContentView:page
+                                                        observer:nil]);
   [window.contentView addSubview:host];
   check(window, host, page, renderer);
   [host invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testDeferredPageFocusResolvesToTheRenderer {
@@ -534,7 +543,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
     FocusView* sentinel = View(window);
     [window makeFirstResponder:sentinel];
     PCNativeFocusManager* manager =
-        [[PCNativeFocusManager alloc] initWithWindow:window];
+        Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
     PCNativeFocusRegistration* token = Register(manager, host, @"page");
     Check([manager requestFocusForKey:@"page"] == PCNativeFocusRequestAccepted,
           "manager requests the real deferred page host");
@@ -553,7 +562,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   [self withPageHost:^(NSWindow* window, PCNativePageHost* host, NSView* , FocusView* ) {
     NSWindow* destination = Window();
     PCNativeFocusManager* manager =
-        [[PCNativeFocusManager alloc] initWithWindow:window];
+        Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
     PCNativeFocusRegistration* token = Register(manager, host, @"page");
     [host removeFromSuperview];
     [destination.contentView addSubview:host];
@@ -561,7 +570,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
           "old window manager rejects the live reparented host");
     [token invalidate];
     [manager invalidate];
-    [destination close];
+    ParcNativeClose(destination);
   }];
 }
 
@@ -587,7 +596,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
     Drain();
     Check(destination.firstResponder == otherControl && renderer.requests == 0,
           "queued work never retargets a moved page to its new physical window");
-    [destination close];
+    ParcNativeClose(destination);
   }];
 }
 
@@ -625,10 +634,10 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   [window makeFirstResponder:sentinel];
   __block NSTimeInterval now = 100;
   PCNativeFocusManager* manager =
-      [[PCNativeFocusManager alloc] initWithWindow:window
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window
                                              clock:^{
                                                return now;
-                                             }];
+                                             }]);
   PCNativeFocusRegistration* token = Register(manager, target, @"page");
   PCNativeFocusRegistration* fallbackToken =
       Register(manager, fallback, @"fallback");
@@ -637,7 +646,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   [token invalidate];
   [fallbackToken invalidate];
   [manager invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testFallbackPreservesAnExistingResponder {
@@ -680,7 +689,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
 - (void)testUnregisteringAPendingTargetReleasesIt {
   GateWindow* retentionWindow = (GateWindow*)Window(GateWindow.class);
   PCNativeFocusManager* retentionManager =
-      [[PCNativeFocusManager alloc] initWithWindow:retentionWindow];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:retentionWindow]);
   PCNativeFocusRegistration* pendingToken;
   __weak FocusView* weakPending;
   @autoreleasepool {
@@ -696,20 +705,20 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   [pendingToken invalidate];
   Check(weakPending == nil,
         "registration removal releases pending target during teardown");
-  [retentionWindow close];
+  ParcNativeClose(retentionWindow);
 }
 
 - (void)testObserversReleaseTheirFocusManager {
   GateWindow* retentionWindow = (GateWindow*)Window(GateWindow.class);
   PCNativeFocusManager* retentionManager =
-      [[PCNativeFocusManager alloc] initWithWindow:retentionWindow];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:retentionWindow]);
   __weak PCNativeFocusManager* weakManager = retentionManager;
   retentionManager = nil;
   Check(weakManager == nil, "KVO and close observer do not retain manager");
   FocusView* after = View(retentionWindow);
   Check([retentionWindow makeFirstResponder:after],
         "window remains usable after manager deallocation");
-  [retentionWindow close];
+  ParcNativeClose(retentionWindow);
 }
 
 - (void)testAResignCallbackCanReleaseItsManagerDuringDelivery {
@@ -717,7 +726,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   FocusView *a = View(window), *b = View(window), *sentinel = View(window);
   [window makeFirstResponder:sentinel];
   __block PCNativeFocusManager* owner =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
   __weak PCNativeFocusManager* weakOwner = owner;
   __block BOOL aliveAfterRelease = NO, deliveredBecome = NO;
   PCNativeFocusRegistration* ta = [owner registerResponder:a
@@ -746,7 +755,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
         "finish");
   [ta invalidate];
   [tb invalidate];
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testABecomeCallbackCanReleaseItsManagerDuringDelivery {
@@ -754,7 +763,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   FocusView *a = View(window), *b = View(window), *sentinel = View(window);
   [window makeFirstResponder:sentinel];
   __block PCNativeFocusManager* owner =
-      [[PCNativeFocusManager alloc] initWithWindow:window];
+      Offscreen([[PCNativeFocusManager alloc] initWithWindow:window]);
   __weak PCNativeFocusManager* weakOwner = owner;
   __block BOOL aliveDuringBecome = NO;
   PCNativeFocusRegistration* becomeToken =
@@ -773,7 +782,7 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   [becomeToken invalidate];
   Check([window makeFirstResponder:b],
         "native window remains usable after callback-driven teardown");
-  [window close];
+  ParcNativeClose(window);
 }
 
 @end

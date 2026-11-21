@@ -4,12 +4,35 @@
 #import "ParcNativeWindows.h"
 #import <Security/Security.h>
 #import <SecurityInterface/SFCertificatePanel.h>
-#import <objc/runtime.h>
 
 #include <cstdio>
 #include <cstdlib>
 
 #import "certificate_viewer_presenter.h"
+
+#import <objc/message.h>
+#import <objc/runtime.h>
+
+@interface CertificateTestPresentation : ParcNativeTestPresentation <PCCertificatePresentation>
+@property(nonatomic, copy) void (^didBeginCertificateSheet)(NSWindow* window, id delegate);
+@end
+@implementation CertificateTestPresentation
+@synthesize didBeginCertificateSheet = _didBeginCertificateSheet;
+- (void)beginSheetForPanel:(SFCertificatePanel*)panel
+                    window:(NSWindow*)window
+             modalDelegate:(id)delegate
+            didEndSelector:(SEL)didEndSelector
+               contextInfo:(void*)contextInfo
+              certificates:(NSArray*)certificates
+                 showGroup:(BOOL)showGroup {
+  SFCertificatePanel* sheet = [SFCertificatePanel new];
+  __weak id target = delegate;
+  [self window:window beginSheet:sheet completionHandler:^(NSModalResponse code) {
+    ((void (*)(id, SEL, NSWindow*, NSInteger, void*))objc_msgSend)(target, didEndSelector, sheet, code, contextInfo);
+  }];
+  if (self.didBeginCertificateSheet) self.didBeginCertificateSheet(window, delegate);
+}
+@end
 @interface PCServerCertificatePresenter (NestedBeginTest)
 - (void)start;
 @end
@@ -39,9 +62,13 @@ static NSData* FixtureCertificate() {
   return [[NSData alloc] initWithBase64EncodedString:body
                                              options:NSDataBase64DecodingIgnoreUnknownCharacters];
 }
-using Begin = void (*)(id, SEL, NSWindow*, id, SEL, void*, NSArray*, BOOL);
-static SEL BeginSelector(void) {
-  return @selector(beginSheetForWindow:modalDelegate:didEndSelector:contextInfo:certificates:showGroup:);
+static CertificateTestPresentation* Certificates(void) {
+  return (CertificateTestPresentation*)ParcNativePresentation();
+}
+static PCServerCertificatePresenter* Offscreen(PCServerCertificatePresenter* presenter) NS_RETURNS_RETAINED {
+  presenter.presentation = Certificates();
+  presenter.scheduler = ParcNativeScheduler();
+  return presenter;
 }
 
 @interface ParcNativeTests_CertificateViewerPresenterTests : ParcNativeTestCase
@@ -52,8 +79,10 @@ static SEL BeginSelector(void) {
   NSWindow* _window;
   NSView* _page;
   int _done;
-  Method _begin;
-  IMP _original;
+}
+
++ (Class)presentationClass {
+  return CertificateTestPresentation.class;
 }
 
 - (void)setUp {
@@ -66,26 +95,23 @@ static SEL BeginSelector(void) {
   _window = Window();
   _page = [[NSView alloc] initWithFrame:_window.contentView.bounds];
   [_window.contentView addSubview:_page];
-  _begin = class_getInstanceMethod(SFCertificatePanel.class, BeginSelector());
-  _original = method_getImplementation(_begin);
 }
 
 - (void)tearDown {
-  method_setImplementation(_begin, _original);
-  [_window close];
+  ParcNativeClose(_window);
   Pump();
   [super tearDown];
 }
 
 - (PCServerCertificatePresenter*)presenterValidating:(BOOL (^)(void))validate {
   int* done = &_done;
-  return [[PCServerCertificatePresenter alloc] initWithPage:_page
-                                                     window:_window
-                                               certificates:_certificates
-                                                   validate:validate
-                                                   finished:^{
-                                                     ++*done;
-                                                   }];
+  return Offscreen([[PCServerCertificatePresenter alloc] initWithPage:_page
+                                                              window:_window
+                                                        certificates:_certificates
+                                                            validate:validate
+                                                            finished:^{
+                                                              ++*done;
+                                                            }]);
 }
 
 - (PCServerCertificatePresenter*)presenter {
@@ -94,14 +120,8 @@ static SEL BeginSelector(void) {
   }];
 }
 
-- (void)interceptBegin:(void (^)(id panel, NSWindow* parent, id delegate))after {
-  IMP original = _original;
-  IMP intercept = imp_implementationWithBlock(
-      ^(id panel, NSWindow* parent, id delegate, SEL ended, void* context, NSArray* certs, BOOL group) {
-        reinterpret_cast<Begin>(original)(panel, BeginSelector(), parent, delegate, ended, context, certs, group);
-        after(panel, parent, delegate);
-      });
-  method_setImplementation(_begin, intercept);
+- (void)interceptBegin:(void (^)(NSWindow* parent, id delegate))after {
+  Certificates().didBeginCertificateSheet = after;
 }
 
 - (void)testThePanelShowsTheCertificateWithTheBasicX509Policy {
@@ -119,17 +139,17 @@ static SEL BeginSelector(void) {
   @autoreleasepool {
     PCServerCertificatePresenter* p = [self presenter];
     [p show];
-    EXPECT(_done == 0 && !_window.attachedSheet);
+    EXPECT(_done == 0 && !ParcNativeAttachedSheet(_window));
     Pump();
-    EXPECT(_window.attachedSheet == p.panel);
-    EXPECT(p.panel.sheetParent == _window && p.panel.visible);
+    EXPECT(ParcNativeAttachedSheet(_window) == p.panel);
+    EXPECT(ParcNativeSheetParent(p.panel) == _window && ParcNativeVisible(p.panel));
     weak = p;
     [p invalidate];
     [p invalidate];
     EXPECT(_done == 1);
     p = nil;
     Pump();
-    EXPECT(!_window.attachedSheet);
+    EXPECT(!ParcNativeAttachedSheet(_window));
   }
   Pump();
   EXPECT(!weak);
@@ -140,7 +160,7 @@ static SEL BeginSelector(void) {
   [p show];
   [p invalidate];
   Pump();
-  EXPECT(_done == 1 && !_window.attachedSheet);
+  EXPECT(_done == 1 && !ParcNativeAttachedSheet(_window));
 }
 
 - (void)testARefusedValidationFinishesWithoutASheet {
@@ -149,15 +169,15 @@ static SEL BeginSelector(void) {
   }];
   [p show];
   Pump();
-  EXPECT(_done == 1 && !_window.attachedSheet);
+  EXPECT(_done == 1 && !ParcNativeAttachedSheet(_window));
 }
 
 - (void)testAHiddenWindowGetsNoSheet {
-  [_window orderOut:nil];
+  ParcNativeOrderOut(_window);
   PCServerCertificatePresenter* p = [self presenter];
   [p show];
   Pump();
-  EXPECT(_done == 1 && !_window.attachedSheet);
+  EXPECT(_done == 1 && !ParcNativeAttachedSheet(_window));
 }
 
 - (void)testAPageRemovedDuringValidationGetsNoSheet {
@@ -168,7 +188,7 @@ static SEL BeginSelector(void) {
   }];
   [p show];
   Pump();
-  EXPECT(_done == 1 && !_window.attachedSheet);
+  EXPECT(_done == 1 && !ParcNativeAttachedSheet(_window));
 }
 
 - (void)testAnExternalSheetEndFinishesAndReleasesThePresenter {
@@ -186,17 +206,18 @@ static SEL BeginSelector(void) {
                                                            ++*done;
                                                            released = nil;
                                                          }];
+    Offscreen(released);
     weak = released;
     [released show];
     Pump();
-    EXPECT(_window.attachedSheet);
-    [NSApp endSheet:released.panel];
+    EXPECT(ParcNativeAttachedSheet(_window));
+    [ParcNativePresentation() endApplicationSheet:released.panel];
     Pump();
     EXPECT(_done == 1);
   }
   Pump();
   EXPECT(!weak);
-  EXPECT(!_window.attachedSheet);
+  EXPECT(!ParcNativeAttachedSheet(_window));
 }
 
 - (void)testAReplacementShownDuringBeginOutlivesTheOldPresenter {
@@ -206,13 +227,13 @@ static SEL BeginSelector(void) {
   int* done = &_done;
   NSView* page = _page;
   NSArray* certificates = _certificates;
-  [self interceptBegin:^(id panel, NSWindow* parent, id delegate) {
+  [self interceptBegin:^(NSWindow* parent, id delegate) {
     if (intercepted) return;
     intercepted = true;
-    EXPECT(parent.attachedSheet);
-    [NSApp endSheet:parent.attachedSheet];
+    EXPECT(ParcNativeAttachedSheet(parent));
+    [ParcNativePresentation() endApplicationSheet:ParcNativeAttachedSheet(parent)];
     Pump();
-    EXPECT(*done == 1 && !parent.attachedSheet);
+    EXPECT(*done == 1 && !ParcNativeAttachedSheet(parent));
     replacement = [[PCServerCertificatePresenter alloc] initWithPage:page
                                                               window:parent
                                                         certificates:certificates
@@ -222,22 +243,23 @@ static SEL BeginSelector(void) {
                                                             finished:^{
                                                               ++replacementDone;
                                                             }];
+    Offscreen(replacement);
     [replacement start];
     Pump();
-    EXPECT(parent.attachedSheet == replacement.panel && replacement.panel.visible);
+    EXPECT(ParcNativeAttachedSheet(parent) == replacement.panel && ParcNativeVisible(replacement.panel));
   }];
   PCServerCertificatePresenter* p = [self presenter];
   [p show];
   Pump();
-  method_setImplementation(_begin, _original);
+  Certificates().didBeginCertificateSheet = nil;
   EXPECT(intercepted && _done == 1 && replacementDone == 0);
-  EXPECT(_window.attachedSheet == replacement.panel && replacement.panel.visible);
+  EXPECT(ParcNativeAttachedSheet(_window) == replacement.panel && ParcNativeVisible(replacement.panel));
   [p invalidate];
   Pump();
-  EXPECT(_window.attachedSheet == replacement.panel && replacement.panel.visible);
+  EXPECT(ParcNativeAttachedSheet(_window) == replacement.panel && ParcNativeVisible(replacement.panel));
   [replacement invalidate];
   Pump();
-  EXPECT(replacementDone == 1 && !_window.attachedSheet);
+  EXPECT(replacementDone == 1 && !ParcNativeAttachedSheet(_window));
 }
 
 - (void)testCancellingDuringBeginKeepsTheSheetOwnerUntilTheSystemCallsBack {
@@ -246,9 +268,9 @@ static SEL BeginSelector(void) {
   @autoreleasepool {
     __block PCServerCertificatePresenter* cancelled;
     int* done = &_done;
-    [self interceptBegin:^(id panel, NSWindow* parent, id delegate) {
+    [self interceptBegin:^(NSWindow* parent, id delegate) {
       intercepted = true;
-      EXPECT(parent.attachedSheet);
+      EXPECT(ParcNativeAttachedSheet(parent));
       [delegate invalidate];
       EXPECT(*done == 1 && !cancelled);
       EXPECT([delegate valueForKey:@"sheetLifetime"] == delegate);
@@ -263,11 +285,12 @@ static SEL BeginSelector(void) {
                                                             ++*done;
                                                             cancelled = nil;
                                                           }];
+    Offscreen(cancelled);
     weak = cancelled;
     [cancelled show];
     Pump();
-    method_setImplementation(_begin, _original);
-    EXPECT(intercepted && _done == 1 && !_window.attachedSheet);
+    Certificates().didBeginCertificateSheet = nil;
+    EXPECT(intercepted && _done == 1 && !ParcNativeAttachedSheet(_window));
   }
   Pump();
   EXPECT(!weak);
@@ -277,11 +300,11 @@ static SEL BeginSelector(void) {
   PCServerCertificatePresenter* p = [self presenter];
   [p show];
   Pump();
-  EXPECT(_window.attachedSheet);
-  [_window close];
+  EXPECT(ParcNativeAttachedSheet(_window));
+  ParcNativeClose(_window);
   Pump();
   EXPECT(_done == 1);
-  EXPECT(!p.panel.sheetParent);
+  EXPECT(!ParcNativeSheetParent(p.panel));
 }
 
 @end

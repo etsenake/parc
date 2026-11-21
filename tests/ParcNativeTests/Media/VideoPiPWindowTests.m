@@ -7,6 +7,11 @@
 
 #import "VideoPiPWindow.h"
 #define EXPECT(condition) PARC_CHECK(condition)
+static PCVideoPiPPresenter* Offscreen(PCVideoPiPPresenter* presenter) NS_RETURNS_RETAINED {
+  presenter.presentation = ParcNativePresentation();
+  presenter.scheduler = ParcNativeScheduler();
+  return presenter;
+}
 static NSButton* Button(NSView* view, NSInteger tag) {
   for (NSView* child in view.subviews) {
     if ([child isKindOfClass:NSButton.class] && child.tag == tag) {
@@ -99,7 +104,7 @@ static NSImage* Cue(void) {
   _video = [NSView new];
   _last = PCVideoPiPClose;
   __weak ParcNativeTests_VideoPiPWindowTests* weak = self;
-  _presenter = [[PCVideoPiPPresenter alloc] initWithVideoView:_video
+  _presenter = Offscreen([[PCVideoPiPPresenter alloc] initWithVideoView:_video
       sourceFrame:NSMakeRect(20, 20, 640, 360)
       action:^(PCVideoPiPAction action, double value) {
         ParcNativeTests_VideoPiPWindowTests* test = weak;
@@ -110,7 +115,7 @@ static NSImage* Cue(void) {
       changed:^{
         ParcNativeTests_VideoPiPWindowTests* test = weak;
         if (test) ++test->_changes;
-      }];
+      }]);
 }
 
 - (void)tearDown {
@@ -152,7 +157,7 @@ static NSImage* Cue(void) {
 - (void)testThePanelFloatsOverSpacesWithoutTakingKeyFocus {
   EXPECT(_presenter.videoView == _video);
   EXPECT(_video.superview == self.content);
-  EXPECT(!_presenter.panel.visible);
+  EXPECT(!ParcNativeVisible(_presenter.panel));
   EXPECT(!_presenter.panel.keyWindow);
   EXPECT(!_presenter.panel.canBecomeKeyWindow);
   EXPECT(_presenter.panel.styleMask & NSWindowStyleMaskNonactivatingPanel);
@@ -219,13 +224,13 @@ static NSImage* Cue(void) {
   EXPECT(fabs(NSWidth(frame) / NSHeight(frame) - 16.0 / 9.0) < 0.05);
   EXPECT(NSMaxX(frame) <= NSMaxX(work) + 1);
   EXPECT(NSMinY(frame) >= NSMinY(work) - 1);
-  EXPECT(_presenter.panel.visible);
+  EXPECT(ParcNativeVisible(_presenter.panel));
   EXPECT(!_presenter.panel.keyWindow);
 }
 
 - (void)testThePanelRefusesKeyStatusAndResizesTheVideo {
   [_presenter showInactive];
-  [_presenter.panel makeKeyWindow];
+  ParcNativeMakeKey(_presenter.panel);
   EXPECT(!_presenter.panel.canBecomeKeyWindow);
   EXPECT(!_presenter.panel.keyWindow);
   EXPECT(_presenter.panel.styleMask & NSWindowStyleMaskNonactivatingPanel);
@@ -374,18 +379,18 @@ static NSImage* Cue(void) {
 - (void)testHidingShowsAgainAndInvalidationIsFinal {
   [self showHovering];
   [_presenter hide];
-  EXPECT(!_presenter.panel.visible);
+  EXPECT(!ParcNativeVisible(_presenter.panel));
   EXPECT(_actions == 0);
   [_presenter showInactive];
-  EXPECT(_presenter.panel.visible);
+  EXPECT(ParcNativeVisible(_presenter.panel));
   EXPECT(!_presenter.panel.canBecomeKeyWindow);
   EXPECT(!_presenter.panel.keyWindow);
   [_presenter invalidate];
   EXPECT(_presenter.invalidated);
-  EXPECT(!_presenter.panel.visible);
+  EXPECT(!ParcNativeVisible(_presenter.panel));
   EXPECT(_video.superview == nil);
   [_presenter showInactive];
-  EXPECT(!_presenter.panel.visible);
+  EXPECT(!ParcNativeVisible(_presenter.panel));
   [_presenter invalidate];
   EXPECT(_actions == 0);
 }
@@ -394,7 +399,7 @@ static NSImage* Cue(void) {
   __block int actions = 0;
   __block PCVideoPiPAction last = PCVideoPiPClose;
   __block PCVideoPiPPresenter* closing;
-  closing = [[PCVideoPiPPresenter alloc] initWithVideoView:[NSView new]
+  closing = Offscreen([[PCVideoPiPPresenter alloc] initWithVideoView:[NSView new]
       sourceFrame:NSZeroRect
       action:^(PCVideoPiPAction action, double value) {
         ++actions;
@@ -403,38 +408,38 @@ static NSImage* Cue(void) {
         closing = nil;
       }
       changed:^{
-      }];
+      }]);
   NSPanel* panel = closing.panel;
   [closing showInactive];
-  [panel close];
+  ParcNativeClose(panel);
   EXPECT(closing == nil);
   EXPECT(last == PCVideoPiPSystemClose);
   EXPECT(actions == 1);
-  EXPECT(!panel.visible);
+  EXPECT(!ParcNativeVisible(panel));
 }
 
 - (void)testInvalidatingFromAChangeCallbackIsSafe {
   __block PCVideoPiPPresenter* reentrant;
-  reentrant = [[PCVideoPiPPresenter alloc] initWithVideoView:[NSView new]
+  reentrant = Offscreen([[PCVideoPiPPresenter alloc] initWithVideoView:[NSView new]
       sourceFrame:NSZeroRect
       action:^(PCVideoPiPAction action, double value) {
       }
       changed:^{
         [reentrant invalidate];
         reentrant = nil;
-      }];
+      }]);
   [reentrant showInactive];
   EXPECT(reentrant == nil);
 }
 
 - (PCVideoPiPPresenter*)fittingPresenterFor:(NSView*)fitted resized:(int*)resized {
-  return [[PCVideoPiPPresenter alloc] initWithVideoView:fitted
+  return Offscreen([[PCVideoPiPPresenter alloc] initWithVideoView:fitted
       sourceFrame:NSZeroRect
       action:^(PCVideoPiPAction a, double v) {
       }
       changed:^{
         if (resized) ++*resized;
-      }];
+      }]);
 }
 
 - (void)testThePanelTakesEachVideoAspectAndKeepsItsCorner {
@@ -524,7 +529,7 @@ static NSImage* Cue(void) {
 
 - (void)testInvalidatingDuringARefitIsSafe {
   __block PCVideoPiPPresenter* releasing;
-  releasing = [[PCVideoPiPPresenter alloc] initWithVideoView:[NSView new]
+  releasing = Offscreen([[PCVideoPiPPresenter alloc] initWithVideoView:[NSView new]
       sourceFrame:NSZeroRect
       action:^(PCVideoPiPAction action, double value) {
       }
@@ -533,7 +538,7 @@ static NSImage* Cue(void) {
           [releasing invalidate];
           releasing = nil;
         }
-      }];
+      }]);
   [releasing setNaturalSize:NSMakeSize(1920, 1080)];
   [releasing setNaturalSize:NSMakeSize(1920, 804)];
   EXPECT(releasing == nil);

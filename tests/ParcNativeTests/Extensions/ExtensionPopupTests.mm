@@ -58,10 +58,13 @@ static NSWindow* Window() {
   return result;
 }
 static PCNativePageHost* Page(PageObserver* observer) {
-  return [PCNativePageHost
+  PCNativePageHost* host = [PCNativePageHost
       hostWithContentView:[[NSView alloc]
                               initWithFrame:NSMakeRect(0, 0, 80, 80)]
                  observer:observer];
+  host.presentation = ParcNativePresentation();
+  host.scheduler = ParcNativeScheduler();
+  return host;
 }
 static BOOL Near(CGFloat a, CGFloat b) {
   return std::abs(a - b) < .01;
@@ -87,7 +90,7 @@ static void Pump() {
 
 - (void)tearDown {
   for (PCNativePageHost* page in _pages) [page invalidate];
-  for (NSWindow* window in _windows) [window close];
+  for (NSWindow* window in _windows) ParcNativeClose(window);
   [super tearDown];
 }
 
@@ -108,11 +111,14 @@ static void Pump() {
                                     anchor:(PCExtensionPopupAnchor* (^)(void))anchor
                                 mayDismiss:(BOOL (^)(void))mayDismiss
                                  onDismiss:(void (^)(void))onDismiss {
-  return [[PCExtensionPopupPresenter alloc] initWithParentWindow:parent
+  PCExtensionPopupPresenter* presenter = [[PCExtensionPopupPresenter alloc] initWithParentWindow:parent
                                                         pageHost:page
                                                           anchor:anchor
                                           mayDismissForParentKey:mayDismiss
                                                        onDismiss:onDismiss];
+  presenter.presentation = ParcNativePresentation();
+  presenter.scheduler = ParcNativeScheduler();
+  return presenter;
 }
 
 - (PCExtensionPopupPresenter*)windowAnchoredPresenterFor:(PCNativePageHost*)page onDismiss:(void (^)(void))onDismiss {
@@ -135,7 +141,7 @@ static void Pump() {
   EXPECT([presenter prepare]);
   EXPECT(!presenter.presenting);
   NSWindow* popup = presenter.popupWindow;
-  EXPECT(popup.parentWindow == nil);
+  EXPECT(ParcNativeParentWindow(popup) == nil);
   EXPECT(page.window == popup);
   EXPECT(page.contentView == original);
   EXPECT(page.superview == popup.contentView && popup.contentViewController.view == popup.contentView);
@@ -168,12 +174,12 @@ static void Pump() {
   EXPECT([presenter prepare]);
   NSWindow* popup = presenter.popupWindow;
   EXPECT([presenter show]);
-  EXPECT(presenter.presenting && popup.isVisible);
-  EXPECT(popup.parentWindow == _parent);
+  EXPECT(presenter.presenting && ParcNativeVisible(popup));
+  EXPECT(ParcNativeParentWindow(popup) == _parent);
   [presenter invalidate];
   EXPECT(presenter.invalidated && !presenter.presenting);
   EXPECT(!page.window && page.contentView == original);
-  EXPECT(popup.parentWindow == nil);
+  EXPECT(ParcNativeParentWindow(popup) == nil);
   EXPECT(closes == 0);
   EXPECT(![presenter show]);
   EXPECT(![presenter resizeContent:NSMakeSize(50, 50)]);
@@ -301,7 +307,7 @@ static void Pump() {
   EXPECT(!weak || weak.invalidated);
   EXPECT(page.window == nil && page.contentView != nil);
   EXPECT(observer.detachCount >= 1);
-  [popup close];
+  ParcNativeClose(popup);
   EXPECT(closes == 1);
 }
 
@@ -359,7 +365,7 @@ static void Pump() {
   PCExtensionPopupPresenter* presenter = [self windowAnchoredPresenterFor:[self page:nil] onDismiss:nil];
   EXPECT([presenter prepare]);
   EXPECT(!presenter.presenting);
-  EXPECT(!presenter.popupWindow.visible);
+  EXPECT(!ParcNativeVisible(presenter.popupWindow));
   EXPECT(!presenter.popupWindow.keyWindow);
   [presenter invalidate];
 }

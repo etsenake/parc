@@ -39,7 +39,7 @@ static PCNativeUninstallPresenter* Presenter(
     BOOL (^valid)(void),
     void (^changed)(BOOL),
     void (^result)(PCUninstallChoice)) {
-  return
+  PCNativeUninstallPresenter* presenter =
       [[PCNativeUninstallPresenter alloc] initWithWindow:window
                                                    title:@"Remove example?"
                                                  message:@"Requested by example"
@@ -51,6 +51,9 @@ static PCNativeUninstallPresenter* Presenter(
                                                 validate:valid
                                                  changed:changed
                                                   result:result];
+  presenter.presentation = ParcNativePresentation();
+  presenter.scheduler = ParcNativeScheduler();
+  return presenter;
 }
 static NSEvent* KeyIn(NSWindow* window, NSString* characters, unsigned short code) {
   return [NSEvent keyEventWithType:NSEventTypeKeyDown
@@ -86,8 +89,8 @@ static NSEvent* KeyIn(NSWindow* window, NSString* characters, unsigned short cod
 
 - (void)tearDown {
   for (id observer in _observers) [NSNotificationCenter.defaultCenter removeObserver:observer];
-  [_a close];
-  [_b close];
+  ParcNativeClose(_a);
+  ParcNativeClose(_b);
   Pump();
   [super tearDown];
 }
@@ -118,7 +121,7 @@ static NSEvent* KeyIn(NSWindow* window, NSString* characters, unsigned short cod
 }
 
 - (void)testReservationsAreSharedPerWindowAndNotifyEachChange {
-  EXPECT(_a.visible && _b.visible);
+  EXPECT(ParcNativeVisible(_a) && ParcNativeVisible(_b));
   __block int notifications = 0;
   [self observe:_a with:^{
     ++notifications;
@@ -161,7 +164,7 @@ static NSEvent* KeyIn(NSWindow* window, NSString* characters, unsigned short cod
 - (void)testAWindowClosedWhileReservingRefusesTheReservation {
   NSWindow* b = _b;
   [self observe:_b with:^{
-    if (PCNativeWindowHasSecurityReservation(b)) [b close];
+    if (PCNativeWindowHasSecurityReservation(b)) ParcNativeClose(b);
   }];
   auto* closed = [PCNativeWindowSecurityReservation acquireForWindow:_b];
   EXPECT(!closed.active);
@@ -177,7 +180,7 @@ static NSEvent* KeyIn(NSWindow* window, NSString* characters, unsigned short cod
     NSWindow* temp = Window();
     weakWindow = temp;
     retained = [PCNativeWindowSecurityReservation acquireForWindow:temp];
-    [temp close];
+    ParcNativeClose(temp);
     temp = nil;
   }
   Pump();
@@ -198,7 +201,7 @@ static NSEvent* KeyIn(NSWindow* window, NSString* characters, unsigned short cod
   [presenter start];
   Pump();
   EXPECT(presenter.presenting);
-  EXPECT(presenter.sheet.sheetParent == _a);
+  EXPECT(ParcNativeSheetParent(presenter.sheet) == _a);
   EXPECT(_results == 0);
   auto* check = Button(presenter.sheet.contentView, @"Report abuse");
   EXPECT(check);
@@ -230,7 +233,7 @@ static NSEvent* KeyIn(NSWindow* window, NSString* characters, unsigned short cod
   [presenter invalidate];
   Pump();
   EXPECT(_results == 1 && _choice == PCUninstallInterrupted);
-  EXPECT(!presenter.presenting && _a.attachedSheet == nil);
+  EXPECT(!presenter.presenting && ParcNativeAttachedSheet(_a) == nil);
 }
 
 - (void)testAValidationThatInvalidatesThePresenterInterrupts {
@@ -249,7 +252,7 @@ static NSEvent* KeyIn(NSWindow* window, NSString* characters, unsigned short cod
 - (void)testReturnRemovesOnlyOnceRemoveIsEnabled {
   auto* presenter = [self presenter];
   EXPECT([presenter.sheet isKindOfClass:NSPanel.class]);
-  EXPECT(!presenter.sheet.visible);
+  EXPECT(!ParcNativeVisible(presenter.sheet));
   [presenter setAcceptEnabled:NO cancelEnabled:YES];
   [presenter start];
   Pump();
@@ -258,7 +261,7 @@ static NSEvent* KeyIn(NSWindow* window, NSString* characters, unsigned short cod
   EXPECT(_results == 0);
   EXPECT([Button(custom.contentView, @"Remove").accessibilityLabel isEqualToString:@"Remove"]);
   [presenter setAcceptEnabled:YES cancelEnabled:YES];
-  [custom makeKeyWindow];
+  ParcNativeMakeKey(custom);
   [custom sendEvent:KeyIn(custom, @"\r", 36)];
   Pump(.3);
   EXPECT(_results == 1 && _choice == PCUninstallAccept);
@@ -266,14 +269,14 @@ static NSEvent* KeyIn(NSWindow* window, NSString* characters, unsigned short cod
 
 - (void)testAnotherSheetOnTheWindowInterrupts {
   NSWindow* foreign = Window();
-  [_a beginSheet:foreign completionHandler:nil];
+  ParcNativeBeginSheet(_a, foreign, nil);
   auto* presenter = [self presenter];
   [presenter start];
   Pump();
   EXPECT(_results == 1 && _choice == PCUninstallInterrupted);
-  EXPECT(_a.attachedSheet == foreign);
-  [_a endSheet:foreign];
-  [foreign close];
+  EXPECT(ParcNativeAttachedSheet(_a) == foreign);
+  ParcNativeEndSheet(_a, foreign);
+  ParcNativeClose(foreign);
 }
 
 - (void)testClosingTheWindowInterrupts {
@@ -281,7 +284,7 @@ static NSEvent* KeyIn(NSWindow* window, NSString* characters, unsigned short cod
   [presenter start];
   Pump();
   EXPECT(presenter.presenting);
-  [_a close];
+  ParcNativeClose(_a);
   Pump();
   EXPECT(_results == 1 && _choice == PCUninstallInterrupted);
   EXPECT(!presenter.presenting);
