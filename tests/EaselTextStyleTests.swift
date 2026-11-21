@@ -703,7 +703,7 @@ struct EaselTextStyleTests {
             view.setSelectedRange(NSRange(location: finished.length + 1, length: 5))
             expect(!view.hasEmphasis(emphasis), "Conversion restores original typing attributes for following text")
         }
-        for literal in ["**bold**", "~~strike~~", "`code`", "[label](https://example.com)", "*incomplete", "*punctuation!*", "word*bold*", #"\*escaped*"#, "+ list", "2. list", "#### heading"] {
+        for literal in ["**bold**", "~~strike~~", "``", "[label](https://example.com)", "*incomplete", "*punctuation!*", "word*bold*", #"\*escaped*"#, "+ list", "2. list", "##### heading", ">quote"] {
             load(""); type(literal)
             expect(view.string == literal, "Unsupported or incomplete syntax remains literal: \(literal)")
         }
@@ -725,7 +725,19 @@ struct EaselTextStyleTests {
         board.clearContents(); board.setData(rtf, forType: .rtf); load("")
         grouped { expect(view.pasteContent(from: board), "Native RTF paste succeeds") }
         expect(view.string == "# Heading\n*word*", "Imported RTF text is not parsed as markdown")
-        for (prefix, level, size) in [("# ", 1, 32.0), ("## ", 2, 26.0), ("### ", 3, 22.0)] {
+        load(""); type("`let x = 1`")
+        expect(view.string == "let x = 1", "Typed backticks become inline code")
+        let code = view.attributedString().attributes(at: 0, effectiveRange: nil)
+        expect((code[.font] as? NSFont)?.fontDescriptor.symbolicTraits.contains(.monoSpace) == true && code[.backgroundColor] != nil,
+               "Inline code is monospaced on a soft fill")
+        expect((view.typingAttributes[.font] as? NSFont)?.fontDescriptor.symbolicTraits.contains(.monoSpace) != true, "Typing after code is plain again")
+        load(""); type("> ")
+        expect(view.string == "\t\u{258E}\t" && view.paragraphKind() == .quote, "A typed > starts a quote")
+        type("Quoted"); grouped { view.insertNewline(nil) }
+        expect(view.string.hasSuffix("\n\t\u{258E}\t"), "Return continues the quote")
+        grouped { view.insertNewline(nil) }
+        expect(view.paragraphKind() == .text, "An empty quote line ends the quote")
+        for (prefix, level, size) in [("# ", 1, 32.0), ("## ", 2, 26.0), ("### ", 3, 22.0), ("#### ", 4, 19.0)] {
             load(""); type(prefix)
             expect(view.string.isEmpty && view.selectedRange().location == 0, "Heading prefix transforms at the typed space")
             expect((view.typingAttributes[.paragraphStyle] as? NSParagraphStyle)?.headerLevel == level, "Empty heading retains semantic typing state")

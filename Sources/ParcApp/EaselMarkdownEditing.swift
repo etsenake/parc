@@ -11,7 +11,7 @@ enum EaselMarkdownEditing {
     }
     static func admission(_ input: Any, text: String, selection: NSRange, replacement: NSRange) -> Admission? {
         guard let character = input as? String, character.count == 1,
-              "*_- \t\n".contains(character), selection.length == 0, replacement == selection,
+              "*_-` \t\n".contains(character), selection.length == 0, replacement == selection,
               replacement.location != NSNotFound, replacement.location <= (text as NSString).length else { return nil }
         return Admission(original: text, insertion: replacement, character: character)
     }
@@ -30,8 +30,10 @@ enum EaselMarkdownEditing {
         var prefix: NSRange?
         var depth = 0
         if paragraph.headerLevel == 0, paragraph.textLists.isEmpty {
-            if let match = first(#"^(#{1,3}) "#, in: local.string), NSMaxRange(match.range) == caret {
-                kind = [.heading1, .heading2, .heading3][match.range(at: 1).length - 1]; prefix = match.range
+            if let match = first(#"^(#{1,4}) "#, in: local.string), NSMaxRange(match.range) == caret {
+                kind = [.heading1, .heading2, .heading3, .heading4][match.range(at: 1).length - 1]; prefix = match.range
+            } else if let match = first(#"^> "#, in: local.string), NSMaxRange(match.range) == caret {
+                kind = .quote; prefix = match.range
             } else if let match = first(#"^(\t{0,6})(-|\*) "#, in: local.string), NSMaxRange(match.range) == caret {
                 kind = .bullets; prefix = match.range; depth = match.range(at: 1).length
             } else if let match = first(#"^(\t{0,6})1\.\s"#, in: local.string), NSMaxRange(match.range) == caret {
@@ -49,9 +51,10 @@ enum EaselMarkdownEditing {
             }
             return replacing(line, in: original, with: edit)
         }
-        guard ["*", "_", "-"].contains(admission.character) else { return nil }
+        guard ["*", "_", "-", "`"].contains(admission.character) else { return nil }
         let delimiter = NSRegularExpression.escapedPattern(for: admission.character)
-        let pattern = "(?:^|\\s)(" + delimiter + "\\w+(?:\\s\\w+)*" + delimiter + ")(?=\\s|$)"
+        let body = admission.character == "`" ? "[^`\\n\\x{FFFC}]+" : "\\w+(?:\\s\\w+)*"
+        let pattern = "(?:^|\\s)(" + delimiter + body + delimiter + ")(?=\\s|$)"
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.matches(in: local.string, range: NSRange(location: 0, length: source.length))
                 .first(where: { NSMaxRange($0.range(at: 1)) == caret }) else { return nil }
@@ -61,7 +64,12 @@ enum EaselMarkdownEditing {
         local.enumerateAttributes(in: content) { attrs, range, stop in
             var next = attrs
             if admission.character == "-" { next[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
-            else {
+            else if admission.character == "`" {
+                let font = (attrs[.font] as? NSFont) ?? EaselTextAppearance.font(base)
+                let bold = font.fontDescriptor.symbolicTraits.contains(.bold)
+                next[.font] = NSFont.monospacedSystemFont(ofSize: font.pointSize, weight: bold ? .bold : .regular)
+                next[.backgroundColor] = EaselTextAppearance.inlineCodeFill
+            } else {
                 let font = (attrs[.font] as? NSFont) ?? EaselTextAppearance.font(base)
                 let trait: NSFontTraitMask = admission.character == "*" ? .boldFontMask : .italicFontMask
                 let symbol: NSFontDescriptor.SymbolicTraits = admission.character == "*" ? .bold : .italic

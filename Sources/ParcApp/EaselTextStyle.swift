@@ -29,6 +29,7 @@ enum EaselTextAppearance {
         }
     }
 
+    static let inlineCodeFill = NSColor(srgbRed: 0.5, green: 0.5, blue: 0.5, alpha: 0.18)
     static func color(_ hex: String) -> NSColor {
         let value = UInt32(hex.dropFirst(), radix: 16) ?? 0x252525
         return NSColor(srgbRed: Double(value >> 16 & 255) / 255, green: Double(value >> 8 & 255) / 255,
@@ -716,7 +717,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         if let edit = EaselParagraphEditing.indent(attributedString(), selection: selectedRange(), typing: typingAttributes, outdent: outdent, base: objectStyle) {
             commitParagraph(edit, name: outdent ? "Decrease list indent" : "Increase list indent"); return true
         }
-        return paragraphKind() == .bullets || paragraphKind() == .numbers
+        return [.bullets, .numbers, .quote].contains(paragraphKind())
     }
     override func insertTab(_ sender: Any?) {
         let markdown = markdownAdmission("\t", replacement: selectedRange())

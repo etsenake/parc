@@ -3,11 +3,21 @@ import AppKit
 @MainActor
 enum EaselParagraphEditing {
     enum Kind: String, CaseIterable {
-        case text = "Text", heading1 = "Heading 1", heading2 = "Heading 2", heading3 = "Heading 3"
-        case bullets = "Bulleted List", numbers = "Numbered List"
-        var level: Int { switch self { case .heading1: 1; case .heading2: 2; case .heading3: 3; default: 0 } }
-        var marker: NSTextList.MarkerFormat? { switch self { case .bullets: .disc; case .numbers: NSTextList.MarkerFormat(rawValue: "{decimal}."); default: nil } }
+        case text = "Text", heading1 = "Heading 1", heading2 = "Heading 2", heading3 = "Heading 3", heading4 = "Heading 4"
+        case bullets = "Bulleted List", numbers = "Numbered List", quote = "Quote"
+        var level: Int { switch self { case .heading1: 1; case .heading2: 2; case .heading3: 3; case .heading4: 4; default: 0 } }
+        var marker: NSTextList.MarkerFormat? {
+            switch self {
+            case .bullets: .disc
+            case .numbers: NSTextList.MarkerFormat(rawValue: "{decimal}.")
+            case .quote: EaselParagraphEditing.quoteMarker
+            default: nil
+            }
+        }
     }
+    nonisolated static let quoteMarker = NSTextList.MarkerFormat(rawValue: "\u{258E}")
+    static let headingSizes: [CGFloat] = [32, 26, 22, 19]
+    static func isQuote(_ list: NSTextList) -> Bool { list.markerFormat == quoteMarker }
     struct Edit {
         var text: NSMutableAttributedString
         var selection: NSRange
@@ -45,9 +55,17 @@ enum EaselParagraphEditing {
         if let list = paragraph.textLists.last {
             if list.markerFormat == .disc { return .bullets }
             if isNumbered(list) { return .numbers }
+            if isQuote(list) { return .quote }
             return nil
         }
-        switch paragraph.headerLevel { case 0: return .text; case 1: return .heading1; case 2: return .heading2; case 3: return .heading3; default: return nil }
+        switch paragraph.headerLevel {
+        case 0: return .text
+        case 1: return .heading1
+        case 2: return .heading2
+        case 3: return .heading3
+        case 4: return .heading4
+        default: return nil
+        }
     }
     static func isNumbered(_ list: NSTextList) -> Bool { list.markerFormat == .decimal || list.markerFormat.rawValue == "{decimal}." }
     static func markerRange(_ text: NSAttributedString, paragraph: NSRange) -> NSRange {
@@ -61,7 +79,7 @@ enum EaselParagraphEditing {
         }
         let prefix = String(value[match]), marker = String(prefix.dropFirst().dropLast())
         let isMarker: Bool
-        if list.markerFormat == .disc {
+        if list.markerFormat == .disc || isQuote(list) {
             isMarker = marker == list.marker(forItemNumber: 1)
         } else if isNumbered(list) {
             let digits = list.markerFormat == .decimal ? marker : String(marker.dropLast())
@@ -102,7 +120,7 @@ enum EaselParagraphEditing {
         }
         let current = (attrs[.font] as? NSFont) ?? EaselTextAppearance.font(base)
         if kind.level > 0 {
-            result[.font] = NSFontManager.shared.convert(current, toSize: [32.0, 26.0, 22.0][kind.level - 1])
+            result[.font] = NSFontManager.shared.convert(current, toSize: headingSizes[min(kind.level, headingSizes.count) - 1])
         } else if style(attrs).headerLevel > 0 {
             let body = EaselTextStyle(family: EaselTextAppearance.paletteFamily(current) ?? base.family, size: .body)
             result[.font] = NSFontManager.shared.convert(current, toSize: bodyPointSize ?? body.pointSize)

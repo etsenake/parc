@@ -100,10 +100,14 @@ image carrier. Refusal does not modify the source clipboard.
 ## Typed markdown
 
 Only a single typed character at a collapsed caret triggers syntax conversion.
-Heading prefixes `#`, `##`, `###` plus space, bullet `-`/`*`, and ordered `1.` plus
-whitespace create paragraph formatting. Single asterisks, underscores and
-hyphens around eligible words apply bold, italic and strike-through.
-Unsupported punctuation and doubled delimiters stay literal.
+Heading prefixes `#` to `####` plus space (32, 26, 22 and 19 points), bullet
+`-`/`*`, ordered `1.` plus whitespace and `>` plus space for a quote create
+paragraph formatting. A quote is a list-style paragraph with a `▎` bar marker, so
+Return continues it, an empty line or Backspace at its start ends it and Tab
+nests it. Single asterisks, underscores and hyphens around eligible words apply
+bold, italic and strike-through; backticks around any run of characters on one
+line make inline code, monospaced on a soft grey fill that reads on light and
+dark paper. Unsupported punctuation and doubled delimiters stay literal.
 
 Paste, composition, Undo and programmatic insertion never trigger conversion.
 A conversion is one native transaction with exact selection/attribute Undo.
