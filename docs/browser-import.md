@@ -203,9 +203,43 @@ and bookmark-file readers against made-up archives, including ZIP64, data
 descriptors, damaged and hostile entries, and localized file names.
 `EngineFacadeImportTests` feed the extension-report adapter the current
 engine's report shapes; `EngineFacadeOldEngineTests` feed the older shapes
-without the newer failure class, so the facade fails to link if it names it. Native reader/writer fixtures use disposable databases; see the
-[native import checks](../Engine/ParcImport/README.md#focused-checks).
+without the newer failure class, so the facade fails to link if it names it.
+The native integration fixtures below use real Chromium libraries and disposable inputs.
 
 Parc’s utility content client registers the isolated import reader. Its protocol
 and reader sources live under Parc’s importer target; atomic history and web-data
 writes retain their dedicated Chromium transaction patch.
+
+### Chromium integration fixtures
+
+The four [BrowserImport harnesses](../tests/BrowserImport) belong to the pinned
+engine. All three Python runners take the same arguments. Set `repo`, `src`,
+`engine_out` and `ninja` to the absolute Parc checkout, matching Chromium
+source tree, completed component output and Ninja executable. Use a separate
+private output directory for each run.
+
+```sh
+python3 tests/BrowserImport/run_chromium.py --parc-root "$repo" \
+  --chromium-source "$src" --engine-output "$engine_out" --ninja "$ninja" \
+  --output "$results/chromium"
+```
+
+| Fixture | Current entry point and coverage |
+| --- | --- |
+| `ChromiumReaders.cc` | `run_chromium.py` exercises Chromium profile bookmarks, passwords and fallback keys with the actual reader and snapshot code. |
+| `SafariFirefoxReaders.mm` | `run_readers.py` exercises plist and SQLite import, including WAL snapshots, against disposable Safari and Firefox inputs. |
+| `HistoryWriter.cc` | `run_writers.py` checks commit, rollback and reopened databases through HistoryBackend and WebDatabase in both transaction modes. |
+| `ImportDiscovery.mm` | The fixture includes the discovery implementation and constructs synthetic Chrome, Opera and Opera GX homes. It has no checked-in executable target or runner. For its compile check, query the existing `obj/parc/browser/native_import_discovery.o` command with Siso in the matching engine output. Keep the compiler, includes, defines and Objective-C++ flags. Replace the input with this fixture’s absolute path, remove object and dependency outputs, and pass `-fsyntax-only`. This checks compilation only. |
+
+A future GN home would add `tests/BrowserImport/BUILD.gn` and map it and the
+four fixtures into `//parc/tests/browser_import` in
+`Engine/ParcHost/overlay.json`. Define four separate `testonly` executables,
+one per existing `main`. Link the two readers to `//parc/importer:service`,
+`//base`, `//url`, `//sql` and `//third_party/sqlite`, and link Foundation
+for the Objective-C++ reader. Link the writer to the history and webdata
+components, SQL, base and base test support, and run it with and without
+`--scoped`. For discovery, use the same browser compile configuration and
+link the native import model and reader dependencies. Adjust the fixture’s
+implementation include to the overlay location and avoid linking a second
+copy of discovery. Preserve the uncaught-exception handler for both
+Objective-C++ fixtures. These proposed targets require engine-owner approval.

@@ -2,9 +2,7 @@
 #import "ParcNativeTest.h"
 #import "browser_window.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-
+#include <pthread.h>
 
 #define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
 
@@ -44,7 +42,7 @@
 static NSWindow* Window(void) {
   NSWindow* window = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(0, 0, 480, 320)
-                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered
                     defer:NO];
   window.releasedWhenClosed = NO;
@@ -55,53 +53,126 @@ static void Post(NSNotificationName name, NSWindow* window) {
   [NSNotificationCenter.defaultCenter postNotificationName:name object:window];
 }
 
-static void TestAttachmentAndNotificationIdentity(void) {
-  NSWindow* first = Window();
-  NSWindow* other = Window();
-  AssociationObserver* observer = [AssociationObserver new];
-  PCNativeWindowAssociation* association =
-      [[PCNativeWindowAssociation alloc] initWithObserver:observer];
+static void* RunBlock(void* context) {
+  @autoreleasepool {
+    void (^work)(void) = (__bridge void (^)(void))context;
+    work();
+  }
+  return NULL;
+}
+
+@interface ParcNativeTests_WindowAssociationTests : ParcNativeTestCase
+@end
+
+@implementation ParcNativeTests_WindowAssociationTests {
+  AssociationObserver* observer;
+  PCNativeWindowAssociation* association;
+}
+
+- (void)setUp {
+  [super setUp];
+  observer = [AssociationObserver new];
+  association = [[PCNativeWindowAssociation alloc] initWithObserver:observer];
+}
+
+- (void)tearDown {
+  [association invalidate];
+  association = nil;
+  observer = nil;
+  [super tearDown];
+}
+
+- (void)testNewAssociationsStartDetached {
   Check(association.window == nil && !association.invalidated, "starts detached");
+}
+
+- (void)testAttachmentPreservesTheSuppliedWindowWithoutActivatingIt {
+  NSWindow* first = Window();
   Check([association attachToWindow:first], "attach supplied shell window");
   Check(association.window == first, "supplied window identity is preserved");
   Check(observer.events.count == 0, "attachment does not synthesize activation");
+  [first close];
+}
+
+- (void)testAttachingTheSameWindowTwiceSucceeds {
+  NSWindow* first = Window();
+  Check([association attachToWindow:first], "attach supplied shell window");
   Check([association attachToWindow:first], "same-window attachment is idempotent");
+  [first close];
+}
+
+- (void)testAttachingAnotherWindowRequiresDetachingFirst {
+  NSWindow* first = Window();
+  NSWindow* other = Window();
+  Check([association attachToWindow:first], "attach supplied shell window");
   Check(![association attachToWindow:other], "live association cannot silently move");
   Check(association.window == first, "rejected move preserves original window");
-  Post(NSWindowDidBecomeKeyNotification, other);
-  Check(observer.events.count == 0, "other window's notification is ignored");
-  Post(NSWindowDidBecomeKeyNotification, first);
-  Post(NSWindowDidResignKeyNotification, first);
-  Post(NSWindowDidEnterFullScreenNotification, first);
-  Post(NSWindowDidExitFullScreenNotification, first);
-  Check([observer.events isEqual:@[
-    @(PCNativeWindowEventDidBecomeKey), @(PCNativeWindowEventDidResignKey),
-    @(PCNativeWindowEventDidEnterFullScreen), @(PCNativeWindowEventDidExitFullScreen)
-  ]], "native notification names route to exact event values once");
-  Check(observer.lastWindow == first, "event carries actual window");
-  [association detach];
-  Check(association.window == nil && !association.invalidated,
-        "detach clears association without terminal invalidation");
-  Post(NSWindowDidBecomeKeyNotification, first);
-  Check(observer.events.count == 4, "detached notifications are removed");
-  Check([association attachToWindow:other], "explicit detachment permits reassociation");
-  Post(NSWindowDidBecomeKeyNotification, first);
-  Check(observer.events.count == 4, "old window remains ignored after reassociation");
-  Post(NSWindowDidBecomeKeyNotification, other);
-  Check(observer.events.count == 5 && observer.lastWindow == other,
-        "new association receives only new window events");
-  [association invalidate];
   [first close];
   [other close];
 }
 
-static void TestActualCloseAndReentrantAttach(void) {
+- (void)testOtherWindowsDoNotDeliverEvents {
   NSWindow* first = Window();
-  NSWindow* next = Window();
-  AssociationObserver* observer = [AssociationObserver new];
-  observer.reattachAfterClose = next;
-  PCNativeWindowAssociation* association =
-      [[PCNativeWindowAssociation alloc] initWithObserver:observer];
+  NSWindow* other = Window();
+  Check([association attachToWindow:first], "attach supplied shell window");
+  Post(NSWindowDidBecomeKeyNotification, other);
+  Check(observer.events.count == 0, "other window's notification is ignored");
+  [first close];
+  [other close];
+}
+
+- (void)checkNotification:(NSNotificationName)notification event:(PCNativeWindowEvent)event {
+  NSWindow* first = Window();
+  Check([association attachToWindow:first], "attach supplied shell window");
+  Post(notification, first);
+  XCTAssertEqualObjects(observer.events, (@[@(event)]));
+  Check(observer.lastWindow == first, "event carries actual window");
+  [first close];
+}
+
+- (void)testDidBecomeKeyReachesTheAssociatedWindow {
+  [self checkNotification:NSWindowDidBecomeKeyNotification event:PCNativeWindowEventDidBecomeKey];
+}
+
+- (void)testDidResignKeyReachesTheAssociatedWindow {
+  [self checkNotification:NSWindowDidResignKeyNotification event:PCNativeWindowEventDidResignKey];
+}
+
+- (void)testDidEnterFullScreenReachesTheAssociatedWindow {
+  [self checkNotification:NSWindowDidEnterFullScreenNotification event:PCNativeWindowEventDidEnterFullScreen];
+}
+
+- (void)testDidExitFullScreenReachesTheAssociatedWindow {
+  [self checkNotification:NSWindowDidExitFullScreenNotification event:PCNativeWindowEventDidExitFullScreen];
+}
+
+- (void)testDetachingRemovesWindowNotifications {
+  NSWindow* first = Window();
+  Check([association attachToWindow:first], "attach supplied shell window");
+  [association detach];
+  Check(association.window == nil && !association.invalidated,
+        "detach clears association without terminal invalidation");
+  Post(NSWindowDidBecomeKeyNotification, first);
+  XCTAssertEqual(observer.events.count, 0u);
+  [first close];
+}
+
+- (void)testReattachmentReceivesEventsOnlyFromTheNewWindow {
+  NSWindow* first = Window();
+  NSWindow* other = Window();
+  Check([association attachToWindow:first], "attach supplied shell window");
+  [association detach];
+  Check([association attachToWindow:other], "explicit detachment permits reassociation");
+  Post(NSWindowDidBecomeKeyNotification, first);
+  Post(NSWindowDidBecomeKeyNotification, other);
+  XCTAssertEqualObjects(observer.events, (@[@(PCNativeWindowEventDidBecomeKey)]));
+  XCTAssertEqual(observer.lastWindow, other);
+  [first close];
+  [other close];
+}
+
+- (void)testClosingDetachesBeforeDeliveringTheCloseEvent {
+  NSWindow* first = Window();
   [association attachToWindow:first];
   [first close];
   Check(observer.events.count == 1 &&
@@ -110,6 +181,14 @@ static void TestActualCloseAndReentrantAttach(void) {
   Check(observer.closeSawDetachedAssociation,
         "native close clears weak attachment before notifying owner");
   Check(observer.lastWindow == first, "closing window remains valid during callback");
+}
+
+- (void)testAReentrantCloseCanAttachAnotherWindow {
+  NSWindow* first = Window();
+  NSWindow* next = Window();
+  observer.reattachAfterClose = next;
+  [association attachToWindow:first];
+  [first close];
   Check(association.window == next, "close callback's new attachment survives return");
   Post(NSWindowDidBecomeKeyNotification, first);
   Check(observer.events.count == 1, "old close clears all old notifications");
@@ -122,19 +201,26 @@ static void TestActualCloseAndReentrantAttach(void) {
   [association invalidate];
 }
 
-static void TestInvalidationAndWeakOwnership(void) {
+- (void)testLosingTheObserverLeavesTheAssociationAlive {
   NSWindow* window = Window();
   __weak AssociationObserver* weakObserver;
-  PCNativeWindowAssociation* association;
+  PCNativeWindowAssociation* weakOwner;
   @autoreleasepool {
-    AssociationObserver* observer = [AssociationObserver new];
-    weakObserver = observer;
-    association = [[PCNativeWindowAssociation alloc] initWithObserver:observer];
-    [association attachToWindow:window];
+    AssociationObserver* delegate = [AssociationObserver new];
+    weakObserver = delegate;
+    weakOwner = [[PCNativeWindowAssociation alloc] initWithObserver:delegate];
+    [weakOwner attachToWindow:window];
   }
-  Check(weakObserver == nil, "association does not own its shell observer");
+  Check(weakObserver == nil, "weakOwner does not own its shell observer");
   Post(NSWindowDidBecomeKeyNotification, window);
-  Check(association.window == window, "missing observer does not destroy association");
+  Check(weakOwner.window == window, "missing observer does not destroy weakOwner");
+  [weakOwner invalidate];
+  [window close];
+}
+
+- (void)testInvalidationPermanentlyDetachesTheWindow {
+  NSWindow* window = Window();
+  [association attachToWindow:window];
   [association invalidate];
   [association invalidate];
   Check(association.invalidated && association.window == nil,
@@ -143,8 +229,9 @@ static void TestInvalidationAndWeakOwnership(void) {
   [association detach];
   Check(association.invalidated, "detach cannot undo invalidation");
   [window close];
+}
 
-  AssociationObserver* observer = [AssociationObserver new];
+- (void)testDetachingReleasesTheWindow {
   PCNativeWindowAssociation* weakWindowAssociation =
       [[PCNativeWindowAssociation alloc] initWithObserver:observer];
   __weak NSWindow* weakWindow;
@@ -157,7 +244,9 @@ static void TestInvalidationAndWeakOwnership(void) {
   }
   Check(weakWindow == nil, "association and observer do not retain detached shell window");
   [weakWindowAssociation invalidate];
+}
 
+- (void)testReleasingAnAssociationUnregistersItsNotifications {
   NSWindow* retainedByShell = Window();
   __weak PCNativeWindowAssociation* weakAssociation;
   @autoreleasepool {
@@ -173,7 +262,7 @@ static void TestInvalidationAndWeakOwnership(void) {
   [retainedByShell close];
 }
 
-static void TestReentryAndSharedShellWindow(void) {
+- (void)testInvalidatingDuringDeliveryPreservesTheOtherAssociation {
   NSWindow* window = Window();
   AssociationObserver* first = [AssociationObserver new];
   AssociationObserver* second = [AssociationObserver new];
@@ -197,51 +286,28 @@ static void TestReentryAndSharedShellWindow(void) {
   [b invalidate];
 }
 
-static void TestMainThreadBoundary(void) {
-  AssociationObserver* observer = [AssociationObserver new];
-  PCNativeWindowAssociation* association =
-      [[PCNativeWindowAssociation alloc] initWithObserver:observer];
-  dispatch_semaphore_t finished = dispatch_semaphore_create(0);
+- (void)testBackgroundDetachRaisesBeforeMutatingTheAssociation {
   __block BOOL rejected = NO;
-  dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+  PCNativeWindowAssociation* target = association;
+  NSWindow* window = Window();
+  [target attachToWindow:window];
+  void (^work)(void) = ^{
     @try {
-      [association detach];
+      [target detach];
     } @catch (NSException* exception) {
       rejected = [exception.name isEqual:NSInternalInconsistencyException];
     }
-    dispatch_semaphore_signal(finished);
-  });
-  Check(dispatch_semaphore_wait(finished, dispatch_time(DISPATCH_TIME_NOW, 2*NSEC_PER_SEC)) == 0,
-        "background contract check completes");
-  Check(rejected, "off-main native access fails before mutation");
-  Check(!association.invalidated && association.window == nil,
-        "thread violation leaves lifecycle state intact");
-  [association invalidate];
-}
-
-@interface WindowAssociationTests : ParcNativeTestCase
-@end
-
-@implementation WindowAssociationTests
-
-- (void)testAttachmentAndNotificationIdentity {
-  TestAttachmentAndNotificationIdentity();
-}
-
-- (void)testActualCloseAndReentrantAttach {
-  TestActualCloseAndReentrantAttach();
-}
-
-- (void)testInvalidationAndWeakOwnership {
-  TestInvalidationAndWeakOwnership();
-}
-
-- (void)testReentryAndSharedShellWindow {
-  TestReentryAndSharedShellWindow();
-}
-
-- (void)testMainThreadBoundary {
-  TestMainThreadBoundary();
+  };
+  pthread_t worker;
+  int error = pthread_create(&worker, NULL, RunBlock, (__bridge void*)work);
+  XCTAssertEqual(error, 0);
+  if (error == 0) {
+    XCTAssertEqual(pthread_join(worker, NULL), 0);
+    XCTAssertTrue(rejected);
+    XCTAssertEqual(target.window, window);
+    XCTAssertFalse(target.invalidated);
+  }
+  [window close];
 }
 
 @end

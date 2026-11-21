@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
 #import <QuartzCore/QuartzCore.h>
 #import "page_host.h"
 #import "pane_compositor_view.h"
@@ -95,14 +96,13 @@
 static NSWindow *Window(void) {
   NSWindow *window = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(0, 0, 480, 320)
-                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-                          NSWindowStyleMaskResizable
+                styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered defer:NO];
   window.releasedWhenClosed = NO;
   return window;
 }
 
-static NSView *Page(RendererView **rendererOut) {
+static NSView *Page(RendererView *__strong *rendererOut) {
   NSView *page = [[NSView alloc] initWithFrame:NSMakeRect(13, 17, 240, 150)];
   RendererView *renderer = [[RendererView alloc] initWithFrame:page.bounds];
   renderer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
@@ -119,22 +119,84 @@ static RendererView *SetSentinel(NSWindow *window) {
 }
 
 static void DrainMainQueue(void) {
-  __block BOOL drained = NO;
-  dispatch_async(dispatch_get_main_queue(), ^{ drained = YES; });
-  NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:2];
-  while (!drained && deadline.timeIntervalSinceNow > 0) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);
-  }
-  Check(drained, "main queue drains through the real run loop");
+  ParcNativeSettle();
 }
 
-static void TestContainmentAndReuse(void) {
-  NSWindow *window = Window();
-  RendererView *renderer = nil;
-  NSView *page = Page(&renderer);
+@interface PCNativePageHost (RendererResponder)
+- (NSView *)rendererResponder;
+@end
+
+namespace {
+
+struct PageFixture {
+  NSWindow* window = Window();
+  RendererView* renderer = nil;
+  NSView* page = Page(&renderer);
+  HostObserver* observer = [HostObserver new];
+  PCNativePageHost* host = [PCNativePageHost hostWithContentView:page observer:observer];
+
+  void Attach() { [window.contentView addSubview:host]; }
+  ~PageFixture() {
+    [host invalidate];
+    [window close];
+  }
+};
+
+struct FreshPage {
+  NSWindow* window = Window();
+  LayoutView* page = [[LayoutView alloc] initWithFrame:NSZeroRect];
+  RendererView* renderer = [[RendererView alloc] initWithFrame:NSZeroRect];
+  PCNativePaneCompositorView* display = [[PCNativePaneCompositorView alloc] initWithHostedLayer:[CALayer layer]];
+  PCNativePageHost* host;
+  PCNativeDevToolsPaneView* pane;
+  explicit FreshPage(BOOL initiallyHidden) {
+    NSView *wrapper = [[NSView alloc] initWithFrame:window.contentView.bounds];
+    [window.contentView addSubview:wrapper];
+    [window.contentView layoutSubtreeIfNeeded];
+    page.hidden = initiallyHidden;
+    renderer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [page addSubview:renderer];
+    [page addSubview:display];
+    host = [PCNativePageHost hostWithContentView:page observer:nil];
+    pane = [[PCNativeDevToolsPaneView alloc]
+        initWithInspectedView:host];
+    pane.frame = wrapper.bounds;
+    [wrapper addSubview:pane];
+    [pane applyInspectedRect:pane.bounds toolsRect:NSZeroRect hideInspected:NO];
+  }
+  ~FreshPage() {
+    [pane invalidate];
+    [host invalidate];
+    [window close];
+  }
+};
+
+struct CompositorFixture : PageFixture {
+  PCNativePaneCompositorView* overlay = [[PCNativePaneCompositorView alloc] initWithHostedLayer:[CALayer layer]];
+  NSUInteger geometryChanges = 0;
+  NSUInteger screenChanges = 0;
+  BOOL lastOnScreen = NO;
+  CompositorFixture() {
+    Attach();
+    overlay.geometryHandler = ^{ ++geometryChanges; };
+    overlay.screenHandler = ^{ ++screenChanges; lastOnScreen = overlay.onScreen; };
+  }
+  ~CompositorFixture() {
+    overlay.geometryHandler = nil;
+    overlay.screenHandler = nil;
+  }
+};
+}
+
+@interface ParcNativeTests_PageHostTests : ParcNativeTestCase
+@end
+
+@implementation ParcNativeTests_PageHostTests
+
+- (void)testNewHostsAdoptTheSuppliedPageAndItsFrame {
+  NSView* page = Page(nullptr);
   NSRect originalFrame = page.frame;
-  HostObserver *original = [HostObserver new];
-  PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:original];
+  PCNativePageHost* host = [PCNativePageHost hostWithContentView:page observer:nil];
   Check(host.contentView == page, "host preserves actual supplied page identity");
   Check(page.superview == host, "supplied view is hosted, not recreated");
   Check(NSEqualRects(host.frame, originalFrame), "initial host adopts supplied frame");
@@ -145,107 +207,151 @@ static void TestContainmentAndReuse(void) {
           "edge constraints are active equalities without insets");
     Check(constraint.relation == NSLayoutRelationEqual, "edge constraints are equalities");
   }
-  HostObserver *ignored = [HostObserver new];
-  PCNativePageHost *reused = [PCNativePageHost hostWithContentView:page observer:ignored];
-  Check(reused == host, "exact existing host is reused");
-  Check(host.subviews.count == 1 && host.constraints.count == 4,
-        "reuse adds no view or constraints");
-  [window.contentView addSubview:host];
-  Check(original.lastWindow == window && [original.moves.lastObject isEqual:@"attach"],
-        "reuse retains original observer");
-  Check(ignored.moves.count == 0, "reuse does not replace observer");
-  host.frame = NSMakeRect(30, 40, 365, 219);
-  [host layoutSubtreeIfNeeded];
-  Check(NSEqualRects(page.frame, host.bounds), "resized page fills host bounds");
-  Check(NSEqualSizes(renderer.frame.size, page.bounds.size), "renderer follows page size");
-  [host removeFromSuperview];
-  Check(original.lastWindow == nil && [original.moves.lastObject isEqual:@"detach"],
-        "detachment reports nil actual window");
-  Check(host.contentView == page, "window detachment preserves the live page");
   [host invalidate];
-  [window close];
 }
 
-static void TestReplacementAndExternalRemoval(void) {
-  NSWindow *window = Window();
+- (void)testAskingForTheSamePageReusesItsOriginalObserver {
+  PageFixture f;
+  HostObserver *ignored = [HostObserver new];
+  PCNativePageHost *reused = [PCNativePageHost hostWithContentView:f.page observer:ignored];
+  Check(reused == f.host, "exact existing host is reused");
+  Check(f.host.subviews.count == 1 && f.host.constraints.count == 4,
+        "reuse adds no view or constraints");
+  [f.window.contentView addSubview:f.host];
+  Check(f.observer.lastWindow == f.window && [f.observer.moves.lastObject isEqual:@"attach"],
+        "reuse retains original observer");
+  Check(ignored.moves.count == 0, "reuse does not replace observer");
+}
+
+- (void)testResizingTheHostResizesItsRenderer {
+  PageFixture f;
+  f.Attach();
+  f.host.frame = NSMakeRect(30, 40, 365, 219);
+  [f.host layoutSubtreeIfNeeded];
+  Check(NSEqualRects(f.page.frame, f.host.bounds), "resized page fills host bounds");
+  Check(NSEqualSizes(f.renderer.frame.size, f.page.bounds.size), "renderer follows page size");
+}
+
+- (void)testWindowDetachmentPreservesTheLivePage {
+  PageFixture f;
+  f.Attach();
+  [f.host removeFromSuperview];
+  Check(f.observer.lastWindow == nil && [f.observer.moves.lastObject isEqual:@"detach"],
+        "detachment reports nil actual window");
+  Check(f.host.contentView == f.page, "window detachment preserves the live page");
+}
+
+- (void)testAnOrdinarySuperviewIsNotReusedAsAHost {
   NSView *old = Page(nullptr);
   NSView *unrelatedContainer = [[NSView alloc] initWithFrame:NSZeroRect];
   [unrelatedContainer addSubview:old];
   PCNativePageHost *host = [PCNativePageHost hostWithContentView:old observer:nil];
   Check(host != unrelatedContainer && unrelatedContainer.subviews.count == 0,
         "an ordinary parent is not mistaken for a reusable host");
-  [window.contentView addSubview:host];
-  NSArray<NSLayoutConstraint *> *oldConstraints = host.constraints;
+  [host invalidate];
+}
+
+- (void)testReplacingContentSwapsTheViewAndItsConstraints {
+  PageFixture f;
+  f.Attach();
+  NSArray<NSLayoutConstraint *> *oldConstraints = f.host.constraints;
   NSView *replacement = Page(nullptr);
-  Check([host replaceContentView:replacement], "accept real replacement");
-  Check(host.contentView == replacement && replacement.superview == host,
+  Check([f.host replaceContentView:replacement], "accept real replacement");
+  Check(f.host.contentView == replacement && replacement.superview == f.host,
         "replacement retains supplied view identity");
-  Check(old.superview == nil, "old page is detached");
-  Check(host.constraints.count == 4, "replacement has only four new edge pins");
+  Check(f.page.superview == nil, "old page is detached");
+  Check(f.host.constraints.count == 4, "replacement has only four new edge pins");
   for (NSLayoutConstraint *constraint in oldConstraints) {
     Check(!constraint.active, "old edge pins are removed");
   }
-  [host layoutSubtreeIfNeeded];
-  Check(NSEqualRects(replacement.frame, host.bounds), "replacement fills host");
-  Check([host replaceContentView:replacement] && host.constraints.count == 4,
-        "same-view replacement is idempotent");
-  Check(![host replaceContentView:nil], "nil replacement does not remove page");
-  Check(![host replaceContentView:host], "self replacement rejects hierarchy cycle");
-  Check(![host replaceContentView:window.contentView], "ancestor replacement rejects cycle");
-  Check(host.contentView == replacement, "rejected changes preserve page");
-  [replacement removeFromSuperview];
-  Check(host.contentView == nil && host.constraints.count == 0,
-        "external removal clears owned reference and constraints");
-  Check(![host replaceContentView:old], "replacement does not invent zero-child installation");
-  [host invalidate];
-  [window close];
+  [f.host layoutSubtreeIfNeeded];
+  Check(NSEqualRects(replacement.frame, f.host.bounds), "replacement fills host");
 }
 
-static void TestDeferredFocusAndRendererReplacement(void) {
-  NSWindow *window = Window();
-  RendererView *renderer = nil;
-  NSView *page = Page(&renderer);
-  HostObserver *observer = [HostObserver new];
-  PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:observer];
-  [window.contentView addSubview:host];
-  SetSentinel(window);
-  Check(host.acceptsFirstResponder, "acceptance is forwarded to renderer");
-  Check([window makeFirstResponder:host], "AppKit accepts host focus request");
-  Check(window.firstResponder == host && renderer.focusRequests == 0,
+- (void)testReplacingContentWithItselfIsIdempotent {
+  PageFixture f;
+  f.Attach();
+  Check([f.host replaceContentView:f.page] && f.host.constraints.count == 4,
+        "same-view replacement is idempotent");
+}
+
+- (void)testNilReplacementPreservesThePage {
+  PageFixture f;
+  f.Attach();
+  Check(![f.host replaceContentView:nil], "nil replacement does not remove page");
+  XCTAssertEqual(f.host.contentView, f.page);
+}
+
+- (void)testSelfReplacementPreservesThePage {
+  PageFixture f;
+  f.Attach();
+  Check(![f.host replaceContentView:f.host], "self replacement rejects hierarchy cycle");
+  XCTAssertEqual(f.host.contentView, f.page);
+}
+
+- (void)testAncestorReplacementPreservesThePage {
+  PageFixture f;
+  f.Attach();
+  Check(![f.host replaceContentView:f.window.contentView], "ancestor replacement rejects cycle");
+  XCTAssertEqual(f.host.contentView, f.page);
+}
+
+- (void)testExternalRemovalClearsOwnedConstraints {
+  PageFixture f;
+  f.Attach();
+  [f.page removeFromSuperview];
+  Check(f.host.contentView == nil && f.host.constraints.count == 0,
+        "external removal clears owned reference and constraints");
+  XCTAssertFalse([f.host replaceContentView:Page(nullptr)]);
+}
+
+- (void)testFocusIsForwardedToTheRendererOnTheQueue {
+  PageFixture f;
+  f.Attach();
+  SetSentinel(f.window);
+  Check(f.host.acceptsFirstResponder, "acceptance is forwarded to renderer");
+  Check([f.window makeFirstResponder:f.host], "AppKit accepts host focus request");
+  Check(f.window.firstResponder == f.host && f.renderer.focusRequests == 0,
         "renderer focus is deferred, not falsely reported synchronous");
   DrainMainQueue();
-  Check(window.firstResponder == renderer && renderer.focusRequests == 1,
+  Check(f.window.firstResponder == f.renderer && f.renderer.focusRequests == 1,
         "queued request focuses real renderer in same window");
-  Check(observer.focusAttempts == 1, "observer notified after queued request");
-
-  SetSentinel(window);
-  Check([window makeFirstResponder:host], "queue focus before renderer replacement");
-  [renderer removeFromSuperview];
-  RendererView *next = [[RendererView alloc] initWithFrame:page.bounds];
-  [page addSubview:next];
-  Check(window.firstResponder == host, "replacement does not focus eagerly");
-  DrainMainQueue();
-  Check(window.firstResponder == host && next.focusRequests == 0,
-        "a replacement renderer supersedes the request queued for the old one");
-  Check(renderer.focusRequests == 1, "old renderer is never focused again");
-  SetSentinel(window);
-  Check([window makeFirstResponder:host], "queue focus after the replacement");
-  DrainMainQueue();
-  Check(window.firstResponder == next && next.focusRequests == 1,
-        "a request made after replacement focuses the new renderer");
-
-  SetSentinel(window);
-  next.acceptsFocus = NO;
-  Check(!host.acceptsFirstResponder, "nonaccepting renderer is not hidden by host");
-  Check([host becomeFirstResponder], "direct host request acknowledges queued attempt");
-  DrainMainQueue();
-  Check(window.firstResponder != next, "attempt callback does not turn rejected focus into success");
-  Check(observer.focusAttempts == 4, "attempt callback does not imply native focus success");
-  [host invalidate];
-  [window close];
+  Check(f.observer.focusAttempts == 1, "observer notified after queued request");
 }
 
-static void TestDeferredMoveAndDetach(void) {
+- (void)testReplacementCancelsFocusRequestedForThePreviousRenderer {
+  PageFixture f;
+  f.Attach();
+  SetSentinel(f.window);
+  Check([f.window makeFirstResponder:f.host], "queue focus before renderer replacement");
+  [f.renderer removeFromSuperview];
+  RendererView *next = [[RendererView alloc] initWithFrame:f.page.bounds];
+  [f.page addSubview:next];
+  Check(f.window.firstResponder == f.host, "replacement does not focus eagerly");
+  DrainMainQueue();
+  Check(f.window.firstResponder == f.host && next.focusRequests == 0,
+        "a replacement renderer supersedes the request queued for the old one");
+  XCTAssertEqual(f.renderer.focusRequests, 0u);
+  SetSentinel(f.window);
+  Check([f.window makeFirstResponder:f.host], "queue focus after the replacement");
+  DrainMainQueue();
+  Check(f.window.firstResponder == next && next.focusRequests == 1,
+        "a request made after replacement focuses the new renderer");
+}
+
+- (void)testARejectingRendererStillReportsItsAttempt {
+  PageFixture f;
+  f.Attach();
+  SetSentinel(f.window);
+  f.renderer.acceptsFocus = NO;
+  Check(!f.host.acceptsFirstResponder, "nonaccepting renderer is not hidden by host");
+  Check([f.host becomeFirstResponder], "direct host request acknowledges queued attempt");
+  DrainMainQueue();
+  Check(f.window.firstResponder != f.renderer, "attempt callback does not turn rejected focus into success");
+  Check(f.observer.focusAttempts == 1, "attempt callback does not imply native focus success");
+}
+
+- (void)testQueuedFocusCannotCrossAWindowMove {
   NSWindow *first = Window();
   NSWindow *second = Window();
   RendererView *renderer = nil;
@@ -263,24 +369,28 @@ static void TestDeferredMoveAndDetach(void) {
         "a move to another window supersedes the queued request");
   Check(first.firstResponder == firstSentinel, "old window responder stays unchanged");
   Check(observer.lastWindow == second, "attachment observer follows actual destination");
-
-  RendererView *secondSentinel = SetSentinel(second);
-  NSUInteger attempts = observer.focusAttempts;
-  NSUInteger focusRequests = renderer.focusRequests;
-  Check([host becomeFirstResponder], "queue focus before detachment");
-  [host removeFromSuperview];
-  DrainMainQueue();
-  Check(host.window == nil && renderer.window == nil, "detached views have no native window");
-  Check(second.firstResponder == secondSentinel && renderer.focusRequests == focusRequests,
-        "detached request does not focus another window");
-  Check(observer.focusAttempts == attempts + 1,
-        "detached focus still reports processing, not success");
   [host invalidate];
   [first close];
   [second close];
 }
 
-static void TestInvalidationAndWeakLifetime(void) {
+- (void)testDetachmentCancelsQueuedRendererFocus {
+  PageFixture f;
+  f.Attach();
+  RendererView *sentinel = SetSentinel(f.window);
+  NSUInteger attempts = f.observer.focusAttempts;
+  NSUInteger focusRequests = f.renderer.focusRequests;
+  Check([f.host becomeFirstResponder], "queue focus before detachment");
+  [f.host removeFromSuperview];
+  DrainMainQueue();
+  Check(f.host.window == nil && f.renderer.window == nil, "detached views have no native window");
+  Check(f.window.firstResponder == sentinel && f.renderer.focusRequests == focusRequests,
+        "detached request does not focus another window");
+  Check(f.observer.focusAttempts == attempts + 1,
+        "detached focus still reports processing, not success");
+}
+
+- (void)testInvalidatingAHostDetachesContentAndCancelsFocus {
   NSWindow *window = Window();
   RendererView *renderer = nil;
   NSView *page = Page(&renderer);
@@ -303,7 +413,9 @@ static void TestInvalidationAndWeakLifetime(void) {
   Check(!host.acceptsFirstResponder && ![host becomeFirstResponder],
         "invalidated host cannot accept another focus request");
   Check(![host replaceContentView:page], "invalidated host cannot resurrect contents");
+}
 
+- (void)testThePageHostDoesNotKeepItsObserverAlive {
   __weak HostObserver *weakObserver = nil;
   PCNativePageHost *weaklyObserved = nil;
   @autoreleasepool {
@@ -315,7 +427,9 @@ static void TestInvalidationAndWeakLifetime(void) {
   [weaklyObserved becomeFirstResponder];
   DrainMainQueue();
   [weaklyObserved invalidate];
+}
 
+- (void)testQueuedFocusReleasesTheWrapperAfterInvalidation {
   __weak PCNativePageHost *queuedHost = nil;
   __weak NSView *releasedPage = nil;
   @autoreleasepool {
@@ -332,7 +446,7 @@ static void TestInvalidationAndWeakLifetime(void) {
   Check(queuedHost == nil, "queued task releases invalidated wrapper without cycle");
 }
 
-static void TestReentrantReplacementTeardown(void) {
+- (void)testAReplacementCallbackCanInvalidateItsHost {
   NSWindow *window = Window();
   PCNativePageHost *host = [PCNativePageHost hostWithContentView:Page(nullptr) observer:nil];
   [window.contentView addSubview:host];
@@ -347,33 +461,49 @@ static void TestReentrantReplacementTeardown(void) {
   [window close];
 }
 
-static void TestHiddenQueuedFocus(void) {
-  NSWindow *window = Window();
-  RendererView *renderer = nil;
-  NSView *content = Page(&renderer);
-  NSView *container = [[NSView alloc] initWithFrame:window.contentView.bounds];
-  [window.contentView addSubview:container];
-  PCNativePageHost *host = [PCNativePageHost hostWithContentView:content observer:nil];
-  [container addSubview:host];
-  Check([host becomeFirstResponder], "queue focus before native crash presentation");
+- (void)testHidingAnAncestorCancelsQueuedFocus {
+  PageFixture f;
+  f.Attach();
+  NSView* container = [[NSView alloc] initWithFrame:f.window.contentView.bounds];
+  [f.window.contentView addSubview:container];
+  [container addSubview:f.host];
+  Check([f.host becomeFirstResponder], "queue focus before native crash presentation");
   container.hidden = YES;
   DrainMainQueue();
-  Check(renderer.focusRequests == 0, "queued focus cannot enter hidden renderer ancestry");
-  Check(!host.acceptsFirstResponder && ![host becomeFirstResponder],
+  Check(f.renderer.focusRequests == 0, "queued focus cannot enter hidden renderer ancestry");
+  Check(!f.host.acceptsFirstResponder && ![f.host becomeFirstResponder],
         "hidden page rejects new focus requests");
-  container.hidden = NO;
-  renderer.hidden = YES;
-  Check(!host.acceptsFirstResponder && ![host becomeFirstResponder],
-        "hidden renderer rejects focus even when outer host remains visible");
-  renderer.hidden = NO;
-  Check([window makeFirstResponder:host], "same retained host can focus after restoration");
-  DrainMainQueue();
-  Check(renderer.focusRequests == 1, "restored host focuses real renderer once");
-  [host invalidate];
-  [window close];
 }
 
-static void TestBackgroundContentVisibility(void) {
+- (void)testRestoringAHiddenRendererAdmitsFreshFocus {
+  PageFixture f;
+  f.Attach();
+  f.renderer.hidden = YES;
+  Check(!f.host.acceptsFirstResponder && ![f.host becomeFirstResponder],
+        "hidden renderer rejects focus even when outer host remains visible");
+  f.renderer.hidden = NO;
+  Check([f.window makeFirstResponder:f.host], "same retained host can focus after restoration");
+  DrainMainQueue();
+  Check(f.renderer.focusRequests == 1, "restored host focuses real renderer once");
+  [f.host invalidate];
+  [f.window close];
+}
+
+- (void)testAHiddenParkingViewCannotShowThePage {
+  PageFixture f;
+  f.Attach();
+  NSView *parking = [[NSView alloc] initWithFrame:NSZeroRect];
+  parking.hidden = YES;
+  [f.window.contentView addSubview:parking];
+  f.page.hidden = YES;
+  [parking addSubview:f.host];
+  Check(f.page.hidden && f.host.contentView == f.page,
+        "background adoption preserves the same initially hidden native child");
+  XCTAssertTrue([f.host setContentVisible:NO inWindow:f.window]);
+  XCTAssertFalse([f.host setContentVisible:YES inWindow:f.window]);
+}
+
+- (void)testSelectingAParkedPageSizesAndShowsTheOriginalRenderer {
   NSWindow *window = Window();
   NSView *parking = [[NSView alloc] initWithFrame:NSZeroRect];
   parking.hidden = YES;
@@ -387,18 +517,10 @@ static void TestBackgroundContentVisibility(void) {
   [parking addSubview:host];
   Check(page.hidden && host.contentView == page,
         "background adoption preserves the same initially hidden native child");
-  BOOL hasVisibility = [host respondsToSelector:@selector(setContentVisible:inWindow:)];
-  if (hasVisibility) {
-    Check([host setContentVisible:NO inWindow:window], "background visibility remains hidden");
-    Check(![host setContentVisible:YES inWindow:window],
-          "a hidden ancestor cannot make the native content visible");
-  }
   [window.contentView addSubview:host];
   host.frame = NSMakeRect(0, 0, 640, 360);
   renderer.hidden = NO;
-  if (hasVisibility) {
-    Check([host setContentVisible:YES inWindow:window], "visible shell shows exact native content");
-  }
+  XCTAssertTrue([host setContentVisible:YES inWindow:window]);
   Check(!page.hidden && !renderer.hiddenOrHasHiddenAncestor,
         "selected initially-hidden native content and its renderer are actually unhidden");
   Check(host.contentView == page && page.superview == host && renderer.superview == page,
@@ -406,92 +528,131 @@ static void TestBackgroundContentVisibility(void) {
   Check(NSEqualSizes(page.frame.size, NSMakeSize(640, 360)) &&
             NSEqualSizes(renderer.frame.size, NSMakeSize(640, 360)),
         "zero-sized parked page reaches actual selected host dimensions");
+  [host invalidate];
+  [window close];
+}
+
+- (void)testShowingVisibleContentSkipsRedundantVisibilityCallbacks {
+  NSWindow *window = Window();
+  VisibilityView *page = [[VisibilityView alloc] initWithFrame:NSZeroRect];
+  page.hidden = YES;
+  RendererView *renderer = [[RendererView alloc] initWithFrame:NSZeroRect];
+  renderer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+  [page addSubview:renderer];
+  PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
+  [window.contentView addSubview:host];
+  XCTAssertTrue([host setContentVisible:YES inWindow:window]);
   NSUInteger changes = page.hiddenChanges;
   Check([host setContentVisible:YES inWindow:window] && page.hiddenChanges == changes,
         "repeated visibility does not emit another native hide callback");
   Check([host setContentVisible:NO inWindow:window] && page.hidden,
         "returning to background hides the same managed parent");
-  NSWindow *unrelated = Window();
-  Check(![host setContentVisible:YES inWindow:unrelated] && page.hidden,
-        "another supplied window cannot expose the page");
-  [unrelated close];
-  [host removeFromSuperview];
-  Check(![host setContentVisible:YES inWindow:window] && page.hidden,
-        "detached content is not exposed by stale presentation");
   [host invalidate];
   [window close];
 }
 
-static void TestFreshContentSizeBeforeShow(void) {
-  const BOOL initialVisibility[] = {NO, YES};
-  for (BOOL initiallyHidden : initialVisibility) {
-    NSWindow *window = Window();
-    NSView *wrapper = [[NSView alloc] initWithFrame:window.contentView.bounds];
-    [window.contentView addSubview:wrapper];
-    [window.contentView layoutSubtreeIfNeeded];
-    LayoutView *page = [[LayoutView alloc] initWithFrame:NSZeroRect];
-    page.hidden = initiallyHidden;
-    RendererView *renderer = [[RendererView alloc] initWithFrame:NSZeroRect];
-    renderer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    [page addSubview:renderer];
-    PCNativePaneCompositorView *display = [[PCNativePaneCompositorView alloc]
-        initWithHostedLayer:[CALayer layer]];
-    [page addSubview:display];
-    PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
-    PCNativeDevToolsPaneView *pane = [[PCNativeDevToolsPaneView alloc]
-        initWithInspectedView:host];
-    pane.frame = wrapper.bounds;
-    [wrapper addSubview:pane];
-    [pane applyInspectedRect:pane.bounds toolsRect:NSZeroRect hideInspected:NO];
-    Check(!window.visible && !window.isKeyWindow,
-          "fresh-page check needs no window activation or display");
-    Check(NSIsEmptyRect(page.bounds) && NSIsEmptyRect(renderer.bounds),
-          "new native page and renderer have no size before presentation");
-    Check([host setContentVisible:YES inWindow:window], "fresh page can be shown");
-    Check(NSEqualSizes(page.bounds.size, host.bounds.size) &&
-              NSEqualSizes(renderer.bounds.size, host.bounds.size),
-          "showing a brand-new page sizes its renderer without another window event");
-    Check(NSEqualSizes(display.bounds.size, host.bounds.size),
-          "the compositor display receives the same nonempty size");
-    Check(!page.hidden, "fresh page is visible after its geometry is ready");
-    const NSUInteger layouts = page.subtreeLayouts;
-    for (int i = 0; i < 5; ++i) {
-      Check([host setContentVisible:YES inWindow:window], "settled show remains valid");
-    }
-    Check(page.subtreeLayouts == layouts,
-          "settled visibility does not walk the renderer subtree again");
-
-    host.frame = NSMakeRect(0, 0, 640, 360);
-    NSView *shelf = [[NSView alloc] initWithFrame:NSZeroRect];
-    [host setInfobarView:shelf preferredHeight:30];
-    Check([host setContentVisible:YES inWindow:window], "resized page can be shown");
-    Check(NSEqualSizes(page.bounds.size, NSMakeSize(640, 330)) &&
-              NSEqualSizes(renderer.bounds.size, page.bounds.size),
-          "showing settles the page below its infobar at the new size");
-    [host setInfobarView:shelf preferredHeight:60];
-    Check([host setContentVisible:YES inWindow:window] &&
-              NSEqualSizes(page.bounds.size, NSMakeSize(640, 300)),
-          "changing an existing infobar settles its new inset before show");
-    [host setInfobarView:nil preferredHeight:0];
-    Check([host setContentVisible:YES inWindow:window] &&
-              NSEqualSizes(page.bounds.size, NSMakeSize(640, 360)),
-          "removing an infobar gives the page its full size before show");
-
-    NSView *replacement = [[NSView alloc] initWithFrame:NSZeroRect];
-    Check([host replaceContentView:replacement], "fresh native content can replace the old view");
-    Check([host setContentVisible:YES inWindow:window] &&
-              NSEqualSizes(replacement.bounds.size, NSMakeSize(640, 360)),
-          "same-size host settles a newly replaced content view");
-    [pane invalidate];
-    [host invalidate];
-    [window close];
-  }
+- (void)testAnotherWindowCannotExposeAHiddenPage {
+  PageFixture f;
+  f.Attach();
+  f.page.hidden = YES;
+  NSWindow *unrelated = Window();
+  Check(![f.host setContentVisible:YES inWindow:unrelated] && f.page.hidden,
+        "another supplied window cannot expose the page");
+  [unrelated close];
 }
 
-static void TestParkedSplitAndTransferredGeometry(void) {
+- (void)testDetachedContentIgnoresStaleVisibility {
+  PageFixture f;
+  f.Attach();
+  f.page.hidden = YES;
+  [f.host removeFromSuperview];
+  Check(![f.host setContentVisible:YES inWindow:f.window] && f.page.hidden,
+        "detached content is not exposed by stale presentation");
+}
+
+- (void)testShowingAnInitiallyVisiblePageSizesItsRendererAndCompositor {
+  FreshPage f(NO);
+  Check(!f.window.visible && !f.window.isKeyWindow,
+        "fresh-page check needs no window activation or display");
+  Check(NSIsEmptyRect(f.page.bounds) && NSIsEmptyRect(f.renderer.bounds),
+        "new native page and renderer have no size before presentation");
+  Check([f.host setContentVisible:YES inWindow:f.window], "fresh page can be shown");
+  Check(NSEqualSizes(f.page.bounds.size, f.host.bounds.size) &&
+            NSEqualSizes(f.renderer.bounds.size, f.host.bounds.size),
+        "showing a brand-new page sizes its renderer without another window event");
+  Check(NSEqualSizes(f.display.bounds.size, f.host.bounds.size),
+        "the compositor display receives the same nonempty size");
+  Check(!f.page.hidden, "fresh page is visible after its geometry is ready");
+}
+
+- (void)testShowingAnInitiallyHiddenPageSizesItsRendererAndCompositor {
+  FreshPage f(YES);
+  Check(!f.window.visible && !f.window.isKeyWindow,
+        "fresh-page check needs no window activation or display");
+  Check(NSIsEmptyRect(f.page.bounds) && NSIsEmptyRect(f.renderer.bounds),
+        "new native page and renderer have no size before presentation");
+  Check([f.host setContentVisible:YES inWindow:f.window], "fresh page can be shown");
+  Check(NSEqualSizes(f.page.bounds.size, f.host.bounds.size) &&
+            NSEqualSizes(f.renderer.bounds.size, f.host.bounds.size),
+        "showing a brand-new page sizes its renderer without another window event");
+  Check(NSEqualSizes(f.display.bounds.size, f.host.bounds.size),
+        "the compositor display receives the same nonempty size");
+  Check(!f.page.hidden, "fresh page is visible after its geometry is ready");
+}
+
+- (void)testSettledVisibilitySkipsRendererLayout {
+  FreshPage f(YES);
+  [f.host setContentVisible:YES inWindow:f.window];
+  const NSUInteger layouts = f.page.subtreeLayouts;
+  XCTAssertTrue([f.host setContentVisible:YES inWindow:f.window]);
+  XCTAssertEqual(f.page.subtreeLayouts, layouts);
+}
+
+- (void)testAnInfobarReservesSpaceBeforeThePageIsShown {
+  FreshPage f(YES);
+  f.host.frame = NSMakeRect(0, 0, 640, 360);
+  NSView *shelf = [[NSView alloc] initWithFrame:NSZeroRect];
+  [f.host setInfobarView:shelf preferredHeight:30];
+  Check([f.host setContentVisible:YES inWindow:f.window], "resized page can be shown");
+  Check(NSEqualSizes(f.page.bounds.size, NSMakeSize(640, 330)) &&
+            NSEqualSizes(f.renderer.bounds.size, f.page.bounds.size),
+        "showing settles the page below its infobar at the new size");
+}
+
+- (void)testResizingAnInfobarChangesThePageInset {
+  FreshPage f(YES);
+  f.host.frame = NSMakeRect(0, 0, 640, 360);
+  NSView *shelf = [[NSView alloc] initWithFrame:NSZeroRect];
+  [f.host setInfobarView:shelf preferredHeight:30];
+  [f.host setInfobarView:shelf preferredHeight:60];
+  Check([f.host setContentVisible:YES inWindow:f.window] &&
+            NSEqualSizes(f.page.bounds.size, NSMakeSize(640, 300)),
+        "changing an existing infobar settles its new inset before show");
+}
+
+- (void)testRemovingAnInfobarReturnsItsSpaceToThePage {
+  FreshPage f(YES);
+  f.host.frame = NSMakeRect(0, 0, 640, 360);
+  NSView *shelf = [[NSView alloc] initWithFrame:NSZeroRect];
+  [f.host setInfobarView:shelf preferredHeight:30];
+  [f.host setInfobarView:nil preferredHeight:0];
+  Check([f.host setContentVisible:YES inWindow:f.window] &&
+            NSEqualSizes(f.page.bounds.size, NSMakeSize(640, 360)),
+        "removing an infobar gives the page its full size before show");
+}
+
+- (void)testShowingAReplacementSettlesItsGeometry {
+  FreshPage f(YES);
+  f.host.frame = NSMakeRect(0, 0, 640, 360);
+  NSView *replacement = [[NSView alloc] initWithFrame:NSZeroRect];
+  Check([f.host replaceContentView:replacement], "fresh native content can replace the old view");
+  Check([f.host setContentVisible:YES inWindow:f.window] &&
+            NSEqualSizes(replacement.bounds.size, NSMakeSize(640, 360)),
+        "same-size host settles a newly replaced content view");
+}
+
+- (void)withParkedPage:(void (^)(NSWindow*, NSView*, NSView*, NSView*, PCNativePageHost*, PCNativeDevToolsPaneView*, NSView*, RendererView*))check {
   NSWindow *first = Window();
-  NSWindow *second = Window();
-  [second setContentSize:NSMakeSize(720, 480)];
   NSView *parking = [[NSView alloc] initWithFrame:NSZeroRect];
   parking.hidden = YES;
   [first.contentView addSubview:parking];
@@ -508,72 +669,101 @@ static void TestParkedSplitAndTransferredGeometry(void) {
       initWithInspectedView:host];
   [parking addSubview:pane];
   [pane applyInspectedRect:NSZeroRect toolsRect:NSZeroRect hideInspected:NO];
-  Check(![host setContentVisible:YES inWindow:first] && page.hidden,
-        "a new parked page stays hidden until a visible pane owns it");
-  [left addSubview:pane];
-  pane.frame = left.bounds;
-  [pane applyInspectedRect:pane.bounds toolsRect:NSZeroRect hideInspected:NO];
-  Check([host setContentVisible:YES inWindow:first] &&
-            NSEqualSizes(page.bounds.size, left.bounds.size) &&
-            NSEqualSizes(renderer.bounds.size, left.bounds.size),
-        "selecting a parked page sizes it to its split pane without a window event");
-
-  NSView *otherPage = [[NSView alloc] initWithFrame:NSZeroRect];
-  PCNativePageHost *otherHost = [PCNativePageHost hostWithContentView:otherPage observer:nil];
-  PCNativeDevToolsPaneView *otherPane = [[PCNativeDevToolsPaneView alloc]
-      initWithInspectedView:otherHost];
-  otherPane.frame = right.bounds;
-  [right addSubview:otherPane];
-  [otherPane applyInspectedRect:otherPane.bounds toolsRect:NSZeroRect hideInspected:NO];
-  Check([otherHost setContentVisible:YES inWindow:first] &&
-            NSEqualSizes(otherPage.bounds.size, right.bounds.size) && !page.hidden,
-        "each displayed split page gets its own geometry without needing focus");
-
-  Check([host setContentVisible:NO inWindow:first], "hide a page before parking it");
-  [parking addSubview:pane];
-  pane.frame = NSZeroRect;
-  [pane applyInspectedRect:NSZeroRect toolsRect:NSZeroRect hideInspected:NO];
-  [left addSubview:pane];
-  pane.frame = left.bounds;
-  [pane applyInspectedRect:pane.bounds toolsRect:NSZeroRect hideInspected:NO];
-  Check([host setContentVisible:YES inWindow:first] &&
-            NSEqualSizes(renderer.bounds.size, left.bounds.size),
-        "reselecting a parked page restores its dimensions immediately");
-
-  Check([host setContentVisible:NO inWindow:first], "hide a page before window transfer");
+  check(first, parking, left, right, host, pane, page, renderer);
   [pane invalidate];
-  PCNativeDevToolsPaneView *moved = [[PCNativeDevToolsPaneView alloc]
-      initWithInspectedView:host];
-  moved.frame = second.contentView.bounds;
-  [second.contentView addSubview:moved];
-  [moved applyInspectedRect:moved.bounds toolsRect:NSZeroRect hideInspected:NO];
-  Check(![host setContentVisible:YES inWindow:first] && page.hidden,
-        "the previous window cannot show a transferred page");
-  Check([host setContentVisible:YES inWindow:second] &&
-            NSEqualSizes(page.bounds.size, second.contentView.bounds.size) &&
-            NSEqualSizes(renderer.bounds.size, second.contentView.bounds.size),
-        "the receiving window sizes and shows the same page without activation");
-  Check(!otherPage.hidden && NSEqualSizes(otherPage.bounds.size, right.bounds.size),
-        "moving one split page preserves the other page's geometry and visibility");
-
-  Check([host setContentVisible:NO inWindow:second], "hide before native content reattachment");
-  [page removeFromSuperview];
-  page.frame = NSZeroRect;
-  Check([host restoreContentView:page], "reattach the native content to its existing host");
-  Check([host setContentVisible:YES inWindow:second] &&
-            NSEqualSizes(renderer.bounds.size, second.contentView.bounds.size),
-        "reattachment into an unchanged host settles the new edge constraints");
-  Check(!first.visible && !second.visible && !first.isKeyWindow && !second.isKeyWindow,
-        "split selection and window transfer require no displayed or key test window");
-  [moved invalidate];
   [host invalidate];
-  [otherPane invalidate];
-  [otherHost invalidate];
   [first close];
-  [second close];
 }
 
-static void TestLayoutReentrantOwnership(void) {
+- (void)testSelectingAParkedSplitSizesItOnTheFirstShow {
+  [self withParkedPage:^(NSWindow* first, NSView*, NSView* left, NSView*, PCNativePageHost* host, PCNativeDevToolsPaneView* pane, NSView* page, RendererView* renderer) {
+    Check(![host setContentVisible:YES inWindow:first] && page.hidden,
+          "a new parked page stays hidden until a visible pane owns it");
+    [left addSubview:pane];
+    pane.frame = left.bounds;
+    [pane applyInspectedRect:pane.bounds toolsRect:NSZeroRect hideInspected:NO];
+    Check([host setContentVisible:YES inWindow:first] &&
+              NSEqualSizes(page.bounds.size, left.bounds.size) &&
+              NSEqualSizes(renderer.bounds.size, left.bounds.size),
+          "selecting a parked page sizes it to its split pane without a window event");
+  }];
+}
+
+- (void)testReselectingAParkedSplitRestoresItsDimensions {
+  [self withParkedPage:^(NSWindow* first, NSView* parking, NSView* left, NSView*, PCNativePageHost* host, PCNativeDevToolsPaneView* pane, NSView*, RendererView* renderer) {
+    [left addSubview:pane];
+    pane.frame = left.bounds;
+    [pane applyInspectedRect:pane.bounds toolsRect:NSZeroRect hideInspected:NO];
+    [host setContentVisible:YES inWindow:first];
+    Check([host setContentVisible:NO inWindow:first], "hide a page before parking it");
+    [parking addSubview:pane];
+    pane.frame = NSZeroRect;
+    [pane applyInspectedRect:NSZeroRect toolsRect:NSZeroRect hideInspected:NO];
+    [left addSubview:pane];
+    pane.frame = left.bounds;
+    [pane applyInspectedRect:pane.bounds toolsRect:NSZeroRect hideInspected:NO];
+    Check([host setContentVisible:YES inWindow:first] &&
+              NSEqualSizes(renderer.bounds.size, left.bounds.size),
+          "reselecting a parked page restores its dimensions immediately");
+  }];
+}
+
+- (void)testMovingASplitPagePreservesBothPagesGeometry {
+  [self withParkedPage:^(NSWindow* first, NSView*, NSView* left, NSView* right, PCNativePageHost* host, PCNativeDevToolsPaneView* pane, NSView* page, RendererView* renderer) {
+    NSWindow *second = Window();
+    [second setContentSize:NSMakeSize(720, 480)];
+    [left addSubview:pane];
+    pane.frame = left.bounds;
+    [pane applyInspectedRect:pane.bounds toolsRect:NSZeroRect hideInspected:NO];
+    [host setContentVisible:YES inWindow:first];
+    NSView *otherPage = [[NSView alloc] initWithFrame:NSZeroRect];
+    PCNativePageHost *otherHost = [PCNativePageHost hostWithContentView:otherPage observer:nil];
+    PCNativeDevToolsPaneView *otherPane = [[PCNativeDevToolsPaneView alloc]
+        initWithInspectedView:otherHost];
+    otherPane.frame = right.bounds;
+    [right addSubview:otherPane];
+    [otherPane applyInspectedRect:otherPane.bounds toolsRect:NSZeroRect hideInspected:NO];
+    Check([otherHost setContentVisible:YES inWindow:first] &&
+              NSEqualSizes(otherPage.bounds.size, right.bounds.size) && !page.hidden,
+          "each displayed split page gets its own geometry without needing focus");
+    Check([host setContentVisible:NO inWindow:first], "hide a page before window transfer");
+    [pane invalidate];
+    PCNativeDevToolsPaneView *moved = [[PCNativeDevToolsPaneView alloc]
+        initWithInspectedView:host];
+    moved.frame = second.contentView.bounds;
+    [second.contentView addSubview:moved];
+    [moved applyInspectedRect:moved.bounds toolsRect:NSZeroRect hideInspected:NO];
+    Check(![host setContentVisible:YES inWindow:first] && page.hidden,
+          "the previous window cannot show a transferred page");
+    Check([host setContentVisible:YES inWindow:second] &&
+              NSEqualSizes(page.bounds.size, second.contentView.bounds.size) &&
+              NSEqualSizes(renderer.bounds.size, second.contentView.bounds.size),
+          "the receiving window sizes and shows the same page without activation");
+    Check(!otherPage.hidden && NSEqualSizes(otherPage.bounds.size, right.bounds.size),
+          "moving one split page preserves the other page's geometry and visibility");
+    Check(!first.visible && !second.visible && !first.isKeyWindow && !second.isKeyWindow,
+          "split selection and window transfer require no displayed or key test window");
+    [moved invalidate];
+    [otherPane invalidate];
+    [otherHost invalidate];
+    [second close];
+  }];
+}
+
+- (void)testRestoringTheNativeViewSettlesItsEdgesBeforeShow {
+  PageFixture f;
+  f.Attach();
+  [f.host setContentVisible:NO inWindow:f.window];
+  f.host.frame = f.window.contentView.bounds;
+  [f.page removeFromSuperview];
+  f.page.frame = NSZeroRect;
+  Check([f.host restoreContentView:f.page], "reattach the native content to its existing host");
+  Check([f.host setContentVisible:YES inWindow:f.window] &&
+            NSEqualSizes(f.renderer.bounds.size, f.window.contentView.bounds.size),
+        "reattachment into an unchanged host settles the new edge constraints");
+}
+
+- (void)testLayoutCanMoveThePageToAnotherWindow {
   NSWindow *first = Window();
   NSWindow *second = Window();
   LayoutView *page = [[LayoutView alloc] initWithFrame:NSZeroRect];
@@ -593,7 +783,12 @@ static void TestLayoutReentrantOwnership(void) {
   Check(host.window == second && page.hidden,
         "old layout leaves the new owner's page hidden");
   [host invalidate];
+  [first close];
+  [second close];
+}
 
+- (void)testANewerHideDuringLayoutSupersedesTheShow {
+  NSWindow *first = Window();
   LayoutView *current = [[LayoutView alloc] initWithFrame:NSZeroRect];
   current.hidden = YES;
   PCNativePageHost *currentHost = [PCNativePageHost hostWithContentView:current observer:nil];
@@ -610,7 +805,18 @@ static void TestLayoutReentrantOwnership(void) {
   Check(![currentHost setContentVisible:YES inWindow:first] && current.hidden,
         "the older show cannot reverse a hide delivered by layout");
   Check([currentHost setContentVisible:YES inWindow:first], "a later show succeeds");
-  [currentHost setContentVisible:NO inWindow:first];
+  [first close];
+}
+
+- (void)testInvalidationDuringLayoutKeepsThePageHidden {
+  NSWindow *first = Window();
+  LayoutView *current = [[LayoutView alloc] initWithFrame:NSZeroRect];
+  current.hidden = YES;
+  PCNativePageHost *currentHost = [PCNativePageHost hostWithContentView:current observer:nil];
+  currentHost.frame = first.contentView.bounds;
+  [first.contentView addSubview:currentHost];
+  __weak PCNativePageHost *weakCurrentHost = currentHost;
+  __weak LayoutView *weakCurrent = current;
   currentHost.frame = NSMakeRect(0, 0, 640, 360);
   current.needsLayout = YES;
   current.didLayout = ^{
@@ -622,10 +828,9 @@ static void TestLayoutReentrantOwnership(void) {
   Check(current.hidden && current.superview == nil,
         "invalidated layout cannot resurrect or unhide its content");
   [first close];
-  [second close];
 }
 
-static void TestVisibilityReentrantOwnership(void) {
+- (void)testVisibilityCallbacksCanTransferWindowOwnership {
   NSWindow *first = Window();
   NSWindow *second = Window();
   VisibilityView *page = [[VisibilityView alloc] initWithFrame:NSMakeRect(0, 0, 300, 200)];
@@ -644,6 +849,20 @@ static void TestVisibilityReentrantOwnership(void) {
         "old show refuses success after native callback moves the host");
   Check(host.window == second && page.hidden,
         "old show leaves newer owner visibility and hierarchy intact");
+  [host invalidate];
+  Check(![host setContentVisible:YES inWindow:second], "invalidated host rejects visibility");
+  [first close];
+  [second close];
+}
+
+- (void)testVisibilityCallbacksCanChangeContainers {
+  NSWindow *second = Window();
+  VisibilityView *page = [[VisibilityView alloc] initWithFrame:NSMakeRect(0, 0, 300, 200)];
+  page.hidden = YES;
+  PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
+  [second.contentView addSubview:host];
+  __weak PCNativePageHost *weakHost = host;
+  __weak VisibilityView *weakPage = page;
   NSView *newContainer = [[NSView alloc] initWithFrame:second.contentView.bounds];
   [second.contentView addSubview:newContainer];
   page.visibilityChanged = ^{
@@ -656,6 +875,18 @@ static void TestVisibilityReentrantOwnership(void) {
         "old show refuses same-window reparenting during native callback");
   Check(host.superview == newContainer && page.hidden,
         "same-window ownership supersession preserves the new hidden state");
+  [host invalidate];
+  [second close];
+}
+
+- (void)testVisibilityCallbacksCanSupersedeAShow {
+  NSWindow *second = Window();
+  VisibilityView *page = [[VisibilityView alloc] initWithFrame:NSMakeRect(0, 0, 300, 200)];
+  page.hidden = YES;
+  PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
+  [second.contentView addSubview:host];
+  __weak PCNativePageHost *weakHost = host;
+  __weak VisibilityView *weakPage = page;
   page.visibilityChanged = ^{
     weakPage.visibilityChanged = nil;
     Check([weakHost setContentVisible:NO inWindow:second],
@@ -663,6 +894,18 @@ static void TestVisibilityReentrantOwnership(void) {
   };
   Check(![host setContentVisible:YES inWindow:second] && page.hidden,
         "old show cannot acknowledge a superseding hidden decision");
+  [host invalidate];
+  [second close];
+}
+
+- (void)testVisibilityCallbacksCanReplaceThePage {
+  NSWindow *second = Window();
+  VisibilityView *page = [[VisibilityView alloc] initWithFrame:NSMakeRect(0, 0, 300, 200)];
+  page.hidden = YES;
+  PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
+  [second.contentView addSubview:host];
+  __weak PCNativePageHost *weakHost = host;
+  __weak VisibilityView *weakPage = page;
   NSView *replacement = [[NSView alloc] initWithFrame:page.frame];
   replacement.hidden = YES;
   page.visibilityChanged = ^{
@@ -674,16 +917,10 @@ static void TestVisibilityReentrantOwnership(void) {
   Check(host.contentView == replacement && replacement.hidden && !page.superview,
         "old operation never unhides replacement content");
   [host invalidate];
-  Check(![host setContentVisible:YES inWindow:second], "invalidated host rejects visibility");
-  [first close];
   [second close];
 }
 
-@interface PCNativePageHost (RendererResponder)
-- (NSView *)rendererResponder;
-@end
-
-static void TestConcealedPictureKeepsItsConnection(void) {
+- (void)testAConcealedPictureKeepsItsDisplayConnection {
   NSWindow *window = Window();
   NSView *parent = [[NSView alloc] initWithFrame:window.contentView.bounds];
   [window.contentView addSubview:parent];
@@ -714,222 +951,207 @@ static void TestConcealedPictureKeepsItsConnection(void) {
   [window close];
 }
 
-static void TestPaneCompositorViewIsNeverTheRenderer(void) {
-  NSWindow *window = Window();
-  RendererView *renderer = nil;
-  NSView *page = Page(&renderer);
-  PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
-  [window.contentView addSubview:host];
-  __block NSUInteger geometryChanges = 0;
-  __block NSUInteger screenChanges = 0;
-  __block BOOL lastOnScreen = NO;
-  PCNativePaneCompositorView *overlay =
-      [[PCNativePaneCompositorView alloc] initWithHostedLayer:[CALayer layer]];
-  __weak PCNativePaneCompositorView *weakOverlay = overlay;
-  overlay.geometryHandler = ^{ ++geometryChanges; };
-  overlay.screenHandler = ^{
-    ++screenChanges;
-    lastOnScreen = weakOverlay.onScreen;
-  };
-  Check(!overlay.onScreen, "an unplaced compositor view is off screen");
-  [page addSubview:overlay positioned:NSWindowBelow relativeTo:nil];
-  Check(geometryChanges >= 1, "joining a window reports geometry");
-  NSUInteger changes = geometryChanges;
-  overlay.frame = page.bounds;
-  Check(geometryChanges == changes + 1, "a size change reports geometry");
-  changes = geometryChanges;
-  overlay.frame = page.bounds;
-  Check(geometryChanges == changes, "an unchanged size reports nothing");
-  Check(overlay.onScreen, "in a window with no hidden ancestor is on screen");
-  Check(page.subviews.firstObject == overlay && host.acceptsFirstResponder,
+- (void)testAttachingAndResizingTheCompositorReportsGeometry {
+  CompositorFixture f;
+  Check(!f.overlay.onScreen, "an unplaced compositor view is off screen");
+  [f.page addSubview:f.overlay positioned:NSWindowBelow relativeTo:nil];
+  Check(f.geometryChanges >= 1, "joining a window reports geometry");
+  NSUInteger changes = f.geometryChanges;
+  f.overlay.frame = f.page.bounds;
+  Check(f.geometryChanges == changes + 1, "a size change reports geometry");
+  changes = f.geometryChanges;
+  f.overlay.frame = f.page.bounds;
+  Check(f.geometryChanges == changes, "an unchanged size reports nothing");
+}
+
+- (void)testACompositorBelowTheRendererPreservesKeyboardFocus {
+  CompositorFixture f;
+  [f.page addSubview:f.overlay positioned:NSWindowBelow relativeTo:nil];
+  Check(f.overlay.onScreen, "in a window with no hidden ancestor is on screen");
+  Check(f.page.subviews.firstObject == f.overlay && f.host.acceptsFirstResponder,
         "a compositor view below the renderer does not stand in for it");
-  SetSentinel(window);
-  Check([window makeFirstResponder:host], "host focus request with compositor view");
+  SetSentinel(f.window);
+  Check([f.window makeFirstResponder:f.host], "host focus request with compositor view");
   DrainMainQueue();
-  Check(window.firstResponder == renderer, "queued focus reaches the renderer, not the compositor view");
-  [page addSubview:overlay positioned:NSWindowAbove relativeTo:renderer];
-  Check(page.subviews.lastObject == overlay && host.acceptsFirstResponder,
+  Check(f.window.firstResponder == f.renderer, "queued focus reaches the renderer, not the compositor view");
+}
+
+- (void)testACompositorAboveTheRendererPassesEventsThrough {
+  CompositorFixture f;
+  f.overlay.frame = f.page.bounds;
+  [f.page addSubview:f.overlay positioned:NSWindowAbove relativeTo:f.renderer];
+  Check(f.page.subviews.lastObject == f.overlay && f.host.acceptsFirstResponder,
         "a compositor view above the renderer leaves it the responder");
-  Check(!overlay.acceptsFirstResponder && !overlay.isAccessibilityElement &&
-            overlay.accessibilityChildren.count == 0,
+  Check(!f.overlay.acceptsFirstResponder && !f.overlay.isAccessibilityElement &&
+            f.overlay.accessibilityChildren.count == 0,
         "compositor view takes no focus or accessibility");
-  const NSPoint inside = [page convertPoint:NSMakePoint(20, 20) toView:page.superview];
-  Check([page hitTest:inside] == renderer, "events pass through the compositor view to the renderer");
-  NSUInteger screens = screenChanges;
-  page.hidden = YES;
-  Check(!overlay.onScreen, "a hidden WebContents view takes its compositor view off screen");
-  Check(screenChanges > screens && !lastOnScreen,
+  const NSPoint inside = [f.page convertPoint:NSMakePoint(20, 20) toView:f.page.superview];
+  Check([f.page hitTest:inside] == f.renderer, "events pass through the compositor view to the renderer");
+}
+
+- (void)testPageVisibilityUpdatesTheCompositor {
+  CompositorFixture f;
+  [f.page addSubview:f.overlay positioned:NSWindowBelow relativeTo:nil];
+  NSUInteger screens = f.screenChanges;
+  f.page.hidden = YES;
+  Check(!f.overlay.onScreen, "a hidden WebContents view takes its compositor view off screen");
+  Check(f.screenChanges > screens && !f.lastOnScreen,
         "hiding the WebContents view reports leaving the screen at once");
-  screens = screenChanges;
-  page.hidden = NO;
-  Check(screenChanges > screens && lastOnScreen, "unhiding it reports rejoining the screen");
-  screens = screenChanges;
-  host.hidden = YES;
-  Check(!overlay.onScreen, "a hidden ancestor takes it off screen");
-  Check(screenChanges > screens && !lastOnScreen, "a hidden ancestor reports leaving the screen");
-  screens = screenChanges;
-  host.hidden = NO;
-  Check(overlay.onScreen, "unhiding brings it back on screen");
-  Check(screenChanges > screens && lastOnScreen, "an unhidden ancestor reports rejoining");
-  NSView *parked = [[NSView alloc] initWithFrame:window.contentView.bounds];
+  screens = f.screenChanges;
+  f.page.hidden = NO;
+  Check(f.screenChanges > screens && f.lastOnScreen, "unhiding it reports rejoining the screen");
+}
+
+- (void)testAncestorVisibilityUpdatesTheCompositor {
+  CompositorFixture f;
+  [f.page addSubview:f.overlay positioned:NSWindowBelow relativeTo:nil];
+  NSUInteger screens = f.screenChanges;
+  f.host.hidden = YES;
+  Check(!f.overlay.onScreen, "a hidden ancestor takes it off screen");
+  Check(f.screenChanges > screens && !f.lastOnScreen, "a hidden ancestor reports leaving the screen");
+  screens = f.screenChanges;
+  f.host.hidden = NO;
+  Check(f.overlay.onScreen, "unhiding brings it back on screen");
+  Check(f.screenChanges > screens && f.lastOnScreen, "an unhidden ancestor reports rejoining");
+}
+
+- (void)testParkingAndUnparkingUpdateTheCompositor {
+  CompositorFixture f;
+  [f.page addSubview:f.overlay positioned:NSWindowBelow relativeTo:nil];
+  NSUInteger screens = f.screenChanges;
+  NSView *parked = [[NSView alloc] initWithFrame:f.window.contentView.bounds];
   parked.hidden = YES;
-  [window.contentView addSubview:parked];
-  screens = screenChanges;
-  [parked addSubview:host];
-  Check(screenChanges > screens && !lastOnScreen && !overlay.onScreen,
+  [f.window.contentView addSubview:parked];
+  screens = f.screenChanges;
+  [parked addSubview:f.host];
+  Check(f.screenChanges > screens && !f.lastOnScreen && !f.overlay.onScreen,
         "parking the page reports leaving the screen at once");
-  screens = screenChanges;
-  [window.contentView addSubview:host];
-  Check(screenChanges > screens && lastOnScreen && overlay.onScreen,
+  screens = f.screenChanges;
+  [f.window.contentView addSubview:f.host];
+  Check(f.screenChanges > screens && f.lastOnScreen && f.overlay.onScreen,
         "unparking it reports rejoining the screen");
-  const NSUInteger before = geometryChanges;
-  screens = screenChanges;
-  [overlay removeFromSuperview];
-  Check(!overlay.onScreen && geometryChanges > before, "leaving the window reports geometry");
-  Check(screenChanges > screens && !lastOnScreen, "leaving the window reports leaving the screen");
-  screens = screenChanges;
-  [page addSubview:overlay positioned:NSWindowAbove relativeTo:renderer];
-  Check(screenChanges > screens && lastOnScreen, "joining a shown page reports the screen");
-  [overlay removeFromSuperview];
-  overlay.geometryHandler = nil;
-  overlay.screenHandler = nil;
-  renderer.acceptsFocus = NO;
-  [page addSubview:overlay positioned:NSWindowAbove relativeTo:renderer];
-  Check(!host.acceptsFirstResponder, "a nonaccepting renderer is still the one consulted");
-  [renderer removeFromSuperview];
-  Check(!host.acceptsFirstResponder, "a page with only the compositor view has no renderer");
-  [host invalidate];
-  [window close];
 }
 
-static void TestRestoreContentAfterNativeDetach(void) {
-  NSWindow *window = Window();
-  RendererView *renderer = nil;
-  NSView *page = Page(&renderer);
-  PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
-  [window.contentView addSubview:host];
-  NSView *shelf = [[NSView alloc] initWithFrame:NSZeroRect];
-  [host setInfobarView:shelf preferredHeight:30];
-  [host layoutSubtreeIfNeeded];
-  const NSRect pinned = page.frame;
-  Check(![host restoreContentView:page], "managed content cannot be restored over itself");
-  page.hidden = YES;
-  [page removeFromSuperview];
-  Check(host.contentView == nil, "native removal clears the managed content");
-  NSView *stranger = [[NSView alloc] initWithFrame:NSZeroRect];
-  [window.contentView addSubview:stranger];
-  Check(![host restoreContentView:stranger], "a view with another superview is refused");
-  Check(![host restoreContentView:host], "the host itself is refused");
-  Check([host restoreContentView:page], "the removed WebContents view is reinstalled");
-  Check(host.contentView == page && page.superview == host &&
-            host.subviews.firstObject == page && host.subviews.lastObject == shelf,
-        "reinstalled content is below the infobar shelf");
-  [host layoutSubtreeIfNeeded];
-  Check(NSEqualRects(page.frame, pinned), "reinstalled content is pinned below the shelf again");
-  Check(page.hidden, "restoring visibility is the caller's");
-  Check(host.rendererResponder == renderer, "the renderer is the responder again");
+- (void)testLeavingAndRejoiningAWindowUpdatesTheCompositor {
+  CompositorFixture f;
+  [f.page addSubview:f.overlay positioned:NSWindowBelow relativeTo:nil];
+  NSUInteger screens = f.screenChanges;
+  const NSUInteger before = f.geometryChanges;
+  screens = f.screenChanges;
+  [f.overlay removeFromSuperview];
+  Check(!f.overlay.onScreen && f.geometryChanges > before, "leaving the window reports geometry");
+  Check(f.screenChanges > screens && !f.lastOnScreen, "leaving the window reports leaving the screen");
+  screens = f.screenChanges;
+  [f.page addSubview:f.overlay positioned:NSWindowAbove relativeTo:f.renderer];
+  Check(f.screenChanges > screens && f.lastOnScreen, "joining a shown page reports the screen");
+}
+
+- (void)testACompositorCannotServeAsAFallbackRenderer {
+  CompositorFixture f;
+  f.renderer.acceptsFocus = NO;
+  [f.page addSubview:f.overlay positioned:NSWindowAbove relativeTo:f.renderer];
+  Check(!f.host.acceptsFirstResponder, "a nonaccepting renderer is still the one consulted");
+  [f.renderer removeFromSuperview];
+  Check(!f.host.acceptsFirstResponder, "a page with only the compositor view has no renderer");
+}
+
+- (void)testContentCannotBeRestoredWhileAlreadyManaged {
+  PageFixture f;
+  f.Attach();
+  Check(![f.host restoreContentView:f.page], "managed content cannot be restored over itself");
   NSView *other = Page(nullptr);
-  Check(![host restoreContentView:other], "nothing is restored while content is managed");
-  [page removeFromSuperview];
-  [host invalidate];
-  Check(![host restoreContentView:page] && page.superview == nil, "an invalidated host refuses");
-  [window close];
+  Check(![f.host restoreContentView:other], "nothing is restored while content is managed");
 }
 
-static void TestHistoryOverlayContainer(void) {
-  NSWindow *window = Window();
-  RendererView *renderer = nil;
-  NSView *page = Page(&renderer);
-  PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
-  [window.contentView addSubview:host];
-  NSView *container = host.historyOverlayContainer;
-  Check(container && container.superview == host && host.subviews.lastObject == container,
+- (void)testARestoredPageResumesItsPositionBelowTheInfobar {
+  PageFixture f;
+  f.Attach();
+  NSView *shelf = [[NSView alloc] initWithFrame:NSZeroRect];
+  [f.host setInfobarView:shelf preferredHeight:30];
+  [f.host layoutSubtreeIfNeeded];
+  const NSRect pinned = f.page.frame;
+  f.page.hidden = YES;
+  [f.page removeFromSuperview];
+  Check(f.host.contentView == nil, "native removal clears the managed content");
+  Check([f.host restoreContentView:f.page], "the removed WebContents view is reinstalled");
+  Check(f.host.contentView == f.page && f.page.superview == f.host &&
+            f.host.subviews.firstObject == f.page && f.host.subviews.lastObject == shelf,
+        "reinstalled content is below the infobar shelf");
+  [f.host layoutSubtreeIfNeeded];
+  Check(NSEqualRects(f.page.frame, pinned), "reinstalled content is pinned below the shelf again");
+  Check(f.page.hidden, "restoring visibility is the caller's");
+  Check(f.host.rendererResponder == f.renderer, "the renderer is the responder again");
+}
+
+- (void)testAViewOwnedElsewhereCannotBeRestored {
+  PageFixture f;
+  f.Attach();
+  [f.page removeFromSuperview];
+  NSView *stranger = [[NSView alloc] initWithFrame:NSZeroRect];
+  [f.window.contentView addSubview:stranger];
+  Check(![f.host restoreContentView:stranger], "a view with another superview is refused");
+}
+
+- (void)testTheHostCannotBeRestoredInsideItself {
+  PageFixture f;
+  f.Attach();
+  [f.page removeFromSuperview];
+  Check(![f.host restoreContentView:f.host], "the host itself is refused");
+}
+
+- (void)testInvalidationPermanentlyClosesContentRestoration {
+  PageFixture f;
+  f.Attach();
+  [f.page removeFromSuperview];
+  [f.host invalidate];
+  Check(![f.host restoreContentView:f.page] && f.page.superview == nil, "an invalidated host refuses");
+}
+
+- (void)testTheHistoryOverlayCoversAndClipsToItsHost {
+  PageFixture f;
+  f.Attach();
+  NSView *container = f.host.historyOverlayContainer;
+  Check(container && container.superview == f.host && f.host.subviews.lastObject == container,
         "the history overlay container is the host's top subview");
-  Check(NSEqualRects(container.frame, host.bounds) && container.clipsToBounds,
+  Check(NSEqualRects(container.frame, f.host.bounds) && container.clipsToBounds,
         "the container covers and clips to the host");
+}
+
+- (void)testTheHistoryOverlayPreservesInputForTheRenderer {
+  PageFixture f;
+  f.Attach();
+  NSView *container = f.host.historyOverlayContainer;
   Check(!container.acceptsFirstResponder &&
             [container hitTest:NSMakePoint(10, 10)] == nil,
         "the container never takes focus or clicks");
-  Check(host.rendererResponder == renderer, "the renderer stays the responder");
+  Check(f.host.rendererResponder == f.renderer, "the renderer stays the responder");
+}
+
+- (void)testAnInfobarCannotCoverTheHistoryOverlay {
+  PageFixture f;
+  f.Attach();
+  NSView *container = f.host.historyOverlayContainer;
   NSView *shelf = [[NSView alloc] initWithFrame:NSZeroRect];
-  [host setInfobarView:shelf preferredHeight:30];
-  Check(host.historyOverlayContainer == container && host.subviews.lastObject == container,
+  [f.host setInfobarView:shelf preferredHeight:30];
+  Check(f.host.historyOverlayContainer == container && f.host.subviews.lastObject == container,
         "the same container returns above a later infobar shelf");
-  [host setFrameSize:NSMakeSize(500, 300)];
-  Check(NSEqualRects(container.frame, host.bounds), "the container follows the host's size");
-  [host invalidate];
-  Check(host.historyOverlayContainer == nil && container.superview == nil,
+}
+
+- (void)testTheHistoryOverlayFollowsHostResizing {
+  PageFixture f;
+  f.Attach();
+  NSView *container = f.host.historyOverlayContainer;
+  [f.host setFrameSize:NSMakeSize(500, 300)];
+  Check(NSEqualRects(container.frame, f.host.bounds), "the container follows the host's size");
+}
+
+- (void)testInvalidatingTheHostRemovesItsHistoryOverlay {
+  PageFixture f;
+  f.Attach();
+  NSView *container = f.host.historyOverlayContainer;
+  [f.host invalidate];
+  Check(f.host.historyOverlayContainer == nil && container.superview == nil,
         "invalidation removes the container");
-  [window close];
-}
-
-@interface PageHostTests : ParcNativeTestCase
-@end
-
-@implementation PageHostTests
-
-- (void)testContainmentAndReuse {
-  TestContainmentAndReuse();
-}
-
-- (void)testReplacementAndExternalRemoval {
-  TestReplacementAndExternalRemoval();
-}
-
-- (void)testDeferredFocusAndRendererReplacement {
-  TestDeferredFocusAndRendererReplacement();
-}
-
-- (void)testDeferredMoveAndDetach {
-  TestDeferredMoveAndDetach();
-}
-
-- (void)testInvalidationAndWeakLifetime {
-  TestInvalidationAndWeakLifetime();
-}
-
-- (void)testReentrantReplacementTeardown {
-  TestReentrantReplacementTeardown();
-}
-
-- (void)testHiddenQueuedFocus {
-  TestHiddenQueuedFocus();
-}
-
-- (void)testFreshContentSizeBeforeShow {
-  TestFreshContentSizeBeforeShow();
-}
-
-- (void)testBackgroundContentVisibility {
-  TestBackgroundContentVisibility();
-}
-
-- (void)testParkedSplitAndTransferredGeometry {
-  TestParkedSplitAndTransferredGeometry();
-}
-
-- (void)testLayoutReentrantOwnership {
-  TestLayoutReentrantOwnership();
-}
-
-- (void)testVisibilityReentrantOwnership {
-  TestVisibilityReentrantOwnership();
-}
-
-- (void)testConcealedPictureKeepsItsConnection {
-  TestConcealedPictureKeepsItsConnection();
-}
-
-- (void)testPaneCompositorViewIsNeverTheRenderer {
-  TestPaneCompositorViewIsNeverTheRenderer();
-}
-
-- (void)testRestoreContentAfterNativeDetach {
-  TestRestoreContentAfterNativeDetach();
-}
-
-- (void)testHistoryOverlayContainer {
-  TestHistoryOverlayContainer();
 }
 
 @end

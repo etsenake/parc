@@ -1,4 +1,6 @@
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
+#import "ParcNativeWindows.h"
 #import <AppKit/AppKit.h>
 
 #include <cstdio>
@@ -8,10 +10,7 @@
 
 #define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
 static void Drain() {
-  NSDate* end = [NSDate dateWithTimeIntervalSinceNow:0.2];
-  while (end.timeIntervalSinceNow > 0) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);
-  }
+  ParcNativeAdvance(0.2);
 }
 @interface PresentationWindow : NSWindow
 @property(nonatomic, copy) void (^afterAttach)(void);
@@ -29,11 +28,11 @@ static void Drain() {
 static PresentationWindow* Window() {
   auto* window = [[PresentationWindow alloc]
       initWithContentRect:NSMakeRect(-2200, -2200, 600, 400)
-                styleMask:NSWindowStyleMaskTitled
+                styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered
                     defer:NO];
   window.releasedWhenClosed = NO;
-  [window orderFront:nil];
+  ParcNativeMarkVisible(window);
   return window;
 }
 static NSButton* FindButton(NSView* view, NSString* title) {
@@ -175,10 +174,10 @@ static void TestPresentedReentry() {
   Check(!window.attachedSheet, "reentrant close detaches native sheet");
   [window close];
 }
-@interface AutofillPresentationTests : ParcNativeTestCase
+@interface ParcNativeTests_AutofillPresentationTests : ParcNativeTestCase
 @end
 
-@implementation AutofillPresentationTests
+@implementation ParcNativeTests_AutofillPresentationTests
 
 - (void)testDeclinedDecision {
   TestVisibleDecision(NO);

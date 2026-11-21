@@ -29,61 +29,174 @@
 }
 @end
 #define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
-@interface ContentDropRouterTests : ParcNativeTestCase
+@interface ParcNativeTests_ContentDropRouterTests : ParcNativeTestCase
 @end
 
-@implementation ContentDropRouterTests
+@implementation ParcNativeTests_ContentDropRouterTests {
+  NSWindow* _window;
+  DropFixture* _owner;
+  NSView* _view;
+  DragFixture* _drag;
+  id<NSDraggingInfo> _info;
+  PCNativeContentDropRouter* _router;
+}
 
-- (void)testRoutesOneNativeGestureToItsAcceptingOwner {
-  @autoreleasepool {
-  NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,200,200) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
-  DropFixture* owner = [[DropFixture alloc] initWithFrame:NSMakeRect(0,0,200,200)]; window.contentView = owner;
-  NSView* view = [[NSView alloc] initWithFrame:owner.bounds]; [owner addSubview:view];
-  DragFixture* drag = [DragFixture new]; drag.draggingDestinationWindow=window; drag.draggingPasteboard=[NSPasteboard pasteboardWithUniqueName]; drag.draggingSequenceNumber=7; drag.draggingSourceOperationMask=NSDragOperationCopy;
-  [drag.draggingPasteboard setString:@"https://fixture.invalid" forType:NSPasteboardTypeURL];
-  id<NSDraggingInfo> info=(id)drag;
-  PCNativeContentDropRouter* router=[[PCNativeContentDropRouter alloc] initWithView:view];
-  Check(![router begin:info] && !router.claimed, "declined input remains Chromium owned");
-  owner.accepts=YES; owner.ready=YES; owner.succeeds=YES;
-  Check([router begin:info] && router.claimed && router.operation==NSDragOperationCopy,"claim original native gesture");
-  Check([router update:info]==NSDragOperationCopy && owner.updates==1,"update actual receiver");
-  Check([router prepare:info] && [router perform:info] && owner.performs==1 && !router.claimed,"single native commit and cleanup");
-  Check(![router perform:info] && owner.performs==1,"no repeated commit");
-  [router begin:info]; int ends=owner.ends;
-  [drag.draggingPasteboard clearContents];
-  Check([router update:info]==NSDragOperationNone && router.claimed,"expired pasteboard never falls through to renderer");
-  Check(owner.ends==ends+1 && ![router perform:info] && owner.performs==1,"expired payload cancels original preview without commit");
-  [router begin:info]; ends=owner.ends; drag.draggingSequenceNumber++;
-  Check(![router prepare:info] && router.claimed && owner.ends==ends+1,"different gesture invalidates original lease"); [router end];
-  [router begin:info]; [view removeFromSuperview]; ends=owner.ends;
-  Check([router update:info]==NSDragOperationNone && owner.ends==ends+1,"reparent cancels recipient");
-  Check(router.claimed && ![router perform:info],"reparent cannot resume webpage fallback or drop");
-  [owner addSubview:view]; [router begin:info]; owner.ready=NO;
-  Check(![router perform:info] && owner.performs==1 && !router.claimed,"prepare refusal reports failure");
-  owner.ready=YES; owner.succeeds=NO; [router begin:info];
-  Check(![router perform:info] && owner.performs==2 && !router.claimed,"real commit failure preserved");
-  drag.draggingSourceOperationMask=NSDragOperationMove; [router begin:info];
-  Check(router.operation==NSDragOperationNone && [router update:info]==NSDragOperationNone,"honor source operation mask"); Check(![router prepare:info] && ![router perform:info], "incompatible operation cannot commit"); [router end];
-  drag.draggingSourceOperationMask=NSDragOperationCopy;
-  owner.accepts=YES; owner.succeeds=YES; owner.handoff=YES;
-  [router begin:info]; ends=owner.ends; [router exit:info];
-  Check(router.claimed && owner.continuation==router && owner.ends==ends,"exit retains only same accepted native router");
-  Check([owner.continuation update:info]==NSDragOperationCopy,"ancestor continuation uses original lease");
-  drag.draggingSequenceNumber++;
-  Check(![owner.continuation prepare:info] && owner.ends==ends+1 && !owner.continuation,"handoff cannot accept another native sequence");
-  [router begin:info]; [router exit:info]; ends=owner.ends; [router end];
-  Check(owner.ends==ends+1 && !owner.continuation && !router.claimed,"original terminal callback retires ancestor continuation");
-  [router begin:info]; owner.detachOnHandoff=YES; ends=owner.ends; [router exit:info];
-  Check(router.claimed && router.operation==NSDragOperationNone && !owner.continuation && owner.ends==ends+1,"reentrant owner loss cancels accepted handoff without fallback");
-  [owner addSubview:view]; owner.detachOnHandoff=NO; owner.handoff=NO;
-  [router begin:info]; ends=owner.ends; [router exit:info];
-  Check(!router.claimed && owner.ends==ends+1,"unaccepted exit remains terminal");
-  owner.handoff=YES; [router begin:info]; [router exit:nil];
-  Check(!router.claimed && !owner.continuation,"missing dragging info cannot authorize continuation");
-  drag.draggingDestinationWindow=nil;
-  Check(![router begin:info],"foreign or missing original window refused");
-  [drag.draggingPasteboard releaseGlobally];
-  }
+- (void)setUp {
+  [super setUp];
+  _window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 200, 200)
+                                        styleMask:NSWindowStyleMaskBorderless
+                                          backing:NSBackingStoreBuffered
+                                            defer:NO];
+  _owner = [[DropFixture alloc] initWithFrame:NSMakeRect(0, 0, 200, 200)];
+  _window.contentView = _owner;
+  _view = [[NSView alloc] initWithFrame:_owner.bounds];
+  [_owner addSubview:_view];
+  _drag = [DragFixture new];
+  _drag.draggingDestinationWindow = _window;
+  _drag.draggingPasteboard = [NSPasteboard pasteboardWithUniqueName];
+  _drag.draggingSequenceNumber = 7;
+  _drag.draggingSourceOperationMask = NSDragOperationCopy;
+  [_drag.draggingPasteboard setString:@"https://fixture.invalid" forType:NSPasteboardTypeURL];
+  _info = (id)_drag;
+  _router = [[PCNativeContentDropRouter alloc] initWithView:_view];
+}
+
+- (void)tearDown {
+  [_drag.draggingPasteboard releaseGlobally];
+  [super tearDown];
+}
+
+- (void)accept {
+  _owner.accepts = YES;
+  _owner.ready = YES;
+  _owner.succeeds = YES;
+}
+
+- (void)testDeclinedInputStaysWithChromium {
+  Check(![_router begin:_info] && !_router.claimed, "declined input remains Chromium owned");
+}
+
+- (void)testAnAcceptedGestureUpdatesAndCommitsOnce {
+  [self accept];
+  Check([_router begin:_info] && _router.claimed && _router.operation == NSDragOperationCopy,
+        "claim original native gesture");
+  Check([_router update:_info] == NSDragOperationCopy && _owner.updates == 1, "update actual receiver");
+  Check([_router prepare:_info] && [_router perform:_info] && _owner.performs == 1 && !_router.claimed,
+        "single native commit and cleanup");
+  Check(![_router perform:_info] && _owner.performs == 1, "no repeated commit");
+}
+
+- (void)testAnExpiredPasteboardCancelsWithoutCommitting {
+  [self accept];
+  [_router begin:_info];
+  const int ends = _owner.ends;
+  [_drag.draggingPasteboard clearContents];
+  Check([_router update:_info] == NSDragOperationNone && _router.claimed,
+        "expired pasteboard never falls through to renderer");
+  Check(_owner.ends == ends + 1 && ![_router perform:_info] && _owner.performs == 0,
+        "expired payload cancels original preview without commit");
+}
+
+- (void)testADifferentGestureInvalidatesTheLease {
+  [self accept];
+  [_router begin:_info];
+  const int ends = _owner.ends;
+  _drag.draggingSequenceNumber++;
+  Check(![_router prepare:_info] && _router.claimed && _owner.ends == ends + 1,
+        "different gesture invalidates original lease");
+  [_router end];
+}
+
+- (void)testReparentingCancelsTheRecipient {
+  [self accept];
+  [_router begin:_info];
+  [_view removeFromSuperview];
+  const int ends = _owner.ends;
+  Check([_router update:_info] == NSDragOperationNone && _owner.ends == ends + 1, "reparent cancels recipient");
+  Check(_router.claimed && ![_router perform:_info], "reparent cannot resume webpage fallback or drop");
+}
+
+- (void)testAPrepareRefusalReportsFailure {
+  [self accept];
+  [_router begin:_info];
+  _owner.ready = NO;
+  Check(![_router perform:_info] && _owner.performs == 0 && !_router.claimed, "prepare refusal reports failure");
+}
+
+- (void)testACommitFailureIsReported {
+  [self accept];
+  _owner.succeeds = NO;
+  [_router begin:_info];
+  Check(![_router perform:_info] && _owner.performs == 1 && !_router.claimed, "real commit failure preserved");
+}
+
+- (void)testTheSourceOperationMaskIsHonoured {
+  [self accept];
+  _drag.draggingSourceOperationMask = NSDragOperationMove;
+  [_router begin:_info];
+  Check(_router.operation == NSDragOperationNone && [_router update:_info] == NSDragOperationNone,
+        "honor source operation mask");
+  Check(![_router prepare:_info] && ![_router perform:_info], "incompatible operation cannot commit");
+  [_router end];
+}
+
+- (void)testAnAcceptedHandoffContinuesOnlyTheOriginalLease {
+  [self accept];
+  _owner.handoff = YES;
+  [_router begin:_info];
+  const int ends = _owner.ends;
+  [_router exit:_info];
+  Check(_router.claimed && _owner.continuation == _router && _owner.ends == ends,
+        "exit retains only same accepted native router");
+  Check([_owner.continuation update:_info] == NSDragOperationCopy, "ancestor continuation uses original lease");
+  _drag.draggingSequenceNumber++;
+  Check(![_owner.continuation prepare:_info] && _owner.ends == ends + 1 && !_owner.continuation,
+        "handoff cannot accept another native sequence");
+}
+
+- (void)testTheOriginalEndRetiresTheContinuation {
+  [self accept];
+  _owner.handoff = YES;
+  [_router begin:_info];
+  [_router exit:_info];
+  const int ends = _owner.ends;
+  [_router end];
+  Check(_owner.ends == ends + 1 && !_owner.continuation && !_router.claimed,
+        "original terminal callback retires ancestor continuation");
+}
+
+- (void)testLosingTheOwnerDuringHandoffCancelsWithoutFallback {
+  [self accept];
+  _owner.handoff = YES;
+  [_router begin:_info];
+  _owner.detachOnHandoff = YES;
+  const int ends = _owner.ends;
+  [_router exit:_info];
+  Check(_router.claimed && _router.operation == NSDragOperationNone && !_owner.continuation &&
+            _owner.ends == ends + 1,
+        "reentrant owner loss cancels accepted handoff without fallback");
+}
+
+- (void)testAnUnacceptedExitIsTerminal {
+  [self accept];
+  [_router begin:_info];
+  const int ends = _owner.ends;
+  [_router exit:_info];
+  Check(!_router.claimed && _owner.ends == ends + 1, "unaccepted exit remains terminal");
+}
+
+- (void)testMissingDraggingInfoCannotContinue {
+  [self accept];
+  _owner.handoff = YES;
+  [_router begin:_info];
+  [_router exit:nil];
+  Check(!_router.claimed && !_owner.continuation, "missing dragging info cannot authorize continuation");
+}
+
+- (void)testAForeignOrMissingWindowIsRefused {
+  [self accept];
+  _drag.draggingDestinationWindow = nil;
+  Check(![_router begin:_info], "foreign or missing original window refused");
 }
 
 @end

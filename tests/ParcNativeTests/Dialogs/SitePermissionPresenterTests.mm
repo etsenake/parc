@@ -1,5 +1,7 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
+#import "ParcNativeWindows.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -7,20 +9,17 @@
 #import "site_permission_presenter.h"
 #define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
 static void Drain() {
-  NSDate* until = [NSDate dateWithTimeIntervalSinceNow:0.08];
-  while (until.timeIntervalSinceNow > 0) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.005, true);
-  }
+  ParcNativeSettle();
 }
 static NSWindow* Window(BOOL visible = YES) {
   NSWindow* w = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(-2200, -2200, 640, 480)
-                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered
                     defer:NO];
   w.releasedWhenClosed = NO;
   if (visible) {
-    [w orderFront:nil];
+    ParcNativeMarkVisible(w);
   }
   return w;
 }
@@ -77,366 +76,6 @@ static void Click(PCSitePermissionPresenter* r, NSString* label) {
   Check(button && button.enabled, "actual native decision button exists");
   [button performClick:nil];
 }
-static void Decisions() {
-  NSWindow* w = Window();
-  NSView* page = Page(w);
-  __block int count = 0;
-  __block PCSitePermissionChoice choice = PCSitePermissionInterrupted;
-  for (NSString* title in @[ @"Allow", @"Not Now" ]) {
-    int before = count;
-    auto r = Request(
-        page, w,
-        ^{
-          return YES;
-        },
-        ^(PCSitePermissionChoice c) {
-          ++count;
-          choice = c;
-          Check(!w.attachedSheet, "no sheet is ever attached");
-        });
-    [r start];
-    [r start];
-    Check(!r.sheet && count == before, "presentation and result are deferred");
-    Drain();
-    Check(r.sheet.visible && !w.attachedSheet && r.sheet != w,
-          "a visible popover window, not a sheet");
-    Check(Contains(r.sheet.contentView,
-                   @"Allow frame.example:8443 to access your camera, microphone?"),
-          "the title names the site and the permissions");
-    Check(Button(r.sheet.contentView, @"Not Now") &&
-              Button(r.sheet.contentView, @"Allow") &&
-              !Button(r.sheet.contentView, @"Block") &&
-              !Button(r.sheet.contentView, @"Allow This Time"),
-          "two actions only");
-    Check(Button(r.sheet.contentView, @"Allow").keyEquivalent.length == 0,
-          "Return does not silently grant");
-    Click(r, title);
-    Check(count == before, "decision deferred off button callback");
-    Drain();
-    Check(count == before + 1, "exactly one result");
-    Check(choice == ([title isEqual:@"Allow"] ? PCSitePermissionAllow
-                                              : PCSitePermissionDismiss),
-          "Allow grants and Not Now dismisses");
-    [r invalidate];
-    [r start];
-    Drain();
-    Check(count == before + 1, "cannot replay terminal request");
-  }
-  auto r = Request(
-      page, w,
-      ^{
-        return YES;
-      },
-      ^(PCSitePermissionChoice c) {
-        ++count;
-        choice = c;
-      });
-  [r start];
-  Drain();
-  [r.sheet cancelOperation:nil];
-  Drain();
-  Check(choice == PCSitePermissionDismiss,
-        "Escape closes the popover as a dismissal");
-  [w close];
-}
-static void Interruptions() {
-  for (int mode = 0; mode < 6; ++mode) {
-    NSWindow* w = Window(mode != 0);
-    NSView* page = Page(w);
-    __block BOOL valid = YES;
-    __block int count = 0;
-    __block PCSitePermissionChoice result = PCSitePermissionAllow;
-    auto r = Request(
-        page, w,
-        ^{
-          return valid;
-        },
-        ^(PCSitePermissionChoice c) {
-          ++count;
-          result = c;
-        });
-    if (mode == 1) {
-      valid = NO;
-    }
-    [r start];
-    Drain();
-    if (mode == 2) {
-      Click(r, @"Allow");
-      valid = NO;
-    }
-    if (mode == 3) {
-      Click(r, @"Allow");
-      [page removeFromSuperview];
-    }
-    if (mode == 4) {
-      Click(r, @"Allow");
-      [r invalidate];
-    }
-    if (mode == 5) {
-      [w close];
-    }
-    Drain();
-    Check(count == 1 && result == PCSitePermissionInterrupted,
-          "hidden/stale/detached/invalidated/closed request cannot grant");
-    [r invalidate];
-    [w close];
-  }
-}
-static void ConcurrentAndReentrant() {
-  NSWindow* w = Window();
-  NSView* page = Page(w);
-  __block int first = 0, second = 0;
-  __block PCSitePermissionChoice secondResult = PCSitePermissionAllow;
-  auto a = Request(
-      page, w,
-      ^{
-        return YES;
-      },
-      ^(PCSitePermissionChoice) {
-        ++first;
-      });
-  auto b = Request(
-      page, w,
-      ^{
-        return YES;
-      },
-      ^(PCSitePermissionChoice c) {
-        ++second;
-        secondResult = c;
-      });
-  [a start];
-  Drain();
-  [b start];
-  Drain();
-  Check(
-      first == 0 && second == 1 && secondResult == PCSitePermissionInterrupted,
-      "a second prompt in the window refuses instead of stacking");
-  Check(a.sheet.visible,
-        "unavailable prompt does not dismiss the existing popover");
-  [a invalidate];
-  Drain();
-  Check(first == 1, "old prompt retires once");
-  __block PCSitePermissionPresenter* replacement = nil;
-  a = Request(
-      page, w,
-      ^{
-        return YES;
-      },
-      ^(PCSitePermissionChoice c) {
-        Check(c == PCSitePermissionAllow, "first genuine decision arrives");
-        replacement = Request(
-            page, w,
-            ^{
-              return YES;
-            },
-            ^(PCSitePermissionChoice) {
-              ++second;
-            });
-        [replacement start];
-      });
-  [a start];
-  Drain();
-  Click(a, @"Allow");
-  Drain();
-  Check(replacement.sheet.visible,
-        "callback can replace old prompt after it closes");
-  [a invalidate];
-  Check(replacement.sheet.visible,
-        "stale invalidation cannot close replacement");
-  [replacement invalidate];
-  Drain();
-  [w close];
-}
-static void WindowIdentityAndOwnerRelease() {
-  NSWindow* a = Window();
-  NSWindow* b = Window();
-  NSView* page = Page(a);
-  __block int count = 0;
-  auto r = Request(
-      page, a,
-      ^{
-        return YES;
-      },
-      ^(PCSitePermissionChoice c) {
-        Check(c == PCSitePermissionInterrupted,
-              "cross-window move cancels old decision");
-        ++count;
-      });
-  [r start];
-  Drain();
-  Click(r, @"Allow");
-  [page removeFromSuperview];
-  [b.contentView addSubview:page];
-  Drain();
-  Check(count == 1 && !a.attachedSheet && !b.attachedSheet,
-        "no current-window fallback");
-  __weak PCSitePermissionPresenter* weak = nil;
-  @autoreleasepool {
-    __block PCSitePermissionPresenter* owned = Request(
-        page, b,
-        ^{
-          return YES;
-        },
-        ^(PCSitePermissionChoice) {
-          ++count;
-          owned = nil;
-        });
-    weak = owned;
-    [owned start];
-    Drain();
-    Click(owned, @"Not Now");
-    Drain();
-    Check(owned == nil && count == 2,
-          "completion can release last owner safely");
-  }
-  Drain();
-  Check(weak == nil,
-        "terminal native request is released after AppKit autoreleases");
-  [a close];
-  [b close];
-}
-static void TypedChoices() {
-  NSWindow* w = Window();
-  NSView* page = Page(w);
-  for (int mode = 0; mode < 4; ++mode) {
-    __block int presented = 0, results = 0;
-    __block BOOL precise = NO;
-    __block PCSitePermissionChoice choice = PCSitePermissionInterrupted;
-    auto r = [[PCSitePermissionPresenter alloc] initWithPage:page
-        window:w
-        title:@"Allow location.example to access your location?"
-        locationMode:static_cast<PCSiteLocationMode>(mode)
-        initialPrecise:YES
-        validate:^{
-          return YES;
-        }
-        presented:^{
-          ++presented;
-        }
-        result:^(PCSitePermissionChoice c, BOOL accuracy) {
-          choice = c;
-          precise = accuracy;
-          ++results;
-        }];
-    [r configureSymbol:@"location.fill" pointSize:14 bold:NO offsetY:0];
-    [r start];
-    Check(presented == 0, "no presentation acknowledgment before display");
-    Drain();
-    Check(presented == 1 && r.sheet.visible,
-          "presentation acknowledgment follows the visible popover");
-    Click(r, @"Allow");
-    Drain();
-    Check(results == 1 && choice == PCSitePermissionAllow, "Allow grants");
-    Check(precise == (mode == PCSiteLocationApproximateOrPrecise ||
-                      mode == PCSiteLocationUpgradeToPrecise),
-          "accuracy is the engine's own selection for each mode");
-    [r invalidate];
-    Drain();
-    Check(results == 1 && presented == 1, "typed request remains exactly once");
-  }
-  __block int shown = 0, completed = 0;
-  auto unavailable = [[PCSitePermissionPresenter alloc] initWithPage:page
-      window:w
-      title:@"Allow location.example to access your location?"
-      locationMode:PCSiteLocationApproximateOrPrecise
-      initialPrecise:NO
-      validate:^{
-        return NO;
-      }
-      presented:^{
-        ++shown;
-      }
-      result:^(PCSitePermissionChoice c, BOOL) {
-        Check(c == PCSitePermissionInterrupted,
-              "typed unavailable request is neutral");
-        ++completed;
-      }];
-  [unavailable start];
-  Drain();
-  Check(shown == 0 && completed == 1,
-        "failed native presentation is never acknowledged");
-  __block PCSitePermissionChoice staged = PCSitePermissionInterrupted;
-  __block int system = 0;
-  auto followUp = Request(page, w,
-                          ^{
-                            return YES;
-                          },
-                          ^(PCSitePermissionChoice c) {
-                            staged = c;
-                          });
-  [followUp configureFollowUpWithTitle:@"You previously allowed camera"
-                                labels:@[ @"Continue allowing", @"Stop allowing" ]
-                               choices:@[ @(PCSitePermissionDismiss),
-                                          @(PCSitePermissionBlock) ]
-                          systemAction:^(PCSitePermissionChoice) {
-                            ++system;
-                          }];
-  [followUp start];
-  Drain();
-  Check(Contains(followUp.sheet.contentView, @"You previously allowed camera") &&
-            Button(followUp.sheet.contentView, @"Continue allowing") &&
-            !Button(followUp.sheet.contentView, @"Allow"),
-        "a permission-element stage shows Chromium's title and labels");
-  Click(followUp, @"Stop allowing");
-  Drain();
-  Check(staged == PCSitePermissionBlock && system == 0,
-        "the stage's own choice is delivered");
-  [followUp invalidate];
-  Drain();
-  [w close];
-}
-static void SheetInterrupts() {
-  NSWindow* w = Window();
-  NSView* page = Page(w);
-  __block PCSitePermissionChoice choice = PCSitePermissionAllow;
-  __block int count = 0;
-  auto r = Request(page, w,
-                   ^{
-                     return YES;
-                   },
-                   ^(PCSitePermissionChoice c) {
-                     choice = c;
-                     ++count;
-                   });
-  [r start];
-  Drain();
-  NSWindow* sheet = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 200, 100)
-                                                styleMask:NSWindowStyleMaskTitled
-                                                  backing:NSBackingStoreBuffered
-                                                    defer:NO];
-  sheet.releasedWhenClosed = NO;
-  [w beginSheet:sheet completionHandler:nil];
-  Drain();
-  Check(count == 1 && choice == PCSitePermissionInterrupted && !r.shown,
-        "another sheet on the window ends the prompt neutrally");
-  [w endSheet:sheet];
-  [r invalidate];
-  Drain();
-  [w close];
-}
-static void Anchor() {
-  NSWindow* w = Window();
-  NSView* page = Page(w);
-  NSWindowController* plain = [[NSWindowController alloc] initWithWindow:w];
-  (void)plain;
-  auto r = Request(page, w,
-                   ^{
-                     return YES;
-                   },
-                   ^(PCSitePermissionChoice) {
-                   });
-  [r start];
-  Drain();
-  NSRect frame = r.sheet.frame;
-  NSRect corner = [page convertRect:NSMakeRect(0, NSMaxY(page.bounds) - 1, 1, 1)
-                             toView:nil];
-  corner = [w convertRectToScreen:corner];
-  Check(r.sheet.visible && NSMaxY(frame) <= NSMinY(corner) + 20,
-        "without an anchor the popover hangs below the page's top corner");
-  [r invalidate];
-  Drain();
-  [w close];
-}
 static double DrawnAlpha(NSButton* button) {
   NSShadow* shadow = button.shadow;
   button.shadow = nil;
@@ -452,76 +91,308 @@ static double DrawnAlpha(NSButton* button) {
   }
   return sum;
 }
-static void PressFeedback() {
-  NSWindow* w = Window();
-  NSView* page = Page(w);
-  auto r = Request(
-      page, w,
-      ^{
-        return YES;
-      },
-      ^(PCSitePermissionChoice) {
-      });
-  [r start];
-  Drain();
-  for (NSAppearanceName name in @[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]) {
-    r.sheet.appearance = [NSAppearance appearanceNamed:name];
-    for (NSString* title in @[ @"Allow", @"Not Now" ]) {
-      NSButton* button = Button(r.sheet.contentView, title);
-      [button viewDidChangeEffectiveAppearance];
-      const double rest = DrawnAlpha(button);
-      [button.cell highlight:YES withFrame:button.bounds inView:button];
-      const double pressed = DrawnAlpha(button);
-      [button.cell highlight:NO withFrame:button.bounds inView:button];
-      Check(rest > 0 && fabs(pressed / rest - 0.75) < 0.01,
-            "a pressed action draws at 75% of its resting content");
-      Check(fabs(DrawnAlpha(button) - rest) < 0.5,
-            "releasing restores the resting content");
-    }
-  }
-  [r invalidate];
-  Drain();
-  [w close];
-}
-@interface SitePermissionPresenterTests : ParcNativeTestCase
+@interface ParcNativeTests_SitePermissionPresenterTests : ParcNativeTestCase
 @end
 
-@implementation SitePermissionPresenterTests
-
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
+@implementation ParcNativeTests_SitePermissionPresenterTests {
+  NSWindow* _window;
+  NSView* _page;
+  PCSitePermissionPresenter* _request;
+  BOOL _valid;
+  BOOL _precise;
+  NSUInteger _results;
+  NSUInteger _presentations;
+  NSUInteger _systemActions;
+  PCSitePermissionChoice _choice;
 }
 
-- (void)testDecisions {
-  Decisions();
+- (void)setUp {
+  [super setUp];
+  _window = Window();
+  _page = Page(_window);
+  _valid = YES;
 }
 
-- (void)testInterruptions {
-  Interruptions();
+- (void)tearDown {
+  [_request invalidate];
+  Drain();
+  [_window close];
+  [super tearDown];
 }
 
-- (void)testConcurrentAndReentrant {
-  ConcurrentAndReentrant();
+- (void)prepare:(PCSiteLocationMode)mode {
+  _request = [[PCSitePermissionPresenter alloc] initWithPage:_page window:_window
+      title:@"Allow frame.example:8443 to access your camera, microphone?"
+      locationMode:mode initialPrecise:YES validate:^{ return self->_valid; }
+      presented:^{ ++self->_presentations; }
+      result:^(PCSitePermissionChoice choice, BOOL precise) {
+        self->_choice = choice;
+        self->_precise = precise;
+        ++self->_results;
+      }];
+  [_request configureSymbol:@"camera.fill" pointSize:14 bold:NO offsetY:-1];
 }
 
-- (void)testWindowIdentityAndOwnerRelease {
-  WindowIdentityAndOwnerRelease();
+- (void)show {
+  [self prepare:PCSiteLocationNone];
+  [_request start];
+  Drain();
 }
 
-- (void)testTypedChoices {
-  TypedChoices();
+- (void)showFollowUp {
+  [self prepare:PCSiteLocationNone];
+  [_request configureFollowUpWithTitle:@"You previously allowed camera"
+                                labels:@[ @"Continue allowing", @"Stop allowing" ]
+                               choices:@[ @(PCSitePermissionDismiss), @(PCSitePermissionBlock) ]
+                          systemAction:^(PCSitePermissionChoice) { ++self->_systemActions; }];
+  [_request start];
+  Drain();
 }
 
-- (void)testAnchor {
-  Anchor();
+- (void)testPresentationIsDeferred {
+  [self prepare:PCSiteLocationNone];
+  [_request start];
+  PARC_CHECK(!_presentations && !_request.sheet && !_results);
 }
 
-- (void)testSheetInterrupts {
-  SheetInterrupts();
+- (void)testRepeatedStartAcknowledgesTheSamePresentationOnce {
+  [self prepare:PCSiteLocationNone];
+  [_request start];
+  [_request start];
+  Drain();
+  PARC_CHECK(_presentations == 1 && _request.shown);
 }
 
-- (void)testPressFeedback {
-  PressFeedback();
+- (void)testThePromptLeavesTheParentsSheetSlotAvailable {
+  [self show];
+  PARC_CHECK(_request.shown && _request.sheet != _window && !_window.attachedSheet);
+}
+
+- (void)testTheTitleNamesTheRequestingSiteAndItsPermissions {
+  [self show];
+  PARC_CHECK(Contains(_request.sheet.contentView, @"Allow frame.example:8443 to access your camera, microphone?"));
+}
+
+- (void)testTheInitialChoicesAreAllowAndNotNow {
+  [self show];
+  NSView* view = _request.sheet.contentView;
+  PARC_CHECK(Button(view, @"Allow") && Button(view, @"Not Now") && !Button(view, @"Block") && !Button(view, @"Allow This Time"));
+}
+
+- (void)testReturnDoesNotGrantPermission {
+  [self show];
+  PARC_CHECK(!Button(_request.sheet.contentView, @"Allow").keyEquivalent.length);
+}
+
+- (void)testAButtonDecisionIsDeliveredAfterTheButtonCallback {
+  [self show];
+  Click(_request, @"Allow");
+  PARC_CHECK(!_results);
+  Drain();
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionAllow);
+}
+
+- (void)testNotNowDismisses {
+  [self show];
+  Click(_request, @"Not Now");
+  Drain();
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionDismiss);
+}
+
+- (void)testEscapeDismisses {
+  [self show];
+  [_request.sheet cancelOperation:nil];
+  Drain();
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionDismiss);
+}
+
+- (void)testACompletedRequestCannotBeReplayed {
+  [self show];
+  Click(_request, @"Allow");
+  Drain();
+  [_request invalidate];
+  [_request start];
+  Drain();
+  PARC_CHECK(_results == 1 && _presentations == 1);
+}
+
+- (void)testAHiddenParentInterruptsWithoutAcknowledging {
+  [_window orderOut:nil];
+  [self show];
+  Drain();
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionInterrupted && !_presentations);
+}
+
+- (void)testAnInvalidContextInterruptsWithoutAcknowledging {
+  _valid = NO;
+  [self show];
+  Drain();
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionInterrupted && !_presentations);
+}
+
+- (void)testValidationCanCancelAQueuedGrant {
+  [self show];
+  Click(_request, @"Allow");
+  _valid = NO;
+  Drain();
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionInterrupted);
+}
+
+- (void)testDetachingThePageCancelsAQueuedGrant {
+  [self show];
+  Click(_request, @"Allow");
+  [_page removeFromSuperview];
+  Drain();
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionInterrupted);
+}
+
+- (void)testInvalidationCancelsAQueuedGrant {
+  [self show];
+  Click(_request, @"Allow");
+  [_request invalidate];
+  Drain();
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionInterrupted);
+}
+
+- (void)testClosingTheParentInterruptsThePrompt {
+  [self show];
+  [_window close];
+  Drain();
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionInterrupted);
+}
+
+- (void)testMovingThePageCannotTransferAQueuedGrant {
+  [self show];
+  Click(_request, @"Allow");
+  NSWindow* other = Window();
+  [other.contentView addSubview:_page];
+  Drain();
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionInterrupted && !_window.attachedSheet && !other.attachedSheet);
+  [other close];
+}
+
+- (void)testASecondPromptIsRejectedWithoutDismissingTheFirst {
+  [self show];
+  __block NSUInteger interruptions = 0;
+  auto other = Request(_page, _window, ^{ return YES; }, ^(PCSitePermissionChoice choice) {
+    if (choice == PCSitePermissionInterrupted) ++interruptions;
+  });
+  [other start];
+  Drain();
+  PARC_CHECK(interruptions == 1 && _request.shown && !_results);
+}
+
+- (void)testTheCompletionMayPresentAReplacement {
+  auto first = Request(_page, _window, ^{ return YES; }, ^(PCSitePermissionChoice choice) {
+    PARC_CHECK(choice == PCSitePermissionAllow);
+    [self show];
+  });
+  [first start];
+  Drain();
+  Click(first, @"Allow");
+  Drain();
+  [first invalidate];
+  PARC_CHECK(_request.shown && !_results);
+}
+
+- (void)testTheCompletionCanReleaseItsLastOwner {
+  __weak PCSitePermissionPresenter* weak;
+  @autoreleasepool {
+    __block PCSitePermissionPresenter* owned;
+    owned = Request(_page, _window, ^{ return YES; }, ^(PCSitePermissionChoice) {
+      ++self->_results;
+      owned = nil;
+    });
+    weak = owned;
+    [owned start];
+    Drain();
+    Click(owned, @"Not Now");
+    Drain();
+  }
+  PARC_CHECK(!weak && _results == 1);
+}
+
+- (void)checkAccuracyFor:(PCSiteLocationMode)mode precise:(BOOL)expected {
+  [self prepare:mode];
+  [_request start];
+  Drain();
+  Click(_request, @"Allow");
+  Drain();
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionAllow && _precise == expected);
+}
+
+- (void)testANonLocationGrantNeverReportsPrecise {
+  [self checkAccuracyFor:PCSiteLocationNone precise:NO];
+}
+
+- (void)testAnApproximateGrantNeverReportsPrecise {
+  [self checkAccuracyFor:PCSiteLocationApproximate precise:NO];
+}
+
+- (void)testASelectableGrantKeepsTheChosenAccuracy {
+  [self checkAccuracyFor:PCSiteLocationApproximateOrPrecise precise:YES];
+}
+
+- (void)testAnUpgradeCanGrantPreciseLocation {
+  [self checkAccuracyFor:PCSiteLocationUpgradeToPrecise precise:YES];
+}
+
+- (void)testAFollowUpUsesTheSuppliedTitleAndActions {
+  [self showFollowUp];
+  NSView* content = _request.sheet.contentView;
+  PARC_CHECK(Contains(content, @"You previously allowed camera") && Button(content, @"Continue allowing") && !Button(content, @"Allow"));
+}
+
+- (void)testStopAllowingReturnsBlockWithoutASystemAction {
+  [self showFollowUp];
+  Click(_request, @"Stop allowing");
+  Drain();
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionBlock && !_systemActions);
+}
+
+- (void)testAnotherSheetInterruptsTheOpenPrompt {
+  [self show];
+  NSWindow* sheet = ParcNativeOffscreenWindow(NSMakeRect(0, 0, 200, 100), NSWindowStyleMaskBorderless);
+  [_window beginSheet:sheet completionHandler:nil];
+  Drain();
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionInterrupted && !_request.shown);
+  [_window endSheet:sheet];
+}
+
+- (void)testTheFallbackAnchorIsTheTopCornerOfThePage {
+  [self show];
+  ParcNativePopoverWindow* host = (ParcNativePopoverWindow*)_request.sheet;
+  PARC_CHECK(host.anchorView == _page && host.anchorEdge == NSRectEdgeMinY &&
+             NSEqualRects(host.anchorRect, NSMakeRect(0, NSMaxY(_page.bounds) - 1, 1, 1)));
+}
+
+- (void)checkPressedFeedback:(NSString*)title appearance:(NSAppearanceName)appearance {
+  [self show];
+  _request.sheet.appearance = [NSAppearance appearanceNamed:appearance];
+  NSButton* button = Button(_request.sheet.contentView, title);
+  [button viewDidChangeEffectiveAppearance];
+  double rest = DrawnAlpha(button);
+  [button.cell highlight:YES withFrame:button.bounds inView:button];
+  double pressed = DrawnAlpha(button);
+  [button.cell highlight:NO withFrame:button.bounds inView:button];
+  PARC_CHECK(rest > 0 && fabs(pressed / rest - 0.75) < 0.01);
+  PARC_CHECK(fabs(DrawnAlpha(button) - rest) < 0.5);
+}
+
+- (void)testAllowShowsPressedFeedbackInAqua {
+  [self checkPressedFeedback:@"Allow" appearance:NSAppearanceNameAqua];
+}
+
+- (void)testNotNowShowsPressedFeedbackInAqua {
+  [self checkPressedFeedback:@"Not Now" appearance:NSAppearanceNameAqua];
+}
+
+- (void)testAllowShowsPressedFeedbackInDarkAqua {
+  [self checkPressedFeedback:@"Allow" appearance:NSAppearanceNameDarkAqua];
+}
+
+- (void)testNotNowShowsPressedFeedbackInDarkAqua {
+  [self checkPressedFeedback:@"Not Now" appearance:NSAppearanceNameDarkAqua];
 }
 
 @end

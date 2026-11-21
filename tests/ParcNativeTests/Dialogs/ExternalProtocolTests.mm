@@ -1,26 +1,22 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
-
-#include <cstdio>
-#include <cstdlib>
+#import "ParcNativeClock.h"
+#import "ParcNativeWindows.h"
 
 #import "external_protocol_presenter.h"
 #define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
 static void Pump() {
-  NSDate* end = [NSDate dateWithTimeIntervalSinceNow:.08];
-  while (end.timeIntervalSinceNow > 0) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, .005, true);
-  }
+  ParcNativeAdvance(.08);
 }
 static NSWindow* Window(bool visible = true) {
   NSWindow* w = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(-2300, -2300, 640, 480)
-                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered
                     defer:NO];
   w.releasedWhenClosed = NO;
   if (visible) {
-    [w orderFront:nil];
+    ParcNativeMarkVisible(w);
   }
   return w;
 }
@@ -63,171 +59,302 @@ static PCExternalProtocolPresenter* Make(NSView* p,
        }
              result:result];
 }
-static void Decisions() {
-  auto* w = Window();
-  auto* p = Page(w);
-  __block int results = 0;
-  __block BOOL accepted = NO, remembered = NO, input = NO;
-  auto* r = Make(
-      p, w, @"Always open “Example”",
+@interface ProtocolState : NSObject
+@property int results;
+@property BOOL accepted;
+@property BOOL remembered;
+@property BOOL inputAllowed;
+@end
+@implementation ProtocolState
+@end
+
+static NSString* const kRemember = @"Always open “Example”";
+
+static NSButton* Control(PCExternalProtocolPresenter* r, NSString* name) {
+  return static_cast<NSButton*>(Find(r.sheet.contentView, name));
+}
+
+static NSEvent* KeypadEnter(NSWindow* window) {
+  return [NSEvent keyEventWithType:NSEventTypeKeyDown
+                          location:NSZeroPoint
+                     modifierFlags:0
+                         timestamp:NSProcessInfo.processInfo.systemUptime
+                      windowNumber:window.windowNumber
+                           context:nil
+                        characters:@"\003"
+       charactersIgnoringModifiers:@"\003"
+                         isARepeat:NO
+                           keyCode:76];
+}
+
+@interface ParcNativeTests_ExternalProtocolDecisionTests : ParcNativeTestCase
+@end
+
+@implementation ParcNativeTests_ExternalProtocolDecisionTests {
+  NSWindow* _window;
+  NSView* _page;
+  ProtocolState* _state;
+}
+
+- (void)setUp {
+  [super setUp];
+  _window = Window();
+  _page = Page(_window);
+  _state = [ProtocolState new];
+  _state.inputAllowed = YES;
+}
+
+- (void)tearDown {
+  [_window close];
+  [super tearDown];
+}
+
+- (PCExternalProtocolPresenter*)presenterRemembering:(NSString*)remember {
+  ProtocolState* state = _state;
+  NSWindow* window = _window;
+  return Make(
+      _page, _window, remember,
       ^{
         return YES;
       },
       ^(NSEvent*) {
-        return input;
+        return state.inputAllowed;
       },
-      ^(BOOL a, BOOL m) {
-        ++results;
-        accepted = a;
-        remembered = m;
-        Check(!w.attachedSheet, "presentation ends before decision");
+      ^(BOOL accepted, BOOL remembered) {
+        ++state.results;
+        state.accepted = accepted;
+        state.remembered = remembered;
+        Check(!window.attachedSheet, "presentation ends before decision");
       });
+}
+
+- (PCExternalProtocolPresenter*)shownPresenter {
+  PCExternalProtocolPresenter* r = [self presenterRemembering:kRemember];
+  [r show];
+  Pump();
+  return r;
+}
+
+- (void)testAnUnpresentedPresenterAlreadyOwnsAnInvisibleNativeSheet {
+  PCExternalProtocolPresenter* r = [self presenterRemembering:kRemember];
   Check(r.sheet && !r.sheet.visible, "unpresented native sheet exists");
+}
+
+- (void)testShowIsDeferredEvenWhenCalledTwice {
+  PCExternalProtocolPresenter* r = [self presenterRemembering:kRemember];
   [r show];
   [r show];
-  Check(results == 0, "show is deferred");
-  Pump();
-  Check(r.sheet.visible && r.sheet.sheetParent == w,
-        "actual originating window owns sheet");
-  auto* open = static_cast<NSButton*>(
-      Find(r.sheet.contentView, @"external-protocol-open"));
-  auto* cancel = static_cast<NSButton*>(
-      Find(r.sheet.contentView, @"external-protocol-cancel"));
-  auto* box = static_cast<NSButton*>(
-      Find(r.sheet.contentView, @"external-protocol-remember"));
-  Check([open.keyEquivalent isEqual:@"\r"] &&
-            r.sheet.accessibilityDefaultButton == open &&
-            [cancel.keyEquivalent isEqual:@"\033"] &&
-            !box.keyEquivalent.length,
+  Check(_state.results == 0, "show is deferred");
+}
+
+- (void)testTheOriginatingWindowOwnsThePresentedSheet {
+  PCExternalProtocolPresenter* r = [self shownPresenter];
+  Check(r.sheet.visible && r.sheet.sheetParent == _window, "actual originating window owns sheet");
+}
+
+- (void)testOpenIsTheDefaultAndCancelAnswersEscape {
+  PCExternalProtocolPresenter* r = [self shownPresenter];
+  NSButton* open = Control(r, @"external-protocol-open");
+  NSButton* cancel = Control(r, @"external-protocol-cancel");
+  NSButton* box = Control(r, @"external-protocol-remember");
+  Check([open.keyEquivalent isEqual:@"\r"] && r.sheet.accessibilityDefaultButton == open &&
+            [cancel.keyEquivalent isEqual:@"\033"] && !box.keyEquivalent.length,
         "Open is the default and Cancel answers Escape");
-  const BOOL boxFirst = NSMidY(box.frame) == NSMidY(open.frame)
-                           ? NSMinX(box.frame) < NSMinX(cancel.frame)
-                           : NSMaxY(box.frame) <= NSMinY(open.frame);
+}
+
+- (void)testCancelSitsLeftOfOpenAndAlwaysOpenIsLeftOfCancelOrWrapsAbove {
+  PCExternalProtocolPresenter* r = [self shownPresenter];
+  NSButton* open = Control(r, @"external-protocol-open");
+  NSButton* cancel = Control(r, @"external-protocol-cancel");
+  NSButton* box = Control(r, @"external-protocol-remember");
+  const BOOL boxFirst = NSMidY(box.frame) == NSMidY(open.frame) ? NSMinX(box.frame) < NSMinX(cancel.frame)
+                                                                 : NSMaxY(box.frame) <= NSMinY(open.frame);
   Check(open.superview == box.superview && box.superview == cancel.superview &&
-            NSMidY(cancel.frame) == NSMidY(open.frame) &&
-            NSMinX(cancel.frame) < NSMinX(open.frame) && boxFirst,
+            NSMidY(cancel.frame) == NSMidY(open.frame) && NSMinX(cancel.frame) < NSMinX(open.frame) && boxFirst,
         "Cancel sits left of Open; Always open is left of Cancel or wraps above");
-  Check(NSContainsRect(r.sheet.contentView.bounds, open.frame) &&
-            NSContainsRect(r.sheet.contentView.bounds, cancel.frame) &&
-            NSContainsRect(r.sheet.contentView.bounds, box.frame),
+}
+
+- (void)testEveryButtonStaysInsideTheSheet {
+  PCExternalProtocolPresenter* r = [self shownPresenter];
+  NSRect bounds = r.sheet.contentView.bounds;
+  Check(NSContainsRect(bounds, Control(r, @"external-protocol-open").frame) &&
+            NSContainsRect(bounds, Control(r, @"external-protocol-cancel").frame) &&
+            NSContainsRect(bounds, Control(r, @"external-protocol-remember").frame),
         "every button stays inside the sheet");
-  Check([box.title isEqual:@"Always open “Example”"],
-        "remember is the Always open button");
-  [box performClick:nil];
-  Check(results == 0 && r.sheet.visible,
-        "input protection refusal keeps request pending");
-  NSEvent* enter = [NSEvent keyEventWithType:NSEventTypeKeyDown
-                                    location:NSZeroPoint
-                               modifierFlags:0
-                                   timestamp:NSProcessInfo.processInfo.systemUptime
-                                windowNumber:r.sheet.windowNumber
-                                     context:nil
-                                  characters:@"\003"
-                 charactersIgnoringModifiers:@"\003"
-                                   isARepeat:NO
-                                     keyCode:76];
-  Check([r.sheet performKeyEquivalent:enter] && results == 0 && r.sheet.visible,
+}
+
+- (void)testRememberIsTheAlwaysOpenButton {
+  PCExternalProtocolPresenter* r = [self shownPresenter];
+  Check([Control(r, @"external-protocol-remember").title isEqual:kRemember], "remember is the Always open button");
+}
+
+- (void)testInputProtectionRefusalKeepsTheRequestPending {
+  PCExternalProtocolPresenter* r = [self shownPresenter];
+  _state.inputAllowed = NO;
+  [Control(r, @"external-protocol-remember") performClick:nil];
+  Check(_state.results == 0 && r.sheet.visible, "input protection refusal keeps request pending");
+}
+
+- (void)testKeypadEnterIsHeldByTheSameInputProtection {
+  PCExternalProtocolPresenter* r = [self shownPresenter];
+  _state.inputAllowed = NO;
+  Check([r.sheet performKeyEquivalent:KeypadEnter(r.sheet)] && _state.results == 0 && r.sheet.visible,
         "keypad Enter is held by the same input protection");
-  input = YES;
-  [open performClick:nil];
+}
+
+- (void)testOpenAcceptsWithoutRemembering {
+  PCExternalProtocolPresenter* r = [self shownPresenter];
+  [Control(r, @"external-protocol-open") performClick:nil];
   Pump();
-  Check(results == 1 && accepted && !remembered,
-        "Open accepts without remembering");
-  r = Make(
-      p, w, @"Always open “Example”",
-      ^{
-        return YES;
-      },
-      ^(NSEvent*) {
-        return YES;
-      },
-      ^(BOOL a, BOOL m) {
-        ++results;
-        accepted = a;
-        remembered = m;
-      });
-  [r show];
+  Check(_state.results == 1 && _state.accepted && !_state.remembered, "Open accepts without remembering");
+}
+
+- (void)testAlwaysOpenAcceptsAndRemembersOnce {
+  PCExternalProtocolPresenter* r = [self shownPresenter];
+  [Control(r, @"external-protocol-remember") performClick:nil];
   Pump();
-  [static_cast<NSButton*>(
-      Find(r.sheet.contentView, @"external-protocol-remember")) performClick:nil];
+  Check(_state.results == 1 && _state.accepted && _state.remembered, "Always open accepts and remembers once");
+}
+
+- (void)testATerminalPresenterCannotReplay {
+  PCExternalProtocolPresenter* r = [self shownPresenter];
+  NSButton* open = Control(r, @"external-protocol-open");
+  [Control(r, @"external-protocol-remember") performClick:nil];
   Pump();
-  Check(results == 2 && accepted && remembered,
-        "Always open accepts and remembers once");
-  results = 1;
+  Check(_state.results == 1, "the first decision lands once");
   [r invalidate];
   [open performClick:nil];
   [r show];
   Pump();
-  Check(results == 1, "terminal cannot replay");
-  r = Make(
-      p, w, @"",
+  Check(_state.results == 1, "terminal cannot replay");
+}
+
+- (void)testAnUnsupportedRememberButtonIsAbsent {
+  PCExternalProtocolPresenter* r = [self presenterRemembering:@""];
+  [r show];
+  Pump();
+  Check(!Find(r.sheet.contentView, @"external-protocol-remember"), "unsupported remember absent");
+}
+
+- (void)testCancelCancelsOnceWithoutRemembering {
+  PCExternalProtocolPresenter* r = [self presenterRemembering:@""];
+  [r show];
+  Pump();
+  [Control(r, @"external-protocol-cancel") performClick:nil];
+  Pump();
+  Check(_state.results == 1 && !_state.accepted && !_state.remembered, "Cancel cancels once and never remembers");
+}
+
+@end
+
+@interface ParcNativeTests_ExternalProtocolInvalidationTests : ParcNativeTestCase
+@end
+
+@implementation ParcNativeTests_ExternalProtocolInvalidationTests {
+  NSWindow* _window;
+  NSView* _page;
+  PCExternalProtocolPresenter* _presenter;
+  ProtocolState* _state;
+}
+
+- (void)tearDown {
+  [_window close];
+  [super tearDown];
+}
+
+- (void)showInWindowVisible:(BOOL)visible valid:(BOOL)valid {
+  _window = Window(visible);
+  _page = Page(_window);
+  _state = [ProtocolState new];
+  ProtocolState* state = _state;
+  _presenter = Make(
+      _page, _window, @"",
       ^{
-        return YES;
+        return valid;
       },
       ^(NSEvent*) {
         return YES;
       },
-      ^(BOOL a, BOOL m) {
-        ++results;
-        Check(!a && !m, "cancel never remembers");
+      ^(BOOL accepted, BOOL remembered) {
+        ++state.results;
+        Check(!accepted && !remembered, "invalid request does not authorize");
       });
-  [r show];
-  Pump();
-  Check(!Find(r.sheet.contentView, @"external-protocol-remember"),
-        "unsupported remember absent");
-  [static_cast<NSButton*>(Find(r.sheet.contentView, @"external-protocol-cancel"))
-      performClick:nil];
-  Pump();
-  Check(results == 2, "Cancel cancels once");
-  [w close];
+  [_presenter show];
 }
-static void Invalidations() {
-  for (int mode = 0; mode < 6; ++mode) {
-    auto* w = Window(mode != 0);
-    auto* p = Page(w);
-    __block int count = 0;
-    auto* r = Make(
-        p, w, @"",
-        ^{
-          return mode != 1;
-        },
-        ^(NSEvent*) {
-          return YES;
-        },
-        ^(BOOL a, BOOL m) {
-          ++count;
-          Check(!a && !m, "invalid request does not authorize");
-        });
-    [r show];
-    if (mode == 2) {
-      [p removeFromSuperview];
-    }
-    if (mode == 3) {
-      [r invalidate];
-    }
-    if (mode == 4) {
-      [w close];
-    }
-    if (mode == 5) {
-      p.hidden = YES;
-    }
-    Pump();
-    Check(count == 1 && !w.attachedSheet,
-          "invalid owner interrupts actual sheet");
-    [r invalidate];
-    Pump();
-    Check(count == 1, "interruption remains once only");
-    [w close];
-  }
+
+- (void)expectInterruptedOnce {
+  Pump();
+  Check(_state.results == 1 && !_window.attachedSheet, "invalid owner interrupts actual sheet");
+  [_presenter invalidate];
+  Pump();
+  Check(_state.results == 1, "interruption remains once only");
 }
-static void Reentry() {
-  auto* w = Window();
-  auto* p = Page(w);
-  __block PCExternalProtocolPresenter* r;
-  __block int calls = 0;
+
+- (void)testAnInvisibleWindowInterruptsTheRequest {
+  [self showInWindowVisible:NO valid:YES];
+  [self expectInterruptedOnce];
+}
+
+- (void)testAFailedValidationInterruptsTheRequest {
+  [self showInWindowVisible:YES valid:NO];
+  [self expectInterruptedOnce];
+}
+
+- (void)testARemovedPageInterruptsTheRequest {
+  [self showInWindowVisible:YES valid:YES];
+  [_page removeFromSuperview];
+  [self expectInterruptedOnce];
+}
+
+- (void)testInvalidatingInterruptsTheRequest {
+  [self showInWindowVisible:YES valid:YES];
+  [_presenter invalidate];
+  [self expectInterruptedOnce];
+}
+
+- (void)testAClosedWindowInterruptsTheRequest {
+  [self showInWindowVisible:YES valid:YES];
+  [_window close];
+  [self expectInterruptedOnce];
+}
+
+- (void)testAHiddenPageInterruptsTheRequest {
+  [self showInWindowVisible:YES valid:YES];
+  _page.hidden = YES;
+  [self expectInterruptedOnce];
+}
+
+@end
+
+@interface ParcNativeTests_ExternalProtocolReentryTests : ParcNativeTestCase
+@end
+
+@implementation ParcNativeTests_ExternalProtocolReentryTests {
+  NSWindow* _window;
+  NSView* _page;
+  PCExternalProtocolPresenter* _presenter;
+  PCExternalProtocolPresenter* _replacement;
+  ProtocolState* _state;
+}
+
+- (void)setUp {
+  [super setUp];
+  _window = Window();
+  _page = Page(_window);
+  _state = [ProtocolState new];
+}
+
+- (void)tearDown {
+  [_window close];
+  [super tearDown];
+}
+
+- (void)testNoSheetIsResurrectedAfterAValidationReentry {
+  ProtocolState* state = _state;
   __block BOOL reenter = NO;
+  __block PCExternalProtocolPresenter* r;
   r = Make(
-      p, w, @"",
+      _page, _window, @"",
       ^{
         if (reenter) {
           [r invalidate];
@@ -237,17 +364,25 @@ static void Reentry() {
       ^(NSEvent*) {
         return YES;
       },
-      ^(BOOL a, BOOL) {
-        ++calls;
-        Check(!a, "validation reentry cancels");
+      ^(BOOL accepted, BOOL) {
+        ++state.results;
+        Check(!accepted, "validation reentry cancels");
       });
   reenter = YES;
   [r show];
   Pump();
-  Check(calls == 1 && !w.attachedSheet, "no resurrection after validation");
-  __block PCExternalProtocolPresenter* replacement;
+  Check(state.results == 1 && !_window.attachedSheet, "no resurrection after validation");
+  r = nil;
+}
+
+- (void)showWithInputReentry {
+  ProtocolState* state = _state;
+  NSView* page = _page;
+  NSWindow* window = _window;
+  __weak ParcNativeTests_ExternalProtocolReentryTests* weakSelf = self;
+  __block PCExternalProtocolPresenter* r;
   r = Make(
-      p, w, @"",
+      page, window, @"",
       ^{
         return YES;
       },
@@ -255,11 +390,12 @@ static void Reentry() {
         [r invalidate];
         return YES;
       },
-      ^(BOOL a, BOOL) {
-        ++calls;
-        Check(!a, "input reentry cannot authorize");
-        replacement = Make(
-            p, w, @"",
+      ^(BOOL accepted, BOOL) {
+        ++state.results;
+        Check(!accepted, "input reentry cannot authorize");
+        ParcNativeTests_ExternalProtocolReentryTests* strongSelf = weakSelf;
+        strongSelf->_replacement = Make(
+            page, window, @"",
             ^{
               return YES;
             },
@@ -267,39 +403,28 @@ static void Reentry() {
               return YES;
             },
             ^(BOOL, BOOL) {
-              ++calls;
+              ++state.results;
             });
-        [replacement show];
+        [strongSelf->_replacement show];
       });
+  _presenter = r;
   [r show];
   Pump();
-  [static_cast<NSButton*>(Find(r.sheet.contentView, @"external-protocol-open"))
-      performClick:nil];
+  [Control(r, @"external-protocol-open") performClick:nil];
   Pump();
-  Check(calls == 2 && w.attachedSheet == replacement.sheet,
-        "old input frame preserves replacement");
-  [replacement invalidate];
-  Pump();
-  Check(calls == 3, "replacement owns own result");
   r = nil;
-  replacement = nil;
-  [w close];
-}
-@interface ExternalProtocolTests : ParcNativeTestCase
-@end
-
-@implementation ExternalProtocolTests
-
-- (void)testDecisions {
-  Decisions();
 }
 
-- (void)testInvalidations {
-  Invalidations();
+- (void)testAnInputReentryPreservesTheReplacementSheet {
+  [self showWithInputReentry];
+  Check(_state.results == 1 && _window.attachedSheet == _replacement.sheet, "old input frame preserves replacement");
 }
 
-- (void)testReentry {
-  Reentry();
+- (void)testAReplacementOwnsItsOwnResult {
+  [self showWithInputReentry];
+  [_replacement invalidate];
+  Pump();
+  Check(_state.results == 2, "replacement owns own result");
 }
 
 @end

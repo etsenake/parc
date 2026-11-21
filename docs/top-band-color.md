@@ -66,6 +66,6 @@ a performance/refresh tradeoff.
 ## Sources and checks
 
 The renderer top-band detector, native associated observer and
-`TopBarColorClient` feed `BrowserToolbar`. Relevant checks are
-`tests/TopBandColor/run.py` for the sampling algorithm and
-`TopBarColorClientTests` for ownership, convergence and cache behavior.
+`TopBarColorClient` feed `BrowserToolbar`. `TopBandColorTests` covers the
+sampling algorithm and `TopBarColorClientTests` ownership, convergence and cache
+behavior.

@@ -92,7 +92,6 @@ step swift_test settings-pretty-json-persist-skip -parse-as-library \
 step python3 "$repo_root/tests/SettingsPrettyJSONPersistSkip/check.py"
 step python3 "$repo_root/tests/PointingHand/check.py"
 step python3 "$repo_root/tests/ErrorPages/check.py"
-step python3 "$repo_root/tests/WebUIBranding/check.py"
 step python3 "$repo_root/tests/TerminationRestart/check.py"
 
 step swift_test native-messaging-hosts -parse-as-library \
@@ -100,9 +99,6 @@ step swift_test native-messaging-hosts -parse-as-library \
   "$repo_root/tests/NativeMessagingHostsTests.swift"
 step bash "$repo_root/scripts/test-shortcut-persist-skip.sh"
 step bash "$repo_root/scripts/test-split-link-snapshot.sh"
-step bash "$repo_root/scripts/test-split-link-policy.sh"
-step bash "$repo_root/scripts/test-top-band-color.sh"
-step bash "$repo_root/scripts/test-private-session-ledger.sh"
 step bash "$repo_root/scripts/test-fairplay-identity.sh"
 step bash "$repo_root/tests/DebuggerWarning/run.sh"
 step bash "$repo_root/scripts/test-scripting.sh"
