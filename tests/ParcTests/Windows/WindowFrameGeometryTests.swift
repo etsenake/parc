@@ -37,9 +37,9 @@ struct WindowFrameGeometryTests {
     @Test(arguments: [CGFloat(3), 10, 13])
     func popupsKeepTheirCompactChrome(_ t: CGFloat) {
         let popup = Self.frames(.hidden, thickness: t, popup: true).pageHost
-        #expect(popup.minX == 8)
-        #expect(popup.minY == 10 + 47)
-        #expect(1200 - popup.maxX == 10)
+        #expect(popup.minX == CGFloat(8))
+        #expect(popup.minY == CGFloat(57))
+        #expect(CGFloat(1200) - popup.maxX == CGFloat(10))
     }
 
     @Test(arguments: [CGFloat(3), 10, 13])
