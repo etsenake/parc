@@ -10,11 +10,15 @@ import AppKit
     var prepareClick: ((Int) -> (() -> Void)?)?
     private var originalClick: (() -> Void)?
     override func mouseDown(with event: NSEvent) {
+        trackOriginalClick(event) { super.mouseDown(with: event) }
+    }
+
+    func trackOriginalClick(_ event: NSEvent, tracking: () -> Void) {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
         originalClick = event.clickCount == 1 && modifiers.isEmpty
             ? prepareClick?(row(at: convert(event.locationInWindow, from: nil))) : nil
         defer { originalClick = nil }
-        super.mouseDown(with: event)
+        tracking()
     }
     @objc func activateOriginalClick() {
         let commit = originalClick; originalClick = nil
