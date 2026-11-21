@@ -3,7 +3,7 @@ import Testing
 @testable import ParcCore
 
 struct CapturePaletteMenuTests {
-    let destinations = CaptureFixtures.Destinations()
+    let destinations = Destinations()
 
     var full: CapturePaletteContext { destinations.full }
 
@@ -157,7 +157,7 @@ struct CapturePaletteMenuTests {
         #expect(CapturePaletteMenu.submenu(submenu, context: context).isEmpty)
     }
 
-    @Test func withoutALibraryDestinationThereIsNoLibraryRowOrEaselSubmenuAndHighlightFallsToCopy() {
+    @Test func withoutALibraryDestinationTheLibraryAndEaselRowsAreAbsent() {
         let rows = CapturePaletteMenu.rows(CapturePaletteContext(easels: destinations.easels, libraryAvailable: false))
         #expect(!rows.contains { $0.id == "library" || $0.id == "easels" })
     }
@@ -167,7 +167,7 @@ struct CapturePaletteMenuTests {
         #expect(CapturePaletteMenu.firstAvailable(in: rows) == "copy")
     }
 
-    @Test func aBusyPaletteDisablesEveryRowAndHighlightsNothing() {
+    @Test func aBusyPaletteDisablesEveryRow() {
         let busy = CapturePaletteMenu.rows(CapturePaletteContext(easels: destinations.easels, notesAvailable: true, busy: true))
         #expect(busy.allSatisfy { !$0.isEnabled })
     }

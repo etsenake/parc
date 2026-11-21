@@ -3,20 +3,29 @@ import Testing
 @testable import ParcCore
 
 struct CaptureDestinationsTests {
-    @Test func lastActivityWinsOverDocumentEditsAndAnotherProfileNeverContributesRecency() {
-        let profile = UUID(), otherProfile = UUID()
-        let first = UUID(), second = UUID(), inactive = UUID()
-        let summaries = [
-            EaselSummary(id: first, title: "Design", modifiedAt: Date(timeIntervalSince1970: 100), itemCount: 1),
-            EaselSummary(id: second, title: "Travel", modifiedAt: Date(timeIntervalSince1970: 900), itemCount: 2),
-            EaselSummary(id: inactive, title: "Research", modifiedAt: Date(timeIntervalSince1970: 999), itemCount: 0),
+    @Test func recencyUsesTheMostRecentSidebarActivityRatherThanTheEditDate() {
+        let profile = UUID(), recent = UUID(), older = UUID()
+        let docs = [
+            EaselSummary(id: recent, title: "Design", modifiedAt: Date(timeIntervalSince1970: 100), itemCount: 1),
+            EaselSummary(id: older, title: "Travel", modifiedAt: Date(timeIntervalSince1970: 900), itemCount: 2),
         ]
-        let destinations = CaptureEaselDestination.catalog(documents: summaries, activity: [
-            .init(id: first, profileID: profile, date: Date(timeIntervalSince1970: 800)),
-            .init(id: first, profileID: profile, date: Date(timeIntervalSince1970: 100)),
-            .init(id: second, profileID: profile, date: Date(timeIntervalSince1970: 400)),
-            .init(id: inactive, profileID: otherProfile, date: Date(timeIntervalSince1970: 2000)),
+        let newestActivity = Date(timeIntervalSince1970: 800)
+        let destinations = CaptureEaselDestination.catalog(documents: docs, activity: [
+            .init(id: recent, profileID: profile, date: newestActivity),
+            .init(id: recent, profileID: profile, date: Date(timeIntervalSince1970: 100)),
+            .init(id: older, profileID: profile, date: Date(timeIntervalSince1970: 400)),
         ], profileID: profile)
-        #expect(CaptureEaselDestination.ranked(destinations).map(\.id) == [first, second, inactive])
+        #expect(CaptureEaselDestination.ranked(destinations).map(\.id) == [recent, older])
+        #expect(destinations.first { $0.id == recent }?.lastActive == newestActivity)
+    }
+
+    @Test func anotherProfilesActivityDoesNotPromoteTheLocalDestination() throws {
+        let profile = UUID(), otherProfile = UUID(), easel = UUID()
+        let doc = EaselSummary(id: easel, title: "Design", modifiedAt: Date(timeIntervalSince1970: 100), itemCount: 1)
+        let destinations = CaptureEaselDestination.catalog(documents: [doc], activity: [
+            .init(id: easel, profileID: otherProfile, date: Date(timeIntervalSince1970: 900)),
+        ], profileID: profile)
+        let destination = try #require(destinations.first)
+        #expect(destination.id == easel && destination.lastActive == nil)
     }
 }
