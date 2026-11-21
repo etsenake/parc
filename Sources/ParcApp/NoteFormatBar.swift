@@ -806,12 +806,18 @@ final class NoteLinkHoverController: NSResponder {
     }
 
     static func presentation(for link: String, controller: NoteFormatBarController) -> (title: String, icon: NoteIcon) {
+        presentation(for: link, resolve: { controller.resolve($0) },
+                     search: { controller.editor.environment.searchNotes($0, limit: $1) })
+    }
+
+    static func presentation(for link: String, resolve: (String) -> URL?,
+                             search: (String, Int) -> [NoteReference]) -> (title: String, icon: NoteIcon) {
         if link.hasPrefix("#") { return (String(link.dropFirst()), .symbol("number")) }
         if link.lowercased().hasPrefix("mailto:") { return (NoteLinkInput.displayText(link), .symbol("envelope")) }
-        if let url = controller.resolve(link), url.isFileURL {
+        if let url = resolve(link), url.isFileURL {
             let title = url.deletingPathExtension().lastPathComponent
             if NoteFileKind(url: url) != nil {
-                let match = controller.editor.environment.searchNotes(title, limit: 8).first { $0.url.standardizedFileURL == url.standardizedFileURL }
+                let match = search(title, 8).first { $0.url.standardizedFileURL == url.standardizedFileURL }
                 return (match?.title ?? title, NoteIcon.note(match?.icon, at: url))
             }
             return (url.lastPathComponent, .symbol("doc"))

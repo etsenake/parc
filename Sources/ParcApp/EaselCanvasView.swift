@@ -121,8 +121,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var connectors = EaselConnectorCanvasState()
     private var textPreview: [UUID: EaselItem] = [:]
     private var textSizeBadge: (label: String, rect: NSRect)?
-    private var objectLinkPopover: NSPopover?
-    private var textSizePopover: NSPopover?
+    private var objectLinkPanel: EaselPanelHandle?
+    private var textSizePanel: EaselPanelHandle?
+    var panels: EaselPanelPresenting?
     var start: NSPoint?
     var original: [EaselItem] = []
     private var resizeHandle: EaselResizeHandle?
@@ -341,6 +342,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var onExportImage: (() -> Void)?
     var onError: ((Error) -> Void)?
     var onOpenURL: ((URL) -> Void)?
+    var onOpenNote: ((URL) -> Void)?
     static var textCompletionFactory: (@MainActor () -> EaselTextCompletion)?
     var onCopiedImage: (() -> Void)?
     var onExportSelection: ((Set<UUID>, EaselSelectionExportFormat) -> Void)?
@@ -613,7 +615,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         placed.zIndex = item.zIndex; placed.movedToFrontAt = item.movedToFrontAt; placed.capturedAt = item.capturedAt
         return placed != item
     }
-    private func cachedTextLayout(for item: EaselItem) -> EaselTextLayout.Layout {
+    func cachedTextLayout(for item: EaselItem) -> EaselTextLayout.Layout {
         let box = EaselTextPlacement.box(for: item), size = NSSize(width: box.width, height: box.height)
         if let cached = textLayouts[item.id], cached.matches(item, size: size) { return cached.layout }
         let layout = EaselTextLayout.Layout(displayedText(item), width: size.width, height: size.height, scale: EaselTextLayout.scale(for: item))
@@ -1009,9 +1011,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         updateConnectorHover(at: point)
         updateMindMapHover(at: point)
         updatePlacementPreview(at: isTopmost(atWindowPoint: event.locationInWindow) ? point : nil)
+        updateLinkHover(at: point, allowed: start == nil && !toolOwnsPointer && NSEvent.pressedMouseButtons == 0
+                        && isTopmost(atWindowPoint: event.locationInWindow))
         super.mouseMoved(with: event)
     }
-    override func mouseExited(with event: NSEvent) { hoveredObjectID = nil; updateHandleHover(nil); updateTableHover(at: nil); invalidateIncrementalDisplay(); updatePlacementPreview(at: nil); super.mouseExited(with: event) }
+    override func mouseExited(with event: NSEvent) { hoveredObjectID = nil; updateHandleHover(nil); updateTableHover(at: nil); invalidateIncrementalDisplay(); updatePlacementPreview(at: nil); updateLinkHover(at: nil, allowed: false); super.mouseExited(with: event) }
     private var easelSelectionColor: NSColor {
         EaselAppearance.selection
     }
@@ -1441,7 +1445,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     func editLink(relativeTo anchor: NSView, rect: NSRect? = nil) {
         guard !session.isClosed else { return }
-        editor?.editLink(relativeTo: anchor, rect: rect)
+        editor?.editLink(relativeTo: anchor, rect: rect, presenter: panels)
     }
     private var formattingEditor: EaselStyledTextView? {
         guard let editor, let window, window.isKeyWindow, window.attachedSheet == nil,
@@ -1566,12 +1570,12 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     @discardableResult
     func editObjectLink(relativeTo anchor: NSView? = nil) -> Bool {
-        guard let target = objectLinkTarget else { return false }
-        objectLinkPopover?.close()
-        let controller = EaselLinkEditor(value: target.url ?? "", webOnly: true)
-        let popover = NSPopover(); popover.behavior = .transient; popover.contentViewController = controller
-        controller.onCommit = { [weak self, weak popover] link in
-            popover?.close()
+        guard let target = objectLinkTarget, let panels else { return false }
+        objectLinkPanel?.close()
+        let badge = EaselObjectLink.badgeRect(for: target.frame, scale: canvasScale)
+        let host = anchor ?? self
+        let place = anchor == nil ? NSRect(x: badge.x, y: badge.y, width: badge.width, height: badge.height) : host.bounds
+        let request = EaselLinkRequest(link: target.url, webOnly: true, host: host, anchor: place) { [weak self] link in
             guard let self, self.session.document.items.contains(target),
                   let next = EaselObjectLink.linking(self.session.document, id: target.id, to: link) else { return }
             self.commit(link == nil ? "Remove link" : target.url == nil ? "Add link" : "Edit link") { document in
@@ -1579,12 +1583,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 document = next
             }
         }
-        objectLinkPopover = popover
-        let badge = EaselObjectLink.badgeRect(for: target.frame, scale: canvasScale)
-        let host = anchor ?? self
-        let place = anchor == nil ? NSRect(x: badge.x, y: badge.y, width: badge.width, height: badge.height) : host.bounds
-        popover.show(relativeTo: place, of: host, preferredEdge: host.isFlipped ? .maxY : .minY)
-        return true
+        objectLinkPanel = panels.presentLinkEditor(request)
+        return objectLinkPanel != nil
     }
     @discardableResult
     func removeObjectLink() -> Bool {
@@ -1613,10 +1613,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
-        let raw = (link as? URL)?.absoluteString ?? link as? String ?? ""
-        guard EaselRichText.validLink(raw), let url = URL(string: raw) else { return true }
-        if ["http", "https"].contains(url.scheme?.lowercased() ?? "") { onOpenURL?(url) }
-        else { NSWorkspace.shared.open(url) }
+        followLink((link as? URL)?.absoluteString ?? link as? String ?? "")
         return true
     }
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -1916,24 +1913,21 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         changeTextStyle { $0 = EaselTextSizing.customSized($0, points: points) ?? $0 }
     }
     func editCustomTextSize(relativeTo anchor: NSView? = nil, rect: NSRect? = nil) {
-        guard !session.isClosed, !session.isDeleted, editor?.hasMarkedText() != true else { return }
+        guard !session.isClosed, !session.isDeleted, editor?.hasMarkedText() != true, let panels else { return }
         let styles = session.document.items.filter { selection.contains($0.id) && $0.kind.holdsText }.map(\.resolvedTextStyle)
         guard !styles.isEmpty else { return }
         let owner = editor, ranges = editor?.selectedRanges, ids = selection
-        let controller = EaselTextSizeEditor(value: EaselTextStyleState.points(of: styles, editor: owner))
-        let popover = NSPopover(); popover.behavior = .transient; popover.contentViewController = controller
-        controller.onCommit = { [weak self, weak popover] points in
-            popover?.close()
+        let host = anchor ?? self
+        let place = rect ?? (anchor == nil ? EaselGeometryEdit.bounds(of: session.document.items.filter { ids.contains($0.id) })
+            .map { NSRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height) } ?? host.bounds : host.bounds)
+        let request = EaselTextSizeRequest(points: EaselTextStyleState.points(of: styles, editor: owner), host: host, anchor: place) { [weak self] points in
             guard let self, self.selection == ids, self.editor === owner else { return }
             if let owner, let ranges { owner.selectedRanges = ranges }
             self.setCustomTextSize(points)
         }
-        textSizePopover?.close(); textSizePopover = popover
-        owner?.pendingPopover = popover
-        let host = anchor ?? self
-        let place = rect ?? (anchor == nil ? EaselGeometryEdit.bounds(of: session.document.items.filter { ids.contains($0.id) })
-            .map { NSRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height) } ?? host.bounds : host.bounds)
-        popover.show(relativeTo: place, of: host, preferredEdge: host.isFlipped ? .maxY : .minY)
+        textSizePanel?.close()
+        textSizePanel = panels.presentTextSizeEditor(request)
+        owner?.pendingPanel = textSizePanel
     }
     override func mouseUp(with event: NSEvent) {
         if finishNavigationGesture(event) { return }

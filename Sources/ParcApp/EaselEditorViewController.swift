@@ -90,6 +90,9 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     var onKeyboardStructureChange: (() -> Void)?
     var onTitleChange: ((String) -> Void)?
     var onOpenURL: ((URL) -> Void)?
+    var onOpenNote: ((URL) -> Void)?
+    var notesFolder: (() -> URL?)?
+    private var panels: EaselPanels?
 
     init(directory: URL, documentID: UUID) throws {
         session = try Self.sharedStore(directory: directory).load(documentID)
@@ -125,6 +128,16 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         scroll.documentView = canvas; root.addSubview(scroll)
 
         let palette = EaselToolPalette(frame: .zero)
+        let panels = EaselPanels(container: { [weak root] in root }, search: { [weak self] query, limit in
+            guard let folder = self?.notesFolder?() else { return [] }
+            return NoteLibrary.shared(folder: folder).search(query, limit: limit)
+        })
+        panels.follow = { [weak self] link in self?.canvas.followLink(link) }
+        panels.copy = { [weak self] link in self?.canvas.copyLink(link) }
+        panels.toast = { [weak self] content in (self?.view.window?.windowController as? BrowserWindowController)?.showToast(content) }
+        canvas.panels = panels
+        canvas.onOpenNote = { [weak self] url in self?.onOpenNote?(url) }
+        self.panels = panels
         palette.onTool = { [weak self] tool, control in
             guard let self else { return }
             self.canvas.activateTool(tool, from: control); self.focusCanvas()
@@ -253,6 +266,10 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     override func viewDidAppear() {
         super.viewDidAppear()
         playBarEntranceIfNeeded()
+    }
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        panels?.closeAll()
     }
     private func playBarEntranceIfNeeded() {
         guard !barEntered, let palette, palette.window != nil, palette.bounds.width > 0, !view.isHiddenOrHasHiddenAncestor else { return }

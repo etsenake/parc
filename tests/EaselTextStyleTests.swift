@@ -149,8 +149,6 @@ struct EaselTextStyleTests {
         let selected = pixels(selectedTool).colorAt(x: 14, y: 14)!.usingColorSpace(.sRGB)!
         expect(selected.blueComponent > selected.redComponent && selected.blueComponent > selected.greenComponent && selected.alphaComponent > 0,
                "The selected tool cell takes the Notes checked fill")
-        let link = EaselLinkEditor(value: "https://example.com")
-        link.view.frame.origin = NSPoint(x: 400, y: 160); root.addSubview(link.view)
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             root.appearance = NSAppearance(named: appearance)
             root.layoutSubtreeIfNeeded(); root.displayIfNeeded()

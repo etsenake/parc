@@ -408,9 +408,9 @@ final class EaselStyledTextView: LocalContentDropTextView {
     var canRedoDocument: (() -> Bool)?
     override var undoManager: UndoManager? { localUndo }
     var onEditBoundary: (() -> Void)?
-    private var linkPopover: NSPopover?
-    weak var pendingPopover: NSPopover?
-    var hasPendingRangeAction: Bool { linkPopover?.isShown == true || pendingPopover?.isShown == true }
+    private var linkPanel: EaselPanelHandle?
+    weak var pendingPanel: EaselPanelHandle?
+    var hasPendingRangeAction: Bool { linkPanel?.isOpen == true || pendingPanel?.isOpen == true }
     private var editRevision = UUID()
     private var suppressMarkdown = false
     var onAlign: ((EaselTextStyle.Alignment) -> Void)?
@@ -459,7 +459,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         guard hasMarkedText() else { return }
         unmarkText(); didChangeText()
     }
-    func retire() { linkPopover?.close(); linkPopover = nil; completion?.dismiss(); editRevision = UUID() }
+    func retire() { linkPanel?.close(); linkPanel = nil; completion?.dismiss(); editRevision = UUID() }
     func resetEditingHistory() {
         let level = localUndo.groupingLevel, automatic = localUndo.groupsByEvent
         localUndo.groupsByEvent = false
@@ -859,22 +859,26 @@ final class EaselStyledTextView: LocalContentDropTextView {
             .offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y).intersection(visibleRect)
         return rect.isEmpty ? (visibleRect.isEmpty ? bounds : visibleRect) : rect
     }
-    func editLink(relativeTo anchor: NSView, rect: NSRect? = nil, ranges suppliedRanges: [NSRange]? = nil, validate: (() -> Bool)? = nil) {
+    func removeLink(in range: NSRange) {
+        guard Self.validFormattingRanges([range], length: attributedString().length), range.length > 0, !hasMarkedText() else { return }
+        format("Remove link", ranges: [range]) { attrs in var next = attrs; next[.link] = nil; return next }
+    }
+    func editLink(relativeTo anchor: NSView, rect: NSRect? = nil, ranges suppliedRanges: [NSRange]? = nil,
+                  presenter: EaselPanelPresenting?, validate: (() -> Bool)? = nil) {
         let ranges = suppliedRanges ?? [selectedRange()], originalSelections = selectedRanges
         guard Self.validFormattingRanges(ranges, length: attributedString().length), ranges.allSatisfy({ $0.length > 0 }),
-              !hasMarkedText(), window != nil else { return }
-        linkPopover?.close()
+              !hasMarkedText(), window != nil, let presenter else { return }
+        linkPanel?.close()
         let range = ranges[0], revision = editRevision
         let value = attributedString().attribute(.link, at: range.location, effectiveRange: nil)
-        let controller = EaselLinkEditor(value: (value as? URL)?.absoluteString ?? value as? String ?? "")
-        let popover = NSPopover(); popover.behavior = .transient; popover.contentViewController = controller
-        linkPopover = popover
-        controller.onCommit = { [weak self, weak popover] link in
-            guard let self, self.editRevision == revision, self.selectedRanges == originalSelections, self.window != nil, validate?() != false else { popover?.close(); return }
+        let existing = (value as? URL)?.absoluteString ?? value as? String
+        let request = EaselLinkRequest(link: existing, webOnly: false, host: anchor, anchor: rect ?? anchor.bounds) { [weak self] link in
+            guard let self, self.editRevision == revision, self.selectedRanges == originalSelections, self.window != nil,
+                  validate?() != false else { return }
             self.format(link == nil ? "Remove link" : "Edit link", ranges: ranges) { attrs in var next = attrs; next[.link] = link; return next }
-            popover?.close(); self.linkPopover = nil
+            self.linkPanel = nil
         }
-        popover.show(relativeTo: rect ?? anchor.bounds, of: anchor, preferredEdge: rect != nil && anchor.isFlipped ? .minY : .maxY)
+        linkPanel = presenter.presentLinkEditor(request)
     }
 
     @objc func undo(_ sender: Any?) {
