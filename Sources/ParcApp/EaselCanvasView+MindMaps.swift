@@ -445,7 +445,11 @@ extension EaselCanvasView {
         let anchors = after.items.filter { ids.contains($0.id) }
         guard !anchors.isEmpty else { return }
         func center(_ item: EaselItem) -> EaselPoint { EaselPoint(x: item.frame.x + item.frame.width / 2, y: item.frame.y + item.frame.height / 2) }
+        let lineage = EaselMindMap.tree(of: after.items)
+        let anchorByID = Dictionary(anchors.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         func anchor(for item: EaselItem) -> EaselItem? {
+            let node = item.kind == .arrow ? item.endConnection?.itemID ?? item.id : item.id
+            if let found = lineage.foldAnchor(of: node, among: ids), let match = anchorByID[found] { return match }
             let c = center(item)
             return anchors.min { hypot(center($0).x - c.x, center($0).y - c.y) < hypot(center($1).x - c.x, center($1).y - c.y) }
         }
@@ -469,7 +473,7 @@ extension EaselCanvasView {
         var staged = before
         let leaving = Set(nodes.map(\.id))
         staged.items.removeAll { leaving.contains($0.id) }
-        let tree = EaselMindMap.tree(of: after.items)
+        let tree = lineage
         func depth(_ id: UUID) -> Int {
             var steps = 0, current = id
             while let parent = tree.nodes[current]?.parent, steps <= tree.nodes.count {
