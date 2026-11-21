@@ -209,7 +209,7 @@ final class CapturePalette: NSObject {
         view.search.text = ""
         view.setStatus(nil)
         view.showMainPage()
-        view.list.prepare(origin: .pointer)
+        view.list.prepare(origin: .keyboard)
         reload(resetHighlight: true)
     }
 
@@ -313,7 +313,7 @@ final class CapturePalette: NSObject {
     private func reload(resetHighlight: Bool) {
         let query = view.search.text
         rows = CapturePaletteMenu.rows(context, query: query)
-        let keep = !resetHighlight && (view.list.hasKeyboardHighlight || flyout != nil)
+        let keep = !resetHighlight && (view.list.highlightedItem != nil || flyout != nil)
         view.list.setItems(rows.map { item(for: $0, detailed: false) }, keepingHighlight: keep)
         if resetHighlight && !query.isEmpty { view.list.prepare(origin: .keyboard) }
         if resetHighlight { closeFlyout(animated: true) } else { refreshFlyout() }

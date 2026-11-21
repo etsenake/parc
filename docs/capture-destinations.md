@@ -15,11 +15,13 @@ then note order. Search lowercases the query and each current title and is a
 literal substring match, including spaces; a saved Library toggle matches its
 current Saved to Library label.
 
-There is one highlight, shared by the pointer and the keyboard, and no row is
-highlighted until one of them picks it; a saved capture shows a check on Saved
-to Library rather than a filled row. The highlight keeps an action ID, exact
-Easel UUID or note file across title changes and availability refreshes, and a
-row that becomes unavailable loses it. New search text highlights the first
+There is one highlight, shared by the pointer and the keyboard. The palette
+opens with it on the first available action, Save to Library, as Parc's other
+keyboard-opened Notes menus do, so one Return saves; the pointer and arrows then
+move it, and it is never a second, permanently filled row. A saved capture
+shows a check on Saved to Library rather than a filled row. The highlight keeps
+an action ID, exact Easel UUID or note file across title changes and
+availability refreshes, and a row that becomes unavailable loses it. New search text highlights the first
 available result; arrows skip unavailable rows, Return activates the highlighted
 row, and Return with nothing highlighted highlights the first one. Right or Return on Easel or Note opens its submenu with its
 search focused, Left at the start of that search or Escape closes it, and Escape

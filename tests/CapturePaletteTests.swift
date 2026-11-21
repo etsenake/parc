@@ -42,6 +42,8 @@ struct CapturePaletteTests {
                "The main palette never grows with the number of Easels or Notes")
         expect(!main.contains { $0.title == "Show More" }, "Show More is gone")
         expect(main.allSatisfy { !$0.isChecked }, "Nothing is filled or checked before a save")
+        expect(CapturePaletteMenu.firstAvailable(in: main) == "library",
+               "A fresh palette gives Save to Library the shared highlight, so one Return saves")
 
         let framed = CapturePaletteMenu.rows(CapturePaletteContext(easels: easels, framed: true))
         expect(framed.map(\.id) == ["library", "copy", "save", "message", "edit", "crop", "frame", "removeFrame", "retake", "easels"],
@@ -93,9 +95,12 @@ struct CapturePaletteTests {
         let noLibrary = CapturePaletteContext(easels: easels, libraryAvailable: false)
         expect(!CapturePaletteMenu.rows(noLibrary).contains { $0.id == "library" || $0.id == "easels" },
                "Without a Library destination there is no Library row or Easel submenu")
+        expect(CapturePaletteMenu.firstAvailable(in: CapturePaletteMenu.rows(noLibrary)) == "copy",
+               "Without a Library destination the opening highlight falls to Copy")
 
         let busy = CapturePaletteMenu.rows(CapturePaletteContext(easels: easels, notesAvailable: true, busy: true))
         expect(busy.allSatisfy { !$0.isEnabled }, "A Library write or open composer disables every row")
+        expect(CapturePaletteMenu.firstAvailable(in: busy) == nil, "A busy palette opens with nothing to highlight")
         let noMessages = CapturePaletteMenu.rows(CapturePaletteContext(messageAvailable: false))
         expect(noMessages.filter { !$0.isEnabled }.map(\.id) == ["message"], "Unavailable Messages is the only skipped row")
 
@@ -121,6 +126,8 @@ struct CapturePaletteTests {
         expect(Keys.command(.down, focus: .main, highlighted: nil) == .move(1)
                && Keys.command(.up, focus: .main, highlighted: .copy) == .move(-1), "Arrows move the single highlight")
         expect(Keys.command(.enter, focus: .main, highlighted: .copy) == .activate, "Return activates the highlighted action")
+        expect(Keys.command(.enter, focus: .main, highlighted: .library) == .activate,
+               "Return on the opening highlight saves to the Library in one press")
         expect(Keys.command(.enter, focus: .main, highlighted: nil) == .move(1),
                "Return without a highlight reveals the first row instead of acting unseen")
         expect(Keys.command(.enter, focus: .main, highlighted: .easels) == .open(.easels), "Return on Easel opens its submenu")
