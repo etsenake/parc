@@ -558,6 +558,8 @@ extension EaselCanvasView {
             animation.isRemovedOnCompletion = !keepsEnd
             return animation
         }
+        if item.ownsEmbeddedPage { turns = false; moves = false; fades = false }
+        if layer.masksToBounds { shades = false }
         var result: [String: CAAnimation] = [:]
         if turns { result["transform"] = keyframes("transform", transforms) }
         if moves { result["position"] = keyframes("position", offsets, additive: true) }
