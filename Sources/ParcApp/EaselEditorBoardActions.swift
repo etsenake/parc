@@ -16,7 +16,7 @@ extension EaselEditorViewController {
     func setDefaultFamily(_ family: EaselTextStyle.Family) {
         guard !session.document.isLocked, session.document.resolvedDefaultFamily != family else { return }
         do {
-            try session.perform("Default Text") { $0.defaultFamily = family == .clean ? nil : family }
+            try session.perform("Default text") { $0.defaultFamily = family == .clean ? nil : family }
         } catch {
             show(error)
         }

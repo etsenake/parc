@@ -733,7 +733,7 @@ final class NoteBacklinkIndex {
                 if session.document.isLocked {
                     try session.updateLinks { EaselBacklinkRewriter.rewrite($0, move: move) }
                 } else {
-                    try session.perform("Update Links") { $0 = next }
+                    try session.perform("Update links") { $0 = next }
                 }
             } catch {
                 continue

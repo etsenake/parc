@@ -70,7 +70,7 @@ extension EaselCanvasView {
                     target.discardUnusedAssets(created)
                     return false
                 }
-                try target.perform(copying ? "Copy Here" : "Send Here") { $0 = landed }
+                try target.perform(copying ? "Copy here" : "Send here") { $0 = landed }
             } catch {
                 target.discardUnusedAssets(created)
                 throw error
