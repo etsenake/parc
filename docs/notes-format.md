@@ -427,11 +427,11 @@ link, HTML exports a picture of the canvas above it, `.txt` notes the address.
   isn't saved, since it follows wherever the file lives; a colour or block link
   goes in the same comment, as in `<!-- parc breadcrumb color="gray" -->`.
 
-Inline things Parc can't edit as text are kept verbatim: an image in the
-middle of a sentence, `<kbd>` and other unknown HTML, footnote markers,
-Obsidian embeds like `![[diagram.png]]`, and inline `$$…$$`. A link wrapped
-around an image (such as a README badge) keeps the link on the image. HTML
-blocks, reference definitions and footnotes stay as you wrote them.
+Inline things Parc can't edit as text are kept verbatim: a mid-sentence image,
+`<kbd>` and other unknown HTML, footnote markers, Obsidian embeds like
+`![[diagram.png]]` and inline `$$…$$`. A link around an image (such as a README
+badge) stays on the image. HTML blocks, reference definitions and footnotes stay
+as written.
 
 ## Custom emoji
 
