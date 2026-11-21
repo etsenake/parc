@@ -80,6 +80,7 @@ extension EaselCanvasView {
         cancelToolGesture()
         if tool != .stamp { dismissStampPanels() }
         hoveredObjectID = nil
+        clearQuickCreateHover(); clearMindMapHover()
         needsDisplay = true
         decoration.needsDisplay = true
         refreshPlacementPreview()
@@ -159,6 +160,7 @@ extension EaselCanvasView {
         guard !toolState.spaceHeld else { return }
         toolState.spaceHeld = true
         hoveredObjectID = nil
+        clearQuickCreateHover(); clearMindMapHover()
         invalidateIncrementalDisplay()
         refreshPlacementPreview()
         refreshToolCursor()

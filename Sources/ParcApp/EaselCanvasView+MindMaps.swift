@@ -9,6 +9,7 @@ enum EaselMindMapControl: Equatable {
 @MainActor
 final class EaselMindMapCanvasState {
     var hover: (id: UUID, control: EaselMindMapControl)?
+    var hoverNode: UUID?
     var drop: (id: UUID, drop: EaselMindMapDrop)?
     var dropRect = NSRect.null
 }
@@ -162,8 +163,8 @@ extension EaselCanvasView {
         }
     }
 
-    func mindMapControls() -> [(id: UUID, control: EaselMindMapControl, point: NSPoint)] {
-        guard fixedCanvasSize == nil, !drawing, marqueeRect == nil, !hidesPassiveAnnotations, start == nil,
+    func mindMapControls(pressing: Bool = false) -> [(id: UUID, control: EaselMindMapControl, point: NSPoint)] {
+        guard fixedCanvasSize == nil, !drawing, marqueeRect == nil, !hidesPassiveAnnotations, start == nil || pressing,
               connectors.gesture == nil, tool == .select else { return [] }
         let shown = items
         guard shown.contains(where: { $0.mindMap != nil }) else { return [] }
@@ -176,7 +177,8 @@ extension EaselCanvasView {
                 result.append((item.id, .expand, mindMapButtonPoint(for: item, side: node.side)))
                 continue
             }
-            guard editor == nil, displayedSelection == [item.id], !item.isLocked else { continue }
+            guard editor == nil, displayedSelection == [item.id] || (item.id == mindMaps.hoverNode && !toolOwnsPointer),
+                  !item.isLocked else { continue }
             for side in EaselMindMap.childSides(of: item.id, in: tree) {
                 let point = mindMapButtonPoint(for: item, side: side)
                 result.append((item.id, .add(side), point))
@@ -199,12 +201,17 @@ extension EaselCanvasView {
         (control == .expand ? 13 : 11) / CGFloat(canvasScale)
     }
 
-    func mindMapControl(at point: NSPoint) -> (id: UUID, control: EaselMindMapControl)? {
-        mindMapControls().last { hypot($0.point.x - point.x, $0.point.y - point.y) <= mindMapControlRadius($0.control) }.map { ($0.id, $0.control) }
+    func mindMapControl(at point: NSPoint, pressing: Bool = false) -> (id: UUID, control: EaselMindMapControl)? {
+        mindMapControl(at: point, in: mindMapControls(pressing: pressing))
+    }
+
+    private func mindMapControl(at point: NSPoint, in controls: [(id: UUID, control: EaselMindMapControl, point: NSPoint)])
+        -> (id: UUID, control: EaselMindMapControl)? {
+        controls.last { hypot($0.point.x - point.x, $0.point.y - point.y) <= mindMapControlRadius($0.control) }.map { ($0.id, $0.control) }
     }
 
     func mindMapControlPress(at point: NSPoint) -> Bool {
-        guard let hit = mindMapControl(at: point) else { return false }
+        guard let hit = mindMapControl(at: point, pressing: true) else { clearMindMapHover(); return false }
         mindMaps.hover = nil
         switch hit.control {
         case .add(let side): addMindMapNode(to: hit.id, side: side)
@@ -214,20 +221,50 @@ extension EaselCanvasView {
         return true
     }
 
-    private func mindMapChromeBounds() -> NSRect {
+    private func mindMapChromeBounds(pressing: Bool = false) -> NSRect {
+        mindMapChromeBounds(of: mindMapControls(pressing: pressing))
+    }
+
+    private func mindMapChromeBounds(of controls: [(id: UUID, control: EaselMindMapControl, point: NSPoint)]) -> NSRect {
         let pad = 26 / max(CGFloat(canvasScale), 0.2)
-        return mindMapControls().reduce(NSRect.null) { $0.union(NSRect(x: $1.point.x - pad, y: $1.point.y - pad, width: pad * 2, height: pad * 2)) }
+        return controls.reduce(NSRect.null) { $0.union(NSRect(x: $1.point.x - pad, y: $1.point.y - pad, width: pad * 2, height: pad * 2)) }
+    }
+
+    private func mindMapHoverTarget(at point: NSPoint, controls: [(id: UUID, control: EaselMindMapControl, point: NSPoint)]) -> UUID? {
+        guard !toolOwnsPointer, start == nil, editor == nil, !session.isClosed, connectors.gesture == nil,
+              objectMotion.hoveredHandle == nil else { return nil }
+        if let hit = mindMapControl(at: point, in: controls), hit.control != .expand { return hit.id }
+        if let id = hoveredObjectID { return isMindMapNode(id) ? id : nil }
+        guard let current = mindMaps.hoverNode, let item = items.first(where: { $0.id == current }) else { return nil }
+        let reach = (Self.mindMapButtonOffset + 12) / CGFloat(canvasScale)
+        let bounds = EaselShapeGeometry.visualBounds(of: item)
+        return NSRect(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height).insetBy(dx: -reach, dy: -reach).contains(point) ? current : nil
     }
 
     func updateMindMapHover(at point: NSPoint) {
-        let next = start == nil && editor == nil ? mindMapControl(at: point) : nil
-        guard next?.id != mindMaps.hover?.id || next?.control != mindMaps.hover?.control else { return }
+        let controls = mindMapControls()
+        let node = mindMapHoverTarget(at: point, controls: controls)
+        let nodeChanged = node != mindMaps.hoverNode
+        let previous = nodeChanged ? mindMapChromeBounds(of: controls) : .null
+        mindMaps.hoverNode = node
+        let next = start == nil && editor == nil ? mindMapControl(at: point, in: nodeChanged ? mindMapControls() : controls) : nil
+        guard nodeChanged || next?.id != mindMaps.hover?.id || next?.control != mindMaps.hover?.control else { return }
         mindMaps.hover = next
-        refreshMindMapChrome()
+        refreshMindMapChrome(from: previous)
+        if nodeChanged { window?.invalidateCursorRects(for: self) }
     }
 
-    func refreshMindMapChrome() {
-        let dirty = mindMapChromeBounds()
+    func clearMindMapHover() {
+        guard mindMaps.hoverNode != nil || mindMaps.hover != nil else { return }
+        let previous = mindMapChromeBounds(pressing: true)
+        mindMaps.hoverNode = nil
+        mindMaps.hover = nil
+        refreshMindMapChrome(from: previous)
+        window?.invalidateCursorRects(for: self)
+    }
+
+    func refreshMindMapChrome(from previous: NSRect = .null) {
+        let dirty = mindMapChromeBounds().union(previous)
         guard !dirty.isNull else { return }
         if usesObjectSurfaces { refreshDecorations() } else { setNeedsDisplay(dirty) }
     }

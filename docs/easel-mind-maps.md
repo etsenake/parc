@@ -47,10 +47,12 @@ come back to body size. It starts empty; letting go of an empty text node
 removes it, just like new text elsewhere. Pressing ⌘Return or ⇧⌘Return on a
 node you left empty puts the new node in its place.
 
-**+ buttons.** A selected node shows the quick-create dot on the side its
-children grow from (the root shows one on each side). Hover turns it into a
-plus; a click adds a child on that side and starts editing. Nodes that are
-mind-map nodes show these instead of the quick-create dots.
+**+ buttons.** A node under the pointer, or the selected node, shows the
+quick-create dot on the side its children grow from (the root shows one on each
+side), plus its collapse button. They stay while the pointer heads out to them.
+Hover turns the dot into a plus; a click adds a child on that side and starts
+editing, with no need to select the node first. Nodes that are mind-map nodes
+show these instead of the quick-create dots.
 
 **Dropping.** Drag a node and a drop indicator follows: a dashed curve to a
 slot between siblings, or a ring around a node when the pointer is over it. Let

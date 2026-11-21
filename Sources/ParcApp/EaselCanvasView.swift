@@ -1059,7 +1059,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         updatePlacementPreview(at: isTopmost(atWindowPoint: event.locationInWindow) ? point : nil)
         super.mouseMoved(with: event)
     }
-    override func mouseExited(with event: NSEvent) { hoveredObjectID = nil; updateObjectBarHover(at: nil, windowPoint: nil); updateHandleHover(nil); updateTableHover(at: nil); invalidateIncrementalDisplay(); updatePlacementPreview(at: nil); super.mouseExited(with: event) }
+    override func mouseExited(with event: NSEvent) {
+        hoveredObjectID = nil; updateObjectBarHover(at: nil, windowPoint: nil); updateHandleHover(nil); updateTableHover(at: nil)
+        clearQuickCreateHover(); clearMindMapHover()
+        invalidateIncrementalDisplay(); updatePlacementPreview(at: nil); super.mouseExited(with: event)
+    }
     private var easelSelectionColor: NSColor {
         EaselAppearance.selection
     }
@@ -1718,7 +1722,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         super.viewWillMove(toWindow: newWindow)
     }
-    @objc private func ownerResignedKey(_ notification: Notification) { dismissStampPanels(animated: false); hoveredObjectID = nil; menuGeneration &+= 1; motion.cancel(); cancelPointerInteraction(); releaseTemporaryHand() }
+    @objc private func ownerResignedKey(_ notification: Notification) {
+        dismissStampPanels(animated: false); hoveredObjectID = nil; clearQuickCreateHover(); clearMindMapHover()
+        menuGeneration &+= 1; motion.cancel(); cancelPointerInteraction(); releaseTemporaryHand()
+    }
     override func resignFirstResponder() -> Bool {
         menuGeneration &+= 1; cancelPointerInteraction(); finishImageCrop(save: true); releaseTemporaryHand(); return super.resignFirstResponder()
     }

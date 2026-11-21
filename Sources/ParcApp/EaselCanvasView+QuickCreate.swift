@@ -8,11 +8,53 @@ extension EaselCanvasView {
         (item.kind == .sticky || item.kind == .rectangle || item.kind == .circle) && !item.isLocked && item.mindMap == nil
     }
 
+    private var showsQuickCreateChrome: Bool {
+        fixedCanvasSize == nil && !drawing && editor == nil && marqueeRect == nil && !hidesPassiveAnnotations && connectors.gesture == nil
+    }
+
     var quickCreateSource: EaselItem? {
-        guard fixedCanvasSize == nil, !drawing, editor == nil, marqueeRect == nil, !hidesPassiveAnnotations,
-              connectors.gesture == nil, displayedSelection.count == 1,
+        guard showsQuickCreateChrome, displayedSelection.count == 1,
               let item = items.first(where: { displayedSelection.contains($0.id) }), quickCreates(item) else { return nil }
         return item
+    }
+
+    var hoveredQuickCreateSource: EaselItem? {
+        guard let id = connectors.quickCreateHover, showsQuickCreateChrome, !toolOwnsPointer,
+              displayedSelection.count < 2 || !displayedSelection.contains(id),
+              let item = items.first(where: { $0.id == id }), quickCreates(item) else { return nil }
+        return item
+    }
+
+    var quickCreateSources: [EaselItem] {
+        let selected = quickCreateSource
+        var sources = selected.map { [$0] } ?? []
+        if let hovered = hoveredQuickCreateSource, hovered.id != selected?.id { sources.append(hovered) }
+        return sources
+    }
+
+    func quickCreateHoverTarget(at point: NSPoint) -> UUID? {
+        guard !toolOwnsPointer, start == nil, editor == nil, !session.isClosed, connectors.gesture == nil,
+              objectMotion.hoveredHandle == nil else { return nil }
+        let current = hoveredQuickCreateSource
+        let reach = (Self.quickCreateDotOffset + 12) / CGFloat(canvasScale)
+        if let current, EaselConnection.Side.allCases.contains(where: { side in
+            let dot = quickCreateDot(for: current, side: side)
+            return hypot(dot.x - point.x, dot.y - point.y) <= 11 / CGFloat(canvasScale)
+        }) { return current.id }
+        if let id = hoveredObjectID, let item = items.first(where: { $0.id == id }) { return quickCreates(item) ? id : nil }
+        guard let current else { return nil }
+        let bounds = EaselShapeGeometry.visualBounds(of: current)
+        let zone = NSRect(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height).insetBy(dx: -reach, dy: -reach)
+        return zone.contains(point) ? current.id : nil
+    }
+
+    func clearQuickCreateHover() {
+        guard connectors.quickCreateHover != nil || connectors.quickHover != nil else { return }
+        let previous = connectorChromeBounds()
+        connectors.quickCreateHover = nil
+        connectors.quickHover = nil
+        refreshConnectorChrome(from: previous)
+        window?.invalidateCursorRects(for: self)
     }
 
     func quickCreateDot(for item: EaselItem, side: EaselConnection.Side) -> NSPoint {

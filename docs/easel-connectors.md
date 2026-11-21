@@ -99,8 +99,10 @@ background remembered by the shared style memory, until Parc quits.
 
 ## Quick create
 
-A single selected, unlocked sticky or shape shows a dot just outside each side;
-hovering one turns it into a plus. Clicking makes the next object of the same
+An unlocked sticky or shape shows a dot just outside each side while the pointer
+is over it, or while it's the only thing selected. The dots stay as the pointer
+heads out to them and go once it leaves, and hovering one turns it into a plus.
+No click on the object first: clicking a dot makes the next object of the same
 kind, size and style 40 points away in that direction and starts its text.
 Shapes always get a connector from the source; stickies don't. Clicking the same
 side again stacks the new object below or above the last one instead of

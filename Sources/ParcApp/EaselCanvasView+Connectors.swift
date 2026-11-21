@@ -47,6 +47,7 @@ struct EaselConnectorCanvasState {
     var preview: [EaselItem] = []
     var magnet: Magnet?
     var quickHover: (id: UUID, side: EaselConnection.Side)?
+    var quickCreateHover: UUID?
     var toolHover: UUID?
     var pendingLabel: (id: UUID, position: Double, original: Double?)?
     var routes: [UUID: (key: RouteKey, drawing: EaselConnectorDrawing)] = [:]
@@ -311,9 +312,11 @@ extension EaselCanvasView {
                 }
             }
         }
-        if connectors.gesture == nil, let source = quickCreateSource {
-            for side in EaselConnection.Side.allCases {
-                result.append((.quickCreate(source, side), quickCreateDot(for: source, side: side), 11 / scale))
+        if connectors.gesture == nil {
+            for source in quickCreateSources {
+                for side in EaselConnection.Side.allCases {
+                    result.append((.quickCreate(source, side), quickCreateDot(for: source, side: side), 11 / scale))
+                }
             }
         }
         return result
@@ -429,11 +432,15 @@ extension EaselCanvasView {
 
     func updateConnectorHover(at point: NSPoint) {
         let previous = connectorChromeBounds()
+        let previousSource = connectors.quickCreateHover
+        connectors.quickCreateHover = quickCreateHoverTarget(at: point)
         var next: (id: UUID, side: EaselConnection.Side)?
         if connectors.gesture == nil, case .quickCreate(let item, let side)? = connectorChrome(at: point) { next = (item.id, side) }
-        let changed = next?.id != connectors.quickHover?.id || next?.side != connectors.quickHover?.side
+        let sourceChanged = previousSource != connectors.quickCreateHover
+        let changed = sourceChanged || next?.id != connectors.quickHover?.id || next?.side != connectors.quickHover?.side
         connectors.quickHover = next
         if changed { refreshConnectorChrome(from: previous) }
+        if sourceChanged { window?.invalidateCursorRects(for: self) }
     }
 
     func connectorTarget(at point: NSPoint, excluding id: UUID?) -> EaselItem? {
@@ -466,7 +473,9 @@ extension EaselCanvasView {
 
     func beginConnectorGesture(at point: NSPoint, event: NSEvent) -> Bool {
         connectors.travelled = false
-        if let chrome = connectorChrome(at: point) {
+        let pressed = connectorChrome(at: point)
+        if case .quickCreate? = pressed {} else { clearQuickCreateHover() }
+        if let chrome = pressed {
             switch chrome {
             case .endpoint(let item, let end):
                 connectors.gesture = .endpoint(id: item.id, end: end, original: item)
@@ -580,6 +589,7 @@ extension EaselCanvasView {
             guard travelled, let item = preview.first else { return true }
             if commit("Add connector", { $0.items.append(item) }) { selection = [item.id]; rememberConnectorStyle(item) }
         case .quickCreate(let source, let side, _):
+            connectors.quickCreateHover = nil; connectors.quickHover = nil
             if travelled { finishQuickCreateDrag(from: source, side: side, preview: preview) }
             else { quickCreate(from: source, side: side) }
         }
@@ -589,6 +599,7 @@ extension EaselCanvasView {
     func cancelConnectorGesture() {
         guard connectors.gesture != nil || !connectors.preview.isEmpty || connectors.magnet != nil else { return }
         let previousChrome = connectorChromeBounds()
+        if case .quickCreate? = connectors.gesture { connectors.quickCreateHover = nil; connectors.quickHover = nil }
         connectors.gesture = nil; connectors.preview = []; connectors.magnet = nil; connectors.travelled = false
         refreshConnectorChrome(from: previousChrome)
     }
