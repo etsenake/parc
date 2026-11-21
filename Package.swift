@@ -8,16 +8,15 @@ let nativeHeaders = root + "/Engine/ParcNative"
 let engineStubs = root + "/Stubs"
 
 let strict: [SwiftSetting] = [.treatAllWarnings(as: .error)]
-let nativeFlags: [CSetting] = [.unsafeFlags(["-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-Werror"])]
+let nativeFlags: [CSetting] = [.enableWarning("all"), .enableWarning("extra"), .treatAllWarnings(as: .error)]
 let facadeFlags: [CSetting] = nativeFlags + [
-    .unsafeFlags(["-Wno-unused-parameter", "-Wno-incomplete-implementation", "-Wno-objc-property-implementation",
-                  "-Wno-objc-protocol-property-synthesis", "-Wno-protocol", "-Wno-objc-root-class", "-Wno-nullability-completeness"]),
+    .disableWarning("unused-parameter"), .disableWarning("incomplete-implementation"),
+    .disableWarning("objc-property-implementation"), .disableWarning("objc-protocol-property-synthesis"),
+    .disableWarning("protocol"), .disableWarning("objc-root-class"), .disableWarning("nullability-completeness"),
     .define("OS_MAC", to: "1"), .headerSearchPath("../../ParcNativeTests/Support"),
     .headerSearchPath("../../../Engine/ParcNative"), .headerSearchPath("../../../Sources/ParcEngine"),
 ]
-let engineImport: [SwiftSetting] = [
-    .unsafeFlags(["-Xcc", "-I", "-Xcc", nativeHeaders, "-Xcc", "-DOS_MAC=1"]),
-]
+let engineImport: [SwiftSetting] = [.unsafeFlags(["-Xcc", "-I", "-Xcc", nativeHeaders])]
 
 let package = Package(
     name: "Parc",
@@ -33,7 +32,8 @@ let package = Package(
             cSettings: [
                 .headerSearchPath("../../Engine/ParcNative"),
                 .define("OS_MAC", to: "1"),
-                .unsafeFlags(["-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter"]),
+                .enableWarning("all"), .enableWarning("extra"), .treatAllWarnings(as: .error),
+                .disableWarning("unused-parameter"),
                 .unsafeFlags(["-O2"], .when(configuration: .release)),
             ],
             linkerSettings: [
@@ -74,13 +74,13 @@ let package = Package(
                           "pane_compositor_view.mm", "site_permission_presenter.mm", "status_text.mm",
                           "window_security_reservation.mm"],
                 publicHeadersPath: "fairplay_chromium/testdata",
-                cSettings: nativeFlags + [.unsafeFlags(["-Wno-unused-parameter"]),
+                cSettings: nativeFlags + [.disableWarning("unused-parameter"),
                                           .headerSearchPath("../../tests/ParcNativeTests/Headers/Chromium")],
                 linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("QuartzCore"),
                                  .linkedFramework("Security"), .linkedFramework("SecurityInterface")]),
         .testTarget(name: "ParcNativeTests", dependencies: ["ParcNative"], path: "tests/ParcNativeTests",
                     exclude: ["Headers"],
-                    cSettings: nativeFlags + [.unsafeFlags(["-Wno-unused-parameter"]), .headerSearchPath("Support"), .headerSearchPath("../../Engine/ParcNative"),
+                    cSettings: nativeFlags + [.disableWarning("unused-parameter"), .headerSearchPath("Support"), .headerSearchPath("../../Engine/ParcNative"),
                                               .headerSearchPath("../../Engine/ParcHost/native"), .headerSearchPath("../../Engine/ParcRenderer"),
                                               .headerSearchPath("../../Sources/ParcEngine")]),
         .testTarget(name: "EngineFacadeMediaTests", path: "tests/EngineFacadeTests/Media", cSettings: facadeFlags),

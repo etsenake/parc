@@ -268,6 +268,8 @@ checksum the pinned package declares, and packaging embeds that framework.
 Scripted builds pass `--disable-keychain` so a credential prompt can never stall
 dependency resolution.
 
+The manifest uses the package manager's own settings for warnings, defines, header paths and frameworks. It passes raw compiler options only where no setting exists: the engine bridge headers' folder for Swift's Objective-C importer, the release optimization level the bridge has always shipped with, weak linking against the engine stub, and the launcher's framework search path and fatal linker warnings.
+
 Package builds never need an engine binary. Debug and test builds weak-link
 `Stubs/Chromium Embedded Framework.framework`, a text stub of what the engine
 bridge headers export, so the local engine can lag the headers. `ParcTests` also
