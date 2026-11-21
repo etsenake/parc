@@ -3,7 +3,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct SidebarWindowSessionTests {
     private struct LegacyDatedRecord: Encodable {
         let sidebarWidth: Double
@@ -28,7 +27,7 @@ struct SidebarWindowSessionTests {
 
     func record(_ width: SidebarWindowWidth) -> BrowserWindowRecord { BrowserWindowRecord(sidebarWidth: width.width) }
 
-    @MainActor final class Directory {
+    final class Directory {
         let url: URL
         let file: URL
         init() throws {
@@ -116,7 +115,7 @@ struct SidebarWindowSessionTests {
         #expect(fallbackRecords.first?.sidebarWidth == 260)
     }
 
-    @Test func aSessionSavesItsWindowRecordsAndAnOlderSessionWithoutThemReopensAtTheLastUsedWidth() throws {
+    @MainActor @Test func aSessionSavesItsWindowRecordsAndAnOlderSessionWithoutThemReopensAtTheLastUsedWidth() throws {
         let d = try Directory()
         let store = try BrowserStore(directory: d.url)
         store.updateSettings { $0.sidebarWidth = 250 }
@@ -129,14 +128,6 @@ struct SidebarWindowSessionTests {
         #expect(migrated.windowRecords.isEmpty)
         #expect(SidebarWindowWidth(lastUsed: migrated.state.settings.sidebarWidth,
                                    restored: migrated.windowRecords.first?.sidebarWidth).width == 250)
-    }
-
-    func waitFor(_ condition: () throws -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(30)
-        while Date() < deadline {
-            if try condition() { return }
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
     }
 
     struct TwoWindows {
@@ -154,49 +145,102 @@ struct SidebarWindowSessionTests {
         }
     }
 
-    @Test func newRecordsUpdateTheStorePublishNothingAndScheduleTheSessionSave() async throws {
-        let d = try Directory()
-        let store = try BrowserStore(directory: d.url)
-        let w = TwoWindows()
-        store.updateSettings { $0.sidebarWidth = w.lastUsed }
+    @MainActor final class DeferredSaves {
+        private(set) var tasks: [DispatchWorkItem] = []
+
+        init(_ store: BrowserStore) {
+            store.scheduleDeferredSave = { [unowned self] _, task in tasks.append(task) }
+        }
+
+        func runLatest(on store: BrowserStore) {
+            tasks.last?.perform()
+            store.flushPendingWrites()
+        }
+    }
+
+    @MainActor private func savedStore(_ directory: Directory) throws -> BrowserStore {
+        let store = try BrowserStore(directory: directory.url)
         try store.save()
-        var published = 0
-        let subscription = store.statePublisher.dropFirst().sink { _ in published += 1 }
-        let settingsUpdates = published
+        return store
+    }
+
+    @MainActor @Test func newRecordsReplaceTheStoresWindowRecordsAndKeepThemOutOfTheState() throws {
+        let d = try Directory()
+        let store = try savedStore(d)
+        let w = TwoWindows()
         store.updateWindowRecords([record(w.first), record(w.second)])
         #expect(store.windowRecords.map(\.sidebarWidth) == [320, 210])
-        #expect(published == settingsUpdates)
         #expect(store.state.windows.isEmpty)
-        try await waitFor { ((try d.json())["windows"] as? [[String: Any]])?.compactMap { $0["sidebarWidth"] as? Double } == [320, 210] }
-        let written = try d.json()
-        #expect((written["windows"] as? [[String: Any]])?.compactMap { $0["sidebarWidth"] as? Double } == [320, 210])
-        let updates = published
+    }
+
+    @MainActor @Test func newRecordsPublishNoStateChange() throws {
+        let d = try Directory()
+        let store = try savedStore(d)
+        let w = TwoWindows()
+        var published = 0
+        let subscription = store.statePublisher.dropFirst().sink { _ in published += 1 }
         store.updateWindowRecords([record(w.first), record(w.second)])
-        #expect(published == updates)
+        #expect(published == 0)
         subscription.cancel()
     }
 
-    @Test func cancelAndCollapseWriteNoLastUsedWidthAndNoRecord() throws {
+    @MainActor @Test func newRecordsScheduleASessionSaveThatWritesEachWidth() throws {
+        let d = try Directory()
+        let store = try savedStore(d)
+        let saves = DeferredSaves(store)
+        let w = TwoWindows()
+        store.updateWindowRecords([record(w.first), record(w.second)])
+        #expect(saves.tasks.count == 1)
+        saves.runLatest(on: store)
+        #expect((try d.json()["windows"] as? [[String: Any]])?.compactMap { $0["sidebarWidth"] as? Double } == [320, 210])
+    }
+
+    @MainActor @Test func theSameRecordsAgainScheduleNothingMore() throws {
+        let d = try Directory()
+        let store = try savedStore(d)
+        let saves = DeferredSaves(store)
+        let w = TwoWindows()
+        store.updateWindowRecords([record(w.first), record(w.second)])
+        let scheduled = saves.tasks.count
+        store.updateWindowRecords([record(w.first), record(w.second)])
+        #expect(saves.tasks.count == scheduled)
+    }
+
+    @MainActor @Test(arguments: [(SidebarResizeGesture.Completion.cancelled, 60.0), (.ended, -300.0)])
+    func aCancelledOrCollapsedDragWritesNoLastUsedWidth(completion: SidebarResizeGesture.Completion, translation: Double) {
+        var window = TwoWindows().first
+        var drag = SidebarResizeGesture(width: window.width, locked: true)
+        _ = drag.change(translationX: translation, velocityX: 0, now: 0)
+        #expect(window.end(drag.end(completion, translationX: translation), completion) == nil)
+        #expect(window.width == 320)
+    }
+
+    @MainActor @Test(arguments: [(SidebarResizeGesture.Completion.cancelled, 60.0), (.ended, -300.0)])
+    func aCancelledOrCollapsedDragChangesNoWindowRecord(completion: SidebarResizeGesture.Completion, translation: Double) throws {
         let d = try Directory()
         let store = try BrowserStore(directory: d.url)
         var w = TwoWindows()
         store.updateWindowRecords([record(w.first), record(w.second)])
-        var published = 0
-        let subscription = store.statePublisher.dropFirst().sink { _ in published += 1 }
-        let updates = published
-        for completion in [SidebarResizeGesture.Completion.cancelled, .ended] {
-            var drag = SidebarResizeGesture(width: w.first.width, locked: true)
-            _ = drag.change(translationX: completion == .ended ? -300 : 60, velocityX: 0, now: 0)
-            let written = w.first.end(drag.end(completion, translationX: completion == .ended ? -300 : 60), completion)
-            #expect(written == nil)
-            store.updateWindowRecords([record(w.first), record(w.second)])
-        }
-        #expect(published == updates)
-        #expect(w.first.width == 320)
-        subscription.cancel()
+        let before = store.windowRecords
+        var drag = SidebarResizeGesture(width: w.first.width, locked: true)
+        _ = drag.change(translationX: translation, velocityX: 0, now: 0)
+        _ = w.first.end(drag.end(completion, translationX: translation), completion)
+        store.updateWindowRecords([record(w.first), record(w.second)])
+        #expect(store.windowRecords == before)
     }
 
-    @Test func eachWindowsWidthSurvivesARelaunchInOrderBesideTheLastUsedWidth() throws {
+    @MainActor @Test func eachWindowsWidthSurvivesARelaunchInOrder() throws {
+        let d = try Directory()
+        let store = try BrowserStore(directory: d.url)
+        let w = TwoWindows()
+        store.updateWindowRecords([record(w.first), record(w.second)])
+        try store.save()
+        let relaunched = try BrowserStore(directory: d.url)
+        #expect(relaunched.windowRecords == [BrowserWindowRecord(sidebarWidth: 320), BrowserWindowRecord(sidebarWidth: 210)])
+        #expect(relaunched.state.windows.isEmpty)
+    }
+
+    @MainActor @Test func theLastUsedWidthSurvivesARelaunchBesideTheWindowWidths() throws {
         let d = try Directory()
         let store = try BrowserStore(directory: d.url)
         let w = TwoWindows()
@@ -204,12 +248,20 @@ struct SidebarWindowSessionTests {
         store.updateWindowRecords([record(w.first), record(w.second)])
         try store.save()
         let relaunched = try BrowserStore(directory: d.url)
-        #expect(relaunched.windowRecords == [BrowserWindowRecord(sidebarWidth: 320), BrowserWindowRecord(sidebarWidth: 210)])
-        #expect(relaunched.state.windows.isEmpty)
         #expect(relaunched.state.settings.sidebarWidth == 210)
-        #expect(SidebarWindowWidth(lastUsed: relaunched.state.settings.sidebarWidth,
-                                   restored: relaunched.windowRecords.first?.sidebarWidth).width == 320)
-        #expect(SidebarWindowWidth(lastUsed: relaunched.state.settings.sidebarWidth).width == 210)
+    }
+
+    @MainActor @Test func aRestoredWindowReopensAtItsOwnWidthAndANewOneAtTheLastUsedWidth() throws {
+        let d = try Directory()
+        let store = try BrowserStore(directory: d.url)
+        let w = TwoWindows()
+        store.updateSettings { $0.sidebarWidth = w.lastUsed }
+        store.updateWindowRecords([record(w.first), record(w.second)])
+        try store.save()
+        let relaunched = try BrowserStore(directory: d.url)
+        let lastUsed = relaunched.state.settings.sidebarWidth
+        #expect(SidebarWindowWidth(lastUsed: lastUsed, restored: relaunched.windowRecords.first?.sidebarWidth).width == 320)
+        #expect(SidebarWindowWidth(lastUsed: lastUsed).width == 210)
     }
 
     struct Dated {
@@ -236,7 +288,7 @@ struct SidebarWindowSessionTests {
         #expect(BrowserWindowRecord.preservingUnrestored(live: [], unrestored: dated) == dated)
     }
 
-    @Test func eachWindowsIdentityPresentationAndActivityDatesSurviveTheRealSessionStoreAndLaterWrites() throws {
+    @MainActor @Test func eachWindowsIdentityPresentationAndActivityDatesSurviveTheRealSessionStoreAndLaterWrites() throws {
         let d = try Directory()
         let store = try BrowserStore(directory: d.url)
         let dated = Dated().records
@@ -265,7 +317,7 @@ struct SidebarWindowSessionTests {
          BrowserWindowRecord(sidebarWidth: 240, id: UUID(), sidebarHidden: true, frame: frame(40, 60, 1200, 800))]
     }
 
-    @Test func eachWindowsFrameSurvivesARelaunchBesideItsOwnWidth() throws {
+    @MainActor @Test func eachWindowsFrameSurvivesARelaunchBesideItsOwnWidth() throws {
         let d = try Directory()
         let store = try BrowserStore(directory: d.url)
         let framed = framedRecords()
@@ -277,7 +329,7 @@ struct SidebarWindowSessionTests {
         #expect(reopened.windowRecords.first?.sidebarWidth == 310)
     }
 
-    @Test func aFileAnOlderParcSavedBackLoadsWithoutFramesAndKeepsEverythingElse() throws {
+    @MainActor @Test func aFileAnOlderParcSavedBackLoadsWithoutFramesAndKeepsEverythingElse() throws {
         let d = try Directory()
         let store = try BrowserStore(directory: d.url)
         let framed = framedRecords()
@@ -298,7 +350,7 @@ struct SidebarWindowSessionTests {
         #expect(downgraded.windowRecords[1].sidebarHidden == true)
     }
 
-    @Test func aDamagedFrameNeverMakesTheSavedSessionUnreadable() throws {
+    @MainActor @Test func aDamagedFrameNeverMakesTheSavedSessionUnreadable() throws {
         let d = try Directory()
         let store = try BrowserStore(directory: d.url)
         try store.save()
@@ -309,7 +361,7 @@ struct SidebarWindowSessionTests {
         #expect(try BrowserStore(directory: d.url).windowRecords == [BrowserWindowRecord(sidebarWidth: 310), BrowserWindowRecord(sidebarWidth: 240)])
     }
 
-    @Test func olderRecordsKeepTheirWidthsAndDefaultMissingActivityDatesToEmptyAndSeedingClampsASavedWidth() throws {
+    @MainActor @Test func olderRecordsKeepTheirWidthsAndDefaultMissingActivityDatesToEmptyAndSeedingClampsASavedWidth() throws {
         let d = try Directory()
         let store = try BrowserStore(directory: d.url)
         try store.save()
@@ -322,7 +374,7 @@ struct SidebarWindowSessionTests {
         #expect(SidebarWindowWidth(lastUsed: 210, restored: edited.windowRecords[0].sidebarWidth).width == 164)
     }
 
-    @Test func aPrivateStoreKeepsNoWindowRecords() throws {
+    @MainActor @Test func aPrivateStoreKeepsNoWindowRecords() throws {
         let d = try Directory()
         let store = try BrowserStore(directory: d.url)
         let incognito = BrowserStore(privateParentProfileID: store.activeSpace.profileID, engineProfilePath: "/tmp/parc-test",
