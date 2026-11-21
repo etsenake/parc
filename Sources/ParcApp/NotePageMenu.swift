@@ -1104,27 +1104,25 @@ final class NotePageFontCard: NoteControlButton {
 
 @MainActor
 final class NotePageMenuButton: NSView {
-    static let size = NSSize(width: 30, height: 30)
+    static let inset: CGFloat = 3
+    static let size = NSSize(width: NoteTheme.toolbarButtonSize.width + inset * 2, height: NoteTheme.toolbarButtonSize.height + inset * 2)
     unowned let pageMenu: NotePageMenu
     let button = NoteToolbarButton(icon: .symbol("ellipsis"), label: "Note Options")
-    private weak var trackedView: NSView?
-    private var paneArea: NSTrackingArea?
-    private var isPaneHovered = false
-    private var isMenuOpen = false
-    private var hasKeyboardFocus = false
+    private let plate = NotePageChromeGroup()
 
     init(menu: NotePageMenu) {
         self.pageMenu = menu
         super.init(frame: NSRect(origin: .zero, size: Self.size))
         wantsLayer = true
-        button.iconPointSize = 15
+        button.iconPointSize = 17
+        button.iconTint = NoteTheme.menuInk
         button.onPress = { [weak self] in
             guard let self else { return }
             self.pageMenu.toggle(from: self)
         }
-        addSubview(button)
+        addSubview(plate)
+        plate.addSubview(button)
         setAccessibilityElement(false)
-        layer?.opacity = 0
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -1136,58 +1134,24 @@ final class NotePageMenuButton: NSView {
 
     override func layout() {
         super.layout()
-        button.frame = bounds.insetBy(dx: 1, dy: 1)
-    }
-
-    override func viewDidMoveToSuperview() {
-        super.viewDidMoveToSuperview()
-        if let paneArea, let trackedView { trackedView.removeTrackingArea(paneArea) }
-        paneArea = nil
-        trackedView = superview
-        guard let superview else { return }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
-        superview.addTrackingArea(area)
-        paneArea = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        isPaneHovered = true
-        refreshVisibility()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        isPaneHovered = false
-        refreshVisibility()
+        plate.frame = bounds
+        button.frame = bounds.insetBy(dx: Self.inset, dy: Self.inset)
     }
 
     func menuDidOpen() {
-        isMenuOpen = true
         button.isChecked = true
-        refreshVisibility()
     }
 
     func menuDidClose() {
-        isMenuOpen = false
         button.isChecked = false
-        refreshVisibility()
-    }
-
-    private func refreshVisibility() {
-        guard let layer else { return }
-        let visible = isPaneHovered || isMenuOpen || hasKeyboardFocus
-        NoteAnimation.fade(layer, to: visible ? 1 : 0, duration: NoteAnimation.hoverDuration)
     }
 
     override func becomeFirstResponder() -> Bool {
-        hasKeyboardFocus = true
-        refreshVisibility()
         needsDisplay = true
         return true
     }
 
     override func resignFirstResponder() -> Bool {
-        hasKeyboardFocus = false
-        refreshVisibility()
         needsDisplay = true
         return true
     }
@@ -1202,7 +1166,7 @@ final class NotePageMenuButton: NSView {
     override var focusRingMaskBounds: NSRect { bounds }
 
     override func drawFocusRingMask() {
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: NoteTheme.controlRadius, yRadius: NoteTheme.controlRadius).fill()
+        NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
     }
 
     override func accessibilityChildren() -> [Any]? { [button] }
