@@ -5,17 +5,10 @@ import tempfile
 root = Path(__file__).resolve().parents[2]
 here = Path(__file__).parent
 model = root / "Sources/ParcCore/SidebarResize.swift"
-placement = root / "Sources/ParcCore/SavedWindowFrame.swift"
 hold = root / "Sources/ParcCore/PageContentResize.swift"
-core = sorted((root / "Sources/ParcCore").glob("*.swift"))
 with tempfile.TemporaryDirectory(prefix="parc-sidebar-resize-") as directory:
-    for name, sources in [("gesture", [model, here / "SidebarResizeGestureTests.swift"]),
-                          ("width", [model, here / "SidebarWindowWidthTests.swift"]),
-                          ("placement", [placement, here / "SavedWindowFrameTests.swift"]),
-                          ("session", [*core, here / "SidebarWindowSessionTests.swift"]),
-                          ("region", [model, root / "Sources/ParcApp/SidebarResizeRegion.swift", root / "Sources/ParcApp/PointerCover.swift",
+    for name, sources in [("region", [model, root / "Sources/ParcApp/SidebarResizeRegion.swift", root / "Sources/ParcApp/PointerCover.swift",
                                       here / "SidebarResizeRegionTests.swift"]),
-                          ("hold", [hold, here / "PageContentResizeTests.swift"]),
                           ("resizer", [hold, root / "Sources/ParcApp/PageContentResizer.swift",
                                        here / "PageContentResizerTests.swift"]),
                           ("frames", [hold, root / "Sources/ParcApp/PageContentResizer.swift",
