@@ -733,7 +733,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         edit.typing = EaselStickyText.scaledAttributes(edit.typing, by: scale)
         return edit
     }
-    private func commitParagraph(_ edit: EaselParagraphEditing.Edit, name: String) {
+    func commitParagraph(_ edit: EaselParagraphEditing.Edit, name: String) {
         do { _ = try EaselRichTextCodec.snapshot(edit.text) } catch { onClipboardError?(error); return }
         let originalSelections = selectedRanges.map(\.rangeValue)
         localUndo.disableUndoRegistration()

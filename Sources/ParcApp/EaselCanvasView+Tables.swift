@@ -700,7 +700,7 @@ extension EaselCanvasView {
     }
 
     @discardableResult
-    private func addTable(_ item: EaselItem, name: String, selectFirstCell: Bool = true) -> Bool {
+    func addTable(_ item: EaselItem, name: String, selectFirstCell: Bool = true) -> Bool {
         guard let table = item.table else { return false }
         let placed = normalizedTable(item, table)
         drawing = false

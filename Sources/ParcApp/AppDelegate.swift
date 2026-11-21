@@ -281,7 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             TooltipController.eventChord = { KeyboardShortcuts.shared.chord(for: $0) }
             TooltipController.symbolicChord = { KeyboardShortcuts.shared.symbolicChord(for: $0) }
             EaselCanvasView.selectionToolbarFactory = { EaselSelectionToolbar() }
-            EaselCanvasView.textCompletionFactory = { EaselEmojiCompletion() }
+            EaselCanvasView.textCompletionFactory = { EaselTextCompletions([EaselSlashCompletion(), EaselEmojiCompletion()]) }
             EaselCanvasView.highlightRecorder = { NoteColorRecents.record(.background($0)) }
             EaselCanvasView.highlightRecall = { NoteColorRecents.load().first(where: \.isBackground)?.color }
             EaselCanvasView.mermaidSheetFactory = { EaselMermaidSheet(canvas: $0, text: $1) }

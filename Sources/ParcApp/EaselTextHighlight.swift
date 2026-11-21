@@ -109,3 +109,16 @@ extension EaselStyledTextView {
         }
     }
 }
+
+extension EaselStyledTextView {
+    func applySlashParagraph(_ kind: EaselParagraphEditing.Kind, removing range: NSRange) {
+        guard isEditable, !hasMarkedText(), selectedRanges.count == 1,
+              Self.validFormattingRanges([range], length: attributedString().length) else { return }
+        var edit = EaselParagraphEditing.Edit(text: NSMutableAttributedString(attributedString: attributedString()), selection: range,
+                                              typing: typingAttributes)
+        EaselParagraphEditing.replace(&edit, range: range, with: NSAttributedString())
+        edit = EaselParagraphEditing.apply(kind, to: edit.text, selection: edit.selection, typing: edit.typing, base: objectStyle,
+                                           bodyPointSize: paragraphBodyPointSize)
+        commitParagraph(edit, name: kind.rawValue)
+    }
+}
