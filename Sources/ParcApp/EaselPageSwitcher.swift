@@ -501,6 +501,11 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         document.needsDisplay = true
     }
 
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil, renaming != nil { endRename(commit: true) }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
     private func endRename(commit: Bool) {
         guard let index = renaming else { return }
         renaming = nil
