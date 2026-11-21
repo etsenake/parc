@@ -285,7 +285,7 @@ struct EaselCanvasTests {
         perform(.bigger)
         expect(session.document.items.first { $0.id == text.id }?.resolvedTextStyle.size == text.resolvedTextStyle.size.shifted(by: 1), "Bigger restyles the whole selected text box")
         canvas.selectAll(nil)
-        expect(!validate(.bigger), "A mixed selection with shapes has no text size")
+        expect(validate(.bigger), "Shapes hold text too, so a text box and a shape share the size steps")
         window.makeFirstResponder(canvas)
     }
     @MainActor static func accessibleObjects() async throws {

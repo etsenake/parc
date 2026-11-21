@@ -1,6 +1,6 @@
 import Foundation
 
-@main
+@main @MainActor
 struct EaselShapeGeometryTests {
     static func expect(_ value: Bool, _ message: String) {
         if !value { failTest(message) }
@@ -27,6 +27,8 @@ struct EaselShapeGeometryTests {
         checkHits()
         checkMarquee()
         checkEdges()
+        checkPlacement()
+        checkNewShapes()
         print("EaselShapeGeometryTests passed")
     }
 
@@ -81,7 +83,9 @@ struct EaselShapeGeometryTests {
     static func checkEveryShape() {
         let frames = [EaselRect(x: 0, y: 0, width: 200, height: 120), EaselRect(x: 37, y: -12, width: 120, height: 200),
                       EaselRect(x: 400, y: 300, width: 160, height: 160), EaselRect(x: 5, y: 5, width: 40, height: 300),
-                      EaselRect(x: -20, y: 80, width: 1000, height: 30), EaselRect(x: 0, y: 0, width: 12, height: 9)]
+                      EaselRect(x: -20, y: 80, width: 1000, height: 30), EaselRect(x: 0, y: 0, width: 12, height: 9),
+                      EaselRect(x: 3, y: 4, width: 1, height: 1), EaselRect(x: 0, y: 0, width: 2, height: 2),
+                      EaselRect(x: 10, y: 10, width: 400, height: 20), EaselRect(x: 10, y: 10, width: 20, height: 400)]
         var names = Set<String>()
         for shape in EaselShape.allCases {
             let name = EaselShapeGeometry.displayName(shape)
@@ -99,10 +103,13 @@ struct EaselShapeGeometryTests {
                        "\(shape) stays inside its frame \(frame)")
                 let text = EaselShapeGeometry.textRect(shape, in: frame)
                 expect(text.width > 0 && text.height > 0, "\(shape) leaves room for text in \(frame)")
+                expect(text.x >= frame.x && text.y >= frame.y && text.x + text.width <= frame.x + frame.width
+                       && text.y + text.height <= frame.y + frame.height, "\(shape)'s text area stays in its frame \(frame)")
                 for column in 0...4 {
                     for row in 0...4 {
                         let point = EaselPoint(x: text.x + text.width * Double(column) / 4, y: text.y + text.height * Double(row) / 4)
-                        expect(outline.contains(point), "\(shape)'s text area stays inside the outline at \(point) in \(frame)")
+                        expect(outline.contains(point, tolerance: min(0.2, min(frame.width, frame.height) / 400)),
+                               "\(shape)'s text area stays inside the outline at \(point) in \(frame)")
                     }
                 }
                 let data = outline.svgPathData
@@ -131,6 +138,19 @@ struct EaselShapeGeometryTests {
         }
         expect(EaselShapeGeometry.details(.rectangle, in: wide).isEmpty, "Plain shapes have no inner lines")
         expect(EaselShapeGeometry.cornerRadius(.rectangle, in: wide) == 5, "Rectangles keep the original five-point corners")
+        for height in [4.0, 9, 12, 15, 16, 30] {
+            let frame = EaselRect(x: 0, y: 0, width: 12, height: height)
+            let radius = EaselShapeGeometry.cornerRadius(.speechBubble, in: frame)
+            expect(height * 0.78 - radius >= radius - 1e-9, "Short speech bubbles keep their sides running forwards at height \(height)")
+            var previous = -Double.infinity
+            for subpath in EaselShapeGeometry.outline(.speechBubble, in: frame).subpaths(tolerance: 0.01) {
+                for point in subpath.points where point.x == 12 {
+                    expect(point.y >= previous - 1e-9, "The bubble's right side only runs downwards at height \(height)")
+                    previous = point.y
+                }
+            }
+        }
+        expect(EaselPath.svgNumber(1e306) == "0" && EaselPath.svgNumber(-1e307) == "0", "Huge SVG numbers never overflow into inf")
         expect(EaselShapeGeometry.cornerRadius(.roundedRectangle, in: wide) == 24
                && EaselShapeGeometry.cornerRadius(.roundedRectangle, in: EaselRect(x: 0, y: 0, width: 600, height: 400)) == 36
                && EaselShapeGeometry.cornerRadius(.roundedRectangle, in: EaselRect(x: 0, y: 0, width: 10, height: 10)) == 5,
@@ -197,6 +217,14 @@ struct EaselShapeGeometryTests {
                "Clicks well clear of an unfilled outline miss")
         expect(!EaselShapeGeometry.hits(EaselPoint(x: 90, y: 160), item: plain, selected: false, scale: 4),
                "Zooming in tightens the outline band to the same screen distance")
+        var ring = shapeItem(.ellipse, EaselRect(x: 0, y: 0, width: 400, height: 400))
+        ring.fillOpacity = 0
+        for index in 0..<72 {
+            let angle = Double(index) * .pi / 36
+            let point = EaselPoint(x: 200 + 201.4 * cos(angle), y: 200 + 201.4 * sin(angle))
+            expect(EaselShapeGeometry.hits(point, item: ring, selected: false, scale: 10),
+                   "At 10× zoom the band around a curve keeps its full 1.5 points at \(index * 5) degrees")
+        }
         expect(EaselShapeGeometry.hits(EaselPoint(x: 200, y: 160), item: plain, selected: true, scale: 1),
                "A selected unfilled shape can be dragged from its middle")
         plain.text = "Label"
@@ -263,5 +291,89 @@ struct EaselShapeGeometryTests {
         expect(EaselShapeGeometry.edgePoint(of: box, toward: EaselPoint(x: 100, y: 50)) == nil, "The centre has no direction")
         expect(EaselShapeGeometry.edgePoint(of: EaselItem(kind: .text, frame: box.frame), toward: EaselPoint(x: 0, y: 0)) == nil,
                "Only shapes have outlines")
+    }
+
+    static func checkPlacement() {
+        let frame = EaselRect(x: 40, y: 60, width: 200, height: 120)
+        let text = EaselItem(kind: .text, frame: frame, text: "Hello")
+        expect(EaselTextPlacement.box(for: text) == frame && EaselTextPlacement.alignment(for: text) == nil
+               && !EaselTextPlacement.centresVertically(text) && !EaselTextPlacement.clipsOverflow(text)
+               && EaselTextPlacement.retiresWhenEmpty(text), "Text objects keep today's placement")
+        expect(EaselTextPlacement.fittedFrameHeight(text, textHeight: 300) == 300
+               && EaselTextPlacement.fittedFrameHeight(text, textHeight: 20) == 120, "Text objects grow to fit and never shrink")
+        let origin = EaselTextPlacement.origin(for: text, textHeight: 30, overflowing: false)
+        expect(origin.x == 40 && origin.y == 60, "Text objects start at their top left")
+
+        var shape = shapeItem(.diamond, frame)
+        shape.text = "Decide"
+        let box = EaselTextPlacement.box(for: shape)
+        expect(box == EaselShapeGeometry.textRect(.diamond, in: frame), "Shapes wrap text inside their own text area")
+        expect(EaselTextPlacement.alignment(for: shape) == .center && EaselTextPlacement.centresVertically(shape)
+               && EaselTextPlacement.clipsOverflow(shape) && !EaselTextPlacement.retiresWhenEmpty(shape),
+               "Shape text is centred, clipped and never deletes the shape")
+        var measured = false
+        expect(EaselTextPlacement.fittedFrameHeight(shape, textHeight: { measured = true; return 900 }()) == nil && !measured,
+               "Shapes never grow with their text, and never pay for measuring it")
+        let centred = EaselTextPlacement.origin(for: shape, textHeight: 20, overflowing: false)
+        expect(centred.x == box.x && centred.y == box.y + ((box.height - 20) / 2).rounded(.down), "Short shape text sits in the middle")
+        let top = EaselTextPlacement.origin(for: shape, textHeight: 400, overflowing: true)
+        expect(top.y == box.y, "Overflowing shape text starts at the top so its first lines show")
+        shape.textStyle = EaselTextStyle(alignment: .right)
+        expect(EaselTextPlacement.alignment(for: shape) == .right, "A chosen alignment beats the centred default")
+
+        var flipped = shapeItem(.triangle, frame)
+        flipped.flipVertical = true
+        expect(EaselTextPlacement.box(for: flipped) == EaselShapeGeometry.textRect(.triangle, in: frame)
+               && EaselTextPlacement.canvasBox(for: flipped).y < frame.y + 10,
+               "Flipped shapes draw text upright in their own space and edit it at the mirrored spot on the canvas")
+        let sticky = EaselItem(kind: .sticky, frame: frame)
+        expect(EaselTextPlacement.box(for: sticky) == frame && !EaselTextPlacement.retiresWhenEmpty(sticky),
+               "Stickies keep their text even when it's empty")
+    }
+
+    static func checkNewShapes() {
+        let frame = EaselRect(x: 10, y: 10, width: 200, height: 120)
+        let circle = EaselShapeStyle.newItem(.ellipse, frame: frame, ink: "#252525", zIndex: 3)
+        expect(circle.kind == .circle && circle.shape == nil && circle.resolvedShape == .ellipse && circle.zIndex == 3,
+               "New circles stay circle objects so older Parc versions still draw them round")
+        let star = EaselShapeStyle.newItem(.star, frame: frame, ink: "#252525", zIndex: 1)
+        expect(star.kind == .rectangle && star.shape == .star && star.fill != nil && star.fillOpacity == 1
+               && star.strokeWidth == EaselPaintRules.shapeWidth, "New shapes save explicit modern styles")
+        expect(star.color == EaselPalette.hex(.note(.blue), role: .ink) && star.fill == EaselPalette.hex(.note(.blue), role: .fill),
+               "With the default ink, new shapes come in the friendly blue pair")
+        if let redInk = EaselPalette.hex(.note(.red), role: .ink) {
+            let red = EaselShapeStyle.newItem(.hexagon, frame: frame, ink: redInk, zIndex: 1)
+            expect(red.color == redInk && red.fill == EaselPalette.hex(.note(.red), role: .fill), "A chosen palette ink brings its matching fill")
+        } else { expect(false, "The palette has a red ink") }
+        let custom = EaselShapeStyle.newItem(.cylinder, frame: frame, ink: "#123456", zIndex: 1)
+        expect(custom.color == "#123456" && custom.fill == EaselPalette.hex(.neutral, role: .fill), "Custom inks get a neutral fill")
+        let document = EaselDocument(id: UUID(), title: "Shapes", createdAt: Date(), modifiedAt: Date(),
+                                     items: EaselShape.allCases.enumerated().map { index, shape in
+                                         EaselShapeStyle.newItem(shape, frame: frame, ink: "#252525", zIndex: index)
+                                     })
+        do { _ = try EaselSession(inMemory: document, assets: [:]) } catch { expect(false, "Every new shape saves as a valid Easel: \(error)") }
+
+        var legacy = EaselItem(kind: .circle, frame: frame, text: "Keep me")
+        legacy.fill = "#FFFFFF"
+        let changed = EaselShapeGeometry.reshaped(legacy, to: .star)
+        expect(changed.kind == .rectangle && changed.shape == .star && changed.frame == frame && changed.text == "Keep me"
+               && changed.fill == "#FFFFFF" && changed.id == legacy.id, "Changing a shape keeps its frame, text and style")
+        let back = EaselShapeGeometry.reshaped(changed, to: .ellipse)
+        expect(back.kind == .circle && back.shape == nil, "Changing to a circle makes a circle object again")
+        let text = EaselItem(kind: .text, frame: frame, text: "Hi")
+        expect(EaselShapeGeometry.reshaped(text, to: .star) == text, "Only shapes change shape")
+
+        var dashed = star
+        dashed.strokeDash = .dashed
+        let svg = EaselVectorExport.element(dashed, art: .init())
+        expect(svg.hasPrefix("<path d=\"" + EaselShapeGeometry.outline(.star, in: frame).svgPathData + "\"")
+               && svg.contains("stroke-dasharray") && !svg.contains("fill:none"), "HTML export draws new shapes from the same outline")
+        var hollow = EaselShapeStyle.newItem(.cylinder, frame: frame, ink: "#252525", zIndex: 1)
+        hollow.fillOpacity = 0
+        let cylinder = EaselVectorExport.element(hollow, art: .init())
+        expect(cylinder.contains("fill:none") && cylinder.components(separatedBy: "<path").count == 3,
+               "Unfilled shapes export without fill and keep their inner lines")
+        expect(EaselVectorExport.element(EaselItem(kind: .rectangle, frame: frame), art: .init()).hasPrefix("<rect"),
+               "Saved shapes export exactly as before")
     }
 }

@@ -229,9 +229,8 @@ struct EaselPath: Equatable {
     }
 
     static func svgNumber(_ value: Double) -> String {
-        guard value.isFinite else { return "0" }
         let rounded = (value * 1000).rounded() / 1000
-        guard rounded != 0 else { return "0" }
+        guard rounded.isFinite, rounded != 0 else { return "0" }
         var text = String(format: "%.3f", rounded)
         while text.hasSuffix("0") { text.removeLast() }
         if text.hasSuffix(".") { text.removeLast() }
@@ -450,7 +449,7 @@ enum EaselShapeGeometry {
         switch shape {
         case .rectangle, .predefinedProcess, .internalStorage: return min(rectangleRadius, limit)
         case .roundedRectangle: return min(max(min(r.width, r.height) * 0.2, 8), 36, limit)
-        case .speechBubble: return min(max(min(r.width, r.height * 0.78) * 0.18, 6), 28, limit)
+        case .speechBubble: return min(max(min(r.width, r.height * 0.78) * 0.18, 6), 28, max(0, min(r.width, r.height * 0.78) / 2))
         default: return 0
         }
     }
@@ -531,7 +530,7 @@ enum EaselShapeGeometry {
         }
         let padding = min(6, raw.width * 0.05, raw.height * 0.05)
         return EaselRect(x: raw.x + padding, y: raw.y + padding,
-                         width: max(1, raw.width - 2 * padding), height: max(1, raw.height - 2 * padding))
+                         width: max(0, raw.width - 2 * padding), height: max(0, raw.height - 2 * padding))
     }
 
     static func defaultSize(_ shape: EaselShape) -> (width: Double, height: Double) {
@@ -589,6 +588,14 @@ enum EaselShapeGeometry {
         case .or: return "Or"
         case .summingJunction: return "Summing junction"
         }
+    }
+
+    static func reshaped(_ item: EaselItem, to shape: EaselShape) -> EaselItem {
+        guard item.resolvedShape != nil else { return item }
+        var next = item
+        next.kind = shape == .ellipse ? .circle : .rectangle
+        next.shape = shape == .ellipse ? nil : shape
+        return next
     }
 
     static func rotation(of item: EaselItem) -> Double {
@@ -666,9 +673,10 @@ enum EaselShapeGeometry {
         let target = EaselRect(x: r.x - grow, y: r.y - rise, width: r.width + 2 * grow, height: r.height + 2 * rise)
         guard EaselContentHitTest.contains(local, rect: target) else { return false }
         if r.width <= minimum || r.height <= minimum { return true }
-        if selected { return EaselContentHitTest.contains(local, rect: r) || nearOutline(local, shape: shape, frame: r, band: band) }
-        if isSolid(item), outline(shape, in: r).contains(local, tolerance: 0.5) { return true }
-        return nearOutline(local, shape: shape, frame: r, band: band)
+        let tolerance = min(0.5, 0.25 / scale)
+        if selected { return EaselContentHitTest.contains(local, rect: r) || nearOutline(local, shape: shape, frame: r, band: band, tolerance: tolerance) }
+        if isSolid(item), outline(shape, in: r).contains(local, tolerance: tolerance) { return true }
+        return nearOutline(local, shape: shape, frame: r, band: band, tolerance: tolerance)
     }
 
     static func intersects(_ rect: EaselRect, item: EaselItem, selected: Bool) -> Bool {
@@ -726,8 +734,8 @@ enum EaselShapeGeometry {
         return edgePoint(of: item, toward: rotationTransform(for: item).apply(direction))
     }
 
-    private static func nearOutline(_ local: EaselPoint, shape: EaselShape, frame: EaselRect, band: Double) -> Bool {
-        outline(shape, in: frame).distance(to: local, tolerance: 0.5) <= band
+    private static func nearOutline(_ local: EaselPoint, shape: EaselShape, frame: EaselRect, band: Double, tolerance: Double) -> Bool {
+        outline(shape, in: frame).distance(to: local, tolerance: tolerance) <= band
     }
 
     private static func isSolid(_ item: EaselItem) -> Bool {

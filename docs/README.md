@@ -63,7 +63,7 @@ Git and release notes retain history.
 - [Capture presentation](capture-presentation.md), [motion](capture-motion.md),
   [portrait framing](portrait-capture-fidelity.md), [Library](capture-library.md),
   [document grid](documents-library-grid.md).
-- [Easels](easels.md), [tools and navigation](easel-tools.md), [text](easel-text.md), [appearance](easel-appearance.md),
+- [Easels](easels.md), [shapes](easel-shapes.md), [tools and navigation](easel-tools.md), [text](easel-text.md), [appearance](easel-appearance.md),
   [motion](easel-motion.md), [connectors and quick create](easel-connectors.md),
   [images and media](easel-images.md), [live captures](easel-live-captures.md),
   [embedded pages](embedded-pages.md), [board features](easel-board-features.md),

@@ -97,12 +97,12 @@ extension EaselCanvasView {
     }
 
     private var selectionToolbarStyles: [EaselTextStyle] {
-        session.document.items.filter { selection.contains($0.id) && $0.kind == .text }.map(\.resolvedTextStyle)
+        session.document.items.filter { selection.contains($0.id) && $0.kind.holdsText }.map(\.resolvedTextStyle)
     }
 
     private func selectionToolbarSupports(_ control: EaselToolbarControl, selected: [EaselItem]) -> Bool {
         if let table = selectionToolbarTableSupports(control, selected: selected) { return table }
-        let textOnly = selected.allSatisfy { $0.kind == .text }
+        let textOnly = selected.allSatisfy { $0.kind.holdsText }
         switch control {
         case .typeface, .textSize, .smaller, .larger, .textFill: return textOnly
         case .bold, .italic, .underline, .strikethrough, .paragraph: return textOnly && editor != nil

@@ -144,6 +144,7 @@ accumulating drift.
 Small objects have a 30-point minimum target. Strokes use a 30-point round hit
 region; large circles pass through transparent corners. Marquee selection uses
 actual geometry. A selected rectangle remains available for manipulation.
+Shapes in the newer styles follow the [shape hit rules](easel-shapes.md#hit-rules).
 
 Guides compare object edges/centers and 24-point spacing. Admission uses a
 strict six-pixel radius (doubled for center X) and velocity below 125, with
@@ -306,7 +307,7 @@ queue behind an existing sheet.
 
 Every object field added for shapes, stickies, sections and connectors is
 optional and left out of the file when unused, so an Easel saved before them
-opens and draws exactly as it did. Rectangle-kind objects are the shape family:
+opens and draws exactly as it did. Rectangle-kind objects are the [shape](easel-shapes.md) family:
 `shape` names their outline (absent means a plain rectangle) and circle-kind
 objects are ellipses. `fill`, `fillOpacity`, `strokeWidth` and `strokeDash`
 style shapes, stickies and sections; absent values keep the original look. Only

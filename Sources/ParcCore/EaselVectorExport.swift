@@ -150,7 +150,7 @@ enum EaselVectorExport {
     static func kindElement(_ item: EaselItem, art: EaselVectorArt) -> String {
         switch item.kind {
         case .text: return text(item, art.texts[item.id])
-        case .rectangle, .circle: return shape(item)
+        case .rectangle, .circle: return shape(item) + text(item, art.texts[item.id])
         case .arrow: return connector(item, art: art)
         case .freehand: return drawing(item)
         case .image: return art.images[item.id].map { framedImage(item, $0) } ?? ""
@@ -179,6 +179,7 @@ enum EaselVectorExport {
     }
 
     static func shape(_ item: EaselItem) -> String {
+        if let kind = item.resolvedShape, !EaselShapeGeometry.usesOriginalLook(item) { return styledShape(item, kind) }
         let f = item.frame
         let style = " style=\"" + fillStyle(item) + ";" + strokeStyle(item) + "\""
         if item.kind == .circle {
@@ -187,6 +188,15 @@ enum EaselVectorExport {
         }
         return "<rect x=\"" + number(f.x) + "\" y=\"" + number(f.y) + "\" width=\"" + number(f.width) + "\" height=\""
             + number(f.height) + "\" rx=\"5\" ry=\"5\"" + style + "/>"
+    }
+
+    static func styledShape(_ item: EaselItem, _ kind: EaselShape) -> String {
+        var result = "<path d=\"" + EaselShapeGeometry.outline(kind, in: item.frame).svgPathData + "\" style=\"" + fillStyle(item) + ";" + strokeStyle(item) + "\"/>"
+        let details = EaselShapeGeometry.details(kind, in: item.frame)
+        if EaselPaintRules.strokeWidth(item) > 0, !details.isEmpty {
+            result += "<path d=\"" + details.svgPathData + "\" style=\"fill:none;" + strokeStyle(item, rounded: true) + "\"/>"
+        }
+        return result
     }
 
     static func strokePath(_ item: EaselItem) -> String? {

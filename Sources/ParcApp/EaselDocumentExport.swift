@@ -4,9 +4,13 @@ import UniformTypeIdentifiers
 @MainActor
 enum EaselDocumentExport {
     static func vectorText(_ item: EaselItem) -> EaselVectorText {
-        let layout = EaselTextLayout.Layout(EaselRichTextCodec.attributed(item), width: item.frame.width, height: item.frame.height)
+        let box = EaselTextPlacement.box(for: item)
+        let layout = EaselTextLayout.Layout(EaselTextPresentation.displayed(EaselRichTextCodec.attributed(item), for: item), width: box.width, height: box.height)
         let manager = layout.manager, storage = layout.storage, container = layout.container
-        let inset = EaselTextLayout.inset
+        let shown = manager.characterRange(forGlyphRange: manager.glyphRange(for: container), actualGlyphRange: nil)
+        let placed = EaselTextPlacement.origin(for: item, textHeight: Double(layout.height),
+                                               overflowing: EaselTextPlacement.clipsOverflow(item) && NSMaxRange(shown) < storage.length)
+        let inset = NSSize(width: EaselTextLayout.inset.width + placed.x - item.frame.x, height: EaselTextLayout.inset.height + placed.y - item.frame.y)
         let hugging = item.resolvedTextStyle.resolvedFill == .contentHugging
         var result = EaselVectorText()
         if hugging {
@@ -142,7 +146,9 @@ enum EaselDocumentExport {
                 }
             case .arrow:
                 connectorArt(item, lookup: lookup, into: &art)
-            case .rectangle, .circle, .freehand, .link:
+            case .rectangle, .circle:
+                if !item.text.isEmpty { art.texts[item.id] = vectorText(item) }
+            case .freehand, .link:
                 break
             }
         }
