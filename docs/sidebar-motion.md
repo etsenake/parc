@@ -318,7 +318,7 @@ optimizations or add a second geometry pass and require the checks to fail.
 | `SidebarHoverModelTests`, `SidebarHoverTrackerTests` | Region geometry, timers, hysteresis and dismissal guards |
 | `FloatingSidebarArtworkTests`, `FloatingSidebarSurfaceTests`, `FloatingSidebarSwipeTests`, `FloatingSidebarSwipeDockTests`, `FloatingSidebarSwipeCommitTests` | Surface properties, material transitions and theme mixing |
 | `SidebarWindowButtonsTests` | Native button layout and pointer-state reconciliation |
-| `tests/SidebarPlusMenu/check.py` | HUD geometry, palette and dismissal behavior |
+| `SidebarPlusMenuModelTests`, `SidebarPlusMenuArtworkTests`, `SidebarPlusMenuLayoutTests`, `SidebarPlusMenuControllerTests`, `SidebarPlusMenuPaletteTests`, `SidebarPlusMenuRenderingTests` | HUD geometry, palette and dismissal behavior |
 | `SidebarPacingTests` | Bounded AppKit layout work and continuity |
 | `SidebarSpacePagingModelTests`, `SidebarSpacePagerTests`, `SidebarSpaceStandInTests`, `SidebarSpaceCreationPullTests` | Phased, discrete and legacy paging, edge resistance, swipes that catch a click's slide and the trailing create-Space gesture and its haptics |
 | `SidebarSpaceSwipeTests` | Space swipes and jumps that build no rows and come to rest, and spring-loaded folders |

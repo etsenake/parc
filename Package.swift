@@ -108,7 +108,8 @@ let package = Package(
                                 .copy("Windows/Fixtures/NavigationControls"),
                                 .copy("CommandBar/CommandBarFixtures"),
                                 .copy("Sidebar/Fixtures/SidebarPreview"),
-                                .copy("Sidebar/ChromeFixtures")],
+                                .copy("Sidebar/ChromeFixtures"),
+                                .copy("Sidebar/Fixtures/SidebarPlusMenu")],
                     swiftSettings: strict + engineImport),
     ] + (siteFilmScenes.isEmpty ? [] : [
         .target(
