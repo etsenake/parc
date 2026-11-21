@@ -174,14 +174,15 @@ extension EaselCanvasView {
         drawing = false
         let document = session.document
         var assets: [String: String] = [:]
-        for (original, data) in payload.assets.sorted(by: { $0.key < $1.key }) {
+        let incoming = captureBoardPasteable(payload.items), needed = Set(incoming.compactMap(\.assetID))
+        for (original, data) in payload.assets.sorted(by: { $0.key < $1.key }) where !isCaptureBoard || needed.contains(original) {
             if payload.documentID == document.id, let existing = try? session.assetData(original), existing == data {
                 assets[original] = original
             } else {
                 assets[original] = try session.importAsset(data, type: EaselAssetType.of(assetID: original) ?? .png)
             }
         }
-        let items = payload.items.map { item -> EaselItem in
+        let items = incoming.map { item -> EaselItem in
             var copy = item
             copy.assetID = item.assetID.flatMap { assets[$0] }
             return copy

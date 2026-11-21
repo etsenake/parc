@@ -50,6 +50,17 @@ struct CaptureEditingTests {
         expect(!canvas.insertLink("https://example.com", browser: true), "Fixed capture editor cannot create a browser provider")
         canvas.insert(kind: .arrow)
         expect(draft.document.items.last!.points.last!.x <= 20 && draft.document.items.last!.points.first!.y <= 10, "Arrow endpoints track clipped fixed-canvas dimensions")
+        let freshArrow = draft.document.items.last!
+        expect(shape.shape == nil && shape.fill == nil && shape.strokeWidth == nil && shape.strokeDash == nil && shape.rotation == nil, "Fresh capture shapes keep the classic outline look")
+        expect(freshArrow.startHead == nil && freshArrow.endHead == nil && freshArrow.routing == nil && freshArrow.strokeWidth == nil, "Fresh capture arrows keep the classic straight arrow")
+        expect(canvas.isCaptureBoard && !EaselCanvasView(session: draft).isCaptureBoard, "Only fixed canvases count as capture boards")
+        expect([EaselToolbarControl.createSection, .sectionTitle, .link, .connectorLabel, .altText].allSatisfy { !canvas.captureBoardAllows($0) }, "Capture toolbar drops sections, links, labels and alt text")
+        expect([EaselToolbarControl.color, .startHead, .endHead, .routing, .crop, .group, .more].allSatisfy(canvas.captureBoardAllows), "Capture toolbar keeps annotation styling and arranging")
+        let pasteKinds: [EaselItemKind] = [.rectangle, .section, .table, .code, .sticky, .link, .stamp]
+        let pasteItems = pasteKinds.map { EaselItem(kind: $0, frame: .init(x: 0, y: 0, width: 4, height: 4)) }
+        expect(canvas.captureBoardPasteable(pasteItems).map(\.kind) == [.rectangle, .sticky, .stamp], "Capture paste keeps only annotation kinds")
+        expect(EaselCanvasView(session: draft).captureBoardPasteable(pasteItems).count == pasteKinds.count, "Easel paste keeps every kind")
+        expect(canvas.objectLinkTarget == nil, "Capture objects never take object links")
         let attributed = NSAttributedString(string: "Rich", attributes: [.font: NSFont.boldSystemFont(ofSize: 12), .foregroundColor: NSColor.black, .link: "https://example.com"])
         var rich = try EaselRichTextCodec.snapshot(attributed)
         rich.runs[0].attributes.semanticInk = .noteBody; rich.runs[0].attributes.ink = "#000000FF"

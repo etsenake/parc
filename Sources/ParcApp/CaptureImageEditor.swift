@@ -24,6 +24,7 @@ final class CaptureImageEditor: NSObject {
     private let status = NSTextField(labelWithString: "")
     private let ink = PointingHandColorWell()
     private var subscription: AnyCancellable?
+    private var inkSubscription: AnyCancellable?
     private var importPanel: NSOpenPanel?
     private var finished = false
 
@@ -84,8 +85,9 @@ final class CaptureImageEditor: NSObject {
         status.stringValue = "Edits apply to the original capture; Crop and Portrait framing stay reversible."
         controls += [cancel, done, canvas]
         let toolControls = controls.filter { $0 !== canvas }
-        canvas.onKeyboardStructureChange = { [weak canvas] in
+        canvas.onKeyboardStructureChange = { [weak self, weak canvas] in
             guard let canvas else { return }
+            self?.syncInk(canvas.session.document)
             let chain = toolControls + [canvas] + canvas.objectKeyViews
             for (a, b) in zip(chain, chain.dropFirst() + [chain[0]]) { a.nextKeyView = b }
         }
@@ -103,6 +105,7 @@ final class CaptureImageEditor: NSObject {
             undo?.isEnabled = canUndo; redo?.isEnabled = canRedo
         }
         undo.isEnabled = false; redo.isEnabled = false
+        inkSubscription = session.$document.sink { [weak self] in self?.syncInk($0) }
     }
 
     func show() -> Bool {
@@ -119,7 +122,7 @@ final class CaptureImageEditor: NSObject {
     func close() {
         guard !finished else { return }; finished = true
         if let importPanel, panel.attachedSheet === importPanel { panel.endSheet(importPanel, returnCode: .cancel) }
-        importPanel = nil; ink.deactivate(); canvas.finishImageEditing(); subscription = nil
+        importPanel = nil; ink.deactivate(); canvas.finishImageEditing(); subscription = nil; inkSubscription = nil
         if parent?.attachedSheet === panel { parent?.endSheet(panel) }
         panel.orderOut(nil); completion()
     }
@@ -139,6 +142,16 @@ final class CaptureImageEditor: NSObject {
     fileprivate func exportImage() {
         guard canExportImage else { return }
         EaselImageExport.run(canvas: canvas, title: nil, in: panel) { [weak self] in self?.canExportImage == true }
+    }
+
+    private func syncInk(_ document: EaselDocument) {
+        guard !finished, !ink.isActive else { return }
+        let inked: Set<EaselItemKind> = [.text, .rectangle, .circle, .arrow, .freehand]
+        let colors = Set(document.items.filter { canvas.selection.contains($0.id) && inked.contains($0.kind) }
+            .map { EaselPalette.normalized($0.color) ?? $0.color })
+        let hex = (colors.count == 1 ? colors.first : nil) ?? canvas.insertionColor
+        let color = EaselInk.color(hex, adaptive: false)
+        if ink.color != color { ink.color = color }
     }
 
     @objc private func changeInk(_ sender: NSColorWell) { guard !finished, valid() else { return }; canvas.setInsertionColor(sender.color) }

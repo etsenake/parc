@@ -12,6 +12,17 @@ is active.
 Image imports use a sheet owned by this editor. Native text retains its own
 composition, rich formatting and undo commands.
 
+Fresh annotations keep the classic capture look: outlined rectangles and
+ellipses, straight arrows, marker strokes and fixed, non-adaptive ink, so old
+snapshots reopen identical. Selecting annotations shows the Easel floating
+selection toolbar (colour, outline, arrowheads, routing, text, arrange, layer
+order); right-click a shape to switch it to any of the 32 shapes. The colour
+well shows the selection's shared colour and recolours it. Anything a flattened
+screenshot can't keep stays out: sections, object links, connector labels, alt
+text, quick create, the tool palette and tool keys, and Mermaid, code, table,
+web and video paste or drop. Pasted Easel objects keep only text, pictures,
+shapes, arrows, drawings, stickies and stamps.
+
 **Crop** remains an independent action in the user-authorized unified capture
 flow. Original capture PNG/pixels, the accepted full-size edited source, the crop
 and optional Portrait composition are separate retained layers. The editor

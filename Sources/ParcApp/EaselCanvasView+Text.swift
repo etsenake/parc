@@ -17,7 +17,7 @@ extension EaselCanvasView {
             }
         }
         var rows: [EaselMenuRow] = []
-        if context.items.count == 1, let item = context.items.first, EaselObjectLink.canLink(item) {
+        if context.items.count == 1, !isCaptureBoard, let item = context.items.first, EaselObjectLink.canLink(item) {
             let link = EaselObjectLink.link(of: item)
             rows.append(EaselMenuRow(id: "text.link", title: link == nil ? TextFormatCommand.addLinkTitle : TextFormatCommand.editLinkTitle,
                                      symbol: "link", shortcut: "⌘K", isEnabled: !item.isLocked, separatorBefore: true,

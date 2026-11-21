@@ -102,6 +102,7 @@ extension EaselCanvasView {
     }
 
     private func selectionToolbarSupports(_ control: EaselToolbarControl, selected: [EaselItem]) -> Bool {
+        guard captureBoardAllows(control) else { return false }
         if let table = selectionToolbarTableSupports(control, selected: selected) { return table }
         let textOnly = selected.allSatisfy { $0.kind.holdsText }
         switch control {

@@ -1520,7 +1520,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return true
     }
     var objectLinkTarget: EaselItem? {
-        guard editor == nil, let window, window.isKeyWindow, window.attachedSheet == nil, !session.isClosed, !session.isDeleted,
+        guard editor == nil, !isCaptureBoard, let window, window.isKeyWindow, window.attachedSheet == nil, !session.isClosed, !session.isDeleted,
               !hidesPassiveAnnotations, selection.count == 1,
               let item = session.document.items.first(where: { selection.contains($0.id) }),
               EaselObjectLink.canLink(item), !item.isLocked else { return nil }
