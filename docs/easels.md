@@ -107,6 +107,10 @@ atomically with a Plain Text alternative; directories and symlink wrappers are
 never followed. PDF/vector/animated-image conversion is outside the local
 image carrier. Refusal does not modify the source clipboard.
 
+Copying whole objects on the canvas uses its own private Easel payload, with
+the objects, their styles and their picture bytes, plus image and text
+fallbacks for other apps; see [arranging](easel-arranging.md#clipboard).
+
 ## Typed markdown
 
 Only a single typed character at a collapsed caret triggers syntax conversion.
@@ -127,7 +131,9 @@ A conversion is one native transaction with exact selection/attribute Undo.
 Selection drag captures the original document, selection and frames. It commits
 one atomic change; intermediate geometry is not saved. A competing geometry
 change cancels the gesture, while an unrelated content change can coexist.
-Travel of three points or less cancels a body drag.
+Travel of three points or less cancels a body drag. Group and lock click rules,
+the marquee, Option-drag copies and Shift's axis lock are in
+[arranging](easel-arranging.md#selecting).
 
 ## Original-group frame resizing
 
