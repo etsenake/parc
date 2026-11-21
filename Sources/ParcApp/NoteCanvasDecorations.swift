@@ -236,25 +236,32 @@ final class NoteCanvasColumnHandle: NSView {
 
     override func updateTrackingAreas() {
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
                                   owner: self, userInfo: nil)
         addTrackingArea(area)
         tracking = area
         super.updateTrackingAreas()
     }
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .resizeLeftRight)
+    override func cursorUpdate(with event: NSEvent) {
+        if isDragging { NSCursor.resizeLeftRight.set(); return }
+        if !applyNoteCursor(.resizeLeftRight, for: event) { super.cursorUpdate(with: event) }
     }
 
-    override func mouseEntered(with event: NSEvent) {
-        isHovered = true
-        setLineVisible(true)
+    override func mouseEntered(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+
+    override func mouseMoved(with event: NSEvent) {
+        let allowed = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        setHovered(allowed)
+        if allowed { NSCursor.resizeLeftRight.set() }
     }
 
-    override func mouseExited(with event: NSEvent) {
-        isHovered = false
-        if !isDragging { setLineVisible(false) }
+    override func mouseExited(with event: NSEvent) { setHovered(false) }
+
+    private func setHovered(_ hovered: Bool) {
+        guard hovered != isHovered else { return }
+        isHovered = hovered
+        if !isDragging { setLineVisible(hovered) }
     }
 
     override func mouseDown(with event: NSEvent) {

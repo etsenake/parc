@@ -121,6 +121,7 @@ final class NoteDragController: NSObject, NSDraggingSource {
         let outcome = track(in: window)
         NSCursor.pop()
         finish(outcome)
+        window.refreshCursorUnderPointer()
     }
 
     private func track(in window: NSWindow) -> Outcome {

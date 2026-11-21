@@ -979,6 +979,10 @@ final class NoteTableBlockView: NoteBlockView {
 
     private func pointerMoved(_ event: NSEvent) {
         guard !isReadOnly, drag == nil, resizingColumn == nil, !isCornerDragging else { return }
+        guard NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow) else {
+            if isHovering { hideHoverChrome(animated: true) }
+            return
+        }
         if !isHovering {
             isHovering = true
             for bar in [addRowBar, addColumnBar, cornerHandle] as [NSView] { NoteAnimation.fade(bar, visible: true, duration: 0.12) }

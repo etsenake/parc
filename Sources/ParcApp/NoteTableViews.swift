@@ -217,7 +217,8 @@ final class NoteTableDocumentView: NSView {
 @MainActor
 final class NoteTableSurfaceView: NSView, NSMenuItemValidation {
     weak var table: NoteTableBlockView?
-    var resizeBoundaries: [NSRect] = [] { didSet { if oldValue != resizeBoundaries { window?.invalidateCursorRects(for: self) } } }
+    var resizeBoundaries: [NSRect] = []
+    private var pointerArea: NSTrackingArea?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -233,8 +234,29 @@ final class NoteTableSurfaceView: NSView, NSMenuItemValidation {
 
     override var acceptsFirstResponder: Bool { table?.hasCellRange == true }
 
-    override func resetCursorRects() {
-        for rect in resizeBoundaries { addCursorRect(rect, cursor: .resizeLeftRight) }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let pointerArea { removeTrackingArea(pointerArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.cursorUpdate, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        pointerArea = area
+    }
+
+    private func applyPointerCursor(for event: NSEvent) -> Bool {
+        guard let content = window?.contentView, !isHiddenOrHasHiddenAncestor,
+              content.hitTest(content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow) === self
+        else { return false }
+        let point = convert(event.locationInWindow, from: nil)
+        (resizeBoundaries.contains { $0.contains(point) } ? NSCursor.resizeLeftRight : NSCursor.iBeam).set()
+        return true
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyPointerCursor(for: event) { super.cursorUpdate(with: event) }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        _ = applyPointerCursor(for: event)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -349,16 +371,19 @@ final class NoteTableCellMenuButton: NSView {
 
     override func updateTrackingAreas() {
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow], owner: self, userInfo: nil)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self, userInfo: nil)
         addTrackingArea(area)
         hoverArea = area
         super.updateTrackingAreas()
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseEntered(with event: NSEvent) { isHovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) { isHovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow) }
     override func mouseExited(with event: NSEvent) { isHovered = false }
-    override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(.pointingHand, for: event) { super.cursorUpdate(with: event) }
+    }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
@@ -424,16 +449,19 @@ final class NoteTableCornerHandle: NSView {
 
     override func updateTrackingAreas() {
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow], owner: self, userInfo: nil)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self, userInfo: nil)
         addTrackingArea(area)
         hoverArea = area
         super.updateTrackingAreas()
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseEntered(with event: NSEvent) { isHovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) { isHovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow) }
     override func mouseExited(with event: NSEvent) { isHovered = false }
     override func cursorUpdate(with event: NSEvent) {
-        if alphaValue > 0.01 { NSCursor.pointingHand.set() } else { super.cursorUpdate(with: event) }
+        if alphaValue > 0.01, applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
     }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -561,15 +589,19 @@ final class NoteTableGripView: NSView {
 
     override func updateTrackingAreas() {
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow], owner: self, userInfo: nil)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self, userInfo: nil)
         addTrackingArea(area)
         hoverArea = area
         super.updateTrackingAreas()
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseEntered(with event: NSEvent) { isHovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) { isHovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow) }
     override func mouseExited(with event: NSEvent) { isHovered = false }
-    override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(.pointingHand, for: event) { super.cursorUpdate(with: event) }
+    }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
@@ -638,24 +670,28 @@ final class NoteTableAddBar: NSView {
 
     override func updateTrackingAreas() {
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow], owner: self, userInfo: nil)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self, userInfo: nil)
         addTrackingArea(area)
         hoverArea = area
         super.updateTrackingAreas()
     }
 
-    override func mouseEntered(with event: NSEvent) {
-        isHovered = true
-        onHoverChange?(true)
-    }
+    override func mouseEntered(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
 
-    override func mouseExited(with event: NSEvent) {
-        isHovered = false
-        onHoverChange?(false)
+    override func mouseMoved(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+
+    override func mouseExited(with event: NSEvent) { setHovered(false) }
+
+    private func setHovered(_ hovered: Bool) {
+        guard hovered != isHovered else { return }
+        isHovered = hovered
+        onHoverChange?(hovered)
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        if alphaValue > 0.01 { NSCursor.pointingHand.set() } else { super.cursorUpdate(with: event) }
+        if alphaValue > 0.01, applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
     }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 

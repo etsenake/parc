@@ -102,7 +102,6 @@ final class NoteBacklinksListView: NSView, NoteFloatingPanelContent {
         invalidateIntrinsicContentSize()
         needsLayout = true
         rows.needsDisplay = true
-        rows.window?.invalidateCursorRects(for: rows)
         rows.refreshAccessibility()
         preferredSizeDidChange?()
     }
@@ -275,14 +274,20 @@ final class NoteBacklinksRowsView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea { removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(area)
         trackingArea = area
     }
 
-    override func resetCursorRects() {
-        guard let list else { return }
-        for index in list.items.indices { addCursorRect(list.rowFrame(index), cursor: .pointingHand) }
+    private func pointerCursor(for event: NSEvent) -> NSCursor {
+        guard let list else { return .arrow }
+        let point = convert(event.locationInWindow, from: nil)
+        return list.items.indices.contains { list.rowFrame($0).contains(point) } ? .pointingHand : .arrow
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(pointerCursor(for: event), for: event) { super.cursorUpdate(with: event) }
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -292,6 +297,7 @@ final class NoteBacklinksRowsView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         let allowed = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
         list.setHighlight(allowed ? list.index(at: point) : nil, animated: true)
+        if allowed { applyNoteCursor(pointerCursor(for: event), for: event) }
     }
 
     override func mouseEntered(with event: NSEvent) { hover(event) }

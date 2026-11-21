@@ -253,7 +253,7 @@ final class NotePropertyRowView: NSView, NSTextFieldDelegate {
     unowned let owner: NotePropertiesView
     let keyButton = NoteToolbarButton(.iconAndText(.symbol("text.alignleft"), ""), label: "Property")
     private let handle = NotePropertyHandle()
-    private let valueField = NSTextField()
+    private let valueField = NoteInputField()
     private let checkButton = NoteToolbarButton(icon: .symbol("circle"), label: "Checkbox")
     private let dateButton = NotePropertyValueButton(label: "Date")
     private let tags = NotePropertyTagsView()
@@ -389,12 +389,13 @@ final class NotePropertyRowView: NSView, NSTextFieldDelegate {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
-    override func mouseEntered(with event: NSEvent) { setHovered(true) }
+    override func mouseEntered(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+    override func mouseMoved(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
     override func mouseExited(with event: NSEvent) { setHovered(false) }
 
     private func setHovered(_ value: Bool) {
@@ -507,6 +508,7 @@ final class NotePropertyHandle: NSView {
         super.init(frame: frame)
         wantsLayer = true
         setAccessibilityElement(false)
+        addCursorUpdateArea()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -525,7 +527,9 @@ final class NotePropertyHandle: NSView {
         }
     }
 
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(.openHand, for: event) { super.cursorUpdate(with: event) }
+    }
 
     override func mouseDown(with event: NSEvent) {
         NSCursor.closedHand.set()
@@ -536,7 +540,7 @@ final class NotePropertyHandle: NSView {
 
     override func mouseUp(with event: NSEvent) {
         onEnd?()
-        NSCursor.openHand.set()
+        if !applyNoteCursor(.openHand, for: event) { window?.refreshCursorUnderPointer() }
     }
 }
 
@@ -547,7 +551,7 @@ final class NotePropertyTagsView: NSView, NSTextFieldDelegate {
     var onChange: (([String]) -> Void)?
     var onHeightChange: (() -> Void)?
     private var chips: [NotePropertyTagChip] = []
-    private let field = NSTextField()
+    private let field = NoteInputField()
     private var lastHeight: CGFloat = 0
 
     override init(frame: NSRect) {
@@ -718,13 +722,21 @@ final class NotePropertyTagChip: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true; remove.isHidden = !removable; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { isHovered = false; remove.isHidden = true; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+    override func mouseMoved(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+    override func mouseExited(with event: NSEvent) { setHovered(false) }
+
+    private func setHovered(_ hovered: Bool) {
+        guard hovered != isHovered else { return }
+        isHovered = hovered
+        remove.isHidden = !(hovered && removable)
+        needsDisplay = true
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         drawInOwnAppearance {

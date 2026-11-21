@@ -342,7 +342,7 @@ final class NoteEquationBlockView: NoteBlockView {
 
     override func readOnlyDidChange() {
         if isReadOnly { closeEditor(commit: true, reselect: false) }
-        window?.invalidateCursorRects(for: self)
+        window?.refreshCursorUnderPointer()
         rerender()
     }
 
@@ -456,9 +456,20 @@ final class NoteEquationBlockView: NoteBlockView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(area)
         tracking = area
+    }
+
+    private func pointerCursor(for event: NSEvent) -> NSCursor {
+        guard isReadOnly else { return .pointingHand }
+        let point = convert(event.locationInWindow, from: nil)
+        return linkFrames().contains { $0.resolved && $0.rect.contains(point) } ? .pointingHand : .arrow
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(pointerCursor(for: event), for: event) { super.cursorUpdate(with: event) }
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -468,18 +479,11 @@ final class NoteEquationBlockView: NoteBlockView {
 
     override func mouseMoved(with event: NSEvent) {
         isHovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        if isHovered { applyNoteCursor(pointerCursor(for: event), for: event) }
         refreshLinkTooltip(event)
     }
 
     override func mouseExited(with event: NSEvent) { isHovered = false }
-
-    override func resetCursorRects() {
-        if !isReadOnly {
-            addCursorRect(bounds, cursor: .pointingHand)
-        } else {
-            for link in linkFrames() where link.resolved { addCursorRect(link.rect, cursor: .pointingHand) }
-        }
-    }
 
     override func scrollWheel(with event: NSEvent) {
         guard let rendering, rendering.error == nil, abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else {

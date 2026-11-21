@@ -231,13 +231,16 @@ final class NotePageCanvasView: NSView {
         super.updateTrackingAreas()
     }
 
-    override func mouseMoved(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        editor?.handles.pointerMoved(to: point)
-        editor?.synced.pointerMoved(to: point)
-    }
+    override func mouseMoved(with event: NSEvent) { pointerMoved(event) }
 
-    override func mouseEntered(with event: NSEvent) {
+    override func mouseEntered(with event: NSEvent) { pointerMoved(event) }
+
+    private func pointerMoved(_ event: NSEvent) {
+        if !NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow) {
+            editor?.handles.pointerExited()
+            editor?.synced.pointerCovered()
+            return
+        }
         let point = convert(event.locationInWindow, from: nil)
         editor?.handles.pointerMoved(to: point)
         editor?.synced.pointerMoved(to: point)
@@ -1003,7 +1006,6 @@ final class NotePageCanvasView: NSView {
                     }()
                     if handle.frame != frame {
                         NoteAnimation.withoutAnimation { handle.frame = frame }
-                        window?.invalidateCursorRects(for: handle)
                     }
                 }
             }

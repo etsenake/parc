@@ -740,9 +740,27 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(area)
         tracking = area
+    }
+
+    private func applyPointerCursor(for event: NSEvent) -> Bool {
+        guard let content = window?.contentView,
+              let hit = content.hitTest(content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow)
+        else { return false }
+        if hit === self {
+            NSCursor.arrow.set()
+            return true
+        }
+        guard hit === card || hit === scrollView || hit === scrollView.contentView else { return false }
+        (shownMode.showsCode ? NSCursor.iBeam : NSCursor.arrow).set()
+        return true
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyPointerCursor(for: event) { super.cursorUpdate(with: event) }
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -751,6 +769,7 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        _ = applyPointerCursor(for: event)
         let allowed = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
         if allowed != isHovering {
             isHovering = allowed

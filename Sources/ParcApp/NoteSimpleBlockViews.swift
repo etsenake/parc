@@ -267,7 +267,7 @@ final class NoteTOCRowView: NSView {
         self.ink = ink
         isInteractive = interactive
         setAccessibilityRole(interactive ? .link : .staticText)
-        window?.invalidateCursorRects(for: self)
+        if !interactive { isHovered = false }
         needsDisplay = true
     }
 
@@ -308,13 +308,18 @@ final class NoteTOCRowView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(area)
         tracking = area
     }
 
-    override func resetCursorRects() {
-        if isInteractive { addCursorRect(textRect, cursor: .pointingHand) }
+    private func pointerCursor(for event: NSEvent) -> NSCursor {
+        isInteractive && textRect.contains(convert(event.locationInWindow, from: nil)) ? .pointingHand : .arrow
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(pointerCursor(for: event), for: event) { super.cursorUpdate(with: event) }
     }
 
     private var textRect: NSRect {
@@ -330,7 +335,14 @@ final class NoteTOCRowView: NSView {
         return textRect.contains(convert(point, from: superview)) ? hit : nil
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = isInteractive }
+    override func mouseEntered(with event: NSEvent) { pointerMoved(event) }
+
+    override func mouseMoved(with event: NSEvent) { pointerMoved(event) }
+
+    private func pointerMoved(_ event: NSEvent) {
+        isHovered = isInteractive && NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        applyNoteCursor(pointerCursor(for: event), for: event)
+    }
 
     override func mouseExited(with event: NSEvent) { isHovered = false; isPressed = false }
 

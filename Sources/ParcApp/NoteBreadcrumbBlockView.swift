@@ -277,7 +277,7 @@ final class NoteBreadcrumbItemView: NSView {
                 parcTooltip = nil
                 setHovered(false)
             }
-            window?.invalidateCursorRects(for: self)
+            refreshPointingHand(interactive)
         }
         refreshFill()
     }
@@ -302,16 +302,19 @@ final class NoteBreadcrumbItemView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(area)
         tracking = area
     }
 
-    override func resetCursorRects() {
-        if isInteractive { addCursorRect(bounds, cursor: .pointingHand) }
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(isInteractive ? .pointingHand : .arrow, for: event) { super.cursorUpdate(with: event) }
     }
 
-    override func mouseEntered(with event: NSEvent) { setHovered(isInteractive) }
+    override func mouseEntered(with event: NSEvent) { setHovered(isInteractive && NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+
+    override func mouseMoved(with event: NSEvent) { setHovered(isInteractive && NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
 
     override func mouseExited(with event: NSEvent) { setHovered(false) }
 

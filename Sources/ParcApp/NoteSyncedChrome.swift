@@ -62,6 +62,12 @@ final class NoteSyncedController {
         refresh()
     }
 
+    func pointerCovered() {
+        guard hovered != nil else { return }
+        hovered = nil
+        refresh()
+    }
+
     func pointerExited() {
         guard hovered != nil else { return }
         if let window = editor?.canvas.window, let id = hovered, let chrome = chromes[id],
