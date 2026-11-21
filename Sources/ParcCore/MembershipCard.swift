@@ -1,23 +1,33 @@
 import Foundation
 import Combine
 
-struct MembershipCardState: Codable, Equatable {
-    var version = 1
-    var name: String
-    var createdAt: Date
-    var palette: Int
-    var shape: Int
-    var title: String
-    var backgroundBlobInfo: [Int]
+package struct MembershipCardState: Codable, Equatable {
+    package var version = 1
+    package var name: String
+    package var createdAt: Date
+    package var palette: Int
+    package var shape: Int
+    package var title: String
+    package var backgroundBlobInfo: [Int]
 
-    static let palettes: [[String]] = [
+    package init(version: Int = 1, name: String, createdAt: Date, palette: Int, shape: Int, title: String, backgroundBlobInfo: [Int]) {
+        self.version = version
+        self.name = name
+        self.createdAt = createdAt
+        self.palette = palette
+        self.shape = shape
+        self.title = title
+        self.backgroundBlobInfo = backgroundBlobInfo
+    }
+
+    package static let palettes: [[String]] = [
         ["3139FB", "F25E6B", "F2EAE4"], ["C0009F", "25A677", "34E895"],
         ["666789", "6A2794", "F25E6B"], ["25A677", "6CBAD9", "F2EAE4"],
         ["6A2794", "C0009F", "FFD335"], ["A85901", "F29BBB", "FFD335"],
         ["D12D0F", "A85901", "F2EAE4"], ["1C3648", "6CBAD9", "F29BBB"]
     ]
-    static let fallbackNumbers = [1, 6, 5, 4, 3, 2, 8, 7]
-    static func validatedName(_ value: String) throws -> String {
+    package static let fallbackNumbers = [1, 6, 5, 4, 3, 2, 8, 7]
+    package static func validatedName(_ value: String) throws -> String {
         let result = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !result.isEmpty, result.count <= 64,
               !result.unicodeScalars.contains(where: { CharacterSet.controlCharacters.union(.newlines).contains($0) }) else {
@@ -25,7 +35,7 @@ struct MembershipCardState: Codable, Equatable {
         }
         return result
     }
-    var isValid: Bool {
+    package var isValid: Bool {
         version == 1 && (try? Self.validatedName(name)) == name &&
             Self.palettes.indices.contains(palette) && (1...4).contains(shape) &&
             createdAt.timeIntervalSince1970.isFinite && createdAt.timeIntervalSince1970 >= 0 &&
@@ -33,18 +43,18 @@ struct MembershipCardState: Codable, Equatable {
             !title.unicodeScalars.contains(where: { CharacterSet.controlCharacters.union(.newlines).contains($0) }) &&
             backgroundBlobInfo.count == 15 && backgroundBlobInfo.allSatisfy { (1...14).contains($0) }
     }
-    static func make<R: RandomNumberGenerator>(name: String, date: Date, using random: inout R) -> Self {
+    package static func make<R: RandomNumberGenerator>(name: String, date: Date, using random: inout R) -> Self {
         let shape = shapeForName(name)
         return Self(name: name, createdAt: date, palette: Int.random(in: 1...7, using: &random),
                     shape: shape, title: randomTitle(using: &random),
                     backgroundBlobInfo: (0..<15).map { _ in Int.random(in: 1...14, using: &random) })
     }
-    static func shapeForName(_ name: String) -> Int {
+    package static func shapeForName(_ name: String) -> Int {
         var lastWord: String?
         name.enumerateSubstrings(in: name.startIndex..<name.endIndex, options: .byWords) { word, _, _, _ in lastWord = word }
         return Int((lastWord?.unicodeScalars.first?.value ?? 0) % 4) + 1
     }
-    func regenerated<R: RandomNumberGenerator>(using random: inout R) -> Self {
+    package func regenerated<R: RandomNumberGenerator>(using random: inout R) -> Self {
         var next = self
         let shapes = (1...4).filter { $0 != shape }
         next.shape = shapes[Int.random(in: shapes.indices, using: &random)]
@@ -82,9 +92,9 @@ struct MembershipCardState: Codable, Equatable {
     ]
 }
 
-enum MembershipCardFailure: LocalizedError {
+package enum MembershipCardFailure: LocalizedError {
     case invalidName, unreadable, changed
-    var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .invalidName: return "Enter a name of 1–64 characters on one line."
         case .unreadable: return "The saved card could not be read. Its existing file has been preserved."
@@ -94,10 +104,10 @@ enum MembershipCardFailure: LocalizedError {
 }
 
 @MainActor
-final class MembershipCardStore: ObservableObject {
+package final class MembershipCardStore: ObservableObject {
     private final class Weak { weak var value: MembershipCardStore?; init(_ value: MembershipCardStore) { self.value = value } }
     private static var owners: [URL: Weak] = [:]
-    static func shared(directory: URL, name: String) -> MembershipCardStore {
+    package static func shared(directory: URL, name: String) -> MembershipCardStore {
         let url = directory.appendingPathComponent("MembershipCard.json").standardizedFileURL
         if let owner = owners[url]?.value { return owner }
         owners = owners.filter { $0.value.value != nil }
@@ -105,22 +115,22 @@ final class MembershipCardStore: ObservableObject {
         owners[url] = Weak(owner)
         return owner
     }
-    @Published private(set) var state: MembershipCardState?
-    @Published private(set) var error: String?
+    @Published package private(set) var state: MembershipCardState?
+    @Published package private(set) var error: String?
     private let url: URL
     private let initialName: String
     private let now: () -> Date
     private let write: (Data, URL) throws -> Void
     private var savedData: Data?
 
-    init(url: URL, initialName: String, now: @escaping () -> Date = Date.init,
+    package init(url: URL, initialName: String, now: @escaping () -> Date = Date.init,
          write: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) }) {
         self.url = url
         self.initialName = (try? MembershipCardState.validatedName(initialName)) ?? "You"
         self.now = now; self.write = write
         reload()
     }
-    func reload() {
+    package func reload() {
         do {
             if FileManager.default.fileExists(atPath: url.path) {
                 let data = try Data(contentsOf: url)
@@ -139,14 +149,14 @@ final class MembershipCardStore: ObservableObject {
             state = nil; self.error = error.localizedDescription
         }
     }
-    func rename(_ name: String, expected: MembershipCardState) throws {
+    package func rename(_ name: String, expected: MembershipCardState) throws {
         guard state == expected else { throw MembershipCardFailure.changed }
         var next = expected
         next.name = try MembershipCardState.validatedName(name)
         next.shape = MembershipCardState.shapeForName(next.name)
         try commit(next)
     }
-    func regenerate() throws {
+    package func regenerate() throws {
         guard let state else { throw MembershipCardFailure.unreadable }
         var random = SystemRandomNumberGenerator()
         try commit(state.regenerated(using: &random))

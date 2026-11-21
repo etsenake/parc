@@ -1,10 +1,10 @@
 import Foundation
 
-enum EaselWebNavigation {
-    enum Mode: Int, CaseIterable { case address, search }
-    enum Category: String, CaseIterable {
+package enum EaselWebNavigation {
+    package enum Mode: Int, CaseIterable { case address, search }
+    package enum Category: String, CaseIterable {
         case all, images, video, news, maps, shopping
-        var title: String {
+        package var title: String {
             switch self {
             case .all: return "All"
             case .images: return "Images"
@@ -15,12 +15,18 @@ enum EaselWebNavigation {
             }
         }
     }
-    struct Draft: Equatable {
-        var mode: Mode = .address
-        var text = ""
-        var category: Category = .images
+    package struct Draft: Equatable {
+        package var mode: Mode = .address
+        package var text = ""
+        package var category: Category = .images
+
+        package init(mode: Mode = .address, text: String = "", category: Category = .images) {
+            self.mode = mode
+            self.text = text
+            self.category = category
+        }
     }
-    static func address(_ raw: String) -> URL? {
+    package static func address(_ raw: String) -> URL? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.utf8.count <= 16_384,
               !text.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
@@ -30,7 +36,7 @@ enum EaselWebNavigation {
               let host = url.host, !host.isEmpty, url.user == nil, url.password == nil else { return nil }
         return url
     }
-    static func destination(_ draft: Draft) -> URL? {
+    package static func destination(_ draft: Draft) -> URL? {
         if draft.mode == .address { return address(draft.text) }
         let query = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, query.utf8.count <= 4096,

@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import ParcCore
+import ParcEngine
 
 extension BrowserWindowController {
     private func embeddedCaptureOwner(_ identity: UUID) -> (UUID, EmbeddedPagePool, PCBrowserView)? {

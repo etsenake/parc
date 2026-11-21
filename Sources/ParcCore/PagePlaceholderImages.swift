@@ -2,47 +2,47 @@ import CoreGraphics
 import Foundation
 
 @MainActor
-final class PagePlaceholderImages {
+package final class PagePlaceholderImages {
     private var images: [UUID: CGImage] = [:]
     private var shown: [UUID: Set<UUID>] = [:]
     private var observers: [UUID: () -> Void] = [:]
 
-    func image(for tab: UUID, in window: UUID) -> CGImage? {
+    package func image(for tab: UUID, in window: UUID) -> CGImage? {
         shown[window]?.contains(tab) == true ? images[tab] : nil
     }
-    func isShown(_ tab: UUID) -> Bool { shown.values.contains { $0.contains(tab) } }
+    package func isShown(_ tab: UUID) -> Bool { shown.values.contains { $0.contains(tab) } }
 
-    func setShown(_ tabs: Set<UUID>, in window: UUID) {
+    package func setShown(_ tabs: Set<UUID>, in window: UUID) {
         let released = (shown[window] ?? []).subtracting(tabs)
         shown[window] = tabs.isEmpty ? nil : tabs
         for tab in released where !isShown(tab) { images.removeValue(forKey: tab) }
     }
 
-    func observe(in window: UUID, _ handler: @escaping () -> Void) { observers[window] = handler }
+    package func observe(in window: UUID, _ handler: @escaping () -> Void) { observers[window] = handler }
 
-    func removeWindow(_ window: UUID) {
+    package func removeWindow(_ window: UUID) {
         setShown([], in: window)
         observers.removeValue(forKey: window)
     }
 
-    func store(_ image: CGImage, for tab: UUID) {
+    package func store(_ image: CGImage, for tab: UUID) {
         guard isShown(tab) else { return }
         images[tab] = image
         for window in shown.filter({ $0.value.contains(tab) }).keys { observers[window]?() }
     }
 }
 
-enum PagePlaceholderCaptureOrder {
-    static let orderedAttempts = 3
-    static let lastAttempt = 5
+package enum PagePlaceholderCaptureOrder {
+    package static let orderedAttempts = 3
+    package static let lastAttempt = 5
 
-    static func mayCapture(_ tab: UUID, pending: Set<UUID>, focused: UUID?) -> Bool {
+    package static func mayCapture(_ tab: UUID, pending: Set<UUID>, focused: UUID?) -> Bool {
         guard let focused, focused != tab else { return true }
         return !pending.contains(focused)
     }
-    static func waits(_ tab: UUID, attempt: Int, pending: Set<UUID>, focused: UUID?) -> Bool {
+    package static func waits(_ tab: UUID, attempt: Int, pending: Set<UUID>, focused: UUID?) -> Bool {
         attempt < orderedAttempts && !mayCapture(tab, pending: pending, focused: focused)
     }
-    static func retries(after attempt: Int) -> Bool { attempt < lastAttempt }
-    static func delay(before attempt: Int) -> TimeInterval { 0.05 + Double(attempt) * 0.15 }
+    package static func retries(after attempt: Int) -> Bool { attempt < lastAttempt }
+    package static func delay(before attempt: Int) -> TimeInterval { 0.05 + Double(attempt) * 0.15 }
 }

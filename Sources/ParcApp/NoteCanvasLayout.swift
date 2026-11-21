@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ParcCore
 
 struct NoteCanvasInsets: Equatable {
     var top: CGFloat

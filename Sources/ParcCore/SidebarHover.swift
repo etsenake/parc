@@ -1,36 +1,40 @@
 import CoreGraphics
 import Foundation
 
-enum SidebarHoverState: Int, Comparable {
+package enum SidebarHoverState: Int, Comparable {
     case none, inside, hasLingered, hasStopped
-    static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+    package static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
-enum SidebarHoverRegion: CaseIterable {
+package enum SidebarHoverRegion: CaseIterable {
     case window, sidebar, innerLeftEdge, outerLeftEdge, innerTopLeftEdge, trafficLight
-    var fidelity: SidebarHoverState {
+    package var fidelity: SidebarHoverState {
         switch self {
         case .window: .inside
         case .sidebar: .hasLingered
         case .innerLeftEdge, .outerLeftEdge, .innerTopLeftEdge, .trafficLight: .hasStopped
         }
     }
-    var lingerRequirement: TimeInterval { self == .outerLeftEdge ? 0.16 : 0.15 }
+    package var lingerRequirement: TimeInterval { self == .outerLeftEdge ? 0.16 : 0.15 }
 }
 
-struct SidebarHoverInfo: Equatable {
+package struct SidebarHoverInfo: Equatable {
     private var states: [SidebarHoverRegion: SidebarHoverState] = [:]
-    subscript(region: SidebarHoverRegion) -> SidebarHoverState {
+
+    package init() {}
+    package subscript(region: SidebarHoverRegion) -> SidebarHoverState {
         get { states[region] ?? .none }
         set { states[region] = newValue == .none ? nil : newValue }
     }
 }
 
-struct SidebarHoverTracking {
-    static let stopDelay: TimeInterval = 0.08
-    private(set) var info = SidebarHoverInfo()
+package struct SidebarHoverTracking {
+    package static let stopDelay: TimeInterval = 0.08
+    package private(set) var info = SidebarHoverInfo()
 
-    mutating func update(contains: (SidebarHoverRegion) -> Bool) -> [SidebarHoverRegion] {
+    package init() {}
+
+    package mutating func update(contains: (SidebarHoverRegion) -> Bool) -> [SidebarHoverRegion] {
         var entered: [SidebarHoverRegion] = []
         for region in SidebarHoverRegion.allCases {
             let inside = contains(region)
@@ -43,12 +47,12 @@ struct SidebarHoverTracking {
         }
         return entered
     }
-    mutating func linger(_ region: SidebarHoverRegion) -> Bool {
+    package mutating func linger(_ region: SidebarHoverRegion) -> Bool {
         guard info[region] == .inside, region.fidelity >= .hasLingered else { return false }
         info[region] = .hasLingered
         return true
     }
-    mutating func stop() -> Bool {
+    package mutating func stop() -> Bool {
         var changed = false
         for region in SidebarHoverRegion.allCases where region.fidelity == .hasStopped
             && (info[region] == .inside || info[region] == .hasLingered) {
@@ -56,28 +60,28 @@ struct SidebarHoverTracking {
         }
         return changed
     }
-    var needsStopPromotion: Bool {
+    package var needsStopPromotion: Bool {
         SidebarHoverRegion.allCases.contains { region in
             region.fidelity == .hasStopped
                 && (info[region] == .inside || info[region] == .hasLingered)
         }
     }
-    mutating func reset() { info = SidebarHoverInfo() }
+    package mutating func reset() { info = SidebarHoverInfo() }
 }
 
-enum SidebarHoverZones {
-    enum Presentation { case locked, floating, hidden }
-    static let contentInset = 10.0
-    static let toolbarAllowance = 16.0
-    static let outerEdgeWidth = 50.0
-    static let expandedOuterEdgeWidth = 250.0
-    static let topLeftWidth = 40.0
-    static let trafficLightReach = 90.0
-    static let floatingSidebarReach = 80.0
-    static let trafficLightClearance = 50.0
-    static let minimumTrafficLightHeight = 10.0
+package enum SidebarHoverZones {
+    package enum Presentation { case locked, floating, hidden }
+    package static let contentInset = 10.0
+    package static let toolbarAllowance = 16.0
+    package static let outerEdgeWidth = 50.0
+    package static let expandedOuterEdgeWidth = 250.0
+    package static let topLeftWidth = 40.0
+    package static let trafficLightReach = 90.0
+    package static let floatingSidebarReach = 80.0
+    package static let trafficLightClearance = 50.0
+    package static let minimumTrafficLightHeight = 10.0
 
-    static func rects(size: CGSize, presentation: Presentation, sidebarWidth: Double, showingToolbar: Bool,
+    package static func rects(size: CGSize, presentation: Presentation, sidebarWidth: Double, showingToolbar: Bool,
                       trafficLightHeight: Double, info: SidebarHoverInfo) -> [SidebarHoverRegion: CGRect] {
         let height = Double(size.height), inset = contentInset
         let edgeHeight = max(0, height - (showingToolbar ? toolbarAllowance : 0))
@@ -102,14 +106,14 @@ enum SidebarHoverZones {
                 .trafficLight: CGRect(x: -outerEdgeWidth, y: height, width: outerEdgeWidth + trafficLightReach,
                                       height: trafficLightHeight)]
     }
-    static func trafficLightHeight(windowMaxY: Double, screenHeight: Double, menuBarHeight: Double) -> Double {
+    package static func trafficLightHeight(windowMaxY: Double, screenHeight: Double, menuBarHeight: Double) -> Double {
         let height = min(windowMaxY + trafficLightClearance, screenHeight - menuBarHeight) - windowMaxY
         return height <= minimumTrafficLightHeight ? 0 : height
     }
 }
 
-enum SidebarHoverActivation {
-    static func isActive(wasActive: Bool, info: SidebarHoverInfo, fullscreen: Bool, includesTopLeft: Bool) -> Bool {
+package enum SidebarHoverActivation {
+    package static func isActive(wasActive: Bool, info: SidebarHoverInfo, fullscreen: Bool, includesTopLeft: Bool) -> Bool {
         let threshold: SidebarHoverState = wasActive ? .inside : fullscreen ? .hasStopped : .hasLingered
         var zones: [SidebarHoverRegion] = [.sidebar, .outerLeftEdge, .innerLeftEdge]
         if includesTopLeft { zones += [.trafficLight, .innerTopLeftEdge] }
@@ -117,13 +121,18 @@ enum SidebarHoverActivation {
     }
 }
 
-enum SidebarHoverPresentationRule {
-    enum Action: Equatable { case keep, reveal, dismiss }
-    struct Decision: Equatable {
-        var isActive: Bool
-        var action: Action
+package enum SidebarHoverPresentationRule {
+    package enum Action: Equatable { case keep, reveal, dismiss }
+    package struct Decision: Equatable {
+        package var isActive: Bool
+        package var action: Action
+
+        package init(isActive: Bool, action: Action) {
+            self.isActive = isActive
+            self.action = action
+        }
     }
-    static func decide(stored: Bool, presentation: SidebarHoverZones.Presentation, info: SidebarHoverInfo,
+    package static func decide(stored: Bool, presentation: SidebarHoverZones.Presentation, info: SidebarHoverInfo,
                        fullscreen: Bool, includesTopLeft: Bool, isKeyWindow: Bool,
                        ownerDefers: Bool, interactionDefers: Bool) -> Decision {
         let active = SidebarHoverActivation.isActive(wasActive: stored && presentation == .floating, info: info,

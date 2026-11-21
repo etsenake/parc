@@ -1,21 +1,33 @@
 import Foundation
 
-struct FolderLinkTarget: Equatable {
-    let folderID: UUID
-    let spaceID: UUID
-    let profileID: UUID
+package struct FolderLinkTarget: Equatable {
+    package let folderID: UUID
+    package let spaceID: UUID
+    package let profileID: UUID
+
+    package init(folderID: UUID, spaceID: UUID, profileID: UUID) {
+        self.folderID = folderID
+        self.spaceID = spaceID
+        self.profileID = profileID
+    }
 }
 
-enum FolderLinkFormat { case plain, markdown }
+package enum FolderLinkFormat { case plain, markdown }
 
-enum FolderLinks {
-    struct Link: Equatable {
-        let tabID: UUID
-        let title: String
-        let url: String
+package enum FolderLinks {
+    package struct Link: Equatable {
+        package let tabID: UUID
+        package let title: String
+        package let url: String
+
+        package init(tabID: UUID, title: String, url: String) {
+            self.tabID = tabID
+            self.title = title
+            self.url = url
+        }
     }
 
-    static func links(in state: BrowserState, target: FolderLinkTarget) -> [Link]? {
+    package static func links(in state: BrowserState, target: FolderLinkTarget) -> [Link]? {
         guard state.spaces.contains(where: { $0.id == target.spaceID && $0.profileID == target.profileID }),
               state.profiles.contains(where: { $0.id == target.profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == target.profileID }),
@@ -37,7 +49,7 @@ enum FolderLinks {
         return result
     }
 
-    static func links(in state: BrowserState, items: [SidebarItemReference],
+    package static func links(in state: BrowserState, items: [SidebarItemReference],
                       spaceID: UUID, profileID: UUID) -> [Link]? {
         guard SidebarHierarchySnapshot(state: state, spaceID: spaceID, profileID: profileID) != nil,
               let roots = SidebarHierarchy.roots(items, state: state, spaceID: spaceID) else { return nil }
@@ -45,7 +57,7 @@ enum FolderLinks {
                      spaceID: spaceID, profileID: profileID)
     }
 
-    static func links(in state: BrowserState, tabIDs: [UUID], spaceID: UUID, profileID: UUID) -> [Link] {
+    package static func links(in state: BrowserState, tabIDs: [UUID], spaceID: UUID, profileID: UUID) -> [Link] {
         var seen = Set<UUID>()
         return tabIDs.compactMap { id in
             guard seen.insert(id).inserted, let tab = state.tab(id, where: {
@@ -60,7 +72,7 @@ enum FolderLinks {
         return Link(tabID: tab.id, title: SidebarTabTitle.display(tab), url: url.absoluteString)
     }
 
-    static func text(for links: [Link], format: FolderLinkFormat) -> String? {
+    package static func text(for links: [Link], format: FolderLinkFormat) -> String? {
         guard !links.isEmpty else { return nil }
         return links.map { link in
             switch format {
@@ -77,7 +89,7 @@ enum FolderLinks {
         }.joined(separator: "\n")
     }
 
-    static func markdownLabel(_ text: String) -> String {
+    package static func markdownLabel(_ text: String) -> String {
         let scalars = text.unicodeScalars.map { $0 == "\r" || $0 == "\n" ? " " : $0 }
         func at(_ index: Int) -> Unicode.Scalar { index < 0 ? "[" : index >= scalars.count ? "]" : scalars[index] }
         func isSpace(_ scalar: Unicode.Scalar) -> Bool { CharacterSet.whitespaces.contains(scalar) }
@@ -116,7 +128,7 @@ enum FolderLinks {
         return String(label)
     }
 
-    static func html(for links: [Link]) -> String? {
+    package static func html(for links: [Link]) -> String? {
         guard !links.isEmpty else { return nil }
         func escaped(_ text: String) -> String {
             text.replacingOccurrences(of: "&", with: "&amp;")

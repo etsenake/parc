@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 @MainActor
 struct EaselConnectorCanvasState {

@@ -1,9 +1,9 @@
-enum ShortcutTooltipDiscoverySkip {
-    static func shouldSkip(previous: String?, next: String) -> Bool {
+package enum ShortcutTooltipDiscoverySkip {
+    package static func shouldSkip(previous: String?, next: String) -> Bool {
         previous == next
     }
 
-    static func fingerprint(
+    package static func fingerprint(
         copyURLTooltip: String,
         copyURLShortcut: String,
         captureShortcut: String,

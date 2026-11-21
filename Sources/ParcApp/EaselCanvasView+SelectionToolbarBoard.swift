@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension EaselCanvasView {
     private var selectionToolbarReady: Bool { editor?.hasMarkedText() != true && !session.isClosed && !session.isDeleted }

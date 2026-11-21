@@ -1,40 +1,40 @@
 import Foundation
 
-enum NoteMDByte {
-    static let tab: UInt8 = 9
-    static let newline: UInt8 = 10
-    static let carriageReturn: UInt8 = 13
-    static let space: UInt8 = 32
+package enum NoteMDByte {
+    package static let tab: UInt8 = 9
+    package static let newline: UInt8 = 10
+    package static let carriageReturn: UInt8 = 13
+    package static let space: UInt8 = 32
 
-    static func isSpaceOrTab(_ byte: UInt8) -> Bool { byte == space || byte == tab }
-    static func isWhitespace(_ byte: UInt8) -> Bool { byte == space || byte == tab || byte == newline || byte == carriageReturn || byte == 12 || byte == 11 }
-    static func isDigit(_ byte: UInt8) -> Bool { byte >= 48 && byte <= 57 }
-    static func isLetter(_ byte: UInt8) -> Bool { (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) }
-    static func isAlphanumeric(_ byte: UInt8) -> Bool { isLetter(byte) || isDigit(byte) }
-    static func isHexDigit(_ byte: UInt8) -> Bool { isDigit(byte) || (byte >= 65 && byte <= 70) || (byte >= 97 && byte <= 102) }
-    static func isPunctuation(_ byte: UInt8) -> Bool {
+    package static func isSpaceOrTab(_ byte: UInt8) -> Bool { byte == space || byte == tab }
+    package static func isWhitespace(_ byte: UInt8) -> Bool { byte == space || byte == tab || byte == newline || byte == carriageReturn || byte == 12 || byte == 11 }
+    package static func isDigit(_ byte: UInt8) -> Bool { byte >= 48 && byte <= 57 }
+    package static func isLetter(_ byte: UInt8) -> Bool { (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) }
+    package static func isAlphanumeric(_ byte: UInt8) -> Bool { isLetter(byte) || isDigit(byte) }
+    package static func isHexDigit(_ byte: UInt8) -> Bool { isDigit(byte) || (byte >= 65 && byte <= 70) || (byte >= 97 && byte <= 102) }
+    package static func isPunctuation(_ byte: UInt8) -> Bool {
         (byte >= 33 && byte <= 47) || (byte >= 58 && byte <= 64) || (byte >= 91 && byte <= 96) || (byte >= 123 && byte <= 126)
     }
-    static func lowered(_ byte: UInt8) -> UInt8 { byte >= 65 && byte <= 90 ? byte + 32 : byte }
+    package static func lowered(_ byte: UInt8) -> UInt8 { byte >= 65 && byte <= 90 ? byte + 32 : byte }
 
-    static func string(_ bytes: ArraySlice<UInt8>) -> String { String(decoding: bytes, as: UTF8.self) }
-    static func string(_ bytes: [UInt8]) -> String { String(decoding: bytes, as: UTF8.self) }
+    package static func string(_ bytes: ArraySlice<UInt8>) -> String { String(decoding: bytes, as: UTF8.self) }
+    package static func string(_ bytes: [UInt8]) -> String { String(decoding: bytes, as: UTF8.self) }
 
-    static func scalar(endingBefore index: Int, in bytes: [UInt8], lowerBound: Int = 0) -> Unicode.Scalar? {
+    package static func scalar(endingBefore index: Int, in bytes: [UInt8], lowerBound: Int = 0) -> Unicode.Scalar? {
         guard index > lowerBound else { return nil }
         var start = index - 1
         while start > lowerBound, bytes[start] & 0xC0 == 0x80 { start -= 1 }
         return String(decoding: bytes[start..<index], as: UTF8.self).unicodeScalars.first
     }
 
-    static func scalar(startingAt index: Int, in bytes: [UInt8], upperBound: Int) -> Unicode.Scalar? {
+    package static func scalar(startingAt index: Int, in bytes: [UInt8], upperBound: Int) -> Unicode.Scalar? {
         guard index < upperBound else { return nil }
         var end = index + 1
         while end < upperBound, bytes[end] & 0xC0 == 0x80 { end += 1 }
         return String(decoding: bytes[index..<end], as: UTF8.self).unicodeScalars.first
     }
 
-    static func isUnicodeWhitespace(_ scalar: Unicode.Scalar?) -> Bool {
+    package static func isUnicodeWhitespace(_ scalar: Unicode.Scalar?) -> Bool {
         guard let scalar else { return true }
         switch scalar.value {
         case 9, 10, 12, 13, 32: return true
@@ -42,7 +42,7 @@ enum NoteMDByte {
         }
     }
 
-    static func isUnicodePunctuation(_ scalar: Unicode.Scalar?) -> Bool {
+    package static func isUnicodePunctuation(_ scalar: Unicode.Scalar?) -> Bool {
         guard let scalar else { return false }
         if scalar.isASCII { return isPunctuation(UInt8(scalar.value)) }
         switch scalar.properties.generalCategory {
@@ -55,8 +55,8 @@ enum NoteMDByte {
     }
 }
 
-enum NoteMDText {
-    static func unescape(_ bytes: ArraySlice<UInt8>) -> String {
+package enum NoteMDText {
+    package static func unescape(_ bytes: ArraySlice<UInt8>) -> String {
         guard bytes.contains(92) || bytes.contains(38) else { return NoteMDByte.string(bytes) }
         var output: [UInt8] = []
         output.reserveCapacity(bytes.count)
@@ -77,12 +77,12 @@ enum NoteMDText {
         return NoteMDByte.string(output)
     }
 
-    static func normalizeLabel(_ label: String) -> String {
+    package static func normalizeLabel(_ label: String) -> String {
         let collapsed = label.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" }).joined(separator: " ")
         return collapsed.folding(options: [.caseInsensitive], locale: nil).uppercased()
     }
 
-    static func trimmed(_ bytes: ArraySlice<UInt8>) -> ArraySlice<UInt8> {
+    package static func trimmed(_ bytes: ArraySlice<UInt8>) -> ArraySlice<UInt8> {
         var lower = bytes.startIndex, upper = bytes.endIndex
         while lower < upper, NoteMDByte.isWhitespace(bytes[lower]) { lower += 1 }
         while upper > lower, NoteMDByte.isWhitespace(bytes[upper - 1]) { upper -= 1 }
@@ -90,13 +90,13 @@ enum NoteMDText {
     }
 }
 
-struct NoteMDLinkReference: Hashable {
-    var destination: String
-    var title: String?
+package struct NoteMDLinkReference: Hashable {
+    package var destination: String
+    package var title: String?
 }
 
-enum NoteMDScan {
-    static func linkLabel(_ bytes: [UInt8], from start: Int, upTo end: Int) -> Int? {
+package enum NoteMDScan {
+    package static func linkLabel(_ bytes: [UInt8], from start: Int, upTo end: Int) -> Int? {
         guard start < end, bytes[start] == 91 else { return nil }
         var index = start + 1
         var count = 0
@@ -117,7 +117,7 @@ enum NoteMDScan {
         return nil
     }
 
-    static func linkDestination(_ bytes: [UInt8], from start: Int, upTo end: Int) -> (String, Int)? {
+    package static func linkDestination(_ bytes: [UInt8], from start: Int, upTo end: Int) -> (String, Int)? {
         guard start < end else { return nil }
         if bytes[start] == 60 {
             var index = start + 1
@@ -150,7 +150,7 @@ enum NoteMDScan {
         return (NoteMDText.unescape(bytes[start..<index]), index)
     }
 
-    static func linkTitle(_ bytes: [UInt8], from start: Int, upTo end: Int) -> (String, Int)? {
+    package static func linkTitle(_ bytes: [UInt8], from start: Int, upTo end: Int) -> (String, Int)? {
         guard start < end else { return nil }
         let open = bytes[start]
         let close: UInt8
@@ -176,7 +176,7 @@ enum NoteMDScan {
         return nil
     }
 
-    static func skipSpacesAndOneNewline(_ bytes: [UInt8], from start: Int, upTo end: Int) -> Int {
+    package static func skipSpacesAndOneNewline(_ bytes: [UInt8], from start: Int, upTo end: Int) -> Int {
         var index = start
         var newlines = 0
         while index < end {
@@ -188,7 +188,7 @@ enum NoteMDScan {
         return index
     }
 
-    static func reference(_ bytes: [UInt8], from start: Int, upTo end: Int) -> (label: String, reference: NoteMDLinkReference, end: Int)? {
+    package static func reference(_ bytes: [UInt8], from start: Int, upTo end: Int) -> (label: String, reference: NoteMDLinkReference, end: Int)? {
         guard let labelEnd = linkLabel(bytes, from: start, upTo: end), labelEnd < end, bytes[labelEnd] == 58 else { return nil }
         let label = NoteMDByte.string(bytes[(start + 1)..<(labelEnd - 1)])
         if label.hasPrefix("^") { return nil }
@@ -222,20 +222,20 @@ enum NoteMDScan {
     }
 }
 
-struct NoteMDTag {
-    var name: String
-    var closing: Bool
-    var selfClosing: Bool
-    var attributes: [(String, String?)]
+package struct NoteMDTag {
+    package var name: String
+    package var closing: Bool
+    package var selfClosing: Bool
+    package var attributes: [(String, String?)]
 
-    func attribute(_ name: String) -> String?? {
+    package func attribute(_ name: String) -> String?? {
         for (key, value) in attributes where key == name { return .some(value) }
         return nil
     }
 }
 
-enum NoteMDHTML {
-    static let blockTagNames: Set<String> = [
+package enum NoteMDHTML {
+    package static let blockTagNames: Set<String> = [
         "address", "article", "aside", "base", "basefont", "blockquote", "body", "caption", "center", "col", "colgroup",
         "dd", "details", "dialog", "dir", "div", "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form", "frame",
         "frameset", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hr", "html", "iframe", "legend", "li", "link",
@@ -243,7 +243,7 @@ enum NoteMDHTML {
         "summary", "table", "tbody", "td", "tfoot", "th", "thead", "title", "tr", "track", "ul",
     ]
 
-    static func tagName(_ bytes: [UInt8], from start: Int, upTo end: Int) -> Int {
+    package static func tagName(_ bytes: [UInt8], from start: Int, upTo end: Int) -> Int {
         var index = start
         guard index < end, NoteMDByte.isLetter(bytes[index]) else { return start }
         index += 1
@@ -251,7 +251,7 @@ enum NoteMDHTML {
         return index
     }
 
-    static func tag(_ bytes: [UInt8], from start: Int, upTo end: Int) -> (NoteMDTag, Int)? {
+    package static func tag(_ bytes: [UInt8], from start: Int, upTo end: Int) -> (NoteMDTag, Int)? {
         guard start + 1 < end, bytes[start] == 60 else { return nil }
         var index = start + 1
         if index < end, bytes[index] == 47 {
@@ -318,7 +318,7 @@ enum NoteMDHTML {
         }
     }
 
-    static func inlineHTML(_ bytes: [UInt8], from start: Int, upTo end: Int) -> Int? {
+    package static func inlineHTML(_ bytes: [UInt8], from start: Int, upTo end: Int) -> Int? {
         guard start + 1 < end, bytes[start] == 60 else { return nil }
         let next = bytes[start + 1]
         if next == 33 {
@@ -358,7 +358,7 @@ enum NoteMDHTML {
         return tag(bytes, from: start, upTo: end)?.1
     }
 
-    static func matches(_ bytes: [UInt8], at start: Int, upTo end: Int, ascii: String, caseInsensitive: Bool = false) -> Bool {
+    package static func matches(_ bytes: [UInt8], at start: Int, upTo end: Int, ascii: String, caseInsensitive: Bool = false) -> Bool {
         var index = start
         for byte in ascii.utf8 {
             guard index < end else { return false }
@@ -369,7 +369,7 @@ enum NoteMDHTML {
         return true
     }
 
-    static func blockStart(_ bytes: [UInt8], from start: Int, upTo end: Int, interruptsParagraph: Bool) -> Int? {
+    package static func blockStart(_ bytes: [UInt8], from start: Int, upTo end: Int, interruptsParagraph: Bool) -> Int? {
         guard start < end, bytes[start] == 60 else { return nil }
         for name in ["pre", "script", "style", "textarea"] where matches(bytes, at: start + 1, upTo: end, ascii: name, caseInsensitive: true) {
             let after = start + 1 + name.utf8.count
@@ -396,7 +396,7 @@ enum NoteMDHTML {
         return index >= end ? 7 : nil
     }
 
-    static func blockEnds(_ type: Int, _ bytes: [UInt8], from start: Int, upTo end: Int) -> Bool {
+    package static func blockEnds(_ type: Int, _ bytes: [UInt8], from start: Int, upTo end: Int) -> Bool {
         func contains(_ needle: String, caseInsensitive: Bool = false) -> Bool {
             let pattern = Array(needle.utf8)
             guard end - start >= pattern.count else { return false }
@@ -420,7 +420,7 @@ enum NoteMDHTML {
 }
 
 extension NoteMDText {
-    static func unescapeEntities(_ bytes: ArraySlice<UInt8>) -> String {
+    package static func unescapeEntities(_ bytes: ArraySlice<UInt8>) -> String {
         guard bytes.contains(38) else { return NoteMDByte.string(bytes) }
         var output: [UInt8] = []
         var index = bytes.startIndex
@@ -436,7 +436,7 @@ extension NoteMDText {
         return NoteMDByte.string(output)
     }
 
-    static func escapeAttribute(_ value: String) -> String {
+    package static func escapeAttribute(_ value: String) -> String {
         var result = ""
         for character in value {
             switch character {

@@ -1,5 +1,6 @@
 import AppKit
 import MetalKit
+import ParcCore
 import simd
 
 extension NSColor {

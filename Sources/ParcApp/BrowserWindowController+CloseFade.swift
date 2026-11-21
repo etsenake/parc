@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension BrowserWindowController {
     func beginCloseFade(_ id: UUID) -> Bool {

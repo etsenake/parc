@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 @MainActor
 final class SoftwareUpdateBanner: ObservableObject {

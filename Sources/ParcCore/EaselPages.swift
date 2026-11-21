@@ -1,7 +1,7 @@
 import Foundation
 
 extension EaselPages {
-    static func merging(_ view: EaselDocument, page: UUID?, into document: EaselDocument) -> EaselDocument {
+    package static func merging(_ view: EaselDocument, page: UUID?, into document: EaselDocument) -> EaselDocument {
         guard document.pages != nil else {
             var next = view
             next.pages = nil
@@ -43,7 +43,7 @@ extension EaselPages {
         return next
     }
 
-    static func cleanName(_ raw: String) -> String? {
+    package static func cleanName(_ raw: String) -> String? {
         let flattened = raw.components(separatedBy: .newlines).joined(separator: " ")
         var scalars = String.UnicodeScalarView()
         scalars.append(contentsOf: flattened.unicodeScalars.filter { $0.properties.generalCategory != .control })
@@ -53,20 +53,20 @@ extension EaselPages {
         return capped.utf8.count <= EaselPage.maximumNameBytes ? capped : nil
     }
 
-    static func materialized(_ document: EaselDocument) -> EaselDocument {
+    package static func materialized(_ document: EaselDocument) -> EaselDocument {
         var next = document
         if next.pages == nil { next.pages = [EaselPage(id: UUID(), name: firstPageName)] }
         return pinned(next)
     }
 
-    static func pinned(_ document: EaselDocument) -> EaselDocument {
+    package static func pinned(_ document: EaselDocument) -> EaselDocument {
         guard let first = firstPageID(document), document.items.contains(where: { $0.page == nil }) else { return document }
         var next = document
         for index in next.items.indices where next.items[index].page == nil { next.items[index].page = first }
         return next
     }
 
-    static func collapsed(_ document: EaselDocument) -> EaselDocument {
+    package static func collapsed(_ document: EaselDocument) -> EaselDocument {
         guard let pages = document.pages, pages.count == 1, pages[0].name == firstPageName else { return document }
         var next = document
         next.pages = nil
@@ -74,14 +74,14 @@ extension EaselPages {
         return next
     }
 
-    static func nextName(in document: EaselDocument) -> String {
+    package static func nextName(in document: EaselDocument) -> String {
         let taken = Set(pages(in: document).map { $0.name.lowercased() })
         var number = max(1, contentPages(document).count + (document.pages == nil ? 1 : 0)) + 1
         while taken.contains("page \(number)") { number += 1 }
         return "Page \(number)"
     }
 
-    static func copyName(_ name: String, in document: EaselDocument) -> String {
+    package static func copyName(_ name: String, in document: EaselDocument) -> String {
         let taken = Set(pages(in: document).map { $0.name.lowercased() })
         let base = String(name.prefix(EaselPage.maximumNameLength - 8))
         var candidate = base + " copy", number = 2
@@ -97,7 +97,7 @@ extension EaselPages {
         return index + 1
     }
 
-    static func adding(to document: EaselDocument, after page: UUID? = nil, name: String? = nil) -> EaselPageChange? {
+    package static func adding(to document: EaselDocument, after page: UUID? = nil, name: String? = nil) -> EaselPageChange? {
         guard (document.pages?.count ?? 1) < EaselPage.maximumCount else { return nil }
         let resolvedName: String
         if let name {
@@ -114,11 +114,11 @@ extension EaselPages {
         return EaselPageChange(document: next, page: resolvedName == EaselPage.dividerName ? resolvedPage(page, in: next) : created.id)
     }
 
-    static func addingDivider(to document: EaselDocument, after page: UUID? = nil) -> EaselPageChange? {
+    package static func addingDivider(to document: EaselDocument, after page: UUID? = nil) -> EaselPageChange? {
         adding(to: document, after: page, name: EaselPage.dividerName)
     }
 
-    static func renaming(_ page: UUID, to name: String, in document: EaselDocument) -> EaselDocument? {
+    package static func renaming(_ page: UUID, to name: String, in document: EaselDocument) -> EaselDocument? {
         guard let clean = cleanName(name), let index = document.pages?.firstIndex(where: { $0.id == page }),
               let pages = document.pages, pages[index].name != clean else { return nil }
         var next = document
@@ -129,7 +129,7 @@ extension EaselPages {
         return validationProblem(next) == nil ? next : nil
     }
 
-    static func moving(_ page: UUID, to index: Int, in document: EaselDocument) -> EaselDocument? {
+    package static func moving(_ page: UUID, to index: Int, in document: EaselDocument) -> EaselDocument? {
         guard var pages = document.pages, let from = pages.firstIndex(where: { $0.id == page }) else { return nil }
         let target = min(max(index, 0), pages.count - 1)
         guard target != from else { return nil }
@@ -140,7 +140,7 @@ extension EaselPages {
         return next
     }
 
-    static func reordered(_ document: EaselDocument, order: [UUID]) -> EaselDocument? {
+    package static func reordered(_ document: EaselDocument, order: [UUID]) -> EaselDocument? {
         guard let pages = document.pages, order.count == pages.count, Set(order) == Set(pages.map(\.id)),
               order != pages.map(\.id) else { return nil }
         var byID: [UUID: EaselPage] = [:]
@@ -150,7 +150,7 @@ extension EaselPages {
         return next
     }
 
-    static func duplicating(_ page: UUID?, in document: EaselDocument) -> EaselPageChange? {
+    package static func duplicating(_ page: UUID?, in document: EaselDocument) -> EaselPageChange? {
         guard (document.pages?.count ?? 1) < EaselPage.maximumCount else { return nil }
         let base = materialized(document)
         guard let source = self.page(page, in: base) else { return nil }
@@ -171,7 +171,7 @@ extension EaselPages {
         return EaselPageChange(document: next, page: created.id, items: Set(copies.map(\.id)))
     }
 
-    static func deleting(_ page: UUID, in document: EaselDocument) -> EaselPageChange? {
+    package static func deleting(_ page: UUID, in document: EaselDocument) -> EaselPageChange? {
         guard let pages = document.pages, pages.count > 1, let index = pages.firstIndex(where: { $0.id == page }) else { return nil }
         let divider = isDivider(pages[index], in: document)
         guard divider || contentPages(document).contains(where: { $0.id != page }) else { return nil }
@@ -205,7 +205,7 @@ extension EaselPages {
         return EaselArrange.dissolvingSingletonGroups(next)
     }
 
-    static func moveSet(_ ids: Set<UUID>, in view: EaselDocument) -> Set<UUID> {
+    package static func moveSet(_ ids: Set<UUID>, in view: EaselDocument) -> Set<UUID> {
         let present = Set(view.items.map(\.id))
         var moving = ids.intersection(present)
         guard !moving.isEmpty else { return [] }
@@ -225,7 +225,7 @@ extension EaselPages {
         }
     }
 
-    static func movingItems(_ ids: Set<UUID>, to target: UUID, in document: EaselDocument) -> EaselPageChange? {
+    package static func movingItems(_ ids: Set<UUID>, to target: UUID, in document: EaselDocument) -> EaselPageChange? {
         guard let destination = document.pages?.first(where: { $0.id == target }), !isDivider(destination, in: document) else { return nil }
         var next = pinned(document)
         guard let anchor = next.items.first(where: { ids.contains($0.id) && $0.page != target }), let source = anchor.page else { return nil }
@@ -305,7 +305,7 @@ extension EaselPages {
 }
 
 extension EaselPages {
-    static func followedPage(from original: EaselDocument, to after: EaselDocument, showing current: UUID?) -> UUID? {
+    package static func followedPage(from original: EaselDocument, to after: EaselDocument, showing current: UUID?) -> UUID? {
         guard after.pages != nil else { return nil }
         var before = original
         var shown = current
@@ -338,7 +338,7 @@ extension EaselPages {
 }
 
 extension EaselPages {
-    static func pageDocuments(_ document: EaselDocument) -> [EaselDocument] {
+    package static func pageDocuments(_ document: EaselDocument) -> [EaselDocument] {
         guard let pages = document.pages else { return [document] }
         return pages.map { page in
             var view = document
@@ -349,7 +349,7 @@ extension EaselPages {
 }
 
 extension EaselPages {
-    static func exportedPages(_ document: EaselDocument) -> [(id: UUID, name: String, items: [EaselItem])] {
+    package static func exportedPages(_ document: EaselDocument) -> [(id: UUID, name: String, items: [EaselItem])] {
         guard let pages = document.pages else { return [] }
         let content = pages.filter { !isDivider($0, in: document) }
         let filled = content.filter { itemCount(on: $0.id, in: document) > 0 }

@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 @MainActor
 final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {

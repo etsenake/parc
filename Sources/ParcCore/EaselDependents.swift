@@ -1,47 +1,47 @@
 import Foundation
 
-struct EaselSettleContext {
-    let previous: EaselDocument
+package struct EaselSettleContext {
+    package let previous: EaselDocument
     private let positions: [UUID: Int]
 
-    init(previous: EaselDocument) {
+    package init(previous: EaselDocument) {
         self.previous = previous
         var positions: [UUID: Int] = [:]
         for (index, item) in previous.items.enumerated() where positions[item.id] == nil { positions[item.id] = index }
         self.positions = positions
     }
 
-    func before(_ id: UUID) -> EaselItem? {
+    package func before(_ id: UUID) -> EaselItem? {
         guard let index = positions[id], previous.items.indices.contains(index) else { return nil }
         return previous.items[index]
     }
 
-    func item(_ id: UUID, in document: EaselDocument) -> EaselItem? {
+    package func item(_ id: UUID, in document: EaselDocument) -> EaselItem? {
         if let index = positions[id], document.items.indices.contains(index), document.items[index].id == id { return document.items[index] }
         return document.items.first { $0.id == id }
     }
 }
 
-enum EaselDependents {
-    static func settle(_ next: EaselDocument, previous: EaselDocument, moved: Set<UUID>) -> EaselDocument {
+package enum EaselDependents {
+    package static func settle(_ next: EaselDocument, previous: EaselDocument, moved: Set<UUID>) -> EaselDocument {
         settle(next, context: EaselSettleContext(previous: previous), moved: moved)
     }
 
-    static func settle(_ next: EaselDocument, context: EaselSettleContext, moved: Set<UUID>, tidy: Bool = true) -> EaselDocument {
+    package static func settle(_ next: EaselDocument, context: EaselSettleContext, moved: Set<UUID>, tidy: Bool = true) -> EaselDocument {
         let mindMaps = EaselMindMap.settling(next, previous: context.previous, moved: moved, tidy: tidy)
         let sections = carrySectionContents(mindMaps.document, previous: context.previous, moved: mindMaps.moved)
         let attached = followAttachments(sections.document, previous: context.previous, moved: sections.moved)
         return rerouteConnectors(attached.document, context: context, moved: attached.moved).document
     }
 
-    static func removing(_ ids: Set<UUID>, from document: EaselDocument, keepingSectionContents: Bool = false) -> EaselDocument {
+    package static func removing(_ ids: Set<UUID>, from document: EaselDocument, keepingSectionContents: Bool = false) -> EaselDocument {
         let removed = removalClosure(ids, in: document, keepingSectionContents: keepingSectionContents)
         var next = document
         next.items.removeAll { removed.contains($0.id) }
         return detachConnectors(EaselMindMap.detaching(removed, from: document, in: next), from: removed)
     }
 
-    static func removalClosure(_ ids: Set<UUID>, in document: EaselDocument, keepingSectionContents: Bool = false) -> Set<UUID> {
+    package static func removalClosure(_ ids: Set<UUID>, in document: EaselDocument, keepingSectionContents: Bool = false) -> Set<UUID> {
         let present = Set(document.items.map(\.id))
         var followers: [UUID: [UUID]] = [:]
         for item in document.items {

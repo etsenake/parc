@@ -1,21 +1,21 @@
 import Foundation
 
-enum OnboardingExperience {
-    typealias TransitionDirection = OnboardingTransitionDirection
+package enum OnboardingExperience {
+    package typealias TransitionDirection = OnboardingTransitionDirection
 
-    static func readyTitle(cardName: String) -> String {
+    package static func readyTitle(cardName: String) -> String {
         let name = cardName.trimmingCharacters(in: .whitespacesAndNewlines)
         return name.isEmpty ? "Welcome to Parc" : "Welcome to Parc, \(name)"
     }
 
-    static let readyDescription =
+    package static let readyDescription =
         "Here’s your Parc Card. Show it off to the world or keep it to yourself.\n\nAnd with that, you’re now ready to experience your upgraded internet."
 
-    static func shouldPlayConfetti(reduceMotion: Bool) -> Bool { !reduceMotion }
+    package static func shouldPlayConfetti(reduceMotion: Bool) -> Bool { !reduceMotion }
 
-    static let readyConfettiDelay: TimeInterval = 0.4
+    package static let readyConfettiDelay: TimeInterval = 0.4
 
-    static func direction(from: OnboardingDraft.Stage, to: OnboardingDraft.Stage) -> TransitionDirection? {
+    package static func direction(from: OnboardingDraft.Stage, to: OnboardingDraft.Stage) -> TransitionDirection? {
         if from.isWelcome && !to.isWelcome { return nil }
         if !from.isWelcome && to.isWelcome { return .back }
         let order = OnboardingDraft.Stage.setupOrder(
@@ -27,22 +27,22 @@ enum OnboardingExperience {
         return destination > origin ? .forward : .back
     }
 
-    struct CounterPage: Equatable {
-        let stage: OnboardingDraft.Stage
-        let importPage: OnboardingDraft.ImportPage?
-        let importStarted: Bool
-        init(stage: OnboardingDraft.Stage, importPage: OnboardingDraft.ImportPage?, importStarted: Bool) {
+    package struct CounterPage: Equatable {
+        package let stage: OnboardingDraft.Stage
+        package let importPage: OnboardingDraft.ImportPage?
+        package let importStarted: Bool
+        package init(stage: OnboardingDraft.Stage, importPage: OnboardingDraft.ImportPage?, importStarted: Bool) {
             self.stage = stage
             self.importPage = stage == .continuedImport ? importPage : nil
             self.importStarted = stage == .bookmarks && importStarted
         }
     }
 
-    enum ImportChange: Equatable {
+    package enum ImportChange: Equatable {
         case showFavorites, returnToSource, show, showInPlace, hold
     }
 
-    static func importChange(on stage: OnboardingDraft.Stage, started: Bool, wasStarted: Bool,
+    package static func importChange(on stage: OnboardingDraft.Stage, started: Bool, wasStarted: Bool,
                              resting: Bool) -> ImportChange {
         switch stage {
         case .bookmarks where started && !wasStarted: return .showFavorites
@@ -53,11 +53,11 @@ enum OnboardingExperience {
         }
     }
 
-    enum ImportBack: Equatable {
+    package enum ImportBack: Equatable {
         case importPage, importSource, favorites, previousStage
     }
 
-    static func importBack(on stage: OnboardingDraft.Stage, holdingImport: Bool,
+    package static func importBack(on stage: OnboardingDraft.Stage, holdingImport: Bool,
                            returnsToSource: Bool) -> ImportBack {
         guard holdingImport else { return .previousStage }
         switch stage {
@@ -68,50 +68,50 @@ enum OnboardingExperience {
         }
     }
 
-    enum ImportNext: Equatable {
+    package enum ImportNext: Equatable {
         case importPage, favorites, nextStage
     }
 
-    static func importNext(on stage: OnboardingDraft.Stage, holdingImport: Bool, started: Bool,
+    package static func importNext(on stage: OnboardingDraft.Stage, holdingImport: Bool, started: Bool,
                            skippingImport: Bool) -> ImportNext {
         guard holdingImport, stage.showsImport else { return .nextStage }
         return stage == .bookmarks && started && !skippingImport ? .favorites : .importPage
     }
 
-    typealias Spring = OnboardingStepMotion.Spring
-    typealias StepMotion = OnboardingStepMotion
+    package typealias Spring = OnboardingStepMotion.Spring
+    package typealias StepMotion = OnboardingStepMotion
 
-    enum MusicEvent: Equatable {
+    package enum MusicEvent: Equatable {
         case startWelcome, changeStage, resignKey, resignActive, becomeKey, becomeActive
         case close, finish, terminate, replay
     }
 
-    static func shouldStartMusic(on event: MusicEvent) -> Bool { event == .startWelcome }
+    package static func shouldStartMusic(on event: MusicEvent) -> Bool { event == .startWelcome }
 
-    static func shouldStopMusic(on event: MusicEvent) -> Bool {
+    package static func shouldStopMusic(on event: MusicEvent) -> Bool {
         switch event {
         case .close, .finish, .terminate, .replay: return true
         default: return false
         }
     }
 
-    static func shouldPauseOrMute(on event: MusicEvent) -> Bool { false }
+    package static func shouldPauseOrMute(on event: MusicEvent) -> Bool { false }
 
-    static let authFeatureOnboardingPerformsHaptics = false
+    package static let authFeatureOnboardingPerformsHaptics = false
 
-    static func welcomeShowsContent(stage: OnboardingDraft.Stage, reduceMotion: Bool) -> Bool {
+    package static func welcomeShowsContent(stage: OnboardingDraft.Stage, reduceMotion: Bool) -> Bool {
         stage.isWelcome && (reduceMotion || stage != .introAnimation)
     }
 
-    static func welcomeContinueTarget(from stage: OnboardingDraft.Stage) -> OnboardingDraft.Stage? {
+    package static func welcomeContinueTarget(from stage: OnboardingDraft.Stage) -> OnboardingDraft.Stage? {
         stage.isWelcome ? OnboardingDraft.Stage.sellCompleted.next : nil
     }
 
-    enum FocusTarget: Equatable {
+    package enum FocusTarget: Equatable {
         case welcome, spaceName, next, unchanged
     }
 
-    static func focusTarget(entering stage: OnboardingDraft.Stage, from previous: OnboardingDraft.Stage?) -> FocusTarget {
+    package static func focusTarget(entering stage: OnboardingDraft.Stage, from previous: OnboardingDraft.Stage?) -> FocusTarget {
         if previous == stage { return .unchanged }
         if stage.isWelcome { return previous?.isWelcome == true ? .unchanged : .welcome }
         if stage == .theme { return .spaceName }

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcCore
 
 @MainActor
 final class NoteEaselPageRegistry {

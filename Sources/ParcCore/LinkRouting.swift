@@ -1,16 +1,22 @@
 import Foundation
 import Combine
 
-enum LinkMatchStyle: String, Codable, CaseIterable {
+package enum LinkMatchStyle: String, Codable, CaseIterable {
     case matches, contains
 }
 
-struct LinkRouteCondition: Codable, Equatable, Identifiable {
-    var id = UUID()
-    var style: LinkMatchStyle = .contains
-    var pattern = ""
+package struct LinkRouteCondition: Codable, Equatable, Identifiable {
+    package var id = UUID()
+    package var style: LinkMatchStyle = .contains
+    package var pattern = ""
 
-    func accepts(_ url: URL) -> Bool {
+    package init(id: UUID = UUID(), style: LinkMatchStyle = .contains, pattern: String = "") {
+        self.id = id
+        self.style = style
+        self.pattern = pattern
+    }
+
+    package func accepts(_ url: URL) -> Bool {
         switch style {
         case .matches:
             guard let incoming = LinkRouteCondition.siteURL(Self.normalized(url).absoluteString),
@@ -45,7 +51,7 @@ struct LinkRouteCondition: Codable, Equatable, Identifiable {
         return URLComponents(string: encoded)?.url
     }
 
-    static func siteURL(_ text: String) -> URL? {
+    package static func siteURL(_ text: String) -> URL? {
         guard var parts = URLComponents(string: text) else { return nil }
         if parts.scheme == nil { parts = URLComponents(string: "https://" + text) ?? parts }
         guard parts.host?.isEmpty == false else { return nil }
@@ -53,7 +59,7 @@ struct LinkRouteCondition: Codable, Equatable, Identifiable {
         return parts.url
     }
 
-    static func normalized(_ url: URL) -> URL {
+    package static func normalized(_ url: URL) -> URL {
         guard var parts = URLComponents(string: url.absoluteString.lowercased()) else { return url }
         if parts.scheme == nil || parts.scheme == "http" { parts.scheme = "https" }
         if parts.host?.hasPrefix("www.") == true { parts.host = String(parts.host!.dropFirst(4)) }
@@ -71,27 +77,33 @@ struct LinkRouteCondition: Codable, Equatable, Identifiable {
     }
 }
 
-enum LinkRouteDestination: Codable, Equatable {
+package enum LinkRouteDestination: Codable, Equatable {
     case mostRecent
     case space(UUID)
     case profile(UUID)
 }
 
-struct LinkRoute: Codable, Equatable, Identifiable {
-    var id = UUID()
-    var conditions = [LinkRouteCondition()]
-    var destination = LinkRouteDestination.mostRecent
+package struct LinkRoute: Codable, Equatable, Identifiable {
+    package var id = UUID()
+    package var conditions = [LinkRouteCondition()]
+    package var destination = LinkRouteDestination.mostRecent
+
+    package init(id: UUID = UUID(), conditions: [LinkRouteCondition] = [LinkRouteCondition()], destination: LinkRouteDestination = LinkRouteDestination.mostRecent) {
+        self.id = id
+        self.conditions = conditions
+        self.destination = destination
+    }
 }
 
-struct LinkRoutingState: Codable, Equatable {
-    var version = 1
-    var rules: [LinkRoute] = []
-    var defaultDestination = LinkRouteDestination.mostRecent
-    var recentSpaceIDs: [UUID] = []
+package struct LinkRoutingState: Codable, Equatable {
+    package var version = 1
+    package var rules: [LinkRoute] = []
+    package var defaultDestination = LinkRouteDestination.mostRecent
+    package var recentSpaceIDs: [UUID] = []
 }
 
 extension LinkRoutingState {
-    func convertingProfileDestinations(spaces: [LinkRoutingSpace]) -> LinkRoutingState {
+    package func convertingProfileDestinations(spaces: [LinkRoutingSpace]) -> LinkRoutingState {
         func converted(_ destination: LinkRouteDestination) -> LinkRouteDestination {
             guard case .profile(let id) = destination else { return destination }
             return spaces.first { $0.profileID == id }.map { .space($0.id) } ?? .mostRecent
@@ -103,8 +115,8 @@ extension LinkRoutingState {
     }
 }
 
-enum LinkRoutingDraft {
-    static func savable(_ rules: [LinkRoute], editing: Set<UUID> = [], saved: [LinkRoute] = []) -> [LinkRoute] {
+package enum LinkRoutingDraft {
+    package static func savable(_ rules: [LinkRoute], editing: Set<UUID> = [], saved: [LinkRoute] = []) -> [LinkRoute] {
         let savedPatterns = Dictionary(saved.flatMap(\.conditions).map { ($0.id, $0.pattern) },
                                        uniquingKeysWith: { first, _ in first })
         return rules.compactMap { rule in
@@ -119,38 +131,43 @@ enum LinkRoutingDraft {
     }
 }
 
-struct LinkRoutingSpace: Equatable {
-    let id: UUID
-    let profileID: UUID
+package struct LinkRoutingSpace: Equatable {
+    package let id: UUID
+    package let profileID: UUID
+
+    package init(id: UUID, profileID: UUID) {
+        self.id = id
+        self.profileID = profileID
+    }
 }
 
-struct LinkRoutingDecision: Equatable {
-    let spaceID: UUID
-    let matchedRuleID: UUID?
-    let usedUnavailableDestinationFallback: Bool
+package struct LinkRoutingDecision: Equatable {
+    package let spaceID: UUID
+    package let matchedRuleID: UUID?
+    package let usedUnavailableDestinationFallback: Bool
 }
 
-enum LinkRoutingUnavailableSpace {
-    static func firstEligibleWindow<ID: Hashable>(ordered: [ID], eligible: Set<ID>) -> ID? {
+package enum LinkRoutingUnavailableSpace {
+    package static func firstEligibleWindow<ID: Hashable>(ordered: [ID], eligible: Set<ID>) -> ID? {
         ordered.first { eligible.contains($0) }
     }
 
-    static func newWindowSpace(lastFocused: UUID?, available: [UUID]) -> UUID? {
+    package static func newWindowSpace(lastFocused: UUID?, available: [UUID]) -> UUID? {
         if let lastFocused, available.contains(lastFocused) { return lastFocused }
         return available.first
     }
 }
 
 @MainActor
-final class LinkRoutingStore: ObservableObject {
+package final class LinkRoutingStore: ObservableObject {
     private static let unreadableMessage = "Saved routes couldn’t be read. Links will open in the most recent Space. Reset Routes to replace the unreadable file."
-    @Published private(set) var state = LinkRoutingState()
-    @Published private(set) var errorMessage: String?
+    @Published package private(set) var state = LinkRoutingState()
+    @Published package private(set) var errorMessage: String?
     private let file: URL
     private var unreadableFile = false
     private var lastWrittenBytes: Data?
 
-    init(directory: URL) {
+    package init(directory: URL) {
         file = directory.appendingPathComponent("link-routing.json")
         guard FileManager.default.fileExists(atPath: file.path) else { return }
         do {
@@ -169,7 +186,7 @@ final class LinkRoutingStore: ObservableObject {
         }
     }
 
-    func decision(for url: URL, spaces: [LinkRoutingSpace], currentSpaceID: UUID?) -> LinkRoutingDecision? {
+    package func decision(for url: URL, spaces: [LinkRoutingSpace], currentSpaceID: UUID?) -> LinkRoutingDecision? {
         guard !spaces.isEmpty else { return nil }
         let rule = state.rules.first { $0.conditions.allSatisfy { $0.accepts(url) } }
         let destination = rule?.destination ?? state.defaultDestination
@@ -189,7 +206,7 @@ final class LinkRoutingStore: ObservableObject {
     }
 
     @discardableResult
-    func save(_ rule: LinkRoute) -> Bool {
+    package func save(_ rule: LinkRoute) -> Bool {
         guard !rule.conditions.isEmpty,
               rule.conditions.allSatisfy({ !$0.pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                   ($0.style != .matches || LinkRouteCondition.siteURL($0.pattern) != nil) }) else {
@@ -203,7 +220,7 @@ final class LinkRoutingStore: ObservableObject {
     }
 
     @discardableResult
-    func commitEditor(_ rules: [LinkRoute], basedOn original: [LinkRoute]) -> Bool {
+    package func commitEditor(_ rules: [LinkRoute], basedOn original: [LinkRoute]) -> Bool {
         let filtered = LinkRoutingDraft.savable(rules)
         if filtered == original { return true }
         guard state.rules == original else {
@@ -215,18 +232,18 @@ final class LinkRoutingStore: ObservableObject {
     }
 
     @discardableResult
-    func remove(_ id: UUID) -> Bool {
+    package func remove(_ id: UUID) -> Bool {
         var next = state; next.rules.removeAll { $0.id == id }; return commit(next)
     }
 
     @discardableResult
-    func move(_ id: UUID, by offset: Int) -> Bool {
+    package func move(_ id: UUID, by offset: Int) -> Bool {
         guard let from = state.rules.firstIndex(where: { $0.id == id }),
               state.rules.indices.contains(from + offset) else { return false }
         var next = state; next.rules.swapAt(from, from + offset); return commit(next)
     }
 
-    func noteVisitedSpace(_ id: UUID) {
+    package func noteVisitedSpace(_ id: UUID) {
         guard !unreadableFile, state.recentSpaceIDs.first != id else { return }
         var next = state; next.recentSpaceIDs.removeAll { $0 == id }
         next.recentSpaceIDs.insert(id, at: 0)
@@ -235,7 +252,7 @@ final class LinkRoutingStore: ObservableObject {
     }
 
     @discardableResult
-    func reset(basedOn original: [LinkRoute]) -> Bool {
+    package func reset(basedOn original: [LinkRoute]) -> Bool {
         guard state.rules == original else {
             errorMessage = "Routes changed in another window. Reopen Air Traffic Control to review the latest routes."
             return false
@@ -247,7 +264,7 @@ final class LinkRoutingStore: ObservableObject {
     }
 
     @discardableResult
-    func convertProfileDestinations(spaces: [LinkRoutingSpace]) -> Bool {
+    package func convertProfileDestinations(spaces: [LinkRoutingSpace]) -> Bool {
         let next = state.convertingProfileDestinations(spaces: spaces)
         return next == state || commit(next)
     }

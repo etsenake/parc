@@ -1,36 +1,36 @@
 import Foundation
 
-enum NoteMermaid {
-    static let languageID = "mermaid"
-    static let typingDelay: TimeInterval = 0.3
-    static let renderTimeout: TimeInterval = 12
+package enum NoteMermaid {
+    package static let languageID = "mermaid"
+    package static let typingDelay: TimeInterval = 0.3
+    package static let renderTimeout: TimeInterval = 12
 
-    static func isMermaid(_ language: String) -> Bool {
+    package static func isMermaid(_ language: String) -> Bool {
         NoteCodeLanguage.named(language)?.id == languageID
     }
 
-    static func isDiagram(_ block: NoteBlock) -> Bool {
+    package static func isDiagram(_ block: NoteBlock) -> Bool {
         block.kind == .code && isMermaid(block.props.language)
     }
 
-    static func storedMode(of block: NoteBlock) -> NoteDiagramMode {
+    package static func storedMode(of block: NoteBlock) -> NoteDiagramMode {
         block.props.diagramMode ?? .preview
     }
 
-    static func presentedMode(stored: NoteDiagramMode, editing: Bool) -> NoteDiagramMode {
+    package static func presentedMode(stored: NoteDiagramMode, editing: Bool) -> NoteDiagramMode {
         stored == .preview && editing ? .split : stored
     }
 
-    static func normalizedSource(_ text: String) -> String {
+    package static func normalizedSource(_ text: String) -> String {
         guard text.unicodeScalars.contains("\r") else { return text }
         return text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
     }
 
-    static func hasContent(_ source: String) -> Bool {
+    package static func hasContent(_ source: String) -> Bool {
         source.unicodeScalars.contains { !CharacterSet.whitespacesAndNewlines.contains($0) }
     }
 
-    static func fingerprint(_ value: String) -> String {
+    package static func fingerprint(_ value: String) -> String {
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         for byte in value.utf8 {
             hash ^= UInt64(byte)
@@ -39,22 +39,22 @@ enum NoteMermaid {
         return String(hash, radix: 36)
     }
 
-    static func json(_ object: Any) -> String {
+    package static func json(_ object: Any) -> String {
         guard JSONSerialization.isValidJSONObject(object),
               let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]) else { return "{}" }
         return String(decoding: data, as: UTF8.self)
     }
 }
 
-struct NoteMermaidTheme: Hashable, Sendable {
-    var dark: Bool
-    var fontFamily: String
-    var fontSize: Double
-    var faces: [String]
-    var variables: [String: String]
-    var chartPalette: [String]
+package struct NoteMermaidTheme: Hashable, Sendable {
+    package var dark: Bool
+    package var fontFamily: String
+    package var fontSize: Double
+    package var faces: [String]
+    package var variables: [String: String]
+    package var chartPalette: [String]
 
-    static func note(dark: Bool, font: NotePageFont = .standard, small: Bool = false) -> NoteMermaidTheme {
+    package static func note(dark: Bool, font: NotePageFont = .standard, small: Bool = false) -> NoteMermaidTheme {
         let type = NoteMermaidPalette.typeface(font, small: small)
         var variables = dark ? NoteMermaidPalette.dark : NoteMermaidPalette.light
         variables["fontFamily"] = type.family
@@ -63,7 +63,7 @@ struct NoteMermaidTheme: Hashable, Sendable {
                                 variables: variables, chartPalette: dark ? NoteMermaidPalette.darkChart : NoteMermaidPalette.lightChart)
     }
 
-    func configuration(seed: String) -> [String: Any] {
+    package func configuration(seed: String) -> [String: Any] {
         var themeVariables: [String: Any] = variables
         themeVariables["darkMode"] = dark
         let palette = chartPalette.joined(separator: ", ")
@@ -89,12 +89,21 @@ struct NoteMermaidTheme: Hashable, Sendable {
         ]
     }
 
-    var signature: String { NoteMermaid.json(configuration(seed: "")) + "\u{1}" + faces.joined(separator: "\u{2}") }
-    var facesJSON: String { NoteMermaid.json(faces) }
+    package var signature: String { NoteMermaid.json(configuration(seed: "")) + "\u{1}" + faces.joined(separator: "\u{2}") }
+    package var facesJSON: String { NoteMermaid.json(faces) }
+
+    package init(dark: Bool, fontFamily: String, fontSize: Double, faces: [String], variables: [String: String], chartPalette: [String]) {
+        self.dark = dark
+        self.fontFamily = fontFamily
+        self.fontSize = fontSize
+        self.faces = faces
+        self.variables = variables
+        self.chartPalette = chartPalette
+    }
 }
 
-enum NoteMermaidPalette {
-    static func typeface(_ font: NotePageFont, small: Bool) -> (family: String, size: Double, faces: [String]) {
+package enum NoteMermaidPalette {
+    package static func typeface(_ font: NotePageFont, small: Bool) -> (family: String, size: Double, faces: [String]) {
         switch font {
         case .standard:
             return ("\"Nunito\", ui-rounded, \"SF Pro Rounded\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif",
@@ -111,13 +120,13 @@ enum NoteMermaidPalette {
         }
     }
 
-    static func cssSize(_ size: Double) -> String {
+    package static func cssSize(_ size: Double) -> String {
         size.rounded() == size ? String(Int(size)) + "px" : String(size) + "px"
     }
 
-    static let lightChart = ["#7B66E0", "#3D8FC4", "#4F9A6E", "#E8B53A", "#E8892E", "#E05A52", "#D45A9A", "#9A6FC4",
+    package static let lightChart = ["#7B66E0", "#3D8FC4", "#4F9A6E", "#E8B53A", "#E8892E", "#E05A52", "#D45A9A", "#9A6FC4",
                              "#A8765E", "#8C8B87", "#3FA39A", "#B59A4A"]
-    static let darkChart = ["#9380E0", "#3D9CDB", "#52A877", "#D9A94A", "#D98A4E", "#E5605A", "#DB5C9F", "#A374DB",
+    package static let darkChart = ["#9380E0", "#3D9CDB", "#52A877", "#D9A94A", "#D98A4E", "#E5605A", "#DB5C9F", "#A374DB",
                             "#BA856F", "#9B9B9B", "#4FB3A9", "#C2B07A"]
     private static let lightScale = ["#D9D2F7", "#CFE3F1", "#D3E8DA", "#F6E6B4", "#F6D6B8", "#F6CFCC", "#F1CFE1", "#E2D5EE",
                                      "#E6D6CE", "#E0DFDC", "#C9E7E3", "#E8E1C6"]
@@ -150,7 +159,7 @@ enum NoteMermaidPalette {
         return result
     }
 
-    static let light: [String: String] = {
+    package static let light: [String: String] = {
         let ink = "#1F1B2E", card = "#F4F4F5", line = "#6E6880"
         var values: [String: String] = [
             "background": card, "textColor": ink, "titleColor": "#220C7F", "lineColor": line, "defaultLinkColor": line,
@@ -189,7 +198,7 @@ enum NoteMermaidPalette {
         return values
     }()
 
-    static let dark: [String: String] = {
+    package static let dark: [String: String] = {
         let ink = "#EDEBFA", card = "#242230", line = "#A7A3B8"
         var values: [String: String] = [
             "background": card, "textColor": ink, "titleColor": "#E6E6FF", "lineColor": line, "defaultLinkColor": line,
@@ -229,13 +238,13 @@ enum NoteMermaidPalette {
     }()
 }
 
-struct NoteMermaidRequest: Hashable, Sendable {
-    let source: String
-    let theme: NoteMermaidTheme
-    let key: String
-    let layoutKey: String
+package struct NoteMermaidRequest: Hashable, Sendable {
+    package let source: String
+    package let theme: NoteMermaidTheme
+    package let key: String
+    package let layoutKey: String
 
-    init(source: String, theme: NoteMermaidTheme) {
+    package init(source: String, theme: NoteMermaidTheme) {
         let normalized = NoteMermaid.normalizedSource(source)
         self.source = normalized
         self.theme = theme
@@ -243,47 +252,53 @@ struct NoteMermaidRequest: Hashable, Sendable {
         layoutKey = NoteMermaid.fingerprint(theme.fontFamily + "\u{0}" + String(theme.fontSize) + "\u{0}" + normalized)
     }
 
-    var elementID: String { "parc-mermaid-" + key }
-    var configurationJSON: String { NoteMermaid.json(theme.configuration(seed: elementID)) }
+    package var elementID: String { "parc-mermaid-" + key }
+    package var configurationJSON: String { NoteMermaid.json(theme.configuration(seed: elementID)) }
 
-    static func == (lhs: NoteMermaidRequest, rhs: NoteMermaidRequest) -> Bool {
+    package static func == (lhs: NoteMermaidRequest, rhs: NoteMermaidRequest) -> Bool {
         lhs.key == rhs.key && lhs.source == rhs.source && lhs.theme == rhs.theme
     }
 
-    func hash(into hasher: inout Hasher) { hasher.combine(key) }
+    package func hash(into hasher: inout Hasher) { hasher.combine(key) }
 }
 
-struct NoteMermaidDrawing: Sendable {
-    var svg: String
-    var size: CGSize
-    var pdf: Data
+package struct NoteMermaidDrawing: Sendable {
+    package var svg: String
+    package var size: CGSize
+    package var pdf: Data
 
-    var cost: Int { svg.utf8.count + pdf.count }
+    package var cost: Int { svg.utf8.count + pdf.count }
+
+    package init(svg: String, size: CGSize, pdf: Data) {
+        self.svg = svg
+        self.size = size
+        self.pdf = pdf
+    }
 }
 
-enum NoteMermaidOutcome: Sendable {
+package enum NoteMermaidOutcome: Sendable {
     case drawing(NoteMermaidDrawing)
     case failure(String)
     case unavailable(String)
 
-    var isCacheable: Bool {
+    package var isCacheable: Bool {
         if case .unavailable = self { return false }
         return true
     }
 
-    var drawing: NoteMermaidDrawing? {
+    package var drawing: NoteMermaidDrawing? {
         if case .drawing(let drawing) = self { return drawing }
         return nil
     }
 
-    var cost: Int {
+    package var cost: Int {
         switch self {
         case .drawing(let drawing): return drawing.cost
         case .failure(let message), .unavailable(let message): return message.utf8.count
         }
     }
 
-    static func parse(_ reply: Any?) -> (outcome: NoteMermaidOutcome, origin: CGPoint)? {
+    package static func parse(_ reply: Any?) -> (outcome: NoteMermaidOutcome, origin: CGPoint)? {
         guard let reply = reply as? [String: Any] else { return nil }
         if reply["ok"] as? Bool != true {
             let message = (reply["message"] as? String).map(NoteMermaidProblem.clean) ?? ""
@@ -299,14 +314,14 @@ enum NoteMermaidOutcome: Sendable {
     }
 }
 
-struct NoteMermaidProblem: Equatable, Sendable {
-    static let fallback = "Mermaid couldn't draw this diagram."
+package struct NoteMermaidProblem: Equatable, Sendable {
+    package static let fallback = "Mermaid couldn't draw this diagram."
 
-    var headline: String
-    var detail: String?
-    var line: Int?
+    package var headline: String
+    package var detail: String?
+    package var line: Int?
 
-    init(message: String) {
+    package init(message: String) {
         let lines = Self.clean(message).components(separatedBy: "\n")
         var first = lines.first?.trimmingCharacters(in: .whitespaces) ?? ""
         if first.hasSuffix(":") { first.removeLast() }
@@ -316,18 +331,18 @@ struct NoteMermaidProblem: Equatable, Sendable {
         line = Self.lineNumber(in: first)
     }
 
-    static func clean(_ message: String) -> String {
+    package static func clean(_ message: String) -> String {
         NoteMermaid.normalizedSource(message).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func lineNumber(in text: String) -> Int? {
+    package static func lineNumber(in text: String) -> Int? {
         let lowered = text.lowercased()
         guard let marker = lowered.range(of: "on line ") else { return nil }
         let digits = lowered[marker.upperBound...].prefix(while: { $0.isASCII && $0.isNumber })
         return Int(digits).flatMap { $0 > 0 ? $0 : nil }
     }
 
-    func range(in source: String) -> Range<Int>? {
+    package func range(in source: String) -> Range<Int>? {
         guard let line else { return nil }
         let text = source as NSString
         var starts: [Int] = [0]
@@ -350,24 +365,24 @@ struct NoteMermaidProblem: Equatable, Sendable {
     }
 }
 
-struct NoteMermaidCache<Value> {
-    let capacity: Int
-    let costLimit: Int
+package struct NoteMermaidCache<Value> {
+    package let capacity: Int
+    package let costLimit: Int
     private var entries: [String: (value: Value, cost: Int, stamp: UInt64)] = [:]
     private var clock: UInt64 = 0
-    private(set) var totalCost = 0
+    package private(set) var totalCost = 0
 
-    init(capacity: Int, costLimit: Int) {
+    package init(capacity: Int, costLimit: Int) {
         self.capacity = max(1, capacity)
         self.costLimit = max(1, costLimit)
     }
 
-    var count: Int { entries.count }
-    var keys: [String] { entries.sorted { $0.value.stamp < $1.value.stamp }.map(\.key) }
+    package var count: Int { entries.count }
+    package var keys: [String] { entries.sorted { $0.value.stamp < $1.value.stamp }.map(\.key) }
 
-    func peek(_ key: String) -> Value? { entries[key]?.value }
+    package func peek(_ key: String) -> Value? { entries[key]?.value }
 
-    mutating func value(for key: String) -> Value? {
+    package mutating func value(for key: String) -> Value? {
         guard var entry = entries[key] else { return nil }
         clock &+= 1
         entry.stamp = clock
@@ -375,7 +390,7 @@ struct NoteMermaidCache<Value> {
         return entry.value
     }
 
-    mutating func insert(_ value: Value, for key: String, cost: Int) {
+    package mutating func insert(_ value: Value, for key: String, cost: Int) {
         clock &+= 1
         if let old = entries[key] { totalCost -= old.cost }
         let weight = max(0, cost)
@@ -387,29 +402,34 @@ struct NoteMermaidCache<Value> {
         }
     }
 
-    mutating func remove(_ key: String) {
+    package mutating func remove(_ key: String) {
         guard let old = entries.removeValue(forKey: key) else { return }
         totalCost -= old.cost
     }
 
-    mutating func removeAll() {
+    package mutating func removeAll() {
         entries.removeAll()
         totalCost = 0
     }
 }
 
-struct NoteMermaidQueue {
-    private(set) var running: NoteMermaidRequest?
-    private(set) var pending: [NoteMermaidRequest] = []
+package struct NoteMermaidQueue {
+    package private(set) var running: NoteMermaidRequest?
+    package private(set) var pending: [NoteMermaidRequest] = []
     private var interest: [Int: String] = [:]
 
-    var isIdle: Bool { running == nil }
-    var pendingKeys: [String] { pending.map(\.key) }
+    package var isIdle: Bool { running == nil }
+    package var pendingKeys: [String] { pending.map(\.key) }
 
-    func wants(_ key: String) -> Bool { interest.values.contains(key) }
-    func key(for client: Int) -> String? { interest[client] }
+    package init(running: NoteMermaidRequest? = nil, pending: [NoteMermaidRequest] = []) {
+        self.running = running
+        self.pending = pending
+    }
 
-    mutating func submit(_ request: NoteMermaidRequest, client: Int) {
+    package func wants(_ key: String) -> Bool { interest.values.contains(key) }
+    package func key(for client: Int) -> String? { interest[client] }
+
+    package mutating func submit(_ request: NoteMermaidRequest, client: Int) {
         let previous = interest[client]
         interest[client] = request.key
         if let previous, previous != request.key { dropIfUnwanted(previous) }
@@ -417,19 +437,19 @@ struct NoteMermaidQueue {
         pending.append(request)
     }
 
-    mutating func withdraw(_ client: Int) {
+    package mutating func withdraw(_ client: Int) {
         guard let key = interest.removeValue(forKey: client) else { return }
         dropIfUnwanted(key)
     }
 
-    mutating func start() -> NoteMermaidRequest? {
+    package mutating func start() -> NoteMermaidRequest? {
         guard running == nil, !pending.isEmpty else { return nil }
         let next = pending.removeFirst()
         running = next
         return next
     }
 
-    mutating func finish(_ key: String) -> [Int] {
+    package mutating func finish(_ key: String) -> [Int] {
         if running?.key == key { running = nil }
         pending.removeAll { $0.key == key }
         let clients = interest.filter { $0.value == key }.map(\.key).sorted()
@@ -437,13 +457,13 @@ struct NoteMermaidQueue {
         return clients
     }
 
-    mutating func requeueRunning() {
+    package mutating func requeueRunning() {
         guard let running else { return }
         self.running = nil
         if wants(running.key), !pending.contains(where: { $0.key == running.key }) { pending.insert(running, at: 0) }
     }
 
-    mutating func failAll() -> [Int] {
+    package mutating func failAll() -> [Int] {
         running = nil
         pending.removeAll()
         let clients = interest.keys.sorted()
@@ -457,7 +477,12 @@ struct NoteMermaidQueue {
     }
 }
 
-struct NoteDiagramArt: Sendable {
-    var light: String
-    var dark: String?
+package struct NoteDiagramArt: Sendable {
+    package var light: String
+    package var dark: String?
+
+    package init(light: String, dark: String? = nil) {
+        self.light = light
+        self.dark = dark
+    }
 }

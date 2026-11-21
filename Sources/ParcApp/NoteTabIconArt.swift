@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import ImageIO
+import ParcCore
 
 @MainActor
 final class NoteTabIconArt {

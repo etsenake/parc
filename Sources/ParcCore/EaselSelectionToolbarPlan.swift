@@ -1,9 +1,9 @@
 import Foundation
 
-enum EaselToolbarSubject: String, CaseIterable, Equatable {
+package enum EaselToolbarSubject: String, CaseIterable, Equatable {
     case text, sticky, shape, connector, section, image, drawing, page, table, code, stamp, icon
 
-    init(_ kind: EaselItemKind) {
+    package init(_ kind: EaselItemKind) {
         switch kind {
         case .text: self = .text
         case .sticky: self = .sticky
@@ -19,11 +19,11 @@ enum EaselToolbarSubject: String, CaseIterable, Equatable {
         }
     }
 
-    init(_ item: EaselItem) {
+    package init(_ item: EaselItem) {
         self = EaselStyleFamily.of(item) == .icons ? .icon : EaselToolbarSubject(item.kind)
     }
 
-    var takesStyle: Bool {
+    package var takesStyle: Bool {
         switch self {
         case .text, .sticky, .shape, .connector, .section, .drawing, .icon: return true
         case .image, .page, .table, .code, .stamp: return false
@@ -31,7 +31,7 @@ enum EaselToolbarSubject: String, CaseIterable, Equatable {
     }
 }
 
-enum EaselToolbarControl: String, CaseIterable, Hashable {
+package enum EaselToolbarControl: String, CaseIterable, Hashable {
     case unlock, sectionTitle, shape, connectorLabel
     case typeface, textSize, smaller, larger
     case bold, italic, underline, strikethrough, paragraph
@@ -45,8 +45,8 @@ enum EaselToolbarControl: String, CaseIterable, Hashable {
     case more
 }
 
-enum EaselSelectionToolbarPlan {
-    static func groups(for subjects: [EaselToolbarSubject], editingText: Bool, locked: Bool) -> [[EaselToolbarControl]] {
+package enum EaselSelectionToolbarPlan {
+    package static func groups(for subjects: [EaselToolbarSubject], editingText: Bool, locked: Bool) -> [[EaselToolbarControl]] {
         guard let first = subjects.first else { return [] }
         let distinct = Set(subjects)
         if subjects.count == 1, first == .page { return [] }
@@ -69,7 +69,7 @@ enum EaselSelectionToolbarPlan {
 
     private static let emphasis: [EaselToolbarControl] = [.bold, .italic, .underline, .strikethrough]
 
-    static func controls(for subject: EaselToolbarSubject, editingText: Bool) -> [[EaselToolbarControl]] {
+    package static func controls(for subject: EaselToolbarSubject, editingText: Bool) -> [[EaselToolbarControl]] {
         switch subject {
         case .text:
             return editingText
@@ -104,26 +104,31 @@ enum EaselSelectionToolbarPlan {
         }
     }
 
-    static func unlocksGroup(_ items: [EaselItem]) -> Bool {
+    package static func unlocksGroup(_ items: [EaselItem]) -> Bool {
         guard items.count > 1, let group = items.first?.groupID else { return false }
         return items.allSatisfy { $0.groupID == group }
     }
 
-    static func available(_ groups: [[EaselToolbarControl]], where supported: (EaselToolbarControl) -> Bool) -> [[EaselToolbarControl]] {
+    package static func available(_ groups: [[EaselToolbarControl]], where supported: (EaselToolbarControl) -> Bool) -> [[EaselToolbarControl]] {
         groups.map { $0.filter(supported) }.filter { !$0.isEmpty }
     }
 }
 
-struct EaselSelectionToolbarPlacement: Equatable {
-    enum Edge: Equatable { case above, below, inside }
+package struct EaselSelectionToolbarPlacement: Equatable {
+    package enum Edge: Equatable { case above, below, inside }
 
-    static let gap = 8.0
-    static let margin = 8.0
+    package static let gap = 8.0
+    package static let margin = 8.0
 
-    var frame: EaselRect
-    var edge: Edge
+    package var frame: EaselRect
+    package var edge: Edge
 
-    static func place(selection: EaselRect, width: Double, height: Double, visible: EaselRect,
+    package init(frame: EaselRect, edge: Edge) {
+        self.frame = frame
+        self.edge = edge
+    }
+
+    package static func place(selection: EaselRect, width: Double, height: Double, visible: EaselRect,
                       gap: Double = gap, margin: Double = margin) -> EaselSelectionToolbarPlacement? {
         guard width > 0, height > 0, let shown = intersection(selection, visible) else { return nil }
         let minX = visible.x + margin, maxX = max(minX, visible.x + visible.width - margin - width)

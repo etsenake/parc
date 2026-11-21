@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 enum NoteTurnIntoTarget: Int, CaseIterable, Hashable {
     case text, heading1, heading2, heading3, todo, bulleted, numbered, toggle, code, page

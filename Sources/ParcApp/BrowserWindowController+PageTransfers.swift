@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import ParcCore
+import ParcEngine
 
 extension BrowserWindowController {
     func movePagesHere(_ ids: ArraySlice<UUID>, then completion: @escaping () -> Bool) -> Bool {

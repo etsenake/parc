@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension FolderUndoManager {
     func appendSidebarCopy(_ record: SidebarCopyUndo, store: BrowserStore,

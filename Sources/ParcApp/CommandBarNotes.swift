@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 extension CommandBarDocument {
     static let fileNoteID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))

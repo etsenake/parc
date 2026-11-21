@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 @MainActor
 protocol NoteMediaResizing: AnyObject {

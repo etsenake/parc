@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import ParcCore
+import ParcEngine
 
 extension NotePageEditor: EmbeddedPageOwner {
     var embeddedPagesOpen: Bool { true }

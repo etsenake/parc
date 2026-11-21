@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 struct SidebarNotePlacement: Equatable {
     let destination: SidebarContainerLocation

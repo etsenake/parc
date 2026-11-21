@@ -1,7 +1,7 @@
 import Foundation
 
 extension NoteButton {
-    var summary: String {
+    package var summary: String {
         guard !actions.isEmpty else { return "Does nothing yet" }
         return actions.map { action -> String in
             switch action {
@@ -15,7 +15,7 @@ extension NoteButton {
         }.joined(separator: ", then ")
     }
 
-    static func targetLabel(_ target: String) -> String {
+    package static func targetLabel(_ target: String) -> String {
         if let url = URL(string: target), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
             return url.host ?? target
         }
@@ -25,7 +25,7 @@ extension NoteButton {
 }
 
 extension NotePage {
-    func buttonInsertion(for id: NoteBlockID, placement: NoteButtonPlacement, carrying blocks: [NoteBlock]) -> NoteInsertion? {
+    package func buttonInsertion(for id: NoteBlockID, placement: NoteButtonPlacement, carrying blocks: [NoteBlock]) -> NoteInsertion? {
         guard contains(id) else { return nil }
         switch placement {
         case .top: return .top(0)
@@ -42,10 +42,10 @@ extension NotePage {
 }
 
 extension NotePageSession {
-    static let buttonPressName = "Press Button"
+    package static let buttonPressName = "Press Button"
 
     @discardableResult
-    func insertFromButton(_ id: NoteBlockID, blocks template: [NoteBlock], placement: NoteButtonPlacement, press token: UUID) -> [NoteBlockID] {
+    package func insertFromButton(_ id: NoteBlockID, blocks template: [NoteBlock], placement: NoteButtonPlacement, press token: UUID) -> [NoteBlockID] {
         guard !template.isEmpty, let position = page.buttonInsertion(for: id, placement: placement, carrying: template) else { return [] }
         let copies = template.map { $0.withFreshIDs() }
         edit(Self.buttonPressName, coalescing: .lasting(id, token), selecting: { $0.clamped(self.selection) }) { page in
@@ -54,7 +54,7 @@ extension NotePageSession {
         return copies.map(\.id)
     }
 
-    func setButton(_ id: NoteBlockID, name: String? = nil, icon: String?? = nil, actions: [NoteButtonAction]? = nil,
+    package func setButton(_ id: NoteBlockID, name: String? = nil, icon: String?? = nil, actions: [NoteButtonAction]? = nil,
                    undoName: String = "Edit Button", coalescing: NoteEditCoalescing = .none) {
         guard let block = page.block(id), block.kind == .button else { return }
         var button = block.buttonValue
@@ -71,7 +71,7 @@ extension NotePageSession {
     }
 
     @discardableResult
-    func unwrapButton(_ id: NoteBlockID) -> [NoteBlockID] {
+    package func unwrapButton(_ id: NoteBlockID) -> [NoteBlockID] {
         guard let block = page.block(id), block.kind == .button else { return [] }
         let blocks = block.buttonValue.templateBlocks.map { $0.withFreshIDs() }
         let landing: NotePageSelection = blocks.isEmpty ? selection : Self.landing(after: blocks)
@@ -85,22 +85,22 @@ extension NotePageSession {
 }
 
 @MainActor
-final class NoteButtonPress {
-    typealias Confirm = @MainActor (String, @escaping @MainActor (Bool) -> Void) -> Void
-    typealias Open = @MainActor (String) -> Void
+package final class NoteButtonPress {
+    package typealias Confirm = @MainActor (String, @escaping @MainActor (Bool) -> Void) -> Void
+    package typealias Open = @MainActor (String) -> Void
 
-    let session: NotePageSession
-    let button: NoteBlockID
-    let actions: [NoteButtonAction]
+    package let session: NotePageSession
+    package let button: NoteBlockID
+    package let actions: [NoteButtonAction]
     private let token = UUID()
     private let confirm: Confirm
     private let open: Open
-    private(set) var inserted: [NoteBlockID] = []
-    private(set) var isFinished = false
-    private(set) var wasCancelled = false
-    var onFinish: (@MainActor (NoteButtonPress) -> Void)?
+    package private(set) var inserted: [NoteBlockID] = []
+    package private(set) var isFinished = false
+    package private(set) var wasCancelled = false
+    package var onFinish: (@MainActor (NoteButtonPress) -> Void)?
 
-    init?(session: NotePageSession, button: NoteBlockID, confirm: @escaping Confirm, open: @escaping Open) {
+    package init?(session: NotePageSession, button: NoteBlockID, confirm: @escaping Confirm, open: @escaping Open) {
         guard let block = session.page.block(button), block.kind == .button else { return nil }
         self.session = session
         self.button = button
@@ -109,7 +109,7 @@ final class NoteButtonPress {
         self.open = open
     }
 
-    func start() {
+    package func start() {
         advance(from: 0)
     }
 

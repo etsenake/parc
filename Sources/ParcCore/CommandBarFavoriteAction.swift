@@ -1,34 +1,34 @@
 import Foundation
 
-struct CommandBarFavoriteAction: Equatable, Identifiable {
-    enum Operation: String {
+package struct CommandBarFavoriteAction: Equatable, Identifiable {
+    package enum Operation: String {
         case favorite, unfavorite
-        var title: String { self == .favorite ? "Favorite Tab" : "Unfavorite Tab" }
+        package var title: String { self == .favorite ? "Favorite Tab" : "Unfavorite Tab" }
     }
-    struct Target: Equatable {
-        let id: UUID
-        let createdAt: Date
-        let spaceID: UUID
-        let kind: TabKind
-        let folderID: UUID?
-        init(_ tab: BrowserTab) {
+    package struct Target: Equatable {
+        package let id: UUID
+        package let createdAt: Date
+        package let spaceID: UUID
+        package let kind: TabKind
+        package let folderID: UUID?
+        package init(_ tab: BrowserTab) {
             id = tab.id; createdAt = tab.createdAt; spaceID = tab.spaceID
             kind = tab.kind; folderID = tab.folderID
         }
     }
-    let operation: Operation
-    let spaceID: UUID
-    let profileID: UUID
-    let targets: [Target]
-    var tabIDs: [UUID] { targets.map(\.id) }
-    var title: String { operation.title }
-    var id: String {
+    package let operation: Operation
+    package let spaceID: UUID
+    package let profileID: UUID
+    package let targets: [Target]
+    package var tabIDs: [UUID] { targets.map(\.id) }
+    package var title: String { operation.title }
+    package var id: String {
         ([operation.rawValue, profileID.uuidString, spaceID.uuidString] + targets.map {
             "\($0.id.uuidString):\($0.createdAt.timeIntervalSinceReferenceDate):\($0.spaceID.uuidString):\($0.kind.rawValue):\($0.folderID?.uuidString ?? "root")"
         }).joined(separator: ":")
     }
 
-    init?(items: [SidebarItemReference], spaceID: UUID, profileID: UUID, state: BrowserState) {
+    package init?(items: [SidebarItemReference], spaceID: UUID, profileID: UUID, state: BrowserState) {
         guard !items.isEmpty, Set(items).count == items.count,
               state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }),
               state.profiles.contains(where: { $0.id == profileID }),
@@ -51,18 +51,18 @@ struct CommandBarFavoriteAction: Equatable, Identifiable {
         self.spaceID = spaceID; self.profileID = profileID; targets = tabs.map(Target.init)
     }
 
-    func isCurrent(in state: BrowserState) -> Bool {
+    package func isCurrent(in state: BrowserState) -> Bool {
         Self(items: tabIDs.map(SidebarItemReference.tab), spaceID: spaceID, profileID: profileID, state: state) == self
     }
 
-    func matches(query: String) -> Bool {
+    package func matches(query: String) -> Bool {
         let words = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             .split(whereSeparator: \.isWhitespace)
         let text = title.lowercased()
         return !words.isEmpty && words.allSatisfy { text.contains($0) }
     }
 
-    func applying(to state: BrowserState) -> BrowserState? {
+    package func applying(to state: BrowserState) -> BrowserState? {
         guard isCurrent(in: state) else { return nil }
         let ids = Set(tabIDs)
         var next = state

@@ -1,16 +1,16 @@
 import Foundation
 
-enum InterProfileMoveDecision: Equatable {
+package enum InterProfileMoveDecision: Equatable {
     case abort, proceed, alwaysProceed
 }
 
-enum InterProfileMoveGate: Equatable {
+package enum InterProfileMoveGate: Equatable {
     case proceed(remembersChoice: Bool)
     case confirm
     case abort
     case blocked
 
-    static func resolve(sourceProfiles: Set<UUID>, destination: UUID,
+    package static func resolve(sourceProfiles: Set<UUID>, destination: UUID,
                         decision: InterProfileMoveDecision?, bypass: Bool, blocked: Bool = false) -> InterProfileMoveGate? {
         guard sourceProfiles.count <= 1 else { return nil }
         guard let source = sourceProfiles.first, source != destination else { return .proceed(remembersChoice: false) }
@@ -24,67 +24,67 @@ enum InterProfileMoveGate: Equatable {
     }
 }
 
-struct InterProfileMovePrompt: Equatable {
-    static let confirmTitle = "Move it"
-    static let cancelTitle = "Cancel"
-    static let suppressionTitle = "Don’t ask again"
-    static let dialogWidth: Double = 455
+package struct InterProfileMovePrompt: Equatable {
+    package static let confirmTitle = "Move it"
+    package static let cancelTitle = "Cancel"
+    package static let suppressionTitle = "Don’t ask again"
+    package static let dialogWidth: Double = 455
 
-    let destinationName: String
-    let tabCount: Int
+    package let destinationName: String
+    package let tabCount: Int
 
-    init(tabCount: Int, spaceName: String) {
+    package init(tabCount: Int, spaceName: String) {
         self.tabCount = max(1, tabCount)
         destinationName = Self.displayName(spaceName)
     }
 
-    init?(tabCount: Int, destinationSpaceID: UUID, state: BrowserState) {
+    package init?(tabCount: Int, destinationSpaceID: UUID, state: BrowserState) {
         guard let index = state.spaces.firstIndex(where: { $0.id == destinationSpaceID }) else { return nil }
         self.init(tabCount: tabCount, spaceName: state.spaces[index].title ?? "Space \(index + 1)")
     }
 
-    var title: String { "Move \(tabCount > 1 ? "tabs" : "tab") to \(destinationName)?" }
-    var message: String {
+    package var title: String { "Move \(tabCount > 1 ? "tabs" : "tab") to \(destinationName)?" }
+    package var message: String {
         "\(destinationName) uses different data, so you might get logged out or lose your progress in "
             + (tabCount > 1 ? "these tabs" : "this tab") + ".\n\nThis can't be undone!"
     }
 
-    var titleSegments: [(String, Bool)] {
+    package var titleSegments: [(String, Bool)] {
         [("Move \(tabCount > 1 ? "tabs" : "tab") to ", false), (destinationName, true), ("?", false)]
     }
-    var messageSegments: [(String, Bool)] {
+    package var messageSegments: [(String, Bool)] {
         [(destinationName, true), (" uses different data, so you might get logged out or lose your progress in "
             + (tabCount > 1 ? "these tabs" : "this tab") + ".\n\nThis can't be undone!", false)]
     }
 
-    static func displayName(_ name: String) -> String {
+    package static func displayName(_ name: String) -> String {
         guard name.count > 24 else { return name }
         return String(name.prefix(24)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 
-    static func decision(confirmed: Bool, suppressed: Bool) -> InterProfileMoveDecision {
+    package static func decision(confirmed: Bool, suppressed: Bool) -> InterProfileMoveDecision {
         confirmed ? (suppressed ? .alwaysProceed : .proceed) : .abort
     }
 }
 
-struct InterProfileDocumentBlock: Equatable {
-    enum Section: Equatable { case pinned, today, favorites, folder(String) }
-    enum Place: Equatable {
+package struct InterProfileDocumentBlock: Equatable {
+    package enum Section: Equatable { case pinned, today, favorites, folder(String) }
+    package enum Place: Equatable {
         case sidebar(Section, split: Bool, otherSpace: String?)
         case leftBehind(Section, split: Bool)
         case archive
     }
-    enum Change: Equatable { case move, share(target: String), keepSeparate }
+    package enum Change: Equatable { case move, share(target: String), keepSeparate }
 
-    let document: InternalPage
-    let subject: String
-    let sourceSpace: String
-    let destinationSpace: String
-    let places: [Place]
-    let others: [InternalPage]
-    let change: Change
+    package let document: InternalPage
+    package let subject: String
+    package let sourceSpace: String
+    package let destinationSpace: String
+    package let places: [Place]
+    package let others: [InternalPage]
+    package let change: Change
 
-    init?(moving ids: Set<UUID>, before: BrowserState, after: BrowserState?, sharing: SpaceDataSharing? = nil) {
+    package init?(moving ids: Set<UUID>, before: BrowserState, after: BrowserState?, sharing: SpaceDataSharing? = nil) {
         guard let after else { return nil }
         var checked: [String] = []
         var blocked: [(tab: BrowserTab, page: InternalPage, blockers: [BrowserTab])] = []
@@ -144,7 +144,7 @@ struct InterProfileDocumentBlock: Equatable {
         others = blocked.dropFirst().map(\.page)
     }
 
-    var title: String {
+    package var title: String {
         switch change {
         case .move: return "Can’t move to " + destinationSpace
         case .share(let target): return "Can’t share " + target + "’s data with " + sourceSpace
@@ -152,7 +152,7 @@ struct InterProfileDocumentBlock: Equatable {
         }
     }
 
-    var message: String {
+    package var message: String {
         let mixed = places.contains { if case .sidebar(_, _, _?) = $0 { return true } else { return false } }
         let phrases = places.map { place -> String in
             switch place {
@@ -215,10 +215,10 @@ struct InterProfileDocumentBlock: Equatable {
     }
 }
 
-enum InterProfileMove {
-    static func admits(_ tab: BrowserTab) -> Bool { tab.archivedAt == nil }
+package enum InterProfileMove {
+    package static func admits(_ tab: BrowserTab) -> Bool { tab.archivedAt == nil }
 
-    static func documents(moving ids: Set<UUID>, after state: BrowserState) -> [InternalPage]? {
+    package static func documents(moving ids: Set<UUID>, after state: BrowserState) -> [InternalPage]? {
         var pages: [InternalPage] = []
         for id in ids.sorted(by: { $0.uuidString < $1.uuidString }) {
             guard let tab = state.tab(id) else { return nil }
@@ -241,40 +241,52 @@ enum InterProfileMove {
         [tab.url, tab.savedURL] + (tab.noteVisit?.documents.map(\.url) ?? [])
     }
 
-    static func samePlacement(_ tab: BrowserTab, _ original: BrowserTab) -> Bool {
+    package static func samePlacement(_ tab: BrowserTab, _ original: BrowserTab) -> Bool {
         guard tab.id == original.id && tab.spaceID == original.spaceID && tab.profileID == original.profileID
             && tab.kind == original.kind && tab.folderID == original.folderID && tab.archivedAt == original.archivedAt
             && tab.customTitle == original.customTitle else { return false }
         return tab.kind == .today || (tab.savedURL == original.savedURL && tab.savedTitle == original.savedTitle)
     }
 
-    static func sourceProfile(of ids: [UUID], in state: BrowserState) -> UUID? {
+    package static func sourceProfile(of ids: [UUID], in state: BrowserState) -> UUID? {
         let profiles = Set(ids.compactMap { id in state.tab(id)?.profileID })
         guard profiles.count == 1, ids.allSatisfy({ id in state.containsTab(id) }) else { return nil }
         return profiles.first
     }
 
-    static func profilesAvailable(_ source: UUID, _ destination: UUID, in state: BrowserState) -> Bool {
+    package static func profilesAvailable(_ source: UUID, _ destination: UUID, in state: BrowserState) -> Bool {
         source != destination
             && state.profiles.contains { $0.id == source } && state.profiles.contains { $0.id == destination }
             && !state.profileRemovals.contains { $0.profileID == source || $0.profileID == destination }
     }
 }
 
-enum ForeignSplitDrop {
-    struct Request: Equatable {
-        let source: BrowserTab
-        let sourceHomeID: UUID
-        let spaceID: UUID
-        let profileID: UUID
-        let selection: [UUID]
-        let layout: BrowserSplitLayout?
-        let target: SplitDropTarget
-        let orientation: SplitOrientation
-        let destinationHomeIDs: [UUID: UUID]
+package enum ForeignSplitDrop {
+    package struct Request: Equatable {
+        package let source: BrowserTab
+        package let sourceHomeID: UUID
+        package let spaceID: UUID
+        package let profileID: UUID
+        package let selection: [UUID]
+        package let layout: BrowserSplitLayout?
+        package let target: SplitDropTarget
+        package let orientation: SplitOrientation
+        package let destinationHomeIDs: [UUID: UUID]
+
+        package init(source: BrowserTab, sourceHomeID: UUID, spaceID: UUID, profileID: UUID, selection: [UUID], layout: BrowserSplitLayout?, target: SplitDropTarget, orientation: SplitOrientation, destinationHomeIDs: [UUID: UUID]) {
+            self.source = source
+            self.sourceHomeID = sourceHomeID
+            self.spaceID = spaceID
+            self.profileID = profileID
+            self.selection = selection
+            self.layout = layout
+            self.target = target
+            self.orientation = orientation
+            self.destinationHomeIDs = destinationHomeIDs
+        }
     }
 
-    static func proposal(_ request: Request, state: BrowserState, now: Date,
+    package static func proposal(_ request: Request, state: BrowserState, now: Date,
                          creation: TabCreationProvenance?) -> BrowserState? {
         let original = request.source
         guard let tab = state.tab(original.id), InterProfileMove.samePlacement(tab, original),
@@ -302,7 +314,7 @@ enum ForeignSplitDrop {
             savedHomeIDs: homes, creation: creation)
     }
 
-    static func destinationHomes(_ request: Request, state: BrowserState) -> [BrowserTab]? {
+    package static func destinationHomes(_ request: Request, state: BrowserState) -> [BrowserTab]? {
         OriginalSplitDrop.savedHomes(source: request.source.id, state: state, selection: request.selection,
             layout: request.layout, target: request.target, orientation: request.orientation, spaceID: request.spaceID)
     }
@@ -384,17 +396,19 @@ enum ForeignSplitDrop {
 
 
 @MainActor
-final class LocalDocumentRelocationRollback {
+package final class LocalDocumentRelocationRollback {
     private var reversals: [() -> Bool] = []
     private var cleanups: [() -> Void] = []
     private var finished = false
 
-    func append(reverse: @escaping () -> Bool, cleanup: @escaping () -> Void = {}) {
+    package init() {}
+
+    package func append(reverse: @escaping () -> Bool, cleanup: @escaping () -> Void = {}) {
         precondition(!finished)
         reversals.append(reverse); cleanups.append(cleanup)
     }
 
-    func run() {
+    package func run() {
         guard !finished else { return }
         finished = true
         var restored = true

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcCore
 import SwiftUI
 
 @MainActor enum SiteControlCenterArtwork {

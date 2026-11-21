@@ -1,19 +1,25 @@
 import Foundation
 
-struct EaselTableGrid: Equatable {
-    var cells: [[String]]
-    var merges: [EaselTableMerge] = []
-    var truncated = false
+package struct EaselTableGrid: Equatable {
+    package var cells: [[String]]
+    package var merges: [EaselTableMerge] = []
+    package var truncated = false
 
-    var rowCount: Int { cells.count }
-    var columnCount: Int { cells.map(\.count).max() ?? 0 }
+    package var rowCount: Int { cells.count }
+    package var columnCount: Int { cells.map(\.count).max() ?? 0 }
+
+    package init(cells: [[String]], merges: [EaselTableMerge] = [], truncated: Bool = false) {
+        self.cells = cells
+        self.merges = merges
+        self.truncated = truncated
+    }
 }
 
-enum EaselTableData {
-    static let maximumInputCharacters = 4_000_000
-    static let maximumParsedRows = 10_000
+package enum EaselTableData {
+    package static let maximumInputCharacters = 4_000_000
+    package static let maximumParsedRows = 10_000
 
-    static func delimited(_ text: String, separator: Character) -> EaselTableGrid {
+    package static func delimited(_ text: String, separator: Character) -> EaselTableGrid {
         var rows: [[String]] = [], row: [String] = [], field = ""
         var quoted = false, fieldStarted = false
         let characters = Array(text.prefix(maximumInputCharacters))
@@ -60,24 +66,24 @@ enum EaselTableData {
         return EaselTableGrid(cells: rows, truncated: truncated)
     }
 
-    static func readsHTMLTable(plainText: String?, intoCells: Bool) -> Bool {
+    package static func readsHTMLTable(plainText: String?, intoCells: Bool) -> Bool {
         intoCells || plainText == nil || plainText?.contains("\t") == true
     }
 
-    static func spreadsheetText(_ text: String) -> EaselTableGrid? {
+    package static func spreadsheetText(_ text: String) -> EaselTableGrid? {
         guard text.contains("\t") else { return nil }
         let grid = delimited(text, separator: "\t")
         guard let first = grid.cells.first?.count, first >= 2, grid.cells.allSatisfy({ $0.count == first }) else { return nil }
         return grid
     }
 
-    static func csv(_ text: String) -> EaselTableGrid? {
+    package static func csv(_ text: String) -> EaselTableGrid? {
         let grid = delimited(text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text, separator: ",")
         guard grid.rowCount > 0, grid.columnCount > 0 else { return nil }
         return grid
     }
 
-    static func html(_ html: String) -> EaselTableGrid? {
+    package static func html(_ html: String) -> EaselTableGrid? {
         let scalars = Array(html.unicodeScalars.prefix(maximumInputCharacters))
         let clippedInput = scalars.count == maximumInputCharacters && html.unicodeScalars.count > maximumInputCharacters
         var rows: [[(text: String, rowSpan: Int, columnSpan: Int)]] = []
@@ -208,7 +214,7 @@ enum EaselTableData {
         return EaselTableGrid(cells: cells, merges: merges, truncated: truncated)
     }
 
-    static func normalizedCellText(_ raw: String) -> String {
+    package static func normalizedCellText(_ raw: String) -> String {
         let text = decodeEntities(raw)
         var collapsed = ""
         var pendingSpace = false
@@ -237,7 +243,7 @@ enum EaselTableData {
         "times": "\u{00D7}", "divide": "\u{00F7}", "middot": "\u{00B7}", "bull": "\u{2022}",
     ]
 
-    static func decodeEntities(_ text: String) -> String {
+    package static func decodeEntities(_ text: String) -> String {
         guard text.contains("&") else { return text }
         var result = ""
         var index = text.startIndex
@@ -268,9 +274,9 @@ enum EaselTableData {
         return result
     }
 
-    static func table(from grid: EaselTableGrid) -> EaselTable? { imported(grid)?.table }
+    package static func table(from grid: EaselTableGrid) -> EaselTable? { imported(grid)?.table }
 
-    static func imported(_ grid: EaselTableGrid, limit: Int = EaselTable.maximumPastedCells) -> (table: EaselTable, trimmed: Bool)? {
+    package static func imported(_ grid: EaselTableGrid, limit: Int = EaselTable.maximumPastedCells) -> (table: EaselTable, trimmed: Bool)? {
         let width = min(EaselTable.maximumColumns, grid.columnCount, max(1, limit))
         guard width > 0, grid.rowCount > 0 else { return nil }
         let height = min(grid.rowCount, EaselTable.maximumRows, max(1, min(limit, EaselTable.maximumCells) / width))
@@ -301,7 +307,7 @@ enum EaselTableData {
         return (table, trimmed)
     }
 
-    static func clipped(_ text: String, bytes limit: Int) -> String {
+    package static func clipped(_ text: String, bytes limit: Int) -> String {
         guard text.utf8.count > limit else { return text }
         var result = ""
         var used = 0
@@ -314,11 +320,11 @@ enum EaselTableData {
         return result
     }
 
-    static func csv(_ table: EaselTable, range: EaselTableRange? = nil) -> String {
+    package static func csv(_ table: EaselTable, range: EaselTableRange? = nil) -> String {
         delimitedText(table, range: range, separator: ",", lineEnding: "\r\n")
     }
 
-    static func tsv(_ table: EaselTable, range: EaselTableRange? = nil) -> String {
+    package static func tsv(_ table: EaselTable, range: EaselTableRange? = nil) -> String {
         delimitedText(table, range: range, separator: "\t", lineEnding: "\n")
     }
 
@@ -332,13 +338,13 @@ enum EaselTableData {
         }.joined(separator: lineEnding) + lineEnding
     }
 
-    static func field(_ raw: String, separator: Character) -> String {
+    package static func field(_ raw: String, separator: Character) -> String {
         let text = raw.replacingOccurrences(of: "\u{FFFC}", with: "")
         guard text.contains(where: { $0 == separator || $0 == "\"" || $0.isNewline }) else { return text }
         return "\"" + text.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 
-    static func html(_ table: EaselTable, range: EaselTableRange? = nil) -> String {
+    package static func html(_ table: EaselTable, range: EaselTableRange? = nil) -> String {
         guard let area = (range ?? table.all).clampedArea(in: table) else { return "" }
         var result = "<meta charset=\"utf-8\"><table>"
         for row in area.rows {
@@ -366,7 +372,7 @@ enum EaselTableData {
 }
 
 extension EaselTableRange {
-    func clampedArea(in table: EaselTable) -> EaselTableRange? {
+    package func clampedArea(in table: EaselTable) -> EaselTableRange? {
         table.clamped(self)
     }
 }

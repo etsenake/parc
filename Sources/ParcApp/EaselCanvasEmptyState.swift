@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 enum EaselEmptyStateAction: Equatable {
     case tool(EaselTool)

@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import ImageIO
+import ParcCore
 
 struct EaselPageSnapshot {
     let image: NSImage

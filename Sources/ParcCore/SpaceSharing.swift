@@ -1,33 +1,38 @@
 import Foundation
 
-enum SpaceSharing {
-    static let version = 1
+package enum SpaceSharing {
+    package static let version = 1
 }
 
-enum SpaceDataSharing: Equatable {
+package enum SpaceDataSharing: Equatable {
     case share(withSpace: UUID)
     case separate
 }
 
-struct UnusedProfile: Equatable {
-    let id: UUID
-    let name: String
+package struct UnusedProfile: Equatable {
+    package let id: UUID
+    package let name: String
+
+    package init(id: UUID, name: String) {
+        self.id = id
+        self.name = name
+    }
 }
 
-struct SpaceSharingChange: Equatable {
-    let spaceID: UUID
-    let profileID: UUID
-    let previousProfileID: UUID
-    let unusedProfile: UnusedProfile?
+package struct SpaceSharingChange: Equatable {
+    package let spaceID: UUID
+    package let profileID: UUID
+    package let previousProfileID: UUID
+    package let unusedProfile: UnusedProfile?
 }
 
-enum SpaceSharingWarning: Equatable {
+package enum SpaceSharingWarning: Equatable {
     case share(target: String, space: String, discardsOwnData: Bool)
     case keepSeparate(space: String)
 
-    static let deletionNote = "This also deletes its logins, saved passwords and history. This can’t be undone."
+    package static let deletionNote = "This also deletes its logins, saved passwords and history. This can’t be undone."
 
-    static func choose(_ sharing: SpaceDataSharing, space: String, target: String?, joinsOtherData: Bool,
+    package static func choose(_ sharing: SpaceDataSharing, space: String, target: String?, joinsOtherData: Bool,
                        spaceSharesData: Bool, discardsOwnData: Bool) -> SpaceSharingWarning? {
         switch sharing {
         case .share:
@@ -38,14 +43,14 @@ enum SpaceSharingWarning: Equatable {
         }
     }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .share(let target, let space, _): return "Share \(target)’s data with \(space)?"
         case .keepSeparate(let space): return "Keep \(space) separate?"
         }
     }
 
-    var message: String {
+    package var message: String {
         switch self {
         case .share(let target, let space, true):
             return "\(space)’s pages will reload signed in as \(target). \(space)’s own logins, saved passwords and history will be deleted. This can’t be undone."
@@ -56,33 +61,33 @@ enum SpaceSharingWarning: Equatable {
         }
     }
 
-    var confirm: String {
+    package var confirm: String {
         switch self {
         case .share: return "Share Data"
         case .keepSeparate: return "Keep Separate"
         }
     }
 
-    var destructive: Bool {
+    package var destructive: Bool {
         if case .share(_, _, true) = self { return true }
         return false
     }
 }
 
 extension BrowserState {
-    func resolvedAutoArchiveHours(forSpace id: UUID) -> Double {
+    package func resolvedAutoArchiveHours(forSpace id: UUID) -> Double {
         guard let space = spaces.first(where: { $0.id == id }) else { return autoArchiveDefaultHours }
         return space.autoArchiveHours ?? profiles.first { $0.id == space.profileID }?.autoArchiveHours ?? autoArchiveDefaultHours
     }
 
-    var profilesWithoutSpaces: [BrowserProfile] {
+    package var profilesWithoutSpaces: [BrowserProfile] {
         profiles.filter { profile in
             !spaces.contains { $0.profileID == profile.id } && !profileRemovals.contains { $0.profileID == profile.id }
         }
     }
 
     @discardableResult
-    mutating func upgradeSpaceSharing() -> Bool {
+    package mutating func upgradeSpaceSharing() -> Bool {
         guard spaceSharingVersion < SpaceSharing.version, !spaces.isEmpty else { return false }
         let template = spaces.first { $0.id == activeSpaceID } ?? spaces[0]
         for profile in profilesWithoutSpaces {
@@ -102,13 +107,13 @@ extension BrowserState {
 }
 
 extension BrowserStore {
-    func autoArchiveInterval(forSpace spaceID: UUID) -> AutoArchiveInterval? {
+    package func autoArchiveInterval(forSpace spaceID: UUID) -> AutoArchiveInterval? {
         guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return nil }
         return space.autoArchiveHours.flatMap(AutoArchiveInterval.init(rawValue:)) ?? autoArchiveInterval(for: space.profileID)
     }
 
     @discardableResult
-    func setAutoArchiveInterval(_ interval: AutoArchiveInterval, forSpace spaceID: UUID) throws -> Bool {
+    package func setAutoArchiveInterval(_ interval: AutoArchiveInterval, forSpace spaceID: UUID) throws -> Bool {
         guard let index = state.spaces.firstIndex(where: { $0.id == spaceID }),
               !isProfileRemovalPending(state.spaces[index].profileID) else { throw ProfileSettingsError.unavailable }
         guard state.spaces[index].autoArchiveHours != interval.rawValue else { return false }
@@ -119,7 +124,7 @@ extension BrowserStore {
         return true
     }
 
-    func unusedProfile(_ profileID: UUID) -> UnusedProfile? {
+    package func unusedProfile(_ profileID: UUID) -> UnusedProfile? {
         guard let profile = state.profiles.first(where: { $0.id == profileID }),
               !state.spaces.contains(where: { $0.profileID == profileID }),
               !isProfileRemovalPending(profileID) else { return nil }
@@ -134,7 +139,7 @@ extension BrowserStore {
         return UnusedProfile(id: profile.id, name: profile.name)
     }
 
-    func unusedProfile(ifSpace spaceID: UUID, joins sharing: SpaceDataSharing) -> UnusedProfile? {
+    package func unusedProfile(ifSpace spaceID: UUID, joins sharing: SpaceDataSharing) -> UnusedProfile? {
         guard case .share(let otherID) = sharing,
               let space = state.spaces.first(where: { $0.id == spaceID }),
               let other = state.spaces.first(where: { $0.id == otherID }),
@@ -142,7 +147,7 @@ extension BrowserStore {
         return soleProfile(of: spaceID)
     }
 
-    func sharingWarning(forSpace spaceID: UUID, to sharing: SpaceDataSharing) -> SpaceSharingWarning? {
+    package func sharingWarning(forSpace spaceID: UUID, to sharing: SpaceDataSharing) -> SpaceSharingWarning? {
         guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return nil }
         var target: BrowserSpace?
         if case .share(let otherID) = sharing { target = state.spaces.first { $0.id == otherID && $0.id != spaceID } }
@@ -152,25 +157,25 @@ extension BrowserStore {
                                           discardsOwnData: unusedProfile(ifSpace: spaceID, joins: sharing) != nil)
     }
 
-    func wouldOrphanProfile(ifSpace spaceID: UUID, joins sharing: SpaceDataSharing) -> Bool {
+    package func wouldOrphanProfile(ifSpace spaceID: UUID, joins sharing: SpaceDataSharing) -> Bool {
         unusedProfile(ifSpace: spaceID, joins: sharing) != nil
     }
 
-    func unusedProfile(ifDeletingSpace spaceID: UUID) -> UnusedProfile? { soleProfile(of: spaceID) }
+    package func unusedProfile(ifDeletingSpace spaceID: UUID) -> UnusedProfile? { soleProfile(of: spaceID) }
 
-    func wouldOrphanProfile(ifDeletingSpace spaceID: UUID) -> Bool { unusedProfile(ifDeletingSpace: spaceID) != nil }
+    package func wouldOrphanProfile(ifDeletingSpace spaceID: UUID) -> Bool { unusedProfile(ifDeletingSpace: spaceID) != nil }
 
-    func stageRemoval(of unused: UnusedProfile) throws -> ProfileRemovalRecord {
+    package func stageRemoval(of unused: UnusedProfile) throws -> ProfileRemovalRecord {
         guard unusedProfile(unused.id) == unused else { throw ProfileRemovalError.unavailable }
         return try stageProfileRemoval(unused.id, expectedName: unused.name)
     }
 
-    func spaceSharing(of spaceID: UUID) -> [BrowserSpace] {
+    package func spaceSharing(of spaceID: UUID) -> [BrowserSpace] {
         guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return [] }
         return state.spaces.filter { $0.id != spaceID && $0.profileID == space.profileID }
     }
 
-    func createSpace(_ draft: SidebarNewSpaceDraft, completion: @escaping (Result<UUID?, Error>) -> Void) {
+    package func createSpace(_ draft: SidebarNewSpaceDraft, completion: @escaping (Result<UUID?, Error>) -> Void) {
         guard !isEphemeral, !draft.tabIDs.contains(where: { retiringTabIDs.contains($0) }) else { completion(.success(nil)); return }
         guard draft.movesItemsAcrossProfiles else {
             completion(Result { try createSpaceAndMoveSidebarItems(draft) })
@@ -197,13 +202,13 @@ extension BrowserStore {
         }
     }
 
-    func sharingDocumentBlock(forSpace spaceID: UUID, to sharing: SpaceDataSharing) -> InterProfileDocumentBlock? {
+    package func sharingDocumentBlock(forSpace spaceID: UUID, to sharing: SpaceDataSharing) -> InterProfileDocumentBlock? {
         guard let destination = sharingDestination(ofSpace: spaceID, to: sharing, newProfileID: UUID()),
               let assignment = profileAssignment(destination.profileID, toSpace: spaceID, creating: destination.created) else { return nil }
         return InterProfileDocumentBlock(moving: assignment.tabIDs, before: state, after: assignment.proposal(state), sharing: sharing)
     }
 
-    func changeSharing(ofSpace spaceID: UUID, to sharing: SpaceDataSharing, newProfileID: UUID = UUID(),
+    package func changeSharing(ofSpace spaceID: UUID, to sharing: SpaceDataSharing, newProfileID: UUID = UUID(),
                        shouldCommit: @escaping () -> Bool = { true },
                        completion: @escaping (Result<SpaceSharingChange?, Error>) -> Void) {
         guard let destination = sharingDestination(ofSpace: spaceID, to: sharing, newProfileID: newProfileID) else {

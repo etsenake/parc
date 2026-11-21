@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 enum DownloadLibraryAction {
     case open, reveal, copyFile, copyLink, openSource, toggleOpen

@@ -1,4 +1,5 @@
 import AppKit
+import ParcEngine
 
 @MainActor
 enum ParcContextMenuMetrics {

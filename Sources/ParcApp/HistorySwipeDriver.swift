@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 protocol HistorySwipeTarget: AnyObject {
     var swipesBetweenPages: Bool { get }

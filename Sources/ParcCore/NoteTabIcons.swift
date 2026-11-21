@@ -1,11 +1,11 @@
 import Combine
 import Foundation
 
-enum NoteTabIcon: Hashable, Sendable {
+package enum NoteTabIcon: Hashable, Sendable {
     case emoji(String)
     case image(URL)
 
-    init?(_ raw: String?, resolve: (String) -> URL?) {
+    package init?(_ raw: String?, resolve: (String) -> URL?) {
         guard let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
         if let emoji = Self.emoji(value) {
             self = .emoji(emoji)
@@ -20,7 +20,7 @@ enum NoteTabIcon: Hashable, Sendable {
         self = .image(URL(fileURLWithPath: resolved.path, isDirectory: false))
     }
 
-    static func emoji(_ value: String) -> String? {
+    package static func emoji(_ value: String) -> String? {
         guard value.count == 1, let first = value.unicodeScalars.first, first.properties.isEmoji,
               first.properties.isEmojiPresentation || value.unicodeScalars.count > 1 else { return nil }
         return value
@@ -28,8 +28,8 @@ enum NoteTabIcon: Hashable, Sendable {
 }
 
 @MainActor
-final class NoteTabIcons {
-    enum Lookup: Equatable {
+package final class NoteTabIcons {
+    package enum Lookup: Equatable {
         case known(NoteTabIcon?)
         case pending
     }
@@ -42,14 +42,14 @@ final class NoteTabIcons {
         var subscriptions: [AnyCancellable]
     }
 
-    static let shared = NoteTabIcons()
-    static var worker = NoteFileWorker(label: "org.parc.notes.tab-icons", qos: .utility)
-    static var clock: NoteFileClock = NoteFileSystemClock.shared
-    nonisolated static let rememberedNotes = 4_096
+    package static let shared = NoteTabIcons()
+    package static var worker = NoteFileWorker(label: "org.parc.notes.tab-icons", qos: .utility)
+    package static var clock: NoteFileClock = NoteFileSystemClock.shared
+    package nonisolated static let rememberedNotes = 4_096
 
-    let changes = PassthroughSubject<Set<String>?, Never>()
-    var readIcon: @Sendable (URL) -> String? = { NoteTabIcons.frontMatterIcon($0) }
-    var folderChanges: @MainActor (URL) -> AnyPublisher<Void, Never>? = { note in
+    package let changes = PassthroughSubject<Set<String>?, Never>()
+    package var readIcon: @Sendable (URL) -> String? = { NoteTabIcons.frontMatterIcon($0) }
+    package var folderChanges: @MainActor (URL) -> AnyPublisher<Void, Never>? = { note in
         NoteLibrary.library(for: note).changes.eraseToAnyPublisher()
     }
 
@@ -63,7 +63,7 @@ final class NoteTabIcons {
     private var announcement: NoteFileTimer?
     private var emojiSubscription: AnyCancellable?
 
-    init() {
+    package init() {
         emojiSubscription = NoteEmojiLibrary.anyChange.sink { [weak self] _ in self?.emojiLibraryChanged() }
     }
 
@@ -78,19 +78,19 @@ final class NoteTabIcons {
         announce(nil)
     }
 
-    nonisolated static func key(_ note: URL) -> String { note.standardizedFileURL.path }
+    package nonisolated static func key(_ note: URL) -> String { note.standardizedFileURL.path }
 
-    nonisolated static func touches(_ change: Set<String>?, note: URL) -> Bool {
+    package nonisolated static func touches(_ change: Set<String>?, note: URL) -> Bool {
         change.map { $0.contains(key(note)) } ?? true
     }
 
-    nonisolated static func frontMatterIcon(_ note: URL) -> String? {
+    package nonisolated static func frontMatterIcon(_ note: URL) -> String? {
         guard NoteFileKind(url: note) == .markdown,
               let head = NoteFileSummary.readHead(note, kind: .markdown, upTo: NoteFileSummary.headSize) else { return nil }
         return NoteFileSummary.frontMatter(head.components(separatedBy: "\n")).icon
     }
 
-    func lookup(_ note: URL) -> Lookup {
+    package func lookup(_ note: URL) -> Lookup {
         guard NoteFileKind(url: note) == .markdown else { return .known(nil) }
         if let session = NoteFileSession.session(for: note) { return .known(follow(session)) }
         let key = Self.key(note)
@@ -100,7 +100,7 @@ final class NoteTabIcons {
     }
 
     @discardableResult
-    func follow(_ session: NoteFileSession) -> NoteTabIcon? {
+    package func follow(_ session: NoteFileSession) -> NoteTabIcon? {
         let id = ObjectIdentifier(session)
         if let entry = followed[id], entry.session === session {
             refresh(id)
@@ -121,7 +121,7 @@ final class NoteTabIcons {
         return icon
     }
 
-    func forget() {
+    package func forget() {
         known.removeAll()
         reading.removeAll()
         generations.removeAll()

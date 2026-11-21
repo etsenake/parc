@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 extension NoteSyncedBlocks {
-    func useNoteFiles() {
+    package func useNoteFiles() {
         guard !usesNoteFiles else { return }
         usesNoteFiles = true
         opener = { url in

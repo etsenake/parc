@@ -1,16 +1,21 @@
 import Foundation
 
-enum HistorySwipeDirection: Equatable {
+package enum HistorySwipeDirection: Equatable {
     case back
     case forward
 }
 
-struct HistorySwipePoint: Equatable {
-    var x: Double
-    var y: Double
+package struct HistorySwipePoint: Equatable {
+    package var x: Double
+    package var y: Double
+
+    package init(x: Double, y: Double) {
+        self.x = x
+        self.y = y
+    }
 }
 
-enum HistorySwipeEventPhase: Equatable {
+package enum HistorySwipeEventPhase: Equatable {
     case none
     case mayBegin
     case began
@@ -20,34 +25,49 @@ enum HistorySwipeEventPhase: Equatable {
     case cancelled
 }
 
-enum HistorySwipeTouchPhase: Equatable {
+package enum HistorySwipeTouchPhase: Equatable {
     case began
     case moved
     case ended
     case cancelled
 }
 
-struct HistorySwipeScroll: Equatable {
-    var phase: HistorySwipeEventPhase
-    var momentumPhase: HistorySwipeEventPhase = .none
-    var deltaX = 0.0
-    var deltaY = 0.0
-    var directionInverted: Bool
+package struct HistorySwipeScroll: Equatable {
+    package var phase: HistorySwipeEventPhase
+    package var momentumPhase: HistorySwipeEventPhase = .none
+    package var deltaX = 0.0
+    package var deltaY = 0.0
+    package var directionInverted: Bool
+
+    package init(phase: HistorySwipeEventPhase, momentumPhase: HistorySwipeEventPhase = .none, deltaX: Double = 0.0, deltaY: Double = 0.0, directionInverted: Bool) {
+        self.phase = phase
+        self.momentumPhase = momentumPhase
+        self.deltaX = deltaX
+        self.deltaY = deltaY
+        self.directionInverted = directionInverted
+    }
 }
 
-enum HistorySwipePageScroll: Equatable {
+package enum HistorySwipePageScroll: Equatable {
     case began(synthetic: Bool, momentum: Bool)
     case updated(consumed: Bool)
 }
 
-struct HistorySwipeTrackedUpdate: Equatable {
-    var generation: Int
-    var amount: Double
-    var phase: HistorySwipeEventPhase
-    var isComplete = false
+package struct HistorySwipeTrackedUpdate: Equatable {
+    package var generation: Int
+    package var amount: Double
+    package var phase: HistorySwipeEventPhase
+    package var isComplete = false
+
+    package init(generation: Int, amount: Double, phase: HistorySwipeEventPhase, isComplete: Bool = false) {
+        self.generation = generation
+        self.amount = amount
+        self.phase = phase
+        self.isComplete = isComplete
+    }
 }
 
-enum HistorySwipeInput: Equatable {
+package enum HistorySwipeInput: Equatable {
     case touches(HistorySwipeTouchPhase, [HistorySwipePoint], time: TimeInterval)
     case scroll(HistorySwipeScroll)
     case pageScroll(HistorySwipePageScroll)
@@ -57,18 +77,18 @@ enum HistorySwipeInput: Equatable {
     case cancel
 }
 
-struct HistorySwipeProgress: Equatable {
-    var fraction: Double
-    var stretch: Double
+package struct HistorySwipeProgress: Equatable {
+    package var fraction: Double
+    package var stretch: Double
 }
 
-enum HistorySwipeCommit: Equatable {
+package enum HistorySwipeCommit: Equatable {
     case adjacent(HistorySwipeDirection)
     case entry(HistorySwipeDirection, distance: Int)
     case dismiss
 }
 
-enum HistorySwipeOutput: Equatable {
+package enum HistorySwipeOutput: Equatable {
     case begin(HistorySwipeDirection)
     case beginDismissal
     case progress(HistorySwipeProgress)
@@ -82,21 +102,35 @@ enum HistorySwipeOutput: Equatable {
     case cancel
 }
 
-struct HistorySwipeTrackingRequest: Equatable {
-    var direction: HistorySwipeDirection
-    var generation: Int
+package struct HistorySwipeTrackingRequest: Equatable {
+    package var direction: HistorySwipeDirection
+    package var generation: Int
+
+    package init(direction: HistorySwipeDirection, generation: Int) {
+        self.direction = direction
+        self.generation = generation
+    }
 }
 
-struct HistorySwipeStep: Equatable {
-    var consumesEvent = false
-    var outputs: [HistorySwipeOutput] = []
-    var startsTracking: HistorySwipeTrackingRequest?
-    var stopsTracking = false
-    var preloadsBack = false
-    var clockDeadline: TimeInterval?
+package struct HistorySwipeStep: Equatable {
+    package var consumesEvent = false
+    package var outputs: [HistorySwipeOutput] = []
+    package var startsTracking: HistorySwipeTrackingRequest?
+    package var stopsTracking = false
+    package var preloadsBack = false
+    package var clockDeadline: TimeInterval?
+
+    package init(consumesEvent: Bool = false, outputs: [HistorySwipeOutput] = [], startsTracking: HistorySwipeTrackingRequest? = nil, stopsTracking: Bool = false, preloadsBack: Bool = false, clockDeadline: TimeInterval? = nil) {
+        self.consumesEvent = consumesEvent
+        self.outputs = outputs
+        self.startsTracking = startsTracking
+        self.stopsTracking = stopsTracking
+        self.preloadsBack = preloadsBack
+        self.clockDeadline = clockDeadline
+    }
 }
 
-protocol HistorySwipeEnvironment {
+package protocol HistorySwipeEnvironment {
     var swipesBetweenPages: Bool { get }
     var allowsHistorySwipe: Bool { get }
     func historyEntries(toward direction: HistorySwipeDirection) -> Int
@@ -104,23 +138,23 @@ protocol HistorySwipeEnvironment {
 }
 
 extension HistorySwipeEnvironment {
-    func dismisses(toward direction: HistorySwipeDirection) -> Bool { false }
+    package func dismisses(toward direction: HistorySwipeDirection) -> Bool { false }
 }
 
-protocol HistorySwipeShell: AnyObject {
+package protocol HistorySwipeShell: AnyObject {
     func historySwipe(_ output: HistorySwipeOutput)
 }
 
-final class HistorySwipeController {
-    private(set) var recognizer: HistorySwipeRecognizer
+package final class HistorySwipeController {
+    package private(set) var recognizer: HistorySwipeRecognizer
     private weak var shell: (any HistorySwipeShell)?
 
-    init(shell: any HistorySwipeShell, parameters: HistorySwipeParameters = .dia) {
+    package init(shell: any HistorySwipeShell, parameters: HistorySwipeParameters = .dia) {
         recognizer = HistorySwipeRecognizer(parameters: parameters)
         self.shell = shell
     }
 
-    func receive(_ input: HistorySwipeInput, in environment: any HistorySwipeEnvironment) -> HistorySwipeStep {
+    package func receive(_ input: HistorySwipeInput, in environment: any HistorySwipeEnvironment) -> HistorySwipeStep {
         let step = recognizer.receive(input, in: environment)
         for output in step.outputs { shell?.historySwipe(output) }
         return step

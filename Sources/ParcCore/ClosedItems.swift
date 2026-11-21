@@ -1,18 +1,29 @@
 import Foundation
 
-struct ClosedItemRecord: Equatable {
-    enum Kind { case saved, archived }
-    let id: UUID
-    let kind: Kind
-    let spaceID: UUID
-    let profileID: UUID
-    let tabs: [BrowserTab]
-    let split: BrowserSplitLayout?
-    let focusedTabID: UUID
-    var membership: ClosedSplitMembership? = nil
-    var tabIDs: [UUID] { tabs.map(\.id) }
+package struct ClosedItemRecord: Equatable {
+    package enum Kind { case saved, archived }
+    package let id: UUID
+    package let kind: Kind
+    package let spaceID: UUID
+    package let profileID: UUID
+    package let tabs: [BrowserTab]
+    package let split: BrowserSplitLayout?
+    package let focusedTabID: UUID
+    package var membership: ClosedSplitMembership? = nil
+    package var tabIDs: [UUID] { tabs.map(\.id) }
 
-    func isValid(in state: BrowserState) -> Bool {
+    package init(id: UUID, kind: Kind, spaceID: UUID, profileID: UUID, tabs: [BrowserTab], split: BrowserSplitLayout?, focusedTabID: UUID, membership: ClosedSplitMembership? = nil) {
+        self.id = id
+        self.kind = kind
+        self.spaceID = spaceID
+        self.profileID = profileID
+        self.tabs = tabs
+        self.split = split
+        self.focusedTabID = focusedTabID
+        self.membership = membership
+    }
+
+    package func isValid(in state: BrowserState) -> Bool {
         if let membership {
             guard kind == .archived, split == nil, tabs.count == 1, membership.layout.spaceID == spaceID,
                   membership.layout.tabIDs.contains(tabs[0].id) else { return false }
@@ -51,13 +62,13 @@ struct ClosedItemRecord: Equatable {
     }
 }
 
-struct ClosedSplitMembership: Equatable {
-    let layout: BrowserSplitLayout
-    let index: Int
-    let dissolved: Bool
-    let closedSiblings: Set<UUID>
+package struct ClosedSplitMembership: Equatable {
+    package let layout: BrowserSplitLayout
+    package let index: Int
+    package let dissolved: Bool
+    package let closedSiblings: Set<UUID>
 
-    func restoredLayout(restoring id: UUID, in state: BrowserState,
+    package func restoredLayout(restoring id: UUID, in state: BrowserState,
                         available: (UUID) -> Bool) -> BrowserSplitLayout? {
         guard let position = layout.tabIDs.firstIndex(of: id),
               let profileID = state.spaces.first(where: { $0.id == layout.spaceID })?.profileID else { return nil }
@@ -143,14 +154,14 @@ struct ClosedSplitMembership: Equatable {
     }
 }
 
-struct ClosedItemIntent {
-    let spaceID: UUID
-    let profileID: UUID
-    let tabs: [BrowserTab]
-    let focusedTabID: UUID?
-    let completeSplits: [BrowserSplitLayout]
-    let partialSplits: [BrowserSplitLayout]
-    init?(ids: Set<UUID>, state: BrowserState, spaceID: UUID, profileID: UUID, focusedTabID: UUID?) {
+package struct ClosedItemIntent {
+    package let spaceID: UUID
+    package let profileID: UUID
+    package let tabs: [BrowserTab]
+    package let focusedTabID: UUID?
+    package let completeSplits: [BrowserSplitLayout]
+    package let partialSplits: [BrowserSplitLayout]
+    package init?(ids: Set<UUID>, state: BrowserState, spaceID: UUID, profileID: UUID, focusedTabID: UUID?) {
         let tabs = state.openTabs(where: { ids.contains($0.id) })
         guard !ids.isEmpty, tabs.count == ids.count,
               state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }),
@@ -164,7 +175,7 @@ struct ClosedItemIntent {
         }
     }
 
-    func membership(of id: UUID, in state: BrowserState) -> ClosedSplitMembership? {
+    package func membership(of id: UUID, in state: BrowserState) -> ClosedSplitMembership? {
         let closed = Set(tabs.map(\.id))
         guard let layout = partialSplits.first(where: { $0.tabIDs.contains(id) }),
               let position = layout.tabIDs.firstIndex(of: id),
@@ -183,13 +194,20 @@ struct ClosedItemIntent {
     }
 }
 
-struct ClosedPeekRecord: Equatable {
-    let id: UUID
-    let url: URL
-    let parentTabID: UUID
-    let profileID: UUID
+package struct ClosedPeekRecord: Equatable {
+    package let id: UUID
+    package let url: URL
+    package let parentTabID: UUID
+    package let profileID: UUID
 
-    func isValid(in state: BrowserState) -> Bool {
+    package init(id: UUID, url: URL, parentTabID: UUID, profileID: UUID) {
+        self.id = id
+        self.url = url
+        self.parentTabID = parentTabID
+        self.profileID = profileID
+    }
+
+    package func isValid(in state: BrowserState) -> Bool {
         ["http", "https"].contains(url.scheme?.lowercased() ?? "")
             && state.profiles.contains(where: { $0.id == profileID })
             && !state.profileRemovals.contains(where: { $0.profileID == profileID })
@@ -197,12 +215,12 @@ struct ClosedPeekRecord: Equatable {
     }
 }
 
-enum ClosedItemStep {
+package enum ClosedItemStep {
     case items(ClosedItemRecord)
     case peek(ClosedPeekRecord)
     case folder(FolderDeletionUndo)
 
-    var id: UUID {
+    package var id: UUID {
         switch self {
         case .items(let record): return record.id
         case .peek(let record): return record.id
@@ -211,16 +229,16 @@ enum ClosedItemStep {
     }
 }
 
-struct WindowClosedItems {
+package struct WindowClosedItems {
     private var saved: ClosedItemRecord?
     private var groups: [[ClosedItemStep]] = []
-    private(set) var itemLastActiveDates: [UUID: Date]
+    package private(set) var itemLastActiveDates: [UUID: Date]
 
-    init(itemLastActiveDates: [UUID: Date] = [:]) {
+    package init(itemLastActiveDates: [UUID: Date] = [:]) {
         self.itemLastActiveDates = itemLastActiveDates
     }
 
-    mutating func recordSelection(_ ids: [UUID], focusedTabID: UUID?, state: BrowserState,
+    package mutating func recordSelection(_ ids: [UUID], focusedTabID: UUID?, state: BrowserState,
                                   at date: Date = Date()) {
         let available = Set(state.openTabs.map(\.id))
         itemLastActiveDates = itemLastActiveDates.filter { available.contains($0.key) }
@@ -229,7 +247,7 @@ struct WindowClosedItems {
         itemLastActiveDates[focus] = date
     }
 
-    mutating func record(_ intent: ClosedItemIntent, in state: BrowserState) {
+    package mutating func record(_ intent: ClosedItemIntent, in state: BrowserState) {
         var after: [BrowserTab] = []
         for before in intent.tabs {
             guard let tab = state.tab(before.id),
@@ -282,17 +300,17 @@ struct WindowClosedItems {
         groups.append(steps.map(ClosedItemStep.items))
     }
 
-    mutating func recordPeek(_ record: ClosedPeekRecord, in state: BrowserState) {
+    package mutating func recordPeek(_ record: ClosedPeekRecord, in state: BrowserState) {
         guard record.isValid(in: state) else { return }
         groups.append([.peek(record)])
     }
 
-    mutating func recordFolderDeletion(_ undo: FolderDeletionUndo) {
+    package mutating func recordFolderDeletion(_ undo: FolderDeletionUndo) {
         saved = nil
         groups.append([.folder(undo)])
     }
 
-    mutating func nextStep(in state: BrowserState,
+    package mutating func nextStep(in state: BrowserState,
                            restorable: (FolderDeletionUndo) -> Bool) -> ClosedItemStep? {
         if let saved, saved.isValid(in: state) { return .items(saved) }
         saved = nil
@@ -307,31 +325,31 @@ struct WindowClosedItems {
         }
         return nil
     }
-    mutating func next(in state: BrowserState) -> ClosedItemRecord? {
+    package mutating func next(in state: BrowserState) -> ClosedItemRecord? {
         guard case .items(let record)? = nextStep(in: state, restorable: { _ in true }) else { return nil }
         return record
     }
-    @discardableResult mutating func consume(_ record: ClosedItemRecord) -> Bool { consume(stepID: record.id) }
-    @discardableResult mutating func consume(stepID: UUID) -> Bool {
+    @discardableResult package mutating func consume(_ record: ClosedItemRecord) -> Bool { consume(stepID: record.id) }
+    @discardableResult package mutating func consume(stepID: UUID) -> Bool {
         if saved?.id == stepID { saved = nil; return true }
         guard saved == nil, groups.last?.last?.id == stepID else { return false }
         groups[groups.count - 1].removeLast()
         if groups.last?.isEmpty == true { groups.removeLast() }
         return true
     }
-    mutating func selected(_ ids: [UUID]) {
+    package mutating func selected(_ ids: [UUID]) {
         if let saved, !Set(ids).isDisjoint(with: saved.tabIDs) { self.saved = nil }
     }
 }
 
-struct ClosedPageHistory<State> {
-    let limit: Int
+package struct ClosedPageHistory<State> {
+    package let limit: Int
     private var states: [UUID: State] = [:]
     private var order: [UUID] = []
     private var restored: Set<UUID> = []
-    init(limit: Int = 100) { self.limit = limit }
+    package init(limit: Int = 100) { self.limit = limit }
 
-    mutating func closed(_ id: UUID, state: State) {
+    package mutating func closed(_ id: UUID, state: State) {
         if states.updateValue(state, forKey: id) != nil { order.removeAll { $0 == id } }
         order.append(id); restored.remove(id)
         while order.count > limit {
@@ -339,16 +357,16 @@ struct ClosedPageHistory<State> {
             states.removeValue(forKey: oldest); restored.remove(oldest)
         }
     }
-    mutating func restore(_ ids: some Sequence<UUID>) {
+    package mutating func restore(_ ids: some Sequence<UUID>) {
         for id in ids where states[id] != nil { restored.insert(id) }
     }
-    mutating func unrestore(_ ids: some Sequence<UUID>) { restored.subtract(ids) }
-    mutating func pageCreated(_ id: UUID) { if restored.remove(id) != nil { _ = take(id) } }
-    mutating func takeRestored(_ id: UUID) -> State? {
+    package mutating func unrestore(_ ids: some Sequence<UUID>) { restored.subtract(ids) }
+    package mutating func pageCreated(_ id: UUID) { if restored.remove(id) != nil { _ = take(id) } }
+    package mutating func takeRestored(_ id: UUID) -> State? {
         guard restored.remove(id) != nil else { return nil }
         return take(id)
     }
-    mutating func take(_ id: UUID) -> State? {
+    package mutating func take(_ id: UUID) -> State? {
         order.removeAll { $0 == id }; restored.remove(id)
         return states.removeValue(forKey: id)
     }

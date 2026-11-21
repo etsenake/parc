@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 struct NoteTableCellStyle: Hashable {
     var font: NotePageFont = .standard

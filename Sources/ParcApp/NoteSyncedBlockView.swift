@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension NoteTheme {
     nonisolated static let syncedPadding: CGFloat = 8

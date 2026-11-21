@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 struct PortraitCaptureOptions {
     enum Background: Int, CaseIterable { case color, page, desktop }

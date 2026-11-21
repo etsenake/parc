@@ -1,5 +1,5 @@
-enum CommandBarReconcileInputs {
-    static func withPresentedBar<Bar>(
+package enum CommandBarReconcileInputs {
+    package static func withPresentedBar<Bar>(
         _ commandBar: Bar?,
         build: (Bar) -> Void
     ) {

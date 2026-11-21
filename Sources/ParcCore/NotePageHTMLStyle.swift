@@ -1,14 +1,21 @@
 import Foundation
 
-enum NotePageHTMLStyle {
-    struct Swatch {
-        var text: String
-        var background: String
-        var darkText: String
-        var darkBackground: String
+package enum NotePageHTMLStyle {
+    package struct Swatch {
+        package var text: String
+        package var background: String
+        package var darkText: String
+        package var darkBackground: String
+
+        package init(text: String, background: String, darkText: String, darkBackground: String) {
+            self.text = text
+            self.background = background
+            self.darkText = darkText
+            self.darkBackground = darkBackground
+        }
     }
 
-    static let palette: [NoteColor: Swatch] = [
+    package static let palette: [NoteColor: Swatch] = [
         .gray: Swatch(text: "787774", background: "F1F1EF", darkText: "9B9B9B", darkBackground: "2F2F2F"),
         .brown: Swatch(text: "9F6B53", background: "F4EEEE", darkText: "BA856F", darkBackground: "4A3228"),
         .orange: Swatch(text: "D9730D", background: "FBECDD", darkText: "C77D48", darkBackground: "5C3B23"),
@@ -20,7 +27,7 @@ enum NotePageHTMLStyle {
         .red: Swatch(text: "D44C47", background: "FDEBEC", darkText: "DF5452", darkBackground: "522E2A")
     ]
 
-    static let mimeTypes: [String: String] = [
+    package static let mimeTypes: [String: String] = [
         "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
         "svg": "image/svg+xml", "heic": "image/heic", "heif": "image/heif", "tif": "image/tiff", "tiff": "image/tiff",
         "bmp": "image/bmp", "avif": "image/avif", "ico": "image/x-icon"
@@ -43,7 +50,7 @@ enum NotePageHTMLStyle {
         }.joined()
     }
 
-    static func maskRules(for page: NotePage) -> String {
+    package static func maskRules(for page: NotePage) -> String {
         let used = Set(page.allBlocks().compactMap { $0.kind == .image ? $0.props.mask : nil })
         return NoteImageMask.allCases.filter { used.contains($0) && $0.borderRadius(frameAspect: nil) == nil }.map { mask in
             let image = "url(\"" + mask.maskImageURL + "\") center/100% 100% no-repeat"
@@ -51,7 +58,7 @@ enum NotePageHTMLStyle {
         }.joined()
     }
 
-    static let css: String = """
+    package static let css: String = """
     :root{--ink:#1F1B2E;--title:#220C7F;--muted:rgba(31,27,46,.62);--faint:rgba(31,27,46,.38);\
     --line:rgba(31,27,46,.12);--accent:#2702C2;--link:#220C7F;--paper:#FFFFFF;--fill:rgba(31,27,46,.045);\
     --callout:rgba(31,27,46,.045);--code-ink:#C0306A;--code-fill:rgba(39,2,194,.07);--check:#2702C2;\

@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import ParcCore
+import ParcEngine
 
 extension BrowserWindowController {
     func canHostPeek(_ browser: PCNativeBrowserWindow, over page: PCNativePage, overLibrary: Bool = false,

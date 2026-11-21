@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import ParcCore
 
 enum WindowFrameCrankCue: Hashable {
     case notch(Int)

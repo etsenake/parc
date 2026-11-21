@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 struct NoteBlockStyle: Hashable {
     var kind: NoteBlockKind

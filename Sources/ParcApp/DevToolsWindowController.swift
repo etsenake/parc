@@ -1,4 +1,5 @@
 import AppKit
+import ParcEngine
 
 @MainActor
 final class DevToolsWindowController: NSWindowController, NSWindowDelegate,

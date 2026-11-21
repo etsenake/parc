@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 final class NoteAtomAttachment: NSTextAttachment {
     let atom: NoteAtom?

@@ -1,13 +1,13 @@
 import Foundation
 
-struct SidebarMoveCollection: Equatable {
-    let hierarchy: SidebarHierarchySnapshot
-    let roots: [SidebarItemReference]
-    let tabIDs: [UUID]
-    let tabs: [BrowserTab]
-    let folderIDs: [UUID]
+package struct SidebarMoveCollection: Equatable {
+    package let hierarchy: SidebarHierarchySnapshot
+    package let roots: [SidebarItemReference]
+    package let tabIDs: [UUID]
+    package let tabs: [BrowserTab]
+    package let folderIDs: [UUID]
 
-    init?(items: [SidebarItemReference], spaceID: UUID, profileID: UUID, state: BrowserState) {
+    package init?(items: [SidebarItemReference], spaceID: UUID, profileID: UUID, state: BrowserState) {
         guard let hierarchy = SidebarHierarchySnapshot(state: state, spaceID: spaceID, profileID: profileID, includesFavorites: true),
               let roots = SidebarHierarchy.roots(items, state: state, spaceID: spaceID), !roots.isEmpty else { return nil }
         var ids: [UUID] = [], folders: [UUID] = [], groups: [UUID] = []
@@ -43,17 +43,17 @@ struct SidebarMoveCollection: Equatable {
     }
 }
 
-struct SidebarWindowMove: Equatable {
-    let collection: SidebarMoveCollection
-    let destination: SidebarHierarchySnapshot
-    let location: SidebarContainerLocation
-    let before: SidebarItemReference?
-    var tabIDs: [UUID] { collection.tabIDs }
-    var roots: [SidebarItemReference] { collection.roots }
-    var source: SidebarHierarchySnapshot { collection.hierarchy }
-    var crossesProfiles: Bool { source.profileID != destination.profileID }
+package struct SidebarWindowMove: Equatable {
+    package let collection: SidebarMoveCollection
+    package let destination: SidebarHierarchySnapshot
+    package let location: SidebarContainerLocation
+    package let before: SidebarItemReference?
+    package var tabIDs: [UUID] { collection.tabIDs }
+    package var roots: [SidebarItemReference] { collection.roots }
+    package var source: SidebarHierarchySnapshot { collection.hierarchy }
+    package var crossesProfiles: Bool { source.profileID != destination.profileID }
 
-    init?(items: [SidebarItemReference], sourceSpaceID: UUID, profileID: UUID, destinationProfileID: UUID? = nil,
+    package init?(items: [SidebarItemReference], sourceSpaceID: UUID, profileID: UUID, destinationProfileID: UUID? = nil,
           to location: SidebarContainerLocation, before: SidebarItemReference?, state: BrowserState) {
         guard let collection = SidebarMoveCollection(items: items, spaceID: sourceSpaceID, profileID: profileID, state: state),
               let destination = SidebarHierarchySnapshot(state: state, spaceID: location.spaceID,
@@ -63,7 +63,7 @@ struct SidebarWindowMove: Equatable {
         guard proposal(in: state) != nil else { return nil }
     }
 
-    func applying(to state: BrowserState) -> BrowserState? {
+    package func applying(to state: BrowserState) -> BrowserState? {
         guard SidebarMoveCollection(items: roots, spaceID: source.spaceID, profileID: source.profileID, state: state) == collection,
               SidebarHierarchySnapshot(state: state, spaceID: destination.spaceID, profileID: destination.profileID, includesFavorites: true) == destination else { return nil }
         return proposal(in: state)

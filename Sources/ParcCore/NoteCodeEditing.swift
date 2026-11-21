@@ -1,32 +1,38 @@
 import Foundation
 
-struct NoteCodeEdit: Hashable {
-    var range: Range<Int>
-    var replacement: String
-    var selection: Range<Int>
+package struct NoteCodeEdit: Hashable {
+    package var range: Range<Int>
+    package var replacement: String
+    package var selection: Range<Int>
 
-    func applied(to text: String) -> String {
+    package init(range: Range<Int>, replacement: String, selection: Range<Int>) {
+        self.range = range
+        self.replacement = replacement
+        self.selection = selection
+    }
+
+    package func applied(to text: String) -> String {
         (text as NSString).replacingCharacters(in: NSRange(location: range.lowerBound, length: range.count), with: replacement)
     }
 }
 
-enum NoteCodeIndent: Hashable {
+package enum NoteCodeIndent: Hashable {
     case spaces(Int)
     case tab(Int)
 
-    var unit: String {
+    package var unit: String {
         switch self {
         case .spaces(let width): return String(repeating: " ", count: width)
         case .tab: return "\t"
         }
     }
 
-    var width: Int {
+    package var width: Int {
         switch self { case .spaces(let width), .tab(let width): return max(1, width) }
     }
 }
 
-enum NoteCodeEditing {
+package enum NoteCodeEditing {
     private static let fourSpaceLanguages: Set<String> = [
         "python", "py", "python3", "swift", "kotlin", "kt", "java", "c", "h", "cpp", "c++", "cc", "cxx", "hpp",
         "objective-c", "objectivec", "objc", "objective-c++", "csharp", "c#", "cs", "rust", "rs", "go", "golang",
@@ -47,15 +53,15 @@ enum NoteCodeEditing {
     ]
     private static let pairs: [unichar: unichar] = [123: 125, 91: 93, 40: 41]
 
-    static func normalizedLanguage(_ language: String) -> String {
+    package static func normalizedLanguage(_ language: String) -> String {
         language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    static func indentWidth(forLanguage language: String) -> Int {
+    package static func indentWidth(forLanguage language: String) -> Int {
         fourSpaceLanguages.contains(normalizedLanguage(language)) ? 4 : 2
     }
 
-    static func indent(forLanguage language: String, text: String = "") -> NoteCodeIndent {
+    package static func indent(forLanguage language: String, text: String = "") -> NoteCodeIndent {
         let name = normalizedLanguage(language)
         let width = indentWidth(forLanguage: name)
         if tabLanguages.contains(name) { return .tab(4) }
@@ -66,7 +72,7 @@ enum NoteCodeEditing {
         return tabbed > spaced ? .tab(width) : .spaces(width)
     }
 
-    static func newline(in text: String, selection: Range<Int>, indent: NoteCodeIndent, language: String = "") -> NoteCodeEdit {
+    package static func newline(in text: String, selection: Range<Int>, indent: NoteCodeIndent, language: String = "") -> NoteCodeEdit {
         let characters = text as NSString
         let range = clamp(selection, characters.length)
         let lineStart = lineStart(of: range.lowerBound, in: characters)
@@ -95,7 +101,7 @@ enum NoteCodeEditing {
         return NoteCodeEdit(range: start..<(range.upperBound + afterSkip), replacement: replacement, selection: caret..<caret)
     }
 
-    static func tab(in text: String, selection: Range<Int>, indent: NoteCodeIndent) -> NoteCodeEdit {
+    package static func tab(in text: String, selection: Range<Int>, indent: NoteCodeIndent) -> NoteCodeEdit {
         let characters = text as NSString
         let range = clamp(selection, characters.length)
         let selected = characters.substring(with: NSRange(location: range.lowerBound, length: range.count))
@@ -113,7 +119,7 @@ enum NoteCodeEditing {
         return NoteCodeEdit(range: range, replacement: insertion, selection: caret..<caret)
     }
 
-    static func indentLines(in text: String, selection: Range<Int>, indent: NoteCodeIndent) -> NoteCodeEdit {
+    package static func indentLines(in text: String, selection: Range<Int>, indent: NoteCodeIndent) -> NoteCodeEdit {
         let characters = text as NSString
         let range = clamp(selection, characters.length)
         let lines = touchedLines(range, in: characters)
@@ -136,7 +142,7 @@ enum NoteCodeEditing {
         return NoteCodeEdit(range: span, replacement: replacement, selection: lower..<max(lower, shifted(range.upperBound)))
     }
 
-    static func dedentLines(in text: String, selection: Range<Int>, indent: NoteCodeIndent) -> NoteCodeEdit? {
+    package static func dedentLines(in text: String, selection: Range<Int>, indent: NoteCodeIndent) -> NoteCodeEdit? {
         let characters = text as NSString
         let range = clamp(selection, characters.length)
         let lines = touchedLines(range, in: characters)
@@ -163,7 +169,7 @@ enum NoteCodeEditing {
         return NoteCodeEdit(range: span, replacement: replacement, selection: lower..<max(lower, shifted(range.upperBound)))
     }
 
-    static func closingBracket(_ character: String, in text: String, selection: Range<Int>, indent: NoteCodeIndent) -> NoteCodeEdit? {
+    package static func closingBracket(_ character: String, in text: String, selection: Range<Int>, indent: NoteCodeIndent) -> NoteCodeEdit? {
         guard ["}", "]", ")"].contains(character) else { return nil }
         let characters = text as NSString
         let range = clamp(selection, characters.length)
@@ -178,7 +184,7 @@ enum NoteCodeEditing {
         return NoteCodeEdit(range: start..<range.lowerBound, replacement: replacement, selection: caret..<caret)
     }
 
-    static func deleteBackward(in text: String, selection: Range<Int>, indent: NoteCodeIndent) -> NoteCodeEdit? {
+    package static func deleteBackward(in text: String, selection: Range<Int>, indent: NoteCodeIndent) -> NoteCodeEdit? {
         guard case .spaces(let width) = indent else { return nil }
         let characters = text as NSString
         let range = clamp(selection, characters.length)
@@ -193,7 +199,7 @@ enum NoteCodeEditing {
         return NoteCodeEdit(range: lower..<range.lowerBound, replacement: "", selection: lower..<lower)
     }
 
-    static func exitsOnReturn(_ text: String, selection: Range<Int>) -> Bool {
+    package static func exitsOnReturn(_ text: String, selection: Range<Int>) -> Bool {
         let characters = text as NSString
         guard selection.isEmpty, selection.lowerBound == characters.length else { return false }
         let start = lineStart(of: characters.length, in: characters)
@@ -206,7 +212,7 @@ enum NoteCodeEditing {
         return leadingWhitespace(previous) == previous
     }
 
-    static func trimmedForExit(_ text: String) -> String {
+    package static func trimmedForExit(_ text: String) -> String {
         let characters = text as NSString
         var end = characters.length
         while end > 0, isWhitespaceOrNewline(characters.character(at: end - 1)) { end -= 1 }
@@ -214,7 +220,7 @@ enum NoteCodeEditing {
         return characters.substring(to: lineEnd(of: end, in: characters))
     }
 
-    static func lineRange(at offset: Int, in text: String) -> Range<Int> {
+    package static func lineRange(at offset: Int, in text: String) -> Range<Int> {
         let characters = text as NSString
         let clamped = min(max(0, offset), characters.length)
         return lineStart(of: clamped, in: characters)..<lineEnd(of: clamped, in: characters)

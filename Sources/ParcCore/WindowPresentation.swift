@@ -1,18 +1,18 @@
 import Foundation
 
-struct WindowPresentation {
-    private(set) var activeSpaceID: UUID
-    private(set) var selectedTabIDs: [UUID]
-    private(set) var isReady: Bool
+package struct WindowPresentation {
+    package private(set) var activeSpaceID: UUID
+    package private(set) var selectedTabIDs: [UUID]
+    package private(set) var isReady: Bool
     private var selectionBySpace: [String: [UUID]]
     private var focusedTabBySpace: [UUID: UUID] = [:]
     private var splitLayoutBySpace: [UUID: BrowserSplitLayout] = [:]
 
-    private(set) var referrerPool: Set<UUID> = []
+    package private(set) var referrerPool: Set<UUID> = []
     private var poolFocusedID: UUID?
-    private(set) var previouslySelectedItemID: UUID?
+    package private(set) var previouslySelectedItemID: UUID?
 
-    mutating func recordCreation(_ id: UUID, state: BrowserState) {
+    package mutating func recordCreation(_ id: UUID, state: BrowserState) {
         guard let tab = state.tab(id, where: { $0.archivedAt == nil }) else { return }
         if let referrer = tab.referrerID {
             referrerPool.formUnion([referrer, id])
@@ -22,7 +22,7 @@ struct WindowPresentation {
     }
 
     @discardableResult
-    mutating func recordPeekPromotion(_ id: UUID, state: BrowserState) -> Bool {
+    package mutating func recordPeekPromotion(_ id: UUID, state: BrowserState) -> Bool {
         guard let tab = state.tab(id, where: { $0.archivedAt == nil }),
               state.spaces.contains(where: { $0.id == activeSpaceID && $0.profileID == tab.profileID }),
               state.spaces.contains(where: { $0.id == tab.spaceID && $0.profileID == tab.profileID }) else { return false }
@@ -35,7 +35,7 @@ struct WindowPresentation {
         return true
     }
 
-    mutating func recordSelectionForReturn(_ id: UUID?, state: BrowserState) {
+    package mutating func recordSelectionForReturn(_ id: UUID?, state: BrowserState) {
         guard id != poolFocusedID else { return }
         if let id, !state.containsTab(id, where: { $0.archivedAt == nil }) { return }
         let outgoing = poolFocusedID
@@ -47,30 +47,30 @@ struct WindowPresentation {
            tab.kind != .today { referrerPool = [id] }
     }
 
-    struct SessionSelection: Equatable {
-        let spaceID: UUID
-        let isReady: Bool
-        let tabIDs: [UUID]
-        let focusedTabID: UUID?
+    package struct SessionSelection: Equatable {
+        package let spaceID: UUID
+        package let isReady: Bool
+        package let tabIDs: [UUID]
+        package let focusedTabID: UUID?
     }
 
-    var sessionSelection: SessionSelection {
+    package var sessionSelection: SessionSelection {
         SessionSelection(spaceID: activeSpaceID, isReady: isReady, tabIDs: selectedTabIDs, focusedTabID: preferredFocusedTabID)
     }
 
-    var preferredFocusedTabID: UUID? {
+    package var preferredFocusedTabID: UUID? {
         focusedTabBySpace[activeSpaceID].flatMap { selectedTabIDs.contains($0) ? $0 : nil }
             ?? selectedTabIDs.first
     }
 
-    mutating func recordFocusedTab(_ id: UUID?) {
+    package mutating func recordFocusedTab(_ id: UUID?) {
         guard isReady else { return }
         guard let id else { focusedTabBySpace.removeValue(forKey: activeSpaceID); return }
         guard selectedTabIDs.contains(id) else { return }
         focusedTabBySpace[activeSpaceID] = id
     }
 
-    var splitLayout: BrowserSplitLayout? {
+    package var splitLayout: BrowserSplitLayout? {
         guard selectedTabIDs.count > 1, let layout = splitLayoutBySpace[activeSpaceID] else { return nil }
         let positions = layout.tabIDs.indices.filter { selectedTabIDs.contains(layout.tabIDs[$0]) }
         guard positions.map({ layout.tabIDs[$0] }) == selectedTabIDs,
@@ -89,7 +89,7 @@ struct WindowPresentation {
         splitLayoutBySpace[activeSpaceID] = layout
     }
 
-    init(state: BrowserState, ready: Bool, preferredProfileID: UUID? = nil,
+    package init(state: BrowserState, ready: Bool, preferredProfileID: UUID? = nil,
          restoredRecord: BrowserWindowRecord? = nil) {
         let preferred = preferredProfileID.flatMap { profile in
             state.spaces.first { $0.id == state.activeSpaceID && $0.profileID == profile }
@@ -122,7 +122,7 @@ struct WindowPresentation {
         rememberSplitLayout(state)
     }
 
-    func projected(_ state: BrowserState) -> BrowserState {
+    package func projected(_ state: BrowserState) -> BrowserState {
         var result = state
         result.activeSpaceID = activeSpaceID
         result.selectedTabIDs = isReady ? selectedTabIDs : []
@@ -131,7 +131,7 @@ struct WindowPresentation {
         return result
     }
 
-    mutating func reconcile(_ state: BrowserState, available: (UUID) -> Bool) {
+    package mutating func reconcile(_ state: BrowserState, available: (UUID) -> Bool) {
         let spaceIDs = Set(state.spaces.map(\.id))
         focusedTabBySpace = focusedTabBySpace.filter { spaceIDs.contains($0.key) }
         splitLayoutBySpace = splitLayoutBySpace.filter { spaceIDs.contains($0.key) }
@@ -161,7 +161,7 @@ struct WindowPresentation {
         reconcilePlaceholders(state, available: available)
     }
 
-    mutating func captureCommand(_ state: BrowserState, available: (UUID) -> Bool) {
+    package mutating func captureCommand(_ state: BrowserState, available: (UUID) -> Bool) {
         guard isReady else { return }
         selectionBySpace[activeSpaceID.uuidString] = selectedTabIDs
         activeSpaceID = state.activeSpaceID
@@ -169,7 +169,7 @@ struct WindowPresentation {
         reconcile(state, available: available)
     }
 
-    mutating func selectSpace(_ id: UUID, state: BrowserState, available: (UUID) -> Bool) {
+    package mutating func selectSpace(_ id: UUID, state: BrowserState, available: (UUID) -> Bool) {
         guard isReady, state.spaces.contains(where: { $0.id == id }) else { return }
         rememberSplitLayout(state)
         selectionBySpace[activeSpaceID.uuidString] = selectedTabIDs
@@ -178,7 +178,7 @@ struct WindowPresentation {
         reconcile(state, available: available)
     }
 
-    mutating func restoreDeletedSpace(_ id: UUID, selection: [UUID], focus: UUID?, state: BrowserState,
+    package mutating func restoreDeletedSpace(_ id: UUID, selection: [UUID], focus: UUID?, state: BrowserState,
                                       available: (UUID) -> Bool) {
         guard isReady, state.spaces.contains(where: { $0.id == id }) else { return }
         selectionBySpace[activeSpaceID.uuidString] = selectedTabIDs
@@ -187,7 +187,7 @@ struct WindowPresentation {
         reconcile(state, available: available)
     }
 
-    func isLocalSelection(_ id: UUID?, state: BrowserState, hasNativeWrapper: Bool) -> Bool {
+    package func isLocalSelection(_ id: UUID?, state: BrowserState, hasNativeWrapper: Bool) -> Bool {
         guard isReady else { return false }
         guard let id else { return selectedTabIDs.isEmpty && !hasNativeWrapper }
         guard selectedTabIDs.contains(id),
@@ -197,7 +197,7 @@ struct WindowPresentation {
     }
 
     @discardableResult
-    mutating func selectExistingTab(_ id: UUID, state: BrowserState,
+    package mutating func selectExistingTab(_ id: UUID, state: BrowserState,
                                     available: (UUID) -> Bool) -> Bool {
         guard isReady, available(id),
               let tab = state.tab(id, where: { $0.archivedAt == nil }),
@@ -221,7 +221,7 @@ struct WindowPresentation {
         return true
     }
 
-    mutating func adopt(_ id: UUID, state: BrowserState, foreground: Bool) {
+    package mutating func adopt(_ id: UUID, state: BrowserState, foreground: Bool) {
         guard let tab = state.tab(id) else { return }
         let currentProfile = state.spaces.first { $0.id == activeSpaceID }?.profileID
         let spaceID = isReady && tab.kind == .favorite && currentProfile == tab.profileID ? activeSpaceID : tab.spaceID
@@ -237,7 +237,7 @@ struct WindowPresentation {
     }
 
     @discardableResult
-    mutating func finishFolderRemoval(_ selection: FolderRemovalSelection,
+    package mutating func finishFolderRemoval(_ selection: FolderRemovalSelection,
                                       state: BrowserState, available: (UUID) -> Bool) -> Bool {
         guard isReady, activeSpaceID == selection.spaceID,
               state.spaces.contains(where: { $0.id == selection.spaceID && $0.profileID == selection.profileID }),
@@ -267,14 +267,14 @@ struct WindowPresentation {
     }
 
     @discardableResult
-    mutating func finishFolderUndo(_ undo: FolderDeletionUndo, state: BrowserState,
+    package mutating func finishFolderUndo(_ undo: FolderDeletionUndo, state: BrowserState,
                                   available: (UUID) -> Bool) -> Bool {
         finishUndo(focusing: undo.focusedTabID, spaceID: undo.spaceID, profileID: undo.profileID,
                    state: state, available: available)
     }
 
     @discardableResult
-    mutating func finishClosedTabsUndo(_ undo: ClosedTabsUndo, state: BrowserState,
+    package mutating func finishClosedTabsUndo(_ undo: ClosedTabsUndo, state: BrowserState,
                                        available: (UUID) -> Bool) -> Bool {
         finishUndo(focusing: undo.focusedTabID, spaceID: undo.spaceID, profileID: undo.profileID,
                    state: state, available: available)
@@ -290,20 +290,20 @@ struct WindowPresentation {
         return true
     }
 
-    private(set) var awaitsCloseReplacement = false
+    package private(set) var awaitsCloseReplacement = false
 
-    mutating func closePage(_ id: UUID) {
+    package mutating func closePage(_ id: UUID) {
         if isReady, selectedTabIDs.contains(id) { awaitsCloseReplacement = true }
         remove(id)
     }
 
-    func admitsEngineSelection(of id: UUID, closing: (UUID) -> Bool) -> Bool {
+    package func admitsEngineSelection(of id: UUID, closing: (UUID) -> Bool) -> Bool {
         selectedTabIDs.contains(id) || (!awaitsCloseReplacement && !selectedTabIDs.contains(where: closing))
     }
 
-    mutating func engineSelectionSynchronized() { awaitsCloseReplacement = false }
+    package mutating func engineSelectionSynchronized() { awaitsCloseReplacement = false }
 
-    mutating func remove(_ id: UUID) {
+    package mutating func remove(_ id: UUID) {
         let previousSelection = selectedTabIDs
         for spaceID in Array(focusedTabBySpace.keys) where focusedTabBySpace[spaceID] == id {
             let selection = spaceID == activeSpaceID ? previousSelection : selectionBySpace[spaceID.uuidString] ?? []
@@ -314,20 +314,20 @@ struct WindowPresentation {
         for key in Array(selectionBySpace.keys) { selectionBySpace[key]?.removeAll { $0 == id } }
     }
 
-    struct PagePlaceholders: Equatable {
-        var tabIDs: [UUID]
-        var placeholders: Set<UUID>
-        var layout: BrowserSplitLayout?
-        func holds(_ selection: [UUID]) -> Bool {
+    package struct PagePlaceholders: Equatable {
+        package var tabIDs: [UUID]
+        package var placeholders: Set<UUID>
+        package var layout: BrowserSplitLayout?
+        package func holds(_ selection: [UUID]) -> Bool {
             var remaining = selection[...]
             for id in tabIDs where !placeholders.contains(id) && remaining.first == id { remaining = remaining.dropFirst() }
             return remaining.isEmpty
         }
     }
-    private(set) var placeholdersBySpace: [UUID: PagePlaceholders] = [:]
+    package private(set) var placeholdersBySpace: [UUID: PagePlaceholders] = [:]
 
     @discardableResult
-    mutating func leavePlaceholder(_ id: UUID, state: BrowserState) -> Bool {
+    package mutating func leavePlaceholder(_ id: UUID, state: BrowserState) -> Bool {
         var kept = false
         if isReady {
             var spaces = selectedTabIDs.contains(id) ? [activeSpaceID] : []
@@ -358,20 +358,20 @@ struct WindowPresentation {
     private var currentPlaceholders: PagePlaceholders? {
         placeholdersBySpace[activeSpaceID].flatMap { $0.holds(selectedTabIDs) ? $0 : nil }
     }
-    var displayedTabIDs: [UUID] {
+    package var displayedTabIDs: [UUID] {
         guard let slot = currentPlaceholders else { return selectedTabIDs }
         return Array(slot.tabIDs.filter { slot.placeholders.contains($0) || selectedTabIDs.contains($0) }.prefix(4))
     }
-    var displayedPlaceholders: Set<UUID> { currentPlaceholders?.placeholders ?? [] }
-    var displayedSplitLayout: BrowserSplitLayout? {
+    package var displayedPlaceholders: Set<UUID> { currentPlaceholders?.placeholders ?? [] }
+    package var displayedSplitLayout: BrowserSplitLayout? {
         guard let slot = currentPlaceholders else { return splitLayout }
         guard let layout = slot.layout, layout.tabIDs == displayedTabIDs,
               BrowserSplitLayout.normalized(layout.widthFactors, count: layout.tabIDs.count) != nil else { return nil }
         return layout
     }
-    func showsPlaceholder(_ id: UUID) -> Bool { placeholdersBySpace.values.contains { $0.placeholders.contains(id) } }
-    var allPlaceholders: Set<UUID> { placeholdersBySpace.values.reduce(into: []) { $0.formUnion($1.placeholders) } }
-    var hasPlaceholders: Bool { !placeholdersBySpace.isEmpty }
+    package func showsPlaceholder(_ id: UUID) -> Bool { placeholdersBySpace.values.contains { $0.placeholders.contains(id) } }
+    package var allPlaceholders: Set<UUID> { placeholdersBySpace.values.reduce(into: []) { $0.formUnion($1.placeholders) } }
+    package var hasPlaceholders: Bool { !placeholdersBySpace.isEmpty }
 
     private mutating func reconcilePlaceholders(_ state: BrowserState, available: (UUID) -> Bool) {
         guard isReady else { placeholdersBySpace = [:]; return }
@@ -411,8 +411,8 @@ struct WindowPresentation {
     }
 }
 
-enum PageReparenting {
-    static func pagesToMove(_ members: [UUID], usableHere: (UUID) -> Bool, movable: (UUID) -> Bool) -> [UUID]? {
+package enum PageReparenting {
+    package static func pagesToMove(_ members: [UUID], usableHere: (UUID) -> Bool, movable: (UUID) -> Bool) -> [UUID]? {
         var pages: [UUID] = []
         for id in members where !usableHere(id) {
             guard movable(id) else { return nil }
@@ -421,73 +421,96 @@ enum PageReparenting {
         return pages
     }
 
-    enum RefusedCloseNotice: Equatable {
+    package enum RefusedCloseNotice: Equatable {
         case explain(String)
         case beep
     }
-    static func closeRefusal(unsavedNotes: Bool, reason: String?) -> RefusedCloseNotice? {
+    package static func closeRefusal(unsavedNotes: Bool, reason: String?) -> RefusedCloseNotice? {
         if unsavedNotes { return .explain("The Note couldn’t save its latest changes. Open it to retry or discard them.") }
         return reason.map { .explain($0) }
     }
 
-    enum RowAction: Equatable { case here, moveHere, moveHereThenClose }
-    static func rowAction(closing: Bool, busy: Bool, usableHere: Bool, heldElsewhere: Bool) -> RowAction? {
+    package enum RowAction: Equatable { case here, moveHere, moveHereThenClose }
+    package static func rowAction(closing: Bool, busy: Bool, usableHere: Bool, heldElsewhere: Bool) -> RowAction? {
         guard !busy else { return nil }
         if usableHere { return .here }
         guard heldElsewhere else { return nil }
         return closing ? .moveHereThenClose : .moveHere
     }
 
-    struct Candidate: Equatable {
-        let windowID: UUID
-        let displaysPlaceholder: Bool
-        let showsPlaceholder: Bool
-        let lastActive: Date
-        var canReceive = true
+    package struct Candidate: Equatable {
+        package let windowID: UUID
+        package let displaysPlaceholder: Bool
+        package let showsPlaceholder: Bool
+        package let lastActive: Date
+        package var canReceive = true
+
+        package init(windowID: UUID, displaysPlaceholder: Bool, showsPlaceholder: Bool, lastActive: Date, canReceive: Bool = true) {
+            self.windowID = windowID
+            self.displaysPlaceholder = displaysPlaceholder
+            self.showsPlaceholder = showsPlaceholder
+            self.lastActive = lastActive
+            self.canReceive = canReceive
+        }
     }
-    enum Trigger: Equatable {
+    package enum Trigger: Equatable {
         case deselected
         case ownerClosing
     }
-    static func returnDestination(_ candidates: [Candidate], trigger: Trigger) -> UUID? {
+    package static func returnDestination(_ candidates: [Candidate], trigger: Trigger) -> UUID? {
         returnDestinations(candidates, trigger: trigger).first
     }
-    static func returnDestinations(_ candidates: [Candidate], trigger: Trigger) -> [UUID] {
+    package static func returnDestinations(_ candidates: [Candidate], trigger: Trigger) -> [UUID] {
         candidates.filter { $0.canReceive && (trigger == .deselected ? $0.displaysPlaceholder : $0.showsPlaceholder) }
             .sorted { $0.lastActive > $1.lastActive }.map(\.windowID)
     }
-    enum ReturnOutcome: Equatable {
+    package enum ReturnOutcome: Equatable {
         case started
         case blocked
         case unneeded
     }
-    static func unstartedReturn(_ candidates: [Candidate]) -> ReturnOutcome {
+    package static func unstartedReturn(_ candidates: [Candidate]) -> ReturnOutcome {
         candidates.contains(where: \.showsPlaceholder) ? .blocked : .unneeded
     }
 }
 
 @MainActor
-final class NativePageOwnership {
+package final class NativePageOwnership {
     private var tabs: [UUID: UUID] = [:]
     private var pages: [String: (owner: UUID, tab: UUID)] = [:]
-    struct Transfer: Equatable {
+    package struct Transfer: Equatable {
         fileprivate let id = UUID()
-        let tab: UUID
-        let page: String
-        let source: UUID
-        let destination: UUID
+        package let tab: UUID
+        package let page: String
+        package let source: UUID
+        package let destination: UUID
+
+        package init(tab: UUID, page: String, source: UUID, destination: UUID) {
+            self.tab = tab
+            self.page = page
+            self.source = source
+            self.destination = destination
+        }
     }
     private var transfers: [UUID: Transfer] = [:]
-    struct CollectionTransfer: Equatable {
+    package struct CollectionTransfer: Equatable {
         fileprivate let id = UUID()
-        let source: UUID
-        let destination: UUID
-        let originals: [UUID: Claim]
+        package let source: UUID
+        package let destination: UUID
+        package let originals: [UUID: Claim]
+
+        package init(source: UUID, destination: UUID, originals: [UUID: Claim]) {
+            self.source = source
+            self.destination = destination
+            self.originals = originals
+        }
     }
     private var collectionTransfers: [UUID: CollectionTransfer] = [:]
     private var collections: [UUID: CollectionTransfer] = [:]
 
-    func reserveCollection(_ ids: [UUID], from source: UUID, to destination: UUID) -> CollectionTransfer? {
+    package init() {}
+
+    package func reserveCollection(_ ids: [UUID], from source: UUID, to destination: UUID) -> CollectionTransfer? {
         guard source != destination, Set(ids).count == ids.count,
               ids.allSatisfy({ transfers[$0] == nil && collectionTransfers[$0] == nil
                   && (tabs[$0] == nil || tabs[$0] == source) }) else { return nil }
@@ -497,14 +520,14 @@ final class NativePageOwnership {
         for id in ids { collectionTransfers[id] = value }
         return value
     }
-    func isCurrent(_ value: CollectionTransfer, closed: Set<UUID> = []) -> Bool {
+    package func isCurrent(_ value: CollectionTransfer, closed: Set<UUID> = []) -> Bool {
         collections[value.id] == value && value.originals.allSatisfy { id, original in
             collectionTransfers[id] == value && (claimSnapshot(id) == original ||
                 (closed.contains(id) && tabs[id] == nil && claimSnapshot(id).pages.isEmpty))
         }
     }
     @discardableResult
-    func finishCollection(_ value: CollectionTransfer, moved: Bool, closed: Set<UUID> = []) -> Bool {
+    package func finishCollection(_ value: CollectionTransfer, moved: Bool, closed: Set<UUID> = []) -> Bool {
         guard isCurrent(value, closed: closed) else { return false }
         collections.removeValue(forKey: value.id)
         for (id, original) in value.originals {
@@ -517,7 +540,7 @@ final class NativePageOwnership {
         return true
     }
 
-    func reserveTransfer(_ tab: UUID, page: String, from source: UUID, to destination: UUID) -> Transfer? {
+    package func reserveTransfer(_ tab: UUID, page: String, from source: UUID, to destination: UUID) -> Transfer? {
         guard source != destination, transfers[tab] == nil, collectionTransfers[tab] == nil,
               tabs[tab] == source, let actual = pages[page],
               actual.owner == source, actual.tab == tab else { return nil }
@@ -526,13 +549,13 @@ final class NativePageOwnership {
         return transfer
     }
 
-    func isCurrent(_ transfer: Transfer) -> Bool {
+    package func isCurrent(_ transfer: Transfer) -> Bool {
         transfers[transfer.tab] == transfer && tabs[transfer.tab] == transfer.source
             && pages[transfer.page]?.owner == transfer.source && pages[transfer.page]?.tab == transfer.tab
     }
 
     @discardableResult
-    func finishTransfer(_ transfer: Transfer, moved: Bool) -> Bool {
+    package func finishTransfer(_ transfer: Transfer, moved: Bool) -> Bool {
         guard isCurrent(transfer) else { return false }
         transfers.removeValue(forKey: transfer.tab)
         if moved {
@@ -542,22 +565,28 @@ final class NativePageOwnership {
         return true
     }
 
-    struct Claim: Equatable {
-        let owner: UUID?
-        let pages: Set<String>
-        let transfer: Transfer?
+    package struct Claim: Equatable {
+        package let owner: UUID?
+        package let pages: Set<String>
+        package let transfer: Transfer?
+
+        package init(owner: UUID?, pages: Set<String>, transfer: Transfer?) {
+            self.owner = owner
+            self.pages = pages
+            self.transfer = transfer
+        }
     }
-    func claimSnapshot(_ tab: UUID) -> Claim {
+    package func claimSnapshot(_ tab: UUID) -> Claim {
         Claim(owner: tabs[tab], pages: Set(pages.filter { $0.value.tab == tab }.map(\.key)), transfer: transfers[tab])
     }
 
-    func canUse(_ tab: UUID, owner: UUID) -> Bool { collectionTransfers[tab] == nil && (tabs[tab] == nil || tabs[tab] == owner) }
-    func isClaimed(_ tab: UUID) -> Bool { tabs[tab] != nil }
-    func owner(of tab: UUID) -> UUID? { tabs[tab] }
-    func canAdopt(_ page: String) -> Bool { pages[page] == nil }
+    package func canUse(_ tab: UUID, owner: UUID) -> Bool { collectionTransfers[tab] == nil && (tabs[tab] == nil || tabs[tab] == owner) }
+    package func isClaimed(_ tab: UUID) -> Bool { tabs[tab] != nil }
+    package func owner(of tab: UUID) -> UUID? { tabs[tab] }
+    package func canAdopt(_ page: String) -> Bool { pages[page] == nil }
 
     @discardableResult
-    func claim(_ tab: UUID, owner: UUID, page: String? = nil) -> Bool {
+    package func claim(_ tab: UUID, owner: UUID, page: String? = nil) -> Bool {
         guard transfers[tab] == nil, collectionTransfers[tab] == nil, canUse(tab, owner: owner) else { return false }
         if let page, let existing = pages[page], existing.owner != owner || existing.tab != tab { return false }
         if let page, pages.contains(where: { $0.key != page && $0.value.tab == tab }) { return false }
@@ -566,14 +595,14 @@ final class NativePageOwnership {
         return true
     }
 
-    func release(_ tab: UUID, owner: UUID) {
+    package func release(_ tab: UUID, owner: UUID) {
         guard tabs[tab] == owner else { return }
         transfers.removeValue(forKey: tab)
         tabs.removeValue(forKey: tab)
         pages = pages.filter { $0.value.owner != owner || $0.value.tab != tab }
     }
 
-    func releaseAll(owner: UUID) {
+    package func releaseAll(owner: UUID) {
         transfers = transfers.filter { $0.value.source != owner && $0.value.destination != owner }
         collectionTransfers = collectionTransfers.filter { $0.value.source != owner && $0.value.destination != owner }
         collections = collections.filter { $0.value.source != owner && $0.value.destination != owner }

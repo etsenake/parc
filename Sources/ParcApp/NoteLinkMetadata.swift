@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 struct NoteLinkPreview: Hashable {
     var title: String?

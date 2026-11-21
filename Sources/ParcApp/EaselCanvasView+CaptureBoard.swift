@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension EaselCanvasView {
     var isCaptureBoard: Bool { fixedCanvasSize != nil }

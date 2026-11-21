@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import PDFKit
+import ParcCore
 import UniformTypeIdentifiers
 
 @MainActor

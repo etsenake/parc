@@ -1,5 +1,5 @@
-enum FindReconcileSkip {
-    static func shouldSkip(isPresented: Bool) -> Bool {
+package enum FindReconcileSkip {
+    package static func shouldSkip(isPresented: Bool) -> Bool {
         !isPresented
     }
 }

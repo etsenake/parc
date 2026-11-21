@@ -2,51 +2,62 @@ import Combine
 import Foundation
 
 @MainActor
-final class NoteLibrary {
-    struct Entry: Hashable, Sendable {
-        var url: URL
-        var title: String
-        var icon: String?
-        var snippet: String
-        var modifiedAt: Date
-        var size: Int
-        var foldedTitle: String
-        var summarized = true
+package final class NoteLibrary {
+    package struct Entry: Hashable, Sendable {
+        package var url: URL
+        package var title: String
+        package var icon: String?
+        package var snippet: String
+        package var modifiedAt: Date
+        package var size: Int
+        package var foldedTitle: String
+        package var summarized = true
 
-        var reference: NoteReference {
+        package init(url: URL, title: String, icon: String? = nil, snippet: String, modifiedAt: Date, size: Int, foldedTitle: String, summarized: Bool = true) {
+            self.url = url
+            self.title = title
+            self.icon = icon
+            self.snippet = snippet
+            self.modifiedAt = modifiedAt
+            self.size = size
+            self.foldedTitle = foldedTitle
+            self.summarized = summarized
+        }
+
+        package var reference: NoteReference {
             NoteReference(url: url, title: title, icon: icon, modifiedAt: modifiedAt, snippet: snippet)
         }
     }
 
-    struct IndexedContent: Hashable, Sendable {
-        var modifiedAt: Date
-        var size: Int
-        var folded: String
+    package struct IndexedContent: Hashable, Sendable {
+        package var modifiedAt: Date
+        package var size: Int
+        package var folded: String
     }
 
     private static var libraries: [String: NoteLibrary] = [:]
     private static var shallowLibraries: [String: NoteLibrary] = [:]
-    static var worker: NoteFileWorker = .index
-    static var clock: NoteFileClock = NoteFileSystemClock.shared
-    static var refreshDelay: TimeInterval = 0.2
-    nonisolated static let maximumDepth = 12
-    nonisolated static let maximumNotes = 20_000
-    nonisolated static let quickListBudget = 1_000
-    nonisolated static let indexedBytes = 2 * 1024 * 1024
+    package static var worker: NoteFileWorker = .index
+    package static var clock: NoteFileClock = NoteFileSystemClock.shared
+    package static var refreshDelay: TimeInterval = 0.2
+    package nonisolated static let maximumDepth = 12
+    package nonisolated static let maximumNotes = 20_000
+    package nonisolated static let quickListBudget = 1_000
+    package nonisolated static let indexedBytes = 2 * 1024 * 1024
     nonisolated private static let skippedFolders: Set<String> = ["attachments", "node_modules"]
     nonisolated private static let bundleExtensions: Set<String> = [
         "textbundle", "textpack", "app", "bundle", "framework", "plugin", "photoslibrary", "xcodeproj", "xcworkspace", "playground"]
 
-    static let opened = PassthroughSubject<NoteLibrary, Never>()
+    package static let opened = PassthroughSubject<NoteLibrary, Never>()
 
-    static var known: [NoteLibrary] { Array(libraries.values) + Array(shallowLibraries.values) }
+    package static var known: [NoteLibrary] { Array(libraries.values) + Array(shallowLibraries.values) }
 
-    static var defaultFolder: URL {
+    package static var defaultFolder: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Parc Notes", isDirectory: true)
     }
 
-    static func shared(folder: URL) -> NoteLibrary {
+    package static func shared(folder: URL) -> NoteLibrary {
         let canonical = NoteFilePaths.canonical(folder)
         let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
         if let existing = libraries[key] { return existing }
@@ -56,7 +67,7 @@ final class NoteLibrary {
         return library
     }
 
-    static func browsing(_ folder: URL) -> NoteLibrary {
+    package static func browsing(_ folder: URL) -> NoteLibrary {
         let canonical = NoteFilePaths.canonical(folder)
         let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
         if let existing = libraries[key] ?? shallowLibraries[key] { return existing }
@@ -65,7 +76,7 @@ final class NoteLibrary {
         return library
     }
 
-    static func library(for note: URL) -> NoteLibrary {
+    package static func library(for note: URL) -> NoteLibrary {
         let containing = libraries.values.filter { $0.contains(note) }
         if let deepest = containing.max(by: { $0.folder.path.count < $1.folder.path.count }) { return deepest }
         let parent = NoteFilePaths.canonical(note.deletingLastPathComponent())
@@ -77,7 +88,7 @@ final class NoteLibrary {
         return library
     }
 
-    static func trash(_ url: URL) throws {
+    package static func trash(_ url: URL) throws {
         let session = NoteFileSession.session(for: url)
         try? session?.flush()
         let file = NoteFilePaths.canonical(url)
@@ -86,7 +97,7 @@ final class NoteLibrary {
         invalidateLibraries(containing: [file])
     }
 
-    static func rename(_ url: URL, to title: String) throws -> URL {
+    package static func rename(_ url: URL, to title: String) throws -> URL {
         if let session = NoteFileSession.session(for: url) {
             let original = session.url
             let renamed = try session.rename(to: title)
@@ -103,11 +114,11 @@ final class NoteLibrary {
         return renamed
     }
 
-    static func noteDidMove(from source: URL, to destination: URL) {
+    package static func noteDidMove(from source: URL, to destination: URL) {
         NoteBacklinkIndex.shared.noteMoved(from: source, to: destination)
     }
 
-    static func filesRewritten(_ urls: [URL]) {
+    package static func filesRewritten(_ urls: [URL]) {
         invalidateLibraries(containing: urls.map(NoteFilePaths.canonical))
     }
 
@@ -118,10 +129,10 @@ final class NoteLibrary {
         }
     }
 
-    let folder: URL
-    let isRecursive: Bool
-    let changes = PassthroughSubject<Void, Never>()
-    let listingChanges = PassthroughSubject<Void, Never>()
+    package let folder: URL
+    package let isRecursive: Bool
+    package let changes = PassthroughSubject<Void, Never>()
+    package let listingChanges = PassthroughSubject<Void, Never>()
 
     private var entries: [String: Entry] = [:]
     private var hasListing = false
@@ -145,18 +156,18 @@ final class NoteLibrary {
         if watcher != nil, FileManager.default.isReadableFile(atPath: folder.path) { scan() }
     }
 
-    func contains(_ url: URL) -> Bool {
+    package func contains(_ url: URL) -> Bool {
         guard url.isFileURL, NoteFilePaths.contains(folder: folder, item: url) else { return false }
         guard !isRecursive else { return true }
         let parent = NoteFilePaths.canonical(url).deletingLastPathComponent().path
         return NoteFilePaths.identityKey(ofCanonicalPath: parent) == NoteFilePaths.identityKey(ofCanonicalPath: folder.path)
     }
 
-    func createNote(title: String? = nil) throws -> URL {
+    package func createNote(title: String? = nil) throws -> URL {
         try Self.createNote(in: folder, title: title)
     }
 
-    static func createNote(in folder: URL, title: String?) throws -> URL {
+    package static func createNote(in folder: URL, title: String?) throws -> URL {
         let directory = NoteFilePaths.canonical(folder)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var base = NoteFileNaming.sanitizedTitle(title ?? "")
@@ -174,12 +185,12 @@ final class NoteLibrary {
         throw NoteFileError.nameTaken(base)
     }
 
-    func notes() throws -> [NoteReference] {
+    package func notes() throws -> [NoteReference] {
         try refreshListing()
         return Self.newestFirst(Array(entries.values)).map(\.reference)
     }
 
-    func search(_ query: String, limit: Int) -> [NoteReference] {
+    package func search(_ query: String, limit: Int) -> [NoteReference] {
         guard limit > 0 else { return [] }
         do { try refreshListing() } catch { return [] }
         wantsContents = true
@@ -187,11 +198,11 @@ final class NoteLibrary {
         return Self.rank(query, entries: Array(entries.values), contents: contents, limit: limit).map(\.reference)
     }
 
-    func notes(withSyncedOriginal anchor: String) -> [URL] {
+    package func notes(withSyncedOriginal anchor: String) -> [URL] {
         syncedNotes(matching: ["synced id=\"" + anchor + "\""])
     }
 
-    func notes(mentioningSynced anchor: String) -> [URL] {
+    package func notes(mentioningSynced anchor: String) -> [URL] {
         syncedNotes(matching: ["synced id=\"" + anchor + "\"", "#" + anchor + "\""])
     }
 
@@ -208,18 +219,18 @@ final class NoteLibrary {
         }.sorted { $0.path < $1.path }
     }
 
-    func snippet(for url: URL) -> String? {
+    package func snippet(for url: URL) -> String? {
         let file = NoteFilePaths.canonical(url)
         if let entry = entries[file.path], entry.summarized { return entry.snippet }
         guard let kind = NoteFileKind(url: file), NoteFilePaths.isOpenableFile(file) else { return nil }
         return NoteFileSummary.read(file, kind: kind).snippet
     }
 
-    func refresh() {
+    package func refresh() {
         folderChanged(events: [], broad: true)
     }
 
-    func listedEntries() -> [Entry]? {
+    package func listedEntries() -> [Entry]? {
         if !(listingIsCurrent && watcher != nil) {
             guard NoteFilePaths.isDirectory(folder) else { return hasListing ? Array(entries.values) : [] }
             startWatchingIfNeeded()
@@ -382,11 +393,11 @@ final class NoteLibrary {
         }
     }
 
-    nonisolated static func scan(folder: URL, recursive: Bool, previous: [String: Entry]) -> [String: Entry] {
+    package nonisolated static func scan(folder: URL, recursive: Bool, previous: [String: Entry]) -> [String: Entry] {
         summarize(list(folder: folder, recursive: recursive, previous: previous))
     }
 
-    nonisolated static func summarize(_ entries: [String: Entry]) -> [String: Entry] {
+    package nonisolated static func summarize(_ entries: [String: Entry]) -> [String: Entry] {
         var result = entries
         for (key, entry) in entries where !entry.summarized {
             guard let kind = NoteFileKind(url: entry.url) else { continue }
@@ -398,7 +409,7 @@ final class NoteLibrary {
         return result
     }
 
-    nonisolated static func entry(at url: URL, previous: Entry?) -> Entry? {
+    package nonisolated static func entry(at url: URL, previous: Entry?) -> Entry? {
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
         guard NoteFileKind(url: url) != nil, let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true else { return nil }
         let modifiedAt = values.contentModificationDate ?? .distantPast
@@ -407,7 +418,7 @@ final class NoteLibrary {
         return unsummarized(url, modifiedAt: modifiedAt, size: size, previous: previous)
     }
 
-    nonisolated static func carryingSummary(into entry: Entry, from departed: [Entry]) -> Entry {
+    package nonisolated static func carryingSummary(into entry: Entry, from departed: [Entry]) -> Entry {
         guard !entry.summarized, entry.snippet.isEmpty, entry.icon == nil,
               let twin = departed.first(where: { $0.modifiedAt == entry.modifiedAt && $0.size == entry.size }) else { return entry }
         var carried = entry
@@ -423,7 +434,7 @@ final class NoteLibrary {
                      foldedTitle: fold(title), summarized: false)
     }
 
-    nonisolated static func list(folder: URL, recursive: Bool, previous: [String: Entry], budget: Int = .max) -> [String: Entry] {
+    package nonisolated static func list(folder: URL, recursive: Bool, previous: [String: Entry], budget: Int = .max) -> [String: Entry] {
         let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey, .isPackageKey, .contentModificationDateKey, .fileSizeKey]
         var options: FileManager.DirectoryEnumerationOptions = [.skipsHiddenFiles, .skipsPackageDescendants]
         if !recursive { options.insert(.skipsSubdirectoryDescendants) }
@@ -455,7 +466,7 @@ final class NoteLibrary {
         return result
     }
 
-    nonisolated static func index(_ entries: [Entry], previous: [String: IndexedContent]) -> [String: IndexedContent] {
+    package nonisolated static func index(_ entries: [Entry], previous: [String: IndexedContent]) -> [String: IndexedContent] {
         var result: [String: IndexedContent] = [:]
         for entry in entries {
             let key = entry.url.path
@@ -470,22 +481,22 @@ final class NoteLibrary {
         return result
     }
 
-    nonisolated static func fold(_ text: String) -> String {
+    package nonisolated static func fold(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
     }
 
-    nonisolated static func newestFirst(_ entries: [Entry]) -> [Entry] {
+    package nonisolated static func newestFirst(_ entries: [Entry]) -> [Entry] {
         entries.sorted { isNewer($0, than: $1) }
     }
 
-    nonisolated static func isNewer(_ first: Entry, than second: Entry) -> Bool {
+    package nonisolated static func isNewer(_ first: Entry, than second: Entry) -> Bool {
         if first.modifiedAt != second.modifiedAt { return first.modifiedAt > second.modifiedAt }
         let order = first.title.localizedStandardCompare(second.title)
         if order != .orderedSame { return order == .orderedAscending }
         return first.url.path < second.url.path
     }
 
-    nonisolated static func rank(_ query: String, entries: [Entry], contents: [String: IndexedContent], limit: Int) -> [Entry] {
+    package nonisolated static func rank(_ query: String, entries: [Entry], contents: [String: IndexedContent], limit: Int) -> [Entry] {
         let tokens = fold(query).split(whereSeparator: \.isWhitespace).map(String.init)
         guard !tokens.isEmpty else { return Array(newestFirst(entries).prefix(limit)) }
         let phrase = tokens.joined(separator: " ")

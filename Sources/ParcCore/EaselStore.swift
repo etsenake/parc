@@ -2,43 +2,43 @@ import Foundation
 import Combine
 import Darwin
 
-enum EaselItemKind: String, Codable, CaseIterable {
+package enum EaselItemKind: String, Codable, CaseIterable {
     case text, image, rectangle, circle, arrow, freehand, webCard, browser, link, sticky, section, table, code, stamp, video
 
-    var holdsText: Bool { self == .text || self == .sticky || self == .rectangle || self == .circle }
+    package var holdsText: Bool { self == .text || self == .sticky || self == .rectangle || self == .circle }
 }
 
-enum EaselShape: String, Codable, CaseIterable {
+package enum EaselShape: String, Codable, CaseIterable {
     case rectangle, roundedRectangle, ellipse, diamond, triangle, triangleDown, parallelogram, trapezoid,
          pentagon, hexagon, octagon, star, plus, speechBubble, arrowLeft, arrowRight, arrowUp, arrowDown,
          chevron, cylinder, parallelogramLeft, cylinderHorizontal, file, folder, document, documents,
          predefinedProcess, shield, manualInput, internalStorage, or, summingJunction
 }
 
-enum EaselStrokeDash: String, Codable, CaseIterable { case solid, dashed, dotted }
+package enum EaselStrokeDash: String, Codable, CaseIterable { case solid, dashed, dotted }
 
-enum EaselArrowHead: String, Codable, CaseIterable {
+package enum EaselArrowHead: String, Codable, CaseIterable {
     case none, arrow, triangle, circle, diamond, bar, solidArrow,
          erdOne, erdMany, erdExactlyOne, erdZeroOrOne, erdOneOrMore, erdZeroOrMore
 }
 
-enum EaselConnectorRouting: String, Codable, CaseIterable { case straight, elbow, curved }
+package enum EaselConnectorRouting: String, Codable, CaseIterable { case straight, elbow, curved }
 
-enum EaselBrush: String, Codable, CaseIterable { case marker, highlighter, washi }
+package enum EaselBrush: String, Codable, CaseIterable { case marker, highlighter, washi }
 
-enum EaselImageMask: String, Codable, CaseIterable { case rounded, circle, squircle, arch, diamond, hexagon, star, heart }
+package enum EaselImageMask: String, Codable, CaseIterable { case rounded, circle, squircle, arch, diamond, hexagon, star, heart }
 
-enum EaselAssetType: String, CaseIterable {
+package enum EaselAssetType: String, CaseIterable {
     case png, gif, mp4, mov
 
-    var isVideo: Bool { self == .mp4 || self == .mov }
+    package var isVideo: Bool { self == .mp4 || self == .mov }
 
-    static func of(assetID: String) -> EaselAssetType? {
+    package static func of(assetID: String) -> EaselAssetType? {
         guard let dot = assetID.lastIndex(of: ".") else { return nil }
         return EaselAssetType(rawValue: String(assetID[assetID.index(after: dot)...]))
     }
 
-    static func sniff(_ data: Data) -> EaselAssetType? {
+    package static func sniff(_ data: Data) -> EaselAssetType? {
         let head = [UInt8](data.prefix(64))
         if head.count >= 24, head.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]), Array(head[12..<16]) == Array("IHDR".utf8) { return .png }
         if head.count >= 13, head.starts(with: Array("GIF87a".utf8)) || head.starts(with: Array("GIF89a".utf8)) {
@@ -64,18 +64,18 @@ enum EaselAssetType: String, CaseIterable {
     private static let stillImageBrands: Set<String> = ["heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1", "avif", "avis"]
 }
 
-enum EaselStampDesign: String, CaseIterable { case plusOne, dot, heart, question, star, thumbsUp, thumbsDown, smiley }
+package enum EaselStampDesign: String, CaseIterable { case plusOne, dot, heart, question, star, thumbsUp, thumbsDown, smiley }
 
-enum EaselStampFace: Hashable {
+package enum EaselStampFace: Hashable {
     case design(EaselStampDesign)
     case emoji(String)
     case icon(String)
 
-    static let iconPrefix = "icon:"
-    static let maximumEmojiBytes = 64
-    static let maximumSymbolLength = 96
+    package static let iconPrefix = "icon:"
+    package static let maximumEmojiBytes = 64
+    package static let maximumSymbolLength = 96
 
-    init?(item: EaselItem) {
+    package init?(item: EaselItem) {
         guard item.kind == .stamp else { return nil }
         if let name = item.stamp {
             guard item.text.isEmpty, let design = EaselStampDesign(rawValue: name) else { return nil }
@@ -86,7 +86,7 @@ enum EaselStampFace: Hashable {
         }
     }
 
-    init?(text: String) {
+    package init?(text: String) {
         if text.hasPrefix(Self.iconPrefix) {
             let name = String(text.dropFirst(Self.iconPrefix.count))
             guard Self.isSymbolName(name) else { return nil }
@@ -97,7 +97,7 @@ enum EaselStampFace: Hashable {
         }
     }
 
-    init?(token: String) {
+    package init?(token: String) {
         guard let colon = token.firstIndex(of: ":") else { return nil }
         let value = String(token[token.index(after: colon)...])
         switch String(token[..<colon]) {
@@ -115,7 +115,7 @@ enum EaselStampFace: Hashable {
         }
     }
 
-    var token: String {
+    package var token: String {
         switch self {
         case .design(let design): return "stamp:" + design.rawValue
         case .emoji(let character): return "emoji:" + character
@@ -123,12 +123,12 @@ enum EaselStampFace: Hashable {
         }
     }
 
-    var stamp: String? {
+    package var stamp: String? {
         if case .design(let design) = self { return design.rawValue }
         return nil
     }
 
-    var text: String {
+    package var text: String {
         switch self {
         case .design: return ""
         case .emoji(let character): return character
@@ -136,17 +136,17 @@ enum EaselStampFace: Hashable {
         }
     }
 
-    var isIcon: Bool {
+    package var isIcon: Bool {
         if case .icon = self { return true }
         return false
     }
 
-    func apply(to item: inout EaselItem) {
+    package func apply(to item: inout EaselItem) {
         item.stamp = stamp
         item.text = text
     }
 
-    init?(emoji text: String) {
+    package init?(emoji text: String) {
         var scalars = Array(text.unicodeScalars)
         if let first = scalars.first, !first.isASCII, first.properties.isEmoji, !first.properties.isEmojiPresentation,
            scalars.count == 1 || !Self.qualifies(scalars[1]) {
@@ -162,7 +162,7 @@ enum EaselStampFace: Hashable {
         scalar.value == 0xFE0F || (0x1F3FB...0x1F3FF).contains(scalar.value)
     }
 
-    static func isEmoji(_ text: String) -> Bool {
+    package static func isEmoji(_ text: String) -> Bool {
         guard !text.isEmpty, text.utf8.count <= maximumEmojiBytes, text.count == 1 else { return false }
         let scalars = Array(text.unicodeScalars)
         guard let first = scalars.first,
@@ -172,13 +172,13 @@ enum EaselStampFace: Hashable {
         return first.properties.isEmoji && scalars.count > 1 && qualifies(scalars[1])
     }
 
-    static func isSymbolName(_ name: String) -> Bool {
+    package static func isSymbolName(_ name: String) -> Bool {
         guard !name.isEmpty, name.utf8.count <= maximumSymbolLength, !name.hasPrefix("."), !name.hasSuffix("."),
               !name.contains("..") else { return false }
         return name.utf8.allSatisfy { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) || $0 == 46 }
     }
 
-    static func validationProblem(_ item: EaselItem) -> String? {
+    package static func validationProblem(_ item: EaselItem) -> String? {
         guard item.kind == .stamp else { return item.stamp == nil ? nil : "stamp face on a non-stamp object" }
         guard EaselStampFace(item: item) != nil else { return "stamp face" }
         guard item.points.isEmpty, item.url == nil, item.assetID == nil, item.richText == nil, item.textStyle == nil else {
@@ -188,40 +188,65 @@ enum EaselStampFace: Hashable {
     }
 }
 
-struct EaselConnection: Codable, Equatable {
-    enum Side: String, Codable, CaseIterable { case top, right, bottom, left }
-    var itemID: UUID
-    var side: Side?
-    var anchor: EaselPoint?
+package struct EaselConnection: Codable, Equatable {
+    package enum Side: String, Codable, CaseIterable { case top, right, bottom, left }
+    package var itemID: UUID
+    package var side: Side?
+    package var anchor: EaselPoint?
+
+    package init(itemID: UUID, side: Side? = nil, anchor: EaselPoint? = nil) {
+        self.itemID = itemID
+        self.side = side
+        self.anchor = anchor
+    }
 }
 
-struct EaselPoint: Codable, Equatable {
-    var x: Double
-    var y: Double
+package struct EaselPoint: Codable, Equatable {
+    package var x: Double
+    package var y: Double
+
+    package init(x: Double, y: Double) {
+        self.x = x
+        self.y = y
+    }
 }
 
-struct EaselRect: Codable, Equatable {
-    static let maximumCoordinate = 1_000_000.0
-    var x: Double
-    var y: Double
-    var width: Double
-    var height: Double
+package struct EaselRect: Codable, Equatable {
+    package static let maximumCoordinate = 1_000_000.0
+    package var x: Double
+    package var y: Double
+    package var width: Double
+    package var height: Double
+
+    package init(x: Double, y: Double, width: Double, height: Double) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
 }
 
-struct EaselScrollContainer: Codable, Equatable {
-    static let maximumCount = 8
+package struct EaselScrollContainer: Codable, Equatable {
+    package static let maximumCount = 8
 
-    var anchorID: String?
-    var path: String
-    var scroll: EaselPoint
-    var frame: EaselRect
+    package var anchorID: String?
+    package var path: String
+    package var scroll: EaselPoint
+    package var frame: EaselRect
 
-    var isValid: Bool {
+    package init(anchorID: String? = nil, path: String, scroll: EaselPoint, frame: EaselRect) {
+        self.anchorID = anchorID
+        self.path = path
+        self.scroll = scroll
+        self.frame = frame
+    }
+
+    package var isValid: Bool {
         [scroll.x, scroll.y, frame.x, frame.y, frame.width, frame.height].allSatisfy { $0.isFinite && abs($0) <= 1_000_000 }
             && frame.width >= 0 && frame.height >= 0 && (anchorID.map(Self.isValidAnchor) ?? true) && Self.isValidPath(path)
     }
 
-    static func isValidAnchor(_ id: String) -> Bool {
+    package static func isValidAnchor(_ id: String) -> Bool {
         guard let first = id.unicodeScalars.first, id.utf8.count <= 128, first.isASCII, CharacterSet.letters.contains(first) else { return false }
         var digits = 0
         for scalar in id.unicodeScalars {
@@ -232,7 +257,7 @@ struct EaselScrollContainer: Codable, Equatable {
         return true
     }
 
-    static func isValidPath(_ path: String) -> Bool {
+    package static func isValidPath(_ path: String) -> Bool {
         if path.isEmpty { return true }
         let steps = path.split(separator: ">", omittingEmptySubsequences: false)
         guard path.utf8.count <= 2048, steps.count <= 128 else { return false }
@@ -245,7 +270,7 @@ struct EaselScrollContainer: Codable, Equatable {
         }
     }
 
-    static func encode(_ containers: [EaselScrollContainer]) -> String {
+    package static func encode(_ containers: [EaselScrollContainer]) -> String {
         containers.map { container in
             [container.anchorID.map { "#" + $0 } ?? "-", container.path.isEmpty ? "-" : container.path,
              number([container.scroll.x, container.scroll.y]),
@@ -253,7 +278,7 @@ struct EaselScrollContainer: Codable, Equatable {
         }.joined(separator: ";")
     }
 
-    static func decode(_ text: String) -> [EaselScrollContainer]? {
+    package static func decode(_ text: String) -> [EaselScrollContainer]? {
         guard !text.isEmpty, text.utf8.count <= 24_576 else { return nil }
         let entries = text.split(separator: ";", omittingEmptySubsequences: false)
         guard entries.count <= maximumCount else { return nil }
@@ -285,13 +310,20 @@ struct EaselScrollContainer: Codable, Equatable {
     }
 }
 
-struct EaselCaptureLayout: Codable, Equatable {
-    var viewport: EaselPoint
-    var scroll: EaselPoint
-    var region: EaselRect
-    var scrollContainers: [EaselScrollContainer]? = nil
+package struct EaselCaptureLayout: Codable, Equatable {
+    package var viewport: EaselPoint
+    package var scroll: EaselPoint
+    package var region: EaselRect
+    package var scrollContainers: [EaselScrollContainer]? = nil
 
-    var isValid: Bool {
+    package init(viewport: EaselPoint, scroll: EaselPoint, region: EaselRect, scrollContainers: [EaselScrollContainer]? = nil) {
+        self.viewport = viewport
+        self.scroll = scroll
+        self.region = region
+        self.scrollContainers = scrollContainers
+    }
+
+    package var isValid: Bool {
         [viewport.x, viewport.y, scroll.x, scroll.y, region.x, region.y, region.width, region.height]
             .allSatisfy { $0.isFinite && abs($0) <= 1_000_000 }
             && viewport.x >= 1 && viewport.y >= 1 && viewport.x <= 16_384 && viewport.y <= 16_384
@@ -301,46 +333,62 @@ struct EaselCaptureLayout: Codable, Equatable {
     }
 }
 
-struct EaselTextStyle: Codable, Equatable {
-    enum Family: String, Codable, CaseIterable { case mono, fancy, hip, clean }
-    enum Size: String, Codable, CaseIterable {
+package struct EaselTextStyle: Codable, Equatable {
+    package enum Family: String, Codable, CaseIterable { case mono, fancy, hip, clean }
+    package enum Size: String, Codable, CaseIterable {
         case body, h2, h1, h0, ultra
-        var index: Int { Self.allCases.firstIndex(of: self)! }
-        func shifted(by delta: Int) -> Size { Self.allCases[min(4, max(0, index + delta))] }
+        package var index: Int { Self.allCases.firstIndex(of: self)! }
+        package func shifted(by delta: Int) -> Size { Self.allCases[min(4, max(0, index + delta))] }
     }
-    enum Fill: String, Codable { case none, contentHugging }
-    enum Alignment: String, Codable, CaseIterable { case left, center, right }
-    static let textScales = 0.25...8.0
-    static let customSizes: ClosedRange<Double> = 8...400
-    var fill: Fill?
-    var resolvedFill: Fill { fill ?? .none }
-    var alignment: Alignment?
-    var textScale: Double?
-    var family: Family = .clean
-    var size: Size = .body
-    var customSize: Double?
-    var autoWidth: Bool?
-    var presetPointSize: Double {
+    package enum Fill: String, Codable { case none, contentHugging }
+    package enum Alignment: String, Codable, CaseIterable { case left, center, right }
+    package static let textScales = 0.25...8.0
+    package static let customSizes: ClosedRange<Double> = 8...400
+    package var fill: Fill?
+    package var resolvedFill: Fill { fill ?? .none }
+    package var alignment: Alignment?
+    package var textScale: Double?
+    package var family: Family = .clean
+    package var size: Size = .body
+    package var customSize: Double?
+    package var autoWidth: Bool?
+    package var presetPointSize: Double {
         switch family {
         case .mono, .clean: return [15, 24, 44, 60, 80][size.index]
         case .fancy: return [16, 28, 48, 60, 80][size.index]
         case .hip: return [18, 21, 44, 60, 80][size.index]
         }
     }
-    var pointSize: Double { customSize ?? presetPointSize }
+    package var pointSize: Double { customSize ?? presetPointSize }
+
+    package init(fill: Fill? = nil, alignment: Alignment? = nil, textScale: Double? = nil, family: Family = .clean, size: Size = .body, customSize: Double? = nil, autoWidth: Bool? = nil) {
+        self.fill = fill
+        self.alignment = alignment
+        self.textScale = textScale
+        self.family = family
+        self.size = size
+        self.customSize = customSize
+        self.autoWidth = autoWidth
+    }
 }
 
-struct EaselMindMapLink: Codable, Equatable {
-    enum Side: String, Codable, CaseIterable { case left, right }
-    var parent: UUID?
-    var side: Side?
-    var collapsed: Bool?
+package struct EaselMindMapLink: Codable, Equatable {
+    package enum Side: String, Codable, CaseIterable { case left, right }
+    package var parent: UUID?
+    package var side: Side?
+    package var collapsed: Bool?
 
-    static func holdsNode(_ kind: EaselItemKind) -> Bool {
+    package init(parent: UUID? = nil, side: Side? = nil, collapsed: Bool? = nil) {
+        self.parent = parent
+        self.side = side
+        self.collapsed = collapsed
+    }
+
+    package static func holdsNode(_ kind: EaselItemKind) -> Bool {
         kind == .text || kind == .sticky || kind == .rectangle || kind == .circle
     }
 
-    static func validationProblem(_ item: EaselItem) -> String? {
+    package static func validationProblem(_ item: EaselItem) -> String? {
         guard let link = item.mindMap else { return nil }
         if item.kind == .arrow {
             return link.parent != nil && link.side == nil && link.collapsed == nil ? nil : "mind map branch"
@@ -350,100 +398,167 @@ struct EaselMindMapLink: Codable, Equatable {
     }
 }
 
-struct EaselItem: Codable, Identifiable, Equatable {
-    var id = UUID()
-    var kind: EaselItemKind
-    var frame: EaselRect
-    var zIndex: Int = 0
-    var movedToFrontAt: Date?
-    var text: String = ""
-    var textStyle: EaselTextStyle?
-    var richText: EaselRichText?
-    var resolvedTextStyle: EaselTextStyle { textStyle ?? EaselTextStyle() }
-    var url: String?
-    var assetID: String?
-    var color: String = "#252525"
-    var points: [EaselPoint] = []
-    var capturedAt: Date?
-    var captureLayout: EaselCaptureLayout?
-    var liveCapture: Bool?
-    var shape: EaselShape?
-    var fill: String?
-    var fillOpacity: Double?
-    var strokeWidth: Double?
-    var strokeDash: EaselStrokeDash?
-    var startHead: EaselArrowHead?
-    var endHead: EaselArrowHead?
-    var routing: EaselConnectorRouting?
-    var startConnection: EaselConnection?
-    var endConnection: EaselConnection?
-    var groupID: UUID?
-    var locked: Bool?
-    var rotation: Double?
-    var flipHorizontal: Bool?
-    var flipVertical: Bool?
-    var labelPosition: Double?
-    var labelBackground: Bool?
-    var waypoints: [EaselPoint]?
-    var brush: EaselBrush?
-    var pattern: String?
-    var attachedTo: UUID?
-    var contentsHidden: Bool?
-    var crop: EaselRect?
-    var mask: EaselImageMask?
-    var altText: String?
-    var quarterTurns: Int?
-    var table: EaselTable?
-    var language: String?
-    var stamp: String?
-    var poster: String?
-    var mindMap: EaselMindMapLink?
-    var page: UUID?
-    var ownsEmbeddedPage: Bool { kind == .browser || (kind == .webCard && captureLayout != nil && liveCapture == true) }
-    var resolvedShape: EaselShape? {
+package struct EaselItem: Codable, Identifiable, Equatable {
+    package var id = UUID()
+    package var kind: EaselItemKind
+    package var frame: EaselRect
+    package var zIndex: Int = 0
+    package var movedToFrontAt: Date?
+    package var text: String = ""
+    package var textStyle: EaselTextStyle?
+    package var richText: EaselRichText?
+    package var resolvedTextStyle: EaselTextStyle { textStyle ?? EaselTextStyle() }
+    package var url: String?
+    package var assetID: String?
+    package var color: String = "#252525"
+    package var points: [EaselPoint] = []
+    package var capturedAt: Date?
+    package var captureLayout: EaselCaptureLayout?
+    package var liveCapture: Bool?
+    package var shape: EaselShape?
+    package var fill: String?
+    package var fillOpacity: Double?
+    package var strokeWidth: Double?
+    package var strokeDash: EaselStrokeDash?
+    package var startHead: EaselArrowHead?
+    package var endHead: EaselArrowHead?
+    package var routing: EaselConnectorRouting?
+    package var startConnection: EaselConnection?
+    package var endConnection: EaselConnection?
+    package var groupID: UUID?
+    package var locked: Bool?
+    package var rotation: Double?
+    package var flipHorizontal: Bool?
+    package var flipVertical: Bool?
+    package var labelPosition: Double?
+    package var labelBackground: Bool?
+    package var waypoints: [EaselPoint]?
+    package var brush: EaselBrush?
+    package var pattern: String?
+    package var attachedTo: UUID?
+    package var contentsHidden: Bool?
+    package var crop: EaselRect?
+    package var mask: EaselImageMask?
+    package var altText: String?
+    package var quarterTurns: Int?
+    package var table: EaselTable?
+    package var language: String?
+    package var stamp: String?
+    package var poster: String?
+    package var mindMap: EaselMindMapLink?
+    package var page: UUID?
+    package var ownsEmbeddedPage: Bool { kind == .browser || (kind == .webCard && captureLayout != nil && liveCapture == true) }
+    package var resolvedShape: EaselShape? {
         switch kind {
         case .rectangle: return shape ?? .rectangle
         case .circle: return .ellipse
         default: return nil
         }
     }
-    var isLocked: Bool { locked == true }
-    var resolvedRotation: Double { rotation ?? 0 }
-    var resolvedStartHead: EaselArrowHead { startHead ?? .none }
-    var resolvedEndHead: EaselArrowHead { endHead ?? .arrow }
-    var resolvedRouting: EaselConnectorRouting { routing ?? .straight }
-    var resolvedBrush: EaselBrush { brush ?? .marker }
-    var resolvedLabelPosition: Double { labelPosition ?? 0.5 }
-    var resolvedQuarterTurns: Int { quarterTurns ?? 0 }
-    static func isValidLanguage(_ value: String) -> Bool {
+    package var isLocked: Bool { locked == true }
+    package var resolvedRotation: Double { rotation ?? 0 }
+    package var resolvedStartHead: EaselArrowHead { startHead ?? .none }
+    package var resolvedEndHead: EaselArrowHead { endHead ?? .arrow }
+    package var resolvedRouting: EaselConnectorRouting { routing ?? .straight }
+    package var resolvedBrush: EaselBrush { brush ?? .marker }
+    package var resolvedLabelPosition: Double { labelPosition ?? 0.5 }
+    package var resolvedQuarterTurns: Int { quarterTurns ?? 0 }
+
+    package init(id: UUID = UUID(), kind: EaselItemKind, frame: EaselRect, zIndex: Int = 0, movedToFrontAt: Date? = nil, text: String = "", textStyle: EaselTextStyle? = nil, richText: EaselRichText? = nil, url: String? = nil, assetID: String? = nil, color: String = "#252525", points: [EaselPoint] = [], capturedAt: Date? = nil, captureLayout: EaselCaptureLayout? = nil, liveCapture: Bool? = nil, shape: EaselShape? = nil, fill: String? = nil, fillOpacity: Double? = nil, strokeWidth: Double? = nil, strokeDash: EaselStrokeDash? = nil, startHead: EaselArrowHead? = nil, endHead: EaselArrowHead? = nil, routing: EaselConnectorRouting? = nil, startConnection: EaselConnection? = nil, endConnection: EaselConnection? = nil, groupID: UUID? = nil, locked: Bool? = nil, rotation: Double? = nil, flipHorizontal: Bool? = nil, flipVertical: Bool? = nil, labelPosition: Double? = nil, labelBackground: Bool? = nil, waypoints: [EaselPoint]? = nil, brush: EaselBrush? = nil, pattern: String? = nil, attachedTo: UUID? = nil, contentsHidden: Bool? = nil, crop: EaselRect? = nil, mask: EaselImageMask? = nil, altText: String? = nil, quarterTurns: Int? = nil, table: EaselTable? = nil, language: String? = nil, stamp: String? = nil, poster: String? = nil, mindMap: EaselMindMapLink? = nil, page: UUID? = nil) {
+        self.id = id
+        self.kind = kind
+        self.frame = frame
+        self.zIndex = zIndex
+        self.movedToFrontAt = movedToFrontAt
+        self.text = text
+        self.textStyle = textStyle
+        self.richText = richText
+        self.url = url
+        self.assetID = assetID
+        self.color = color
+        self.points = points
+        self.capturedAt = capturedAt
+        self.captureLayout = captureLayout
+        self.liveCapture = liveCapture
+        self.shape = shape
+        self.fill = fill
+        self.fillOpacity = fillOpacity
+        self.strokeWidth = strokeWidth
+        self.strokeDash = strokeDash
+        self.startHead = startHead
+        self.endHead = endHead
+        self.routing = routing
+        self.startConnection = startConnection
+        self.endConnection = endConnection
+        self.groupID = groupID
+        self.locked = locked
+        self.rotation = rotation
+        self.flipHorizontal = flipHorizontal
+        self.flipVertical = flipVertical
+        self.labelPosition = labelPosition
+        self.labelBackground = labelBackground
+        self.waypoints = waypoints
+        self.brush = brush
+        self.pattern = pattern
+        self.attachedTo = attachedTo
+        self.contentsHidden = contentsHidden
+        self.crop = crop
+        self.mask = mask
+        self.altText = altText
+        self.quarterTurns = quarterTurns
+        self.table = table
+        self.language = language
+        self.stamp = stamp
+        self.poster = poster
+        self.mindMap = mindMap
+        self.page = page
+    }
+    package static func isValidLanguage(_ value: String) -> Bool {
         (1...32).contains(value.utf8.count)
             && value.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.lowercaseLetters.contains($0) || CharacterSet.decimalDigits.contains($0) || $0 == "-") }
     }
 }
 
-struct EaselDocument: Codable, Identifiable, Equatable {
-    static let currentVersion = 1
-    var version: Int = currentVersion
-    var id: UUID
-    var title: String
-    var createdAt: Date
-    var modifiedAt: Date
-    var items: [EaselItem] = []
-    var pages: [EaselPage]?
+package struct EaselDocument: Codable, Identifiable, Equatable {
+    package static let currentVersion = 1
+    package var version: Int = currentVersion
+    package var id: UUID
+    package var title: String
+    package var createdAt: Date
+    package var modifiedAt: Date
+    package var items: [EaselItem] = []
+    package var pages: [EaselPage]?
+
+    package init(version: Int = currentVersion, id: UUID, title: String, createdAt: Date, modifiedAt: Date, items: [EaselItem] = [], pages: [EaselPage]? = nil) {
+        self.version = version
+        self.id = id
+        self.title = title
+        self.createdAt = createdAt
+        self.modifiedAt = modifiedAt
+        self.items = items
+        self.pages = pages
+    }
 }
 
-struct EaselSummary: Identifiable, Equatable {
-    var id: UUID
-    var title: String
-    var modifiedAt: Date
-    var itemCount: Int
+package struct EaselSummary: Identifiable, Equatable {
+    package var id: UUID
+    package var title: String
+    package var modifiedAt: Date
+    package var itemCount: Int
+
+    package init(id: UUID, title: String, modifiedAt: Date, itemCount: Int) {
+        self.id = id
+        self.title = title
+        self.modifiedAt = modifiedAt
+        self.itemCount = itemCount
+    }
 }
 
-enum EaselStoreError: Error, LocalizedError {
+package enum EaselStoreError: Error, LocalizedError {
     case invalidDocument(String), unsupportedVersion(Int), unsafePath, invalidImage, tooLarge, invalidVideo, videoTooLarge
     case missingDocument, deletedDocument, closedDocument, browserInUse
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .invalidDocument(let reason): return "The Easel is invalid: \(reason)."
         case .unsupportedVersion(let version): return "This Easel uses unsupported format version \(version)."
@@ -461,23 +576,23 @@ enum EaselStoreError: Error, LocalizedError {
 }
 
 extension Notification.Name {
-    static let easelDocumentRemoved = Notification.Name("ParcEaselDocumentRemoved")
+    package static let easelDocumentRemoved = Notification.Name("ParcEaselDocumentRemoved")
 }
 
 @MainActor
-final class EaselStore {
-    static let maximumAssetBytes = 30 * 1024 * 1024
-    static let maximumDocumentBytes = 8 * 1024 * 1024
-    let directory: URL
+package final class EaselStore {
+    package static let maximumAssetBytes = 30 * 1024 * 1024
+    package static let maximumDocumentBytes = 8 * 1024 * 1024
+    package let directory: URL
     private let now: () -> Date
     private var sessions: [UUID: WeakSession] = [:]
-    var documentsDirectory: URL { directory.appendingPathComponent("documents", isDirectory: true) }
+    package var documentsDirectory: URL { directory.appendingPathComponent("documents", isDirectory: true) }
     private var assetsDirectory: URL { directory.appendingPathComponent("assets", isDirectory: true) }
     private let documentWriter = EaselDocumentWriter()
-    var onSessionCreated: ((EaselSession) -> Void)?
-    var onDocumentRemoved: ((UUID) -> Void)?
+    package var onSessionCreated: ((EaselSession) -> Void)?
+    package var onDocumentRemoved: ((UUID) -> Void)?
 
-    init(directory: URL, now: @escaping () -> Date = Date.init) throws {
+    package init(directory: URL, now: @escaping () -> Date = Date.init) throws {
         self.directory = directory.standardizedFileURL
         self.now = now
         guard self.directory.isFileURL else { throw EaselStoreError.unsafePath }
@@ -491,7 +606,7 @@ final class EaselStore {
         }
     }
 
-    func list() throws -> [EaselSummary] {
+    package func list() throws -> [EaselSummary] {
         try checkDirectories()
         return try FileManager.default.contentsOfDirectory(at: documentsDirectory,
                     includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
@@ -505,25 +620,25 @@ final class EaselStore {
             .sorted { $0.modifiedAt == $1.modifiedAt ? $0.id.uuidString < $1.id.uuidString : $0.modifiedAt > $1.modifiedAt }
     }
 
-    func create(title: String = "Untitled Easel") throws -> EaselSession {
+    package func create(title: String = "Untitled Easel") throws -> EaselSession {
         let date = now()
         let document = EaselDocument(id: UUID(), title: title, createdAt: date, modifiedAt: date)
         try persist(document)
         return session(document)
     }
 
-    func load(_ id: UUID) throws -> EaselSession {
+    package func load(_ id: UUID) throws -> EaselSession {
         if let session = sessions[id]?.value { return session }
         return session(try read(id))
     }
 
-    func validateReference(_ id: UUID) throws {
+    package func validateReference(_ id: UUID) throws {
         let saved = try read(id)
         if let live = sessions[id]?.value, live.document != saved {
             throw EaselStoreError.invalidDocument("the shared document changed outside its session")
         }
     }
-    func delete(_ id: UUID) throws {
+    package func delete(_ id: UUID) throws {
         try checkDirectories()
         let url = documentURL(id)
         try ensureRegularFile(url)
@@ -575,7 +690,7 @@ final class EaselStore {
         return url
     }
 
-    func relocate(_ id: UUID, to destination: EaselStore) throws -> [String] {
+    package func relocate(_ id: UUID, to destination: EaselStore) throws -> [String] {
         guard destination !== self, sessions[id]?.value == nil, destination.sessions[id]?.value == nil else {
             throw EaselStoreError.invalidDocument("the document is open")
         }
@@ -611,7 +726,7 @@ final class EaselStore {
         return copied
     }
 
-    func retireSessionForRelocation(_ id: UUID) throws {
+    package func retireSessionForRelocation(_ id: UUID) throws {
         guard let current = sessions[id]?.value else { return }
         try current.validateReplacement(nil)
         guard current.document == (try read(id)) else {
@@ -621,7 +736,7 @@ final class EaselStore {
         current.markClosed()
     }
 
-    func removeAssets(_ ids: [String]) {
+    package func removeAssets(_ ids: [String]) {
         for asset in ids { try? FileManager.default.removeItem(at: assetsDirectory.appendingPathComponent(asset)) }
         if !ids.isEmpty { syncDirectory(assetsDirectory) }
     }
@@ -644,7 +759,7 @@ final class EaselStore {
         return document
     }
 
-    static func repairingDuplicateIDs(_ document: EaselDocument) -> EaselDocument {
+    package static func repairingDuplicateIDs(_ document: EaselDocument) -> EaselDocument {
         let taken = Set(document.items.map(\.id))
         guard taken.count != document.items.count else { return document }
         var next = document, seen = Set<UUID>()
@@ -665,9 +780,9 @@ final class EaselStore {
         return next
     }
 
-    static let maximumStackIndex = 1_000_000_000
+    package static let maximumStackIndex = 1_000_000_000
 
-    static func repairingStackOrder(_ document: EaselDocument) -> EaselDocument {
+    package static func repairingStackOrder(_ document: EaselDocument) -> EaselDocument {
         guard document.items.contains(where: { $0.zIndex > maximumStackIndex || $0.zIndex < -maximumStackIndex }) else { return document }
         var next = document
         let order = document.items.indices.sorted { (document.items[$0].zIndex, $0) < (document.items[$1].zIndex, $1) }
@@ -924,10 +1039,10 @@ private final class EaselDocumentWriter: @unchecked Sendable {
 }
 
 @MainActor
-final class EaselSession: ObservableObject {
-    @Published private(set) var document: EaselDocument
-    @Published private(set) var canUndo = false
-    @Published private(set) var canRedo = false
+package final class EaselSession: ObservableObject {
+    @Published package private(set) var document: EaselDocument
+    @Published package private(set) var canUndo = false
+    @Published package private(set) var canRedo = false
     private let store: EaselStore?
     private var memoryAssets: [String: Data] = [:]
     private static let maximumMemoryAssetBytes = 256 * 1024 * 1024
@@ -935,16 +1050,16 @@ final class EaselSession: ObservableObject {
     private var redoStack: [EaselDocument] = []
     private var deleted = false
     private var closed = false
-    var isClosed: Bool { closed }
-    var isDeleted: Bool { deleted }
+    package var isClosed: Bool { closed }
+    package var isDeleted: Bool { deleted }
     private var lastUndoGroup: UUID?
     private var replacementGuards: [UUID: (EaselDocument?) -> Bool] = [:]
-    var undoDestination: EaselDocument? { undoStack.last }
-    var redoDestination: EaselDocument? { redoStack.last }
-    func observeReplacement(_ guardChange: @escaping (EaselDocument?) -> Bool) -> UUID {
+    package var undoDestination: EaselDocument? { undoStack.last }
+    package var redoDestination: EaselDocument? { redoStack.last }
+    package func observeReplacement(_ guardChange: @escaping (EaselDocument?) -> Bool) -> UUID {
         let token = UUID(); replacementGuards[token] = guardChange; return token
     }
-    func removeReplacementObserver(_ token: UUID) { replacementGuards.removeValue(forKey: token) }
+    package func removeReplacementObserver(_ token: UUID) { replacementGuards.removeValue(forKey: token) }
     fileprivate func validateReplacement(_ next: EaselDocument?) throws {
         guard replacementGuards.values.allSatisfy({ $0(next) }) else { throw EaselStoreError.browserInUse }
     }
@@ -954,12 +1069,12 @@ final class EaselSession: ObservableObject {
         self.document = document
     }
 
-    init(inMemory document: EaselDocument, assets: [String: Data]) throws {
+    package init(inMemory document: EaselDocument, assets: [String: Data]) throws {
         store = nil; self.document = document; memoryAssets = assets
         try persist(document)
     }
 
-    var inMemoryAssets: [String: Data] { memoryAssets }
+    package var inMemoryAssets: [String: Data] { memoryAssets }
     private func persist(_ document: EaselDocument) throws {
         try requireWritable()
         if let store { try store.persist(document); return }
@@ -970,13 +1085,13 @@ final class EaselSession: ObservableObject {
         guard try JSONEncoder().encode(document).count <= EaselStore.maximumDocumentBytes else { throw EaselStoreError.tooLarge }
     }
 
-    func assetData(_ id: String) throws -> Data {
+    package func assetData(_ id: String) throws -> Data {
         if let store { return try Data(contentsOf: store.assetURL(id)) }
         guard let data = memoryAssets[id] else { throw EaselStoreError.invalidImage }
         return data
     }
 
-    func perform(_ name: String, coalescing group: UUID? = nil, _ mutation: (inout EaselDocument) throws -> Void) throws {
+    package func perform(_ name: String, coalescing group: UUID? = nil, _ mutation: (inout EaselDocument) throws -> Void) throws {
         try requireWritable()
         var next = document
         try mutation(&next)
@@ -1000,12 +1115,12 @@ final class EaselSession: ObservableObject {
     }
 
     private var recordingBrowserURL: (id: UUID, from: String, to: String)?
-    func isRecordingBrowserNavigation(_ id: UUID, from: String, to: String) -> Bool {
+    package func isRecordingBrowserNavigation(_ id: UUID, from: String, to: String) -> Bool {
         guard let change = recordingBrowserURL else { return false }
         return change.id == id && change.from == from && change.to == to
     }
     @discardableResult
-    func recordBrowserNavigation(_ url: URL, itemID: UUID, expectedURL: String) throws -> Bool {
+    package func recordBrowserNavigation(_ url: URL, itemID: UUID, expectedURL: String) throws -> Bool {
         try requireWritable()
         guard recordingBrowserURL == nil, ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
               let host = url.host, !host.isEmpty, url.user == nil, url.password == nil,
@@ -1028,7 +1143,7 @@ final class EaselSession: ObservableObject {
         return true
     }
 
-    func undo() throws {
+    package func undo() throws {
         lastUndoGroup = nil
         try requireWritable()
         guard var previous = undoStack.last else { return }
@@ -1041,7 +1156,7 @@ final class EaselSession: ObservableObject {
         updateHistoryState()
     }
 
-    func redo() throws {
+    package func redo() throws {
         lastUndoGroup = nil
         try requireWritable()
         guard var next = redoStack.last else { return }
@@ -1055,14 +1170,14 @@ final class EaselSession: ObservableObject {
         updateHistoryState()
     }
 
-    func save() throws {
+    package func save() throws {
         try requireWritable()
         try persist(document)
     }
 
-    func importPNG(_ data: Data) throws -> String { try importAsset(data, type: .png) }
+    package func importPNG(_ data: Data) throws -> String { try importAsset(data, type: .png) }
 
-    func importAsset(_ data: Data, type: EaselAssetType) throws -> String {
+    package func importAsset(_ data: Data, type: EaselAssetType) throws -> String {
         try requireWritable()
         if let store { return try store.importAsset(data, type: type) }
         try EaselStore.checkAsset(data, type: type)
@@ -1071,12 +1186,12 @@ final class EaselSession: ObservableObject {
         return id
     }
 
-    func assetURL(_ assetID: String) throws -> URL {
+    package func assetURL(_ assetID: String) throws -> URL {
         guard let store else { throw EaselStoreError.unsafePath }
         return try store.assetURL(assetID)
     }
 
-    func discardUnusedAssets(_ ids: [String]) {
+    package func discardUnusedAssets(_ ids: [String]) {
         let used = Set(([document] + undoStack + redoStack).flatMap { $0.items.flatMap { [$0.assetID, $0.poster].compactMap { $0 } } })
         let unused = ids.filter { !used.contains($0) }
         guard !unused.isEmpty else { return }

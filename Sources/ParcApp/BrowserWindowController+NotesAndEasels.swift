@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import ParcCore
+import ParcEngine
 
 extension BrowserWindowController {
     func openLocalNoteAddress(_ input: String, inPane tabID: UUID? = nil) -> Bool {

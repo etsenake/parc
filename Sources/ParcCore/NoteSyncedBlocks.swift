@@ -1,16 +1,16 @@
 import Combine
 import Foundation
 
-struct NoteSyncedGroup: Hashable {
-    var file: String
-    var anchor: String
+package struct NoteSyncedGroup: Hashable {
+    package var file: String
+    package var anchor: String
 }
 
-struct NoteSyncedReference: Equatable {
-    var path: String?
-    var anchor: String
+package struct NoteSyncedReference: Equatable {
+    package var path: String?
+    package var anchor: String
 
-    init?(_ target: String) {
+    package init?(_ target: String) {
         guard let hash = target.lastIndex(of: "#") else { return nil }
         let fragment = String(target[target.index(after: hash)...])
         let anchor = fragment.removingPercentEncoding ?? fragment
@@ -20,7 +20,7 @@ struct NoteSyncedReference: Equatable {
         self.anchor = anchor
     }
 
-    func url(relativeTo document: URL?) -> URL? {
+    package func url(relativeTo document: URL?) -> URL? {
         guard let path else { return document }
         if path.lowercased().hasPrefix("file:"), let url = URL(string: path), url.isFileURL {
             return URL(fileURLWithPath: url.path)
@@ -32,7 +32,7 @@ struct NoteSyncedReference: Equatable {
         return URL(fileURLWithPath: decoded, relativeTo: document.deletingLastPathComponent()).standardizedFileURL
     }
 
-    static func target(anchor: String, original: URL?, from document: URL?) -> String {
+    package static func target(anchor: String, original: URL?, from document: URL?) -> String {
         let fragment = "#" + NoteFilePaths.encodedSegment(anchor)
         guard let original else { return fragment }
         if let document, NoteFilePaths.key(for: document) == NoteFilePaths.key(for: original) { return fragment }
@@ -44,22 +44,31 @@ struct NoteSyncedReference: Equatable {
     }
 }
 
-struct NoteSyncedInfo: Equatable {
-    var isOriginal: Bool
-    var isMissing: Bool
-    var anchor: String?
-    var originalURL: URL?
-    var originalBlock: NoteBlockID?
-    var notes: [URL]
+package struct NoteSyncedInfo: Equatable {
+    package var isOriginal: Bool
+    package var isMissing: Bool
+    package var anchor: String?
+    package var originalURL: URL?
+    package var originalBlock: NoteBlockID?
+    package var notes: [URL]
+
+    package init(isOriginal: Bool, isMissing: Bool, anchor: String? = nil, originalURL: URL? = nil, originalBlock: NoteBlockID? = nil, notes: [URL]) {
+        self.isOriginal = isOriginal
+        self.isMissing = isMissing
+        self.anchor = anchor
+        self.originalURL = originalURL
+        self.originalBlock = originalBlock
+        self.notes = notes
+    }
 }
 
 @MainActor
-final class NoteSyncedLease {
+package final class NoteSyncedLease {
     nonisolated(unsafe) private var ending: (() -> Void)?
 
-    init(_ ending: @escaping () -> Void) { self.ending = ending }
+    package init(_ ending: @escaping () -> Void) { self.ending = ending }
 
-    func end() {
+    package func end() {
         let pending = ending
         ending = nil
         pending?()
@@ -72,20 +81,20 @@ final class NoteSyncedLease {
 }
 
 @MainActor
-final class NoteSyncedEdit {
+package final class NoteSyncedEdit {
     fileprivate weak var engine: NoteSyncedBlocks?
     fileprivate var groups: Set<NoteSyncedGroup> = []
     fileprivate var after: [NoteSyncedGroup: [NoteBlock]] = [:]
     fileprivate var leases: [NoteSyncedLease] = []
-    private(set) var isApplied = true
-    let name: String
+    package private(set) var isApplied = true
+    package let name: String
 
     fileprivate init(engine: NoteSyncedBlocks, name: String) {
         self.engine = engine
         self.name = name
     }
 
-    var owner: ObjectIdentifier { ObjectIdentifier(self) }
+    package var owner: ObjectIdentifier { ObjectIdentifier(self) }
 
     fileprivate func mark(applied: Bool) -> Bool {
         guard isApplied != applied else { return false }
@@ -93,7 +102,7 @@ final class NoteSyncedEdit {
         return true
     }
 
-    func effect(for session: NotePageSession) -> NoteUndoEffect {
+    package func effect(for session: NotePageSession) -> NoteUndoEffect {
         NoteUndoEffect(undo: { [weak session] in
             guard let session else { return }
             self.engine?.reverse(self, by: session)
@@ -103,7 +112,7 @@ final class NoteSyncedEdit {
         }, owner: owner)
     }
 
-    func reversal(for session: NotePageSession) -> NoteUndoEffect {
+    package func reversal(for session: NotePageSession) -> NoteUndoEffect {
         NoteUndoEffect(undo: { [weak session] in
             guard let session else { return }
             self.engine?.reapply(self, by: session)
@@ -115,12 +124,12 @@ final class NoteSyncedEdit {
 }
 
 @MainActor
-final class NoteSyncedUnsync {
+package final class NoteSyncedUnsync {
     fileprivate var leases: [NoteSyncedLease] = []
     fileprivate var sessions: [() -> NotePageSession?] = []
     private var isApplied = true
 
-    var owner: ObjectIdentifier { ObjectIdentifier(self) }
+    package var owner: ObjectIdentifier { ObjectIdentifier(self) }
 
     fileprivate func effect(for session: NotePageSession, retaining: Bool) -> NoteUndoEffect {
         if retaining {
@@ -142,10 +151,10 @@ final class NoteSyncedUnsync {
 }
 
 @MainActor
-final class NoteSyncedBlocks {
-    static let shared = NoteSyncedBlocks()
+package final class NoteSyncedBlocks {
+    package static let shared = NoteSyncedBlocks()
 
-    static let stepName = "Synced Edit"
+    package static let stepName = "Synced Edit"
 
     @MainActor
     fileprivate final class Document {
@@ -196,14 +205,14 @@ final class NoteSyncedBlocks {
         }
     }
 
-    let changes = PassthroughSubject<Void, Never>()
-    let retries = PassthroughSubject<Void, Never>()
-    var opener: @MainActor (URL) -> NoteSyncedLease? = { _ in nil }
-    var originalFinder: @MainActor (String, URL) -> [URL] = { _, _ in [] }
-    var noteFinder: @MainActor (String, URL) -> [URL] = { _, _ in [] }
-    var libraryChanges: @MainActor (URL) -> AnyPublisher<Void, Never>? = { _ in nil }
-    var usesNoteFiles = false
-    var closedCopyDelay: TimeInterval = 2
+    package let changes = PassthroughSubject<Void, Never>()
+    package let retries = PassthroughSubject<Void, Never>()
+    package var opener: @MainActor (URL) -> NoteSyncedLease? = { _ in nil }
+    package var originalFinder: @MainActor (String, URL) -> [URL] = { _, _ in [] }
+    package var noteFinder: @MainActor (String, URL) -> [URL] = { _, _ in [] }
+    package var libraryChanges: @MainActor (URL) -> AnyPublisher<Void, Never>? = { _ in nil }
+    package var usesNoteFiles = false
+    package var closedCopyDelay: TimeInterval = 2
     private var closedRefreshes: [NoteSyncedGroup: Int] = [:]
     private var documents: [ObjectIdentifier: Document] = [:]
     private var depth = 0
@@ -212,9 +221,9 @@ final class NoteSyncedBlocks {
     private var pendingRewrites: [(session: NotePageSession, block: NoteBlockID, change: (inout NoteBlock) -> Void)] = []
     private var announce = false
 
-    init() {}
+    package init() {}
 
-    func attach(_ session: NotePageSession, location: @escaping () -> URL?, isAvailable: @escaping () -> Bool = { true }) {
+    package func attach(_ session: NotePageSession, location: @escaping () -> URL?, isAvailable: @escaping () -> Bool = { true }) {
         let key = ObjectIdentifier(session)
         guard documents[key] == nil else { return }
         let document = Document(session: session, location: location, isAvailable: isAvailable)
@@ -230,15 +239,15 @@ final class NoteSyncedBlocks {
         }
     }
 
-    func detach(_ session: NotePageSession) {
+    package func detach(_ session: NotePageSession) {
         guard let document = documents.removeValue(forKey: ObjectIdentifier(session)) else { return }
         document.subscription = nil
         changes.send()
     }
 
-    func isAttached(_ session: NotePageSession) -> Bool { documents[ObjectIdentifier(session)] != nil }
+    package func isAttached(_ session: NotePageSession) -> Bool { documents[ObjectIdentifier(session)] != nil }
 
-    func availabilityChanged(_ session: NotePageSession) {
+    package func availabilityChanged(_ session: NotePageSession) {
         guard let document = documents[ObjectIdentifier(session)] else { return }
         batch {
             pendingReconcile.formUnion(groups(in: document))
@@ -246,9 +255,9 @@ final class NoteSyncedBlocks {
         }
     }
 
-    func url(of session: NotePageSession) -> URL? { documents[ObjectIdentifier(session)]?.url }
+    package func url(of session: NotePageSession) -> URL? { documents[ObjectIdentifier(session)]?.url }
 
-    func info(for id: NoteBlockID, in session: NotePageSession) -> NoteSyncedInfo? {
+    package func info(for id: NoteBlockID, in session: NotePageSession) -> NoteSyncedInfo? {
         guard let block = session.page.block(id), block.kind == .synced else { return nil }
         let document = documents[ObjectIdentifier(session)]
         let group = document.flatMap { group(of: block, in: $0) }
@@ -287,18 +296,18 @@ final class NoteSyncedBlocks {
         return found.map(\.url)
     }
 
-    func originalKey(for id: NoteBlockID, in session: NotePageSession) -> String? {
+    package func originalKey(for id: NoteBlockID, in session: NotePageSession) -> String? {
         guard let document = documents[ObjectIdentifier(session)], let block = session.page.block(id) else { return nil }
         return group(of: block, in: document)?.file
     }
 
-    func originalSession(for id: NoteBlockID, in session: NotePageSession) -> (session: NotePageSession, block: NoteBlockID)? {
+    package func originalSession(for id: NoteBlockID, in session: NotePageSession) -> (session: NotePageSession, block: NoteBlockID)? {
         guard let document = documents[ObjectIdentifier(session)], let block = session.page.block(id),
               let group = group(of: block, in: document), let found = original(of: group), let other = found.0.session else { return nil }
         return (other, found.1.id)
     }
 
-    func referencedOriginals(in session: NotePageSession) -> [(url: URL, anchor: String, resolved: Bool)] {
+    package func referencedOriginals(in session: NotePageSession) -> [(url: URL, anchor: String, resolved: Bool)] {
         guard let document = documents[ObjectIdentifier(session)] else { return [] }
         var result: [(url: URL, anchor: String, resolved: Bool)] = []
         var seenKeys = Set<NoteSyncedGroup>()
@@ -315,7 +324,7 @@ final class NoteSyncedBlocks {
         return result
     }
 
-    func reference(for id: NoteBlockID, in session: NotePageSession) -> NoteBlock? {
+    package func reference(for id: NoteBlockID, in session: NotePageSession) -> NoteBlock? {
         guard let block = session.page.block(id), block.kind == .synced else { return nil }
         let document = documents[ObjectIdentifier(session)]
         let here = document?.url
@@ -333,7 +342,7 @@ final class NoteSyncedBlocks {
     }
 
     @discardableResult
-    func unsyncAll(_ id: NoteBlockID, in session: NotePageSession) -> Int {
+    package func unsyncAll(_ id: NoteBlockID, in session: NotePageSession) -> Int {
         guard let block = session.page.block(id), block.isSyncedOriginal else { return 0 }
         guard let document = documents[ObjectIdentifier(session)], let group = group(of: block, in: document) else {
             session.unsync(id, name: "Unsync All")
@@ -372,23 +381,23 @@ final class NoteSyncedBlocks {
         return copies
     }
 
-    func hold(_ session: NotePageSession) -> NoteSyncedHold {
+    package func hold(_ session: NotePageSession) -> NoteSyncedHold {
         NoteSyncedHold(engine: self, session: session)
     }
 
-    func searchAgain() {
+    package func searchAgain() {
         retries.send()
         reconcileAll()
         changes.send()
     }
 
-    func reconcileAll() {
+    package func reconcileAll() {
         batch {
             for document in documents.values { pendingReconcile.formUnion(groups(in: document)) }
         }
     }
 
-    func batch(_ body: () -> Void) {
+    package func batch(_ body: () -> Void) {
         depth += 1
         body()
         depth -= 1
@@ -518,7 +527,7 @@ final class NoteSyncedBlocks {
         }
     }
 
-    func refreshClosedCopies(of group: NoteSyncedGroup) {
+    package func refreshClosedCopies(of group: NoteSyncedGroup) {
         closedRefreshes[group] = nil
         guard let found = original(of: group), let here = found.0.url else { return }
         let open = Set(documents.values.compactMap(\.key))
@@ -693,7 +702,7 @@ final class NoteSyncedBlocks {
         return NoteSyncedGroup(file: key, anchor: reference.anchor)
     }
 
-    static func mapped(_ blocks: [NoteBlock], key: NoteBlockID) -> [NoteBlock] {
+    package static func mapped(_ blocks: [NoteBlock], key: NoteBlockID) -> [NoteBlock] {
         blocks.map { block in
             var copy = block
             copy.id = mix(block.id, key)
@@ -703,7 +712,7 @@ final class NoteSyncedBlocks {
         }
     }
 
-    static func unmapped(_ blocks: [NoteBlock], key: NoteBlockID, restoringAnchorsFrom canonical: [NoteBlock]) -> [NoteBlock] {
+    package static func unmapped(_ blocks: [NoteBlock], key: NoteBlockID, restoringAnchorsFrom canonical: [NoteBlock]) -> [NoteBlock] {
         var anchors: [NoteBlockID: String] = [:]
         func collect(_ list: [NoteBlock]) {
             for block in list {
@@ -725,7 +734,7 @@ final class NoteSyncedBlocks {
         return walk(blocks)
     }
 
-    static func mix(_ id: NoteBlockID, _ key: NoteBlockID) -> NoteBlockID {
+    package static func mix(_ id: NoteBlockID, _ key: NoteBlockID) -> NoteBlockID {
         let a = id.raw.uuid, b = key.raw.uuid
         return NoteBlockID(UUID(uuid: (a.0 ^ b.0, a.1 ^ b.1, a.2 ^ b.2, a.3 ^ b.3, a.4 ^ b.4, a.5 ^ b.5, a.6 ^ b.6, a.7 ^ b.7,
                                        a.8 ^ b.8, a.9 ^ b.9, a.10 ^ b.10, a.11 ^ b.11, a.12 ^ b.12, a.13 ^ b.13, a.14 ^ b.14, a.15 ^ b.15)))
@@ -734,7 +743,7 @@ final class NoteSyncedBlocks {
 }
 
 extension NotePage {
-    func syncedSites() -> [NoteBlock] {
+    package func syncedSites() -> [NoteBlock] {
         var result: [NoteBlock] = []
         func walk(_ list: [NoteBlock]) {
             for block in list {

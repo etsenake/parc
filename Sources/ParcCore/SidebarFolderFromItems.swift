@@ -1,25 +1,36 @@
 import Foundation
 
-struct SidebarFolderFromItems: Equatable {
-    static let defaultName = "Untitled"
-    static let undoName = "New Folder…"
+package struct SidebarFolderFromItems: Equatable {
+    package static let defaultName = "Untitled"
+    package static let undoName = "New Folder…"
 
-    struct Placement: Equatable { let id: UUID, spaceID: UUID, kind: TabKind, folderID: UUID? }
-    struct Parts: Equatable {
-        var tabs: [Placement]
-        var folder: Placement?
-        var order: [String: [SidebarItemReference]]
+    package struct Placement: Equatable { package let id: UUID, spaceID: UUID, kind: TabKind, folderID: UUID? }
+    package struct Parts: Equatable {
+        package var tabs: [Placement]
+        package var folder: Placement?
+        package var order: [String: [SidebarItemReference]]
     }
-    let folderID: UUID
-    let spaceID: UUID
-    let profileID: UUID
-    let tabIDs: [UUID]
-    var folder: BrowserFolder
-    let orderKeys: [String]
-    let before: Parts
-    let after: Parts
+    package let folderID: UUID
+    package let spaceID: UUID
+    package let profileID: UUID
+    package let tabIDs: [UUID]
+    package var folder: BrowserFolder
+    package let orderKeys: [String]
+    package let before: Parts
+    package let after: Parts
 
-    static func make(items: [SidebarItemReference], folderID: UUID, name: String = defaultName,
+    package init(folderID: UUID, spaceID: UUID, profileID: UUID, tabIDs: [UUID], folder: BrowserFolder, orderKeys: [String], before: Parts, after: Parts) {
+        self.folderID = folderID
+        self.spaceID = spaceID
+        self.profileID = profileID
+        self.tabIDs = tabIDs
+        self.folder = folder
+        self.orderKeys = orderKeys
+        self.before = before
+        self.after = after
+    }
+
+    package static func make(items: [SidebarItemReference], folderID: UUID, name: String = defaultName,
                      expected: SidebarHierarchySnapshot, state: BrowserState) -> (Self, BrowserState)? {
         let spaceID = expected.spaceID, profileID = expected.profileID
         guard !items.isEmpty, !state.folders.contains(where: { $0.id == folderID }),
@@ -53,7 +64,7 @@ struct SidebarFolderFromItems: Equatable {
         return (receipt, next)
     }
 
-    func parts(of state: BrowserState) -> Parts {
+    package func parts(of state: BrowserState) -> Parts {
         let tabs = tabIDs.compactMap { id in state.tab(id, where: { $0.archivedAt == nil }) }
             .map { Placement(id: $0.id, spaceID: $0.spaceID, kind: $0.kind, folderID: $0.folderID) }
         let folder = state.folders.first { $0.id == folderID }
@@ -63,7 +74,7 @@ struct SidebarFolderFromItems: Equatable {
         return Parts(tabs: tabs, folder: folder, order: order)
     }
 
-    func reverting(_ state: BrowserState, undo: Bool) -> BrowserState? {
+    package func reverting(_ state: BrowserState, undo: Bool) -> BrowserState? {
         guard parts(of: state) == (undo ? after : before) else { return nil }
         if undo {
             let moved = Set(tabIDs)
@@ -84,13 +95,13 @@ struct SidebarFolderFromItems: Equatable {
     }
 }
 
-enum SidebarTodayArchive {
-    static func order(in state: BrowserState, spaceID: UUID) -> [UUID] {
+package enum SidebarTodayArchive {
+    package static func order(in state: BrowserState, spaceID: UUID) -> [UUID] {
         SidebarHierarchy.children(in: SidebarContainerLocation(spaceID: spaceID, folderID: nil, section: .today), state: state)
             .flatMap { SidebarHierarchy.tabIDs(in: $0, state: state, spaceID: spaceID) }
     }
 
-    static func admits(anchorID: UUID, order: [UUID], ids: Set<UUID>, state: BrowserState,
+    package static func admits(anchorID: UUID, order: [UUID], ids: Set<UUID>, state: BrowserState,
                        spaceID: UUID, profileID: UUID) -> Bool {
         guard !ids.isEmpty, ids.isSubset(of: Set(order)), order.contains(anchorID),
               let anchor = state.tab(anchorID, where: { $0.archivedAt == nil }),

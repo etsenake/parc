@@ -1,42 +1,58 @@
 import Foundation
 
-enum NoteMathAtomKind: Equatable, Sendable {
+package enum NoteMathAtomKind: Equatable, Sendable {
     case ord, op, bin, rel, open, close, punct, inner
 }
 
-enum NoteMathVariant: Equatable, Sendable {
+package enum NoteMathVariant: Equatable, Sendable {
     case normal, roman, bold, italic, boldItalic, doubleStruck, script, fraktur, sansSerif, monospace
 }
 
-enum NoteMathTextStyle: Equatable, Sendable {
+package enum NoteMathTextStyle: Equatable, Sendable {
     case roman, bold, italic, sansSerif, monospace
 }
 
-enum NoteMathLimits: Equatable, Sendable {
+package enum NoteMathLimits: Equatable, Sendable {
     case auto, above, beside
 }
 
-enum NoteMathStyleLevel: Equatable, Sendable {
+package enum NoteMathStyleLevel: Equatable, Sendable {
     case display, text, script, scriptScript
 }
 
-struct NoteMathColor: Equatable, Sendable {
-    var red: Double
-    var green: Double
-    var blue: Double
+package struct NoteMathColor: Equatable, Sendable {
+    package var red: Double
+    package var green: Double
+    package var blue: Double
+
+    package init(red: Double, green: Double, blue: Double) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+    }
 }
 
-struct NoteMathFraction: Equatable {
-    var numerator: [NoteMathNode]
-    var denominator: [NoteMathNode]
-    var hasRule = true
-    var thickness: Double?
-    var level: NoteMathStyleLevel?
-    var left: String?
-    var right: String?
+package struct NoteMathFraction: Equatable {
+    package var numerator: [NoteMathNode]
+    package var denominator: [NoteMathNode]
+    package var hasRule = true
+    package var thickness: Double?
+    package var level: NoteMathStyleLevel?
+    package var left: String?
+    package var right: String?
+
+    package init(numerator: [NoteMathNode], denominator: [NoteMathNode], hasRule: Bool = true, thickness: Double? = nil, level: NoteMathStyleLevel? = nil, left: String? = nil, right: String? = nil) {
+        self.numerator = numerator
+        self.denominator = denominator
+        self.hasRule = hasRule
+        self.thickness = thickness
+        self.level = level
+        self.left = left
+        self.right = right
+    }
 }
 
-enum NoteMathDecoration: Equatable, Sendable {
+package enum NoteMathDecoration: Equatable, Sendable {
     case accent(String)
     case wideAccent(String)
     case overArrow(String)
@@ -54,45 +70,67 @@ enum NoteMathDecoration: Equatable, Sendable {
     case actuarialAngle
 }
 
-enum NoteMathLap: Equatable, Sendable {
+package enum NoteMathLap: Equatable, Sendable {
     case left, right, center
 }
 
-enum NoteMathColumnAlignment: Equatable, Sendable {
+package enum NoteMathColumnAlignment: Equatable, Sendable {
     case left, center, right
 }
 
-enum NoteMathEnvironmentKind: Equatable, Sendable {
+package enum NoteMathEnvironmentKind: Equatable, Sendable {
     case matrix, smallMatrix, cases, aligned, alignedAt, gathered, multline, array, subarray, commutativeDiagram
 }
 
-enum NoteMathDiagramArrowDirection: Equatable, Sendable {
+package enum NoteMathDiagramArrowDirection: Equatable, Sendable {
     case right, left, up, down, equals, parallel, empty
 }
 
-struct NoteMathDiagramArrow: Equatable {
-    var direction: NoteMathDiagramArrowDirection
-    var first: [NoteMathNode] = []
-    var second: [NoteMathNode] = []
+package struct NoteMathDiagramArrow: Equatable {
+    package var direction: NoteMathDiagramArrowDirection
+    package var first: [NoteMathNode] = []
+    package var second: [NoteMathNode] = []
+
+    package init(direction: NoteMathDiagramArrowDirection, first: [NoteMathNode] = [], second: [NoteMathNode] = []) {
+        self.direction = direction
+        self.first = first
+        self.second = second
+    }
 }
 
-struct NoteMathEnvironment: Equatable {
-    var kind: NoteMathEnvironmentKind
-    var rows: [[[NoteMathNode]]]
-    var columns: [NoteMathColumnAlignment]
-    var tags: [[NoteMathNode]?] = []
-    var columnRules: [Int] = []
-    var rowRules: [Int] = []
-    var rowSpacing: [Int: Double] = [:]
-    var left: String?
-    var right: String?
-    var displayCells = false
-    var columnRuleDashes: [Bool] = []
-    var rowRuleDashes: [Bool] = []
-    var arrows: [[NoteMathDiagramArrow?]] = []
+package struct NoteMathEnvironment: Equatable {
+    package var kind: NoteMathEnvironmentKind
+    package var rows: [[[NoteMathNode]]]
+    package var columns: [NoteMathColumnAlignment]
+    package var tags: [[NoteMathNode]?] = []
+    package var columnRules: [Int] = []
+    package var rowRules: [Int] = []
+    package var rowSpacing: [Int: Double] = [:]
+    package var left: String?
+    package var right: String?
+    package var displayCells = false
+    package var columnRuleDashes: [Bool] = []
+    package var rowRuleDashes: [Bool] = []
+    package var arrows: [[NoteMathDiagramArrow?]] = []
+
+    package init(kind: NoteMathEnvironmentKind, rows: [[[NoteMathNode]]], columns: [NoteMathColumnAlignment], tags: [[NoteMathNode]?] = [], columnRules: [Int] = [], rowRules: [Int] = [], rowSpacing: [Int: Double] = [:], left: String? = nil, right: String? = nil, displayCells: Bool = false, columnRuleDashes: [Bool] = [], rowRuleDashes: [Bool] = [], arrows: [[NoteMathDiagramArrow?]] = []) {
+        self.kind = kind
+        self.rows = rows
+        self.columns = columns
+        self.tags = tags
+        self.columnRules = columnRules
+        self.rowRules = rowRules
+        self.rowSpacing = rowSpacing
+        self.left = left
+        self.right = right
+        self.displayCells = displayCells
+        self.columnRuleDashes = columnRuleDashes
+        self.rowRuleDashes = rowRuleDashes
+        self.arrows = arrows
+    }
 }
 
-indirect enum NoteMathNode: Equatable {
+package indirect enum NoteMathNode: Equatable {
     case char(String, NoteMathAtomKind)
     case largeOperator(String, NoteMathLimits)
     case function(String, NoteMathLimits)
@@ -129,23 +167,30 @@ indirect enum NoteMathNode: Equatable {
     case vcenter([NoteMathNode])
 }
 
-enum NoteMathLabelTarget: Equatable {
+package enum NoteMathLabelTarget: Equatable {
     case automatic(Int)
     case tag([NoteMathNode])
 }
 
-struct NoteMathLabel: Equatable {
-    var key: String
-    var target: NoteMathLabelTarget
+package struct NoteMathLabel: Equatable {
+    package var key: String
+    package var target: NoteMathLabelTarget
 }
 
-struct NoteMathNumberingContext: Equatable {
-    var firstNumber = 0
-    var references: [String: [NoteMathNode]] = [:]
-    var takenLabels: Set<String> = []
-    var referenceDigest = ""
+package struct NoteMathNumberingContext: Equatable {
+    package var firstNumber = 0
+    package var references: [String: [NoteMathNode]] = [:]
+    package var takenLabels: Set<String> = []
+    package var referenceDigest = ""
 
-    func fingerprint(for source: String, display: Bool) -> String {
+    package init(firstNumber: Int = 0, references: [String: [NoteMathNode]] = [:], takenLabels: Set<String> = [], referenceDigest: String = "") {
+        self.firstNumber = firstNumber
+        self.references = references
+        self.takenLabels = takenLabels
+        self.referenceDigest = referenceDigest
+    }
+
+    package func fingerprint(for source: String, display: Bool) -> String {
         var parts: [String] = []
         if display, source.contains("begin") { parts.append("n\(firstNumber)") }
         if display, source.contains("label"), !takenLabels.isEmpty { parts.append("t" + takenLabels.sorted().joined(separator: ",")) }
@@ -153,26 +198,39 @@ struct NoteMathNumberingContext: Equatable {
         return parts.joined(separator: ";")
     }
 
-    static func digest(_ references: [String: [NoteMathNode]]) -> String {
+    package static func digest(_ references: [String: [NoteMathNode]]) -> String {
         references.keys.sorted().map { "\($0)=\(String(describing: references[$0]!))" }.joined(separator: "|")
     }
 }
 
-struct NoteMathEquation: Equatable {
-    var nodes: [NoteMathNode]
-    var tag: [NoteMathNode]?
-    var labels: [NoteMathLabel] = []
-    var automaticNumbers = 0
+package struct NoteMathEquation: Equatable {
+    package var nodes: [NoteMathNode]
+    package var tag: [NoteMathNode]?
+    package var labels: [NoteMathLabel] = []
+    package var automaticNumbers = 0
+
+    package init(nodes: [NoteMathNode], tag: [NoteMathNode]? = nil, labels: [NoteMathLabel] = [], automaticNumbers: Int = 0) {
+        self.nodes = nodes
+        self.tag = tag
+        self.labels = labels
+        self.automaticNumbers = automaticNumbers
+    }
 }
 
-struct NoteMathParseError: Error, Equatable, CustomStringConvertible {
-    var message: String
-    var offset: Int
-    var length: Int
-    var description: String { message }
+package struct NoteMathParseError: Error, Equatable, CustomStringConvertible {
+    package var message: String
+    package var offset: Int
+    package var length: Int
+    package var description: String { message }
+
+    package init(message: String, offset: Int, length: Int) {
+        self.message = message
+        self.offset = offset
+        self.length = length
+    }
 }
 
-struct NoteMathParser {
+package struct NoteMathParser {
     private enum Token: Equatable {
         case command(String)
         case character(Character)
@@ -220,11 +278,11 @@ struct NoteMathParser {
         self.numbering = numbering
     }
 
-    static func parse(_ source: String) throws(NoteMathParseError) -> [NoteMathNode] {
+    package static func parse(_ source: String) throws(NoteMathParseError) -> [NoteMathNode] {
         try parseEquation(source, display: true).nodes
     }
 
-    static func parseEquation(_ source: String, display: Bool,
+    package static func parseEquation(_ source: String, display: Bool,
                               numbering: NoteMathNumberingContext = NoteMathNumberingContext()) throws(NoteMathParseError) -> NoteMathEquation {
         var parser = NoteMathParser(try NoteMathExpander.expand(source), display: display, numbering: numbering)
         let nodes = try parser.parseFormula()
@@ -267,7 +325,7 @@ struct NoteMathParser {
         return .reference(raw.text, parenthesized: name == "eqref", label: numbering.references[raw.text])
     }
 
-    static func isBuiltIn(_ name: String) -> Bool {
+    package static func isBuiltIn(_ name: String) -> Bool {
         NoteMathSymbols.symbols[name] != nil || NoteMathSymbols.italicCapitals[name] != nil
             || NoteMathSymbols.largeOperators[name] != nil || NoteMathSymbols.functions[name] != nil
             || NoteMathSymbols.spaces[name] != nil || fontCommands[name] != nil || textCommands[name] != nil
@@ -1173,7 +1231,7 @@ struct NoteMathParser {
         return value
     }
 
-    static func dimension(_ text: String) -> Double? {
+    package static func dimension(_ text: String) -> Double? {
         let trimmed = text.replacingOccurrences(of: " ", with: "")
         var numberEnd = trimmed.startIndex
         while numberEnd < trimmed.endIndex, "+-.0123456789".contains(trimmed[numberEnd]) {
@@ -1764,8 +1822,8 @@ struct NoteMathParser {
     ]
 }
 
-enum NoteMathSymbols {
-    static let symbols: [String: (String, NoteMathAtomKind)] = {
+package enum NoteMathSymbols {
+    package static let symbols: [String: (String, NoteMathAtomKind)] = {
         var table: [String: (String, NoteMathAtomKind)] = [:]
         for (name, symbol) in greek { table[name] = (symbol, .ord) }
         for (name, symbol) in ordinary { table[name] = (symbol, .ord) }
@@ -1779,7 +1837,7 @@ enum NoteMathSymbols {
         return table
     }()
 
-    static let kindsByCharacter: [String: NoteMathAtomKind] = {
+    package static let kindsByCharacter: [String: NoteMathAtomKind] = {
         var table: [String: NoteMathAtomKind] = [:]
         for (_, entry) in symbols where table[entry.0] == nil && entry.0.unicodeScalars.count == 1 {
             table[entry.0] = entry.1
@@ -1790,13 +1848,13 @@ enum NoteMathSymbols {
         return table
     }()
 
-    static let largeOperatorsByCharacter: [String: Bool] = {
+    package static let largeOperatorsByCharacter: [String: Bool] = {
         var table: [String: Bool] = [:]
         for (_, entry) in largeOperators { table[entry.0] = entry.1 }
         return table
     }()
 
-    static let greek: [(String, String)] = [
+    package static let greek: [(String, String)] = [
         ("alpha", "α"), ("beta", "β"), ("gamma", "γ"), ("delta", "δ"), ("epsilon", "ϵ"), ("varepsilon", "ε"),
         ("zeta", "ζ"), ("eta", "η"), ("theta", "θ"), ("vartheta", "ϑ"), ("iota", "ι"), ("kappa", "κ"),
         ("varkappa", "ϰ"), ("lambda", "λ"), ("mu", "μ"), ("nu", "ν"), ("xi", "ξ"), ("omicron", "ο"), ("pi", "π"),
@@ -1808,12 +1866,12 @@ enum NoteMathSymbols {
         ("Kappa", "Κ"), ("Mu", "Μ"), ("Nu", "Ν"), ("Omicron", "Ο"), ("Rho", "Ρ"), ("Tau", "Τ"), ("Chi", "Χ"),
     ]
 
-    static let italicCapitals: [String: String] = [
+    package static let italicCapitals: [String: String] = [
         "varGamma": "Γ", "varDelta": "Δ", "varTheta": "Θ", "varLambda": "Λ", "varXi": "Ξ", "varPi": "Π",
         "varSigma": "Σ", "varUpsilon": "Υ", "varPhi": "Φ", "varPsi": "Ψ", "varOmega": "Ω",
     ]
 
-    static let ordinary: [(String, String)] = [
+    package static let ordinary: [(String, String)] = [
         ("infty", "∞"), ("partial", "∂"), ("nabla", "∇"), ("forall", "∀"), ("exists", "∃"), ("nexists", "∄"),
         ("emptyset", "∅"), ("varnothing", "∅"), ("neg", "¬"), ("lnot", "¬"), ("top", "⊤"), ("bot", "⊥"),
         ("angle", "∠"), ("measuredangle", "∡"), ("sphericalangle", "∢"), ("triangle", "△"), ("square", "□"),
@@ -1834,7 +1892,7 @@ enum NoteMathSymbols {
         ("real", "ℜ"), ("sect", "§"), ("spades", "♠"), ("thetasym", "ϑ"), ("weierp", "℘"),
     ]
 
-    static let binary: [(String, String)] = [
+    package static let binary: [(String, String)] = [
         ("pm", "±"), ("mp", "∓"), ("times", "×"), ("div", "÷"), ("cdot", "⋅"), ("ast", "∗"), ("star", "⋆"),
         ("circ", "∘"), ("bullet", "∙"), ("oplus", "⊕"), ("ominus", "⊖"), ("otimes", "⊗"), ("oslash", "⊘"),
         ("odot", "⊙"), ("cup", "∪"), ("cap", "∩"), ("uplus", "⊎"), ("sqcup", "⊔"), ("sqcap", "⊓"),
@@ -1850,7 +1908,7 @@ enum NoteMathSymbols {
         ("And", "&"), ("plusmn", "±"), ("sdot", "⋅"), ("bull", "∙"), ("Dagger", "‡"), ("minuso", "⦵"),
     ]
 
-    static let relations: [(String, String)] = [
+    package static let relations: [(String, String)] = [
         ("leq", "≤"), ("le", "≤"), ("geq", "≥"), ("ge", "≥"), ("neq", "≠"), ("ne", "≠"), ("approx", "≈"),
         ("equiv", "≡"), ("sim", "∼"), ("simeq", "≃"), ("cong", "≅"), ("propto", "∝"), ("in", "∈"),
         ("notin", "∉"), ("ni", "∋"), ("owns", "∋"), ("subset", "⊂"), ("supset", "⊃"), ("subseteq", "⊆"),
@@ -1887,7 +1945,7 @@ enum NoteMathSymbols {
         ("vcentcolon", "∶"), ("ratio", "∶"), ("dblcolon", "∷"), ("Coloneqq", "⩴"), ("eqcolon", "∹"),
     ]
 
-    static let arrows: [(String, String)] = [
+    package static let arrows: [(String, String)] = [
         ("leftarrow", "←"), ("gets", "←"), ("rightarrow", "→"), ("to", "→"), ("leftrightarrow", "↔"),
         ("Leftarrow", "⇐"), ("Rightarrow", "⇒"), ("Leftrightarrow", "⇔"), ("longleftarrow", "⟵"),
         ("longrightarrow", "⟶"), ("longleftrightarrow", "⟷"), ("Longleftarrow", "⟸"), ("Longrightarrow", "⟹"),
@@ -1910,28 +1968,28 @@ enum NoteMathSymbols {
         ("restriction", "↾"), ("Lleftarrow", "⇚"), ("Rrightarrow", "⇛"),
     ]
 
-    static let opening: [(String, String)] = [
+    package static let opening: [(String, String)] = [
         ("{", "{"), ("lbrace", "{"), ("langle", "⟨"), ("lceil", "⌈"), ("lfloor", "⌊"), ("lvert", "|"),
         ("lVert", "‖"), ("lgroup", "⟮"), ("lbrack", "["), ("ulcorner", "⌜"), ("llcorner", "⌞"),
         ("llbracket", "⟦"), ("lmoustache", "⎰"), ("lparen", "("), ("lang", "⟨"),
     ]
 
-    static let closing: [(String, String)] = [
+    package static let closing: [(String, String)] = [
         ("}", "}"), ("rbrace", "}"), ("rangle", "⟩"), ("rceil", "⌉"), ("rfloor", "⌋"), ("rvert", "|"),
         ("rVert", "‖"), ("rgroup", "⟯"), ("rbrack", "]"), ("urcorner", "⌝"), ("lrcorner", "⌟"),
         ("rrbracket", "⟧"), ("rmoustache", "⎱"), ("rparen", ")"), ("rang", "⟩"),
     ]
 
-    static let punctuation: [(String, String)] = [
+    package static let punctuation: [(String, String)] = [
         ("ldotp", "."), ("cdotp", "⋅"),
     ]
 
-    static let inner: [(String, String)] = [
+    package static let inner: [(String, String)] = [
         ("ldots", "…"), ("dots", "…"), ("dotsc", "…"), ("dotso", "…"), ("cdots", "⋯"), ("dotsb", "⋯"),
         ("dotsm", "⋯"), ("dotsi", "⋯"), ("ddots", "⋱"), ("iddots", "⋰"), ("mathellipsis", "…"),
     ]
 
-    static let largeOperators: [String: (String, Bool)] = [
+    package static let largeOperators: [String: (String, Bool)] = [
         "sum": ("∑", false), "prod": ("∏", false), "coprod": ("∐", false), "bigcup": ("⋃", false),
         "bigcap": ("⋂", false), "bigvee": ("⋁", false), "bigwedge": ("⋀", false), "bigoplus": ("⨁", false),
         "bigotimes": ("⨂", false), "bigodot": ("⨀", false), "biguplus": ("⨄", false), "bigsqcup": ("⨆", false),
@@ -1940,7 +1998,7 @@ enum NoteMathSymbols {
         "smallint": ("∫", true),
     ]
 
-    static let functions: [String: (String, Bool)] = [
+    package static let functions: [String: (String, Bool)] = [
         "arccos": ("arccos", false), "arcsin": ("arcsin", false), "arctan": ("arctan", false),
         "arg": ("arg", false), "cos": ("cos", false), "cosh": ("cosh", false), "cot": ("cot", false),
         "coth": ("coth", false), "csc": ("csc", false), "deg": ("deg", false), "dim": ("dim", false),
@@ -1956,19 +2014,19 @@ enum NoteMathSymbols {
         "th": ("th", false),
     ]
 
-    static let spaces: [String: Double] = [
+    package static let spaces: [String: Double] = [
         ",": 3.0 / 18, "thinspace": 3.0 / 18, ":": 4.0 / 18, ">": 4.0 / 18, "medspace": 4.0 / 18,
         ";": 5.0 / 18, "thickspace": 5.0 / 18, "!": -3.0 / 18, "negthinspace": -3.0 / 18,
         "negmedspace": -4.0 / 18, "negthickspace": -5.0 / 18, "quad": 1, "qquad": 2, " ": 1.0 / 3,
         "\n": 1.0 / 3, "\t": 1.0 / 3, "enspace": 0.5, "space": 1.0 / 3, "nobreakspace": 1.0 / 3,
     ]
 
-    static let delimiterCharacters: [Character: String] = [
+    package static let delimiterCharacters: [Character: String] = [
         "(": "(", ")": ")", "[": "[", "]": "]", "|": "|", "/": "/", "<": "⟨", ">": "⟩",
         "⟨": "⟨", "⟩": "⟩", "‖": "‖", "⌊": "⌊", "⌋": "⌋", "⌈": "⌈", "⌉": "⌉",
     ]
 
-    static let delimiterCommands: [String: String] = [
+    package static let delimiterCommands: [String: String] = [
         "{": "{", "}": "}", "lbrace": "{", "rbrace": "}", "|": "‖", "Vert": "‖", "lVert": "‖", "rVert": "‖",
         "vert": "|", "lvert": "|", "rvert": "|", "langle": "⟨", "rangle": "⟩", "lfloor": "⌊", "rfloor": "⌋",
         "lceil": "⌈", "rceil": "⌉", "backslash": "\\", "uparrow": "↑", "downarrow": "↓", "updownarrow": "↕",
@@ -1978,13 +2036,13 @@ enum NoteMathSymbols {
         "lparen": "(", "rparen": ")", "lang": "⟨", "rang": "⟩", "lt": "⟨", "gt": "⟩",
     ]
 
-    static let negations: [String: String] = [
+    package static let negations: [String: String] = [
         "=": "≠", "∈": "∉", "≡": "≢", "⊂": "⊄", "⊃": "⊅", "⊆": "⊈", "⊇": "⊉", "<": "≮", ">": "≯",
         "≤": "≰", "≥": "≱", "∼": "≁", "≈": "≉", "≅": "≇", "∋": "∌", "∃": "∄", "∣": "∤", "∥": "∦",
         "≃": "≄", "≺": "⊀", "≻": "⊁", "⊢": "⊬", "⊨": "⊭", "≍": "≭", "⊑": "⋢", "⊒": "⋣",
     ]
 
-    static let namedColors: [String: UInt32] = [
+    package static let namedColors: [String: UInt32] = [
         "black": 0x000000, "white": 0xFFFFFF, "red": 0xFF0000, "green": 0x008000, "blue": 0x0000FF,
         "cyan": 0x00FFFF, "magenta": 0xFF00FF, "yellow": 0xFFFF00, "gray": 0x808080, "grey": 0x808080,
         "orange": 0xFFA500, "purple": 0x800080, "brown": 0xA52A2A, "pink": 0xFFC0CB, "lime": 0x00FF00,
@@ -1997,7 +2055,7 @@ enum NoteMathSymbols {
         "fuchsia": 0xFF00FF, "plum": 0xDDA0DD, "orchid": 0xDA70D6, "tan": 0xD2B48C, "khaki": 0xF0E68C,
     ]
 
-    static func color(named raw: String) -> NoteMathColor? {
+    package static func color(named raw: String) -> NoteMathColor? {
         let name = raw.lowercased()
         if let value = namedColors[name] { return color(hex: value) }
         let digits = name.hasPrefix("#") ? String(name.dropFirst()) : name
