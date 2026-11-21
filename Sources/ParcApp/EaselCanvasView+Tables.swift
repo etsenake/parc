@@ -1498,6 +1498,10 @@ extension EaselCanvasView {
 
     func validateTableMenuItem(_ menuItem: NSMenuItem) -> Bool? {
         guard let action = menuItem.action else { return nil }
+        if let command = TextFormatCommand(menuItem), let valid = tableFormatAvailable(command) {
+            if let emphasis = Self.tableEmphasis(command) { menuItem.state = tableCellsHaveEmphasis(emphasis) ? .on : .off }
+            return valid
+        }
         if action == #selector(copy(_:)), editor == nil, selectedTable != nil { return true }
         let tableActions: [Selector] = [#selector(tableInsertRowAbove(_:)), #selector(tableInsertRowBelow(_:)), #selector(tableInsertColumnLeft(_:)),
             #selector(tableInsertColumnRight(_:)), #selector(tableMergeCells(_:)), #selector(tableUnmergeCells(_:)), #selector(tableClearContents(_:)),
@@ -1693,6 +1697,49 @@ extension EaselCanvasView {
             case .strikethrough:
                 if enabled { value.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range) }
                 else { value.removeAttribute(.strikethroughStyle, range: range) }
+            }
+        }
+    }
+
+    static func tableEmphasis(_ command: TextFormatCommand) -> EaselStyledTextView.Emphasis? {
+        switch command {
+        case .bold: return .bold
+        case .italic: return .italic
+        case .underline: return .underline
+        case .strikethrough: return .strikethrough
+        default: return nil
+        }
+    }
+
+    func tableFormatAvailable(_ command: TextFormatCommand) -> Bool? {
+        guard editor == nil, tableFormattingTarget != nil else { return nil }
+        switch command {
+        case .bold, .italic, .underline, .strikethrough, .bigger, .smaller: return true
+        default: return false
+        }
+    }
+
+    func performTableFormat(_ command: TextFormatCommand) -> Bool {
+        guard tableFormatAvailable(command) == true else { return false }
+        if let emphasis = Self.tableEmphasis(command) { toggleTableCellsEmphasis(emphasis); return true }
+        resizeTableCellsText(by: command == .bigger ? 1 : -1)
+        return true
+    }
+
+    @discardableResult
+    func resizeTableCellsText(by delta: Int) -> Bool {
+        guard tableCellSelection != nil, let target = tableFormattingTarget else {
+            return setTableTextStyle { $0.size = $0.size.shifted(by: delta) }
+        }
+        let base = target.item.resolvedTextStyle
+        return formatTableCells(delta > 0 ? "Bigger Text" : "Smaller Text") { value in
+            value.enumerateAttribute(.font, in: NSRange(location: 0, length: value.length)) { font, part, _ in
+                guard let font = font as? NSFont else { return }
+                var style = EaselTextAppearance.paletteStyle(font)
+                    ?? EaselTextStyle(family: EaselTextAppearance.paletteFamily(font) ?? base.family, size: .body)
+                style.size = style.size.shifted(by: delta)
+                guard let next = try? EaselTextAppearance.font(style, preservingEmphasisFrom: font) else { return }
+                value.addAttribute(.font, value: next, range: part)
             }
         }
     }

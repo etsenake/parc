@@ -1283,6 +1283,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     @objc func formatText(_ sender: Any?) {
+        if let command = TextFormatCommand(sender), performTableFormat(command) { return }
         guard let command = TextFormatCommand(sender), canFormat(command) else { return }
         switch command {
         case .bigger, .smaller: resizeText(by: command == .bigger ? 1 : -1)

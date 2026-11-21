@@ -43,7 +43,10 @@ Pasting spreadsheet cells also makes a table; see [Data in and out](#data-in-and
 Cells use the full Easel text editor: bold, italic, underline, strikethrough,
 links (Command-K), lists, headings, typed Markdown and inline images all work
 inside a cell, with the same undo. Each cell edit is one undo step, as with
-text objects.
+text objects. Without editing, Bold, Italic, Underline and Strikethrough in the
+Format menu (Command-B, Command-I, Command-U) apply to every selected cell, or
+the whole table when no cells are selected, and Bigger and Smaller step the
+text size the same way.
 
 A locked table can't be edited until it's unlocked, and its grips and bars
 stay hidden.
