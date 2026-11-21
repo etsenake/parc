@@ -203,9 +203,7 @@ hover stay correct. `tests/MediaLibraryGridTests.swift` checks, without a window
 that the grid keeps two columns sized to its width as it widens, narrows, gains
 items past the page height or switches scroll bar style, and that thumbnails filled
 while hidden load on return while loads answering after the Library closed cannot
-land. `tests/CaptureLibraryCatalogSkip` pins the skip,
-off-main and cancellable planning, settling, iCloud status, event structure and
-how pages suspend and resume; `scripts/test.sh` runs these Media checks.
+land. `scripts/test.sh` runs these Media checks.
 
 ## Private Media ownership
 

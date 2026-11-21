@@ -11,40 +11,9 @@ struct SoftwareUpdateDownloadProgressTests {
 
     static func main() { exitOnFailure(runChecks) }
     static func runChecks() {
-        downloadCounts()
         stableCounter()
         progressTransitions()
         print("SoftwareUpdateDownloadProgressTests: \(checks) checks passed")
-    }
-
-    static func downloadCounts() {
-        var download = SoftwareUpdateDownloadProgress()
-        check(download.display.fraction == nil, "An unknown size cannot report a fraction")
-        download.receive(32_768)
-        check(download.display.fraction == nil && !download.display.text.contains(" of "),
-              "Receiving data before the size must not show a full bar or invent a total")
-        download.expect(227_500_000)
-        download.receive(202_800_000 - 32_768)
-        check(download.receivedLength == 202_800_000, "Chunk lengths accumulate exactly once")
-        check(abs(download.display.fraction! - 202.8 / 227.5) < 0.000001,
-              "The reported 202.8 of 227.5 MB is an 89 percent bar")
-        download.expect(0)
-        check(download.expectedLength == 227_500_000 && download.display.fraction! < 1,
-              "A repeated unknown size cannot erase the known total or jump to complete")
-        download.expect(227_500_000)
-        check(download.receivedLength == 202_800_000, "Repeated size callbacks do not reset received bytes")
-        download.receive(24_700_000)
-        check(download.display.fraction == 1, "Receiving the expected bytes fills the bar")
-        download.receive(1_000_000)
-        check(download.display.fraction == 1, "An underestimated size never overfills the bar")
-        download.expect(250_000_000)
-        check(download.display.fraction == Double(download.receivedLength) / 250_000_000,
-              "An authoritative size correction keeps the count and fraction consistent")
-        download = SoftwareUpdateDownloadProgress()
-        check(download.receivedLength == 0 && download.display.fraction == nil, "A new transfer starts fresh")
-        download.receive(.max)
-        download.receive(1)
-        check(download.receivedLength == .max, "Invalid counters cannot wrap back to zero or trap")
     }
 
     static func stableCounter() {

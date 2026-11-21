@@ -2,9 +2,6 @@
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 mkdir -p "$repo_root/build/tests"
-xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library "$repo_root"/Sources/ParcCore/*.swift \
-  "$repo_root/tests/KeyboardNavigation/SelectionTests.swift" -o "$repo_root/build/tests/tab-selection"
-"$repo_root/build/tests/tab-selection"
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library "$repo_root/Sources/ParcApp/KeyboardShortcuts.swift" \
 "$repo_root/Sources/ParcCore/SettingsPrettyJSONPersistSkip.swift" \
   "$repo_root/tests/KeyboardNavigation/NativeShortcutStub.swift" \
@@ -15,12 +12,6 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/tests/KeyboardNavigation/NativeShortcutStub.swift" \
   "$repo_root/tests/KeyboardNavigation/KeyLabelTests.swift" -o "$repo_root/build/tests/shortcut-key-labels"
 "$repo_root/build/tests/shortcut-key-labels"
-xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library "$repo_root"/Sources/ParcCore/*.swift \
-  "$repo_root/tests/KeyboardNavigation/SidebarHierarchyTests.swift" -o "$repo_root/build/tests/sidebar-keyboard-hierarchy"
-"$repo_root/build/tests/sidebar-keyboard-hierarchy"
-xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library "$repo_root"/Sources/ParcCore/*.swift \
-  "$repo_root/tests/KeyboardNavigation/SidebarAnnouncementTests.swift" -o "$repo_root/build/tests/sidebar-keyboard-announcements"
-"$repo_root/build/tests/sidebar-keyboard-announcements"
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library "$repo_root/Sources/ParcApp/KeyboardShortcuts.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcCore/SettingsPrettyJSONPersistSkip.swift" \

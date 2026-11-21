@@ -202,7 +202,6 @@ images live in ignored `work/start-page/`.
 ```sh
 python3 tests/StartPage/check.py
 python3 tests/StartPageMark/check.py
-python3 tests/CommandBar/resident_check.py
 python3 tests/EmptyWindow/check.py
 ```
 

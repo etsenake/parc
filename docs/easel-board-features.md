@@ -153,7 +153,7 @@ while Parc runs and is never saved in the Easel. The countdown rules are
 
 ## Checks
 
-`tests/EaselBoardFeaturesTests.swift` is a windowless suite over the ParcCore
+`tests/ParcCoreTests/Easels/EaselBoardFeaturesTests.swift` is a suite over the ParcCore
 board logic: find order, visibility, matching, replacement across rich text
 runs, per-object and per-table refusals, the find session's replace and
 refresh rules, viewport focus, object links, history names, caps and
