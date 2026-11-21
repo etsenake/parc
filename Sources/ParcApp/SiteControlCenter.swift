@@ -875,6 +875,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
     private var keptOpen = 0
     private var pendingShow: UUID?
     private let scheduleShow: (DispatchTimeInterval, @escaping @MainActor () -> Void) -> Void
+    private let orderPanel: (NSWindow, NSWindow) -> Void
     var onClose: (() -> Void)?
     var onDidClose: (() -> Void)?
     var onDetach: (() -> Void)?
@@ -888,9 +889,13 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
     init(model: SiteControlCenterModel,
          scheduleShow: @escaping (DispatchTimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, work in
              DispatchQueue.main.asyncAfter(deadline: .now() + delay) { work() }
+         }, orderPanel: @escaping (NSWindow, NSWindow) -> Void = { panel, parent in
+             parent.addChildWindow(panel, ordered: .above)
+             panel.makeKeyAndOrderFront(nil)
          }) {
         self.model = model
         self.scheduleShow = scheduleShow
+        self.orderPanel = orderPanel
         host = NSHostingController(rootView: SiteControlCenterView(model: model))
         host.sizingOptions = []
         card = SiteControlCenterCard(content: host.view, colors: model.colors.menu)
@@ -1031,8 +1036,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         self.chrome = chrome
         placement = (rect, anchor, placed.below)
         TooltipController.controller(for: panel).palette = TooltipColorPalette(theme: theme)
-        parent.addChildWindow(panel, ordered: .above)
-        panel.makeKeyAndOrderFront(nil)
+        orderPanel(panel, parent)
         panel.makeFirstResponder(host.view)
         observe(parent)
         SidebarPlusMenuMotion.animateOpen(chrome, about: chrome.tailTip)
