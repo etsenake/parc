@@ -2,6 +2,122 @@ import AppKit
 import Testing
 @testable import Parc
 
+@MainActor private final class Frames: DisplayFrameDriving {
+    private(set) var starts = 0
+    private var onFrame: (() -> Bool)?
+    var isRunning: Bool { onFrame != nil }
+    func start(in view: NSView, onFrame: @escaping () -> Bool) {
+        guard !isRunning else { return }
+        starts += 1
+        self.onFrame = onFrame
+    }
+    func stop() { onFrame = nil }
+    func fire() { if onFrame?() != true { stop() } }
+}
+
+private final class RedrawCountingView: NSView {
+    var redraws = 0
+    override var needsDisplay: Bool {
+        get { super.needsDisplay }
+        set {
+            if newValue { redraws += 1 }
+            super.needsDisplay = newValue
+        }
+    }
+}
+
+@MainActor private final class GlyphScene {
+    let view = RedrawCountingView()
+    let frames = Frames()
+    var clock: CFTimeInterval = 0
+    var reduceMotion = false
+    let glyph: ReloadGlyph
+
+    init() {
+        _ = NSApplication.shared
+        glyph = ReloadGlyph(view: view, pointSize: SidebarChromeLayout.navigationGlyphPointSize, rasterized: true)
+        glyph.frames = frames
+        glyph.now = { [unowned self] in self.clock }
+        glyph.reduceMotion = { [unowned self] in self.reduceMotion }
+    }
+}
+
+@MainActor private final class PillScene {
+    let pill = PageLoadingIndicator(frame: NSRect(x: 0, y: 0, width: 128, height: 4))
+    let frames = Frames()
+    var clock: CFTimeInterval = 0
+    var onScreen = true
+    var reduceMotion = false
+    private var loadingStarted: CFTimeInterval = 0
+    private(set) var frame = 0
+    private static let unpresented = CATransform3DMakeScale(0.5, 0.5, 1)
+
+    init() {
+        _ = NSApplication.shared
+        pill.frames = frames
+        pill.now = { [unowned self] in self.clock }
+        pill.isVisibleOnScreen = { [unowned self] _ in self.onScreen }
+        pill.reduceMotion = { [unowned self] in self.reduceMotion }
+    }
+
+    static func sweeping() -> PillScene {
+        let s = PillScene()
+        s.startLoading()
+        _ = s.sweepFrame()
+        return s
+    }
+
+    var track: CALayer { pill.layer!.sublayers!.first! }
+    var bar: CAShapeLayer { track.sublayers!.last as! CAShapeLayer }
+
+    func startLoading() {
+        loadingStarted = clock
+        frame = 0
+        pill.setLoading(true)
+    }
+
+    func deliverFrame() -> Bool {
+        frame += 1
+        clock = loadingStarted + (Double(frame) - 0.5) / 60
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        track.transform = Self.unpresented
+        CATransaction.commit()
+        frames.fire()
+        return !CATransform3DEqualToTransform(track.transform, Self.unpresented)
+    }
+
+    func sweepFrame() -> Int? {
+        while bar.opacity == 0, frame < 300 { _ = deliverFrame() }
+        return bar.opacity == 0 ? nil : frame
+    }
+
+    func settleSkippedTicks() -> Int {
+        var skipped = 0
+        let limit = frame + 480
+        while skipped < 2, frame < limit {
+            let empty = bar.strokeStart == 0 && bar.strokeEnd == 0
+            let presented = deliverFrame()
+            skipped = empty && bar.strokeEnd == 0 && !presented ? skipped + 1 : 0
+        }
+        return skipped
+    }
+
+    func boundsSpring() -> (from: CGFloat, to: CGFloat, spring: CASpringAnimation)? {
+        guard let spring = track.animation(forKey: "bounds") as? CASpringAnimation,
+              let from = spring.fromValue as? NSValue, let to = spring.toValue as? NSValue else { return nil }
+        return (from.rectValue.width, to.rectValue.width, spring)
+    }
+
+    func barSpring() -> CASpringAnimation? { bar.animation(forKey: "opacity") as? CASpringAnimation }
+
+    static func isSweepSpring(_ spring: CASpringAnimation) -> Bool {
+        let response = 2 * Double.pi / (spring.stiffness / spring.mass).squareRoot()
+        let fraction = spring.damping / (2 * (spring.stiffness * spring.mass).squareRoot())
+        return abs(response - 0.8) < 0.0001 && abs(fraction - 0.92) < 0.0001 && spring.duration == spring.settlingDuration
+    }
+}
+
 struct NavigationLoadingTests {
     private static func near(_ a: CGFloat, _ b: CGFloat, _ e: CGFloat = 0.0001) -> Bool { abs(a - b) <= e }
 
@@ -160,19 +276,129 @@ struct NavigationLoadingTests {
     }
 
     @MainActor @Test func anUnanimatedSwitchToStopSettlesTheGlyph() {
-        _ = NSApplication.shared
-        let glyph = ReloadGlyph(view: NSView(), pointSize: SidebarChromeLayout.navigationGlyphPointSize, rasterized: true)
-        glyph.update(loading: true, forceReload: false, animated: false)
-        #expect(glyph.progress == 1)
-        #expect(glyph.loading)
+        let s = GlyphScene()
+        s.glyph.update(loading: true, forceReload: false, animated: false)
+        #expect(s.glyph.progress == 1)
+        #expect(s.glyph.loading)
     }
 
     @MainActor @Test func theForceDefaultSwitchesTheIdleGlyph() {
-        _ = NSApplication.shared
-        let glyph = ReloadGlyph(view: NSView(), pointSize: SidebarChromeLayout.navigationGlyphPointSize, rasterized: true)
-        glyph.update(loading: false, forceReload: true, animated: false)
-        #expect(glyph.progress == 0)
-        #expect(glyph.forceReload)
+        let s = GlyphScene()
+        s.glyph.update(loading: false, forceReload: true, animated: false)
+        #expect(s.glyph.progress == 0)
+        #expect(s.glyph.forceReload)
+    }
+
+    @MainActor @Test(arguments: [(true, false), (false, true)])
+    func unanimatedGlyphChangesNeverTick(loading: Bool, forceReload: Bool) {
+        let s = GlyphScene()
+        s.glyph.update(loading: loading, forceReload: forceReload, animated: false)
+        #expect(s.frames.starts == 0)
+    }
+
+    @MainActor @Test(arguments: [(false, false), (true, true)])
+    func anUnanimatedOrReduceMotionActionSpinLeavesTheGlyphUprightWithoutTicking(animated: Bool, reduceMotion: Bool) {
+        let s = GlyphScene()
+        s.reduceMotion = reduceMotion
+        s.glyph.playActionSpin(animated: animated)
+        #expect(abs(s.glyph.rotation) < 0.001)
+        #expect(s.frames.starts == 0)
+    }
+
+    @MainActor @Test func reduceMotionSnapsTheGlyphToStopAndIdles() {
+        let s = GlyphScene()
+        s.reduceMotion = true
+        s.glyph.update(loading: true, forceReload: false, animated: true)
+        #expect(s.glyph.progress == 1)
+        #expect(s.frames.starts == 0)
+    }
+
+    @MainActor @Test func theLoadSpringSamplesOnTheDisplayLink() {
+        let s = GlyphScene()
+        s.glyph.update(loading: true, forceReload: false, animated: true)
+        #expect(s.frames.isRunning)
+    }
+
+    @MainActor @Test func aFrameInsideTheEnteringDelayRedrawsTheIdleGlyphAndKeepsSampling() {
+        let s = GlyphScene()
+        s.glyph.update(loading: true, forceReload: false, animated: true)
+        let redraws = s.view.redraws
+        s.clock += ReloadGlyph.delay(enteringLoading: true) - 1.0 / 60
+        s.frames.fire()
+        #expect(s.glyph.progress == 0)
+        #expect(s.frames.isRunning)
+        #expect(s.view.redraws == redraws + 1)
+    }
+
+    @MainActor @Test func stopSettlesTheGlyphAndIdles() {
+        let s = GlyphScene()
+        s.glyph.update(loading: true, forceReload: false, animated: true)
+        s.glyph.stop()
+        #expect(s.glyph.progress == 1)
+        #expect(!s.frames.isRunning)
+    }
+
+    @MainActor @Test func theActionSpinSamplesOnTheDisplayLink() {
+        let s = GlyphScene()
+        s.glyph.playActionSpin(animated: true)
+        #expect(s.frames.isRunning)
+    }
+
+    @MainActor @Test func stopIdlesTheActionSpin() {
+        let s = GlyphScene()
+        s.glyph.playActionSpin(animated: true)
+        s.glyph.stop()
+        #expect(!s.frames.isRunning)
+    }
+
+    @MainActor private static func unloading() -> GlyphScene {
+        let s = GlyphScene()
+        s.glyph.update(loading: true, forceReload: false, animated: false)
+        s.glyph.update(loading: false, forceReload: false, animated: true)
+        return s
+    }
+
+    @MainActor @Test func leavingLoadingSamplesOnTheDisplayLink() {
+        #expect(Self.unloading().frames.isRunning)
+    }
+
+    @MainActor @Test func midSpringTheGlyphKeepsSamplingBetweenStopAndReload() {
+        let s = Self.unloading()
+        s.clock = ReloadGlyph.delay(enteringLoading: false) + ReloadGlyph.settlingTime / 2
+        s.frames.fire()
+        #expect(s.frames.isRunning)
+        #expect(s.glyph.progress != 0)
+        #expect(s.glyph.progress != 1)
+    }
+
+    @MainActor @Test func aSettledSpringStopsItsOwnDisplayLink() {
+        let s = Self.unloading()
+        s.clock = ReloadGlyph.delay(enteringLoading: false) + ReloadGlyph.settlingTime + 1.0 / 60
+        s.frames.fire()
+        #expect(s.glyph.progress == 0)
+        #expect(!s.frames.isRunning)
+    }
+
+    @MainActor private static var fixtureArtwork: URL? { NavigationControlArtwork.resourcesDirectory(in: .module) }
+
+    @MainActor @Test func theForceReloadArtworkLoadsFromTheBundlesNavigationControlsResourcesWithItsRetinaRendition() throws {
+        let force = try #require(NavigationControlArtwork.forceReload(in: Self.fixtureArtwork))
+        #expect(force.size == NSSize(width: 22, height: 15))
+        #expect(force.isTemplate)
+        #expect(force.representations.contains { $0.pixelsWide == 44 })
+    }
+
+    @MainActor @Test func aBundleWithoutTheArtworkHasNoForceReloadImage() {
+        let empty = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        #expect(NavigationControlArtwork.forceReload(in: empty) == nil)
+    }
+
+    @MainActor @Test func theForceDefaultDrawsTheForceReloadArtwork() throws {
+        let s = GlyphScene()
+        s.glyph.artworkDirectory = Self.fixtureArtwork
+        s.glyph.update(loading: false, forceReload: true, animated: false)
+        let force = try #require(NavigationControlArtwork.forceReload(in: Self.fixtureArtwork))
+        #expect(s.glyph.idleImage === force)
     }
 
     @MainActor @Test func glyphsAreSixteenPointMedium() {
@@ -208,6 +434,153 @@ struct NavigationLoadingTests {
         #expect(!PageLoadingIndicator.isVisible(occlusion: [], miniaturized: false, hidden: false))
         #expect(!PageLoadingIndicator.isVisible(occlusion: .visible, miniaturized: true, hidden: false))
         #expect(!PageLoadingIndicator.isVisible(occlusion: .visible, miniaturized: false, hidden: true))
+    }
+
+    @MainActor @Test func aLoadingPillWithoutAWindowNeverTicks() {
+        let pill = PageLoadingIndicator(frame: NSRect(x: 0, y: 0, width: 128, height: 4))
+        let frames = Frames()
+        pill.frames = frames
+        pill.setLoading(true)
+        #expect(pill.isLoading)
+        pill.setLoading(false)
+        #expect(!pill.isLoading)
+        #expect(frames.starts == 0)
+    }
+
+    @MainActor @Test func aLoadingPillOffScreenDoesNotTick() {
+        let s = PillScene()
+        s.onScreen = false
+        s.startLoading()
+        #expect(s.pill.isLoading)
+        #expect(s.frames.starts == 0)
+    }
+
+    @MainActor @Test func aVisibleLoadingPillSamplesOnTheDisplayLink() {
+        let s = PillScene()
+        s.startLoading()
+        #expect(s.frames.isRunning)
+    }
+
+    @MainActor @Test func loadingShowsTheFortyEightPointTrack() {
+        let s = PillScene()
+        s.startLoading()
+        #expect(s.track.bounds.size == PageLoadingIndicator.trackSize(sweeping: false))
+    }
+
+    @MainActor @Test func thePillSweepsAtThePulseTroughOnTheFirstFrameAfterThreePointTwoSeconds() {
+        let s = PillScene()
+        s.startLoading()
+        #expect(s.sweepFrame() == 193)
+        #expect(s.bar.opacity == PageLoadingIndicator.sweepBarOpacity)
+    }
+
+    @MainActor @Test func theSweepSpringsTheTrackFromFortyEightToOneTwentyEightPoints() throws {
+        let s = PillScene.sweeping()
+        let widen = try #require(s.boundsSpring())
+        #expect(s.track.bounds.size == PageLoadingIndicator.trackSize(sweeping: true))
+        #expect(Self.near(widen.from, 48))
+        #expect(widen.to == 128)
+        #expect(PillScene.isSweepSpring(widen.spring))
+    }
+
+    @MainActor @Test func theSweepSpringsTheBarToPointNineTwo() throws {
+        let s = PillScene.sweeping()
+        let bar = try #require(s.barSpring())
+        #expect(PillScene.isSweepSpring(bar))
+        #expect((bar.toValue as? NSNumber)?.floatValue == PageLoadingIndicator.sweepBarOpacity)
+    }
+
+    @MainActor @Test func settledEmptyThirdTicksSkipLayerWritesWhileTheLinkKeepsSampling() {
+        let s = PillScene.sweeping()
+        #expect(s.settleSkippedTicks() == 2)
+        #expect(s.frames.isRunning)
+    }
+
+    @MainActor @Test func strokeGrowthPresents() {
+        let s = PillScene.sweeping()
+        _ = s.settleSkippedTicks()
+        var presented = false
+        let limit = s.frame + 90
+        while s.bar.strokeEnd == 0, s.frame < limit { presented = s.deliverFrame() }
+        #expect(s.bar.strokeEnd > 0)
+        #expect(presented)
+    }
+
+    @MainActor @Test func endingALoadMidSweepSpringsTheTrackBackToFortyEightPoints() throws {
+        let s = PillScene.sweeping()
+        s.pill.setLoading(false)
+        let shrink = try #require(s.boundsSpring())
+        #expect(s.track.bounds.size == PageLoadingIndicator.trackSize(sweeping: false))
+        #expect(abs(shrink.from - 128) < 0.5)
+        #expect(shrink.to == 48)
+        #expect(PillScene.isSweepSpring(shrink.spring))
+        #expect(s.frames.isRunning)
+    }
+
+    @MainActor @Test func endingALoadMidSweepSpringsTheBarToZero() throws {
+        let s = PillScene.sweeping()
+        s.pill.setLoading(false)
+        let bar = try #require(s.barSpring())
+        #expect(s.bar.opacity == 0)
+        #expect((bar.toValue as? NSNumber)?.floatValue == 0)
+    }
+
+    @MainActor @Test func resetRemovesTheTrackAndBarSpringsAndIdlesThePill() {
+        let s = PillScene.sweeping()
+        s.pill.setLoading(false)
+        s.pill.reset()
+        #expect(s.track.animation(forKey: "bounds") == nil)
+        #expect(s.bar.animation(forKey: "opacity") == nil)
+        #expect(!s.frames.isRunning)
+    }
+
+    @MainActor @Test func aSecondLoadSweepsAgainOnTheFirstFrameAfterThreePointTwoSeconds() {
+        let s = PillScene.sweeping()
+        s.pill.setLoading(false)
+        s.pill.reset()
+        s.startLoading()
+        #expect(s.sweepFrame() == 193)
+        #expect(s.bar.opacity > 0)
+    }
+
+    @MainActor @Test func aReduceMotionSweepExitPresentsNarrowsWithoutASpringAndIdles() {
+        let s = PillScene.sweeping()
+        s.reduceMotion = true
+        #expect(s.deliverFrame())
+        #expect(s.bar.opacity == 0)
+        #expect(!s.frames.isRunning)
+        #expect(s.track.bounds.size == PageLoadingIndicator.trackSize(sweeping: false))
+        #expect(s.track.animation(forKey: "bounds") == nil)
+        #expect(s.bar.animation(forKey: "opacity") == nil)
+    }
+
+    @MainActor @Test func reduceMotionLoadingHoldsThePulseWithoutTicking() {
+        let s = PillScene()
+        s.reduceMotion = true
+        s.startLoading()
+        #expect(s.pill.isLoading)
+        #expect(s.frames.starts == 0)
+    }
+
+    @MainActor private static func hidingAfterAReduceMotionLoad() -> PillScene {
+        let s = PillScene()
+        s.reduceMotion = true
+        s.startLoading()
+        s.reduceMotion = false
+        s.pill.setLoading(false)
+        return s
+    }
+
+    @MainActor @Test func hidingSamplesThePulseBackToRest() {
+        let s = Self.hidingAfterAReduceMotionLoad()
+        #expect(s.frames.starts == 1)
+        #expect(s.frames.isRunning)
+    }
+
+    @MainActor @Test func resetIdlesAHidingPill() {
+        let s = Self.hidingAfterAReduceMotionLoad()
+        s.pill.reset()
+        #expect(!s.frames.isRunning)
     }
 
     private typealias Skip = PageLoadingPresentationSkip
@@ -322,6 +695,33 @@ struct NavigationLoadingTests {
             _ = (item.target as? NSObject)?.perform(item.action)
         }
         #expect(chosen == [.reload, .forceReload])
+    }
+
+    private static func withDefaults(_ body: (UserDefaults) -> Void) {
+        let name = "parc.navigation-loading-tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        body(defaults)
+    }
+
+    @MainActor @Test func theDeveloperReloadDefaultIsReload() {
+        Self.withDefaults { defaults in
+            #expect(DeveloperReloadPreference.storedState(in: defaults) == .reload)
+        }
+    }
+
+    @MainActor @Test func storingForceReloadWritesItsRawValue() {
+        Self.withDefaults { defaults in
+            DeveloperReloadPreference.store(.forceReload, in: defaults)
+            #expect(defaults.string(forKey: DeveloperReloadPreference.key) == "forceReload")
+        }
+    }
+
+    @MainActor @Test func theStoredDeveloperReloadDefaultReadsBack() {
+        Self.withDefaults { defaults in
+            DeveloperReloadPreference.store(.forceReload, in: defaults)
+            #expect(DeveloperReloadPreference.storedState(in: defaults) == .forceReload)
+        }
     }
 
     private static let lights = CGSize(width: 60, height: 14)

@@ -19,14 +19,6 @@ import Testing
     func runTimeouts() {
         for item in scheduled where item.delay > 0 { item.work() }
     }
-
-    func waitForDeferral() {
-        var turns = 0
-        while !scheduled.contains(where: { $0.delay == 0 }) && turns < 50 {
-            RunLoop.main.run(mode: .default, before: .distantPast)
-            turns += 1
-        }
-    }
 }
 
 @MainActor private final class Scene {
@@ -59,6 +51,7 @@ struct WindowRestoreWaitsTests {
         s.waits.wait(for: s.main) { s.resumed.append("address") }
         s.restore()
         #expect(s.resumed.isEmpty)
+        #expect(s.timers.scheduled.map(\.delay) == [0.5, 0])
     }
 
     @MainActor @Test func oneRestoreDeliversEveryWaitingRequestInOrder() {
@@ -66,7 +59,6 @@ struct WindowRestoreWaitsTests {
         s.waits.wait(for: s.main) { s.resumed.append("address") }
         s.waits.wait(for: s.main) { s.resumed.append("tab") }
         s.restore()
-        s.timers.waitForDeferral()
         s.timers.runDeferred()
         #expect(s.resumed == ["address", "tab"])
         #expect(s.waits.count == 0)
@@ -76,7 +68,6 @@ struct WindowRestoreWaitsTests {
         let s = Scene()
         s.waits.wait(for: s.main) { s.resumed.append("address") }
         s.restore()
-        s.timers.waitForDeferral()
         s.timers.runDeferred()
         s.restore()
         s.timers.runDeferred()
@@ -92,7 +83,6 @@ struct WindowRestoreWaitsTests {
         s.waits.wait(for: s.main) { [request] in _ = request; s.resumed.append("address") }
         request = nil
         s.restore()
-        s.timers.waitForDeferral()
         s.timers.runDeferred()
         s.timers.scheduled.removeAll()
         #expect(held == nil)
@@ -102,7 +92,7 @@ struct WindowRestoreWaitsTests {
         let s = Scene()
         s.waits.wait(for: s.main) { s.resumed.append("timed out") }
         s.restore(s.other)
-        RunLoop.main.run(mode: .default, before: .distantPast)
+        #expect(s.timers.scheduled.map(\.delay) == [0.5])
         s.timers.runDeferred()
         #expect(s.resumed.isEmpty)
         #expect(s.waits.count == 1)
@@ -126,7 +116,6 @@ struct WindowRestoreWaitsTests {
         let s = Scene()
         s.waits.wait(for: s.main) { s.resumed.append("closed") }
         NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: s.main)
-        s.timers.waitForDeferral()
         s.timers.runDeferred()
         #expect(s.resumed == ["closed"])
     }
@@ -135,7 +124,6 @@ struct WindowRestoreWaitsTests {
         let s = Scene()
         s.waits.wait(for: s.main) { s.resumed.append("closed") }
         NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: s.main)
-        s.timers.waitForDeferral()
         s.timers.runDeferred()
         s.timers.runTimeouts()
         #expect(s.resumed == ["closed"])

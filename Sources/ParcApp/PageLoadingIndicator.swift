@@ -52,7 +52,8 @@ enum PageLoadingPresentationSkip {
     private var loadingStart: CFTimeInterval = 0, sweepStart: CFTimeInterval = 0
     private var lastTick: CFTimeInterval = 0
     private var lastPresentation: PageLoadingPresentation?
-    private let frames = ViewDisplayFrameDriver()
+    var frames: any DisplayFrameDriving = ViewDisplayFrameDriver()
+    var reduceMotion: @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     var now: () -> CFTimeInterval = { CACurrentMediaTime() }
     var isVisibleOnScreen: @MainActor (NSView) -> Bool = { view in
         guard let window = view.window else { return false }
@@ -112,7 +113,7 @@ enum PageLoadingPresentationSkip {
     private func setTrackSize(animated: Bool) {
         let target = CGRect(origin: .zero, size: Self.trackSize(sweeping: phase == .sweeping))
         guard track.bounds != target else { return }
-        if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        if animated, !reduceMotion() {
             let from = track.presentation()?.bounds ?? track.bounds
             track.add(Self.phaseSpring(keyPath: "bounds", from: NSValue(rect: from), to: NSValue(rect: target)), forKey: "bounds")
         } else {
@@ -127,7 +128,7 @@ enum PageLoadingPresentationSkip {
 
     func setLoading(_ loading: Bool) {
         if loading == isLoading { return }
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let reduceMotion = self.reduceMotion()
         if loading {
             phase = .loading; loadingStart = now()
             if reduceMotion { pulse = 1; velocity = 0 }
@@ -142,7 +143,7 @@ enum PageLoadingPresentationSkip {
 
     private var needsFrames: Bool {
         guard windowVisible else { return false }
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        if reduceMotion() {
             return phase == .hidden && (abs(pulse) >= 0.001 || abs(velocity) >= 0.01)
         }
         switch phase {
@@ -164,7 +165,7 @@ enum PageLoadingPresentationSkip {
 
     private func tick(now: CFTimeInterval) -> Bool {
         let step = min(1.0 / 20, max(0, now - lastTick)); lastTick = now
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let reduceMotion = self.reduceMotion()
         var stroke = (start: bar.strokeStart, end: bar.strokeEnd)
         switch phase {
         case .loading:
@@ -233,7 +234,7 @@ enum PageLoadingPresentationSkip {
     private func setBarVisible(_ visible: Bool) {
         let target: Float = visible ? Self.sweepBarOpacity : 0
         guard bar.opacity != target else { return }
-        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        if !reduceMotion() {
             let from = bar.presentation()?.opacity ?? bar.opacity
             bar.add(Self.phaseSpring(keyPath: "opacity", from: from, to: target), forKey: "opacity")
         } else {

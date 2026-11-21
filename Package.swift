@@ -103,7 +103,8 @@ let package = Package(
         .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles"], path: "tests/ParcTests",
                     resources: [.copy("Notes/Fixtures"), .copy("Presentation/Fixtures/AppIcons"), .copy("Presentation/Fixtures/NativeIcon.icns"),
                                 .copy("Presentation/Fixtures/MembershipCard"), .copy("Presentation/Fixtures/ThemeEditor"),
-                                .copy("Easels/Fixtures/EaselFonts"), .copy("Capture/CaptureFixtures")],
+                                .copy("Easels/Fixtures/EaselFonts"), .copy("Capture/CaptureFixtures"),
+                                .copy("Windows/Fixtures/NavigationControls")],
                     swiftSettings: strict + engineImport),
     ] + (siteFilmScenes.isEmpty ? [] : [
         .target(
