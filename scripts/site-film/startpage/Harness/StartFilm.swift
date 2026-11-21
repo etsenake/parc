@@ -1,4 +1,6 @@
 import AppKit
+@testable import Parc
+import ParcCore
 
 struct SplitMix: RandomNumberGenerator {
     var state: UInt64

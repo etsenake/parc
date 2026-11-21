@@ -1,6 +1,8 @@
 import AppKit
 import CoreImage
 import SwiftUI
+@testable import Parc
+import ParcCore
 
 @MainActor enum PageArt {
     static func draw(_ image: NSImage, in card: NSRect, fill: NSColor = .white, fitWidth: CGFloat? = nil, scroll: CGFloat = 0) {
@@ -51,7 +53,7 @@ import SwiftUI
         let state = ParcToastState(content: content, theme: theme)
         state.showing = true
         let actions = ParcToastActions(tap: nil, accessory: nil, dismiss: {}, share: { _ in }, frames: { _ in }, retry: nil)
-        let view = ParcToastCard(state: state, actions: actions)
+        let view = ParcToastCard(state: state, actions: actions, backgroundFill: Color(white: 0.92))
             .frame(width: 560, height: 120)
             .padding(30)
             .environment(\.colorScheme, .light)

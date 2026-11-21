@@ -1158,7 +1158,7 @@ extension EaselCanvasView {
             chosen = chosen.filter { displayBounds(of: $0).intersects(visible) }
         }
         if reduced, !drawsLine { return }
-        let now = CACurrentMediaTime()
+        let now = motionTime
         for item in chosen {
             canvasFeedback.reveals[item.id] = .init(start: now, drawsLine: drawsLine, startHead: startHead, endHead: endHead, reduced: reduced)
         }
@@ -1167,7 +1167,7 @@ extension EaselCanvasView {
 
     func presentedReveal(_ id: UUID) -> EaselConnectorRevealFrame? {
         guard let reveal = canvasFeedback.reveals[id] else { return nil }
-        let elapsed = CACurrentMediaTime() - reveal.start
+        let elapsed = motionTime - reveal.start
         if reveal.reduced {
             return EaselConnectorRevealFrame(fraction: 1, opacity: CGFloat(EaselFeedbackCurve.revealOpacity(elapsed, reduced: true)))
         }
@@ -1211,7 +1211,7 @@ extension EaselCanvasView {
         let magnet = connectors.magnet, previous = canvasFeedback.movingMagnet
         canvasFeedback.movingMagnet = magnet
         canvasFeedback.magnetTicker.update(Set([magnet.map(magnetKey)].compactMap { $0 }))
-        let now = CACurrentMediaTime()
+        let now = motionTime
         var animate = false
         if magnet?.target != previous?.target {
             canvasFeedback.glow = magnet.map { ($0.target, now) }
@@ -1231,12 +1231,12 @@ extension EaselCanvasView {
     func connectorGlowLevel(_ target: UUID) -> CGFloat? {
         guard let glow = canvasFeedback.glow, glow.target == target else { return nil }
         if feedbackReducesMotion { return 1 }
-        return CGFloat(EaselFeedbackCurve.highlighted(CACurrentMediaTime() - glow.start, from: 0, to: 1))
+        return CGFloat(EaselFeedbackCurve.highlighted(motionTime - glow.start, from: 0, to: 1))
     }
 
     func connectorDotRadius(target: UUID, side: EaselConnection.Side, active: Bool) -> CGFloat {
         guard active else { return 4 }
         guard let dot = canvasFeedback.dot, dot.target == target, dot.side == side, !feedbackReducesMotion else { return 6 }
-        return CGFloat(EaselFeedbackCurve.highlighted(CACurrentMediaTime() - dot.start, from: dot.from, to: 6))
+        return CGFloat(EaselFeedbackCurve.highlighted(motionTime - dot.start, from: dot.from, to: 6))
     }
 }

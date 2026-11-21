@@ -1125,3 +1125,14 @@ private final class CaptureSelectionShade: CaptureFlippedView {
         }
     }
 }
+
+extension PageCaptureOverlay {
+    var harnessPicture: NSImageView { picture }
+    var harnessSelection: NSRect? { selection }
+    var harnessLensShown: Bool { !elementLens.isHidden && selecting }
+    func harnessGrayscale(_ shown: Bool) { elementLens.harnessGrayscale(shown) }
+}
+
+private extension CaptureElementLens {
+    func harnessGrayscale(_ shown: Bool) { grayscale.isHidden = !shown }
+}

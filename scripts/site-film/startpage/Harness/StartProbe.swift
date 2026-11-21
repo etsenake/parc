@@ -1,4 +1,5 @@
 import AppKit
+@testable import Parc
 
 @MainActor enum StartProbe {
     static func snapshot(_ view: NSView, scale: CGFloat = 2) -> NSBitmapImageRep {

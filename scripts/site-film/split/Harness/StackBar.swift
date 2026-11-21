@@ -1,5 +1,7 @@
 import AppKit
 import CoreImage
+@testable import Parc
+import ParcCore
 
 struct BarRow {
     let id: String

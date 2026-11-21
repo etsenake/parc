@@ -264,6 +264,8 @@ struct ParcToastActions {
 struct ParcToastCard: View {
     @ObservedObject var state: ParcToastState
     let actions: ParcToastActions
+    var backgroundFill: Color? = nil
+    var buttonPointer = true
     @Environment(\.colorScheme) private var colorScheme
     @State private var accessoryHovered = false
     private var palette: ParcToastPalette {
@@ -341,11 +343,11 @@ struct ParcToastCard: View {
                             SwiftUI.Button { actions.share(urls) } label: {
                                 Image(systemName: "square.and.arrow.up").offset(x: 0, y: -1)
                             }
-                            .buttonStyle(ParcToastButtonStyle(ink: ink, isDark: palette.isDark))
+                            .buttonStyle(ParcToastButtonStyle(ink: ink, isDark: palette.isDark, showsPointer: buttonPointer))
                             .accessibilityLabel("Share")
                         case .retry:
                             SwiftUI.Button("Retry") { actions.retry?() }
-                                .buttonStyle(ParcToastButtonStyle(ink: ink, isDark: palette.isDark))
+                                .buttonStyle(ParcToastButtonStyle(ink: ink, isDark: palette.isDark, showsPointer: buttonPointer))
                         }
                     }
                     .overlay(focusRing(cornerRadius: 6, shown: state.focused == .button(index)))
@@ -403,7 +405,7 @@ struct ParcToastCard: View {
 
     @ViewBuilder private func backdrop(accessory: Bool) -> some View {
         ZStack {
-            ParcToastMaterial()
+            if let backgroundFill { backgroundFill } else { ParcToastMaterial() }
             Color(nsColor: palette.background).opacity(0.8)
             if !accessory {
                 LinearGradient(colors: palette.isDark ? [.black.opacity(0.2), .black.opacity(0.4)] :
@@ -442,8 +444,10 @@ struct ParcToastCard: View {
 struct ParcToastButtonStyle: ButtonStyle {
     let ink: Color
     let isDark: Bool
-    func makeBody(configuration: Configuration) -> some View {
-        StyledButton(configuration: configuration, ink: ink, isDark: isDark)
+    var showsPointer = true
+    @ViewBuilder func makeBody(configuration: Configuration) -> some View {
+        let button = StyledButton(configuration: configuration, ink: ink, isDark: isDark)
+        if showsPointer { button.pointingHandCursor() } else { button }
     }
     private struct StyledButton: View {
         let configuration: ButtonStyleConfiguration
@@ -467,7 +471,6 @@ struct ParcToastButtonStyle: ButtonStyle {
                             : hovered ? Color.black.opacity(0.025) : Color.clear))
                 )
                 .onHover { hovered = $0 }
-                .pointingHandCursor()
         }
     }
 }

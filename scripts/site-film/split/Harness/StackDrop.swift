@@ -1,4 +1,6 @@
 import AppKit
+@testable import Parc
+import ParcCore
 
 @MainActor final class StackDrop {
     struct Motion { var from: [NSRect]; var to: [NSRect]; var start: Double }

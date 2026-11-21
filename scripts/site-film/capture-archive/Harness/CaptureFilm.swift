@@ -1,4 +1,16 @@
 import AppKit
+@testable import Parc
+
+private extension PageCaptureOverlay {
+    var harnessActionTitles: [String] { palette.rows.map(\.title) }
+    var harnessPaletteFrame: NSRect { palette.card.frame }
+    func harnessRowFrame(_ index: Int) -> NSRect {
+        guard palette.rows.indices.contains(index), let row = palette.view.list.rowFrame(forItemID: palette.rows[index].id) else { return .zero }
+        return convert(row, from: palette.view.list)
+    }
+    func harnessHover(_ index: Int?) { palette.view.list.highlightedIndex = index }
+    func harnessPress(_ index: Int, _ pressed: Bool) { harnessHover(pressed ? index : nil) }
+}
 
 @MainActor final class CaptureFilm {
     let scene: BrowserScene

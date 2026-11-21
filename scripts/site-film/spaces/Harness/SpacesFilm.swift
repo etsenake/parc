@@ -1,4 +1,6 @@
 import AppKit
+@testable import Parc
+import ParcCore
 
 struct FingerSwipe {
     let name: String

@@ -1,4 +1,6 @@
 import AppKit
+@testable import Parc
+import ParcCore
 
 @MainActor final class TextDrag {
     let editor: NotePageEditor
