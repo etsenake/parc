@@ -1,5 +1,6 @@
 #import <Cocoa/Cocoa.h>
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
 #include <objc/runtime.h>
 #include <stdio.h>
 
@@ -42,8 +43,7 @@ static BOOL LiveResize(id self, SEL _cmd) {
   return gLiveResize;
 }
 static BOOL Shows(NSCursor* cursor) {
-  [[NSRunLoop currentRunLoop]
-      runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+  ParcNativeAdvance(0.1);
   return NSEqualPoints(NSCursor.currentSystemCursor.hotSpot, cursor.hotSpot);
 }
 static NSView* Host(NSButton* button) {
@@ -66,11 +66,9 @@ static void PlaceUnderCursor(NSPanel* panel) {
 static void Hover(PCVideoPiPPresenter* presenter) {
   PlaceUnderCursor(presenter.panel);
   [presenter.panel.contentView mouseEntered:[NSEvent new]];
-  [[NSRunLoop currentRunLoop]
-      runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+  ParcNativeAdvance(0.05);
   [presenter.panel.contentView mouseMoved:[NSEvent new]];
-  [[NSRunLoop currentRunLoop]
-      runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+  ParcNativeAdvance(0.02);
 }
 @interface VideoPiPWindowTests : ParcNativeTestCase
 @end
@@ -138,8 +136,7 @@ static void Hover(PCVideoPiPPresenter* presenter) {
     EXPECT(!slider.hidden);
     EXPECT(slider.doubleValue == 5);
     [presenter setPosition:5 duration:20 playbackRate:1];
-    [[NSRunLoop currentRunLoop]
-        runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.12]];
+    ParcNativeAdvance(0.12);
     EXPECT(slider.doubleValue > 5);
     [presenter setPosition:8 duration:20 playbackRate:0];
     EXPECT(slider.doubleValue == 8);
@@ -148,8 +145,7 @@ static void Hover(PCVideoPiPPresenter* presenter) {
     [presenter.panel.contentView mouseExited:[NSEvent new]];
     NSPoint away = NSMakePoint(-2000, -2000);
     [presenter.panel setFrameOrigin:away];
-    [[NSRunLoop currentRunLoop]
-        runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+    ParcNativeAdvance(0.05);
     [presenter setNaturalSize:NSMakeSize(1920, 1080)];
     NSRect frame = presenter.panel.frame;
     NSRect work = NSScreen.mainScreen.visibleFrame;

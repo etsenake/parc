@@ -104,6 +104,27 @@ static void InstallClock(void) {
   }));
 }
 
+static void InstallDates(void) {
+  typedef NSDate* (*DateIMP)(id, SEL);
+  typedef NSDate* (*DateSinceNowIMP)(id, SEL, NSTimeInterval);
+  static IMP realDate, realSinceNow;
+  SwizzleClass(NSDate.class, @selector(date), ^NSDate*(id cls) {
+    NSDate* now = ((DateIMP)realDate)(cls, @selector(date));
+    if (!CalledFromTestBundle(__builtin_return_address(0))) return now;
+    return [now dateByAddingTimeInterval:clockOffset];
+  }, &realDate);
+  SwizzleClass(NSDate.class, @selector(dateWithTimeIntervalSinceNow:), ^NSDate*(id cls, NSTimeInterval seconds) {
+    if (CalledFromTestBundle(__builtin_return_address(0))) seconds += clockOffset;
+    return ((DateSinceNowIMP)realSinceNow)(cls, @selector(dateWithTimeIntervalSinceNow:), seconds);
+  }, &realSinceNow);
+  Method sinceNow = class_getInstanceMethod(NSDate.class, @selector(timeIntervalSinceNow));
+  IMP realInterval = method_getImplementation(sinceNow);
+  method_setImplementation(sinceNow, imp_implementationWithBlock(^NSTimeInterval(NSDate* date) {
+    NSTimeInterval interval = ((NSTimeInterval(*)(id, SEL))realInterval)(date, @selector(timeIntervalSinceNow));
+    return CalledFromTestBundle(__builtin_return_address(0)) ? interval - clockOffset : interval;
+  }));
+}
+
 static void InstallAnimations(void) {
   typedef void (*RunGroupIMP)(id, SEL, void (^)(NSAnimationContext*), void (^)(void));
   SwizzleClass(NSAnimationContext.class, @selector(runAnimationGroup:completionHandler:),
@@ -145,7 +166,7 @@ void ParcNativeSettle(void) {
       drained = YES;
     });
     for (int turn = 0; !drained && turn < 100; ++turn) CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, true);
-    BOOL handled = !drained;
+    BOOL handled = NO;
     NSEvent* event;
     while ((event = [NSApp nextEventMatchingMask:NSEventMaskAny
                                        untilDate:nil
@@ -209,6 +230,7 @@ __attribute__((constructor)) static void InstallParcNativeClock(void) {
   if (dladdr((const void*)&InstallParcNativeClock, &info)) bundleBase = info.dli_fbase;
   scheduledTimers = [NSMutableArray array];
   InstallClock();
+  InstallDates();
   InstallTimers();
   InstallAnimations();
   [XCTestObservationCenter.sharedTestObservationCenter addTestObserver:[ParcNativeClockObserver new]];
