@@ -360,8 +360,6 @@ static void Pump() {
 }
 
 - (void)testPreparingNeitherShowsNorFocusesThePopup {
-  [_parent orderFront:nil];
-  EXPECT(_parent.visible);
   PCExtensionPopupPresenter* presenter = [self windowAnchoredPresenterFor:[self page:nil] onDismiss:nil];
   EXPECT([presenter prepare]);
   EXPECT(!presenter.presenting);

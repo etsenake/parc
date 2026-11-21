@@ -1,4 +1,5 @@
 #import "ParcNativeTest.h"
+#import "ParcNativeWindows.h"
 
 #import <objc/runtime.h>
 
@@ -39,6 +40,8 @@ void ParcNativeCheckMessage(const char* file, int line, bool passed, const char*
 }
 
 - (void)tearDown {
+  BOOL onScreen = NO;
+  for (NSWindow* window in NSApp.windows) onScreen |= ParcNativeWindowOrderedForReal(window);
   for (Class cls = self.class; cls != ParcNativeTestCase.class; cls = class_getSuperclass(cls)) {
     unsigned count = 0;
     Ivar* ivars = class_copyIvarList(cls, &count);
@@ -48,8 +51,13 @@ void ParcNativeCheckMessage(const char* file, int line, bool passed, const char*
     }
     free(ivars);
   }
+  XCTestCase* test = currentTest;
   currentTest = nil;
   [super tearDown];
+  if (onScreen) {
+    [test recordIssue:[[XCTIssue alloc] initWithType:XCTIssueTypeAssertionFailure
+                                  compactDescription:@"a window was ordered on screen"]];
+  }
 }
 
 @end
