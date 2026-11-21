@@ -154,6 +154,8 @@ private final class ExternalMediaPreferenceObserver: NSObject {
 
 @MainActor
 final class ExternalMediaLibrary: ObservableObject {
+    typealias WatchFactory = ([String: String], FSEventStreamEventId, @escaping @Sendable (ExternalMediaWatcher.Batch) -> Void) -> AnyObject?
+
     private final class Weak { weak var value: ExternalMediaLibrary?; init(_ value: ExternalMediaLibrary) { self.value = value } }
     private static var owners: [String: Weak] = [:]
     static func shared(directory: URL) -> ExternalMediaLibrary {
@@ -173,7 +175,8 @@ final class ExternalMediaLibrary: ObservableObject {
     private let disk: ExternalMediaDisk
     private let systemFolders: (() -> [URL])
     private var clients = Set<UUID>()
-    private var watcher: ExternalMediaWatcher?
+    private var watcher: AnyObject?
+    private let makeWatcher: WatchFactory
     private var watchedRoots: [String]?
     private var watchedAliases: [String: String]?
     private var watchSession: UInt64 = 0
@@ -192,7 +195,9 @@ final class ExternalMediaLibrary: ObservableObject {
     private var screenshotObserver: ExternalMediaPreferenceObserver?
     nonisolated static let screenshotDomain = "com.apple.screencapture"
     init(directory: URL, preferencesAreEphemeral: Bool = false, systemFolders: @escaping () -> [URL] = ExternalMediaLibrary.defaultFolders,
-         cloud: ExternalMediaCloud = .system, screenshotPreferences: UserDefaults? = UserDefaults(suiteName: ExternalMediaLibrary.screenshotDomain)) {
+         cloud: ExternalMediaCloud = .system, screenshotPreferences: UserDefaults? = UserDefaults(suiteName: ExternalMediaLibrary.screenshotDomain),
+         makeWatcher: @escaping WatchFactory = { ExternalMediaWatcher(aliases: $0, since: $1, handler: $2) }) {
+        self.makeWatcher = makeWatcher
         self.systemFolders = systemFolders; self.cloud = cloud; self.screenshotPreferences = screenshotPreferences
         disk = ExternalMediaDisk(directory: directory, preferencesAreEphemeral: preferencesAreEphemeral, cloud: cloud)
     }
@@ -375,7 +380,7 @@ final class ExternalMediaLibrary: ObservableObject {
         watcher = nil; watchedRoots = roots; watchedAliases = aliases; watchSession &+= 1
         guard !roots.isEmpty else { return }
         let session = watchSession
-        watcher = ExternalMediaWatcher(aliases: aliases, since: mark) { [weak self] batch in
+        watcher = makeWatcher(aliases, mark) { [weak self] batch in
             Task { @MainActor [weak self] in self?.receive(batch, session: session) }
         }
     }
