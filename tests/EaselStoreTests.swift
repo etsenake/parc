@@ -582,6 +582,12 @@ struct EaselStoreTests {
             try session.undo()
             expect(session.document.items[0].text == "", "One document undo restores typing-run start")
             try session.redo()
+            try session.perform("Type", coalescing: group) { $0.items[0].text = "abcX" }
+            try session.perform("Type", coalescing: group) { $0.items[0].text = "abc" }
+            expect(session.document.items[0].text == "abc", "Typing that is undone back to its start leaves the text unchanged")
+            try session.undo()
+            expect(session.document.items[0].text == "", "A typing run that nets to nothing leaves no empty undo step behind")
+            try session.redo()
             expect(session.document.items[0].text == "abc", "Redo restores the complete typing run")
             try session.perform("Type", coalescing: group) { $0.items[0].text = "abcd" }
             try session.perform("Other window") { $0.title = "From another window" }

@@ -987,8 +987,12 @@ final class EaselSession: ObservableObject {
         next.modifiedAt = (store?.timestamp() ?? Date())
         try validateReplacement(next)
         try persist(next)
-        if group == nil || lastUndoGroup != group { undoStack.append(document) }
-        lastUndoGroup = group
+        if group == nil || lastUndoGroup != group {
+            undoStack.append(document); lastUndoGroup = group
+        } else if var start = undoStack.last {
+            start.modifiedAt = next.modifiedAt
+            if start == next { undoStack.removeLast(); lastUndoGroup = nil }
+        }
         trimUndo()
         redoStack.removeAll()
         document = next
