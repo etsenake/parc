@@ -37,6 +37,7 @@ struct EaselObjectMotionTests {
         stampHold()
         wheel()
         bursts()
+        foldAnchors()
         print("EaselObjectMotionTests passed")
     }
 
@@ -393,5 +394,20 @@ struct EaselObjectMotionTests {
         let puff = EaselBurstPlan.puff(width: 100, height: 40, seed: 3)
         expect((5...6).contains(puff.count) && puff.allSatisfy { $0.size >= 7 }, "a poof puffs a few soft specks")
         expect(EaselBurstPlan.perCommand == 8, "bursts play for at most eight objects")
+    }
+
+    static func foldAnchors() {
+        let root = UUID(), left = UUID(), right = UUID(), leftChild = UUID(), leftGrandchild = UUID(), rightChild = UUID()
+        var tree = EaselMindMapTree()
+        let parents: [UUID: UUID?] = [root: nil, left: root, right: root, leftChild: left, leftGrandchild: leftChild, rightChild: right]
+        for (id, parent) in parents { tree.nodes[id] = EaselMindMapTree.Node(id: id, parent: parent) }
+        let folded: Set<UUID> = [left, right]
+        expect(tree.foldAnchor(of: leftChild, among: folded) == left, "a topic folds into its own branch")
+        expect(tree.foldAnchor(of: leftGrandchild, among: folded) == left, "deep topics fold into the branch they belong to")
+        expect(tree.foldAnchor(of: rightChild, among: folded) == right, "the other branch keeps its own topics")
+        expect(tree.foldAnchor(of: left, among: folded) == nil, "a folded branch never anchors to itself")
+        expect(tree.foldAnchor(of: UUID(), among: folded) == nil, "unknown topics fall back to the nearest branch")
+        let siblings: Set<UUID> = [leftChild, right]
+        expect(tree.foldAnchor(of: leftGrandchild, among: siblings) == leftChild, "the nearest folded ancestor wins")
     }
 }

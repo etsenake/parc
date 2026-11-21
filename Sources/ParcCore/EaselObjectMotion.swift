@@ -715,3 +715,15 @@ enum EaselStampWheelMotion {
         return (t, 1.15 - 0.55 * t, 1 - EaselObjectTransition.easeIn(elapsed / tuck) * 0.9)
     }
 }
+
+extension EaselMindMapTree {
+    func foldAnchor(of id: UUID, among targets: Set<UUID>) -> UUID? {
+        var current = nodes[id]?.parent, steps = 0
+        while let candidate = current, steps <= nodes.count {
+            if targets.contains(candidate) { return candidate }
+            current = nodes[candidate]?.parent
+            steps += 1
+        }
+        return nil
+    }
+}
