@@ -19,7 +19,7 @@ static void Pump() {
 static NSWindow* Window() {
   NSWindow* w =
       [[NSWindow alloc] initWithContentRect:NSMakeRect(-2500, -2500, 640, 480)
-                                  styleMask:NSWindowStyleMaskTitled
+                                  styleMask:NSWindowStyleMaskBorderless
                                     backing:NSBackingStoreBuffered
                                       defer:NO];
   w.releasedWhenClosed = NO;

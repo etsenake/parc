@@ -16,7 +16,7 @@ static void Pump(double seconds = .12) {
 static NSWindow* Window() {
   auto* w = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(-20000, -20000, 600, 500)
-                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered
                     defer:NO];
   w.releasedWhenClosed = NO;

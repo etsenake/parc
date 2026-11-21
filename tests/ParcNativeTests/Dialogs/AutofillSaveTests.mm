@@ -14,7 +14,7 @@ static void Drain() {
 static NSWindow* Window() {
   NSWindow* window = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(-2000, -2000, 600, 400)
-                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered
                     defer:NO];
   window.releasedWhenClosed = NO;

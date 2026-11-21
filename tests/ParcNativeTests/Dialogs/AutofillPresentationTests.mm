@@ -27,7 +27,7 @@ static void Drain() {
 static PresentationWindow* Window() {
   auto* window = [[PresentationWindow alloc]
       initWithContentRect:NSMakeRect(-2200, -2200, 600, 400)
-                styleMask:NSWindowStyleMaskTitled
+                styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered
                     defer:NO];
   window.releasedWhenClosed = NO;

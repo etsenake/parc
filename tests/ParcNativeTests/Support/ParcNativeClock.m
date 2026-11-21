@@ -156,7 +156,7 @@ static void InstallAnimations(void) {
 
 void ParcNativeSettle(void) {
   const CFAbsoluteTime limit = CFAbsoluteTimeGetCurrent() + 1;
-  for (int idle = 0; idle < 2;) {
+  while (true) {
     if (CFAbsoluteTimeGetCurrent() > limit) {
       fprintf(stderr, "ParcNativeSettle: run loop never went idle\n");
       return;
@@ -165,18 +165,16 @@ void ParcNativeSettle(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
       drained = YES;
     });
-    for (int turn = 0; !drained && turn < 100; ++turn) CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, true);
     BOOL handled = NO;
+    for (int turn = 0; !drained && turn < 100; ++turn) {
+      if (CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, true) == kCFRunLoopRunHandledSource && turn > 0) handled = YES;
+    }
     NSEvent* event;
-    while ((event = [NSApp nextEventMatchingMask:NSEventMaskAny
-                                       untilDate:nil
-                                          inMode:NSDefaultRunLoopMode
-                                         dequeue:YES])) {
+    while ((event = [NSApp nextEventMatchingMask:NSEventMaskAny untilDate:nil inMode:NSDefaultRunLoopMode dequeue:YES])) {
       [NSApp sendEvent:event];
       handled = YES;
     }
-    if (CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, true) == kCFRunLoopRunHandledSource) handled = YES;
-    idle = handled ? 0 : idle + 1;
+    if (!handled) return;
   }
 }
 
