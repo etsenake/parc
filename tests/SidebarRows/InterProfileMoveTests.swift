@@ -131,6 +131,13 @@ import Foundation
         var aheadEasel = f.state; aheadEasel.tabs[0].openDocumentVisit(.easel(easelID), title: "Board"); _ = aheadEasel.tabs[0].stepBackFromNote()
         let movedAhead = try unwrap(propose(request(f, aheadEasel.tabs[0]), aheadEasel), "page with an Easel ahead crosses Profiles")
         try check(InterProfileMove.documents(moving: [f.today.id], after: movedAhead) == [.easel(easelID)], "an Easel waiting ahead of the page moves with it")
+        var stacked = f.state; let laterEasel = UUID()
+        stacked.tabs[0].openDocumentVisit(.easel(easelID), title: "Board")
+        stacked.tabs[0].openDocumentVisit(.note(URL(fileURLWithPath: "/tmp/Parc Notes/Plan.md")), title: "Plan")
+        stacked.tabs[0].openDocumentVisit(.easel(laterEasel), title: "Later"); _ = stacked.tabs[0].stepNoteVisit(by: -1)
+        let movedStack = try unwrap(propose(request(f, stacked.tabs[0]), stacked), "page with Easels behind and ahead crosses Profiles")
+        try check(InterProfileMove.documents(moving: [f.today.id], after: movedStack) == [.easel(easelID), .easel(laterEasel)],
+                  "every Easel in the tab's history moves with it, behind and ahead of the shown note")
         var pinnedEasel = f.state; pinnedEasel.tabs[1].url = InternalPage.easel(easelID).urlString; pinnedEasel.tabs[1].savedURL = pinnedEasel.tabs[1].url
         let split = try unwrap(propose(request(f, pinnedEasel.tabs[1]), pinnedEasel), "pinned Easel proposal")
         try check(InterProfileMove.documents(moving: [f.pinned.id], after: split) == nil, "a home alias left in the source Profile keeps the document there")

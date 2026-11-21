@@ -139,7 +139,7 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
                                              pageEntries: engineSwipe ? source.historyEntries(back: false) : 0) {
             case .note?:
                 guard noteStep.controller.noteVisitTarget(.forward) == noteStep.tabID else { return false }
-                return noteStep.controller.stepNoteVisit(noteStep.tabID, forward: true)
+                return noteStep.controller.stepNoteVisit(noteStep.tabID, by: distance)
             case let .page(steps)?:
                 return source.navigate(back: false, distance: steps)
             case .pageUnderNote?, nil:
@@ -203,10 +203,11 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
         view.palette = (container.window?.windowController as? BrowserWindowController)?.historySwipePalette
         let rows = history.map { HistorySwipeRows(entries: $0.entries.map(Self.row), currentIndex: $0.currentIndex) }
         if let noteStep {
-            let note = HistorySwipeOverlayRow(title: noteStep.visit.note.title,
-                                              favicon: BrowserWindowController.noteVisitIcon(noteStep.visit))
+            let notes = noteStep.visit.ahead.map {
+                HistorySwipeOverlayRow(title: $0.title, favicon: BrowserWindowController.noteVisitIcon($0))
+            }
             let current = rows?.current ?? HistorySwipeOverlayRow(title: noteStep.visit.page.title, favicon: nil)
-            view.setRows(current: current, back: rows?.back ?? [], forward: [note] + (rows?.forward ?? []))
+            view.setRows(current: current, back: rows?.back ?? [], forward: notes + (rows?.forward ?? []))
         } else if let rows {
             view.setRows(current: rows.current ?? HistorySwipeOverlayRow(title: "", favicon: nil),
                          back: rows.back, forward: rows.forward)

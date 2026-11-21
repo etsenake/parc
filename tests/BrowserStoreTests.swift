@@ -88,6 +88,47 @@ struct BrowserStoreTests {
         }
     }
 
+    static func testNoteVisitStackSessions() throws {
+        try withDirectory { directory in
+            let note = directory.appendingPathComponent("Plan.md"), easel = UUID()
+            try Data("# Plan\n".utf8).write(to: note)
+            let page: UUID
+            do {
+                let store = try BrowserStore(directory: directory)
+                page = store.open("https://example.test/docs")
+                store.updateTab(page, title: "Docs", url: "https://example.test/docs")
+                try expect(store.openDocumentOverPage(page, page: .note(note), title: "Plan")
+                           && store.openDocumentOverPage(page, page: .easel(easel), title: "Board")
+                           && store.stepNoteVisit(page, forward: false), "A page holds a note and an Easel, showing the note")
+                try store.save()
+            }
+            let reopened = try BrowserStore(directory: directory)
+            let restored = reopened.state.tab(page)!
+            try expect(restored.url == InternalPage.note(note).urlString && restored.noteVisit?.position == 0
+                       && restored.noteVisit?.documents.count == 2 && restored.hasNoteAhead,
+                       "A session restores every document step and where the tab stood")
+            try expect(reopened.stepNoteVisit(page, forward: true) && reopened.state.tab(page)?.url == InternalPage.easel(easel).urlString,
+                       "Forward after a restart reaches the Easel")
+            try reopened.save()
+
+            let file = directory.appendingPathComponent("session.json")
+            var saved = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+            var tabs = saved["tabs"] as! [[String: Any]]
+            let index = tabs.firstIndex { $0["id"] as? String == page.uuidString }!
+            let record = tabs[index]["noteVisit"] as! [String: Any]
+            try expect((record["note"] as? [String: Any])?["url"] as? String == InternalPage.easel(easel).urlString
+                       && record["showsNote"] as? Bool == true, "Older Parc versions still find the shown document in the saved record")
+            tabs[index]["noteVisit"] = ["page": record["page"]!, "note": record["note"]!, "showsNote": false]
+            saved["tabs"] = tabs
+            try JSONSerialization.data(withJSONObject: saved).write(to: file)
+            let legacy = try BrowserStore(directory: directory)
+            let migrated = legacy.state.tab(page)!.noteVisit!
+            try expect(migrated.documents == [.init(url: InternalPage.easel(easel).urlString, title: "Board")]
+                       && migrated.position == nil && migrated.page.url == "https://example.test/docs",
+                       "A session saved with one document step loads as a one-step stack")
+        }
+    }
+
     static func testLocalFileOpensTitledByName() throws {
         try withDirectory { directory in
             let store = try BrowserStore(directory: directory)
@@ -3851,6 +3892,7 @@ struct BrowserStoreTests {
         try testNativeArchiveConsentAndRevalidation()
         try testPublicInternalAddresses()
         try testLocalFileOpensTitledByName()
+        try testNoteVisitStackSessions()
         try testNavigationMetadataPublication()
         try testHistoryNewestFirstMatchesDateSort()
         try testHistoryFileSplit()

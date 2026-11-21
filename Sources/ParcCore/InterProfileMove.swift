@@ -238,7 +238,7 @@ enum InterProfileMove {
     }
 
     private static func addresses(of tab: BrowserTab) -> [String] {
-        [tab.url, tab.savedURL] + (tab.noteVisit.map { [$0.note.url] } ?? [])
+        [tab.url, tab.savedURL] + (tab.noteVisit?.documents.map(\.url) ?? [])
     }
 
     static func samePlacement(_ tab: BrowserTab, _ original: BrowserTab) -> Bool {

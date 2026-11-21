@@ -82,7 +82,8 @@ extension BrowserWindowController {
             && window?.isKeyWindow == true
             && window.map { PCNativeBrowserApplication.canPresentTabSwitcher(in: $0) } == true
         toolbar.update(url: nil, documentTitle: tab.title.isEmpty ? "New tab" : tab.title,
-            fullURL: false, enabled: enabled, canBack: tab.showsNoteOverPage, canForward: false, loading: false,
+            fullURL: false, enabled: enabled, canBack: tab.showsNoteOverPage,
+            canForward: tab.showsNoteOverPage && tab.hasNoteAhead, loading: false,
             canReload: false, canCopy: false, canShowSiteInfo: false, canSplit: true,
             close: activeSplitLayout != nil, showSidebar: leading && sidebarPresentation != .locked,
             siteControls: false, extensionItems: [])

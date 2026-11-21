@@ -346,8 +346,8 @@ struct NavigationHistoryStepRow {
 final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     let page: PCNativePage?
     private let snapshot: PCNativeNavigationHistory?
-    private let leading: NavigationHistoryStepRow?
-    private var rowCount: Int { (leading == nil ? 0 : 1) + (snapshot?.entries.count ?? 0) }
+    private let leading: [NavigationHistoryStepRow]
+    private var rowCount: Int { leading.count + (snapshot?.entries.count ?? 0) }
     private var isValid: Bool { snapshot?.isValid ?? true }
     var beforeEntry: ((Bool) -> Bool)?
     private let colors: ParcMenuColors
@@ -366,10 +366,10 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
     var onNavigate: (() -> Void)?
     var address: (URL) -> String? = { $0.absoluteString }
 
-    init(page: PCNativePage?, snapshot: PCNativeNavigationHistory?, leading: NavigationHistoryStepRow? = nil,
+    init(page: PCNativePage?, snapshot: PCNativeNavigationHistory?, leading: [NavigationHistoryStepRow] = [],
          window: NSWindow, theme: SpaceTheme) {
         self.page = page; self.snapshot = snapshot; self.leading = leading; colors = ParcMenuColors(theme: theme)
-        let rowCount = (leading == nil ? 0 : 1) + (snapshot?.entries.count ?? 0)
+        let rowCount = leading.count + (snapshot?.entries.count ?? 0)
         parent = window; oldResponder = window.firstResponder
         let m = NavigationHistoryMenuMetrics.self
         let size = NSSize(width: m.width + 2 * m.shadowMargin,
@@ -514,12 +514,12 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         return cell
     }
     private func shownRow(_ row: Int) -> (title: String, icon: NSImage?, url: URL?) {
-        if let leading, row == 0 { return (leading.title, leading.icon, leading.url) }
+        if leading.indices.contains(row) { return (leading[row].title, leading[row].icon, leading[row].url) }
         guard let entry = entry(at: row) else { return ("", nil, nil) }
         return (entry.title, entry.favicon, entry.url)
     }
     private func entry(at row: Int) -> PCNativeNavigationEntry? {
-        let index = row - (leading == nil ? 0 : 1)
+        let index = row - leading.count
         guard let snapshot, snapshot.entries.indices.contains(index) else { return nil }
         return snapshot.entries[index]
     }
@@ -550,9 +550,10 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
     private func choose(_ row: Int, alternate: Bool) {
         guard !finished, (0..<rowCount).contains(row), isValid,
               stillSelected?() == true else { dismiss(); return }
-        if let leading, row == 0 {
+        if leading.indices.contains(row) {
+            let step = leading[row]
             finish(selection: nil, restoreFocus: false)
-            DispatchQueue.main.async { leading.choose(alternate) }
+            DispatchQueue.main.async { step.choose(alternate) }
             return
         }
         guard let entry = entry(at: row) else { dismiss(); return }

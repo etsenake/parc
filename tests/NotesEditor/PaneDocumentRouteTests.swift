@@ -12,6 +12,7 @@ struct PaneDocumentRouteTests {
         exitOnFailure {
             try singlePane()
             try splitPanes()
+            try stackedPanes()
             print("PaneDocumentRoute: \(assertions) assertions passed")
         }
     }
@@ -21,6 +22,19 @@ struct PaneDocumentRouteTests {
             try expect(PaneDocumentRoute.routes(paneCount: 1, paneHoldsWebPage: page) == [.newTab],
                        "outside a split, a note or Easel keeps opening as its own tab")
         }
+    }
+
+    static func stackedPanes() throws {
+        var tab = BrowserTab(id: UUID(), spaceID: UUID(), profileID: UUID(), url: "https://example.test/", title: "Page",
+                             kind: .today, createdAt: Date(), lastAccessed: Date(),
+                             savedURL: "https://example.test/", savedTitle: "Page")
+        for title in ["One", "Two", "Three"] {
+            try expect(tab.openDocumentVisit(.easel(UUID()), title: title), "a pane over a page stacks another document")
+            try expect(PaneDocumentRoute.routes(paneCount: 2, paneHoldsWebPage: tab.showsNoteOverPage) == [.overPage, .newTab],
+                       "at every depth the pane still holds its page, so the next document stacks on top")
+        }
+        try expect(tab.stepNoteVisit(by: -3) && !tab.showsNoteOverPage && tab.hasNoteAhead,
+                   "Back through every document returns the pane to its page")
     }
 
     static func splitPanes() throws {

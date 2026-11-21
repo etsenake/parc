@@ -90,22 +90,25 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
     func dismisses(toward direction: HistorySwipeDirection) -> Bool { false }
 
     func beginSwipe(_ direction: HistorySwipeDirection) -> Bool {
-        direction == .back && allowsHistorySwipe
+        allowsHistorySwipe && historyEntries(toward: direction) > 0
     }
 
     func beginDismissal() -> Bool { false }
 
     func navigate(_ commit: HistorySwipeCommit) -> Bool {
         guard let controller, let tabID, let visit else { return false }
-        let distance: Int
+        let direction: HistorySwipeDirection, distance: Int
         switch commit {
-        case .adjacent(.back): distance = 1
-        case let .entry(.back, steps): distance = steps
-        default: return false
+        case let .adjacent(toward): direction = toward; distance = 1
+        case let .entry(toward, steps): direction = toward; distance = steps
+        case .dismiss: return false
         }
-        guard case .pageUnderNote? = HistorySwipeNoteStep.step(toward: .back, distance: distance, visit: visit,
-                                                              pageEntries: 0) else { return false }
-        return controller.stepNoteVisit(tabID, forward: false)
+        switch HistorySwipeNoteStep.step(toward: direction, distance: distance, visit: visit, pageEntries: 0) {
+        case .note?, .pageUnderNote?:
+            return controller.stepNoteVisit(tabID, by: HistorySwipeNoteStep.visitOffset(toward: direction, distance: distance))
+        case .page?, nil:
+            return false
+        }
     }
 
     func endSwipe() {}
@@ -138,10 +141,12 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
         let view = HistorySwipeOverlayView(frame: frame)
         view.autoresizingMask = [.width, .height]
         view.palette = controller.historySwipePalette
-        let note = HistorySwipeOverlayRow(title: visit.note.title, favicon: BrowserWindowController.noteVisitIcon(visit))
+        let row = { (entry: TabNoteVisit.Entry) in
+            HistorySwipeOverlayRow(title: entry.title, favicon: BrowserWindowController.noteVisitIcon(entry))
+        }
         let page = HistorySwipeOverlayRow(title: visit.page.title,
                                           favicon: controller.coveredPages[tabID]?.browser.nativePage?.favicon)
-        view.setRows(current: note, back: [page], forward: [])
+        view.setRows(current: row(visit.shown), back: visit.behind.dropLast().map(row) + [page], forward: visit.ahead.map(row))
         container.addSubview(view, positioned: .above, relativeTo: noteView(controller, tabID))
         overlay = view
     }

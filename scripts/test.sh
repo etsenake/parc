@@ -59,6 +59,7 @@ core_sources=(
   "$repo_root/Sources/ParcCore/SessionBackups.swift"
   "$repo_root/Sources/ParcCore/NoteFileKind.swift"
   "$repo_root/Sources/ParcCore/NoteFilePaths.swift"
+  "$repo_root/Sources/ParcCore/TabNoteVisit.swift"
 )
 mkdir -p "$repo_root/build/tests/tooltip"
 tooltip_sources=()

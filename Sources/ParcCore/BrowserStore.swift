@@ -1115,7 +1115,8 @@ struct BrowserState: Codable, Equatable {
                     && current.archiveProvenance == prior.archiveProvenance
                     && current.referrerID == prior.referrerID
                     && current.activeTabBeforeCreationID == prior.activeTabBeforeCreationID
-                    && current.noteVisit?.showsNote == prior.noteVisit?.showsNote
+                    && current.noteVisit?.position == prior.noteVisit?.position
+                    && current.noteVisit?.documents.count == prior.noteVisit?.documents.count
             }
     }
 
@@ -2907,9 +2908,14 @@ final class BrowserStore: ObservableObject {
 
     @discardableResult
     func stepNoteVisit(_ id: UUID, forward: Bool) -> Bool {
+        stepNoteVisit(id, by: forward ? 1 : -1)
+    }
+
+    @discardableResult
+    func stepNoteVisit(_ id: UUID, by offset: Int) -> Bool {
         guard !retiringTabIDs.contains(id), let index = state.tabIndex(id, where: { $0.archivedAt == nil }) else { return false }
         var next = state
-        guard forward ? next.tabs[index].stepForwardToNote() : next.tabs[index].stepBackFromNote() else { return false }
+        guard next.tabs[index].stepNoteVisit(by: offset) else { return false }
         next.tabs[index].lastAccessed = clock()
         state = next
         changed()
