@@ -247,11 +247,14 @@ list; the inverse menu restores Safari. Open pages update accordingly.
 
 ## Validation
 
-`scripts/test-fairplay-identity.sh` runs policy and exact compatibility-script
-models, renderer identity gates and service capability fixtures. Native codec,
-FairPlay/HLS and Blink component/compiler checks cover their separate layers.
-Check commands and fixtures live with their owning components. Follow
-[the working contract](../AGENTS.md) before running them.
+`FairPlayIdentityPolicyTests` exercises site decisions and navigation.
+`FairPlayRendererGateTests` calls the renderer’s identity, codec, session and
+key-system predicates. `WebKitNeedKeyTests` checks the init-data bytes, and
+`FairPlayIdentitySitesTests` covers stored choices. The
+[compatibility script checks](../scripts/test-fairplay-identity.sh) run the
+five shipped scripts against JavaScript fixtures with Node. Exercising
+Blink’s actual script installation and encrypted-event dispatch requires an
+engine integration test. Separate FairPlay media fixtures play real content.
 
 Page attachment and system power restrictions live in Parc-owned per-page state.
 The browser client reapplies them after Chrome computes page preferences, so
