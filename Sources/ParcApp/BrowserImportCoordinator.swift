@@ -142,24 +142,27 @@ final class BrowserImportCoordinator {
     private var completed = 0
     private var cancelled = false
     private var subscription: AnyCancellable?
+    private let native: any BrowserImportNative
 
     init(store: BrowserStore, destination: BrowserImportDestination, window: NSWindow, onboarding: Bool = false,
          supportsICloudPasswords: Bool = ICloudPasswordsSupport.connects(),
          arcSidebarURL: URL = ArcSidebarSnapshot.defaultURL,
          arcPreferencesURL: URL = ArcSidebarSnapshot.preferencesURL,
          safariExportRoot: URL = FileManager.default.temporaryDirectory,
+         native: any BrowserImportNative = EngineBrowserImport(),
          ownerIsCurrent: @escaping () -> Bool) {
         self.store = store; originalDestination = destination; self.window = window
+        self.native = native
         self.arcSidebarURL = arcSidebarURL; self.arcPreferencesURL = arcPreferencesURL
         self.safariExportRoot = safariExportRoot
         let live = Self.liveExports
-        DispatchQueue.global(qos: .utility).async { Self.removeAbandonedExports(in: safariExportRoot, keeping: live) }
+        native.background(.utility) { Self.removeAbandonedExports(in: safariExportRoot, keeping: live) }
         self.onboarding = onboarding
         setupRun = onboarding ? SetupExtensionChanges.setupRun : nil
         self.supportsICloudPasswords = supportsICloudPasswords
         self.ownerIsCurrent = ownerIsCurrent
-        subscription = store.statePublisher.dropFirst().sink { [weak self] _ in
-            DispatchQueue.main.async { [weak self] in
+        subscription = store.statePublisher.dropFirst().sink { [weak self, native] _ in
+            native.main { [weak self] in
                 guard let self, !self.cancelled else { return }
                 if !self.isCurrent {
                     self.cancel()
@@ -230,7 +233,7 @@ final class BrowserImportCoordinator {
         safariAccessReady = false; requiresSafariAccess = false
         extensionBatch = nil
         stage = .loading; message = "Finding your browsers…"; error = nil; onChange?()
-        discovery = PCNativeBrowserApplication.availableImportSources { [weak self] sources in
+        discovery = native.availableImportSources { [weak self] sources in
             guard let self, self.isCurrent, self.generation == token else { return }
             let priorities = [Self.arcBundleIdentifier: 0, "com.google.Chrome": 1]
             self.discovery = nil
@@ -311,7 +314,7 @@ final class BrowserImportCoordinator {
         guard stage == .sources, let source, isCurrent else { return }
         generation = UUID(); let token = generation
         stage = .loading; message = "Finding your \(source.displayName) profiles…"; onChange?()
-        discovery = PCNativeBrowserApplication.loadImportSourceProfiles(source) { [weak self] result in
+        discovery = native.loadImportSourceProfiles(source) { [weak self] result in
             guard let self, self.isCurrent, self.generation == token, self.source === source else { return }
             self.discovery = nil; self.applyProfiles(result)
             self.requiresSafariAccess = result.access == .restricted
@@ -336,7 +339,7 @@ final class BrowserImportCoordinator {
               isCurrent, let source else { return }
         checkingSafariAccess = true; generation = UUID(); let token = generation
         onChange?()
-        discovery = PCNativeBrowserApplication.loadImportSourceProfiles(source) { [weak self] result in
+        discovery = native.loadImportSourceProfiles(source) { [weak self] result in
             guard let self, self.isCurrent, self.generation == token,
                   self.stage == .safariAccess, self.source === source, !self.restarting else { return }
             self.discovery = nil; self.checkingSafariAccess = false; self.applyProfiles(result)
@@ -467,9 +470,9 @@ final class BrowserImportCoordinator {
         let token = generation
         message = "Importing \(chosen[0].displayName)…"; onChange?()
         let url = arcSidebarURL, preferencesURL = arcPreferencesURL
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        native.background(.userInitiated) { [weak self, native] in
             let result = Result { try ArcSidebarSnapshot.read(url, preferences: preferencesURL) }
-            DispatchQueue.main.async { [weak self] in
+            native.main { [weak self] in
                 MainActor.assumeIsolated { self?.importArcSidebar(result, profiles: chosen, token: token) }
             }
         }
@@ -535,7 +538,7 @@ final class BrowserImportCoordinator {
         guard categories.contains(.bookmarks) else { activeDestination = nil; completed += 1; importNext(); return }
         categories = [.bookmarks]
         message = "Importing \(profile.displayName)…"; onChange?()
-        session = PCNativeBrowserApplication.importBrowserData(from: profile,
+        session = native.importBrowserData(from: profile,
             toProfilePath: store.independentEngineProfilePath(for: destination.profileID), in: window,
             categories: categories, skipExistingCookies: skipExistingCookies,
             progress: { [weak self] event in
@@ -592,7 +595,7 @@ final class BrowserImportCoordinator {
             }
             let id = UUID(), carriesCards = categories.contains(.autofill)
             backgroundPending.insert(id)
-            let lease = PCNativeBrowserApplication.importBrowserData(from: item.profile,
+            let lease = native.importBrowserData(from: item.profile,
                 toProfilePath: store.independentEngineProfilePath(for: item.destination.profileID), in: window,
                 categories: categories, skipExistingCookies: skipExistingCookies,
                 progress: { [weak self] event in
@@ -680,7 +683,7 @@ final class BrowserImportCoordinator {
             }
         }
 
-        extensionInstall = PCImportedExtensions.install(requests, completion: { [weak self] result, failures in
+        extensionInstall = native.installImportedExtensions(requests, completion: { [weak self] result, failures in
             guard let self, self.backgroundToken == token, !self.cancelled else { return }
             self.extensionInstall = nil
             self.reportFailedExtensions(failed(failures))
@@ -723,7 +726,7 @@ final class BrowserImportCoordinator {
         let profile = namingProfile ? store.state.profiles.first { $0.id == entry.destination.profileID }?.name : nil
         return entry.profile.extensions.filter { entry.ids.contains($0.identifier) }.map {
             .init(source: entry.profile, identifier: $0.identifier, name: $0.displayName,
-                  destination: entry.destination, profile: profile, setupRun: setupRun)
+                  destination: entry.destination, profile: profile, setupRun: setupRun, native: native)
         }
     }
 
@@ -791,7 +794,7 @@ final class BrowserImportCoordinator {
         passwordSession?.cancel(); passwordResult = nil; passwordFileRemoved = false; passwordError = nil
         passwordFileName = url.lastPathComponent; importingPasswords = true
         let token = UUID(); passwordRequestID = token; onChange?()
-        passwordSession = PCNativeBrowserApplication.importPasswordFile(url,
+        passwordSession = native.importPasswordFile(url,
             toProfilePath: store.independentEngineProfilePath(for: destination.profileID), in: window) { [weak self] result in
             if let self, self.detached { self.passwordSession?.cancel(); self.passwordSession = nil; self.startDeferredBackground() }
             guard let self, self.isCurrent, self.stage == .safariPasswords, self.passwordRequestID == token else { return }
@@ -1114,10 +1117,10 @@ final class BrowserImportCoordinator {
         discardSafariExport()
         stage = .loading; error = nil; message = "Opening your Safari export…"; onChange?()
         let root = safariExportRoot, live = Self.liveExports
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        native.background(.userInitiated) { [weak self, native] in
             Self.removeAbandonedExports(in: root, keeping: live)
             let result = Result { try SafariBrowsingExport.open(archive, temporaryRoot: root) }
-            DispatchQueue.main.async { [weak self] in
+            native.main { [weak self] in
                 MainActor.assumeIsolated {
                     guard let self else { if case .success(let export) = result { export.remove() }; return }
                     self.openedSafariExport(result, token: token, returning: returning)
@@ -1149,7 +1152,7 @@ final class BrowserImportCoordinator {
         case .success(let export):
             safariExport = export; Self.liveExports.insert(export.directory)
             guard !export.profiles.isEmpty else { startSafariExport([], unreadable: 0, token: token); return }
-            discovery = PCNativeBrowserApplication.loadSafariExportProfiles(export.profiles.map(\.directory),
+            discovery = native.loadSafariExportProfiles(export.profiles.map(\.directory),
                 names: export.profiles.map { $0.name ?? "Safari" }) { [weak self] result in
                     guard let self, self.isCurrent, self.generation == token, self.stage == .loading else { return }
                     self.discovery = nil
@@ -1190,7 +1193,7 @@ final class BrowserImportCoordinator {
     private func importSafariExportPasswords(_ file: URL, from export: SafariBrowsingExport) {
         guard let window else { export.removePasswords(); failed("Safari passwords couldn’t be imported."); return }
         stoppedExportPasswords = false
-        exportPasswords = PCNativeBrowserApplication.importPasswordFile(file,
+        exportPasswords = native.importPasswordFile(file,
             toProfilePath: store.independentEngineProfilePath(for: originalDestination.profileID), in: window) { [weak self] result in
             export.removePasswords()
             guard let self, self.exportPasswords != nil else { return }
@@ -1226,7 +1229,7 @@ final class BrowserImportCoordinator {
         guard let export = safariExport else { return }
         safariExport = nil; Self.liveExports.remove(export.directory)
         let directory = export.directory
-        DispatchQueue.global(qos: .utility).async { try? FileManager.default.removeItem(at: directory) }
+        native.background(.utility) { try? FileManager.default.removeItem(at: directory) }
     }
 
     func stopImport() {

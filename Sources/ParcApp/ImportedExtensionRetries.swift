@@ -13,6 +13,7 @@ enum ImportedExtensionRetries {
         var reason: ImportedExtensionFailures.Failure.Reason? = nil
         var retryable = true
         var setupRun: UUID? = nil
+        var native: any BrowserImportNative = EngineBrowserImport()
         var target: String { "import " + destination.profileID.uuidString + " " + identifier }
         var failure: ImportedExtensionFailures.Failure {
             .init(name: name, profile: profile, target: target, reason: reason)
@@ -59,7 +60,7 @@ enum ImportedExtensionRetries {
             guard let store else { return }
             for failure in mine { record(item.reported(by: failure), store: store) }
         }
-        let install = PCImportedExtensions.install([request], completion: { result, failures in
+        let install = item.native.installImportedExtensions([request], completion: { result, failures in
             installs[id] = nil
             ImportedExtensionFailures.clearFailed(result.installedIdentifiers)
             failed(failures, false)

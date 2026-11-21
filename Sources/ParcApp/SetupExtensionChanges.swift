@@ -5,35 +5,37 @@ import ParcEngine
 @MainActor
 enum SetupExtensionChanges {
     static func addICloudPasswords(to destination: BrowserImportDestination, store: BrowserStore,
-                                   connects: @escaping @MainActor () -> Bool = { ICloudPasswordsSupport.connects() }) {
+                                   connects: @escaping @MainActor () -> Bool = { ICloudPasswordsSupport.connects() },
+                                   native: any BrowserImportNative = EngineBrowserImport()) {
         let failure = ImportedExtensionFailures.Failure(name: "iCloud Passwords", target: "setup " + destination.profileID.uuidString)
         guard connects() else { ImportedExtensionFailures.record(failure); return }
-        PCNativeBrowserApplication.installICloudPasswordsExtension(
+        native.installICloudPasswordsExtension(
             toProfilePath: store.independentEngineProfilePath(for: destination.profileID)) { [weak store] error in
                 guard let error else { return }
                 NSLog("Parc could not install the selected iCloud Passwords extension: %@", error.localizedDescription)
                 MainActor.assumeIsolated {
                     var failure = failure
-                    failure.reason = .init(PCImportedExtensions.restriction(for: error))
+                    failure.reason = .init(native.extensionRestriction(for: error))
                     ImportedExtensionFailures.record(failure) { [weak store] in
                         guard let store, !removableProfiles([destination.profileID], in: store.state).isEmpty else { return }
-                        addICloudPasswords(to: destination, store: store, connects: connects)
+                        addICloudPasswords(to: destination, store: store, connects: connects, native: native)
                     }
                 }
             }
     }
 
-    static func addAdBlocker(to destination: BrowserImportDestination, store: BrowserStore) {
-        PCNativeBrowserApplication.installSetupAdBlocker(
+    static func addAdBlocker(to destination: BrowserImportDestination, store: BrowserStore,
+                             native: any BrowserImportNative = EngineBrowserImport()) {
+        native.installSetupAdBlocker(
             toProfilePath: store.independentEngineProfilePath(for: destination.profileID)) { [weak store] error in
                 guard let error else { return }
                 NSLog("Parc could not install uBlock Origin: %@", error.localizedDescription)
                 MainActor.assumeIsolated {
                     let target = "setup " + destination.profileID.uuidString
-                    let reason = ImportedExtensionFailures.Failure.Reason(PCImportedExtensions.restriction(for: error))
+                    let reason = ImportedExtensionFailures.Failure.Reason(native.extensionRestriction(for: error))
                     ImportedExtensionFailures.record(.init(name: "uBlock Origin Lite", target: target, reason: reason)) { [weak store] in
                         guard let store, !removableProfiles([destination.profileID], in: store.state).isEmpty else { return }
-                        addAdBlocker(to: destination, store: store)
+                        addAdBlocker(to: destination, store: store, native: native)
                     }
                 }
             }
@@ -45,16 +47,17 @@ enum SetupExtensionChanges {
     static func beginSetupRun() { setupRun = UUID() }
 
     static func apply(_ choice: OnboardingDraft.AdBlockerChoice, to blockers: [OnboardingDraft.ImportedAdBlocker],
-                      in destination: BrowserImportDestination, store: BrowserStore) {
+                      in destination: BrowserImportDestination, store: BrowserStore,
+                      native: any BrowserImportNative = EngineBrowserImport()) {
         adBlockerChoices[setupRun] = choice
         ImportedExtensionRetries.discardDeclined()
         let plan = choice.plan(for: blockers, setupProfileID: destination.profileID)
         let names = Dictionary(blockers.map { ($0.identifier, $0.displayName) }) { first, _ in first }
-        removeAdBlockers(plan.removals, names: names, store: store)
+        removeAdBlockers(plan.removals, names: names, store: store, native: native)
         if let profileID = plan.installProfileID,
            case let target = BrowserImportDestination(spaceID: destination.spaceID, profileID: profileID),
            target.isCurrent(in: store.state) {
-            addAdBlocker(to: target, store: store)
+            addAdBlocker(to: target, store: store, native: native)
         }
     }
 
@@ -74,7 +77,8 @@ enum SetupExtensionChanges {
         }
     }
 
-    static func removeAdBlockers(_ removals: [UUID: Set<String>], names: [String: String], store: BrowserStore) {
+    static func removeAdBlockers(_ removals: [UUID: Set<String>], names: [String: String], store: BrowserStore,
+                                 native: any BrowserImportNative = EngineBrowserImport()) {
         let profiles = removableProfiles(store.state.profiles.map(\.id).filter { removals[$0] != nil }, in: store.state)
         var reach: [String: Set<UUID>] = [:]
         for profileID in profiles {
@@ -84,15 +88,16 @@ enum SetupExtensionChanges {
             for identifier in (removals[profileID] ?? []).sorted() {
                 let name = names[identifier] ?? identifier
                 removeAdBlocker(identifier, named: name, from: profileID,
-                                namingProfile: reach[name, default: []].count > 1, store: store)
+                                namingProfile: reach[name, default: []].count > 1, store: store, native: native)
             }
         }
     }
 
     static func removeAdBlocker(_ identifier: String, named name: String, from profileID: UUID,
-                                namingProfile: Bool, store: BrowserStore) {
+                                namingProfile: Bool, store: BrowserStore,
+                                native: any BrowserImportNative = EngineBrowserImport()) {
         guard !removableProfiles([profileID], in: store.state).isEmpty else { return }
-        PCNativeBrowserApplication.removeSetupAdBlockers([identifier],
+        native.removeSetupAdBlockers([identifier],
             fromProfilePath: store.independentEngineProfilePath(for: profileID)) { [weak store] error in
                 guard let error else { return }
                 NSLog("Parc could not remove %@: %@", name, error.localizedDescription)
@@ -100,10 +105,11 @@ enum SetupExtensionChanges {
                     let profile = namingProfile ? store?.state.profiles.first { $0.id == profileID }?.name : nil
                     let failure = ImportedExtensionFailures.Failure(change: .removal, name: name, profile: profile,
                         target: identifier + " " + profileID.uuidString,
-                        reason: .init(PCImportedExtensions.restriction(for: error)))
+                        reason: .init(native.extensionRestriction(for: error)))
                     ImportedExtensionFailures.record(failure) { [weak store] in
                         guard let store else { return }
-                        removeAdBlocker(identifier, named: name, from: profileID, namingProfile: namingProfile, store: store)
+                        removeAdBlocker(identifier, named: name, from: profileID, namingProfile: namingProfile, store: store,
+                                        native: native)
                     }
                 }
             }
