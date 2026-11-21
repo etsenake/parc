@@ -286,8 +286,10 @@ struct EaselStampTests {
         let art = EaselVectorArt()
         var heart = stamp(.design(.heart)); heart.rotation = 8
         let heartSVG = EaselVectorExport.element(heart, art: art)
-        expect(heartSVG.hasPrefix("<g class=\"easel-stamp\">") && heartSVG.components(separatedBy: "<path").count - 1 == EaselStampArt.layers(.heart).count,
+        expect(heartSVG.contains("<g class=\"easel-stamp\">") && heartSVG.components(separatedBy: "<path").count - 1 == EaselStampArt.layers(.heart).count,
                "Built-in stamps export as vector paths")
+        expect(heartSVG.hasPrefix("<g transform=\"rotate(8 ") && heartSVG.components(separatedBy: "rotate(").count == 2,
+               "A tilted stamp exports its tilt once, around its centre")
         expect(heartSVG.contains("#F2506A") && heartSVG.contains("stroke:#FFFFFF"), "Their colours and rim come along")
         let party = EaselVectorExport.element(stamp(.emoji("🎉")), art: art)
         expect(party.contains(">🎉</text>") && party.contains("text-anchor=\"middle\""), "Emoji export as text")
@@ -298,8 +300,10 @@ struct EaselStampTests {
         let automatic = EaselVectorExport.element(cloud, art: withPicture)
         expect(automatic.contains("<mask") && automatic.contains("fill:var(--easel-ink)") && automatic.contains("data:image/png;base64,"),
                "Icons export as a tinted mask that follows light and dark")
+        cloud.color = "#123456"
+        expect(EaselVectorExport.element(cloud, art: withPicture).contains("fill:#123456"), "Custom icon colours stay exact")
         cloud.color = "#2C6C91"
-        expect(EaselVectorExport.element(cloud, art: withPicture).contains("fill:#2C6C91"), "Chosen icon colours stay exact")
+        expect(EaselVectorExport.element(cloud, art: withPicture).contains("fill:var(--"), "Palette icon colours follow light and dark like other Easel colours")
         var broken = stamp(.design(.heart)); broken.stamp = "wave"
         expect(EaselVectorExport.element(broken, art: art).isEmpty, "Damaged stamps export nothing")
         let doc = document([item(.rectangle, 0, 0, 50, 50), heart, stamp(.emoji("🎉"))])

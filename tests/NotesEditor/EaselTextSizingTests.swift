@@ -229,12 +229,12 @@ struct EaselTextSizingTests {
         guard let steady = EaselTextSizing.scaled(item, factor: 1.02)?.richText?.runs else { failTest("Tiny drags work") }
         expect(steady[0].attributes.font.style == EaselTextStyle() && steady[0].attributes.font.size == 15,
                "A run whose size doesn't change keeps its preset label")
-        let board = EaselRect(x: 0, y: 0, width: 400, height: 300)
-        expect(EaselTextSizing.fits(EaselRect(x: 0, y: 0, width: 400, height: 300), in: board), "A frame the board's size fits")
-        expect(!EaselTextSizing.fits(EaselRect(x: 0, y: 0, width: 401, height: 10), in: board), "A wider frame doesn't fit")
-        expect(EaselTextSizing.placed(EaselRect(x: 350, y: -20, width: 100, height: 40), in: board) == EaselRect(x: 300, y: 0, width: 100, height: 40),
+        let limit = EaselRect(x: 0, y: 0, width: 400, height: 300)
+        expect(EaselTextSizing.fits(EaselRect(x: 0, y: 0, width: 400, height: 300), in: limit), "A frame the board's size fits")
+        expect(!EaselTextSizing.fits(EaselRect(x: 0, y: 0, width: 401, height: 10), in: limit), "A wider frame doesn't fit")
+        expect(EaselTextSizing.placed(EaselRect(x: 350, y: -20, width: 100, height: 40), in: limit) == EaselRect(x: 300, y: 0, width: 100, height: 40),
                "Text slides back inside a fixed board")
-        expect(EaselTextSizing.placed(EaselRect(x: 50, y: 50, width: 500, height: 40), in: board).x == 0, "Oversized text pins to the board's edge")
+        expect(EaselTextSizing.placed(EaselRect(x: 50, y: 50, width: 500, height: 40), in: limit).x == 0, "Oversized text pins to the board's edge")
 
         let original = EaselRect(x: 100, y: 100, width: 200, height: 40)
         var grown = text(original); grown.frame.width = 300
