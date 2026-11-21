@@ -204,7 +204,7 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
         let rows = history.map { HistorySwipeRows(entries: $0.entries.map(Self.row), currentIndex: $0.currentIndex) }
         if let noteStep {
             let note = HistorySwipeOverlayRow(title: noteStep.visit.note.title,
-                                              favicon: noteStep.visit.noteFile.flatMap { NoteTabIconArt.shared.image(forNote: $0) })
+                                              favicon: BrowserWindowController.noteVisitIcon(noteStep.visit))
             let current = rows?.current ?? HistorySwipeOverlayRow(title: noteStep.visit.page.title, favicon: nil)
             view.setRows(current: current, back: rows?.back ?? [], forward: [note] + (rows?.forward ?? []))
         } else if let rows {

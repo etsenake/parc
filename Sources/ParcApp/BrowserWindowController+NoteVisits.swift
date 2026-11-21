@@ -140,8 +140,8 @@ extension BrowserWindowController {
         let leading: NavigationHistoryStepRow
         if forward {
             leading = NavigationHistoryStepRow(
-                title: visit.note.title, icon: visit.noteFile.flatMap { NoteTabIconArt.shared.image(forNote: $0) },
-                url: visit.noteFile) { [weak self] alternate in self?.chooseNoteVisitStep(id, forward: true, alternate: alternate) }
+                title: visit.note.title, icon: Self.noteVisitIcon(visit),
+                url: URL(string: visit.note.url)) { [weak self] alternate in self?.chooseNoteVisitStep(id, forward: true, alternate: alternate) }
         } else {
             leading = NavigationHistoryStepRow(
                 title: visit.page.title, icon: page?.favicon, url: URL(string: visit.page.url)) { [weak self] alternate in
@@ -201,31 +201,50 @@ extension BrowserWindowController {
     @discardableResult
     func openNoteAheadInBackground(_ id: UUID) -> Bool {
         guard canCreateNote, let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
-              let visit = tab.noteVisit, !visit.showsNote, let file = visit.noteFile,
-              NoteFilePaths.isOpenableFile(file) else { return false }
+              let visit = tab.noteVisit, !visit.showsNote, let document = visit.document else { return false }
+        if let file = document.noteURL, !NoteFilePaths.isOpenableFile(file) { return false }
         navigationHistory?.dismiss()
         let creation = TabCreationProvenance(referrerID: id, activeTabID: currentTabID,
                                              profileID: activeProfileID, state: store.state)
         var opened: UUID?
         performWindowCommand(selectNativePage: false) {
             let existing = Set(store.state.tabs.map(\.id))
-            opened = store.openNote(url: file, title: visit.note.title, inBackground: true, creation: creation)
+            switch document {
+            case .note(let file):
+                opened = store.openNote(url: file, title: visit.note.title, inBackground: true, creation: creation)
+            case .easel(let easel):
+                opened = store.openEasel(id: easel, title: visit.note.title, inBackground: true, creation: creation)
+            }
             if let created = opened, !existing.contains(created) { presentation.recordCreation(created, state: store.state) }
         }
         return opened != nil
     }
 
-    func openNoteOverPage(_ file: URL, url: URL, sourceID: UUID, page: PCNativePage) -> Bool {
-        guard browsers[sourceID]?.nativePage === page, peekPages(forTabID: sourceID).isEmpty,
+    func noteFileTitle(_ file: URL) -> String {
+        NoteFileSession.session(for: file)?.title ?? file.deletingPathExtension().lastPathComponent
+    }
+
+    static func noteVisitIcon(_ visit: TabNoteVisit) -> NSImage? {
+        if let file = visit.noteFile { return NoteTabIconArt.shared.image(forNote: file) }
+        return visit.document.flatMap { NoteDefaultIcon.fallback(named: $0.sidebarFallbackSymbol) }
+    }
+
+    func openDocumentOverPage(_ document: InternalPage, title: String, sourceID: UUID, page: PCNativePage?,
+                              anchor: String? = nil) -> Bool {
+        guard let tab = store.state.tab(sourceID, where: { $0.archivedAt == nil }), peekPages(forTabID: sourceID).isEmpty,
               nativeFullscreenTabID != sourceID, !closingTabIDs.contains(sourceID),
               !transferringTabIDs.contains(sourceID), !store.retiringTabIDs.contains(sourceID) else { return false }
+        if tab.showsNoteOverPage {
+            guard prepareNotesToClose([sourceID]) else { return false }
+        } else {
+            guard let page, browsers[sourceID]?.nativePage === page else { return false }
+        }
         closeLibrary(restoreFocus: false)
-        let title = NoteFileSession.session(for: file)?.title ?? file.deletingPathExtension().lastPathComponent
         var opened = false
-        performWindowCommand { opened = store.openNoteOverPage(sourceID, url: file, title: title) }
+        performWindowCommand { opened = store.openDocumentOverPage(sourceID, page: document, title: title) }
         guard opened else { return false }
         focusSelectedLocalContent()
-        if let anchor = url.fragment, !anchor.isEmpty { revealNoteAnchor(anchor, inTab: sourceID) }
+        if let anchor, !anchor.isEmpty { revealNoteAnchor(anchor, inTab: sourceID) }
         return true
     }
 }

@@ -12,6 +12,18 @@ struct TabNoteVisit: Codable, Equatable {
 
     var shown: Entry { showsNote ? note : page }
     var noteFile: URL? { InternalPage.noteFile(note.url) }
+    var document: InternalPage? { InternalPage(urlString: note.url) }
+
+    static func entry(_ document: InternalPage, title: String) -> Entry? {
+        switch document {
+        case .note(let url):
+            guard let file = InternalPage.noteFile(url) else { return nil }
+            return Entry(url: InternalPage.note(file).urlString, title: InternalPage.noteTitle(title, file: file))
+        case .easel:
+            let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Entry(url: document.urlString, title: name.isEmpty ? document.untitledTitle : name)
+        }
+    }
 }
 
 extension BrowserTab {
@@ -20,12 +32,20 @@ extension BrowserTab {
 
     @discardableResult
     mutating func openNoteVisit(url noteURL: URL, title noteTitle: String) -> Bool {
-        guard archivedAt == nil, !InternalPage.isInternal(url), !BrowserState.isBlankPage(url),
-              let file = InternalPage.noteFile(noteURL) else { return false }
-        let note = TabNoteVisit.Entry(url: InternalPage.note(file).urlString,
-                                      title: InternalPage.noteTitle(noteTitle, file: file))
-        noteVisit = TabNoteVisit(page: .init(url: url, title: title), note: note, showsNote: true)
-        show(note)
+        openDocumentVisit(.note(noteURL), title: noteTitle)
+    }
+
+    @discardableResult
+    mutating func openDocumentVisit(_ document: InternalPage, title documentTitle: String) -> Bool {
+        guard archivedAt == nil, let entry = TabNoteVisit.entry(document, title: documentTitle) else { return false }
+        if var visit = noteVisit, visit.showsNote, InternalPage.isInternal(url) {
+            visit.note = entry
+            noteVisit = visit
+        } else {
+            guard !InternalPage.isInternal(url), !BrowserState.isBlankPage(url) else { return false }
+            noteVisit = TabNoteVisit(page: .init(url: url, title: title), note: entry, showsNote: true)
+        }
+        show(entry)
         return true
     }
 

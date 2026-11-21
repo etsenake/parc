@@ -2,8 +2,12 @@
 
 Easels are local documents backed by `EaselStore`. A shared `EaselSession`
 commits an atomic save before publishing changes to other editors. File → New
-Easel replaces the selection; Add Split's draft fills its pending pane. Local
-editing and export do not require a collaboration service.
+Easel opens the Easel in its own tab; Add Split's draft fills its pending pane.
+In a split, New Easel, an Easel row and a typed Easel address go to the
+command bar's pane, and over a web page the Easel sits on top of the page like
+a note: Back returns to the page as it was and Forward to the Easel
+([navigation](navigation.md#links-to-markdown-and-text-files)). Local editing
+and export do not require a collaboration service.
 
 ## Object-wide text styles
 

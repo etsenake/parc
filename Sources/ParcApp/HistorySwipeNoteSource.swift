@@ -57,8 +57,9 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
     }
 
     private func noteView(_ controller: BrowserWindowController, _ id: UUID) -> NSView? {
-        guard let note = controller.noteEditors[id], note.editor.isViewLoaded else { return nil }
-        let view = note.editor.view
+        let editor: NSViewController? = controller.noteEditors[id]?.editor ?? controller.easelEditors[id]?.editor
+        guard let editor, editor.isViewLoaded else { return nil }
+        let view = editor.view
         return view.window == nil || view.isHiddenOrHasHiddenAncestor ? nil : view
     }
 
@@ -137,8 +138,7 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
         let view = HistorySwipeOverlayView(frame: frame)
         view.autoresizingMask = [.width, .height]
         view.palette = controller.historySwipePalette
-        let note = HistorySwipeOverlayRow(title: visit.note.title,
-                                          favicon: visit.noteFile.flatMap { NoteTabIconArt.shared.image(forNote: $0) })
+        let note = HistorySwipeOverlayRow(title: visit.note.title, favicon: BrowserWindowController.noteVisitIcon(visit))
         let page = HistorySwipeOverlayRow(title: visit.page.title,
                                           favicon: controller.coveredPages[tabID]?.browser.nativePage?.favicon)
         view.setRows(current: note, back: [page], forward: [])

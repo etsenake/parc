@@ -222,7 +222,7 @@ enum InterProfileMove {
         var pages: [InternalPage] = []
         for id in ids.sorted(by: { $0.uuidString < $1.uuidString }) {
             guard let tab = state.tab(id) else { return nil }
-            for value in [tab.url, tab.savedURL] {
+            for value in addresses(of: tab) {
                 guard InternalPage.isInternal(value), InternalPage.noteFile(value) == nil,
                       !InternalPage.isRetiredNoteAddress(value) else { continue }
                 guard let page = InternalPage(urlString: value) else { return nil }
@@ -230,11 +230,15 @@ enum InterProfileMove {
             }
             for page in pages {
                 guard state.tabs.allSatisfy({ other in
-                    other.url != page.urlString && other.savedURL != page.urlString || other.profileID == tab.profileID
+                    !addresses(of: other).contains(page.urlString) || other.profileID == tab.profileID
                 }) else { return nil }
             }
         }
         return pages
+    }
+
+    private static func addresses(of tab: BrowserTab) -> [String] {
+        [tab.url, tab.savedURL] + (tab.noteVisit.map { [$0.note.url] } ?? [])
     }
 
     static func samePlacement(_ tab: BrowserTab, _ original: BrowserTab) -> Bool {

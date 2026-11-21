@@ -57,6 +57,9 @@ extension BrowserWindowController {
                 cached.editor.retirePageOwner()
                 panes[id]?.clearNativeContent()
                 easelEditors.removeValue(forKey: id)
+            } else if let tab {
+                easelEditors[id] = EaselPane(documentID: cached.documentID, profileID: cached.profileID,
+                                             editor: cached.editor, originalTab: tab)
             }
         }
         for id in Array(panes.keys) where !liveIDs.contains(id) && browsers[id] == nil && easelEditors[id] == nil && noteEditors[id] == nil {

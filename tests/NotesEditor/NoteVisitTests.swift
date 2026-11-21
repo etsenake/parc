@@ -21,9 +21,11 @@ struct NoteVisitTests {
             let readme = notes.appendingPathComponent("Readme.md")
             try Data("# Read me\n".utf8).write(to: readme)
             try transitions(readme)
+            try easels(readme)
             try store(directory, readme: readme)
             try persistence(directory, readme: readme)
             try renamesAndDeletion(directory, notes: notes, readme: readme)
+            try storeEasels(directory)
             print("NoteVisits: \(assertions) assertions passed")
         }
     }
@@ -40,7 +42,6 @@ struct NoteVisitTests {
         try expect(tab.savedURL == tab.url && tab.savedTitle == "Readme", "A Today tab's saved address follows what shows")
         try expect(tab.showsNoteOverPage && !tab.hasNoteAhead, "The note shows on top of the page")
         try expect(tab.noteVisit?.page == .init(url: "https://example.test/docs", title: "Docs"), "The page entry remembers where it was")
-        try expect(!tab.openNoteVisit(url: readme, title: "Again"), "A note can't open over a note")
         try expect(!tab.stepForwardToNote(), "Forward does nothing while the note shows")
         try expect(tab.stepBackFromNote(), "Back leaves the note")
         try expect(tab.url == "https://example.test/docs" && tab.title == "Docs", "Back shows the page's address and title")
@@ -93,6 +94,50 @@ struct NoteVisitTests {
         try expect(damaged.noteVisit == nil, "A damaged note entry is dropped instead of losing the tab")
     }
 
+    static func easels(_ readme: URL) throws {
+        let id = UUID(), other = UUID()
+        let easel = InternalPage.easel(id).urlString
+        var tab = webTab()
+        try expect(tab.openDocumentVisit(.easel(id), title: " Board "), "A page can open an Easel over itself")
+        try expect(tab.url == easel && tab.title == "Board" && tab.showsNoteOverPage, "The tab shows the Easel on top of the page")
+        try expect(tab.noteVisit?.document == .easel(id) && tab.noteVisit?.noteFile == nil, "The step holds the Easel, not a note")
+        try expect(tab.stepBackFromNote() && tab.url == "https://example.test/docs" && tab.hasNoteAhead, "Back shows the page")
+        try expect(tab.stepForwardToNote() && tab.url == easel, "Forward returns to the Easel")
+
+        var untitled = webTab()
+        try expect(untitled.openDocumentVisit(.easel(id), title: "") && untitled.title == "Untitled Easel", "An untitled Easel gets its usual name")
+
+        var mixed = webTab()
+        mixed.openNoteVisit(url: readme, title: "Readme")
+        try expect(mixed.openDocumentVisit(.easel(id), title: "Board"), "An Easel opened over a note takes the top step")
+        try expect(mixed.url == easel && mixed.noteVisit?.page.url == "https://example.test/docs", "The page stays behind it")
+        try expect(mixed.stepBackFromNote() && mixed.url == "https://example.test/docs", "Back from the Easel shows the page")
+        try expect(mixed.stepForwardToNote() && mixed.url == easel, "Forward shows the Easel")
+        try expect(mixed.openNoteVisit(url: readme, title: "Readme") && mixed.url == readme.absoluteString
+                   && mixed.noteVisit?.page.url == "https://example.test/docs", "A note opened over the Easel keeps the page too")
+        try expect(mixed.stepBackFromNote(), "Back to the page")
+        try expect(mixed.openDocumentVisit(.easel(other), title: "Other") && mixed.noteVisit?.document == .easel(other),
+                   "A new document from the page replaces the step ahead, like a new navigation")
+        try expect(mixed.stepBackFromNote() && mixed.stepForwardToNote() && mixed.url == InternalPage.easel(other).urlString,
+                   "Forward reaches the newest document")
+
+        var easelTab = webTab(easel, title: "Board")
+        try expect(!easelTab.openDocumentVisit(.note(readme), title: "Readme"), "An Easel tab with no page behind it stacks nothing")
+
+        let renamed = mixed
+        var follow = renamed
+        try expect(follow.followNoteRename(from: InternalPage.easel(other).matcher(), to: InternalPage.easel(other).urlString, title: "Renamed")
+                   && follow.noteVisit?.note.title == "Renamed", "A renamed Easel renames its step")
+        try expect(follow.forgetNote(matching: InternalPage.easel(other).matcher()) && follow.noteVisit == nil
+                   && follow.url == "https://example.test/docs", "A deleted Easel sends the tab back to its page")
+
+        let decoded = try JSONDecoder().decode(BrowserTab.self, from: JSONEncoder().encode(tab))
+        try expect(decoded == tab && decoded.noteVisit?.document == .easel(id), "The Easel step survives encoding")
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(tab)) as? [String: Any] ?? [:]
+        let saved = json["noteVisit"] as? [String: Any]
+        try expect((saved?["note"] as? [String: Any])?["url"] as? String == easel, "It saves in the same record notes use")
+    }
+
     static func store(_ directory: URL, readme: URL) throws {
         let store = try BrowserStore(directory: directory.appendingPathComponent("store"))
         let page = store.open("https://example.test/docs")
@@ -100,7 +145,7 @@ struct NoteVisitTests {
         let other = store.open("https://example.test/other")
         store.selectTab(page)
         let tabs = store.state.tabs.count
-        try expect(store.openNoteOverPage(page, url: readme, title: ""), "A same-tab click opens the note in the page's tab")
+        try expect(store.openDocumentOverPage(page, page: .note(readme), title: ""), "A same-tab click opens the note in the page's tab")
         try expect(store.state.tabs.count == tabs && store.state.selectedTabIDs == [page], "No new tab, and the tab stays selected")
         let shown = try unwrap(store.state.tab(page), "tab")
         try expect(shown.url == readme.absoluteString && shown.title == "Readme" && shown.showsNoteOverPage, "The tab shows the note")
@@ -128,16 +173,16 @@ struct NoteVisitTests {
         try expect(moved.noteVisit == nil && moved.url == "https://example.test/elsewhere", "A new page navigation drops the Forward note")
         try expect(!store.stepNoteVisit(page, forward: true), "Forward has nothing to show after that")
 
-        try expect(store.openNoteOverPage(page, url: readme, title: "Readme"), "Open the note again")
+        try expect(store.openDocumentOverPage(page, page: .note(readme), title: "Readme"), "Open the note again")
         store.updateTab(page, url: "https://example.test/typed")
         let typed = try unwrap(store.state.tab(page), "typed")
         try expect(typed.noteVisit == nil && typed.url == "https://example.test/typed", "Typing an address over the note leaves it")
 
-        try expect(!store.openNoteOverPage(other, url: URL(string: "https://example.test/a.md")!, title: "a"), "Remote files aren't notes")
-        try expect(!store.openNoteOverPage(UUID(), url: readme, title: "Readme"), "Unknown tabs open nothing")
+        try expect(!store.openDocumentOverPage(other, page: .note(URL(string: "https://example.test/a.md")!), title: "a"), "Remote files aren't notes")
+        try expect(!store.openDocumentOverPage(UUID(), page: .note(readme), title: "Readme"), "Unknown tabs open nothing")
         let archived = store.open("https://example.test/archived")
         store.closeTab(archived)
-        try expect(!store.openNoteOverPage(archived, url: readme, title: "Readme"), "Archived tabs open nothing")
+        try expect(!store.openDocumentOverPage(archived, page: .note(readme), title: "Readme"), "Archived tabs open nothing")
 
         let state = store.state
         var next = state
@@ -156,10 +201,10 @@ struct NoteVisitTests {
             let store = try BrowserStore(directory: location)
             page = store.open("https://example.test/docs")
             store.updateTab(page, title: "Docs", url: "https://example.test/docs")
-            try expect(store.openNoteOverPage(page, url: readme, title: "Readme"), "open")
+            try expect(store.openDocumentOverPage(page, page: .note(readme), title: "Readme"), "open")
             archived = store.open("https://example.test/archived")
             store.updateTab(archived, title: "Archived", url: "https://example.test/archived")
-            try expect(store.openNoteOverPage(archived, url: readme, title: "Readme"), "open archived")
+            try expect(store.openDocumentOverPage(archived, page: .note(readme), title: "Readme"), "open archived")
             store.closeTab(archived)
             try store.save()
         }
@@ -181,8 +226,8 @@ struct NoteVisitTests {
         store.updateTab(shown, title: "Shown", url: "https://example.test/shown")
         let ahead = store.open("https://example.test/ahead")
         store.updateTab(ahead, title: "Ahead", url: "https://example.test/ahead")
-        try expect(store.openNoteOverPage(shown, url: readme, title: "Readme"), "shown")
-        try expect(store.openNoteOverPage(ahead, url: readme, title: "Readme") && store.stepNoteVisit(ahead, forward: false), "ahead")
+        try expect(store.openDocumentOverPage(shown, page: .note(readme), title: "Readme"), "shown")
+        try expect(store.openDocumentOverPage(ahead, page: .note(readme), title: "Readme") && store.stepNoteVisit(ahead, forward: false), "ahead")
         let renamed = notes.appendingPathComponent("Guide.md")
         try FileManager.default.moveItem(at: readme, to: renamed)
         store.updateNoteFile(from: readme, to: renamed, title: "Guide")
@@ -205,5 +250,47 @@ struct NoteVisitTests {
                    "A page showing the deleted note goes back to its page instead of closing")
         try expect(store.state.tab(ahead)?.noteVisit == nil && store.state.tab(ahead)?.url == "https://example.test/ahead",
                    "A page with the deleted note ahead just loses Forward")
+    }
+
+    static func storeEasels(_ directory: URL) throws {
+        let location = directory.appendingPathComponent("easels")
+        let id = UUID(), easel = InternalPage.easel(id).urlString
+        let shown: UUID, ahead: UUID
+        do {
+            let store = try BrowserStore(directory: location)
+            shown = store.open("https://example.test/shown")
+            store.updateTab(shown, title: "Shown", url: "https://example.test/shown")
+            ahead = store.open("https://example.test/ahead")
+            store.updateTab(ahead, title: "Ahead", url: "https://example.test/ahead")
+            let tabs = store.state.tabs.count
+            try expect(store.openDocumentOverPage(shown, page: .easel(id), title: "Board"), "An Easel opens in the page's tab")
+            try expect(store.state.tabs.count == tabs && store.state.tab(shown)?.url == easel, "No new tab; the tab shows the Easel")
+            try expect(store.openDocumentOverPage(ahead, page: .easel(id), title: "Board") && store.stepNoteVisit(ahead, forward: false),
+                       "Back from an Easel shows the page")
+            store.updateEaselTitle(id: id, profileID: store.activeSpace.profileID, title: "Plans")
+            try expect(store.state.tab(shown)?.title == "Plans" && store.state.tab(shown)?.noteVisit?.note.title == "Plans",
+                       "Renaming the Easel renames the shown step")
+            try expect(store.state.tab(ahead)?.noteVisit?.note.title == "Plans" && store.state.tab(ahead)?.title == "Ahead",
+                       "and the step waiting ahead, without touching the page")
+            let separate = try unwrap(store.openEasel(id: id, title: "Plans"), "separate Easel tab")
+            try expect(separate != shown && separate != ahead, "Opening the Easel elsewhere gets its own tab")
+            store.closeTab(separate)
+            try store.save()
+        }
+        let store = try BrowserStore(directory: location)
+        try expect(store.state.tab(shown)?.url == easel && store.state.tab(shown)?.showsNoteOverPage == true,
+                   "After a restart the tab still shows the Easel over its page")
+        try expect(store.state.tab(ahead)?.hasNoteAhead == true, "and the other tab still has it ahead")
+        try expect(store.stepNoteVisit(shown, forward: false) && store.state.tab(shown)?.url == "https://example.test/shown",
+                   "Back after a restart puts the page back")
+        try expect(store.stepNoteVisit(shown, forward: true), "Forward again")
+        var finished: Error??
+        store.deleteLocalDocument(.easel(id), profileID: store.activeSpace.profileID, ownerValid: { true },
+                                  deleteDocument: {}, completion: { finished = .some($0) })
+        try expect(finished != nil && finished! == nil, "The Easel is deleted")
+        try expect(store.state.tab(shown)?.noteVisit == nil && store.state.tab(shown)?.url == "https://example.test/shown",
+                   "A page showing the deleted Easel goes back to its page instead of closing")
+        try expect(store.state.tab(ahead)?.noteVisit == nil && store.state.tab(ahead)?.url == "https://example.test/ahead",
+                   "A page with the deleted Easel ahead just loses Forward")
     }
 }

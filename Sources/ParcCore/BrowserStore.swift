@@ -2894,11 +2894,11 @@ final class BrowserStore: ObservableObject {
         return id
     }
     @discardableResult
-    func openNoteOverPage(_ id: UUID, url: URL, title: String) -> Bool {
+    func openDocumentOverPage(_ id: UUID, page: InternalPage, title: String) -> Bool {
         guard !isEphemeral, !retiringTabIDs.contains(id), let index = state.tabIndex(id, where: { $0.archivedAt == nil }),
               !isProfileRemovalPending(state.tabs[index].profileID) else { return false }
         var next = state
-        guard next.tabs[index].openNoteVisit(url: url, title: title) else { return false }
+        guard next.tabs[index].openDocumentVisit(page, title: title) else { return false }
         next.tabs[index].lastAccessed = clock()
         state = next
         changed()
@@ -2979,7 +2979,9 @@ final class BrowserStore: ObservableObject {
             do {
                 var next = self.state
                 next.tabs.removeAll { ids.contains($0.id) }; next.selectedTabIDs.removeAll { ids.contains($0) }
-                if file != nil { for index in next.tabs.indices { next.tabs[index].forgetNote(matching: names) } }
+                for index in next.tabs.indices where file != nil || next.tabs[index].profileID == profileID {
+                    next.tabs[index].forgetNote(matching: names)
+                }
                 next.recentlyClosedIDs.removeAll { ids.contains($0) }
                 next.splitLayouts = next.splitLayouts.compactMap { original in
                     var layout = original
@@ -2998,8 +3000,9 @@ final class BrowserStore: ObservableObject {
     }
 
     @discardableResult
-    func openEasel(id documentID: UUID, title: String, inSplit: Bool = false) -> UUID? {
-        guard !inSplit || (!isEphemeral && !isProfileRemovalPending(activeSpace.profileID)
+    func openEasel(id documentID: UUID, title: String, inSplit: Bool = false, inBackground: Bool = false,
+                   creation: TabCreationProvenance? = nil) -> UUID? {
+        guard !inSplit || (!isEphemeral && !isProfileRemovalPending(activeSpace.profileID) && !inBackground
               && !state.selectedTabIDs.isEmpty && state.selectedTabIDs.count < 4) else { return nil }
         let original = state.selectedTabIDs, page = InternalPage.easel(documentID)
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3008,18 +3011,24 @@ final class BrowserStore: ObservableObject {
             let existing = state.tabs[index]
             guard !inSplit || existing.spaceID == activeSpaceID else { return nil }
             let id = presentLocalDocument(at: index, page: page, title: title)
-            if inSplit { setSplit(original + [id]) } else { selectTab(id) }
+            if inSplit { setSplit(original + [id]) } else if inBackground { changed() } else { selectTab(id) }
             return id
         }
         let id = UUID()
+        let creation = creation?.validated(profileID: activeSpace.profileID, state: state)
         var next = state
         next.tabs.append(BrowserTab(id: id, spaceID: activeSpaceID, profileID: activeSpace.profileID,
                                      url: page.urlString, title: title, kind: .today,
                                      createdAt: clock(), lastAccessed: clock(),
-                                     savedURL: page.urlString, savedTitle: title))
+                                     savedURL: page.urlString, savedTitle: title, referrerID: creation?.referrerID,
+                                     activeTabBeforeCreationID: creation?.activeTabBeforeCreationID))
         if inSplit {
             state = next
             setSplit(original + [id], adding: id)
+        } else if inBackground {
+            SidebarHierarchy.placingCreatedTab(id, insertion: .automatic, in: &next)
+            state = next
+            changed()
         } else {
             SidebarHierarchy.placingCreatedTab(id, insertion: .automatic, in: &next)
             next.selectedTabIDs = [id]
@@ -3066,7 +3075,9 @@ final class BrowserStore: ObservableObject {
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         var didChange = false
+        let page = InternalPage.easel(documentID)
         for index in state.tabs.indices where state.tabs[index].profileID == profileID {
+            if state.tabs[index].followNoteRename(from: page.matcher(), to: page.urlString, title: name) { didChange = true }
             if InternalPage(urlString: state.tabs[index].url)?.easelID == documentID && state.tabs[index].title != name {
                 state.tabs[index].title = name; didChange = true
             }

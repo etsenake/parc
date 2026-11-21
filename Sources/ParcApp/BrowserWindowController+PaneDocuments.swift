@@ -1,16 +1,16 @@
 import AppKit
 
 extension BrowserWindowController {
-    func paneDocumentRoutes(_ tabID: UUID?, isNote: Bool) -> [PaneDocumentRoute] {
+    func paneDocumentRoutes(_ tabID: UUID?) -> [PaneDocumentRoute] {
         guard let tabID, currentTabID == tabID, selectedTabIDs.contains(tabID), activePeek == nil,
               let tab = store.state.tab(tabID, where: { $0.archivedAt == nil }) else { return [.newTab] }
-        let showsWebPage = !InternalPage.isInternal(tab.url) && !BrowserState.isBlankPage(tab.url)
-        return PaneDocumentRoute.routes(paneCount: selectedTabIDs.count, paneShowsWebPage: showsWebPage, isNote: isNote)
+        let holdsWebPage = tab.showsNoteOverPage || (!InternalPage.isInternal(tab.url) && !BrowserState.isBlankPage(tab.url))
+        return PaneDocumentRoute.routes(paneCount: selectedTabIDs.count, paneHoldsWebPage: holdsWebPage)
     }
 
     @discardableResult
     func openNote(url: URL, inPane tabID: UUID?) -> Bool {
-        let routes = paneDocumentRoutes(tabID, isNote: true)
+        let routes = paneDocumentRoutes(tabID)
         guard let tabID, routes != [.newTab], let file = InternalPage.noteFile(url) else { return openNote(url: url) }
         guard canCreateNote else { return false }
         guard NoteFilePaths.isOpenableFile(file) else {
@@ -22,11 +22,10 @@ extension BrowserWindowController {
             case .newTab:
                 return openNote(url: url)
             case .overPage:
-                if let page = browsers[tabID]?.nativePage,
-                   openNoteOverPage(file, url: url, sourceID: tabID, page: page) { return true }
+                if openDocumentOverPage(.note(file), title: noteFileTitle(file), sourceID: tabID,
+                                        page: browsers[tabID]?.nativePage, anchor: url.fragment) { return true }
             case .replacePane:
-                let title = NoteFileSession.session(for: file)?.title ?? file.deletingPathExtension().lastPathComponent
-                return showDocument(.note(file), title: InternalPage.noteTitle(title, file: file),
+                return showDocument(.note(file), title: InternalPage.noteTitle(noteFileTitle(file), file: file),
                                     inPane: tabID, anchor: url.fragment)
             }
         }
@@ -34,14 +33,17 @@ extension BrowserWindowController {
     }
 
     func openEasel(id: UUID, title: String, inPane tabID: UUID?) {
-        let routes = paneDocumentRoutes(tabID, isNote: false)
+        let routes = paneDocumentRoutes(tabID)
         guard let tabID, routes != [.newTab] else { openEasel(id: id, title: title); return }
         guard canCreateNote else { return }
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         for route in routes {
             switch route {
-            case .newTab, .overPage:
+            case .newTab:
                 openEasel(id: id, title: title); return
+            case .overPage:
+                if openDocumentOverPage(.easel(id), title: title, sourceID: tabID,
+                                        page: browsers[tabID]?.nativePage) { return }
             case .replacePane:
                 if !showDocument(.easel(id), title: name.isEmpty ? "Untitled Easel" : name, inPane: tabID) { NSSound.beep() }
                 return
@@ -52,14 +54,14 @@ extension BrowserWindowController {
     func createsDocumentInPane(_ command: KeyboardShortcuts.MenuCommand, tabID: UUID) -> Bool {
         switch command.id {
         case "createNote:":
-            guard paneDocumentRoutes(tabID, isNote: true) != [.newTab], canCreateNote else { return false }
+            guard paneDocumentRoutes(tabID) != [.newTab], canCreateNote else { return false }
             do {
                 let file = try NoteFolderPreferences.library(for: activeProfileID).createNote()
                 openNote(url: file, inPane: tabID)
             } catch { showNoteError(error) }
             return true
         case "createEasel:":
-            guard paneDocumentRoutes(tabID, isNote: false) != [.newTab], canCreateNote else { return false }
+            guard paneDocumentRoutes(tabID) != [.newTab], canCreateNote else { return false }
             do {
                 let easels = try EaselEditorViewController.sharedStore(directory: store.easelsDirectory(for: activeProfileID))
                 let session = try easels.create()

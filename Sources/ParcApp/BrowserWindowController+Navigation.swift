@@ -188,7 +188,8 @@ extension BrowserWindowController {
             case .regularWindow:
                 return false
             case .overPage:
-                if openNoteOverPage(file, url: url, sourceID: sourceID, page: page) { return true }
+                if openDocumentOverPage(.note(file), title: noteFileTitle(file), sourceID: sourceID,
+                                        page: page, anchor: url.fragment) { return true }
             case .foregroundTab, .backgroundTab:
                 return openNoteLinkTab(file, url: url, sourceID: sourceID, background: route == .backgroundTab)
             case .newWindow:

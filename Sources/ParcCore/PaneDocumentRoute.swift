@@ -7,9 +7,8 @@ enum PaneDocumentRoute: Equatable {
 }
 
 extension PaneDocumentRoute {
-    static func routes(paneCount: Int, paneShowsWebPage: Bool, isNote: Bool) -> [PaneDocumentRoute] {
+    static func routes(paneCount: Int, paneHoldsWebPage: Bool) -> [PaneDocumentRoute] {
         guard paneCount > 1 else { return [.newTab] }
-        guard paneShowsWebPage, isNote else { return [.replacePane] }
-        return [.overPage, .newTab]
+        return paneHoldsWebPage ? [.overPage, .newTab] : [.replacePane]
     }
 }

@@ -90,11 +90,18 @@ the hidden page before it leaves, as closing any page does. A Command-click or m
 the note in its own tab, in the background unless Shift is held. A private window hands the note
 to a regular window.
 
-`TabNoteVisit` on the tab holds the page and note steps and which one shows; the store is the
-source of truth and each render covers or uncovers the tab's live page to match. If the hidden
-page can't stay (the tab moves to another window or Profile), Parc closes it and keeps its
-history, so Back reloads it with that history. Renaming the note moves the note step with it;
-trashing it sends a tab showing it back to its page.
+An [Easel](easels.md) opened in a split pane showing a page uses the same step: it replaces the
+page on screen, Back returns to the page as it was and Forward to the Easel, with the same swipes,
+held-arrow lists, session restore, archive, closing and window moves. A note or Easel opened in a
+pane already showing one over a page takes that step and keeps the page behind it, and one
+opened from the page while a step waits ahead replaces that Forward step, like any new navigation.
+
+`TabNoteVisit` on the tab holds the page step, the document step (a note file or an Easel
+address) and which one shows; the store is the source of truth and each render covers or
+uncovers the tab's live page to match. If the hidden page can't stay (the tab moves to another
+window or Profile), Parc closes it and keeps its history, so Back reloads it with that history,
+and an Easel step moves to the new Profile with its tab. Renaming the note or Easel moves the step
+with it; trashing it sends a tab showing it back to its page.
 
 Swipes and the held-arrow list treat the note as one more history step, through
 `HistorySwipeNoteStep`. A two-finger swipe back over a note shows the page with the usual swipe

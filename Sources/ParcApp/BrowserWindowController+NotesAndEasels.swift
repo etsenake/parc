@@ -8,6 +8,11 @@ extension BrowserWindowController {
             showNoteError(NoteTabError.retiredAddress)
             return true
         }
+        if let easel = InternalPage(urlString: value)?.easelID {
+            guard !isPrivateBrowsing, !isPopupWindow else { return false }
+            openEaselAddress(easel, inPane: tabID)
+            return true
+        }
         guard let file = InternalPage.noteFile(value) else { return false }
         let target = URL(string: value).flatMap { InternalPage.noteFile($0) == nil ? nil : $0 } ?? file
         if isPrivateBrowsing || isPopupWindow {
@@ -370,6 +375,17 @@ extension BrowserWindowController {
         if inSplit { closeLibrary(restoreFocus: false) }
         performWindowCommand { _ = store.openEasel(id: id, title: title, inSplit: inSplit) }
         if inSplit { focusSelectedLocalContent() }
+    }
+
+    private func openEaselAddress(_ id: UUID, inPane tabID: UUID?) {
+        guard canCreateNote else { return }
+        do {
+            let easels = try EaselEditorViewController.sharedStore(directory: store.easelsDirectory(for: activeProfileID))
+            try easels.validateReference(id)
+            let session = try easels.load(id)
+            guard !session.isDeleted, !session.isClosed else { NSSound.beep(); return }
+            openEasel(id: id, title: session.document.title, inPane: tabID)
+        } catch { showEaselError(error) }
     }
 
     func showEaselError(_ error: Error) {
