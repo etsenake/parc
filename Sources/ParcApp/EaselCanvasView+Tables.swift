@@ -1416,7 +1416,17 @@ extension EaselCanvasView {
         selection = Set(stickies.map(\.id))
     }
 
+    private func targetTableCell(at point: NSPoint) {
+        guard editor == nil, let item = selectedTable, !item.isLocked, let table = item.table,
+              let cell = EaselTableLayout(table: table, frame: item.frame).cell(at: EaselPoint(point)).map(table.anchor) else { return }
+        if let selected = tableCellSelection, selected.range.contains(cell) { return }
+        selectTableCells(item.id, anchor: cell)
+    }
+
     func addTableMenuItems(to menu: NSMenu) {
+        if let event = NSApp.currentEvent, event.window === window, [.rightMouseDown, .leftMouseDown].contains(event.type) {
+            targetTableCell(at: convert(event.locationInWindow, from: nil))
+        }
         guard let item = selectedTable, item.table != nil else { return }
         let token = EaselTableMenuToken(table: item.id)
         func add(_ title: String, _ action: Selector, to target: NSMenu = menu, token value: EaselTableMenuToken? = nil) {
@@ -1774,8 +1784,9 @@ extension EaselCanvasView {
 
 extension EaselCanvasView {
     func tableMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] {
-        guard context.items.count == 1, let item = context.items.first, item.kind == .table, let table = item.table,
-              selectedTable?.id == item.id else { return [] }
+        guard context.items.count == 1, let first = context.items.first, first.kind == .table, selectedTable?.id == first.id else { return [] }
+        targetTableCell(at: NSPoint(x: context.point.x, y: context.point.y))
+        guard let item = selectedTable, item.id == first.id, let table = item.table else { return [] }
         let id = item.id, locked = item.isLocked
         let canAddRow = !locked && table.rowCount < EaselTable.maximumRows && (table.rowCount + 1) * table.columnCount <= EaselTable.maximumCells
         let canAddColumn = !locked && table.columnCount < EaselTable.maximumColumns && table.rowCount * (table.columnCount + 1) <= EaselTable.maximumCells
