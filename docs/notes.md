@@ -65,8 +65,9 @@ handle sets its height. Scrolling and Tab pass over the canvas until it's clicke
 click activates it, moves the keyboard into it and reaches the canvas. Then
 scrolling pans the canvas and carries on into the note at its edge, as an embed
 does, and Escape with nothing selected, the check mark or a click outside
-returns to the note. Webpages on the canvas show their saved cards; Open shows
-them live. A locked note shows the canvas view-only. A deleted Easel, or one
+returns to the note. Webpages and live captures on the canvas are real pages,
+as in the Easel tab: select one to use it, and captured cards offer Make live
+and Back to snapshot. A locked note shows the canvas view-only. A deleted Easel, or one
 that belongs to another Profile (Easels live in their Profile, notes don't),
 shows a card saying so with Remove. Dragging an Easel from the sidebar onto a
 note's text puts an Easel block where the drop line shows; sidebar tab drags

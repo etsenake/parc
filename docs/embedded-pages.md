@@ -88,8 +88,15 @@ history-swipe handler. Note shortcuts stay out of a focused page: Find, Find
 Next, Find Previous and Use Selection for Find search the page with its own find
 bar, as in an Easel, and Find and Replace is off.
 
-Easel blocks in notes reuse this scroll latch for their canvas, but host no
-live pages: their webpage objects show saved cards.
+Easel blocks in notes reuse this scroll latch for their canvas. Their webpage
+objects and live captures are pages in the note's own pool, so they share the
+note tab's window, Profile, sleep, window moves and leave-page checks; each
+page's id mixes the block's and the object's, so the same Easel shown twice gets
+two pages. They keep the Easel's select-first rule and don't take the note's
+Escape route. Deleting an object or turning a capture back into a snapshot
+closes its pages in the note and in any Easel tab first; navigation is saved to
+the Easel. An Easel tab that deletes an object closes the note's copy afterwards
+with the page's usual leave-page check.
 
 Live capture blocks share the note pool: their page loads the capture's saved
 source without the app Referer and is framed to the captured region; see

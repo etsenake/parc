@@ -5,6 +5,7 @@ extension NotePageEditor: EmbeddedPageOwner {
     var embeddedPagesOpen: Bool { true }
 
     func embeddedPage(_ id: UUID, wants url: String, variant: EmbeddedPageFingerprint?) -> Bool {
+        if let easel = NoteEaselPageRegistry.existing(for: self)?.wants(id, url: url, variant: variant) { return easel }
         guard let block = session.page.block(NoteBlockID(id)) else { return false }
         if let capture = NoteEmbeddedPages.liveCapture(of: block) {
             return variant == EmbeddedPageFingerprint(capture.layout) && capture.address.absoluteString == url
@@ -14,12 +15,16 @@ extension NotePageEditor: EmbeddedPageOwner {
     }
 
     func embeddedPageFingerprint(for ids: Set<UUID>) -> EmbeddedPageFingerprint {
-        EmbeddedPageFingerprint(Dictionary(uniqueKeysWithValues: ids.compactMap { id in
-            session.page.block(NoteBlockID(id)).flatMap(NoteEmbeddedPages.pageKey(of:)).map { (id, $0) }
+        let easels = NoteEaselPageRegistry.existing(for: self)
+        return EmbeddedPageFingerprint(Dictionary(uniqueKeysWithValues: ids.compactMap { id in
+            (easels?.fingerprint(id) ?? session.page.block(NoteBlockID(id)).flatMap(NoteEmbeddedPages.pageKey(of:))).map { (id, $0) }
         }))
     }
 
-    func recordEmbeddedPageNavigation(_ url: URL, for id: UUID, expectedURL: String) throws {}
+    func recordEmbeddedPageNavigation(_ url: URL, for id: UUID, expectedURL: String) throws {
+        guard let page = NoteEaselPageRegistry.existing(for: self)?.page(id) else { return }
+        try page.session.recordEmbeddedPageNavigation(url, for: page.item, expectedURL: expectedURL)
+    }
 }
 
 @MainActor
@@ -125,6 +130,7 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
         for view in editor.canvas.materializedViews {
             (view as? NoteEmbedBlockView)?.pageHostDidChange()
             (view as? NoteMediaBlockView)?.pageHostDidChange()
+            (view as? NoteEaselBlockView)?.pageHostDidChange()
         }
     }
 
@@ -156,7 +162,10 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
         for (id, entry) in entries where !entry.started { start(id, entry: entry) }
     }
 
-    var activeBlock: NoteBlockID? { interacting ? selectedID.map(NoteBlockID.init) : nil }
+    var activeBlock: NoteBlockID? {
+        guard interacting, let id = selectedID.map(NoteBlockID.init), editor.session.page.contains(id) else { return nil }
+        return id
+    }
 
     func surface(for block: NoteBlockID, address: URL) -> NoteEmbedSurface? {
         if let existing = entries[block.raw], existing.originalURL != address.absoluteString { return nil }
@@ -242,14 +251,14 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
     }
 
     override func revealEntry(_ id: UUID) {
-        let block = NoteBlockID(id)
+        let block = NoteEaselPageRegistry.existing(for: editor)?.page(id)?.block ?? NoteBlockID(id)
         editor.canvas.revealBlock(block)
         if let entry = entries[id], wants(id, entry) {
             synchronize(wanted: { [unowned self] in self.wants($0, $1) }, selection: id, interacting: true)
         }
     }
 
-    private func reconcile() {
+    func reconcile() {
         guard !gate.isDisposed else { return }
         let keepSelection = selectedID.flatMap { id in entries[id].map { wants(id, $0) } } == true
         synchronize(wanted: { [unowned self] in self.wants($0, $1) },

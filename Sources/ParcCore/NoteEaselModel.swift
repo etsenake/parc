@@ -39,6 +39,20 @@ enum NoteEaselAddress {
     }
 }
 
+enum NoteEaselPageKey {
+    static func key(block: UUID, item: UUID) -> UUID {
+        var left = block.uuid, right = item.uuid, result = block.uuid
+        withUnsafeMutableBytes(of: &result) { out in
+            withUnsafeBytes(of: &left) { a in
+                withUnsafeBytes(of: &right) { b in
+                    for index in 0..<out.count { out[index] = a[index] ^ b[index] }
+                }
+            }
+        }
+        return UUID(uuid: result)
+    }
+}
+
 struct NoteDocumentDrag: Equatable {
     static let pasteboardType = "org.parc.sidebar-document"
 

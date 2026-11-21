@@ -90,6 +90,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     private let trailingHandle = NoteMediaResizeHandle(edge: .trailing)
     private var session: EaselSession?
     private var sessionDirectory: URL?
+    private var pages: NoteEaselPages?
     private var watch: AnyCancellable?
     private var heightStart: Double?
     private var liveHeight: Double?
@@ -141,6 +142,23 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     private var frameHeight: CGFloat { NoteEaselSurface.headerHeight + CGFloat(pageHeight) + 1 }
 
     func hostDidChange() { rebuild() }
+
+    func pageHostDidChange() { bindPages() }
+
+    private func bindPages() {
+        guard let session, let directory = sessionDirectory, let canvas = surface.canvas, let editor,
+              let pool = NoteEmbeddedPages.pool(for: editor), !pool.disposed else {
+            pages = nil
+            surface.canvas?.pageObjects = nil
+            return
+        }
+        if pages?.hosts(pool, session, canvas) == true { return }
+        let next = NoteEaselPages(block: blockID, session: session, directory: directory, editor: editor, pool: pool, canvas: canvas,
+                                  isActive: { [weak self] in self?.surface.active == true })
+        pages = next
+        canvas.pageObjects = next
+        canvas.onOpenURL = { [weak pool] url in pool?.onOpen?(url) }
+    }
 
     override func update(_ block: NoteBlock) {
         let previous = self.block
@@ -197,6 +215,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         if let session, session.document.id == id, sessionDirectory == host.directory, !session.isClosed, !session.isDeleted {
             surface.viewOnly = !canEdit
             refreshTitle()
+            bindPages()
             return
         }
         detach()
@@ -209,6 +228,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.sessionDidChange() } }
             }
             refreshTitle()
+            bindPages()
         case .failure(let absence):
             surface.showAbsence(absence, title: NoteEaselAddress.title(of: block), removable: canEdit)
         }
@@ -216,6 +236,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
 
     private func detach() {
         finish(restoreFocus: false)
+        pages = nil
         watch = nil
         session = nil
         sessionDirectory = nil
@@ -287,6 +308,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
             }
         }
         host?.keyLoopChanged()
+        canvas.needsLayout = true
         window.makeFirstResponder(canvas)
         window.invalidateCursorRects(for: self)
         if let event { window.postEvent(event, atStart: true) }
@@ -304,6 +326,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         guard surface.active else { return }
         surface.active = false
         surface.canvas?.onImageEditingCancel = nil
+        pages?.release()
         host?.keyLoopChanged()
         guard let window else { return }
         window.invalidateCursorRects(for: self)

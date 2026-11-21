@@ -11,11 +11,22 @@ struct NoteEaselBlockTests {
     static func main() {
         addresses()
         documentDrags()
+        pageKeys()
         picker()
         roundTrip()
         sizing()
         exports()
         print("NoteEaselBlockTests passed")
+    }
+
+    static func pageKeys() {
+        let block = UUID(uuidString: "0A1B2C3D-4E5F-6071-8293-A4B5C6D7E8F9")!
+        let other = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        let key = NoteEaselPageKey.key(block: block, item: id)
+        expect(key == NoteEaselPageKey.key(block: block, item: id), "page keys are stable for the same block and object")
+        expect(NoteEaselPageKey.key(block: block, item: key) == id, "a page key leads back to its object")
+        expect(key != id && key != block, "page keys never reuse the object or block id")
+        expect(NoteEaselPageKey.key(block: other, item: id) != key, "the same Easel in two blocks gets two pages")
     }
 
     static func documentDrags() {

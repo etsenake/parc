@@ -3,7 +3,7 @@ import Combine
 
 @MainActor
 final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHosting {
-    private let session: EaselSession
+    let session: EaselSession
     private var canvas: EaselCanvasView? { hostView as? EaselCanvasView }
     private var replacementObserver: UUID?
     private var documentObserver: AnyCancellable?
@@ -168,7 +168,7 @@ extension EaselSession: EmbeddedPageOwner {
 }
 
 @MainActor
-private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
+final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
     let browser: PCBrowserView
     private let captureLayout: EaselCaptureLayout?
     private let address: URL
@@ -447,7 +447,7 @@ private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
 }
 
 @MainActor
-private final class EaselSnapshotHeader: NSView {
+final class EaselSnapshotHeader: NSView {
     var onMakeLive: (() -> Void)?
     var onOpen: (() -> Void)?
     private let header = EmbeddedPageHeader()
