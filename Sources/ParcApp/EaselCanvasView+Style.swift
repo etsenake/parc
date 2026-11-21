@@ -52,7 +52,7 @@ extension EaselCanvasView {
     @discardableResult func applyStrokeDash(_ dash: EaselStrokeDash) -> Bool { applyStyle(.dash(dash)) }
 
     @discardableResult
-    func applyStyle(_ change: EaselStyleChange) -> Bool {
+    func applyStyle(_ change: EaselStyleChange, coalescing group: UUID? = nil) -> Bool {
         guard adaptsInk, !session.isClosed, !session.isDeleted, editor?.hasMarkedText() != true else { return false }
         if case .color(let choice) = change, let editor, let id = editingID,
            session.document.items.contains(where: { $0.id == id && $0.kind.holdsText && !$0.isLocked }) {
@@ -63,7 +63,7 @@ extension EaselCanvasView {
         guard !targets.isEmpty, finishImageEditing() else { return false }
         let ids = Set(targets.map(\.id))
         var families = Set<EaselStyleFamily>()
-        let saved = commit(change.actionName) { document in
+        let saved = commit(change.actionName, coalescing: group) { document in
             for index in document.items.indices where ids.contains(document.items[index].id) && !document.items[index].isLocked {
                 var item = document.items[index]
                 guard EaselStyle.apply(change, to: &item) else { continue }

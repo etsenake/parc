@@ -28,6 +28,7 @@ final class EaselColorPicker: NSView, NoteFloatingPanelContent {
 
     var preferredSizeDidChange: (() -> Void)?
     var onChange: ((EaselStyleChange) -> Void)?
+    var onScrubChange: ((EaselStyleChange, UUID) -> Void)?
     var onCancel: (() -> Void)?
     var controls: EaselStyleControls { didSet { if controls != oldValue { rebuild() } } }
     var summary: EaselStyleSummary { didSet { if summary != oldValue { refreshState(popping: true) } } }
@@ -43,6 +44,8 @@ final class EaselColorPicker: NSView, NoteFloatingPanelContent {
     private var notice: String?
     private(set) var highlighted: Slot?
     private var highlightFromPointer = false
+    private var scrubGroup: UUID?
+    private var scrubPreview: Double?
 
     init(controls: EaselStyleControls, summary: EaselStyleSummary = EaselStyleSummary()) {
         self.controls = controls
@@ -325,7 +328,20 @@ final class EaselColorPicker: NSView, NoteFloatingPanelContent {
 
     private func scrub(_ value: Double, finished: Bool) {
         setNeedsDisplay(footerRect)
-        if finished { onChange?(.fillOpacity(value)) }
+        guard let onScrubChange else {
+            if finished { onChange?(.fillOpacity(value)) }
+            return
+        }
+        let group = scrubGroup ?? UUID()
+        if finished {
+            scrubGroup = nil; scrubPreview = nil
+            onScrubChange(.fillOpacity(value), group)
+            return
+        }
+        let shown = (value * 100).rounded() / 100
+        guard shown != scrubPreview else { return }
+        scrubGroup = group; scrubPreview = shown
+        onScrubChange(.fillOpacity(shown), group)
     }
 
     private func editHex(seed: String?) {
@@ -756,6 +772,11 @@ extension EaselCanvasView {
             guard let self, let picker else { return }
             self.applyStyle(change)
             if let controls = self.styleControls { picker.controls = controls }
+            picker.summary = self.styleSummary
+        }
+        picker.onScrubChange = { [weak self, weak picker] change, group in
+            guard let self, let picker else { return }
+            self.applyStyle(change, coalescing: group)
             picker.summary = self.styleSummary
         }
         return picker

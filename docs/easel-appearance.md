@@ -147,7 +147,8 @@ width, and arrowheads stay solid and grow with the line.
 The style picker (`EaselColorPicker`) is a Notes floating-panel card with the
 Notes highlight and press motion: Color swatches, a custom colour from a hex
 code (type # to start one) or the screen eyedropper, then Fill (No Fill,
-Transparent, Solid and an opacity slider) and Outline or Line (weights, solid,
+Transparent, Solid and an opacity slider that restyles the selection live as
+it drags, as one Undo step) and Outline or Line (weights, solid,
 dashed, dotted) when the selection takes them; connectors add a Label
 Background toggle. Text shows colour only, shapes
 everything, arrows colour, width and style, the pen and highlighter colour and
