@@ -105,20 +105,29 @@ struct EaselImageExportTests {
             CGImageSourceCreateWithURL(url as CFURL, nil).flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
         }
         func rawMegabytes(_ image: CGImage) -> Int { image.bytesPerRow * image.height / 1_048_576 }
+        expect(tallImage.height == Int(EaselExportScale.maximumSide) && tallImage.width < Int(EaselCanvasView(session: tall).bounds.width * 2),
+               "A 40,110-point Easel exports at the capped 32,000-pixel side instead of gigapixels")
+        let rawTall: CGImage = {
+            let context = CGContext(data: nil, width: 1_600, height: 80_220, bitsPerComponent: 8, bytesPerRow: 0,
+                                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 1_600, height: 80_220))
+            return context.makeImage()!
+        }()
         var before = peakMegabytes()
         let tallPNG = directory.appendingPathComponent("Tall.png")
-        try EaselImageExport.write(tallImage, scale: 2, to: tallPNG)
-        expect(tallImage.height == 80_220 && properties(tallPNG)?[kCGImagePropertyPixelHeight] as? Int == 80_220, "A 40,110-point Easel exports every row as PNG")
-        expect(peakMegabytes() - before < rawMegabytes(tallImage) / 2, "PNG encoding streams to the file without the whole raw image")
+        try EaselImageExport.write(rawTall, scale: 2, to: tallPNG)
+        expect(properties(tallPNG)?[kCGImagePropertyPixelHeight] as? Int == 80_220, "An 80,220-pixel image writes every row as PNG")
+        expect(peakMegabytes() - before < rawMegabytes(rawTall) / 2, "PNG encoding streams to the file without the whole raw image")
         let tallJPEG = directory.appendingPathComponent("Tall.jpg")
-        expect((try? EaselImageExport.write(tallImage, scale: 2, to: tallJPEG)) == nil && !FileManager.default.fileExists(atPath: tallJPEG.path),
+        expect((try? EaselImageExport.write(rawTall, scale: 2, to: tallJPEG)) == nil && !FileManager.default.fileExists(atPath: tallJPEG.path),
                "JPEG's 65,535-pixel limit refuses it and leaves no file")
         let jpegTall = try store.create(title: "JPEG tall")
         try jpegTall.perform("Seed") { $0.items = [EaselItem(kind: .rectangle, frame: .init(x: 20, y: 30_000, width: 100, height: 50))] }
         let jpegImage = EaselCanvasView(session: jpegTall).exportImage(backingScale: 2)!
         before = peakMegabytes()
         try EaselImageExport.write(jpegImage, scale: 2, to: tallJPEG)
-        expect(properties(tallJPEG)?[kCGImagePropertyPixelHeight] as? Int == 60_220, "A 30,110-point Easel fits JPEG")
+        expect(properties(tallJPEG)?[kCGImagePropertyPixelHeight] as? Int == Int(EaselExportScale.maximumSide), "A 30,110-point Easel exports capped and fits JPEG")
         expect(peakMegabytes() - before < rawMegabytes(jpegImage) / 2, "JPEG encoding streams to the file without the whole raw image")
 
         let now = Date()

@@ -96,8 +96,9 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
 "$scratch/easel-code-block-style"
 
 style_bundle="$scratch/EaselTextStyle.app/Contents"
-mkdir -p "$style_bundle/MacOS" "$style_bundle/Resources/EaselFonts"
+mkdir -p "$style_bundle/MacOS" "$style_bundle/Resources/EaselFonts" "$style_bundle/Resources/AppIcons/Marks"
 cp "$repo_root/Resources/EaselFonts/"*.ttf "$style_bundle/Resources/EaselFonts/"
+cp "$repo_root/Resources/AppIcons/Marks/"*.png "$style_bundle/Resources/AppIcons/Marks/"
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/Sources/ParcApp/NoteTheme.swift" \
