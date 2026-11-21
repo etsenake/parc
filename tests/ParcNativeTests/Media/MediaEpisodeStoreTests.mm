@@ -173,31 +173,49 @@ static auto Page(int id) {
   PARC_CHECK(!live.Consume(fence, true));
 }
 
-- (void)testRemovingAPresentationReadmitsOnlyWhenAccepted {
+- (void)checkRemovingActive:(bool)active dismissed:(bool)dismissed admission:(bool)admission
+             expectsAttempt:(bool)attempt expectsReadmission:(bool)readmitted {
+  const bool wasActive = active;
+  const bool wasDismissed = dismissed;
   int calls = 0;
-  auto accepted = [&] {
+  const bool result = parc::AdmitAfterPresentationRemoval(active, dismissed, [&] {
     ++calls;
-    return true;
-  };
-  for (bool was_active : {false, true}) {
-    bool active = was_active, dismissed = true;
-    PARC_CHECK(parc::AdmitAfterPresentationRemoval(active, dismissed, accepted));
-    PARC_CHECK(!active && !dismissed);
-  }
-  bool active = true, dismissed = true;
-  PARC_CHECK(!parc::AdmitAfterPresentationRemoval(active, dismissed, [] { return false; }));
-  PARC_CHECK(active && dismissed);
-  active = false;
-  dismissed = true;
-  PARC_CHECK(!parc::AdmitAfterPresentationRemoval(active, dismissed, [] { return false; }));
-  PARC_CHECK(!active && dismissed);
-  active = false;
-  dismissed = false;
-  PARC_CHECK(parc::AdmitAfterPresentationRemoval(active, dismissed, accepted));
-  active = true;
-  dismissed = false;
-  PARC_CHECK(!parc::AdmitAfterPresentationRemoval(active, dismissed, accepted));
-  PARC_CHECK(calls == 3 && active && !dismissed);
+    return admission;
+  });
+  PARC_CHECK(result == readmitted);
+  PARC_CHECK(calls == int(attempt));
+  PARC_CHECK(active == (readmitted ? false : wasActive));
+  PARC_CHECK(dismissed == (readmitted ? false : wasDismissed));
+}
+
+- (void)testAdmittingAnInactiveDismissedEpisodeClearsDismissal {
+  [self checkRemovingActive:false dismissed:true admission:true
+             expectsAttempt:true expectsReadmission:true];
+}
+
+- (void)testAdmittingAnActiveDismissedEpisodeClearsPresentation {
+  [self checkRemovingActive:true dismissed:true admission:true
+             expectsAttempt:true expectsReadmission:true];
+}
+
+- (void)testRefusingAnActiveDismissedEpisodePreservesPresentation {
+  [self checkRemovingActive:true dismissed:true admission:false
+             expectsAttempt:true expectsReadmission:false];
+}
+
+- (void)testRefusingAnInactiveDismissedEpisodePreservesDismissal {
+  [self checkRemovingActive:false dismissed:true admission:false
+             expectsAttempt:true expectsReadmission:false];
+}
+
+- (void)testAnInactiveUndismissedEpisodeCanBeReadmitted {
+  [self checkRemovingActive:false dismissed:false admission:true
+             expectsAttempt:true expectsReadmission:true];
+}
+
+- (void)testAnActiveUndismissedEpisodeSkipsReadmission {
+  [self checkRemovingActive:true dismissed:false admission:true
+             expectsAttempt:false expectsReadmission:false];
 }
 
 - (void)testAnEpisodeIsHeldWhileActiveOrCasting {

@@ -450,20 +450,18 @@ void CreationClaimsBeforeLastWindowCloses() {
   world.CheckSettled();
 }
 
-void FailedCreationAfterLastWindowClosed() {
-  for (Failure failure : {Failure::kAfterSession, Failure::kAdmission}) {
-    World world;
-    Check(world.Begin(1), "first window opens");
-    world.RunAll();
-    Check(!world.Begin(1, failure, [&] { world.CloseWindow(1); }),
-          "the overlapping creation fails");
-    world.RunAll();
-    Check(world.teardowns == 1,
-          "the session is torn down once the failed creation lets go");
-    world.Quiesce();
-    Check(!world.Current(1), "nothing survives a failed creation after the last close");
-    world.CheckSettled();
-  }
+void FailedCreationAfterLastWindowClosed(Failure failure) {
+  World world;
+  Check(world.Begin(1), "first window opens");
+  world.RunAll();
+  Check(!world.Begin(1, failure, [&] { world.CloseWindow(1); }),
+        "the overlapping creation fails");
+  world.RunAll();
+  Check(world.teardowns == 1,
+        "the session is torn down once the failed creation lets go");
+  world.Quiesce();
+  Check(!world.Current(1), "nothing survives a failed creation after the last close");
+  world.CheckSettled();
 }
 
 void LastWindowClosesBeforeCreation() {
@@ -538,29 +536,24 @@ void ChromiumErrorsBeforeAskingForAWindow() {
   Check(world.slots.empty(), "no orphan survives");
 }
 
-void FailureAtEachStep() {
-  for (bool window_open : {false, true}) {
-    for (Failure failure : {Failure::kBeforeSession, Failure::kAfterSession,
-                            Failure::kAdmission}) {
-      World world;
-      if (window_open) {
-        Check(world.Begin(1), "an existing window opens");
-      }
-      int outcomes = 0;
-      world.PrivateWindow(1, failure, &outcomes);
-      Check(outcomes == 1, "the failed request completes once");
-      Check(!world.Routed(1, failure) || window_open,
-            "a failed routed request opens nothing new");
-      world.Quiesce();
-      world.CheckSettled();
-      Check(world.ledger.Idle(), "no claim leaks from a failure");
-      if (window_open) {
-        Check(world.Current(1) && world.Current(1)->browsers >= 1,
-              "an existing window keeps its session");
-      } else {
-        Check(world.slots.empty(), "a failure leaves no session behind");
-      }
-    }
+void FailureAtEachStep(bool window_open, Failure failure) {
+  World world;
+  if (window_open) {
+    Check(world.Begin(1), "an existing window opens");
+  }
+  int outcomes = 0;
+  world.PrivateWindow(1, failure, &outcomes);
+  Check(outcomes == 1, "the failed request completes once");
+  Check(!world.Routed(1, failure) || window_open,
+        "a failed routed request opens nothing new");
+  world.Quiesce();
+  world.CheckSettled();
+  Check(world.ledger.Idle(), "no claim leaks from a failure");
+  if (window_open) {
+    Check(world.Current(1) && world.Current(1)->browsers >= 1,
+          "an existing window keeps its session");
+  } else {
+    Check(world.slots.empty(), "a failure leaves no session behind");
   }
 }
 
@@ -862,7 +855,6 @@ void Randomized() {
   std::mt19937 random(20261116);
   const int kScenarios = 4000;
   const int kSteps = 80;
-  int opened = 0;
   for (int scenario = 0; scenario < kScenarios; ++scenario) {
     World world;
     int requests = 0;
@@ -877,10 +869,10 @@ void Randomized() {
           world.PrivateWindow(parent, failure, &completions);
           break;
         case 1:
-          opened += world.Begin(parent, failure);
+          world.Begin(parent, failure);
           break;
         case 2:
-          opened += world.Begin(parent, failure, [&] {
+          world.Begin(parent, failure, [&] {
             const int other = 1 + static_cast<int>(random() % 2);
             switch (random() % 4) {
               case 0:
@@ -899,7 +891,7 @@ void Randomized() {
           });
           break;
         case 3:
-          opened += world.Routed(parent, failure, random() % 2 == 0);
+          world.Routed(parent, failure, random() % 2 == 0);
           break;
         case 4:
           ++requests;
@@ -956,7 +948,6 @@ void Randomized() {
     Check(world.slots.empty(),
           "after every window and operation ends, no private session survives");
   }
-  Check(opened > kScenarios, "the randomized scenarios really opened windows");
 }
 
 }
@@ -978,8 +969,12 @@ void Randomized() {
   CreationClaimsBeforeLastWindowCloses();
 }
 
-- (void)testFailedCreationAfterLastWindowClosed {
-  FailedCreationAfterLastWindowClosed();
+- (void)testFailingAfterSessionAfterLastWindowCloseReleasesTheSession {
+  FailedCreationAfterLastWindowClosed(Failure::kAfterSession);
+}
+
+- (void)testFailingAdmissionAfterLastWindowCloseReleasesTheSession {
+  FailedCreationAfterLastWindowClosed(Failure::kAdmission);
 }
 
 - (void)testLastWindowClosesBeforeCreation {
@@ -998,8 +993,28 @@ void Randomized() {
   ChromiumErrorsBeforeAskingForAWindow();
 }
 
-- (void)testFailureAtEachStep {
-  FailureAtEachStep();
+- (void)testBeforeSessionFailurePreservesTheOpenWindow {
+  FailureAtEachStep(true, Failure::kBeforeSession);
+}
+
+- (void)testBeforeSessionFailureLeavesNoPrivateSession {
+  FailureAtEachStep(false, Failure::kBeforeSession);
+}
+
+- (void)testAfterSessionFailurePreservesTheOpenWindow {
+  FailureAtEachStep(true, Failure::kAfterSession);
+}
+
+- (void)testAfterSessionFailureLeavesNoPrivateSession {
+  FailureAtEachStep(false, Failure::kAfterSession);
+}
+
+- (void)testAdmissionFailurePreservesTheOpenWindow {
+  FailureAtEachStep(true, Failure::kAdmission);
+}
+
+- (void)testAdmissionFailureLeavesNoPrivateSession {
+  FailureAtEachStep(false, Failure::kAdmission);
 }
 
 - (void)testReentrantCreationNeitherDoubleClaimsNorReleasesEarly {

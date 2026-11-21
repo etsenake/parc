@@ -70,12 +70,18 @@ static const Bytes original{0, 1, 65, 255, 0, 42};
     PARC_CHECK(f.marker.find(std::string(original.begin(), original.end())) == std::string::npos);
 }
 
-- (void)testDeniedAccessKeepsAMarkedNamespaceWithoutReading {
-  for (auto selected : {StorageNamespace::kParc, StorageNamespace::kInvalid}) {
-    Fixture f; f.denied = true;
-    PARC_CHECK(f.Run(true, selected) == selected);
-    PARC_CHECK(f.reads.empty() && f.adds.empty() && f.marker.empty());
-  }
+- (void)testDeniedAccessPreservesTheParcMarker {
+  Fixture f;
+  f.denied = true;
+  PARC_CHECK(f.Run(true, StorageNamespace::kParc) == StorageNamespace::kParc);
+  PARC_CHECK(f.reads.empty() && f.adds.empty() && f.marker.empty());
+}
+
+- (void)testDeniedAccessPreservesAnInvalidMarker {
+  Fixture f;
+  f.denied = true;
+  PARC_CHECK(f.Run(true, StorageNamespace::kInvalid) == StorageNamespace::kInvalid);
+  PARC_CHECK(f.reads.empty() && f.adds.empty() && f.marker.empty());
 }
 
 - (void)testAMigratedRootReadsOnlyItsCopiedKey {
@@ -121,13 +127,23 @@ static const Bytes original{0, 1, 65, 255, 0, 42};
     PARC_CHECK(!f.keys.contains(target) && f.marker.empty());
 }
 
-- (void)testADuplicateAddRaceKeepsOnlyAnIdenticalKey {
-  for (bool conflict : {false, true}) {
-    Fixture f; f.keys[legacy] = original; f.race = true; f.different_race = conflict;
-    PARC_CHECK(f.Run() == (conflict ? StorageNamespace::kInvalid : StorageNamespace::kLegacyChromium));
-    PARC_CHECK(f.keys[legacy] == original);
-    PARC_CHECK(f.marker.empty() == conflict);
-  }
+- (void)testAnIdenticalRacingKeyCanCompleteMigration {
+  Fixture f;
+  f.keys[legacy] = original;
+  f.race = true;
+  PARC_CHECK(f.Run() == StorageNamespace::kLegacyChromium);
+  PARC_CHECK(f.keys[legacy] == original);
+  PARC_CHECK(f.marker == "parc-chromium-v1\n");
+}
+
+- (void)testAConflictingRacingKeyCannotCompleteMigration {
+  Fixture f;
+  f.keys[legacy] = original;
+  f.race = true;
+  f.different_race = true;
+  PARC_CHECK(f.Run() == StorageNamespace::kInvalid);
+  PARC_CHECK(f.keys[legacy] == original);
+  PARC_CHECK(f.marker.empty());
 }
 
 - (void)testAFailedMarkerSaveRetriesWithoutAddingAgain {
@@ -145,10 +161,19 @@ static const Bytes original{0, 1, 65, 255, 0, 42};
     PARC_CHECK(f.keys.empty() && f.marker.empty());
 }
 
-- (void)testMarkersAndAccountsParse {
+- (void)testTheParcMarkerSelectsParc {
   PARC_CHECK(parc::ParseStorageMarker("parc-v1\n") == StorageNamespace::kParc);
+}
+
+- (void)testTheMigratedMarkerSelectsLegacyChromium {
   PARC_CHECK(parc::ParseStorageMarker("parc-chromium-v1\n") == StorageNamespace::kLegacyChromium);
+}
+
+- (void)testAnUnknownMarkerIsInvalid {
   PARC_CHECK(parc::ParseStorageMarker("corrupt") == StorageNamespace::kInvalid);
+}
+
+- (void)testTheParcNamespaceUsesTheParcAccount {
   PARC_CHECK(std::string(parc::StorageAccount(StorageNamespace::kParc)) == "Parc");
 }
 

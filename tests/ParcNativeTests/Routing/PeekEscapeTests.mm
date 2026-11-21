@@ -20,18 +20,30 @@ static State AfterQuickRepeat() {
   parc::NativeEscapeEvents _events;
 }
 
-- (void)testAFirstEscapeReportsConsumptionAndEditing {
-  for (bool consumed : {false, true}) {
-    for (bool editable : {false, true}) {
-      State state;
-      if (consumed) state.ConsumedRawKeyDown();
-      auto first = state.Complete(editable, 10, 0.5);
-      PARC_CHECK(first.status == (consumed ? Status::kConsuming : Status::kUnconsumed));
-      PARC_CHECK(first.editable == editable);
-      PARC_CHECK(first.prefers_confirmation() == (consumed || editable));
-      PARC_CHECK(!first.repeated);
-    }
-  }
+- (void)checkFirstEscapeConsumed:(bool)consumed editable:(bool)editable {
+  State state;
+  if (consumed) state.ConsumedRawKeyDown();
+  auto first = state.Complete(editable, 10, 0.5);
+  PARC_CHECK(first.status == (consumed ? Status::kConsuming : Status::kUnconsumed));
+  PARC_CHECK(first.editable == editable);
+  PARC_CHECK(first.prefers_confirmation() == (consumed || editable));
+  PARC_CHECK(!first.repeated);
+}
+
+- (void)testAFirstConsumedEscapeWhileEditing {
+  [self checkFirstEscapeConsumed:true editable:true];
+}
+
+- (void)testAFirstConsumedEscapeOutsideAnEditor {
+  [self checkFirstEscapeConsumed:true editable:false];
+}
+
+- (void)testAFirstUnconsumedEscapeWhileEditing {
+  [self checkFirstEscapeConsumed:false editable:true];
+}
+
+- (void)testAFirstUnconsumedEscapeOutsideAnEditor {
+  [self checkFirstEscapeConsumed:false editable:false];
 }
 
 - (void)testASlowSecondEscapeMayHaveBeenConsumed {
