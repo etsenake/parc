@@ -129,8 +129,9 @@ Adding a template is one undo step. It lands centred in the view above
 everything already there, never off the board's top or left edge, and comes
 in selected so it can be dragged straight away; a board bigger than the view
 is zoomed to fit. Stickies sit inside their sections, so moving a section
-carries them along, and flowchart and mind map connectors are real
-connectors that follow their shapes. `EaselTemplates` in ParcCore holds the
+carries them along, flowchart connectors are real connectors that follow
+their shapes, and the Mind Map template is a real two-sided
+[mind map](easel-mind-maps.md) ready for ⌘Return. `EaselTemplates` in ParcCore holds the
 boards; `EaselTemplateGallery` is a self-contained view any surface can place.
 
 ## Timer

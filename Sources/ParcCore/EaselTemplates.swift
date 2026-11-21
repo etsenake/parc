@@ -228,19 +228,24 @@ enum EaselTemplates {
         }
 
         mutating func mindMap() {
-            let topic = shape(.ellipse, "Main topic", x: 380, y: 300, width: 240, height: 140, color: .purple)
-            let branches: [(String, Double, Double, NoteColor, EaselConnection.Side, EaselConnection.Side)] = [
-                ("Idea", 40, 80, .blue, .left, .right),
-                ("Question", 760, 80, .green, .right, .left),
-                ("Next step", 0, 330, .orange, .left, .right),
-                ("Resource", 800, 330, .pink, .right, .left),
-                ("Example", 40, 580, .yellow, .left, .right),
-                ("Open loop", 760, 580, .red, .right, .left),
+            var topic = EaselItem(kind: .circle, frame: EaselRect(x: 380, y: 300, width: 240, height: 140), text: "Main topic")
+            topic.fill = Self.fill(.purple)
+            topic.color = Self.ink(.purple)
+            topic.mindMap = EaselMindMapLink()
+            add(topic)
+            let branches: [(String, Double, NoteColor, EaselMindMapLink.Side?)] = [
+                ("Idea", 80, .blue, .left), ("Question", 80, .green, nil), ("Next step", 330, .orange, .left),
+                ("Resource", 330, .pink, nil), ("Example", 580, .yellow, .left), ("Open loop", 580, .red, nil),
             ]
             for branch in branches {
-                let node = shape(.roundedRectangle, branch.0, x: branch.1, y: branch.2, width: 200, height: 80, color: branch.3)
-                connect(topic, branch.4, to: node, branch.5, routing: .curved)
+                var node = shape(.roundedRectangle, branch.0, x: branch.3 == .left ? 0 : 760, y: branch.1, width: 200, height: 80, color: branch.2)
+                items.removeLast()
+                node.mindMap = EaselMindMapLink(parent: topic.id, side: branch.3)
+                add(node)
             }
+            let laidOut = EaselMindMap.tidied(EaselDocument(id: UUID(), title: "Mind Map", createdAt: Date(timeIntervalSinceReferenceDate: 0),
+                                                            modifiedAt: Date(timeIntervalSinceReferenceDate: 0), items: items))
+            items = laidOut.items.filter { $0.kind == .arrow } + laidOut.items.filter { $0.kind != .arrow }
         }
 
         mutating func moodboard() {
