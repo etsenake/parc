@@ -309,6 +309,21 @@ extension EaselCanvasView {
         bar.isHidden = false
     }
 
+    func codeMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] {
+        guard context.target == .object, context.items.count == 1, let item = context.items.first, item.kind == .code else { return [] }
+        let id = item.id
+        let current = EaselCodeBlock.language(item.language).id
+        let languages = NoteCodeLanguage.all.map { language in
+            EaselMenuRow(id: "code-language-" + language.id, title: language.name, isChecked: language.id == current,
+                         perform: guardedMenuAction { canvas in _ = canvas.setCodeLanguage(EaselCodeBlock.stored(language), for: [id]) })
+        }
+        return [
+            EaselMenuRow(id: "copy-code", title: "Copy Code", symbol: "doc.on.doc", perform: guardedMenuAction { canvas in _ = canvas.copyCode(id) }),
+            EaselMenuRow(id: "code-language", title: "Language", symbol: "chevron.left.forwardslash.chevron.right",
+                         isEnabled: canEditCode && !item.isLocked, children: languages),
+        ]
+    }
+
     @discardableResult
     func showCodeLanguageMenu(_ id: UUID, from anchor: NSView? = nil) -> Bool {
         guard let item = codeItem(id), canEditCode, !item.isLocked else { return false }
