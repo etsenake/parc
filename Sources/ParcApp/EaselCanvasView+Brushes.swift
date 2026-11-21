@@ -3,8 +3,13 @@ import AppKit
 @MainActor
 final class EaselCanvasBrushes {
     static var washiPattern = EaselWashi.defaultPattern
-    var brush: EaselBrush = .marker
-    var draftID = UUID()
+    var template: EaselItem?
+    var path = CGMutablePath()
+    var end: NSPoint?
+    var straight = false
+    var strict = false
+    var bounds = NSRect.null
+    var preview = NSRect.null
     var erasing: Set<UUID> = []
     var lastEraserPoint: EaselPoint?
     var trail: [(point: EaselPoint, time: TimeInterval)] = []
@@ -21,7 +26,7 @@ enum EaselBrushArt {
         let origin = NSPoint(x: item.frame.x, y: item.frame.y), path = NSBezierPath()
         var current = origin
         func point(_ p: EaselPoint) -> NSPoint { NSPoint(x: origin.x + p.x, y: origin.y + p.y) }
-        for element in EaselDrawing.smoothPath(item.points) {
+        for element in EaselDrawing.pathElements(item) {
             switch element {
             case .move(let p): current = point(p); path.move(to: current)
             case .line(let p): current = point(p); path.line(to: current)
@@ -40,7 +45,7 @@ enum EaselBrushArt {
     static func cgPath(_ item: EaselItem) -> CGPath {
         let path = CGMutablePath()
         func point(_ p: EaselPoint) -> CGPoint { CGPoint(x: item.frame.x + p.x, y: item.frame.y + p.y) }
-        for element in EaselDrawing.smoothPath(item.points) {
+        for element in EaselDrawing.pathElements(item) {
             switch element {
             case .move(let p): path.move(to: point(p))
             case .line(let p): path.addLine(to: point(p))
@@ -181,37 +186,58 @@ extension EaselCanvasView {
     }
 
     func beginBrushStroke(_ brush: EaselBrush, at point: NSPoint, flags: NSEvent.ModifierFlags) {
-        brushes.brush = brush
-        brushes.draftID = UUID()
+        var template = EaselItem(kind: .freehand, frame: EaselRect(x: point.x, y: point.y, width: 1, height: 1),
+                                 zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1, color: insertionColor)
+        template.brush = brush
+        template.pattern = brush == .washi ? EaselWashi.storedName(EaselCanvasBrushes.washiPattern) : nil
+        stampRememberedStyle(on: &template)
+        brushes.template = template
+        brushes.path = CGMutablePath()
+        brushes.path.move(to: point)
+        brushes.end = point
+        brushes.bounds = NSRect(origin: point, size: .zero)
+        brushes.preview = .null
         stroke = [point]
+        draft = []
         selection.removeAll()
-        updateBrushDraft(flags: flags)
+        refreshLiveStroke(flags: flags, dirty: liveReach(around: [point]))
     }
 
     func dragBrushStroke(to point: NSPoint, flags: NSEvent.ModifierFlags) {
-        guard let last = stroke.last, point.x.isFinite, point.y.isFinite else { return }
-        let travel = hypot(point.x - last.x, point.y - last.y)
-        if travel >= 1 / EaselDrawing.safeScale(canvasScale), stroke.count < EaselDrawing.maximumPoints {
+        guard brushes.template != nil, let last = stroke.last, point.x.isFinite, point.y.isFinite else { return }
+        brushes.end = point
+        var dirty = NSRect.null
+        if hypot(point.x - last.x, point.y - last.y) >= 1 / EaselDrawing.safeScale(canvasScale), stroke.count < EaselDrawing.maximumPoints {
             stroke.append(point)
-        } else if stroke.count > 1, flags.contains(.shift) || brushes.brush.alwaysStraight {
-            stroke[stroke.count - 1] = point
+            extendLivePath()
+            brushes.bounds = brushes.bounds.union(NSRect(origin: point, size: .zero))
+            dirty = liveReach(around: Array(stroke.suffix(3)))
         }
-        updateBrushDraft(flags: flags)
+        refreshLiveStroke(flags: flags, dirty: dirty)
     }
 
     func refreshBrushStroke(flags: NSEvent.ModifierFlags) {
-        guard drawing, start != nil, !stroke.isEmpty else { return }
-        updateBrushDraft(flags: flags)
+        guard drawing, start != nil, brushes.template != nil else { return }
+        refreshLiveStroke(flags: flags, dirty: .null)
     }
 
     func endBrushStroke(flags: NSEvent.ModifierFlags) {
-        updateBrushDraft(flags: flags, finishing: true)
-        guard var item = draft?.first else { return }
-        if item.resolvedBrush.sticksToObjects {
+        guard let template = brushes.template, let first = stroke.first else { return }
+        let brush = template.resolvedBrush, straight = brush.alwaysStraight || flags.contains(.shift)
+        var raw = stroke.map { EaselPoint(x: $0.x, y: $0.y) }
+        if let end = brushes.end, end != stroke.last { raw.append(EaselPoint(x: end.x, y: end.y)) }
+        if straight { raw = [EaselPoint(x: first.x, y: first.y), raw[raw.count - 1]] }
+        let painted = paintedLiveStroke()
+        brushes.template = nil
+        setNeedsDisplay(painted)
+        decoration.setNeedsDisplay(painted)
+        guard var item = EaselDrawing.strokeItem(raw, like: template, straight: straight, strict: brush.alwaysStraight && flags.contains(.shift),
+                                                 scale: canvasScale) else { return }
+        if brush.sticksToObjects {
             item.attachedTo = EaselDrawing.attachmentTarget(for: EaselDrawing.visualPoints(item), in: session.document.items)
         }
         let name: String
-        switch item.resolvedBrush {
+        switch brush {
         case .marker: name = "Draw"
         case .highlighter: name = "Highlight"
         case .washi: name = "Washi Tape"
@@ -221,33 +247,87 @@ extension EaselCanvasView {
 
     func cancelBrushStroke() {
         brushes.lastEraserPoint = nil
+        if brushes.template != nil {
+            let painted = paintedLiveStroke()
+            brushes.template = nil
+            setNeedsDisplay(painted)
+            decoration.setNeedsDisplay(painted)
+        }
         guard !brushes.erasing.isEmpty else { return }
         let faded = brushes.erasing
         brushes.erasing = []
         repaintDrawings(faded)
     }
 
-    private func updateBrushDraft(flags: NSEvent.ModifierFlags, finishing: Bool = false) {
-        guard let first = stroke.first, let last = stroke.last else { draft = nil; return }
-        let brush = brushes.brush
-        let start = EaselPoint(x: first.x, y: first.y)
-        let absolute: [EaselPoint]
-        if brush.alwaysStraight || flags.contains(.shift) {
-            let end = EaselDrawing.straightEnd(from: start, to: EaselPoint(x: last.x, y: last.y), strict: brush.alwaysStraight && flags.contains(.shift))
-            if brush == .washi && hypot(end.x - start.x, end.y - start.y) < 4 { draft = nil; invalidateIncrementalDisplay(); return }
-            absolute = [start, end]
-        } else {
-            let raw = stroke.map { EaselPoint(x: $0.x, y: $0.y) }
-            absolute = finishing ? EaselDrawing.finished(raw, scale: canvasScale) : (raw.count == 1 ? [start, start] : raw)
+    private func extendLivePath() {
+        let count = stroke.count
+        guard count >= 2 else { return }
+        let a = stroke[count - 2], b = stroke[count - 1], middle = NSPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+        if count == 2 { brushes.path.addLine(to: middle) } else { brushes.path.addQuadCurve(to: middle, control: a) }
+    }
+
+    private func liveReach(around points: [NSPoint]) -> NSRect {
+        guard let template = brushes.template, let first = points.first else { return .null }
+        let pad = CGFloat(EaselPaintRules.strokeWidth(template)) / 2 + 2
+        return points.dropFirst().reduce(NSRect(origin: first, size: .zero)) { $0.union(NSRect(origin: $1, size: .zero)) }
+            .insetBy(dx: -pad, dy: -pad)
+    }
+
+    private func liveLine() -> EaselItem? {
+        guard let template = brushes.template, let first = stroke.first, let end = brushes.end else { return nil }
+        return EaselDrawing.strokeItem([EaselPoint(x: first.x, y: first.y), EaselPoint(x: end.x, y: end.y)], like: template,
+                                       straight: true, strict: brushes.strict, scale: canvasScale)
+    }
+
+    private func liveLineReach() -> NSRect {
+        guard let line = liveLine() else { return .null }
+        let reach = CGFloat(EaselDrawing.reach(of: line)) + CGFloat(EaselWashi.tooth) + 4
+        return NSRect(x: line.frame.x, y: line.frame.y, width: line.frame.width, height: line.frame.height).insetBy(dx: -reach, dy: -reach)
+    }
+
+    private func paintedLiveStroke() -> NSRect {
+        guard let template = brushes.template else { return .null }
+        let pad = CGFloat(EaselPaintRules.strokeWidth(template)) / 2 + 2
+        return brushes.bounds.insetBy(dx: -pad, dy: -pad).union(brushes.preview)
+    }
+
+    private func refreshLiveStroke(flags: NSEvent.ModifierFlags, dirty: NSRect) {
+        guard let template = brushes.template else { return }
+        let straight = template.resolvedBrush.alwaysStraight || flags.contains(.shift)
+        var region = dirty
+        if straight != brushes.straight { region = region.union(paintedLiveStroke()); brushes.straight = straight }
+        brushes.strict = template.resolvedBrush.alwaysStraight && flags.contains(.shift)
+        if straight {
+            let next = liveLineReach()
+            region = region.union(brushes.preview).union(next)
+            brushes.preview = next
         }
-        guard let placed = EaselDrawing.geometry(absolute) else { draft = nil; invalidateIncrementalDisplay(); return }
-        var item = EaselItem(kind: .freehand, frame: placed.frame, zIndex: (original.map(\.zIndex).max() ?? 0) + 1,
-                             color: insertionColor, points: placed.points)
-        item.id = brushes.draftID
-        item.brush = brush == .marker ? nil : brush
-        item.pattern = brush == .washi ? EaselWashi.storedName(EaselCanvasBrushes.washiPattern) : nil
-        draft = [item]
-        invalidateIncrementalDisplay()
+        guard !region.isNull else { return }
+        setNeedsDisplay(region)
+        decoration.setNeedsDisplay(region)
+    }
+
+    private func drawLiveStroke() {
+        guard let template = brushes.template, start != nil, let context = NSGraphicsContext.current?.cgContext else { return }
+        let dark = NoteTheme.isDark(effectiveAppearance)
+        if brushes.straight {
+            if let line = liveLine() { EaselBrushArt.draw(line, adaptive: adaptsInk, dark: dark, faded: false) }
+            return
+        }
+        guard let last = stroke.last else { return }
+        let ink = EaselPaintRules.ink(template)
+        context.saveGState(); defer { context.restoreGState() }
+        if template.resolvedBrush == .highlighter { context.setBlendMode(dark ? .normal : .multiply) }
+        context.setAlpha(CGFloat(EaselPaintRules.strokeOpacity(template)))
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        context.setStrokeColor(EaselInk.color(ink.hex, adaptive: adaptsInk, role: ink.role).cgColor)
+        context.setLineWidth(CGFloat(EaselPaintRules.strokeWidth(template)))
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        context.addPath(brushes.path)
+        context.addLine(to: last)
+        context.strokePath()
+        context.endTransparencyLayer()
     }
 
     func beginErasing(at point: NSPoint) {
@@ -296,6 +376,7 @@ extension EaselCanvasView {
     }
 
     func drawBrushOverlay(in dirtyRect: NSRect) {
+        drawLiveStroke()
         let now = ProcessInfo.processInfo.systemUptime
         let live = brushes.trail.filter { now - $0.time < EaselBrushArt.trailLife }
         guard live.count > 1, brushes.trailBounds.intersects(dirtyRect), let context = NSGraphicsContext.current?.cgContext else { return }
