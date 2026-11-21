@@ -100,6 +100,7 @@ extension EaselCanvasView {
                                                   zIndex: zIndex) { lookup[$0] }
         connector.id = id
         connector.zIndex = zIndex
+        stampRememberedStyle(on: &connector)
         return connector
     }
 

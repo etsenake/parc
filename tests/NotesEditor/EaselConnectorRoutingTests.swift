@@ -56,6 +56,10 @@ struct EaselConnectorRoutingTests {
         settling()
         dependents()
         exportSVG()
+        rotatedAndPinnedElbows()
+        sameObjectEnds()
+        freedCurves()
+        draggingTogether()
         print("EaselConnectorRoutingTests passed")
     }
 
@@ -453,6 +457,113 @@ struct EaselConnectorRoutingTests {
         let plain = EaselVectorExport.element(legacy, art: EaselVectorArt())
         expect(plain.contains("M10 10L110 10") && plain.contains("M95.959 17.671L110 10L95.959 2.329"),
                "Legacy arrows export the same straight line and open V")
+    }
+
+    static func rotatedAndPinnedElbows() {
+        var turned = box(100, 100, 100, 100)
+        turned.rotation = 45
+        let target = box(420, 320)
+        let item = connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .elbow,
+                             startConnection: EaselConnection(itemID: turned.id, side: .right),
+                             endConnection: EaselConnection(itemID: target.id, side: .left))
+        guard let route = EaselConnectorRouter.route(for: item, lookup: lookup([turned, target])) else { failTest("Rotated elbows resolve") }
+        let own = EaselShapeGeometry.visualBounds(of: turned)
+        expect(orthogonal(route.vertices), "Elbows from rotated objects stay orthogonal")
+        expect(route.vertices.count > 2 && route.vertices[1].x >= own.x + own.width + EaselConnectorRouter.stub - 1e-6,
+               "The first leg clears the rotated object's own box before it turns")
+        expect(!crossesInterior(Array(route.vertices.dropFirst()), own) && !crossesInterior(route.vertices, target.frame),
+               "After leaving, the route never cuts back through either object")
+        var spun = box(400, 300, 100, 100)
+        spun.rotation = 30
+        let mover = box(100, 100)
+        let far = connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .elbow,
+                            startConnection: EaselConnection(itemID: mover.id, side: .right),
+                            endConnection: EaselConnection(itemID: spun.id, side: .top))
+        guard let arriving = EaselConnectorRouter.route(for: far, lookup: lookup([mover, spun])) else { failTest("Elbows into rotated objects resolve") }
+        let spunBox = EaselShapeGeometry.visualBounds(of: spun)
+        expect(orthogonal(arriving.vertices) && !crossesInterior(Array(arriving.vertices.dropLast()), spunBox),
+               "Arriving at a rotated object only enters its box on the last leg")
+        let wide = box(100, 100, 200, 100)
+        let pinned = connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .elbow,
+                               startConnection: EaselConnection(itemID: wide.id, side: nil, anchor: EaselPoint(x: 0.5, y: 0.4)),
+                               endConnection: EaselConnection(itemID: target.id, side: .left))
+        guard let pinnedRoute = EaselConnectorRouter.route(for: pinned, lookup: lookup([wide, target])) else { failTest("Pinned elbows resolve") }
+        expect(near(pinnedRoute.vertices[0], EaselPoint(x: 200, y: 100)), "A pinned elbow leaves from the outline straight out from the pin")
+        expect(orthogonal(pinnedRoute.vertices) && !crossesInterior(Array(pinnedRoute.vertices.dropFirst()), wide.frame),
+               "A pinned elbow never runs back across its own object")
+        let straightPin = connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .straight,
+                                    startConnection: EaselConnection(itemID: wide.id, side: nil, anchor: EaselPoint(x: 0.5, y: 0.4)),
+                                    endConnection: EaselConnection(itemID: target.id, side: .left))
+        expect(EaselConnectorRouter.route(for: straightPin, lookup: lookup([wide, target])).map { near($0.start, EaselPoint(x: 200, y: 140)) } == true,
+               "Straight connectors still start right at the pin")
+    }
+
+    static func sameObjectEnds() {
+        let solo = box(100, 100, 200, 100)
+        let loop = connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: nil,
+                             startConnection: EaselConnection(itemID: solo.id), endConnection: EaselConnection(itemID: solo.id))
+        guard let straight = EaselConnectorRouter.route(for: loop, lookup: lookup([solo])) else { failTest("Same-object connectors resolve") }
+        expect(near(straight.start, EaselPoint(x: 300, y: 150)) && near(straight.end, EaselPoint(x: 200, y: 200)) && straight.length > 1,
+               "Both ends on one object take different sides instead of collapsing to a point")
+        var elbowLoop = loop
+        elbowLoop.routing = .elbow
+        guard let elbow = EaselConnectorRouter.route(for: elbowLoop, lookup: lookup([solo])) else { failTest("Same-object elbows resolve") }
+        expect(orthogonal(elbow.vertices) && elbow.vertices.allSatisfy { $0.x >= 200 - 1e-6 && $0.y >= 150 - 1e-6 },
+               "A same-object elbow hops around one corner rather than circling the object")
+        let sided = connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .elbow,
+                              startConnection: EaselConnection(itemID: solo.id, side: .top), endConnection: EaselConnection(itemID: solo.id))
+        guard let corner = EaselConnectorRouter.route(for: sided, lookup: lookup([solo])) else { failTest("Mixed same-object elbows resolve") }
+        expect(near(corner.start, EaselPoint(x: 200, y: 100)) && near(corner.end, EaselPoint(x: 300, y: 150)),
+               "An automatic end beside a fixed one moves on to the next side")
+    }
+
+    static func freedCurves() {
+        let a = box(100, 100), b = box(400, 300)
+        let curve = EaselConnectorRouter.settled(connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .curved,
+                                                           startConnection: EaselConnection(itemID: a.id, side: .bottom),
+                                                           endConnection: EaselConnection(itemID: b.id, side: .left)), lookup: lookup([a, b]))
+        guard let before = EaselConnectorRouter.route(for: curve, lookup: lookup([a, b])) else { failTest("Curves resolve") }
+        let board = EaselDocument(id: UUID(), title: "Board", createdAt: Date(), modifiedAt: Date(), items: [a, b, curve])
+        let removed = EaselDependents.removing([b.id], from: board)
+        guard let freed = removed.items.first(where: { $0.id == curve.id }) else { failTest("Freed curves stay") }
+        expect(freed.endConnection == nil && freed.waypoints?.count == 1, "A freed curve remembers where its middle was")
+        expect(freed.waypoints.map { near($0[0], before.location(atFraction: 0.5).point, 1e-6) } == true, "The remembered middle is the old middle")
+        guard let after = EaselConnectorRouter.route(for: freed, lookup: lookup([a])) else { failTest("Freed curves route") }
+        expect(after.distance(to: before.location(atFraction: 0.5).point) < 1e-6, "The freed curve still passes through its old middle")
+        var unrelated = removed
+        unrelated.items.append(box(900, 900))
+        let settled = EaselDependents.settle(unrelated, previous: removed, moved: [])
+        expect(settled.items.first(where: { $0.id == curve.id }) == freed, "An unrelated edit leaves the freed curve exactly where it was")
+    }
+
+    static func draggingTogether() {
+        let a = box(100, 100), b = box(400, 300)
+        var elbow = EaselConnectorRouter.settled(connector(from: .init(x: 0, y: 0), to: .init(x: 1, y: 1), routing: .elbow,
+                                                           startConnection: EaselConnection(itemID: a.id, side: .right),
+                                                           endConnection: EaselConnection(itemID: b.id, side: .left)), lookup: lookup([a, b]))
+        elbow.waypoints = [EaselPoint(x: 340, y: 130), EaselPoint(x: 340, y: 330)]
+        elbow = EaselConnectorRouter.settled(elbow, lookup: lookup([a, b]))
+        let board = EaselDocument(id: UUID(), title: "Board", createdAt: Date(), modifiedAt: Date(), items: [a, b, elbow])
+        var dragged = board
+        for index in dragged.items.indices { dragged.items[index].frame.x += 30; dragged.items[index].frame.y += 15 }
+        let moved: Set<UUID> = [a.id, b.id, elbow.id]
+        let context = EaselSettleContext(previous: board)
+        let fast = EaselDependents.settle(dragged, context: context, moved: moved)
+        expect(fast == EaselDependents.settle(dragged, previous: board, moved: moved), "A shared context settles exactly like a fresh one")
+        guard let shifted = fast.items.first(where: { $0.id == elbow.id }) else { failTest("Dragged connectors stay") }
+        let expected = EaselConnectorRouter.absolutePoints(elbow).map { EaselPoint(x: $0.x + 30, y: $0.y + 15) }
+        expect(zip(EaselConnectorRouter.absolutePoints(shifted), expected).allSatisfy { near($0, $1) }, "Dragging a connector with both its objects just slides the route")
+        expect(shifted.waypoints == [EaselPoint(x: 370, y: 145), EaselPoint(x: 370, y: 345)], "Its bends slide along")
+        var lookupAfter = Dictionary(fast.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        lookupAfter[elbow.id] = nil
+        expect(EaselConnectorRouter.settled(shifted) { lookupAfter[$0] } == shifted, "The slid route is exactly what a full reroute would give")
+        var half = board
+        half.items[0].frame.x += 30
+        half.items[2].frame.x += 30
+        let partial = EaselDependents.settle(half, previous: board, moved: [a.id, elbow.id])
+        guard let rerouted = partial.items.first(where: { $0.id == elbow.id }) else { failTest("Partly dragged connectors stay") }
+        expect(near(EaselConnectorRouter.absolutePoints(rerouted).last ?? .init(x: 0, y: 0), EaselPoint(x: 400, y: 330)),
+               "When only one end moves along, the connector reroutes to the one that stayed")
     }
 
     static func pipeline() {

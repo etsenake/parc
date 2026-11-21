@@ -1,10 +1,36 @@
 import Foundation
 
+struct EaselSettleContext {
+    let previous: EaselDocument
+    private let positions: [UUID: Int]
+
+    init(previous: EaselDocument) {
+        self.previous = previous
+        var positions: [UUID: Int] = [:]
+        for (index, item) in previous.items.enumerated() where positions[item.id] == nil { positions[item.id] = index }
+        self.positions = positions
+    }
+
+    func before(_ id: UUID) -> EaselItem? {
+        guard let index = positions[id], previous.items.indices.contains(index) else { return nil }
+        return previous.items[index]
+    }
+
+    func item(_ id: UUID, in document: EaselDocument) -> EaselItem? {
+        if let index = positions[id], document.items.indices.contains(index), document.items[index].id == id { return document.items[index] }
+        return document.items.first { $0.id == id }
+    }
+}
+
 enum EaselDependents {
     static func settle(_ next: EaselDocument, previous: EaselDocument, moved: Set<UUID>) -> EaselDocument {
-        let sections = carrySectionContents(next, previous: previous, moved: moved)
-        let attached = followAttachments(sections.document, previous: previous, moved: sections.moved)
-        return rerouteConnectors(attached.document, previous: previous, moved: attached.moved).document
+        settle(next, context: EaselSettleContext(previous: previous), moved: moved)
+    }
+
+    static func settle(_ next: EaselDocument, context: EaselSettleContext, moved: Set<UUID>) -> EaselDocument {
+        let sections = carrySectionContents(next, previous: context.previous, moved: moved)
+        let attached = followAttachments(sections.document, previous: context.previous, moved: sections.moved)
+        return rerouteConnectors(attached.document, context: context, moved: attached.moved).document
     }
 
     static func removing(_ ids: Set<UUID>, from document: EaselDocument, keepingSectionContents: Bool = false) -> EaselDocument {
@@ -51,39 +77,67 @@ enum EaselDependents {
         EaselBoardObjects.deletion(ids, in: document).subtracting(ids)
     }
 
-    private static func rerouteConnectors(_ next: EaselDocument, previous: EaselDocument,
+    private static func rerouteConnectors(_ next: EaselDocument, context: EaselSettleContext,
                                           moved: Set<UUID>) -> (document: EaselDocument, moved: Set<UUID>) {
         guard next.items.contains(where: { $0.kind == .arrow }) else { return (next, moved) }
-        let before = Dictionary(previous.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var changed = moved
         for item in next.items {
-            guard let old = before[item.id] else { changed.insert(item.id); continue }
+            guard let old = context.before(item.id) else { changed.insert(item.id); continue }
             if placementChanged(old, item) || old.shape != item.shape || old.kind != item.kind { changed.insert(item.id) }
         }
-        let current = Dictionary(next.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let current: (UUID) -> EaselItem? = { context.item($0, in: next) }
         var document = next, rerouted = moved
         for index in document.items.indices where document.items[index].kind == .arrow {
             var item = document.items[index]
+            let old = context.before(item.id)
             let targets = [item.startConnection?.itemID, item.endConnection?.itemID].compactMap { $0 }
-            let touched = before[item.id] != item || changed.contains(item.id)
-                || targets.contains { changed.contains($0) || current[$0] == nil }
+            let touched = old != item || changed.contains(item.id) || targets.contains { changed.contains($0) || current($0) == nil }
             guard touched else { continue }
-            if moved.contains(item.id), let old = before[item.id], let waypoints = item.waypoints,
-               targets.count < 2 || targets.allSatisfy(moved.contains) {
+            if let old, let shifted = translatedTogether(item, from: old, targets: targets, context: context, current: current, moved: moved) {
+                document.items[index] = shifted
+                continue
+            }
+            if moved.contains(item.id), let old, let waypoints = item.waypoints, targets.count < 2 || targets.allSatisfy(moved.contains) {
                 item.waypoints = EaselConnectorPath.mapped(waypoints, from: old.frame, to: item.frame)
             }
-            let settled = EaselConnectorRouter.settled(item) { current[$0] }
+            let settled = EaselConnectorRouter.settled(item, lookup: current)
             if settled.frame != document.items[index].frame || settled.points != document.items[index].points { rerouted.insert(item.id) }
             document.items[index] = settled
         }
         return (document, rerouted)
     }
 
+    private static func translatedTogether(_ item: EaselItem, from old: EaselItem, targets: [UUID], context: EaselSettleContext,
+                                           current: (UUID) -> EaselItem?, moved: Set<UUID>) -> EaselItem? {
+        guard moved.contains(item.id), old.frame.width == item.frame.width, old.frame.height == item.frame.height else { return nil }
+        let dx = item.frame.x - old.frame.x, dy = item.frame.y - old.frame.y
+        guard dx != 0 || dy != 0, dx.isFinite, dy.isFinite else { return nil }
+        var unmoved = item
+        unmoved.frame = old.frame
+        guard unmoved == old else { return nil }
+        for id in targets {
+            guard let was = context.before(id), let now = current(id), EaselConnectorAttachment.resolves(now),
+                  now.kind == was.kind, now.shape == was.shape, now.frame.width == was.frame.width, now.frame.height == was.frame.height,
+                  abs(now.frame.x - was.frame.x - dx) < 1e-9, abs(now.frame.y - was.frame.y - dy) < 1e-9,
+                  now.resolvedRotation == was.resolvedRotation, (now.flipHorizontal == true) == (was.flipHorizontal == true),
+                  (now.flipVertical == true) == (was.flipVertical == true) else { return nil }
+        }
+        var shifted = item
+        shifted.waypoints = item.waypoints.map { points in points.map { EaselPoint(x: $0.x + dx, y: $0.y + dy) } }
+        return shifted
+    }
+
     private static func detachConnectors(_ document: EaselDocument, from removed: Set<UUID>) -> EaselDocument {
-        guard !removed.isEmpty else { return document }
+        guard !removed.isEmpty, document.items.contains(where: { $0.kind == .arrow }) else { return document }
+        var lookup: [UUID: EaselItem]?
         var next = document
         for index in next.items.indices where next.items[index].kind == .arrow {
-            next.items[index] = EaselConnectorRouter.detached(next.items[index], from: removed)
+            let item = next.items[index]
+            let freed = EaselConnectorRouter.detached(item, from: removed)
+            guard freed != item else { continue }
+            let table = lookup ?? Dictionary(document.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            lookup = table
+            next.items[index] = EaselConnectorRouter.settled(freed) { table[$0] }
         }
         return next
     }

@@ -52,6 +52,7 @@ struct EaselConnectorCanvasState {
     var labels: [UUID: (key: LabelKey, layout: EaselConnectorLabelLayout)] = [:]
     var draftGeneration = 0
     var settledPreview: (generation: Int, modified: Date, document: UUID, items: [EaselItem])?
+    var settleContext: (modified: Date, document: UUID, context: EaselSettleContext)?
     static var styles: [UUID: EaselConnectorStyle] = [:]
 }
 
@@ -531,9 +532,12 @@ extension EaselCanvasView {
             guard connectors.travelled || hypot(point.x - origin.x, point.y - origin.y) * canvasScale > EaselToolGeometry.dragThreshold else { return true }
             connectors.travelled = true
             let snap = snappedConnectorEnd(point, flags: event.modifierFlags, other: startPoint, excluding: start?.itemID)
-            connectors.preview = [EaselConnectorRouter.make(from: startPoint, to: snap.point, style: Self.connectorStyle(for: session.document.id),
-                                                             routing: routing, startConnection: start, endConnection: snap.connection,
-                                                             zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1) { lookup[$0] }]
+            var created = EaselConnectorRouter.make(from: startPoint, to: snap.point, style: Self.connectorStyle(for: session.document.id),
+                                                    routing: routing, startConnection: start, endConnection: snap.connection,
+                                                    zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1) { lookup[$0] }
+            if let previous = connectors.preview.first { created.id = previous.id }
+            stampRememberedStyle(on: &created)
+            connectors.preview = [created]
         case .quickCreate(let source, let side, let origin):
             guard connectors.travelled || hypot(point.x - origin.x, point.y - origin.y) * canvasScale > EaselToolGeometry.dragThreshold else { return true }
             connectors.travelled = true
@@ -559,8 +563,8 @@ extension EaselCanvasView {
             else { cancelPointerInteraction(); beginConnectorLabelEditing(original, at: nil) }
         case .inert:
             break
-        case .create(let routing, _, let start, let startPoint):
-            let item = preview.first ?? defaultConnector(routing: routing, start: start, from: startPoint)
+        case .create:
+            guard travelled, let item = preview.first else { return true }
             if commit("Add connector", { $0.items.append(item) }) { selection = [item.id]; rememberConnectorStyle(item) }
         case .quickCreate(let source, let side, _):
             if travelled { finishQuickCreateDrag(from: source, side: side, preview: preview) }
@@ -605,7 +609,14 @@ extension EaselCanvasView {
            cached.modified == previous.modifiedAt, cached.document == previous.id {
             return cached.items
         }
-        let items = EaselDependents.settle(preview, previous: previous, moved: moved).items
+        let context: EaselSettleContext
+        if let cached = connectors.settleContext, cached.modified == previous.modifiedAt, cached.document == previous.id {
+            context = cached.context
+        } else {
+            context = EaselSettleContext(previous: previous)
+            connectors.settleContext = (previous.modifiedAt, previous.id, context)
+        }
+        let items = EaselDependents.settle(preview, context: context, moved: moved).items
         connectors.settledPreview = (connectors.draftGeneration, previous.modifiedAt, previous.id, items)
         return items
     }
@@ -619,15 +630,6 @@ extension EaselCanvasView {
 
     func updateConnectorCreation(to point: NSPoint, event: NSEvent) {
         _ = continueConnectorGesture(to: point, event: event)
-    }
-
-    func defaultConnector(routing: EaselConnectorRouting?, start: EaselConnection?, from startPoint: EaselPoint) -> EaselItem {
-        let length = EaselTool.straightConnector.defaultSize.width
-        let lookup = connectorLookup()
-        return EaselConnectorRouter.make(from: startPoint, to: EaselPoint(x: startPoint.x + length, y: startPoint.y),
-                                         style: Self.connectorStyle(for: session.document.id), routing: routing,
-                                         startConnection: start, endConnection: nil,
-                                         zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1) { lookup[$0] }
     }
 
     @discardableResult
@@ -715,23 +717,9 @@ extension EaselCanvasView {
     }
 
     @discardableResult
-    func setConnectorStrokeWidth(_ width: Double) -> Bool {
-        guard width.isFinite, width >= 0, width <= EaselPaintRules.maximumWidth else { return false }
-        return updateSelectedConnectors("Change line weight") { item in
-            item.strokeWidth = width == EaselPaintRules.lineWidth ? nil : width
-        }
-    }
-
-    @discardableResult
-    func setConnectorDash(_ dash: EaselStrokeDash) -> Bool {
-        updateSelectedConnectors("Change line style") { item in item.strokeDash = dash == .solid ? nil : dash }
-    }
-
-    @discardableResult
     func setConnectorLabelBackground(_ enabled: Bool) -> Bool {
-        updateSelectedConnectors(enabled ? "Add label background" : "Remove label background") { item in
-            item.labelBackground = enabled ? true : nil
-        }
+        guard !connectorSelection.isEmpty else { return false }
+        return applyStyle(.labelBackground(enabled))
     }
 
     @discardableResult
@@ -762,9 +750,6 @@ final class EaselMenuAction: NSObject {
 }
 
 extension EaselCanvasView {
-    static let connectorThinWidth = EaselPaintRules.lineWidth
-    static let connectorThickWidth = 6.0
-
     static func headTitle(_ head: EaselArrowHead) -> String {
         switch head {
         case .none: return "None"
@@ -877,16 +862,6 @@ extension EaselCanvasView {
             }
         }
         add("Swap Ends", to: menu) { _ = $0.swapArrowHeads() }
-        let line = submenu("Line", in: menu)
-        let widths = chosen.map(EaselPaintRules.strokeWidth)
-        add("Thin", to: line, checked: widths.allSatisfy { $0 == Self.connectorThinWidth }) { _ = $0.setConnectorStrokeWidth(Self.connectorThinWidth) }
-        add("Thick", to: line, checked: widths.allSatisfy { $0 == Self.connectorThickWidth }) { _ = $0.setConnectorStrokeWidth(Self.connectorThickWidth) }
-        line.addItem(.separator())
-        for (title, dash) in [("Solid", EaselStrokeDash.solid), ("Dashed", .dashed), ("Dotted", .dotted)] {
-            add(title, to: line, checked: chosen.allSatisfy { ($0.strokeDash ?? .solid) == dash }) { _ = $0.setConnectorDash(dash) }
-        }
-        let background = chosen.allSatisfy { $0.labelBackground == true }
-        add("Label Background", to: menu, checked: background) { _ = $0.setConnectorLabelBackground(!background) }
         if chosen.contains(where: { $0.waypoints != nil }) {
             menu.addItem(.separator())
             add("Reset Path", to: menu) { _ = $0.resetConnectorPath() }
@@ -938,11 +913,11 @@ extension EaselCanvasView {
         guard !chosen.isEmpty else { return nil }
         switch control {
         case .connectorStyle:
-            let widths = chosen.map(EaselPaintRules.strokeWidth)
+            let weights = chosen.map { EaselStyleFamily.lines.weight(forWidth: EaselPaintRules.strokeWidth($0)) }
             let background = chosen.allSatisfy { $0.labelBackground == true }
-            return [
-                EaselToolbarMenuEntry(id: "thin", title: "Thin", isChecked: widths.allSatisfy { $0 == Self.connectorThinWidth }),
-                EaselToolbarMenuEntry(id: "thick", title: "Thick", isChecked: widths.allSatisfy { $0 == Self.connectorThickWidth }),
+            return EaselStyleFamily.lines.weights.map { weight in
+                EaselToolbarMenuEntry(id: weight.rawValue, title: weight.title, isChecked: weights.allSatisfy { $0 == weight })
+            } + [
                 EaselToolbarMenuEntry(id: "solid", title: "Solid", isChecked: chosen.allSatisfy { ($0.strokeDash ?? .solid) == .solid }, separatorBefore: true),
                 EaselToolbarMenuEntry(id: "dashed", title: "Dashed", isChecked: chosen.allSatisfy { $0.strokeDash == .dashed }),
                 EaselToolbarMenuEntry(id: "dotted", title: "Dotted", isChecked: chosen.allSatisfy { $0.strokeDash == .dotted }),
@@ -984,12 +959,11 @@ extension EaselCanvasView {
     func performConnectorToolbarMenu(_ control: EaselToolbarControl, entry id: String) -> Bool? {
         switch control {
         case .connectorStyle:
+            if let weight = EaselStrokeWeight(rawValue: id) { return applyStrokeWeight(weight) }
             switch id {
-            case "thin": return setConnectorStrokeWidth(Self.connectorThinWidth)
-            case "thick": return setConnectorStrokeWidth(Self.connectorThickWidth)
-            case "solid": return setConnectorDash(.solid)
-            case "dashed": return setConnectorDash(.dashed)
-            case "dotted": return setConnectorDash(.dotted)
+            case "solid": return applyStrokeDash(.solid)
+            case "dashed": return applyStrokeDash(.dashed)
+            case "dotted": return applyStrokeDash(.dotted)
             case "background": return setConnectorLabelBackground(!connectorSelection.allSatisfy { $0.labelBackground == true })
             default: return false
             }
