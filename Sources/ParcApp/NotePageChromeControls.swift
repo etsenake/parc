@@ -94,12 +94,18 @@ final class NotePagePopover {
             }
             return false
         case .scrollWheel:
-            if closesOnScroll, !contains(windowPoint: event.locationInWindow, in: event.window) { close() }
+            if closesOnScroll, !isAuxiliary(event.window), !contains(windowPoint: event.locationInWindow, in: event.window) { close() }
             return false
         default:
+            if isAuxiliary(event.window) { return false }
             if !contains(windowPoint: event.locationInWindow, in: event.window) { close() }
             return false
         }
+    }
+
+    private func isAuxiliary(_ window: NSWindow?) -> Bool {
+        guard let window, let host = panel.window, window !== host else { return false }
+        return window is NSPanel || window.sheetParent === host || host.attachedSheet === window
     }
 
     private func didDismiss() {

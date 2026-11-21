@@ -451,9 +451,10 @@ final class NotePageImageDropZone: NSView {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.prompt = "Use Image"
-        panel.beginSheetModal(for: window) { [weak self] response in
+        let onFile = onFile
+        panel.beginSheetModal(for: window) { response in
             guard response == .OK, let url = panel.url else { return }
-            MainActor.assumeIsolated { self?.onFile?(url) }
+            MainActor.assumeIsolated { onFile?(url) }
         }
     }
 }
