@@ -160,10 +160,11 @@ package final class EaselStoreAvailability {
     private var subscriptions: [AnyCancellable] = []
     private let exists: (String) -> Bool
 
-    package init(exists: @escaping (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) {
+    package init(exists: @escaping (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+                 center: NotificationCenter = .default) {
         self.exists = exists
         subscriptions = [
-            NotificationCenter.default.publisher(for: .easelDocumentRemoved).sink { [weak self] _ in self?.present.removeAll() },
+            center.publisher(for: .easelDocumentRemoved).sink { [weak self] _ in self?.present.removeAll() },
         ]
     }
 
