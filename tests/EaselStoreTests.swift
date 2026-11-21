@@ -346,6 +346,23 @@ struct EaselStoreTests {
             let healthy = try store.create(title: "Healthy")
             try Data("{}".utf8).write(to: directory.appendingPathComponent("documents/stray.json"))
             expect(try! store.list().map(\.id) == [healthy.document.id], "One unreadable or stray Easel file does not hide the other Easels")
+            try healthy.perform("Shapes") {
+                $0.items = [EaselItem(kind: .rectangle, frame: frame), EaselItem(kind: .circle, frame: frame), EaselItem(kind: .text, frame: frame, text: "Kept")]
+            }
+            let shapes = healthy.document.items
+            var duplicated = try JSONSerialization.jsonObject(with: Data(contentsOf: file(directory, healthy.document.id))) as! [String: Any]
+            var raw = duplicated["items"] as! [[String: Any]]
+            raw[1]["id"] = raw[0]["id"]; raw[2]["id"] = raw[0]["id"]
+            duplicated["items"] = raw
+            try JSONSerialization.data(withJSONObject: duplicated).write(to: file(directory, healthy.document.id))
+            let repaired = try EaselStore(directory: directory).load(healthy.document.id).document
+            expect(repaired.items.count == 3 && Set(repaired.items.map(\.id)).count == 3, "Duplicate object IDs on disk are re-IDed instead of rejecting the Easel")
+            expect(repaired.items[0].id == shapes[0].id && repaired.items.map(\.kind) == shapes.map(\.kind) && repaired.items[2].text == "Kept",
+                   "Repair keeps the first object's ID and every object's content")
+            expect(try! EaselStore(directory: directory).load(healthy.document.id).document == repaired, "Duplicate repair is stable across reads")
+            var aliased = repaired; aliased.items[1].id = aliased.items[0].id
+            let edit = EaselGeometryEdit(document: repaired, selection: [repaired.items[0].id])!
+            expect(!edit.isCurrent(in: aliased) || edit.applying(edit.translated(x: 5, y: 5), to: aliased) != nil, "Geometry edits tolerate an aliased document without trapping")
         }
     }
 

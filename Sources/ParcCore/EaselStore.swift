@@ -274,10 +274,31 @@ final class EaselStore {
         let url = documentURL(id)
         guard FileManager.default.fileExists(atPath: url.path) else { throw EaselStoreError.missingDocument }
         try ensureRegularFile(url, maximumBytes: Self.maximumDocumentBytes)
-        let document = try JSONDecoder().decode(EaselDocument.self, from: Data(contentsOf: url))
+        let document = Self.repairingDuplicateIDs(try JSONDecoder().decode(EaselDocument.self, from: Data(contentsOf: url)))
         guard document.id == id else { throw EaselStoreError.invalidDocument("document ID does not match its file") }
         try validate(document)
         return document
+    }
+
+    static func repairingDuplicateIDs(_ document: EaselDocument) -> EaselDocument {
+        let taken = Set(document.items.map(\.id))
+        guard taken.count != document.items.count else { return document }
+        var next = document, seen = Set<UUID>()
+        for index in next.items.indices {
+            let base = next.items[index].id
+            var id = base, salt: UInt32 = 0
+            while seen.contains(id) || (id != base && taken.contains(id)) {
+                salt &+= 1
+                var raw = base.uuid
+                withUnsafeMutableBytes(of: &raw) { bytes in
+                    withUnsafeBytes(of: salt.bigEndian) { for (offset, byte) in $0.enumerated() { bytes[12 + offset] ^= byte } }
+                }
+                id = UUID(uuid: raw)
+            }
+            seen.insert(id)
+            next.items[index].id = id
+        }
+        return next
     }
 
     private func validate(_ document: EaselDocument) throws {

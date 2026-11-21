@@ -342,7 +342,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if window?.firstResponder === retired { window?.makeFirstResponder(self) }
             retired?.removeFromSuperview()
         }
-        let displayed = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        let displayed = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         for item in session.document.items {
             let node = accessibleObjects[item.id] ?? EaselAccessibleObject(canvas: self, id: item.id)
             accessibleObjects[item.id] = node
@@ -532,7 +532,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return layout
     }
     private func rememberPaintedArtwork() {
-        trackedItems = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        trackedItems = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         trackedSelection = displayedSelection
         trackedHover = hoveredObjectID
         trackedMarquee = marqueeRect

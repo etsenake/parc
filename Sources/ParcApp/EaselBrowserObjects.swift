@@ -129,7 +129,7 @@ final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHosting {
     }
 
     func synchronize(items: [EaselItem], selection: Set<UUID>, interacting: Bool) {
-        let current = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        let current = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         synchronize(wanted: { id, entry in current[id].map { Self.matches($0, entry) } == true },
                     selection: selection.count == 1 ? selection.first : nil, interacting: interacting)
     }
@@ -159,7 +159,7 @@ extension EaselSession: EmbeddedPageOwner {
         document.items.contains { $0.id == id && $0.ownsEmbeddedPage && $0.url == url && $0.captureLayout.map(EmbeddedPageFingerprint.init) == variant }
     }
     func embeddedPageFingerprint(for ids: Set<UUID>) -> EmbeddedPageFingerprint {
-        EmbeddedPageFingerprint(Dictionary(uniqueKeysWithValues: document.items.filter { ids.contains($0.id) }.map { ($0.id, $0) }))
+        EmbeddedPageFingerprint(Dictionary(document.items.filter { ids.contains($0.id) }.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last }))
     }
     func recordEmbeddedPageNavigation(_ url: URL, for id: UUID, expectedURL: String) throws {
         do { _ = try recordBrowserNavigation(url, itemID: id, expectedURL: expectedURL) }

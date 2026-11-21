@@ -10,6 +10,10 @@ Easels opened before it to the page as it was, and Forward returns to them
 ([navigation](navigation.md#links-to-markdown-and-text-files)). Local editing
 and export do not require a collaboration service.
 
+Saves refuse a document with duplicate object IDs. A file that already has
+them opens with the later copies given new IDs, and an unreadable file is left
+out of Easel lists rather than hiding every other Easel.
+
 An Easel's icon is the Library card's Easel mark, light or dark with the
 appearance, drawn from the same `DocumentDefaultIcon` as the note mark: sidebar
 rows, Favorites, the folded Pinned peek, folders, the tab switcher, command bar

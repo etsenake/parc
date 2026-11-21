@@ -91,7 +91,7 @@ struct EaselGeometryEdit {
 
     func isCurrent(in document: EaselDocument) -> Bool {
         guard document.id == documentID else { return false }
-        let current = Dictionary(uniqueKeysWithValues: document.items.map { ($0.id, $0) })
+        let current = Dictionary(document.items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         return originals.allSatisfy { original in
             guard let item = current[original.id] else { return false }
             return item.kind == original.kind && item.frame == original.frame && item.points == original.points
@@ -231,7 +231,7 @@ struct EaselGeometryEdit {
     func applying(_ proposed: [EaselItem], to document: EaselDocument) -> EaselDocument? {
         guard isCurrent(in: document), proposed.count == originals.count,
               Set(proposed.map(\.id)) == ids else { return nil }
-        let changes = Dictionary(uniqueKeysWithValues: proposed.map { ($0.id, $0) })
+        let changes = Dictionary(proposed.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         var next = document
         for index in next.items.indices {
             guard let change = changes[next.items[index].id] else { continue }
@@ -255,7 +255,7 @@ struct EaselObjectCommand {
 
     func isCurrent(in document: EaselDocument) -> Bool {
         guard document.id == documentID else { return false }
-        let current = Dictionary(uniqueKeysWithValues: document.items.map { ($0.id, $0) })
+        let current = Dictionary(document.items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         return originals.allSatisfy { current[$0.id] == $0 }
     }
 
@@ -434,7 +434,7 @@ struct EaselAlignmentGuides {
         }
         guard edit.isCurrent(in: document), scale.isFinite, scale > 0, var result = proposed(x, y) else { return nil }
         guard enabled else { for index in guides.indices { guides[index].translationAtSnap = nil }; return result }
-        let current = Dictionary(uniqueKeysWithValues: document.items.map { ($0.id, $0.frame) })
+        let current = Dictionary(document.items.map { ($0.id, $0.frame) }, uniquingKeysWith: { _, last in last })
         var accepted: [Int] = []
         for index in guides.indices {
             let guide = guides[index]
