@@ -6,13 +6,14 @@ extension EaselCanvasView {
         let holders = context.items.filter { $0.kind.holdsText }
         guard !holders.isEmpty else { return [] }
         let targets = Set(context.items.map(\.id))
+        weak var owner = self
         let act: (@escaping (EaselCanvasView) -> Void) -> () -> Void = { action in
-            { [weak self] in
-                guard let self else { return }
-                let present = targets.intersection(Set(self.session.document.items.map(\.id)))
+            {
+                guard let canvas = owner else { return }
+                let present = targets.intersection(Set(canvas.session.document.items.map(\.id)))
                 guard !present.isEmpty else { return }
-                if self.selection != present { self.selection = present }
-                action(self)
+                if canvas.selection != present { canvas.selection = present }
+                action(canvas)
             }
         }
         var rows: [EaselMenuRow] = []
