@@ -52,6 +52,7 @@ struct EaselStampTests {
         icons()
         artwork()
         vectorExport()
+        iconColour()
         print("EaselStampTests passed")
     }
 
@@ -381,5 +382,26 @@ struct EaselStampTests {
         let doc = document([item(.rectangle, 0, 0, 50, 50), heart, stamp(.emoji("🎉"))])
         let html = EaselVectorExport.htmlDocument(doc, art: art)
         expect(html.contains("easel-stamp") && html.contains("🎉"), "Stamps make it into the HTML page")
+    }
+
+    @MainActor static func iconColour() {
+        var cloud = stamp(.icon("cloud"))
+        let party = stamp(.emoji("🎉")), heart = stamp(.design(.heart))
+        expect(EaselStyleFamily.of(cloud) == .icons && EaselStyleFamily.of(party) == nil && EaselStyleFamily.of(heart) == nil,
+               "Only icon stamps take a colour")
+        expect(EaselSelectionToolbarPlan.groups(for: [EaselToolbarSubject(cloud)], editingText: false, locked: false) == [[.color], [.more]],
+               "A selected icon gets the style button")
+        expect(EaselSelectionToolbarPlan.groups(for: [EaselToolbarSubject(party)], editingText: false, locked: false) == [[.more]],
+               "Emoji and built-in stamps stay colourless")
+        guard let palette = EaselPalette.colors(for: .ink).first(where: { $0 != .automatic }) else { failTest("No ink palette") }
+        expect(EaselStyle.apply(.color(.palette(palette)), to: &cloud) && cloud.color == EaselPalette.stored(palette, role: .ink),
+               "The style button recolours icons with palette colours")
+        expect(EaselStyle.colorChoice(of: cloud) == .palette(palette), "The picker shows the icon's palette colour")
+        var art = EaselVectorArt()
+        art.images[cloud.id] = EaselVectorImage(data: Data([0x89, 0x50, 0x4E, 0x47]), mimeType: "image/png")
+        expect(EaselVectorExport.element(cloud, art: art).contains("fill:var(--"), "Recoloured icons export their palette colour for light and dark")
+        var mixed = party
+        expect(!EaselStyle.apply(.color(.palette(palette)), to: &mixed) && mixed == party, "Recolouring a mixed selection leaves emoji alone")
+        expect(accepts([cloud]), "Recoloured icons still save")
     }
 }

@@ -35,7 +35,7 @@ enum EaselFillMode: String, CaseIterable, Codable {
 }
 
 enum EaselStyleFamily: String, CaseIterable, Codable {
-    case shapes, stickies, lines, pen, highlighter, tape, text, sections
+    case shapes, stickies, lines, pen, highlighter, tape, text, sections, icons
 
     static func of(_ item: EaselItem) -> EaselStyleFamily? {
         switch item.kind {
@@ -44,6 +44,7 @@ enum EaselStyleFamily: String, CaseIterable, Codable {
         case .section: return .sections
         case .arrow: return .lines
         case .text: return .text
+        case .stamp: return EaselStampFace(item: item)?.isIcon == true ? .icons : nil
         case .freehand:
             switch item.resolvedBrush {
             case .marker: return .pen
@@ -59,7 +60,7 @@ enum EaselStyleFamily: String, CaseIterable, Codable {
         case .stickies: return .sticky
         case .sections: return .fill
         case .highlighter: return .highlight
-        case .shapes, .lines, .pen, .tape, .text: return .ink
+        case .shapes, .lines, .pen, .tape, .text, .icons: return .ink
         }
     }
 
@@ -70,7 +71,7 @@ enum EaselStyleFamily: String, CaseIterable, Codable {
         switch self {
         case .shapes: return [.none, .thin, .medium, .thick]
         case .lines, .pen, .highlighter: return [.thin, .medium, .thick]
-        case .stickies, .sections, .tape, .text: return []
+        case .stickies, .sections, .tape, .text, .icons: return []
         }
     }
 
@@ -244,7 +245,7 @@ enum EaselStyle {
             let inks = Set(([item.color] + (item.richText?.runs.map(\.attributes.ink) ?? [])).compactMap(EaselPalette.normalized))
             guard inks.count == 1, let ink = inks.first else { return nil }
             return .recognizing(ink, role: .ink)
-        case .shapes, .lines, .pen, .tape: return .recognizing(item.color, role: .ink)
+        case .shapes, .lines, .pen, .tape, .icons: return .recognizing(item.color, role: .ink)
         case .highlighter: return .recognizing(EaselPaintRules.ink(item).hex, role: .highlight)
         case .stickies: return .recognizing(item.fill ?? EaselPalette.stored(EaselPalette.defaultSticky, role: .sticky), role: .sticky)
         case .sections: return item.fill.flatMap { .recognizing($0, role: .fill) }
@@ -283,7 +284,7 @@ enum EaselStyle {
             item.fill = choice == .palette(.automatic) ? nil : choice.hex(role: .fill)
             if case .palette(.note(let note)) = choice { item.color = EaselPalette.stored(.note(note), role: .ink) }
             else { item.color = EaselPalette.automaticInk }
-        case .lines, .pen, .tape:
+        case .lines, .pen, .tape, .icons:
             item.color = choice.hex(role: .ink)
         case .highlighter:
             item.color = choice.hex(role: .highlight)

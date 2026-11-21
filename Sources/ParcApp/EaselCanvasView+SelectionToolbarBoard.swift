@@ -12,7 +12,7 @@ extension EaselCanvasView {
         case .crop, .replaceImage: return selectedImage != nil
         case .imageMask: return selectedImage != nil && hasImageChrome
         case .altText:
-            return hasImageChrome && selected.count == 1 && selected.first.map { EaselToolbarSubject($0.kind) == .image } == true
+            return hasImageChrome && selected.count == 1 && selected.first.map { EaselToolbarSubject($0) == .image } == true
         default: return selectionToolbarStyleSupports(control, selected: selected)
         }
     }

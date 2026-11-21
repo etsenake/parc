@@ -83,7 +83,7 @@ extension EaselCanvasView {
         guard canPresentMotion else { return nil }
         let selected = session.document.items.filter { selection.contains($0.id) }.sorted { $0.zIndex < $1.zIndex }
         guard let first = selected.first else { return nil }
-        let plan = EaselSelectionToolbarPlan.groups(for: selected.map { EaselToolbarSubject($0.kind) },
+        let plan = EaselSelectionToolbarPlan.groups(for: selected.map { EaselToolbarSubject($0) },
                                                     editingText: editor != nil, locked: selected.allSatisfy(\.isLocked))
         let groups = EaselSelectionToolbarPlan.available(plan) { selectionToolbarSupports($0, selected: selected) }
         guard !groups.isEmpty else { return nil }
