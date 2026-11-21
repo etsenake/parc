@@ -6,14 +6,16 @@ final class EaselEmojiCompletion: EaselTextCompletion {
     private var list: NoteEmojiSuggestionList?
     private var panel: NoteFloatingPanel?
     private var start: Int?
+    private var previous = ""
     private var observer: NSObjectProtocol?
 
     func attach(_ view: EaselStyledTextView) {
         detach()
         self.view = view
+        previous = view.string
         observer = NotificationCenter.default.addObserver(forName: NSTextView.didChangeSelectionNotification, object: view,
                                                           queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refresh(typed: false) }
+            MainActor.assumeIsolated { self?.selectionDidChange() }
         }
     }
 
@@ -26,7 +28,18 @@ final class EaselEmojiCompletion: EaselTextCompletion {
 
     func textDidChange(in view: EaselStyledTextView) {
         guard view === self.view else { return }
-        refresh(typed: true)
+        let old = previous
+        previous = view.string
+        guard !view.hasMarkedText(), view.selectedRanges.count == 1 else { dismiss(); return }
+        let caret = view.selectedRange().location
+        switch EaselCompletionGate.action(inserted: NoteTriggerRule.insertion(from: old, to: view.string, caret: caret)?.text,
+                                          editedByOne: NoteTriggerRule.edit(from: old, to: view.string, caret: caret),
+                                          panelOpen: panel?.isPresented == true) {
+        case .complete: refresh(typed: true, colon: true)
+        case .open: refresh(typed: true, colon: false)
+        case .refresh: refresh(typed: false, colon: false)
+        case .dismiss: dismiss()
+        }
     }
 
     func handle(_ selector: Selector, in view: EaselStyledTextView) -> Bool {
@@ -41,17 +54,30 @@ final class EaselEmojiCompletion: EaselTextCompletion {
         panel.dismiss(animated: !NoteAnimation.reduceMotion)
     }
 
-    private func refresh(typed: Bool) {
+    private func selectionDidChange() {
+        guard let view else { return }
+        if view.string != previous, !view.hasMarkedText() { previous = view.string }
+        guard panel?.isPresented == true else { return }
+        refresh(typed: false, colon: false)
+    }
+
+    private func refresh(typed: Bool, colon: Bool) {
         guard let view, view.isEditable, view.window != nil, !view.hasMarkedText(), view.selectedRanges.count == 1,
               view.selectedRange().length == 0 else { dismiss(); return }
         let text = view.string, caret = view.selectedRange().location
-        if typed, let done = NoteTriggerRule.completedShortcode(in: text, caret: caret) {
+        if colon, let done = NoteTriggerRule.completedShortcode(in: text, caret: caret), !isCode(at: done.range.lowerBound, in: view) {
             dismiss()
             DispatchQueue.main.async { [weak self] in self?.complete(done, expected: text) }
             return
         }
-        guard typed || panel?.isPresented == true, let match = NoteTriggerRule.emojiQuery(in: text, caret: caret) else { dismiss(); return }
+        guard typed || panel?.isPresented == true, let match = NoteTriggerRule.emojiQuery(in: text, caret: caret),
+              !isCode(at: match.start, in: view) else { dismiss(); return }
         show(start: match.start, query: match.query, in: view)
+    }
+
+    private func isCode(at location: Int, in view: EaselStyledTextView) -> Bool {
+        guard let storage = view.textStorage, location >= 0, location < storage.length else { return false }
+        return EaselTextAppearance.isInlineCode(storage.attributes(at: location, effectiveRange: nil))
     }
 
     private func show(start: Int, query: String, in view: EaselStyledTextView) {

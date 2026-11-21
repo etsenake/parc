@@ -30,6 +30,11 @@ enum EaselTextAppearance {
     }
 
     static let inlineCodeFill = NSColor(srgbRed: 0.5, green: 0.5, blue: 0.5, alpha: 0.18)
+    static func isInlineCode(_ attributes: [NSAttributedString.Key: Any]) -> Bool {
+        guard let fill = attributes[.backgroundColor] as? NSColor, let font = attributes[.font] as? NSFont,
+              font.fontDescriptor.symbolicTraits.contains(.monoSpace) else { return false }
+        return (try? EaselRichTextCodec.hex(fill)) == (try? EaselRichTextCodec.hex(inlineCodeFill))
+    }
     static func color(_ hex: String) -> NSColor {
         let value = UInt32(hex.dropFirst(), radix: 16) ?? 0x252525
         return NSColor(srgbRed: Double(value >> 16 & 255) / 255, green: Double(value >> 8 & 255) / 255,
