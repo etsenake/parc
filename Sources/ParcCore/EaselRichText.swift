@@ -99,7 +99,7 @@ struct EaselRichText: Codable, Equatable {
                   a.font.size.isFinite, (1...512).contains(a.font.size),
                   [a.font.weight, a.font.width, a.font.slant].allSatisfy({ $0.isFinite && (-1...1).contains($0) }),
                   a.font.variations.count <= 32,
-                  a.font.variations.allSatisfy({ UInt32($0.key) != nil && $0.value.isFinite && abs($0.value) <= 1_000_000 }),
+                  a.font.variations.allSatisfy({ UInt32($0.key).map(String.init) == $0.key && $0.value.isFinite && abs($0.value) <= 1_000_000 }),
                   a.semanticInk == nil || a.ink == "#000000FF",
                   color(a.ink), color(a.background), color(a.underlineColor), color(a.strikeColor),
                   a.underline >= 0, a.underline <= 0xFFFF, a.strike >= 0, a.strike <= 0xFFFF,

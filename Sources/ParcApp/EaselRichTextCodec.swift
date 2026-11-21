@@ -32,9 +32,9 @@ enum EaselRichTextCodec {
         var attributes: [NSFontDescriptor.AttributeName: Any] = [.traits: [NSFontDescriptor.TraitKey.symbolic: traits.rawValue,
             .weight: value.weight, .width: value.width, .slant: value.slant]]
         if !value.variations.isEmpty {
-            attributes[.variation] = Dictionary(uniqueKeysWithValues: value.variations.compactMap { key, amount in
+            attributes[.variation] = Dictionary(value.variations.compactMap { key, amount in
                 UInt32(key).map { (NSNumber(value: $0), NSNumber(value: amount)) }
-            })
+            }, uniquingKeysWith: { first, _ in first })
         }
         return NSFont(descriptor: original.fontDescriptor.addingAttributes(attributes), size: value.size) ?? original
     }
@@ -44,7 +44,7 @@ enum EaselRichTextCodec {
         return .init(name: font.fontName, size: font.pointSize, traits: font.fontDescriptor.symbolicTraits.rawValue,
                      weight: (traits?[.weight] as? NSNumber)?.doubleValue ?? 0,
                      width: (traits?[.width] as? NSNumber)?.doubleValue ?? 0, slant: (traits?[.slant] as? NSNumber)?.doubleValue ?? 0,
-                     variations: Dictionary(uniqueKeysWithValues: axes.map { ($0.key.stringValue, $0.value.doubleValue) }), style: EaselTextAppearance.matchingStyle(font))
+                     variations: Dictionary(axes.map { ($0.key.stringValue, $0.value.doubleValue) }, uniquingKeysWith: { first, _ in first }), style: EaselTextAppearance.matchingStyle(font))
     }
     static func snapshot(_ value: NSAttributedString) throws -> EaselRichText {
         var runs: [EaselRichText.Run] = [], error: Error?

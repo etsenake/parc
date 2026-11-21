@@ -506,6 +506,8 @@ struct EaselStoreTests {
             expectThrows("overflow range") { try session.perform("Invalid") { $0.items[0].richText!.runs[0].length = Int.max } }
             expectThrows("non-finite font") { try session.perform("Invalid") { $0.items[0].richText!.runs[0].attributes.font.size = .infinity } }
             expectThrows("unsafe rich link") { try session.perform("Invalid") { $0.items[0].richText!.runs[0].attributes.link = "file:///private/example" } }
+            expectThrows("aliased font axis tags") { try session.perform("Invalid") { $0.items[0].richText!.runs[0].attributes.font.variations = ["1": 1, "01": 2] } }
+            expectThrows("signed font axis tag") { try session.perform("Invalid") { $0.items[0].richText!.runs[0].attributes.font.variations = ["+2003265652": 400] } }
             expectThrows("rich ranges on image") { try session.perform("Invalid") { $0.items[0].kind = .rectangle } }
             expect(session.document == before && (try! Data(contentsOf: file(directory, before.id))) == bytes, "Rejected rich mutations preserve published model and original bytes")
             var legacy = try JSONSerialization.jsonObject(with: bytes) as! [String: Any]
