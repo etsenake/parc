@@ -73,8 +73,9 @@ the badge edits it. Empty text removes it; up to 4 KB is kept.
 Replace Image… swaps in a different picture and keeps the object's exact size
 and spot: the new picture fills the old frame from its middle, like a cover
 crop, and the mask, alt text, rotation and flips stay. The quarter turns go,
-because they belonged to the old picture. A replaced image is one Undo step,
-and Undo brings the old picture back.
+because they belonged to the old picture. Dropping a picture onto the selected
+image replaces it the same way, while a drop anywhere else adds a new one. A
+replaced image is one Undo step, and Undo brings the old picture back.
 
 ## GIFs
 
@@ -84,13 +85,35 @@ when the selection changes, so only one GIF moves at a time. With Reduce Motion
 on, GIFs stay on their first frame, as they do in Notes. Copying a GIF puts the
 GIF itself on the pasteboard.
 
+## Videos
+
+MP4 and MOV videos (including M4V) come in through the Add image button, a
+pasted file or a drop, up to 30 MB; anything bigger gets a friendly "a bit big"
+message instead. Parc checks the file's first bytes, asks macOS's video player
+whether it can play it, reads its size and grabs a poster frame from just after
+the start, then copies the video and the poster into the Easel's storage. WebM
+isn't offered, because macOS's own video player (the one Notes video blocks use
+too) can't open it; such files get the same "can't play on an Easel" message as
+a broken one.
+
+A video shows its poster with rounded corners and a play button. Clicking the
+play button, double-clicking the video, pressing Return on it or choosing Play
+Video from its menu plays it right there with the native inline controls
+(scrubbing, volume, full screen and picture in picture). Only one video plays
+at a time: starting another, selecting something else, closing or hiding the
+tab stops it, and Escape pauses it. A playing video plays upright even if the
+object is rotated. Videos take alt text like images, which VoiceOver reads,
+and VoiceOver also gets Play video and Pause video actions.
+
 ## Export
 
 PDF, PNG and Copy as Image draw images through the canvas drawing, so crops,
 turns and masks look exactly as they do on the Easel; a playing GIF exports the
-frame on screen. HTML exports draw a cropped, turned or masked image as an SVG
+frame on screen, and a video exports as its poster frame without the play
+button. HTML exports draw a cropped, turned or masked image as an SVG
 picture inside a clip path (the mask's own outline), keep animated GIFs
-animated, and write alt text as the picture's `aria-label` and `<title>`.
+animated, draw videos as their poster, and write alt text as the picture's
+`aria-label` and `<title>`.
 
 ## Saved format
 
@@ -102,12 +125,16 @@ from before them opens and looks the same:
 | `crop` | A rectangle in 0…1 units of the stored picture; absent means the whole picture. |
 | `quarterTurns` | 1, 2 or 3 clockwise quarter turns of the cropped picture inside the frame. |
 | `mask` | `rounded`, `circle`, `squircle`, `arch`, `diamond`, `hexagon`, `star` or `heart`. |
-| `altText` | The description VoiceOver reads and HTML exports write. |
+| `altText` | The description VoiceOver reads and HTML exports write (images and videos). |
+| `poster` | A video's poster frame, a PNG asset in the same store. |
 
 Validation refuses each field on anything but an image, crops outside the
 picture or thinner than 1% of it, turns outside 1–3, alt text over 4 KB, an
-unknown mask and a GIF asset on any object but an image, so a malformed file is
-rejected whole. Asset names are a lowercase UUID plus `.png` or `.gif`.
+unknown mask, a GIF asset on anything but an image, a video asset on anything
+but a video and a poster that isn't a PNG, so a malformed file is rejected
+whole. Video objects are the `video` kind, holding the movie as their asset.
+Asset names are a lowercase UUID plus `.png`, `.gif`, `.mp4` or `.mov`, and
+moving an Easel to another Profile copies posters along with the assets.
 
 ## Where the code lives
 
@@ -119,6 +146,8 @@ rejected whole. Asset names are a lowercase UUID plus `.png` or `.gif`.
   GIF playback, and owns the commands the toolbar, menus and VoiceOver call:
   `beginImageCrop`, `finishImageCrop(save:)`, `setImageMask`,
   `editImageAltText`, `chooseReplacementImage` and `replaceImage(id:data:)`.
+- `EaselCanvasView+Video.swift` imports videos, draws posters and runs the
+  single inline player, an `AVPlayerView` placed over the object.
 - `EaselImageChrome.swift` is the crop bar and the alt text and mask popovers,
   reached through the canvas's `imageEditing.chrome`. The Easel editor wires it;
   Easel blocks in notes don't, so they crop with the menu and keys only.
