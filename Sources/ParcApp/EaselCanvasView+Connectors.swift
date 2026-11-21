@@ -817,8 +817,8 @@ extension EaselCanvasView {
             let moves: [(String, Double, Double)] = [("Move left", -1, 0), ("Move right", 1, 0), ("Move up", 0, -1), ("Move down", 0, 1)]
             node.setAccessibilityCustomActions(moves.map { name, dx, dy in
                 NSAccessibilityCustomAction(name: name) { [weak self, weak owner] in
-                    guard let self, let owner, self.window === owner, self.editor == nil,
-                          let current = self.session.document.items.first(where: { $0.id == item.id }) else { return false }
+                    guard let self, let owner, self.window === owner,
+                          let current = self.selectedConnector, current.id == item.id else { return false }
                     return self.moveConnectorEnd(end, of: current, dx: dx, dy: dy)
                 }
             })
