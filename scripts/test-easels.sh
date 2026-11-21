@@ -90,7 +90,9 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/Sources/ParcApp/NoteTheme.swift" \
   "$repo_root/Sources/ParcApp/PointingHand.swift" \
+  "$repo_root/Sources/ParcApp/PointerCover.swift" \
   "$repo_root/Sources/ParcApp/NoteAnimation.swift" \
+  "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvasControlMotion.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvasCodeBlockViews.swift" \
   "$repo_root/tests/EaselCodeBlockStyleTests.swift" \
