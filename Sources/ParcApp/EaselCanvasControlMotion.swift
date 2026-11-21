@@ -2,16 +2,16 @@ import AppKit
 
 @MainActor
 enum EaselControlSurface {
-    static let scaleKey = NoteAnimation.keyPrefix + "easel.control.scale"
-    static let shadowKey = NoteAnimation.keyPrefix + "easel.control.shadow"
-    static let radiusKey = NoteAnimation.keyPrefix + "easel.control.radius"
-    static let shakeKey = NoteAnimation.keyPrefix + "easel.control.shake"
-    static let glowKey = NoteAnimation.keyPrefix + "easel.control.glow"
-    static let morphKey = NoteAnimation.keyPrefix + "easel.control.morph"
-    static let blinkKey = NoteAnimation.keyPrefix + "easel.control.blink"
-    static let glowName = "parc.easel.control.glow"
-    static let restingShadowRadius: CGFloat = 2
-    static let liftedShadowRadius: CGFloat = 8
+    nonisolated static let scaleKey = NoteAnimation.keyPrefix + "easel.control.scale"
+    nonisolated static let shadowKey = NoteAnimation.keyPrefix + "easel.control.shadow"
+    nonisolated static let radiusKey = NoteAnimation.keyPrefix + "easel.control.radius"
+    nonisolated static let shakeKey = NoteAnimation.keyPrefix + "easel.control.shake"
+    nonisolated static let glowKey = NoteAnimation.keyPrefix + "easel.control.glow"
+    nonisolated static let morphKey = NoteAnimation.keyPrefix + "easel.control.morph"
+    nonisolated static let blinkKey = NoteAnimation.keyPrefix + "easel.control.blink"
+    nonisolated static let glowName = "parc.easel.control.glow"
+    nonisolated static let restingShadowRadius: CGFloat = 2
+    nonisolated static let liftedShadowRadius: CGFloat = 8
 
     static func apply(_ view: NSView, hovered: Bool, pressed: Bool, released: Bool = false,
                       hover: Double = EaselControlMotion.hoverScale, press: Double = EaselControlMotion.pressedScale,

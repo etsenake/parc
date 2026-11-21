@@ -25,6 +25,7 @@ SWIFT
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/Sources/ParcApp/NoteTheme.swift" \
+  "$repo_root/Sources/ParcApp/NoteAnimation.swift" \
   "$repo_root/Sources/ParcApp/LocalContentDrop.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
   "$repo_root/Sources/ParcApp/PointingHand.swift" \

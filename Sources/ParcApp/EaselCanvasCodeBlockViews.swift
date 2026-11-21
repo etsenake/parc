@@ -467,10 +467,18 @@ final class EaselCodeChip: PointingHandButton {
     private var shownSymbol: String { didSet { needsDisplay = true } }
     private var isFlashing = false
     private var flashGeneration = 0
-    private var hovering = false { didSet { if hovering != oldValue { needsDisplay = true } } }
+    private var hovering = false {
+        didSet {
+            guard hovering != oldValue else { return }
+            needsDisplay = true
+            EaselControlSurface.crossfade(self, duration: NoteAnimation.hoverDuration, pops: nil)
+        }
+    }
     private var hoverArea: NSTrackingArea?
+    private let flashTitle: String?
 
-    init(title: String, symbol: String) {
+    init(title: String, symbol: String, flashTitle: String? = nil) {
+        self.flashTitle = flashTitle
         chipTitle = title
         self.symbol = symbol
         shownTitle = title
@@ -480,6 +488,12 @@ final class EaselCodeChip: PointingHandButton {
         self.title = ""
         imagePosition = .noImage
         refusesFirstResponder = true
+        wantsLayer = true
+        NoteAnimation.observeReduceMotion(self) { [weak self] in
+            guard let self else { return }
+            NoteAnimation.settle(self)
+            EaselControlSurface.apply(self, hovered: false, pressed: false, casts: false)
+        }
         target = self
         action = #selector(pressed)
         setAccessibilityRole(.button)
@@ -492,12 +506,23 @@ final class EaselCodeChip: PointingHandButton {
 
     private var chipFont: NSFont { NoteTheme.chromeFont(12.5) }
 
+    private func titleWidth(_ title: String) -> CGFloat {
+        ceil(NSAttributedString(string: title, attributes: [.font: chipFont]).size().width)
+    }
+
     override var intrinsicContentSize: NSSize {
-        let text = ceil(NSAttributedString(string: shownTitle, attributes: [.font: chipFont]).size().width)
+        let text = max(titleWidth(shownTitle), titleWidth(chipTitle), flashTitle.map(titleWidth) ?? 0)
         return NSSize(width: text + 38, height: NoteTheme.chipHeight)
     }
 
     @objc private func pressed() { onPress?() }
+
+    override func highlight(_ flag: Bool) {
+        let released = !flag && isHighlighted
+        super.highlight(flag)
+        needsDisplay = true
+        EaselControlSurface.apply(self, hovered: false, pressed: flag, released: released, casts: false)
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -517,8 +542,10 @@ final class EaselCodeChip: PointingHandButton {
             NSBezierPath(roundedRect: bounds, xRadius: NoteTheme.controlRadius, yRadius: NoteTheme.controlRadius).fill()
         }
         let ink = isEnabled ? (hovering || pressed ? NoteTheme.menuInk : NoteTheme.menuSecondaryInk) : NoteTheme.tertiaryInk
-        drawSymbol(shownSymbol, in: NSRect(x: bounds.minX + 9, y: bounds.midY - 8, width: 16, height: 16), ink: ink)
-        let x = bounds.minX + 28
+        let content = 19 + titleWidth(shownTitle)
+        let start = bounds.minX + max(9, ((bounds.width - content) / 2).rounded())
+        drawSymbol(shownSymbol, in: NSRect(x: start, y: bounds.midY - 8, width: 16, height: 16), ink: ink)
+        let x = start + 19
         let height = ceil(chipFont.ascender - chipFont.descender)
         NSAttributedString(string: shownTitle, attributes: [.font: chipFont, .foregroundColor: ink])
             .draw(with: NSRect(x: x, y: (bounds.midY - height / 2).rounded(), width: max(0, bounds.maxX - x - 8), height: height),
@@ -538,15 +565,19 @@ final class EaselCodeChip: PointingHandButton {
         flashGeneration += 1
         let generation = flashGeneration
         isFlashing = true
-        shownTitle = title
-        shownSymbol = symbol
+        EaselControlSurface.morph(self, pops: 0.88) {
+            shownTitle = title
+            shownSymbol = symbol
+        }
         NSAccessibility.post(element: self, notification: .announcementRequested,
                              userInfo: [.announcement: title, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
             guard let self, self.flashGeneration == generation else { return }
             self.isFlashing = false
-            self.shownTitle = self.chipTitle
-            self.shownSymbol = self.symbol
+            EaselControlSurface.morph(self, pops: 0.94) {
+                self.shownTitle = self.chipTitle
+                self.shownSymbol = self.symbol
+            }
             self.onSizeChange?()
         }
     }
@@ -558,7 +589,7 @@ final class EaselCodeChip: PointingHandButton {
 final class EaselCodeBlockBar: NSView {
     static let padding: CGFloat = 2
     static let radius: CGFloat = 9
-    let copy = EaselCodeChip(title: "Copy", symbol: "doc.on.doc")
+    let copy = EaselCodeChip(title: "Copy", symbol: "doc.on.doc", flashTitle: "Copied!")
     var itemID: UUID?
 
     override init(frame: NSRect) {
