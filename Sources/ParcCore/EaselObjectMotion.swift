@@ -35,6 +35,10 @@ enum EaselObjectEntrance: Equatable {
         default: return .pop
         }
     }
+
+    static func returning(_ item: EaselItem) -> EaselObjectEntrance { item.kind == .arrow ? .fade : .quick }
+
+    static func cascades(_ item: EaselItem) -> Bool { item.kind != .arrow }
 }
 
 enum EaselObjectEffect: Equatable {

@@ -154,6 +154,9 @@ struct EaselObjectMotionTests {
         else { expect(false, "stamps slam") }
         expect(EaselObjectEntrance.of(shape) == .pop, "shapes pop")
         expect(EaselObjectEntrance.of(arrow) == .fade, "connectors fade in so they can draw themselves")
+        expect(EaselObjectEntrance.returning(arrow) == .fade && EaselObjectEntrance.returning(shape) == .quick,
+               "undo brings connectors back with a fade and objects with a quick pop")
+        expect(!EaselObjectEntrance.cascades(arrow) && EaselObjectEntrance.cascades(shape), "connectors skip the cascade while they draw on")
 
         var motion = EaselObjectMotion()
         motion.appear([sticky.id: .drop(tilt: 3)], at: 0, reduced: false)
@@ -319,6 +322,19 @@ struct EaselObjectMotionTests {
         var reduced = EaselObjectMotion()
         reduced.appear([far: .pop], delays: [far: 0.2], at: 0, reduced: true)
         expect(reduced.presentation(for: far, at: 0.15).isIdentity, "Reduce Motion drops the stagger")
+
+        var unfolding = EaselObjectMotion()
+        let shallow = UUID(), deep = UUID()
+        unfolding.glide([shallow: EaselPoint(x: -60, y: 0), deep: EaselPoint(x: -120, y: 0)], fades: true,
+                        delays: [deep: 0.12], at: 0, reduced: false)
+        expect(unfolding.presentation(for: shallow, at: 0.06).offset.x > -60, "the first topic starts gliding at once")
+        expect(near(unfolding.presentation(for: deep, at: 0.06).offset.x, -120), "a deeper topic waits on its parent")
+        expect(unfolding.presentation(for: deep, at: 0.2).offset.x > -120, "the deeper topic follows after its delay")
+        expect(unfolding.presentation(for: deep, at: 0.58).isIdentity && !unfolding.presentation(for: deep, at: 0.5).isIdentity,
+               "a delayed glide still runs its full length")
+        var calm = EaselObjectMotion()
+        calm.glide([deep: EaselPoint(x: -120, y: 0)], fades: true, delays: [deep: 0.12], at: 0, reduced: true)
+        expect(calm.presentation(for: deep, at: 0.151).isIdentity, "Reduce Motion drops glide delays")
     }
 
     static func history() {
