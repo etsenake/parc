@@ -215,6 +215,18 @@ extension BrowserWindowController {
         configureNoteEmbeds(tab, editor: editor)
     }
 
+    func noteContentDropTarget(for info: NSDraggingInfo, over overlay: NSView) -> SplitContentDropTarget? {
+        guard let window = overlay.window, !isPrivateBrowsing else { return nil }
+        for note in noteEditors.values where note.editor.isViewLoaded {
+            guard let target = note.editor.view as? SplitContentDropTarget, target.window === window,
+                  !target.isHiddenOrHasHiddenAncestor,
+                  target.visibleRect.contains(target.convert(info.draggingLocation, from: nil)),
+                  target.acceptsSplitContentDrop(info) else { continue }
+            return target
+        }
+        return nil
+    }
+
     func embeddedPagePool(forTabID id: UUID) -> EmbeddedPagePool? {
         if let easel = easelEditors[id] { return easel.editor.pageObjects }
         return noteEditors[id].flatMap { NoteEmbeddedPages.pool(for: $0.editor) }

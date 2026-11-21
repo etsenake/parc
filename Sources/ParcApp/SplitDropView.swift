@@ -35,8 +35,15 @@ protocol SplitDropCardSource: AnyObject {
 }
 
 @MainActor
+protocol SplitContentDropTarget: NSView {
+    func acceptsSplitContentDrop(_ info: NSDraggingInfo) -> Bool
+}
+
+@MainActor
 final class SplitDropView: NSView {
     let drag: SidebarSplitDrag
+    var contentTarget: (NSDraggingInfo) -> SplitContentDropTarget? = { _ in nil }
+    private weak var contentDrop: SplitContentDropTarget?
     private let reservation: ParcSplitView.DropReservation
     private var proposal: (SplitDropTarget, SplitOrientation, NSRect)?
     let targets = SplitDropTargetTracker()
@@ -62,7 +69,10 @@ final class SplitDropView: NSView {
         return true
     }
     private func update(_ sender: NSDraggingInfo, presenting: Bool = true, refreshingCard: Bool = true) -> NSDragOperation {
-        guard accepts(sender), frame.size == superview?.bounds.size else { proposal = nil; targets.reset(); reservation.end(); return [] }
+        guard accepts(sender), frame.size == superview?.bounds.size else {
+            leaveContent(sender); proposal = nil; targets.reset(); reservation.end(); return []
+        }
+        if let operation = routeToContent(sender, presenting: presenting) { return operation }
         proposal = reservation.proposal(at: convert(sender.draggingLocation, from: nil), canPropose: canPropose, presenting: presenting)
         guard presenting else { return proposal == nil ? [] : .move }
         lastSender = sender
@@ -73,8 +83,29 @@ final class SplitDropView: NSView {
     }
     private var lastSender: NSDraggingInfo?
     private func refreshIntent() {
-        guard let lastSender else { return }
+        guard let lastSender, contentDrop == nil else { return }
         _ = update(lastSender, refreshingCard: false)
+    }
+    private func routeToContent(_ sender: NSDraggingInfo, presenting: Bool) -> NSDragOperation? {
+        guard let content = contentTarget(sender) else {
+            if contentDrop != nil {
+                leaveContent(sender)
+                if presenting { showsCard = presentPlaceholderCard(sender) }
+            }
+            return nil
+        }
+        if contentDrop !== content {
+            leaveContent(sender)
+            contentDrop = content
+            proposal = nil; targets.reset(); reservation.clear(animated: true)
+            if showsCard { showsCard = false; restoreRowImage(sender) }
+        }
+        return content.draggingUpdated(sender)
+    }
+    private func leaveContent(_ sender: NSDraggingInfo?) {
+        guard let content = contentDrop else { return }
+        contentDrop = nil
+        content.draggingExited(sender)
     }
     var canPropose: (SplitDropTarget, SplitOrientation) -> Bool = { _, _ in false }
     private var edit: ParcSplitView.InteractivePaneEdit?
@@ -100,10 +131,11 @@ final class SplitDropView: NSView {
         guard let sender, let image = (sender.draggingSource as? SplitDropCardSource)?.splitDragImage else { return }
         SplitDropPlaceholderCard.present(image, on: sender, admits: ownsItem)
     }
-    override func draggingEnded(_ sender: NSDraggingInfo) { showsCard = false; lastSender = nil; endEdit() }
+    override func draggingEnded(_ sender: NSDraggingInfo) { leaveContent(sender); showsCard = false; lastSender = nil; endEdit() }
     private func endEdit() { let old = edit; edit = nil; old?.end() }
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { update(sender) }
     override func draggingExited(_ sender: NSDraggingInfo?) {
+        leaveContent(sender)
         proposal = nil; lastSender = nil; targets.reset(); reservation.clear(animated: true)
         edit?.isDragInside = false
         if showsCard { showsCard = false; restoreRowImage(sender) }
@@ -111,6 +143,13 @@ final class SplitDropView: NSView {
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { !update(sender, presenting: false).isEmpty }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         showsCard = false; lastSender = nil
+        if accepts(sender), let content = contentTarget(sender) {
+            contentDrop = nil
+            reservation.clear()
+            let result = content.performDragOperation(sender)
+            drag.end()
+            return result
+        }
         guard !update(sender, presenting: false).isEmpty, let proposal, accepts(sender) else { return false }
         reservation.clear()
         let result = (perform ?? drag.commit)(proposal.0, proposal.1)

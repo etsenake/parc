@@ -244,6 +244,7 @@ extension BrowserWindowController {
             })
         let overlay = SplitDropView(frame: frame, drag: drag,
             reservation: reservation, insertionColor: { [weak self] in self.map { ThemeChromePalette.appearanceBasedMaxContrast(theme: $0.rootView.paletteTheme) } ?? .clear })
+        overlay.contentTarget = { [weak self, weak overlay] info in overlay.flatMap { self?.noteContentDropTarget(for: info, over: $0) } }
         overlay.canPropose = { [weak self] target, orientation in
             guard let self, validate(), let required = OriginalSplitDrop.savedHomes(source: sourceID, state: self.presentedState,
                 selection: selection, layout: layout, target: target, orientation: orientation, spaceID: spaceID) else { return false }
@@ -375,6 +376,7 @@ extension BrowserWindowController {
                     }
                 }
             }, insertionColor: { [weak self] in self.map { ThemeChromePalette.appearanceBasedMaxContrast(theme: $0.rootView.paletteTheme) } ?? .clear })
+        overlay.contentTarget = { [weak self, weak overlay] info in overlay.flatMap { self?.noteContentDropTarget(for: info, over: $0) } }
         overlay.canPropose = { [weak self] target, orientation in
             guard let self, gesture() else { return false }
             return proposal(request(target, orientation), self.store.state) != nil

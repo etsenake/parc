@@ -10,11 +10,24 @@ struct NoteEaselBlockTests {
 
     static func main() {
         addresses()
+        documentDrags()
         picker()
         roundTrip()
         sizing()
         exports()
         print("NoteEaselBlockTests passed")
+    }
+
+    static func documentDrags() {
+        let easel = NoteDocumentDrag(address: NoteEaselAddress.address(id), title: "Mood\nboard")
+        let decoded = NoteDocumentDrag(encoded: easel.encoded)
+        expect(decoded?.address == NoteEaselAddress.address(id) && decoded?.title == "Mood board", "drags round-trip on one title line")
+        let block = decoded?.easelBlock
+        expect(block.flatMap(NoteEaselAddress.id(of:)) == id && block.map(NoteEaselAddress.title(of:)) == "Mood board", "Easel drags become Easel blocks")
+        let note = NoteDocumentDrag(address: "file:///Users/me/Notes/Ideas.md", title: "Ideas")
+        expect(NoteDocumentDrag(encoded: note.encoded)?.easelBlock == nil, "note drags aren't Easels")
+        expect(NoteDocumentDrag(encoded: "") == nil && NoteDocumentDrag(encoded: "\nTitle") == nil, "drags need an address")
+        expect(NoteDocumentDrag(encoded: NoteEaselAddress.address(id))?.title == "", "a missing title stays empty")
     }
 
     static func addresses() {

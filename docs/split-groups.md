@@ -259,6 +259,11 @@ commit share the classifier and original lease. A release drops into the zone
 under the pointer, as its preview shows, even when that preview hasn't appeared
 yet; the drop classifies without presenting, so it never moves panes first.
 
+An Easel row dragged over a note pane's text column (with a little room either
+side for block handles) drops into the note as an Easel block, with the note's
+drop line instead of a split preview. The margins beside the column keep the
+split zones, and every other row and pane classifies as above.
+
 ## Replacement highlight, pending pane and proposal feedback
 
 Replacement draws a highlight on the existing pane, preserving its content.

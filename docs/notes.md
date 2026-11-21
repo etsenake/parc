@@ -68,8 +68,10 @@ does, and Escape with nothing selected, the check mark or a click outside
 returns to the note. Webpages on the canvas show their saved cards; Open shows
 them live. A locked note shows the canvas view-only. A deleted Easel, or one
 that belongs to another Profile (Easels live in their Profile, notes don't),
-shows a card saying so with Remove. Sidebar drags don't carry Easel addresses
-yet, so dropping an Easel from the sidebar doesn't add one.
+shows a card saying so with Remove. Dragging an Easel from the sidebar onto a
+note's text puts an Easel block where the drop line shows; sidebar tab drags
+carry the Easel's `parc://easel/…` address (or a note's file address) in a
+private drag type, so pages and other drop targets don't see a link.
 
 PDF blocks (`/pdf`, a dropped or pasted PDF file, a pasted `.pdf` link, or Turn
 Into on a file row) read the PDF right in the note with PDFKit: pages scroll

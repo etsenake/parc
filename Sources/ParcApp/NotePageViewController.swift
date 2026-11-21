@@ -301,6 +301,10 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
 
     fileprivate func dragExited() { editor.dragExited() }
 
+    fileprivate func acceptsSplitContentDrop(_ info: NSDraggingInfo) -> Bool {
+        isViewLoaded && editor.acceptsDocumentDrop(info, at: editor.canvas.convert(info.draggingLocation, from: nil))
+    }
+
     private func layoutRoot() {
         scroll.frame = root.bounds
         if let pageMenuButton {
@@ -477,6 +481,10 @@ final class NoteFileLease {
         guard let file else { return }
         DispatchQueue.main.async { MainActor.assumeIsolated { file.release() } }
     }
+}
+
+extension NotePageRootView: SplitContentDropTarget {
+    func acceptsSplitContentDrop(_ info: NSDraggingInfo) -> Bool { controller?.acceptsSplitContentDrop(info) ?? false }
 }
 
 @MainActor

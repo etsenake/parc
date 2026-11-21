@@ -39,6 +39,29 @@ enum NoteEaselAddress {
     }
 }
 
+struct NoteDocumentDrag: Equatable {
+    static let pasteboardType = "org.parc.sidebar-document"
+
+    var address: String
+    var title: String
+
+    init(address: String, title: String) {
+        self.address = address
+        self.title = title
+    }
+
+    init?(encoded: String) {
+        let parts = encoded.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let first = parts.first, !first.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        address = String(first)
+        title = parts.count > 1 ? String(parts[1]) : ""
+    }
+
+    var encoded: String { address + "\n" + title.replacingOccurrences(of: "\n", with: " ") }
+
+    var easelBlock: NoteBlock? { NoteEaselAddress.id(from: address).map { NoteEaselAddress.block(id: $0, title: title) } }
+}
+
 struct NoteEaselChoice: Equatable {
     enum Action: Equatable {
         case existing(UUID)

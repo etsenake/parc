@@ -1210,15 +1210,33 @@ final class NotePageEditor {
         menu.dismiss()
     }
 
+    static let documentDragType = NSPasteboard.PasteboardType(NoteDocumentDrag.pasteboardType)
     static let externalDragTypes: [NSPasteboard.PasteboardType] = [.fileURL, .URL, .string, .png, .tiff, .html]
-        + NoteClipboard.imageTypes.map(\.type)
+        + NoteClipboard.imageTypes.map(\.type) + [documentDragType]
+    private static let documentDropGutter: CGFloat = 48
+
+    private func draggedEasel(_ pasteboard: NSPasteboard) -> NoteBlock? {
+        guard !isPlainText, NoteEaselHost.host(for: self) != nil,
+              let raw = pasteboard.string(forType: Self.documentDragType) else { return nil }
+        return NoteDocumentDrag(encoded: raw)?.easelBlock
+    }
+
+    func acceptsDocumentDrop(_ info: NSDraggingInfo, at point: NSPoint) -> Bool {
+        guard !isReadOnly, draggedEasel(info.draggingPasteboard) != nil else { return false }
+        let layout = canvas.canvasLayout
+        return point.x >= layout.columnX - Self.documentDropGutter
+            && point.x <= layout.columnX + layout.columnWidth + Self.documentDropGutter
+    }
 
     func dragOperation(for info: NSDraggingInfo, at point: NSPoint) -> NSDragOperation {
-        guard !isReadOnly, info.draggingPasteboard.availableType(from: Self.externalDragTypes) != nil else {
+        let pasteboard = info.draggingPasteboard
+        guard !isReadOnly, let type = pasteboard.availableType(from: Self.externalDragTypes),
+              type != Self.documentDragType || draggedEasel(pasteboard) != nil else {
             hideDropIndicator()
             return []
         }
         canvas.showDropIndicator(canvas.dropTarget(at: point, dragging: []))
+        if type == Self.documentDragType { return info.draggingSourceOperationMask.contains(.copy) ? .copy : .move }
         return info.draggingSourceOperationMask.contains(.copy) ? .copy : .generic
     }
 
@@ -1230,6 +1248,11 @@ final class NotePageEditor {
         hideDropIndicator()
         guard !isReadOnly else { return false }
         let target = canvas.dropTarget(at: point, dragging: [])
+        if let easel = draggedEasel(info.draggingPasteboard) {
+            guard let id = NoteEaselAddress.id(of: easel), let host = NoteEaselHost.host(for: self),
+                  case .success = host.session(id) else { return false }
+            return insertDropped([easel], at: target)
+        }
         let reading = NoteClipboard.read(info.draggingPasteboard)
         var blocks: [NoteBlock] = []
         switch NoteClipboard.choose(reading, plainOnly: isPlainText, canReadHTML: true) {
@@ -1265,6 +1288,10 @@ final class NotePageEditor {
             guard let string = NoteClipboard.plainString(reading) else { return false }
             blocks = isPlainText ? NotePlainText.parse(string).blocks : NoteClipboard.plainBlocks(string)
         }
+        return insertDropped(blocks, at: target)
+    }
+
+    private func insertDropped(_ blocks: [NoteBlock], at target: NoteCanvasDropTarget?) -> Bool {
         guard !blocks.isEmpty else { return false }
         dismissOverlaysForStructure()
         let landing = Self.landing(for: blocks)

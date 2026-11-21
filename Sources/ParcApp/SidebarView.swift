@@ -1073,10 +1073,20 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         let item = NSPasteboardItem(); item.setString(tabID.uuidString, forType: Self.pasteboardType)
         if let sidebarDrag { item.setString(sidebarDrag.identifier.uuidString, forType: SidebarMoveSession.pasteboardType) }
         if let splitDrag { item.setString(splitDrag.identifier.uuidString, forType: SidebarSplitDrag.pasteboardType) }
+        if let document = Self.documentDrag(tooltipTab) {
+            item.setString(document.encoded, forType: NSPasteboard.PasteboardType(NoteDocumentDrag.pasteboardType))
+        }
         let drag = NSDraggingItem(pasteboardWriter: item)
         splitDragImage = snapshot
         drag.setDraggingFrame(bounds, contents: snapshot)
         beginDraggingSession(with: [drag], event: event, source: self)
+    }
+    private static func documentDrag(_ tab: BrowserTab) -> NoteDocumentDrag? {
+        switch InternalPage(urlString: tab.url) {
+        case .easel(let id): return NoteDocumentDrag(address: NoteEaselAddress.address(id), title: tab.title)
+        case .note(let url): return NoteDocumentDrag(address: url.absoluteString, title: tab.title)
+        case nil: return nil
+        }
     }
     private func dragImage() -> NSImage {
         resetParts?.region.cancelInteraction(); setResetSubtitle(nil, animated: false)
