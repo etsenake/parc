@@ -68,6 +68,8 @@ radius.
 
 ## Checks
 
+`SpaceThemeInputTests` exercises the editor's color and noise transactions,
+marking wheel delivery explicitly so cancellation can be checked deterministically.
 `scripts/test-theme-input.sh` exercises production model/AppKit controls with
 explicit event objects: axes/clipping, linked handle promotion, offset tracking,
 one-transaction Undo, intensity cancellation, dial thresholds, rotation/end,
