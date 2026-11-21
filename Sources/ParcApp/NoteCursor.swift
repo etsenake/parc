@@ -128,7 +128,7 @@ class NoteInputField: NSTextField {
     override func resetCursorRects() {}
 
     override func cursorUpdate(with event: NSEvent) {
-        if isEnabled, isEditable || isSelectable, applyNoteCursor(.iBeam, for: event) { return }
-        super.cursorUpdate(with: event)
+        guard isEnabled, isEditable || isSelectable else { super.cursorUpdate(with: event); return }
+        applyNoteCursor(.iBeam, for: event)
     }
 }

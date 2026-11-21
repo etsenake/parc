@@ -105,7 +105,7 @@ final class NotePagePopover {
 
     private func isAuxiliary(_ window: NSWindow?) -> Bool {
         guard let window, let host = panel.window, window !== host else { return false }
-        return window is NSPanel || window.sheetParent === host || host.attachedSheet === window
+        return window.sheetParent === host || host.attachedSheet === window || window is NSSavePanel
     }
 
     private func didDismiss() {
