@@ -1374,6 +1374,7 @@ final class ThemeAppearanceButton: NSButton {
     private let scheduleFrame: (Timer) -> Void
     private var timer: Timer?
     var now: () -> CFTimeInterval = { CACurrentMediaTime() }
+    var onDisplayInvalidated: (() -> Void)?
     private var startedAt = 0.0
     private var frozenAt = 0.0
     private var lastDisplayFingerprint: Int?
@@ -1454,6 +1455,7 @@ final class ThemeAppearanceButton: NSButton {
     private func stopFrames() { timer?.invalidate(); timer = nil }
     private func invalidateDisplay() {
         needsDisplay = true
+        onDisplayInvalidated?()
     }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
