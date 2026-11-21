@@ -247,9 +247,11 @@ One Undo restores the original attributes and selection. Composition and
 attachment-bearing labels refuse before mutation. Later typing and explicit
 plain paste do not inherit the pasted link.
 
-The canvas accepts URL-only pasteboards as local link objects. Capture's
-memory-only image editor instead inserts annotation text and never creates an
-Easel or browser owner. Existing public RTF/RTFD interoperability is retained.
+The canvas accepts URL-only pasteboards as local link objects, and plain text
+that reads as a Mermaid flowchart or ER diagram becomes editable shapes, arrows
+and sections ([Mermaid diagrams](easel-mermaid.md)). Capture's memory-only
+image editor instead inserts annotation text and never creates an Easel or
+browser owner. Existing public RTF/RTFD interoperability is retained.
 
 ## Canvas keyboard and accessibility ownership — EASEL26
 
