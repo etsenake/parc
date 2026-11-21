@@ -132,10 +132,12 @@ into a closed query reopens it, and clicking away closes it. Code spans, table
 cells and connector labels never open it.
 
 The rows are the Notes catalog rows that make sense in text: Text, Heading 1–3,
-Bulleted and Numbered list, Quote and Emoji, plus To-do, Divider, Mention,
-Date and Inline equation once those exist in Easel text. Picking a row removes
+Bulleted and Numbered list, Quote, Mention, Date, Inline equation and Emoji,
+plus To-do and Divider once those exist in Easel text. Picking a row removes
 the typed `/query` and turns the paragraph into it as one native Undo step;
-Emoji opens the Notes emoji picker at the caret. Below them, **Add to the
+Mention and Date open the mention menu, Inline equation opens the equation
+editor and Emoji opens the Notes emoji picker (with the custom section) at the
+caret. Below them, **Add to the
 Easel** places a Sticky, Shape, Image, Video, Audio, File, PDF, Embed,
 Bookmark, Block equation, Table or Code block beside the text, to its right or
 below it when something is already there (`EaselSlashPlacement`), selected and
@@ -169,5 +171,35 @@ the caret; ↑ and ↓ move, Return or Tab picks and Esc closes the list without
 leaving the text. Typing a complete `:shortcode:` swaps it for the emoji right
 away. Only typing counts: pasted, dropped, dictated or autocorrected text
 never converts, and nothing happens inside inline code. Each emoji insertion is
-its own Undo step. Custom emoji from the Notes
-library aren't offered, because Easel text stores only characters.
+its own Undo step. Custom emoji from the Notes library of the Profile's Notes
+folder come first in the suggestions and complete on `:name:`; each lands as
+an inline run that keeps a copy of its picture, so it still draws, copies and
+exports when the library changes or the Easel moves.
+
+## Mentions, dates and inline equations
+
+Typing `@` (or `[[` for notes only) in any Easel text opens the Notes mention
+menu (`NoteMentionMenu`) under the caret: notes from the Profile's Notes folder
+with their icons, New note “…”, dates and reminders, with the Notes date parser,
+so `@Jan 3 - 5`, `@3-5pm` and `@8:40` behave exactly as in a note. Picking a row
+replaces the typed `@query` with one inline run, as one native Undo step.
+
+A note mention draws as the Notes mention pill with the note's title; clicking
+it while editing opens the note, and on the canvas hovering it shows the link
+card with Open and Copy. Mentions count in the note's backlinks and follow the
+note through renames and moves. A date draws with the Notes wording (Today,
+Tomorrow, Yesterday, then the full date) and rewords itself as days pass;
+clicking it opens the Notes date picker (range, time, format, time zone and
+Remind). Reminders ring as the same local notifications notes use, named after
+the Easel; clicking one opens the Easel. They follow the Easel through renames
+and disappear when it's deleted. Typing `$x^2$` or picking Inline equation
+makes an inline equation typeset by the Notes math renderer; clicking it opens
+the Notes equation editor, and an empty one that's left empty goes away.
+
+Inline runs are saved as typed payloads on a U+FFFC character (see
+[Easels](easels.md#range-formatting-and-persistence)). Find matches their words
+and highlights the whole pill, Replace leaves them alone, VoiceOver reads them
+as Notes does (“Page, Roadmap”, “Reminder, Tomorrow 9:00 AM”), and copying
+writes their words to RTF and plain text. PDF and PNG exports draw them as on
+the canvas; HTML and SVG write mentions and dates as words and equations and
+custom emoji as pictures.
