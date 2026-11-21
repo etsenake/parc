@@ -1,81 +1,15 @@
 import Foundation
+import Testing
+@testable import ParcCore
 
-struct SyntaxProbe {
-    let language: String
-    let code: String
-    let tokens: [NoteSyntaxToken]
-
-    init(_ language: String, _ code: String) {
-        self.language = language
-        self.code = code
-        tokens = NoteSyntaxHighlighter.tokens(in: code, language: language)
-    }
-
-    func kind(_ fragment: String, _ occurrence: Int = 1) -> NoteSyntaxKind? {
-        let text = code as NSString
-        var searchStart = 0
-        var found = NSRange(location: NSNotFound, length: 0)
-        for _ in 0..<occurrence {
-            found = text.range(of: fragment, options: [], range: NSRange(location: searchStart, length: text.length - searchStart))
-            if found.location == NSNotFound { return nil }
-            searchStart = found.location + max(1, found.length)
-        }
-        let target = found.location..<(found.location + found.length)
-        return tokens.first { $0.range.lowerBound <= target.lowerBound && $0.range.upperBound >= target.upperBound }?.kind
-    }
-
-    func expect(_ fragment: String, _ kind: NoteSyntaxKind?, _ occurrence: Int = 1,
-                file: StaticString = #file, line: UInt = #line) {
-        let actual = self.kind(fragment, occurrence)
-        if actual != kind {
-            let dump = tokens.map { token -> String in
-                let piece = (code as NSString).substring(with: NSRange(location: token.range.lowerBound, length: token.range.count))
-                return "\(token.kind.rawValue)=\(piece.debugDescription)"
-            }.joined(separator: " ")
-            failTest("[\(language)] \(fragment.debugDescription)#\(occurrence) expected \(kind?.rawValue ?? "none"), got \(actual?.rawValue ?? "none")\n\(dump)",
-                     file: file, line: line)
-        }
-    }
-
-    func expectWellFormed(file: StaticString = #file, line: UInt = #line) {
-        let length = (code as NSString).length
-        var previous = 0
-        for token in tokens {
-            if token.range.lowerBound < previous || token.range.isEmpty || token.range.upperBound > length {
-                failTest("[\(language)] malformed token \(token) after \(previous)", file: file, line: line)
-            }
-            previous = token.range.upperBound
-        }
-    }
-}
-
-@main
 struct NoteSyntaxMarkupTests {
-    static func expect(_ value: Bool, _ message: String, file: StaticString = #file, line: UInt = #line) {
-        if !value { failTest(message, file: file, line: line) }
-    }
-
-    static func main() {
-        catalog()
-        html()
-        xml()
-        styles()
-        markdown()
-        data()
-        diff()
-        dockerfile()
-        makefile()
-        robustness()
-        print("NoteSyntaxMarkupTests passed")
-    }
-
-    static func catalog() {
+    @Test func catalog() {
         let all = NoteCodeLanguage.all
-        expect(all.first?.id == "plaintext" && all.first?.name == "Plain Text", "Plain Text leads the picker")
+        #expect(all.first?.id == "plaintext" && all.first?.name == "Plain Text", "Plain Text leads the picker")
         let names = all.dropFirst().map { $0.name.lowercased() }
-        expect(names == names.sorted(), "the rest is alphabetical: \(names)")
-        expect(Set(all.map(\.id)).count == all.count, "ids are unique")
-        expect(all.count >= 36, "about thirty-five languages and then some")
+        #expect(names == names.sorted(), "the rest is alphabetical: \(names)")
+        #expect(Set(all.map(\.id)).count == all.count, "ids are unique")
+        #expect(all.count >= 36, "about thirty-five languages and then some")
         let fences: [String: String] = [
             "js": "javascript", "ts": "typescript", "sh": "bash", "shell": "bash", "zsh": "bash", "py": "python",
             "objc": "objectivec", "c++": "cpp", "yml": "yaml", "JSON": "json", "  Swift  ": "swift", "C#": "csharp",
@@ -84,23 +18,23 @@ struct NoteSyntaxMarkupTests {
             "gql": "graphql", "plain": "plaintext", "Plain Text": "plaintext", "tsx": "tsx", "jsx": "jsx",
         ]
         for (fence, id) in fences {
-            expect(NoteCodeLanguage.named(fence)?.id == id, "\(fence) names \(id), got \(NoteCodeLanguage.named(fence)?.id ?? "nil")")
+            #expect(NoteCodeLanguage.named(fence)?.id == id, "\(fence) names \(id), got \(NoteCodeLanguage.named(fence)?.id ?? "nil")")
         }
-        expect(NoteCodeLanguage.named("brainfudge") == nil, "unknown languages stay unknown")
-        expect(NoteCodeLanguage.named("") == nil, "empty info strings name nothing")
-        expect(NoteSyntaxHighlighter.tokens(in: "let x = 1", language: "klingon").isEmpty, "unknown languages get no tokens")
-        expect(NoteSyntaxHighlighter.tokens(in: "let x = 1", language: "text").isEmpty, "plain text gets no tokens")
-        expect(NoteSyntaxHighlighter.tokens(in: "", language: "swift").isEmpty, "empty code gets no tokens")
+        #expect(NoteCodeLanguage.named("brainfudge") == nil, "unknown languages stay unknown")
+        #expect(NoteCodeLanguage.named("") == nil, "empty info strings name nothing")
+        #expect(NoteSyntaxHighlighter.tokens(in: "let x = 1", language: "klingon").isEmpty, "unknown languages get no tokens")
+        #expect(NoteSyntaxHighlighter.tokens(in: "let x = 1", language: "text").isEmpty, "plain text gets no tokens")
+        #expect(NoteSyntaxHighlighter.tokens(in: "", language: "swift").isEmpty, "empty code gets no tokens")
         for language in all where language.id != "plaintext" {
-            expect(NoteSyntaxLexer.lexer(for: language.id) != nil, "\(language.name) has a lexer")
+            #expect(NoteSyntaxLexer.lexer(for: language.id) != nil, "\(language.name) has a lexer")
         }
         let emoji = SyntaxProbe("swift", "let 🌳 = \"🌳\" // 🌳")
         emoji.expect("\"🌳\"", .string)
         emoji.expect("// 🌳", .comment)
-        expect(emoji.tokens.last?.range.upperBound == ("let 🌳 = \"🌳\" // 🌳" as NSString).length, "offsets are UTF-16")
+        #expect(emoji.tokens.last?.range.upperBound == ("let 🌳 = \"🌳\" // 🌳" as NSString).length, "offsets are UTF-16")
     }
 
-    static func html() {
+    @Test func html() {
         let probe = SyntaxProbe("html", """
         <!DOCTYPE html>
         <!-- a <b>comment</b> -->
@@ -151,7 +85,7 @@ struct NoteSyntaxMarkupTests {
         probe.expectWellFormed()
     }
 
-    static func xml() {
+    @Test func xml() {
         let probe = SyntaxProbe("xml", """
         <?xml version="1.0" encoding="UTF-8"?>
         <plist version="1.0"><dict><key>Name</key><string>Parc &lt;3</string>
@@ -172,7 +106,7 @@ struct NoteSyntaxMarkupTests {
         probe.expectWellFormed()
     }
 
-    static func styles() {
+    @Test func styles() {
         let css = SyntaxProbe("css", """
         @import url(https://fonts.googleapis.com/css);
         :root { --accent: #6c5ce7; }
@@ -248,7 +182,7 @@ struct NoteSyntaxMarkupTests {
         scss.expectWellFormed()
     }
 
-    static func markdown() {
+    @Test func markdown() {
         let probe = SyntaxProbe("markdown", """
         ---
         title: Hello
@@ -313,7 +247,7 @@ struct NoteSyntaxMarkupTests {
         list.expect("+", .punctuation)
     }
 
-    static func data() {
+    @Test func data() {
         let json = SyntaxProbe("json", """
         {
           // jsonc comment
@@ -422,7 +356,7 @@ struct NoteSyntaxMarkupTests {
         toml.expectWellFormed()
     }
 
-    static func diff() {
+    @Test func diff() {
         let probe = SyntaxProbe("diff", """
         diff --git a/notes.md b/notes.md
         index 83db48f..bf269f4 100644
@@ -453,7 +387,7 @@ struct NoteSyntaxMarkupTests {
         loose.expect("-removed", .deleted)
     }
 
-    static func dockerfile() {
+    @Test func dockerfile() {
         let probe = SyntaxProbe("dockerfile", """
         # syntax=docker/dockerfile:1
         FROM --platform=$BUILDPLATFORM node:20-alpine AS build
@@ -491,7 +425,7 @@ struct NoteSyntaxMarkupTests {
         probe.expectWellFormed()
     }
 
-    static func makefile() {
+    @Test func makefile() {
         let probe = SyntaxProbe("makefile", """
         # build things
         CC ?= clang
@@ -531,7 +465,7 @@ struct NoteSyntaxMarkupTests {
         probe.expectWellFormed()
     }
 
-    static func robustness() {
+    @Test func robustness() {
         let languages = NoteCodeLanguage.all.map(\.id)
         let snippets = [
             "\"unterminated", "/* open", "`${`${`${", "<div <span", "'''", "#{", "${", "$(", "<<EOF", "@\"", "r#\"",
@@ -552,6 +486,53 @@ struct NoteSyntaxMarkupTests {
             SyntaxProbe(language, pathological).expectWellFormed()
         }
         let elapsed = Date().timeIntervalSince(started)
-        expect(elapsed < 20, "every language stays linear on 2,000-line and adversarial blocks (\(elapsed)s)")
+        #expect(elapsed < 20, "every language stays linear on 2,000-line and adversarial blocks (\(elapsed)s)")
+    }
+
+    struct SyntaxProbe {
+        let language: String
+        let code: String
+        let tokens: [NoteSyntaxToken]
+
+        init(_ language: String, _ code: String) {
+            self.language = language
+            self.code = code
+            tokens = NoteSyntaxHighlighter.tokens(in: code, language: language)
+        }
+
+        func kind(_ fragment: String, _ occurrence: Int = 1) -> NoteSyntaxKind? {
+            let text = code as NSString
+            var searchStart = 0
+            var found = NSRange(location: NSNotFound, length: 0)
+            for _ in 0..<occurrence {
+                found = text.range(of: fragment, options: [], range: NSRange(location: searchStart, length: text.length - searchStart))
+                if found.location == NSNotFound { return nil }
+                searchStart = found.location + max(1, found.length)
+            }
+            let target = found.location..<(found.location + found.length)
+            return tokens.first { $0.range.lowerBound <= target.lowerBound && $0.range.upperBound >= target.upperBound }?.kind
+        }
+
+        func expect(_ fragment: String, _ kind: NoteSyntaxKind?, _ occurrence: Int = 1) {
+            let actual = self.kind(fragment, occurrence)
+            if actual != kind {
+                let dump = tokens.map { token -> String in
+                    let piece = (code as NSString).substring(with: NSRange(location: token.range.lowerBound, length: token.range.count))
+                    return "\(token.kind.rawValue)=\(piece.debugDescription)"
+                }.joined(separator: " ")
+                Issue.record("[\(language)] \(fragment.debugDescription)#\(occurrence) expected \(kind?.rawValue ?? "none"), got \(actual?.rawValue ?? "none")\n\(dump)")
+            }
+        }
+
+        func expectWellFormed(file: StaticString = #file) {
+            let length = (code as NSString).length
+            var previous = 0
+            for token in tokens {
+                if token.range.lowerBound < previous || token.range.isEmpty || token.range.upperBound > length {
+                    Issue.record("[\(language)] malformed token \(token) after \(previous)")
+                }
+                previous = token.range.upperBound
+            }
+        }
     }
 }

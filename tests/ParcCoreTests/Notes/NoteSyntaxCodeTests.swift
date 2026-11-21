@@ -1,77 +1,9 @@
 import Foundation
+import Testing
+@testable import ParcCore
 
-struct SyntaxProbe {
-    let language: String
-    let code: String
-    let tokens: [NoteSyntaxToken]
-
-    init(_ language: String, _ code: String) {
-        self.language = language
-        self.code = code
-        tokens = NoteSyntaxHighlighter.tokens(in: code, language: language)
-    }
-
-    func range(of fragment: String, occurrence: Int) -> Range<Int>? {
-        let text = code as NSString
-        var searchStart = 0
-        var found = NSRange(location: NSNotFound, length: 0)
-        for _ in 0..<occurrence {
-            found = text.range(of: fragment, options: [], range: NSRange(location: searchStart, length: text.length - searchStart))
-            if found.location == NSNotFound { return nil }
-            searchStart = found.location + max(1, found.length)
-        }
-        return found.location..<(found.location + found.length)
-    }
-
-    func kind(_ fragment: String, _ occurrence: Int = 1) -> NoteSyntaxKind? {
-        guard let target = range(of: fragment, occurrence: occurrence) else { return nil }
-        return tokens.first { $0.range.lowerBound <= target.lowerBound && $0.range.upperBound >= target.upperBound }?.kind
-    }
-
-    func expect(_ fragment: String, _ kind: NoteSyntaxKind?, _ occurrence: Int = 1,
-                file: StaticString = #file, line: UInt = #line) {
-        let actual = self.kind(fragment, occurrence)
-        if actual != kind {
-            let dump = tokens.map { token -> String in
-                let piece = (code as NSString).substring(with: NSRange(location: token.range.lowerBound, length: token.range.count))
-                return "\(token.kind.rawValue)=\(piece.debugDescription)"
-            }.joined(separator: " ")
-            failTest("[\(language)] \(fragment.debugDescription)#\(occurrence) expected \(kind?.rawValue ?? "none"), got \(actual?.rawValue ?? "none")\n\(dump)",
-                     file: file, line: line)
-        }
-    }
-
-    func expectWellFormed(file: StaticString = #file, line: UInt = #line) {
-        let length = (code as NSString).length
-        var previous = 0
-        for token in tokens {
-            if token.range.lowerBound < previous || token.range.isEmpty || token.range.upperBound > length {
-                failTest("[\(language)] malformed token \(token) after \(previous)", file: file, line: line)
-            }
-            previous = token.range.upperBound
-        }
-    }
-}
-
-@main
 struct NoteSyntaxCodeTests {
-    static func main() {
-        swift()
-        javascriptFamily()
-        python()
-        ruby()
-        goAndRust()
-        cFamily()
-        jvmFamily()
-        dartAndPHP()
-        shells()
-        scriptingFamily()
-        functionalFamily()
-        queryFamily()
-        print("NoteSyntaxCodeTests passed")
-    }
-
-    static func swift() {
+    @Test func swift() {
         let probe = SyntaxProbe("swift", """
         @MainActor final class Box<T>: Codable {
             let url = "https://parc.dev/a // b"
@@ -121,7 +53,7 @@ struct NoteSyntaxCodeTests {
         regex.expect("// tail", .comment)
     }
 
-    static func javascriptFamily() {
+    @Test func javascriptFamily() {
         let js = SyntaxProbe("js", """
         import { a } from "./mod.js" // "quote in comment
         const re = /[/]+\\d{2}/gi, half = total / 2 / count;
@@ -199,7 +131,7 @@ struct NoteSyntaxCodeTests {
         tsx.expect("string", .type)
     }
 
-    static func python() {
+    @Test func python() {
         let probe = SyntaxProbe("python", """
         @dataclass(frozen=True)
         class Point:
@@ -237,7 +169,7 @@ struct NoteSyntaxCodeTests {
         probe.expectWellFormed()
     }
 
-    static func ruby() {
+    @Test func ruby() {
         let probe = SyntaxProbe("ruby", """
         # frozen_string_literal: true
         module Shop
@@ -288,7 +220,7 @@ struct NoteSyntaxCodeTests {
         probe.expectWellFormed()
     }
 
-    static func goAndRust() {
+    @Test func goAndRust() {
         let go = SyntaxProbe("go", """
         package main
         import "fmt"
@@ -339,7 +271,7 @@ struct NoteSyntaxCodeTests {
         rust.expectWellFormed()
     }
 
-    static func cFamily() {
+    @Test func cFamily() {
         let c = SyntaxProbe("c", """
         #include <stdio.h>
         #define MAX 10
@@ -432,7 +364,7 @@ struct NoteSyntaxCodeTests {
         objc.expectWellFormed()
     }
 
-    static func jvmFamily() {
+    @Test func jvmFamily() {
         let java = SyntaxProbe("java", """
         @Override
         public static final long ID = 42L;
@@ -495,7 +427,7 @@ struct NoteSyntaxCodeTests {
         scala.expectWellFormed()
     }
 
-    static func dartAndPHP() {
+    @Test func dartAndPHP() {
         let dart = SyntaxProbe("dart", """
         @override
         Widget build(BuildContext context) {
@@ -554,7 +486,7 @@ struct NoteSyntaxCodeTests {
         bare.expect("A", .type, 2)
     }
 
-    static func shells() {
+    @Test func shells() {
         let bash = SyntaxProbe("bash", """
         #!/usr/bin/env bash
         set -euo pipefail
@@ -629,7 +561,7 @@ struct NoteSyntaxCodeTests {
         powershell.expectWellFormed()
     }
 
-    static func scriptingFamily() {
+    @Test func scriptingFamily() {
         let lua = SyntaxProbe("lua", """
         --[==[ long
         comment ]==]
@@ -704,7 +636,7 @@ struct NoteSyntaxCodeTests {
         elixir.expectWellFormed()
     }
 
-    static func functionalFamily() {
+    @Test func functionalFamily() {
         let haskell = SyntaxProbe("haskell", """
         {-# LANGUAGE OverloadedStrings #-}
         module Main where
@@ -758,7 +690,7 @@ struct NoteSyntaxCodeTests {
         zig.expectWellFormed()
     }
 
-    static func queryFamily() {
+    @Test func queryFamily() {
         let sql = SyntaxProbe("sql", """
         -- top users
         SELECT u.name, COUNT(*) AS total FROM users u
@@ -805,5 +737,56 @@ struct NoteSyntaxCodeTests {
         graphql.expect("name", .property, 2)
         graphql.expect("ID", .type)
         graphql.expectWellFormed()
+    }
+
+    struct SyntaxProbe {
+        let language: String
+        let code: String
+        let tokens: [NoteSyntaxToken]
+
+        init(_ language: String, _ code: String) {
+            self.language = language
+            self.code = code
+            tokens = NoteSyntaxHighlighter.tokens(in: code, language: language)
+        }
+
+        func range(of fragment: String, occurrence: Int) -> Range<Int>? {
+            let text = code as NSString
+            var searchStart = 0
+            var found = NSRange(location: NSNotFound, length: 0)
+            for _ in 0..<occurrence {
+                found = text.range(of: fragment, options: [], range: NSRange(location: searchStart, length: text.length - searchStart))
+                if found.location == NSNotFound { return nil }
+                searchStart = found.location + max(1, found.length)
+            }
+            return found.location..<(found.location + found.length)
+        }
+
+        func kind(_ fragment: String, _ occurrence: Int = 1) -> NoteSyntaxKind? {
+            guard let target = range(of: fragment, occurrence: occurrence) else { return nil }
+            return tokens.first { $0.range.lowerBound <= target.lowerBound && $0.range.upperBound >= target.upperBound }?.kind
+        }
+
+        func expect(_ fragment: String, _ kind: NoteSyntaxKind?, _ occurrence: Int = 1) {
+            let actual = self.kind(fragment, occurrence)
+            if actual != kind {
+                let dump = tokens.map { token -> String in
+                    let piece = (code as NSString).substring(with: NSRange(location: token.range.lowerBound, length: token.range.count))
+                    return "\(token.kind.rawValue)=\(piece.debugDescription)"
+                }.joined(separator: " ")
+                Issue.record("[\(language)] \(fragment.debugDescription)#\(occurrence) expected \(kind?.rawValue ?? "none"), got \(actual?.rawValue ?? "none")\n\(dump)")
+            }
+        }
+
+        func expectWellFormed(file: StaticString = #file) {
+            let length = (code as NSString).length
+            var previous = 0
+            for token in tokens {
+                if token.range.lowerBound < previous || token.range.isEmpty || token.range.upperBound > length {
+                    Issue.record("[\(language)] malformed token \(token) after \(previous)")
+                }
+                previous = token.range.upperBound
+            }
+        }
     }
 }
