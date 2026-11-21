@@ -75,15 +75,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var started = false
     private var historyDeletionObserver: NSObjectProtocol?
     private var historySpotlight: HistorySpotlightIndexer?
-    private var terminationInProgress = false
+    private lazy var termination = ApplicationTermination(host: self)
+    private var terminationInProgress: Bool { termination.inProgress }
     private var applicationRestart: ApplicationRestart?
     private var restartCompletion: ((String?) -> Void)?
     private var pendingImportResume: BrowserImportRestartIntent?
     private weak var restartOwner: AnyObject?
     private var armedReplayRestart = false
-    private var quitWarning: ApplicationQuitWarning?
-    private var quitWarningApprovalPending = false
-    private var quitCommandPending = false
+    private var quitWarning: QuitWarningPrompt? { termination.quitWarning }
+    private var quitWarningApprovalPending: Bool { termination.approvalPending }
     private var privateWindowCreations: [UUID: PendingBrowserCreation<BrowserWindowController>] = [:]
     private let archiveScheduling = ArchiveScheduling()
     private var pendingURLs: [URL] = []
@@ -722,7 +722,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
-    private func resumeOnboardingAfterCancelledTermination() {
+    func resumeOnboardingAfterCancelledTermination() {
         if replayRestoreError != nil { presentReplayRestoreFailure() }
         else if !replayTransition.isClosing { onboarding?.resume() }
     }
@@ -1148,133 +1148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func requestApplicationTermination(_ sender: Any?) {
-        let fromQuitCommand = quitCommandPending
-        quitCommandPending = false
-        guard !terminationInProgress, !quitWarningApprovalPending else { return }
-        if replayTransition.deferTerminationWhileClosing({ [weak self] in
-            self?.quitCommandPending = fromQuitCommand
-            self?.requestApplicationTermination(sender)
-        }) { return }
-        guard started else {
-            (NSApp as? ParcApplication)?.finishApprovedTermination(sender)
-            return
-        }
-        if let quitWarning {
-            self.quitWarning = nil
-            quitWarning.cancel()
-            continueApplicationTermination(sender)
-            return
-        }
-        if fromQuitCommand, QuitWarningPreferences.shared.state.isEnabled, let owner = quitWarningOwner,
-           let parent = owner.window {
-            let warning = ApplicationQuitWarning(preferences: .shared)
-            warning.isCurrent = { [weak self, weak owner, weak parent, weak warning] in
-                guard let self, let owner, let parent, let warning,
-                      self.quitWarning === warning, self.started, !self.terminationInProgress,
-                      self.windows.contains(where: { $0 === owner }), owner.window === parent,
-                      owner.hasReadyPresentation,
-                      parent.attachedSheet == nil || parent.attachedSheet === warning.window else { return false }
-                return true
-            }
-            warning.onDecision = { [weak self, weak warning] approved in
-                guard let self, self.quitWarning === warning else { return }
-                self.quitWarning = nil
-                guard approved else {
-                    self.abandonApplicationTermination("Restart cancelled.")
-                    self.resumeOnboardingAfterCancelledTermination()
-                    return
-                }
-                self.quitWarningApprovalPending = true
-                DispatchQueue.main.async { [weak self] in self?.continueApplicationTermination(sender) }
-            }
-            quitWarning = warning
-            warning.present(in: parent)
-            return
-        }
-        continueApplicationTermination(sender)
-    }
-
-    private var quitWarningOwner: BrowserWindowController? {
-        let candidates = [NSApp.keyWindow, NSApp.mainWindow].compactMap { $0 } + NSApp.orderedWindows
-        for window in candidates {
-            if let owner = windows.first(where: { $0.window === window && $0.hasReadyPresentation }) {
-                return owner
-            }
-        }
-        return nil
-    }
-
-    private func continueApplicationTermination(_ sender: Any?) {
-        quitWarningApprovalPending = false
-        guard !terminationInProgress else { return }
-        if replayTransition.deferTerminationWhileClosing({ [weak self] in
-            self?.continueApplicationTermination(sender)
-        }) { return }
-        guard started else {
-            (NSApp as? ParcApplication)?.finishApprovedTermination(sender)
-            return
-        }
-        guard windows.allSatisfy({ $0.prepareNotesToClose() }) else {
-            abandonApplicationTermination("Restart cancelled. Your notes are still open.")
-            resumeOnboardingAfterCancelledTermination()
-            return
-        }
-        do { try NoteFileSession.flushAll() }
-        catch {
-            abandonApplicationTermination("Quit cancelled. A note could not be saved on this Mac.")
-            resumeOnboardingAfterCancelledTermination()
-            return
-        }
-        guard applicationSettings?.prepareForTermination() ?? true,
-              windows.allSatisfy({ $0.prepareSettingsForTermination() }) else {
-            abandonApplicationTermination("Quit cancelled. Air Traffic Control changes could not be saved.")
-            resumeOnboardingAfterCancelledTermination()
-            return
-        }
-        recordWindowSessions()
-        persistTabHistory()
-        let applicationSettingsWasVisible = applicationSettings?.window?.isVisible == true
-        terminationInProgress = true
-        windows.forEach { $0.prepareForApplicationClose() }
-        guard applicationSettings?.attemptClose() ?? true,
-              windows.allSatisfy({ $0.closePreparedSettingsForTermination() }) else {
-            terminationInProgress = false
-            if applicationSettingsWasVisible { applicationSettings?.restoreAfterCancelledOwnerClose() }
-            windows.forEach { $0.cancelApplicationClose() }
-            resumePendingAppKitRestorations()
-            finishInitialLaunchIfReady()
-            drainInitialActions()
-            abandonApplicationTermination("Quit cancelled. Settings could not be closed.")
-            resumeOnboardingAfterCancelledTermination()
-            return
-        }
-        if applicationRestart == nil { browserImport?.close(); onboarding?.closeBrowserImport() }
-        let pendingPrivate = Array(privateWindowCreations.values)
-        privateWindowCreations.removeAll()
-        pendingPrivate.forEach { $0.finish(.failure(BrowserScriptError.cancelled)) }
-        trace("command.quit")
-        saveSession()
-        PCBrowserEngine.requestTermination { [weak self] allowed in
-            guard let self else { return }
-            if allowed {
-                self.cancelPendingAppKitRestorations()
-                self.browserImport?.close(); self.onboarding?.closeBrowserImport()
-                self.restartCompletion = nil
-                if !self.armedReplayRestart { Self.removeReplayRestartDraft(in: self.store.directory) }
-                self.historySpotlight?.flush()
-                self.finishShutdown()
-                (NSApp as? ParcApplication)?.finishApprovedTermination(sender)
-            } else {
-                self.terminationInProgress = false
-                self.resumeOnboardingAfterCancelledTermination()
-                if applicationSettingsWasVisible { self.applicationSettings?.restoreAfterCancelledOwnerClose() }
-                self.windows.forEach { $0.cancelApplicationClose() }
-                self.resumePendingAppKitRestorations()
-                self.finishInitialLaunchIfReady()
-                self.drainInitialActions()
-                self.abandonApplicationTermination("Restart cancelled. Your browser is still open.")
-            }
-        }
+        termination.request(sender)
     }
 
     private func beginLaunchContinuity(root: URL) {
@@ -1300,8 +1174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             continuity.write(in: store.directory)
         }
         cancelPendingAppKitRestorations()
-        quitWarningApprovalPending = false
-        quitWarning?.cancel()
+        termination.shutDown()
         onboarding?.suspend()
         archiveScheduling.cancel()
         windows.forEach { $0.shutdownBrowsers() }
@@ -2653,9 +2526,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
     @objc private func quitMenu(_ sender: Any?) {
         DispatchQueue.main.async { [weak self] in
-            self?.quitCommandPending = true
+            self?.termination.quitCommandPending = true
             NSApp.terminate(sender)
-            self?.quitCommandPending = false
+            self?.termination.quitCommandPending = false
         }
     }
     @objc private func toggleStayOnTop(_ sender: NSMenuItem) {
@@ -3189,4 +3062,74 @@ extension AppDelegate: BrowserPrivateScriptFactory {
             BrowserScriptError.report(error); return nil
         }
     }
+}
+
+extension AppDelegate: ApplicationTerminationHost {
+    var terminationStarted: Bool { started }
+    var terminatingWindows: [TerminatingWindow] { windows }
+    var terminatingSettings: TerminatingSettings? { applicationSettings }
+
+    var quitWarningOwner: TerminatingWindow? {
+        let candidates = [NSApp.keyWindow, NSApp.mainWindow].compactMap { $0 } + NSApp.orderedWindows
+        for window in candidates {
+            if let owner = windows.first(where: { $0.window === window && $0.hasReadyPresentation }) {
+                return owner
+            }
+        }
+        return nil
+    }
+
+    var quitWarningEnabled: Bool { QuitWarningPreferences.shared.state.isEnabled }
+
+    func makeQuitWarning() -> QuitWarningPrompt { ApplicationQuitWarning(preferences: .shared) }
+
+    func afterQuitWarningApproval(_ work: @escaping @Sendable @MainActor () -> Void) {
+        DispatchQueue.main.async { work() }
+    }
+
+    func deferTerminationWhileClosing(_ resume: @escaping () -> Void) -> Bool {
+        replayTransition.deferTerminationWhileClosing(resume)
+    }
+
+    func finishApprovedTermination(_ sender: Any?) {
+        (NSApp as? ParcApplication)?.finishApprovedTermination(sender)
+    }
+
+    func flushNotesForTermination() throws { try NoteFileSession.flushAll() }
+
+    func recordStateForTermination() {
+        recordWindowSessions()
+        persistTabHistory()
+    }
+
+    func closeForTermination() {
+        if applicationRestart == nil { browserImport?.close(); onboarding?.closeBrowserImport() }
+        let pendingPrivate = Array(privateWindowCreations.values)
+        privateWindowCreations.removeAll()
+        pendingPrivate.forEach { $0.finish(.failure(BrowserScriptError.cancelled)) }
+        trace("command.quit")
+        saveSession()
+    }
+
+    func requestEngineTermination(_ completion: @escaping (Bool) -> Void) {
+        PCBrowserEngine.requestTermination(completion: completion)
+    }
+
+    func completeTermination(_ sender: Any?) {
+        cancelPendingAppKitRestorations()
+        browserImport?.close(); onboarding?.closeBrowserImport()
+        restartCompletion = nil
+        if !armedReplayRestart { Self.removeReplayRestartDraft(in: store.directory) }
+        historySpotlight?.flush()
+        finishShutdown()
+        (NSApp as? ParcApplication)?.finishApprovedTermination(sender)
+    }
+
+    func resumeAfterRefusedTermination() {
+        resumePendingAppKitRestorations()
+        finishInitialLaunchIfReady()
+        drainInitialActions()
+    }
+
+    func abandonTermination(_ message: String) { abandonApplicationTermination(message) }
 }
