@@ -31,7 +31,7 @@ A pending request holds the parent page (none for the window route), archive
 lease and one-shot token, and keeps any second Peek out. A missing callback
 releases the reservation after two seconds. Adoption rechecks the window,
 Profile, backdrop and archive lease before accepting the new page; a refused or
-late page is closed. `tests/ParcCoreTests/Data/Archive/PeekBackdropTests.swift` covers each backdrop's route and that
+late page is closed. `tests/ParcCoreTests/Windows/PeekBackdropTests.swift` covers each backdrop's route and that
 the window then shows the preview.
 
 The preview is admitted only for a single HTTP(S) web item. Notes, Easels,
