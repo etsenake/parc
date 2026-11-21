@@ -874,7 +874,7 @@ extension EaselCanvasView {
         guard !selected.isEmpty, selected.allSatisfy({ $0.kind == .arrow }) else { return nil }
         switch control {
         case .connectorLabel: return selected.count == 1 && editor == nil
-        case .connectorStyle, .startHead, .endHead, .routing: return editor == nil
+        case .startHead, .endHead, .routing: return editor == nil
         default: return nil
         }
     }
@@ -887,8 +887,6 @@ extension EaselCanvasView {
             let empty = selected.first?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
             return .init(control: control, face: .symbol("text.bubble"), name: empty ? "Add a label" : "Edit label", shortcut: "↩",
                          isEnabled: unlocked)
-        case .connectorStyle:
-            return .init(control: control, face: .symbol("lineweight"), name: "Line style", isEnabled: unlocked, opens: .menu, showsDisclosure: true)
         case .startHead:
             return .init(control: control, face: .symbol("arrow.left"), name: "Start", isEnabled: unlocked, opens: .menu, showsDisclosure: true)
         case .endHead:
@@ -911,17 +909,6 @@ extension EaselCanvasView {
         let chosen = connectorSelection
         guard !chosen.isEmpty else { return nil }
         switch control {
-        case .connectorStyle:
-            let weights = chosen.map { EaselStyleFamily.lines.weight(forWidth: EaselPaintRules.strokeWidth($0)) }
-            let background = chosen.allSatisfy { $0.labelBackground == true }
-            return EaselStyleFamily.lines.weights.map { weight in
-                EaselToolbarMenuEntry(id: weight.rawValue, title: weight.title, isChecked: weights.allSatisfy { $0 == weight })
-            } + [
-                EaselToolbarMenuEntry(id: "solid", title: "Solid", isChecked: chosen.allSatisfy { ($0.strokeDash ?? .solid) == .solid }, separatorBefore: true),
-                EaselToolbarMenuEntry(id: "dashed", title: "Dashed", isChecked: chosen.allSatisfy { $0.strokeDash == .dashed }),
-                EaselToolbarMenuEntry(id: "dotted", title: "Dotted", isChecked: chosen.allSatisfy { $0.strokeDash == .dotted }),
-                EaselToolbarMenuEntry(id: "background", title: "Label Background", isChecked: background, separatorBefore: true),
-            ]
         case .startHead, .endHead:
             let start = control == .startHead
             var entries: [EaselToolbarMenuEntry] = []
@@ -957,15 +944,6 @@ extension EaselCanvasView {
 
     func performConnectorToolbarMenu(_ control: EaselToolbarControl, entry id: String) -> Bool? {
         switch control {
-        case .connectorStyle:
-            if let weight = EaselStrokeWeight(rawValue: id) { return applyStrokeWeight(weight) }
-            switch id {
-            case "solid": return applyStrokeDash(.solid)
-            case "dashed": return applyStrokeDash(.dashed)
-            case "dotted": return applyStrokeDash(.dotted)
-            case "background": return setConnectorLabelBackground(!connectorSelection.allSatisfy { $0.labelBackground == true })
-            default: return false
-            }
         case .startHead, .endHead:
             if id == "swap" { return swapArrowHeads() }
             guard let head = EaselArrowHead(rawValue: id) else { return false }

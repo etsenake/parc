@@ -18,14 +18,21 @@ enum EaselToolbarSubject: String, CaseIterable, Equatable {
         case .stamp: self = .stamp
         }
     }
+
+    var takesStyle: Bool {
+        switch self {
+        case .text, .sticky, .shape, .connector, .section, .drawing: return true
+        case .image, .page, .table, .code, .stamp: return false
+        }
+    }
 }
 
 enum EaselToolbarControl: String, CaseIterable, Hashable {
     case unlock, sectionTitle, shape, connectorLabel
     case typeface, textSize, smaller, larger
     case bold, italic, underline, strikethrough, paragraph
-    case color, textFill, outline, connectorStyle, startHead, endHead, routing
-    case stickyShape, brushWidth, pattern
+    case color, textFill, startHead, endHead, routing
+    case stickyShape, pattern
     case crop, imageMask, replaceImage, altText
     case mergeCells, cellFill
     case codeLanguage
@@ -45,7 +52,10 @@ enum EaselSelectionToolbarPlan {
             groups = controls(for: first, editingText: editingText && subjects.count == 1)
         } else {
             let sets = distinct.map { Set(controls(for: $0, editingText: false).joined()) }
-            let shared = EaselToolbarControl.allCases.filter { control in sets.allSatisfy { $0.contains(control) } }
+            let styled = distinct.contains { $0.takesStyle }
+            let shared = EaselToolbarControl.allCases.filter { control in
+                control == .color ? styled : sets.allSatisfy { $0.contains(control) }
+            }
             groups = [shared]
         }
         if subjects.count > 1 { groups += [[.arrange, .tidyUp], [.group, .createSection, .lock]] }
@@ -53,34 +63,44 @@ enum EaselSelectionToolbarPlan {
         return groups.filter { !$0.isEmpty }
     }
 
+    private static let emphasis: [EaselToolbarControl] = [.bold, .italic, .underline, .strikethrough]
+
     static func controls(for subject: EaselToolbarSubject, editingText: Bool) -> [[EaselToolbarControl]] {
         switch subject {
         case .text:
             return editingText
-                ? [[.typeface, .textSize, .smaller, .larger], [.bold, .italic, .underline, .strikethrough], [.paragraph],
-                   [.color, .textFill], [.alignment], [.link]]
+                ? [[.typeface, .textSize, .smaller, .larger], emphasis, [.paragraph], [.color, .textFill], [.alignment], [.link]]
                 : [[.typeface, .textSize, .smaller, .larger], [.color, .textFill], [.alignment], [.link]]
         case .sticky:
-            return [[.color], [.textSize, .bold, .paragraph], [.link], [.stickyShape]]
+            return editingText
+                ? [[.color], emphasis, [.paragraph], [.alignment], [.link]]
+                : [[.color], [.alignment], [.link], [.stickyShape]]
         case .shape:
-            return [[.shape], [.color, .outline], [.typeface, .textSize, .bold, .paragraph], [.alignment], [.link]]
+            return editingText
+                ? [[.color], emphasis, [.paragraph], [.alignment], [.link]]
+                : [[.shape], [.color], [.alignment], [.link]]
         case .connector:
-            return [[.connectorLabel], [.color, .connectorStyle], [.startHead, .endHead], [.routing]]
+            return editingText ? [[.bold, .strikethrough]] : [[.connectorLabel], [.color], [.startHead, .endHead], [.routing]]
         case .section:
             return [[.sectionTitle], [.color]]
         case .image:
             return [[.crop, .imageMask, .replaceImage, .altText]]
         case .drawing:
-            return [[.color, .brushWidth, .pattern]]
+            return [[.color, .pattern]]
         case .page, .stamp:
             return []
         case .table:
             return editingText
-                ? [[.typeface, .textSize], [.bold, .italic, .underline, .strikethrough], [.paragraph], [.color], [.alignment], [.link]]
+                ? [[.typeface, .textSize], emphasis, [.paragraph], [.color], [.alignment], [.link]]
                 : [[.typeface, .textSize], [.bold, .strikethrough], [.color, .cellFill], [.alignment], [.mergeCells]]
         case .code:
             return [[.codeLanguage]]
         }
+    }
+
+    static func unlocksGroup(_ items: [EaselItem]) -> Bool {
+        guard items.count > 1, let group = items.first?.groupID else { return false }
+        return items.allSatisfy { $0.groupID == group }
     }
 
     static func available(_ groups: [[EaselToolbarControl]], where supported: (EaselToolbarControl) -> Bool) -> [[EaselToolbarControl]] {

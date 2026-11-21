@@ -23,10 +23,12 @@ final class EaselShapePickerView: NSView, NoteFloatingPanelContent {
     private var footerRect = NSRect.zero
     private(set) var highlighted: EaselShapeCatalog.Slot?
     private var highlightFromPointer = false
+    private let showsPin: Bool
 
-    init(checked: Set<EaselShape> = [], pinned: Bool = false) {
+    init(checked: Set<EaselShape> = [], pinned: Bool = false, showsPin: Bool = true) {
         self.checked = checked
         isPinned = pinned
+        self.showsPin = showsPin
         super.init(frame: .zero)
         wantsLayer = true
         plate.cornerRadius = NoteTheme.menuHighlightRadius + 2
@@ -38,7 +40,7 @@ final class EaselShapePickerView: NSView, NoteFloatingPanelContent {
         setAccessibilityLabel("Shapes")
         pin.target = self; pin.action = #selector(togglePin)
         pin.setButtonType(.pushOnPushOff); pin.imagePosition = .imageOnly
-        addSubview(pin)
+        if showsPin { addSubview(pin) }
         build()
         refreshPin()
     }
@@ -201,7 +203,7 @@ final class EaselShapePickerView: NSView, NoteFloatingPanelContent {
 
     override func accessibilityChildren() -> [Any]? {
         var children: [Any] = cells.joined().map { $0 }
-        children.append(pin)
+        if showsPin { children.append(pin) }
         return children
     }
 

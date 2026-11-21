@@ -77,7 +77,7 @@ extension EaselCanvasView {
             }
             return alignments + spacings
         case .unlock:
-            let group = Set(session.document.items.filter { ids.contains($0.id) }.compactMap(\.groupID)).count == 1 && ids.count > 1
+            let group = EaselSelectionToolbarPlan.unlocksGroup(session.document.items.filter { ids.contains($0.id) })
             return [EaselToolbarMenuEntry(id: "unlock", title: group ? "Unlock Group" : "Unlock", symbol: "lock.open", shortcut: "⇧⌘L",
                                           isEnabled: ready)]
         case .more:
@@ -106,8 +106,20 @@ extension EaselCanvasView {
             entries.append(EaselToolbarMenuEntry(id: "layer." + move.rawValue, title: move.title, symbol: move.symbol, shortcut: move.shortcut,
                                                  isEnabled: layers, separatorBefore: index == 0 && !entries.isEmpty))
         }
+        let flips = ready && EaselRotation.canFlip(selected), turns = ready && EaselRotation.canRotate(selected)
+        if EaselRotation.canFlip(selected) || EaselRotation.canRotate(selected) {
+            entries.append(EaselToolbarMenuEntry(id: "flip.horizontal", title: "Flip Horizontal",
+                                                 symbol: "arrow.left.and.right.righttriangle.left.righttriangle.right", shortcut: "⇧H",
+                                                 isEnabled: flips, separatorBefore: true))
+            entries.append(EaselToolbarMenuEntry(id: "flip.vertical", title: "Flip Vertical",
+                                                 symbol: "arrow.up.and.down.righttriangle.up.righttriangle.down", shortcut: "⇧V",
+                                                 isEnabled: flips))
+            entries.append(EaselToolbarMenuEntry(id: "rotate.left", title: "Rotate 90° Left", symbol: "rotate.left", isEnabled: turns))
+            entries.append(EaselToolbarMenuEntry(id: "rotate.right", title: "Rotate 90° Right", symbol: "rotate.right", isEnabled: turns))
+        }
         entries.append(EaselToolbarMenuEntry(id: "duplicate", title: "Duplicate", symbol: "plus.square.on.square", shortcut: "⌘D",
                                              isEnabled: ready && !allLocked, separatorBefore: true))
+        entries.append(EaselToolbarMenuEntry(id: "copy-image", title: "Copy as Image", symbol: "photo.on.rectangle", isEnabled: ready))
         if selected.count == 1, !allLocked {
             entries.append(EaselToolbarMenuEntry(id: "lock", title: "Lock", symbol: "lock", shortcut: "⇧⌘L", isEnabled: ready))
         }
@@ -177,6 +189,11 @@ extension EaselCanvasView {
         if id.hasPrefix("layer."), let move = EaselLayerMove(rawValue: String(id.dropFirst("layer.".count))) { return moveLayer(move) }
         switch id {
         case "duplicate": return duplicateSelection()
+        case "copy-image": return copySelectionAsImage()
+        case "flip.horizontal": return flipSelection(horizontal: true)
+        case "flip.vertical": return flipSelection(horizontal: false)
+        case "rotate.left": return rotateSelection(by: -90)
+        case "rotate.right": return rotateSelection(by: 90)
         case "lock": return toggleLock()
         case "delete":
             deleteObjects(nil)

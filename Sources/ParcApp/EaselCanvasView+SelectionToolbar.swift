@@ -18,7 +18,7 @@ struct EaselToolbarButtonModel: Equatable {
         case symbolAndText(String, String)
     }
     enum Mark: Equatable { case none, italic, underline, strikethrough }
-    enum Opens: Equatable { case nothing, menu }
+    enum Opens: Equatable { case nothing, menu, stylePicker, shapePicker }
 
     var control: EaselToolbarControl
     var face: Face
@@ -31,6 +31,7 @@ struct EaselToolbarButtonModel: Equatable {
     var showsDisclosure = false
     var mark: Mark = .none
     var tint: NSColor?
+    var value: String?
 }
 
 struct EaselToolbarMenuEntry: Equatable {
@@ -105,9 +106,9 @@ extension EaselCanvasView {
         let textOnly = selected.allSatisfy { $0.kind.holdsText }
         switch control {
         case .typeface, .textSize, .smaller, .larger, .textFill: return textOnly
-        case .bold, .italic, .underline, .strikethrough, .paragraph: return textOnly && editor != nil
+        case .bold, .italic, .underline, .strikethrough, .paragraph: return editor != nil && selected.count == 1
         case .link:
-            if editor != nil { return textOnly }
+            if editor != nil { return selected.count == 1 && !editingLabel }
             return selected.count == 1 && selected.allSatisfy { EaselObjectLink.canLink($0) && !$0.isLocked }
         case .more: return true
         case .codeLanguage: return selected.allSatisfy { $0.kind == .code } && selected.contains { !$0.isLocked }

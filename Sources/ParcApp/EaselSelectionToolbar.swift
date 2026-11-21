@@ -23,7 +23,7 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
     private var viewportObservers: [NSObjectProtocol] = []
     private var responderObservation: NSKeyValueObservation?
     private var content: EaselSelectionToolbarContent?
-    private var menu: (control: EaselToolbarControl, popover: NotePagePopover)?
+    private var menu: (control: EaselToolbarControl, popover: NotePagePopover, keys: (NSEvent) -> Bool, isList: Bool)?
     private var refreshing = false
 
     init() {
@@ -199,8 +199,29 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
         }
         switch model.opens {
         case .menu: openMenu(model.control, from: button, origin: origin)
+        case .stylePicker: openStylePicker(model.control, from: button, origin: origin)
+        case .shapePicker: openShapePicker(model.control, from: button, origin: origin)
         case .nothing: canvas.performSelectionToolbar(model.control, anchor: button)
         }
+    }
+
+    private func openStylePicker(_ control: EaselToolbarControl, from button: NoteToolbarButton, origin: NoteMenuList.Origin) {
+        guard let picker = canvas?.makeStylePicker() else { return }
+        picker.onCancel = { [weak self] in self?.closeMenu(animated: true) }
+        picker.prepare(origin: origin)
+        present(picker, control: control, from: button, isList: false) { [weak picker] event in picker?.handleKeyDown(event) ?? false }
+    }
+
+    private func openShapePicker(_ control: EaselToolbarControl, from button: NoteToolbarButton, origin: NoteMenuList.Origin) {
+        guard let picker = canvas?.makeSelectionToolbarShapePicker() else { return }
+        let pick = picker.onPick
+        picker.onPick = { [weak self] shape in
+            self?.closeMenu(animated: true)
+            pick?(shape)
+        }
+        picker.onCancel = { [weak self] in self?.closeMenu(animated: true) }
+        picker.prepare(origin: origin)
+        present(picker, control: control, from: button, isList: false) { [weak picker] event in picker?.handleKeyDown(event) ?? false }
     }
 
     private func openMenu(_ control: EaselToolbarControl, from button: NoteToolbarButton, origin: NoteMenuList.Origin) {
@@ -216,24 +237,29 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
         })
         list.minimumWidth = 180
         list.prepare(origin: origin)
-        let popover = NotePagePopover(content: list)
-        popover.exempt(button)
         list.onActivate = { [weak self, weak canvas] item in
             guard let self else { return }
             self.closeMenu(animated: true)
             canvas?.performSelectionToolbarMenu(control, entry: item.id)
         }
         list.onCancel = { [weak self] in self?.closeMenu(animated: true) }
-        popover.onKeyDown = { [weak list] event in list?.handleKeyDown(event) ?? false }
+        present(list, control: control, from: button, isList: true) { [weak list] event in list?.handleKeyDown(event) ?? false }
+        if origin == .keyboard { list.moveHighlight(by: 1) }
+    }
+
+    private func present(_ content: NSView, control: EaselToolbarControl, from button: NoteToolbarButton, isList: Bool,
+                         keys: @escaping (NSEvent) -> Bool) {
+        let popover = NotePagePopover(content: content)
+        popover.exempt(button)
+        popover.onKeyDown = keys
         popover.onClose = { [weak self, weak popover] in
             guard let self, let popover, self.menu?.popover === popover else { return }
             self.menu = nil
             self.bar.openControl = nil
         }
-        menu = (control, popover)
+        menu = (control, popover, keys, isList)
         bar.openControl = control
         popover.present(in: host, anchor: host.convert(button.bounds, from: button), edge: .below, alignment: .leading)
-        if origin == .keyboard { list.moveHighlight(by: 1) }
     }
 
     private func closeMenu(animated: Bool) {
@@ -245,9 +271,9 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
 
     private func menuKey(_ event: NSEvent) -> Bool {
         guard let menu else { return false }
-        if event.keyCode == 123 || event.keyCode == 124 { closeMenu(animated: true); return false }
+        if menu.isList, event.keyCode == 123 || event.keyCode == 124 { closeMenu(animated: true); return false }
         if event.keyCode == 53 { closeMenu(animated: true); return true }
-        return (menu.popover.panel.contentView as? NoteMenuList)?.handleKeyDown(event) ?? false
+        return menu.keys(event)
     }
 
     private func exitKeyboard() {
@@ -369,6 +395,7 @@ final class EaselSelectionToolbarView: NSView, NoteFloatingPanelContent {
             if case .symbol(let symbol) = model.face, button.content != .icon(.symbol(symbol)) { button.content = .icon(.symbol(symbol)) }
             if button.iconTint != model.tint { button.iconTint = model.tint }
             button.isEnabled = model.isEnabled
+            if old?.value != model.value || old == nil { button.setAccessibilityValue(model.value) }
             guard old?.name != model.name || old?.shortcut != model.shortcut || old?.commandID != model.commandID || old?.face != model.face else { continue }
             button.setAccessibilityLabel(Self.accessibilityLabel(model))
             button.setToolTip(model.name, shortcut: model.shortcut, commandID: model.commandID, anchor: tooltipAnchor)

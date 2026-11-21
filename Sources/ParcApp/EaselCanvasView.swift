@@ -419,8 +419,15 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     override func accessibilityChildren() -> [Any]? {
         synchronizeAccessibleObjects()
-        var result: [Any] = items.compactMap { accessibleObjects[$0.id] }
-        if let toolbar = selectionToolbar?.accessibilityToolbar { result.append(toolbar) }
+        let toolbar = selectionToolbar?.accessibilityToolbar
+        let lastSelected = toolbar == nil ? nil : items.last { selection.contains($0.id) && accessibleObjects[$0.id] != nil }?.id
+        var result: [Any] = []
+        for item in items {
+            guard let node = accessibleObjects[item.id] else { continue }
+            result.append(node)
+            if item.id == lastSelected, let toolbar { result.append(toolbar) }
+        }
+        if lastSelected == nil, let toolbar { result.append(toolbar) }
         if let snapshotHeader { result.append(snapshotHeader) }
         result.append(contentsOf: accessibleManipulationControls())
         return result

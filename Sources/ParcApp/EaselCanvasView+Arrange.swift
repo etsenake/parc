@@ -196,7 +196,9 @@ extension EaselCanvasView {
             return claim(applies) { ungroupSelection() }
         case .toggleLock: return claim(applies) { toggleLock() }
         case .layer(let move): return claim(applies) { moveLayer(move) }
-        case .alignText(let alignment): return alignText(alignment, editing: textEditorOwnsKeyFocus)
+        case .alignText(let alignment):
+            if isEditingTableCell || (editor == nil && selectedTable != nil) { return setTableCellsAlignment(Self.textAlignment(alignment)) }
+            return alignText(alignment, editing: textEditorOwnsKeyFocus)
         case .quickCreate: return performQuickCreate()
         case .focusSelectionToolbar: return selectionToolbar?.focusFromKeyboard() == true
         }
