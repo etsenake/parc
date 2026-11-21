@@ -106,7 +106,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     private var pointerMonitor: Any?
     private var alignmentMenu: NoteFloatingPanel?
     private let quickActions = EaselQuickActions()
-    private var imagePanel: NSOpenPanel?
 
     override init(block: NoteBlock, editor: NotePageEditor?) {
         super.init(block: block, editor: editor)
@@ -343,8 +342,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         pointerMonitor = nil
         guard surface.active else { return }
         quickActions.close()
-        if let imagePanel, let window, window.attachedSheet === imagePanel { window.endSheet(imagePanel, returnCode: .cancel) }
-        imagePanel = nil
         surface.canvas?.tool = .select
         surface.active = false
         surface.canvas?.onImageEditingCancel = nil
@@ -361,10 +358,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     private func toggleQuickActions() {
         guard surface.active, !surface.viewOnly, canEdit, let canvas = surface.canvas, let window, window.attachedSheet == nil,
               !canvas.session.isClosed, !canvas.session.isDeleted else { return }
-        var inserts: [EaselQuickActions.Action] = [
-            .init(id: "insert-image", title: EaselToolPalette.title(for: .image), icon: EaselToolPalette.icon(for: .image), shortcut: nil,
-                  keywords: ["picture", "photo", "file"], section: "Add") { [weak self] in self?.chooseImages() },
-        ]
+        var inserts = EaselQuickActions.catalogInserts(canvas: canvas) { [weak self] in self?.focusCanvas() }
         if canvas.acceptsMermaid {
             inserts.append(.init(id: "insert-mermaid", title: EaselToolPalette.title(for: .mermaid), icon: EaselToolPalette.icon(for: .mermaid),
                                  shortcut: nil, keywords: ["flowchart", "diagram", "chart", "er"], section: "Add") { [weak canvas] in
@@ -382,23 +376,6 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     private func focusCanvas() {
         guard surface.active, let canvas = surface.canvas, let window = canvas.window else { return }
         window.makeFirstResponder(canvas)
-    }
-
-    private func chooseImages() {
-        guard surface.active, canEdit, let window, window.attachedSheet == nil else { return }
-        let chooser = NSOpenPanel()
-        chooser.allowedContentTypes = [.image]
-        chooser.allowsMultipleSelection = true
-        imagePanel = chooser
-        chooser.beginSheetModal(for: window) { [weak self, weak chooser] response in
-            MainActor.assumeIsolated {
-                guard let self, let chooser, self.imagePanel === chooser else { return }
-                self.imagePanel = nil
-                guard response == .OK, self.surface.active, self.canEdit, let canvas = self.surface.canvas else { return }
-                do { try canvas.importMediaFiles(chooser.urls) } catch { self.editor?.onError?(error) }
-                self.focusCanvas()
-            }
-        }
     }
 
     private func resizeHeight(by delta: CGFloat, commit: Bool) {
