@@ -5,14 +5,14 @@ import Testing
 struct SplitDropIntentTests {
     typealias Zone = SplitDropIntent.Zone
     typealias Place = SplitDropIntent.Place
-    static let leftEdge = Zone(target: .insert(0), orientation: .horizontal)
-    static let leftCentre = Zone(target: .replace(0), orientation: .horizontal)
-    static let between = Zone(target: .insert(1), orientation: .horizontal)
-    static let rightCentre = Zone(target: .replace(1), orientation: .horizontal)
-    static let rightEdge = Zone(target: .insert(2), orientation: .horizontal)
-    static let seat = Zone(target: .stack(1, after: true), orientation: .horizontal)
+    private static let leftEdge = Zone(target: .insert(0), orientation: .horizontal)
+    private static let leftCentre = Zone(target: .replace(0), orientation: .horizontal)
+    private static let between = Zone(target: .insert(1), orientation: .horizontal)
+    private static let rightCentre = Zone(target: .replace(1), orientation: .horizontal)
+    private static let rightEdge = Zone(target: .insert(2), orientation: .horizontal)
+    private static let seat = Zone(target: .stack(1, after: true), orientation: .horizontal)
 
-    static func place(x: Double, y: Double) -> Place {
+    private static func place(x: Double, y: Double) -> Place {
         if x >= 700 && x < 710 { return .preview }
         let pane = x < 700 ? 0.0 : 710.0
         let local = x - pane
@@ -22,7 +22,7 @@ struct SplitDropIntentTests {
         return .pane(pane == 0 ? leftCentre : rightCentre)
     }
 
-    struct Pointer {
+    private struct Pointer {
         var intent = SplitDropIntent()
         var time: TimeInterval = 10
         var x: Double
@@ -53,191 +53,372 @@ struct SplitDropIntentTests {
         var appearances: [Zone] { steps.compactMap { $0.step.appeared ? $0.step.shown : nil } }
     }
 
-    @Test static func fastTraversalOpensNothing() {
+    @Test func aFastSweepFromTheSidebarOverEdgeCentreBoundaryAndGapOpensNothing() {
         var pointer = Pointer(x: 0, y: 300)
         pointer.sample()
         pointer.glide(toX: 1100, y: 690, speed: 1500)
-        #expect(pointer.steps.allSatisfy { !$0.step.changed } && pointer.shown == nil,
-               "a fast sweep from the sidebar over the left edge, a centre, the boundary and a gap opens nothing")
+        #expect(pointer.steps.allSatisfy { !$0.step.changed })
+        #expect(pointer.shown == nil)
+    }
+
+    @Test func crossingAWidePaneCentreAtABriskSpeedTakesFarLongerThanTheDwellAndOpensNothing() {
         var wide = Pointer(x: 90, y: 300)
         wide.sample()
         wide.glide(toX: 610, y: 300, speed: 600)
-        #expect(wide.time - 10 > 0.12 * 5 && wide.shown == nil && wide.steps.allSatisfy { !$0.step.changed },
-               "crossing a wide pane centre at a brisk 600 points a second takes far longer than the dwell and still opens nothing")
-        var single = Pointer(x: 0, y: 300)
-        single.sample(.pane(leftEdge))
-        for _ in 0..<60 {
-            single.time += 0.008; single.x += 12
-            single.sample(.pane(single.x < 480 ? leftEdge : single.x < 720 ? leftCentre : rightEdge))
-        }
-        #expect(single.shown == nil && single.appearances.isEmpty,
-               "sweeping across a single page's wide side band at 1500 points a second opens nothing")
+        #expect(wide.time - 10 > 0.12 * 5)
+        #expect(wide.shown == nil)
+        #expect(wide.steps.allSatisfy { !$0.step.changed })
     }
 
-    @Test static func slowdownOpensAtOnce() {
+    @Test func sweepingAcrossASinglePagesWideSideBandOpensNothing() {
+        var single = Pointer(x: 0, y: 300)
+        single.sample(.pane(Self.leftEdge))
+        for _ in 0..<60 {
+            single.time += 0.008
+            single.x += 12
+            single.sample(.pane(single.x < 480 ? Self.leftEdge : single.x < 720 ? Self.leftCentre : Self.rightEdge))
+        }
+        #expect(single.shown == nil)
+        #expect(single.appearances.isEmpty)
+    }
+
+    private static func arrivedAtTheSeat() -> (pointer: Pointer, entry: TimeInterval) {
         var pointer = Pointer(x: 900, y: 300)
         pointer.sample()
         pointer.glide(toX: 1000, y: 660, speed: 1500)
-        let entry = pointer.steps.first { $0.place == .pane(seat) }?.time ?? .infinity
-        #expect(pointer.shown == nil && entry <= pointer.time, "arriving fast leaves the seat closed")
-        pointer.glide(toX: 1010, y: 670, speed: 100)
-        let opened = pointer.steps.first { $0.step.appeared }
-        #expect(opened?.step.shown == seat, "slowing below the settle speed opens the seat")
-        #expect((opened?.time ?? .infinity) - entry < 0.12, "the slowdown opens it before the dwell would")
+        return (pointer, pointer.steps.first { $0.place == .pane(seat) }?.time ?? .infinity)
+    }
+
+    @Test func arrivingFastLeavesTheSeatClosed() {
+        let a = Self.arrivedAtTheSeat()
+        #expect(a.pointer.shown == nil)
+        #expect(a.entry <= a.pointer.time)
+    }
+
+    @Test func slowingBelowTheSettleSpeedOpensTheSeat() {
+        var a = Self.arrivedAtTheSeat()
+        a.pointer.glide(toX: 1010, y: 670, speed: 100)
+        #expect(a.pointer.steps.first { $0.step.appeared }?.step.shown == Self.seat)
+    }
+
+    @Test func theSlowdownOpensTheSeatBeforeTheDwellWould() {
+        var a = Self.arrivedAtTheSeat()
+        a.pointer.glide(toX: 1010, y: 670, speed: 100)
+        let opened = a.pointer.steps.first { $0.step.appeared }
+        #expect((opened?.time ?? .infinity) - a.entry < 0.12)
+    }
+
+    @Test func alreadyMovingSlowlyTheCentreRingAppearsOnceItsSpeedIsKnown() {
         var aimed = Pointer(x: 300, y: 300)
         aimed.sample()
         aimed.glide(toX: 640, y: 300, speed: 120)
-        #expect(aimed.appearances.first == leftCentre, "already moving slowly, the centre ring appears once its speed is known")
-        let band = aimed.steps.firstIndex { $0.place == .pane(between) }
-        #expect(band.map { aimed.steps[$0].step.appeared && aimed.steps[$0].step.shown == between } == true,
-               "easing slowly from the centre into the boundary band opens it on its first sample there")
+        #expect(aimed.appearances.first == Self.leftCentre)
     }
 
-    @Test static func dwellOpens() {
+    @Test func easingSlowlyFromTheCentreIntoTheBoundaryOpensItOnItsFirstSampleThere() {
+        var aimed = Pointer(x: 300, y: 300)
+        aimed.sample()
+        aimed.glide(toX: 640, y: 300, speed: 120)
+        let band = aimed.steps.firstIndex { $0.place == .pane(Self.between) }
+        #expect(band.map { aimed.steps[$0].step.appeared && aimed.steps[$0].step.shown == Self.between } == true)
+    }
+
+    private static func lingering() -> Pointer {
         var pointer = Pointer(x: 300, y: 300)
         pointer.sample()
         pointer.glide(toX: 400, y: 300, speed: 350)
-        let entry = 10.0
-        #expect(pointer.steps.filter { $0.time - entry < 0.12 }.allSatisfy { $0.step.shown == nil },
-               "350 points a second is above the settle speed, so the ring waits out the dwell")
-        let opened = pointer.steps.first { $0.step.appeared }
-        #expect(opened?.step.shown == leftCentre, "lingering at a moderate speed opens the zone after the dwell")
-        #expect((opened?.time ?? 0) - entry >= 0.12 && (opened?.time ?? .infinity) - entry < 0.12 + 0.009,
-               "the dwell opens it within one sample of 120 ms")
+        return pointer
     }
 
-    @Test static func stoppingOpensAtTheDeadline() {
+    @Test func aSpeedAboveTheSettleSpeedMakesTheRingWaitOutTheDwell() {
+        let pointer = Self.lingering()
+        #expect(pointer.steps.filter { $0.time - 10 < 0.12 }.allSatisfy { $0.step.shown == nil })
+    }
+
+    @Test func lingeringAtAModerateSpeedOpensTheZoneAfterTheDwell() {
+        #expect(Self.lingering().steps.first { $0.step.appeared }?.step.shown == Self.leftCentre)
+    }
+
+    @Test func theDwellOpensItWithinOneSampleOfOneTwentyMilliseconds() {
+        let opened = Self.lingering().steps.first { $0.step.appeared }
+        #expect((opened?.time ?? 0) - 10 >= 0.12)
+        #expect((opened?.time ?? .infinity) - 10 < 0.12 + 0.009)
+    }
+
+    private static func pendingAtTheSeat() -> Pointer {
         var pointer = Pointer(x: 900, y: 300)
         pointer.sample()
         pointer.glide(toX: 1000, y: 680, speed: 1500)
-        #expect(pointer.shown == nil && pointer.intent.isPending, "the seat is pending while the pointer is still moving fast")
-        let deadline = pointer.intent.deadline
-        #expect(deadline == pointer.time + 0.05, "a pointer that stops is judged settled one window after its last movement")
-        pointer.time = deadline ?? pointer.time
-        pointer.sample()
-        #expect(pointer.shown == seat && pointer.steps.last?.step.appeared == true, "the timer's sample at the deadline opens the seat")
-        #expect(pointer.intent.deadline == nil, "nothing pending leaves no deadline")
+        return pointer
     }
 
-    @Test static func openToOpenTransition() {
+    @Test func theSeatIsPendingWhileThePointerStillMovesFast() {
+        let pointer = Self.pendingAtTheSeat()
+        #expect(pointer.shown == nil)
+        #expect(pointer.intent.isPending)
+    }
+
+    @Test func aPointerThatStopsIsJudgedSettledOneWindowAfterItsLastMovement() {
+        let pointer = Self.pendingAtTheSeat()
+        #expect(pointer.intent.deadline == pointer.time + 0.05)
+    }
+
+    @Test func theTimersSampleAtTheDeadlineOpensTheSeat() {
+        var pointer = Self.pendingAtTheSeat()
+        pointer.time = pointer.intent.deadline ?? pointer.time
+        pointer.sample()
+        #expect(pointer.shown == Self.seat)
+        #expect(pointer.steps.last?.step.appeared == true)
+    }
+
+    @Test func nothingPendingLeavesNoDeadline() {
+        var pointer = Self.pendingAtTheSeat()
+        pointer.time = pointer.intent.deadline ?? pointer.time
+        pointer.sample()
+        #expect(pointer.intent.deadline == nil)
+    }
+
+    private static func columnOpen() -> Pointer {
         var pointer = Pointer(x: 640, y: 300)
         pointer.sample()
         pointer.rest(for: 0.06)
-        #expect(pointer.shown == between, "resting in the boundary band opens the column between")
+        return pointer
+    }
+
+    @Test func restingInTheBoundaryBandOpensTheColumnBetween() {
+        #expect(Self.columnOpen().shown == Self.between)
+    }
+
+    @Test func crossingTheGapAndTheRightCentreKeepsTheOpenColumnWithNoCollapse() {
+        var pointer = Self.columnOpen()
         let before = pointer.steps.count
         pointer.glide(toX: 1000, y: 680, speed: 1500)
-        let travel = pointer.steps[before...]
-        #expect(travel.allSatisfy { !$0.step.changed && $0.step.shown == between },
-               "crossing the gap and the right centre keeps the open column, with no collapse")
-        pointer.rest(for: 0.06)
-        let changes = pointer.steps[before...].filter { $0.step.changed }
-        #expect(changes.count == 1 && changes.first?.step.shown == seat,
-               "the seat replaces the column in one step, straight from one preview to the next")
+        #expect(pointer.steps[before...].allSatisfy { !$0.step.changed && $0.step.shown == Self.between })
     }
 
-    @Test static func earlyReleaseDropsUnderThePointer() {
-        var pointer = Pointer(x: 640, y: 300)
-        pointer.sample()
-        pointer.rest(for: 0.06)
+    @Test func theSeatReplacesTheColumnInOneStep() {
+        var pointer = Self.columnOpen()
         pointer.glide(toX: 1000, y: 680, speed: 1500)
-        #expect(pointer.shown == between && pointer.intent.isPending, "the seat has not appeared yet")
-        #expect(pointer.intent.dropZone(at: place(x: pointer.x, y: pointer.y)) == seat,
-               "an early release drops into the seat under the pointer, not the column still showing")
-        #expect(pointer.intent.dropZone(at: .preview) == between,
-               "a release inside the open preview or a gap drops into the preview that shows")
-        #expect(pointer.intent.dropZone(at: .pane(nil)) == nil, "a release over a spot offering nothing drops nowhere")
+        let before = pointer.steps.count
+        pointer.rest(for: 0.06)
+        let changes = pointer.steps[before...].filter { $0.step.changed }
+        #expect(changes.count == 1)
+        #expect(changes.first?.step.shown == Self.seat)
+    }
+
+    private static func earlyRelease() -> Pointer {
+        var pointer = columnOpen()
+        pointer.glide(toX: 1000, y: 680, speed: 1500)
+        return pointer
+    }
+
+    @Test func theSeatHasNotAppearedYetOnAnEarlyRelease() {
+        let pointer = Self.earlyRelease()
+        #expect(pointer.shown == Self.between)
+        #expect(pointer.intent.isPending)
+    }
+
+    @Test func anEarlyReleaseDropsIntoTheSeatUnderThePointer() {
+        let pointer = Self.earlyRelease()
+        #expect(pointer.intent.dropZone(at: Self.place(x: pointer.x, y: pointer.y)) == Self.seat)
+    }
+
+    @Test func aReleaseInsideTheOpenPreviewOrAGapDropsIntoTheShownPreview() {
+        #expect(Self.earlyRelease().intent.dropZone(at: .preview) == Self.between)
+    }
+
+    @Test func aReleaseOverASpotOfferingNothingDropsNowhere() {
+        #expect(Self.earlyRelease().intent.dropZone(at: .pane(nil)) == nil)
+    }
+
+    @Test func withNothingOpenAFastDropStillLandsAtTheEdgeUnderThePointer() {
         var fresh = Pointer(x: 0, y: 300)
         fresh.sample()
         fresh.glide(toX: 50, y: 300, speed: 1500)
-        #expect(fresh.shown == nil && fresh.intent.dropZone(at: place(x: fresh.x, y: fresh.y)) == leftEdge,
-               "with nothing open yet, a fast drop still lands at the edge under the pointer")
+        #expect(fresh.shown == nil)
+        #expect(fresh.intent.dropZone(at: Self.place(x: fresh.x, y: fresh.y)) == Self.leftEdge)
     }
 
-    @Test static func hapticsOnlyOnAppearance() {
+    private static func seatShown() -> Pointer {
         var pointer = Pointer(x: 0, y: 300)
         pointer.sample()
         pointer.glide(toX: 1000, y: 680, speed: 1500)
-        #expect(pointer.appearances.isEmpty, "crossing zones never asks for a haptic")
-        pointer.glide(toX: 1005, y: 685, speed: 80)
-        #expect(pointer.appearances == [seat], "the seat appearing asks for one haptic")
-        pointer.sample(.preview); pointer.time += 0.2; pointer.sample(.preview)
-        pointer.glide(toX: 1006, y: 686, speed: 50)
-        #expect(pointer.appearances == [seat], "holding inside the open seat asks for nothing more")
-        let left = pointer.intent.leave()
-        #expect(left.changed && !left.appeared, "leaving clears without a haptic")
-        pointer.time += 0.1
-        pointer.x = 300; pointer.y = 300
-        pointer.sample()
-        pointer.rest(for: 0.06)
-        #expect(pointer.appearances == [seat, leftCentre], "coming back and settling on a centre asks for one more")
+        return pointer
     }
 
-    @Test static func leavingAndEscapeClearImmediately() {
-        var pointer = Pointer(x: 640, y: 300)
+    @Test func crossingZonesNeverAsksForAHaptic() {
+        #expect(Self.seatShown().appearances.isEmpty)
+    }
+
+    @Test func theSeatAppearingAsksForOneHaptic() {
+        var pointer = Self.seatShown()
+        pointer.glide(toX: 1005, y: 685, speed: 80)
+        #expect(pointer.appearances == [Self.seat])
+    }
+
+    @Test func holdingInsideTheOpenSeatAsksForNothingMore() {
+        var pointer = Self.seatShown()
+        pointer.glide(toX: 1005, y: 685, speed: 80)
+        pointer.sample(.preview)
+        pointer.time += 0.2
+        pointer.sample(.preview)
+        pointer.glide(toX: 1006, y: 686, speed: 50)
+        #expect(pointer.appearances == [Self.seat])
+    }
+
+    @Test func leavingClearsWithoutAHaptic() {
+        var pointer = Self.seatShown()
+        pointer.glide(toX: 1005, y: 685, speed: 80)
+        let left = pointer.intent.leave()
+        #expect(left.changed)
+        #expect(!left.appeared)
+    }
+
+    @Test func comingBackAndSettlingOnACentreAsksForOneMoreHaptic() {
+        var pointer = Self.seatShown()
+        pointer.glide(toX: 1005, y: 685, speed: 80)
+        _ = pointer.intent.leave()
+        pointer.time += 0.1
+        pointer.x = 300
+        pointer.y = 300
         pointer.sample()
         pointer.rest(for: 0.06)
-        pointer.glide(toX: 1000, y: 680, speed: 1500)
-        #expect(pointer.shown == between && pointer.intent.isPending, "a column shows while the seat is pending")
+        #expect(pointer.appearances == [Self.seat, Self.leftCentre])
+    }
+
+    @Test func leavingTheSplitClearsThePreviewAtOnceAndForgetsThePendingSeat() {
+        var pointer = Self.earlyRelease()
+        #expect(pointer.shown == Self.between)
         let left = pointer.intent.leave()
-        #expect(left == SplitDropIntent.Step(shown: nil, changed: true) && pointer.shown == nil && !pointer.intent.isPending
-               && pointer.intent.deadline == nil, "leaving the split clears the preview at once and forgets the pending seat")
-        #expect(pointer.intent.leave() == SplitDropIntent.Step(shown: nil, changed: false), "leaving again changes nothing")
+        #expect(left == SplitDropIntent.Step(shown: nil, changed: true))
+        #expect(pointer.shown == nil)
+        #expect(!pointer.intent.isPending)
+        #expect(pointer.intent.deadline == nil)
+    }
+
+    @Test func leavingAgainChangesNothing() {
+        var pointer = Self.earlyRelease()
+        _ = pointer.intent.leave()
+        #expect(pointer.intent.leave() == SplitDropIntent.Step(shown: nil, changed: false))
+    }
+
+    @Test func sweepingBackInFastRightBesideWhereItLeftOpensNothingSinceLeavingForgetsTheOldSamples() {
         var returning = Pointer(x: 10, y: 300)
         returning.sample()
         returning.rest(for: 0.06)
-        #expect(returning.shown == leftEdge, "resting on the left edge opens it")
-        #expect(returning.intent.leave().changed, "the drag leaves the split")
-        returning.time += 2; returning.x = 0; returning.y = 305
+        #expect(returning.shown == Self.leftEdge)
+        #expect(returning.intent.leave().changed)
+        returning.time += 2
+        returning.x = 0
+        returning.y = 305
         returning.sample()
         returning.glide(toX: 400, y: 305, speed: 1500)
-        #expect(returning.shown == nil && returning.appearances == [leftEdge],
-               "sweeping back in fast right beside where it left opens nothing, since leaving forgets the old samples")
+        #expect(returning.shown == nil)
+        #expect(returning.appearances == [Self.leftEdge])
+    }
+
+    @Test func aClockThatRunsBackwardsStillLetsTheDwellOpenTheZone() {
         var rewound = Pointer(x: 300, y: 300)
         rewound.sample()
         rewound.glide(toX: 330, y: 300, speed: 350)
         rewound.time -= 5
         rewound.glide(toX: 400, y: 300, speed: 350)
-        #expect(rewound.shown == leftCentre, "a clock that runs backwards still lets the dwell open the zone")
-        var escaped = Pointer(x: 640, y: 300)
-        escaped.sample()
-        escaped.rest(for: 0.06)
+        #expect(rewound.shown == Self.leftCentre)
+    }
+
+    @Test func escapeOrTheDragsEndResetsEverythingAtOnce() {
+        var escaped = Self.columnOpen()
         escaped.intent.reset()
-        #expect(escaped.shown == nil && !escaped.intent.isPending && escaped.intent.deadline == nil,
-               "Escape or the drag's end resets everything at once")
+        #expect(escaped.shown == nil)
+        #expect(!escaped.intent.isPending)
+        #expect(escaped.intent.deadline == nil)
+    }
+
+    @Test func afterAResetThePointersSpeedIsMeasuredAfreshBeforeAnythingOpens() {
+        var escaped = Self.columnOpen()
+        escaped.intent.reset()
         escaped.time += 0.008
         escaped.sample()
-        #expect(escaped.shown == nil && escaped.intent.deadline == escaped.time + 0.05,
-               "after a reset the pointer's speed is measured afresh before anything opens")
+        #expect(escaped.shown == nil)
+        #expect(escaped.intent.deadline == escaped.time + 0.05)
     }
 
-    @Test static func gapsAndEmptySpotsKeepTheOpenPreview() {
-        var pointer = Pointer(x: 640, y: 300)
-        pointer.sample()
-        pointer.rest(for: 0.06)
+    private static func pastTheGap() -> Pointer {
+        var pointer = columnOpen()
         pointer.glide(toX: 750, y: 300, speed: 1500)
-        #expect(pointer.shown == between && pointer.intent.isPending == false, "the pane beyond the gap offers the same column")
-        pointer.sample(.pane(rightCentre))
-        #expect(pointer.intent.isPending, "the right centre is pending")
-        pointer.x = 705; pointer.time += 0.008
-        pointer.sample()
-        #expect(pointer.steps.last?.place == .preview && pointer.shown == between && !pointer.intent.isPending
-               && pointer.intent.deadline == nil, "a gap keeps the open column and cancels anything pending")
-        pointer.rest(for: 0.3)
-        #expect(pointer.shown == between && pointer.steps.suffix(30).allSatisfy { !$0.step.changed },
-               "even resting in a gap keeps the column")
-        for _ in 0..<4 { pointer.x += 20; pointer.time += 0.008; pointer.sample(.pane(nil)) }
-        #expect(pointer.shown == between && pointer.intent.isPending, "a spot offering nothing waits like any other zone")
-        pointer.time += 0.05; pointer.sample(.pane(nil))
-        #expect(pointer.shown == nil && pointer.steps.last?.step.changed == true && pointer.steps.last?.step.appeared == false,
-               "settling on a spot offering nothing closes the column without a haptic")
+        return pointer
     }
 
-    @Test static func immediateIntentOpensOnEntry() {
+    @Test func thePaneBeyondTheGapOffersTheSameColumn() {
+        let pointer = Self.pastTheGap()
+        #expect(pointer.shown == Self.between)
+        #expect(!pointer.intent.isPending)
+    }
+
+    @Test func theRightCentreIsPending() {
+        var pointer = Self.pastTheGap()
+        pointer.sample(.pane(Self.rightCentre))
+        #expect(pointer.intent.isPending)
+    }
+
+    @Test func aGapKeepsTheOpenColumnAndCancelsAnythingPending() {
+        var pointer = Self.pastTheGap()
+        pointer.sample(.pane(Self.rightCentre))
+        pointer.x = 705
+        pointer.time += 0.008
+        pointer.sample()
+        #expect(pointer.steps.last?.place == .preview)
+        #expect(pointer.shown == Self.between)
+        #expect(!pointer.intent.isPending)
+        #expect(pointer.intent.deadline == nil)
+    }
+
+    @Test func evenRestingInAGapKeepsTheColumn() {
+        var pointer = Self.pastTheGap()
+        pointer.x = 705
+        pointer.time += 0.008
+        pointer.sample()
+        pointer.rest(for: 0.3)
+        #expect(pointer.shown == Self.between)
+        #expect(pointer.steps.suffix(30).allSatisfy { !$0.step.changed })
+    }
+
+    private static func onEmptySpot() -> Pointer {
+        var pointer = pastTheGap()
+        for _ in 0..<4 {
+            pointer.x += 20
+            pointer.time += 0.008
+            pointer.sample(.pane(nil))
+        }
+        return pointer
+    }
+
+    @Test func aSpotOfferingNothingWaitsLikeAnyOtherZone() {
+        let pointer = Self.onEmptySpot()
+        #expect(pointer.shown == Self.between)
+        #expect(pointer.intent.isPending)
+    }
+
+    @Test func settlingOnASpotOfferingNothingClosesTheColumnWithoutAHaptic() {
+        var pointer = Self.onEmptySpot()
+        pointer.time += 0.05
+        pointer.sample(.pane(nil))
+        #expect(pointer.shown == nil)
+        #expect(pointer.steps.last?.step.changed == true)
+        #expect(pointer.steps.last?.step.appeared == false)
+    }
+
+    @Test func aZeroDwellOpensEveryZoneOnEntry() {
         var pointer = Pointer(x: 0, y: 300, intent: SplitDropIntent(dwell: 0))
         pointer.sample()
-        #expect(pointer.shown == leftEdge && pointer.steps.last?.step.appeared == true,
-               "a zero dwell opens every zone on entry, as before hover intent")
+        #expect(pointer.shown == Self.leftEdge)
+        #expect(pointer.steps.last?.step.appeared == true)
+    }
+
+    @Test func aZeroDwellFollowsThePointerHoweverFastItMoves() {
+        var pointer = Pointer(x: 0, y: 300, intent: SplitDropIntent(dwell: 0))
+        pointer.sample()
         pointer.glide(toX: 300, y: 300, speed: 3000)
-        #expect(pointer.shown == leftCentre, "and follows the pointer however fast it moves")
+        #expect(pointer.shown == Self.leftCentre)
     }
 }

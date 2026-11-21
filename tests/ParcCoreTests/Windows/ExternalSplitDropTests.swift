@@ -716,6 +716,7 @@ struct ExternalSplitDropTests {
     @MainActor @Test func aFailedWriteKeepsTheOriginalStateAndReportsTheError() throws {
         let f = try Fixture()
         let current = f.store.state, currentGroup = try #require(f.store.activeSplitLayout)
+        try f.store.save()
         try f.breakWrites(in: f.root)
         #expect(throws: (any Error).self) {
             _ = try f.commit(f.store, selection: current.selectedTabIDs, layout: currentGroup, target: .insert(0))

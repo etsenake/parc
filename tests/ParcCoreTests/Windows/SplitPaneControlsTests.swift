@@ -261,8 +261,9 @@ struct SplitPaneControlsTests {
 
         init(_ f: Fixture) throws {
             file = f.root.appendingPathComponent("Shared Note.md")
-            id = f.store.openNote(url: file, title: "Shared Note")!
+            let id = f.store.openNote(url: file, title: "Shared Note")!
             f.store.selectTab(f.b)
+            self.id = id
             old = f.store.state.tabs.first { $0.id == id }!
         }
 
@@ -314,8 +315,9 @@ struct SplitPaneControlsTests {
         init(_ f: Fixture) throws {
             easels = try EaselStore(directory: f.root.appendingPathComponent("easels"))
             easel = try easels.create()
-            id = f.store.openEasel(id: easel.document.id, title: "Shared Easel")!
+            let id = f.store.openEasel(id: easel.document.id, title: "Shared Easel")!
             f.store.selectTab(f.b)
+            self.id = id
             old = f.store.state.tabs.first { $0.id == id }!
         }
 

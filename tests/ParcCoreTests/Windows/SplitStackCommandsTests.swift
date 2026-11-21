@@ -16,7 +16,7 @@ struct SplitStackCommandsTests {
                                   widthFactors: shape.widthFactors, stacks: shape.stacks)
     }
 
-    private struct Position: Sendable, CustomTestStringConvertible {
+    struct Position: Sendable, CustomTestStringConvertible {
         let count: Int
         let index: Int
         var testDescription: String { "pane \(index) of \(count)" }
@@ -26,39 +26,39 @@ struct SplitStackCommandsTests {
     }
 
     @Test(arguments: Position.all)
-    fileprivate func flatMovePreviousKeepsTodaysRule(_ p: Position) {
+    func flatMovePreviousKeepsTodaysRule(_ p: Position) {
         #expect(p.candidates.allSatisfy { SplitPaneOperation.movePrevious.isEnabled(index: p.index, count: p.count, layout: $0) == (p.inside && p.count > 1 && p.index > 0) })
     }
 
     @Test(arguments: Position.all)
-    fileprivate func flatMoveNextKeepsTodaysRule(_ p: Position) {
+    func flatMoveNextKeepsTodaysRule(_ p: Position) {
         #expect(p.candidates.allSatisfy { SplitPaneOperation.moveNext.isEnabled(index: p.index, count: p.count, layout: $0) == (p.inside && p.count > 1 && p.index < p.count - 1) })
     }
 
     @Test(arguments: Position.all)
-    fileprivate func flatAddKeepsTheFourPaneLimit(_ p: Position) {
+    func flatAddKeepsTheFourPaneLimit(_ p: Position) {
         #expect(p.candidates.allSatisfy { SplitPaneOperation.addAfter.isEnabled(index: p.index, count: p.count, layout: $0) == (p.inside && p.count < 4) })
     }
 
     @Test(arguments: Position.all)
-    fileprivate func flatSeparateKeepsTodaysRule(_ p: Position) {
+    func flatSeparateKeepsTodaysRule(_ p: Position) {
         #expect(p.candidates.allSatisfy { SplitPaneOperation.separate.isEnabled(index: p.index, count: p.count, layout: $0) == (p.inside && p.count > 1) })
     }
 
     @Test(arguments: Position.all)
-    fileprivate func splitThisPaneNeedsRoomForOneMorePane(_ p: Position) {
+    func splitThisPaneNeedsRoomForOneMorePane(_ p: Position) {
         #expect(p.candidates.allSatisfy { SplitPaneOperation.stackAfter.isEnabled(index: p.index, count: p.count, layout: $0) == (p.inside && (2...3).contains(p.count)) })
     }
 
     @Test(arguments: Position.all)
-    fileprivate func aFlatPaneHasNoStackToMoveIn(_ p: Position) {
+    func aFlatPaneHasNoStackToMoveIn(_ p: Position) {
         #expect(p.candidates.allSatisfy {
             !SplitPaneOperation.stackPrevious.isEnabled(index: p.index, count: p.count, layout: $0)
                 && !SplitPaneOperation.stackNext.isEnabled(index: p.index, count: p.count, layout: $0)
         })
     }
 
-    private struct StackedPane: Sendable, CustomTestStringConvertible {
+    struct StackedPane: Sendable, CustomTestStringConvertible {
         let sizes: [Int]
         let index: Int
         var testDescription: String { "pane \(index) of \(sizes)" }
@@ -69,35 +69,35 @@ struct SplitStackCommandsTests {
     }
 
     @Test(arguments: StackedPane.all)
-    fileprivate func moveLeftMatchesTheStoresSlotMove(_ p: StackedPane) {
+    func moveLeftMatchesTheStoresSlotMove(_ p: StackedPane) {
         let split = p.split
         #expect(SplitPaneOperation.movePrevious.isEnabled(index: p.index, count: split.tabIDs.count, layout: split)
                 == (split.movingSlot(of: split.tabIDs[p.index], by: -1) != nil))
     }
 
     @Test(arguments: StackedPane.all)
-    fileprivate func moveRightMatchesTheStoresSlotMove(_ p: StackedPane) {
+    func moveRightMatchesTheStoresSlotMove(_ p: StackedPane) {
         let split = p.split
         #expect(SplitPaneOperation.moveNext.isEnabled(index: p.index, count: split.tabIDs.count, layout: split)
                 == (split.movingSlot(of: split.tabIDs[p.index], by: 1) != nil))
     }
 
     @Test(arguments: StackedPane.all)
-    fileprivate func moveUpMatchesTheStoresStackMove(_ p: StackedPane) {
+    func moveUpMatchesTheStoresStackMove(_ p: StackedPane) {
         let split = p.split
         #expect(SplitPaneOperation.stackPrevious.isEnabled(index: p.index, count: split.tabIDs.count, layout: split)
                 == (split.movingWithinStack(split.tabIDs[p.index], by: -1) != nil))
     }
 
     @Test(arguments: StackedPane.all)
-    fileprivate func moveDownMatchesTheStoresStackMove(_ p: StackedPane) {
+    func moveDownMatchesTheStoresStackMove(_ p: StackedPane) {
         let split = p.split
         #expect(SplitPaneOperation.stackNext.isEnabled(index: p.index, count: split.tabIDs.count, layout: split)
                 == (split.movingWithinStack(split.tabIDs[p.index], by: 1) != nil))
     }
 
     @Test(arguments: StackedPane.all)
-    fileprivate func splitThisPaneIsOfferedOnEveryPaneUntilTheSplitHoldsFour(_ p: StackedPane) {
+    func splitThisPaneIsOfferedOnEveryPaneUntilTheSplitHoldsFour(_ p: StackedPane) {
         let split = p.split
         #expect(SplitPaneOperation.stackBefore.isEnabled(index: p.index, count: split.tabIDs.count, layout: split) == (split.tabIDs.count < 4))
     }
@@ -149,7 +149,7 @@ struct SplitStackCommandsTests {
         }
 
         func fourPanes() {
-            let (_, b, _) = stackedBelow()
+            let b = stackedBelow().b
             _ = store.insertSplitPane(SplitPaneInsertion(paneID: b, operation: .stackBefore, state: store.state)!, tabID: UUID(),
                                       navigationURL: URL(string: "https://fourth.test/"), creation: nil, savedHomeIDs: [:], documents: [:])
         }
@@ -281,7 +281,7 @@ struct SplitStackCommandsTests {
         #expect(SplitPaneInsertion(paneID: pane, operation: .stackBefore, state: f.store.state) == nil)
     }
 
-    private struct StartCase: Sendable, CustomTestStringConvertible {
+    struct StartCase: Sendable, CustomTestStringConvertible {
         let count: Int
         let isSplit: Bool
         var testDescription: String { "\(count) panes, split \(isSplit)" }
@@ -289,12 +289,12 @@ struct SplitStackCommandsTests {
     }
 
     @Test(arguments: StartCase.all)
-    fileprivate func splitThisPaneStartsASplitOnlyOnASingleUnsplitPage(_ c: StartCase) {
+    func splitThisPaneStartsASplitOnlyOnASingleUnsplitPage(_ c: StartCase) {
         #expect(SplitPaneOperation.stackAfter.startsSplitView(paneCount: c.count, isSplit: c.isSplit) == (c.count == 1 && !c.isSplit))
     }
 
     @Test(arguments: StartCase.all, 0..<SplitPaneOperation.allCases.count)
-    fileprivate func onlySplitThisPaneIsRedirected(_ c: StartCase, _ operationIndex: Int) {
+    func onlySplitThisPaneIsRedirected(_ c: StartCase, _ operationIndex: Int) {
         let operation = SplitPaneOperation.allCases[operationIndex]
         guard operation != .stackAfter else { return }
         #expect(!operation.startsSplitView(paneCount: c.count, isSplit: c.isSplit))
