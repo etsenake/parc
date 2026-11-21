@@ -11,7 +11,7 @@ private final class PortraitFixture {
     var options: PortraitCaptureOptions
     let source: CGImage
     let original: Data
-    let palette = PortraitCaptureRenderer.palette(bundle: .module)
+    let palette = PortraitCaptureRenderer.palette(bundle: .module, subdirectory: "CaptureFixtures/ThemeEditor")
     let wallpaper = NSImage(size: NSSize(width: 30, height: 30), flipped: false) { rect in
         NSColor.cyan.setFill()
         rect.fill()
@@ -118,17 +118,17 @@ struct PortraitCaptureRendererTests {
     }
 
     @MainActor @Test func theBundledPaletteHasNineColors() {
-        #expect(PortraitCaptureRenderer.palette(bundle: .module).count == 9)
+        #expect(PortraitCaptureRenderer.palette(bundle: .module, subdirectory: "CaptureFixtures/ThemeEditor").count == 9)
     }
 
     @MainActor @Test func aNonNumberBlendsToNoColor() {
-        let palette = PortraitCaptureRenderer.palette(bundle: .module)
+        let palette = PortraitCaptureRenderer.palette(bundle: .module, subdirectory: "CaptureFixtures/ThemeEditor")
         #expect(PortraitCaptureRenderer.blendedColor(.nan, palette: palette) == nil)
     }
 
     @MainActor @Test(arguments: [0, 1, 2])
     func theFirstEndpointBlendsToTheFirstPaletteColor(_ channel: Int) throws {
-        let palette = PortraitCaptureRenderer.palette(bundle: .module)
+        let palette = PortraitCaptureRenderer.palette(bundle: .module, subdirectory: "CaptureFixtures/ThemeEditor")
         let endpoint = try #require(PortraitCaptureRenderer.blendedColor(0, palette: palette)?.usingColorSpace(.sRGB))
         let first = try #require(palette[0].usingColorSpace(.sRGB))
         let components = [(endpoint.redComponent, first.redComponent), (endpoint.greenComponent, first.greenComponent),

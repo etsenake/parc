@@ -25,9 +25,9 @@ struct RendererCrashPresentationTests {
             window.isReleasedWhenClosed = false
             let root = try #require(window.contentView)
             rendererArtwork = try #require(SadTabContent.templateImage(
-                in: Bundle.module.url(forResource: "SadTab", withExtension: nil), named: "SadTab"))
+                in: Bundle.module.url(forResource: "SadTab", withExtension: nil, subdirectory: "CaptureFixtures"), named: "SadTab"))
             navigationArtwork = try #require(SadTabContent.templateImage(
-                in: Bundle.module.url(forResource: "PageFailure", withExtension: nil), named: "PageFailure"))
+                in: Bundle.module.url(forResource: "PageFailure", withExtension: nil, subdirectory: "CaptureFixtures"), named: "PageFailure"))
             failure = PageFailureView(frame: page.frame, rendererArtwork: { [rendererArtwork] in rendererArtwork },
                                       navigationArtwork: { [navigationArtwork] in navigationArtwork })
             root.addSubview(page)

@@ -98,12 +98,7 @@ let package = Package(
         ),
         .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: "."),
         .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles"], path: "tests/ParcTests",
-                    resources: [
-                        .copy("Capture/ThemeEditor"),
-                        .copy("Capture/CaptureArtwork"),
-                        .copy("Capture/SadTab"),
-                        .copy("Capture/PageFailure"),
-                    ],
+                    resources: [.copy("Capture/CaptureFixtures")],
                     swiftSettings: strict + engineImport),
     ],
     swiftLanguageModes: [.v5],

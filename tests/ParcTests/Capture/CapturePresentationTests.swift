@@ -116,12 +116,12 @@ struct CapturePresentationTests {
     }
 
     @MainActor @Test func theCursorArtworkLoadsAtItsNativeHeight() throws {
-        let cursor = try #require(CaptureArtwork.image("camera-cross-cursor", in: Bundle.module.url(forResource: "CaptureArtwork", withExtension: nil)))
+        let cursor = try #require(CaptureArtwork.image("camera-cross-cursor", in: Bundle.module.url(forResource: "CaptureArtwork", withExtension: nil, subdirectory: "CaptureFixtures")))
         #expect(cursor.size.height == 50)
     }
 
     @MainActor @Test func theCursorArtworkCarriesRetinaRenditions() throws {
-        let cursor = try #require(CaptureArtwork.image("camera-cross-cursor", in: Bundle.module.url(forResource: "CaptureArtwork", withExtension: nil)))
+        let cursor = try #require(CaptureArtwork.image("camera-cross-cursor", in: Bundle.module.url(forResource: "CaptureArtwork", withExtension: nil, subdirectory: "CaptureFixtures")))
         #expect(cursor.representations.compactMap { ($0 as? NSBitmapImageRep)?.pixelsHigh }.sorted() == [50, 100] && !cursor.isTemplate)
     }
 }
