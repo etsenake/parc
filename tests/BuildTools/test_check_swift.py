@@ -52,6 +52,7 @@ class CheckSwiftTests(unittest.TestCase):
         for name, content in {
             "Sources/ParcCore/Model.swift": "struct Model {}\n",
             "Sources/ParcApp/App.swift": "struct App {}\n",
+            "Sources/ParcMain/main.swift": "print(1)\n",
             "Sources/ParcEngine/ParcEngine.h": "#import <Cocoa/Cocoa.h>\n",
             "Package.swift": "// swift-tools-version: 6.2\n",
             "Package.resolved": "{}\n",
@@ -99,7 +100,7 @@ class CheckSwiftTests(unittest.TestCase):
         plan = json.loads(result.stdout)
         self.assertFalse(self.output.exists())
         self.assertFalse(plan["executed"])
-        self.assertEqual(plan["source_count"], 2)
+        self.assertEqual(plan["source_count"], 3)
         command = plan["command"]
         self.assertEqual(command[:3], ["xcrun", "swift", "build"])
         self.assertEqual(command[command.index("--package-path") + 1], str(self.repo))
@@ -231,7 +232,7 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertFalse(receipt["inputs_unchanged"])
         self.assertNotIn(str(added), receipt["inputs"])
         self.assertNotIn(str(added), receipt["command"])
-        self.assertEqual(receipt["source_count"], 2)
+        self.assertEqual(receipt["source_count"], 3)
 
     def test_release_archive_without_git_compiles_by_input_hashes(self):
         archive = Path(self.temp.name).resolve() / "release archive"

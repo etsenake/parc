@@ -22,6 +22,7 @@ let engineImport: [SwiftSetting] = [
 let package = Package(
     name: "Parc",
     platforms: [.macOS(.v13)],
+    products: [.executable(name: "Parc", targets: ["ParcMain"])],
     dependencies: [.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1")],
     targets: [
         .target(name: "ParcCore", path: "Sources/ParcCore", swiftSettings: strict),
@@ -39,19 +40,27 @@ let package = Package(
                 .unsafeFlags(["-F", engineStubs, "-Xlinker", "-weak_framework", "-Xlinker", "Chromium Embedded Framework"]),
             ]
         ),
-        .executableTarget(
+        .target(
             name: "Parc",
             dependencies: ["ParcCore", "ParcEngine", .product(name: "Sparkle", package: "Sparkle")],
             path: "Sources/ParcApp",
             swiftSettings: strict + engineImport,
             linkerSettings: [
-                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
-                              "-Xlinker", "-fatal_warnings"]),
                 .linkedFramework("Cocoa"),
                 .linkedFramework("QuartzCore"),
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("AVKit"),
                 .linkedFramework("CoreSpotlight"),
+            ]
+        ),
+        .executableTarget(
+            name: "ParcMain",
+            dependencies: ["Parc", "ParcEngine"],
+            path: "Sources/ParcMain",
+            swiftSettings: strict + engineImport,
+            linkerSettings: [
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
+                              "-Xlinker", "-fatal_warnings"]),
             ]
         ),
         .testTarget(name: "ParcCoreTests", dependencies: ["ParcCore"], path: "tests/ParcCoreTests",

@@ -9,7 +9,7 @@ import threading
 
 SWIFT_TARGET = "arm64-apple-macos13.0"
 APP_PRODUCT = "Parc"
-APP_SWIFT_DIRECTORIES = ("Sources/ParcCore", "Sources/ParcApp")
+APP_SWIFT_DIRECTORIES = ("Sources/ParcCore", "Sources/ParcApp", "Sources/ParcMain")
 WARNING = re.compile(r"^(?:\S[^:]*:\d+(?::\d+)?: |<unknown>:0: "
                      r"|(?:\S[^:]*: [\w.+-]+: )?(?:clang(?:\+\+)?|cc|c\+\+|swiftc?|swift-frontend|swift-driver|ld|ld64\.lld|libtool): )?warning: ")
 

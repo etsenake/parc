@@ -36,7 +36,8 @@ class PackagingIconTests(unittest.TestCase):
         for name, text in {"ParcEngine/ParcEngine.m": '#include "native_engine_entry.h"\n',
                            "ParcEngine/ParcEngine.h": "fixture header",
                            "ParcCore/Model.swift": "fixture model",
-                           "ParcApp/main.swift": "fixture application",
+                           "ParcApp/App.swift": "fixture application",
+                           "ParcMain/main.swift": "fixture entry point",
                            "ParcDockTile/ParcDockTile.m": "fixture Dock plugin",
                            "ParcRestart/main.c": "fixture restart helper"}.items():
             target = self.repo / "Sources" / name
