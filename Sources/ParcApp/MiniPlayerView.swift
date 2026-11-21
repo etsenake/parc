@@ -290,7 +290,7 @@ private final class MiniPlayerSurface: NSView {
 }
 
 @MainActor
-private final class MiniPlayerRow: NSView {
+final class MiniPlayerRow: NSView {
     var onHeightChanged: (() -> Void)?
     var onKeyViewsChanged: (() -> Void)?
     var onClose: (() -> Void)?
@@ -623,8 +623,10 @@ private final class MiniPlayerRow: NSView {
     }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); applyPalette() }
     deinit { volumeDismissal.forEach(NSEvent.removeMonitor) }
+    var initiatingEventType: () -> NSEvent.EventType? = { NSApp.currentEvent?.type }
+
     override func becomeFirstResponder() -> Bool {
-        if let type = NSApp.currentEvent?.type, [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(type) { return false }
+        if let type = initiatingEventType(), [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(type) { return false }
         if !restoringVolumeFocus { onFocus?() }
         return super.becomeFirstResponder()
     }
