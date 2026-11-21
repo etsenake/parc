@@ -1724,9 +1724,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if editor != nil {
             if finishEditing() { selection.removeAll(); window?.makeFirstResponder(self) }
         } else if start != nil { cancelPointerInteraction() }
+        else if !selection.isEmpty { selection.removeAll(); invalidateIncrementalDisplay(layout: true) }
         else if tool != .select { tool = .select }
-        else if selection.isEmpty, let onImageEditingCancel { onImageEditingCancel() }
-        else { selection.removeAll(); invalidateIncrementalDisplay(layout: true) }
+        else if let onImageEditingCancel { onImageEditingCancel() }
     }
     override func keyDown(with event: NSEvent) {
         guard canvasOwnsKeyFocus else {

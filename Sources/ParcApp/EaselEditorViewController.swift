@@ -28,6 +28,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private var palette: EaselToolPalette?
     private let recenter = NoteChip("Recenter", icon: .symbol("scope"), style: .filled)
     private var recenterShown = false
+    private let quickActions = EaselQuickActions()
     private(set) var pageObjects: EaselBrowserObjects?
     private var webpageInput: EaselWebInput?
     private var webpageOwnerValid: (() -> Bool)?
@@ -132,6 +133,8 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         }
         palette.canZoomToSelection = { [weak self] in self?.canvas.canZoomToSelection == true }
         palette.onPreferredSizeChange = { [weak root] in root?.needsLayout = true }
+        palette.keepOpenViews = { [weak self] in self.map { [$0.scroll] } ?? [] }
+        canvas.toolState.onQuickActions = { [weak self] in self?.showQuickActions() }
         canvas.onToolChange = { [weak self, weak palette] tool in
             guard let self else { return }
             palette?.update(tool: tool, shape: self.canvas.toolState.shape)
@@ -221,6 +224,67 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         })
     }
     private func focusCanvas() { canvas.window?.makeFirstResponder(canvas) }
+    private func showQuickActions() {
+        guard let palette, !session.isClosed, view.window?.attachedSheet == nil else { return }
+        palette.closeMenu(animated: false)
+        let strip = view.convert(palette.bounds, from: palette)
+        quickActions.toggle(in: view, anchor: NSRect(x: strip.midX - 1, y: strip.minY, width: 2, height: strip.height),
+                            actions: quickActionList()) { [weak self] in
+            guard let window = self?.view.window, window.firstResponder == nil || window.firstResponder === window else { return }
+            self?.focusCanvas()
+        }
+    }
+    private func quickActionList() -> [EaselQuickActions.Action] {
+        var actions: [EaselQuickActions.Action] = []
+        func tool(_ tool: EaselTool, _ keywords: [String], section: String) {
+            guard tool.isAvailable else { return }
+            actions.append(.init(id: tool.rawValue, title: tool.title, icon: EaselToolPalette.icon(for: tool), shortcut: tool.key?.label,
+                                 keywords: keywords, section: section) { [weak self] in
+                self?.canvas.activateTool(tool); self?.focusCanvas()
+            })
+        }
+        tool(.sticky, ["note", "card", "idea"], section: "Objects")
+        for shape in EaselToolPalette.shapeTools {
+            let shapeTool: EaselTool = shape == .ellipse ? .ellipse : .rectangle
+            actions.append(.init(id: "shape-" + shape.rawValue,
+                                 title: shape == .ellipse ? shapeTool.title : EaselToolPalette.shapeTitle(shape),
+                                 icon: EaselToolPalette.icon(for: shape),
+                                 shortcut: shape == .ellipse || shape == .rectangle ? shapeTool.key?.label : nil,
+                                 keywords: ["shape", shape == .ellipse ? "circle oval" : shape == .rectangle ? "square box" : ""],
+                                 section: "Objects") { [weak self] in
+                self?.canvas.armShape(shape); self?.focusCanvas()
+            })
+        }
+        for connector in EaselToolPalette.connectorTools { tool(connector, ["arrow", "line", "connector", "link"], section: "Objects") }
+        tool(.text, ["type", "words", "label", "title"], section: "Objects")
+        tool(.section, ["frame", "area", "group", "region"], section: "Objects")
+        tool(.table, ["grid", "rows", "columns", "cells"], section: "Objects")
+        for drawing in EaselToolPalette.drawTools { tool(drawing, ["draw", "pen", "pencil", "doodle"], section: "Tools") }
+        tool(.stamp, ["emoji", "sticker", "vote", "react"], section: "Tools")
+        tool(.select, ["move", "pointer", "cursor", "arrow"], section: "Tools")
+        tool(.hand, ["pan", "scroll", "move", "grab"], section: "Tools")
+        let inserts: [(EaselToolPalette.Insert, [String])] = [(.image, ["picture", "photo", "file"]), (.link, ["url", "bookmark", "address"]),
+                                                              (.webpage, ["site", "browser", "page", "web"])]
+        for (insert, keywords) in inserts {
+            actions.append(.init(id: "insert-" + insert.rawValue, title: EaselToolPalette.title(for: insert),
+                                 icon: EaselToolPalette.icon(for: insert), shortcut: nil, keywords: keywords, section: "Inserts",
+                                 isEnabled: insert != .webpage || pageObjects != nil) { [weak self] in
+                guard let self, let control = self.palette?.button(for: insert) else { return }
+                self.insert(insert, from: control)
+            })
+        }
+        tool(.codeBlock, ["code", "snippet", "monospace", "program"], section: "Inserts")
+        let zoomSymbols: [EaselZoomCommand: String] = [.zoomIn: "plus.magnifyingglass", .zoomOut: "minus.magnifyingglass",
+                                                       .fit: "viewfinder", .selection: "scope", .actualSize: "1.magnifyingglass"]
+        for command in [EaselZoomCommand.zoomIn, .zoomOut, .fit, .selection, .actualSize] {
+            actions.append(.init(id: "zoom-" + command.rawValue, title: command.title, icon: .symbol(zoomSymbols[command] ?? "magnifyingglass"),
+                                 shortcut: command.shortcut, keywords: ["zoom", "view", "scale"], section: "View",
+                                 isEnabled: command != .selection || canvas.canZoomToSelection) { [weak self] in
+                self?.canvas.zoom(command); self?.focusCanvas()
+            })
+        }
+        return actions
+    }
     private func insert(_ insert: EaselToolPalette.Insert, from control: NSButton) {
         switch insert {
         case .image: addImage()

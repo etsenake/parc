@@ -23,6 +23,7 @@ final class EaselCanvasToolState {
     var zoomDriver: EaselCanvasFrameDriver?
     var zoomTarget: (magnification: Double, centre: NSPoint)?
     var openFitDone = false
+    var onQuickActions: (() -> Void)?
 }
 
 extension EaselKeyModifiers {
@@ -132,8 +133,13 @@ extension EaselCanvasView {
     }
 
     func performZoomKeyEquivalent(_ event: NSEvent) -> Bool {
-        guard event.modifierFlags.contains(.command), case .zoom(let command)? = keyCommand(for: event),
-              enclosingScrollView?.allowsMagnification == true else { return false }
+        guard event.modifierFlags.contains(.command) else { return false }
+        if event.charactersIgnoringModifiers == "/", event.modifierFlags.isDisjoint(with: [.control, .option]),
+           let onQuickActions = toolState.onQuickActions {
+            onQuickActions()
+            return true
+        }
+        guard case .zoom(let command)? = keyCommand(for: event), enclosingScrollView?.allowsMagnification == true else { return false }
         zoom(command)
         return true
     }
@@ -233,9 +239,35 @@ extension EaselCanvasView {
         creation.flags = event.modifierFlags
         if !creation.dragged, Self.travel(creation) * canvasScale > EaselToolGeometry.dragThreshold { creation.dragged = true }
         if creation.tool.drawsConnector, !creation.dragged { return true }
+        let frame = creation.dragged && creation.tool != .sticky
+            ? EaselToolGeometry.draggedFrame(from: EaselPoint(creation.start), to: EaselPoint(creation.end),
+                                             square: creation.flags.contains(.shift), centered: creation.flags.contains(.option))
+            : EaselToolGeometry.placedFrame(creation.tool, at: EaselPoint(creation.dragged ? creation.end : creation.start))
+        if placeWithOwner(creation.tool, from: creation.start, to: creation.end, frame: frame, dragged: creation.dragged) != nil { return true }
         guard let item = createdItem(for: creation) else { return true }
         placeCreatedItem(item, tool: creation.tool)
         return true
+    }
+
+    func ownerPlacement(_ placing: EaselTool, from start: NSPoint, to end: NSPoint, frame: EaselRect, dragged: Bool) -> Bool? {
+        switch placing {
+        case .sticky: return nil
+        case .section: return nil
+        case .rectangle: return nil
+        case .ellipse: return nil
+        case .text: return nil
+        case .table: return nil
+        case .codeBlock: return nil
+        case .stamp: return nil
+        default: return nil
+        }
+    }
+
+    private func placeWithOwner(_ placing: EaselTool, from start: NSPoint, to end: NSPoint, frame: EaselRect, dragged: Bool) -> Bool? {
+        let returning = placing.returnsToSelect && tool == placing
+        guard let placed = ownerPlacement(placing, from: start, to: end, frame: frame, dragged: dragged) else { return nil }
+        if placed, returning, tool == placing { tool = .select }
+        return placed
     }
 
     private static func travel(_ creation: EaselCanvasToolState.Creation) -> Double {
@@ -284,7 +316,7 @@ extension EaselCanvasView {
         if tool == .section {
             let lowest = items.map(\.zIndex).min() ?? 0
             item.zIndex = lowest > Int.min ? lowest - 1 : lowest
-            item.text = "Section"
+            item.text = EaselBoardObjects.sectionName
         } else {
             let highest = items.map(\.zIndex).max() ?? 0
             item.zIndex = highest < Int.max ? highest + 1 : highest
@@ -341,12 +373,12 @@ extension EaselCanvasView {
     @discardableResult
     func place(_ placing: EaselTool, at point: NSPoint) -> Bool {
         guard placing.isAvailable, placing.createsObjects, !placing.draws, !session.isClosed else { return false }
-        switch placing {
-        case .table: return false
-        default: break
-        }
         cancelPointerInteraction()
         guard finishEditing() else { return false }
+        if let placed = placeWithOwner(placing, from: point, to: point,
+                                       frame: EaselToolGeometry.placedFrame(placing, at: EaselPoint(point)), dragged: false) {
+            return placed
+        }
         if placing.drawsConnector {
             let half = CGFloat(placing.defaultSize.width / 2)
             return placeCreatedItem(connectorItem(placing, from: NSPoint(x: point.x - half, y: point.y),

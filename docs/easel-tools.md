@@ -59,8 +59,8 @@ Stickies, shapes, text, sections, tables and code blocks go back to Select
 after one placement (Parc's choice where FigJam's behaviour isn't documented).
 The marker, highlighter, washi tape, eraser, connectors, stamps and the hand
 stay armed until V, Escape or another tool. Escape first finishes text editing,
-then cancels a drag in progress, then leaves an armed tool, then clears the
-selection; in a note's Easel block the next Escape returns to the note.
+then cancels a drag in progress, then clears the selection, then leaves an
+armed tool; in a note's Easel block the next Escape returns to the note.
 
 ## Keys
 
@@ -96,6 +96,16 @@ pages everywhere else. ⇧1, ⇧2 and ⇧0 match the number keys by position, so
 they work on layouts with symbols on that row; the zoom chords fall back to a
 key's position only when it types a non-Latin character, so ⇧⌘? on German
 layouts stays the Help search.
+
+## Quick actions
+
+⌘/ opens a search card under the toolbar, styled like the Notes slash menu.
+Type what you want by name, such as sticky, ellipse, connector, pen or zoom,
+and press Return or click it. Objects arm their tool, so the ghost follows the
+pointer and a click (or Return) drops one; tools switch; Add image, link and
+webpage open their usual pickers; view commands zoom. The last three you ran
+from the card sit at the top under Recent. ⌘/ opens only while the canvas has
+keyboard focus in an Easel tab; Parc has no other ⌘/ shortcut.
 
 ## Navigation
 
@@ -133,7 +143,11 @@ endpoint cursors appear only with Select.
 
 `Sources/ParcCore/EaselTool.swift` holds the tools, keys, placement geometry
 and zoom maths; `EaselCanvasView+Tools.swift` the canvas gestures, panning,
-zooming, ghost and cursors; `EaselToolPalette.swift` the toolbar and its menus.
+zooming, ghost and cursors; `EaselToolPalette.swift` the toolbar and its menus;
+`EaselQuickActions.swift` the ⌘/ card. Objects with their own insert code
+(stickies, sections, shapes, text, tables, code blocks) plug into the
+`ownerPlacement` switch, one line per tool, and everything else uses the
+generic placement.
 In a note's Easel block the keys, panning and zooming work the same, without a
 toolbar. The capture editor keeps its own buttons and ignores tool letters, but
 Space panning and the zoom keys work there too.

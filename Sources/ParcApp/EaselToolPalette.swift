@@ -218,6 +218,8 @@ final class EaselToolPalette: NSView {
     var onPreferredSizeChange: (() -> Void)?
     var canZoomToSelection: () -> Bool = { false }
     var shapePicker: ((@escaping (EaselShape) -> Void) -> NSView)?
+    var shapePickerKeepsOpen = false { didSet { if shapePickerKeepsOpen { exemptPinnedViews() } } }
+    var keepOpenViews: () -> [NSView] = { [] }
     var showsTemplates = false { didSet { if showsTemplates != oldValue { rebuild() } } }
 
     private(set) var tool: EaselTool = .select
@@ -484,8 +486,9 @@ final class EaselToolPalette: NSView {
         switch entry {
         case .menu(.shapes) where shapePicker != nil:
             guard let picker = shapePicker?({ [weak self] shape in
-                self?.closeMenu()
-                self?.onShape?(shape)
+                guard let self else { return }
+                if !self.shapePickerKeepsOpen { self.closeMenu() }
+                self.onShape?(shape)
             }) else { return }
             content = picker
         case .menu(let menu):
@@ -534,10 +537,16 @@ final class EaselToolPalette: NSView {
         }
         popover = next
         openEntry = entry
+        if entry == .menu(.shapes) { exemptPinnedViews() }
         next.present(in: host, anchor: host.convert(button.bounds, from: button), edge: .below)
         list?.prepare(origin: keyboard ? .keyboard : .pointer)
         field?.focus()
         refreshStates()
+    }
+
+    private func exemptPinnedViews() {
+        guard shapePickerKeepsOpen, shapePicker != nil, openEntry == .menu(.shapes), let popover else { return }
+        for view in keepOpenViews() { popover.exempt(view) }
     }
 
     private func menuItems(_ menu: Menu) -> [NoteMenuList.Item] {

@@ -117,11 +117,12 @@ enum EaselTool: String, CaseIterable, Equatable {
 
     var defaultSize: (width: Double, height: Double) {
         switch self {
-        case .sticky: return (200, 200)
-        case .rectangle, .ellipse: return (160, 160)
+        case .sticky: return (EaselBoardObjects.stickySide, EaselBoardObjects.stickySide)
+        case .rectangle: return EaselShapeGeometry.defaultSize(.rectangle)
+        case .ellipse: return EaselShapeGeometry.defaultSize(.ellipse)
         case .text: return (280, 28)
         case .straightConnector, .elbowConnector, .curvedConnector: return (160, 0)
-        case .section: return (400, 400)
+        case .section: return (EaselBoardObjects.sectionWidth, EaselBoardObjects.sectionHeight)
         case .table: return (360, 160)
         case .stamp: return (48, 48)
         case .codeBlock: return (420, 180)
