@@ -344,7 +344,7 @@ extension EaselCanvasView {
                         box = box.insetBy(dx: -grow, dy: -grow)
                     default:
                         box = box.union(presentedBounds(of: item, objectMotion.timeline.presentation(for: id, at: now)))
-                        if let previous = objectMotion.timeline.previousLook(for: id) { box = box.union(displayBounds(of: previous)) }
+                        for look in objectMotion.timeline.fadingLooks(for: id, at: now) { box = box.union(displayBounds(of: look.item)) }
                         let pad = max(box.width, box.height) * 0.06 + 4
                         box = box.insetBy(dx: -pad, dy: -pad)
                     }
@@ -402,12 +402,16 @@ extension EaselCanvasView {
         for item in ordered {
             let presentation = objectMotion.timeline.presentation(for: item.id, at: now)
             guard presentedBounds(of: item, presentation).intersects(dirtyRect) else { continue }
-            if let previous = objectMotion.timeline.previousLook(for: item.id), let context = NSGraphicsContext.current?.cgContext {
+            let looks = objectMotion.timeline.fadingLooks(for: item.id, at: now)
+            if !looks.isEmpty, let context = NSGraphicsContext.current?.cgContext {
                 let mix = CGFloat(min(1, max(0, presentation.opacity)))
                 context.saveGState()
                 context.beginTransparencyLayer(auxiliaryInfo: nil)
-                context.setAlpha(1 - mix)
-                drawObject(previous)
+                for (index, look) in looks.enumerated() {
+                    if index > 0 { context.setBlendMode(.plusLighter) }
+                    context.setAlpha(CGFloat(look.weight))
+                    drawObject(look.item)
+                }
                 context.setBlendMode(.plusLighter)
                 context.setAlpha(mix)
                 drawObject(item)
