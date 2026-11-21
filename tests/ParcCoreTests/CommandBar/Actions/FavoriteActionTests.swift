@@ -60,12 +60,12 @@ struct FavoriteActionTests {
     }
 
     static let expiringChanges: [Change] = [
-        Change(name: "an original is replaced by a new incarnation") { $0.tabs[0].createdAt.addTimeInterval(1) },
+        Change(name: "an original is replaced by a new incarnation") { state, _ in state.tabs[0].createdAt.addTimeInterval(1) },
         Change(name: "an original moves to another space") { state, fixture in state.tabs[0].spaceID = fixture.other.id },
-        Change(name: "an original is reparented") { $0.tabs[2].folderID = nil },
+        Change(name: "an original is reparented") { state, _ in state.tabs[2].folderID = nil },
         Change(name: "an original changes profile") { state, fixture in state.tabs[0].profileID = fixture.foreign.id },
-        Change(name: "an original is archived") { $0.tabs[0].archivedAt = Date() },
-        Change(name: "the source is missing") { $0.tabs.removeFirst() },
+        Change(name: "an original is archived") { state, _ in state.tabs[0].archivedAt = Date() },
+        Change(name: "the source is missing") { state, _ in state.tabs.removeFirst() },
         Change(name: "the profile is retired") { state, fixture in state.profiles.removeAll { $0.id == fixture.profile.id } },
         Change(name: "the destination is missing") { state, fixture in state.spaces.removeAll { $0.id == fixture.space.id } },
     ]

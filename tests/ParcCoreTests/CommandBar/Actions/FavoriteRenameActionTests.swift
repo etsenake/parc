@@ -48,13 +48,13 @@ struct FavoriteRenameActionTests {
     }
 
     static let expiringChanges: [Change] = [
-        Change(name: "another window renames the Favorite") { $0.tabs[0].customTitle = "Another window" },
-        Change(name: "the saved anchor is replaced") { $0.tabs[0].savedURL = "https://example.test/new-home" },
-        Change(name: "the UUID is reused by a new incarnation") { $0.tabs[0].createdAt.addTimeInterval(1) },
-        Change(name: "the Favorite is unfavorited") { $0.tabs[0].kind = .pinned },
+        Change(name: "another window renames the Favorite") { state, _ in state.tabs[0].customTitle = "Another window" },
+        Change(name: "the saved anchor is replaced") { state, _ in state.tabs[0].savedURL = "https://example.test/new-home" },
+        Change(name: "the UUID is reused by a new incarnation") { state, _ in state.tabs[0].createdAt.addTimeInterval(1) },
+        Change(name: "the Favorite is unfavorited") { state, _ in state.tabs[0].kind = .pinned },
         Change(name: "the Favorite moves to a foreign profile") { state, fixture in state.tabs[0].profileID = fixture.foreign.id },
-        Change(name: "the Favorite is archived") { $0.tabs[0].archivedAt = Date() },
-        Change(name: "the Favorite is deleted") { $0.tabs.removeFirst() },
+        Change(name: "the Favorite is archived") { state, _ in state.tabs[0].archivedAt = Date() },
+        Change(name: "the Favorite is deleted") { state, _ in state.tabs.removeFirst() },
         Change(name: "the profile is retiring") { state, fixture in
             state.profileRemovals = [.init(id: UUID(), profileID: fixture.profile.id, profileName: fixture.profile.name)]
         },
@@ -74,17 +74,20 @@ struct FavoriteRenameActionTests {
     }
 
     @Test func theTitleIsTheRecoveredTypeTravelTitle() throws {
-        #expect(try #require(Fixture().make()).title == "Rename Current Tab…")
+        let action = try #require(Fixture().make())
+        #expect(action.title == "Rename Current Tab…")
     }
 
     @Test(arguments: ["rename", "CURRENT TAB", "tab ren"])
     func commandWordsMatch(query: String) throws {
-        #expect(try #require(Fixture().make()).matches(query: query))
+        let action = try #require(Fixture().make())
+        #expect(action.matches(query: query))
     }
 
     @Test(arguments: ["", "rename folder", "> rename"])
     func noTriggerIsFabricatedAndUnrelatedCommandsDoNotMatch(query: String) throws {
-        #expect(try !#require(Fixture().make()).matches(query: query))
+        let action = try #require(Fixture().make())
+        #expect(!action.matches(query: query))
     }
 
     @Test func anEmptySelectionOffersNoRename() {
@@ -136,7 +139,8 @@ struct FavoriteRenameActionTests {
         var changed = fixture.state
         changed.tabs[0].title = "Live update"
         changed.tabs[0].url = "https://example.test/redirect"
-        #expect(try action.id == #require(fixture.make(changed)).id)
+        let changedAction = try #require(fixture.make(changed))
+        #expect(action.id == changedAction.id)
     }
 
     @Test(arguments: expiringChanges)

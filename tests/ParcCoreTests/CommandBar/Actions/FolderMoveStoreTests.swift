@@ -20,7 +20,8 @@ struct FolderMoveStoreTests {
         func store() throws -> BrowserStore { try BrowserStore(directory: directory) }
 
         func move(_ id: UUID, in store: BrowserStore) throws -> CommandBarFolderMove {
-            try #require(fixture.action(try #require(fixture.source([.tab(id)], store.state)), fixture.there.id, store.state))
+            let source = try #require(fixture.source([.tab(id)], store.state))
+            return try #require(fixture.action(source, fixture.there.id, store.state))
         }
 
         func cleanUp() { try? FileManager.default.removeItem(at: directory) }

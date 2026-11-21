@@ -74,8 +74,8 @@ struct FolderMoveTests {
     }
 
     static let expiringChanges: [Change] = [
-        Change(name: "the original incarnation is replaced") { $0.tabs[0].createdAt.addTimeInterval(1) },
-        Change(name: "the source is archived") { $0.tabs[0].archivedAt = Date() },
+        Change(name: "the original incarnation is replaced") { state, _ in state.tabs[0].createdAt.addTimeInterval(1) },
+        Change(name: "the source is archived") { state, _ in state.tabs[0].archivedAt = Date() },
         Change(name: "the destination is removed") { state, fixture in state.folders.removeAll { $0.id == fixture.here.id } },
         Change(name: "the destination moves to another space") { state, fixture in state.folders[2].spaceID = fixture.away.id },
         Change(name: "profile ownership changes") { state, fixture in state.spaces[0].profileID = fixture.foreign.id },
