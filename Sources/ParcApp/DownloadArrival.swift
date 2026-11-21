@@ -11,6 +11,14 @@ import SwiftUI
 @MainActor class DownloadArrivalSchedule {
     static let main = DownloadArrivalSchedule()
     var drivesFrames: Bool { true }
+
+    func present(_ window: NSWindow, above parent: NSWindow, frame: NSRect) {
+        parent.addChildWindow(window, ordered: .above)
+        window.setFrame(frame, display: false)
+        window.level = .floating
+        window.orderFront(nil)
+    }
+
     func after(_ delay: TimeInterval, _ body: @escaping @MainActor () -> Void) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { body() } }
     }
@@ -332,10 +340,7 @@ import SwiftUI
         animateDownload(source: Self.source(screenPoint: screenPoint, in: parent),
                         destination: DownloadArrivalFlight.destinationArgument)
         isAnimating = true
-        parent.addChildWindow(window, ordered: .above)
-        window.setFrame(inset, display: false)
-        window.level = .floating
-        window.orderFront(nil)
+        self.schedule.present(window, above: parent, frame: inset)
         presented = true
         if binRunning { startFrames() }
         securityObserver = NotificationCenter.default.addObserver(forName: Notification.Name("PCNativeWindowSecurityStateChanged"),
