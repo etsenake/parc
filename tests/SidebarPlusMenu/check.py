@@ -51,7 +51,8 @@ assert "appearanceSource" not in plus, "the HUD keeps AppKit's default appearanc
 navigation = (root / "Sources/ParcApp/NavigationControls.swift").read_text()
 history = navigation[navigation.index("private final class NavigationHistoryFill"):]
 for use in (
-    "init(page: PCNativePage, snapshot: PCNativeNavigationHistory, window: NSWindow, theme: SpaceTheme) {",
+    "init(page: PCNativePage?, snapshot: PCNativeNavigationHistory?, leading: [NavigationHistoryStepRow] = [],\n"
+    "         window: NSWindow, theme: SpaceTheme) {",
     "colors = ParcMenuColors(theme: theme)",
     "base = NavigationHistoryFill(color: colors.base)",
     "tint = NavigationHistoryFill(color: colors.background)",
@@ -64,6 +65,7 @@ for gone in ("palette.isDark", ".appearance = ", "NSAppearance(named:", "appeara
     assert gone not in history, f"the history chooser still picks its own light/dark half: {gone}"
 assert ("NavigationHistoryController(page: page, snapshot: snapshot, window: window,\n"
         "                    theme: self.windowPaletteTheme)") in controller \
+    and "NavigationHistoryController(page: page, snapshot: nil, leading: rows, window: window, theme: windowPaletteTheme)" in controller \
     and "var windowPaletteTheme: SpaceTheme { rootView.incognito ? IncognitoWindowTheme.paletteTheme : activeSpace.theme }" in controller, \
     "the window hands the history chooser its Space theme, or the incognito theme in a private window"
 assert "sidebar.plusMenuTheme = rootView.paletteTheme" in controller.split("func applyChromeTheme(", 1)[1].split("\n    }\n", 1)[0], \
