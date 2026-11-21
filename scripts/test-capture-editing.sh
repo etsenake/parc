@@ -4,6 +4,18 @@ repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 check_root=$(mktemp -d "${TMPDIR:-/tmp}/parc-capture-edit.XXXXXX")
 trap 'rm -rf "$check_root"' EXIT
 spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$check_root/ParcButtonSpinner.swift" ParcButtonSpinner)
+cat > "$check_root/EaselShapePickerStub.swift" <<'SWIFT'
+import AppKit
+@MainActor final class EaselShapePickerView: NSView {
+    var onPick: ((EaselShape) -> Void)?
+    var checked: Set<EaselShape>
+    init(checked: Set<EaselShape> = [], pinned: Bool = false, showsPin: Bool = true) {
+        self.checked = checked
+        super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { nil }
+}
+SWIFT
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/Sources/ParcApp/NoteTheme.swift" \
@@ -19,6 +31,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvas"*.swift \
+  "$repo_root/Sources/ParcApp/EaselStampArtwork.swift" "$check_root/EaselShapePickerStub.swift" \
   "$repo_root/Sources/ParcApp/ParcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/EaselMotion.swift" \
   "$repo_root/Sources/ParcApp/CaptureLibrarySharing.swift" \
