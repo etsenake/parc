@@ -1,6 +1,8 @@
 import AppKit
+import Testing
+@testable import Parc
 
-@MainActor final class PlateCanvas: NSView {
+private final class PlateCanvas: NSView {
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
         NSColor(srgbRed: 99 / 255, green: 175 / 255, blue: 129 / 255, alpha: 1).setFill()
@@ -8,7 +10,7 @@ import AppKit
     }
 }
 
-struct MeasuredPlate {
+private struct MeasuredPlate {
     var top: CGFloat
     var bottom: CGFloat
     var leading: CGFloat
@@ -24,20 +26,15 @@ struct MeasuredPlate {
     }
 }
 
-@main @MainActor struct PinnedPlateGeometryTests {
-    static var count = 0
-    static func check(_ value: @autoclosure () -> Bool, _ message: String) {
-        count += 1; precondition(value(), message)
-    }
+@MainActor
+struct PinnedPlateGeometryTests {
+    private let scale: CGFloat = 2
+    private let listX: CGFloat = 8
+    private let listY: CGFloat = 10
+    private let listWidth: CGFloat = 212
+    private let probeX: CGFloat = 150
 
-    static let scale: CGFloat = 2
-    static let listX: CGFloat = 8, listY: CGFloat = 10, listWidth: CGFloat = 212
-    static let probeX: CGFloat = 150
-
-    static func main() { exitOnFailure(runChecks) }
-
-    static func measure(_ content: NSView, row: SidebarChromeLayout.TablistRow,
-                        prepare: (NSView) -> Void) -> (plate: MeasuredPlate?, slot: NSRect) {
+    private func measure(_ content: NSView, row: SidebarChromeLayout.TablistRow, prepare: (NSView) -> Void) -> (plate: MeasuredPlate?, slot: NSRect) {
         let canvas = PlateCanvas(frame: NSRect(x: 0, y: 0, width: listX * 2 + listWidth, height: 80))
         canvas.appearance = NSAppearance(named: .aqua)
         let outline = SidebarOutlineView(frame: NSRect(x: listX, y: listY, width: listWidth, height: 60))
@@ -46,9 +43,9 @@ struct MeasuredPlate {
         outline.layoutSubtreeIfNeeded()
         prepare(content)
         let slot = canvas.convert(outline.rowFrames()["subject"] ?? .zero, from: outline)
-        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(canvas.bounds.width * scale),
-                                      pixelsHigh: Int(canvas.bounds.height * scale), bitsPerSample: 8, samplesPerPixel: 4,
-                                      hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(canvas.bounds.width * scale), pixelsHigh: Int(canvas.bounds.height * scale),
+                                      bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                      bytesPerRow: 0, bitsPerPixel: 0)!
         bitmap.size = canvas.bounds.size
         canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
         func pixel(_ x: Int, _ y: Int) -> [CGFloat] {
@@ -56,9 +53,7 @@ struct MeasuredPlate {
             return [color.redComponent, color.greenComponent, color.blueComponent]
         }
         let ground = pixel(1, 1)
-        func delta(_ x: Int, _ y: Int) -> CGFloat {
-            zip(pixel(x, y), ground).map { abs($0 - $1) }.max() ?? 0
-        }
+        func delta(_ x: Int, _ y: Int) -> CGFloat { zip(pixel(x, y), ground).map { abs($0 - $1) }.max() ?? 0 }
         let marked: (Int, Int) -> Bool = { delta($0, $1) >= 2 / 255 }
         let column = Int((listX + probeX) * scale)
         let rows = (0..<bitmap.pixelsHigh).filter { marked(column, $0) }
@@ -74,52 +69,75 @@ struct MeasuredPlate {
             return uncovered / scale
         }
         return (MeasuredPlate(top: CGFloat(first) / scale - slot.minY, bottom: CGFloat(last + 1) / scale - slot.minY,
-                              leading: CGFloat(leading) / scale - listX, trailing: CGFloat(trailing + 1) / scale - listX,
-                              corner: corner), slot)
+                              leading: CGFloat(leading) / scale - listX, trailing: CGFloat(trailing + 1) / scale - listX, corner: corner), slot)
     }
 
-    static func press(_ view: NSView) {
+    private func press(_ view: NSView) {
         let event = NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
                                        context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
         view.mouseDown(with: event)
     }
 
-    static func pinnedHeader(collapsed: Bool = false) -> SidebarPinnedHeaderView {
+    private func pinnedHeader(collapsed: Bool = false) -> SidebarPinnedHeaderView {
         let header = SidebarPinnedHeaderView()
         header.applyStyle(dark: false, accent: nil)
         header.update(.init(collapsed: collapsed, showsIcons: false, count: collapsed ? 6 : 0), fallbacks: [:], animated: false)
         return header
     }
 
-    static func hoveredNewTab(_ view: NSView) {
+    private func hoveredNewTab(_ view: NSView) {
         (view.subviews.first { $0 is SidebarRowBackgroundView } as? SidebarRowBackgroundView)?.appearanceState.hovered = true
     }
 
-    static func runChecks() {
-        NSApplication.shared.setActivationPolicy(.prohibited)
-        let slotRow = SidebarChromeLayout.TablistSlot.pinnedSectionHeader.row
-        let standard = measure(SidebarNewTabRow(dark: false) {}, row: SidebarChromeLayout.TablistSlot.newTab.row, prepare: hoveredNewTab)
-        guard let reference = standard.plate else { preconditionFailure("the New Tab row painted no hover plate") }
-        check(reference.height == SidebarChromeLayout.tablistVisibleRowHeight && reference.leading == 0 && reference.trailing == listWidth,
-              "the measured New Tab plate is the standard 36-point row, edge to edge")
+    private var slotRow: SidebarChromeLayout.TablistRow { SidebarChromeLayout.TablistSlot.pinnedSectionHeader.row }
 
+    private func standard() -> (plate: MeasuredPlate?, slot: NSRect) {
+        measure(SidebarNewTabRow(dark: false) {}, row: SidebarChromeLayout.TablistSlot.newTab.row, prepare: hoveredNewTab)
+    }
+
+    @Test func theMeasuredNewTabPlateIsTheStandardThirtySixPointRowEdgeToEdge() throws {
+        let reference = try #require(standard().plate)
+        #expect(reference.height == SidebarChromeLayout.tablistVisibleRowHeight)
+        #expect(reference.leading == 0)
+        #expect(reference.trailing == listWidth)
+    }
+
+    @Test func thePinnedHeadersPlateIsExactlyAsTallAsTheNewTabRows() throws {
+        let reference = try #require(standard().plate)
+        let plate = try #require(measure(pinnedHeader(), row: slotRow, prepare: press).plate)
+        #expect(plate.height == reference.height)
+    }
+
+    @Test func thePinnedHeadersPlateSitsSpansAndRoundsLikeTheNewTabRows() throws {
+        let reference = try #require(standard().plate)
+        let plate = try #require(measure(pinnedHeader(), row: slotRow, prepare: press).plate)
+        #expect(plate.matches(reference))
+    }
+
+    @Test func thePinnedHeaderTakesAStandardRowSlot() {
         let pressed = measure(pinnedHeader(), row: slotRow, prepare: press)
-        guard let plate = pressed.plate else { preconditionFailure("a pressed Pinned header painted no plate") }
-        check(plate.height == reference.height, "the Pinned header's plate is exactly as tall as the New Tab row's")
-        check(plate.matches(reference), "the Pinned header's plate sits, spans and rounds exactly like the New Tab row's")
-        check(pressed.slot.height == standard.slot.height, "the Pinned header takes a standard row slot")
+        #expect(pressed.slot.height == standard().slot.height)
+    }
 
+    @Test func aFoldedHeaderWithItsCountKeepsTheStandardPlate() throws {
+        let reference = try #require(standard().plate)
         let folded = measure(pinnedHeader(collapsed: true), row: slotRow, prepare: press)
-        check(folded.plate.map { $0.matches(reference) } == true, "a folded header with its count keeps the standard plate")
+        #expect(folded.plate.map { $0.matches(reference) } == true)
+    }
 
-        check(measure(pinnedHeader(), row: slotRow) { _ in }.plate == nil, "a resting header paints no plate")
+    @Test func aRestingHeaderPaintsNoPlate() {
+        #expect(measure(pinnedHeader(), row: slotRow) { _ in }.plate == nil)
+    }
 
+    @Test func negativeControlAHeaderSqueezedIntoATwentySixPointSlotIsCaught() throws {
+        let reference = try #require(standard().plate)
         let short = measure(pinnedHeader(), row: .accessory(height: 26), prepare: press)
-        check(short.plate.map { $0.height != reference.height && !$0.matches(reference) } == true,
-              "negative control: a header squeezed into a 26-point slot is caught as off-standard")
+        #expect(short.plate.map { $0.height != reference.height && !$0.matches(reference) } == true)
+    }
+
+    @Test func negativeControlAFullHeightPlateWithTheWrongCornersIsCaught() throws {
+        let reference = try #require(standard().plate)
         let sharp = measure(pinnedHeader(), row: slotRow) { view in press(view); view.layer?.cornerRadius = 6 }
-        check(sharp.plate.map { $0.height == reference.height && !$0.matches(reference) } == true,
-              "negative control: a full-height plate with the wrong corners is caught")
-        print("Pinned plate geometry checks passed: \(count)")
+        #expect(sharp.plate.map { $0.height == reference.height && !$0.matches(reference) } == true)
     }
 }
