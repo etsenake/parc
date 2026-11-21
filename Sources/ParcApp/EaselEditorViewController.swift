@@ -304,7 +304,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         }
     }
     private func quickActionList() -> [EaselQuickActions.Action] {
-        var inserts = EaselQuickActions.catalogInserts(canvas: canvas) { [weak self] in self?.focusCanvas() }
+        var inserts = EaselQuickActions.catalogInserts(canvas: canvas, canInsert: { [weak self] in self?.canInsert($0) == true }) { [weak self] in self?.focusCanvas() }
         var extras: [(EaselToolPalette.Insert, [String])] = []
         if canvas.acceptsMermaid { extras.append((.mermaid, ["flowchart", "diagram", "chart", "er"])) }
         if canvas.acceptsTemplates { extras.append((.templates, ["template", "starter", "kanban", "retro", "brainstorm", "board"])) }

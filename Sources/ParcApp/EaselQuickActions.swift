@@ -105,12 +105,13 @@ final class EaselQuickActions {
 }
 
 extension EaselQuickActions {
-    static func catalogInserts(canvas: EaselCanvasView, focus: @escaping () -> Void) -> [Action] {
+    static func catalogInserts(canvas: EaselCanvasView, canInsert: ((EaselInsertKind) -> Bool)? = nil, focus: @escaping () -> Void) -> [Action] {
         guard canvas.fixedCanvasSize == nil else { return [] }
         return EaselInsertKind.allCases.compactMap { kind in
             guard let itemKind = kind.itemKind else { return nil }
             return Action(id: "insert-" + kind.rawValue, title: kind.title, icon: kind.icon, shortcut: nil, keywords: kind.keywords,
-                          section: "Add", isEnabled: kind != .embed || canvas.pageObjects != nil) { [weak canvas] in
+                          section: "Add",
+                          isEnabled: canInsert?(kind) ?? (kind != .embed || canvas.pageObjects != nil)) { [weak canvas] in
                 canvas?.placeEmptyObject(itemKind)
                 focus()
             }
