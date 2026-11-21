@@ -116,6 +116,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private var textPreview: [UUID: EaselItem] = [:]
     private var textSizeBadge: (label: String, rect: NSRect)?
     private var objectLinkPopover: NSPopover?
+    private var textSizePopover: NSPopover?
     var start: NSPoint?
     var original: [EaselItem] = []
     private var resizeHandle: EaselResizeHandle?
@@ -1666,6 +1667,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if let owner, let ranges { owner.selectedRanges = ranges }
             self.setCustomTextSize(points)
         }
+        textSizePopover?.close(); textSizePopover = popover
         owner?.pendingPopover = popover
         let host = anchor ?? self
         let place = rect ?? (anchor == nil ? EaselGeometryEdit.bounds(of: session.document.items.filter { ids.contains($0.id) })
