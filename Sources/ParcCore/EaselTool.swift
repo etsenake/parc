@@ -131,6 +131,7 @@ enum EaselZoomCommand: String, CaseIterable, Equatable {
 enum EaselKeyCommand: Equatable {
     case tool(EaselTool)
     case zoom(EaselZoomCommand)
+    case layer(EaselLayerMove)
 }
 
 enum EaselKeyCommands {
@@ -148,6 +149,7 @@ enum EaselKeyCommands {
         }
         guard modifiers.isDisjoint(with: [.control, .option]) else { return nil }
         let shift = modifiers.contains(.shift)
+        if !shift, let move = EaselChords.bareLayerMove(characters: characters, keyCode: keyCode) { return .layer(move) }
         if shift {
             switch keyCode {
             case 18: return .zoom(.fit)
