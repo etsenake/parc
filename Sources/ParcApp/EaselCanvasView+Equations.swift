@@ -58,12 +58,13 @@ extension EaselCanvasView {
         }
         opened.onChange = { [weak self] text in self?.equationTextDidChange(text) }
         opened.onCommit = { [weak self] in self?.endEquationEditing(reselect: true) }
-        opened.onCancel = { [weak self] in self?.endEquationEditing(reselect: true) }
+        opened.onCancel = { [weak self] in self?.endEquationEditing(reselect: true, cancelling: true) }
         opened.onClickAway = { [weak self] in self?.endEquationEditing(reselect: false) }
         opened.onDismiss = { [weak self] in self?.finishEquationEditing() }
         equations.session = opened
         equations.editingID = id
         equations.undoGroup = group ?? UUID()
+        equations.original = item
         equations.fitNatural = EaselEquationArtwork.typesetSize(item.text) != nil ? EaselEquationArtwork.natural(item.text) : EaselEquation.emptySize
         watchEquationViewport()
         let failure = EaselEquationArtwork.error(of: item.text)
@@ -119,29 +120,39 @@ extension EaselCanvasView {
         NSAccessibility.post(element: self, notification: .layoutChanged)
     }
 
-    private func endEquationEditing(reselect: Bool) {
+    private func endEquationEditing(reselect: Bool, cancelling: Bool = false) {
         let id = equations.editingID
-        guard finishEquationEditing() else { return }
+        guard finishEquationEditing(cancelling: cancelling) else { return }
         guard reselect, let id, equationItem(id) != nil else { return }
         selection = [id]
         window?.makeFirstResponder(self)
     }
 
     @discardableResult
-    func finishEquationEditing(removingEmpty: Bool = true) -> Bool {
+    func finishEquationEditing(cancelling: Bool = false) -> Bool {
         guard let opened = equations.session, let id = equations.editingID else { return true }
         guard !equations.finishing else { return false }
         equations.finishing = true
         defer { equations.finishing = false }
         let group = equations.undoGroup
+        if cancelling, let original = equations.original, let current = equationItem(id),
+           current.text != original.text || current.frame != original.frame {
+            let restored = commit("Edit equation", coalescing: group) { document in
+                guard let index = document.items.firstIndex(where: { $0.id == id }) else { return }
+                document.items[index].text = original.text
+                document.items[index].frame = original.frame
+            }
+            guard restored else { return false }
+        }
         let blank = equationItem(id).map { EaselEquation.isBlank($0.text) } ?? false
         unwatchEquationViewport()
         equations.session = nil
         equations.editingID = nil
         equations.undoGroup = nil
+        equations.original = nil
         if let responder = window?.firstResponder as? NSView, opened.contains(responder) { window?.makeFirstResponder(self) }
         opened.close(animated: true)
-        if blank, removingEmpty {
+        if blank {
             guard commit("Remove empty equation", coalescing: group, { $0.items.removeAll { $0.id == id } }) else { return false }
             selection.remove(id)
         }
@@ -181,9 +192,9 @@ extension EaselCanvasView {
         guard context.target == .object, context.items.count == 1, let item = context.items.first, item.kind == .equation else { return [] }
         let id = item.id
         return [
-            EaselMenuRow(id: "edit-tex", title: "Edit TeX", symbol: "x.squareroot", isEnabled: canEditEquations && !item.isLocked,
+            EaselMenuRow(id: "edit-tex", title: "Edit Equation", symbol: "x.squareroot", isEnabled: canEditEquations && !item.isLocked,
                          perform: guardedMenuAction { canvas in _ = canvas.beginEquationEditing(id) }),
-            EaselMenuRow(id: "copy-tex", title: "Copy TeX", symbol: "doc.on.doc", isEnabled: !EaselEquation.isBlank(item.text),
+            EaselMenuRow(id: "copy-tex", title: "Copy as TeX", symbol: "doc.on.doc", isEnabled: !EaselEquation.isBlank(item.text),
                          perform: guardedMenuAction { canvas in _ = canvas.copyEquationTeX(id) }),
         ]
     }
@@ -191,9 +202,9 @@ extension EaselCanvasView {
     func equationToolbarEntries(_ selected: [EaselItem], ready: Bool) -> [EaselToolbarMenuEntry] {
         guard selected.count == 1, let item = selected.first, item.kind == .equation else { return [] }
         return [
-            EaselToolbarMenuEntry(id: "equation.edit", title: "Edit TeX", symbol: "x.squareroot",
+            EaselToolbarMenuEntry(id: "equation.edit", title: "Edit Equation", symbol: "x.squareroot",
                                   isEnabled: ready && canEditEquations && !item.isLocked),
-            EaselToolbarMenuEntry(id: "equation.copy", title: "Copy TeX", symbol: "doc.on.doc",
+            EaselToolbarMenuEntry(id: "equation.copy", title: "Copy as TeX", symbol: "doc.on.doc",
                                   isEnabled: ready && !EaselEquation.isBlank(item.text)),
         ]
     }

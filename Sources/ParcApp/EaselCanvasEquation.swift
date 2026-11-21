@@ -20,6 +20,7 @@ final class EaselEquationState {
     var session: EaselEquationEditing?
     var editingID: UUID?
     var undoGroup: UUID?
+    var original: EaselItem?
     var fitNatural = EaselEquation.emptySize
     var finishing = false
     var observers: [NSObjectProtocol] = []

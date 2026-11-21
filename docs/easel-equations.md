@@ -12,10 +12,11 @@ Code ▾ in the toolbar, the ⌘/ quick actions and the empty-object path
 (`placeEmptyObject(.equation)`) place an empty equation at the middle of the
 visible area, selected, with its TeX editor already open. Double-clicking an
 equation, or pressing Return while it is selected, reopens the editor. Typing
-retypesets live and keeps the equation's chosen size and centre. Escape, ⌘Return,
-Done or a click anywhere else closes the editor; the placement and every edit
-since belong to one Undo step. An equation left empty is removed, like empty
-text. The editor's own ⌘Z undoes typing inside the field.
+retypesets live and keeps the equation's chosen size and centre. ⌘Return, Done or a
+click anywhere else closes the editor and keeps what you typed; Escape closes it
+and puts back the TeX the equation had when you opened it, like Notes does. The
+placement and every edit since belong to one Undo step. An equation left empty,
+by any route, is removed, like empty text. The editor's own ⌘Z undoes typing inside the field.
 
 A typo shows the way a note shows one: the panel underlines the spot and says what
 is wrong, and the object shows a warning with the TeX until it is fixed. While a
@@ -33,7 +34,7 @@ placed in sections and sent to pages like any object. They cannot hold a link.
 
 ## Selection toolbar, menus and clipboard
 
-The selection toolbar has colour and the ••• menu with Edit TeX and Copy TeX; the
+The selection toolbar has colour and the ••• menu with Edit Equation and Copy as TeX; the
 context menu has the same two rows. Copying the object writes the TeX as plain
 text next to the private object data and the image. Pasting that TeX as text
 makes ordinary text.
@@ -42,7 +43,7 @@ makes ordinary text.
 
 VoiceOver reads what Notes reads (`NoteEquationSpeech`): "Equation: the TeX",
 "Equation that won't typeset: the TeX. the problem" or "Empty equation". Activate
-is Edit TeX, and Copy TeX is an action.
+is Edit equation, and Copy as TeX is an action.
 
 ## Exports
 
