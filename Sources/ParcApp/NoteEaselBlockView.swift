@@ -234,6 +234,8 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
             sessionDirectory = host.directory
             let canvas = EaselCanvasView(session: next)
             canvas.toolState.onQuickActions = { [weak self] in self?.toggleQuickActions() }
+            canvas.onError = { [weak self] error in self?.editor?.onError?(error) }
+            canvas.onCopiedImage = { [weak self] in self?.editor?.formatBar.showToast(.copiedImage) }
             surface.show(canvas, viewOnly: !canEdit)
             watch = next.objectWillChange.sink { [weak self] (_: Void) in
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.sessionDidChange() } }
@@ -338,6 +340,10 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         quickActions.close()
         if let imagePanel, let window, window.attachedSheet === imagePanel { window.endSheet(imagePanel, returnCode: .cancel) }
         imagePanel = nil
+        if let canvas = surface.canvas {
+            _ = canvas.finishEditing()
+            canvas.selection = []
+        }
         surface.canvas?.tool = .select
         surface.active = false
         surface.canvas?.onImageEditingCancel = nil
