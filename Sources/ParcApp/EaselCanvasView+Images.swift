@@ -27,6 +27,7 @@ final class EaselImageEditing {
     fileprivate(set) var crop: Crop?
     fileprivate var shownOverlay = NSRect.null
     fileprivate var gif: EaselGIFPlayer?
+    var video: EaselVideoSurface?
     fileprivate var animatedAssets: [String: Bool] = [:]
 }
 
@@ -100,6 +101,18 @@ extension EaselCanvasView {
     var selectedImage: EaselItem? {
         guard selection.count == 1, let id = selection.first else { return nil }
         return session.document.items.first { $0.id == id && $0.kind == .image }
+    }
+
+    var selectedMedia: EaselItem? {
+        guard selection.count == 1, let id = selection.first else { return nil }
+        return session.document.items.first { $0.id == id && ($0.kind == .image || $0.kind == .video) }
+    }
+
+    @discardableResult
+    func openMedia(_ item: EaselItem) -> Bool {
+        if item.kind == .video { return playVideo(item.id) }
+        if selection != [item.id] { selection = [item.id] }
+        return beginImageCrop()
     }
 
     var canEditSelectedImage: Bool {
@@ -204,7 +217,7 @@ extension EaselCanvasView {
             drawCropOverlay(crop)
             return true
         }
-        for item in session.document.items where item.kind == .image {
+        for item in items where item.kind == .image {
             let r = frameRect(item)
             guard r.insetBy(dx: -4, dy: -4).intersects(dirtyRect) else { continue }
             if imageEditing.gif?.itemID != item.id, isAnimatedImage(item), let badge = imageBadgeRect("GIF", in: r, bottom: false) {
@@ -251,7 +264,7 @@ extension EaselCanvasView {
 
     private func altBadgeTarget(at point: NSPoint) -> EaselItem? {
         guard imageEditing.crop == nil, let id = hoveredObjectID,
-              let item = session.document.items.first(where: { $0.id == id && $0.kind == .image }),
+              let item = session.document.items.first(where: { $0.id == id && $0.kind == .image && !$0.isLocked }),
               let alt = item.altText, !alt.isEmpty, let badge = imageBadgeRect("ALT", in: frameRect(item), bottom: true),
               badge.contains(point) else { return nil }
         return item
@@ -374,6 +387,9 @@ extension EaselCanvasView {
         for item in session.document.items where item.kind == .image && !(item.altText ?? "").isEmpty {
             if let badge = imageBadgeRect("ALT", in: frameRect(item), bottom: true) { addCursorRect(badge, cursor: .pointingHand) }
         }
+        for item in session.document.items where item.kind == .video && imageEditing.video?.itemID != item.id {
+            if let disc = videoPlayRect(in: frameRect(item)) { addCursorRect(disc, cursor: .pointingHand) }
+        }
     }
 
     func addImageCropCursorRects() -> Bool {
@@ -437,7 +453,9 @@ extension EaselCanvasView {
             if next != current {
                 commit("Crop image") { document in
                     guard let index = document.items.firstIndex(where: { $0.id == current.id }) else { return }
+                    let previous = document
                     document.items[index] = next
+                    document = EaselDependents.settle(document, previous: previous, moved: [current.id])
                 }
             }
         }
@@ -471,6 +489,11 @@ extension EaselCanvasView {
     func imageMouseDown(_ event: NSEvent) -> Bool {
         let point = convert(event.locationInWindow, from: nil)
         guard var crop = imageEditing.crop else {
+            if event.clickCount == 1, let video = videoPlayTarget(at: point) {
+                window?.makeFirstResponder(self)
+                playVideo(video.id)
+                return true
+            }
             if event.clickCount == 1, let item = altBadgeTarget(at: point) {
                 selection = [item.id]
                 editImageAltText(for: item)
@@ -518,6 +541,10 @@ extension EaselCanvasView {
     }
 
     func imageKeyDown(_ event: NSEvent) -> Bool {
+        if event.keyCode == 53, let video = imageEditing.video, (video.player?.rate ?? 0) > 0 {
+            pauseVideo()
+            return true
+        }
         guard imageEditing.crop != nil else { return false }
         let modifiers = event.modifierFlags.intersection([.command, .option, .control])
         guard modifiers.isEmpty else { return false }
@@ -550,14 +577,16 @@ extension EaselCanvasView {
         cancelPointerInteraction()
         guard finishEditing() else { return }
         commit(mask == nil ? "Remove mask" : "Mask image") { document in
+            let previous = document
             for index in document.items.indices where targets.contains(document.items[index].id) {
                 document.items[index] = EaselImageFraming.masking(document.items[index], with: mask)
             }
+            document = EaselDependents.settle(document, previous: previous, moved: targets)
         }
     }
 
     func editImageAltText() {
-        guard let item = selectedImage else { return }
+        guard let item = selectedMedia else { return }
         editImageAltText(for: item)
     }
 
@@ -572,7 +601,8 @@ extension EaselCanvasView {
         var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         while value.utf8.count > 4096 { value.removeLast() }
         let alt: String? = value.isEmpty ? nil : value
-        guard let item = session.document.items.first(where: { $0.id == id && $0.kind == .image }), !item.isLocked, item.altText != alt else { return }
+        guard let item = session.document.items.first(where: { $0.id == id && ($0.kind == .image || $0.kind == .video) }), !item.isLocked,
+              item.altText != alt else { return }
         commit(alt == nil ? "Remove alt text" : "Alt text") { document in
             guard let index = document.items.firstIndex(where: { $0.id == id }) else { return }
             document.items[index].altText = alt
@@ -618,6 +648,33 @@ extension EaselCanvasView {
         selection = [id]
         invalidateIncrementalDisplay(layout: true)
         refreshImagePlayback()
+    }
+
+    func replaceSelectedImageFromPasteboard(_ pasteboard: NSPasteboard) -> Bool? {
+        guard canEditSelectedImage, let item = selectedImage, let data = pastedImageData(pasteboard) else { return nil }
+        do {
+            try replaceImage(id: item.id, data: data)
+            return true
+        } catch {
+            onError?(error)
+            return false
+        }
+    }
+
+    func replaceImage(fromDrop sender: NSDraggingInfo) -> Bool? {
+        guard let item = selectedImage, frameRect(item).contains(convert(sender.draggingLocation, from: nil)) else { return nil }
+        return replaceSelectedImageFromPasteboard(sender.draggingPasteboard)
+    }
+
+    private func pastedImageData(_ pasteboard: NSPasteboard) -> Data? {
+        if let data = pasteboard.data(forType: Self.gifPasteboardType) ?? pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff) {
+            return data
+        }
+        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+              urls.count == 1, let url = urls.first,
+              let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey]), values.isRegularFile == true,
+              values.contentType?.conforms(to: .image) == true, let size = values.fileSize, size <= EaselStore.maximumAssetBytes else { return nil }
+        return try? Data(contentsOf: url, options: .mappedIfSafe)
     }
 
     func preparedImageAsset(_ data: Data) throws -> (data: Data, type: EaselAssetType, pixelSize: CGSize) {
@@ -666,6 +723,7 @@ extension EaselCanvasView {
     }
 
     func refreshImagePlayback() {
+        if let video = imageEditing.video, selection != [video.itemID] { stopVideoPlayback() }
         if let crop = imageEditing.crop, selection != [crop.item.id] { finishImageCrop(save: true) }
         guard imageEditing.crop == nil, window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
               let item = selectedImage, let asset = item.assetID, isAnimatedImage(item) else {
@@ -703,6 +761,15 @@ extension EaselCanvasView {
     }
 
     func addImageMenuItems(to menu: NSMenu, target: Any) {
+        if let video = selectedMedia, video.kind == .video, !video.isLocked {
+            menu.addItem(.separator())
+            let playing = (imageEditing.video?.itemID == video.id) && (imageEditing.video?.player?.rate ?? 0) > 0
+            let play = NSMenuItem(title: playing ? "Pause Video" : "Play Video", action: #selector(playVideoFromMenu(_:)), keyEquivalent: "")
+            play.target = self; play.representedObject = target; menu.addItem(play)
+            let alt = NSMenuItem(title: "Alt Text…", action: #selector(editAltTextFromMenu(_:)), keyEquivalent: "")
+            alt.target = self; alt.representedObject = target; menu.addItem(alt)
+            return
+        }
         guard let item = selectedImage, !item.isLocked else { return }
         menu.addItem(.separator())
         let crop = NSMenuItem(title: "Crop Image", action: #selector(cropImageFromMenu(_:)), keyEquivalent: "")
@@ -757,7 +824,13 @@ extension EaselCanvasView {
 
     func validateImageMenuItem(_ menuItem: NSMenuItem) -> Bool? {
         switch menuItem.action {
-        case #selector(cropImageFromMenu(_:)), #selector(maskImageFromMenu(_:)), #selector(editAltTextFromMenu(_:)), #selector(replaceImageFromMenu(_:)):
+        case #selector(playVideoFromMenu(_:)):
+            guard let command = command(for: menuItem), command.ids == selection else { return false }
+            return selectedMedia?.kind == .video
+        case #selector(editAltTextFromMenu(_:)):
+            guard let command = command(for: menuItem), command.ids == selection, imageEditing.crop == nil else { return false }
+            return selectedMedia.map { $0.kind == .video ? !$0.isLocked && hasImageChrome : canEditSelectedImage && hasImageChrome } ?? false
+        case #selector(cropImageFromMenu(_:)), #selector(maskImageFromMenu(_:)), #selector(replaceImageFromMenu(_:)):
             guard let command = command(for: menuItem), command.ids == selection, imageEditing.crop == nil else { return false }
             return canEditSelectedImage
         case #selector(cropAspectFromMenu(_:)):
@@ -776,7 +849,14 @@ extension EaselCanvasView {
     }
 
     @objc private func cropImageFromMenu(_ sender: Any?) { if menuImage(sender) != nil { beginImageCrop() } }
-    @objc private func editAltTextFromMenu(_ sender: Any?) { if let item = menuImage(sender) { editImageAltText(for: item) } }
+    @objc private func editAltTextFromMenu(_ sender: Any?) {
+        guard let command = command(for: sender), command.ids == selection, imageEditing.crop == nil, let item = selectedMedia else { return }
+        editImageAltText(for: item)
+    }
+    @objc private func playVideoFromMenu(_ sender: Any?) {
+        guard let command = command(for: sender), command.ids == selection, let video = selectedMedia, video.kind == .video else { return }
+        if imageEditing.video?.itemID == video.id, (imageEditing.video?.player?.rate ?? 0) > 0 { pauseVideo() } else { playVideo(video.id) }
+    }
     @objc private func replaceImageFromMenu(_ sender: Any?) { if menuImage(sender) != nil { chooseReplacementImage() } }
     @objc private func maskImageFromMenu(_ sender: Any?) {
         guard menuImage(sender) != nil, let row = sender as? NSMenuItem else { return }
@@ -799,8 +879,20 @@ extension EaselCanvasView {
     @objc private func cancelCropFromMenu(_ sender: Any?) { finishImageCrop(save: false) }
 
     func mediaMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] {
-        guard context.target == .object, context.items.count == 1, let item = context.items.first, item.kind == .image, !item.isLocked,
+        guard context.target == .object, context.items.count == 1, let item = context.items.first, !item.isLocked,
               imageEditing.crop == nil else { return [] }
+        if item.kind == .video {
+            let playing = imageEditing.video?.itemID == item.id && (imageEditing.video?.player?.rate ?? 0) > 0
+            return [
+                EaselMenuRow(id: "video-play", title: playing ? "Pause Video" : "Play Video", symbol: playing ? "pause.fill" : "play.fill",
+                             shortcut: "↩", perform: guardedMenuAction { canvas in
+                    if playing { canvas.pauseVideo() } else { canvas.playVideo(item.id) }
+                }),
+                EaselMenuRow(id: "video-alt", title: "Alt Text…", symbol: "text.bubble", isEnabled: hasImageChrome,
+                             perform: guardedMenuAction { $0.editImageAltText() }),
+            ]
+        }
+        guard item.kind == .image else { return [] }
         let options: [EaselImageMask?] = [nil] + EaselImageMask.allCases.map(Optional.some)
         let masks = options.enumerated().map { index, option in
             EaselMenuRow(id: "image-mask-" + (option?.rawValue ?? "none"), title: option?.title ?? NoteImageMask.noneTitle,
@@ -851,9 +943,15 @@ extension EaselCanvasView {
     }
 
     func imageAccessibilityActions(for item: EaselItem, owner: NSWindow) -> [NSAccessibilityCustomAction] {
-        guard item.kind == .image, !item.isLocked else { return [] }
+        guard item.kind == .image || item.kind == .video, !item.isLocked else { return [] }
         let actions: [(String, (EaselCanvasView) -> Bool)]
-        if imageEditing.crop?.item.id == item.id {
+        if item.kind == .video {
+            actions = [
+                ("Play video", { $0.playVideo(item.id) }),
+                ("Pause video", { canvas in canvas.pauseVideo(); return canvas.imageEditing.video?.itemID == item.id }),
+                ("Edit alt text", { canvas in canvas.selection = [item.id]; canvas.editImageAltText(); return canvas.hasImageChrome }),
+            ]
+        } else if imageEditing.crop?.item.id == item.id {
             actions = [
                 ("Move picture left", { $0.panImageCrop(dx: -10, dy: 0); return true }),
                 ("Move picture right", { $0.panImageCrop(dx: 10, dy: 0); return true }),

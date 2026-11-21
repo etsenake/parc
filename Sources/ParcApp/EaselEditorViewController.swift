@@ -328,7 +328,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     }
     private func addImage() {
         guard let window = view.window else { return }
-        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = true
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image] + EaselCanvasView.movieTypes; panel.allowsMultipleSelection = true
         panel.beginSheetModal(for: window) { [weak self] result in
             guard result == .OK, let self else { return }
             for url in panel.urls {

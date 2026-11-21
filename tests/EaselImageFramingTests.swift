@@ -34,6 +34,7 @@ struct EaselImageFramingTests {
         presets()
         replacingAndMasking()
         validation()
+        videos()
         assets()
         coding()
         export()
@@ -203,6 +204,37 @@ struct EaselImageFramingTests {
         var card = EaselItem(kind: .webCard, frame: .init(x: 0, y: 0, width: 10, height: 10), url: "https://example.com")
         card.assetID = UUID().uuidString.lowercased() + ".gif"
         expect(!accepts(card), "GIFs only live in images")
+    }
+
+    @MainActor static func videos() {
+        let movie = UUID().uuidString.lowercased() + ".mp4", poster = UUID().uuidString.lowercased() + ".png"
+        var video = EaselItem(kind: .video, frame: .init(x: 0, y: 0, width: 320, height: 180), assetID: movie)
+        video.poster = poster
+        video.altText = "A demo"
+        expect((try? session([video], assets: [movie: png, poster: png])) != nil, "a video with a poster and alt text opens")
+        var bare = video; bare.poster = nil
+        expect((try? session([bare], assets: [movie: png])) != nil, "a poster is optional")
+        var noAsset = video; noAsset.assetID = nil
+        expect((try? session([noAsset], assets: [poster: png])) == nil, "a video needs its movie")
+        var stillVideo = video; stillVideo.assetID = poster
+        expect((try? session([stillVideo], assets: [poster: png])) == nil, "a video's asset must be a movie")
+        var gifPoster = video; gifPoster.poster = UUID().uuidString.lowercased() + ".gif"
+        expect((try? session([gifPoster], assets: [movie: png, gifPoster.poster ?? "": gif])) == nil, "posters are PNGs")
+        var moviePicture = image(); moviePicture.assetID = movie
+        expect((try? session([moviePicture], assets: [movie: png])) == nil, "an image can't hold a movie")
+        var posterOnImage = image(); posterOnImage.poster = poster
+        expect((try? session([posterOnImage], assets: [posterOnImage.assetID ?? "": png, poster: png])) == nil, "only videos have posters")
+        var croppedVideo = video; croppedVideo.crop = EaselRect(x: 0, y: 0, width: 0.5, height: 0.5)
+        expect((try? session([croppedVideo], assets: [movie: png, poster: png])) == nil, "videos don't crop")
+        let html = EaselVectorExport.element(video, art: EaselVectorArt(images: [video.id: EaselVectorImage(data: png, mimeType: "image/png")]))
+        expect(html.contains("aria-label=\"A demo\"") && html.contains("<image "), "a video exports as its labelled poster")
+        expect(EaselVectorExport.element(video, art: EaselVectorArt()).isEmpty, "a video without a poster exports nothing")
+        var mp4 = Data([0, 0, 0, 0x18]); mp4.append(contentsOf: Array("ftypmp42".utf8)); mp4.append(Data(count: 12))
+        guard let board = try? session([]) else { fatalError("an empty Easel opens") }
+        guard let stored = try? board.importAsset(mp4, type: .mp4) else { fatalError("movie bytes import") }
+        expect(stored.hasSuffix(".mp4"), "movies keep their type")
+        board.discardUnusedAssets([stored])
+        expect((try? board.assetData(stored)) == nil, "an unused imported movie can be thrown away")
     }
 
     @MainActor static func assets() {

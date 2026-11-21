@@ -355,7 +355,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         self.session = session
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 1800))
         setAccessibilityElement(true); setAccessibilityRole(.group); setAccessibilityLabel("Easel canvas")
-        registerForDraggedTypes([.URL, EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType, .rtfd, .rtf, .fileURL, .png, .tiff, .string])
+        registerForDraggedTypes([.URL, EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType, .rtfd, .rtf, .fileURL, Self.gifPasteboardType, .png, .tiff, .string])
         subscription = session.$document.receive(on: DispatchQueue.main).sink { [weak self] _ in
             guard let self else { return }
             let document = self.session.document
@@ -465,7 +465,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard selectAccessibleObject(expected) else { return false }
         if expected.kind == .section { beginSectionRename(expected.id); return boardState.titleField != nil }
         if expected.kind.holdsText { beginEditing(expected); return editingID == expected.id }
-        if expected.kind == .image { return beginImageCrop() }
+        if expected.kind == .image || expected.kind == .video { return openMedia(expected) }
         if expected.kind == .table { return activateTable(expected) }
         if expected.kind == .code { return beginCodeEditing(expected) }
         if pageObjects?.focusPage(for: expected.id) == true { return true }
@@ -731,6 +731,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     override func layout() {
         super.layout(); motion.bind(enclosingScrollView); refreshTextControls(); synchronizeAccessibleObjects()
+        layoutVideoSurface()
         refreshSnapshotHeader()
         positionSectionTitleField()
         synchronizePageSelection()
@@ -764,6 +765,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         if decoration.frame != bounds { decoration.frame = bounds; overlayDirty = true }
         if overlayDirty { decoration.needsDisplay = true }
+        ordered.append(contentsOf: videoSurfaces)
         ordered.append(decoration)
         if let preview = toolState.previewView { ordered.append(preview) }
         if let editor { ordered.append(editor) }
@@ -803,6 +805,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             case .freehand:
                 drawDrawing(item)
             case .image: drawImageObject(item, in: r)
+            case .video: drawVideoObject(item, in: r, controls: showsEditor)
             case .webCard where item.assetID != nil:
                 if let id = item.assetID { image(id)?.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil) }
             case .link, .webCard, .browser:
@@ -978,7 +981,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         allowsFrameHandle(handle) && showsCodeHandle(handle) && !motion.isInteracting && rotationDrag == nil && (!hidesPassiveAnnotations || displayedSelection.count > 1 || resizeHandle == handle)
     }
     func refreshMotionOwnership() {
-        if !canPresentMotion || isHiddenOrHasHiddenAncestor || window == nil { motion.cancel() }
+        if !canPresentMotion || isHiddenOrHasHiddenAncestor || window == nil { motion.cancel(); stopVideoPlayback() }
     }
     private var resizeBounds: EaselRect? {
         guard tool == .select, editor == nil, marqueeRect == nil, selectedConnector == nil, !isCroppingImage else { return nil }
@@ -1181,11 +1184,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return false
     }
     func importImage(_ data: Data) throws { try insertImageData(data) }
-    func importImageFile(_ url: URL) throws {
-        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-        guard values.isRegularFile == true, let size = values.fileSize, size <= EaselStore.maximumAssetBytes else { throw EaselStoreError.tooLarge }
-        try importImage(Data(contentsOf: url, options: .mappedIfSafe))
-    }
+    func importImageFile(_ url: URL) throws { try insertMediaFile(url) }
     func beginEditing(_ item: EaselItem, at point: NSPoint? = nil) {
         guard item.kind.holdsText || item.kind == .arrow, !item.isLocked else { return }
         guard finishEditing(), session.document.items.contains(where: { $0 == item }) else { return }
@@ -1602,7 +1601,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: window)
             NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: window)
         }
-        if newWindow !== window { hoveredObjectID = nil; menuGeneration &+= 1; motion.cancel(); cancelPointerInteraction(); releaseTemporaryHand(); stopZoomAnimation() }
+        if newWindow !== window { hoveredObjectID = nil; menuGeneration &+= 1; motion.cancel(); cancelPointerInteraction(); releaseTemporaryHand(); stopZoomAnimation(); stopVideoPlayback() }
         if newWindow !== window { selectionToolbar?.detach() }
         if let newWindow {
             NotificationCenter.default.addObserver(self, selector: #selector(ownerResignedKey),
@@ -1636,6 +1635,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if let snapshotHeader, hit === snapshotHeader || hit.isDescendant(of: snapshotHeader) { return hit }
         if hit === editor || editor.map({ hit.isDescendant(of: $0) }) == true || ownsCodeBlockView(hit) { return hit }
         if let field = boardState.titleField, hit === field || hit.isDescendant(of: field) { return hit }
+        if videoSurfaceHit(hit) { return hit }
         let local = convert(point, from: superview)
         guard tool == .select, !toolState.spaceHeld, resizeHandle(at: local) == nil, connectorChrome(at: local) == nil,
               let item = object(at: local, includingLocked: true), item.ownsEmbeddedPage, selection == [item.id],
@@ -1688,7 +1688,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if event.clickCount == 2, !enteredGroup {
             cancelPointerInteraction()
             if hit.kind.holdsText { beginEditing(hit, at: point) }
-            else if hit.kind == .image { beginImageCrop() }
+            else if hit.kind == .image || hit.kind == .video { openMedia(hit) }
             else if hit.kind == .code { beginCodeEditing(hit, at: point) }
             else if !hit.ownsEmbeddedPage, let raw = hit.url, let url = URL(string: raw) { onOpenURL?(url) }
         }
@@ -2091,7 +2091,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         if fixedCanvasSize == nil, let operation = contentDrop.begin(sender) { return operation }
-        return sender.draggingPasteboard.availableType(from: [EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType, .rtfd, .rtf, .fileURL, .png, .tiff, .URL, .string]) == nil ? [] : .copy
+        return sender.draggingPasteboard.availableType(from: [EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType, .rtfd, .rtf, .fileURL, Self.gifPasteboardType, .png, .tiff, .URL, .string]) == nil ? [] : .copy
     }
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
         fixedCanvasSize == nil ? super.draggingUpdated(sender) : draggingEntered(sender)
@@ -2101,6 +2101,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         if fixedCanvasSize == nil, let result = contentDrop.perform(sender) { return result }
+        if let replaced = replaceImage(fromDrop: sender) { return replaced }
         return readPasteboard(sender.draggingPasteboard)
     }
     func setLiveCapture(_ id: UUID, enabled: Bool) {
@@ -2359,7 +2360,7 @@ private final class EaselAccessibleObject: NSView {
     override func accessibilityValue() -> Any? {
         guard let item = canvas?.accessibleItem(id), item.kind != .stamp else { return nil }
         let value: String?
-        if item.kind == .image { value = item.altText ?? item.url }
+        if item.kind == .image || item.kind == .video { value = item.altText ?? item.url }
         else if let table = item.table { value = table.accessibilitySummary }
         else if item.kind == .section { value = canvas?.sectionSummary(item) }
         else { value = item.text.isEmpty ? item.url : item.text }

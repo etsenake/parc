@@ -216,7 +216,7 @@ struct EaselGeometryEdit {
     }
 
     func preservesAspect(shift: Bool, command: Bool) -> Bool {
-        let intrinsic = originals.contains { $0.kind == .image || $0.kind == .webCard || $0.kind == .link || $0.kind == .sticky || $0.kind == .stamp }
+        let intrinsic = originals.contains { $0.kind == .image || $0.kind == .video || $0.kind == .webCard || $0.kind == .link || $0.kind == .sticky || $0.kind == .stamp }
         return !command && (intrinsic || (shift && originals.count > 1))
     }
 

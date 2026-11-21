@@ -3,7 +3,7 @@ import Combine
 import Darwin
 
 enum EaselItemKind: String, Codable, CaseIterable {
-    case text, image, rectangle, circle, arrow, freehand, webCard, browser, link, sticky, section, table, code, stamp
+    case text, image, rectangle, circle, arrow, freehand, webCard, browser, link, sticky, section, table, code, stamp, video
 
     var holdsText: Bool { self == .text || self == .sticky || self == .rectangle || self == .circle }
 }
@@ -346,6 +346,7 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var table: EaselTable?
     var language: String?
     var stamp: String?
+    var poster: String?
     var ownsEmbeddedPage: Bool { kind == .browser || (kind == .webCard && captureLayout != nil && liveCapture == true) }
     var resolvedShape: EaselShape? {
         switch kind {
@@ -525,7 +526,7 @@ final class EaselStore {
         }
         var copied: [String] = []
         do {
-            for asset in Set(document.items.compactMap(\.assetID)).sorted() {
+            for asset in Set(document.items.flatMap { [$0.assetID, $0.poster].compactMap { $0 } }).sorted() {
                 let url = destination.assetsDirectory.appendingPathComponent(asset)
                 let original = try Data(contentsOf: assetURL(asset))
                 if FileManager.default.fileExists(atPath: url.path) {
@@ -632,6 +633,7 @@ final class EaselStore {
             try validateStyle(item)
             try validateMedia(item)
             if let id = item.assetID { try asset(id) }
+            if let id = item.poster { try asset(id) }
             if let layout = item.captureLayout {
                 guard item.kind == .webCard, item.assetID != nil, layout.isValid else {
                     throw EaselStoreError.invalidDocument("captured webpage geometry")
@@ -645,7 +647,7 @@ final class EaselStore {
                       ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
                       let host = url.host, !host.isEmpty else { throw EaselStoreError.invalidDocument("card URL") }
             }
-            if item.kind == .image && item.assetID == nil { throw EaselStoreError.invalidDocument("image has no asset") }
+            if (item.kind == .image || item.kind == .video) && item.assetID == nil { throw EaselStoreError.invalidDocument("image has no asset") }
             if [.link, .webCard, .browser].contains(item.kind) && item.url == nil { throw EaselStoreError.invalidDocument("card has no URL") }
             if [.arrow, .freehand].contains(item.kind) && item.points.count < 2 { throw EaselStoreError.invalidDocument("drawing has fewer than two points") }
             if (item.kind == .table) != (item.table != nil) { throw EaselStoreError.invalidDocument("table grid on the wrong object") }
@@ -713,11 +715,15 @@ final class EaselStore {
         if let turns = item.quarterTurns, item.kind != .image || !(1...3).contains(turns) {
             throw EaselStoreError.invalidDocument("image turn")
         }
-        if let alt = item.altText, item.kind != .image || alt.utf8.count > 4096 {
+        if let alt = item.altText, (item.kind != .image && item.kind != .video) || alt.utf8.count > 4096 {
             throw EaselStoreError.invalidDocument("alt text")
         }
-        if let id = item.assetID, let type = EaselAssetType.of(assetID: id), type.isVideo || (type == .gif && item.kind != .image) {
+        let type = item.assetID.flatMap(EaselAssetType.of(assetID:))
+        if (type?.isVideo == true) != (item.kind == .video) || (type == .gif && item.kind != .image) {
             throw EaselStoreError.invalidDocument("media on an object that can't play it")
+        }
+        if let poster = item.poster, item.kind != .video || EaselAssetType.of(assetID: poster) != .png {
+            throw EaselStoreError.invalidDocument("video poster")
         }
     }
 
@@ -989,6 +995,13 @@ final class EaselSession: ObservableObject {
     func assetURL(_ assetID: String) throws -> URL {
         guard let store else { throw EaselStoreError.unsafePath }
         return try store.assetURL(assetID)
+    }
+
+    func discardUnusedAssets(_ ids: [String]) {
+        let used = Set(([document] + undoStack + redoStack).flatMap { $0.items.flatMap { [$0.assetID, $0.poster].compactMap { $0 } } })
+        let unused = ids.filter { !used.contains($0) }
+        guard !unused.isEmpty else { return }
+        if let store { store.removeAssets(unused) } else { for id in unused { memoryAssets.removeValue(forKey: id) } }
     }
 
     private func requireWritable() throws {

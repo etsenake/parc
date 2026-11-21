@@ -162,6 +162,7 @@ enum EaselVectorExport {
         case .table: return table(item, art.texts[item.id])
         case .code: return codeBlock(item, art.texts[item.id])
         case .stamp: return stamp(item, art.images[item.id])
+        case .video: return art.images[item.id].map { poster(item, $0) } ?? ""
         }
     }
 
@@ -263,6 +264,15 @@ enum EaselVectorExport {
             + number(Double(full.midY)) + ")\""
         return "<clipPath id=\"" + id + "\">" + shape + "</clipPath><g clip-path=\"url(#" + id + ")\"" + label + ">" + title
             + element(source, rotate) + "/></g>"
+    }
+
+    static func poster(_ item: EaselItem, _ picture: EaselVectorImage) -> String {
+        let alt = item.altText.flatMap { $0.isEmpty ? nil : escape($0) }
+        var labelled = item
+        labelled.text = ""
+        let body = image(labelled, picture, corner: min(8, item.frame.width / 4, item.frame.height / 4))
+        guard let alt else { return "<g>" + body + "</g>" }
+        return "<g role=\"img\" aria-label=\"" + alt + "\"><title>" + alt + "</title>" + body + "</g>"
     }
 
     static func card(_ item: EaselItem) -> String {

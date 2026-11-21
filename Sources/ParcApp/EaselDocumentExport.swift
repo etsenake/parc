@@ -131,6 +131,8 @@ enum EaselDocumentExport {
                 art.texts[item.id] = EaselCodeLayout.vectorText(item)
             case .image:
                 if let id = item.assetID, let data = try? session.assetData(id) { art.images[item.id] = webImage(data) }
+            case .video:
+                if let id = item.poster, let data = try? session.assetData(id) { art.images[item.id] = webImage(data) }
             case .webCard, .browser:
                 if let page = pages[item.id] {
                     art.images[item.id] = canvas.exportObjectImage(item, page: page, backingScale: scale).flatMap(png)

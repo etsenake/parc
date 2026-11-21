@@ -10,7 +10,7 @@ enum EaselToolbarSubject: String, CaseIterable, Equatable {
         case .rectangle, .circle: self = .shape
         case .arrow: self = .connector
         case .section: self = .section
-        case .image: self = .image
+        case .image, .video: self = .image
         case .freehand: self = .drawing
         case .webCard, .browser, .link: self = .page
         case .table: self = .table
