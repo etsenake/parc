@@ -3,7 +3,7 @@ import AppKit
 extension NSView {
     func ownsPointer(atWindowPoint point: NSPoint) -> Bool {
         guard window != nil, !isHiddenOrHasHiddenAncestor else { return false }
-        return visibleRect.contains(convert(point, from: nil)) && isTopmost(atWindowPoint: point)
+        return visibleRect.contains(convert(point, from: nil)) && NoteFloatingPanel.allowsHover(for: self, at: point)
     }
 
     @discardableResult
