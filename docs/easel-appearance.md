@@ -1,9 +1,13 @@
 # Easel static appearance
 
 The Easel shares the original document, text editor and embedded-page owners.
-The canvas uses named white/black paper from the enclosing Space appearance, selection blue and content-specific
-selection contours. Floating controls use the Easel semantic surface, outline,
-ink and error colors. The text menu is a 50×88-point rail beside the selection,
+It wears the Notes look: the pane shows the Space theme through the Notes paper,
+so an Easel takes the Space's gradient, grain and light or dark exactly as a
+note does. Ink, placeholders, selection, guides and floating controls come from
+`NoteTheme` through `EaselAppearance`: selection, handles and the marquee use
+the Notes accent, alignment guides use tertiary ink, link and webpage cards use
+the Notes panel fill, and the empty-Easel prompt uses the Notes placeholder inks
+in Nunito. The text menu is a 50×88-point rail beside the selection,
 with three 24-point plus/font/minus controls and a four-point gap from the
 object. Its frame and native hit targets remain measured in screen points while
 the canvas magnifies. Only corner resize marks are painted; all eligible edge
@@ -18,12 +22,15 @@ annotation hiding and owner retirement collapse it. The original text storage,
 glyph layout, fill contour, typing history and document transactions remain the
 only text owners. Palette callbacks reject a closed session.
 
-The tool strip is a dark HUD pill: seven icon-only 32-point tools in
-select / image / text / circle / square / arrow / scribble order, a filled
-steel-blue selected cell, and light glyphs on a near-black continuous rounded
-bar. It sits centered under the title. Link, webpage, undo and redo stay as
-quiet 24-point paper chrome on the title row so those actions remain reachable
-without joining the pill. The Share button (`square.and.arrow.up`) ends that
+The tool strip is the Notes format bar: a 36-point Notes menu card with its
+hairline and shadow, holding seven icon-only 28-point tools in
+select / image / text / circle / square / arrow / scribble order. Tools use the
+Notes button states: secondary ink at rest, hover and pressed washes, and the
+checked fill and ink for the current tool. It sits centered under the title,
+which is Nunito ExtraBold in the Notes title ink over a caption-style status
+line. Link, webpage, undo and redo are 28-point Notes chrome buttons on the
+title row so those actions remain reachable without joining the strip. The text
+rail's three controls sit on the same card. The Share button (`square.and.arrow.up`) ends that
 row; it opens the [Export as Image](easels.md#export-as-image) menu. The strip still follows the actual drawing mode and
 scrolls horizontally when the window is narrower than the controls. Its explicit overlay scrollbar preserves the full control
 height even under the system legacy-scrollbar preference. The ordinary Add Link action now presents the existing
@@ -33,13 +40,29 @@ range-link editor retains its separate original-range/revision guard. Both use
 plain controls, eight-point corners, semantic outlines and visible invalid-URL
 feedback; no browser page is created by either editor itself.
 
+## Ink and saved colours
+
+Objects store colours as RGB hex, and `#252525`, the colour every new object
+has always been given, is the automatic ink token. On an Easel canvas it draws
+as the Notes ink, dark on light paper and near-white on dark paper, for text,
+strokes, arrows and shape outlines. Saved Easels need no rewrite: their default
+objects and default-coloured text runs read the same token. Editing stores the
+token again, never the resolved light or dark value, so a document stays the
+same on disk whichever appearance it was edited in. Any other colour is a
+chosen colour and stays exactly as saved. Copy and export to other apps write
+the fixed `#252525`, so pasted text stays readable on their white pages.
+
+The capture editor turns adaptive ink off: its annotations are burned into
+pixels, so they keep the fixed colour and its colour well. Image export paints
+white or black behind the objects from the Easel's own appearance, matching the
+ink it draws with. Authored font geometry, text fill and immutable capture
+pixels are unchanged.
+
 ## Native adaptations and boundaries
 
-Parc's existing authored object colors are explicit RGB values and stay as
-saved. Document paper, title ink and reusable floating controls resolve
-white/black from the enclosing Space `contentOverBackgroundAppearance`, the
-same Aqua/DarkAqua override Notes already inherit. Authored font geometry,
-text fill, immutable capture pixels and the memory-only capture editor are unchanged.
+Document paper, title ink and floating controls resolve from the enclosing
+Space `contentOverBackgroundAppearance`, the same Aqua/DarkAqua override Notes
+inherit.
 
 The rail's disclosed family/size selectors and checkbox are native AppKit
 controls; the expanded range inspector carries Parc's already-delivered rich
@@ -58,7 +81,8 @@ motion visibility, Reduce Motion and original-owner cancellation remain owned
 by `EaselMotion`. Embedded live-page crop/mask/loading pixels and beforeunload
 retirement remain owned by the delivered page pool. No engine change is needed.
 
-Inert checks cover all font/fill/history behavior, native rail/disclosure bounds,
+The windowless `EaselInkTests` suite in `tests/NotesEditor` checks ink
+resolution, chosen colours and token round trips. Inert checks cover all font/fill/history behavior, native rail/disclosure bounds,
 non-overlapping controls, actual selected/disabled states, light/dark drawing,
 unchanged attributed text, scaled corner/edge admission, retained edge refusal after zoom, narrow toolbar
 content height under legacy preferences and the compact native

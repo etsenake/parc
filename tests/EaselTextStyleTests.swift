@@ -138,7 +138,7 @@ struct EaselTextStyleTests {
         let pill = EaselToolbarPill(frame: NSRect(x: 20, y: 220, width: 260, height: EaselAppearance.toolbarHeight))
         root.addSubview(pill)
         let selectedTool = EaselPaletteButton(title: "A", target: nil, action: nil)
-        selectedTool.usesToolbarInk = true; selectedTool.font = .systemFont(ofSize: 16, weight: .medium)
+        selectedTool.usesToolbarInk = true; selectedTool.font = NoteTheme.nunitoExtraBold(16)
         selectedTool.frame = NSRect(x: 8, y: 6, width: EaselAppearance.toolbarButton, height: EaselAppearance.toolbarButton)
         selectedTool.state = .on; pill.addSubview(selectedTool)
         let button = EaselPaletteButton(title: "Selected", target: nil, action: nil)
@@ -155,12 +155,12 @@ struct EaselTextStyleTests {
             view.cacheDisplay(in: view.bounds, to: bitmap)
             return bitmap
         }
-        let fill = pixels(pill).colorAt(x: 240, y: 22)!.usingColorSpace(.sRGB)!
-        expect(fill.redComponent < 0.15 && fill.greenComponent < 0.18 && fill.blueComponent < 0.22 && fill.alphaComponent > 0.9,
-               "Easel tool pill is a dark HUD")
-        let selected = pixels(selectedTool).colorAt(x: 16, y: 16)!.usingColorSpace(.sRGB)!
-        expect(selected.blueComponent > selected.redComponent && selected.greenComponent > 0.3 && selected.blueComponent > 0.4,
-               "The selected tool cell fills steel blue")
+        let fill = pixels(pill).colorAt(x: 240, y: 18)!.usingColorSpace(.sRGB)!
+        expect(fill.redComponent > 0.95 && fill.greenComponent > 0.95 && fill.blueComponent > 0.95 && fill.alphaComponent > 0.9,
+               "Easel tool pill is the Notes format-bar card in light appearance")
+        let selected = pixels(selectedTool).colorAt(x: 14, y: 14)!.usingColorSpace(.sRGB)!
+        expect(selected.blueComponent > selected.redComponent && selected.blueComponent > selected.greenComponent && selected.alphaComponent > 0,
+               "The selected tool cell takes the Notes checked fill")
         let link = EaselLinkEditor(value: "https://example.com")
         link.view.frame.origin = NSPoint(x: 400, y: 160); root.addSubview(link.view)
         font.performClick(nil); sizeBar()
@@ -183,11 +183,12 @@ struct EaselTextStyleTests {
         let dark = NSAppearance(named: .darkAqua)!
         root.inheritSpaceContentAppearance(dark)
         expect(root.appearance == dark, "Document host applies Space contentOverBackgroundAppearance DarkAqua")
-        var paperHex = ""
+        var paperHex = "", notesPaperHex = ""
         root.effectiveAppearance.performAsCurrentDrawingAppearance {
-            paperHex = (try? EaselRichTextCodec.hex(EaselAppearance.surface)) ?? "unresolved"
+            paperHex = (try? EaselRichTextCodec.hex(EaselAppearance.paper)) ?? "unresolved"
+            notesPaperHex = (try? EaselRichTextCodec.hex(NoteTheme.paper)) ?? "unresolved"
         }
-        expect(paperHex == "#000000FF", "Inherited dark appearance resolves named easel paper to black")
+        expect(paperHex == notesPaperHex && paperHex == "#00000080", "Inherited dark appearance resolves Easel paper to the Notes paper")
         root.inheritSpaceContentAppearance(nil)
         expect(root.appearance == nil, "Absent contentOverBackgroundAppearance clears the local override")
     }

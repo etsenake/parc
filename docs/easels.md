@@ -191,7 +191,8 @@ Every entry/return action validates the original document/window owner.
 Share → Export as Image and Command–Shift–S export a saved document snapshot.
 The canvas uses its width and height `max(lowest object bottom, width) + 60`;
 fixed capture canvases use exact capture bounds. Selection, guides and carets
-are excluded. Background follows the chosen light/dark appearance.
+are excluded. Background is white or black from the Easel's own light or dark
+appearance, matching its ink ([appearance](easel-appearance.md#ink-and-saved-colours)).
 
 Each native embedded-page snapshot has a five-second deadline; the app allows
 eight seconds for the full collection. Missing, denied, late or unsupported

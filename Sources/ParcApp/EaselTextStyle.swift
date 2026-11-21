@@ -303,12 +303,14 @@ final class EaselStyledTextView: LocalContentDropTextView {
             insertionPointColor = .white
         } else {
             layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
-            insertionPointColor = .textColor
+            insertionPointColor = caretColor
         }
         needsDisplay = true; onObjectLayoutChanged?()
     }
     var paragraphBodyPointSize: CGFloat?
-    var objectColor = "#252525"
+    var objectColor = EaselInk.automatic
+    var adaptsInk = false
+    var caretColor: NSColor = .textColor { didSet { refreshObjectFill() } }
     var onClipboardError: ((Error) -> Void)?
     var onUndoDocument: (() -> Void)?
     var onRedoDocument: (() -> Void)?
@@ -371,7 +373,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
                 return try pasteLink(url)
             }
             if !plain, let payload = try EaselStyledText.read(from: board) {
-                insertText(payload.attributed, replacementRange: selectedRange()); return true
+                insertText(adaptsInk ? EaselInk.adapting(payload.attributed) : payload.attributed, replacementRange: selectedRange()); return true
             }
             if !plain, let data = try EaselTextAttachments.pastedImageData(from: board) {
                 return try insertImage(data)
@@ -797,6 +799,7 @@ extension TextFormatCommand {
 final class EaselTextStyleBar: NSView {
     var onVisibilityChange: ((Bool) -> Void)?
     private let details = EaselSurfaceView(frame: .zero)
+    private let railSurface = EaselToolbarPill(frame: .zero)
     private let fontButton = EaselPaletteButton(title: "Aa", target: nil, action: nil)
     private var expanded = false
     var onLayoutChange: (() -> Void)?
@@ -820,6 +823,7 @@ final class EaselTextStyleBar: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
+        addSubview(railSurface)
         addSubview(details); details.isHidden = true
         fontButton.target = self; fontButton.action = #selector(toggleDetails)
         fontButton.setAccessibilityLabel("Text formatting"); fontButton.setAccessibilityHelp("Show font, size, fill and range formatting controls")
@@ -832,7 +836,7 @@ final class EaselTextStyleBar: NSView {
         sizes.target = self; sizes.action = #selector(selectSize)
         smaller.target = self; smaller.action = #selector(decrease)
         larger.target = self; larger.action = #selector(increase)
-        for button in [smaller, larger] { button.font = .systemFont(ofSize: 14) }
+        for button in [smaller, larger] { button.font = NoteTheme.chromeFont(14) }
         for popup in [families, sizes, paragraphs] { popup.isBordered = false; popup.font = .systemFont(ofSize: 12) }
         families.setAccessibilityLabel("Text family"); sizes.setAccessibilityLabel("Text size")
         smaller.setAccessibilityLabel("Decrease text size"); larger.setAccessibilityLabel("Increase text size")
@@ -863,6 +867,7 @@ final class EaselTextStyleBar: NSView {
     override func layout() {
         super.layout()
         let railY = (bounds.height - 88) / 2
+        railSurface.frame = NSRect(x: 7, y: railY, width: 36, height: 88)
         larger.frame = NSRect(x: 13, y: railY + 60, width: 24, height: 24)
         fontButton.frame = NSRect(x: 13, y: railY + 32, width: 24, height: 24)
         smaller.frame = NSRect(x: 13, y: railY + 4, width: 24, height: 24)

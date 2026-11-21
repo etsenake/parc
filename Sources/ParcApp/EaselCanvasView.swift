@@ -141,7 +141,14 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     var fixedCanvasSize: NSSize?
-    private var insertionColor = "#252525"
+    private var insertionColor = EaselInk.automatic
+    var adaptsInk = true {
+        didSet {
+            guard adaptsInk != oldValue else { return }
+            textLayouts.removeAll(); needsDisplay = true
+            for view in artwork.values { view.needsDisplay = true }
+        }
+    }
     var onImageEditingCancel: (() -> Void)?
     func setInsertionColor(_ color: NSColor) {
         guard let rgb = color.usingColorSpace(.sRGB) else { return }
@@ -201,8 +208,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let pixels = NSSize(width: (size.width * backingScale).rounded(), height: (size.height * backingScale).rounded())
         guard backingScale > 0, pixels.width >= 1, pixels.height >= 1, pixels.width < 1e9, pixels.height < 1e9 else { return nil }
         for id in content.compactMap(\.assetID) { _ = image(id) }
-        let backing: NSColor = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .black : .white
         let appearance = effectiveAppearance
+        let backing: NSColor = NoteTheme.isDark(appearance) ? .black : .white
         return EaselExportStrips.image(width: Int(pixels.width), height: Int(pixels.height)) { [self] context, firstRow, rows in
             let strip = NSRect(x: 0, y: CGFloat(firstRow) / backingScale, width: size.width, height: CGFloat(rows) / backingScale)
             context.translateBy(x: 0, y: CGFloat(rows)); context.scaleBy(x: backingScale, y: -backingScale)
@@ -220,7 +227,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     private func drawLivePage(_ page: EaselPageSnapshot, in frame: NSRect) {
         let shape = NSBezierPath(roundedRect: frame, xRadius: 8, yRadius: 8)
-        EaselAppearance.surface.setFill(); shape.fill()
+        EaselAppearance.cardFill.setFill(); shape.fill()
         NSGraphicsContext.saveGraphicsState()
         shape.addClip(); NSBezierPath(rect: page.visibleFrame.offsetBy(dx: frame.minX, dy: frame.minY)).addClip()
         page.image.draw(in: page.pageFrame.offsetBy(dx: frame.minX, dy: frame.minY), from: .zero,
@@ -473,10 +480,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private func rect(_ item: EaselItem) -> NSRect {
         NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height)
     }
-    private func color(_ hex: String) -> NSColor {
-        let value = UInt32(hex.dropFirst(), radix: 16) ?? 0x252525
-        return NSColor(srgbRed: Double(value >> 16 & 255) / 255, green: Double(value >> 8 & 255) / 255,
-                       blue: Double(value & 255) / 255, alpha: 1)
+    private func color(_ hex: String) -> NSColor { EaselInk.color(hex, adaptive: adaptsInk) }
+    private func displayedText(_ item: EaselItem) -> NSAttributedString {
+        let value = EaselRichTextCodec.attributed(item)
+        return adaptsInk ? EaselInk.adapting(value) : value
     }
     private func image(_ id: String) -> NSImage? {
         if let value = images[id] { return value }
@@ -518,7 +525,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private func cachedTextLayout(for item: EaselItem) -> EaselTextLayout.Layout {
         let size = NSSize(width: item.frame.width, height: item.frame.height)
         if let cached = textLayouts[item.id], cached.matches(item, size: size) { return cached.layout }
-        let layout = EaselTextLayout.Layout(EaselRichTextCodec.attributed(item), width: size.width, height: size.height)
+        let layout = EaselTextLayout.Layout(displayedText(item), width: size.width, height: size.height)
         textLayouts[item.id] = CachedTextLayout(width: size.width, height: size.height, text: item.text,
                                                 rich: item.richText, style: item.textStyle, color: item.color, layout: layout)
         return layout
@@ -677,9 +684,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     override func draw(_ dirtyRect: NSRect) {
-        if fixedCanvasSize == nil {
-            EaselAppearance.surface.setFill(); dirtyRect.fill()
-        } else { NSColor.clear.setFill(); dirtyRect.fill(using: .copy) }
+        NSColor.clear.setFill(); dirtyRect.fill(using: .copy)
         if !usesObjectSurfaces {
             for item in items where displayBounds(of: item).intersects(dirtyRect) { drawObject(item) }
             drawDecorations(in: dirtyRect)
@@ -723,12 +728,12 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             case .webCard where item.assetID != nil:
                 if let id = item.assetID { image(id)?.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil) }
             case .link, .webCard, .browser:
-                EaselAppearance.surface.setFill(); NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
-                ink.withAlphaComponent(0.15).setStroke(); let border = NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10); border.stroke()
+                EaselAppearance.cardFill.setFill(); NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
+                EaselAppearance.cardStroke.setStroke(); let border = NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10); border.stroke()
                 let title = item.text.isEmpty ? (item.url ?? "Link") : item.text
-                (title as NSString).draw(in: r.insetBy(dx: 16, dy: 16), withAttributes: [.font: NSFont.systemFont(ofSize: 17, weight: .medium), .foregroundColor: ink])
+                (title as NSString).draw(in: r.insetBy(dx: 16, dy: 16), withAttributes: [.font: NoteTheme.nunitoBold(17), .foregroundColor: ink])
                 ((item.url ?? "") as NSString).draw(in: NSRect(x: r.minX + 16, y: r.maxY - 36, width: r.width - 32, height: 24),
-                       withAttributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor])
+                       withAttributes: [.font: NoteTheme.nunitoRegular(12), .foregroundColor: EaselAppearance.secondaryText])
             }
     }
     fileprivate func drawDecorations(in dirtyRect: NSRect) {
@@ -764,7 +769,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         let highlights = guides?.lines ?? []
         if guideDirtyBounds().intersects(dirtyRect) {
-            for (segments, color) in [(highlights.flatMap(\.targetSegments), NSColor(white: 0.92, alpha: 1)),
+            for (segments, color) in [(highlights.flatMap(\.targetSegments), EaselAppearance.guide),
                                       (highlights.flatMap(\.anchorSegments), easelSelectionColor)] {
                 let path = NSBezierPath(); path.lineWidth = 2.5 / canvasScale
                 path.lineCapStyle = .round; path.lineJoinStyle = .round
@@ -778,8 +783,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if session.document.items.isEmpty && editor == nil {
             let placeholder = NSRect(x: 40, y: 50, width: max(180, bounds.width - 80), height: 106)
             if placeholder.intersects(dirtyRect) {
-                ("A place for your ideas" as NSString).draw(at: NSPoint(x: 40, y: 50), withAttributes: [.font: NSFont.systemFont(ofSize: 28, weight: .semibold), .foregroundColor: NSColor.tertiaryLabelColor])
-                ("Add text, images, links or a drawing. Everything saves here on your Mac." as NSString).draw(in: NSRect(x: 40, y: 96, width: max(180, bounds.width - 80), height: 60), withAttributes: [.font: NSFont.systemFont(ofSize: 15), .foregroundColor: NSColor.secondaryLabelColor])
+                ("A place for your ideas" as NSString).draw(at: NSPoint(x: 40, y: 50), withAttributes: [.font: NoteTheme.nunitoExtraBold(28), .foregroundColor: NoteTheme.titlePlaceholderInk])
+                ("Add text, images, links or a drawing. Everything saves here on your Mac." as NSString).draw(in: NSRect(x: 40, y: 96, width: max(180, bounds.width - 80), height: 60), withAttributes: [.font: NoteTheme.nunitoRegular(15), .foregroundColor: NoteTheme.placeholderInk])
             }
         }
     }
@@ -975,6 +980,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         text.onObjectLayoutChanged = { [weak self] in self?.invalidateIncrementalDisplay(layout: true) }
         text.textContainer?.lineFragmentPadding = EaselTextLayout.fragmentPadding
         text.textContainerInset = EaselTextLayout.inset; text.delegate = self
+        text.adaptsInk = adaptsInk
+        if adaptsInk { text.caretColor = NoteTheme.caret; text.selectedTextAttributes = [.backgroundColor: NoteTheme.selection] }
         text.setAccessibilityLabel("Easel text"); addSubview(text); editor = text; keyboardStructureChanged()
         text.onClipboardError = { [weak self] in self?.onError?($0) }
         text.onUndoDocument = { [weak self] in self?.undo(nil) }
@@ -1001,7 +1008,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         synchronizingEditor = true
         defer { synchronizingEditor = false }
         let selected = text.selectedRanges
-        let target = EaselRichTextCodec.attributed(item)
+        let target = displayedText(item)
         EaselTextAttachments.bind(target, container: text.textContainer)
         let current = try? EaselRichTextCodec.snapshot(text.attributedString())
         let desired = try? EaselRichTextCodec.snapshot(target)

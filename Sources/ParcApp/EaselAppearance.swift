@@ -1,36 +1,67 @@
 import AppKit
 
 @MainActor
+enum EaselInk {
+    static let automatic = "#252525"
+    static let adaptiveName = NSColor.Name("Parc.Easel.Ink")
+    static let adaptive: NSColor = {
+        let ink = NoteTheme.ink
+        return NSColor(name: adaptiveName) { appearance in
+            var resolved = ink
+            appearance.performAsCurrentDrawingAppearance { resolved = ink.usingColorSpace(.sRGB) ?? ink }
+            return resolved
+        }
+    }()
+
+    static func isAutomatic(_ hex: String) -> Bool {
+        let value = hex.uppercased()
+        return value == automatic || value == automatic + "FF"
+    }
+
+    static func isAdaptive(_ color: NSColor) -> Bool {
+        color.type == .catalog && color.colorNameComponent == adaptiveName
+    }
+
+    static func color(_ hex: String, adaptive adapts: Bool) -> NSColor {
+        if adapts, isAutomatic(hex) { return adaptive }
+        let value = UInt32(hex.dropFirst().prefix(6), radix: 16) ?? 0x252525
+        return NSColor(srgbRed: Double(value >> 16 & 255) / 255, green: Double(value >> 8 & 255) / 255,
+                       blue: Double(value & 255) / 255, alpha: 1)
+    }
+
+    static func adapting(_ value: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: value)
+        value.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: value.length)) { color, range, _ in
+            guard let color = color as? NSColor, !isAdaptive(color), color.type != .catalog,
+                  let rgb = color.usingColorSpace(.sRGB),
+                  isAutomatic(String(format: "#%02X%02X%02X%02X", Int((rgb.redComponent * 255).rounded()),
+                      Int((rgb.greenComponent * 255).rounded()), Int((rgb.blueComponent * 255).rounded()),
+                      Int((rgb.alphaComponent * 255).rounded()))) else { return }
+            result.addAttribute(.foregroundColor, value: adaptive, range: range)
+        }
+        return result
+    }
+}
+
+@MainActor
 enum EaselAppearance {
-    static let selection = NSColor(srgbRed: 108 / 255, green: 186 / 255, blue: 217 / 255, alpha: 1)
-    static let surface = NSColor(name: "ParcEaselFloatingElementBackground") { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .black : .white
-    }
-    static let text = NSColor(name: "ParcEaselTextColor") { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .white : .black
-    }
-    static let outline = NSColor(name: "ParcEaselModalOutline") { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.99, green: 1, blue: 1, alpha: 0.1)
-            : NSColor(srgbRed: 0.071, green: 0.059, blue: 0.180, alpha: 0.03)
-    }
-    static let error = NSColor(name: "ParcEaselErrorBorder") { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(displayP3Red: 0.818, green: 0.535, blue: 0.507, alpha: 1)
-            : NSColor(displayP3Red: 0.818, green: 0.230, blue: 0.138, alpha: 1)
-    }
-    static let toolbarInk = NSColor(name: "ParcEaselToolbarIcon") { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(displayP3Red: 0.522, green: 0.529, blue: 0.557, alpha: 1)
-            : NSColor(srgbRed: 0.373, green: 0.345, blue: 0.502, alpha: 1)
-    }
-    static let toolbarFill = NSColor(srgbRed: 0.086, green: 0.106, blue: 0.129, alpha: 1)
-    static let toolbarSelected = NSColor(srgbRed: 0.290, green: 0.435, blue: 0.533, alpha: 1)
-    static let toolbarGlyph = NSColor(srgbRed: 0.820, green: 0.898, blue: 0.945, alpha: 1)
-    static let toolbarHeight: CGFloat = 44
-    static let toolbarButton: CGFloat = 32
-    static let toolbarRadius: CGFloat = 12
-    static let toolbarSelectedRadius: CGFloat = 8
+    static let selection = NoteTheme.accent
+    static let surface = NoteTheme.menuFill
+    static let paper = NoteTheme.paper
+    static let text = NoteTheme.menuInk
+    static let secondaryText = NoteTheme.secondaryInk
+    static let outline = NoteTheme.menuHairline
+    static let guide = NoteTheme.tertiaryInk
+    static let cardFill = NoteTheme.panelFill
+    static let cardStroke = NoteTheme.panelStroke
+    static let error = NoteTheme.destructiveInk
+    static let toolbarInk = NoteTheme.menuSecondaryInk
+    static let toolbarFill = NoteTheme.menuFill
+    static let toolbarHeight: CGFloat = NoteTheme.toolbarHeight
+    static let toolbarButton: CGFloat = NoteTheme.toolbarButtonSize.width
+    static let toolbarRadius: CGFloat = NoteTheme.menuRadius
+    static let toolbarSelectedRadius: CGFloat = NoteTheme.controlRadius
+    static let toolbarInset: CGFloat = (NoteTheme.toolbarHeight - NoteTheme.toolbarButtonSize.height) / 2
     static func configureToolbarScroll(_ scroll: NSScrollView) {
         scroll.drawsBackground = false; scroll.hasHorizontalScroller = true; scroll.autohidesScrollers = true
         scroll.scrollerStyle = .overlay
@@ -42,8 +73,15 @@ enum EaselAppearance {
     }
     static func configureSurface(_ layer: CALayer?) {
         layer?.backgroundColor = surface.cgColor
-        layer?.cornerRadius = 8; layer?.cornerCurve = .continuous
+        layer?.cornerRadius = NoteTheme.menuRadius; layer?.cornerCurve = .continuous
         layer?.borderWidth = 1; layer?.borderColor = outline.cgColor
+    }
+    static func configureFloatingShadow(_ layer: CALayer?, dark: Bool) {
+        layer?.masksToBounds = false
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = dark ? 0.32 : 0.12
+        layer?.shadowRadius = 7
+        layer?.shadowOffset = CGSize(width: 0, height: -2)
     }
 }
 
@@ -55,7 +93,7 @@ final class EaselPaletteButton: PointingHandButton {
     private var hoverTracking: NSTrackingArea?
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        isBordered = false; focusRingType = .exterior; font = .systemFont(ofSize: 13)
+        isBordered = false; focusRingType = .exterior; font = NoteTheme.chromeFont(13)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func updateTrackingAreas() {
@@ -78,30 +116,15 @@ final class EaselPaletteButton: PointingHandButton {
     override var isEnabled: Bool { didSet { needsDisplay = true } }
     override func highlight(_ flag: Bool) { super.highlight(flag); needsDisplay = true }
     override func draw(_ dirtyRect: NSRect) {
-        if usesToolbarInk {
-            drawTool()
-            return
+        let radius = NoteTheme.controlRadius, plate = bounds
+        let fill: NSColor? = !isEnabled ? nil : state != .off ? NoteTheme.checkedFill
+            : isHighlighted ? NoteTheme.pressedFill : pointerInside ? NoteTheme.hoverFill : nil
+        if let fill {
+            fill.setFill()
+            NSBezierPath(roundedRect: plate, xRadius: radius, yRadius: radius).fill()
         }
-        let ink = EaselAppearance.text
-        let alpha: CGFloat = !isEnabled ? 0 : isHighlighted ? 0.12 : state != .off ? 0.08 : pointerInside ? 0.03 : 0
-        EaselAppearance.surface.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
-        if alpha > 0 {
-            ink.withAlphaComponent(alpha).setFill()
-            NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
-        }
-        drawContent(foreground: ink.withAlphaComponent(isEnabled ? 1 : 0.35))
-    }
-    private func drawTool() {
-        let radius = EaselAppearance.toolbarSelectedRadius
-        if state != .off {
-            EaselAppearance.toolbarSelected.setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: radius, yRadius: radius).fill()
-        } else if isEnabled, isHighlighted || pointerInside {
-            EaselAppearance.toolbarGlyph.withAlphaComponent(0.12).setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: radius, yRadius: radius).fill()
-        }
-        drawContent(foreground: EaselAppearance.toolbarGlyph.withAlphaComponent(isEnabled ? 1 : 0.35), maximum: 18)
+        let ink = state != .off ? NoteTheme.checkedInk : isHighlighted || pointerInside ? NoteTheme.menuInk : NoteTheme.menuSecondaryInk
+        drawContent(foreground: ink.withAlphaComponent(isEnabled ? 1 : NoteTheme.disabledOpacity), maximum: usesToolbarInk ? 18 : nil)
     }
     private func drawContent(foreground: NSColor, maximum: CGFloat? = nil) {
         if let image, imagePosition != .noImage {
@@ -117,11 +140,11 @@ final class EaselPaletteButton: PointingHandButton {
             if let caption {
                 let paragraph = NSMutableParagraphStyle(); paragraph.alignment = .center; paragraph.lineBreakMode = .byTruncatingTail
                 (caption as NSString).draw(in: NSRect(x: 0, y: 0, width: bounds.width, height: 11),
-                    withAttributes: [.font: NSFont.systemFont(ofSize: 9, weight: .bold), .foregroundColor: foreground, .paragraphStyle: paragraph])
+                    withAttributes: [.font: NoteTheme.nunitoBold(9), .foregroundColor: foreground, .paragraphStyle: paragraph])
             }
         } else {
             let paragraph = NSMutableParagraphStyle(); paragraph.alignment = .center; paragraph.lineBreakMode = .byTruncatingTail
-            let attributes: [NSAttributedString.Key: Any] = [.font: font ?? NSFont.systemFont(ofSize: 13), .foregroundColor: foreground, .paragraphStyle: paragraph]
+            let attributes: [NSAttributedString.Key: Any] = [.font: font ?? NoteTheme.chromeFont(13), .foregroundColor: foreground, .paragraphStyle: paragraph]
             let height = (title as NSString).size(withAttributes: attributes).height
             (title as NSString).draw(in: NSRect(x: 4, y: (bounds.height - height) / 2, width: max(0, bounds.width - 8), height: height), withAttributes: attributes)
         }
@@ -129,7 +152,7 @@ final class EaselPaletteButton: PointingHandButton {
             foreground.setFill(); NSRect(x: bounds.midX - 3, y: 2, width: 6, height: 1).fill()
         }
     }
-    override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill() }
+    override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: NoteTheme.controlRadius, yRadius: NoteTheme.controlRadius).fill() }
     override var focusRingMaskBounds: NSRect { bounds }
 }
 
@@ -138,13 +161,23 @@ final class EaselToolbarPill: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.backgroundColor = EaselAppearance.toolbarFill.cgColor
         layer?.cornerRadius = EaselAppearance.toolbarRadius
         layer?.cornerCurve = .continuous
+        layer?.borderWidth = 1
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override var wantsUpdateLayer: Bool { true }
-    override func updateLayer() { layer?.backgroundColor = EaselAppearance.toolbarFill.cgColor }
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = EaselAppearance.toolbarFill.cgColor
+            layer?.borderColor = EaselAppearance.outline.cgColor
+        }
+        EaselAppearance.configureFloatingShadow(layer, dark: NoteTheme.isDark(effectiveAppearance))
+        layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: EaselAppearance.toolbarRadius,
+                                   cornerHeight: EaselAppearance.toolbarRadius, transform: nil)
+    }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
+    override func setFrameSize(_ newSize: NSSize) { super.setFrameSize(newSize); needsDisplay = true }
 }
 
 @MainActor
@@ -163,7 +196,7 @@ final class EaselDocumentView: NSView {
     override init(frame frameRect: NSRect) { super.init(frame: frameRect); wantsLayer = true }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override var wantsUpdateLayer: Bool { true }
-    override func updateLayer() { effectiveAppearance.performAsCurrentDrawingAppearance { layer?.backgroundColor = EaselAppearance.surface.cgColor } }
+    override func updateLayer() { effectiveAppearance.performAsCurrentDrawingAppearance { layer?.backgroundColor = EaselAppearance.paper.cgColor } }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
     override func layout() { super.layout(); onLayout?() }
 

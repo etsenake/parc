@@ -31,7 +31,7 @@ sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [app / name for 
 sources += [root / "tests/KeyboardNavigation/NativeShortcutStub.swift", root / "tests/SpaceManager/NativeHostStub.swift",
             root / "tests/Support/TestFailure.swift"]
 sources += [app / name for name in ["CommandResultRowView.swift", "CommandResultCell.swift", "CommandBarAppearance.swift",
-    "PopoverBackgroundView.swift", "LocalContentDrop.swift", "EaselAppearance.swift", "EaselTextStyle.swift", "TextFormatMenu.swift",
+    "PopoverBackgroundView.swift", "LocalContentDrop.swift", "NoteTheme.swift", "EaselAppearance.swift", "EaselTextStyle.swift", "TextFormatMenu.swift",
     "EaselRichTextCodec.swift", "EaselTextAttachment.swift", "EaselParagraphEditing.swift", "EaselMarkdownEditing.swift",
     "WebpageEditCommands.swift", "EaselCanvasView.swift", "EaselMotion.swift"] if name not in names]
 sources += sorted(here.glob("Harness/*.swift"))

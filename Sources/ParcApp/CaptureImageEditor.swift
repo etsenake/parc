@@ -44,7 +44,7 @@ final class CaptureImageEditor: NSObject {
             session = try EaselSession(inMemory: document, assets: [id: png])
         }
         initial = session.document
-        canvas = EaselCanvasView(session: session); canvas.fixedCanvasSize = size
+        canvas = EaselCanvasView(session: session); canvas.fixedCanvasSize = size; canvas.adaptsInk = false
         super.init()
         panel.isReleasedWhenClosed = false; panel.title = "Edit Capture"
         panel.contentView = root; panel.onCancel = { [weak self] in self?.close() }; panel.editor = self

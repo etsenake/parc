@@ -4,8 +4,8 @@ import subprocess,hashlib,json,sys,time,shutil
 root=Path(__file__).resolve().parents[2]
 out=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else root/'build/tests/easel-page-pool'
 out.mkdir(parents=True,exist_ok=True)
-files=[root/'Sources/ParcCore'/x for x in ['EaselStore.swift','EaselRichText.swift','EaselCanvasInteraction.swift','EaselWebNavigation.swift','FairPlayIdentity.swift','EmbeddedPageLifecycle.swift']]
-files += [root/'Sources/ParcApp'/x for x in ['LocalContentDrop.swift','WebpageEditCommands.swift','EaselAppearance.swift','EaselTextStyle.swift','TextFormatMenu.swift','EaselRichTextCodec.swift','EaselTextAttachment.swift','EaselParagraphEditing.swift','EaselMarkdownEditing.swift','EaselCanvasView.swift','EaselMotion.swift','EaselWebInput.swift','SavedFocus.swift','SadTabContent.swift','EmbeddedPagePool.swift','EaselBrowserObjects.swift','FairPlayIdentityController.swift','PointerCover.swift','PointingHand.swift','ParcDialog.swift']]
+files=sorted((root/'Sources/ParcCore').glob('*.swift'))
+files += [root/'Sources/ParcApp'/x for x in ['NoteTheme.swift','LocalContentDrop.swift','WebpageEditCommands.swift','EaselAppearance.swift','EaselTextStyle.swift','TextFormatMenu.swift','EaselRichTextCodec.swift','EaselTextAttachment.swift','EaselParagraphEditing.swift','EaselMarkdownEditing.swift','EaselCanvasView.swift','EaselMotion.swift','EaselWebInput.swift','SavedFocus.swift','SadTabContent.swift','EmbeddedPagePool.swift','EaselBrowserObjects.swift','FairPlayIdentityController.swift','PointerCover.swift','PointingHand.swift','ParcDialog.swift']]
 files.append(Path(subprocess.check_output(['python3','-B',str(root/'tests/Support/declarations.py'),str(out/'ParcButtonSpinner.swift'),'ParcButtonSpinner'],text=True).strip()))
 files += [root/'tests/EaselPagePool'/x for x in ['EngineBoundary.swift','Tests.swift']]
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()

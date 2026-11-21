@@ -98,12 +98,12 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         let root = EaselDocumentView(frame: .zero)
         view = root
         titleField.stringValue = session.document.title
-        titleField.font = .systemFont(ofSize: 20, weight: .semibold)
-        titleField.textColor = EaselAppearance.text
+        titleField.font = NoteTheme.nunitoExtraBold(24)
+        titleField.textColor = NoteTheme.titleInk
         titleField.isBezeled = false; titleField.drawsBackground = false
         titleField.delegate = self; titleField.setAccessibilityLabel("Easel title")
         root.addSubview(titleField)
-        status.font = .systemFont(ofSize: 11); status.textColor = .secondaryLabelColor
+        status.font = NoteTheme.captionFont(); status.textColor = NoteTheme.secondaryInk
         root.addSubview(status)
         scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true
         scroll.allowsMagnification = true; scroll.minMagnification = 0.3333; scroll.maxMagnification = 4
@@ -111,10 +111,11 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         scroll.documentView = canvas; root.addSubview(scroll)
 
         let tools = NSStackView()
-        tools.orientation = .horizontal; tools.spacing = 4
+        tools.orientation = .horizontal; tools.spacing = 2
         tools.setClippingResistancePriority(.init(999), for: .horizontal)
         tools.setClippingResistancePriority(.init(999), for: .vertical)
-        tools.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
+        let toolInset = EaselAppearance.toolbarInset
+        tools.edgeInsets = NSEdgeInsets(top: toolInset, left: toolInset, bottom: toolInset, right: toolInset)
         let toolSurface = EaselToolbarPill(frame: .zero)
         let toolScroll = NSScrollView()
         EaselAppearance.configureToolbarScroll(toolScroll)
@@ -128,7 +129,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
                 b = EaselPaletteButton(image: glyph, target: self, action: action)
             } else {
                 b = EaselPaletteButton(title: title ?? "", target: self, action: action)
-                b.font = .systemFont(ofSize: 16, weight: .medium)
+                b.font = NoteTheme.nunitoExtraBold(16)
                 b.imagePosition = .noImage
             }
             b.usesToolbarInk = true; b.toolTip = label; b.setAccessibilityLabel(label); b.tag = tag
@@ -152,13 +153,14 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         chrome.orientation = .horizontal; chrome.spacing = 2
         chrome.setClippingResistancePriority(.init(999), for: .horizontal)
         chrome.setClippingResistancePriority(.init(999), for: .vertical)
+        let chromeSize = NoteTheme.toolbarButtonSize.width
         func chromeButton(_ label: String, _ symbol: String, _ action: Selector) -> NSButton {
             let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
-                .withSymbolConfiguration(.init(pointSize: 13, weight: .regular)) ?? NSImage()
+                .withSymbolConfiguration(.init(pointSize: 14, weight: .medium)) ?? NSImage()
             let b = EaselPaletteButton(image: glyph, target: self, action: action)
             b.toolTip = label; b.setAccessibilityLabel(label)
-            b.widthAnchor.constraint(equalToConstant: 24).isActive = true
-            b.heightAnchor.constraint(equalToConstant: 24).isActive = true
+            b.widthAnchor.constraint(equalToConstant: chromeSize).isActive = true
+            b.heightAnchor.constraint(equalToConstant: chromeSize).isActive = true
             chrome.addArrangedSubview(b); return b
         }
         _ = chromeButton("Add link", "link", #selector(addLink(_:)))
@@ -169,7 +171,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         _ = chromeButton("Share", "square.and.arrow.up", #selector(showShareMenu))
         root.addSubview(toolSurface)
         root.addSubview(chrome)
-        let toolWidth: CGFloat = 6 + 7 * buttonSize + 6 * 4 + 6
+        let toolWidth: CGFloat = 2 * toolInset + 7 * buttonSize + 6 * tools.spacing
         var lastChromeSize = NSSize(width: -1, height: -1)
         root.onLayout = { [weak self, weak root, weak tools, weak toolSurface, weak toolScroll, weak chrome] in
             guard let self, let root, let tools, let toolSurface, let toolScroll, let chrome else { return }
@@ -177,12 +179,12 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             let size = root.bounds.size
             guard size != lastChromeSize else { return }
             lastChromeSize = size
-            let chromeWidth: CGFloat = 5 * 24 + 4 * 2
-            self.titleField.frame = NSRect(x: 24, y: 12, width: max(80, width - chromeWidth - 52), height: 28)
-            chrome.frame = NSRect(x: max(24, width - chromeWidth - 20), y: 14, width: chromeWidth, height: 24)
-            self.status.frame = NSRect(x: 26, y: 40, width: max(100, width - 52), height: 14)
+            let chromeWidth: CGFloat = 5 * chromeSize + 4 * 2
+            self.titleField.frame = NSRect(x: 24, y: 10, width: max(80, width - chromeWidth - 52), height: 32)
+            chrome.frame = NSRect(x: max(24, width - chromeWidth - 14), y: 12, width: chromeWidth, height: chromeSize)
+            self.status.frame = NSRect(x: 26, y: 40, width: max(100, width - 52), height: 18)
             let strip = min(width - 24, toolWidth)
-            toolSurface.frame = NSRect(x: (width - strip) / 2, y: 56, width: strip, height: EaselAppearance.toolbarHeight)
+            toolSurface.frame = NSRect(x: (width - strip) / 2, y: 62, width: strip, height: EaselAppearance.toolbarHeight)
             toolScroll.frame = toolSurface.bounds
             tools.frame = NSRect(x: 0, y: 0, width: toolWidth, height: EaselAppearance.toolbarHeight)
             let canvasTop = toolSurface.frame.maxY + 8

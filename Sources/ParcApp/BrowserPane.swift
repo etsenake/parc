@@ -166,7 +166,7 @@ final class BrowserPane: NSView {
         view.frame = content.bounds; view.isHidden = false
         error.clear(); browser?.isHidden = true; showsBlank = false
         surface = .local
-        setNoteCanvasBacking(showsNoteController)
+        setNoteCanvasBacking(showsNoteController || view is EaselDocumentView)
         applyNoteCanvasTheme()
     }
     func showNote(_ controller: NotePageViewController) {

@@ -18,9 +18,8 @@ style_bundle="$scratch/EaselTextStyle.app/Contents"
 mkdir -p "$style_bundle/MacOS" "$style_bundle/Resources/EaselFonts"
 cp "$repo_root/Resources/EaselFonts/"*.ttf "$style_bundle/Resources/EaselFonts/"
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
-  "$repo_root/Sources/ParcCore/EaselStore.swift" \
-  "$repo_root/Sources/ParcCore/EaselRichText.swift" \
-  "$repo_root/Sources/ParcCore/EaselCanvasInteraction.swift" \
+  "$repo_root/Sources/ParcCore/"*.swift \
+  "$repo_root/Sources/ParcApp/NoteTheme.swift" \
   "$repo_root/Sources/ParcApp/LocalContentDrop.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
   "$repo_root/Sources/ParcApp/PointingHand.swift" \
@@ -36,9 +35,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
 "$style_bundle/MacOS/EaselTextStyle"
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
-  "$repo_root/Sources/ParcCore/EaselStore.swift" \
-  "$repo_root/Sources/ParcCore/EaselRichText.swift" \
-  "$repo_root/Sources/ParcCore/EaselCanvasInteraction.swift" \
+  "$repo_root/Sources/ParcCore/"*.swift \
+  "$repo_root/Sources/ParcApp/NoteTheme.swift" \
   "$repo_root/Sources/ParcApp/LocalContentDrop.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
   "$repo_root/Sources/ParcApp/PointingHand.swift" \
@@ -61,6 +59,7 @@ mkdir -p "$style_bundle/Resources/CustomInfoPicker" "$style_bundle/Resources/App
 cp "$repo_root/Resources/CustomInfoPicker/feather.ttf" "$style_bundle/Resources/CustomInfoPicker/"
 cp "$repo_root/Resources/AppIcons/Marks/Borderless.png" "$style_bundle/Resources/AppIcons/Marks/"
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
+  "$repo_root/Sources/ParcApp/NoteTheme.swift" \
   "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/Sources/ParcApp/LocalContentDrop.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
@@ -95,7 +94,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
 "$scratch/capture-destinations"
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
-  "$repo_root/Sources/ParcCore/EaselWebNavigation.swift" \
+  "$repo_root/Sources/ParcCore/"*.swift \
+  "$repo_root/Sources/ParcApp/NoteTheme.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
   "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/PointerCover.swift" \
