@@ -39,6 +39,8 @@ and caret formatting updates typing attributes. Native text Undo precedes
 canvas/document Undo. Composition is never serialized as a finished edit.
 Durable saves coalesce within the editing UUID while native Undo retains its
 own transactions; another owner's edits invalidate obsolete local history.
+Point and area text, width handles and alignment are described in
+[Easel text](easel-text.md).
 
 ## Selection toolbar
 
@@ -212,7 +214,8 @@ Undo must retain the latest acknowledged navigation metadata.
 ## Default text, selection and empty-object retirement — EASEL24
 
 New text starts with “Start typing to enter text”. Empty-canvas double click
-creates a 280 × 28 object with its top 14 points above the click. Keyboard
+creates [point text](easel-text.md#point-text-and-area-text) fitted to that
+prompt, with its left edge at the click and its top 14 points above it. Keyboard
 editing selects the prompt; ordinary double click selects a word.
 
 Whitespace-only text retires at the final editing boundary through the same
@@ -298,7 +301,10 @@ moves with) apply to any object. Text, shapes and stickies hold rich text;
 sections keep a plain title. Tables keep their grid, cell text and merges in a
 `table` field described in [Easel tables](easel-tables.md#saved-format), and
 [code blocks](easel-code-blocks.md#saved-format) keep their code in `text` with an
-optional `language`. Validation refuses each field on objects it doesn't belong
+optional `language`. A text style may carry `alignment`, `customSize` (8 to 400
+points, overriding the preset size) and, on text objects only, `autoWidth` for
+point text; absent means the preset size and fixed-width area text.
+Validation refuses each field on objects it doesn't belong
 to, so a malformed file is rejected whole rather than half drawn.
 
 ## Checks and limits

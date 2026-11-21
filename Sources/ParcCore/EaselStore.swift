@@ -173,19 +173,23 @@ struct EaselTextStyle: Codable, Equatable {
     enum Fill: String, Codable { case none, contentHugging }
     enum Alignment: String, Codable, CaseIterable { case left, center, right }
     static let textScales = 0.25...8.0
+    static let customSizes: ClosedRange<Double> = 8...400
     var fill: Fill?
     var resolvedFill: Fill { fill ?? .none }
     var alignment: Alignment?
     var textScale: Double?
     var family: Family = .clean
     var size: Size = .body
-    var pointSize: Double {
+    var customSize: Double?
+    var autoWidth: Bool?
+    var presetPointSize: Double {
         switch family {
         case .mono, .clean: return [15, 24, 44, 60, 80][size.index]
         case .fancy: return [16, 28, 48, 60, 80][size.index]
         case .hip: return [18, 21, 44, 60, 80][size.index]
         }
     }
+    var pointSize: Double { customSize ?? presetPointSize }
 }
 
 struct EaselItem: Codable, Identifiable, Equatable {
@@ -578,6 +582,12 @@ final class EaselStore {
         if let language = item.language {
             guard item.kind == .code else { throw EaselStoreError.invalidDocument("code language on a non-code object") }
             guard EaselItem.isValidLanguage(language) else { throw EaselStoreError.invalidDocument("code language") }
+        }
+        if let style = item.textStyle {
+            guard style.customSize.map({ EaselTextStyle.customSizes.contains($0) }) != false else {
+                throw EaselStoreError.invalidDocument("text size")
+            }
+            if style.autoWidth != nil && item.kind != .text { throw EaselStoreError.invalidDocument("auto width on a non-text object") }
         }
     }
 

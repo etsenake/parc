@@ -454,8 +454,10 @@ struct EaselCanvasTests {
         canvas.mouseDown(with: doubleClick)
         expect(session.document.items.last!.text == EaselTextEditing.defaultText && currentEditor().selectedRange().length == 26,
                "Blank-canvas double click authors and selects the actual default prompt")
-        expect(session.document.items.last!.frame == EaselRect(x: 40, y: 436, width: 280, height: 28),
-               "Blank-canvas insertion uses the recovered point-relative text frame")
+        let created = session.document.items.last!
+        expect(created.frame.x == 40 && created.frame.y == 436 && created.textStyle?.autoWidth == true &&
+               created.frame.width > 120 && created.frame.width < 280 && created.frame.height < 40,
+               "Blank-canvas insertion makes point text fitted to the prompt at the click")
         let linked = currentEditor()
         let nativeShow = class_getInstanceMethod(NSPopover.self, #selector(NSPopover.show(relativeTo:of:preferredEdge:)))!
         let hiddenShow = class_getInstanceMethod(NSPopover.self, #selector(NSPopover.easelTestSuppressShow(relativeTo:of:preferredEdge:)))!

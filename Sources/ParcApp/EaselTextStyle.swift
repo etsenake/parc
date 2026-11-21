@@ -107,6 +107,29 @@ enum EaselTextLayout {
         }
     }
 
+    static func drawWidthHandle(at point: NSPoint, scale: CGFloat) {
+        let mark = NSRect(x: point.x - 3 / scale, y: point.y - 8 / scale, width: 6 / scale, height: 16 / scale)
+        EaselAppearance.selection.setFill(); NSBezierPath(roundedRect: mark, xRadius: 3 / scale, yRadius: 3 / scale).fill()
+        let inner = mark.insetBy(dx: 2 / scale, dy: 2.5 / scale)
+        EaselAppearance.surface.setFill(); NSBezierPath(roundedRect: inner, xRadius: 1 / scale, yRadius: 1 / scale).fill()
+    }
+
+    static func naturalWidth(_ value: NSAttributedString) -> CGFloat {
+        let storage = NSTextStorage(attributedString: value)
+        EaselRichTextCodec.align(storage, to: .left)
+        let manager = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: 100_000, height: 1_000_000))
+        container.lineFragmentPadding = fragmentPadding
+        manager.addTextContainer(container); storage.addLayoutManager(manager)
+        EaselTextAttachments.bind(storage, container: container)
+        manager.ensureLayout(for: container)
+        var width: CGFloat = 0
+        manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { _, used, _, _, _ in
+            if used.width.isFinite { width = max(width, used.maxX) }
+        }
+        return ceil(width) + inset.width * 2
+    }
+
     static func lineRects(manager: NSLayoutManager, container: NSTextContainer) -> [NSRect] {
         guard let storage = manager.textStorage else { return [] }
         manager.ensureLayout(for: container)
@@ -322,11 +345,39 @@ final class EaselStyledTextView: LocalContentDropTextView {
     var hasPendingRangeAction: Bool { linkPopover?.isShown == true }
     private var editRevision = UUID()
     private var suppressMarkdown = false
+    var onAlign: ((EaselTextStyle.Alignment) -> Void)?
+    var enforcedAlignment: NSTextAlignment? {
+        didSet { if enforcedAlignment != oldValue { synchronizeAlignment() } }
+    }
+    private func synchronizeAlignment() {
+        guard let storage = textStorage, !hasMarkedText() else { return }
+        localUndo.disableUndoRegistration()
+        storage.beginEditing()
+        if let alignment = enforcedAlignment { EaselRichTextCodec.align(storage, to: alignment) }
+        else { EaselRichTextCodec.unalign(storage) }
+        storage.endEditing()
+        localUndo.enableUndoRegistration()
+        if let alignment = enforcedAlignment { typingAttributes = EaselRichTextCodec.aligned(typingAttributes, to: alignment) }
+        else if (typingAttributes[.paragraphStyle] as? NSParagraphStyle)?.alignment ?? .natural != .natural {
+            typingAttributes = EaselRichTextCodec.aligned(typingAttributes, to: .natural)
+        }
+        needsDisplay = true
+    }
+    private func documentText(_ value: NSAttributedString) -> NSAttributedString {
+        enforcedAlignment == nil ? value : EaselRichTextCodec.unaligned(value)
+    }
+    func documentPayload() throws -> EaselStyledText {
+        try EaselStyledText.capture(documentText(attributedString()), style: objectStyle, color: objectColor)
+    }
+    override func alignLeft(_ sender: Any?) { if let onAlign { onAlign(.left) } else { super.alignLeft(sender) } }
+    override func alignCenter(_ sender: Any?) { if let onAlign { onAlign(.center) } else { super.alignCenter(sender) } }
+    override func alignRight(_ sender: Any?) { if let onAlign { onAlign(.right) } else { super.alignRight(sender) } }
+    override func alignJustified(_ sender: Any?) { if onAlign == nil { super.alignJustified(sender) } }
 
     func selectedPayload() throws -> EaselStyledText? {
         let range = selectedRange()
         guard range.length > 0 else { return nil }
-        return try EaselStyledText.capture(attributedString().attributedSubstring(from: range), style: objectStyle, color: objectColor)
+        return try EaselStyledText.capture(documentText(attributedString().attributedSubstring(from: range)), style: objectStyle, color: objectColor)
     }
     private func copySelection() -> Bool {
         do {

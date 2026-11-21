@@ -149,8 +149,53 @@ enum EaselRichTextCodec {
         return result
     }
     static func attributed(_ item: EaselItem) -> NSAttributedString {
-        let result = attributed(item.text, richText: item.richText, style: item.resolvedTextStyle, color: item.color)
+        let result = NSMutableAttributedString(attributedString: attributed(item.text, richText: item.richText, style: item.resolvedTextStyle, color: item.color))
         EaselTextAttachments.bind(result, width: max(1, item.frame.width - 20))
+        if let alignment = EaselTextSizing.enforcedAlignment(item) { align(result, to: textAlignment(alignment)) }
+        return result
+    }
+    static func textAlignment(_ alignment: EaselTextStyle.Alignment) -> NSTextAlignment {
+        switch alignment {
+        case .left: return .left
+        case .center: return .center
+        case .right: return .right
+        }
+    }
+    static func align(_ value: NSMutableAttributedString, to alignment: NSTextAlignment) {
+        var parts: [(NSRange, NSParagraphStyle?)] = []
+        value.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: value.length)) { style, range, _ in
+            parts.append((range, style as? NSParagraphStyle))
+        }
+        for (range, style) in parts where style?.alignment != alignment {
+            let next = (style?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+            next.alignment = alignment
+            value.addAttribute(.paragraphStyle, value: next, range: range)
+        }
+    }
+    static func aligned(_ attributes: [NSAttributedString.Key: Any], to alignment: NSTextAlignment) -> [NSAttributedString.Key: Any] {
+        let style = attributes[.paragraphStyle] as? NSParagraphStyle
+        guard style?.alignment != alignment else { return attributes }
+        let next = (style?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+        next.alignment = alignment
+        var result = attributes
+        result[.paragraphStyle] = next
+        return result
+    }
+    static func unalign(_ value: NSMutableAttributedString) {
+        var parts: [(NSRange, NSParagraphStyle)] = []
+        value.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: value.length)) { style, range, _ in
+            if let style = style as? NSParagraphStyle, style.alignment != .natural { parts.append((range, style)) }
+        }
+        for (range, style) in parts {
+            guard let next = style.mutableCopy() as? NSMutableParagraphStyle else { continue }
+            next.alignment = .natural
+            if next == NSParagraphStyle.default { value.removeAttribute(.paragraphStyle, range: range) }
+            else { value.addAttribute(.paragraphStyle, value: next, range: range) }
+        }
+    }
+    static func unaligned(_ value: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: value)
+        unalign(result)
         return result
     }
 }
