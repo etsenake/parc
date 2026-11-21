@@ -29,6 +29,7 @@ struct EaselShapeGeometryTests {
         checkEdges()
         checkPlacement()
         checkNewShapes()
+        checkCatalog()
         print("EaselShapeGeometryTests passed")
     }
 
@@ -375,5 +376,34 @@ struct EaselShapeGeometryTests {
                "Unfilled shapes export without fill and keep their inner lines")
         expect(EaselVectorExport.element(EaselItem(kind: .rectangle, frame: frame), art: .init()).hasPrefix("<rect"),
                "Saved shapes export exactly as before")
+    }
+
+    static func checkCatalog() {
+        let listed = EaselShapeCatalog.families.flatMap(\.shapes)
+        expect(listed.count == EaselShape.allCases.count && Set(listed) == Set(EaselShape.allCases),
+               "The picker lists every shape exactly once")
+        for shape in EaselShape.allCases {
+            expect(EaselShapeCatalog.slot(of: shape).flatMap(EaselShapeCatalog.shape(at:)) == shape, "\(shape) has a picker slot")
+        }
+        typealias Slot = EaselShapeCatalog.Slot
+        expect(EaselShapeCatalog.move(from: nil, dx: 1, dy: 0) == Slot(family: 0, index: 0), "Keyboard picking starts at the first shape")
+        expect(EaselShapeCatalog.move(from: Slot(family: 0, index: 0), dx: -1, dy: 0) == Slot(family: 1, index: EaselShapeCatalog.families[1].shapes.count - 1),
+               "Left from the first shape wraps to the last")
+        let lastBasic = EaselShapeCatalog.families[0].shapes.count - 1
+        expect(EaselShapeCatalog.move(from: Slot(family: 0, index: lastBasic), dx: 1, dy: 0) == Slot(family: 1, index: 0),
+               "Right from the last basic shape continues into the flowchart shapes")
+        expect(EaselShapeCatalog.move(from: Slot(family: 0, index: 1), dx: 0, dy: 1) == Slot(family: 0, index: 1 + EaselShapeCatalog.columns),
+               "Down moves one row in the same column")
+        let bottomBasic = Slot(family: 0, index: (lastBasic / EaselShapeCatalog.columns) * EaselShapeCatalog.columns + 2)
+        expect(EaselShapeCatalog.move(from: bottomBasic, dx: 0, dy: 1) == Slot(family: 1, index: 2), "Down from the last basic row lands in the flowchart's first row")
+        expect(EaselShapeCatalog.move(from: Slot(family: 1, index: 5), dx: 0, dy: -1).family == 0, "Up from the flowchart's first row returns to the basics")
+        for family in EaselShapeCatalog.families.indices {
+            for index in EaselShapeCatalog.families[family].shapes.indices {
+                for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let next = EaselShapeCatalog.move(from: Slot(family: family, index: index), dx: dx, dy: dy)
+                    expect(EaselShapeCatalog.shape(at: next) != nil, "Every keyboard move lands on a real shape")
+                }
+            }
+        }
     }
 }

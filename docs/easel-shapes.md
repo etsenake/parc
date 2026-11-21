@@ -90,6 +90,13 @@ object menu offers it as **Shape**, a submenu of every shape with its icon and a
 check on the current one, which also reaches VoiceOver through the object's
 menu action.
 
+The shape picker (`EaselShapePickerView`) is a Notes floating panel with every
+shape in a Basic and a Flowchart grid, drawn from the same outlines. It uses the
+Notes highlight plate, a footer naming the shape under the pointer, a ring on
+the selection's current shape and a pin that keeps it open, like a shapes
+sidebar, so several shapes can be placed in a row. Arrow keys, Tab, Return and
+Esc work as in the Notes colour menu, and VoiceOver reads each shape by name.
+
 `insertShape(_:in:editing:)` adds one shape as a single Undo step, selected
 afterwards, at the given frame or the default size in the middle of the view,
 and can open its text right away. `selectedShapes` reports the shapes in the
