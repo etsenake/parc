@@ -30,9 +30,16 @@ import Quartz
     private var observations: [NSObjectProtocol] = []
     private var motionObservation: NSObjectProtocol?
     private let reduceMotion: () -> Bool
+    private let presentWindow: (NSWindow, NSWindow) -> Void
     private var finishing: DownloadLibraryPreview?
 
-    init(itemName: String = "download", reduceMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
+    init(itemName: String = "download",
+         reduceMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
+         presentWindow: @escaping (NSWindow, NSWindow) -> Void = { window, parent in
+             parent.addChildWindow(window, ordered: .above)
+             window.makeKeyAndOrderFront(nil)
+         }) {
+        self.presentWindow = presentWindow
         self.reduceMotion = reduceMotion
         let panel = DownloadPreviewPanel(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
                                          styleMask: .borderless, backing: .buffered, defer: false)
@@ -107,8 +114,8 @@ import Quartz
         guard let window, !closing, originalParent == nil, parent.attachedSheet == nil else { return }
         originalParent = parent; window.appearance = parent.effectiveAppearance
         window.setFrame(parent.frame, display: false)
-        parent.addChildWindow(window, ordered: .above)
-        window.makeKeyAndOrderFront(nil); window.makeFirstResponder(dismissButton)
+        presentWindow(window, parent)
+        window.makeFirstResponder(dismissButton)
         root.layoutSubtreeIfNeeded()
         let source = localSourceRect()
         imageView.image = sourceImage
