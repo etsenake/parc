@@ -165,50 +165,117 @@ struct EaselStoreTests {
         #expect(decoded.shape == nil && decoded.fill == nil && decoded.rotation == nil && decoded.resolvedShape == .rectangle, "Easels saved before board objects decode unchanged")
     }
 
-    @MainActor @Test func anEaselRelocatesToAnotherProfileWithItsExactBytes() throws {
+    @MainActor
+    private func makeRelocation(in directory: URL) throws -> (
+        source: EaselStore, destination: EaselStore, original: EaselSession, asset: String, browser: EaselItem
+    ) {
+        let source = try EaselStore(directory: directory.appendingPathComponent("source"))
+        let destination = try EaselStore(directory: directory.appendingPathComponent("destination"))
+        let original = try source.create(title: "Profile transfer")
+        let asset = try original.importPNG(png)
+        let browser = EaselItem(kind: .browser, frame: frame, url: "https://example.com/original")
+        let card = EaselItem(kind: .webCard, frame: frame, text: "Original capture", url: "https://example.com/source", assetID: asset, capturedAt: Date(timeIntervalSince1970: 42))
+        try original.perform("Seed") { $0.items = [browser, card] }
+        _ = try original.recordBrowserNavigation(URL(string: "https://example.com/current")!, itemID: browser.id, expectedURL: browser.url!)
+        return (source, destination, original, asset, browser)
+    }
+
+    @MainActor @Test
+    func aLiveChildPreventsSessionRetirement() throws {
         try withDirectory { directory in
-            let source = try EaselStore(directory: directory.appendingPathComponent("source"))
-            let destination = try EaselStore(directory: directory.appendingPathComponent("destination"))
-            let original = try source.create(title: "Profile transfer")
-            let id = original.document.id, asset = try original.importPNG(png)
-            let browser = EaselItem(kind: .browser, frame: frame, url: "https://example.com/original")
-            let card = EaselItem(kind: .webCard, frame: frame, text: "Original capture", url: "https://example.com/source", assetID: asset, capturedAt: Date(timeIntervalSince1970: 42))
-            try original.perform("Seed") { $0.items = [browser, card] }
-            _ = try original.recordBrowserNavigation(URL(string: "https://example.com/current")!, itemID: browser.id, expectedURL: browser.url!)
-            let saved = original.document
-            let originalBytes = try Data(contentsOf: file(source.directory, id))
+            let (source, _, original, _, _) = try makeRelocation(in: directory)
+            let id = original.document.id
             let liveChild = original.observeReplacement { $0 != nil }
             expectThrows("a live original child prevents session retirement") { try source.retireSessionForRelocation(id) }
             #expect(!original.isClosed && (try! source.load(id)) === original, "refused retirement preserves source session")
             original.removeReplacementObserver(liveChild)
+        }
+    }
+
+    @MainActor @Test
+    func aBoardWithAnOpenSessionCannotMoveProfiles() throws {
+        try withDirectory { directory in
+            let (source, destination, original, _, _) = try makeRelocation(in: directory)
+            let id = original.document.id
             expectThrows("a still-open editor cannot move by deallocation timing") { _ = try source.relocate(id, to: destination) }
+        }
+    }
+
+    @MainActor @Test
+    func anEaselRelocatesToAnotherProfileWithItsExactBytes() throws {
+        try withDirectory { directory in
+            let (source, destination, original, asset, _) = try makeRelocation(in: directory)
+            let id = original.document.id
+            let saved = original.document
+            let originalBytes = try Data(contentsOf: file(source.directory, id))
             try source.retireSessionForRelocation(id)
             #expect(original.isClosed && !original.canUndo && !original.canRedo, "explicit session retirement revokes history despite a retained old owner")
             let copied = try source.relocate(id, to: destination)
             #expect(copied == [asset] && (try? source.load(id)) == nil, "actual document moves after explicit retirement")
             #expect(try! Data(contentsOf: file(destination.directory, id)) == originalBytes, "Profile relocation preserves the exact document bytes")
-            expectThrows("retained editor cannot recreate the source file") { try original.perform("Late callback") { $0.title = "Wrong profile" } }
-            expectThrows("retired navigation cannot rewrite source metadata") { _ = try original.recordBrowserNavigation(URL(string: "https://example.com/stale")!, itemID: browser.id, expectedURL: "https://example.com/current") }
-            expectThrows("retired save is refused") { try original.save() }
-            expectThrows("retired asset import is refused") { _ = try original.importPNG(png) }
-            expectThrows("retired undo is refused") { try original.undo() }
-            expectThrows("retired redo is refused") { try original.redo() }
-            #expect(!FileManager.default.fileExists(atPath: file(source.directory, id).path), "late callbacks leave no source document behind")
             let arrived = try destination.load(id)
             #expect(arrived !== original && arrived.document == saved, "destination uses a fresh session with exact identity/current URL/capture provenance")
             #expect(try! arrived.assetData(asset) == png, "destination capture resolves the original bytes")
-            try destination.retireSessionForRelocation(id)
+        }
+    }
+
+    enum LateRelocationAction: CaseIterable {
+        case edit, navigate, save, importImage, undo, redo
+    }
+
+    @MainActor @Test(arguments: LateRelocationAction.allCases)
+    func aRetiredSessionCannotRecreateTheSource(_ action: LateRelocationAction) throws {
+        try withDirectory { directory in
+            let (source, destination, original, _, browser) = try makeRelocation(in: directory)
+            let id = original.document.id
+            try source.retireSessionForRelocation(id)
+            _ = try source.relocate(id, to: destination)
+            #expect(throws: EaselStoreError.self) {
+                switch action {
+                case .edit: try original.perform("Late edit") { $0.title = "Wrong profile" }
+                case .navigate:
+                    let url = try #require(URL(string: "https://example.com/stale"))
+                    _ = try original.recordBrowserNavigation(url, itemID: browser.id, expectedURL: "https://example.com/current")
+                case .save: try original.save()
+                case .importImage: _ = try original.importPNG(png)
+                case .undo: try original.undo()
+                case .redo: try original.redo()
+                }
+            }
+            #expect(!FileManager.default.fileExists(atPath: file(source.directory, id).path))
+        }
+    }
+
+    @MainActor @Test
+    func rollingBackRelocationReopensASeparateWritableSession() throws {
+        try withDirectory { directory in
+            let (source, destination, original, _, _) = try makeRelocation(in: directory)
+            let id = original.document.id
+            let saved = original.document
+            try source.retireSessionForRelocation(id)
+            let copied = try source.relocate(id, to: destination)
+            let arrived = try destination.load(id)
+            try destination.retireSessionForRelocation(arrived.document.id)
             _ = try destination.relocate(id, to: source); destination.removeAssets(copied)
             let restored = try source.load(id)
             #expect(restored !== original && restored.document == saved, "rollback reopens exact original data through a fresh source session")
             try restored.perform("After rollback") { $0.title = "Writable source" }
             #expect(restored.document.title == "Writable source" && original.document == saved, "old retained session stays revoked after rollback")
+        }
+    }
+
+    @MainActor @Test
+    func aDestinationAssetCollisionPreservesBothProfiles() throws {
+        try withDirectory { directory in
+            let (source, destination, original, asset, _) = try makeRelocation(in: directory)
+            let id = original.document.id
+            let saved = original.document
             try source.retireSessionForRelocation(id)
             let collision = destination.directory.appendingPathComponent("assets/" + asset)
             var other = png; other.append(0)
             try other.write(to: collision)
             expectThrows("destination asset collision cannot silently replace a capture") { _ = try source.relocate(id, to: destination) }
-            #expect((try! source.load(id)).document.title == "Writable source" && (try? destination.load(id)) == nil,
+            #expect((try! source.load(id)).document == saved && (try? destination.load(id)) == nil,
                    "asset collision preserves source ownership and leaves no destination document")
             #expect(try! Data(contentsOf: collision) == other, "collision preserves the preexisting destination asset")
         }
@@ -327,31 +394,53 @@ struct EaselStoreTests {
         }
     }
 
-    @MainActor @Test func corruptAndFutureFilesAreNeverReplaced() throws {
+    enum UnreadableFile: CaseIterable {
+        case malformedJson, futureVersion, differentID, oversized
+    }
+
+    @MainActor @Test(arguments: UnreadableFile.allCases)
+    func anUnreadableEaselFileIsLeftExactlyAsItWas(_ unreadable: UnreadableFile) throws {
         try withDirectory { directory in
-            let session = try EaselStore(directory: directory).create()
-            let url = file(directory, session.document.id)
-            let valid = try Data(contentsOf: url)
-            let corrupt = Data("{not valid json".utf8)
-            try corrupt.write(to: url)
-            expectThrows("corrupt JSON") { _ = try EaselStore(directory: directory).load(session.document.id) }
-            #expect(try! Data(contentsOf: url) == corrupt, "Corrupt session is not replaced")
-            var object = try JSONSerialization.jsonObject(with: valid) as! [String: Any]
-            object["version"] = 999
-            let future = try JSONSerialization.data(withJSONObject: object)
-            try future.write(to: url)
-            expectThrows("future version") { _ = try EaselStore(directory: directory).load(session.document.id) }
-            #expect(try! Data(contentsOf: url) == future, "Future version remains untouched")
-            object["version"] = 1
-            object["id"] = UUID().uuidString
-            try JSONSerialization.data(withJSONObject: object).write(to: url)
-            expectThrows("filename/document ID mismatch") { _ = try EaselStore(directory: directory).load(session.document.id) }
-            try Data(repeating: 32, count: EaselStore.maximumDocumentBytes + 1).write(to: url)
-            expectThrows("oversized document") { _ = try EaselStore(directory: directory).load(session.document.id) }
+            let store = try EaselStore(directory: directory)
+            let session = try store.create()
+            let id = session.document.id
+            let path = file(directory, id)
+            var invalid = session.document
+            let bytes: Data
+            switch unreadable {
+            case .malformedJson:
+                bytes = Data("{not json".utf8)
+            case .futureVersion:
+                invalid.version = 999
+                bytes = try JSONEncoder().encode(invalid)
+            case .differentID:
+                invalid.id = UUID()
+                bytes = try JSONEncoder().encode(invalid)
+            case .oversized:
+                bytes = Data(repeating: 32, count: EaselStore.maximumDocumentBytes + 1)
+            }
+            try bytes.write(to: path)
+            #expect(throws: (any Error).self) { _ = try EaselStore(directory: directory).load(id) }
+            #expect(try Data(contentsOf: path) == bytes)
+        }
+    }
+
+    @MainActor @Test
+    func anUnreadableFileDoesNotHideOtherBoards() throws {
+        try withDirectory { directory in
+            let store = try EaselStore(directory: directory)
+            let unreadable = try store.create()
+            try Data("invalid".utf8).write(to: file(directory, unreadable.document.id))
+            let healthy = try store.create(title: "Healthy")
+            #expect(try! store.list().map(\.id) == [healthy.document.id], "One unreadable or stray Easel file does not hide the other Easels")
+        }
+    }
+
+    @MainActor @Test
+    func reopeningDuplicateObjectIDsKeepsIdentityAndContent() throws {
+        try withDirectory { directory in
             let store = try EaselStore(directory: directory)
             let healthy = try store.create(title: "Healthy")
-            try Data("{}".utf8).write(to: directory.appendingPathComponent("documents/stray.json"))
-            #expect(try! store.list().map(\.id) == [healthy.document.id], "One unreadable or stray Easel file does not hide the other Easels")
             try healthy.perform("Shapes") {
                 $0.items = [EaselItem(kind: .rectangle, frame: frame), EaselItem(kind: .circle, frame: frame), EaselItem(kind: .text, frame: frame, text: "Kept")]
             }
@@ -366,30 +455,89 @@ struct EaselStoreTests {
             #expect(repaired.items[0].id == shapes[0].id && repaired.items.map(\.kind) == shapes.map(\.kind) && repaired.items[2].text == "Kept",
                    "Repair keeps the first object's ID and every object's content")
             #expect(try! EaselStore(directory: directory).load(healthy.document.id).document == repaired, "Duplicate repair is stable across reads")
-            var aliased = repaired; aliased.items[1].id = aliased.items[0].id
-            let edit = EaselGeometryEdit(document: repaired, selection: [repaired.items[0].id])!
-            #expect(!edit.isCurrent(in: aliased) || edit.applying(edit.translated(x: 5, y: 5), to: aliased) != nil, "Geometry edits tolerate an aliased document without trapping")
         }
     }
 
-    @MainActor @Test func importedAssetsAreRecognisedAndNamedSafely() throws {
+    @Test
+    func geometryEditsTolerateAnAliasedDocumentWithoutTrapping() {
+        let first = EaselItem(kind: .rectangle, frame: frame)
+        let second = EaselItem(kind: .circle, frame: frame)
+        let date = Date(timeIntervalSince1970: 0)
+        let repaired = EaselDocument(id: UUID(), title: "Shapes", createdAt: date, modifiedAt: date, items: [first, second])
+        var aliased = repaired; aliased.items[1].id = aliased.items[0].id
+        let edit = EaselGeometryEdit(document: repaired, selection: [repaired.items[0].id])!
+        #expect(!edit.isCurrent(in: aliased) || edit.applying(edit.translated(x: 5, y: 5), to: aliased) != nil, "Geometry edits tolerate an aliased document without trapping")
+    }
+
+    @MainActor @Test(arguments: [false, true])
+    func aMalformedOrOversizedImageCannotBeImported(_ oversized: Bool) throws {
         try withDirectory { directory in
             let session = try EaselStore(directory: directory).create()
-            expectThrows("invalid image carrier") { _ = try session.importPNG(Data("not PNG".utf8)) }
-            expectThrows("oversized image") { _ = try session.importPNG(Data(repeating: 0, count: EaselStore.maximumAssetBytes + 1)) }
-            var legacy = Data([0, 0, 0, 0x08]); legacy.append(contentsOf: Array("wide".utf8))
-            legacy.append(contentsOf: [0, 0, 0, 0x10]); legacy.append(contentsOf: Array("mdat".utf8)); legacy.append(Data(count: 8))
-            #expect((try? session.importAsset(legacy, type: .mov))?.hasSuffix(".mov") == true, "a wide and mdat led QuickTime movie still imports")
-            var av1 = Data([0, 0, 0, 0x18]); av1.append(contentsOf: Array("ftypav01".utf8)); av1.append(Data(count: 4))
-            av1.append(contentsOf: Array("iso8".utf8)); av1.append(Data(count: 4))
-            #expect((try? session.importAsset(av1, type: .mp4))?.hasSuffix(".mp4") == true, "an AV1 MP4 imports")
+            let input = oversized ? Data(repeating: 0, count: EaselStore.maximumAssetBytes + 1) : Data("not PNG".utf8)
+            #expect(throws: EaselStoreError.self) { _ = try session.importPNG(input) }
+        }
+    }
+
+    @MainActor @Test(arguments: [false, true])
+    func legacyQuickTimeAndAv1UseTheirOwnAssetTypes(_ legacyMovie: Bool) throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
+            let bytes: Data
+            let type: EaselAssetType
+            if legacyMovie {
+                var legacy = Data([0, 0, 0, 0x08])
+                legacy.append(contentsOf: "wide".utf8)
+                legacy.append(contentsOf: [0, 0, 0, 0x10])
+                legacy.append(contentsOf: "mdat".utf8)
+                legacy.append(Data(count: 8))
+                bytes = legacy
+                type = .mov
+            } else {
+                var av1 = Data([0, 0, 0, 0x18])
+                av1.append(contentsOf: "ftypav01".utf8)
+                av1.append(Data(count: 4))
+                av1.append(contentsOf: "iso8".utf8)
+                av1.append(Data(count: 4))
+                bytes = av1
+                type = .mp4
+            }
+            let asset = try session.importAsset(bytes, type: type)
+            #expect(asset.hasSuffix("." + type.rawValue))
+        }
+    }
+
+    @MainActor @Test
+    func aHeicImageCannotBeImportedAsVideo() throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
             var heic = Data([0, 0, 0, 0x18]); heic.append(contentsOf: Array("ftypheic".utf8)); heic.append(Data(count: 4))
             heic.append(contentsOf: Array("mif1".utf8)); heic.append(Data(count: 4))
             expectThrows("HEIC still image as a video") { _ = try session.importAsset(heic, type: .mp4) }
+        }
+    }
+
+    @MainActor @Test
+    func pngImportGeneratesAnAssetID() throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
             let id = try session.importPNG(png)
             #expect(id.count == 40 && id.hasSuffix(".png"), "Asset name is generated, not user-supplied")
-            expectThrows("path traversal") { _ = try session.assetURL("../outside.png") }
-            expectThrows("absolute asset path") { _ = try session.assetURL("/tmp/outside.png") }
+        }
+    }
+
+    @MainActor @Test(arguments: ["../outside.png", "/tmp/outside.png"])
+    func assetLookupsRefuseAbsoluteAndParentPaths(_ path: String) throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
+            #expect(throws: EaselStoreError.self) { _ = try session.assetURL(path) }
+        }
+    }
+
+    @MainActor @Test
+    func aSymlinkCannotActAsAnAsset() throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
+            let id = try session.importPNG(png)
             let asset = try session.assetURL(id)
             try FileManager.default.removeItem(at: asset)
             let outside = directory.appendingPathComponent("outside.png")
@@ -398,6 +546,13 @@ struct EaselStoreTests {
             expectThrows("asset symlink") { _ = try session.assetURL(id) }
             expectThrows("document referencing symlink") { try session.perform("Image") { $0.items = [EaselItem(kind: .image, frame: frame, assetID: id)] } }
             #expect(try! Data(contentsOf: outside) == png, "External target was not touched")
+        }
+    }
+
+    @MainActor @Test
+    func aBoardCannotSaveThroughADocumentsDirectorySymlink() throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
             let docs = directory.appendingPathComponent("documents")
             try FileManager.default.moveItem(at: docs, to: directory.appendingPathComponent("original-documents"))
             try FileManager.default.createSymbolicLink(at: docs, withDestinationURL: directory.appendingPathComponent("original-documents"))
