@@ -2110,7 +2110,7 @@ struct BrowserStoreTests {
         try expect(canonical == "parc://easel/" + id.uuidString.lowercased(), "Easel routes must use a canonical opaque document ID")
         try expect(InternalPage(urlString: canonical) == .easel(id), "The internal route must round-trip its typed identity")
         try expect(InternalPage.easel(id).sidebarFallbackSymbol == "square.on.square"
-                   && InternalPage.note(URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")).sidebarFallbackSymbol == "note.text"
+                   && InternalPage.note(URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")).sidebarFallbackSymbol == InternalPage.noteFallbackSymbol
                    && InternalPage.sidebarFallbackSymbol(urlString: "https://example.org") == "globe",
                    "Easel and Note rows keep distinct still glyphs; web rows keep the globe fallback")
         for address in ["parc://easel/not-a-uuid", "parc://easel/" + id.uuidString + "/more",

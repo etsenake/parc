@@ -670,8 +670,7 @@ final class NotePageLinkBlockView: NoteBlockView {
             if let emoji = NoteLinkedNote.icon(for: target), !emoji.isEmpty, emoji.count <= 2 {
                 iconView.icon = .emoji(emoji)
             } else {
-                iconView.icon = .symbol("doc.text")
-                iconView.tint = NoteTheme.secondaryInk
+                iconView.icon = .noteMark
             }
             setAccessibilityRole(.link)
             setAccessibilityLabel("Link to note: " + title.stringValue)

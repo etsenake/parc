@@ -45,7 +45,7 @@ struct NoteTabTests {
         try expect(BrowserInternalURL.publicString("chrome://note/x") == "chrome://note/x", "Chromium's own hosts never become note addresses")
         try expect(InternalPage.noteTitle("  ", file: project) == "Project" && InternalPage.noteTitle("Named", file: project) == "Named",
                    "An empty title falls back to the file name")
-        try expect(page.sidebarFallbackSymbol == "note.text" && page.untitledTitle == "Untitled", "Note rows keep their glyph")
+        try expect(page.sidebarFallbackSymbol == InternalPage.noteFallbackSymbol && page.untitledTitle == "Untitled", "Note rows keep their glyph")
     }
 
     static func tabs(_ directory: URL, project: URL) throws {

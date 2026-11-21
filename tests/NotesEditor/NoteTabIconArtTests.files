@@ -2,3 +2,5 @@ Sources/ParcCore/*.swift
 Sources/ParcApp/NoteTabIconArt.swift
 Sources/ParcApp/SidebarIconCatalog.swift
 tests/NotesEditor/NoteFileTestSupport.swift
+Sources/ParcApp/NoteDefaultIcon.swift
+Sources/ParcApp/LibraryArtwork.swift

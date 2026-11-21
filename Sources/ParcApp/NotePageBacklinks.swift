@@ -210,7 +210,7 @@ final class NoteBacklinksListView: NSView, NoteFloatingPanelContent {
             image.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             NSGraphicsContext.restoreGraphicsState()
         } else {
-            NoteIconRenderer.draw(.symbol("doc.text"), in: box, tint: secondary, pointSize: 15)
+            NoteIconRenderer.draw(.noteMark, in: box, tint: secondary, pointSize: 15)
         }
         let x = box.maxX + 12
         let width = max(0, frame.maxX - 10 - x)

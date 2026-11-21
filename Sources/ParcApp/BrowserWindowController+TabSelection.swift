@@ -473,7 +473,7 @@ extension BrowserWindowController {
                 case nil: if privateWindow { component.template = RecentSwitcherArtwork.incognito.map { .init(image: $0, title: nil) } }
                 }
                 if let page = InternalPage(urlString: tab.url) {
-                    component.favicon = NSImage(systemSymbolName: page.sidebarFallbackSymbol, accessibilityDescription: nil)
+                    component.favicon = NoteDefaultIcon.fallback(named: page.sidebarFallbackSymbol)
                     if let note = page.noteURL {
                         switch NoteTabIconArt.shared.art(forNote: note) {
                         case .image(let image): component.favicon = image
@@ -481,7 +481,7 @@ extension BrowserWindowController {
                             component.faviconRequest = { completion in
                                 NoteTabIconArt.shared.requestImage(forNote: note, completion: completion)
                             }
-                        case .symbol: break
+                        case .standard: break
                         }
                     }
                 } else if let page = browsers[id]?.nativePage, !page.isClosed, let icon = page.favicon {

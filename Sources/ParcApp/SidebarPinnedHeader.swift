@@ -298,7 +298,7 @@ final class SidebarPinnedHeaderView: NSView {
         shape.fill()
         let inset = (L.chipSide - L.faviconSide) / 2
         let target = chip.insetBy(dx: inset, dy: inset)
-        if let image = favicons[tabID]?.image {
+        if let image = favicons[tabID]?.image ?? noteFallback(tabID) {
             NSGraphicsContext.saveGraphicsState()
             NSBezierPath(roundedRect: target, xRadius: 2.5, yRadius: 2.5).addClip()
             image.draw(in: target, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
@@ -312,6 +312,10 @@ final class SidebarPinnedHeaderView: NSView {
                                        width: size.width, height: size.height),
                             from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         }
+    }
+
+    private func noteFallback(_ tabID: UUID) -> NSImage? {
+        fallbacks[tabID] == InternalPage.noteFallbackSymbol ? NoteDefaultIcon.image(size: L.faviconSide) : nil
     }
 
     private func symbolImage(_ name: String) -> NSImage? {

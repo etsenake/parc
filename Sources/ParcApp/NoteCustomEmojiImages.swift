@@ -94,11 +94,11 @@ enum NoteCustomEmojiImages {
 extension NoteIcon {
     @MainActor
     static func note(_ icon: String?, at note: URL?) -> NoteIcon {
-        guard let icon, !icon.isEmpty else { return .symbol("doc.text") }
+        guard let icon, !icon.isEmpty else { return .noteMark }
         if NoteTabIcon.emoji(icon) != nil { return .emoji(icon) }
         guard let note, NoteCustomEmojiName.isReference(icon) || NotePageExport.isImageSource(icon),
               let url = NoteFileEnvironment(documentURL: note, isPlainText: false).resolve(icon), url.isFileURL,
-              NoteCustomEmojiImages.image(at: url) != nil else { return .symbol("doc.text") }
+              NoteCustomEmojiImages.image(at: url) != nil else { return .noteMark }
         return .image(url)
     }
 }

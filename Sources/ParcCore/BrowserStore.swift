@@ -2399,9 +2399,10 @@ enum InternalPage: Equatable {
         return { InternalPage(urlString: $0)?.noteURL.map(identity.matches) ?? false }
     }
     var untitledTitle: String { noteURL != nil ? "Untitled" : "Untitled Easel" }
+    static let noteFallbackSymbol = "parc.note"
     var sidebarFallbackSymbol: String {
         switch self {
-        case .note: return "note.text"
+        case .note: return Self.noteFallbackSymbol
         case .easel: return "square.on.square"
         }
     }

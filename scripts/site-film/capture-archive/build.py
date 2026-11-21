@@ -44,7 +44,7 @@ easel = (app / "EaselEditorViewController.swift").read_text()
 write("PortraitDesktopSnapshot.swift", "import AppKit\n@MainActor\nenum PortraitDesktopSnapshot {\n    static func capture(screen: NSScreen?) async throws -> NSImage { throw CancellationError() }\n}\n")
 write("EaselStoreOwner.swift", easel[:easel.index("    private let session:")] + "}\n")
 
-extra = ["CaptureLibraryView", "DocumentsLibraryView", "DownloadLibraryTable", "DownloadLibraryView", "DownloadThumbnailProvider",
+extra = ["CaptureLibraryView", "DocumentsLibraryView", "NoteDefaultIcon", "DownloadLibraryTable", "DownloadLibraryView", "DownloadThumbnailProvider",
          "ExternalMediaLibrary", "CaptureLibrarySharing", "MediaLibraryContext", "CaptureMotion", "DownloadArrivalMotion",
          "LibraryRailTile", "LibraryRailIcon", "TopBarColorClient", "CapturePresentation", "ParcBrandMark",
          "CapturedImage", "PeekWindowLayout", "PeekControls"]

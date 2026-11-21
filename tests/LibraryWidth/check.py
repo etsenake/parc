@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix="parc-library-width-") as directory:
     func render(state: BrowserState, focusedTabID: UUID?, loading: Set<UUID>, canBack: Bool, canForward: Bool) {}
 }
 """)
-    app = ["LibraryView", "CaptureLibraryStore", "CaptureLibraryView", "DocumentsLibraryView", "DownloadLibrarySelection", "DownloadLibraryTable", "DownloadLibraryView",
+    app = ["LibraryView", "CaptureLibraryStore", "CaptureLibraryView", "DocumentsLibraryView", "NoteDefaultIcon", "DownloadLibrarySelection", "DownloadLibraryTable", "DownloadLibraryView",
            "DownloadLibraryPreview", "DownloadActivityBadge", "DownloadThumbnailProvider", "DownloadFileDrag", "ThemeRenderer", "LibraryArtwork",
            "ExternalMediaLibrary", "CaptureLibrarySharing", "MediaLibraryContext", "SpaceManagerView", "SidebarIconCatalog", "SidebarRowAppearance",
            "CaptureMotion", "DownloadArrivalMotion", "LibraryRailTile", "LibraryRailIcon", "WindowStandardButtons", "TranslucentButtonFace", "ReloadControl",

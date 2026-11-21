@@ -6,7 +6,7 @@ import ImageIO
 final class NoteTabIconArt {
     enum Art {
         case image(NSImage)
-        case symbol
+        case standard
         case pending
     }
 
@@ -69,8 +69,8 @@ final class NoteTabIconArt {
     func art(forNote note: URL, size: CGFloat = side) -> Art {
         switch icons.lookup(note) {
         case .pending: return .pending
-        case .known(nil): return .symbol
-        case .known(.emoji(let value)?): return emojiImage(value, size: size).map(Art.image) ?? .symbol
+        case .known(nil): return .standard
+        case .known(.emoji(let value)?): return emojiImage(value, size: size).map(Art.image) ?? .standard
         case .known(.image(let file)?): return thumbnailArt(file, note: note, size: size)
         }
     }
@@ -80,14 +80,17 @@ final class NoteTabIconArt {
     }
 
     func image(forNote note: URL, size: CGFloat = side) -> NSImage? {
-        if case .image(let image) = art(forNote: note, size: size) { return image }
-        return nil
+        switch art(forNote: note, size: size) {
+        case .image(let image): return image
+        case .standard: return NoteDefaultIcon.image(size: size)
+        case .pending: return nil
+        }
     }
 
     func requestImage(forNote note: URL, size: CGFloat = side, completion: @escaping (NSImage?) -> Void) {
         switch art(forNote: note, size: size) {
         case .image(let image): completion(image)
-        case .symbol: completion(nil)
+        case .standard: completion(NoteDefaultIcon.image(size: size))
         case .pending:
             waiterCounter += 1
             waiters[waiterCounter] = Waiter(note: note, size: size, completion: completion)
@@ -101,9 +104,9 @@ final class NoteTabIconArt {
             case .image(let image):
                 waiters[id] = nil
                 waiter.completion(image)
-            case .symbol:
+            case .standard:
                 waiters[id] = nil
-                waiter.completion(nil)
+                waiter.completion(NoteDefaultIcon.image(size: waiter.size))
             }
         }
     }
@@ -127,7 +130,7 @@ final class NoteTabIconArt {
             return .image(image)
         }
         if let failed = unreadableThumbnails[stamp] {
-            if NoteTabIcons.clock.now.timeIntervalSince(failed) < Self.unreadableRetryDelay { return .symbol }
+            if NoteTabIcons.clock.now.timeIntervalSince(failed) < Self.unreadableRetryDelay { return .standard }
             unreadableThumbnails[stamp] = nil
         }
         let key = NoteTabIcons.key(note)

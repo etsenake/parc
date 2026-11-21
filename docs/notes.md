@@ -13,9 +13,11 @@ A note tab's address is its file's `file://` URL, and its title is the file name
 renaming a note moves every tab that shows it. The sidebar's URL pill shows the
 file's name. A note's front-matter emoji icon is its tab icon in the sidebar,
 Favorites, the folded Pinned peek, the tab switcher and the command bar; a local
-image icon shows as a small rounded thumbnail, and anything else keeps the note
-glyph. An open note's icon updates as it's edited, and other notes reread their
-front matter off the main thread when their folder changes. Any regular Profile can open any
+image icon shows as a small rounded thumbnail. A note without an icon of its own,
+plain text included, shows the Library card's coral note mark there and in note
+links, mentions and backlinks, from one shared source. An open note's icon
+updates as it's edited, and other notes reread their front matter off the main
+thread when their folder changes. Any regular Profile can open any
 note file, so moving a tab to another Profile leaves the file where it is.
 Parc appears in Finder's Open With list as an editor for Markdown and plain text.
 Opening one from Finder or the Dock icon, dropping it on the sidebar, typing its

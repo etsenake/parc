@@ -476,15 +476,7 @@ private final class DocumentCard: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     private func updateArtwork() {
-        let name = (isNote ? "note" : "easel") + (dark ? "-dark" : "")
-        guard let directory = LibraryArtwork.directory,
-              let base = NSImage(contentsOf: directory.appendingPathComponent(name + ".png")) else { return }
-        if let data = try? Data(contentsOf: directory.appendingPathComponent(name + "@2x.png")),
-           let rep = NSBitmapImageRep(data: data) {
-            rep.size = NSSize(width: DocumentCardChrome.artwork, height: DocumentCardChrome.artwork)
-            base.addRepresentation(rep)
-        }
-        icon.image = base
+        icon.image = isNote ? NoteDefaultIcon.card(dark: dark) : LibraryArtwork.card("easel", dark: dark, side: DocumentCardChrome.artwork)
     }
     override func updateLayer() {
         let radius = DocumentCardChrome.radius

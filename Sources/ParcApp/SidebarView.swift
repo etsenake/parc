@@ -627,14 +627,14 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         switch NoteTabIconArt.shared.art(forNote: file) {
         case .pending: return
         case .image(let image): icon.showLocal(image, fallback: Self.fallbackSymbol(tooltipTab))
-        case .symbol: icon.showLocal(nil, fallback: Self.fallbackSymbol(tooltipTab))
+        case .standard: icon.showLocal(NoteDefaultIcon.image(size: NoteTabIconArt.side), fallback: Self.fallbackSymbol(tooltipTab))
         }
     }
     private static var fallbackSymbols: [String: NSImage] = [:]
     private static func fallbackSymbol(_ tab: BrowserTab) -> NSImage? {
         let name = InternalPage.sidebarFallbackSymbol(urlString: tab.url)
         if let image = fallbackSymbols[name] { return image }
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+        let image = NoteDefaultIcon.fallback(named: name)
         fallbackSymbols[name] = image
         return image
     }

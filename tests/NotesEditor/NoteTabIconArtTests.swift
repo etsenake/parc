@@ -64,14 +64,15 @@ struct NoteTabIconArtTests {
         guard case .image(let emoji) = art.art(forNote: note("Rocket.md", icon: "🚀")) else { failTest("emoji notes get an image") }
         expectEqual(emoji.size, NSSize(width: NoteTabIconArt.side, height: NoteTabIconArt.side), "emoji fill the icon slot")
         expect(art.image(forNote: note("Rocket 2.md", icon: "🚀")) === emoji, "the same emoji reuses its image")
-        guard case .symbol = art.art(forNote: note("Words.md", icon: "rocket")) else { failTest("words fall back to the symbol") }
-        guard case .symbol = art.art(forNote: folder.appendingPathComponent("Plain.txt")) else { failTest("text notes use the symbol") }
+        guard case .standard = art.art(forNote: note("Words.md", icon: "rocket")) else { failTest("words fall back to the library note mark") }
+        expect(art.image(forNote: note("Words 2.md", icon: "rocket")) === NoteDefaultIcon.image(size: NoteTabIconArt.side), "iconless notes draw the library note mark")
+        guard case .standard = art.art(forNote: folder.appendingPathComponent("Plain.txt")) else { failTest("text notes use the library note mark") }
         guard case .image(let picture) = art.art(forNote: note("Pictured.md", icon: "Attachments/wide.png")) else {
             failTest("image icons get a thumbnail")
         }
         expectEqual(picture.size, NSSize(width: 16, height: 16), "image icons fill the icon slot")
-        guard case .symbol = art.art(forNote: note("Broken.md", icon: "Attachments/junk.png")) else {
-            failTest("broken image icons fall back to the symbol")
+        guard case .standard = art.art(forNote: note("Broken.md", icon: "Attachments/junk.png")) else {
+            failTest("broken image icons fall back to the library note mark")
         }
         expect(art.image(emoji: "🌵") != nil, "library emoji render")
         expect(art.image(emoji: "cactus") == nil, "library words don't")
@@ -89,7 +90,7 @@ struct NoteTabIconArtTests {
         let art = NoteTabIconArt(icons: icons)
         var emoji: NSImage?, emojiDone = false, symbolDone = false, picture: NSImage?
         art.requestImage(forNote: note("Later.md", icon: "🐢")) { emoji = $0; emojiDone = true }
-        art.requestImage(forNote: note("Never.md", icon: "nope")) { expect($0 == nil, "symbol notes answer nil"); symbolDone = true }
+        art.requestImage(forNote: note("Never.md", icon: "nope")) { expect($0 === NoteDefaultIcon.image(size: NoteTabIconArt.side), "iconless notes answer the library note mark"); symbolDone = true }
         art.requestImage(forNote: note("Framed.md", icon: "Attachments/tall.png")) { picture = $0 }
         expect(!emojiDone && !symbolDone && picture == nil, "cold requests wait for the background")
         expect(NoteFileTestSupport.spin(timeout: 5) { emojiDone && symbolDone && picture != nil }, "waiting requests settle")
@@ -112,9 +113,9 @@ struct NoteTabIconArtTests {
 
         let pending = folder.appendingPathComponent("Attachments/later.png")
         let waiting = note("Waiting.md", icon: "Attachments/later.png")
-        guard case .symbol = art.art(forNote: waiting) else { failTest("a missing picture shows the symbol") }
+        guard case .standard = art.art(forNote: waiting) else { failTest("a missing picture shows the library note mark") }
         _ = try png("Attachments/later.png", width: 20, height: 20)
-        guard case .symbol = art.art(forNote: waiting) else { failTest("the file isn't restamped on every request") }
+        guard case .standard = art.art(forNote: waiting) else { failTest("the file isn't restamped on every request") }
         clock.advance(NoteTabIconArt.restampInterval + 0.5)
         guard case .image = art.art(forNote: waiting) else { failTest("a picture that shows up later is picked up") }
         expect(FileManager.default.fileExists(atPath: pending.path), "the late picture is on disk")
@@ -123,10 +124,10 @@ struct NoteTabIconArtTests {
         let lockedNote = note("Locked.md", icon: "Attachments/locked.png")
         try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: locked.path) }
-        guard case .symbol = art.art(forNote: lockedNote) else { failTest("an unreadable picture shows the symbol") }
+        guard case .standard = art.art(forNote: lockedNote) else { failTest("an unreadable picture shows the library note mark") }
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: locked.path)
         clock.advance(NoteTabIconArt.restampInterval + 0.5)
-        guard case .symbol = art.art(forNote: lockedNote) else { failTest("an unreadable picture isn't retried right away") }
+        guard case .standard = art.art(forNote: lockedNote) else { failTest("an unreadable picture isn't retried right away") }
         clock.advance(NoteTabIconArt.unreadableRetryDelay)
         guard case .image = art.art(forNote: lockedNote) else { failTest("an unreadable picture is retried after a short wait") }
     }
