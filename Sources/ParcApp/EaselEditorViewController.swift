@@ -24,7 +24,10 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private var subscription: AnyCancellable?
     private var undoButton: NSButton!
     private var redoButton: NSButton!
-    private var webpageButton: NSButton!
+    private var webpageButton: NSButton?
+    private var palette: EaselToolPalette?
+    private let recenter = NoteChip("Recenter", icon: .symbol("scope"), style: .filled)
+    private var recenterShown = false
     private(set) var pageObjects: EaselBrowserObjects?
     private var webpageInput: EaselWebInput?
     private var webpageOwnerValid: (() -> Bool)?
@@ -113,45 +116,34 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         scroll.autohidesScrollers = true; scroll.drawsBackground = false
         scroll.documentView = canvas; root.addSubview(scroll)
 
-        let tools = NSStackView()
-        tools.orientation = .horizontal; tools.spacing = 2
-        tools.setClippingResistancePriority(.init(999), for: .horizontal)
-        tools.setClippingResistancePriority(.init(999), for: .vertical)
-        let toolInset = EaselAppearance.toolbarInset
-        tools.edgeInsets = NSEdgeInsets(top: toolInset, left: toolInset, bottom: toolInset, right: toolInset)
-        let toolSurface = EaselToolbarPill(frame: .zero)
-        let toolScroll = NSScrollView()
-        EaselAppearance.configureToolbarScroll(toolScroll)
-        toolScroll.documentView = tools; toolSurface.addSubview(toolScroll)
-        let buttonSize = EaselAppearance.toolbarButton
-        func tool(_ label: String, _ symbol: String?, _ action: Selector, tag: Int = 0, title: String? = nil) -> EaselPaletteButton {
-            let b: EaselPaletteButton
-            if let symbol {
-                let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
-                    .withSymbolConfiguration(.init(pointSize: 15, weight: .regular)) ?? NSImage()
-                b = EaselPaletteButton(image: glyph, target: self, action: action)
-            } else {
-                b = EaselPaletteButton(title: title ?? "", target: self, action: action)
-                b.font = NoteTheme.nunitoExtraBold(16)
-                b.imagePosition = .noImage
-            }
-            b.usesToolbarInk = true; b.toolTip = label; b.setAccessibilityLabel(label); b.tag = tag
-            b.widthAnchor.constraint(equalToConstant: buttonSize).isActive = true
-            b.heightAnchor.constraint(equalToConstant: buttonSize).isActive = true
-            tools.addArrangedSubview(b); return b
+        let palette = EaselToolPalette(frame: .zero)
+        palette.onTool = { [weak self] tool, control in
+            guard let self else { return }
+            self.canvas.activateTool(tool, from: control); self.focusCanvas()
         }
-        let select = tool("Select objects", "cursorarrow", #selector(selectTool))
-        select.setButtonType(.pushOnPushOff); select.state = .on
-        _ = tool("Add image", "photo", #selector(addImage))
-        _ = tool("Add text", nil, #selector(addText), title: "A")
-        _ = tool("Add circle", "circle", #selector(addShape), tag: 1)
-        _ = tool("Add rectangle", "square", #selector(addShape), tag: 0)
-        _ = tool("Add arrow", "arrow.up.right", #selector(addShape), tag: 2)
-        let draw = tool("Draw", "scribble", #selector(drawTool))
-        draw.setButtonType(.pushOnPushOff)
-        canvas.onDrawingStateChange = { [weak select, weak draw] drawing in
-            select?.state = drawing ? .off : .on; draw?.state = drawing ? .on : .off
+        palette.onShape = { [weak self] shape in self?.canvas.armShape(shape); self?.focusCanvas() }
+        palette.onInsert = { [weak self] insert, control in self?.insert(insert, from: control) }
+        palette.onZoom = { [weak self] command in self?.canvas.zoom(command) }
+        palette.onZoomTo = { [weak self] value in self?.canvas.zoom(toMagnification: value) }
+        palette.onDrag = { [weak self] tool, point, ended in self?.dragTool(tool, to: point, ended: ended) }
+        palette.onMenuClose = { [weak self] in
+            guard let window = self?.view.window, window.firstResponder == nil || window.firstResponder === window else { return }
+            self?.focusCanvas()
         }
+        palette.canZoomToSelection = { [weak self] in self?.canvas.canZoomToSelection == true }
+        palette.onPreferredSizeChange = { [weak root] in root?.needsLayout = true }
+        canvas.onToolChange = { [weak self, weak palette] tool in
+            guard let self else { return }
+            palette?.update(tool: tool, shape: self.canvas.toolState.shape)
+        }
+        palette.update(tool: canvas.tool, shape: canvas.toolState.shape)
+        self.palette = palette
+        recenter.onPress = { [weak self] in self?.canvas.zoomToFit(maximum: 1) }
+        recenter.setToolTip("Recenter on everything in this Easel")
+        recenter.alphaValue = 0; recenter.isHidden = true
+        scroll.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(self, selector: #selector(viewportChanged),
+                                               name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         let chrome = NSStackView()
         chrome.orientation = .horizontal; chrome.spacing = 2
         chrome.setClippingResistancePriority(.init(999), for: .horizontal)
@@ -166,34 +158,36 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             b.heightAnchor.constraint(equalToConstant: chromeSize).isActive = true
             chrome.addArrangedSubview(b); return b
         }
-        _ = chromeButton("Add link", "link", #selector(addLink(_:)))
-        webpageButton = chromeButton("Add webpage", "globe", #selector(addWebpage))
-        webpageButton.isEnabled = pageObjects != nil
+        webpageButton = palette.button(for: .webpage)
+        webpageButton?.isEnabled = pageObjects != nil
         undoButton = chromeButton("Undo Easel change", "arrow.uturn.backward", #selector(undoChange))
         redoButton = chromeButton("Redo Easel change", "arrow.uturn.forward", #selector(redoChange))
         let options = chromeButton("Easel Options", "ellipsis", #selector(showPageMenu(_:)))
         options.setAccessibilityRole(.menuButton)
-        root.addSubview(toolSurface)
+        root.addSubview(palette)
         root.addSubview(chrome)
-        let toolWidth: CGFloat = 2 * toolInset + 7 * buttonSize + 6 * tools.spacing
+        root.addSubview(recenter)
         var lastChromeSize = NSSize(width: -1, height: -1)
-        root.onLayout = { [weak self, weak root, weak tools, weak toolSurface, weak toolScroll, weak chrome] in
-            guard let self, let root, let tools, let toolSurface, let toolScroll, let chrome else { return }
+        root.onLayout = { [weak self, weak root, weak palette, weak chrome] in
+            guard let self, let root, let palette, let chrome else { return }
             let width = root.bounds.width, height = root.bounds.height
+            let strip = min(width - 24, palette.preferredWidth)
+            palette.frame = NSRect(x: ((width - strip) / 2).rounded(), y: 62, width: strip, height: EaselAppearance.toolbarHeight)
             let size = root.bounds.size
             guard size != lastChromeSize else { return }
             lastChromeSize = size
-            let chromeWidth: CGFloat = 5 * chromeSize + 4 * 2
+            let chromeWidth: CGFloat = 3 * chromeSize + 2 * 2
             self.titleField.frame = NSRect(x: 24, y: 10, width: max(80, width - chromeWidth - 52), height: 32)
             chrome.frame = NSRect(x: max(24, width - chromeWidth - 14), y: 12, width: chromeWidth, height: chromeSize)
             self.status.frame = NSRect(x: 26, y: 40, width: max(100, width - 52), height: 18)
-            let strip = min(width - 24, toolWidth)
-            toolSurface.frame = NSRect(x: (width - strip) / 2, y: 62, width: strip, height: EaselAppearance.toolbarHeight)
-            toolScroll.frame = toolSurface.bounds
-            tools.frame = NSRect(x: 0, y: 0, width: toolWidth, height: EaselAppearance.toolbarHeight)
-            let canvasTop = toolSurface.frame.maxY + 8
+            let canvasTop = palette.frame.maxY + 8
             self.scroll.frame = NSRect(x: 0, y: canvasTop, width: width, height: max(80, height - canvasTop))
             self.canvas.resizeCanvas(viewport: self.scroll.contentSize)
+            self.canvas.fitOnOpenIfNeeded()
+            let chip = self.recenter.intrinsicContentSize
+            self.recenter.frame = NSRect(x: ((width - chip.width) / 2).rounded(), y: max(canvasTop, height - chip.height - 20),
+                                         width: chip.width, height: chip.height)
+            self.viewportChanged()
         }
         canvas.onKeyboardStructureChange = { [weak self] in self?.onKeyboardStructureChange?() }
         canvas.onError = { [weak self] error in self?.show(error) }
@@ -206,7 +200,40 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             self.onTitleChange?(doc.title)
             self.undoButton.isEnabled = self.canvas.canUndo; self.redoButton.isEnabled = self.canvas.canRedo
             self.status.stringValue = "Saved on this Mac · \(doc.items.count) object\(doc.items.count == 1 ? "" : "s")"
+            self.viewportChanged()
         }
+    }
+    @objc private func viewportChanged() {
+        guard isViewLoaded else { return }
+        palette?.setZoom(percent: EaselZoom.percent(Double(scroll.magnification)))
+        let away = canvas.contentIsOutOfView
+        guard away != recenterShown else { return }
+        recenterShown = away
+        if away { recenter.isHidden = false }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.18
+            recenter.animator().alphaValue = away ? 1 : 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, !self.recenterShown else { return }
+                self.recenter.isHidden = true
+            }
+        })
+    }
+    private func focusCanvas() { canvas.window?.makeFirstResponder(canvas) }
+    private func insert(_ insert: EaselToolPalette.Insert, from control: NSButton) {
+        switch insert {
+        case .image: addImage()
+        case .link: addLink(control)
+        case .webpage: addWebpage()
+        case .templates: break
+        }
+    }
+    private func dragTool(_ tool: EaselTool, to point: NSPoint?, ended: Bool) {
+        guard ended else { canvas.previewPlacement(tool, atWindowPoint: point); return }
+        canvas.previewPlacement(nil, atWindowPoint: nil)
+        guard let point, scroll.bounds.contains(scroll.convert(point, from: nil)) else { return }
+        if canvas.placeTool(tool, atWindowPoint: point) { focusCanvas() }
     }
     func controlTextDidChange(_ notification: Notification) {
         let value = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -216,10 +243,6 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     }
     func controlTextDidEndEditing(_ notification: Notification) { titleField.stringValue = session.document.title }
     private func show(_ error: Error) { status.stringValue = error.localizedDescription; NSSound.beep() }
-    @objc private func selectTool() { canvas.drawing = false; canvas.window?.makeFirstResponder(canvas) }
-    @objc private func drawTool() { canvas.drawing = true; canvas.window?.makeFirstResponder(canvas) }
-    @objc private func addText() { canvas.insert(kind: .text, text: "", edit: true) }
-    @objc private func addShape(_ sender: NSButton) { canvas.insert(kind: [.rectangle, .circle, .arrow][sender.tag]) }
     @objc private func undoChange() { canvas.undo(nil) }
     @objc private func redoChange() { canvas.redo(nil) }
     @objc private func showPageMenu(_ sender: NSButton) {
@@ -235,7 +258,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         guard canExportImage, let window = view.window else { return }
         EaselImageExport.run(canvas: canvas, title: session.document.title, in: window) { [weak self] in self?.canExportImage == true }
     }
-    @objc private func addImage() {
+    private func addImage() {
         guard let window = view.window else { return }
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = true
         panel.beginSheetModal(for: window) { [weak self] result in
@@ -246,7 +269,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             }
         }
     }
-    @objc private func addWebpage() {
+    private func addWebpage() {
         guard webpageOwnerValid?() == true, view.window?.attachedSheet == nil,
               !view.isHiddenOrHasHiddenAncestor else { return }
         webpageInput?.cancel(); canvas.cancelOperation(nil)
@@ -260,9 +283,9 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         })
         webpageInput = input
         input.onClose = { [weak self, weak input] in if self?.webpageInput === input { self?.webpageInput = nil } }
-        if !input.show(from: webpageButton) { input.cancel(restoreFocus: false) }
+        guard let webpageButton, input.show(from: webpageButton) else { input.cancel(restoreFocus: false); return }
     }
-    @objc private func addLink(_ sender: NSButton) {
+    private func addLink(_ sender: NSButton) {
         guard !session.isClosed, let window = view.window, window.attachedSheet == nil else { return }
         webpageInput?.cancel(); canvas.cancelOperation(nil)
         let documentID = session.document.id
