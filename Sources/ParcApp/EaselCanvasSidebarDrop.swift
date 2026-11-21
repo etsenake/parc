@@ -33,10 +33,16 @@ extension EaselCanvasView {
         let typing = EaselTextAppearance.attributed(title, style: style, color: insertionColor).attributes(at: 0, effectiveRange: nil)
         var attributes = typing
         attributes[.link] = url
+        let value: NSAttributedString
+        if url.isFileURL, (try? EaselRichText.Inline.note(url, title: title).validate()) != nil {
+            value = EaselInlineText.character(.note(url, title: title), attributes: typing)
+        } else {
+            value = NSAttributedString(string: title, attributes: attributes)
+        }
         do {
-            let styled = try EaselStyledText.capture(NSAttributedString(string: title, attributes: attributes), style: style, color: insertionColor)
+            let styled = try EaselStyledText.capture(value, style: style, color: insertionColor)
             let point = convert(sender.draggingLocation, from: nil)
-            return withObjectMotion(.appear) { insert(kind: .text, text: title, styledText: styled, at: point) }
+            return withObjectMotion(.appear) { insert(kind: .text, text: value.string, styledText: styled, at: point) }
         } catch {
             onError?(error)
             return false

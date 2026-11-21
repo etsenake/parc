@@ -5,6 +5,7 @@ struct EaselLinkHit: Equatable {
     var range: NSRange
     var link: String
     var rect: NSRect
+    var inline = false
 
     var key: String { "\(itemID.uuidString)-\(range.location)-\(range.length)-\(link)" }
 }
@@ -22,6 +23,11 @@ enum EaselLinkHitTest {
         guard box.insetBy(dx: -1, dy: 0).contains(local) else { return nil }
         let index = manager.characterIndexForGlyph(at: glyph)
         var effective = NSRange()
+        if let inline = EaselInlineText.inline(at: index, in: storage), inline.kind == .note, let target = inline.target {
+            var hit = EaselLinkHit(itemID: itemID, range: NSRange(location: index, length: 1), link: target, rect: box.offsetBy(dx: origin.x, dy: origin.y))
+            hit.inline = true
+            return hit
+        }
         guard index < storage.length, let value = storage.attribute(.link, at: index, effectiveRange: &effective) else { return nil }
         guard let link = (value as? URL)?.absoluteString ?? value as? String, !link.isEmpty else { return nil }
         let spanGlyphs = manager.glyphRange(forCharacterRange: effective, actualCharacterRange: nil)
@@ -45,7 +51,7 @@ extension EaselCanvasView {
 
     static func carriesTextLink(_ item: EaselItem) -> Bool {
         guard item.kind.holdsText || item.kind == .arrow, !item.text.isEmpty else { return false }
-        return item.richText?.runs.contains { $0.attributes.link != nil } == true
+        return item.richText?.runs.contains { $0.attributes.link != nil || $0.attributes.inline?.kind == .note } == true
     }
 
     private func editingLinkHit(_ editor: EaselStyledTextView, itemID: UUID, at point: NSPoint) -> EaselLinkHit? {
@@ -86,7 +92,7 @@ extension EaselCanvasView {
             return
         }
         let editable = !item.isLocked && !isCaptureBoard && !viewOnly
-        panels.hoverLink(EaselLinkHoverRequest(key: hit.key, link: hit.link, host: self, anchor: hit.rect, canEdit: editable,
+        panels.hoverLink(EaselLinkHoverRequest(key: hit.key, link: hit.link, host: self, anchor: hit.rect, canEdit: editable && !hit.inline,
                                                edit: { [weak self] in self?.editLink(of: hit) },
                                                remove: { [weak self] in self?.removeLink(of: hit) }))
     }
