@@ -64,7 +64,8 @@ Git and release notes retain history.
   [portrait framing](portrait-capture-fidelity.md), [Library](capture-library.md),
   [document grid](documents-library-grid.md).
 - [Easels](easels.md), [appearance](easel-appearance.md), [motion](easel-motion.md),
-  [live captures](easel-live-captures.md), [embedded pages](embedded-pages.md).
+  [live captures](easel-live-captures.md), [embedded pages](embedded-pages.md),
+  [board features](easel-board-features.md).
 
 ## Extensions and developer tools
 

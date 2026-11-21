@@ -293,6 +293,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var onExportImage: (() -> Void)?
     var onError: ((Error) -> Void)?
     var onOpenURL: ((URL) -> Void)?
+    var onKeyEquivalent: ((NSEvent) -> Bool)?
+    var onDrawOverlay: ((NSRect, CGFloat) -> Void)?
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     var canAcceptExternalSplitDrop: Bool {
@@ -789,6 +791,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             }
     }
     fileprivate func drawDecorations(in dirtyRect: NSRect) {
+        onDrawOverlay?(dirtyRect, canvasScale)
         for item in items where displayedSelection.contains(item.id) || item.id == hoveredObjectID {
             if displayBounds(of: item).intersects(dirtyRect) {
                 drawSelectionOutline(item, exclusive: displayedSelection == [item.id])
@@ -968,6 +971,16 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         selection = [item.id]; window?.makeFirstResponder(self)
         if edit { beginEditing(item) }
         return true
+    }
+    @discardableResult
+    func selectOnly(_ id: UUID) -> Bool {
+        guard session.document.items.contains(where: { $0.id == id }) else { return false }
+        cancelPointerInteraction(); guard finishEditing() else { return false }; drawing = false
+        selection = [id]; invalidateIncrementalDisplay(layout: true)
+        return true
+    }
+    func setOverlayNeedsDisplay(_ rect: NSRect) {
+        if usesObjectSurfaces { decoration.setNeedsDisplay(rect) } else { setNeedsDisplay(rect) }
     }
     func selectBrowserObject(_ id: UUID) {
         guard let item = session.document.items.first(where: { $0.id == id && $0.ownsEmbeddedPage }) else { return }
@@ -1458,6 +1471,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         } else if start != nil { cancelPointerInteraction() }
         else if !drawing, selection.isEmpty, let onImageEditingCancel { onImageEditingCancel() }
         else { drawing = false; selection.removeAll(); invalidateIncrementalDisplay(layout: true) }
+    }
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if onKeyEquivalent?(event) == true { return true }
+        return super.performKeyEquivalent(with: event)
     }
     override func keyDown(with event: NSEvent) {
         guard window?.firstResponder === self || (window?.firstResponder as? EaselAccessibleObject)?.canvas === self else {

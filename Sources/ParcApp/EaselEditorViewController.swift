@@ -20,6 +20,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private let scroll = NSScrollView()
     let canvas: EaselCanvasView
     private(set) lazy var pageMenu = EaselPageMenu(editor: self)
+    private(set) lazy var find = EaselFindController(editor: self)
     private var subscription: AnyCancellable?
     private var undoButton: NSButton!
     private var redoButton: NSButton!
@@ -197,6 +198,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         canvas.onError = { [weak self] error in self?.show(error) }
         canvas.onOpenURL = { [weak self] url in self?.onOpenURL?(url) }
         canvas.onExportImage = { [weak self] in self?.exportImage() }
+        canvas.onKeyEquivalent = { [weak self] event in self?.performBoardKeyEquivalent(event) ?? false }
         subscription = session.$document.receive(on: DispatchQueue.main).sink { [weak self] doc in
             guard let self else { return }
             if self.titleField.currentEditor() == nil { self.titleField.stringValue = doc.title }

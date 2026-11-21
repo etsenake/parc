@@ -10,7 +10,8 @@ notes around it: Back walks through every note, Easel and page before it, with
 each page as it was, and Forward returns to them, and an address typed over the
 Easel keeps it behind the new page
 ([navigation](navigation.md#links-to-markdown-and-text-files)). Local editing
-and export do not require a collaboration service.
+and export do not require a collaboration service. Board-wide tools such as
+find and replace are in [board features](easel-board-features.md).
 
 Saves refuse a document with duplicate object IDs. A file that already has
 them opens with the later copies given new IDs, and an unreadable file is left
