@@ -114,6 +114,7 @@ extension BrowserWindowController {
             try copy.perform("Duplicate Easel") { document in
                 document.pages = original.pages
                 document.defaultFamily = original.defaultFamily
+                document.icon = original.icon
                 document.items = EaselArrange.copies(of: EaselArrange.paintOrder(original), offset: EaselPoint(x: 0, y: 0),
                                                      firstZIndex: 0, keepingGroups: Set(original.items.compactMap(\.groupID)))
             }
