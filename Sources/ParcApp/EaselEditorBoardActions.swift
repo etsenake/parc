@@ -1,4 +1,5 @@
 import AppKit
+import PDFKit
 import UniformTypeIdentifiers
 
 extension EaselEditorViewController {
@@ -21,10 +22,38 @@ extension EaselEditorViewController {
         }
     }
 
+    func installSendProvider() {
+        canvas.sendProvider = EaselSendProvider(destinations: { [weak self] in
+            guard let self else { return [] }
+            let current = self.session.document.id
+            return ((try? self.easelStore.list()) ?? []).filter { $0.id != current }.map { EaselSendDestination(id: $0.id, title: $0.title) }
+        }, session: { [weak self] id in try? self?.easelStore.load(id) }, create: { [weak self] in
+            try? self?.easelStore.create(title: "Untitled Easel")
+        }, sent: { [weak self] title, count, copied in
+            let noun = count == 1 ? "object" : "objects"
+            self?.showExportToast(.standard((copied ? "Copied " : "Sent ") + "\(count) \(noun) to \(title)"))
+        })
+    }
+
     func applyLock(_ locked: Bool) {
         palette?.isViewOnly = locked
         titleField.isEditable = !locked
         canvas.documentLockDidChange()
+    }
+
+    func printEasel() {
+        guard canExportImage, let window = view.window else { return }
+        withExportPages(in: window) { [weak self] pages in
+            guard let self, window.attachedSheet == nil else { return }
+            guard let data = self.canvas.exportPagesPDF(title: self.session.document.title, pages: pages),
+                  let document = PDFDocument(data: data),
+                  let info = NSPrintInfo.shared.copy() as? NSPrintInfo,
+                  let operation = document.printOperation(for: info, scalingMode: .pageScaleToFit, autoRotate: true) else {
+                return EaselImageExport.showFailure(in: window)
+            }
+            operation.jobTitle = self.session.document.title
+            operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+        }
     }
 
     func copyMarkdown() {

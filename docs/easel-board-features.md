@@ -75,6 +75,39 @@ the canvas to it at up to 100%. If the object has since been deleted, the
 Easel still opens and a toast says the object isn't there anymore. Tabs keep
 the plain Easel address, and any other fragment is not an Easel link.
 
+## Links to notes and Easels
+
+Text links and object links in an Easel can point at a note (a `file://`
+address of the note) or at another Easel (`parc://easel/<id>`), besides web
+addresses. Clicking one opens the note or Easel the way note links do.
+Notes list the Easels that link to them under "N backlinks", and renaming or
+moving a note rewrites those links in the Easel documents, changing only the
+link, as one undo step in each Easel. `EaselBacklinkScanner` and
+`EaselBacklinkRewriter` in ParcCore read and rewrite Easel documents;
+`NoteBacklinkIndex` lists the Profile's Easel files off the main thread and
+re-reads the ones that changed.
+
+Dragging a note or an Easel from the sidebar onto the canvas puts a text
+object with its title as a link where the drop lands, as one undo step.
+
+## Send to Easel
+
+Send to Easel and Copy to Easel, in the right-click menu of a selection, list
+the Profile's other Easels (the twelve most recently edited) and New Easel. Send
+moves the objects, Copy leaves them, and both take their pictures and other
+assets along. The objects land beside what the other Easel already holds, on its
+first page, and each Easel gets one undo step. Locked objects stay behind when
+moving. A locked Easel isn't offered as a destination or a source.
+
+## Lock Easel
+
+Lock Easel, in the page menu like Lock Note, makes the canvas view-only: no
+tools in the bar except Select, Hand and zoom, no typing, dropping, pasting or
+moving, and no context menu. Panning, zooming, copying, opening links and the
+live pages inside the Easel still work, and Undo undoes the lock. The document
+refuses every other change while locked, so nothing else can edit it by
+accident. `EaselDocument.locked` is left out of the file when unlocked.
+
 ## Easel History
 
 Easel History, in the ••• page menu, keeps restorable versions of an Easel the
@@ -108,6 +141,15 @@ whose other end is left out keeps its last route. Copy as Image in the same
 menu follows the same rules and puts a PNG on the clipboard. An Easel inside
 a note offers the same exports and toasts. While text is being edited, ⇧⌘E
 stays with the text.
+
+Copy as Markdown in the page menu and Export → Markdown File… write the Easel in
+reading order: pages become headings, sections become headings with their
+contents under them, then text (headings, lists, quotes, bold, italic, strike,
+code and links), stickies as list items, tables as Markdown tables, code
+blocks as fences, links, bookmarks and embeds as links, and pictures and videos
+as links to files saved in a "<name> Files" folder beside the file (a copy
+carries their alt text instead). `EaselMarkdown` in ParcCore builds a note page
+from the Easel and the note Markdown writer does the rest.
 
 Stickies as CSV (in Export Selection when the pick has stickies, and in the •••
 menu's Export list for the whole Easel) saves one Content column, a row per

@@ -360,6 +360,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     static var highlightRecorder: (@MainActor (NoteColor) -> Void)?
     static var highlightRecall: (@MainActor () -> NoteColor?)?
     var onCopiedImage: (() -> Void)?
+    var sendProvider: EaselSendProvider?
     var onExportSelection: ((Set<UUID>, EaselSelectionExportFormat) -> Void)?
     var onKeyEquivalent: ((NSEvent) -> Bool)?
     var onDrawOverlay: ((NSRect, CGFloat) -> Void)?
@@ -391,7 +392,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         self.session = EaselPageSession(session)
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 1800))
         setAccessibilityElement(true); setAccessibilityRole(.group); setAccessibilityLabel("Easel canvas")
-        registerForDraggedTypes([.URL, EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType, .rtfd, .rtf, .fileURL, Self.gifPasteboardType, .png, .tiff, .string])
+        registerForDraggedTypes([Self.documentDragType, .URL, EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType, .rtfd, .rtf, .fileURL, Self.gifPasteboardType, .png, .tiff, .string])
         subscription = session.$document.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.documentDidChange() }
     }
     func documentDidChange() {
@@ -2259,6 +2260,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 return insert(kind: .text, text: url.absoluteString)
             }
             if pasteMermaid(from: pasteboard) { return true }
+            if let text = try EaselClipboardText.styledText(from: pasteboard, style: EaselTextStyle(family: session.document.resolvedDefaultFamily),
+                                                            color: insertionColor) {
+                return insert(kind: .text, text: text.text, styledText: text)
+            }
             if let text = try EaselStyledText.read(from: pasteboard) {
                 return insert(kind: .text, text: text.text, styledText: text)
             }
@@ -2272,6 +2277,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         if isDocumentLocked { return [] }
+        if sidebarDocumentDrag(sender.draggingPasteboard) != nil { return .copy }
         if fixedCanvasSize == nil, let operation = contentDrop.begin(sender) { return operation }
         return sender.draggingPasteboard.availableType(from: [EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType, .rtfd, .rtf, .fileURL, Self.gifPasteboardType, .png, .tiff, .URL, .string]) == nil ? [] : .copy
     }
@@ -2282,6 +2288,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         fixedCanvasSize == nil ? super.prepareForDragOperation(sender) : !draggingEntered(sender).isEmpty
     }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if let dropped = dropSidebarDocument(sender) { return dropped }
         if fixedCanvasSize == nil, let result = contentDrop.perform(sender) { return result }
         if let replaced = replaceImage(fromDrop: sender) { return replaced }
         return withObjectMotion(.appear) { readPasteboard(sender.draggingPasteboard, at: convert(sender.draggingLocation, from: nil)) }

@@ -93,6 +93,7 @@ extension EaselCanvasView {
                 documentAttributes: [.documentType: images ? NSAttributedString.DocumentType.rtfd : NSAttributedString.DocumentType.rtf])
             if native.count <= 8_388_608 { item.setData(native, forType: images ? .rtfd : .rtf) }
         }
+        EaselClipboardText.writeFlavours(for: EaselMarkdown.blocks(for: worded.isEmpty ? [] : objects), into: item)
         let plain = objects.compactMap(clipboardWords).joined(separator: "\n\n")
         if !plain.isEmpty { item.setString(plain, forType: .string) }
     }

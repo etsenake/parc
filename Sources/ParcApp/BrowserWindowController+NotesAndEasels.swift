@@ -397,6 +397,7 @@ extension BrowserWindowController {
 
     var canPrintCurrentPage: Bool {
         if currentNoteEditor != nil { return window?.attachedSheet == nil }
+        if let easel = currentEaselEditor { return window?.attachedSheet == nil && easel.canExportImage }
         return canPerformPageTool(.print)
     }
 
@@ -404,6 +405,9 @@ extension BrowserWindowController {
         if let note = currentNoteEditor {
             guard window?.attachedSheet == nil else { return }
             note.printPage()
+        } else if let easel = currentEaselEditor {
+            guard window?.attachedSheet == nil else { return }
+            easel.printEasel()
         } else {
             performPageTool(.print)
         }

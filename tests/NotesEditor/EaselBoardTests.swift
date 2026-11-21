@@ -145,8 +145,8 @@ struct EaselBoardTests {
     static func markdown() {
         let note = URL(fileURLWithPath: "/Users/me/Notes/Roadmap.md")
         var title = item("Plans\nBold move see Roadmap\nfirst\nsecond", runs: [
-            styled(0, 6, heading: 1), styled(6, 5, bold: true), styled(11, 10), styled(21, 7, link: note.absoluteString),
-            styled(28, 1), styled(29, 5, list: "{disc}"), styled(34, 1, list: "{disc}"), styled(35, 6, list: "{disc}")])
+            styled(0, 6, heading: 1), styled(6, 4, bold: true), styled(10, 10), styled(20, 7, link: note.absoluteString),
+            styled(27, 1), styled(28, 6, list: "{disc}"), styled(34, 6, list: "{disc}")])
         title.frame = EaselRect(x: 0, y: 0, width: 300, height: 100)
         var sticky = EaselItem(kind: .sticky, frame: EaselRect(x: 0, y: 200, width: 100, height: 100))
         sticky.text = "Buy milk"
@@ -166,7 +166,7 @@ struct EaselBoardTests {
         expect(text.contains("- first") && text.contains("- second"), "bullets become list items: \(text)")
         expect(text.contains("- Buy milk"), "stickies become list items: \(text)")
         expect(text.contains("```python"), "code keeps its fence and language: \(text)")
-        expect(text.contains("| Name | Age |") && text.contains("| Ada | 36 |"), "tables become Markdown tables: \(text)")
+        expect(text.contains("| Name | Age |") && text.contains("| Ada  | 36  |"), "tables become Markdown tables: \(text)")
         let order = ["## Plans", "Buy milk", "```python", "| Name"].compactMap { text.range(of: $0)?.lowerBound }
         expect(order == order.sorted(), "objects read top to bottom")
         let words = EaselBoardText.stats(of: doc)
