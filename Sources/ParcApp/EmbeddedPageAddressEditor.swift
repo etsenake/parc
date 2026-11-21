@@ -14,7 +14,7 @@ enum EmbeddedPageSearchRows {
         return EaselWebNavigation.Category.allCases.map { category in
             var item = NoteMenuList.Item(id: category.rawValue, title: category.title, icon: .symbol(symbol(for: category)),
                                          section: "Search DuckDuckGo")
-            item.accessibilityLabel = "Search DuckDuckGo " + category.title
+            item.accessibilityLabel = category == .all ? "Search DuckDuckGo" : "Search DuckDuckGo for " + category.title.lowercased()
             return item
         }
     }
@@ -72,7 +72,7 @@ final class EmbeddedPageAddressEditor: NSView, NoteFloatingPanelContent {
         list.prepare(origin: .keyboard)
         list.onActivate = { [weak self] item in self?.activate(item) }
         list.onCancel = { [weak self] in self?.onCancel?() }
-        list.setAccessibilityLabel("Search DuckDuckGo")
+        list.setAccessibilityLabel("Search results")
         addSubview(list)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)

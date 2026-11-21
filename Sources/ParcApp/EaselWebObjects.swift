@@ -116,7 +116,7 @@ final class EaselWebObjects: EaselHostedObjects, EaselCanvasPasteChoices {
             closeSearch()
             let list = NoteMenuList()
             list.minimumWidth = 260
-            list.setAccessibilityLabel("Search DuckDuckGo")
+            list.setAccessibilityLabel("Search results")
             list.onActivate = { [weak self] item in self?.activateSearch(item, for: id) }
             list.onCancel = { [weak self] in self?.closeSearch() }
             let popover = NotePagePopover(content: list)
