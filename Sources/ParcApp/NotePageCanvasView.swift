@@ -231,19 +231,26 @@ final class NotePageCanvasView: NSView {
         super.updateTrackingAreas()
     }
 
-    override func mouseMoved(with event: NSEvent) { pointerMoved(event) }
+    override func mouseMoved(with event: NSEvent) { pointerMoved(to: event.locationInWindow) }
 
-    override func mouseEntered(with event: NSEvent) { pointerMoved(event) }
+    override func mouseEntered(with event: NSEvent) { pointerMoved(to: event.locationInWindow) }
 
-    private func pointerMoved(_ event: NSEvent) {
-        if !NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow) {
+    private func pointerMoved(to windowPoint: NSPoint) {
+        if !NoteFloatingPanel.allowsHover(for: self, at: windowPoint) {
             editor?.handles.pointerExited()
             editor?.synced.pointerCovered()
             return
         }
-        let point = convert(event.locationInWindow, from: nil)
+        let point = convert(windowPoint, from: nil)
         editor?.handles.pointerMoved(to: point)
         editor?.synced.pointerMoved(to: point)
+    }
+
+    private func panelsDidChange() {
+        guard let window, window.isKeyWindow, NSEvent.pressedMouseButtons == 0 else { return }
+        let point = window.mouseLocationOutsideOfEventStream
+        guard visibleRect.contains(convert(point, from: nil)) else { return }
+        pointerMoved(to: point)
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -507,6 +514,10 @@ final class NotePageCanvasView: NSView {
         clipObservers.append(NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: clip,
                                                                     queue: nil) { [weak self] _ in
             MainActor.assumeIsolated { self?.clipDidResize() }
+        })
+        clipObservers.append(NotificationCenter.default.addObserver(forName: NoteFloatingPanel.didChangePresentationNotification, object: nil,
+                                                                    queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.panelsDidChange() }
         })
         clipDidResize()
     }

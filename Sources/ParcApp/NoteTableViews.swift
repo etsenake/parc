@@ -105,6 +105,11 @@ final class NoteTableCellTextView: NoteTextView {
         super.paste(sender)
     }
 
+    override func pointerCursor(at point: NSPoint, modifiers: NSEvent.ModifierFlags) -> NSCursor {
+        if let table, table.isResizeBoundary(atWindowPoint: convert(point, to: nil)) { return .resizeLeftRight }
+        return super.pointerCursor(at: point, modifiers: modifiers)
+    }
+
     override func isAccessibilityElement() -> Bool { true }
 
     override func accessibilityLabel() -> String? {

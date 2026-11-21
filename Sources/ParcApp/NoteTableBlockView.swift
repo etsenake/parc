@@ -961,6 +961,11 @@ final class NoteTableBlockView: NoteBlockView {
         super.updateTrackingAreas()
     }
 
+    func isResizeBoundary(atWindowPoint point: NSPoint) -> Bool {
+        let local = surface.convert(point, from: nil)
+        return surface.resizeBoundaries.contains { $0.contains(local) }
+    }
+
     override func mouseEntered(with event: NSEvent) { pointerMoved(event) }
     override func mouseMoved(with event: NSEvent) { pointerMoved(event) }
 
