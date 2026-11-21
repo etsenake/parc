@@ -14,6 +14,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
     var onToast: ((ParcToastContent) -> Void)?
     var onTrashed: ((URL) -> Void)?
     var onOpenFolder: ((URL) -> Void)?
+    var onShowInLibrary: ((URL) -> Void)? { didSet { bindShowInLibrary() } }
     var notesFolder: (() -> URL?)?
     var downloadFolder: (@MainActor () async -> URL?)?
     private let root = NotePageRootView()
@@ -97,6 +98,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         pageMenu.onToast = { [weak self] content in self?.onToast?(content) }
         pageMenu.onTrashed = { [weak self] url in self?.onTrashed?(url) }
         self.pageMenu = pageMenu
+        bindShowInLibrary()
         let pageMenuButton = pageMenu.makeButton()
         root.addSubview(pageMenuButton)
         self.pageMenuButton = pageMenuButton
@@ -147,6 +149,10 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
             guard isViewLoaded, spaceFocus != oldValue else { return }
             editor.canvas.spaceFocus = spaceFocus
         }
+    }
+
+    private func bindShowInLibrary() {
+        pageMenu?.onShowInLibrary = onShowInLibrary
     }
 
     func focusContent() {

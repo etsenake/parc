@@ -280,7 +280,8 @@ Unsplash photo, with reposition), an emoji or image icon, front-matter propertie
 checkbox, date and tags), and one of four fonts: Nunito, EB Garamond, Space Mono
 or ParcWide. The menu at the top right of a note offers Small Text, Full Width,
 Lock Note, Copy as Markdown, Copy Link, export (Markdown, HTML and PDF), Show in
-Finder, Note History and Move to Trash, with a word count and reading time.
+Library, Show in Finder, Note History and Move to Trash, with a word count and
+reading time.
 Markdown exports and Copy as Markdown write portable Markdown without Parc's
 hidden comments: synced blocks become their current content, columns and
 indents become plain blocks, buttons become toggles, colours, block IDs and

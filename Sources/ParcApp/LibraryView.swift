@@ -275,6 +275,11 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         guard kind == .documents else { return }
         documentsView.scope(to: folder)
     }
+    func revealDocument(_ target: DocumentsLibraryReveal.Target) {
+        show(.documents)
+        guard kind == .documents else { return }
+        documentsView.revealItem(target)
+    }
     func focusSearch() {
         if kind == .spaces { spaceManager.focusFirst() }
         else if kind == .documents { documentsView.focusSearch() }

@@ -137,6 +137,30 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         subscription = next.changes.sink { [weak self] in self?.reload() }
     }
     func focusSearch() { window?.makeFirstResponder(search); search.selectText(nil) }
+    func revealItem(_ target: DocumentsLibraryReveal.Target) {
+        guard !store.isEphemeral else { return }
+        scope(to: DocumentsLibraryReveal.folder(for: target, library: NoteFolderPreferences.library(for: profileID).folder))
+        reload(force: true)
+        if DocumentsLibraryReveal.clearsQuery(search.stringValue, target: target, visible: rows.map(Self.target)) {
+            search.stringValue = ""
+            reload(force: true)
+        }
+        guard let index = DocumentsLibraryReveal.index(of: target, in: rows.map(Self.target)) else { return }
+        let page = rows[index].page
+        selectedPage = page
+        updateSelection()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.valid, self.selectedPage == page,
+                  let index = self.rows.firstIndex(where: { $0.page == page }) else { return }
+            self.layoutSubtreeIfNeeded()
+            self.revealCard(index)
+            self.updateSelection()
+            guard let card = self.card(at: index) else { return }
+            card.superview?.layoutSubtreeIfNeeded()
+            self.window?.makeFirstResponder(card)
+            NoteAnimation.pop(card, from: 0.92)
+        }
+    }
     func reload(force: Bool = false) {
         let selected = selectedPage
         guard !store.isEphemeral, let library else {
@@ -173,6 +197,12 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private static func row(_ item: DocumentsLibraryItem) -> Row? {
         if let url = item.noteURL { return Row(item: item, page: .note(url)) }
         return item.easelID.map { Row(item: item, page: .easel($0)) }
+    }
+    private static func target(_ row: Row) -> DocumentsLibraryReveal.Target {
+        switch row.item.identity {
+        case .note(let url): return .note(url)
+        case .easel(let id): return .easel(id)
+        }
     }
     private var current: Row? { rows.first { $0.page == selectedPage } }
     private var valid: Bool { window != nil && ownerValid?() == true }

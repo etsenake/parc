@@ -94,6 +94,11 @@ extension BrowserWindowController {
         guard let libraryView, libraryView.profileID == activeProfileID else { return }
         libraryView.showDocuments(in: folder)
     }
+    func revealInDocumentsLibrary(_ target: DocumentsLibraryReveal.Target) {
+        showLibrary(.documents)
+        guard let libraryView, libraryView.profileID == activeProfileID else { return }
+        libraryView.revealDocument(target)
+    }
     var canShowNotesFolder: Bool { canCreateNote }
     func showNotesFolder() {
         guard canShowNotesFolder else { return }
@@ -206,6 +211,13 @@ extension BrowserWindowController {
             guard let self, let editor, self.noteEditors[tabID]?.editor === editor,
                   self.activeProfileID == profileID, !self.isClosing else { return }
             self.showNotesLibrary(folder: folder)
+        }
+        if !store.isEphemeral {
+            editor.onShowInLibrary = { [weak self, weak editor] url in
+                guard let self, let editor, self.noteEditors[tabID]?.editor === editor, self.currentTabID == tabID,
+                      self.activeProfileID == profileID, !self.isClosing, !self.wholeWindowClose else { return }
+                self.revealInDocumentsLibrary(.note(url))
+            }
         }
         editor.onTrashed = { [weak self, weak editor] url in
             guard let self, let editor, self.noteEditors[tabID]?.editor === editor else { return }

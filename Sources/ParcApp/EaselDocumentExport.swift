@@ -229,7 +229,7 @@ extension BrowserWindowController {
         }
         editor.pageMenu.actions = .init(showInLibrary: { [weak self] in
             guard let self, current() else { return }
-            self.showLibrary(.documents)
+            self.revealInDocumentsLibrary(.easel(documentID))
         }, duplicate: { [weak self] in
             guard let self, current() else { return }
             self.duplicateEasel(documentID, profileID: profileID)

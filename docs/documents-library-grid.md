@@ -37,6 +37,13 @@ including Escape from empty search, closes Library through its window owner.
 Click and Return use profile/window-guarded callbacks with real document
 identities.
 
+Show in Library on a note's or an Easel's page menu opens this page with that
+card selected, scrolled into view, focused and given a brief pop. A search that
+would hide it is cleared, and a note saved outside the Notes folder is shown by
+browsing its own folder. [`DocumentsLibraryReveal`](../Sources/ParcCore/DocumentsLibraryReveal.swift)
+decides the folder, the match and whether the search clears, with windowless
+tests.
+
 ## Grid
 
 The native table virtualizes pairs of cards. When the window cannot fit both

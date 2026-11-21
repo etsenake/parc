@@ -38,6 +38,7 @@ final class NotePageMenu {
     var onToast: ((ParcToastContent) -> Void)?
     var onTrashed: ((URL) -> Void)?
     var onOpenHistory: (() -> Void)?
+    var onShowInLibrary: ((URL) -> Void)?
     private var popover: NotePagePopover?
     private var exportPopover: NotePagePopover?
     private var backlinksPopover: NotePagePopover?
@@ -139,6 +140,8 @@ final class NotePageMenu {
         result.append(copy)
         result.append(.init(id: "copy-link", title: "Copy Link", icon: .symbol("link"), isEnabled: hasFile))
         result.append(.init(id: "export", title: "Export", icon: .symbol("square.and.arrow.up"), hasSubmenu: true))
+        result.append(.init(id: "library", title: "Show in Library", icon: .symbol("books.vertical"),
+                            isEnabled: hasFile && onShowInLibrary != nil))
         result.append(.init(id: "reveal", title: "Show in Finder", icon: .symbol("folder"), isEnabled: hasFile))
         result.append(.init(id: "history", title: "Note History", icon: .symbol("clock.arrow.circlepath"), isEnabled: hasFile))
         if isPlainText {
@@ -162,6 +165,7 @@ final class NotePageMenu {
         case "copy-link": close(); copyLink()
         case "export": presentExport(from: row)
         case "backlinks": presentBacklinks(from: row)
+        case "library": close(); showInLibrary()
         case "reveal": close(); revealInFinder()
         case "history": close(); showHistory()
         case "turn-markdown": close(); turnIntoMarkdown()
@@ -226,6 +230,12 @@ final class NotePageMenu {
         board.writeObjects([url as NSURL])
         board.setString(url.absoluteString, forType: .string)
         showToast(.copiedLinks([url]))
+    }
+
+    func showInLibrary() {
+        guard let url, let onShowInLibrary else { return }
+        try? file?.flush()
+        onShowInLibrary(url)
     }
 
     func revealInFinder() {
