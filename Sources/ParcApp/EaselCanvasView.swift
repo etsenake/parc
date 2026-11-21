@@ -60,7 +60,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             self.selectionToolbar?.settle()
         })
     weak var pageObjects: EaselBrowserObjectHosting? { didSet { needsLayout = true } }
-    private var artwork: [UUID: NSView] = [:]
+    var artwork: [UUID: NSView] = [:]
     private var accessibleObjects: [UUID: EaselAccessibleObject] = [:]
     var onKeyboardStructureChange: (() -> Void)?
     private var keyboardStructurePending = false
@@ -101,6 +101,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var selection = Set<UUID>() {
         didSet {
             if selection != oldValue {
+                refreshImagePlayback()
                 menuGeneration &+= 1
                 NSAccessibility.post(element: self, notification: .selectedChildrenChanged)
                 keyboardStructureChanged()
@@ -146,6 +147,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var editingID: UUID?
     private var editingTextSnapshot: (text: String, rich: EaselRichText?)?
     private var images: [String: NSImage] = [:]
+    let imageEditing = EaselImageEditing()
     var onDrawingStateChange: ((Bool) -> Void)?
     var drawing = false {
         didSet {
@@ -440,6 +442,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     fileprivate func activateAccessibleObject(_ expected: EaselItem) -> Bool {
         guard selectAccessibleObject(expected) else { return false }
         if expected.kind == .text { beginEditing(expected); return editingID == expected.id }
+        if expected.kind == .image { return beginImageCrop() }
         if pageObjects?.focusPage(for: expected.id) == true { return true }
         return false
     }
@@ -522,7 +525,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let value = EaselRichTextCodec.attributed(item)
         return adaptsInk ? EaselInk.adapting(value) : value
     }
-    private func image(_ id: String) -> NSImage? {
+    func image(_ id: String) -> NSImage? {
         if let value = images[id] { return value }
         guard let data = try? session.assetData(id), let value = NSImage(data: data) else { return nil }
         images[id] = value; return value
@@ -781,8 +784,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                     head.line(to: end); head.line(to: NSPoint(x: end.x - cos(angle + 0.5) * length, y: end.y - sin(angle + 0.5) * length))
                     head.lineCapStyle = .round; head.lineJoinStyle = .round; paint.stroke(head, dashed: false)
                 }
-            case .image:
-                if let id = item.assetID { image(id)?.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil) }
+            case .image: drawImageObject(item, in: r)
             case .webCard where item.assetID != nil:
                 if let id = item.assetID { image(id)?.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil) }
             case .link, .webCard, .browser:
@@ -798,6 +800,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     fileprivate func drawDecorations(in dirtyRect: NSRect) {
         onDrawOverlay?(dirtyRect, canvasScale)
+        if drawImageDecorations(in: dirtyRect) { return }
         for item in items where displayedSelection.contains(item.id) || (item.id == hoveredObjectID && !item.isLocked) {
             if displayBounds(of: item).intersects(dirtyRect) {
                 drawSelectionOutline(item, exclusive: displayedSelection == [item.id])
@@ -937,7 +940,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     private var resizeBounds: EaselRect? {
-        guard !drawing, editor == nil, marqueeRect == nil, selectedArrow == nil else { return nil }
+        guard !drawing, editor == nil, marqueeRect == nil, selectedArrow == nil, !isCroppingImage else { return nil }
         return EaselGeometryEdit.bounds(of: items.filter { displayedSelection.contains($0.id) && !$0.isLocked })
     }
     private func resizeHandle(at point: NSPoint) -> EaselResizeHandle? {
@@ -1007,33 +1010,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if commit(browser ? "Add webpage" : "Add link", { $0.items.append(item) }) { selection = [item.id]; return true }
         return false
     }
-    func importImage(_ data: Data) throws {
-        guard data.count <= EaselStore.maximumAssetBytes,
-              let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let widthValue = properties[kCGImagePropertyPixelWidth] as? Int,
-              let heightValue = properties[kCGImagePropertyPixelHeight] as? Int,
-              widthValue > 0, heightValue > 0, widthValue <= 16_384, heightValue <= 16_384,
-              Int64(widthValue) * Int64(heightValue) <= 80_000_000,
-              let rep = NSBitmapImageRep(data: data),
-              rep.pixelsWide > 0, rep.pixelsHigh > 0, rep.pixelsWide <= 16_384, rep.pixelsHigh <= 16_384,
-              Int64(rep.pixelsWide) * Int64(rep.pixelsHigh) <= 80_000_000,
-              let png = rep.representation(using: .png, properties: [:]) else { throw EaselStoreError.invalidImage }
-        cancelPointerInteraction()
-        guard finishEditing() else { throw EaselStoreError.invalidDocument("finish the current text edit") }
-        drawing = false
-        let assetID = try session.importPNG(png), width = min(480.0, Double(rep.pixelsWide))
-        var item = EaselItem(kind: .image, frame: EaselRect(x: max(24, visibleRect.midX - width / 2), y: visibleRect.minY + 70,
-                             width: width, height: max(1, width * Double(rep.pixelsHigh) / Double(rep.pixelsWide))),
-                             zIndex: (items.map(\.zIndex).max() ?? 0) + 1, assetID: assetID)
-        if let size = fixedCanvasSize {
-            let ratio = min(1, size.width / item.frame.width, size.height / item.frame.height)
-            item.frame.width *= ratio; item.frame.height *= ratio
-            item.frame.x = max(0, min(visibleRect.midX - item.frame.width / 2, size.width - item.frame.width))
-            item.frame.y = max(0, min(visibleRect.midY - item.frame.height / 2, size.height - item.frame.height))
-        }
-        try session.perform("Add image") { $0.items.append(item) }; selection = [item.id]
-    }
+    func importImage(_ data: Data) throws { try insertImageData(data) }
     func importImageFile(_ url: URL) throws {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
         guard values.isRegularFile == true, let size = values.fileSize, size <= EaselStore.maximumAssetBytes else { throw EaselStoreError.tooLarge }
@@ -1309,7 +1286,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     @objc private func ownerResignedKey(_ notification: Notification) { hoveredObjectID = nil; menuGeneration &+= 1; motion.cancel(); cancelPointerInteraction() }
     override func resignFirstResponder() -> Bool {
-        menuGeneration &+= 1; cancelPointerInteraction(); return super.resignFirstResponder()
+        menuGeneration &+= 1; cancelPointerInteraction(); finishImageCrop(save: true); return super.resignFirstResponder()
     }
     private func updateMarquee(to point: NSPoint, flags: NSEvent.ModifierFlags) {
         guard let start, marqueeRect != nil else { return }
@@ -1336,6 +1313,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return hit
     }
     override func mouseDown(with event: NSEvent) {
+        if imageMouseDown(event) { return }
         hoveredObjectID = nil
         motion.cancel(); cancelPointerInteraction(); guard finishEditing() else { return }; window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil); start = point; original = session.document.items
@@ -1363,11 +1341,13 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if event.clickCount == 2, !enteredGroup {
             cancelPointerInteraction()
             if hit.kind == .text { beginEditing(hit, at: point) }
+            else if hit.kind == .image { beginImageCrop() }
             else if !hit.ownsEmbeddedPage, let raw = hit.url, let url = URL(string: raw) { onOpenURL?(url) }
         }
         invalidateIncrementalDisplay(layout: true)
     }
     override func mouseDragged(with event: NSEvent) {
+        if imageMouseDragged(event) { return }
         guard start != nil else { return }
         let point = convert(event.locationInWindow, from: nil)
         if marqueeRect != nil { updateMarquee(to: point, flags: event.modifierFlags); autoscroll(with: event); return }
@@ -1416,7 +1396,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if flags.contains(.shift), edit.originals.count == 1, let item = edit.originals.first {
             switch item.kind {
             case .image, .webCard:
-                if let asset = item.assetID, let size = image(asset)?.size,
+                if item.kind == .image, let aspect = imageAspect(item) { intrinsicGuideRatio = aspect }
+                else if let asset = item.assetID, let size = image(asset)?.size,
                    size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 {
                     intrinsicGuideRatio = size.width / size.height
                 } else if item.kind == .webCard { intrinsicGuideRatio = 1 }
@@ -1440,6 +1421,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                          color: insertionColor, points: stroke.map { EaselPoint(x: $0.x - minX, y: $0.y - minY) })
     }
     override func mouseUp(with event: NSEvent) {
+        if imageMouseUp(event) { return }
         guard start != nil else { return }
         defer { cancelPointerInteraction() }
         if marqueeRect != nil {
@@ -1461,7 +1443,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     override func resetCursorRects() {
+        if addImageCropCursorRects() { return }
         addCursorRect(bounds, cursor: drawing ? .crosshair : .arrow)
+        addImageBadgeCursorRects()
         if let arrow = selectedArrow {
             for endpoint in EaselArrowEndpoint.allCases where showsArrowAnnotation(endpoint) {
                 guard let r = endpoint.hitRect(in: arrow, scale: canvasScale) else { continue }
@@ -1477,6 +1461,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     override func cancelOperation(_ sender: Any?) {
+        if cancelImageCrop() { return }
         if editor != nil {
             if finishEditing() { selection.removeAll(); window?.makeFirstResponder(self) }
         } else if start != nil { cancelPointerInteraction() }
@@ -1487,6 +1472,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard window?.firstResponder === self || (window?.firstResponder as? EaselAccessibleObject)?.canvas === self else {
             super.keyDown(with: event); return
         }
+        if imageKeyDown(event) { return }
         if event.keyCode == 48, event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
             if event.modifierFlags.contains(.shift) { window?.selectPreviousKeyView(window?.firstResponder) }
             else { window?.selectNextKeyView(window?.firstResponder) }
@@ -1538,7 +1524,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard let owner = target.window else { return false }
         return owner === window && target.generation == menuGeneration
     }
-    private func command(for sender: Any?) -> EaselObjectCommand? {
+    func command(for sender: Any?) -> EaselObjectCommand? {
         guard hasCurrentMenuOwner(sender) else { return nil }
         let command: EaselObjectCommand?
         if let menu = sender as? NSMenuItem, let target = menu.representedObject as? MenuTarget {
@@ -1581,7 +1567,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
               [.text, .image, .link, .webCard, .browser].contains(item.kind) else { return }
         let pasteboard = NSPasteboard.general
         if let id = item.assetID, let data = try? session.assetData(id) {
-            pasteboard.clearContents(); pasteboard.setData(data, forType: .png)
+            pasteboard.clearContents(); pasteboard.setData(data, forType: EaselAssetType.of(assetID: id) == .gif ? Self.gifPasteboardType : .png)
         } else if item.kind == .text {
             do { try EaselStyledText(text: item.text, style: item.resolvedTextStyle, color: item.color, richText: item.richText).write(to: pasteboard) }
             catch { onError?(error) }
@@ -1625,7 +1611,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if let text = try EaselStyledText.read(from: pasteboard) {
                 return insert(kind: .text, text: text.text, styledText: text)
             }
-            if let data = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff) { try importImage(data); return true }
+            if let data = pasteboard.data(forType: Self.gifPasteboardType) ?? pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff) { try importImage(data); return true }
             if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
                 for url in urls { try importImageFile(url); imported = true }; return imported
             }
@@ -1648,6 +1634,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return readPasteboard(sender.draggingPasteboard)
     }
     override func menu(for event: NSEvent) -> NSMenu? {
+        if let menu = imageCropMenu() { return menu }
         cancelPointerInteraction(); guard finishEditing() else { return nil }; window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
         if let item = object(at: point), !selection.contains(item.id) { selection = [item.id]; invalidateIncrementalDisplay(layout: true) }
@@ -1672,6 +1659,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 row.target = self; row.representedObject = captured; menu.addItem(row)
             }
         }
+        addImageMenuItems(to: menu, target: captured)
         menu.addItem(.separator())
         let alignment = NSMenuItem(title: "Use Alignment Guides", action: #selector(toggleAlignmentGuides), keyEquivalent: "")
         alignment.target = self; alignment.representedObject = captured
@@ -1719,6 +1707,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard hasCurrentMenuOwner(menuItem) else { return false }
+        if let verdict = validateImageMenuItem(menuItem) { return verdict }
         if let command = TextFormatCommand(menuItem) {
             if let editor = formattingEditor {
                 if command == .link { menuItem.title = editor.hasLink() ? TextFormatCommand.editLinkTitle : TextFormatCommand.addLinkTitle }
@@ -1898,6 +1887,7 @@ private final class EaselAccessibleObject: NSView {
     }
     override func accessibilityValue() -> Any? {
         guard let item = canvas?.accessibleItem(id) else { return nil }
+        if item.kind == .image { return item.altText ?? item.url }
         return item.text.isEmpty ? item.url : item.text
     }
     override func isAccessibilityEnabled() -> Bool { acceptsFirstResponder }
@@ -1924,6 +1914,6 @@ private final class EaselAccessibleObject: NSView {
             NSAccessibilityCustomAction(name: name == "Activate" ? (item.kind == .text ? "Edit text" : "Interact with webpage") : name) { [weak canvas, weak owner] in
                 canvas?.accessibleAction(name, item: item, owner: owner) == true
             }
-        }
+        } + canvas.imageAccessibilityActions(for: item, owner: owner)
     }
 }

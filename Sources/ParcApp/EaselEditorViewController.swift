@@ -83,6 +83,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     init(directory: URL, documentID: UUID) throws {
         session = try Self.sharedStore(directory: directory).load(documentID)
         canvas = EaselCanvasView(session: session)
+        canvas.imageEditing.chrome = EaselImageChrome()
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
