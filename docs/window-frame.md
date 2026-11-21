@@ -139,11 +139,12 @@ position, bounds and corner radius, so the transform does not collide with it.
 
 ## Checks
 
-- `swift test --filter WindowFrameModelTests` and `tests/WindowFrame`: the turning, placement and naming model, the
-  click and thunk synthesis and feedback gating, and the crank view's input,
-  lights, dismissal, Reduce Motion and accessibility.
-- `tests/WindowFrameIntegration`: chrome frames at 3, 10 and 13 points
+- `swift test --filter 'WindowFrameModelTests|WindowFrameFeedbackTests|WindowFrameViewTests'`:
+  turning, placement, naming, click and thunk synthesis, feedback gating and
+  the crank view's input, lights, dismissal, Reduce Motion and accessibility.
+- `swift test --filter 'WindowFrameGeometryTests|WindowFramePreferenceTests'`:
+  chrome frames at 3, 10 and 13 points
   for every sidebar presentation, side panel, Library, popup and full screen;
   preference persistence and preserved records.
-- `tests/LayoutChromeGeometrySkipTests.swift` proves a thickness change relayouts
+- `LayoutChromeGeometrySkipTests` proves a thickness change relayouts
   open windows; `tests/SidebarResize` covers the `frameAdjust` throttle reason.

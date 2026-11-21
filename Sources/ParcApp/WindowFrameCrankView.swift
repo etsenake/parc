@@ -16,6 +16,8 @@ final class WindowFrameCrankView: NSView {
         case idle, presenting, shown, dismissing(commit: Bool), finished
     }
 
+    typealias StartTimer = (TimeInterval, Bool, @escaping @Sendable (Timer) -> Void) -> Timer
+
     private struct Settle {
         var from: Double
         var to: Double
@@ -59,6 +61,8 @@ final class WindowFrameCrankView: NSView {
     private let stage = NSView()
     private let feedback: WindowFrameCrankFeedback
     private let reducesMotion: () -> Bool
+    private let now: () -> TimeInterval
+    private let startTimer: StartTimer
     private var phaseClock: Double = 0
     private var trembleClock: Double = 0
     private var settle: Settle?
@@ -78,7 +82,13 @@ final class WindowFrameCrankView: NSView {
                   reducesMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion })
     }
 
-    init(value: Int, palette: WindowFrameCrankPalette, feedback: WindowFrameCrankFeedback, reducesMotion: @escaping () -> Bool) {
+    init(value: Int, palette: WindowFrameCrankPalette, feedback: WindowFrameCrankFeedback, reducesMotion: @escaping () -> Bool,
+         now: @escaping () -> TimeInterval = CACurrentMediaTime,
+         startTimer: @escaping StartTimer = { interval, repeats, tick in
+             let timer = Timer(timeInterval: interval, repeats: repeats, block: tick)
+             RunLoop.main.add(timer, forMode: .common)
+             return timer
+         }) {
         let square = NSRect(x: 0, y: 0, width: Self.side, height: Self.side)
         let start = WindowFrameCrank(value: value)
         crank = start
@@ -87,6 +97,8 @@ final class WindowFrameCrankView: NSView {
         self.palette = palette
         self.feedback = feedback
         self.reducesMotion = reducesMotion
+        self.now = now
+        self.startTimer = startTimer
         model = WindowFrameCrankModel(side: Self.side, palette: palette)
         lights = WindowFrameCrankLightsView(frame: square, litCount: start.litCount, readout: start.value, palette: palette)
         sceneView = WindowFrameCrankSceneView(frame: square, options: nil)
@@ -524,25 +536,21 @@ final class WindowFrameCrankView: NSView {
 
     private func scheduleWheelRelease(after interval: TimeInterval) {
         wheelTimer?.invalidate()
-        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+        wheelTimer = startTimer(interval, false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.wheelTimer = nil
                 self.releaseTurn()
             }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        wheelTimer = timer
     }
 
     private func schedule() {
         guard timer == nil, phase != .finished else { return }
-        lastTick = CACurrentMediaTime()
-        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+        lastTick = now()
+        timer = startTimer(1.0 / 60, true) { [weak self] timer in
             MainActor.assumeIsolated { if let self { self.tick() } else { timer.invalidate() } }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
     }
 
     private func stopTimer() {
@@ -551,7 +559,7 @@ final class WindowFrameCrankView: NSView {
     }
 
     private func tick() {
-        let now = CACurrentMediaTime()
+        let now = now()
         let dt = min(0.05, max(0, now - lastTick))
         lastTick = now
         advance(by: dt)

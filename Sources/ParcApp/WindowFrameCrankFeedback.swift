@@ -169,6 +169,8 @@ final class WindowFrameCrankAudioOutput: WindowFrameCrankSoundOutput {
 
     private let format = AVAudioFormat(standardFormatWithSampleRate: WindowFrameCrankSound.sampleRate, channels: 1)
     private let now: () -> TimeInterval
+    private let makeAudioEngine: () -> AVAudioEngine
+    private let scheduleStop: (DispatchWorkItem) -> Void
     private var engine: AVAudioEngine?
     private var players: [AVAudioPlayerNode] = []
     private(set) var voices: [WindowFrameCrankVoice] = []
@@ -180,8 +182,14 @@ final class WindowFrameCrankAudioOutput: WindowFrameCrankSoundOutput {
     private var pendingStop: DispatchWorkItem?
     private(set) var holders = 0
 
-    init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+    init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+         makeAudioEngine: @escaping () -> AVAudioEngine = { AVAudioEngine() },
+         scheduleStop: ((DispatchWorkItem) -> Void)? = nil) {
         self.now = now
+        self.makeAudioEngine = makeAudioEngine
+        self.scheduleStop = scheduleStop ?? { work in
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.stopDelay, execute: work)
+        }
     }
 
     var isGraphReady: Bool { graphReady }
@@ -236,7 +244,7 @@ final class WindowFrameCrankAudioOutput: WindowFrameCrankSoundOutput {
     }
 
     private func makeEngine() -> AVAudioEngine {
-        let made = AVAudioEngine()
+        let made = makeAudioEngine()
         engine = made
         observer = NotificationToken(NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: made,
                                                                             queue: .main) { [weak self] _ in
@@ -301,7 +309,7 @@ final class WindowFrameCrankAudioOutput: WindowFrameCrankSoundOutput {
             }
         }
         pendingStop = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.stopDelay, execute: work)
+        scheduleStop(work)
     }
 }
 

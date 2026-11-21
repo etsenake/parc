@@ -29,7 +29,18 @@ struct HistorySwipeOverlayRow: Equatable {
     private let chevron = NSImageView()
     private let frames = ViewDisplayFrameDriver()
 
-    override init(frame frameRect: NSRect) {
+    private let reducesMotion: () -> Bool
+    private let now: () -> TimeInterval
+
+    override convenience init(frame frameRect: NSRect) {
+        self.init(frame: frameRect,
+                  reducesMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
+                  now: CACurrentMediaTime)
+    }
+
+    init(frame frameRect: NSRect, reducesMotion: @escaping () -> Bool, now: @escaping () -> TimeInterval) {
+        self.reducesMotion = reducesMotion
+        self.now = now
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.masksToBounds = true
@@ -95,15 +106,15 @@ struct HistorySwipeOverlayRow: Equatable {
     }
 
     func handle(_ output: HistorySwipeOutput) {
-        if case .begin = output { model.prefersReducedMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+        if case .begin = output { model.prefersReducedMotion = reducesMotion() }
         if case let .begin(direction) = output { showChevron(direction) }
-        let haptic = model.receive(output, at: CACurrentMediaTime())
+        let haptic = model.receive(output, at: now())
         if let haptic { perform(haptic) }
         render()
         guard model.isAnimating, window != nil else { return }
         frames.start(in: self) { [weak self] in
             guard let self else { return false }
-            self.model.advance(to: CACurrentMediaTime())
+            self.model.advance(to: self.now())
             self.render()
             return self.model.isAnimating
         }
