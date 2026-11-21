@@ -1,11 +1,11 @@
 import Foundation
 
-struct NoteMathSource {
-    var characters: [Character]
-    var origins: [Range<Int>]
-    var length: Int
+package struct NoteMathSource {
+    package var characters: [Character]
+    package var origins: [Range<Int>]
+    package var length: Int
 
-    init(_ source: String) {
+    package init(_ source: String) {
         characters = Array(source)
         origins = []
         origins.reserveCapacity(characters.count)
@@ -18,15 +18,15 @@ struct NoteMathSource {
         length = running
     }
 
-    init(characters: [Character], origins: [Range<Int>], length: Int) {
+    package init(characters: [Character], origins: [Range<Int>], length: Int) {
         self.characters = characters
         self.origins = origins
         self.length = length
     }
 }
 
-struct NoteMathExpander {
-    enum Kind: Equatable {
+package struct NoteMathExpander {
+    package enum Kind: Equatable {
         case control(String)
         case character(Character)
         case hash
@@ -34,39 +34,53 @@ struct NoteMathExpander {
         case marker
     }
 
-    struct Token {
-        var kind: Kind
-        var raw: String
-        var start: Int
-        var invocation: Range<Int>?
-        var noexpand = false
-        var fromCsname = false
+    package struct Token {
+        package var kind: Kind
+        package var raw: String
+        package var start: Int
+        package var invocation: Range<Int>?
+        package var noexpand = false
+        package var fromCsname = false
 
-        var origin: Range<Int> {
+        package init(kind: Kind, raw: String, start: Int, invocation: Range<Int>? = nil, noexpand: Bool = false, fromCsname: Bool = false) {
+            self.kind = kind
+            self.raw = raw
+            self.start = start
+            self.invocation = invocation
+            self.noexpand = noexpand
+            self.fromCsname = fromCsname
+        }
+
+        package var origin: Range<Int> {
             if let invocation { return invocation }
             let trailing = kind == .space ? 0 : raw.reversed().prefix { $0.isWhitespace }.reduce(0) { $0 + $1.utf16.count }
             return start..<(start + raw.utf16.count - trailing)
         }
     }
 
-    struct Macro {
-        var arity = 0
-        var defaultArgument: [Token]?
-        var body: [Token] = []
-        var alias: Token?
-        var prefix: [Token] = []
-        var delimiters: [[Token]] = []
-        var braceDelimited = false
+    package struct Macro {
+        package var arity = 0
+        package var defaultArgument: [Token]?
+        package var body: [Token] = []
+        package var alias: Token?
+        package var prefix: [Token] = []
+        package var delimiters: [[Token]] = []
+        package var braceDelimited = false
     }
 
     private struct Frame {
         enum Kind { case root, brace, cell }
         var kind: Kind
         var macros: [String: Macro] = [:]
+
+        package init(kind: Kind, macros: [String: Macro] = [:]) {
+            self.kind = kind
+            self.macros = macros
+        }
     }
 
-    static let maximumExpansions = 1000
-    static let maximumLength = 100_000
+    package static let maximumExpansions = 1000
+    package static let maximumLength = 100_000
     private static let triggers: Set<String> = [
         "newcommand", "renewcommand", "providecommand", "def", "gdef", "edef", "xdef", "let", "global", "ce", "pu",
         "expandafter", "noexpand", "csname",
@@ -92,7 +106,7 @@ struct NoteMathExpander {
         sourceLength = length
     }
 
-    static func expand(_ source: String) throws(NoteMathParseError) -> NoteMathSource {
+    package static func expand(_ source: String) throws(NoteMathParseError) -> NoteMathSource {
         let tokens = tokenize(source, start: 0, invocation: nil)
         let wanted = tokens.contains { token in
             if case .control(let name) = token.kind { return triggers.contains(name) }
@@ -104,7 +118,7 @@ struct NoteMathExpander {
         return NoteMathSource(characters: expander.characters, origins: expander.origins, length: expander.sourceLength)
     }
 
-    static func tokenize(_ text: String, start: Int, invocation: Range<Int>?) -> [Token] {
+    package static func tokenize(_ text: String, start: Int, invocation: Range<Int>?) -> [Token] {
         let characters = Array(text)
         var result: [Token] = []
         var index = 0

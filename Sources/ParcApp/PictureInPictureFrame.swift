@@ -1,4 +1,5 @@
 import AppKit
+import ParcEngine
 
 enum PictureInPictureFrame {
     static let cornerRadius: CGFloat = 6

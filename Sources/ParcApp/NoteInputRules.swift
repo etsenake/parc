@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 struct NoteBlockShortcut: Hashable {
     var conversion: NoteBlockConversion

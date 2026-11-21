@@ -1,23 +1,35 @@
 import Foundation
 
-enum CommandBarHistoryScanSkip {
-    struct Key: Equatable {
-        var query: String
-        var historyRevision: UInt64
-        var excludedURL: String
-        var tabIdentityFingerprint: String
+package enum CommandBarHistoryScanSkip {
+    package struct Key: Equatable {
+        package var query: String
+        package var historyRevision: UInt64
+        package var excludedURL: String
+        package var tabIdentityFingerprint: String
+
+        package init(query: String, historyRevision: UInt64, excludedURL: String, tabIdentityFingerprint: String) {
+            self.query = query
+            self.historyRevision = historyRevision
+            self.excludedURL = excludedURL
+            self.tabIdentityFingerprint = tabIdentityFingerprint
+        }
     }
 
-    struct Visit: Equatable {
-        var url: String
-        var title: String
+    package struct Visit: Equatable {
+        package var url: String
+        package var title: String
+
+        package init(url: String, title: String) {
+            self.url = url
+            self.title = title
+        }
     }
 
-    static func shouldReuse(previous: Key?, next: Key) -> Bool {
+    package static func shouldReuse(previous: Key?, next: Key) -> Bool {
         previous == next
     }
 
-    static func key(
+    package static func key(
         query: String,
         historyRevision: UInt64,
         excludedURL: String?,
@@ -32,15 +44,15 @@ enum CommandBarHistoryScanSkip {
         )
     }
 
-    static func tabIdentityFingerprint(urls: [String]) -> String {
+    package static func tabIdentityFingerprint(urls: [String]) -> String {
         urls.joined(separator: "\u{1f}")
     }
 
-    static func historyMembershipToken(revision: UInt64, excludedURL: String?) -> String {
+    package static func historyMembershipToken(revision: UInt64, excludedURL: String?) -> String {
         "rev:\(revision)\u{1f}ex:\(excludedURL ?? "-")"
     }
 
-    static func emptyQueryVisits(
+    package static func emptyQueryVisits(
         rankedURLsAndTitles: [(url: String, title: String)],
         tabURLs: Set<String>,
         tabPages: Set<String> = [],

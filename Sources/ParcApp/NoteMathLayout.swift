@@ -1,5 +1,6 @@
 import AppKit
 import CoreText
+import ParcCore
 
 enum NoteMathInkColor {
     case inherited

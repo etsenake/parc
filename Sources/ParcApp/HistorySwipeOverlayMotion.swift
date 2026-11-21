@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ParcCore
 
 enum HistorySwipeOverlayMetrics {
     static let restingDiameter: CGFloat = 72

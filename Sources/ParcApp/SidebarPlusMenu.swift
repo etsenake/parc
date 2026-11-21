@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 @MainActor enum SidebarPlusMenuArtwork {
     static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("SidebarPlusMenu", isDirectory: true)

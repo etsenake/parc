@@ -1,22 +1,38 @@
 import Compression
 import Foundation
 
-struct SafariBrowsingExport {
-    struct Profile: Equatable {
-        let name: String?
-        let directory: URL
+package struct SafariBrowsingExport {
+    package struct Profile: Equatable {
+        package let name: String?
+        package let directory: URL
+
+        package init(name: String?, directory: URL) {
+            self.name = name
+            self.directory = directory
+        }
     }
 
-    let directory: URL
-    let profiles: [Profile]
-    let bookmarks: [BrowserImportBookmark]
-    let passwordsFile: URL?
-    let paymentCardsFile: URL?
-    let includesPaymentCards: Bool
-    let includesExtensions: Bool
-    let skippedParts: Int
+    package let directory: URL
+    package let profiles: [Profile]
+    package let bookmarks: [BrowserImportBookmark]
+    package let passwordsFile: URL?
+    package let paymentCardsFile: URL?
+    package let includesPaymentCards: Bool
+    package let includesExtensions: Bool
+    package let skippedParts: Int
 
-    static func open(_ archive: URL, temporaryRoot: URL = FileManager.default.temporaryDirectory) throws -> SafariBrowsingExport {
+    package init(directory: URL, profiles: [Profile], bookmarks: [BrowserImportBookmark], passwordsFile: URL?, paymentCardsFile: URL?, includesPaymentCards: Bool, includesExtensions: Bool, skippedParts: Int) {
+        self.directory = directory
+        self.profiles = profiles
+        self.bookmarks = bookmarks
+        self.passwordsFile = passwordsFile
+        self.paymentCardsFile = paymentCardsFile
+        self.includesPaymentCards = includesPaymentCards
+        self.includesExtensions = includesExtensions
+        self.skippedParts = skippedParts
+    }
+
+    package static func open(_ archive: URL, temporaryRoot: URL = FileManager.default.temporaryDirectory) throws -> SafariBrowsingExport {
         let zip = try SafariExportZip(contentsOf: archive)
         var histories: [(stem: String, entry: SafariExportZip.Entry, data: Data?)] = []
         var bookmarksEntry: SafariExportZip.Entry?
@@ -129,16 +145,16 @@ struct SafariBrowsingExport {
         }
     }
 
-    func removePaymentCards() {
+    package func removePaymentCards() {
         guard let paymentCardsFile else { return }
         try? FileManager.default.removeItem(at: paymentCardsFile)
     }
 
-    func removePasswords() {
+    package func removePasswords() {
         try? FileManager.default.removeItem(at: directory.appendingPathComponent("passwords", isDirectory: true))
     }
 
-    func remove() {
+    package func remove() {
         try? FileManager.default.removeItem(at: directory)
     }
 
@@ -226,6 +242,16 @@ private final class SafariExportZip {
         let compressedSize: UInt64
         let uncompressedSize: UInt64
         let localOffset: UInt64
+
+        package init(name: String, flags: UInt16, method: UInt16, crc: UInt32, compressedSize: UInt64, uncompressedSize: UInt64, localOffset: UInt64) {
+            self.name = name
+            self.flags = flags
+            self.method = method
+            self.crc = crc
+            self.compressedSize = compressedSize
+            self.uncompressedSize = uncompressedSize
+            self.localOffset = localOffset
+        }
     }
 
     static let archiveLimit: UInt64 = 1 << 30

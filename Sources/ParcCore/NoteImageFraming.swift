@@ -1,30 +1,30 @@
 import CoreGraphics
 import Foundation
 
-struct NoteImageCrop: Hashable, Codable {
-    var x: Double
-    var y: Double
-    var width: Double
-    var height: Double
+package struct NoteImageCrop: Hashable, Codable {
+    package var x: Double
+    package var y: Double
+    package var width: Double
+    package var height: Double
 
-    static let full = NoteImageCrop(x: 0, y: 0, width: 1, height: 1)
-    static let minimumSide = 0.01
-    static let precision = 10_000.0
+    package static let full = NoteImageCrop(x: 0, y: 0, width: 1, height: 1)
+    package static let minimumSide = 0.01
+    package static let precision = 10_000.0
 
-    init(x: Double, y: Double, width: Double, height: Double) {
+    package init(x: Double, y: Double, width: Double, height: Double) {
         self.x = x
         self.y = y
         self.width = width
         self.height = height
     }
 
-    init(_ rect: CGRect, in bounds: CGRect) {
+    package init(_ rect: CGRect, in bounds: CGRect) {
         guard bounds.width > 0, bounds.height > 0 else { self = .full; return }
         self = NoteImageCrop(x: Double((rect.minX - bounds.minX) / bounds.width), y: Double((rect.minY - bounds.minY) / bounds.height),
                              width: Double(rect.width / bounds.width), height: Double(rect.height / bounds.height)).normalized
     }
 
-    init?(attribute: String) {
+    package init?(attribute: String) {
         let parts = attribute.split(separator: ",", omittingEmptySubsequences: false)
             .map { Double($0.trimmingCharacters(in: .whitespaces)) }
         guard parts.count == 4, let x = parts[0], let y = parts[1], let width = parts[2], let height = parts[3],
@@ -32,7 +32,7 @@ struct NoteImageCrop: Hashable, Codable {
         self = NoteImageCrop(x: x, y: y, width: width, height: height).normalized
     }
 
-    var normalized: NoteImageCrop {
+    package var normalized: NoteImageCrop {
         func value(_ number: Double, _ fallback: Double) -> Double { number.isFinite ? number : fallback }
         let width = Self.rounded(min(1, max(Self.minimumSide, value(width, 1))))
         let height = Self.rounded(min(1, max(Self.minimumSide, value(height, 1))))
@@ -41,31 +41,31 @@ struct NoteImageCrop: Hashable, Codable {
         return NoteImageCrop(x: x, y: y, width: width, height: height)
     }
 
-    var isFull: Bool {
+    package var isFull: Bool {
         let tolerance = 0.5 / Self.precision
         return abs(x) <= tolerance && abs(y) <= tolerance && abs(width - 1) <= tolerance && abs(height - 1) <= tolerance
     }
 
-    var attribute: String { [x, y, width, height].map(Self.format).joined(separator: ",") }
+    package var attribute: String { [x, y, width, height].map(Self.format).joined(separator: ",") }
 
-    func rect(in bounds: CGRect) -> CGRect {
+    package func rect(in bounds: CGRect) -> CGRect {
         CGRect(x: bounds.minX + CGFloat(x) * bounds.width, y: bounds.minY + CGFloat(y) * bounds.height,
                width: CGFloat(width) * bounds.width, height: CGFloat(height) * bounds.height)
     }
 
-    func croppedSize(of natural: CGSize) -> CGSize {
+    package func croppedSize(of natural: CGSize) -> CGSize {
         CGSize(width: natural.width * CGFloat(width), height: natural.height * CGFloat(height))
     }
 
-    func fullRect(forFrame frame: CGRect) -> CGRect {
+    package func fullRect(forFrame frame: CGRect) -> CGRect {
         let fullWidth = frame.width / CGFloat(max(width, Self.minimumSide))
         let fullHeight = frame.height / CGFloat(max(height, Self.minimumSide))
         return CGRect(x: frame.minX - CGFloat(x) * fullWidth, y: frame.minY - CGFloat(y) * fullHeight, width: fullWidth, height: fullHeight)
     }
 
-    static func rounded(_ value: Double) -> Double { (value * precision).rounded() / precision }
+    package static func rounded(_ value: Double) -> Double { (value * precision).rounded() / precision }
 
-    static func format(_ value: Double) -> String {
+    package static func format(_ value: Double) -> String {
         var text = String(format: "%.4f", rounded(value))
         while text.hasSuffix("0") { text.removeLast() }
         if text.hasSuffix(".") { text.removeLast() }
@@ -73,10 +73,10 @@ struct NoteImageCrop: Hashable, Codable {
     }
 }
 
-enum NoteImageMask: String, Hashable, Codable, CaseIterable {
+package enum NoteImageMask: String, Hashable, Codable, CaseIterable {
     case rounded, circle, squircle, arch, diamond, hexagon, star, heart
 
-    var title: String {
+    package var title: String {
         switch self {
         case .rounded: return "Rounded"
         case .circle: return "Circle"
@@ -89,15 +89,15 @@ enum NoteImageMask: String, Hashable, Codable, CaseIterable {
         }
     }
 
-    static let noneTitle = "Original"
+    package static let noneTitle = "Original"
 
-    var isSquare: Bool { self != .rounded && self != .arch }
+    package var isSquare: Bool { self != .rounded && self != .arch }
 
-    static func roundedRadius(for size: CGSize) -> CGFloat { max(0, min(size.width, size.height)) * 0.1 }
+    package static func roundedRadius(for size: CGSize) -> CGFloat { max(0, min(size.width, size.height)) * 0.1 }
 
-    static func archRadius(for size: CGSize) -> CGFloat { max(0, min(size.width / 2, size.height)) }
+    package static func archRadius(for size: CGSize) -> CGFloat { max(0, min(size.width / 2, size.height)) }
 
-    func path(in rect: CGRect) -> CGPath {
+    package func path(in rect: CGRect) -> CGPath {
         guard rect.width > 0, rect.height > 0 else { return CGPath(rect: rect, transform: nil) }
         switch self {
         case .rounded:
@@ -122,7 +122,7 @@ enum NoteImageMask: String, Hashable, Codable, CaseIterable {
         }
     }
 
-    var unitPath: CGPath {
+    package var unitPath: CGPath {
         switch self {
         case .rounded, .circle, .arch: return path(in: CGRect(x: 0, y: 0, width: 1, height: 1))
         case .squircle: return Self.squirclePath
@@ -202,9 +202,9 @@ enum NoteImageMask: String, Hashable, Codable, CaseIterable {
         return path
     }()
 
-    var svgPathData: String { Self.svgData(unitPath) }
+    package var svgPathData: String { Self.svgData(unitPath) }
 
-    static func svgData(_ path: CGPath) -> String {
+    package static func svgData(_ path: CGPath) -> String {
         var parts: [String] = []
         func point(_ value: CGPoint) -> String { NoteImageCrop.format(Double(value.x)) + " " + NoteImageCrop.format(Double(value.y)) }
         path.applyWithBlock { element in
@@ -221,12 +221,12 @@ enum NoteImageMask: String, Hashable, Codable, CaseIterable {
         return parts.joined()
     }
 
-    var maskImageURL: String {
+    package var maskImageURL: String {
         let svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1' preserveAspectRatio='none'><path d='" + svgPathData + "'/></svg>"
         return "data:image/svg+xml," + svg.replacingOccurrences(of: "<", with: "%3C").replacingOccurrences(of: ">", with: "%3E")
     }
 
-    func borderRadius(frameAspect: Double?) -> String? {
+    package func borderRadius(frameAspect: Double?) -> String? {
         switch self {
         case .circle: return "50%"
         case .arch: return "9999px 9999px 0 0"
@@ -239,16 +239,16 @@ enum NoteImageMask: String, Hashable, Codable, CaseIterable {
     }
 }
 
-enum NoteImageCropHandle: CaseIterable, Hashable {
+package enum NoteImageCropHandle: CaseIterable, Hashable {
     case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
 
-    var movesLeft: Bool { self == .topLeft || self == .left || self == .bottomLeft }
-    var movesRight: Bool { self == .topRight || self == .right || self == .bottomRight }
-    var movesTop: Bool { self == .topLeft || self == .top || self == .topRight }
-    var movesBottom: Bool { self == .bottomLeft || self == .bottom || self == .bottomRight }
-    var isCorner: Bool { (movesLeft || movesRight) && (movesTop || movesBottom) }
+    package var movesLeft: Bool { self == .topLeft || self == .left || self == .bottomLeft }
+    package var movesRight: Bool { self == .topRight || self == .right || self == .bottomRight }
+    package var movesTop: Bool { self == .topLeft || self == .top || self == .topRight }
+    package var movesBottom: Bool { self == .bottomLeft || self == .bottom || self == .bottomRight }
+    package var isCorner: Bool { (movesLeft || movesRight) && (movesTop || movesBottom) }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .topLeft: return "top left corner"
         case .top: return "top edge"
@@ -262,10 +262,10 @@ enum NoteImageCropHandle: CaseIterable, Hashable {
     }
 }
 
-enum NoteImageCropAspect: Hashable, CaseIterable {
+package enum NoteImageCropAspect: Hashable, CaseIterable {
     case free, original, square, landscape43, portrait34, wide169, tall916
 
-    var id: String {
+    package var id: String {
         switch self {
         case .free: return "free"
         case .original: return "original"
@@ -277,7 +277,7 @@ enum NoteImageCropAspect: Hashable, CaseIterable {
         }
     }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .free: return "Freeform"
         case .original: return "Original"
@@ -289,7 +289,7 @@ enum NoteImageCropAspect: Hashable, CaseIterable {
         }
     }
 
-    func ratio(natural: CGSize?) -> CGFloat? {
+    package func ratio(natural: CGSize?) -> CGFloat? {
         switch self {
         case .free: return nil
         case .original:
@@ -304,14 +304,14 @@ enum NoteImageCropAspect: Hashable, CaseIterable {
     }
 }
 
-enum NoteImageCropGeometry {
-    static func move(_ rect: CGRect, by delta: CGSize, within bounds: CGRect) -> CGRect {
+package enum NoteImageCropGeometry {
+    package static func move(_ rect: CGRect, by delta: CGSize, within bounds: CGRect) -> CGRect {
         let x = min(max(bounds.minX, rect.minX + delta.width), bounds.maxX - rect.width)
         let y = min(max(bounds.minY, rect.minY + delta.height), bounds.maxY - rect.height)
         return CGRect(x: x, y: y, width: rect.width, height: rect.height)
     }
 
-    static func resize(_ start: CGRect, handle: NoteImageCropHandle, by delta: CGSize, within bounds: CGRect,
+    package static func resize(_ start: CGRect, handle: NoteImageCropHandle, by delta: CGSize, within bounds: CGRect,
                        minimum: CGFloat, aspect: CGFloat?) -> CGRect {
         let floor = min(minimum, bounds.width, bounds.height)
         guard let aspect, aspect.isFinite, aspect > 0 else {
@@ -353,7 +353,7 @@ enum NoteImageCropGeometry {
         return CGRect(x: x, y: handle.movesTop ? anchorY - height : anchorY, width: width, height: height)
     }
 
-    static func fitted(aspect: CGFloat, around rect: CGRect, within bounds: CGRect) -> CGRect {
+    package static func fitted(aspect: CGFloat, around rect: CGRect, within bounds: CGRect) -> CGRect {
         guard aspect.isFinite, aspect > 0, bounds.width > 0, bounds.height > 0 else { return rect }
         var size = bounds.width / bounds.height > aspect ? CGSize(width: bounds.height * aspect, height: bounds.height)
             : CGSize(width: bounds.width, height: bounds.width / aspect)
@@ -367,14 +367,14 @@ enum NoteImageCropGeometry {
         return CGRect(x: x, y: y, width: size.width, height: size.height)
     }
 
-    static func matches(_ rect: CGRect, aspect: CGFloat?) -> Bool {
+    package static func matches(_ rect: CGRect, aspect: CGFloat?) -> Bool {
         guard let aspect, rect.height > 0 else { return true }
         return abs(rect.width / rect.height - aspect) < 0.01
     }
 }
 
-enum NoteImageFraming {
-    static func squareCrop(_ crop: NoteImageCrop?, natural: CGSize?) -> NoteImageCrop? {
+package enum NoteImageFraming {
+    package static func squareCrop(_ crop: NoteImageCrop?, natural: CGSize?) -> NoteImageCrop? {
         guard let natural, natural.width > 0, natural.height > 0 else { return crop }
         let bounds = CGRect(origin: .zero, size: natural)
         let current = (crop ?? .full).rect(in: bounds)
@@ -385,14 +385,14 @@ enum NoteImageFraming {
         return result.isFull ? nil : result
     }
 
-    static func applying(_ mask: NoteImageMask?, to props: NoteBlockProps, natural: CGSize?) -> NoteBlockProps {
+    package static func applying(_ mask: NoteImageMask?, to props: NoteBlockProps, natural: CGSize?) -> NoteBlockProps {
         var next = props
         next.mask = mask
         if mask?.isSquare == true { next.crop = squareCrop(props.crop, natural: natural) }
         return next
     }
 
-    static func frameAspect(crop: NoteImageCrop?, natural: CGSize?) -> Double? {
+    package static func frameAspect(crop: NoteImageCrop?, natural: CGSize?) -> Double? {
         guard let natural, natural.width > 0, natural.height > 0 else { return nil }
         let size = (crop ?? .full).croppedSize(of: natural)
         guard size.width > 0 else { return nil }

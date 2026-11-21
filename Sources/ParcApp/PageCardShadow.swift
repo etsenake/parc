@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 enum PageCard {
     nonisolated(unsafe) private(set) static var cornerRadius: CGFloat = 6

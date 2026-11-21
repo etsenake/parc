@@ -1,26 +1,26 @@
 import Foundation
 
-struct EaselChord: Hashable {
-    enum Key: Hashable {
+package struct EaselChord: Hashable {
+    package enum Key: Hashable {
         case character(Character)
         case delete
         case returnKey
         case up, down, left, right
     }
 
-    let key: Key
-    let modifiers: EaselKeyModifiers
+    package let key: Key
+    package let modifiers: EaselKeyModifiers
 
-    init(_ key: Key, _ modifiers: EaselKeyModifiers) {
+    package init(_ key: Key, _ modifiers: EaselKeyModifiers) {
         self.key = key
         self.modifiers = modifiers.intersection([.shift, .control, .option, .command])
     }
 
-    init(_ character: Character, _ modifiers: EaselKeyModifiers) {
+    package init(_ character: Character, _ modifiers: EaselKeyModifiers) {
         self.init(.character(character), modifiers)
     }
 
-    init?(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers) {
+    package init?(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers) {
         switch keyCode {
         case 51, 117: self.init(.delete, modifiers)
         case 36, 76: self.init(.returnKey, modifiers)
@@ -34,7 +34,7 @@ struct EaselChord: Hashable {
         }
     }
 
-    static func character(characters: String?, keyCode: UInt16) -> Character? {
+    package static func character(characters: String?, keyCode: UInt16) -> Character? {
         if let letter = EaselKeyCommands.letter(characters: characters, keyCode: keyCode) { return letter }
         let typed = (characters ?? "").lowercased()
         if typed.count == 1, let first = typed.first, first.isASCII {
@@ -49,7 +49,7 @@ struct EaselChord: Hashable {
     ]
 }
 
-enum EaselChordCommand: Hashable {
+package enum EaselChordCommand: Hashable {
     case duplicate
     case group
     case ungroup
@@ -64,8 +64,8 @@ enum EaselChordCommand: Hashable {
     case mindMapSibling
 }
 
-enum EaselChords {
-    static let table: [EaselChord: EaselChordCommand] = [
+package enum EaselChords {
+    package static let table: [EaselChord: EaselChordCommand] = [
         EaselChord("d", .command): .duplicate,
         EaselChord("g", .command): .group,
         EaselChord("g", [.command, .shift]): .ungroup,
@@ -82,24 +82,24 @@ enum EaselChords {
         EaselChord(.returnKey, [.command, .shift]): .mindMapSibling,
     ]
 
-    static let reserved: [EaselChord] = [
+    package static let reserved: [EaselChord] = [
         EaselChord("l", .command), EaselChord("p", .command), EaselChord("k", .command),
         EaselChord("k", [.command, .shift]), EaselChord("c", [.command, .shift]),
         EaselChord(.up, [.command, .option]), EaselChord(.down, [.command, .option]),
     ]
 
-    static func command(for chord: EaselChord) -> EaselChordCommand? { table[chord] }
+    package static func command(for chord: EaselChord) -> EaselChordCommand? { table[chord] }
 
-    static func command(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers) -> EaselChordCommand? {
+    package static func command(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers) -> EaselChordCommand? {
         EaselChord(characters: characters, keyCode: keyCode, modifiers: modifiers).flatMap(command(for:))
     }
 
-    static func command(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers, stampArmed: Bool) -> EaselChordCommand? {
+    package static func command(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers, stampArmed: Bool) -> EaselChordCommand? {
         let found = command(characters: characters, keyCode: keyCode, modifiers: modifiers)
         return stampArmed && found == .quickCreate ? .stampSelection : found
     }
 
-    static func bareLayerMove(characters: String?, keyCode: UInt16) -> EaselLayerMove? {
+    package static func bareLayerMove(characters: String?, keyCode: UInt16) -> EaselLayerMove? {
         switch EaselChord.character(characters: characters, keyCode: keyCode) {
         case "]": return .front
         case "[": return .back
@@ -109,9 +109,9 @@ enum EaselChords {
 }
 
 extension EaselChords {
-    static func consults(canvasFocus: Bool, editorFocus: Bool) -> Bool { canvasFocus || editorFocus }
+    package static func consults(canvasFocus: Bool, editorFocus: Bool) -> Bool { canvasFocus || editorFocus }
 
-    static func applies(_ command: EaselChordCommand, selection: Set<UUID>, in document: EaselDocument) -> Bool {
+    package static func applies(_ command: EaselChordCommand, selection: Set<UUID>, in document: EaselDocument) -> Bool {
         let live = selection.intersection(Set(document.items.map(\.id)))
         switch command {
         case .duplicate, .toggleLock, .exportSelection: return !live.isEmpty

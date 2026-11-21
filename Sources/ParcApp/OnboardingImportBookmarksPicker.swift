@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 import SwiftUI
 
 struct OnboardingImportBookmarksPicker: View {

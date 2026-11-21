@@ -1,14 +1,14 @@
 import Foundation
 
-struct SidebarKeyboardCursor {
-    private(set) var highlightedID: String?
-    init(highlightedID: String?) { self.highlightedID = highlightedID }
+package struct SidebarKeyboardCursor {
+    package private(set) var highlightedID: String?
+    package init(highlightedID: String?) { self.highlightedID = highlightedID }
 
-    mutating func reconcile(_ ids: [String]) {
+    package mutating func reconcile(_ ids: [String]) {
         if let highlightedID, !ids.contains(highlightedID) { self.highlightedID = nil }
     }
 
-    mutating func move(_ delta: Int, in ids: [String]) {
+    package mutating func move(_ delta: Int, in ids: [String]) {
         reconcile(ids)
         guard !ids.isEmpty, delta != 0 else { return }
         guard let highlightedID, let index = ids.firstIndex(of: highlightedID) else {

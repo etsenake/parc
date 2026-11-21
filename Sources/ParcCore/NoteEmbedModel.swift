@@ -1,29 +1,29 @@
 import Foundation
 
-enum NoteEmbedSizing {
-    static let defaultHeight: Double = 420
-    static let minimumHeight: Double = 160
-    static let maximumHeight: Double = 1600
+package enum NoteEmbedSizing {
+    package static let defaultHeight: Double = 420
+    package static let minimumHeight: Double = 160
+    package static let maximumHeight: Double = 1600
 
-    static func clamped(_ height: Double?) -> Double {
+    package static func clamped(_ height: Double?) -> Double {
         guard let height, height.isFinite else { return defaultHeight }
         return min(maximumHeight, max(minimumHeight, height.rounded()))
     }
 
-    static func height(of props: NoteBlockProps) -> Double { clamped(props.height) }
+    package static func height(of props: NoteBlockProps) -> Double { clamped(props.height) }
 
-    static func resized(from start: Double?, by delta: Double) -> Double {
+    package static func resized(from start: Double?, by delta: Double) -> Double {
         clamped(clamped(start) + (delta.isFinite ? delta : 0))
     }
 
-    static func stored(_ height: Double) -> Double? {
+    package static func stored(_ height: Double) -> Double? {
         let value = clamped(height)
         return value == defaultHeight ? nil : value
     }
 }
 
-enum NoteEmbedAddress {
-    static func liveURL(for url: URL) -> URL {
+package enum NoteEmbedAddress {
+    package static func liveURL(for url: URL) -> URL {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               var host = components.host?.lowercased() else { return url }
@@ -62,7 +62,7 @@ enum NoteEmbedAddress {
         return url
     }
 
-    static func embedderReferrer(appID: String?) -> URL? {
+    package static func embedderReferrer(appID: String?) -> URL? {
         guard let appID = appID?.lowercased(), !appID.isEmpty, appID.count <= 253, !appID.hasPrefix("."), !appID.hasSuffix("."),
               appID.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-") }) else { return nil }
         return URL(string: "https://" + appID)

@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 enum EaselMindMapControl: Equatable {
     case add(EaselMindMapLink.Side)

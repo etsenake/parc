@@ -1,10 +1,10 @@
 import Foundation
 
-struct NativeRelaunchRequest {
-    enum Destination: Equatable { case url(URL), input(String) }
-    let destinations: [Destination]
+package struct NativeRelaunchRequest {
+    package enum Destination: Equatable { case url(URL), input(String) }
+    package let destinations: [Destination]
 
-    init(arguments: [String], currentDirectory: URL) {
+    package init(arguments: [String], currentDirectory: URL) {
         var result: [Destination] = []
         var index = 1
         var positionalOnly = false

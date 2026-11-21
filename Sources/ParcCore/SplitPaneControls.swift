@@ -1,16 +1,16 @@
 import Foundation
 
-enum SplitPaneOperation: Int, CaseIterable {
+package enum SplitPaneOperation: Int, CaseIterable {
     case movePrevious, moveNext, addBefore, addAfter, addAbove, addBelow, separate, copyLinks, flip
     case stackBefore, stackAfter, stackPrevious, stackNext
 
-    var addsToStack: Bool { self == .stackBefore || self == .stackAfter }
+    package var addsToStack: Bool { self == .stackBefore || self == .stackAfter }
 
-    func startsSplitView(paneCount: Int, isSplit: Bool) -> Bool {
+    package func startsSplitView(paneCount: Int, isSplit: Bool) -> Bool {
         self == .stackAfter && paneCount == 1 && !isSplit
     }
 
-    func isEnabled(index: Int, count: Int, layout: BrowserSplitLayout? = nil) -> Bool {
+    package func isEnabled(index: Int, count: Int, layout: BrowserSplitLayout? = nil) -> Bool {
         guard (0..<count).contains(index) else { return false }
         var slot = index, slots = count, place = 0, stack = 1
         if let layout, layout.tabIDs.count == count, let position = layout.position(of: layout.tabIDs[index]) {
@@ -30,17 +30,17 @@ enum SplitPaneOperation: Int, CaseIterable {
     }
 }
 
-struct SplitPaneInsertion: Equatable {
-    let spaceID: UUID
-    let profileID: UUID
-    let selection: [UUID]
-    let layout: BrowserSplitLayout?
-    let paneID: UUID
-    let index: Int
-    let orientation: SplitOrientation
-    let target: SplitDropTarget
+package struct SplitPaneInsertion: Equatable {
+    package let spaceID: UUID
+    package let profileID: UUID
+    package let selection: [UUID]
+    package let layout: BrowserSplitLayout?
+    package let paneID: UUID
+    package let index: Int
+    package let orientation: SplitOrientation
+    package let target: SplitDropTarget
 
-    init?(paneID: UUID, operation: SplitPaneOperation, state: BrowserState) {
+    package init?(paneID: UUID, operation: SplitPaneOperation, state: BrowserState) {
         if operation.addsToStack {
             guard let stacked = SplitPaneInsertion(paneID: paneID, stackingAfter: operation == .stackAfter, state: state) else { return nil }
             self = stacked
@@ -68,7 +68,7 @@ struct SplitPaneInsertion: Equatable {
         self.selection = selection; self.layout = layout; self.paneID = paneID
     }
 
-    init?(paneID: UUID, stackingAfter after: Bool, state: BrowserState) {
+    package init?(paneID: UUID, stackingAfter after: Bool, state: BrowserState) {
         let selection = state.selectedTabIDs
         guard let position = selection.firstIndex(of: paneID), (2...3).contains(selection.count),
               let space = state.spaces.first(where: { $0.id == state.activeSpaceID }),
@@ -81,7 +81,7 @@ struct SplitPaneInsertion: Equatable {
         self.selection = selection; self.layout = layout; self.paneID = paneID
     }
 
-    func isCurrent(in state: BrowserState) -> Bool {
+    package func isCurrent(in state: BrowserState) -> Bool {
         state.activeSpaceID == spaceID && state.selectedTabIDs == selection
             && state.spaces.contains { $0.id == spaceID && $0.profileID == profileID }
             && state.profiles.contains { $0.id == profileID }
@@ -91,20 +91,20 @@ struct SplitPaneInsertion: Equatable {
                     && ($0.spaceID == spaceID || $0.kind == .favorite) }) }
     }
 
-    var previewLayout: BrowserSplitLayout? {
+    package var previewLayout: BrowserSplitLayout? {
         guard let layout, layout.stacks != nil || target.isStack else { return nil }
         return SplitDropTransaction.make(source: UUID(), selection: selection, layout: layout, target: target,
                                          orientation: orientation, spaceID: layout.spaceID)
     }
 
-    var previewFactors: [Double] {
+    package var previewFactors: [Double] {
         if let preview = previewLayout { return preview.widthFactors }
         var factors = layout?.widthFactors ?? [1]
         factors.insert(1 / Double(selection.count), at: index)
         return BrowserSplitLayout.normalized(factors, count: factors.count)!
     }
 
-    func preparedState(_ state: BrowserState, tabID: UUID, navigationURL: URL?,
+    package func preparedState(_ state: BrowserState, tabID: UUID, navigationURL: URL?,
                        localPage: InternalPage? = nil, localTitle: String? = nil,
                        now: Date, creation: TabCreationProvenance?) -> BrowserState? {
         guard isCurrent(in: state), !selection.contains(tabID) else { return nil }

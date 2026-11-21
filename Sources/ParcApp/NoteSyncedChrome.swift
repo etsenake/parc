@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcCore
 
 extension NoteTheme {
     static let syncedAccent = adaptive("SyncedAccent", light: rgb(0xE0533A), dark: rgb(0xF2876C))

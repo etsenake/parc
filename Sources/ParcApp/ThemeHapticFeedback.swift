@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 enum ThemeHapticFeedback {
     static func shouldPerformNoise(from previous: Double, to current: Double,

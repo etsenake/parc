@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcCore
 
 enum DocumentCardChrome {
     static let side: CGFloat = 140

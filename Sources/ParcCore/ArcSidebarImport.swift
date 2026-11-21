@@ -1,22 +1,29 @@
 import Foundation
 
-struct ArcSidebarImport: Equatable {
-    enum ProfileKey: Hashable { case standard; case custom(directory: String) }
+package struct ArcSidebarImport: Equatable {
+    package enum ProfileKey: Hashable { case standard; case custom(directory: String) }
 
-    struct Tab: Equatable {
-        let title: String
-        let url: String
-        var customTitle: String? = nil
-        var isMuted = false
+    package struct Tab: Equatable {
+        package let title: String
+        package let url: String
+        package var customTitle: String? = nil
+        package var isMuted = false
+
+        package init(title: String, url: String, customTitle: String? = nil, isMuted: Bool = false) {
+            self.title = title
+            self.url = url
+            self.customTitle = customTitle
+            self.isMuted = isMuted
+        }
     }
 
-    indirect enum Item: Equatable {
+    package indirect enum Item: Equatable {
         case tab(Tab)
         case folder(title: String, icon: SidebarGroupIcon?, children: [Item])
         case split(title: String?, icon: SidebarGroupIcon?, tabs: [Tab], orientation: SplitOrientation, widthFactors: [Double])
         case stackedSplit(title: String?, icon: SidebarGroupIcon?, tabs: [Tab], orientation: SplitOrientation, stacks: BrowserSplitStacks)
 
-        var splitTabs: [Tab]? {
+        package var splitTabs: [Tab]? {
             switch self {
             case .split(_, _, let tabs, _, _), .stackedSplit(_, _, let tabs, _, _): return tabs
             case .tab, .folder: return nil
@@ -24,22 +31,32 @@ struct ArcSidebarImport: Equatable {
         }
     }
 
-    struct Space: Equatable {
-        let title: String?
-        let icon: SidebarGroupIcon?
-        let theme: SpaceTheme?
-        let profile: ProfileKey
-        let pinned: [Item]
-        var id: String? = nil
-        var today: [Item] = []
+    package struct Space: Equatable {
+        package let title: String?
+        package let icon: SidebarGroupIcon?
+        package let theme: SpaceTheme?
+        package let profile: ProfileKey
+        package let pinned: [Item]
+        package var id: String? = nil
+        package var today: [Item] = []
+
+        package init(title: String?, icon: SidebarGroupIcon?, theme: SpaceTheme?, profile: ProfileKey, pinned: [Item], id: String? = nil, today: [Item] = []) {
+            self.title = title
+            self.icon = icon
+            self.theme = theme
+            self.profile = profile
+            self.pinned = pinned
+            self.id = id
+            self.today = today
+        }
     }
 
-    let spaces: [Space]
-    let favorites: [ProfileKey: [Item]]
-    var autoArchiveHours: [ProfileKey: Double] = [:]
-    let skippedItemCount: Int
+    package let spaces: [Space]
+    package let favorites: [ProfileKey: [Item]]
+    package var autoArchiveHours: [ProfileKey: Double] = [:]
+    package let skippedItemCount: Int
 
-    var profiles: [ProfileKey] {
+    package var profiles: [ProfileKey] {
         let referenced = spaces.map(\.profile) + favoriteOrder
         var result: [ProfileKey] = []
         for key in (referenced.contains(.standard) ? [.standard] : []) + referenced where !result.contains(key) {
@@ -49,14 +66,14 @@ struct ArcSidebarImport: Equatable {
     }
     private let favoriteOrder: [ProfileKey]
 
-    static func profileKey(directory: String) -> ProfileKey {
+    package static func profileKey(directory: String) -> ProfileKey {
         directory == "Default" ? .standard : .custom(directory: directory)
     }
 
-    static let maximumDepth = 128
-    static let maximumItems = 50_000
+    package static let maximumDepth = 128
+    package static let maximumItems = 50_000
 
-    init(data: Data) throws {
+    package init(data: Data) throws {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let containers = (root["sidebar"] as? [String: Any])?["containers"] as? [Any],
               let container = containers.lazy.compactMap({ $0 as? [String: Any] }).first(where: { $0["spaces"] is [Any] }) else {
@@ -101,7 +118,7 @@ struct ArcSidebarImport: Equatable {
         return nil
     }
 
-    static func autoArchiveHours(preferences: [String: Any], profiles: [ProfileKey]) -> [ProfileKey: Double] {
+    package static func autoArchiveHours(preferences: [String: Any], profiles: [ProfileKey]) -> [ProfileKey: Double] {
         func hours(_ value: Any?) -> Double? {
             let name = value as? String ?? (value as? [String: Any]).flatMap { $0.count == 1 ? $0.keys.first : nil }
             switch name {
@@ -130,7 +147,7 @@ struct ArcSidebarImport: Equatable {
         return result
     }
 
-    static func profile(_ value: Any?) -> ProfileKey? {
+    package static func profile(_ value: Any?) -> ProfileKey? {
         guard let value = value as? [String: Any] else { return nil }
         if value["default"] != nil { return .standard }
         guard let id = (value["custom"] as? [String: Any])?["_0"] as? [String: Any],
@@ -140,7 +157,7 @@ struct ArcSidebarImport: Equatable {
         return profileKey(directory: directory)
     }
 
-    static func icon(_ value: Any?) -> SidebarGroupIcon? {
+    package static func icon(_ value: Any?) -> SidebarGroupIcon? {
         guard let value = value as? [String: Any] else { return nil }
         let icon: SidebarGroupIcon?
         if let emoji = value["emoji_v2"] as? String { icon = .emoji(emoji) }
@@ -153,7 +170,7 @@ struct ArcSidebarImport: Equatable {
         return icon?.isValid == true ? icon : nil
     }
 
-    static func theme(_ value: Any) -> SpaceTheme? {
+    package static func theme(_ value: Any) -> SpaceTheme? {
         if value is NSNull { return SpaceTheme() }
         guard let background = value as? [String: Any],
               let based = background["background"] as? [String: Any],
@@ -191,7 +208,7 @@ struct ArcSidebarImport: Equatable {
         return theme.isValid ? theme : nil
     }
 
-    static func color(_ value: Any?) -> ThemeColor? {
+    package static func color(_ value: Any?) -> ThemeColor? {
         guard let value = value as? [String: Any],
               let red = value["red"] as? Double, let green = value["green"] as? Double,
               let blue = value["blue"] as? Double, [red, green, blue].allSatisfy(\.isFinite) else { return nil }
@@ -375,12 +392,17 @@ struct ArcSidebarImport: Equatable {
 }
 
 extension ArcSidebarImport {
-    struct Result {
-        var state: BrowserState
-        var destinations: [ProfileKey: BrowserImportDestination]
+    package struct Result {
+        package var state: BrowserState
+        package var destinations: [ProfileKey: BrowserImportDestination]
+
+        package init(state: BrowserState, destinations: [ProfileKey: BrowserImportDestination]) {
+            self.state = state
+            self.destinations = destinations
+        }
     }
 
-    func inserting(into state: BrowserState, profiles: [(key: ProfileKey, name: String)],
+    package func inserting(into state: BrowserState, profiles: [(key: ProfileKey, name: String)],
                    standardProfileID: UUID, target: (key: ProfileKey, profileID: UUID)? = nil, at date: Date) throws -> Result {
         func live(_ id: UUID) -> Bool {
             state.profiles.contains { $0.id == id } && !state.profileRemovals.contains { $0.profileID == id }

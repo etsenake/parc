@@ -1,22 +1,22 @@
 import Foundation
 
-enum NoteLinkClick: Equatable, CaseIterable {
+package enum NoteLinkClick: Equatable, CaseIterable {
     case plain
     case shift
     case modified
 }
 
-enum NoteLinkFollowRoute: Equatable {
+package enum NoteLinkFollowRoute: Equatable {
     case peek
     case usual
 }
 
 extension NoteLinkClick {
-    init(shift: Bool, command: Bool, option: Bool, control: Bool) {
+    package init(shift: Bool, command: Bool, option: Bool, control: Bool) {
         if command || option || control { self = .modified } else { self = shift ? .shift : .plain }
     }
 
-    func route(for url: URL, automaticPeek: Bool, shiftPeek: Bool) -> NoteLinkFollowRoute {
+    package func route(for url: URL, automaticPeek: Bool, shiftPeek: Bool) -> NoteLinkFollowRoute {
         guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host?.isEmpty == false else { return .usual }
         switch self {
         case .plain: return automaticPeek ? .peek : .usual

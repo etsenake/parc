@@ -1,11 +1,11 @@
 import Foundation
 
-struct NoteMDWriter {
-    let reader: NoteMDReader
-    let inline: NoteMDInlineWriter
-    let portable: Bool
+package struct NoteMDWriter {
+    package let reader: NoteMDReader
+    package let inline: NoteMDInlineWriter
+    package let portable: Bool
 
-    init(page: NotePage, customEmoji: Set<String> = [], portable: Bool = false) {
+    package init(page: NotePage, customEmoji: Set<String> = [], portable: Bool = false) {
         self.portable = portable
         var references: [String: NoteMDLinkReference] = [:]
         var labels: [String: String] = [:]
@@ -39,7 +39,7 @@ struct NoteMDWriter {
         inline = NoteMDInlineWriter(reader: reader, referenceLabels: labels, portable: portable)
     }
 
-    func write(_ page: NotePage) -> String {
+    package func write(_ page: NotePage) -> String {
         let front = NoteMDFrontMatter.write(page.settings)
         var body = sequence(page.blocks, frame: front == nil ? .document : .documentAfterFrontMatter)
         if front == nil, let first = body.first, NoteMDFrontMatter.split(Array((body.joined(separator: "\n") + "\n").utf8)) != nil {
@@ -50,11 +50,11 @@ struct NoteMDWriter {
         return output
     }
 
-    enum Frame {
+    package enum Frame {
         case document, documentAfterFrontMatter, container(leading: Int, trailing: Int), listItem(leading: Int)
     }
 
-    static func isBareEmptyParagraph(_ block: NoteBlock) -> Bool {
+    package static func isBareEmptyParagraph(_ block: NoteBlock) -> Bool {
         block.kind == .paragraph && block.text.isEmpty && block.color == nil && block.children.isEmpty && block.props.anchor == nil
     }
 
@@ -72,7 +72,7 @@ struct NoteMDWriter {
         return "b" + (block.props.bulletMarker.flatMap { ["*", "+", "-"].contains($0) ? $0 : nil } ?? "-")
     }
 
-    func sequence(_ blocks: [NoteBlock], frame: Frame) -> [String] {
+    package func sequence(_ blocks: [NoteBlock], frame: Frame) -> [String] {
         var lines: [String] = []
         var empties = 0
         var placedAny = false
@@ -177,7 +177,7 @@ struct NoteMDWriter {
         return lines
     }
 
-    func attributes(_ items: [(String, String?)]) -> String {
+    package func attributes(_ items: [(String, String?)]) -> String {
         guard !items.isEmpty, !portable else { return "" }
         var result = "<!-- parc"
         for (name, value) in items {
@@ -187,7 +187,7 @@ struct NoteMDWriter {
         return result + " -->"
     }
 
-    func blockAttributes(_ block: NoteBlock) -> [(String, String?)] {
+    package func blockAttributes(_ block: NoteBlock) -> [(String, String?)] {
         var items: [(String, String?)] = []
         guard !portable else { return items }
         if let color = block.color { items.append(("color", NoteMDColor.name(color))) }
@@ -195,7 +195,7 @@ struct NoteMDWriter {
         return items
     }
 
-    func suffix(_ items: [(String, String?)]) -> String {
+    package func suffix(_ items: [(String, String?)]) -> String {
         let text = attributes(items)
         return text.isEmpty ? "" : " " + text
     }
@@ -218,9 +218,9 @@ struct NoteMDWriter {
         return standalone ? Self.leadingParagraph(lines) : lines
     }
 
-    static let paragraphLeadIn = "<b></b>"
+    package static let paragraphLeadIn = "<b></b>"
 
-    static func endsWithAttributeComment(_ text: NoteText) -> Bool {
+    package static func endsWithAttributeComment(_ text: NoteText) -> Bool {
         guard text.length > 0, case .raw(let source)? = text.marks(at: text.length - 1).atom else { return false }
         return NoteMDAttributes.parse(source) != nil
     }
@@ -231,7 +231,7 @@ struct NoteMDWriter {
         return Self.endsWithAttributeComment(text) ? (true, " " + comment([])) : (false, "")
     }
 
-    static func needsLeadIn(_ line: String) -> Bool {
+    package static func needsLeadIn(_ line: String) -> Bool {
         guard let byte = line.utf8.first, NoteMDBlockParser.mayOpenBlock(byte) else { return false }
         return !startsParagraph(line)
     }
@@ -241,12 +241,12 @@ struct NoteMDWriter {
         return [paragraphLeadIn + first] + lines.dropFirst()
     }
 
-    static func startsHTMLBlock(_ line: String) -> Bool {
+    package static func startsHTMLBlock(_ line: String) -> Bool {
         let bytes = Array(line.utf8)
         return NoteMDHTML.blockStart(bytes, from: 0, upTo: bytes.count, interruptsParagraph: false) != nil
     }
 
-    static func writesAsParagraph(_ block: NoteBlock?) -> Bool {
+    package static func writesAsParagraph(_ block: NoteBlock?) -> Bool {
         guard let block else { return false }
         switch block.kind {
         case .paragraph, .pageLink, .image, .video, .audio, .file, .pdf, .embed, .easel, .bookmark: return true
@@ -300,11 +300,11 @@ struct NoteMDWriter {
         return lines + ["", fence + " " + NoteMDDirective.indent] + sequence(children, frame: .container(leading: 0, trailing: 0)) + [fence]
     }
 
-    static func writesIndent(_ block: NoteBlock) -> Bool {
+    package static func writesIndent(_ block: NoteBlock) -> Bool {
         !block.children.isEmpty && (block.kind == .paragraph || (block.kind == .heading && !block.props.toggleable))
     }
 
-    static func directiveDepth(_ blocks: [NoteBlock]) -> Int {
+    package static func directiveDepth(_ blocks: [NoteBlock]) -> Int {
         blocks.reduce(0) { deepest, block in
             let own: Int
             switch block.kind {
@@ -322,7 +322,7 @@ struct NoteMDWriter {
         return text.isEmpty ? [] : [text]
     }
 
-    static func isThematicBreak(_ value: String) -> Bool {
+    package static func isThematicBreak(_ value: String) -> Bool {
         let trimmed = value.trimmingCharacters(in: .whitespaces)
         guard trimmed == value, let first = trimmed.first, "*-_".contains(first) else { return false }
         return trimmed.allSatisfy { $0 == first || $0 == " " || $0 == "\t" } && trimmed.filter({ $0 == first }).count >= 3
@@ -468,7 +468,7 @@ struct NoteMDWriter {
         return inner.map { $0.isEmpty ? ">" : "> " + $0 }
     }
 
-    static func startsParagraph(_ line: String) -> Bool {
+    package static func startsParagraph(_ line: String) -> Bool {
         NoteMDBlockParser.startsParagraph(Array(line.utf8)[...])
     }
 
@@ -504,7 +504,7 @@ struct NoteMDWriter {
         return [fence + separator + Self.escapeInfo(info)] + (text.isEmpty ? [] : lines) + [fence] + trailingAttributes(items)
     }
 
-    static func writesIndentedCode(_ block: NoteBlock, afterList: Bool) -> Bool {
+    package static func writesIndentedCode(_ block: NoteBlock, afterList: Bool) -> Bool {
         guard block.kind == .code, block.props.fence == "    ", !afterList, block.props.language.isEmpty, block.props.info == nil,
               block.props.caption.isEmpty, !block.props.wrap, block.color == nil, !(block.props.anchor.map(NoteAnchor.isValid) ?? false) else { return false }
         let lines = block.text.string.components(separatedBy: "\n")
@@ -523,7 +523,7 @@ struct NoteMDWriter {
         return result
     }
 
-    static func fence(for text: String, preferred: String?, info: String) -> String {
+    package static func fence(for text: String, preferred: String?, info: String) -> String {
         var character: Character = preferred?.first == "~" ? "~" : "`"
         if character == "`", info.contains("`") { character = "~" }
         var longest = 0
@@ -549,7 +549,7 @@ struct NoteMDWriter {
         return ["$$"] + (text.isEmpty ? [] : lines) + ["$$"] + trailingAttributes(items)
     }
 
-    static func equationNeedsFence(_ text: String) -> Bool {
+    package static func equationNeedsFence(_ text: String) -> Bool {
         text.components(separatedBy: "\n").contains { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             return trimmed.hasSuffix("$$") || trimmed.hasPrefix("$$")
@@ -682,7 +682,7 @@ struct NoteMDWriter {
         return lines + trailingAttributes(blockAttributes(block))
     }
 
-    static func number(_ value: Double) -> String {
+    package static func number(_ value: Double) -> String {
         if value == value.rounded(), abs(value) < 1e15 { return String(Int64(value)) }
         return "\(value)"
     }

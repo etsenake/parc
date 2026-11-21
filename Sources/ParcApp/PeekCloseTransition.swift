@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 struct PeekCloseTransition: Equatable {
     enum Phase: Equatable {

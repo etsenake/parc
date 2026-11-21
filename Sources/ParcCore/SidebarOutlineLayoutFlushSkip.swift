@@ -1,5 +1,5 @@
-enum SidebarOutlineLayoutFlushSkip {
-    static func shouldFlush(
+package enum SidebarOutlineLayoutFlushSkip {
+    package static func shouldFlush(
         frameChanged: Bool = false,
         needsLayout: Bool,
         subtreeNeedsLayout: Bool

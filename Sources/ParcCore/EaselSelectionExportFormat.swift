@@ -1,10 +1,10 @@
 import Foundation
 import UniformTypeIdentifiers
 
-enum EaselSelectionExportFormat: String, CaseIterable {
+package enum EaselSelectionExportFormat: String, CaseIterable {
     case image, pdf, html, stickies
 
-    var title: String {
+    package var title: String {
         switch self {
         case .image: return "Image…"
         case .pdf: return "PDF…"
@@ -13,7 +13,7 @@ enum EaselSelectionExportFormat: String, CaseIterable {
         }
     }
 
-    var symbol: String {
+    package var symbol: String {
         switch self {
         case .image: return "photo"
         case .pdf: return "doc.richtext"
@@ -22,7 +22,7 @@ enum EaselSelectionExportFormat: String, CaseIterable {
         }
     }
 
-    var contentTypes: [UTType] {
+    package var contentTypes: [UTType] {
         switch self {
         case .image: return [.png, .jpeg]
         case .pdf: return [.pdf]
@@ -31,7 +31,7 @@ enum EaselSelectionExportFormat: String, CaseIterable {
         }
     }
 
-    var fileExtension: String {
+    package var fileExtension: String {
         switch self {
         case .image: return "png"
         case .pdf: return "pdf"

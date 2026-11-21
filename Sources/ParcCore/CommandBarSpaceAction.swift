@@ -1,23 +1,32 @@
 import Foundation
 
-struct CommandBarSpaceAction: Equatable, Identifiable {
-    let spaceID: UUID
-    let profileID: UUID
-    let name: String
-    let symbol: String
-    let position: Int
-    let needsPositionLabel: Bool
+package struct CommandBarSpaceAction: Equatable, Identifiable {
+    package let spaceID: UUID
+    package let profileID: UUID
+    package let name: String
+    package let symbol: String
+    package let position: Int
+    package let needsPositionLabel: Bool
 
-    var id: String { "focus-space:\(profileID.uuidString):\(spaceID.uuidString)" }
-    var title: String { "Focus on" }
-    var detail: String { needsPositionLabel ? "Space \(position)" : "" }
+    package var id: String { "focus-space:\(profileID.uuidString):\(spaceID.uuidString)" }
+    package var title: String { "Focus on" }
+    package var detail: String { needsPositionLabel ? "Space \(position)" : "" }
 
-    func isCurrent(spaces: [BrowserSpace], profiles: [BrowserProfile]) -> Bool {
+    package init(spaceID: UUID, profileID: UUID, name: String, symbol: String, position: Int, needsPositionLabel: Bool) {
+        self.spaceID = spaceID
+        self.profileID = profileID
+        self.name = name
+        self.symbol = symbol
+        self.position = position
+        self.needsPositionLabel = needsPositionLabel
+    }
+
+    package func isCurrent(spaces: [BrowserSpace], profiles: [BrowserProfile]) -> Bool {
         profiles.contains { $0.id == profileID }
             && spaces.contains { $0.id == spaceID && $0.profileID == profileID }
     }
 
-    static func snapshot(spaces: [BrowserSpace], profiles: [BrowserProfile]) -> [Self] {
+    package static func snapshot(spaces: [BrowserSpace], profiles: [BrowserProfile]) -> [Self] {
         let names = Dictionary(grouping: spaces, by: { normalized($0.name) })
         return spaces.enumerated().compactMap { offset, space in
             guard profiles.contains(where: { $0.id == space.profileID }) else { return nil }
@@ -27,7 +36,7 @@ struct CommandBarSpaceAction: Equatable, Identifiable {
         }
     }
 
-    static func matching(_ actions: [Self], query: String) -> [Self] {
+    package static func matching(_ actions: [Self], query: String) -> [Self] {
         let query = normalized(query).trimmingCharacters(in: .whitespacesAndNewlines)
         let words = query.split(whereSeparator: \.isWhitespace)
         guard !words.isEmpty else { return [] }

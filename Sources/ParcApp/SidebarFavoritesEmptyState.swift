@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 import QuartzCore
 
 final class FavoritesEmptyStateView: NSView {

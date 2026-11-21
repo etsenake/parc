@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ParcCore
 import UniformTypeIdentifiers
 
 enum NoteMediaEdge: Hashable {

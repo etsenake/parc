@@ -1,5 +1,5 @@
-enum SplitLayoutFlushSkip {
-    static func shouldFlush(
+package enum SplitLayoutFlushSkip {
+    package static func shouldFlush(
         frameChanged: Bool = false,
         needsLayout: Bool,
         subtreeNeedsLayout: Bool
@@ -7,7 +7,7 @@ enum SplitLayoutFlushSkip {
         frameChanged || needsLayout || subtreeNeedsLayout
     }
 
-    static func shouldApplyDividerMove(factorsChanged: Bool, alreadyMoved: Bool) -> Bool {
+    package static func shouldApplyDividerMove(factorsChanged: Bool, alreadyMoved: Bool) -> Bool {
         factorsChanged || !alreadyMoved
     }
 }

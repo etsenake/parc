@@ -1,8 +1,8 @@
 import Foundation
 
 @MainActor
-final class NoteCrossNoteMove {
-    typealias Access = @MainActor (_ body: (NotePageSession) -> Void) -> Bool
+package final class NoteCrossNoteMove {
+    package typealias Access = @MainActor (_ body: (NotePageSession) -> Void) -> Bool
 
     private enum Side { case source, target }
 
@@ -13,10 +13,10 @@ final class NoteCrossNoteMove {
     private var originals: [NoteBlock]
     private var placements: [NoteInsertion]
     private var copies: [NoteBlock]
-    private(set) var isApplied = false
+    package private(set) var isApplied = false
 
-    var originalIDs: [NoteBlockID] { originals.map(\.id) }
-    var copyIDs: [NoteBlockID] { copies.map(\.id) }
+    package var originalIDs: [NoteBlockID] { originals.map(\.id) }
+    package var copyIDs: [NoteBlockID] { copies.map(\.id) }
 
     private init(name: String, originals: [NoteBlock], placements: [NoteInsertion], source: @escaping Access, target: @escaping Access) {
         self.name = name
@@ -67,7 +67,7 @@ final class NoteCrossNoteMove {
         }
     }
 
-    static func perform(_ ids: [NoteBlockID], from session: NotePageSession, name: String,
+    package static func perform(_ ids: [NoteBlockID], from session: NotePageSession, name: String,
                         target: @escaping Access, source: Access? = nil) -> NoteCrossNoteMove? {
         let page = session.page
         let top = page.topLevelSelection(ids)

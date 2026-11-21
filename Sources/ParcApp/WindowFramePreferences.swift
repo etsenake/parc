@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import CoreGraphics
+import ParcCore
 
 @MainActor
 final class WindowFramePreferences: ObservableObject {

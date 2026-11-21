@@ -1,19 +1,19 @@
 import Foundation
 
-enum EaselObjectLink {
-    static let badgeSize = 18.0
-    static let badgeOffset = 14.0
+package enum EaselObjectLink {
+    package static let badgeSize = 18.0
+    package static let badgeOffset = 14.0
 
-    static func canLink(_ item: EaselItem) -> Bool { item.kind.holdsText }
+    package static func canLink(_ item: EaselItem) -> Bool { item.kind.holdsText }
 
-    static func hasLink(_ item: EaselItem) -> Bool { item.url != nil && canLink(item) }
+    package static func hasLink(_ item: EaselItem) -> Bool { item.url != nil && canLink(item) }
 
-    static func link(of item: EaselItem) -> URL? {
+    package static func link(of item: EaselItem) -> URL? {
         guard canLink(item), let raw = item.url, let safe = normalized(raw), let url = URL(string: safe) else { return nil }
         return url
     }
 
-    static func normalized(_ raw: String) -> String? {
+    package static func normalized(_ raw: String) -> String? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.utf8.count <= 16_384, !text.contains(where: { $0.isWhitespace }) else { return nil }
         let explicit = text.range(of: "^[A-Za-z][A-Za-z0-9+.-]*://", options: .regularExpression) != nil
@@ -24,7 +24,7 @@ enum EaselObjectLink {
         return url.absoluteString
     }
 
-    static func linking(_ document: EaselDocument, id: UUID, to raw: String?) -> EaselDocument? {
+    package static func linking(_ document: EaselDocument, id: UUID, to raw: String?) -> EaselDocument? {
         guard let index = document.items.firstIndex(where: { $0.id == id }) else { return nil }
         let item = document.items[index]
         guard canLink(item), !item.isLocked else { return nil }
@@ -39,7 +39,7 @@ enum EaselObjectLink {
         return next
     }
 
-    static func badgeRect(for frame: EaselRect, scale: Double) -> EaselRect {
+    package static func badgeRect(for frame: EaselRect, scale: Double) -> EaselRect {
         let scale = scale.isFinite && scale > 0 ? scale : 1
         let size = badgeSize / scale, offset = badgeOffset / scale
         let x = frame.x + frame.width + offset - size / 2
@@ -47,13 +47,13 @@ enum EaselObjectLink {
         return EaselRect(x: x, y: y, width: size, height: size)
     }
 
-    static func badgeAllowance(_ item: EaselItem, scale: Double) -> Double {
+    package static func badgeAllowance(_ item: EaselItem, scale: Double) -> Double {
         guard hasLink(item) else { return 0 }
         let scale = scale.isFinite && scale > 0 ? scale : 1
         return (badgeOffset + badgeSize) / scale
     }
 
-    static func item(at point: EaselPoint, in items: [EaselItem], scale: Double) -> EaselItem? {
+    package static func item(at point: EaselPoint, in items: [EaselItem], scale: Double) -> EaselItem? {
         items.reversed().first { item in
             hasLink(item) && EaselContentHitTest.contains(point, rect: badgeRect(for: EaselRotation.bounds(of: item), scale: scale)) && link(of: item) != nil
         }

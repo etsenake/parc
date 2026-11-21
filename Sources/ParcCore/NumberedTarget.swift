@@ -1,24 +1,24 @@
 import Foundation
 
-enum NumberedTarget {
-    static let excludeFavoritesKey = "excludeFavoritesInSwitchToNthTab"
-    static let ninthItemKey = "switchToNinthSidebarItemEnabled"
-    static let numbers = 1...9
+package enum NumberedTarget {
+    package static let excludeFavoritesKey = "excludeFavoritesInSwitchToNthTab"
+    package static let ninthItemKey = "switchToNinthSidebarItemEnabled"
+    package static let numbers = 1...9
 
-    static func itemBindingID(_ number: Int) -> String { "item\(number)" }
-    static func spaceBindingID(_ number: Int) -> String { "space\(number)" }
-    static func itemNumber(_ id: String) -> Int? {
+    package static func itemBindingID(_ number: Int) -> String { "item\(number)" }
+    package static func spaceBindingID(_ number: Int) -> String { "space\(number)" }
+    package static func itemNumber(_ id: String) -> Int? {
         guard let value = number(id, prefix: "item"), numbers.contains(value) else { return nil }
         return value
     }
-    static func spaceNumber(_ id: String) -> Int? { number(id, prefix: "space") }
+    package static func spaceNumber(_ id: String) -> Int? { number(id, prefix: "space") }
     private static func number(_ id: String, prefix: String) -> Int? {
         guard id.hasPrefix(prefix), let value = Int(id.dropFirst(prefix.count)),
               value > 0, id == prefix + String(value) else { return nil }
         return value
     }
 
-    static func description(for id: String, excludeFavorites: Bool, ninthItemEnabled: Bool) -> String? {
+    package static func description(for id: String, excludeFavorites: Bool, ninthItemEnabled: Bool) -> String? {
         if let number = itemNumber(id) {
             if number == 9, !ninthItemEnabled { return "Jumps to the last item at the bottom of your Sidebar." }
             let ordinals = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth"]
@@ -33,7 +33,7 @@ enum NumberedTarget {
         return nil
     }
 
-    static func destination<Item>(_ items: [Item], number: Int, ninthItemEnabled: Bool) -> Item? {
+    package static func destination<Item>(_ items: [Item], number: Int, ninthItemEnabled: Bool) -> Item? {
         guard numbers.contains(number) else { return nil }
         if number == 9, !ninthItemEnabled { return items.last }
         return items.indices.contains(number - 1) ? items[number - 1] : nil

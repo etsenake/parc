@@ -1,5 +1,6 @@
 import AppKit
 import CoreText
+import ParcCore
 
 enum SidebarIconCatalog {
     enum Font: String { case ionicons, feather }

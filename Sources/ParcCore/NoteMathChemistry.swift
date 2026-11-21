@@ -1,6 +1,6 @@
 import Foundation
 
-enum NoteMathChemistry {
+package enum NoteMathChemistry {
     private static let arrows: [(text: String, command: String)] = [
         ("<=>>", "xrightequilibrium"), ("<<=>", "xleftequilibrium"), ("<-->", "xrightleftarrows"),
         ("<=>", "xrightleftharpoons"), ("<->", "xleftrightarrow"), ("->", "xrightarrow"), ("<-", "xleftarrow"),
@@ -8,12 +8,12 @@ enum NoteMathChemistry {
         ("\u{2194}", "xleftrightarrow"), ("\u{21CC}", "xrightleftharpoons"), ("\u{21C4}", "xrightleftarrows"),
     ]
 
-    static func formula(_ text: String) throws(NoteMathParseError) -> String {
+    package static func formula(_ text: String) throws(NoteMathParseError) -> String {
         var scanner = Scanner(Array(text))
         return try scanner.formula()
     }
 
-    static func units(_ text: String) throws(NoteMathParseError) -> String {
+    package static func units(_ text: String) throws(NoteMathParseError) -> String {
         var scanner = Scanner(Array(text))
         return try scanner.physicalUnits()
     }

@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension EaselDocumentExport {
     static func connectorArt(_ item: EaselItem, lookup: [UUID: EaselItem], into art: inout EaselVectorArt) {

@@ -1,10 +1,10 @@
 import Foundation
 
-enum SplitPaneResize {
-    static let step = 0.1
-    static let snapTolerance = 0.01
+package enum SplitPaneResize {
+    package static let step = 0.1
+    package static let snapTolerance = 0.01
 
-    static func movingDivider(_ divider: Int, in shares: [Double], forward: Bool, minimum: Double) -> [Double]? {
+    package static func movingDivider(_ divider: Int, in shares: [Double], forward: Bool, minimum: Double) -> [Double]? {
         guard isValid(shares, minimum: minimum),
               shares.indices.contains(divider), shares.indices.contains(divider + 1) else { return nil }
         let pair = shares[divider] + shares[divider + 1]
@@ -17,7 +17,7 @@ enum SplitPaneResize {
         return BrowserSplitLayout.normalized(next, count: next.count)
     }
 
-    static func resizingPane(_ index: Int, in shares: [Double], growing: Bool, minimum: Double) -> [Double]? {
+    package static func resizingPane(_ index: Int, in shares: [Double], growing: Bool, minimum: Double) -> [Double]? {
         guard isValid(shares, minimum: minimum), shares.indices.contains(index) else { return nil }
         let current = shares[index], center = 1 / Double(shares.count)
         let others = shares.indices.filter { $0 != index }
@@ -39,11 +39,11 @@ enum SplitPaneResize {
         return BrowserSplitLayout.normalized(next, count: next.count)
     }
 
-    static func equal(count: Int) -> [Double]? {
+    package static func equal(count: Int) -> [Double]? {
         BrowserSplitLayout.normalized(Array(repeating: 1, count: count), count: count)
     }
 
-    static func isEqual(_ factors: [Double]) -> Bool {
+    package static func isEqual(_ factors: [Double]) -> Bool {
         guard let shares = BrowserSplitLayout.normalized(factors, count: factors.count) else { return false }
         return shares.allSatisfy { abs($0 - 1 / Double(shares.count)) < 1e-9 }
     }

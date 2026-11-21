@@ -1,5 +1,6 @@
 import AppKit
 import PDFKit
+import ParcCore
 
 @MainActor
 final class EaselCanvasPageState {

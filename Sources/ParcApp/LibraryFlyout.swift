@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcCore
 import QuickLookThumbnailing
 import SwiftUI
 import UniformTypeIdentifiers

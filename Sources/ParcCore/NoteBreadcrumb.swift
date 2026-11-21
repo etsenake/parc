@@ -1,33 +1,39 @@
 import Foundation
 
-struct NoteBreadcrumbSegment: Hashable, Sendable {
-    enum Kind: String, Hashable, Sendable {
+package struct NoteBreadcrumbSegment: Hashable, Sendable {
+    package enum Kind: String, Hashable, Sendable {
         case notes, home, volume, folder, note
     }
 
-    var kind: Kind
-    var name: String
-    var url: URL
+    package var kind: Kind
+    package var name: String
+    package var url: URL
 
-    var isFolder: Bool { kind != .note }
+    package var isFolder: Bool { kind != .note }
+
+    package init(kind: Kind, name: String, url: URL) {
+        self.kind = kind
+        self.name = name
+        self.url = url
+    }
 }
 
-struct NoteBreadcrumbPlaces {
-    var notesFolder: URL?
-    var home: URL
-    var volume: (URL) -> (url: URL, name: String)?
-    var displayName: (URL) -> String
+package struct NoteBreadcrumbPlaces {
+    package var notesFolder: URL?
+    package var home: URL
+    package var volume: (URL) -> (url: URL, name: String)?
+    package var displayName: (URL) -> String
 
-    static func system(notesFolder: URL?) -> NoteBreadcrumbPlaces {
+    package static func system(notesFolder: URL?) -> NoteBreadcrumbPlaces {
         NoteBreadcrumbPlaces(notesFolder: notesFolder, home: FileManager.default.homeDirectoryForCurrentUser,
                              volume: NoteBreadcrumb.volume(of:), displayName: NoteBreadcrumb.displayName(of:))
     }
 }
 
-enum NoteBreadcrumb {
-    static let separator = "/"
+package enum NoteBreadcrumb {
+    package static let separator = "/"
 
-    static func trail(for document: URL, places: NoteBreadcrumbPlaces) -> [NoteBreadcrumbSegment] {
+    package static func trail(for document: URL, places: NoteBreadcrumbPlaces) -> [NoteBreadcrumbSegment] {
         let file = NoteFilePaths.canonical(document)
         let root = self.root(of: file, places: places)
         var segments = [root]
@@ -43,12 +49,12 @@ enum NoteBreadcrumb {
         return segments
     }
 
-    static func title(of file: URL) -> String {
+    package static func title(of file: URL) -> String {
         let name = file.deletingPathExtension().lastPathComponent
         return name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled" : name
     }
 
-    static func text(of trail: [NoteBreadcrumbSegment]) -> String {
+    package static func text(of trail: [NoteBreadcrumbSegment]) -> String {
         trail.map(\.name).joined(separator: " " + separator + " ")
     }
 
@@ -73,14 +79,14 @@ enum NoteBreadcrumb {
         URL(fileURLWithPath: url.path, isDirectory: true)
     }
 
-    static func volume(of file: URL) -> (url: URL, name: String)? {
+    package static func volume(of file: URL) -> (url: URL, name: String)? {
         guard let values = try? file.deletingLastPathComponent().resourceValues(forKeys: [.volumeURLKey, .volumeLocalizedNameKey, .volumeNameKey]),
               let url = values.volume else { return nil }
         let name = values.volumeLocalizedName ?? values.volumeName ?? url.lastPathComponent
         return (url, name.isEmpty ? separator : name)
     }
 
-    static func displayName(of url: URL) -> String {
+    package static func displayName(of url: URL) -> String {
         let name = FileManager.default.displayName(atPath: url.path)
         return name.isEmpty ? url.lastPathComponent : name
     }

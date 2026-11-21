@@ -1,24 +1,24 @@
 import Foundation
 
-struct EaselKey: Hashable {
-    enum Base: Hashable {
+package struct EaselKey: Hashable {
+    package enum Base: Hashable {
         case character(Character)
         case physical(UInt16, label: String)
     }
-    let base: Base
-    let shift: Bool
+    package let base: Base
+    package let shift: Bool
 
-    init(_ character: Character, shift: Bool = false) {
+    package init(_ character: Character, shift: Bool = false) {
         base = .character(character)
         self.shift = shift
     }
 
-    init(keyCode: UInt16, label: String, shift: Bool) {
+    package init(keyCode: UInt16, label: String, shift: Bool) {
         base = .physical(keyCode, label: label)
         self.shift = shift
     }
 
-    var label: String {
+    package var label: String {
         let key: String
         switch base {
         case .character(let character): key = String(character).uppercased()
@@ -28,11 +28,11 @@ struct EaselKey: Hashable {
     }
 }
 
-enum EaselTool: String, CaseIterable, Equatable {
+package enum EaselTool: String, CaseIterable, Equatable {
     case select, hand, sticky, rectangle, ellipse, elbowConnector, curvedConnector, straightConnector, text, section, table,
          marker, highlighter, washi, eraser, stamp, codeBlock
 
-    var title: String {
+    package var title: String {
         switch self {
         case .select: return "Select"
         case .hand: return "Hand"
@@ -54,16 +54,16 @@ enum EaselTool: String, CaseIterable, Equatable {
         }
     }
 
-    var isAvailable: Bool {
+    package var isAvailable: Bool {
         switch self {
         default: return true
         }
     }
 
-    var keys: [EaselKey] { EaselKeyCommands.bindings.filter { $0.command == .tool(self) }.map(\.key) }
-    var key: EaselKey? { keys.first }
+    package var keys: [EaselKey] { EaselKeyCommands.bindings.filter { $0.command == .tool(self) }.map(\.key) }
+    package var key: EaselKey? { keys.first }
 
-    var routing: EaselConnectorRouting? {
+    package var routing: EaselConnectorRouting? {
         switch self {
         case .straightConnector: return .straight
         case .elbowConnector: return .elbow
@@ -72,7 +72,7 @@ enum EaselTool: String, CaseIterable, Equatable {
         }
     }
 
-    static func connector(_ routing: EaselConnectorRouting) -> EaselTool {
+    package static func connector(_ routing: EaselConnectorRouting) -> EaselTool {
         switch routing {
         case .straight: return .straightConnector
         case .elbow: return .elbowConnector
@@ -80,7 +80,7 @@ enum EaselTool: String, CaseIterable, Equatable {
         }
     }
 
-    var brush: EaselBrush? {
+    package var brush: EaselBrush? {
         switch self {
         case .marker: return .marker
         case .highlighter: return .highlighter
@@ -89,14 +89,14 @@ enum EaselTool: String, CaseIterable, Equatable {
         }
     }
 
-    var createsObjects: Bool { self != .select && self != .hand && self != .eraser }
-    var draws: Bool { brush != nil }
-    var drawsConnector: Bool { routing != nil }
-    var placesObjects: Bool { createsObjects && !draws && !drawsConnector }
-    var returnsToSelect: Bool { placesObjects && self != .stamp }
-    var staysArmed: Bool { !returnsToSelect }
+    package var createsObjects: Bool { self != .select && self != .hand && self != .eraser }
+    package var draws: Bool { brush != nil }
+    package var drawsConnector: Bool { routing != nil }
+    package var placesObjects: Bool { createsObjects && !draws && !drawsConnector }
+    package var returnsToSelect: Bool { placesObjects && self != .stamp }
+    package var staysArmed: Bool { !returnsToSelect }
 
-    var kind: EaselItemKind? {
+    package var kind: EaselItemKind? {
         switch self {
         case .select, .hand, .eraser, .stamp: return nil
         case .table: return .table
@@ -111,7 +111,7 @@ enum EaselTool: String, CaseIterable, Equatable {
         }
     }
 
-    var defaultSize: (width: Double, height: Double) {
+    package var defaultSize: (width: Double, height: Double) {
         switch self {
         case .sticky: return (EaselBoardObjects.stickySide, EaselBoardObjects.stickySide)
         case .rectangle: return EaselShapeGeometry.defaultSize(.rectangle)
@@ -127,18 +127,23 @@ enum EaselTool: String, CaseIterable, Equatable {
     }
 }
 
-struct EaselKeyModifiers: OptionSet, Hashable {
-    let rawValue: Int
-    static let shift = EaselKeyModifiers(rawValue: 1)
-    static let control = EaselKeyModifiers(rawValue: 2)
-    static let option = EaselKeyModifiers(rawValue: 4)
-    static let command = EaselKeyModifiers(rawValue: 8)
+package struct EaselKeyModifiers: OptionSet, Hashable {
+    package let rawValue: Int
+
+    package init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+
+    package static let shift = EaselKeyModifiers(rawValue: 1)
+    package static let control = EaselKeyModifiers(rawValue: 2)
+    package static let option = EaselKeyModifiers(rawValue: 4)
+    package static let command = EaselKeyModifiers(rawValue: 8)
 }
 
-enum EaselZoomCommand: String, CaseIterable, Equatable {
+package enum EaselZoomCommand: String, CaseIterable, Equatable {
     case zoomIn, zoomOut, actualSize, fit, selection
 
-    var title: String {
+    package var title: String {
         switch self {
         case .zoomIn: return "Zoom in"
         case .zoomOut: return "Zoom out"
@@ -148,7 +153,7 @@ enum EaselZoomCommand: String, CaseIterable, Equatable {
         }
     }
 
-    var shortcut: String {
+    package var shortcut: String {
         switch self {
         case .zoomIn: return "⌘="
         case .zoomOut: return "⌘-"
@@ -159,17 +164,17 @@ enum EaselZoomCommand: String, CaseIterable, Equatable {
     }
 }
 
-enum EaselKeyCommand: Equatable {
+package enum EaselKeyCommand: Equatable {
     case tool(EaselTool)
     case zoom(EaselZoomCommand)
     case flip(horizontal: Bool)
     case layer(EaselLayerMove)
 }
 
-enum EaselKeyCommands {
-    static let spaceKeyCode: UInt16 = 49
+package enum EaselKeyCommands {
+    package static let spaceKeyCode: UInt16 = 49
 
-    static let bindings: [(key: EaselKey, command: EaselKeyCommand)] = [
+    package static let bindings: [(key: EaselKey, command: EaselKeyCommand)] = [
         (EaselKey("v"), .tool(.select)),
         (EaselKey("h"), .tool(.hand)),
         (EaselKey("s"), .tool(.sticky)),
@@ -207,7 +212,7 @@ enum EaselKeyCommands {
         40: "k", 45: "n", 46: "m", 50: "`",
     ]
 
-    static func command(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers) -> EaselKeyCommand? {
+    package static func command(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers) -> EaselKeyCommand? {
         if modifiers.contains(.command) {
             guard modifiers.isDisjoint(with: [.control, .option]) else { return nil }
             return zoomChord(characters: characters, keyCode: keyCode, shift: modifiers.contains(.shift)).map(EaselKeyCommand.zoom)
@@ -223,12 +228,12 @@ enum EaselKeyCommands {
         return bindings.first { $0.key == EaselKey(character, shift: shift) }?.command
     }
 
-    static func letter(characters: String?, keyCode: UInt16) -> Character? {
+    package static func letter(characters: String?, keyCode: UInt16) -> Character? {
         guard let character = keyCharacter(characters: characters, keyCode: keyCode), character.isLetter else { return nil }
         return character
     }
 
-    static func keyCharacter(characters: String?, keyCode: UInt16) -> Character? {
+    package static func keyCharacter(characters: String?, keyCode: UInt16) -> Character? {
         let typed = (characters ?? "").lowercased()
         if typed.count == 1, let character = typed.first {
             if character.isASCII { return character.isLetter || "[]`=+-_".contains(character) ? character : nil }
@@ -239,7 +244,7 @@ enum EaselKeyCommands {
         return positionKeyCodes[keyCode]
     }
 
-    static func zoomChord(characters: String?, keyCode: UInt16, shift: Bool) -> EaselZoomCommand? {
+    package static func zoomChord(characters: String?, keyCode: UInt16, shift: Bool) -> EaselZoomCommand? {
         let typed = characters ?? ""
         switch typed {
         case "=", "+": return .zoomIn
@@ -257,17 +262,17 @@ enum EaselKeyCommands {
     }
 }
 
-enum EaselToolGeometry {
-    static let dragThreshold = 3.0
+package enum EaselToolGeometry {
+    package static let dragThreshold = 3.0
 
-    static func placedFrame(_ tool: EaselTool, at point: EaselPoint) -> EaselRect {
+    package static func placedFrame(_ tool: EaselTool, at point: EaselPoint) -> EaselRect {
         let size = tool.defaultSize
         if tool == .text { return EaselRect(x: point.x, y: point.y - 14, width: size.width, height: size.height) }
         return EaselRect(x: point.x - size.width / 2, y: point.y - size.height / 2,
                          width: max(1, size.width), height: max(1, size.height))
     }
 
-    static func draggedFrame(from start: EaselPoint, to end: EaselPoint, square: Bool, centered: Bool) -> EaselRect {
+    package static func draggedFrame(from start: EaselPoint, to end: EaselPoint, square: Bool, centered: Bool) -> EaselRect {
         var dx = end.x - start.x, dy = end.y - start.y
         if square {
             let side = max(abs(dx), abs(dy))
@@ -280,7 +285,7 @@ enum EaselToolGeometry {
         return EaselRect(x: min(start.x, start.x + dx), y: min(start.y, start.y + dy), width: max(1, abs(dx)), height: max(1, abs(dy)))
     }
 
-    static func snappedLineEnd(from start: EaselPoint, to end: EaselPoint) -> EaselPoint {
+    package static func snappedLineEnd(from start: EaselPoint, to end: EaselPoint) -> EaselPoint {
         let dx = end.x - start.x, dy = end.y - start.y
         let length = hypot(dx, dy)
         guard length > 0 else { return end }
@@ -291,32 +296,32 @@ enum EaselToolGeometry {
                           y: abs(snapped.y - start.y) < 1e-9 ? start.y : snapped.y)
     }
 
-    static func lineItemGeometry(from start: EaselPoint, to end: EaselPoint) -> (frame: EaselRect, points: [EaselPoint]) {
+    package static func lineItemGeometry(from start: EaselPoint, to end: EaselPoint) -> (frame: EaselRect, points: [EaselPoint]) {
         let minX = min(start.x, end.x), minY = min(start.y, end.y)
         let frame = EaselRect(x: minX, y: minY, width: max(1, abs(end.x - start.x)), height: max(1, abs(end.y - start.y)))
         return (frame, [EaselPoint(x: start.x - minX, y: start.y - minY), EaselPoint(x: end.x - minX, y: end.y - minY)])
     }
 
-    static func constrained(_ frame: EaselRect, to bounds: EaselRect) -> EaselRect {
+    package static func constrained(_ frame: EaselRect, to bounds: EaselRect) -> EaselRect {
         let width = min(frame.width, bounds.width), height = min(frame.height, bounds.height)
         return EaselRect(x: min(max(frame.x, bounds.x), bounds.x + bounds.width - width),
                          y: min(max(frame.y, bounds.y), bounds.y + bounds.height - height),
                          width: max(1, width), height: max(1, height))
     }
 
-    static func clamped(_ point: EaselPoint, to bounds: EaselRect) -> EaselPoint {
+    package static func clamped(_ point: EaselPoint, to bounds: EaselRect) -> EaselPoint {
         EaselPoint(x: min(max(point.x, bounds.x), bounds.x + bounds.width),
                    y: min(max(point.y, bounds.y), bounds.y + bounds.height))
     }
 }
 
-enum EaselZoom {
-    static let levels: [Double] = [0.25, 0.3333, 0.5, 0.75, 1, 1.5, 2, 3, 4]
-    static let presets: [Double] = [0.5, 1, 2]
-    static let fitPadding = 48.0
-    static let animationDuration = 0.24
+package enum EaselZoom {
+    package static let levels: [Double] = [0.25, 0.3333, 0.5, 0.75, 1, 1.5, 2, 3, 4]
+    package static let presets: [Double] = [0.5, 1, 2]
+    package static let fitPadding = 48.0
+    package static let animationDuration = 0.24
 
-    static func stepped(from current: Double, zoomingIn: Bool, minimum: Double, maximum: Double) -> Double {
+    package static func stepped(from current: Double, zoomingIn: Bool, minimum: Double, maximum: Double) -> Double {
         guard minimum.isFinite, maximum.isFinite, minimum > 0, maximum >= minimum else { return 1 }
         guard current.isFinite, current > 0 else { return min(maximum, max(minimum, 1)) }
         let tolerance = 0.005
@@ -325,12 +330,12 @@ enum EaselZoom {
         return min(maximum, max(minimum, next ?? (zoomingIn ? current * 2 : current / 2)))
     }
 
-    static func clamped(_ value: Double, minimum: Double, maximum: Double) -> Double {
+    package static func clamped(_ value: Double, minimum: Double, maximum: Double) -> Double {
         guard value.isFinite, value > 0 else { return min(maximum, max(minimum, 1)) }
         return min(maximum, max(minimum, value))
     }
 
-    static func fitting(_ content: EaselRect, viewport: (width: Double, height: Double), padding: Double = fitPadding,
+    package static func fitting(_ content: EaselRect, viewport: (width: Double, height: Double), padding: Double = fitPadding,
                         minimum: Double, maximum: Double) -> Double? {
         guard content.width > 0, content.height > 0, viewport.width > 0, viewport.height > 0,
               [content.width, content.height, viewport.width, viewport.height].allSatisfy(\.isFinite) else { return nil }
@@ -338,7 +343,7 @@ enum EaselZoom {
         return clamped(min(room.width / content.width, room.height / content.height), minimum: minimum, maximum: maximum)
     }
 
-    static func bounds(of frames: [EaselRect]) -> EaselRect? {
+    package static func bounds(of frames: [EaselRect]) -> EaselRect? {
         guard let first = frames.first else { return nil }
         var minX = first.x, minY = first.y, maxX = first.x + first.width, maxY = first.y + first.height
         for frame in frames.dropFirst() {
@@ -348,13 +353,13 @@ enum EaselZoom {
         return EaselRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
-    static func wheelFactor(deviceDelta: Double, precise: Bool) -> Double {
+    package static func wheelFactor(deviceDelta: Double, precise: Bool) -> Double {
         guard deviceDelta.isFinite, deviceDelta != 0 else { return 1 }
         let factor = precise ? exp(max(-40, min(40, deviceDelta)) * 0.0125) : pow(1.2, max(-3, min(3, deviceDelta)))
         return max(0.5, min(2, factor))
     }
 
-    static func anchoredOrigin(anchor: EaselPoint, visibleOrigin: EaselPoint, before: Double, after: Double) -> EaselPoint {
+    package static func anchoredOrigin(anchor: EaselPoint, visibleOrigin: EaselPoint, before: Double, after: Double) -> EaselPoint {
         guard [anchor.x, anchor.y, visibleOrigin.x, visibleOrigin.y, before, after].allSatisfy(\.isFinite), before > 0, after > 0 else {
             return visibleOrigin
         }
@@ -362,41 +367,45 @@ enum EaselZoom {
                           y: anchor.y - (anchor.y - visibleOrigin.y) * before / after)
     }
 
-    static func percent(_ magnification: Double) -> Int {
+    package static func percent(_ magnification: Double) -> Int {
         guard magnification.isFinite, magnification > 0 else { return 100 }
         return Int((min(magnification, 1000) * 100).rounded())
     }
 
-    static func interpolated(from start: Double, to end: Double, progress: Double) -> Double {
+    package static func interpolated(from start: Double, to end: Double, progress: Double) -> Double {
         guard start > 0, end > 0 else { return end }
         let t = min(1, max(0, progress))
         return start * pow(end / start, t)
     }
 
-    static func eased(_ progress: Double) -> Double {
+    package static func eased(_ progress: Double) -> Double {
         let t = min(1, max(0, progress))
         return 1 - pow(1 - t, 3)
     }
 
-    static let extentTolerance = 0.01
+    package static let extentTolerance = 0.01
 
-    static func extentMatches(_ size: (width: Double, height: Double), _ current: (width: Double, height: Double)) -> Bool {
+    package static func extentMatches(_ size: (width: Double, height: Double), _ current: (width: Double, height: Double)) -> Bool {
         abs(size.width - current.width) <= extentTolerance && abs(size.height - current.height) <= extentTolerance
     }
 }
 
-enum EaselWheelPhase: Equatable {
+package enum EaselWheelPhase: Equatable {
     case discrete, active, ending, momentum
 }
 
-enum EaselWheelRoute: Equatable {
+package enum EaselWheelRoute: Equatable {
     case zoom, pan, drop
 }
 
-struct EaselWheelGesture: Equatable {
-    private(set) var zooming = false
+package struct EaselWheelGesture: Equatable {
+    package private(set) var zooming = false
 
-    mutating func route(_ phase: EaselWheelPhase, zoomChord: Bool) -> EaselWheelRoute {
+    package init(zooming: Bool = false) {
+        self.zooming = zooming
+    }
+
+    package mutating func route(_ phase: EaselWheelPhase, zoomChord: Bool) -> EaselWheelRoute {
         switch phase {
         case .discrete: return zoomChord ? .zoom : .pan
         case .active: zooming = zoomChord; return zooming ? .zoom : .pan

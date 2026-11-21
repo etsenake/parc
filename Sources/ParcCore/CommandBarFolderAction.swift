@@ -1,29 +1,38 @@
 import Foundation
 
-struct CommandBarFolderAction: Equatable, Identifiable {
-    let folderID: UUID
-    let reveal: SidebarItemReveal
-    let name: String
-    let path: [String]
-    let ancestorIDs: [UUID]
-    let spaceName: String
+package struct CommandBarFolderAction: Equatable, Identifiable {
+    package let folderID: UUID
+    package let reveal: SidebarItemReveal
+    package let name: String
+    package let path: [String]
+    package let ancestorIDs: [UUID]
+    package let spaceName: String
 
-    var spaceID: UUID { reveal.spaceID }
-    var profileID: UUID { reveal.profileID }
-    var id: String {
+    package var spaceID: UUID { reveal.spaceID }
+    package var profileID: UUID { reveal.profileID }
+    package var id: String {
         (["open-folder", profileID.uuidString, spaceID.uuidString, folderID.uuidString]
             + ancestorIDs.map(\.uuidString)).joined(separator: ":")
     }
-    var title: String { "Open" }
-    var detail: String { ([spaceName] + path).joined(separator: " › ") }
+    package var title: String { "Open" }
+    package var detail: String { ([spaceName] + path).joined(separator: " › ") }
 
-    func isCurrent(in state: BrowserState, profileID: UUID) -> Bool {
+    package init(folderID: UUID, reveal: SidebarItemReveal, name: String, path: [String], ancestorIDs: [UUID], spaceName: String) {
+        self.folderID = folderID
+        self.reveal = reveal
+        self.name = name
+        self.path = path
+        self.ancestorIDs = ancestorIDs
+        self.spaceName = spaceName
+    }
+
+    package func isCurrent(in state: BrowserState, profileID: UUID) -> Bool {
         guard self.profileID == profileID,
               let current = Self.make(folderID: folderID, state: state, profileID: profileID) else { return false }
         return current.reveal == reveal && current.ancestorIDs == ancestorIDs
     }
 
-    static func snapshot(state: BrowserState, profileID: UUID) -> [Self] {
+    package static func snapshot(state: BrowserState, profileID: UUID) -> [Self] {
         var result: [Self] = [], seen = Set<UUID>()
         for space in state.spaces where space.profileID == profileID {
             func visit(_ parent: UUID?) {
@@ -38,7 +47,7 @@ struct CommandBarFolderAction: Equatable, Identifiable {
         return result
     }
 
-    static func matching(_ actions: [Self], query: String) -> [Self] {
+    package static func matching(_ actions: [Self], query: String) -> [Self] {
         let query = normalized(query).trimmingCharacters(in: .whitespacesAndNewlines)
         let words = query.split(whereSeparator: \.isWhitespace)
         guard !words.isEmpty else { return [] }

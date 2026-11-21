@@ -1,23 +1,23 @@
 import Foundation
 
 @MainActor
-final class NoteFileEnvironment: NoteEnvironment {
+package final class NoteFileEnvironment: NoteEnvironment {
     private static let webSchemes: Set<String> = ["http", "https"]
     private static let knownSchemes: Set<String> = ["http", "https", "file", "mailto", "data", "tel", "ftp", "parc", "about", "blob"]
 
-    private(set) var documentURL: URL?
-    let isPlainText: Bool
-    var now: () -> Date = Date.init
+    package private(set) var documentURL: URL?
+    package let isPlainText: Bool
+    package var now: () -> Date = Date.init
     private var cachedLibrary: (path: String, library: NoteEmojiLibrary)?
 
-    init(documentURL: URL, isPlainText: Bool) {
+    package init(documentURL: URL, isPlainText: Bool) {
         self.documentURL = documentURL
         self.isPlainText = isPlainText
     }
 
-    func move(to url: URL) { documentURL = url }
+    package func move(to url: URL) { documentURL = url }
 
-    var emojiLibrary: NoteEmojiLibrary? {
+    package var emojiLibrary: NoteEmojiLibrary? {
         guard let documentURL, !isPlainText else { return nil }
         if let cachedLibrary, cachedLibrary.path == documentURL.path { return cachedLibrary.library }
         let library = NoteEmojiLibrary.library(for: documentURL)
@@ -25,9 +25,9 @@ final class NoteFileEnvironment: NoteEnvironment {
         return library
     }
 
-    var folder: URL? { documentURL?.deletingLastPathComponent() }
+    package var folder: URL? { documentURL?.deletingLastPathComponent() }
 
-    func resolve(_ source: String) -> URL? {
+    package func resolve(_ source: String) -> URL? {
         var value = source.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.count >= 2, value.hasPrefix("<"), value.hasSuffix(">") { value = String(value.dropFirst().dropLast()) }
         guard !value.isEmpty else { return nil }
@@ -48,26 +48,26 @@ final class NoteFileEnvironment: NoteEnvironment {
         return localURL(value)
     }
 
-    func importAsset(from url: URL) throws -> String {
+    package func importAsset(from url: URL) throws -> String {
         guard url.isFileURL else { return url.absoluteString }
         guard let documentURL else { throw NoteFileError.missing }
         return try NoteAttachments.importFile(url, into: documentURL)
     }
 
-    func importAsset(data: Data, fileExtension: String, suggestedName: String?) throws -> String {
+    package func importAsset(data: Data, fileExtension: String, suggestedName: String?) throws -> String {
         guard let documentURL else { throw NoteFileError.missing }
         return try NoteAttachments.importData(data, fileExtension: fileExtension, suggestedName: suggestedName,
                                               into: documentURL, date: now())
     }
 
-    func searchNotes(_ query: String, limit: Int) -> [NoteReference] {
+    package func searchNotes(_ query: String, limit: Int) -> [NoteReference] {
         guard let documentURL, limit > 0 else { return [] }
         let own = NoteFilePaths.key(for: documentURL)
         let found = NoteLibrary.library(for: documentURL).search(query, limit: limit + 1)
         return Array(found.filter { NoteFilePaths.key(for: $0.url) != own }.prefix(limit))
     }
 
-    func linkTarget(for note: URL) -> String {
+    package func linkTarget(for note: URL) -> String {
         guard note.isFileURL, let folder else { return note.absoluteString }
         let file = URL(fileURLWithPath: note.path)
         guard let relative = NoteFilePaths.relativePath(from: folder, to: file) else { return file.absoluteString }
@@ -75,7 +75,7 @@ final class NoteFileEnvironment: NoteEnvironment {
         return relative + "#" + NoteFilePaths.encodedSegment(fragment)
     }
 
-    func resolveNoteLink(_ target: String) -> URL? {
+    package func resolveNoteLink(_ target: String) -> URL? {
         guard let resolved = resolve(target), resolved.isFileURL else { return nil }
         let file = NoteFilePaths.canonical(URL(fileURLWithPath: resolved.path))
         if NoteFileKind(url: file) != nil { return file }

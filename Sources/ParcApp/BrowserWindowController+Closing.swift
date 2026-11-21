@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import ParcCore
+import ParcEngine
 
 extension BrowserWindowController {
     func archiveTodayTabs(anchor: BrowserTab, order: [UUID], ids: Set<UUID>) {

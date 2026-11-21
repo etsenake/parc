@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcCore
 
 struct NotePageVersion: Hashable {
     var date: Date

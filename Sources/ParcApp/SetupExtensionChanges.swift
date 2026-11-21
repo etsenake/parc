@@ -1,4 +1,6 @@
 import Foundation
+import ParcCore
+import ParcEngine
 
 @MainActor
 enum SetupExtensionChanges {

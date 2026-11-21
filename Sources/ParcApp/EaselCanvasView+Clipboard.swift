@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension EaselCanvasView {
     static let objectsPasteboardType = NSPasteboard.PasteboardType(EaselClipboardPayload.typeIdentifier)

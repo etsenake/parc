@@ -3,7 +3,7 @@ import Foundation
 private typealias Ch = NoteSyntaxChar
 
 extension NoteSyntaxScanner {
-    mutating func lexSpecial(_ g: NoteSyntaxGrammar, _ c: UInt16, lineStart: Bool) -> Bool {
+    package mutating func lexSpecial(_ g: NoteSyntaxGrammar, _ c: UInt16, lineStart: Bool) -> Bool {
         let features = g.features
         switch c {
         case Ch.hash:
@@ -688,21 +688,21 @@ extension NoteSyntaxScanner {
         return true
     }
 
-    func longBracketLevel(at index: Int) -> Int? {
+    package func longBracketLevel(at index: Int) -> Int? {
         guard at(index) == Ch.openBracket else { return nil }
         var cursor = index + 1
         while at(cursor) == Ch.equals { cursor += 1 }
         return at(cursor) == Ch.openBracket ? cursor - index - 1 : nil
     }
 
-    mutating func lexLongBracket(level: Int, from start: Int, bracketAt bracket: Int, kind: NoteSyntaxKind) {
+    package mutating func lexLongBracket(level: Int, from start: Int, bracketAt bracket: Int, kind: NoteSyntaxKind) {
         let close = [Ch.closeBracket] + Array(repeating: Ch.equals, count: level) + [Ch.closeBracket]
         let stop = find(close, from: bracket + level + 2).map { $0 + close.count } ?? end
         emit(start, stop, kind)
         pos = stop
     }
 
-    mutating func lexShellDollar(_ g: NoteSyntaxGrammar) -> Bool {
+    package mutating func lexShellDollar(_ g: NoteSyntaxGrammar) -> Bool {
         let start = pos
         if makeMode {
             if peek() == Ch.dollar {
@@ -781,7 +781,7 @@ extension NoteSyntaxScanner {
         return true
     }
 
-    mutating func lexMakeReference() -> Bool {
+    package mutating func lexMakeReference() -> Bool {
         let start = pos
         let next = peek()
         if next == Ch.openParen || next == Ch.openBrace {
@@ -844,7 +844,7 @@ extension NoteSyntaxScanner {
         }
     }
 
-    mutating func lexPowerShellDollar(_ g: NoteSyntaxGrammar) -> Bool {
+    package mutating func lexPowerShellDollar(_ g: NoteSyntaxGrammar) -> Bool {
         let start = pos
         let next = peek()
         if next == Ch.openParen {

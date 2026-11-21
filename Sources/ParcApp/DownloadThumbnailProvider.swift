@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 import QuickLookThumbnailing
 
 @MainActor final class DownloadThumbnailProvider {

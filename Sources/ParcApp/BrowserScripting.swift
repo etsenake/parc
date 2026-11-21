@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 struct ScriptTabRecord {
     let id: UUID

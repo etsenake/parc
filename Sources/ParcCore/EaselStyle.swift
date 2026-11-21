@@ -1,9 +1,9 @@
 import Foundation
 
-enum EaselStrokeWeight: String, CaseIterable, Codable {
+package enum EaselStrokeWeight: String, CaseIterable, Codable {
     case none, thin, medium, thick
 
-    var title: String {
+    package var title: String {
         switch self {
         case .none: return "None"
         case .thin: return "Thin"
@@ -22,10 +22,10 @@ enum EaselStrokeWeight: String, CaseIterable, Codable {
     }
 }
 
-enum EaselFillMode: String, CaseIterable, Codable {
+package enum EaselFillMode: String, CaseIterable, Codable {
     case none, transparent, solid
 
-    var title: String {
+    package var title: String {
         switch self {
         case .none: return "No Fill"
         case .transparent: return "Transparent"
@@ -34,10 +34,10 @@ enum EaselFillMode: String, CaseIterable, Codable {
     }
 }
 
-enum EaselStyleFamily: String, CaseIterable, Codable {
+package enum EaselStyleFamily: String, CaseIterable, Codable {
     case shapes, stickies, lines, pen, highlighter, tape, text, sections, icons
 
-    static func of(_ item: EaselItem) -> EaselStyleFamily? {
+    package static func of(_ item: EaselItem) -> EaselStyleFamily? {
         switch item.kind {
         case .rectangle, .circle: return .shapes
         case .sticky: return .stickies
@@ -55,7 +55,7 @@ enum EaselStyleFamily: String, CaseIterable, Codable {
         }
     }
 
-    var colorRole: EaselColorRole {
+    package var colorRole: EaselColorRole {
         switch self {
         case .stickies: return .sticky
         case .sections: return .fill
@@ -64,10 +64,10 @@ enum EaselStyleFamily: String, CaseIterable, Codable {
         }
     }
 
-    var takesFill: Bool { self == .shapes }
-    var takesDash: Bool { self == .shapes || self == .lines }
+    package var takesFill: Bool { self == .shapes }
+    package var takesDash: Bool { self == .shapes || self == .lines }
 
-    var weights: [EaselStrokeWeight] {
+    package var weights: [EaselStrokeWeight] {
         switch self {
         case .shapes: return [.none, .thin, .medium, .thick]
         case .lines, .pen, .highlighter: return [.thin, .medium, .thick]
@@ -75,7 +75,7 @@ enum EaselStyleFamily: String, CaseIterable, Codable {
         }
     }
 
-    func width(_ weight: EaselStrokeWeight) -> Double? {
+    package func width(_ weight: EaselStrokeWeight) -> Double? {
         guard weights.contains(weight) else { return nil }
         let scale: [Double]
         switch self {
@@ -86,17 +86,17 @@ enum EaselStyleFamily: String, CaseIterable, Codable {
         return scale[weight.step]
     }
 
-    func weight(forWidth width: Double) -> EaselStrokeWeight? {
+    package func weight(forWidth width: Double) -> EaselStrokeWeight? {
         let options = weights.compactMap { weight in self.width(weight).map { (weight, $0) } }
         return options.min { abs($0.1 - width) < abs($1.1 - width) }?.0
     }
 }
 
-enum EaselColorChoice: Hashable {
+package enum EaselColorChoice: Hashable {
     case palette(EaselPaletteColor)
     case custom(String)
 
-    init?(storage: String) {
+    package init?(storage: String) {
         if storage.hasPrefix("#") {
             guard let hex = EaselPalette.normalized(storage) else { return nil }
             self = .custom(hex)
@@ -106,19 +106,19 @@ enum EaselColorChoice: Hashable {
         }
     }
 
-    var storage: String {
+    package var storage: String {
         switch self {
         case .palette(let color): return color.id
         case .custom(let hex): return hex
         }
     }
 
-    static func recognizing(_ hex: String, role: EaselColorRole) -> EaselColorChoice? {
+    package static func recognizing(_ hex: String, role: EaselColorRole) -> EaselColorChoice? {
         if let color = EaselPalette.color(for: hex, role: role) { return .palette(color) }
         return EaselPalette.normalized(hex).map { .custom($0) }
     }
 
-    func hex(role: EaselColorRole) -> String {
+    package func hex(role: EaselColorRole) -> String {
         switch self {
         case .palette(let color): return EaselPalette.stored(color, role: role)
         case .custom(let hex): return EaselPalette.normalized(hex) ?? EaselPalette.automaticInk
@@ -126,7 +126,7 @@ enum EaselColorChoice: Hashable {
     }
 }
 
-enum EaselStyleChange: Equatable {
+package enum EaselStyleChange: Equatable {
     case color(EaselColorChoice)
     case fill(EaselFillMode)
     case fillOpacity(Double)
@@ -134,7 +134,7 @@ enum EaselStyleChange: Equatable {
     case dash(EaselStrokeDash)
     case labelBackground(Bool)
 
-    var actionName: String {
+    package var actionName: String {
         switch self {
         case .color: return "Change color"
         case .fill, .fillOpacity: return "Change fill"
@@ -145,22 +145,22 @@ enum EaselStyleChange: Equatable {
     }
 }
 
-struct EaselStyleControls: Equatable {
-    var colorRole: EaselColorRole
-    var colors: [EaselPaletteColor]
-    var fill: Bool
-    var weights: [EaselStrokeWeight]
-    var dash: Bool
-    var labelBackground: Bool
-    var lineTitle: String
+package struct EaselStyleControls: Equatable {
+    package var colorRole: EaselColorRole
+    package var colors: [EaselPaletteColor]
+    package var fill: Bool
+    package var weights: [EaselStrokeWeight]
+    package var dash: Bool
+    package var labelBackground: Bool
+    package var lineTitle: String
 
-    init(colorRole: EaselColorRole, colors: [EaselPaletteColor], fill: Bool = false, weights: [EaselStrokeWeight] = [],
+    package init(colorRole: EaselColorRole, colors: [EaselPaletteColor], fill: Bool = false, weights: [EaselStrokeWeight] = [],
          dash: Bool = false, labelBackground: Bool = false, lineTitle: String = "Line") {
         self.colorRole = colorRole; self.colors = colors; self.fill = fill; self.weights = weights
         self.dash = dash; self.labelBackground = labelBackground; self.lineTitle = lineTitle
     }
 
-    init?(families: Set<EaselStyleFamily>) {
+    package init?(families: Set<EaselStyleFamily>) {
         guard !families.isEmpty else { return nil }
         let roles = Set(families.map(\.colorRole))
         if roles.count == 1, let role = roles.first { colorRole = role }
@@ -177,24 +177,24 @@ struct EaselStyleControls: Equatable {
         lineTitle = families.filter { !$0.weights.isEmpty || $0.takesDash } == [.shapes] ? "Outline" : "Line"
     }
 
-    init?(items: [EaselItem]) { self.init(families: Set(items.compactMap(EaselStyleFamily.of))) }
+    package init?(items: [EaselItem]) { self.init(families: Set(items.compactMap(EaselStyleFamily.of))) }
 }
 
-struct EaselStyleSummary: Equatable {
-    var color: EaselColorChoice?
-    var fill: EaselFillMode?
-    var fillOpacity: Double?
-    var weight: EaselStrokeWeight?
-    var dash: EaselStrokeDash?
-    var labelBackground: Bool?
+package struct EaselStyleSummary: Equatable {
+    package var color: EaselColorChoice?
+    package var fill: EaselFillMode?
+    package var fillOpacity: Double?
+    package var weight: EaselStrokeWeight?
+    package var dash: EaselStrokeDash?
+    package var labelBackground: Bool?
 
-    init(color: EaselColorChoice? = nil, fill: EaselFillMode? = nil, fillOpacity: Double? = nil,
+    package init(color: EaselColorChoice? = nil, fill: EaselFillMode? = nil, fillOpacity: Double? = nil,
          weight: EaselStrokeWeight? = nil, dash: EaselStrokeDash? = nil, labelBackground: Bool? = nil) {
         self.color = color; self.fill = fill; self.fillOpacity = fillOpacity; self.weight = weight; self.dash = dash
         self.labelBackground = labelBackground
     }
 
-    init(items: [EaselItem]) {
+    package init(items: [EaselItem]) {
         func uniform<T: Equatable>(_ values: [T?]) -> T? {
             guard let first = values.first, let value = first, values.allSatisfy({ $0 == value }) else { return nil }
             return value
@@ -210,8 +210,8 @@ struct EaselStyleSummary: Equatable {
     }
 }
 
-enum EaselStyle {
-    static func applies(_ change: EaselStyleChange, to item: EaselItem) -> Bool {
+package enum EaselStyle {
+    package static func applies(_ change: EaselStyleChange, to item: EaselItem) -> Bool {
         guard let family = EaselStyleFamily.of(item) else { return false }
         switch change {
         case .color: return true
@@ -223,7 +223,7 @@ enum EaselStyle {
     }
 
     @discardableResult
-    static func apply(_ change: EaselStyleChange, to item: inout EaselItem) -> Bool {
+    package static func apply(_ change: EaselStyleChange, to item: inout EaselItem) -> Bool {
         guard applies(change, to: item), let family = EaselStyleFamily.of(item) else { return false }
         switch change {
         case .color(let choice): recolor(&item, family: family, choice: choice)
@@ -238,7 +238,7 @@ enum EaselStyle {
         return true
     }
 
-    static func colorChoice(of item: EaselItem) -> EaselColorChoice? {
+    package static func colorChoice(of item: EaselItem) -> EaselColorChoice? {
         guard let family = EaselStyleFamily.of(item) else { return nil }
         switch family {
         case .text:
@@ -252,13 +252,13 @@ enum EaselStyle {
         }
     }
 
-    static func fillMode(of item: EaselItem) -> EaselFillMode? {
+    package static func fillMode(of item: EaselItem) -> EaselFillMode? {
         guard EaselStyleFamily.of(item)?.takesFill == true else { return nil }
         if fillOpacity(of: item) <= 0 { return EaselFillMode.none }
         return item.fill == nil ? .transparent : .solid
     }
 
-    static func fillOpacity(of item: EaselItem) -> Double {
+    package static func fillOpacity(of item: EaselItem) -> Double {
         if let opacity = item.fillOpacity, opacity.isFinite { return min(1, max(0, opacity)) }
         return item.fill == nil ? EaselPaintRules.washOpacity : 1
     }
@@ -312,16 +312,25 @@ enum EaselStyle {
     }
 }
 
-struct EaselStyleMemory: Equatable {
-    struct Style: Codable, Equatable {
-        var color: String?
-        var fill: EaselFillMode?
-        var fillOpacity: Double?
-        var weight: EaselStrokeWeight?
-        var dash: EaselStrokeDash?
-        var labelBackground: Bool?
+package struct EaselStyleMemory: Equatable {
+    package struct Style: Codable, Equatable {
+        package var color: String?
+        package var fill: EaselFillMode?
+        package var fillOpacity: Double?
+        package var weight: EaselStrokeWeight?
+        package var dash: EaselStrokeDash?
+        package var labelBackground: Bool?
 
-        var changes: [EaselStyleChange] {
+        package init(color: String? = nil, fill: EaselFillMode? = nil, fillOpacity: Double? = nil, weight: EaselStrokeWeight? = nil, dash: EaselStrokeDash? = nil, labelBackground: Bool? = nil) {
+            self.color = color
+            self.fill = fill
+            self.fillOpacity = fillOpacity
+            self.weight = weight
+            self.dash = dash
+            self.labelBackground = labelBackground
+        }
+
+        package var changes: [EaselStyleChange] {
             var result: [EaselStyleChange] = []
             if let choice = color.flatMap(EaselColorChoice.init(storage:)) { result.append(.color(choice)) }
             if let fill { result.append(.fill(fill)) }
@@ -332,7 +341,7 @@ struct EaselStyleMemory: Equatable {
             return result
         }
 
-        mutating func record(_ change: EaselStyleChange) {
+        package mutating func record(_ change: EaselStyleChange) {
             switch change {
             case .color(let choice): color = choice.storage
             case .fill(let mode): fill = mode; fillOpacity = nil
@@ -344,24 +353,24 @@ struct EaselStyleMemory: Equatable {
         }
     }
 
-    static let defaultsKey = "Parc.Easel.Style.Memory"
-    static let rememberedAcrossLaunches: Set<EaselStyleFamily> = [.shapes, .pen, .highlighter, .tape, .text, .sections]
+    package static let defaultsKey = "Parc.Easel.Style.Memory"
+    package static let rememberedAcrossLaunches: Set<EaselStyleFamily> = [.shapes, .pen, .highlighter, .tape, .text, .sections]
 
-    private(set) var families: [EaselStyleFamily: Style]
-    private(set) var sticky: Style
-    private(set) var connectors: [UUID: Style] = [:]
+    package private(set) var families: [EaselStyleFamily: Style]
+    package private(set) var sticky: Style
+    package private(set) var connectors: [UUID: Style] = [:]
 
-    init(families: [EaselStyleFamily: Style] = [:], sticky: Style) {
+    package init(families: [EaselStyleFamily: Style] = [:], sticky: Style) {
         self.families = families.filter { Self.rememberedAcrossLaunches.contains($0.key) }
         self.sticky = sticky
     }
 
-    static func randomSticky<G: RandomNumberGenerator>(using generator: inout G) -> Style {
+    package static func randomSticky<G: RandomNumberGenerator>(using generator: inout G) -> Style {
         let note = NoteColor.allCases.randomElement(using: &generator) ?? .yellow
         return Style(color: EaselColorChoice.palette(.note(note)).storage)
     }
 
-    func style(for family: EaselStyleFamily, document: UUID?) -> Style {
+    package func style(for family: EaselStyleFamily, document: UUID?) -> Style {
         switch family {
         case .stickies: return sticky
         case .lines: return document.flatMap { connectors[$0] } ?? Style()
@@ -369,7 +378,7 @@ struct EaselStyleMemory: Equatable {
         }
     }
 
-    mutating func record(_ change: EaselStyleChange, for family: EaselStyleFamily, document: UUID?) {
+    package mutating func record(_ change: EaselStyleChange, for family: EaselStyleFamily, document: UUID?) {
         switch family {
         case .stickies: sticky.record(change)
         case .lines:
@@ -379,18 +388,18 @@ struct EaselStyleMemory: Equatable {
         }
     }
 
-    func stamp(_ item: inout EaselItem, document: UUID?) {
+    package func stamp(_ item: inout EaselItem, document: UUID?) {
         guard let family = EaselStyleFamily.of(item) else { return }
         for change in style(for: family, document: document).changes { EaselStyle.apply(change, to: &item) }
     }
 
-    var persistentData: Data? {
+    package var persistentData: Data? {
         var stored: [String: Style] = [:]
         for (family, style) in families where Self.rememberedAcrossLaunches.contains(family) { stored[family.rawValue] = style }
         return try? JSONEncoder().encode(stored)
     }
 
-    static func persistentFamilies(from data: Data?) -> [EaselStyleFamily: Style] {
+    package static func persistentFamilies(from data: Data?) -> [EaselStyleFamily: Style] {
         guard let data, let decoded = try? JSONDecoder().decode([String: Style].self, from: data) else { return [:] }
         var result: [EaselStyleFamily: Style] = [:]
         for (key, style) in decoded {

@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 struct StartPageLayout: Equatable {
     static let markSize = CGSize(width: 65, height: 96)

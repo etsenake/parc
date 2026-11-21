@@ -1,61 +1,108 @@
 import Foundation
 
-struct EaselVectorTextRun: Equatable {
-    var x: Double
-    var y: Double
-    var text: String
-    var fontFamily: String
-    var fontSize: Double
-    var weight: Int = 400
-    var italic = false
-    var color: String?
-    var underline = false
-    var strikethrough = false
-    var link: String?
-    var syntax: String?
-}
+package struct EaselVectorTextRun: Equatable {
+    package var x: Double
+    package var y: Double
+    package var text: String
+    package var fontFamily: String
+    package var fontSize: Double
+    package var weight: Int = 400
+    package var italic = false
+    package var color: String?
+    package var underline = false
+    package var strikethrough = false
+    package var link: String?
+    package var syntax: String?
 
-struct EaselVectorText: Equatable {
-    var runs: [EaselVectorTextRun] = []
-    var fillPath: String?
-    var fillColor: String = "#000000"
-}
-
-struct EaselVectorImage: Equatable {
-    var data: Data
-    var mimeType: String
-    var dataURI: String { "data:" + mimeType + ";base64," + data.base64EncodedString() }
-}
-
-struct EaselVectorPalette: Equatable {
-    struct Swatch: Equatable {
-        var ink: String
-        var card: String
-        var cardLine: String
-        var muted: String
+    package init(x: Double, y: Double, text: String, fontFamily: String, fontSize: Double, weight: Int = 400, italic: Bool = false, color: String? = nil, underline: Bool = false, strikethrough: Bool = false, link: String? = nil, syntax: String? = nil) {
+        self.x = x
+        self.y = y
+        self.text = text
+        self.fontFamily = fontFamily
+        self.fontSize = fontSize
+        self.weight = weight
+        self.italic = italic
+        self.color = color
+        self.underline = underline
+        self.strikethrough = strikethrough
+        self.link = link
+        self.syntax = syntax
     }
-    var light: Swatch
-    var dark: Swatch
-    var code: EaselCodePalette = .standard
+}
 
-    static let standard = EaselVectorPalette(
+package struct EaselVectorText: Equatable {
+    package var runs: [EaselVectorTextRun] = []
+    package var fillPath: String?
+    package var fillColor: String = "#000000"
+
+    package init(runs: [EaselVectorTextRun] = [], fillPath: String? = nil, fillColor: String = "#000000") {
+        self.runs = runs
+        self.fillPath = fillPath
+        self.fillColor = fillColor
+    }
+}
+
+package struct EaselVectorImage: Equatable {
+    package var data: Data
+    package var mimeType: String
+    package var dataURI: String { "data:" + mimeType + ";base64," + data.base64EncodedString() }
+
+    package init(data: Data, mimeType: String) {
+        self.data = data
+        self.mimeType = mimeType
+    }
+}
+
+package struct EaselVectorPalette: Equatable {
+    package struct Swatch: Equatable {
+        package var ink: String
+        package var card: String
+        package var cardLine: String
+        package var muted: String
+
+        package init(ink: String, card: String, cardLine: String, muted: String) {
+            self.ink = ink
+            self.card = card
+            self.cardLine = cardLine
+            self.muted = muted
+        }
+    }
+    package var light: Swatch
+    package var dark: Swatch
+    package var code: EaselCodePalette = .standard
+
+    package init(light: Swatch, dark: Swatch, code: EaselCodePalette = .standard) {
+        self.light = light
+        self.dark = dark
+        self.code = code
+    }
+
+    package static let standard = EaselVectorPalette(
         light: Swatch(ink: "#1F1B2E", card: "#F6F5F9", cardLine: "rgba(31,27,46,.12)", muted: "rgba(31,27,46,.62)"),
         dark: Swatch(ink: "#EDEBFA", card: "#24212F", cardLine: "rgba(255,255,255,.14)", muted: "rgba(237,235,250,.62)"))
 }
 
-struct EaselVectorArt {
-    var texts: [UUID: EaselVectorText] = [:]
-    var images: [UUID: EaselVectorImage] = [:]
-    var connectorRoutes: [UUID: EaselConnectorRoute] = [:]
-    var connectorLabels: [UUID: EaselConnectorLabelArt] = [:]
-    var sectionTitles: [UUID: EaselVectorSectionTitle] = [:]
+package struct EaselVectorArt {
+    package var texts: [UUID: EaselVectorText] = [:]
+    package var images: [UUID: EaselVectorImage] = [:]
+    package var connectorRoutes: [UUID: EaselConnectorRoute] = [:]
+    package var connectorLabels: [UUID: EaselConnectorLabelArt] = [:]
+    package var sectionTitles: [UUID: EaselVectorSectionTitle] = [:]
+
+    package init(texts: [UUID: EaselVectorText] = [:], images: [UUID: EaselVectorImage] = [:], connectorRoutes: [UUID: EaselConnectorRoute] = [:], connectorLabels: [UUID: EaselConnectorLabelArt] = [:], sectionTitles: [UUID: EaselVectorSectionTitle] = [:]) {
+        self.texts = texts
+        self.images = images
+        self.connectorRoutes = connectorRoutes
+        self.connectorLabels = connectorLabels
+        self.sectionTitles = sectionTitles
+    }
 }
 
-enum EaselVectorExport {
-    static let margin: Double = 40
-    static let automaticInk = "#252525"
+package enum EaselVectorExport {
+    package static let margin: Double = 40
+    package static let automaticInk = "#252525"
 
-    static func contentBounds(_ items: [EaselItem], art: EaselVectorArt = .init(), margin: Double = margin) -> EaselRect {
+    package static func contentBounds(_ items: [EaselItem], art: EaselVectorArt = .init(), margin: Double = margin) -> EaselRect {
         let frames = items.map { exportFrame($0, art: art) }.filter { [$0.x, $0.y, $0.width, $0.height].allSatisfy(\.isFinite) }
         guard let first = frames.first else { return EaselRect(x: 0, y: 0, width: 2 * margin + 320, height: 2 * margin + 200) }
         var minX = first.x, minY = first.y, maxX = first.x + first.width, maxY = first.y + first.height
@@ -68,12 +115,12 @@ enum EaselVectorExport {
                          width: max(1, maxX - minX) + 2 * (margin + stroke), height: max(1, maxY - minY) + 2 * (margin + stroke))
     }
 
-    static func isAutomatic(_ hex: String) -> Bool {
+    package static func isAutomatic(_ hex: String) -> Bool {
         let value = hex.uppercased()
         return value == automaticInk || value == automaticInk + "FF"
     }
 
-    static func escape(_ text: String) -> String {
+    package static func escape(_ text: String) -> String {
         var result = ""
         result.reserveCapacity(text.utf8.count)
         for scalar in text.unicodeScalars {
@@ -92,28 +139,28 @@ enum EaselVectorExport {
         return result
     }
 
-    static func number(_ value: Double) -> String {
+    package static func number(_ value: Double) -> String {
         guard value.isFinite else { return "0" }
         let rounded = (value * 100).rounded() / 100
         if rounded == rounded.rounded(), abs(rounded) < 1e15 { return String(Int(rounded)) }
         return String(rounded)
     }
 
-    static func safeLink(_ raw: String?) -> String? {
+    package static func safeLink(_ raw: String?) -> String? {
         guard let raw, let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
               let scheme = url.scheme?.lowercased(), ["http", "https", "mailto"].contains(scheme) else { return nil }
         return url.absoluteString
     }
 
-    static func color(_ hex: String) -> String? {
+    package static func color(_ hex: String) -> String? {
         let body = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
         guard [6, 8].contains(body.count), body.allSatisfy(\.isHexDigit) else { return nil }
         return "#" + body.prefix(6).uppercased()
     }
 
-    static func paint(_ hex: String) -> String { paint(hex, role: .ink) }
+    package static func paint(_ hex: String) -> String { paint(hex, role: .ink) }
 
-    static func svg(_ items: [EaselItem], art: EaselVectorArt, title: String) -> String {
+    package static func svg(_ items: [EaselItem], art: EaselVectorArt, title: String) -> String {
         let shown = EaselBoardObjects.displayed(items)
         let bounds = contentBounds(shown, art: art)
         var svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" class=\"easel-svg\""
@@ -127,11 +174,11 @@ enum EaselVectorExport {
         return svg + "</svg>"
     }
 
-    static func element(_ item: EaselItem, art: EaselVectorArt) -> String {
+    package static func element(_ item: EaselItem, art: EaselVectorArt) -> String {
         transformed(item, kindElement(item, art: art))
     }
 
-    static func transformed(_ item: EaselItem, _ body: String) -> String {
+    package static func transformed(_ item: EaselItem, _ body: String) -> String {
         guard !body.isEmpty, EaselRotation.isTransformed(item) else { return body }
         let middle = EaselRotation.center(of: item.frame), angle = EaselRotation.degrees(of: item)
         var steps: [String] = []
@@ -144,11 +191,11 @@ enum EaselVectorExport {
         return "<g transform=\"" + steps.joined(separator: " ") + "\">" + body + "</g>"
     }
 
-    static func matrix(_ transform: EaselTransform) -> String {
+    package static func matrix(_ transform: EaselTransform) -> String {
         "matrix(" + [transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty].map(number).joined(separator: " ") + ")"
     }
 
-    static func kindElement(_ item: EaselItem, art: EaselVectorArt) -> String {
+    package static func kindElement(_ item: EaselItem, art: EaselVectorArt) -> String {
         switch item.kind {
         case .text: return text(item, art.texts[item.id])
         case .rectangle, .circle: return shape(item) + text(item, art.texts[item.id])
@@ -167,20 +214,20 @@ enum EaselVectorExport {
         }
     }
 
-    static func board(_ item: EaselItem, _ layout: EaselVectorText?, title: EaselVectorSectionTitle? = nil) -> String {
+    package static func board(_ item: EaselItem, _ layout: EaselVectorText?, title: EaselVectorSectionTitle? = nil) -> String {
         item.kind == .section ? section(item, title: title) : sticky(item, layout)
     }
 
-    static func objectLinked(_ item: EaselItem, _ body: String) -> String {
+    package static func objectLinked(_ item: EaselItem, _ body: String) -> String {
         EaselObjectLink.canLink(item) && !body.isEmpty ? linked(body, item.url) : body
     }
 
-    static func linked(_ body: String, _ raw: String?) -> String {
+    package static func linked(_ body: String, _ raw: String?) -> String {
         guard let link = safeLink(raw) else { return body }
         return "<a href=\"" + escape(link) + "\" target=\"_blank\" rel=\"noopener\">" + body + "</a>"
     }
 
-    static func shape(_ item: EaselItem) -> String {
+    package static func shape(_ item: EaselItem) -> String {
         if let kind = item.resolvedShape, !EaselShapeGeometry.usesOriginalLook(item) { return styledShape(item, kind) }
         let f = item.frame
         let style = " style=\"" + fillStyle(item) + ";" + strokeStyle(item) + "\""
@@ -192,7 +239,7 @@ enum EaselVectorExport {
             + number(f.height) + "\" rx=\"5\" ry=\"5\"" + style + "/>"
     }
 
-    static func styledShape(_ item: EaselItem, _ kind: EaselShape) -> String {
+    package static func styledShape(_ item: EaselItem, _ kind: EaselShape) -> String {
         var result = "<path d=\"" + EaselShapeGeometry.outline(kind, in: item.frame).svgPathData + "\" style=\"" + fillStyle(item) + ";" + strokeStyle(item) + "\"/>"
         let details = EaselShapeGeometry.details(kind, in: item.frame)
         if EaselPaintRules.strokeWidth(item) > 0, !details.isEmpty {
@@ -201,7 +248,7 @@ enum EaselVectorExport {
         return result
     }
 
-    static func strokePath(_ item: EaselItem) -> String? {
+    package static func strokePath(_ item: EaselItem) -> String? {
         guard let first = item.points.first else { return nil }
         let f = item.frame
         var path = "M" + number(f.x + first.x) + " " + number(f.y + first.y)
@@ -210,7 +257,7 @@ enum EaselVectorExport {
         return path
     }
 
-    static func arrowHead(_ item: EaselItem) -> String? {
+    package static func arrowHead(_ item: EaselItem) -> String? {
         guard item.kind == .arrow, item.points.count >= 2, let last = item.points.last else { return nil }
         let previous = item.points[item.points.count - 2], angle = atan2(last.y - previous.y, last.x - previous.x)
         let end = (x: item.frame.x + last.x, y: item.frame.y + last.y)
@@ -220,14 +267,14 @@ enum EaselVectorExport {
             + "L" + number(end.x - cos(angle + 0.5) * length) + " " + number(end.y - sin(angle + 0.5) * length)
     }
 
-    static func stroke(_ item: EaselItem) -> String {
+    package static func stroke(_ item: EaselItem) -> String {
         guard let path = strokePath(item) else { return "" }
         var result = "<path d=\"" + path + "\" style=\"fill:none;" + strokeStyle(item, rounded: true) + "\"/>"
         if let head = arrowHead(item) { result += "<path d=\"" + head + "\" style=\"fill:none;" + strokeStyle(item, dashed: false, rounded: true) + "\"/>" }
         return result
     }
 
-    static func image(_ item: EaselItem, _ picture: EaselVectorImage, corner: Double) -> String {
+    package static func image(_ item: EaselItem, _ picture: EaselVectorImage, corner: Double) -> String {
         let f = item.frame
         let geometry = "x=\"" + number(f.x) + "\" y=\"" + number(f.y) + "\" width=\"" + number(f.width) + "\" height=\"" + number(f.height) + "\""
         var result = ""
@@ -242,7 +289,7 @@ enum EaselVectorExport {
         return result
     }
 
-    static func framedImage(_ item: EaselItem, _ picture: EaselVectorImage) -> String {
+    package static func framedImage(_ item: EaselItem, _ picture: EaselVectorImage) -> String {
         let f = item.frame
         let frame = CGRect(x: f.x, y: f.y, width: f.width, height: f.height)
         let alt = item.altText.flatMap { $0.isEmpty ? nil : escape($0) }
@@ -267,7 +314,7 @@ enum EaselVectorExport {
             + element(source, rotate) + "/></g>"
     }
 
-    static func poster(_ item: EaselItem, _ picture: EaselVectorImage) -> String {
+    package static func poster(_ item: EaselItem, _ picture: EaselVectorImage) -> String {
         let alt = item.altText.flatMap { $0.isEmpty ? nil : escape($0) }
         var labelled = item
         labelled.text = ""
@@ -276,7 +323,7 @@ enum EaselVectorExport {
         return "<g role=\"img\" aria-label=\"" + alt + "\"><title>" + alt + "</title>" + body + "</g>"
     }
 
-    static func card(_ item: EaselItem) -> String {
+    package static func card(_ item: EaselItem) -> String {
         let f = item.frame
         let title = item.text.isEmpty ? (item.url ?? "Link") : item.text
         var result = "<g class=\"easel-card\"><rect x=\"" + number(f.x) + "\" y=\"" + number(f.y) + "\" width=\"" + number(f.width)
@@ -294,7 +341,7 @@ enum EaselVectorExport {
         return linked(result + "</g></g>", item.url)
     }
 
-    static func text(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
+    package static func text(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
         guard let layout, !layout.runs.isEmpty || layout.fillPath != nil else { return "" }
         var result = "<g transform=\"translate(" + number(item.frame.x) + " " + number(item.frame.y) + ")\">"
         if let fill = layout.fillPath, !fill.isEmpty {
@@ -304,7 +351,7 @@ enum EaselVectorExport {
         return result + "</g>"
     }
 
-    static func textRun(_ run: EaselVectorTextRun) -> String {
+    package static func textRun(_ run: EaselVectorTextRun) -> String {
         var style = "font-family:" + run.fontFamily + ";font-size:" + number(run.fontSize) + "px"
         if run.weight != 400 { style += ";font-weight:" + String(run.weight) }
         if run.italic { style += ";font-style:italic" }
@@ -316,7 +363,7 @@ enum EaselVectorExport {
         return linked(body, run.link)
     }
 
-    static func css(_ palette: EaselVectorPalette) -> String {
+    package static func css(_ palette: EaselVectorPalette) -> String {
         func variables(_ swatch: EaselVectorPalette.Swatch) -> String {
             "--easel-ink:" + swatch.ink + ";--easel-card:" + swatch.card + ";--easel-card-line:" + swatch.cardLine + ";--easel-muted:" + swatch.muted + ";"
         }
@@ -327,7 +374,7 @@ enum EaselVectorExport {
             + ".easel-svg a{cursor:pointer}\n" + codeCSS(palette.code)
     }
 
-    static func htmlDocument(_ document: EaselDocument, art: EaselVectorArt, palette: EaselVectorPalette = .standard) -> String {
+    package static func htmlDocument(_ document: EaselDocument, art: EaselVectorArt, palette: EaselVectorPalette = .standard) -> String {
         let trimmed = document.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmed.isEmpty ? "Untitled Easel" : trimmed
         var html = "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n"
@@ -349,7 +396,7 @@ enum EaselVectorExport {
         return html
     }
 
-    static func imageMimeType(_ data: Data) -> String? {
+    package static func imageMimeType(_ data: Data) -> String? {
         let bytes = [UInt8](data.prefix(12))
         if bytes.starts(with: [0x89, 0x50, 0x4E, 0x47]) { return "image/png" }
         if bytes.starts(with: [0xFF, 0xD8, 0xFF]) { return "image/jpeg" }
@@ -358,7 +405,7 @@ enum EaselVectorExport {
         return nil
     }
 
-    static func exportFileName(_ title: String, fileExtension: String) -> String {
+    package static func exportFileName(_ title: String, fileExtension: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let base = (trimmed.isEmpty ? "Untitled Easel" : trimmed)
             .replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")

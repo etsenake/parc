@@ -1,5 +1,6 @@
 import AppKit
 import CoreText
+import ParcCore
 
 final class NoteMathLayoutEntry {
     let box: NoteMathBox

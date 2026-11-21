@@ -1,27 +1,39 @@
 import Foundation
 
-struct EaselMermaidSize: Equatable {
-    var width: Double
-    var height: Double
+package struct EaselMermaidSize: Equatable {
+    package var width: Double
+    package var height: Double
+
+    package init(width: Double, height: Double) {
+        self.width = width
+        self.height = height
+    }
 }
 
-typealias EaselMermaidMeasure = (_ text: String, _ maximumWidth: Double) -> EaselMermaidSize
+package typealias EaselMermaidMeasure = (_ text: String, _ maximumWidth: Double) -> EaselMermaidSize
 
-struct EaselMermaidLayout: Equatable {
-    var nodes: [String: EaselRect] = [:]
-    var groups: [String: EaselRect] = [:]
-    var edgeDirections: [Int: EaselMermaidDirection] = [:]
-    var width = 0.0
-    var height = 0.0
+package struct EaselMermaidLayout: Equatable {
+    package var nodes: [String: EaselRect] = [:]
+    package var groups: [String: EaselRect] = [:]
+    package var edgeDirections: [Int: EaselMermaidDirection] = [:]
+    package var width = 0.0
+    package var height = 0.0
 }
 
-struct EaselMermaidDrawing: Equatable {
-    var items: [EaselItem]
-    var width: Double
-    var height: Double
-    var headings: Set<UUID> = []
+package struct EaselMermaidDrawing: Equatable {
+    package var items: [EaselItem]
+    package var width: Double
+    package var height: Double
+    package var headings: Set<UUID> = []
 
-    func moved(by dx: Double, _ dy: Double) -> EaselMermaidDrawing {
+    package init(items: [EaselItem], width: Double, height: Double, headings: Set<UUID> = []) {
+        self.items = items
+        self.width = width
+        self.height = height
+        self.headings = headings
+    }
+
+    package func moved(by dx: Double, _ dy: Double) -> EaselMermaidDrawing {
         var copy = self
         for index in copy.items.indices {
             copy.items[index].frame.x += dx
@@ -31,20 +43,27 @@ struct EaselMermaidDrawing: Equatable {
     }
 }
 
-enum EaselMermaidLayoutEngine {
-    static let nodeGap = 56.0
-    static let rankGap = 84.0
-    static let edgeGap = 24.0
-    static let sectionPadding = 32.0
-    static let sectionTitleBand = 48.0
-    static let minimumSection = EaselMermaidSize(width: 200, height: 120)
-    static let dummyBudget = 12_000
+package enum EaselMermaidLayoutEngine {
+    package static let nodeGap = 56.0
+    package static let rankGap = 84.0
+    package static let edgeGap = 24.0
+    package static let sectionPadding = 32.0
+    package static let sectionTitleBand = 48.0
+    package static let minimumSection = EaselMermaidSize(width: 200, height: 120)
+    package static let dummyBudget = 12_000
 
-    struct Edge: Equatable {
-        var from: Int
-        var to: Int
-        var length = 1
-        var label: EaselMermaidSize?
+    package struct Edge: Equatable {
+        package var from: Int
+        package var to: Int
+        package var length = 1
+        package var label: EaselMermaidSize?
+
+        package init(from: Int, to: Int, length: Int = 1, label: EaselMermaidSize? = nil) {
+            self.from = from
+            self.to = to
+            self.length = length
+            self.label = label
+        }
     }
 
     private struct Graph {
@@ -113,7 +132,7 @@ enum EaselMermaidLayoutEngine {
         func members(of level: Int?) -> [Int] { level.map { children[$0] ?? [] } ?? topLevel }
     }
 
-    static func layout(_ diagram: EaselMermaidDiagram, nodeSizes: [String: EaselMermaidSize],
+    package static func layout(_ diagram: EaselMermaidDiagram, nodeSizes: [String: EaselMermaidSize],
                        labelSizes: [Int: EaselMermaidSize]) -> EaselMermaidLayout {
         let graph = Graph(diagram)
         var directions: [Int: EaselMermaidDirection] = [:]
@@ -169,7 +188,7 @@ enum EaselMermaidLayoutEngine {
         return (frames, placed.size)
     }
 
-    static func layered(sizes: [EaselMermaidSize], edges: [Edge], direction: EaselMermaidDirection) -> (centers: [EaselPoint], size: EaselMermaidSize) {
+    package static func layered(sizes: [EaselMermaidSize], edges: [Edge], direction: EaselMermaidDirection) -> (centers: [EaselPoint], size: EaselMermaidSize) {
         guard !sizes.isEmpty else { return ([], EaselMermaidSize(width: 0, height: 0)) }
         let vertical = direction.isVertical
         let cross = sizes.map { vertical ? $0.width : $0.height }, rank = sizes.map { vertical ? $0.height : $0.width }
@@ -195,7 +214,7 @@ enum EaselMermaidLayoutEngine {
         return (centers, EaselMermaidSize(width: maxX - minX, height: maxY - minY))
     }
 
-    static func arrange(cross: [Double], rank: [Double], edges: [Edge]) -> (cross: [Double], rank: [Double]) {
+    package static func arrange(cross: [Double], rank: [Double], edges: [Edge]) -> (cross: [Double], rank: [Double]) {
         let count = cross.count
         let links = edges.filter { $0.from != $0.to && (0..<count).contains($0.from) && (0..<count).contains($0.to) }
         var outgoing = Array(repeating: [Int](), count: count)
@@ -412,7 +431,7 @@ enum EaselMermaidLayoutEngine {
         return ((0..<count).map { coordinate[$0] }, (0..<count).map { centers[layerOf[$0]] })
     }
 
-    static func isotonic(_ desired: [Double], weights: [Double], gaps: [Double]) -> [Double] {
+    package static func isotonic(_ desired: [Double], weights: [Double], gaps: [Double]) -> [Double] {
         guard !desired.isEmpty, weights.count == desired.count, gaps.count == desired.count - 1 else { return desired }
         var offsets = [0.0]
         for gap in gaps { offsets.append(offsets[offsets.count - 1] + gap) }
@@ -437,12 +456,12 @@ enum EaselMermaidLayoutEngine {
 }
 
 extension EaselMermaid {
-    static let textWidth = 220.0
-    static let labelWidth = 180.0
-    static let thickStroke = 6.0
-    static let doubleStroke = 5.0
+    package static let textWidth = 220.0
+    package static let labelWidth = 180.0
+    package static let thickStroke = 6.0
+    package static let doubleStroke = 5.0
 
-    static func estimate(_ text: String, maximumWidth: Double) -> EaselMermaidSize {
+    package static func estimate(_ text: String, maximumWidth: Double) -> EaselMermaidSize {
         let character = 8.2, lineHeight = 20.0, limit = max(character, maximumWidth)
         var lines = 0, widest = 0.0
         for paragraph in text.components(separatedBy: "\n") {
@@ -471,12 +490,12 @@ extension EaselMermaid {
         return EaselMermaidSize(width: min(limit, widest), height: Double(max(1, lines)) * lineHeight)
     }
 
-    static func displayText(_ node: EaselMermaidNode) -> String {
+    package static func displayText(_ node: EaselMermaidNode) -> String {
         guard node.shape == .entity, !node.attributes.isEmpty else { return node.label }
         return ([node.label] + node.attributes.map(\.line)).joined(separator: "\n")
     }
 
-    static func appearance(_ shape: EaselMermaidShape) -> (kind: EaselItemKind, shape: EaselShape?, flipped: Bool, strokeWidth: Double?) {
+    package static func appearance(_ shape: EaselMermaidShape) -> (kind: EaselItemKind, shape: EaselShape?, flipped: Bool, strokeWidth: Double?) {
         switch shape {
         case .rectangle, .entity: return (.rectangle, nil, false, nil)
         case .rounded, .stadium: return (.rectangle, .roundedRectangle, false, nil)
@@ -504,7 +523,7 @@ extension EaselMermaid {
         }
     }
 
-    static func frameSize(_ shape: EaselMermaidShape, text: EaselMermaidSize) -> EaselMermaidSize {
+    package static func frameSize(_ shape: EaselMermaidShape, text: EaselMermaidSize) -> EaselMermaidSize {
         let look = appearance(shape)
         let round = shape == .circle || shape == .doubleCircle || shape == .crossedCircle
         let minimum: EaselMermaidSize
@@ -534,7 +553,7 @@ extension EaselMermaid {
         return EaselMermaidSize(width: ceil(width), height: ceil(height))
     }
 
-    static func drawing(_ diagram: EaselMermaidDiagram, zIndex: Int = 1, ink: String = EaselPalette.automaticInk,
+    package static func drawing(_ diagram: EaselMermaidDiagram, zIndex: Int = 1, ink: String = EaselPalette.automaticInk,
                         measure: EaselMermaidMeasure = EaselMermaid.estimate) -> EaselMermaidDrawing {
         var nodeSizes: [String: EaselMermaidSize] = [:], labelSizes: [Int: EaselMermaidSize] = [:]
         for node in diagram.nodes where nodeSizes[node.id] == nil {
@@ -614,7 +633,7 @@ extension EaselMermaid {
         return minX < 0 || minY < 0 ? drawing.moved(by: -minX, -minY) : drawing
     }
 
-    static func sides(from a: EaselRect, to b: EaselRect, direction: EaselMermaidDirection,
+    package static func sides(from a: EaselRect, to b: EaselRect, direction: EaselMermaidDirection,
                       loop: Bool) -> (start: EaselConnection.Side?, end: EaselConnection.Side?) {
         if loop { return direction.isVertical ? (.right, .top) : (.bottom, .left) }
         let forward: Bool
@@ -633,7 +652,7 @@ extension EaselMermaid {
         }
     }
 
-    static func attachment(_ item: EaselItem, side: EaselConnection.Side?, toward target: EaselPoint) -> EaselPoint {
+    package static func attachment(_ item: EaselItem, side: EaselConnection.Side?, toward target: EaselPoint) -> EaselPoint {
         let r = item.frame
         if let side {
             if item.resolvedShape != nil, let point = EaselShapeGeometry.anchorPoint(of: item, side: side) { return point }
@@ -651,7 +670,7 @@ extension EaselMermaid {
         return EaselPoint(x: center.x + dx * scale, y: center.y + dy * scale)
     }
 
-    static func head(_ head: EaselMermaidHead) -> EaselArrowHead {
+    package static func head(_ head: EaselMermaidHead) -> EaselArrowHead {
         switch head {
         case .none: return .none
         case .arrow: return .arrow

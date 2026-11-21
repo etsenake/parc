@@ -1,11 +1,11 @@
 import Foundation
 
-enum EaselTemplate: String, CaseIterable, Identifiable {
+package enum EaselTemplate: String, CaseIterable, Identifiable {
     case brainstorm, retro, kanban, flowchart, weeklyPlan, mindMap, moodboard
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .brainstorm: return "Brainstorm"
         case .retro: return "Retro"
@@ -17,7 +17,7 @@ enum EaselTemplate: String, CaseIterable, Identifiable {
         }
     }
 
-    var blurb: String {
+    package var blurb: String {
         switch self {
         case .brainstorm: return "One big question, lots of stickies"
         case .retro: return "What went well, what to fix, what to try"
@@ -29,7 +29,7 @@ enum EaselTemplate: String, CaseIterable, Identifiable {
         }
     }
 
-    var keywords: [String] {
+    package var keywords: [String] {
         switch self {
         case .brainstorm: return ["ideas", "storm", "workshop"]
         case .retro: return ["retrospective", "review", "sprint"]
@@ -42,15 +42,15 @@ enum EaselTemplate: String, CaseIterable, Identifiable {
     }
 }
 
-struct EaselTemplateDrawing: Equatable {
-    var items: [EaselItem]
-    var bounds: EaselRect
+package struct EaselTemplateDrawing: Equatable {
+    package var items: [EaselItem]
+    package var bounds: EaselRect
 }
 
-enum EaselTemplates {
-    static let margin = EaselPoint(x: 48, y: 56)
+package enum EaselTemplates {
+    package static let margin = EaselPoint(x: 48, y: 56)
 
-    static func drawing(_ template: EaselTemplate) -> EaselTemplateDrawing {
+    package static func drawing(_ template: EaselTemplate) -> EaselTemplateDrawing {
         var builder = Builder()
         switch template {
         case .brainstorm: builder.brainstorm()
@@ -66,7 +66,7 @@ enum EaselTemplates {
         return EaselTemplateDrawing(items: items, bounds: bounds)
     }
 
-    static func placed(_ template: EaselTemplate, centeredAt center: EaselPoint, within visible: EaselRect? = nil,
+    package static func placed(_ template: EaselTemplate, centeredAt center: EaselPoint, within visible: EaselRect? = nil,
                        firstZIndex: Int) -> EaselTemplateDrawing {
         let base = drawing(template)
         var x = center.x - base.bounds.width / 2, y = center.y - base.bounds.height / 2

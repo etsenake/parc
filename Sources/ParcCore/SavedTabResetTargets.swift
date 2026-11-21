@@ -1,7 +1,7 @@
 import Foundation
 
-enum SavedTabResetTargets {
-    static func collect(in state: BrowserState, spaceID: UUID) -> [BrowserTab] {
+package enum SavedTabResetTargets {
+    package static func collect(in state: BrowserState, spaceID: UUID) -> [BrowserTab] {
         guard let space = state.spaces.first(where: { $0.id == spaceID }),
               state.profiles.contains(where: { $0.id == space.profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == space.profileID }) else { return [] }

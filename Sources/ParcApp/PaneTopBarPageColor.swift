@@ -1,4 +1,5 @@
 import AppKit
+import ParcEngine
 
 extension PCNativePage {
     var reportsTopBandColor: Bool { responds(to: #selector(getter: PCNativePage.topBandColor)) }

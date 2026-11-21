@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcCore
 
 extension BrowserWindowController {
     func layoutChrome() {

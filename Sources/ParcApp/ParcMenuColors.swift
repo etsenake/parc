@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 struct ParcMenuColors {
     let base: NSColor

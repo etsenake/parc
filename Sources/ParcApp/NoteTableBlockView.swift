@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcCore
 
 struct NoteTableGeometry: Equatable {
     private(set) var columnWidths: [CGFloat]

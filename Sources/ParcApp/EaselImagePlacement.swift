@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import ParcCore
 
 @MainActor
 struct EaselImageInput {

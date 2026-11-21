@@ -1,16 +1,16 @@
 import Foundation
 
-struct CapturePaletteDocument: Equatable {
-    enum Target: Equatable { case easel(UUID), note(URL) }
-    enum Kind: String { case easel = "Easel", note = "Note" }
+package struct CapturePaletteDocument: Equatable {
+    package enum Target: Equatable { case easel(UUID), note(URL) }
+    package enum Kind: String { case easel = "Easel", note = "Note" }
 
-    let target: Target
-    let title: String
-    let icon: String?
-    let modifiedAt: Date?
-    let id: String
+    package let target: Target
+    package let title: String
+    package let icon: String?
+    package let modifiedAt: Date?
+    package let id: String
 
-    init(target: Target, title: String, icon: String? = nil, modifiedAt: Date? = nil) {
+    package init(target: Target, title: String, icon: String? = nil, modifiedAt: Date? = nil) {
         self.target = target; self.title = title; self.icon = icon; self.modifiedAt = modifiedAt
         switch target {
         case .easel(let id): self.id = "easel:" + id.uuidString
@@ -18,28 +18,28 @@ struct CapturePaletteDocument: Equatable {
         }
     }
 
-    init(_ easel: CaptureEaselDestination) {
+    package init(_ easel: CaptureEaselDestination) {
         self.init(target: .easel(easel.id), title: easel.title, modifiedAt: easel.modifiedAt)
     }
 
-    init(_ note: CaptureNoteDestination) {
+    package init(_ note: CaptureNoteDestination) {
         self.init(target: .note(note.url), title: note.title, icon: note.icon, modifiedAt: note.modifiedAt)
     }
 
-    var kind: Kind {
+    package var kind: Kind {
         if case .easel = target { return .easel }
         return .note
     }
 }
 
-enum CapturePaletteSubmenu: Equatable { case easels, notes }
+package enum CapturePaletteSubmenu: Equatable { case easels, notes }
 
-enum CapturePaletteAction: Equatable {
+package enum CapturePaletteAction: Equatable {
     case library, copy, save, message, edit, crop, frame, removeFrame, retake
     case easels, notes, newEasel, newNote
     case document(CapturePaletteDocument)
 
-    var id: String {
+    package var id: String {
         switch self {
         case .library: return "library"
         case .copy: return "copy"
@@ -58,7 +58,7 @@ enum CapturePaletteAction: Equatable {
         }
     }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .library: return "Save to Library"
         case .copy: return "Copy"
@@ -77,7 +77,7 @@ enum CapturePaletteAction: Equatable {
         }
     }
 
-    var symbol: String {
+    package var symbol: String {
         switch self {
         case .library: return "tray.and.arrow.down"
         case .copy: return "doc.on.doc"
@@ -95,7 +95,7 @@ enum CapturePaletteAction: Equatable {
         }
     }
 
-    var submenu: CapturePaletteSubmenu? {
+    package var submenu: CapturePaletteSubmenu? {
         switch self {
         case .easels: return .easels
         case .notes: return .notes
@@ -103,50 +103,72 @@ enum CapturePaletteAction: Equatable {
         }
     }
 
-    func title(librarySaved: Bool, framed: Bool) -> String {
+    package func title(librarySaved: Bool, framed: Bool) -> String {
         if self == .library && librarySaved { return "Saved to Library" }
         if self == .frame && framed { return "Edit Portrait Frame" }
         return title
     }
 }
 
-struct CapturePaletteRow: Equatable {
-    var action: CapturePaletteAction
-    var title: String
-    var subtitle: String?
-    var section: String?
-    var separatorBefore = false
-    var isEnabled = true
-    var isChecked = false
+package struct CapturePaletteRow: Equatable {
+    package var action: CapturePaletteAction
+    package var title: String
+    package var subtitle: String?
+    package var section: String?
+    package var separatorBefore = false
+    package var isEnabled = true
+    package var isChecked = false
 
-    var id: String { action.id }
-    var hasSubmenu: Bool { action.submenu != nil }
+    package var id: String { action.id }
+    package var hasSubmenu: Bool { action.submenu != nil }
+
+    package init(action: CapturePaletteAction, title: String, subtitle: String? = nil, section: String? = nil, separatorBefore: Bool = false, isEnabled: Bool = true, isChecked: Bool = false) {
+        self.action = action
+        self.title = title
+        self.subtitle = subtitle
+        self.section = section
+        self.separatorBefore = separatorBefore
+        self.isEnabled = isEnabled
+        self.isChecked = isChecked
+    }
 }
 
-struct CapturePaletteContext: Equatable {
-    var easels: [CaptureEaselDestination] = []
-    var notes: [CaptureNoteDestination] = []
-    var framed = false
-    var librarySaved = false
-    var libraryAvailable = true
-    var easelsAvailable = true
-    var notesAvailable = false
-    var messageAvailable = true
-    var busy = false
+package struct CapturePaletteContext: Equatable {
+    package var easels: [CaptureEaselDestination] = []
+    package var notes: [CaptureNoteDestination] = []
+    package var framed = false
+    package var librarySaved = false
+    package var libraryAvailable = true
+    package var easelsAvailable = true
+    package var notesAvailable = false
+    package var messageAvailable = true
+    package var busy = false
 
-    var offersEasels: Bool { libraryAvailable && easelsAvailable }
-    var offersNotes: Bool { notesAvailable }
+    package var offersEasels: Bool { libraryAvailable && easelsAvailable }
+    package var offersNotes: Bool { notesAvailable }
+
+    package init(easels: [CaptureEaselDestination] = [], notes: [CaptureNoteDestination] = [], framed: Bool = false, librarySaved: Bool = false, libraryAvailable: Bool = true, easelsAvailable: Bool = true, notesAvailable: Bool = false, messageAvailable: Bool = true, busy: Bool = false) {
+        self.easels = easels
+        self.notes = notes
+        self.framed = framed
+        self.librarySaved = librarySaved
+        self.libraryAvailable = libraryAvailable
+        self.easelsAvailable = easelsAvailable
+        self.notesAvailable = notesAvailable
+        self.messageAvailable = messageAvailable
+        self.busy = busy
+    }
 }
 
-enum CapturePaletteMenu {
-    static let sendToTitle = "Send To"
-    static let recentTitle = "Recent"
+package enum CapturePaletteMenu {
+    package static let sendToTitle = "Send To"
+    package static let recentTitle = "Recent"
 
-    static func isEnabled(_ action: CapturePaletteAction, in context: CapturePaletteContext) -> Bool {
+    package static func isEnabled(_ action: CapturePaletteAction, in context: CapturePaletteContext) -> Bool {
         !context.busy && (action != .message || context.messageAvailable)
     }
 
-    static func rows(_ context: CapturePaletteContext, query: String = "") -> [CapturePaletteRow] {
+    package static func rows(_ context: CapturePaletteContext, query: String = "") -> [CapturePaletteRow] {
         guard query.isEmpty else { return search(context, query: query) }
         var rows = quickActions(context).map { row($0, context) }
         for (index, action) in editActions(context).enumerated() {
@@ -163,7 +185,7 @@ enum CapturePaletteMenu {
         return rows
     }
 
-    static func search(_ context: CapturePaletteContext, query: String) -> [CapturePaletteRow] {
+    package static func search(_ context: CapturePaletteContext, query: String) -> [CapturePaletteRow] {
         let needle = query.lowercased()
         func matches(_ title: String) -> Bool { title.lowercased().contains(needle) }
         var actions = quickActions(context) + editActions(context)
@@ -179,7 +201,7 @@ enum CapturePaletteMenu {
         return rows
     }
 
-    static func submenu(_ submenu: CapturePaletteSubmenu, context: CapturePaletteContext, query: String = "") -> [CapturePaletteRow] {
+    package static func submenu(_ submenu: CapturePaletteSubmenu, context: CapturePaletteContext, query: String = "") -> [CapturePaletteRow] {
         let offered = submenu == .easels ? context.offersEasels : context.offersNotes
         guard offered else { return [] }
         let create: CapturePaletteAction = submenu == .easels ? .newEasel : .newNote
@@ -196,17 +218,17 @@ enum CapturePaletteMenu {
         }
     }
 
-    static func documents(_ context: CapturePaletteContext) -> [CapturePaletteDocument] {
+    package static func documents(_ context: CapturePaletteContext) -> [CapturePaletteDocument] {
         (context.offersEasels ? CaptureEaselDestination.ranked(context.easels).map(CapturePaletteDocument.init) : [])
             + (context.offersNotes ? CaptureNoteDestination.ranked(context.notes).map(CapturePaletteDocument.init) : [])
     }
 
-    static func retainedHighlight(_ previousID: String?, in rows: [CapturePaletteRow]) -> String? {
+    package static func retainedHighlight(_ previousID: String?, in rows: [CapturePaletteRow]) -> String? {
         guard let previousID, let row = rows.first(where: { $0.id == previousID }), row.isEnabled else { return nil }
         return row.id
     }
 
-    static func firstAvailable(in rows: [CapturePaletteRow]) -> String? {
+    package static func firstAvailable(in rows: [CapturePaletteRow]) -> String? {
         rows.first(where: \.isEnabled)?.id
     }
 
@@ -225,16 +247,16 @@ enum CapturePaletteMenu {
     }
 }
 
-enum CapturePaletteKey: Equatable { case up, down, left, right, enter, escape, tab }
+package enum CapturePaletteKey: Equatable { case up, down, left, right, enter, escape, tab }
 
-enum CapturePaletteFocus: Equatable { case main, submenu(CapturePaletteSubmenu), frame }
+package enum CapturePaletteFocus: Equatable { case main, submenu(CapturePaletteSubmenu), frame }
 
-enum CapturePaletteCommand: Equatable {
+package enum CapturePaletteCommand: Equatable {
     case move(Int), activate, open(CapturePaletteSubmenu), closeSubmenu, back, cancel, consume, pass
 }
 
-enum CapturePaletteKeys {
-    static func command(_ key: CapturePaletteKey, focus: CapturePaletteFocus, highlighted: CapturePaletteAction?,
+package enum CapturePaletteKeys {
+    package static func command(_ key: CapturePaletteKey, focus: CapturePaletteFocus, highlighted: CapturePaletteAction?,
                         caretAtStart: Bool = true, caretAtEnd: Bool = true, composing: Bool = false) -> CapturePaletteCommand {
         guard !composing else { return .pass }
         switch focus {
@@ -272,28 +294,34 @@ enum CapturePaletteKeys {
     }
 }
 
-struct CaptureFrameSettings: Equatable {
-    enum Background: Int, CaseIterable { case color, page, desktop }
-    static let fractionTolerance = 0.001
+package struct CaptureFrameSettings: Equatable {
+    package enum Background: Int, CaseIterable { case color, page, desktop }
+    package static let fractionTolerance = 0.001
 
-    var background: Background
-    var fraction: Double
-    var watermark: Bool
+    package var background: Background
+    package var fraction: Double
+    package var watermark: Bool
 
-    func rendersLike(_ other: Self) -> Bool {
+    package init(background: Background, fraction: Double, watermark: Bool) {
+        self.background = background
+        self.fraction = fraction
+        self.watermark = watermark
+    }
+
+    package func rendersLike(_ other: Self) -> Bool {
         background == other.background && watermark == other.watermark
             && (background != .color || abs(fraction - other.fraction) < Self.fractionTolerance)
     }
 }
 
-enum CaptureFrameApply: Equatable {
+package enum CaptureFrameApply: Equatable {
     case pending, unchanged, unavailable
 
-    static func state(committed: CaptureFrameSettings?, draft: CaptureFrameSettings, renderable: Bool) -> Self {
+    package static func state(committed: CaptureFrameSettings?, draft: CaptureFrameSettings, renderable: Bool) -> Self {
         guard renderable else { return .unavailable }
         guard let committed else { return .pending }
         return draft.rendersLike(committed) ? .unchanged : .pending
     }
 
-    var isPrimary: Bool { self == .pending }
+    package var isPrimary: Bool { self == .pending }
 }

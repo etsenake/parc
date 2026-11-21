@@ -1,9 +1,9 @@
 import Foundation
 
 extension EaselVectorExport {
-    static let strokeAllowance = 4.0
+    package static let strokeAllowance = 4.0
 
-    static func exportFrame(_ item: EaselItem, art: EaselVectorArt = .init()) -> EaselRect {
+    package static func exportFrame(_ item: EaselItem, art: EaselVectorArt = .init()) -> EaselRect {
         let painted = paintedFrame(item)
         let width = EaselPaintRules.strokeWidth(item)
         guard item.kind == .arrow else { return outset(painted, by: max(0, width / 2 - strokeAllowance)) }
@@ -20,27 +20,27 @@ extension EaselVectorExport {
         return reach
     }
 
-    static func outset(_ r: EaselRect, by amount: Double) -> EaselRect {
+    package static func outset(_ r: EaselRect, by amount: Double) -> EaselRect {
         guard amount > 0, amount.isFinite else { return r }
         return EaselRect(x: r.x - amount, y: r.y - amount, width: r.width + 2 * amount, height: r.height + 2 * amount)
     }
 
-    static func union(_ a: EaselRect, _ b: EaselRect) -> EaselRect {
+    package static func union(_ a: EaselRect, _ b: EaselRect) -> EaselRect {
         let minX = min(a.x, b.x), minY = min(a.y, b.y)
         return EaselRect(x: minX, y: minY, width: max(a.x + a.width, b.x + b.width) - minX, height: max(a.y + a.height, b.y + b.height) - minY)
     }
 }
 
-enum EaselPreviewRegion {
-    static let margin = 40.0
+package enum EaselPreviewRegion {
+    package static let margin = 40.0
 
-    static func content(_ items: [EaselItem]) -> EaselRect? {
+    package static func content(_ items: [EaselItem]) -> EaselRect? {
         let shown = EaselBoardObjects.displayed(items)
         guard !shown.isEmpty else { return nil }
         return EaselVectorExport.contentBounds(shown, margin: margin)
     }
 
-    static func fit(_ content: EaselRect, aspect: Double, minimumWidth: Double) -> EaselRect {
+    package static func fit(_ content: EaselRect, aspect: Double, minimumWidth: Double) -> EaselRect {
         let ratio = aspect.isFinite && aspect > 0 ? aspect : 1
         let width = max(content.width, content.height / ratio, minimumWidth)
         let x = max(0, content.x + content.width / 2 - width / 2)
@@ -48,17 +48,17 @@ enum EaselPreviewRegion {
         return EaselRect(x: x, y: y, width: width, height: width * ratio)
     }
 
-    static func crop(_ content: EaselRect) -> EaselRect {
+    package static func crop(_ content: EaselRect) -> EaselRect {
         let x = max(0, content.x), y = max(0, content.y)
         return EaselRect(x: x, y: y, width: max(1, content.x + content.width - x), height: max(1, content.y + content.height - y))
     }
 }
 
-enum EaselExportScale {
-    static let maximumPixels = 64_000_000.0
-    static let maximumSide = 32_000.0
+package enum EaselExportScale {
+    package static let maximumPixels = 64_000_000.0
+    package static let maximumSide = 32_000.0
 
-    static func capped(_ scale: Double, width: Double, height: Double) -> Double {
+    package static func capped(_ scale: Double, width: Double, height: Double) -> Double {
         guard scale.isFinite, scale > 0, width.isFinite, height.isFinite, width > 0, height > 0 else { return scale }
         let pixels = width * height * scale * scale
         let budget = pixels > maximumPixels ? scale * (maximumPixels / pixels).squareRoot() : scale

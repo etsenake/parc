@@ -1,10 +1,10 @@
 import Foundation
 
-enum NoteFilePaths {
+package enum NoteFilePaths {
     private static let segmentCharacters: Set<UInt8> = Set(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~!$&'*+,;=@".utf8)
 
-    static func canonical(_ url: URL) -> URL {
+    package static func canonical(_ url: URL) -> URL {
         let standardized = url.standardizedFileURL
         var path = standardized.path
         var trailing: [String] = []
@@ -22,13 +22,13 @@ enum NoteFilePaths {
         return standardized
     }
 
-    static func key(for url: URL) -> String { identityKey(ofCanonicalPath: canonical(url).path) }
+    package static func key(for url: URL) -> String { identityKey(ofCanonicalPath: canonical(url).path) }
 
-    static func identityKey(ofCanonicalPath path: String) -> String {
+    package static func identityKey(ofCanonicalPath path: String) -> String {
         isCaseSensitive(atPath: path) ? path : path.precomposedStringWithCanonicalMapping.folding(options: [.caseInsensitive], locale: nil)
     }
 
-    static func sameItem(_ first: URL, _ second: URL) -> Bool {
+    package static func sameItem(_ first: URL, _ second: URL) -> Bool {
         let left = first.standardizedFileURL.path, right = second.standardizedFileURL.path
         if left == right { return true }
         let leftNode = NoteFileNode(path: left), rightNode = NoteFileNode(path: right)
@@ -37,7 +37,7 @@ enum NoteFilePaths {
         return key(for: first) == key(for: second)
     }
 
-    static func isOpenableFile(_ url: URL) -> Bool {
+    package static func isOpenableFile(_ url: URL) -> Bool {
         var info = stat()
         return stat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
     }
@@ -61,34 +61,34 @@ enum NoteFilePaths {
         return path.isEmpty ? nil : path
     }
 
-    static func itemExists(_ url: URL) -> Bool { itemExists(atPath: url.path) }
+    package static func itemExists(_ url: URL) -> Bool { itemExists(atPath: url.path) }
 
-    static func itemExists(atPath path: String) -> Bool {
+    package static func itemExists(atPath path: String) -> Bool {
         var info = stat()
         return lstat(path, &info) == 0
     }
 
-    static func isDirectory(_ url: URL) -> Bool {
+    package static func isDirectory(_ url: URL) -> Bool {
         var info = stat()
         return stat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR
     }
 
-    static func isDataless(_ url: URL) -> Bool {
+    package static func isDataless(_ url: URL) -> Bool {
         var info = stat()
         return lstat(url.path, &info) == 0 && info.st_flags & UInt32(SF_DATALESS) != 0
     }
 
-    static func isSameFile(_ first: URL, _ second: URL) -> Bool {
+    package static func isSameFile(_ first: URL, _ second: URL) -> Bool {
         var a = stat(), b = stat()
         guard stat(first.path, &a) == 0, stat(second.path, &b) == 0 else { return false }
         return a.st_dev == b.st_dev && a.st_ino == b.st_ino
     }
 
-    static func isInTrash(_ url: URL) -> Bool {
+    package static func isInTrash(_ url: URL) -> Bool {
         url.standardizedFileURL.pathComponents.contains { $0 == ".Trash" || $0 == ".Trashes" }
     }
 
-    static func contains(folder: URL, item: URL) -> Bool {
+    package static func contains(folder: URL, item: URL) -> Bool {
         let base = canonical(folder).pathComponents
         let inner = canonical(item).pathComponents
         guard inner.count > base.count else { return false }
@@ -96,7 +96,7 @@ enum NoteFilePaths {
         return zip(base, inner).allSatisfy { sameComponent($0, $1, caseInsensitive: insensitive) }
     }
 
-    static func relativePath(from directory: URL, to target: URL) -> String? {
+    package static func relativePath(from directory: URL, to target: URL) -> String? {
         let base = canonical(directory).pathComponents
         let destination = canonical(target).pathComponents
         let insensitive = !isCaseSensitive(directory)
@@ -110,7 +110,7 @@ enum NoteFilePaths {
         return parts.isEmpty ? "." : parts.joined(separator: "/")
     }
 
-    static func encodedSegment(_ segment: String) -> String {
+    package static func encodedSegment(_ segment: String) -> String {
         var result = ""
         for scalar in segment.unicodeScalars {
             if scalar.isASCII {
@@ -128,7 +128,7 @@ enum NoteFilePaths {
         return result
     }
 
-    static func encodedPath(_ components: [String]) -> String {
+    package static func encodedPath(_ components: [String]) -> String {
         components.map(encodedSegment).joined(separator: "/")
     }
 
@@ -152,11 +152,11 @@ enum NoteFilePaths {
     }
 }
 
-struct NoteFileNode: Hashable, Sendable {
-    var device: UInt64
-    var inode: UInt64
+package struct NoteFileNode: Hashable, Sendable {
+    package var device: UInt64
+    package var inode: UInt64
 
-    init?(path: String) {
+    package init?(path: String) {
         var info = stat()
         guard stat(path, &info) == 0 else { return nil }
         device = UInt64(info.st_dev)
@@ -164,18 +164,18 @@ struct NoteFileNode: Hashable, Sendable {
     }
 }
 
-struct NoteFileIdentity {
-    let path: String
-    let key: String
-    let node: NoteFileNode?
+package struct NoteFileIdentity {
+    package let path: String
+    package let key: String
+    package let node: NoteFileNode?
 
-    init(_ url: URL) {
+    package init(_ url: URL) {
         path = url.standardizedFileURL.path
         node = NoteFileNode(path: path)
         key = NoteFilePaths.key(for: url)
     }
 
-    func matches(_ url: URL) -> Bool {
+    package func matches(_ url: URL) -> Bool {
         let other = url.standardizedFileURL.path
         if other == path { return true }
         let otherNode = NoteFileNode(path: other)

@@ -1,7 +1,7 @@
 import Foundation
 
-enum NoteMarkdown {
-    static func parse(_ source: String, customEmoji: Set<String> = []) -> NotePage {
+package enum NoteMarkdown {
+    package static func parse(_ source: String, customEmoji: Set<String> = []) -> NotePage {
         var bytes = Array(source.utf8)
         if bytes.starts(with: [0xEF, 0xBB, 0xBF]) { bytes.removeFirst(3) }
         var settings = NotePageSettings()
@@ -20,9 +20,9 @@ enum NoteMarkdown {
         return NotePage(settings: settings, blocks: blocks)
     }
 
-    enum Purpose { case file, export }
+    package enum Purpose { case file, export }
 
-    static func serialize(_ page: NotePage, customEmoji: Set<String> = [], purpose: Purpose = .file) -> String {
+    package static func serialize(_ page: NotePage, customEmoji: Set<String> = [], purpose: Purpose = .file) -> String {
         switch purpose {
         case .file:
             return NoteMDWriter(page: page, customEmoji: customEmoji).write(page)
@@ -33,16 +33,16 @@ enum NoteMarkdown {
     }
 }
 
-enum NotePlainText {
-    static func parse(_ source: String) -> NotePage {
+package enum NotePlainText {
+    package static func parse(_ source: String) -> NotePage {
         NotePage(blocks: source.components(separatedBy: "\n").map { NoteBlock.paragraph(NoteText($0)) })
     }
 
-    static func serialize(_ page: NotePage) -> String {
+    package static func serialize(_ page: NotePage) -> String {
         page.allBlocks().map(line).joined(separator: "\n")
     }
 
-    static func line(_ block: NoteBlock) -> String {
+    package static func line(_ block: NoteBlock) -> String {
         guard block.kind.isMedia || block.kind == .bookmark || block.kind == .embed || block.kind == .easel, block.text.isEmpty,
               let source = block.props.source, !source.isEmpty else { return block.text.plainText }
         return source

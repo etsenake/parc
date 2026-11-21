@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import AVKit
+import ParcCore
 import UniformTypeIdentifiers
 
 @MainActor

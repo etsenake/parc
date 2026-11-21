@@ -1,15 +1,15 @@
 import Foundation
 
-enum NoteEmojiSkinTone: Int, CaseIterable, Codable {
+package enum NoteEmojiSkinTone: Int, CaseIterable, Codable {
     case none, light, mediumLight, medium, mediumDark, dark
 
-    static let modifiers: ClosedRange<UInt32> = 0x1F3FB...0x1F3FF
+    package static let modifiers: ClosedRange<UInt32> = 0x1F3FB...0x1F3FF
 
-    var modifier: Unicode.Scalar? {
+    package var modifier: Unicode.Scalar? {
         self == .none ? nil : Unicode.Scalar(Self.modifiers.lowerBound + UInt32(rawValue - 1))
     }
 
-    var displayName: String {
+    package var displayName: String {
         switch self {
         case .none: return "Default"
         case .light: return "Light"
@@ -21,12 +21,12 @@ enum NoteEmojiSkinTone: Int, CaseIterable, Codable {
     }
 }
 
-enum NoteEmojiCategory: String, CaseIterable {
+package enum NoteEmojiCategory: String, CaseIterable {
     case recents, custom, people, nature, food, activities, travel, objects, symbols, flags
 
-    static let browsable: [NoteEmojiCategory] = allCases.filter { $0 != .recents && $0 != .custom }
+    package static let browsable: [NoteEmojiCategory] = allCases.filter { $0 != .recents && $0 != .custom }
 
-    var displayName: String {
+    package var displayName: String {
         switch self {
         case .recents: return "Recents"
         case .custom: return "Custom"
@@ -41,7 +41,7 @@ enum NoteEmojiCategory: String, CaseIterable {
         }
     }
 
-    init(unicodeGroup: String) {
+    package init(unicodeGroup: String) {
         switch unicodeGroup {
         case "Smileys & Emotion", "People & Body": self = .people
         case "Animals & Nature": self = .nature
@@ -55,45 +55,56 @@ enum NoteEmojiCategory: String, CaseIterable {
     }
 }
 
-struct NoteEmoji: Hashable {
-    let character: String
-    let name: String
-    let keywords: [String]
-    let shortcodes: [String]
-    let category: NoteEmojiCategory
-    let version: Double
-    let skinToneVariants: [String]
-    let order: Int
+package struct NoteEmoji: Hashable {
+    package let character: String
+    package let name: String
+    package let keywords: [String]
+    package let shortcodes: [String]
+    package let category: NoteEmojiCategory
+    package let version: Double
+    package let skinToneVariants: [String]
+    package let order: Int
 
-    var supportsSkinTones: Bool { skinToneVariants.count == 5 }
+    package var supportsSkinTones: Bool { skinToneVariants.count == 5 }
 
-    var displayName: String { name.prefix(1).uppercased() + name.dropFirst() }
+    package var displayName: String { name.prefix(1).uppercased() + name.dropFirst() }
 
-    var shortcode: String { shortcodes.first ?? NoteEmojiCatalog.shortcode(fromName: name) }
+    package var shortcode: String { shortcodes.first ?? NoteEmojiCatalog.shortcode(fromName: name) }
 
-    func character(with tone: NoteEmojiSkinTone) -> String {
+    package init(character: String, name: String, keywords: [String], shortcodes: [String], category: NoteEmojiCategory, version: Double, skinToneVariants: [String], order: Int) {
+        self.character = character
+        self.name = name
+        self.keywords = keywords
+        self.shortcodes = shortcodes
+        self.category = category
+        self.version = version
+        self.skinToneVariants = skinToneVariants
+        self.order = order
+    }
+
+    package func character(with tone: NoteEmojiSkinTone) -> String {
         guard tone != .none, supportsSkinTones else { return character }
         return skinToneVariants[tone.rawValue - 1]
     }
 
-    func tone(of variant: String) -> NoteEmojiSkinTone? {
+    package func tone(of variant: String) -> NoteEmojiSkinTone? {
         if variant == character { return NoteEmojiSkinTone.none }
         return skinToneVariants.firstIndex(of: variant).flatMap { NoteEmojiSkinTone(rawValue: $0 + 1) }
     }
 }
 
 @MainActor
-final class NoteEmojiCatalog {
-    static let recentsKey = "Parc.Notes.Emoji.Recents"
-    static let skinToneKey = "Parc.Notes.Emoji.SkinTone"
-    static let recentsLimit = 36
-    static let randomCategories: Set<NoteEmojiCategory> = [.people, .nature, .food, .activities, .travel, .objects]
+package final class NoteEmojiCatalog {
+    package static let recentsKey = "Parc.Notes.Emoji.Recents"
+    package static let skinToneKey = "Parc.Notes.Emoji.SkinTone"
+    package static let recentsLimit = 36
+    package static let randomCategories: Set<NoteEmojiCategory> = [.people, .nature, .food, .activities, .travel, .objects]
 
-    static var bundledURL: URL? {
+    package static var bundledURL: URL? {
         Bundle.main.url(forResource: "emoji", withExtension: "json", subdirectory: "NoteEmoji")
     }
 
-    static let shared = NoteEmojiCatalog(url: bundledURL)
+    package static let shared = NoteEmojiCatalog(url: bundledURL)
 
     private let source: () -> Data?
     private let defaults: UserDefaults
@@ -101,25 +112,25 @@ final class NoteEmojiCatalog {
     private var availableCache: [NoteEmoji]?
     private var recentsCache: [String]?
 
-    var availability: (@MainActor (NoteEmoji) -> Bool)? {
+    package var availability: (@MainActor (NoteEmoji) -> Bool)? {
         didSet { availableCache = nil }
     }
 
-    init(url: URL?, defaults: UserDefaults = .standard) {
+    package init(url: URL?, defaults: UserDefaults = .standard) {
         source = { url.flatMap { try? Data(contentsOf: $0, options: .mappedIfSafe) } }
         self.defaults = defaults
     }
 
-    init(data: Data, defaults: UserDefaults = .standard) {
+    package init(data: Data, defaults: UserDefaults = .standard) {
         source = { data }
         self.defaults = defaults
     }
 
-    var isLoaded: Bool { !index.entries.isEmpty }
-    var unicodeVersion: String { index.unicodeVersion }
-    var all: [NoteEmoji] { index.entries }
+    package var isLoaded: Bool { !index.entries.isEmpty }
+    package var unicodeVersion: String { index.unicodeVersion }
+    package var all: [NoteEmoji] { index.entries }
 
-    var available: [NoteEmoji] {
+    package var available: [NoteEmoji] {
         if let availableCache { return availableCache }
         let entries = index.entries
         let filtered = availability.map { check in entries.filter { check($0) } } ?? entries
@@ -127,12 +138,12 @@ final class NoteEmojiCatalog {
         return filtered
     }
 
-    func emoji(in category: NoteEmojiCategory) -> [NoteEmoji] {
+    package func emoji(in category: NoteEmojiCategory) -> [NoteEmoji] {
         if category == .recents { return recents.compactMap { entry(for: $0) } }
         return available.filter { $0.category == category }
     }
 
-    func sections() -> [(category: NoteEmojiCategory, emoji: [NoteEmoji])] {
+    package func sections() -> [(category: NoteEmojiCategory, emoji: [NoteEmoji])] {
         var grouped: [NoteEmojiCategory: [NoteEmoji]] = [:]
         for emoji in available { grouped[emoji.category, default: []].append(emoji) }
         return NoteEmojiCategory.browsable.compactMap { category in
@@ -140,7 +151,7 @@ final class NoteEmojiCatalog {
         }
     }
 
-    func entry(for character: String) -> NoteEmoji? {
+    package func entry(for character: String) -> NoteEmoji? {
         let index = index
         if let position = index.byCharacter[character] ?? index.byCharacter[Self.unqualified(character)] {
             return index.entries[position]
@@ -148,7 +159,7 @@ final class NoteEmojiCatalog {
         return nil
     }
 
-    func emoji(forShortcode shortcode: String) -> NoteEmoji? {
+    package func emoji(forShortcode shortcode: String) -> NoteEmoji? {
         let code = Self.fold(shortcode).trimmingCharacters(in: CharacterSet(charactersIn: ":").union(.whitespaces))
         guard !code.isEmpty else { return nil }
         let index = index
@@ -157,7 +168,7 @@ final class NoteEmojiCatalog {
         return isAvailable(found) ? found : nil
     }
 
-    func search(_ query: String, limit: Int = .max) -> [NoteEmoji] {
+    package func search(_ query: String, limit: Int = .max) -> [NoteEmoji] {
         let folded = Self.fold(query).trimmingCharacters(in: CharacterSet(charactersIn: ":").union(.whitespacesAndNewlines))
         guard !folded.isEmpty, limit > 0 else { return [] }
         let index = index
@@ -178,30 +189,30 @@ final class NoteEmojiCatalog {
         return ranked.prefix(limit).map(\.emoji)
     }
 
-    func random() -> NoteEmoji? {
+    package func random() -> NoteEmoji? {
         var generator = SystemRandomNumberGenerator()
         return random(using: &generator)
     }
 
-    func random<Generator: RandomNumberGenerator>(using generator: inout Generator) -> NoteEmoji? {
+    package func random<Generator: RandomNumberGenerator>(using generator: inout Generator) -> NoteEmoji? {
         let pool = available.filter { Self.randomCategories.contains($0.category) }
         return (pool.isEmpty ? available : pool).randomElement(using: &generator)
     }
 
-    var skinTone: NoteEmojiSkinTone {
+    package var skinTone: NoteEmojiSkinTone {
         get { NoteEmojiSkinTone(rawValue: defaults.integer(forKey: Self.skinToneKey)) ?? .none }
         set { defaults.set(newValue.rawValue, forKey: Self.skinToneKey) }
     }
 
-    func character(for emoji: NoteEmoji) -> String {
+    package func character(for emoji: NoteEmoji) -> String {
         emoji.character(with: skinTone)
     }
 
-    func applying(_ tone: NoteEmojiSkinTone, to character: String) -> String {
+    package func applying(_ tone: NoteEmojiSkinTone, to character: String) -> String {
         entry(for: character)?.character(with: tone) ?? character
     }
 
-    var recents: [String] {
+    package var recents: [String] {
         if let recentsCache { return recentsCache }
         let stored = defaults.stringArray(forKey: Self.recentsKey) ?? []
         var seen = Set<String>()
@@ -214,7 +225,7 @@ final class NoteEmojiCatalog {
         return capped
     }
 
-    func recordUse(_ character: String) {
+    package func recordUse(_ character: String) {
         guard let base = recentBase(character) else { return }
         var list = recents.filter { recentBase($0) != base }
         list.insert(character, at: 0)
@@ -223,14 +234,14 @@ final class NoteEmojiCatalog {
         defaults.set(list, forKey: Self.recentsKey)
     }
 
-    func removeRecent(_ character: String) {
+    package func removeRecent(_ character: String) {
         let base = recentBase(character) ?? character
         let list = recents.filter { (recentBase($0) ?? $0) != base }
         recentsCache = list
         defaults.set(list, forKey: Self.recentsKey)
     }
 
-    func clearRecents() {
+    package func clearRecents() {
         recentsCache = []
         defaults.removeObject(forKey: Self.recentsKey)
     }
@@ -244,22 +255,22 @@ final class NoteEmojiCatalog {
         availability?(emoji) ?? true
     }
 
-    nonisolated static func fold(_ text: String) -> String {
+    package nonisolated static func fold(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: Locale(identifier: "en"))
             .replacingOccurrences(of: "\u{2019}", with: "'")
     }
 
-    nonisolated static func unqualified(_ character: String) -> String {
+    package nonisolated static func unqualified(_ character: String) -> String {
         var scalars = String.UnicodeScalarView()
         scalars.append(contentsOf: character.unicodeScalars.filter { $0.value != 0xFE0F })
         return String(scalars)
     }
 
-    nonisolated static func shortcode(fromName name: String) -> String {
+    package nonisolated static func shortcode(fromName name: String) -> String {
         words(in: fold(name).replacingOccurrences(of: "'", with: "")).joined(separator: "_")
     }
 
-    nonisolated static func words(in text: String) -> [String] {
+    package nonisolated static func words(in text: String) -> [String] {
         text.split { !$0.isLetter && !$0.isNumber }.map(String.init)
     }
 }
@@ -268,6 +279,11 @@ private struct NoteEmojiFile: Decodable {
     struct Group: Decodable {
         let name: String
         let emoji: [Entry]
+
+        package init(name: String, emoji: [Entry]) {
+            self.name = name
+            self.emoji = emoji
+        }
     }
     struct Entry: Decodable {
         let e: String
@@ -276,6 +292,15 @@ private struct NoteEmojiFile: Decodable {
         let c: [String]?
         let s: [String]?
         let v: Double
+
+        package init(e: String, n: String, k: [String]?, c: [String]?, s: [String]?, v: Double) {
+            self.e = e
+            self.n = n
+            self.k = k
+            self.c = c
+            self.s = s
+            self.v = v
+        }
     }
     let unicode: String
     let groups: [Group]

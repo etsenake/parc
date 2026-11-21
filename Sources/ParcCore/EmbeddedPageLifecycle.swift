@@ -1,76 +1,88 @@
 import Foundation
 
-struct EmbeddedPageFingerprint: Equatable {
+package struct EmbeddedPageFingerprint: Equatable {
     private let value: Any
     private let matches: (Any) -> Bool
 
-    init<Value: Equatable>(_ value: Value) {
+    package init<Value: Equatable>(_ value: Value) {
         self.value = value
         matches = { ($0 as? Value) == value }
     }
 
-    func unwrap<Value>(_ type: Value.Type) -> Value? { value as? Value }
+    package func unwrap<Value>(_ type: Value.Type) -> Value? { value as? Value }
 
-    static func == (lhs: EmbeddedPageFingerprint, rhs: EmbeddedPageFingerprint) -> Bool { lhs.matches(rhs.value) }
+    package static func == (lhs: EmbeddedPageFingerprint, rhs: EmbeddedPageFingerprint) -> Bool { lhs.matches(rhs.value) }
 }
 
-struct EmbeddedPageOwnerGate: Equatable {
-    private(set) var isDisposed = false
-    private(set) var isRetiring = false
-    private(set) var activeTransfer: UInt64?
-    private(set) var transferGeneration: UInt64 = 0
+package struct EmbeddedPageOwnerGate: Equatable {
+    package private(set) var isDisposed = false
+    package private(set) var isRetiring = false
+    package private(set) var activeTransfer: UInt64?
+    package private(set) var transferGeneration: UInt64 = 0
 
-    var isTransferring: Bool { activeTransfer != nil }
-    var admitsCreation: Bool { !isDisposed && !isTransferring && !isRetiring }
-    var admitsPositioning: Bool { admitsCreation }
-    var admitsInput: Bool { !isTransferring && !isRetiring }
-    var publishesPages: Bool { !isDisposed && !isTransferring }
-    var admitsTransferSnapshot: Bool { admitsCreation }
+    package var isTransferring: Bool { activeTransfer != nil }
+    package var admitsCreation: Bool { !isDisposed && !isTransferring && !isRetiring }
+    package var admitsPositioning: Bool { admitsCreation }
+    package var admitsInput: Bool { !isTransferring && !isRetiring }
+    package var publishesPages: Bool { !isDisposed && !isTransferring }
+    package var admitsTransferSnapshot: Bool { admitsCreation }
 
-    func admitsTransfer(generation: UInt64) -> Bool {
+    package init() {}
+
+    package func admitsTransfer(generation: UInt64) -> Bool {
         !isDisposed && !isRetiring && generation == transferGeneration
     }
 
     @discardableResult
-    mutating func beginRetirement() -> Bool {
+    package mutating func beginRetirement() -> Bool {
         guard !isRetiring, !isTransferring else { return false }
         isRetiring = true
         return true
     }
 
-    mutating func endRetirement() { isRetiring = false }
+    package mutating func endRetirement() { isRetiring = false }
 
     @discardableResult
-    mutating func beginTransfer(generation: UInt64) -> Bool {
+    package mutating func beginTransfer(generation: UInt64) -> Bool {
         guard !isTransferring, admitsTransfer(generation: generation) else { return false }
         activeTransfer = generation
         return true
     }
 
-    mutating func finishTransfer() {
+    package mutating func finishTransfer() {
         activeTransfer = nil
         transferGeneration &+= 1
     }
 
-    mutating func dispose() { isDisposed = true }
+    package mutating func dispose() { isDisposed = true }
 }
 
-struct EmbeddedPageSleepPolicy {
-    static let idleInterval: TimeInterval = 14_400
+package struct EmbeddedPageSleepPolicy {
+    package static let idleInterval: TimeInterval = 14_400
 
-    enum Protection: Equatable { case eligible, protected, unknown }
+    package enum Protection: Equatable { case eligible, protected, unknown }
 
-    struct Candidate: Equatable {
-        var lastShown: Date
-        var shown: Bool
-        var closing: Bool
-        var transferring: Bool
-        var editing: Bool
-        var pendingCreation: Bool
-        var pages: [Protection]
+    package struct Candidate: Equatable {
+        package var lastShown: Date
+        package var shown: Bool
+        package var closing: Bool
+        package var transferring: Bool
+        package var editing: Bool
+        package var pendingCreation: Bool
+        package var pages: [Protection]
+
+        package init(lastShown: Date, shown: Bool, closing: Bool, transferring: Bool, editing: Bool, pendingCreation: Bool, pages: [Protection]) {
+            self.lastShown = lastShown
+            self.shown = shown
+            self.closing = closing
+            self.transferring = transferring
+            self.editing = editing
+            self.pendingCreation = pendingCreation
+            self.pages = pages
+        }
     }
 
-    static func shouldSleep(_ candidate: Candidate, now: Date) -> Bool {
+    package static func shouldSleep(_ candidate: Candidate, now: Date) -> Bool {
         guard !candidate.shown, !candidate.closing, !candidate.transferring, !candidate.editing,
               !candidate.pendingCreation, !candidate.pages.isEmpty,
               candidate.lastShown < now.addingTimeInterval(-idleInterval) else { return false }

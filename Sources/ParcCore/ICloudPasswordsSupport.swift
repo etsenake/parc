@@ -1,18 +1,18 @@
 import Foundation
 import Security
 
-enum ICloudPasswordsSupport {
-    enum Helper: Equatable {
+package enum ICloudPasswordsSupport {
+    package enum Helper: Equatable {
         case unrestricted
         case restricted(Data)
     }
 
-    struct Signer {
-        var identifier: String?
-        var team: String?
-        var entitlements: [String: Any] = [:]
+    package struct Signer {
+        package var identifier: String?
+        package var team: String?
+        package var entitlements: [String: Any] = [:]
 
-        static var current: Signer {
+        package static var current: Signer {
             var code: SecCode?
             var staticCode: SecStaticCode?
             var information: CFDictionary?
@@ -27,15 +27,15 @@ enum ICloudPasswordsSupport {
         }
     }
 
-    static let manifest = URL(fileURLWithPath: "/Library/Google/Chrome/NativeMessagingHosts/com.apple.passwordmanager.json")
-    static let systemHelper = URL(fileURLWithPath:
+    package static let manifest = URL(fileURLWithPath: "/Library/Google/Chrome/NativeMessagingHosts/com.apple.passwordmanager.json")
+    package static let systemHelper = URL(fileURLWithPath:
         "/System/Cryptexes/App/System/Library/CoreServices/PasswordManagerBrowserExtensionHelper.app/Contents/MacOS/PasswordManagerBrowserExtensionHelper")
 
-    static func connects() -> Bool {
+    package static func connects() -> Bool {
         connects(helper: installedHelper(), signer: .current, on: ProcessInfo.processInfo.operatingSystemVersion)
     }
 
-    static func connects(helper: Helper?, signer: @autoclosure () -> Signer, on version: OperatingSystemVersion) -> Bool {
+    package static func connects(helper: Helper?, signer: @autoclosure () -> Signer, on version: OperatingSystemVersion) -> Bool {
         let release = (version.majorVersion, version.minorVersion)
         guard release >= (14, 0) else { return false }
         switch helper {
@@ -47,7 +47,7 @@ enum ICloudPasswordsSupport {
         return release < (15, 5)
     }
 
-    static func installedHelper(manifest: URL = manifest, fallback: URL = systemHelper) -> Helper? {
+    package static func installedHelper(manifest: URL = manifest, fallback: URL = systemHelper) -> Helper? {
         let named = (try? Data(contentsOf: manifest))
             .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
             .flatMap { $0["path"] as? String }
@@ -59,7 +59,7 @@ enum ICloudPasswordsSupport {
         return nil
     }
 
-    static func parentConstraint(in file: Data) -> Helper? {
+    package static func parentConstraint(in file: Data) -> Helper? {
         func word(_ offset: Int, bigEndian: Bool = false) -> Int? {
             guard offset >= 0, offset <= file.count - 4 else { return nil }
             let raw = file.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt32.self) }
@@ -102,21 +102,21 @@ enum ICloudPasswordsSupport {
         return nil
     }
 
-    struct LaunchConstraint {
-        struct Term {
-            let key: String
-            let value: Value
+    package struct LaunchConstraint {
+        package struct Term {
+            package let key: String
+            package let value: Value
         }
-        enum Value {
+        package enum Value {
             case integer(Int)
             case boolean(Bool)
             case string(String)
             case array([Value])
             case dictionary([Term])
         }
-        let requirements: [Term]
+        package let requirements: [Term]
 
-        init?(_ der: Data) {
+        package init?(_ der: Data) {
             let bytes = [UInt8](der)
             var index = 0
             guard case .array(let root)? = Self.value(bytes, &index, limit: bytes.count, depth: 0), index == bytes.count,
@@ -125,7 +125,7 @@ enum ICloudPasswordsSupport {
             self.requirements = requirements
         }
 
-        func admits(_ signer: Signer) -> Bool? { Self.all(requirements, signer) }
+        package func admits(_ signer: Signer) -> Bool? { Self.all(requirements, signer) }
 
         private static func value(_ bytes: [UInt8], _ index: inout Int, limit: Int, depth: Int) -> Value? {
             guard depth < 32, index + 2 <= limit else { return nil }

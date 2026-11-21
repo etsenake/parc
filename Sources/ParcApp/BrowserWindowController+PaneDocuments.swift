@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 extension BrowserWindowController {
     func paneDocumentRoutes(_ tabID: UUID?) -> [PaneDocumentRoute] {

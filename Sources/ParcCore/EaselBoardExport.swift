@@ -1,14 +1,21 @@
 import Foundation
 
-struct EaselVectorSectionTitle: Equatable {
-    var text: String
-    var width: Double
-    var baseline: Double
-    var hiddenCount: Int?
+package struct EaselVectorSectionTitle: Equatable {
+    package var text: String
+    package var width: Double
+    package var baseline: Double
+    package var hiddenCount: Int?
+
+    package init(text: String, width: Double, baseline: Double, hiddenCount: Int? = nil) {
+        self.text = text
+        self.width = width
+        self.baseline = baseline
+        self.hiddenCount = hiddenCount
+    }
 }
 
 extension EaselVectorExport {
-    static func paintedFrame(_ item: EaselItem) -> EaselRect {
+    package static func paintedFrame(_ item: EaselItem) -> EaselRect {
         let f = item.frame
         switch item.kind {
         case .sticky:
@@ -22,12 +29,12 @@ extension EaselVectorExport {
         }
     }
 
-    static func rounded(_ r: EaselRect, radius: Double, style: String) -> String {
+    package static func rounded(_ r: EaselRect, radius: Double, style: String) -> String {
         "<rect x=\"" + number(r.x) + "\" y=\"" + number(r.y) + "\" width=\"" + number(max(0, r.width)) + "\" height=\""
             + number(max(0, r.height)) + "\" rx=\"" + number(radius) + "\" ry=\"" + number(radius) + "\" style=\"" + style + "\"/>"
     }
 
-    static func sticky(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
+    package static func sticky(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
         let f = item.frame, scale = EaselBoardObjects.textScale(item)
         let radius = max(1.5, 4 * scale), lift = min(f.height * 0.45, 72 * scale)
         guard case .color = EaselPaintRules.fill(item) else { return "<g class=\"easel-sticky\">" + text(item, layout) + "</g>" }
@@ -57,7 +64,7 @@ extension EaselVectorExport {
         return result + text(item, layout) + "</g>"
     }
 
-    static func roundedPath(_ r: EaselRect, radius: Double) -> String {
+    package static func roundedPath(_ r: EaselRect, radius: Double) -> String {
         let k = min(radius, r.width / 2, r.height / 2)
         return "M" + number(r.x + k) + " " + number(r.y) + "H" + number(r.x + r.width - k)
             + "A" + number(k) + " " + number(k) + " 0 0 1 " + number(r.x + r.width) + " " + number(r.y + k)
@@ -69,7 +76,7 @@ extension EaselVectorExport {
             + "A" + number(k) + " " + number(k) + " 0 0 1 " + number(r.x + k) + " " + number(r.y) + "Z"
     }
 
-    static func sectionTabFill(_ item: EaselItem, line: String, border: Double) -> String {
+    package static func sectionTabFill(_ item: EaselItem, line: String, border: Double) -> String {
         switch EaselPaintRules.fill(item) {
         case .none: return "fill:" + line + ";fill-opacity:" + number(border)
         case .wash(let opacity): return "fill:" + paint(item.color, role: .ink) + ";fill-opacity:" + number(max(opacity, 0.12))
@@ -78,7 +85,7 @@ extension EaselVectorExport {
         }
     }
 
-    static func section(_ item: EaselItem, title: EaselVectorSectionTitle?) -> String {
+    package static func section(_ item: EaselItem, title: EaselVectorSectionTitle?) -> String {
         let f = item.frame, ink = paint(item.color, role: .ink)
         let border = isAutomatic(item.color) ? 0.22 : 0.5
         let line = ";stroke:" + ink + ";stroke-opacity:" + number(border)

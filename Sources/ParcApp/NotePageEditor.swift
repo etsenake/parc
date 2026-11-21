@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcCore
 
 enum NoteCaretDirection: Hashable { case up, down, left, right }
 

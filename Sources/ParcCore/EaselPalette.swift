@@ -1,17 +1,17 @@
 import Foundation
 
-enum EaselColorRole: String, CaseIterable {
+package enum EaselColorRole: String, CaseIterable {
     case ink, fill, sticky, highlight
 }
 
-enum EaselPaletteColor: Hashable, CaseIterable {
+package enum EaselPaletteColor: Hashable, CaseIterable {
     case automatic
     case neutral
     case note(NoteColor)
 
-    static let allCases: [EaselPaletteColor] = [.automatic, .neutral] + NoteColor.allCases.map { .note($0) }
+    package static let allCases: [EaselPaletteColor] = [.automatic, .neutral] + NoteColor.allCases.map { .note($0) }
 
-    init?(id: String) {
+    package init?(id: String) {
         switch id {
         case "automatic": self = .automatic
         case "neutral": self = .neutral
@@ -21,7 +21,7 @@ enum EaselPaletteColor: Hashable, CaseIterable {
         }
     }
 
-    var id: String {
+    package var id: String {
         switch self {
         case .automatic: return "automatic"
         case .neutral: return "neutral"
@@ -29,7 +29,7 @@ enum EaselPaletteColor: Hashable, CaseIterable {
         }
     }
 
-    func title(dark: Bool) -> String {
+    package func title(dark: Bool) -> String {
         switch self {
         case .automatic: return "Default"
         case .neutral: return dark ? "Black" : "White"
@@ -38,21 +38,27 @@ enum EaselPaletteColor: Hashable, CaseIterable {
     }
 }
 
-struct EaselColorVariants: Equatable {
-    var canonical: String
-    var light: String
-    var dark: String
-    var adapts: Bool { light != dark }
+package struct EaselColorVariants: Equatable {
+    package var canonical: String
+    package var light: String
+    package var dark: String
+    package var adapts: Bool { light != dark }
+
+    package init(canonical: String, light: String, dark: String) {
+        self.canonical = canonical
+        self.light = light
+        self.dark = dark
+    }
 }
 
-enum EaselPalette {
-    static let automaticInk = "#252525"
-    static let inkLight = "#1F1B2E"
-    static let inkDark = "#EDEBFA"
-    static let neutralLight = "#FFFFFF"
-    static let neutralDark = "#2A2733"
-    static let defaultSticky = EaselPaletteColor.note(.yellow)
-    static let defaultHighlight = EaselPaletteColor.note(.yellow)
+package enum EaselPalette {
+    package static let automaticInk = "#252525"
+    package static let inkLight = "#1F1B2E"
+    package static let inkDark = "#EDEBFA"
+    package static let neutralLight = "#FFFFFF"
+    package static let neutralDark = "#2A2733"
+    package static let defaultSticky = EaselPaletteColor.note(.yellow)
+    package static let defaultHighlight = EaselPaletteColor.note(.yellow)
 
     private typealias Pair = (light: String, dark: String)
 
@@ -80,7 +86,7 @@ enum EaselPalette {
         }
     }
 
-    static func colors(for role: EaselColorRole) -> [EaselPaletteColor] {
+    package static func colors(for role: EaselColorRole) -> [EaselPaletteColor] {
         let notes = NoteColor.allCases.map { EaselPaletteColor.note($0) }
         switch role {
         case .ink: return [.automatic] + notes
@@ -89,7 +95,7 @@ enum EaselPalette {
         }
     }
 
-    static func hex(_ color: EaselPaletteColor, role: EaselColorRole) -> String? {
+    package static func hex(_ color: EaselPaletteColor, role: EaselColorRole) -> String? {
         switch color {
         case .automatic: return role == .ink ? automaticInk : nil
         case .neutral: return role == .fill || role == .sticky ? neutralLight : nil
@@ -97,7 +103,7 @@ enum EaselPalette {
         }
     }
 
-    static func stored(_ color: EaselPaletteColor, role: EaselColorRole) -> String {
+    package static func stored(_ color: EaselPaletteColor, role: EaselColorRole) -> String {
         if let value = hex(color, role: role) { return value }
         switch role {
         case .ink: return automaticInk
@@ -106,7 +112,7 @@ enum EaselPalette {
         }
     }
 
-    static func normalized(_ hex: String) -> String? {
+    package static func normalized(_ hex: String) -> String? {
         let value = hex.uppercased()
         let digits = value.dropFirst()
         guard value.first == "#", digits.count == 6 || (digits.count == 8 && digits.hasSuffix("FF")),
@@ -114,7 +120,7 @@ enum EaselPalette {
         return String(value.prefix(7))
     }
 
-    static func parseHex(_ input: String) -> String? {
+    package static func parseHex(_ input: String) -> String? {
         var body = input.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         if body.hasPrefix("#") { body.removeFirst() }
         guard body.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return nil }
@@ -122,14 +128,14 @@ enum EaselPalette {
         return body.count == 6 ? "#" + body : nil
     }
 
-    static func color(for hex: String, role: EaselColorRole) -> EaselPaletteColor? {
+    package static func color(for hex: String, role: EaselColorRole) -> EaselPaletteColor? {
         guard let value = normalized(hex) else { return nil }
         if role == .ink, value == automaticInk { return .automatic }
         if role == .fill || role == .sticky, value == neutralLight { return .neutral }
         return NoteColor.allCases.first { pair($0, role: role).light == value }.map { .note($0) }
     }
 
-    static func resolve(_ hex: String, role: EaselColorRole, dark: Bool) -> String {
+    package static func resolve(_ hex: String, role: EaselColorRole, dark: Bool) -> String {
         guard let value = normalized(hex) else { return hex }
         switch color(for: value, role: role) {
         case .automatic?: return dark ? inkDark : inkLight
@@ -139,18 +145,18 @@ enum EaselPalette {
         }
     }
 
-    static func variants(_ hex: String, role: EaselColorRole) -> EaselColorVariants? {
+    package static func variants(_ hex: String, role: EaselColorRole) -> EaselColorVariants? {
         guard let value = normalized(hex) else { return nil }
         return EaselColorVariants(canonical: value, light: resolve(value, role: role, dark: false),
                                   dark: resolve(value, role: role, dark: true))
     }
 
-    static func cssVariable(_ hex: String, role: EaselColorRole) -> String? {
+    package static func cssVariable(_ hex: String, role: EaselColorRole) -> String? {
         guard let color = color(for: hex, role: role), color != .automatic else { return nil }
         return "--easel-" + role.rawValue + "-" + color.id
     }
 
-    static func cssDeclarations(dark: Bool) -> String {
+    package static func cssDeclarations(dark: Bool) -> String {
         var result = ""
         for role in EaselColorRole.allCases {
             for color in [EaselPaletteColor.neutral] + NoteColor.allCases.map({ EaselPaletteColor.note($0) }) {
@@ -163,14 +169,14 @@ enum EaselPalette {
 }
 
 extension EaselVectorExport {
-    static func paint(_ hex: String, role: EaselColorRole) -> String {
+    package static func paint(_ hex: String, role: EaselColorRole) -> String {
         guard let value = color(hex) else { return "var(--easel-ink)" }
         if role == .ink, isAutomatic(hex) { return "var(--easel-ink)" }
         guard let name = EaselPalette.cssVariable(value, role: role) else { return value }
         return "var(" + name + "," + value + ")"
     }
 
-    static func fillStyle(_ item: EaselItem) -> String {
+    package static func fillStyle(_ item: EaselItem) -> String {
         switch EaselPaintRules.fill(item) {
         case .none: return "fill:none"
         case .wash(let opacity):
@@ -181,7 +187,7 @@ extension EaselVectorExport {
         }
     }
 
-    static func strokeStyle(_ item: EaselItem, dashed: Bool = true, rounded: Bool = false) -> String {
+    package static func strokeStyle(_ item: EaselItem, dashed: Bool = true, rounded: Bool = false) -> String {
         let width = EaselPaintRules.strokeWidth(item)
         guard width > 0 else { return "stroke:none" }
         let ink = EaselPaintRules.ink(item), opacity = EaselPaintRules.strokeOpacity(item)
@@ -195,24 +201,24 @@ extension EaselVectorExport {
     }
 }
 
-enum EaselPaintRules {
-    enum Fill: Equatable {
+package enum EaselPaintRules {
+    package enum Fill: Equatable {
         case none
         case wash(opacity: Double)
         case color(hex: String, role: EaselColorRole, opacity: Double)
     }
 
-    static let shapeWidth = 2.5
-    static let lineWidth = 3.0
-    static let highlighterWidth = 16.0
-    static let highlighterOpacity = 0.35
-    static let washOpacity = 0.09
-    static let maximumWidth = 64.0
-    static let minimumLineWidth = 1.0
+    package static let shapeWidth = 2.5
+    package static let lineWidth = 3.0
+    package static let highlighterWidth = 16.0
+    package static let highlighterOpacity = 0.35
+    package static let washOpacity = 0.09
+    package static let maximumWidth = 64.0
+    package static let minimumLineWidth = 1.0
 
-    static func isHighlighter(_ item: EaselItem) -> Bool { item.kind == .freehand && item.resolvedBrush == .highlighter }
+    package static func isHighlighter(_ item: EaselItem) -> Bool { item.kind == .freehand && item.resolvedBrush == .highlighter }
 
-    static func ink(_ item: EaselItem) -> (hex: String, role: EaselColorRole) {
+    package static func ink(_ item: EaselItem) -> (hex: String, role: EaselColorRole) {
         guard isHighlighter(item) else { return (item.color, .ink) }
         if EaselPalette.color(for: item.color, role: .highlight) != nil { return (item.color, .highlight) }
         if EaselPalette.color(for: item.color, role: .ink) == .automatic {
@@ -221,19 +227,19 @@ enum EaselPaintRules {
         return (item.color, .highlight)
     }
 
-    static func strokeOpacity(_ item: EaselItem) -> Double { isHighlighter(item) ? highlighterOpacity : 1 }
+    package static func strokeOpacity(_ item: EaselItem) -> Double { isHighlighter(item) ? highlighterOpacity : 1 }
 
-    static func takesFill(_ kind: EaselItemKind) -> Bool {
+    package static func takesFill(_ kind: EaselItemKind) -> Bool {
         kind == .rectangle || kind == .circle || kind == .sticky || kind == .section
     }
 
-    static func takesStroke(_ kind: EaselItemKind) -> Bool {
+    package static func takesStroke(_ kind: EaselItemKind) -> Bool {
         kind == .rectangle || kind == .circle || kind == .arrow || kind == .freehand || kind == .sticky || kind == .section
     }
 
-    static func fillRole(_ kind: EaselItemKind) -> EaselColorRole { kind == .sticky ? .sticky : .fill }
+    package static func fillRole(_ kind: EaselItemKind) -> EaselColorRole { kind == .sticky ? .sticky : .fill }
 
-    static func defaultStrokeWidth(_ kind: EaselItemKind, brush: EaselBrush? = nil) -> Double {
+    package static func defaultStrokeWidth(_ kind: EaselItemKind, brush: EaselBrush? = nil) -> Double {
         switch kind {
         case .rectangle, .circle: return shapeWidth
         case .arrow: return lineWidth
@@ -242,14 +248,14 @@ enum EaselPaintRules {
         }
     }
 
-    static func strokeWidth(_ item: EaselItem) -> Double {
+    package static func strokeWidth(_ item: EaselItem) -> Double {
         guard takesStroke(item.kind) else { return 0 }
         guard let width = item.strokeWidth, width.isFinite else { return defaultStrokeWidth(item.kind, brush: item.brush) }
         let floor = item.kind == .arrow || item.kind == .freehand ? minimumLineWidth : 0
         return min(maximumWidth, max(floor, width))
     }
 
-    static func dashPattern(_ dash: EaselStrokeDash?, width: Double) -> [Double] {
+    package static func dashPattern(_ dash: EaselStrokeDash?, width: Double) -> [Double] {
         let unit = max(1, width.isFinite ? width : 1)
         switch dash ?? .solid {
         case .solid: return []
@@ -258,9 +264,9 @@ enum EaselPaintRules {
         }
     }
 
-    static func arrowHeadLength(width: Double) -> Double { 10 + 2 * max(0, width) }
+    package static func arrowHeadLength(width: Double) -> Double { 10 + 2 * max(0, width) }
 
-    static func fill(_ item: EaselItem) -> Fill {
+    package static func fill(_ item: EaselItem) -> Fill {
         guard takesFill(item.kind) else { return .none }
         let opacity = item.fillOpacity.map { $0.isFinite ? min(1, max(0, $0)) : 1 }
         if opacity == 0 { return .none }

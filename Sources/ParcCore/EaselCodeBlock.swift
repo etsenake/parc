@@ -1,55 +1,55 @@
 import Foundation
 
-enum EaselCodeBlock {
-    static let defaultLanguage = "typescript"
-    static let starterLineCount = 4
-    static let starterText = String(repeating: "\n", count: starterLineCount - 1)
-    static let defaultWidth = 440.0
-    static let minimumWidth = 160.0
-    static let lineHeight = 22.0
-    static let headerHeight = 34.0
-    static let bottomPadding = 14.0
-    static let sidePadding = 16.0
-    static let labelBaseline = 22.0
-    static let cornerRadius = 10.0
-    static let stackGap = 24.0
-    static let cascadeStep = 24.0
+package enum EaselCodeBlock {
+    package static let defaultLanguage = "typescript"
+    package static let starterLineCount = 4
+    package static let starterText = String(repeating: "\n", count: starterLineCount - 1)
+    package static let defaultWidth = 440.0
+    package static let minimumWidth = 160.0
+    package static let lineHeight = 22.0
+    package static let headerHeight = 34.0
+    package static let bottomPadding = 14.0
+    package static let sidePadding = 16.0
+    package static let labelBaseline = 22.0
+    package static let cornerRadius = 10.0
+    package static let stackGap = 24.0
+    package static let cascadeStep = 24.0
 
-    static func language(_ stored: String?) -> NoteCodeLanguage {
+    package static func language(_ stored: String?) -> NoteCodeLanguage {
         stored.flatMap(NoteCodeLanguage.named) ?? .plainText
     }
 
-    static func stored(_ language: NoteCodeLanguage) -> String? {
+    package static func stored(_ language: NoteCodeLanguage) -> String? {
         language.id == NoteCodeLanguage.plainText.id ? nil : language.id
     }
 
-    static func displayName(_ stored: String?) -> String {
+    package static func displayName(_ stored: String?) -> String {
         guard let stored, !stored.isEmpty else { return NoteCodeLanguage.plainText.name }
         return NoteCodeLanguage.named(stored)?.name ?? stored
     }
 
-    static func newLanguage(remembered: String?) -> String? {
+    package static func newLanguage(remembered: String?) -> String? {
         guard let remembered, let language = NoteCodeLanguage.named(remembered) else { return defaultLanguage }
         return stored(language)
     }
 
-    static func rememberedValue(_ stored: String?) -> String {
+    package static func rememberedValue(_ stored: String?) -> String {
         stored.flatMap(NoteCodeLanguage.named)?.id ?? NoteCodeLanguage.plainText.id
     }
 
-    static func lineCount(_ code: String) -> Int {
+    package static func lineCount(_ code: String) -> Int {
         code.utf16.reduce(1) { $1 == 10 ? $0 + 1 : $0 }
     }
 
-    static func height(lines: Int) -> Double {
+    package static func height(lines: Int) -> Double {
         headerHeight + Double(max(1, lines)) * lineHeight + bottomPadding
     }
 
-    static func textWidth(forWidth width: Double) -> Double {
+    package static func textWidth(forWidth width: Double) -> Double {
         max(1, width - 2 * sidePadding)
     }
 
-    static func item(at origin: EaselPoint, language: String?, zIndex: Int, width: Double = defaultWidth, text: String = starterText) -> EaselItem {
+    package static func item(at origin: EaselPoint, language: String?, zIndex: Int, width: Double = defaultWidth, text: String = starterText) -> EaselItem {
         let size = max(minimumWidth, width)
         var item = EaselItem(kind: .code, frame: EaselRect(x: max(0, origin.x), y: max(0, origin.y), width: size, height: height(lines: lineCount(text))),
                              zIndex: zIndex, text: text)
@@ -57,7 +57,7 @@ enum EaselCodeBlock {
         return item
     }
 
-    static func placedOrigin(in visible: EaselRect, width: Double, height: Double, occupied: [EaselRect]) -> EaselPoint {
+    package static func placedOrigin(in visible: EaselRect, width: Double, height: Double, occupied: [EaselRect]) -> EaselPoint {
         var origin = EaselPoint(x: max(0, (visible.x + visible.width / 2 - width / 2).rounded()),
                                 y: max(0, (visible.y + min(120, max(24, visible.height / 4))).rounded()))
         for _ in 0..<12 where occupied.contains(where: { abs($0.x - origin.x) < 1 && abs($0.y - origin.y) < 1 }) {
@@ -67,7 +67,7 @@ enum EaselCodeBlock {
         return origin
     }
 
-    static func originBelow(_ frame: EaselRect, height: Double, occupied: [EaselRect]) -> EaselPoint {
+    package static func originBelow(_ frame: EaselRect, height: Double, occupied: [EaselRect]) -> EaselPoint {
         var y = frame.y + frame.height + stackGap
         for _ in 0..<64 {
             let candidate = EaselRect(x: frame.x, y: y, width: frame.width, height: height)
@@ -78,7 +78,7 @@ enum EaselCodeBlock {
         return EaselPoint(x: frame.x, y: y)
     }
 
-    static func settledFrame(_ proposed: EaselRect, original: EaselRect, lines: Int, keepsTop: Bool) -> EaselRect {
+    package static func settledFrame(_ proposed: EaselRect, original: EaselRect, lines: Int, keepsTop: Bool) -> EaselRect {
         let width = max(minimumWidth, proposed.width)
         let leftMoved = abs(proposed.x - original.x) > 1e-9
             && abs(proposed.x + proposed.width - original.x - original.width) < 1e-9
@@ -87,17 +87,29 @@ enum EaselCodeBlock {
     }
 }
 
-struct EaselCodePalette: Equatable {
-    struct Swatch: Equatable {
-        var fill: String
-        var line: String
-        var ink: String
-        var syntax: [String: String]
-    }
-    var light: Swatch
-    var dark: Swatch
+package struct EaselCodePalette: Equatable {
+    package struct Swatch: Equatable {
+        package var fill: String
+        package var line: String
+        package var ink: String
+        package var syntax: [String: String]
 
-    static let standard = EaselCodePalette(
+        package init(fill: String, line: String, ink: String, syntax: [String: String]) {
+            self.fill = fill
+            self.line = line
+            self.ink = ink
+            self.syntax = syntax
+        }
+    }
+    package var light: Swatch
+    package var dark: Swatch
+
+    package init(light: Swatch, dark: Swatch) {
+        self.light = light
+        self.dark = dark
+    }
+
+    package static let standard = EaselCodePalette(
         light: Swatch(fill: "rgba(31,27,46,.045)", line: "rgba(31,27,46,.12)", ink: "#29243D", syntax: [
             "comment": "rgba(41,36,61,.5)", "keyword": "#6A1FC9", "string": "#2A7A4B", "number": "#A8520C",
             "type": "#0B7285", "function": "#2350C2", "tag": "#B8322B", "attribute": "#9A3F86", "escape": "#B3366E",
@@ -111,9 +123,9 @@ struct EaselCodePalette: Equatable {
 }
 
 extension EaselVectorExport {
-    static let codeFontFamily = "\"Space Mono\",ui-monospace,\"SF Mono\",Menlo,monospace"
+    package static let codeFontFamily = "\"Space Mono\",ui-monospace,\"SF Mono\",Menlo,monospace"
 
-    static func codeBlock(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
+    package static func codeBlock(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
         let f = item.frame, radius = number(EaselCodeBlock.cornerRadius)
         let box = "x=\"" + number(f.x) + "\" y=\"" + number(f.y) + "\" width=\"" + number(f.width) + "\" height=\""
             + number(f.height) + "\" rx=\"" + radius + "\" ry=\"" + radius + "\""
@@ -129,14 +141,14 @@ extension EaselVectorExport {
         return result + "</g></g></g>"
     }
 
-    static func plainCodeRuns(_ item: EaselItem) -> [EaselVectorTextRun] {
+    package static func plainCodeRuns(_ item: EaselItem) -> [EaselVectorTextRun] {
         item.text.components(separatedBy: "\n").enumerated().map { index, line in
             EaselVectorTextRun(x: EaselCodeBlock.sidePadding, y: EaselCodeBlock.headerHeight + Double(index) * EaselCodeBlock.lineHeight + 16,
                                text: line.replacingOccurrences(of: "\t", with: "    "), fontFamily: codeFontFamily, fontSize: 14)
         }
     }
 
-    static func codeRun(_ run: EaselVectorTextRun) -> String {
+    package static func codeRun(_ run: EaselVectorTextRun) -> String {
         var style = "font-family:" + run.fontFamily + ";font-size:" + number(run.fontSize) + "px"
         if run.weight != 400 { style += ";font-weight:" + String(run.weight) }
         if run.italic { style += ";font-style:italic" }
@@ -149,7 +161,7 @@ extension EaselVectorExport {
             + escape(run.text) + "</text>"
     }
 
-    static func codeCSS(_ palette: EaselCodePalette) -> String {
+    package static func codeCSS(_ palette: EaselCodePalette) -> String {
         func variables(_ swatch: EaselCodePalette.Swatch) -> String {
             var result = "--easel-code:" + swatch.fill + ";--easel-code-line:" + swatch.line + ";--easel-code-ink:" + swatch.ink + ";"
             for family in swatch.syntax.keys.sorted() {

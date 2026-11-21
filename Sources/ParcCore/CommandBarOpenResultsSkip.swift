@@ -1,34 +1,34 @@
 import Foundation
 
-enum CommandBarOpenResultsSkip {
-    static let sidebarBrowsingToken = "sidebar-browsing"
+package enum CommandBarOpenResultsSkip {
+    package static let sidebarBrowsingToken = "sidebar-browsing"
 
-    static func shouldSkip(previous: String?, next: String) -> Bool {
+    package static func shouldSkip(previous: String?, next: String) -> Bool {
         previous == next
     }
 
-    static func tabToken(id: UUID, title: String, url: String, archived: Bool,
+    package static func tabToken(id: UUID, title: String, url: String, archived: Bool,
                          customTitle: String? = nil, caption: String = "") -> String {
         [id.uuidString, title, url, archived ? "1" : "0", customTitle ?? "", caption].joined(separator: "\u{1f}")
     }
 
-    static func historyToken(url: String, title: String) -> String {
+    package static func historyToken(url: String, title: String) -> String {
         [url, title].joined(separator: "\u{1f}")
     }
 
-    static func commandToken(id: String, title: String, group: String) -> String {
+    package static func commandToken(id: String, title: String, group: String) -> String {
         [id, title, group].joined(separator: "\u{1f}")
     }
 
-    static func spaceToken(id: String, name: String, position: Int, needsPositionLabel: Bool) -> String {
+    package static func spaceToken(id: String, name: String, position: Int, needsPositionLabel: Bool) -> String {
         [id, name, String(position), needsPositionLabel ? "1" : "0"].joined(separator: "\u{1f}")
     }
 
-    static func folderToken(id: String, name: String, detail: String) -> String {
+    package static func folderToken(id: String, name: String, detail: String) -> String {
         [id, name, detail].joined(separator: "\u{1f}")
     }
 
-    static func fingerprint(
+    package static func fingerprint(
         query: String,
         actionsScope: Bool,
         websiteScoped: Bool,

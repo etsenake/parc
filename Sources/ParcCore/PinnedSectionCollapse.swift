@@ -1,27 +1,27 @@
 import Foundation
 
-enum PinnedSectionCollapse {
-    static func isFolded(state: BrowserState, spaceID: UUID) -> Bool {
+package enum PinnedSectionCollapse {
+    package static func isFolded(state: BrowserState, spaceID: UUID) -> Bool {
         state.spaces.contains { $0.id == spaceID && $0.pinnedCollapsed } && hasItems(state: state, spaceID: spaceID)
     }
 
-    static func hasItems(state: BrowserState, spaceID: UUID) -> Bool {
+    package static func hasItems(state: BrowserState, spaceID: UUID) -> Bool {
         state.spaces.contains { $0.id == spaceID }
             && !SidebarHierarchy.children(in: .init(spaceID: spaceID, folderID: nil, section: .pinned), state: state).isEmpty
     }
 
-    static func isEmpty(state: BrowserState, spaceID: UUID) -> Bool {
+    package static func isEmpty(state: BrowserState, spaceID: UUID) -> Bool {
         state.spaces.contains { $0.id == spaceID } && !hasItems(state: state, spaceID: spaceID)
             && SidebarHierarchy.children(in: .init(spaceID: spaceID, folderID: nil, section: .today), state: state).isEmpty
     }
 
-    static func activeItem(state: BrowserState, spaceID: UUID, tabID: UUID?) -> SidebarItemReference? {
+    package static func activeItem(state: BrowserState, spaceID: UUID, tabID: UUID?) -> SidebarItemReference? {
         guard let id = tabID else { return nil }
         return SidebarSplitItems.groups(in: state, spaceID: spaceID).first { $0.tabIDs.contains(id) }
             .map { .split($0.id) } ?? .tab(id)
     }
 
-    static func peek(state: BrowserState, spaceID: UUID, active: SidebarItemReference?) -> [SidebarItemReference] {
+    package static func peek(state: BrowserState, spaceID: UUID, active: SidebarItemReference?) -> [SidebarItemReference] {
         guard let active, var location = SidebarHierarchy.location(of: active, state: state, spaceID: spaceID),
               location.section == .pinned else { return [] }
         var path = [active], seen = Set<UUID>()
@@ -35,20 +35,25 @@ enum PinnedSectionCollapse {
         return path
     }
 
-    static func headerDrop(state: BrowserState, spaceID: UUID,
+    package static func headerDrop(state: BrowserState, spaceID: UUID,
                            moving items: [SidebarItemReference]) -> (destination: SidebarContainerLocation, before: SidebarItemReference?) {
         let destination = SidebarContainerLocation(spaceID: spaceID, folderID: nil, section: .pinned)
         return (destination, SidebarHierarchy.children(in: destination, state: state).first { !items.contains($0) })
     }
 
-    struct Summary: Equatable {
-        static let shownIcons = 4
-        var tabs: [BrowserTab]
-        var count: Int
-        var hidden: Int { max(0, count - tabs.count) }
+    package struct Summary: Equatable {
+        package static let shownIcons = 4
+        package var tabs: [BrowserTab]
+        package var count: Int
+        package var hidden: Int { max(0, count - tabs.count) }
+
+        package init(tabs: [BrowserTab], count: Int) {
+            self.tabs = tabs
+            self.count = count
+        }
     }
 
-    static func summary(state: BrowserState, spaceID: UUID) -> Summary {
+    package static func summary(state: BrowserState, spaceID: UUID) -> Summary {
         guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return Summary(tabs: [], count: 0) }
         let groups = SidebarSplitItems.groups(in: state, spaceID: spaceID)
         var shown: [BrowserTab] = [], count = 0, visited = Set<UUID>()
@@ -75,7 +80,7 @@ enum PinnedSectionCollapse {
 extension BrowserStore {
     private static var pinnedFoldClearFailures: [ObjectIdentifier: UInt64] = [:]
 
-    func clearEmptyPinnedFolds() {
+    package func clearEmptyPinnedFolds() {
         guard !isEphemeral, Self.pinnedFoldClearFailures[ObjectIdentifier(self)] != stateRevision else { return }
         var next = state, cleared = false
         for index in next.spaces.indices where next.spaces[index].pinnedCollapsed
@@ -89,7 +94,7 @@ extension BrowserStore {
     }
 
     @discardableResult
-    func setPinnedSectionCollapsed(_ collapsed: Bool, spaceID: UUID) throws -> Bool {
+    package func setPinnedSectionCollapsed(_ collapsed: Bool, spaceID: UUID) throws -> Bool {
         guard !isEphemeral, let index = state.spaces.firstIndex(where: { $0.id == spaceID }),
               !state.profileRemovals.contains(where: { $0.profileID == state.spaces[index].profileID }),
               !collapsed || PinnedSectionCollapse.hasItems(state: state, spaceID: spaceID) else { return false }

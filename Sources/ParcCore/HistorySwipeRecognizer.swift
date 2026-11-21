@@ -1,33 +1,33 @@
 import Foundation
 
-struct HistorySwipeParameters: Equatable {
-    var commitDistance = 0.08
-    var consumeDistance = 0.01
-    var directionDistance = 0.001
-    var verticalCancelDistance = 0.24
-    var verticalDriftDistance = 0.01
-    var verticalDominance = 2.0
-    var verticalExcess = 1.3
-    var trackedArmAmount = 0.3
-    var rubberBand = 0.15
-    var holdDelay: TimeInterval = 0.3
-    var rowStep = 0.08
-    var edgeZone = 0.15
-    var edgeMargin = 0.03
-    var edgeStepInterval: TimeInterval = 0.1
-    var listCloseProgress = 0.85
-    var dismissDistance = 0.3
-    var dismissCommitProgress = 0.5
-    var dismissDisarmProgress = 0.45
-    var flickVelocity = 0.6
-    var flickProgress = 0.1
-    var velocityWindow: TimeInterval = 0.08
+package struct HistorySwipeParameters: Equatable {
+    package var commitDistance = 0.08
+    package var consumeDistance = 0.01
+    package var directionDistance = 0.001
+    package var verticalCancelDistance = 0.24
+    package var verticalDriftDistance = 0.01
+    package var verticalDominance = 2.0
+    package var verticalExcess = 1.3
+    package var trackedArmAmount = 0.3
+    package var rubberBand = 0.15
+    package var holdDelay: TimeInterval = 0.3
+    package var rowStep = 0.08
+    package var edgeZone = 0.15
+    package var edgeMargin = 0.03
+    package var edgeStepInterval: TimeInterval = 0.1
+    package var listCloseProgress = 0.85
+    package var dismissDistance = 0.3
+    package var dismissCommitProgress = 0.5
+    package var dismissDisarmProgress = 0.45
+    package var flickVelocity = 0.6
+    package var flickProgress = 0.1
+    package var velocityWindow: TimeInterval = 0.08
 
-    static let dia = HistorySwipeParameters()
+    package static let dia = HistorySwipeParameters()
 }
 
-struct HistorySwipeRecognizer {
-    enum State: Equatable {
+package struct HistorySwipeRecognizer {
+    package enum State: Equatable {
         case waitingForPage
         case possible
         case tracking
@@ -37,19 +37,19 @@ struct HistorySwipeRecognizer {
         case cancelled
     }
 
-    enum Source: Equatable {
+    package enum Source: Equatable {
         case touches
         case trackedSwipe
     }
 
-    let parameters: HistorySwipeParameters
-    private(set) var state = State.waitingForPage
-    private(set) var direction: HistorySwipeDirection?
-    private(set) var source: Source?
-    private(set) var selection: Int?
-    private(set) var holdDeadline: TimeInterval?
-    private(set) var entries = 0
-    private(set) var dismissing = false
+    package let parameters: HistorySwipeParameters
+    package private(set) var state = State.waitingForPage
+    package private(set) var direction: HistorySwipeDirection?
+    package private(set) var source: Source?
+    package private(set) var selection: Int?
+    package private(set) var holdDeadline: TimeInterval?
+    package private(set) var entries = 0
+    package private(set) var dismissing = false
     private var samples: [(time: TimeInterval, x: Double)] = []
     private var inverted = false
     private var announced = false
@@ -77,18 +77,18 @@ struct HistorySwipeRecognizer {
     private var liveTracking: Int?
     private var lastProgress: HistorySwipeProgress?
 
-    init(parameters: HistorySwipeParameters = .dia) {
+    package init(parameters: HistorySwipeParameters = .dia) {
         self.parameters = parameters
     }
 
-    var isLive: Bool {
+    package var isLive: Bool {
         switch state {
         case .possible, .tracking, .armed, .holding: true
         case .waitingForPage, .completed, .cancelled: false
         }
     }
 
-    mutating func receive(_ input: HistorySwipeInput, in environment: any HistorySwipeEnvironment) -> HistorySwipeStep {
+    package mutating func receive(_ input: HistorySwipeInput, in environment: any HistorySwipeEnvironment) -> HistorySwipeStep {
         var step = HistorySwipeStep()
         if isLive && !environment.allowsHistorySwipe { cancel(&step) }
         switch input {

@@ -1,7 +1,7 @@
 import Foundation
 
 extension EaselTextStyle.Size {
-    var title: String {
+    package var title: String {
         switch self {
         case .body: return "Body"
         case .h2: return "Heading 2"
@@ -13,7 +13,7 @@ extension EaselTextStyle.Size {
 }
 
 extension EaselTextStyle.Alignment {
-    var title: String {
+    package var title: String {
         switch self {
         case .left: return "Align Left"
         case .center: return "Align Center"
@@ -21,7 +21,7 @@ extension EaselTextStyle.Alignment {
         }
     }
 
-    var shortcut: String {
+    package var shortcut: String {
         switch self {
         case .left: return "⌥⌘L"
         case .center: return "⌥⌘T"
@@ -31,7 +31,7 @@ extension EaselTextStyle.Alignment {
 }
 
 extension EaselRichText.Attributes {
-    mutating func scale(by ratio: Double) {
+    package mutating func scale(by ratio: Double) {
         guard ratio.isFinite, ratio > 0, ratio != 1 else { return }
         func scaled(_ value: Double, limit: Double) -> Double {
             let result = (value * ratio * 100).rounded() / 100
@@ -58,44 +58,44 @@ extension EaselRichText.Attributes {
     }
 }
 
-enum EaselTextSizing {
-    static let minimumWidth = 24.0
-    static let autoWidthEms = 36.0
-    static let autoWidthFloor = 560.0
-    static let autoWidthCeiling = 4000.0
+package enum EaselTextSizing {
+    package static let minimumWidth = 24.0
+    package static let autoWidthEms = 36.0
+    package static let autoWidthFloor = 560.0
+    package static let autoWidthCeiling = 4000.0
 
-    static func isAutoWidth(_ item: EaselItem) -> Bool { item.kind == .text && item.textStyle?.autoWidth == true }
+    package static func isAutoWidth(_ item: EaselItem) -> Bool { item.kind == .text && item.textStyle?.autoWidth == true }
 
-    static func isTextOnly(_ items: [EaselItem]) -> Bool { !items.isEmpty && items.allSatisfy { $0.kind == .text } }
+    package static func isTextOnly(_ items: [EaselItem]) -> Bool { !items.isEmpty && items.allSatisfy { $0.kind == .text } }
 
-    static func maximumAutoWidth(pointSize: Double) -> Double {
+    package static func maximumAutoWidth(pointSize: Double) -> Double {
         let size = pointSize.isFinite && pointSize > 0 ? pointSize : EaselTextStyle().pointSize
         return min(autoWidthCeiling, max(autoWidthFloor, (size * autoWidthEms).rounded(.up)))
     }
 
-    static func autoWidth(natural: Double, pointSize: Double) -> Double {
+    package static func autoWidth(natural: Double, pointSize: Double) -> Double {
         let limit = maximumAutoWidth(pointSize: pointSize)
         guard natural.isFinite, natural > 0 else { return minimumWidth }
         return min(limit, max(minimumWidth, natural.rounded(.up)))
     }
 
-    static func defaultAlignment(for kind: EaselItemKind) -> EaselTextStyle.Alignment {
+    package static func defaultAlignment(for kind: EaselItemKind) -> EaselTextStyle.Alignment {
         kind == .rectangle || kind == .circle ? .center : .left
     }
 
-    static func resolvedAlignment(_ item: EaselItem) -> EaselTextStyle.Alignment {
+    package static func resolvedAlignment(_ item: EaselItem) -> EaselTextStyle.Alignment {
         item.textStyle?.alignment ?? defaultAlignment(for: item.kind)
     }
 
-    static func sharedAlignment(_ items: [EaselItem]) -> EaselTextStyle.Alignment? {
+    package static func sharedAlignment(_ items: [EaselItem]) -> EaselTextStyle.Alignment? {
         let alignments = items.filter(\.kind.holdsText).map(resolvedAlignment)
         guard let first = alignments.first, alignments.allSatisfy({ $0 == first }) else { return nil }
         return first
     }
 
-    static func canAlign(_ items: [EaselItem]) -> Bool { items.contains { $0.kind.holdsText && !$0.isLocked } }
+    package static func canAlign(_ items: [EaselItem]) -> Bool { items.contains { $0.kind.holdsText && !$0.isLocked } }
 
-    static func aligning(_ document: EaselDocument, ids: Set<UUID>, to alignment: EaselTextStyle.Alignment) -> EaselDocument? {
+    package static func aligning(_ document: EaselDocument, ids: Set<UUID>, to alignment: EaselTextStyle.Alignment) -> EaselDocument? {
         var next = document, changed = false
         for index in next.items.indices where ids.contains(next.items[index].id) {
             let item = next.items[index]
@@ -108,7 +108,7 @@ enum EaselTextSizing {
         return changed ? next : nil
     }
 
-    static func anchoredX(_ x: Double, width: Double, to newWidth: Double, alignment: EaselTextStyle.Alignment) -> Double {
+    package static func anchoredX(_ x: Double, width: Double, to newWidth: Double, alignment: EaselTextStyle.Alignment) -> Double {
         let shift: Double
         switch alignment {
         case .left: shift = 0
@@ -119,7 +119,7 @@ enum EaselTextSizing {
         return result.isFinite ? max(0, result) : x
     }
 
-    static func fittedFrame(_ item: EaselItem, naturalWidth: Double, height measure: (Double) -> Double) -> EaselRect {
+    package static func fittedFrame(_ item: EaselItem, naturalWidth: Double, height measure: (Double) -> Double) -> EaselRect {
         var frame = item.frame
         if isAutoWidth(item) {
             let width = autoWidth(natural: naturalWidth, pointSize: item.resolvedTextStyle.pointSize)
@@ -132,7 +132,7 @@ enum EaselTextSizing {
         return frame
     }
 
-    static func autoWidthFrame(_ item: EaselItem, naturalWidth: Double, height measure: (Double) -> Double) -> EaselItem? {
+    package static func autoWidthFrame(_ item: EaselItem, naturalWidth: Double, height measure: (Double) -> Double) -> EaselItem? {
         guard item.kind == .text, !item.isLocked, !isAutoWidth(item) else { return nil }
         var next = item
         var style = item.resolvedTextStyle
@@ -142,7 +142,7 @@ enum EaselTextSizing {
         return next
     }
 
-    static func widthResized(_ item: EaselItem, height measure: (Double) -> Double) -> EaselItem {
+    package static func widthResized(_ item: EaselItem, height measure: (Double) -> Double) -> EaselItem {
         guard item.kind == .text else { return item }
         var next = item
         next.frame.height = sanitized(measure(item.frame.width), fallback: item.frame.height)
@@ -150,11 +150,11 @@ enum EaselTextSizing {
         return next
     }
 
-    static func handleOrder(for items: [EaselItem]) -> [EaselResizeHandle] {
+    package static func handleOrder(for items: [EaselItem]) -> [EaselResizeHandle] {
         isTextOnly(items) ? [.left, .right, .topLeft, .topRight, .bottomLeft, .bottomRight] : EaselResizeHandle.allCases
     }
 
-    static func handleRect(_ handle: EaselResizeHandle, in rect: EaselRect, items: [EaselItem], scale: Double = 1) -> EaselRect? {
+    package static func handleRect(_ handle: EaselResizeHandle, in rect: EaselRect, items: [EaselItem], scale: Double = 1) -> EaselRect? {
         guard isTextOnly(items) else { return handle.hitRect(in: rect, scale: scale) }
         guard scale.isFinite, scale > 0 else { return nil }
         switch handle {
@@ -169,24 +169,24 @@ enum EaselTextSizing {
         }
     }
 
-    static func sideHandlePoints(in rect: EaselRect, items: [EaselItem]) -> [EaselPoint] {
+    package static func sideHandlePoints(in rect: EaselRect, items: [EaselItem]) -> [EaselPoint] {
         guard isTextOnly(items) else { return [] }
         return [EaselResizeHandle.left, .right].map { $0.point(in: rect) }
     }
 
-    static func scalesText(_ items: [EaselItem], handle: EaselResizeHandle?) -> Bool {
+    package static func scalesText(_ items: [EaselItem], handle: EaselResizeHandle?) -> Bool {
         handle?.isCorner == true && isTextOnly(items)
     }
 
-    static func setsTextWidth(_ handle: EaselResizeHandle?) -> Bool { handle == .left || handle == .right }
+    package static func setsTextWidth(_ handle: EaselResizeHandle?) -> Bool { handle == .left || handle == .right }
 
-    static func scaledSize(base: Double, factor: Double) -> Double? {
+    package static func scaledSize(base: Double, factor: Double) -> Double? {
         guard base.isFinite, base > 0, factor.isFinite, factor > 0 else { return nil }
         let limits = EaselTextStyle.customSizes
         return min(limits.upperBound, max(limits.lowerBound, (base * factor).rounded()))
     }
 
-    static func scaled(_ item: EaselItem, factor: Double) -> EaselItem? {
+    package static func scaled(_ item: EaselItem, factor: Double) -> EaselItem? {
         guard item.kind == .text else { return nil }
         let style = item.resolvedTextStyle
         guard let size = scaledSize(base: style.pointSize, factor: factor) else { return nil }
@@ -204,7 +204,7 @@ enum EaselTextSizing {
         return next
     }
 
-    static func scaledFrame(_ item: EaselItem, original: EaselRect, proposed: EaselRect, handle: EaselResizeHandle,
+    package static func scaledFrame(_ item: EaselItem, original: EaselRect, proposed: EaselRect, handle: EaselResizeHandle,
                             centered: Bool, single: Bool, naturalWidth: Double, height measure: (Double) -> Double) -> EaselRect {
         let width = isAutoWidth(item) ? autoWidth(natural: naturalWidth, pointSize: item.resolvedTextStyle.pointSize) : item.frame.width
         let height = sanitized(measure(width), fallback: item.frame.height)
@@ -214,7 +214,7 @@ enum EaselTextSizing {
         return EaselRect(x: max(0, x), y: max(0, y), width: width, height: height)
     }
 
-    static func merging(_ changes: [EaselItem], into document: EaselDocument) -> EaselDocument {
+    package static func merging(_ changes: [EaselItem], into document: EaselDocument) -> EaselDocument {
         let byID = Dictionary(changes.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         var next = document
         for index in next.items.indices {
@@ -226,12 +226,12 @@ enum EaselTextSizing {
         return next
     }
 
-    static func sizeLabel(for style: EaselTextStyle) -> String {
+    package static func sizeLabel(for style: EaselTextStyle) -> String {
         let points = Int(style.pointSize.rounded())
         return style.customSize == nil ? "\(style.size.title) · \(points)" : "\(points) pt"
     }
 
-    static func customSized(_ style: EaselTextStyle, points: Double) -> EaselTextStyle? {
+    package static func customSized(_ style: EaselTextStyle, points: Double) -> EaselTextStyle? {
         guard points.isFinite else { return nil }
         let limits = EaselTextStyle.customSizes
         let size = min(limits.upperBound, max(limits.lowerBound, points.rounded()))
@@ -240,14 +240,14 @@ enum EaselTextSizing {
         return next
     }
 
-    static func preset(_ style: EaselTextStyle, size: EaselTextStyle.Size) -> EaselTextStyle {
+    package static func preset(_ style: EaselTextStyle, size: EaselTextStyle.Size) -> EaselTextStyle {
         var next = style
         next.size = size
         next.customSize = nil
         return next
     }
 
-    static func stepped(_ style: EaselTextStyle, by delta: Int) -> EaselTextStyle? {
+    package static func stepped(_ style: EaselTextStyle, by delta: Int) -> EaselTextStyle? {
         guard delta != 0 else { return nil }
         if let custom = style.customSize {
             let presets = EaselTextStyle.Size.allCases.map { ($0, EaselTextStyle(family: style.family, size: $0).presetPointSize) }
@@ -259,11 +259,11 @@ enum EaselTextSizing {
         return shifted == style.size ? nil : preset(style, size: shifted)
     }
 
-    static func fits(_ frame: EaselRect, in bounds: EaselRect) -> Bool {
+    package static func fits(_ frame: EaselRect, in bounds: EaselRect) -> Bool {
         frame.width <= bounds.width + 0.5 && frame.height <= bounds.height + 0.5
     }
 
-    static func placed(_ frame: EaselRect, in bounds: EaselRect) -> EaselRect {
+    package static func placed(_ frame: EaselRect, in bounds: EaselRect) -> EaselRect {
         EaselRect(x: min(max(frame.x, bounds.x), max(bounds.x, bounds.x + bounds.width - frame.width)),
                   y: min(max(frame.y, bounds.y), max(bounds.y, bounds.y + bounds.height - frame.height)),
                   width: frame.width, height: frame.height)

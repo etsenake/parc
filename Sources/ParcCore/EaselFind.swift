@@ -1,31 +1,46 @@
 import Foundation
 
-struct EaselFindMatch: Hashable {
-    enum Part: Hashable {
+package struct EaselFindMatch: Hashable {
+    package enum Part: Hashable {
         case text
         case cell(row: Int, column: Int)
     }
 
-    var itemID: UUID
-    var part: Part
-    var range: Range<Int>
+    package var itemID: UUID
+    package var part: Part
+    package var range: Range<Int>
+
+    package init(itemID: UUID, part: Part, range: Range<Int>) {
+        self.itemID = itemID
+        self.part = part
+        self.range = range
+    }
 }
 
-enum EaselReplaceability: Equatable { case replaceable, locked, readOnly }
+package enum EaselReplaceability: Equatable { case replaceable, locked, readOnly }
 
-struct EaselFindReplacement: Equatable {
-    var document: EaselDocument
-    var count = 0
-    var touched = Set<UUID>()
-    var skippedLocked = 0
-    var skippedReadOnly = 0
-    var skippedOther = 0
+package struct EaselFindReplacement: Equatable {
+    package var document: EaselDocument
+    package var count = 0
+    package var touched = Set<UUID>()
+    package var skippedLocked = 0
+    package var skippedReadOnly = 0
+    package var skippedOther = 0
 
-    var skipped: Int { skippedLocked + skippedReadOnly + skippedOther }
+    package var skipped: Int { skippedLocked + skippedReadOnly + skippedOther }
+
+    package init(document: EaselDocument, count: Int = 0, touched: Set<UUID> = Set<UUID>(), skippedLocked: Int = 0, skippedReadOnly: Int = 0, skippedOther: Int = 0) {
+        self.document = document
+        self.count = count
+        self.touched = touched
+        self.skippedLocked = skippedLocked
+        self.skippedReadOnly = skippedReadOnly
+        self.skippedOther = skippedOther
+    }
 }
 
-enum EaselFinder {
-    static func searchableParts(of item: EaselItem) -> [(part: EaselFindMatch.Part, text: String)] {
+package enum EaselFinder {
+    package static func searchableParts(of item: EaselItem) -> [(part: EaselFindMatch.Part, text: String)] {
         switch item.kind {
         case .text, .sticky, .rectangle, .circle, .arrow, .section, .link, .code:
             return item.text.isEmpty ? [] : [(.text, item.text)]
@@ -42,14 +57,14 @@ enum EaselFinder {
         }
     }
 
-    static func replaceability(of item: EaselItem) -> EaselReplaceability {
+    package static func replaceability(of item: EaselItem) -> EaselReplaceability {
         switch item.kind {
         case .text, .sticky, .rectangle, .circle, .arrow, .section, .code, .table: return item.isLocked ? .locked : .replaceable
         case .image, .freehand, .link, .webCard, .browser, .stamp, .video: return .readOnly
         }
     }
 
-    static func readingOrder(_ items: [EaselItem]) -> [EaselItem] {
+    package static func readingOrder(_ items: [EaselItem]) -> [EaselItem] {
         let sorted = items.sorted { lhs, rhs in
             lhs.frame.y != rhs.frame.y ? lhs.frame.y < rhs.frame.y : (lhs.frame.x != rhs.frame.x ? lhs.frame.x < rhs.frame.x : lhs.id.uuidString < rhs.id.uuidString)
         }
@@ -70,12 +85,12 @@ enum EaselFinder {
         }
     }
 
-    static func visibleItems(in document: EaselDocument) -> [EaselItem] {
+    package static func visibleItems(in document: EaselDocument) -> [EaselItem] {
         let hidden = EaselBoardObjects.hiddenIDs(in: document.items)
         return hidden.isEmpty ? document.items : document.items.filter { !hidden.contains($0.id) }
     }
 
-    static func matches(of query: String, in document: EaselDocument, options: NoteFindOptions = NoteFindOptions()) -> [EaselFindMatch] {
+    package static func matches(of query: String, in document: EaselDocument, options: NoteFindOptions = NoteFindOptions()) -> [EaselFindMatch] {
         guard !query.isEmpty else { return [] }
         var result: [EaselFindMatch] = []
         for item in EaselPages.pageDocuments(document).flatMap({ readingOrder(visibleItems(in: $0)) }) {
@@ -88,7 +103,7 @@ enum EaselFinder {
         return result
     }
 
-    static func index(of match: EaselFindMatch?, in matches: [EaselFindMatch], document: EaselDocument) -> Int? {
+    package static func index(of match: EaselFindMatch?, in matches: [EaselFindMatch], document: EaselDocument) -> Int? {
         guard !matches.isEmpty else { return nil }
         guard let match else { return 0 }
         if let exact = matches.firstIndex(of: match) { return exact }
@@ -106,7 +121,7 @@ enum EaselFinder {
         return matches.firstIndex { key($0) >= target } ?? 0
     }
 
-    static func nextReplaceable(after index: Int, in matches: [EaselFindMatch], document: EaselDocument) -> Int? {
+    package static func nextReplaceable(after index: Int, in matches: [EaselFindMatch], document: EaselDocument) -> Int? {
         guard matches.indices.contains(index) else { return nil }
         var kinds: [UUID: EaselReplaceability] = [:]
         for item in document.items where kinds[item.id] == nil { kinds[item.id] = replaceability(of: item) }
@@ -117,7 +132,7 @@ enum EaselFinder {
         return nil
     }
 
-    static func replace(_ targets: [EaselFindMatch], with replacement: String, in document: EaselDocument) -> EaselFindReplacement {
+    package static func replace(_ targets: [EaselFindMatch], with replacement: String, in document: EaselDocument) -> EaselFindReplacement {
         var outcome = EaselFindReplacement(document: document)
         var grouped: [UUID: Set<EaselFindMatch>] = [:]
         var order: [UUID] = []
@@ -145,7 +160,7 @@ enum EaselFinder {
         return outcome
     }
 
-    static func rewrite(_ item: EaselItem, matches: Set<EaselFindMatch>, with replacement: String) -> (item: EaselItem, changed: Int)? {
+    package static func rewrite(_ item: EaselItem, matches: Set<EaselFindMatch>, with replacement: String) -> (item: EaselItem, changed: Int)? {
         var next = item
         var changed = 0
         var parts: [EaselFindMatch.Part: [EaselFindMatch]] = [:]
@@ -171,7 +186,7 @@ enum EaselFinder {
         return (next, changed)
     }
 
-    static func rewrite(_ text: String, rich: EaselRichText?, _ matches: [EaselFindMatch],
+    package static func rewrite(_ text: String, rich: EaselRichText?, _ matches: [EaselFindMatch],
                         with replacement: String) -> (text: String, rich: EaselRichText?, changed: Int)? {
         var value = text, styled = rich, changed = 0, last = Int.max
         for match in matches.sorted(by: { $0.range.lowerBound > $1.range.lowerBound }) {
@@ -190,11 +205,11 @@ enum EaselFinder {
         return (value, styled, changed)
     }
 
-    enum Rewrite: Equatable {
+    package enum Rewrite: Equatable {
         case changed(String, EaselRichText?), unchanged, failed
     }
 
-    static func replacing(_ range: Range<Int>, with replacement: String, text: String, rich: EaselRichText?) -> Rewrite {
+    package static func replacing(_ range: Range<Int>, with replacement: String, text: String, rich: EaselRichText?) -> Rewrite {
         let source = text as NSString
         guard range.lowerBound >= 0, range.upperBound <= source.length, !range.isEmpty else { return .failed }
         let nsRange = NSRange(location: range.lowerBound, length: range.count)
@@ -210,7 +225,7 @@ enum EaselFinder {
 }
 
 extension EaselRichText {
-    func replacing(_ range: Range<Int>, with insertedLength: Int) -> EaselRichText? {
+    package func replacing(_ range: Range<Int>, with insertedLength: Int) -> EaselRichText? {
         guard insertedLength >= 0,
               let source = runs.first(where: { $0.location <= range.lowerBound && range.lowerBound < $0.location + $0.length }),
               !runs.contains(where: { $0.attributes.image != nil && $0.location < range.upperBound && range.lowerBound < $0.location + $0.length }) else {
@@ -243,30 +258,37 @@ extension EaselRichText {
     }
 }
 
-struct EaselFindSession: Equatable {
-    enum ReplaceStep: Equatable {
+package struct EaselFindSession: Equatable {
+    package enum ReplaceStep: Equatable {
         case replaced(EaselFindReplacement, next: EaselFindMatch)
         case moved
         case skipped
         case refused
     }
 
-    var query = ""
-    var options = NoteFindOptions()
-    private(set) var matches: [EaselFindMatch] = []
-    private(set) var currentIndex: Int?
+    package var query = ""
+    package var options = NoteFindOptions()
+    package private(set) var matches: [EaselFindMatch] = []
+    package private(set) var currentIndex: Int?
 
-    var currentMatch: EaselFindMatch? {
+    package init(query: String = "", options: NoteFindOptions = NoteFindOptions(), matches: [EaselFindMatch] = [], currentIndex: Int? = nil) {
+        self.query = query
+        self.options = options
+        self.matches = matches
+        self.currentIndex = currentIndex
+    }
+
+    package var currentMatch: EaselFindMatch? {
         guard let currentIndex, matches.indices.contains(currentIndex) else { return nil }
         return matches[currentIndex]
     }
 
-    mutating func clear() {
+    package mutating func clear() {
         matches = []
         currentIndex = nil
     }
 
-    mutating func refresh(in document: EaselDocument, keeping match: EaselFindMatch?, preferred: (([EaselFindMatch]) -> Int?)? = nil) {
+    package mutating func refresh(in document: EaselDocument, keeping match: EaselFindMatch?, preferred: (([EaselFindMatch]) -> Int?)? = nil) {
         matches = EaselFinder.matches(of: query, in: document, options: options)
         if let match {
             currentIndex = EaselFinder.index(of: match, in: matches, document: document)
@@ -275,18 +297,18 @@ struct EaselFindSession: Equatable {
         }
     }
 
-    mutating func step(_ delta: Int) {
+    package mutating func step(_ delta: Int) {
         guard !matches.isEmpty else { return }
         let count = matches.count
         currentIndex = currentIndex.map { (($0 + delta) % count + count) % count } ?? (delta > 0 ? 0 : count - 1)
     }
 
-    func replaceability(in document: EaselDocument) -> EaselReplaceability? {
+    package func replaceability(in document: EaselDocument) -> EaselReplaceability? {
         guard let match = currentMatch, let item = document.items.first(where: { $0.id == match.itemID }) else { return nil }
         return EaselFinder.replaceability(of: item)
     }
 
-    mutating func replaceCurrent(with replacement: String, in document: EaselDocument) -> ReplaceStep {
+    package mutating func replaceCurrent(with replacement: String, in document: EaselDocument) -> ReplaceStep {
         let previous = currentMatch
         let fresh = EaselFinder.matches(of: query, in: document, options: options)
         if fresh != matches {
@@ -311,12 +333,12 @@ struct EaselFindSession: Equatable {
         return .replaced(outcome, next: EaselFindMatch(itemID: match.itemID, part: match.part, range: offset..<offset))
     }
 
-    mutating func replaceAll(with replacement: String, in document: EaselDocument) -> EaselFindReplacement {
+    package mutating func replaceAll(with replacement: String, in document: EaselDocument) -> EaselFindReplacement {
         refresh(in: document, keeping: currentMatch)
         return EaselFinder.replace(matches, with: replacement, in: document)
     }
 
-    func countLabel(replacing: Bool, in document: EaselDocument) -> String {
+    package func countLabel(replacing: Bool, in document: EaselDocument) -> String {
         guard !query.isEmpty else { return "" }
         guard let currentIndex, !matches.isEmpty else { return matches.isEmpty ? "No matches" : "\(matches.count) found" }
         let position = "\(currentIndex + 1) of \(matches.count)"
@@ -328,7 +350,7 @@ struct EaselFindSession: Equatable {
         }
     }
 
-    static func summary(_ outcome: EaselFindReplacement) -> String {
+    package static func summary(_ outcome: EaselFindReplacement) -> String {
         var parts: [String] = []
         if outcome.skippedLocked > 0 { parts.append("\(outcome.skippedLocked) locked") }
         if outcome.skippedReadOnly > 0 { parts.append("\(outcome.skippedReadOnly) read-only") }
@@ -338,15 +360,20 @@ struct EaselFindSession: Equatable {
     }
 }
 
-enum EaselViewportFocus {
-    struct Plan: Equatable {
-        var magnification: Double
-        var center: EaselPoint
+package enum EaselViewportFocus {
+    package struct Plan: Equatable {
+        package var magnification: Double
+        package var center: EaselPoint
+
+        package init(magnification: Double, center: EaselPoint) {
+            self.magnification = magnification
+            self.center = center
+        }
     }
 
-    enum Mode { case reveal, focus }
+    package enum Mode { case reveal, focus }
 
-    static func plan(target: EaselRect, visible: EaselRect, magnification: Double, minimum: Double, maximum: Double,
+    package static func plan(target: EaselRect, visible: EaselRect, magnification: Double, minimum: Double, maximum: Double,
                      mode: Mode = .reveal, preferred: Double = 1, legible: Double = 0.6, margin: Double = 72) -> Plan? {
         guard [target.x, target.y, target.width, target.height, visible.x, visible.y, visible.width, visible.height, magnification]
                 .allSatisfy(\.isFinite), visible.width > 0, visible.height > 0, magnification > 0 else { return nil }

@@ -1,40 +1,44 @@
 import Foundation
 
-struct NoteFindOptions: Hashable {
-    var matchCase = false
+package struct NoteFindOptions: Hashable {
+    package var matchCase = false
 
-    var compareOptions: NSString.CompareOptions { matchCase ? [] : [.caseInsensitive, .diacriticInsensitive] }
+    package var compareOptions: NSString.CompareOptions { matchCase ? [] : [.caseInsensitive, .diacriticInsensitive] }
+
+    package init(matchCase: Bool = false) {
+        self.matchCase = matchCase
+    }
 }
 
-struct NoteFindMatch: Hashable {
-    static let titleBlock = NoteBlockID(UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)))
+package struct NoteFindMatch: Hashable {
+    package static let titleBlock = NoteBlockID(UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)))
 
-    var position: NotePosition
-    var length: Int
+    package var position: NotePosition
+    package var length: Int
 
-    init(_ block: NoteBlockID, field: NoteTextField = .body, offset: Int, length: Int) {
+    package init(_ block: NoteBlockID, field: NoteTextField = .body, offset: Int, length: Int) {
         position = NotePosition(block, offset, field: field)
         self.length = length
     }
 
-    static func title(offset: Int, length: Int) -> NoteFindMatch {
+    package static func title(offset: Int, length: Int) -> NoteFindMatch {
         NoteFindMatch(titleBlock, offset: offset, length: length)
     }
 
-    var block: NoteBlockID { position.block }
-    var field: NoteTextField { position.field }
-    var range: Range<Int> { position.offset..<(position.offset + length) }
-    var isTitle: Bool { position.block == Self.titleBlock }
+    package var block: NoteBlockID { position.block }
+    package var field: NoteTextField { position.field }
+    package var range: Range<Int> { position.offset..<(position.offset + length) }
+    package var isTitle: Bool { position.block == Self.titleBlock }
 }
 
-struct NoteFindOrder {
+package struct NoteFindOrder {
     private var blocks: [NoteBlockID: Int] = [:]
 
-    init(_ page: NotePage) {
+    package init(_ page: NotePage) {
         for (index, id) in page.documentOrder(includingCollapsed: true).enumerated() { blocks[id] = index }
     }
 
-    func key(_ position: NotePosition) -> (Int, Int, Int) {
+    package func key(_ position: NotePosition) -> (Int, Int, Int) {
         if position.block == NoteFindMatch.titleBlock { return (-1, 0, position.offset) }
         let field: Int
         switch position.field {
@@ -45,11 +49,11 @@ struct NoteFindOrder {
         return (blocks[position.block] ?? Int.max, field, position.offset)
     }
 
-    func precedes(_ lhs: NotePosition, _ rhs: NotePosition) -> Bool { key(lhs) < key(rhs) }
+    package func precedes(_ lhs: NotePosition, _ rhs: NotePosition) -> Bool { key(lhs) < key(rhs) }
 }
 
-enum NotePageFinder {
-    static func fields(of block: NoteBlock) -> [NoteTextField] {
+package enum NotePageFinder {
+    package static func fields(of block: NoteBlock) -> [NoteTextField] {
         var result: [NoteTextField] = []
         if block.kind.hasRichText || block.kind.hasPlainText { result.append(.body) }
         if let table = block.props.table {
@@ -61,7 +65,7 @@ enum NotePageFinder {
         return result
     }
 
-    static func ranges(of query: String, in string: String, options: NoteFindOptions = NoteFindOptions()) -> [Range<Int>] {
+    package static func ranges(of query: String, in string: String, options: NoteFindOptions = NoteFindOptions()) -> [Range<Int>] {
         guard !query.isEmpty else { return [] }
         let haystack = string as NSString
         var result: [Range<Int>] = []
@@ -76,7 +80,7 @@ enum NotePageFinder {
         return result
     }
 
-    static func matches(of query: String, in page: NotePage, title: String? = nil,
+    package static func matches(of query: String, in page: NotePage, title: String? = nil,
                         options: NoteFindOptions = NoteFindOptions()) -> [NoteFindMatch] {
         guard !query.isEmpty else { return [] }
         var result: [NoteFindMatch] = []
@@ -97,7 +101,7 @@ enum NotePageFinder {
         return result
     }
 
-    static func firstIndex(atOrAfter position: NotePosition?, in matches: [NoteFindMatch], page: NotePage) -> Int? {
+    package static func firstIndex(atOrAfter position: NotePosition?, in matches: [NoteFindMatch], page: NotePage) -> Int? {
         guard !matches.isEmpty else { return nil }
         guard let position else { return 0 }
         let order = NoteFindOrder(page)
@@ -106,11 +110,11 @@ enum NotePageFinder {
     }
 
     @discardableResult
-    static func replace(_ targets: [NoteFindMatch], with replacement: String, in page: inout NotePage) -> Set<NoteBlockID> {
+    package static func replace(_ targets: [NoteFindMatch], with replacement: String, in page: inout NotePage) -> Set<NoteBlockID> {
         replaceCounting(targets, with: replacement, in: &page).touched
     }
 
-    static func replaceCounting(_ targets: [NoteFindMatch], with replacement: String,
+    package static func replaceCounting(_ targets: [NoteFindMatch], with replacement: String,
                                 in page: inout NotePage) -> (touched: Set<NoteBlockID>, count: Int) {
         var count = 0
         var grouped: [NotePosition: [NoteFindMatch]] = [:]
@@ -139,11 +143,11 @@ enum NotePageFinder {
         return (touched, count)
     }
 
-    static func positionAfterReplacing(_ match: NoteFindMatch, with replacement: String) -> NotePosition {
+    package static func positionAfterReplacing(_ match: NoteFindMatch, with replacement: String) -> NotePosition {
         NotePosition(match.block, match.position.offset + (replacement as NSString).length, field: match.field)
     }
 
-    static func titleReplacementCount(_ title: String, matches targets: [NoteFindMatch]) -> Int {
+    package static func titleReplacementCount(_ title: String, matches targets: [NoteFindMatch]) -> Int {
         let length = (title as NSString).length
         var last = Int.max
         var count = 0
@@ -156,7 +160,7 @@ enum NotePageFinder {
         return count
     }
 
-    static func replacingTitle(_ title: String, matches targets: [NoteFindMatch], with replacement: String) -> String {
+    package static func replacingTitle(_ title: String, matches targets: [NoteFindMatch], with replacement: String) -> String {
         let text = NSMutableString(string: title)
         var last = Int.max
         for match in targets.filter(\.isTitle).sorted(by: { $0.position.offset > $1.position.offset }) {
@@ -169,8 +173,8 @@ enum NotePageFinder {
     }
 }
 
-enum NotePageTitleCheck {
-    static func problem(renaming url: URL, to proposed: String) -> NoteFileError? {
+package enum NotePageTitleCheck {
+    package static func problem(renaming url: URL, to proposed: String) -> NoteFileError? {
         let trimmed = proposed.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         if NoteFileNaming.sanitizedTitle(trimmed).isEmpty { return .invalidName }
@@ -185,48 +189,76 @@ enum NotePageTitleCheck {
     }
 }
 
-struct NotePageHeaderGeometry: Equatable {
-    struct Layout: Equatable {
-        var cover: CGRect?
-        var icon: CGRect?
-        var affordances: CGRect
-        var title: CGRect
-        var error: CGRect?
-        var properties: CGRect?
-        var backlinks: CGRect?
-        var height: CGFloat
+package struct NotePageHeaderGeometry: Equatable {
+    package struct Layout: Equatable {
+        package var cover: CGRect?
+        package var icon: CGRect?
+        package var affordances: CGRect
+        package var title: CGRect
+        package var error: CGRect?
+        package var properties: CGRect?
+        package var backlinks: CGRect?
+        package var height: CGFloat
+
+        package init(cover: CGRect? = nil, icon: CGRect? = nil, affordances: CGRect, title: CGRect, error: CGRect? = nil, properties: CGRect? = nil, backlinks: CGRect? = nil, height: CGFloat) {
+            self.cover = cover
+            self.icon = icon
+            self.affordances = affordances
+            self.title = title
+            self.error = error
+            self.properties = properties
+            self.backlinks = backlinks
+            self.height = height
+        }
     }
 
-    static let iconSide: CGFloat = 80
-    static let iconLead: CGFloat = 6
-    static let topPadding: CGFloat = 52
-    static let plainTextTop: CGFloat = 56
-    static let inkGap: CGFloat = 14
-    static let affordanceGap: CGFloat = 8
-    static let coverAffordanceGap: CGFloat = 14
-    static let errorGap: CGFloat = 4
-    static let propertiesGap: CGFloat = 8
-    static let backlinksGap: CGFloat = 6
-    static let bottomPadding: CGFloat = 14
+    package static let iconSide: CGFloat = 80
+    package static let iconLead: CGFloat = 6
+    package static let topPadding: CGFloat = 52
+    package static let plainTextTop: CGFloat = 56
+    package static let inkGap: CGFloat = 14
+    package static let affordanceGap: CGFloat = 8
+    package static let coverAffordanceGap: CGFloat = 14
+    package static let errorGap: CGFloat = 4
+    package static let propertiesGap: CGFloat = 8
+    package static let backlinksGap: CGFloat = 6
+    package static let bottomPadding: CGFloat = 14
 
-    var width: CGFloat
-    var column: CGRect
-    var coverHeight: CGFloat?
-    var hasIcon = false
-    var isPlainText = false
-    var iconInkInset: CGFloat = 11
-    var titleHeight: CGFloat
-    var titleCapInset: CGFloat = 0
-    var affordanceHeight: CGFloat = 26
-    var errorHeight: CGFloat?
-    var propertiesHeight: CGFloat?
-    var propertiesGutter: CGFloat = 0
-    var backlinksHeight: CGFloat?
-    var backlinksGutter: CGFloat = 0
+    package var width: CGFloat
+    package var column: CGRect
+    package var coverHeight: CGFloat?
+    package var hasIcon = false
+    package var isPlainText = false
+    package var iconInkInset: CGFloat = 11
+    package var titleHeight: CGFloat
+    package var titleCapInset: CGFloat = 0
+    package var affordanceHeight: CGFloat = 26
+    package var errorHeight: CGFloat?
+    package var propertiesHeight: CGFloat?
+    package var propertiesGutter: CGFloat = 0
+    package var backlinksHeight: CGFloat?
+    package var backlinksGutter: CGFloat = 0
 
-    var hasCover: Bool { (coverHeight ?? 0) > 0 && !isPlainText }
+    package var hasCover: Bool { (coverHeight ?? 0) > 0 && !isPlainText }
 
-    func layout() -> Layout {
+    package init(width: CGFloat, column: CGRect, coverHeight: CGFloat? = nil, hasIcon: Bool = false, isPlainText: Bool = false, iconInkInset: CGFloat = 11, titleHeight: CGFloat, titleCapInset: CGFloat = 0, affordanceHeight: CGFloat = 26, errorHeight: CGFloat? = nil, propertiesHeight: CGFloat? = nil, propertiesGutter: CGFloat = 0, backlinksHeight: CGFloat? = nil, backlinksGutter: CGFloat = 0) {
+        self.width = width
+        self.column = column
+        self.coverHeight = coverHeight
+        self.hasIcon = hasIcon
+        self.isPlainText = isPlainText
+        self.iconInkInset = iconInkInset
+        self.titleHeight = titleHeight
+        self.titleCapInset = titleCapInset
+        self.affordanceHeight = affordanceHeight
+        self.errorHeight = errorHeight
+        self.propertiesHeight = propertiesHeight
+        self.propertiesGutter = propertiesGutter
+        self.backlinksHeight = backlinksHeight
+        self.backlinksGutter = backlinksGutter
+    }
+
+    package func layout() -> Layout {
         let column = self.column.width > 0 ? self.column : CGRect(x: 0, y: 0, width: width, height: 0)
         var cover: CGRect?
         var icon: CGRect?
@@ -282,18 +314,18 @@ struct NotePageHeaderGeometry: Equatable {
     }
 }
 
-struct NotePageStats: Hashable {
-    static let wordsPerMinute = 238.0
+package struct NotePageStats: Hashable {
+    package static let wordsPerMinute = 238.0
 
-    var words: Int
-    var characters: Int
+    package var words: Int
+    package var characters: Int
 
-    init(words: Int, characters: Int) {
+    package init(words: Int, characters: Int) {
         self.words = words
         self.characters = characters
     }
 
-    init(page: NotePage) {
+    package init(page: NotePage) {
         var pieces: [String] = []
         for block in page.allBlocks() {
             for field in NotePageFinder.fields(of: block) {
@@ -307,26 +339,26 @@ struct NotePageStats: Hashable {
         characters = joined.reduce(0) { $1.isNewline ? $0 : $0 + 1 }
     }
 
-    var readingMinutes: Int {
+    package var readingMinutes: Int {
         words == 0 ? 0 : max(1, Int((Double(words) / Self.wordsPerMinute).rounded(.up)))
     }
 
-    var wordLabel: String {
+    package var wordLabel: String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         let number = formatter.string(from: NSNumber(value: words)) ?? String(words)
         return words == 1 ? "1 word" : number + " words"
     }
 
-    var readingLabel: String {
+    package var readingLabel: String {
         readingMinutes == 0 ? "Nothing to read yet" : "\(readingMinutes) min read"
     }
 
-    var summary: String { words == 0 ? "No words yet" : wordLabel + " · " + readingLabel }
+    package var summary: String { words == 0 ? "No words yet" : wordLabel + " · " + readingLabel }
 }
 
-enum NoteRelativeTime {
-    static func phrase(for date: Date, now: Date = Date()) -> String {
+package enum NoteRelativeTime {
+    package static func phrase(for date: Date, now: Date = Date()) -> String {
         let elapsed = now.timeIntervalSince(date)
         if elapsed < 45 && elapsed > -45 { return "just now" }
         let formatter = RelativeDateTimeFormatter()
@@ -335,16 +367,16 @@ enum NoteRelativeTime {
         return formatter.localizedString(for: date, relativeTo: now)
     }
 
-    static func edited(_ date: Date?, now: Date = Date()) -> String {
+    package static func edited(_ date: Date?, now: Date = Date()) -> String {
         guard let date else { return "Not saved yet" }
         return "Edited " + phrase(for: date, now: now)
     }
 }
 
-enum NotePropertyKind: String, CaseIterable, Hashable {
+package enum NotePropertyKind: String, CaseIterable, Hashable {
     case text, number, checkbox, date, list
 
-    var displayName: String {
+    package var displayName: String {
         switch self {
         case .text: return "Text"
         case .number: return "Number"
@@ -354,7 +386,7 @@ enum NotePropertyKind: String, CaseIterable, Hashable {
         }
     }
 
-    var symbolName: String {
+    package var symbolName: String {
         switch self {
         case .text: return "text.alignleft"
         case .number: return "number"
@@ -364,7 +396,7 @@ enum NotePropertyKind: String, CaseIterable, Hashable {
         }
     }
 
-    var defaultValue: NotePropertyValue {
+    package var defaultValue: NotePropertyValue {
         switch self {
         case .text: return .text("")
         case .number: return .number(0)
@@ -374,7 +406,7 @@ enum NotePropertyKind: String, CaseIterable, Hashable {
         }
     }
 
-    var suggestedKey: String {
+    package var suggestedKey: String {
         switch self {
         case .text: return "Notes"
         case .number: return "Number"
@@ -386,7 +418,7 @@ enum NotePropertyKind: String, CaseIterable, Hashable {
 }
 
 extension NotePropertyValue {
-    var kind: NotePropertyKind {
+    package var kind: NotePropertyKind {
         switch self {
         case .text: return .text
         case .number: return .number
@@ -396,7 +428,7 @@ extension NotePropertyValue {
         }
     }
 
-    var isEmpty: Bool {
+    package var isEmpty: Bool {
         switch self {
         case .text(let value), .date(let value): return value.trimmingCharacters(in: .whitespaces).isEmpty
         case .number: return false
@@ -405,7 +437,7 @@ extension NotePropertyValue {
         }
     }
 
-    var displayText: String {
+    package var displayText: String {
         switch self {
         case .text(let value): return value
         case .number(let value): return NotePropertyEditing.format(value)
@@ -421,7 +453,7 @@ extension NotePropertyValue {
         }
     }
 
-    func converted(to kind: NotePropertyKind) -> NotePropertyValue {
+    package func converted(to kind: NotePropertyKind) -> NotePropertyValue {
         guard kind != self.kind else { return self }
         switch (self, kind) {
         case (.text(let value), .number), (.date(let value), .number):
@@ -453,26 +485,26 @@ extension NotePropertyValue {
     }
 }
 
-enum NotePropertyEditing {
-    static let reservedKeys: Set<String> = ["icon", "cover", "cover-position", "cover-credit", "cover-credit-url", "font", "small-text", "full-width", "locked", "title"]
+package enum NotePropertyEditing {
+    package static let reservedKeys: Set<String> = ["icon", "cover", "cover-position", "cover-credit", "cover-credit-url", "font", "small-text", "full-width", "locked", "title"]
 
-    static let calendar: Calendar = {
+    package static let calendar: Calendar = {
         var value = Calendar(identifier: .gregorian)
         value.timeZone = TimeZone(identifier: "UTC")!
         return value
     }()
 
-    static func normalizedKey(_ key: String) -> String {
+    package static func normalizedKey(_ key: String) -> String {
         key.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
     }
 
-    static func isUsable(_ key: String, among properties: [NotePageProperty], excluding index: Int? = nil) -> Bool {
+    package static func isUsable(_ key: String, among properties: [NotePageProperty], excluding index: Int? = nil) -> Bool {
         let value = normalizedKey(key)
         guard !value.isEmpty, !value.contains(":"), !reservedKeys.contains(value.lowercased()) else { return false }
         return !properties.indices.contains { $0 != index && properties[$0].key.lowercased() == value.lowercased() }
     }
 
-    static func uniqueKey(_ base: String, among properties: [NotePageProperty]) -> String {
+    package static func uniqueKey(_ base: String, among properties: [NotePageProperty]) -> String {
         let root = normalizedKey(base).isEmpty ? "Property" : normalizedKey(base)
         if isUsable(root, among: properties) { return root }
         var counter = 2
@@ -480,11 +512,11 @@ enum NotePropertyEditing {
         return "\(root) \(counter)"
     }
 
-    static func adding(_ kind: NotePropertyKind, to properties: [NotePageProperty]) -> [NotePageProperty] {
+    package static func adding(_ kind: NotePropertyKind, to properties: [NotePageProperty]) -> [NotePageProperty] {
         properties + [NotePageProperty(key: uniqueKey(kind.suggestedKey, among: properties), value: kind.defaultValue)]
     }
 
-    static func renaming(_ properties: [NotePageProperty], at index: Int, to key: String) -> [NotePageProperty]? {
+    package static func renaming(_ properties: [NotePageProperty], at index: Int, to key: String) -> [NotePageProperty]? {
         guard properties.indices.contains(index) else { return nil }
         let value = normalizedKey(key)
         if value == properties[index].key { return properties }
@@ -494,14 +526,14 @@ enum NotePropertyEditing {
         return result
     }
 
-    static func changingKind(_ properties: [NotePageProperty], at index: Int, to kind: NotePropertyKind) -> [NotePageProperty] {
+    package static func changingKind(_ properties: [NotePageProperty], at index: Int, to kind: NotePropertyKind) -> [NotePageProperty] {
         guard properties.indices.contains(index) else { return properties }
         var result = properties
         result[index].value = result[index].value.converted(to: kind)
         return result
     }
 
-    static func moving(_ properties: [NotePageProperty], from source: Int, to destination: Int) -> [NotePageProperty] {
+    package static func moving(_ properties: [NotePageProperty], from source: Int, to destination: Int) -> [NotePageProperty] {
         guard properties.indices.contains(source) else { return properties }
         var result = properties
         let item = result.remove(at: source)
@@ -509,20 +541,20 @@ enum NotePropertyEditing {
         return result
     }
 
-    static func removing(_ properties: [NotePageProperty], at index: Int) -> [NotePageProperty] {
+    package static func removing(_ properties: [NotePageProperty], at index: Int) -> [NotePageProperty] {
         guard properties.indices.contains(index) else { return properties }
         var result = properties
         result.remove(at: index)
         return result
     }
 
-    static func parseNumber(_ text: String) -> Double? {
+    package static func parseNumber(_ text: String) -> Double? {
         let trimmed = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: "")
         guard !trimmed.isEmpty, let value = Double(trimmed), value.isFinite else { return nil }
         return value
     }
 
-    static func format(_ value: Double) -> String {
+    package static func format(_ value: Double) -> String {
         if value.rounded() == value && abs(value) < 1e15 { return String(Int64(value)) }
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -532,11 +564,11 @@ enum NotePropertyEditing {
         return formatter.string(from: NSNumber(value: value)) ?? String(value)
     }
 
-    static func truthy(_ text: String) -> Bool {
+    package static func truthy(_ text: String) -> Bool {
         ["true", "yes", "y", "1", "x", "done", "on"].contains(text.trimmingCharacters(in: .whitespaces).lowercased())
     }
 
-    static func listItems(from text: String) -> [String] {
+    package static func listItems(from text: String) -> [String] {
         var seen = Set<String>()
         return text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { item in
             guard !item.isEmpty, !seen.contains(item.lowercased()) else { return false }
@@ -545,18 +577,18 @@ enum NotePropertyEditing {
         }
     }
 
-    static func addingTag(_ tag: String, to items: [String]) -> [String] {
+    package static func addingTag(_ tag: String, to items: [String]) -> [String] {
         let value = tag.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: " ")
         guard !value.isEmpty, !items.contains(where: { $0.lowercased() == value.lowercased() }) else { return items }
         return items + [value]
     }
 
-    static func dateString(from date: Date) -> String {
+    package static func dateString(from date: Date) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
     }
 
-    static func date(from string: String) -> Date? {
+    package static func date(from string: String) -> Date? {
         let trimmed = string.trimmingCharacters(in: .whitespaces)
         let parts = trimmed.prefix(10).split(separator: "-")
         guard trimmed.count >= 10, parts.count == 3, parts[0].count == 4, let year = Int(parts[0]),
@@ -567,7 +599,7 @@ enum NotePropertyEditing {
         return date
     }
 
-    static func localDateString(from date: Date, in zone: TimeZone = .current) -> String {
+    package static func localDateString(from date: Date, in zone: TimeZone = .current) -> String {
         var local = Calendar(identifier: .gregorian)
         local.timeZone = zone
         let parts = local.dateComponents([.year, .month, .day], from: date)
@@ -575,13 +607,18 @@ enum NotePropertyEditing {
     }
 }
 
-enum NotePageHistoryReason: Hashable { case save, idle, close }
+package enum NotePageHistoryReason: Hashable { case save, idle, close }
 
-struct NotePageHistoryPolicy: Hashable {
-    var minimumInterval: TimeInterval = 300
-    var idleDelay: TimeInterval = 120
+package struct NotePageHistoryPolicy: Hashable {
+    package var minimumInterval: TimeInterval = 300
+    package var idleDelay: TimeInterval = 120
 
-    func shouldRecord(_ reason: NotePageHistoryReason, current: String, lastRecorded: String?,
+    package init(minimumInterval: TimeInterval = 300, idleDelay: TimeInterval = 120) {
+        self.minimumInterval = minimumInterval
+        self.idleDelay = idleDelay
+    }
+
+    package func shouldRecord(_ reason: NotePageHistoryReason, current: String, lastRecorded: String?,
                       lastRecordedAt: Date?, now: Date) -> Bool {
         guard let lastRecorded else { return true }
         guard Self.isMeaningful(from: lastRecorded, to: current) else { return false }
@@ -593,7 +630,7 @@ struct NotePageHistoryPolicy: Hashable {
         }
     }
 
-    static func isMeaningful(from old: String, to new: String) -> Bool {
+    package static func isMeaningful(from old: String, to new: String) -> Bool {
         trimmed(old) != trimmed(new)
     }
 
@@ -609,22 +646,22 @@ struct NotePageHistoryPolicy: Hashable {
     }
 }
 
-enum NotePageExport {
-    static func markdownForCopy(body: String, title: String) -> String {
+package enum NotePageExport {
+    package static func markdownForCopy(body: String, title: String) -> String {
         let trimmedBody = body.trimmingCharacters(in: .newlines)
         let heading = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !heading.isEmpty else { return trimmedBody + "\n" }
         return trimmedBody.isEmpty ? "# " + heading + "\n" : "# " + heading + "\n\n" + trimmedBody + "\n"
     }
 
-    static func isImageSource(_ value: String) -> Bool {
+    package static func isImageSource(_ value: String) -> Bool {
         let lower = value.lowercased()
         if lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.hasPrefix("file:") { return true }
         let ext = (value as NSString).pathExtension.lowercased()
         return ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "tif", "tiff", "bmp", "svg", "avif"].contains(ext)
     }
 
-    static func relativeAssetSources(in page: NotePage) -> [String] {
+    package static func relativeAssetSources(in page: NotePage) -> [String] {
         var sources: [String] = []
         if let cover = page.settings.cover?.source { sources.append(cover) }
         if let icon = page.settings.icon, isImageSource(icon) { sources.append(icon) }
@@ -642,7 +679,7 @@ enum NotePageExport {
         }
     }
 
-    static func markdownCopyURL(for source: URL, exists: (URL) -> Bool) -> URL {
+    package static func markdownCopyURL(for source: URL, exists: (URL) -> Bool) -> URL {
         let folder = source.deletingLastPathComponent()
         let base = source.deletingPathExtension().lastPathComponent
         var candidate = folder.appendingPathComponent(base).appendingPathExtension("md")
@@ -654,23 +691,23 @@ enum NotePageExport {
         return candidate
     }
 
-    static func validatedLink(_ text: String) -> URL? {
+    package static func validatedLink(_ text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
               let host = url.host, host.contains(".") || host == "localhost" else { return nil }
         return url
     }
 
-    static func flattenedTitle(_ text: String) -> String {
+    package static func flattenedTitle(_ text: String) -> String {
         var value = text.replacingOccurrences(of: "\r\n", with: " ")
         for separator in ["\n", "\r", "\u{2028}", "\u{2029}", "\t"] { value = value.replacingOccurrences(of: separator, with: " ") }
         return value
     }
 }
 
-struct NoteCalloutAlert: Hashable {
-    var icon: String
-    var color: NoteColor
+package struct NoteCalloutAlert: Hashable {
+    package var icon: String
+    package var color: NoteColor
 
     private static let table: [String: NoteCalloutAlert] = {
         let groups: [([String], String, NoteColor)] = [
@@ -697,42 +734,48 @@ struct NoteCalloutAlert: Hashable {
         return result
     }()
 
-    static func defaults(for alert: String?) -> NoteCalloutAlert? {
+    package static func defaults(for alert: String?) -> NoteCalloutAlert? {
         guard let alert else { return nil }
         return table[alert.lowercased()]
     }
 }
 
 extension NoteBlock {
-    var calloutAlert: NoteCalloutAlert? {
+    package var calloutAlert: NoteCalloutAlert? {
         kind == .callout ? NoteCalloutAlert.defaults(for: props.alert) : nil
     }
 
-    var calloutDisplayIcon: String? {
+    package var calloutDisplayIcon: String? {
         guard kind == .callout else { return nil }
         if let icon = props.icon { return icon.isEmpty ? nil : icon }
         return calloutAlert?.icon
     }
 
-    var calloutDisplayColor: NoteColorStyle? {
+    package var calloutDisplayColor: NoteColorStyle? {
         guard kind == .callout else { return color }
         if let color { return color }
         return calloutAlert.map { .background($0.color) }
     }
 
-    var calloutIconRemoval: String? {
+    package var calloutIconRemoval: String? {
         calloutAlert == nil ? nil : ""
     }
 }
 
-struct NotePagePrintSpan: Hashable {
-    var minY: CGFloat
-    var maxY: CGFloat
-    var keepsTogether: Bool
+package struct NotePagePrintSpan: Hashable {
+    package var minY: CGFloat
+    package var maxY: CGFloat
+    package var keepsTogether: Bool
+
+    package init(minY: CGFloat, maxY: CGFloat, keepsTogether: Bool) {
+        self.minY = minY
+        self.maxY = maxY
+        self.keepsTogether = keepsTogether
+    }
 }
 
-enum NotePagePagination {
-    static func pageBreak(proposed: CGFloat, limit: CGFloat, spans: [NotePagePrintSpan]) -> CGFloat {
+package enum NotePagePagination {
+    package static func pageBreak(proposed: CGFloat, limit: CGFloat, spans: [NotePagePrintSpan]) -> CGFloat {
         var bottom = proposed
         var moved = true
         while moved {
@@ -745,7 +788,7 @@ enum NotePagePagination {
         return bottom
     }
 
-    static func settledBottom(adjusted: CGFloat, preferred: CGFloat, bottom: CGFloat, limit: CGFloat) -> CGFloat {
+    package static func settledBottom(adjusted: CGFloat, preferred: CGFloat, bottom: CGFloat, limit: CGFloat) -> CGFloat {
         min(bottom, max(min(limit, bottom), min(adjusted, preferred)))
     }
 }

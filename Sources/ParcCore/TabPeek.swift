@@ -1,28 +1,42 @@
 import Foundation
 
-struct TabPeekCandidate: Equatable {
-    enum Holder: Equatable { case here, elsewhere(movable: Bool), nobody }
-    enum Page: Equatable { case live(String), creating, unloaded(loadable: Bool), failed, closed }
-    enum Shown: Equatable { case none, peek(canClose: Bool), tab(UUID, canClose: Bool) }
+package struct TabPeekCandidate: Equatable {
+    package enum Holder: Equatable { case here, elsewhere(movable: Bool), nobody }
+    package enum Page: Equatable { case live(String), creating, unloaded(loadable: Bool), failed, closed }
+    package enum Shown: Equatable { case none, peek(canClose: Bool), tab(UUID, canClose: Bool) }
 
-    var tabID: UUID
-    var windowAdmits = true
-    var parentCanHost = true
-    var inActiveSpace = true
-    var profileMatches = true
-    var onScreen = false
-    var busy = false
-    var document = false
-    var holder = Holder.here
-    var page = Page.unloaded(loadable: true)
-    var shown = Shown.none
+    package var tabID: UUID
+    package var windowAdmits = true
+    package var parentCanHost = true
+    package var inActiveSpace = true
+    package var profileMatches = true
+    package var onScreen = false
+    package var busy = false
+    package var document = false
+    package var holder = Holder.here
+    package var page = Page.unloaded(loadable: true)
+    package var shown = Shown.none
+
+    package init(tabID: UUID, windowAdmits: Bool = true, parentCanHost: Bool = true, inActiveSpace: Bool = true, profileMatches: Bool = true, onScreen: Bool = false, busy: Bool = false, document: Bool = false, holder: TabPeekCandidate.Holder = Holder.here, page: TabPeekCandidate.Page = Page.unloaded(loadable: true), shown: TabPeekCandidate.Shown = Shown.none) {
+        self.tabID = tabID
+        self.windowAdmits = windowAdmits
+        self.parentCanHost = parentCanHost
+        self.inActiveSpace = inActiveSpace
+        self.profileMatches = profileMatches
+        self.onScreen = onScreen
+        self.busy = busy
+        self.document = document
+        self.holder = holder
+        self.page = page
+        self.shown = shown
+    }
 }
 
-enum TabPeekRefusal: Error, Equatable {
+package enum TabPeekRefusal: Error, Equatable {
     case window, parent, space, profile, onScreen, busy, document, heldElsewhere, failed, closed, unloadable, peekBusy
 }
 
-enum TabPeekPlan: Equatable {
+package enum TabPeekPlan: Equatable {
     case present(String)
     case load
     case moveHere
@@ -30,8 +44,8 @@ enum TabPeekPlan: Equatable {
     case alreadyShown
 }
 
-enum TabPeekAdmission {
-    static func plan(_ candidate: TabPeekCandidate) -> Result<TabPeekPlan, TabPeekRefusal> {
+package enum TabPeekAdmission {
+    package static func plan(_ candidate: TabPeekCandidate) -> Result<TabPeekPlan, TabPeekRefusal> {
         if case .tab(let id, _) = candidate.shown, id == candidate.tabID { return .success(.alreadyShown) }
         guard candidate.windowAdmits else { return .failure(.window) }
         guard candidate.parentCanHost else { return .failure(.parent) }
@@ -63,24 +77,32 @@ enum TabPeekAdmission {
         }
     }
 
-    static func offers(_ candidate: TabPeekCandidate) -> Bool {
+    package static func offers(_ candidate: TabPeekCandidate) -> Bool {
         if case .success(let opening) = plan(candidate) { return opening != .alreadyShown }
         return false
     }
 }
 
-struct TabPeekHoldFacts: Equatable {
-    var pageInCard = true
-    var windowOpen = true
-    var tabUsable = true
-    var tabDisplayed = false
-    var parentCurrent = true
+package struct TabPeekHoldFacts: Equatable {
+    package var pageInCard = true
+    package var windowOpen = true
+    package var tabUsable = true
+    package var tabDisplayed = false
+    package var parentCurrent = true
+
+    package init(pageInCard: Bool = true, windowOpen: Bool = true, tabUsable: Bool = true, tabDisplayed: Bool = false, parentCurrent: Bool = true) {
+        self.pageInCard = pageInCard
+        self.windowOpen = windowOpen
+        self.tabUsable = tabUsable
+        self.tabDisplayed = tabDisplayed
+        self.parentCurrent = parentCurrent
+    }
 }
 
-enum TabPeekResolution: Equatable { case keep, promote, putBack, drop }
+package enum TabPeekResolution: Equatable { case keep, promote, putBack, drop }
 
-enum TabPeekHold {
-    static func resolve(_ facts: TabPeekHoldFacts) -> TabPeekResolution {
+package enum TabPeekHold {
+    package static func resolve(_ facts: TabPeekHoldFacts) -> TabPeekResolution {
         guard facts.pageInCard else { return .drop }
         guard facts.windowOpen, facts.tabUsable else { return .putBack }
         if facts.tabDisplayed { return .promote }
@@ -88,9 +110,9 @@ enum TabPeekHold {
     }
 }
 
-struct TabPeekSession: Equatable {
-    enum Phase: Equatable { case loading, shown, promoting, finished }
-    enum Effect: Equatable {
+package struct TabPeekSession: Equatable {
+    package enum Phase: Equatable { case loading, shown, promoting, finished }
+    package enum Effect: Equatable {
         case createPage
         case presentPage(String)
         case returnPage(String)
@@ -98,12 +120,12 @@ struct TabPeekSession: Equatable {
         case finish
     }
 
-    let tabID: UUID
-    private(set) var phase: Phase
-    private(set) var page: String?
-    private(set) var loads: Int
+    package let tabID: UUID
+    package private(set) var phase: Phase
+    package private(set) var page: String?
+    package private(set) var loads: Int
 
-    init?(tabID: UUID, plan: TabPeekPlan) {
+    package init?(tabID: UUID, plan: TabPeekPlan) {
         self.tabID = tabID
         switch plan {
         case .present(let page): phase = .shown; self.page = page; loads = 0
@@ -112,7 +134,7 @@ struct TabPeekSession: Equatable {
         }
     }
 
-    var opening: [Effect] {
+    package var opening: [Effect] {
         switch phase {
         case .loading: return [.createPage]
         case .shown: return page.map { [.presentPage($0)] } ?? []
@@ -120,34 +142,34 @@ struct TabPeekSession: Equatable {
         }
     }
 
-    var holdsPage: Bool { phase == .shown }
+    package var holdsPage: Bool { phase == .shown }
 
-    mutating func pageReady(_ page: String) -> [Effect] {
+    package mutating func pageReady(_ page: String) -> [Effect] {
         guard phase == .loading else { return [] }
         phase = .shown
         self.page = page
         return [.presentPage(page)]
     }
 
-    mutating func returnRequested() -> [Effect] {
+    package mutating func returnRequested() -> [Effect] {
         guard phase == .shown, let page else { return [] }
         phase = .finished
         return [.returnPage(page), .finish]
     }
 
-    mutating func promote() -> [Effect] {
+    package mutating func promote() -> [Effect] {
         guard phase == .shown, let page else { return [] }
         phase = .promoting
         return [.returnPage(page), .exit]
     }
 
-    mutating func exitFinished() -> [Effect] {
+    package mutating func exitFinished() -> [Effect] {
         guard phase == .promoting else { return [] }
         phase = .finished
         return [.finish]
     }
 
-    mutating func resolve(_ resolution: TabPeekResolution) -> [Effect] {
+    package mutating func resolve(_ resolution: TabPeekResolution) -> [Effect] {
         switch resolution {
         case .keep: return []
         case .promote:
@@ -160,7 +182,7 @@ struct TabPeekSession: Equatable {
         }
     }
 
-    mutating func pageClosed() -> [Effect] {
+    package mutating func pageClosed() -> [Effect] {
         switch phase {
         case .loading: phase = .finished; return []
         case .shown: phase = .finished; return [.finish]
@@ -169,18 +191,26 @@ struct TabPeekSession: Equatable {
     }
 }
 
-struct TabPeekSplitFacts: Equatable {
-    var peekInteractive = true
-    var tabUsable = true
-    var parentSelected = true
-    var panes = 1
-    var windowReady = true
+package struct TabPeekSplitFacts: Equatable {
+    package var peekInteractive = true
+    package var tabUsable = true
+    package var parentSelected = true
+    package var panes = 1
+    package var windowReady = true
+
+    package init(peekInteractive: Bool = true, tabUsable: Bool = true, parentSelected: Bool = true, panes: Int = 1, windowReady: Bool = true) {
+        self.peekInteractive = peekInteractive
+        self.tabUsable = tabUsable
+        self.parentSelected = parentSelected
+        self.panes = panes
+        self.windowReady = windowReady
+    }
 }
 
-enum TabPeekSplitRefusal: Equatable {
+package enum TabPeekSplitRefusal: Equatable {
     case unavailable, full
 
-    var toolTip: String {
+    package var toolTip: String {
         switch self {
         case .unavailable: return "Split View isn't available right now"
         case .full: return "Split View already shows four pages"
@@ -188,10 +218,10 @@ enum TabPeekSplitRefusal: Equatable {
     }
 }
 
-enum TabPeekSplit {
-    static let paneLimit = 4
+package enum TabPeekSplit {
+    package static let paneLimit = 4
 
-    static func refusal(_ facts: TabPeekSplitFacts) -> TabPeekSplitRefusal? {
+    package static func refusal(_ facts: TabPeekSplitFacts) -> TabPeekSplitRefusal? {
         guard facts.peekInteractive, facts.tabUsable, facts.parentSelected else { return .unavailable }
         if facts.panes >= paneLimit { return .full }
         return facts.windowReady ? nil : .unavailable

@@ -1,11 +1,11 @@
 import Foundation
 
-struct EaselTableLayout: Equatable {
-    let frame: EaselRect
-    let columnEdges: [Double]
-    let rowEdges: [Double]
+package struct EaselTableLayout: Equatable {
+    package let frame: EaselRect
+    package let columnEdges: [Double]
+    package let rowEdges: [Double]
 
-    init(table: EaselTable, frame: EaselRect) {
+    package init(table: EaselTable, frame: EaselRect) {
         self.frame = frame
         let width = table.width, height = table.height
         let scaleX = width > 0 && frame.width.isFinite ? frame.width / width : 1
@@ -18,10 +18,10 @@ struct EaselTableLayout: Equatable {
         rowEdges = rows
     }
 
-    var columnCount: Int { max(0, columnEdges.count - 1) }
-    var rowCount: Int { max(0, rowEdges.count - 1) }
+    package var columnCount: Int { max(0, columnEdges.count - 1) }
+    package var rowCount: Int { max(0, rowEdges.count - 1) }
 
-    func rect(_ range: EaselTableRange) -> EaselRect? {
+    package func rect(_ range: EaselTableRange) -> EaselRect? {
         guard range.rows.lowerBound >= 0, range.columns.lowerBound >= 0,
               range.rows.upperBound < rowCount, range.columns.upperBound < columnCount else { return nil }
         let left = columnEdges[range.columns.lowerBound], right = columnEdges[range.columns.upperBound + 1]
@@ -29,23 +29,23 @@ struct EaselTableLayout: Equatable {
         return EaselRect(x: left, y: top, width: right - left, height: bottom - top)
     }
 
-    func rect(of cell: EaselTableCoordinate, in table: EaselTable) -> EaselRect? {
+    package func rect(of cell: EaselTableCoordinate, in table: EaselTable) -> EaselRect? {
         rect(table.span(of: cell))
     }
 
-    func cell(at point: EaselPoint) -> EaselTableCoordinate? {
+    package func cell(at point: EaselPoint) -> EaselTableCoordinate? {
         guard let column = Self.index(of: point.x, in: columnEdges), let row = Self.index(of: point.y, in: rowEdges) else { return nil }
         return EaselTableCoordinate(row: row, column: column)
     }
 
-    func clampedCell(at point: EaselPoint) -> EaselTableCoordinate? {
+    package func clampedCell(at point: EaselPoint) -> EaselTableCoordinate? {
         guard columnCount > 0, rowCount > 0, let first = columnEdges.first, let last = columnEdges.last,
               let top = rowEdges.first, let bottom = rowEdges.last else { return nil }
         let x = min(max(point.x, first), last - 0.001), y = min(max(point.y, top), bottom - 0.001)
         return cell(at: EaselPoint(x: x, y: y))
     }
 
-    static func index(of position: Double, in edges: [Double]) -> Int? {
+    package static func index(of position: Double, in edges: [Double]) -> Int? {
         guard edges.count >= 2, position.isFinite, position >= edges[0], position < edges[edges.count - 1] else { return nil }
         var low = 0, high = edges.count - 2
         while low < high {
@@ -55,7 +55,7 @@ struct EaselTableLayout: Equatable {
         return low
     }
 
-    func columnBorder(near point: EaselPoint, tolerance: Double, in table: EaselTable) -> Int? {
+    package func columnBorder(near point: EaselPoint, tolerance: Double, in table: EaselTable) -> Int? {
         guard point.y >= frame.y, point.y <= frame.y + frame.height, columnEdges.count > 2 else { return nil }
         let row = Self.index(of: point.y, in: rowEdges)
         var best: (index: Int, distance: Double)?
@@ -69,7 +69,7 @@ struct EaselTableLayout: Equatable {
         return best?.index
     }
 
-    func rowBorder(near point: EaselPoint, tolerance: Double, in table: EaselTable) -> Int? {
+    package func rowBorder(near point: EaselPoint, tolerance: Double, in table: EaselTable) -> Int? {
         guard point.x >= frame.x, point.x <= frame.x + frame.width, rowEdges.count > 2 else { return nil }
         let column = Self.index(of: point.x, in: columnEdges)
         var best: (index: Int, distance: Double)?
@@ -83,7 +83,7 @@ struct EaselTableLayout: Equatable {
         return best?.index
     }
 
-    func insertionIndex(near position: Double, edges: [Double], tolerance: Double) -> Int? {
+    package func insertionIndex(near position: Double, edges: [Double], tolerance: Double) -> Int? {
         var best: (index: Int, distance: Double)?
         for (index, edge) in edges.enumerated() {
             let distance = abs(edge - position)
@@ -92,7 +92,7 @@ struct EaselTableLayout: Equatable {
         return best?.index
     }
 
-    func dropIndex(for position: Double, edges: [Double], moving block: ClosedRange<Int>) -> Int {
+    package func dropIndex(for position: Double, edges: [Double], moving block: ClosedRange<Int>) -> Int {
         let count = edges.count - 1
         guard count > 0, block.lowerBound >= 0, block.upperBound < count else { return 0 }
         var destination = 0
@@ -103,8 +103,8 @@ struct EaselTableLayout: Equatable {
     }
 }
 
-enum EaselTableGeometry {
-    static func fitted(_ item: EaselItem) -> EaselItem {
+package enum EaselTableGeometry {
+    package static func fitted(_ item: EaselItem) -> EaselItem {
         guard item.kind == .table, var table = item.table, table.width > 0, table.height > 0 else { return item }
         var next = item
         if abs(table.width - item.frame.width) > 0.001 { table.scaleColumns(toWidth: item.frame.width) }
@@ -115,7 +115,7 @@ enum EaselTableGeometry {
         return next
     }
 
-    static func placement(from start: EaselPoint, to end: EaselPoint?,
+    package static func placement(from start: EaselPoint, to end: EaselPoint?,
                           columnWidth: Double = EaselTable.defaultColumnWidth,
                           rowHeight: Double = EaselTable.defaultRowHeight) -> (columns: Int, rows: Int, frame: EaselRect) {
         guard let end, hypot(end.x - start.x, end.y - start.y) > EaselToolGeometry.dragThreshold else {
@@ -131,7 +131,7 @@ enum EaselTableGeometry {
         return (columns, rows, EaselRect(x: max(0, x), y: max(0, y), width: width, height: height))
     }
 
-    static func item(columns: Int, rows: Int, frame: EaselRect, zIndex: Int, color: String = EaselVectorExport.automaticInk) -> EaselItem {
+    package static func item(columns: Int, rows: Int, frame: EaselRect, zIndex: Int, color: String = EaselVectorExport.automaticInk) -> EaselItem {
         let table = EaselTable.blank(columns: columns, rows: rows,
                                      columnWidth: frame.width / Double(max(1, min(columns, EaselTable.maximumColumns))),
                                      rowHeight: frame.height / Double(max(1, min(rows, EaselTable.maximumRows))))
@@ -141,7 +141,7 @@ enum EaselTableGeometry {
         return item
     }
 
-    static func stickies(from item: EaselItem, size: Double = EaselBoardObjects.stickySide, gap: Double = 24,
+    package static func stickies(from item: EaselItem, size: Double = EaselBoardObjects.stickySide, gap: Double = 24,
                          fill: (String?) -> String?, textHeight: (EaselItem) -> Double = { _ in 0 }) -> [EaselItem] {
         guard item.kind == .table, let table = item.table else { return [] }
         var rows: [Int: [EaselItem]] = [:]
@@ -171,7 +171,7 @@ enum EaselTableGeometry {
 }
 
 extension EaselTableLayout {
-    func borderSegments(in table: EaselTable) -> [(start: EaselPoint, end: EaselPoint)] {
+    package func borderSegments(in table: EaselTable) -> [(start: EaselPoint, end: EaselPoint)] {
         guard rowCount == table.rowCount, columnCount == table.columnCount, rowCount > 0, columnCount > 0 else { return [] }
         var owner: [EaselTableCoordinate: Int] = [:]
         for (index, merge) in table.merges.enumerated() {
@@ -207,9 +207,9 @@ extension EaselTableLayout {
 }
 
 extension EaselVectorExport {
-    static let tableCornerRadius = 6.0
+    package static let tableCornerRadius = 6.0
 
-    static func table(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
+    package static func table(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
         guard let model = item.table else { return "" }
         let f = item.frame, grid = EaselTableLayout(table: model, frame: f)
         func box(_ r: EaselRect) -> String {

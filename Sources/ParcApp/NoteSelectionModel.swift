@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ParcCore
 
 enum NoteSelectionRole: Hashable {
     case text

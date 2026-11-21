@@ -1,85 +1,90 @@
 import Foundation
 
-struct EaselTableCoordinate: Hashable {
-    var row: Int
-    var column: Int
+package struct EaselTableCoordinate: Hashable {
+    package var row: Int
+    package var column: Int
+
+    package init(row: Int, column: Int) {
+        self.row = row
+        self.column = column
+    }
 }
 
-struct EaselTableRange: Hashable {
-    var rows: ClosedRange<Int>
-    var columns: ClosedRange<Int>
+package struct EaselTableRange: Hashable {
+    package var rows: ClosedRange<Int>
+    package var columns: ClosedRange<Int>
 
-    init(rows: ClosedRange<Int>, columns: ClosedRange<Int>) {
+    package init(rows: ClosedRange<Int>, columns: ClosedRange<Int>) {
         self.rows = rows
         self.columns = columns
     }
 
-    init(_ cell: EaselTableCoordinate) {
+    package init(_ cell: EaselTableCoordinate) {
         rows = cell.row...cell.row
         columns = cell.column...cell.column
     }
 
-    init(_ anchor: EaselTableCoordinate, _ head: EaselTableCoordinate) {
+    package init(_ anchor: EaselTableCoordinate, _ head: EaselTableCoordinate) {
         rows = min(anchor.row, head.row)...max(anchor.row, head.row)
         columns = min(anchor.column, head.column)...max(anchor.column, head.column)
     }
 
-    var topLeft: EaselTableCoordinate { EaselTableCoordinate(row: rows.lowerBound, column: columns.lowerBound) }
-    var cellCount: Int { rows.count * columns.count }
-    var isSingleCell: Bool { rows.count == 1 && columns.count == 1 }
+    package var topLeft: EaselTableCoordinate { EaselTableCoordinate(row: rows.lowerBound, column: columns.lowerBound) }
+    package var cellCount: Int { rows.count * columns.count }
+    package var isSingleCell: Bool { rows.count == 1 && columns.count == 1 }
 
-    func contains(_ cell: EaselTableCoordinate) -> Bool { rows.contains(cell.row) && columns.contains(cell.column) }
-    func intersects(_ other: EaselTableRange) -> Bool { rows.overlaps(other.rows) && columns.overlaps(other.columns) }
-    var cells: [EaselTableCoordinate] { rows.flatMap { row in columns.map { EaselTableCoordinate(row: row, column: $0) } } }
+    package func contains(_ cell: EaselTableCoordinate) -> Bool { rows.contains(cell.row) && columns.contains(cell.column) }
+    package func intersects(_ other: EaselTableRange) -> Bool { rows.overlaps(other.rows) && columns.overlaps(other.columns) }
+    package var cells: [EaselTableCoordinate] { rows.flatMap { row in columns.map { EaselTableCoordinate(row: row, column: $0) } } }
 }
 
-struct EaselTableMerge: Codable, Hashable {
-    var row: Int
-    var column: Int
-    var rowSpan: Int
-    var columnSpan: Int
+package struct EaselTableMerge: Codable, Hashable {
+    package var row: Int
+    package var column: Int
+    package var rowSpan: Int
+    package var columnSpan: Int
 
-    init(row: Int, column: Int, rowSpan: Int, columnSpan: Int) {
+    package init(row: Int, column: Int, rowSpan: Int, columnSpan: Int) {
         self.row = row
         self.column = column
         self.rowSpan = rowSpan
         self.columnSpan = columnSpan
     }
 
-    init(_ range: EaselTableRange) {
+    package init(_ range: EaselTableRange) {
         self.init(row: range.rows.lowerBound, column: range.columns.lowerBound,
                   rowSpan: range.rows.count, columnSpan: range.columns.count)
     }
 
-    var anchor: EaselTableCoordinate { EaselTableCoordinate(row: row, column: column) }
-    var range: EaselTableRange {
+    package var anchor: EaselTableCoordinate { EaselTableCoordinate(row: row, column: column) }
+    package var range: EaselTableRange {
         EaselTableRange(rows: row...(row + max(1, rowSpan) - 1), columns: column...(column + max(1, columnSpan) - 1))
     }
 }
 
-struct EaselTableCell: Codable, Equatable {
-    var text: String
-    var richText: EaselRichText?
-    var fill: String?
+package struct EaselTableCell: Codable, Equatable {
+    package var text: String
+    package var richText: EaselRichText?
+    package var fill: String?
 
-    init(text: String = "", richText: EaselRichText? = nil, fill: String? = nil) {
+    package init(text: String = "", richText: EaselRichText? = nil, fill: String? = nil) {
         self.text = text
         self.richText = richText
         self.fill = fill
     }
 
-    var isBlank: Bool { text.isEmpty && richText == nil && fill == nil }
+    package var isBlank: Bool { text.isEmpty && richText == nil && fill == nil }
 
     private enum CodingKeys: String, CodingKey { case text, richText, fill }
 
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
         richText = try container.decodeIfPresent(EaselRichText.self, forKey: .richText)
         fill = try container.decodeIfPresent(String.self, forKey: .fill)
     }
 
-    func encode(to encoder: Encoder) throws {
+    package func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         if !text.isEmpty { try container.encode(text, forKey: .text) }
         try container.encodeIfPresent(richText, forKey: .richText)
@@ -87,41 +92,41 @@ struct EaselTableCell: Codable, Equatable {
     }
 }
 
-enum EaselTableStep: Equatable {
+package enum EaselTableStep: Equatable {
     case cell(EaselTableCoordinate)
     case appendRow
     case none
 }
 
-enum EaselTableDirection: CaseIterable {
+package enum EaselTableDirection: CaseIterable {
     case up, down, left, right
 }
 
-enum EaselTableAxis {
+package enum EaselTableAxis {
     case rows, columns
 }
 
-struct EaselTable: Codable, Equatable {
-    static let maximumRows = 100
-    static let maximumColumns = 100
-    static let maximumCells = 10_000
-    static let maximumPastedCells = 500
-    static let maximumCellBytes = 65_536
-    static let maximumTextBytes = 1_048_576
-    static let minimumColumnWidth = 48.0
-    static let minimumRowHeight = 24.0
-    static let maximumLength = 8_000.0
-    static let defaultColumnWidth = 140.0
-    static let defaultRowHeight = 36.0
-    static let defaultColumns = 3
-    static let defaultRows = 3
+package struct EaselTable: Codable, Equatable {
+    package static let maximumRows = 100
+    package static let maximumColumns = 100
+    package static let maximumCells = 10_000
+    package static let maximumPastedCells = 500
+    package static let maximumCellBytes = 65_536
+    package static let maximumTextBytes = 1_048_576
+    package static let minimumColumnWidth = 48.0
+    package static let minimumRowHeight = 24.0
+    package static let maximumLength = 8_000.0
+    package static let defaultColumnWidth = 140.0
+    package static let defaultRowHeight = 36.0
+    package static let defaultColumns = 3
+    package static let defaultRows = 3
 
-    var columnWidths: [Double]
-    var rowHeights: [Double]
-    var cells: [[EaselTableCell]]
-    var merges: [EaselTableMerge]
+    package var columnWidths: [Double]
+    package var rowHeights: [Double]
+    package var cells: [[EaselTableCell]]
+    package var merges: [EaselTableMerge]
 
-    init(columnWidths: [Double], rowHeights: [Double], cells: [[EaselTableCell]]? = nil, merges: [EaselTableMerge] = []) {
+    package init(columnWidths: [Double], rowHeights: [Double], cells: [[EaselTableCell]]? = nil, merges: [EaselTableMerge] = []) {
         self.columnWidths = columnWidths
         self.rowHeights = rowHeights
         self.cells = cells ?? Array(repeating: Array(repeating: EaselTableCell(), count: columnWidths.count), count: rowHeights.count)
@@ -130,7 +135,7 @@ struct EaselTable: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey { case columnWidths, rowHeights, cells, merges }
 
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         columnWidths = try container.decode([Double].self, forKey: .columnWidths)
         rowHeights = try container.decode([Double].self, forKey: .rowHeights)
@@ -138,7 +143,7 @@ struct EaselTable: Codable, Equatable {
         merges = try container.decodeIfPresent([EaselTableMerge].self, forKey: .merges) ?? []
     }
 
-    func encode(to encoder: Encoder) throws {
+    package func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(columnWidths, forKey: .columnWidths)
         try container.encode(rowHeights, forKey: .rowHeights)
@@ -146,7 +151,7 @@ struct EaselTable: Codable, Equatable {
         if !merges.isEmpty { try container.encode(merges, forKey: .merges) }
     }
 
-    static func blank(columns: Int, rows: Int, columnWidth: Double = defaultColumnWidth,
+    package static func blank(columns: Int, rows: Int, columnWidth: Double = defaultColumnWidth,
                       rowHeight: Double = defaultRowHeight) -> EaselTable {
         let columnCount = min(max(1, columns), maximumColumns)
         let rowCount = min(max(1, rows), maximumRows, maximumCells / columnCount)
@@ -154,20 +159,20 @@ struct EaselTable: Codable, Equatable {
                           rowHeights: Array(repeating: rowHeight, count: rowCount))
     }
 
-    var rowCount: Int { rowHeights.count }
-    var columnCount: Int { columnWidths.count }
-    var width: Double { columnWidths.reduce(0, +) }
-    var height: Double { rowHeights.reduce(0, +) }
-    var all: EaselTableRange { EaselTableRange(rows: 0...max(0, rowCount - 1), columns: 0...max(0, columnCount - 1)) }
+    package var rowCount: Int { rowHeights.count }
+    package var columnCount: Int { columnWidths.count }
+    package var width: Double { columnWidths.reduce(0, +) }
+    package var height: Double { rowHeights.reduce(0, +) }
+    package var all: EaselTableRange { EaselTableRange(rows: 0...max(0, rowCount - 1), columns: 0...max(0, columnCount - 1)) }
 
-    static func isHex(_ value: String) -> Bool {
+    package static func isHex(_ value: String) -> Bool {
         let scalars = Array(value.unicodeScalars)
         return scalars.count == 7 && scalars[0] == "#" && scalars.dropFirst().allSatisfy {
             ("0"..."9").contains($0) || ("a"..."f").contains($0) || ("A"..."F").contains($0)
         }
     }
 
-    func validate() throws {
+    package func validate() throws {
         let rowCount = rowHeights.count, columnCount = columnWidths.count
         guard (1...Self.maximumRows).contains(rowCount), (1...Self.maximumColumns).contains(columnCount),
               rowCount * columnCount <= Self.maximumCells, cells.count == rowCount,
@@ -201,40 +206,40 @@ struct EaselTable: Codable, Equatable {
         }
     }
 
-    func contains(_ cell: EaselTableCoordinate) -> Bool {
+    package func contains(_ cell: EaselTableCoordinate) -> Bool {
         cell.row >= 0 && cell.row < rowCount && cell.column >= 0 && cell.column < columnCount
     }
 
-    func cell(_ cell: EaselTableCoordinate) -> EaselTableCell? {
+    package func cell(_ cell: EaselTableCoordinate) -> EaselTableCell? {
         guard contains(cell), cells.indices.contains(cell.row), cells[cell.row].indices.contains(cell.column) else { return nil }
         return cells[cell.row][cell.column]
     }
 
     @discardableResult
-    mutating func update(_ cell: EaselTableCoordinate, _ change: (inout EaselTableCell) -> Void) -> Bool {
+    package mutating func update(_ cell: EaselTableCoordinate, _ change: (inout EaselTableCell) -> Void) -> Bool {
         guard contains(cell), cells.indices.contains(cell.row), cells[cell.row].indices.contains(cell.column) else { return false }
         change(&cells[cell.row][cell.column])
         return true
     }
 
-    func merge(containing cell: EaselTableCoordinate) -> EaselTableMerge? {
+    package func merge(containing cell: EaselTableCoordinate) -> EaselTableMerge? {
         merges.first { $0.range.contains(cell) }
     }
 
-    func anchor(of cell: EaselTableCoordinate) -> EaselTableCoordinate {
+    package func anchor(of cell: EaselTableCoordinate) -> EaselTableCoordinate {
         merge(containing: cell)?.anchor ?? cell
     }
 
-    func span(of cell: EaselTableCoordinate) -> EaselTableRange {
+    package func span(of cell: EaselTableCoordinate) -> EaselTableRange {
         merge(containing: cell)?.range ?? EaselTableRange(cell)
     }
 
-    func isCovered(_ cell: EaselTableCoordinate) -> Bool {
+    package func isCovered(_ cell: EaselTableCoordinate) -> Bool {
         guard let merge = merge(containing: cell) else { return false }
         return merge.anchor != cell
     }
 
-    var coveredCells: Set<EaselTableCoordinate> {
+    package var coveredCells: Set<EaselTableCoordinate> {
         var result = Set<EaselTableCoordinate>()
         for merge in merges {
             for cell in merge.range.cells where cell != merge.anchor { result.insert(cell) }
@@ -242,19 +247,19 @@ struct EaselTable: Codable, Equatable {
         return result
     }
 
-    var visibleCells: [EaselTableCoordinate] {
+    package var visibleCells: [EaselTableCoordinate] {
         let covered = coveredCells
         return all.cells.filter { !covered.contains($0) }
     }
 
-    func clamped(_ range: EaselTableRange) -> EaselTableRange? {
+    package func clamped(_ range: EaselTableRange) -> EaselTableRange? {
         guard rowCount > 0, columnCount > 0, range.rows.lowerBound < rowCount, range.columns.lowerBound < columnCount,
               range.rows.upperBound >= 0, range.columns.upperBound >= 0 else { return nil }
         return EaselTableRange(rows: max(0, range.rows.lowerBound)...min(range.rows.upperBound, rowCount - 1),
                                columns: max(0, range.columns.lowerBound)...min(range.columns.upperBound, columnCount - 1))
     }
 
-    func expanded(_ range: EaselTableRange) -> EaselTableRange {
+    package func expanded(_ range: EaselTableRange) -> EaselTableRange {
         var result = range
         var changed = !merges.isEmpty
         while changed {
@@ -288,7 +293,7 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func insertRows(at index: Int, count: Int = 1, height: Double = defaultRowHeight) -> Bool {
+    package mutating func insertRows(at index: Int, count: Int = 1, height: Double = defaultRowHeight) -> Bool {
         let position = min(max(0, index), rowCount)
         guard count > 0, rowCount + count <= Self.maximumRows, (rowCount + count) * columnCount <= Self.maximumCells,
               height.isFinite else { return false }
@@ -307,7 +312,7 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func insertColumns(at index: Int, count: Int = 1, width: Double = defaultColumnWidth) -> Bool {
+    package mutating func insertColumns(at index: Int, count: Int = 1, width: Double = defaultColumnWidth) -> Bool {
         let position = min(max(0, index), columnCount)
         guard count > 0, columnCount + count <= Self.maximumColumns, rowCount * (columnCount + count) <= Self.maximumCells,
               width.isFinite else { return false }
@@ -328,7 +333,7 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func removeRows(_ range: ClosedRange<Int>) -> Bool {
+    package mutating func removeRows(_ range: ClosedRange<Int>) -> Bool {
         let lower = max(0, range.lowerBound), upper = min(rowCount - 1, range.upperBound)
         guard lower <= upper, upper - lower + 1 < rowCount else { return false }
         let count = upper - lower + 1
@@ -349,7 +354,7 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func removeColumns(_ range: ClosedRange<Int>) -> Bool {
+    package mutating func removeColumns(_ range: ClosedRange<Int>) -> Bool {
         let lower = max(0, range.lowerBound), upper = min(columnCount - 1, range.upperBound)
         guard lower <= upper, upper - lower + 1 < columnCount else { return false }
         let count = upper - lower + 1
@@ -380,7 +385,7 @@ struct EaselTable: Codable, Equatable {
         axis == .rows ? merge.range.rows : merge.range.columns
     }
 
-    func keepsMerges(moving block: ClosedRange<Int>, to destination: Int, along axis: EaselTableAxis) -> Bool {
+    package func keepsMerges(moving block: ClosedRange<Int>, to destination: Int, along axis: EaselTableAxis) -> Bool {
         let count = axis == .rows ? rowCount : columnCount
         guard let order = Self.order(count: count, moving: block, to: destination) else { return false }
         var position = [Int](repeating: 0, count: count)
@@ -394,7 +399,7 @@ struct EaselTable: Codable, Equatable {
         }
     }
 
-    func destination(moving block: ClosedRange<Int>, by step: Int, along axis: EaselTableAxis) -> Int? {
+    package func destination(moving block: ClosedRange<Int>, by step: Int, along axis: EaselTableAxis) -> Int? {
         let count = axis == .rows ? rowCount : columnCount
         guard step != 0 else { return nil }
         var candidate = block.lowerBound + step
@@ -405,7 +410,7 @@ struct EaselTable: Codable, Equatable {
         return nil
     }
 
-    func nearestDestination(moving block: ClosedRange<Int>, to desired: Int, along axis: EaselTableAxis) -> Int {
+    package func nearestDestination(moving block: ClosedRange<Int>, to desired: Int, along axis: EaselTableAxis) -> Int {
         let count = axis == .rows ? rowCount : columnCount
         let limit = count - block.count
         guard limit >= 0 else { return block.lowerBound }
@@ -419,7 +424,7 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func moveRows(_ block: ClosedRange<Int>, to destination: Int) -> Bool {
+    package mutating func moveRows(_ block: ClosedRange<Int>, to destination: Int) -> Bool {
         guard keepsMerges(moving: block, to: destination, along: .rows),
               let order = Self.order(count: rowCount, moving: block, to: destination), order != Array(0..<rowCount) else { return false }
         var position = [Int](repeating: 0, count: rowCount)
@@ -437,7 +442,7 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func moveColumns(_ block: ClosedRange<Int>, to destination: Int) -> Bool {
+    package mutating func moveColumns(_ block: ClosedRange<Int>, to destination: Int) -> Bool {
         guard keepsMerges(moving: block, to: destination, along: .columns),
               let order = Self.order(count: columnCount, moving: block, to: destination), order != Array(0..<columnCount) else { return false }
         var position = [Int](repeating: 0, count: columnCount)
@@ -455,7 +460,7 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func duplicateRows(_ block: ClosedRange<Int>) -> Bool {
+    package mutating func duplicateRows(_ block: ClosedRange<Int>) -> Bool {
         guard block.lowerBound >= 0, block.upperBound < rowCount,
               expanded(EaselTableRange(rows: block, columns: all.columns)).rows == block else { return false }
         let copies = Array(cells[block]), heights = Array(rowHeights[block])
@@ -471,7 +476,7 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func duplicateColumns(_ block: ClosedRange<Int>) -> Bool {
+    package mutating func duplicateColumns(_ block: ClosedRange<Int>) -> Bool {
         guard block.lowerBound >= 0, block.upperBound < columnCount,
               expanded(EaselTableRange(rows: all.rows, columns: block)).columns == block else { return false }
         let copies = cells.map { Array($0[block]) }, widths = Array(columnWidths[block])
@@ -486,17 +491,17 @@ struct EaselTable: Codable, Equatable {
         return true
     }
 
-    func canMerge(_ range: EaselTableRange) -> Bool {
+    package func canMerge(_ range: EaselTableRange) -> Bool {
         guard clamped(range) == range else { return false }
         let area = expanded(range)
         return area.cellCount > 1 && !merges.contains { $0.range == area }
     }
 
-    func hasMerges(in range: EaselTableRange) -> Bool {
+    package func hasMerges(in range: EaselTableRange) -> Bool {
         merges.contains { $0.range.intersects(range) }
     }
 
-    func joinedText(_ range: EaselTableRange) -> String {
+    package func joinedText(_ range: EaselTableRange) -> String {
         expanded(range).cells.compactMap { cell in
             guard !isCovered(cell), let text = self.cell(cell)?.text,
                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
@@ -505,7 +510,7 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func merge(_ range: EaselTableRange, content: EaselTableCell? = nil) -> EaselTableMerge? {
+    package mutating func merge(_ range: EaselTableRange, content: EaselTableCell? = nil) -> EaselTableMerge? {
         guard canMerge(range) else { return nil }
         let area = expanded(range)
         let merged = EaselTableMerge(area)
@@ -521,14 +526,14 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func unmerge(_ range: EaselTableRange) -> Bool {
+    package mutating func unmerge(_ range: EaselTableRange) -> Bool {
         let before = merges.count
         merges.removeAll { $0.range.intersects(range) }
         return merges.count != before
     }
 
     @discardableResult
-    mutating func clearText(_ range: EaselTableRange) -> Bool {
+    package mutating func clearText(_ range: EaselTableRange) -> Bool {
         var changed = false
         for cell in expanded(range).cells where contains(cell) {
             guard !cells[cell.row][cell.column].text.isEmpty || cells[cell.row][cell.column].richText != nil else { continue }
@@ -540,7 +545,7 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func setFill(_ fill: String?, in range: EaselTableRange) -> Bool {
+    package mutating func setFill(_ fill: String?, in range: EaselTableRange) -> Bool {
         guard fill.map(Self.isHex) != false else { return false }
         var changed = false
         for cell in expanded(range).cells where contains(cell) && !isCovered(cell) && cells[cell.row][cell.column].fill != fill {
@@ -550,7 +555,7 @@ struct EaselTable: Codable, Equatable {
         return changed
     }
 
-    func commonFill(_ range: EaselTableRange) -> String?? {
+    package func commonFill(_ range: EaselTableRange) -> String?? {
         var result: String??
         for cell in expanded(range).cells where contains(cell) && !isCovered(cell) {
             let fill = cells[cell.row][cell.column].fill
@@ -561,7 +566,7 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func setWidth(_ width: Double, column: Int) -> Bool {
+    package mutating func setWidth(_ width: Double, column: Int) -> Bool {
         guard columnWidths.indices.contains(column), width.isFinite else { return false }
         let value = min(Self.maximumLength, max(Self.minimumColumnWidth, width))
         guard value != columnWidths[column] else { return false }
@@ -570,7 +575,7 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func setHeight(_ height: Double, row: Int, minimum: Double = minimumRowHeight) -> Bool {
+    package mutating func setHeight(_ height: Double, row: Int, minimum: Double = minimumRowHeight) -> Bool {
         guard rowHeights.indices.contains(row), height.isFinite else { return false }
         let value = min(Self.maximumLength, max(Self.minimumRowHeight, minimum.isFinite ? minimum : 0, height))
         guard value != rowHeights[row] else { return false }
@@ -578,13 +583,13 @@ struct EaselTable: Codable, Equatable {
         return true
     }
 
-    mutating func scaleColumns(toWidth target: Double) {
+    package mutating func scaleColumns(toWidth target: Double) {
         let total = width
         guard target.isFinite, target > 0, total > 0 else { return }
         columnWidths = columnWidths.map { min(Self.maximumLength, max(Self.minimumColumnWidth, $0 * target / total)) }
     }
 
-    mutating func scaleRows(toHeight target: Double, minimums: [Double] = []) {
+    package mutating func scaleRows(toHeight target: Double, minimums: [Double] = []) {
         let total = height
         guard target.isFinite, target > 0, total > 0 else { return }
         rowHeights = rowHeights.indices.map { index in
@@ -593,20 +598,20 @@ struct EaselTable: Codable, Equatable {
         }
     }
 
-    mutating func fitRows(minimums: [Double]) {
+    package mutating func fitRows(minimums: [Double]) {
         for index in rowHeights.indices where minimums.indices.contains(index) && minimums[index].isFinite {
             rowHeights[index] = min(Self.maximumLength, max(Self.minimumRowHeight, rowHeights[index], minimums[index]))
         }
     }
 
-    func tab(from cell: EaselTableCoordinate, backward: Bool) -> EaselTableStep {
+    package func tab(from cell: EaselTableCoordinate, backward: Bool) -> EaselTableStep {
         let order = visibleCells
         guard let index = order.firstIndex(of: anchor(of: cell)) else { return .none }
         if backward { return index > 0 ? .cell(order[index - 1]) : .none }
         return index + 1 < order.count ? .cell(order[index + 1]) : .appendRow
     }
 
-    func step(from cell: EaselTableCoordinate, _ direction: EaselTableDirection) -> EaselTableCoordinate {
+    package func step(from cell: EaselTableCoordinate, _ direction: EaselTableDirection) -> EaselTableCoordinate {
         guard contains(cell) else { return anchor(of: EaselTableCoordinate(row: 0, column: 0)) }
         let span = self.span(of: cell)
         let lane = (row: min(max(cell.row, span.rows.lowerBound), span.rows.upperBound),
@@ -627,7 +632,7 @@ struct EaselTable: Codable, Equatable {
         }
     }
 
-    func extended(_ head: EaselTableCoordinate, _ direction: EaselTableDirection) -> EaselTableCoordinate {
+    package func extended(_ head: EaselTableCoordinate, _ direction: EaselTableDirection) -> EaselTableCoordinate {
         var next = head
         switch direction {
         case .up: next.row -= 1
@@ -640,7 +645,7 @@ struct EaselTable: Codable, Equatable {
         return next
     }
 
-    func slice(_ range: EaselTableRange) -> EaselTable? {
+    package func slice(_ range: EaselTableRange) -> EaselTable? {
         guard let area = clamped(range).map(expanded) else { return nil }
         var result = EaselTable(columnWidths: Array(columnWidths[area.columns]), rowHeights: Array(rowHeights[area.rows]),
                                 cells: area.rows.map { Array(cells[$0][area.columns]) })
@@ -653,7 +658,7 @@ struct EaselTable: Codable, Equatable {
     }
 
     @discardableResult
-    mutating func paste(_ source: EaselTable, at origin: EaselTableCoordinate, filling target: EaselTableRange? = nil) -> EaselTableRange? {
+    package mutating func paste(_ source: EaselTable, at origin: EaselTableCoordinate, filling target: EaselTableRange? = nil) -> EaselTableRange? {
         guard contains(origin), source.rowCount > 0, source.columnCount > 0 else { return nil }
         if source.rowCount == 1, source.columnCount == 1, let target, let area = clamped(target), !area.isSingleCell {
             let value = source.cells[0][0]
@@ -698,14 +703,14 @@ struct EaselTable: Codable, Equatable {
 }
 
 extension EaselTable {
-    var accessibilitySummary: String {
+    package var accessibilitySummary: String {
         let columns = columnCount == 1 ? "1 column" : "\(columnCount) columns"
         let rows = rowCount == 1 ? "1 row" : "\(rowCount) rows"
         let filled = visibleCells.filter { !(cell($0)?.text.isEmpty ?? true) }.count
         return columns + ", " + rows + (filled == 0 ? ", empty" : ", \(filled) filled")
     }
 
-    static func cellName(_ cell: EaselTableCoordinate) -> String {
+    package static func cellName(_ cell: EaselTableCoordinate) -> String {
         "row \(cell.row + 1), column \(cell.column + 1)"
     }
 }

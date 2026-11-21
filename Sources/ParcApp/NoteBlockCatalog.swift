@@ -1,4 +1,5 @@
 import Foundation
+import ParcCore
 
 enum NoteCatalogSection: String, CaseIterable, Hashable {
     case basic, media, advanced, inline, colors, actions

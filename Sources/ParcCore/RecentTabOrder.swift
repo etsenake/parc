@@ -1,26 +1,37 @@
 import Foundation
 
-struct RecentTabOrder {
-    struct Item: Identifiable {
-        var tabIDs: [UUID]
-        var focusedTabID: UUID
-        var spaceID: UUID
-        var profileID: UUID
-        var orientation: SplitOrientation
-        var slotSizes: [Int]? = nil
-        var id: String { tabIDs.map(\.uuidString).joined(separator: ":") }
+package struct RecentTabOrder {
+    package struct Item: Identifiable {
+        package var tabIDs: [UUID]
+        package var focusedTabID: UUID
+        package var spaceID: UUID
+        package var profileID: UUID
+        package var orientation: SplitOrientation
+        package var slotSizes: [Int]? = nil
+        package var id: String { tabIDs.map(\.uuidString).joined(separator: ":") }
+
+        package init(tabIDs: [UUID], focusedTabID: UUID, spaceID: UUID, profileID: UUID, orientation: SplitOrientation, slotSizes: [Int]? = nil) {
+            self.tabIDs = tabIDs
+            self.focusedTabID = focusedTabID
+            self.spaceID = spaceID
+            self.profileID = profileID
+            self.orientation = orientation
+            self.slotSizes = slotSizes
+        }
     }
     private var recency: [String] = []
     private var lastFocus: [String: UUID] = [:]
 
-    mutating func record(_ ids: [UUID], focus: UUID?) {
+    package init() {}
+
+    package mutating func record(_ ids: [UUID], focus: UUID?) {
         guard let first = ids.first else { return }
         let key = ids.map(\.uuidString).joined(separator: ":")
         lastFocus[key] = focus.flatMap { ids.contains($0) ? $0 : nil } ?? first
         if recency.first != key { recency.removeAll { $0 == key }; recency.insert(key, at: 0) }
     }
 
-    mutating func items(state: BrowserState, selected: [UUID], currentSpace: UUID,
+    package mutating func items(state: BrowserState, selected: [UUID], currentSpace: UUID,
                         available: (UUID) -> Bool) -> [Item] {
         let tabs = Dictionary(uniqueKeysWithValues: state.openTabs(where: { available($0.id) }).map { ($0.id, $0) })
         let spaces = Dictionary(uniqueKeysWithValues: state.spaces.map { ($0.id, $0) })
@@ -57,13 +68,13 @@ struct RecentTabOrder {
     }
 }
 
-struct RecentTabSwitcherSelection {
-    static let maximumDisplayedItems = 5
-    private(set) var itemIDs: [String]
-    private(set) var focusedIndex: Int
-    var displayedIDs: ArraySlice<String> { itemIDs.prefix(Self.maximumDisplayedItems) }
+package struct RecentTabSwitcherSelection {
+    package static let maximumDisplayedItems = 5
+    package private(set) var itemIDs: [String]
+    package private(set) var focusedIndex: Int
+    package var displayedIDs: ArraySlice<String> { itemIDs.prefix(Self.maximumDisplayedItems) }
 
-    init(itemIDs: [String], currentID: String?, forward: Bool) {
+    package init(itemIDs: [String], currentID: String?, forward: Bool) {
         var seen = Set<String>()
         self.itemIDs = Array(itemIDs.filter { seen.insert($0).inserted }.prefix(Self.maximumDisplayedItems + 1))
         let count = min(self.itemIDs.count, Self.maximumDisplayedItems)
@@ -72,13 +83,13 @@ struct RecentTabSwitcherSelection {
         } else { focusedIndex = forward ? 0 : max(0, count - 1) }
     }
 
-    mutating func focus(_ index: Int) {
+    package mutating func focus(_ index: Int) {
         let count = displayedIDs.count
         guard count > 0 else { focusedIndex = 0; return }
         focusedIndex = (index % count + count) % count
     }
 
-    mutating func didClose(_ id: String, availableIDs: [String]) {
+    package mutating func didClose(_ id: String, availableIDs: [String]) {
         let available = Set(availableIDs).subtracting([id])
         var seen = Set<String>()
         itemIDs = Array((itemIDs + availableIDs).filter {
@@ -88,25 +99,25 @@ struct RecentTabSwitcherSelection {
     }
 }
 
-struct RecentTabSwitcherInput {
-    static let modifierMask: UInt = 0x1E_0000
-    static let control: UInt = 0x4_0000
-    enum KeyAction: Equatable { case forward, backward, cancel, close, consume }
-    let continuationFlags: [UInt]
+package struct RecentTabSwitcherInput {
+    package static let modifierMask: UInt = 0x1E_0000
+    package static let control: UInt = 0x4_0000
+    package enum KeyAction: Equatable { case forward, backward, cancel, close, consume }
+    package let continuationFlags: [UInt]
 
-    init(next: UInt?, previous: UInt?) {
+    package init(next: UInt?, previous: UInt?) {
         continuationFlags = [next, previous, Self.control].compactMap { $0.map { $0 & Self.modifierMask } }
     }
 
-    func isHolding(_ flags: UInt) -> Bool {
+    package func isHolding(_ flags: UInt) -> Bool {
         flags & continuationFlags.reduce(0, |) != 0
     }
 
-    func continues(_ flags: UInt) -> Bool {
+    package func continues(_ flags: UInt) -> Bool {
         continuationFlags.contains(flags & Self.modifierMask)
     }
 
-    func keyDown(matchesNext: Bool, matchesPrevious: Bool, keyCode: UInt16, flags: UInt) -> KeyAction {
+    package func keyDown(matchesNext: Bool, matchesPrevious: Bool, keyCode: UInt16, flags: UInt) -> KeyAction {
         if matchesNext { return .forward }
         if matchesPrevious { return .backward }
         if keyCode == 50 && flags & Self.modifierMask == Self.control { return .backward }

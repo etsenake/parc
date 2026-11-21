@@ -1,11 +1,17 @@
 import Foundation
 
-enum SidebarKeyboardNavigation {
-    struct Item {
-        let reference: SidebarItemReference
-        let selection: RecentTabOrder.Item?
-        let folder: BrowserFolder?
-        var id: String {
+package enum SidebarKeyboardNavigation {
+    package struct Item {
+        package let reference: SidebarItemReference
+        package let selection: RecentTabOrder.Item?
+        package let folder: BrowserFolder?
+
+        package init(reference: SidebarItemReference, selection: RecentTabOrder.Item?, folder: BrowserFolder?) {
+            self.reference = reference
+            self.selection = selection
+            self.folder = folder
+        }
+        package var id: String {
             switch reference {
             case .tab(let id): return "tab:" + id.uuidString
             case .folder(let id): return "folder:" + id.uuidString
@@ -14,7 +20,7 @@ enum SidebarKeyboardNavigation {
         }
     }
 
-    static func items(state: BrowserState, spaceID: UUID, selected: [UUID],
+    package static func items(state: BrowserState, spaceID: UUID, selected: [UUID],
                       focused: UUID?, peeks: [UUID: [SidebarItemReference]] = [:], pinnedPeek: [SidebarItemReference]? = nil,
                       available: (UUID) -> Bool) -> [Item] {
         guard let space = state.spaces.first(where: { $0.id == spaceID }),

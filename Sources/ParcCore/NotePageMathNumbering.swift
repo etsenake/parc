@@ -1,31 +1,46 @@
 import Foundation
 
-struct NotePageMathNumbering: Equatable {
-    struct Entry: Equatable {
-        var firstNumber = 0
-        var numbers = 0
-        var labels: [String] = []
-        var duplicateLabels: Set<String> = []
+package struct NotePageMathNumbering: Equatable {
+    package struct Entry: Equatable {
+        package var firstNumber = 0
+        package var numbers = 0
+        package var labels: [String] = []
+        package var duplicateLabels: Set<String> = []
+
+        package init(firstNumber: Int = 0, numbers: Int = 0, labels: [String] = [], duplicateLabels: Set<String> = []) {
+            self.firstNumber = firstNumber
+            self.numbers = numbers
+            self.labels = labels
+            self.duplicateLabels = duplicateLabels
+        }
     }
 
-    var entries: [NoteBlockID: Entry] = [:]
-    var references: [String: [NoteMathNode]] = [:]
-    var targets: [String: NoteBlockID] = [:]
-    var referenceDigest = ""
-    var total = 0
+    package var entries: [NoteBlockID: Entry] = [:]
+    package var references: [String: [NoteMathNode]] = [:]
+    package var targets: [String: NoteBlockID] = [:]
+    package var referenceDigest = ""
+    package var total = 0
 
-    func context(for id: NoteBlockID) -> NoteMathNumberingContext {
+    package init(entries: [NoteBlockID: Entry] = [:], references: [String: [NoteMathNode]] = [:], targets: [String: NoteBlockID] = [:], referenceDigest: String = "", total: Int = 0) {
+        self.entries = entries
+        self.references = references
+        self.targets = targets
+        self.referenceDigest = referenceDigest
+        self.total = total
+    }
+
+    package func context(for id: NoteBlockID) -> NoteMathNumberingContext {
         let entry = entries[id] ?? Entry(firstNumber: total)
         return NoteMathNumberingContext(firstNumber: entry.firstNumber, references: references, takenLabels: entry.duplicateLabels,
                                         referenceDigest: referenceDigest)
     }
 
-    var inlineContext: NoteMathNumberingContext {
+    package var inlineContext: NoteMathNumberingContext {
         NoteMathNumberingContext(firstNumber: 0, references: references, takenLabels: [], referenceDigest: referenceDigest)
     }
 }
 
-final class NotePageMathNumberer {
+package final class NotePageMathNumberer {
     private struct Scan {
         var numbers: Int
         var labels: [NoteMathLabel]
@@ -33,7 +48,9 @@ final class NotePageMathNumberer {
 
     private var scans: [String: Scan?] = [:]
 
-    func numbering(for page: NotePage, drafts: [NoteBlockID: String] = [:]) -> NotePageMathNumbering {
+    package init() {}
+
+    package func numbering(for page: NotePage, drafts: [NoteBlockID: String] = [:]) -> NotePageMathNumbering {
         var result = NotePageMathNumbering()
         var used: Set<String> = []
         var count = 0

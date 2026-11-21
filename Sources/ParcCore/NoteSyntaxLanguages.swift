@@ -1,13 +1,19 @@
 import Foundation
 
-struct NoteCodeLanguage: Hashable, Sendable {
-    let id: String
-    let name: String
-    let aliases: [String]
+package struct NoteCodeLanguage: Hashable, Sendable {
+    package let id: String
+    package let name: String
+    package let aliases: [String]
 
-    static let plainText = NoteCodeLanguage(id: "plaintext", name: "Plain Text", aliases: ["text", "txt", "plain", "none"])
+    package init(id: String, name: String, aliases: [String]) {
+        self.id = id
+        self.name = name
+        self.aliases = aliases
+    }
 
-    static let all: [NoteCodeLanguage] = [
+    package static let plainText = NoteCodeLanguage(id: "plaintext", name: "Plain Text", aliases: ["text", "txt", "plain", "none"])
+
+    package static let all: [NoteCodeLanguage] = [
         plainText,
         NoteCodeLanguage(id: "bash", name: "Bash", aliases: ["sh", "shell", "zsh", "ksh", "shellscript", "shell-script", "console"]),
         NoteCodeLanguage(id: "c", name: "C", aliases: ["h"]),
@@ -60,7 +66,7 @@ struct NoteCodeLanguage: Hashable, Sendable {
         return table
     }()
 
-    static func named(_ text: String) -> NoteCodeLanguage? {
+    package static func named(_ text: String) -> NoteCodeLanguage? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !trimmed.isEmpty else { return nil }
         if let language = index[trimmed] { return language }

@@ -1,4 +1,5 @@
 import AppKit
+import ParcEngine
 
 extension BrowserWindowController {
     func setupBlockedContent() {

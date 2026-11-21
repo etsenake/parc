@@ -1,7 +1,7 @@
 import Foundation
 
-enum NativeMessagingHosts {
-    static func sourceDirectories(home: URL) -> [URL] {
+package enum NativeMessagingHosts {
+    package static func sourceDirectories(home: URL) -> [URL] {
         let support = home.appendingPathComponent("Library/Application Support", isDirectory: true)
         let browsers = ["Arc/User Data", "Google/Chrome", "Chromium", "BraveSoftware/Brave-Browser",
                         "Microsoft Edge", "Vivaldi"]
@@ -12,7 +12,7 @@ enum NativeMessagingHosts {
             .map { URL(fileURLWithPath: $0, isDirectory: true) }
     }
 
-    static func link(engineRoot: URL, sources: [URL], fileManager: FileManager = .default) {
+    package static func link(engineRoot: URL, sources: [URL], fileManager: FileManager = .default) {
         let folder = engineRoot.appendingPathComponent("NativeMessagingHosts", isDirectory: true)
         if (try? fileManager.destinationOfSymbolicLink(atPath: folder.path)) != nil { return }
         try? fileManager.createDirectory(at: folder, withIntermediateDirectories: true)

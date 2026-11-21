@@ -1,7 +1,7 @@
 import Foundation
 
 extension NotePage {
-    func canTurnIntoSynced(_ ids: [NoteBlockID]) -> Bool {
+    package func canTurnIntoSynced(_ ids: [NoteBlockID]) -> Bool {
         let top = topLevelSelection(ids)
         guard !top.isEmpty else { return false }
         return top.allSatisfy { id in
@@ -10,7 +10,7 @@ extension NotePage {
         }
     }
 
-    func syncedPlacement(of id: NoteBlockID) -> NoteInsertion {
+    package func syncedPlacement(of id: NoteBlockID) -> NoteInsertion {
         if let parent = parent(of: id), let siblings = block(parent)?.children {
             guard let index = siblings.firstIndex(where: { $0.id == id }) else { return .lastChild(of: parent) }
             return index == 0 ? .firstChild(of: parent) : .after(siblings[index - 1].id)
@@ -22,7 +22,7 @@ extension NotePage {
 
 extension NotePageSession {
     @discardableResult
-    func turnIntoSynced(_ ids: [NoteBlockID]) -> NoteBlockID? {
+    package func turnIntoSynced(_ ids: [NoteBlockID]) -> NoteBlockID? {
         guard !isReadOnly, !isFlat, page.canTurnIntoSynced(ids) else { return nil }
         let top = page.topLevelSelection(ids)
         let blocks = top.compactMap { page.block($0) }
@@ -38,7 +38,7 @@ extension NotePageSession {
     }
 
     @discardableResult
-    func insertSyncedBlock(replacing id: NoteBlockID) -> NoteBlockID? {
+    package func insertSyncedBlock(replacing id: NoteBlockID) -> NoteBlockID? {
         guard !isReadOnly, !isFlat, let block = page.block(id), page.syncedSite(containing: id) == nil else { return nil }
         let inner = NoteBlock.paragraph()
         let synced = NoteBlock(.synced, children: [inner])
@@ -51,7 +51,7 @@ extension NotePageSession {
     }
 
     @discardableResult
-    func unsync(_ id: NoteBlockID, name: String = "Unsync", effect: NoteUndoEffect? = nil) -> Bool {
+    package func unsync(_ id: NoteBlockID, name: String = "Unsync", effect: NoteUndoEffect? = nil) -> Bool {
         guard !isReadOnly, let block = page.block(id), block.kind == .synced else { return false }
         let children = block.children.isEmpty ? [NoteBlock.paragraph()] : block.children
         let landing: NotePageSelection = .blocks(children.map(\.id))
@@ -63,7 +63,7 @@ extension NotePageSession {
         return !page.contains(id)
     }
 
-    func syncedClipboardBlocks(_ blocks: [NoteBlock], documentURL: URL?) -> [NoteBlock] {
+    package func syncedClipboardBlocks(_ blocks: [NoteBlock], documentURL: URL?) -> [NoteBlock] {
         let folder = documentURL?.deletingLastPathComponent()
         return blocks.map { block in
             block.referencingSyncedOriginals { anchor in
@@ -74,7 +74,7 @@ extension NotePageSession {
 }
 
 extension NoteBlock {
-    func portableSyncedTargets(documentURL: URL?) -> NoteBlock {
+    package func portableSyncedTargets(documentURL: URL?) -> NoteBlock {
         var copy = self
         if isSyncedCopy, let target = props.target, let reference = NoteSyncedReference(target), reference.path == nil {
             copy.props.target = NoteSyncedReference.portableTarget(anchor: reference.anchor, original: documentURL,
@@ -85,7 +85,7 @@ extension NoteBlock {
         return copy
     }
 
-    func localizingSyncedTargets(documentURL: URL?) -> NoteBlock {
+    package func localizingSyncedTargets(documentURL: URL?) -> NoteBlock {
         var copy = self
         if isSyncedCopy, let target = props.target, let reference = NoteSyncedReference(target), reference.path != nil,
            let documentURL, let url = reference.url(relativeTo: documentURL),
@@ -99,7 +99,7 @@ extension NoteBlock {
 }
 
 extension NoteSyncedReference {
-    static func portableTarget(anchor: String, original: URL?, folder: URL?) -> String {
+    package static func portableTarget(anchor: String, original: URL?, folder: URL?) -> String {
         let fragment = "#" + NoteFilePaths.encodedSegment(anchor)
         guard let original else { return fragment }
         let file = URL(fileURLWithPath: original.path)

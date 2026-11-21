@@ -1,25 +1,25 @@
 import Foundation
 
-enum SidebarKeyboardAnnouncement {
-    static let endOfList = "End of list"
-    static let topOfList = "Top of list"
-    static let emptyList = "Sidebar is empty"
-    static let unnamedItem = "Sidebar item"
+package enum SidebarKeyboardAnnouncement {
+    package static let endOfList = "End of list"
+    package static let topOfList = "Top of list"
+    package static let emptyList = "Sidebar is empty"
+    package static let unnamedItem = "Sidebar item"
 
-    static func highlight(_ cursor: SidebarKeyboardCursor?, in items: [SidebarKeyboardNavigation.Item],
+    package static func highlight(_ cursor: SidebarKeyboardCursor?, in items: [SidebarKeyboardNavigation.Item],
                           state: BrowserState) -> String? {
         guard let id = cursor?.highlightedID, let item = items.first(where: { $0.id == id }) else { return nil }
         return text(item, state: state) ?? unnamedItem
     }
 
-    static func move(_ delta: Int, cursor: inout SidebarKeyboardCursor, in items: [SidebarKeyboardNavigation.Item],
+    package static func move(_ delta: Int, cursor: inout SidebarKeyboardCursor, in items: [SidebarKeyboardNavigation.Item],
                      state: BrowserState) -> String {
         cursor.move(delta, in: items.map(\.id))
         guard cursor.highlightedID != nil else { return items.isEmpty ? emptyList : delta > 0 ? endOfList : topOfList }
         return highlight(cursor, in: items, state: state) ?? unnamedItem
     }
 
-    static func text(_ item: SidebarKeyboardNavigation.Item, state: BrowserState) -> String? {
+    package static func text(_ item: SidebarKeyboardNavigation.Item, state: BrowserState) -> String? {
         switch item.reference {
         case .tab(let id):
             return state.tab(id).map(SidebarTabTitle.display)

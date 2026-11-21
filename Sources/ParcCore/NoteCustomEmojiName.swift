@@ -1,19 +1,19 @@
 import Foundation
 
-enum NoteCustomEmojiName {
-    static let maximumLength = 48
+package enum NoteCustomEmojiName {
+    package static let maximumLength = 48
 
-    static func isNameByte(_ byte: UInt8) -> Bool {
+    package static func isNameByte(_ byte: UInt8) -> Bool {
         (byte >= 97 && byte <= 122) || (byte >= 48 && byte <= 57) || byte == 95 || byte == 45 || byte == 43
     }
 
-    static func isValid(_ name: String) -> Bool {
+    package static func isValid(_ name: String) -> Bool {
         let bytes = Array(name.utf8)
         guard !bytes.isEmpty, bytes.count <= maximumLength, bytes.allSatisfy(isNameByte) else { return false }
         return bytes.contains { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) }
     }
 
-    static func normalized(_ proposed: String) -> String? {
+    package static func normalized(_ proposed: String) -> String? {
         let folded = proposed.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: Locale(identifier: "en"))
             .lowercased()
         var result = ""
@@ -38,18 +38,18 @@ enum NoteCustomEmojiName {
         return isValid(result) ? result : nil
     }
 
-    static func reference(_ name: String) -> String { ":" + name + ":" }
+    package static func reference(_ name: String) -> String { ":" + name + ":" }
 
-    static func name(inReference value: String) -> String? {
+    package static func name(inReference value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespaces)
         guard trimmed.count >= 3, trimmed.hasPrefix(":"), trimmed.hasSuffix(":") else { return nil }
         let name = String(trimmed.dropFirst().dropLast())
         return isValid(name) ? name : nil
     }
 
-    static func isReference(_ value: String) -> Bool { name(inReference: value) != nil }
+    package static func isReference(_ value: String) -> Bool { name(inReference: value) != nil }
 
-    static func names(in page: NotePage) -> Set<String> {
+    package static func names(in page: NotePage) -> Set<String> {
         var found = Set<String>()
         func scan(_ text: NoteText) {
             for span in text.spans {

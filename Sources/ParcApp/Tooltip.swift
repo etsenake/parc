@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 struct TooltipConfiguration: Equatable {
     enum Anchor: Int, CaseIterable {

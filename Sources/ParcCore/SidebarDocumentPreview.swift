@@ -1,10 +1,10 @@
 import Foundation
 
-enum SidebarDocumentKind: Hashable, Sendable {
+package enum SidebarDocumentKind: Hashable, Sendable {
     case note(URL)
     case easel(UUID)
 
-    init?(url: URL) {
+    package init?(url: URL) {
         if url.isFileURL {
             guard NoteFileKind(url: url) != nil else { return nil }
             self = .note(url.standardizedFileURL)
@@ -15,39 +15,45 @@ enum SidebarDocumentKind: Hashable, Sendable {
         self = .easel(id)
     }
 
-    var cacheKey: String {
+    package var cacheKey: String {
         switch self {
         case .note(let url): return "note:" + url.standardizedFileURL.path
         case .easel(let id): return "easel:" + id.uuidString.lowercased()
         }
     }
 
-    var isNote: Bool { if case .note = self { return true }; return false }
+    package var isNote: Bool { if case .note = self { return true }; return false }
 }
 
-enum SidebarDocumentAvailability: Equatable, Sendable {
+package enum SidebarDocumentAvailability: Equatable, Sendable {
     case available
     case missing
 }
 
-struct SidebarDocumentContent: Equatable, Sendable {
-    var availability: SidebarDocumentAvailability = .available
-    var snippet = ""
-    var objectCount: Int?
+package struct SidebarDocumentContent: Equatable, Sendable {
+    package var availability: SidebarDocumentAvailability = .available
+    package var snippet = ""
+    package var objectCount: Int?
+
+    package init(availability: SidebarDocumentAvailability = .available, snippet: String = "", objectCount: Int? = nil) {
+        self.availability = availability
+        self.snippet = snippet
+        self.objectCount = objectCount
+    }
 }
 
-enum SidebarDocumentButton: Equatable, Sendable {
+package enum SidebarDocumentButton: Equatable, Sendable {
     case peek, copyLink, split
 }
 
-enum SidebarDocumentPreviewText {
-    static func kindName(_ kind: SidebarDocumentKind) -> String { kind.isNote ? "Note" : "Easel" }
+package enum SidebarDocumentPreviewText {
+    package static func kindName(_ kind: SidebarDocumentKind) -> String { kind.isNote ? "Note" : "Easel" }
 
-    static func missing(_ kind: SidebarDocumentKind) -> String {
+    package static func missing(_ kind: SidebarDocumentKind) -> String {
         kind.isNote ? "This note moved or was deleted" : "This Easel was deleted"
     }
 
-    static func objects(_ count: Int) -> String {
+    package static func objects(_ count: Int) -> String {
         switch count {
         case 0: return "No objects yet"
         case 1: return "1 object"
@@ -55,12 +61,12 @@ enum SidebarDocumentPreviewText {
         }
     }
 
-    static func subtitle(_ kind: SidebarDocumentKind, content: SidebarDocumentContent) -> String {
+    package static func subtitle(_ kind: SidebarDocumentKind, content: SidebarDocumentContent) -> String {
         guard content.availability == .available, let count = content.objectCount, !kind.isNote else { return kindName(kind) }
         return kindName(kind) + " · " + objects(count)
     }
 
-    static func body(_ kind: SidebarDocumentKind, content: SidebarDocumentContent) -> String {
+    package static func body(_ kind: SidebarDocumentKind, content: SidebarDocumentContent) -> String {
         if content.availability == .missing { return missing(kind) }
         let snippet = content.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
         if !snippet.isEmpty { return snippet }
@@ -69,45 +75,55 @@ enum SidebarDocumentPreviewText {
     }
 }
 
-enum SidebarDocumentPreviewButtons {
-    static func buttons(availability: SidebarDocumentAvailability, peekAdmitsDocuments: Bool) -> [SidebarDocumentButton] {
+package enum SidebarDocumentPreviewButtons {
+    package static func buttons(availability: SidebarDocumentAvailability, peekAdmitsDocuments: Bool) -> [SidebarDocumentButton] {
         guard availability == .available else { return [] }
         return (peekAdmitsDocuments ? [.peek] : []) + [.copyLink, .split]
     }
 }
 
-struct SidebarThumbnailCache<Image, Revision: Hashable> {
-    struct Key: Hashable {
-        let document: String
-        let appearance: String
+package struct SidebarThumbnailCache<Image, Revision: Hashable> {
+    package struct Key: Hashable {
+        package let document: String
+        package let appearance: String
+
+        package init(document: String, appearance: String) {
+            self.document = document
+            self.appearance = appearance
+        }
     }
 
     private struct Entry {
         var image: Image
         var revision: Revision
+
+        package init(image: Image, revision: Revision) {
+            self.image = image
+            self.revision = revision
+        }
     }
 
-    let capacity: Int
-    let interval: TimeInterval
+    package let capacity: Int
+    package let interval: TimeInterval
     private var entries: [Key: Entry] = [:]
     private var order: [Key] = []
     private var renderedAt: [Key: Date] = [:]
 
-    init(capacity: Int = 48, interval: TimeInterval = 1) {
+    package init(capacity: Int = 48, interval: TimeInterval = 1) {
         self.capacity = max(1, capacity)
         self.interval = max(0, interval)
     }
 
-    var count: Int { entries.count }
+    package var count: Int { entries.count }
 
-    func fresh(_ key: Key, revision: Revision) -> Image? {
+    package func fresh(_ key: Key, revision: Revision) -> Image? {
         guard let entry = entries[key], entry.revision == revision else { return nil }
         return entry.image
     }
 
-    func latest(_ key: Key) -> Image? { entries[key]?.image }
+    package func latest(_ key: Key) -> Image? { entries[key]?.image }
 
-    mutating func store(_ image: Image, for key: Key, revision: Revision, now: Date) {
+    package mutating func store(_ image: Image, for key: Key, revision: Revision, now: Date) {
         entries[key] = Entry(image: image, revision: revision)
         renderedAt[key] = now
         order.removeAll { $0 == key }
@@ -119,23 +135,23 @@ struct SidebarThumbnailCache<Image, Revision: Hashable> {
         }
     }
 
-    mutating func touch(_ key: Key) {
+    package mutating func touch(_ key: Key) {
         guard entries[key] != nil, order.last != key else { return }
         order.removeAll { $0 == key }
         order.append(key)
     }
 
-    mutating func invalidate(document: String) {
+    package mutating func invalidate(document: String) {
         let keys = entries.keys.filter { $0.document == document }
         for key in keys { entries.removeValue(forKey: key) }
         order.removeAll { $0.document == document }
     }
 
-    mutating func removeAll() {
+    package mutating func removeAll() {
         entries.removeAll(); order.removeAll(); renderedAt.removeAll()
     }
 
-    func renderDelay(_ key: Key, now: Date) -> TimeInterval {
+    package func renderDelay(_ key: Key, now: Date) -> TimeInterval {
         guard let last = renderedAt[key] else { return 0 }
         let elapsed = now.timeIntervalSince(last)
         guard elapsed >= 0 else { return interval }

@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 enum SplitCellMenuCommand: Equatable { case separateAll, addTab, convertOrientation, newFolder }
 

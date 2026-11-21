@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 @MainActor
 final class EaselMermaidSheet: NSObject, NSTextViewDelegate, EaselMermaidSheetPresenting {

@@ -1,29 +1,29 @@
 import Foundation
 
-struct NoteMDInlineStyle {
-    enum Shape { case paragraph, line, heading, cell, verbatim }
+package struct NoteMDInlineStyle {
+    package enum Shape { case paragraph, line, heading, cell, verbatim }
 
-    var shape: Shape
-    var taskSensitive = false
-    var insideLink = false
-    var htmlSafe = false
-    var trailingComment = false
-    var calloutSensitive = false
+    package var shape: Shape
+    package var taskSensitive = false
+    package var insideLink = false
+    package var htmlSafe = false
+    package var trailingComment = false
+    package var calloutSensitive = false
 
-    static let paragraph = NoteMDInlineStyle(shape: .paragraph)
-    static let line = NoteMDInlineStyle(shape: .line)
-    static let heading = NoteMDInlineStyle(shape: .heading)
-    static let cell = NoteMDInlineStyle(shape: .cell)
-    static let verbatim = NoteMDInlineStyle(shape: .verbatim)
+    package static let paragraph = NoteMDInlineStyle(shape: .paragraph)
+    package static let line = NoteMDInlineStyle(shape: .line)
+    package static let heading = NoteMDInlineStyle(shape: .heading)
+    package static let cell = NoteMDInlineStyle(shape: .cell)
+    package static let verbatim = NoteMDInlineStyle(shape: .verbatim)
 
-    var multiline: Bool { shape == .paragraph }
-    var trimSensitive: Bool { shape != .verbatim }
+    package var multiline: Bool { shape == .paragraph }
+    package var trimSensitive: Bool { shape != .verbatim }
 }
 
-struct NoteMDInlineWriter {
-    let reader: NoteMDReader
-    let referenceLabels: [String: String]
-    var portable = false
+package struct NoteMDInlineWriter {
+    package let reader: NoteMDReader
+    package let referenceLabels: [String: String]
+    package var portable = false
 
     private enum Mark: Equatable {
         case link(String), color(NoteColorStyle), underline, strike, bold, italic, code
@@ -55,7 +55,7 @@ struct NoteMDInlineWriter {
         case literal(String)
     }
 
-    func write(_ text: NoteText, style: NoteMDInlineStyle) -> String {
+    package func write(_ text: NoteText, style: NoteMDInlineStyle) -> String {
         guard !text.isEmpty else { return "" }
         let markdown = render(text, style: style, safe: false)
         if matches(markdown, text, style: style) { return markdown }
@@ -384,7 +384,7 @@ struct NoteMDInlineWriter {
         return fence + body + fence
     }
 
-    static func destination(_ url: String) -> String {
+    package static func destination(_ url: String) -> String {
         if url.isEmpty { return "<>" }
         var depth = 0
         var balanced = true
@@ -421,7 +421,7 @@ struct NoteMDInlineWriter {
         return result
     }
 
-    static func opensCustomEmoji(_ scalars: [Unicode.Scalar], at index: Int, names: Set<String>) -> Bool {
+    package static func opensCustomEmoji(_ scalars: [Unicode.Scalar], at index: Int, names: Set<String>) -> Bool {
         guard !names.isEmpty else { return false }
         var name = ""
         var probe = index + 1
@@ -434,7 +434,7 @@ struct NoteMDInlineWriter {
         return names.contains(name)
     }
 
-    static func entityLike(_ scalars: [Unicode.Scalar], at index: Int) -> Bool {
+    package static func entityLike(_ scalars: [Unicode.Scalar], at index: Int) -> Bool {
         var probe = index + 1
         guard probe < scalars.count else { return false }
         if scalars[probe] == "#" {
@@ -499,7 +499,7 @@ struct NoteMDInlineWriter {
         return ([lines[0]] + indented).joined(separator: "\n")
     }
 
-    static func escapeLight(_ text: String) -> String {
+    package static func escapeLight(_ text: String) -> String {
         var result = ""
         let scalars = Array(text.unicodeScalars)
         for (index, scalar) in scalars.enumerated() {
@@ -524,7 +524,7 @@ struct NoteMDInlineWriter {
         return result
     }
 
-    static func escapeAll(_ text: String) -> String {
+    package static func escapeAll(_ text: String) -> String {
         var result = ""
         for scalar in text.unicodeScalars {
             if scalar == "\n" { result += "<br>"; continue }

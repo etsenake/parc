@@ -1,13 +1,18 @@
 import Foundation
 
-enum CommandBarResultText {
-    struct Address: Equatable {
-        let host: String
-        let path: String
-        var text: String { host + path }
+package enum CommandBarResultText {
+    package struct Address: Equatable {
+        package let host: String
+        package let path: String
+        package var text: String { host + path }
+
+        package init(host: String, path: String) {
+            self.host = host
+            self.path = path
+        }
     }
 
-    static func address(_ url: String) -> Address {
+    package static func address(_ url: String) -> Address {
         if isData(url) { return Address(host: "", path: String(url.prefix(dataURLLimit))) }
         guard let parts = split(url) else {
             return Address(host: "", path: readable(url.prefix(pathLimit).prefix { $0 != "?" && $0 != "#" }))
@@ -24,34 +29,34 @@ enum CommandBarResultText {
         }
     }
 
-    static func displayURL(_ url: String) -> String { address(url).text }
+    package static func displayURL(_ url: String) -> String { address(url).text }
 
-    static let dataURLLimit = 256
-    static let pathLimit = 4096
+    package static let dataURLLimit = 256
+    package static let pathLimit = 4096
 
     private static func isData(_ url: String) -> Bool { url.prefix(5).lowercased() == "data:" }
 
-    static func urlSubtitle(_ url: String) -> String? {
+    package static func urlSubtitle(_ url: String) -> String? {
         let shown = address(url)
         let text = shown.host.isEmpty ? shown.text : shown.host
         return text.isEmpty ? nil : "— " + text
     }
 
-    static func pageTitle(_ title: String, url: String) -> String? {
+    package static func pageTitle(_ title: String, url: String) -> String? {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty || isAddress(trimmed, of: url) ? nil : title
     }
 
-    static func pageSubtitle(title: String, url: String) -> String? {
+    package static func pageSubtitle(title: String, url: String) -> String? {
         pageTitle(title, url: url) == nil ? nil : urlSubtitle(url)
     }
 
-    static func samePageKey(title: String, url: String) -> String? {
+    package static func samePageKey(title: String, url: String) -> String? {
         guard !isData(url), pageTitle(title, url: url) != nil else { return nil }
         return title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() + "\u{0}" + address(url).text
     }
 
-    static func hostRange(in text: String, url: String) -> NSRange? {
+    package static func hostRange(in text: String, url: String) -> NSRange? {
         let shown = address(url)
         guard !shown.host.isEmpty else { return nil }
         let length = (shown.host as NSString).length
@@ -60,7 +65,7 @@ enum CommandBarResultText {
         return nil
     }
 
-    static func matchRanges(in text: String, query: String) -> [NSRange] {
+    package static func matchRanges(in text: String, query: String) -> [NSRange] {
         let terms = query.split(whereSeparator: \.isWhitespace).prefix(8).map(bareTerm).filter { !$0.isEmpty }
         guard !terms.isEmpty, !text.isEmpty else { return [] }
         let string = text as NSString
@@ -195,35 +200,40 @@ enum CommandBarResultText {
         return safe
     }
 
-    static func spokenSubtitle(_ subtitle: String?) -> String {
+    package static func spokenSubtitle(_ subtitle: String?) -> String {
         guard let subtitle else { return "" }
         return subtitle.hasPrefix("— ") ? String(subtitle.dropFirst(2)) : subtitle
     }
 
-    static func historyTitle(pageTitle: String, url: String) -> String {
+    package static func historyTitle(pageTitle: String, url: String) -> String {
         self.pageTitle(pageTitle, url: url) ?? displayURL(url)
     }
 
-    static func tabTitle(customTitle: String?, pageTitle: String, url: String) -> String {
+    package static func tabTitle(customTitle: String?, pageTitle: String, url: String) -> String {
         if let customTitle, !customTitle.isEmpty { return customTitle }
         if let title = self.pageTitle(pageTitle, url: url) { return title }
         return BrowserState.isBlankPage(url) ? "New Tab" : displayURL(url)
     }
 
-    struct TabCaption: Equatable {
-        let text: String
-        let spoken: String
-        static let switchToTab = TabCaption(text: "Switch to Tab", spoken: "Switch to Tab")
+    package struct TabCaption: Equatable {
+        package let text: String
+        package let spoken: String
+
+        package init(text: String, spoken: String) {
+            self.text = text
+            self.spoken = spoken
+        }
+        package static let switchToTab = TabCaption(text: "Switch to Tab", spoken: "Switch to Tab")
     }
 
-    static func tabCaption(isFavorite: Bool, isInActiveSpace: Bool, spaceName: String?, isInSplit: Bool) -> TabCaption {
+    package static func tabCaption(isFavorite: Bool, isInActiveSpace: Bool, spaceName: String?, isInSplit: Bool) -> TabCaption {
         if !isFavorite, !isInActiveSpace, let spaceName, !spaceName.isEmpty {
             return TabCaption(text: spaceName, spoken: "Switch to Tab in " + spaceName)
         }
         return isInSplit ? TabCaption(text: "Switch to Split View", spoken: "Switch to Split View") : .switchToTab
     }
 
-    enum NativeKind: Equatable {
+    package enum NativeKind: Equatable {
         case search
         case history
         case navSuggestion
@@ -231,7 +241,7 @@ enum CommandBarResultText {
         case calculator(answer: String)
     }
 
-    static func nativeKind(matchType: String?, isSearch: Bool, contents: String, description: String, input: String) -> NativeKind? {
+    package static func nativeKind(matchType: String?, isSearch: Bool, contents: String, description: String, input: String) -> NativeKind? {
         guard let matchType else {
             return isSearch ? .search : description.isEmpty ? .typedURL : .history
         }
@@ -251,7 +261,7 @@ enum CommandBarResultText {
         }
     }
 
-    static func calculatorAnswer(contents: String, input: String) -> String? {
+    package static func calculatorAnswer(contents: String, input: String) -> String? {
         let prefix = input + " = "
         guard !input.isEmpty, contents.hasPrefix(prefix) else { return nil }
         if input.split(separator: " ").count < 2, !input.contains(where: \.isNumber) { return nil }
@@ -259,14 +269,14 @@ enum CommandBarResultText {
         return answer.isEmpty ? nil : answer
     }
 
-    struct NativeRow: Equatable {
-        let title: String
-        let subtitle: String?
-        let symbol: String
-        let isSearch: Bool
+    package struct NativeRow: Equatable {
+        package let title: String
+        package let subtitle: String?
+        package let symbol: String
+        package let isSearch: Bool
     }
 
-    static func nativeRow(matchType: String?, isSearch: Bool, contents: String, description: String,
+    package static func nativeRow(matchType: String?, isSearch: Bool, contents: String, description: String,
                           url: String, input: String, preserveDefault: Bool = false) -> NativeRow? {
         let shown = contents.isEmpty ? displayURL(url) : contents
         let kind = nativeKind(matchType: matchType, isSearch: isSearch, contents: contents, description: description, input: input)

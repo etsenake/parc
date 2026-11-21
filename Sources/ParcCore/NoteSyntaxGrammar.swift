@@ -1,62 +1,66 @@
 import Foundation
 
-struct NoteSyntaxFeatures: OptionSet, Sendable {
-    let rawValue: UInt64
+package struct NoteSyntaxFeatures: OptionSet, Sendable {
+    package let rawValue: UInt64
 
-    static let regexLiterals = NoteSyntaxFeatures(rawValue: 1 << 0)
-    static let jsx = NoteSyntaxFeatures(rawValue: 1 << 1)
-    static let taggedTemplates = NoteSyntaxFeatures(rawValue: 1 << 2)
-    static let privateNames = NoteSyntaxFeatures(rawValue: 1 << 3)
-    static let swiftLiterals = NoteSyntaxFeatures(rawValue: 1 << 4)
-    static let rustLiterals = NoteSyntaxFeatures(rawValue: 1 << 5)
-    static let preprocessor = NoteSyntaxFeatures(rawValue: 1 << 6)
-    static let csharpLiterals = NoteSyntaxFeatures(rawValue: 1 << 7)
-    static let objcLiterals = NoteSyntaxFeatures(rawValue: 1 << 8)
-    static let rubyLiterals = NoteSyntaxFeatures(rawValue: 1 << 9)
-    static let symbols = NoteSyntaxFeatures(rawValue: 1 << 10)
-    static let elixirSigils = NoteSyntaxFeatures(rawValue: 1 << 11)
-    static let phpLiterals = NoteSyntaxFeatures(rawValue: 1 << 12)
-    static let shell = NoteSyntaxFeatures(rawValue: 1 << 13)
-    static let luaLongBrackets = NoteSyntaxFeatures(rawValue: 1 << 14)
-    static let zigLiterals = NoteSyntaxFeatures(rawValue: 1 << 15)
-    static let powershell = NoteSyntaxFeatures(rawValue: 1 << 16)
-    static let sqlLiterals = NoteSyntaxFeatures(rawValue: 1 << 17)
-    static let keysBeforeColon = NoteSyntaxFeatures(rawValue: 1 << 18)
-    static let capsConstants = NoteSyntaxFeatures(rawValue: 1 << 19)
-    static let capitalizedTypes = NoteSyntaxFeatures(rawValue: 1 << 20)
-    static let callsAreFunctions = NoteSyntaxFeatures(rawValue: 1 << 21)
-    static let arrowMembers = NoteSyntaxFeatures(rawValue: 1 << 22)
-    static let memberProperties = NoteSyntaxFeatures(rawValue: 1 << 23)
-    static let backtickIdentifiers = NoteSyntaxFeatures(rawValue: 1 << 24)
-    static let decoratorsAtLineStart = NoteSyntaxFeatures(rawValue: 1 << 25)
-    static let percentOperators = NoteSyntaxFeatures(rawValue: 1 << 26)
-    static let haskellDashes = NoteSyntaxFeatures(rawValue: 1 << 27)
-    static let lineStartFunctions = NoteSyntaxFeatures(rawValue: 1 << 28)
-    static let signedNumbers = NoteSyntaxFeatures(rawValue: 1 << 29)
-    static let graphqlLiterals = NoteSyntaxFeatures(rawValue: 1 << 30)
+    package init(rawValue: UInt64) {
+        self.rawValue = rawValue
+    }
+
+    package static let regexLiterals = NoteSyntaxFeatures(rawValue: 1 << 0)
+    package static let jsx = NoteSyntaxFeatures(rawValue: 1 << 1)
+    package static let taggedTemplates = NoteSyntaxFeatures(rawValue: 1 << 2)
+    package static let privateNames = NoteSyntaxFeatures(rawValue: 1 << 3)
+    package static let swiftLiterals = NoteSyntaxFeatures(rawValue: 1 << 4)
+    package static let rustLiterals = NoteSyntaxFeatures(rawValue: 1 << 5)
+    package static let preprocessor = NoteSyntaxFeatures(rawValue: 1 << 6)
+    package static let csharpLiterals = NoteSyntaxFeatures(rawValue: 1 << 7)
+    package static let objcLiterals = NoteSyntaxFeatures(rawValue: 1 << 8)
+    package static let rubyLiterals = NoteSyntaxFeatures(rawValue: 1 << 9)
+    package static let symbols = NoteSyntaxFeatures(rawValue: 1 << 10)
+    package static let elixirSigils = NoteSyntaxFeatures(rawValue: 1 << 11)
+    package static let phpLiterals = NoteSyntaxFeatures(rawValue: 1 << 12)
+    package static let shell = NoteSyntaxFeatures(rawValue: 1 << 13)
+    package static let luaLongBrackets = NoteSyntaxFeatures(rawValue: 1 << 14)
+    package static let zigLiterals = NoteSyntaxFeatures(rawValue: 1 << 15)
+    package static let powershell = NoteSyntaxFeatures(rawValue: 1 << 16)
+    package static let sqlLiterals = NoteSyntaxFeatures(rawValue: 1 << 17)
+    package static let keysBeforeColon = NoteSyntaxFeatures(rawValue: 1 << 18)
+    package static let capsConstants = NoteSyntaxFeatures(rawValue: 1 << 19)
+    package static let capitalizedTypes = NoteSyntaxFeatures(rawValue: 1 << 20)
+    package static let callsAreFunctions = NoteSyntaxFeatures(rawValue: 1 << 21)
+    package static let arrowMembers = NoteSyntaxFeatures(rawValue: 1 << 22)
+    package static let memberProperties = NoteSyntaxFeatures(rawValue: 1 << 23)
+    package static let backtickIdentifiers = NoteSyntaxFeatures(rawValue: 1 << 24)
+    package static let decoratorsAtLineStart = NoteSyntaxFeatures(rawValue: 1 << 25)
+    package static let percentOperators = NoteSyntaxFeatures(rawValue: 1 << 26)
+    package static let haskellDashes = NoteSyntaxFeatures(rawValue: 1 << 27)
+    package static let lineStartFunctions = NoteSyntaxFeatures(rawValue: 1 << 28)
+    package static let signedNumbers = NoteSyntaxFeatures(rawValue: 1 << 29)
+    package static let graphqlLiterals = NoteSyntaxFeatures(rawValue: 1 << 30)
 }
 
-enum NoteSyntaxInterpolation: Sendable {
+package enum NoteSyntaxInterpolation: Sendable {
     case backslashParen, dollarBrace, dollarName, hashBrace, brace, php, shell, powershell
 }
 
-enum NoteSyntaxStringPrefixes: Sendable {
+package enum NoteSyntaxStringPrefixes: Sendable {
     case none, python, rust, cpp, scala, dart, r, sql
 }
 
-struct NoteSyntaxStringRule: Sendable {
-    var open: [UInt16]
-    var close: [UInt16]
-    var escape: UInt16 = NoteSyntaxChar.backslash
-    var escapes = true
-    var rawEscapes = false
-    var escapeHashes = 0
-    var doubledClose = false
-    var multiline = false
-    var interpolation: NoteSyntaxInterpolation?
-    var kind: NoteSyntaxKind = .string
+package struct NoteSyntaxStringRule: Sendable {
+    package var open: [UInt16]
+    package var close: [UInt16]
+    package var escape: UInt16 = NoteSyntaxChar.backslash
+    package var escapes = true
+    package var rawEscapes = false
+    package var escapeHashes = 0
+    package var doubledClose = false
+    package var multiline = false
+    package var interpolation: NoteSyntaxInterpolation?
+    package var kind: NoteSyntaxKind = .string
 
-    init(_ open: String, _ close: String? = nil, multiline: Bool = false, escapes: Bool = true, rawEscapes: Bool = false,
+    package init(_ open: String, _ close: String? = nil, multiline: Bool = false, escapes: Bool = true, rawEscapes: Bool = false,
          doubledClose: Bool = false, interpolation: NoteSyntaxInterpolation? = nil, kind: NoteSyntaxKind = .string,
          escape: UInt16 = NoteSyntaxChar.backslash) {
         self.open = Array(open.utf16)
@@ -70,7 +74,7 @@ struct NoteSyntaxStringRule: Sendable {
         self.escape = escape
     }
 
-    init(units open: [UInt16], close: [UInt16], multiline: Bool, escapes: Bool, interpolation: NoteSyntaxInterpolation?) {
+    package init(units open: [UInt16], close: [UInt16], multiline: Bool, escapes: Bool, interpolation: NoteSyntaxInterpolation?) {
         self.open = open
         self.close = close
         self.multiline = multiline
@@ -79,13 +83,13 @@ struct NoteSyntaxStringRule: Sendable {
     }
 }
 
-struct NoteSyntaxBlockComment: Sendable {
-    let open: [UInt16]
-    let close: [UInt16]
-    let nests: Bool
-    let kind: NoteSyntaxKind
+package struct NoteSyntaxBlockComment: Sendable {
+    package let open: [UInt16]
+    package let close: [UInt16]
+    package let nests: Bool
+    package let kind: NoteSyntaxKind
 
-    init(_ open: String, _ close: String, nests: Bool = false, kind: NoteSyntaxKind = .comment) {
+    package init(_ open: String, _ close: String, nests: Bool = false, kind: NoteSyntaxKind = .comment) {
         self.open = Array(open.utf16)
         self.close = Array(close.utf16)
         self.nests = nests
@@ -93,23 +97,23 @@ struct NoteSyntaxBlockComment: Sendable {
     }
 }
 
-final class NoteSyntaxGrammar: Sendable {
-    let words: NoteSyntaxWords
-    let lineComments: [[UInt16]]
-    let blockComments: [NoteSyntaxBlockComment]
-    let strings: [NoteSyntaxStringRule]
-    let prefixes: NoteSyntaxStringPrefixes
-    let features: NoteSyntaxFeatures
-    let wordExtras: [UInt16]
-    let wordStartExtras: [UInt16]
-    let wordSuffixes: [UInt16]
-    let operators: [UInt16]
-    let punctuation: [UInt16]
-    let dollarKind: NoteSyntaxKind?
-    let atKind: NoteSyntaxKind?
-    let digitSeparators: [UInt16]
+package final class NoteSyntaxGrammar: Sendable {
+    package let words: NoteSyntaxWords
+    package let lineComments: [[UInt16]]
+    package let blockComments: [NoteSyntaxBlockComment]
+    package let strings: [NoteSyntaxStringRule]
+    package let prefixes: NoteSyntaxStringPrefixes
+    package let features: NoteSyntaxFeatures
+    package let wordExtras: [UInt16]
+    package let wordStartExtras: [UInt16]
+    package let wordSuffixes: [UInt16]
+    package let operators: [UInt16]
+    package let punctuation: [UInt16]
+    package let dollarKind: NoteSyntaxKind?
+    package let atKind: NoteSyntaxKind?
+    package let digitSeparators: [UInt16]
 
-    init(keywords: String = "", types: String = "", constants: String = "", builtins: String = "",
+    package init(keywords: String = "", types: String = "", constants: String = "", builtins: String = "",
          operands: String = "", variables: String = "", functionDeclarators: String = "", typeDeclarators: String = "",
          commandStarters: String = "", caseInsensitive: Bool = false,
          lineComments: [String] = [], blockComments: [NoteSyntaxBlockComment] = [],
@@ -144,11 +148,11 @@ final class NoteSyntaxGrammar: Sendable {
         self.digitSeparators = Array(digitSeparators.utf16)
     }
 
-    @inline(__always) func isWordStart(_ c: UInt16) -> Bool {
+    @inline(__always) package func isWordStart(_ c: UInt16) -> Bool {
         NoteSyntaxChar.isWordStart(c) || (!wordStartExtras.isEmpty && wordStartExtras.contains(c))
     }
 
-    @inline(__always) func isWord(_ c: UInt16) -> Bool {
+    @inline(__always) package func isWord(_ c: UInt16) -> Bool {
         NoteSyntaxChar.isWord(c) || (!wordExtras.isEmpty && wordExtras.contains(c))
     }
 }

@@ -1,24 +1,30 @@
 import Foundation
 import Combine
 
-struct EaselVersion: Identifiable, Hashable {
-    var id: String
-    var savedAt: Date
-    var itemCount: Int
+package struct EaselVersion: Identifiable, Hashable {
+    package var id: String
+    package var savedAt: Date
+    package var itemCount: Int
+
+    package init(id: String, savedAt: Date, itemCount: Int) {
+        self.id = id
+        self.savedAt = savedAt
+        self.itemCount = itemCount
+    }
 }
 
-struct EaselHistoryPolicy: Equatable {
-    var minimumInterval: TimeInterval = 300
-    var idleDelay: TimeInterval = 120
-    var maximumVersions = 40
-    var maximumBytes = 96 * 1024 * 1024
+package struct EaselHistoryPolicy: Equatable {
+    package var minimumInterval: TimeInterval = 300
+    package var idleDelay: TimeInterval = 120
+    package var maximumVersions = 40
+    package var maximumBytes = 96 * 1024 * 1024
 
-    func shouldRecord(lastRecordedAt: Date?, now: Date) -> Bool {
+    package func shouldRecord(lastRecordedAt: Date?, now: Date) -> Bool {
         guard let lastRecordedAt else { return true }
         return now.timeIntervalSince(lastRecordedAt) >= minimumInterval
     }
 
-    func expired(_ versions: [(version: EaselVersion, bytes: Int)]) -> [EaselVersion] {
+    package func expired(_ versions: [(version: EaselVersion, bytes: Int)]) -> [EaselVersion] {
         var kept = 0, bytes = 0
         var removed: [EaselVersion] = []
         for entry in versions.sorted(by: { $0.version.savedAt == $1.version.savedAt ? $0.version.id > $1.version.id : $0.version.savedAt > $1.version.savedAt }) {
@@ -34,10 +40,10 @@ struct EaselHistoryPolicy: Equatable {
 }
 
 @MainActor
-final class EaselHistory {
-    nonisolated static let maximumDocumentBytes = 8 * 1024 * 1024
-    let directory: URL
-    var policy = EaselHistoryPolicy()
+package final class EaselHistory {
+    package nonisolated static let maximumDocumentBytes = 8 * 1024 * 1024
+    package let directory: URL
+    package var policy = EaselHistoryPolicy()
     private var lastRecordedAt: [UUID: Date] = [:]
     private var lastRecorded: [UUID: EaselDocument] = [:]
     private var lastSeen: [UUID: EaselDocument] = [:]
@@ -45,29 +51,29 @@ final class EaselHistory {
     private var followers: [UUID: AnyCancellable] = [:]
     private let writer = DispatchQueue(label: "org.parc.easel-history", qos: .utility)
 
-    init(directory: URL) {
+    package init(directory: URL) {
         self.directory = directory.standardizedFileURL
     }
 
-    func folder(for id: UUID) -> URL {
+    package func folder(for id: UUID) -> URL {
         directory.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
     }
 
-    nonisolated static let maximumSavedSeconds = 1e13
+    package nonisolated static let maximumSavedSeconds = 1e13
 
-    nonisolated static func fileName(savedAt: Date, itemCount: Int) -> String {
+    package nonisolated static func fileName(savedAt: Date, itemCount: Int) -> String {
         let millis = Int64((min(max(0, savedAt.timeIntervalSince1970), maximumSavedSeconds) * 1000).rounded())
         return "v-\(millis)-\(max(0, itemCount)).json"
     }
 
-    nonisolated static func parse(_ name: String) -> (savedAt: Date, itemCount: Int)? {
+    package nonisolated static func parse(_ name: String) -> (savedAt: Date, itemCount: Int)? {
         guard name.hasPrefix("v-"), name.hasSuffix(".json"), name.utf8.count <= 64 else { return nil }
         let parts = name.dropFirst(2).dropLast(5).split(separator: "-", omittingEmptySubsequences: false)
         guard parts.count == 2, let millis = Int64(parts[0]), let count = Int(parts[1]), millis >= 0, count >= 0 else { return nil }
         return (Date(timeIntervalSince1970: Double(millis) / 1000), count)
     }
 
-    func follow(_ document: EaselDocument, changes: AnyPublisher<EaselDocument, Never>) {
+    package func follow(_ document: EaselDocument, changes: AnyPublisher<EaselDocument, Never>) {
         let id = document.id
         lastSeen[id] = document
         followers[id] = changes.sink { [weak self] next in
@@ -79,12 +85,12 @@ final class EaselHistory {
         }
     }
 
-    func versions(of id: UUID) -> [EaselVersion] {
+    package func versions(of id: UUID) -> [EaselVersion] {
         writer.sync {}
         return Self.listing(folder(for: id)).map(\.version)
     }
 
-    func document(_ version: EaselVersion, of id: UUID) throws -> EaselDocument {
+    package func document(_ version: EaselVersion, of id: UUID) throws -> EaselDocument {
         guard Self.parse(version.id) != nil, !version.id.contains("/") else { throw EaselStoreError.unsafePath }
         writer.sync {}
         let url = folder(for: id).appendingPathComponent(version.id)
@@ -96,7 +102,7 @@ final class EaselHistory {
         return EaselStore.repairingStackOrder(EaselStore.repairingDuplicateIDs(document))
     }
 
-    func documentDidChange(from previous: EaselDocument, to next: EaselDocument, now: Date) {
+    package func documentDidChange(from previous: EaselDocument, to next: EaselDocument, now: Date) {
         if lastRecordedAt[next.id] == nil {
             record(previous, savedAt: previous.modifiedAt)
             lastRecordedAt[next.id] = now
@@ -108,7 +114,7 @@ final class EaselHistory {
     }
 
     @discardableResult
-    func record(_ document: EaselDocument, savedAt: Date, wait: Bool = false) -> Bool {
+    package func record(_ document: EaselDocument, savedAt: Date, wait: Bool = false) -> Bool {
         let comparable = Self.comparable(document)
         if lastRecorded[document.id] == nil, let newest = versions(of: document.id).first,
            let stored = try? self.document(newest, of: document.id) {
@@ -123,7 +129,7 @@ final class EaselHistory {
         return true
     }
 
-    func removeAll(for id: UUID) {
+    package func removeAll(for id: UUID) {
         idleTimers.removeValue(forKey: id)?.invalidate()
         followers.removeValue(forKey: id)
         lastRecordedAt.removeValue(forKey: id)
@@ -136,7 +142,7 @@ final class EaselHistory {
         }
     }
 
-    func flush() {
+    package func flush() {
         writer.sync {}
     }
 
@@ -194,11 +200,11 @@ final class EaselHistory {
 }
 
 @MainActor
-enum EaselHistories {
+package enum EaselHistories {
     private static var byStore: [String: EaselHistory] = [:]
     private static var byDocument: [UUID: String] = [:]
 
-    static func attach(to store: EaselStore) {
+    package static func attach(to store: EaselStore) {
         let key = store.directory.path
         let history = byStore[key] ?? EaselHistory(directory: store.directory.appendingPathComponent("history", isDirectory: true))
         byStore[key] = history
@@ -212,7 +218,7 @@ enum EaselHistories {
         }
     }
 
-    static func history(for id: UUID) -> EaselHistory? {
+    package static func history(for id: UUID) -> EaselHistory? {
         byDocument[id].flatMap { byStore[$0] }
     }
 }

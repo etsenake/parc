@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 
 enum SpaceManagerReloadSkip {
     static func shouldSkip(previous: BrowserState?, next: BrowserState) -> Bool {
