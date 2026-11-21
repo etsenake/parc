@@ -377,4 +377,31 @@ enum EaselZoom {
         let t = min(1, max(0, progress))
         return 1 - pow(1 - t, 3)
     }
+
+    static let extentTolerance = 0.01
+
+    static func extentMatches(_ size: (width: Double, height: Double), _ current: (width: Double, height: Double)) -> Bool {
+        abs(size.width - current.width) <= extentTolerance && abs(size.height - current.height) <= extentTolerance
+    }
+}
+
+enum EaselWheelPhase: Equatable {
+    case discrete, active, ending, momentum
+}
+
+enum EaselWheelRoute: Equatable {
+    case zoom, pan, drop
+}
+
+struct EaselWheelGesture: Equatable {
+    private(set) var zooming = false
+
+    mutating func route(_ phase: EaselWheelPhase, zoomChord: Bool) -> EaselWheelRoute {
+        switch phase {
+        case .discrete: return zoomChord ? .zoom : .pan
+        case .active: zooming = zoomChord; return zooming ? .zoom : .pan
+        case .ending: return zooming ? .zoom : .pan
+        case .momentum: return zooming ? .drop : .pan
+        }
+    }
 }

@@ -22,6 +22,7 @@ final class EaselCanvasToolState {
     let previewID = UUID()
     var zoomDriver: EaselCanvasFrameDriver?
     var zoomTarget: (magnification: Double, centre: NSPoint)?
+    var wheel = EaselWheelGesture()
     var openFitDone = false
     var onQuickActions: (() -> Void)?
 }
@@ -469,11 +470,18 @@ extension EaselCanvasView {
     }
 
     override func scrollWheel(with event: NSEvent) {
-        guard event.modifierFlags.contains(.command), event.modifierFlags.isDisjoint(with: [.control, .option]),
-              let scroll = enclosingScrollView, scroll.allowsMagnification, !motion.isInteracting else {
-            super.scrollWheel(with: event)
-            return
+        let scroll = enclosingScrollView
+        let chord = event.modifierFlags.contains(.command) && event.modifierFlags.isDisjoint(with: [.control, .option])
+            && scroll?.allowsMagnification == true && !motion.isInteracting
+        let phase: EaselWheelPhase = !event.momentumPhase.isEmpty ? .momentum
+            : event.phase.isEmpty ? .discrete
+            : event.phase.isDisjoint(with: [.ended, .cancelled]) ? .active : .ending
+        switch toolState.wheel.route(phase, zoomChord: chord) {
+        case .pan: super.scrollWheel(with: event); return
+        case .drop: return
+        case .zoom: break
         }
+        guard let scroll, scroll.allowsMagnification, !motion.isInteracting else { return }
         let raw = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY
         let factor = EaselZoom.wheelFactor(deviceDelta: Double(raw), precise: event.hasPreciseScrollingDeltas)
         guard factor != 1 else { return }

@@ -6,8 +6,11 @@ native text history and embedded pages keep their existing owners. Ordinary
 Easels admit the 0.3333–4 magnification range. The fixed capture editor
 retains its existing 0.01 minimum so an original large image can fit its window.
 That fit is programmatic and silent. Ordinary canvas minimum extent uses the
-actual document-space clip bounds, with an idempotent size guard; zooming out
-cannot expose an undersized canvas or resize a fixed capture canvas.
+actual document-space clip bounds, with a size guard that ignores differences
+under a hundredth of a point: below 100% that bounds size drifts by rounding
+error whenever the clip scrolls, so an exact guard would let each resize scroll
+the clip and resize again without end. Zooming out cannot expose an undersized
+canvas or resize a fixed capture canvas.
 
 ## Pinch feedback
 
@@ -107,4 +110,6 @@ notifications, source replacement and immediate visibility reversal. Feedback
 is injected, so the component does not emit physical haptics. The windowless
 `EaselObjectMotionTests` suite covers pop, fade, glide, lift and Reduce Motion
 curves, chained glides, ghost bookkeeping and the document diffs. Shared capture
-checks protect original pixels and independent in-memory history.
+checks protect original pixels and independent in-memory history. The Easel
+canvas suite zooms a real canvas in its scroll view 3,000 times while resizing
+from every bounds change and requires each step to settle.

@@ -180,6 +180,7 @@ struct EaselCanvasTests {
         try anchorInteractions()
         try directControlInteractions()
         try magnifiedGuideInteractions()
+        try zoomedOutExtentSettles()
         try inlineImageEditing()
         try await textDefaultsAndDisposal()
         try browserObjectCanvas()
@@ -958,6 +959,47 @@ struct EaselCanvasTests {
                    "Guide admission measures screen velocity exactly once at non-unit magnification")
         }
         expect(!window.isVisible, "Magnified guide checks remain an inert hidden native component")
+    }
+
+    @MainActor final class ExtentReentry: NSObject {
+        let canvas: EaselCanvasView
+        let scroll: NSScrollView
+        var depth = 0, deepest = 0
+        init(canvas: EaselCanvasView, scroll: NSScrollView) { self.canvas = canvas; self.scroll = scroll }
+        @objc func boundsChanged(_ notification: Notification) {
+            depth += 1; deepest = max(deepest, depth); defer { depth -= 1 }
+            guard depth < 40 else { return }
+            canvas.resizeCanvas(viewport: scroll.contentSize)
+        }
+    }
+
+    @MainActor static func zoomedOutExtentSettles() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-zoomed-extent-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try EaselStore(directory: directory), session = try store.create()
+        try session.perform("Seed zoomed extent") { $0.items = [EaselItem(kind: .rectangle, frame: .init(x: 60, y: 60, width: 700, height: 300))] }
+        let canvas = EaselCanvasView(session: session)
+        let scroll = NSScrollView(frame: .init(x: 0, y: 0, width: 1213, height: 731))
+        scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true; scroll.autohidesScrollers = true
+        scroll.allowsMagnification = true; scroll.minMagnification = 0.3333; scroll.maxMagnification = 4
+        scroll.documentView = canvas
+        canvas.resizeCanvas(viewport: scroll.contentSize)
+        scroll.contentView.postsBoundsChangedNotifications = true
+        let probe = ExtentReentry(canvas: canvas, scroll: scroll)
+        NotificationCenter.default.addObserver(probe, selector: #selector(ExtentReentry.boundsChanged(_:)),
+                                               name: NSView.boundsDidChangeNotification, object: scroll.contentView)
+        defer { NotificationCenter.default.removeObserver(probe) }
+        for step in 1...3000 {
+            let spread = (Double(step) * 0.6180339887).truncatingRemainder(dividingBy: 1)
+            let magnification = CGFloat(0.3333 * pow(12.0, spread))
+            let centre = NSPoint(x: (Double(step) * 0.7548776662).truncatingRemainder(dividingBy: 1) * 2400,
+                                 y: (Double(step) * 0.5698402910).truncatingRemainder(dividingBy: 1) * 2400)
+            scroll.setMagnification(magnification, centeredAt: centre)
+        }
+        expect(probe.deepest <= 2, "Resizing the canvas from a zoomed clip view's bounds settles instead of feeding its own scroll")
+        let clip = scroll.contentView.bounds.size
+        expect(canvas.frame.width >= clip.width - CGFloat(EaselZoom.extentTolerance) && canvas.frame.height >= clip.height - CGFloat(EaselZoom.extentTolerance),
+               "The settled canvas still covers the zoomed viewport")
     }
 
     @MainActor static func anchorInteractions() throws {

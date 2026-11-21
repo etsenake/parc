@@ -27,6 +27,8 @@ struct EaselToolTests {
         zoomSteps()
         zoomFitting()
         zoomAnchor()
+        wheelGestures()
+        canvasExtent()
         print("EaselToolTests passed")
     }
 
@@ -245,5 +247,34 @@ struct EaselToolTests {
         let bounds = EaselZoom.bounds(of: [EaselRect(x: 10, y: 20, width: 30, height: 40), EaselRect(x: -5, y: 50, width: 10, height: 100)])
         expect(bounds == EaselRect(x: -5, y: 20, width: 45, height: 130), "Fit bounds wrap every object")
         expect(EaselZoom.bounds(of: []) == nil, "No objects, no bounds")
+    }
+
+    static func wheelGestures() {
+        var wheel = EaselWheelGesture()
+        expect(wheel.route(.discrete, zoomChord: true) == .zoom && wheel.route(.discrete, zoomChord: false) == .pan,
+               "A mouse wheel notch zooms with ⌘ and pans without it")
+        expect(wheel.route(.active, zoomChord: false) == .pan, "A plain trackpad scroll pans")
+        expect(wheel.route(.ending, zoomChord: true) == .pan, "Pressing ⌘ as the fingers lift doesn't turn the pan into a zoom")
+        expect(wheel.route(.momentum, zoomChord: true) == .pan, "A pan's glide keeps panning when ⌘ goes down")
+        expect(wheel.route(.active, zoomChord: true) == .zoom && wheel.route(.active, zoomChord: true) == .zoom, "⌘ with the trackpad zooms")
+        expect(wheel.route(.ending, zoomChord: false) == .zoom, "Letting go of ⌘ as the fingers lift still ends the zoom")
+        expect(wheel.route(.momentum, zoomChord: true) == .drop && wheel.route(.momentum, zoomChord: false) == .drop,
+               "The zoom stops when the fingers lift, like a pinch")
+        expect(wheel.route(.active, zoomChord: true) == .zoom && wheel.route(.active, zoomChord: false) == .pan
+               && wheel.route(.ending, zoomChord: false) == .pan && wheel.route(.momentum, zoomChord: false) == .pan,
+               "Letting go of ⌘ mid-gesture pans, and the glide follows the pan")
+        expect(wheel.route(.active, zoomChord: false) == .pan && wheel.route(.active, zoomChord: true) == .zoom
+               && wheel.route(.momentum, zoomChord: true) == .drop, "Pressing ⌘ mid-gesture zooms and the glide is dropped")
+        expect(wheel.route(.active, zoomChord: false) == .pan && wheel.route(.momentum, zoomChord: true) == .pan,
+               "The next gesture starts fresh after a zoom")
+    }
+
+    static func canvasExtent() {
+        expect(EaselZoom.extentMatches((3110.895928713965, 1874.7443725386834), (3110.895928713965, 1874.7443725386831)),
+               "The clip view's rounding while zoomed out doesn't count as a new canvas size")
+        expect(EaselZoom.extentMatches((1200, 1400), (1200.004, 1399.996)), "Differences far below a pixel at 400% leave the canvas alone")
+        expect(!EaselZoom.extentMatches((1200.25, 1400), (1200, 1400)), "A quarter-point drag at the edge still grows the canvas")
+        expect(!EaselZoom.extentMatches((1200, 1399), (1200, 1400)), "A shorter viewport shrinks the canvas")
+        expect(!EaselZoom.extentMatches((.nan, 1400), (1200, 1400)), "Nonsense sizes never count as settled")
     }
 }

@@ -412,7 +412,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let right = session.document.items.map { EaselCanvasRotation.bounds($0).maxX + 80 }.max() ?? 0
         let bottom = session.document.items.map { EaselCanvasRotation.bounds($0).maxY + 180 }.max() ?? 0
         let size = NSSize(width: max(viewport.width, right), height: max(viewport.height, 1400, bottom))
-        if size != frame.size { setFrameSize(size) }
+        guard !EaselZoom.extentMatches((Double(size.width), Double(size.height)), (Double(frame.width), Double(frame.height))) else { return }
+        setFrameSize(size)
     }
     private func updateAccessibilitySummary() {
         let document = session.document

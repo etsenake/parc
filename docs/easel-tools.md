@@ -118,7 +118,9 @@ the wheel pans sideways, and the arrow keys pan by 48 points (240 with Shift)
 when nothing is selected, whichever tool is armed.
 
 Pinch zooms as before. ⌘ with the wheel zooms around the pointer; one wheel
-event never more than doubles or halves the zoom. Zoom in and Zoom out step
+event never more than doubles or halves the zoom. A trackpad ⌘-scroll zoom
+stops when the fingers lift, like a pinch, and a scroll's glide keeps panning
+even if ⌘ goes down before it ends. Zoom in and Zoom out step
 through 25, 33, 50, 75, 100, 150, 200, 300 and 400% within the Easel's range
 (33–400%; the capture editor also reaches below 25% by halving). Zoom to fit
 shows every object and Zoom to selection the selected ones, each with a
@@ -159,4 +161,4 @@ Space panning and the zoom keys work there too.
 
 `scripts/test-notes-editor.sh EaselToolTests` checks every key, layout
 fallbacks, tool behaviour, placement and connector geometry, zoom steps,
-fitting and the wheel limits without opening a window.
+fitting, the wheel limits and ⌘-scroll glide routing without opening a window.
