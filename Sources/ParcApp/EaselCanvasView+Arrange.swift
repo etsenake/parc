@@ -5,7 +5,7 @@ struct EaselCanvasArrangeState {
     var lastDuplicate: (sources: [UUID], copies: [UUID])?
     var duplicateDragArmed = false
     var duplicateDrag: (group: UUID, before: EaselDocument, sources: [UUID], copies: [UUID])?
-    var lastPaste: (fingerprint: Int, step: Int)?
+    var lastPaste: (fingerprint: Int, step: Int, pointer: EaselPoint?)?
     var menu: EaselCanvasMenuPresenter?
 }
 
@@ -205,7 +205,7 @@ extension EaselCanvasView {
 
     func performChord(_ command: EaselChordCommand, editing: Bool) -> Bool {
         let document = session.document
-        let ready = !editing && canFinishEditingForTransfer
+        let ready = canFinishEditingForTransfer
         switch command {
         case .duplicate: return claim(ready && !selection.isEmpty) { duplicateSelection() }
         case .group: return claim(ready && EaselArrange.canGroup(selection, in: document)) { groupSelection() }

@@ -324,6 +324,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var onError: ((Error) -> Void)?
     var onOpenURL: ((URL) -> Void)?
     static var textCompletionFactory: (@MainActor () -> EaselTextCompletion)?
+    var onCopiedImage: (() -> Void)?
     var onKeyEquivalent: ((NSEvent) -> Bool)?
     var onDrawOverlay: ((NSRect, CGFloat) -> Void)?
     override var isFlipped: Bool { true }
@@ -786,7 +787,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard let item = items.first(where: { $0.id == id }) else { return }
         drawObject(item)
     }
-    private func drawObject(_ item: EaselItem, showsEditor: Bool = true) {
+    func drawObject(_ item: EaselItem, showsEditor: Bool = true) {
             let turned = EaselCanvasRotation.begin(item, straight: showsEditor && editingID == item.id)
             defer { if turned { NSGraphicsContext.restoreGraphicsState() } }
             let r = rect(item), ink = color(item.color)
@@ -1637,7 +1638,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if let field = boardState.titleField, hit === field || hit.isDescendant(of: field) { return hit }
         let local = convert(point, from: superview)
         guard tool == .select, !toolState.spaceHeld, resizeHandle(at: local) == nil, connectorChrome(at: local) == nil,
-              let item = object(at: local), item.ownsEmbeddedPage, selection == [item.id],
+              let item = object(at: local, includingLocked: true), item.ownsEmbeddedPage, selection == [item.id],
               let surface = artwork[item.id], hit === surface || hit.isDescendant(of: surface) else { return self }
         return hit
     }
@@ -2012,13 +2013,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return command
     }
     @objc func deleteObjects(_ sender: Any?) {
-        cancelPointerInteraction(); guard finishEditing() else { return }
-        guard let command = command(for: sender) else { return }
-        let next = EaselDependents.removing(command.ids, from: session.document)
-        prepareReplacement(next) { [weak self] in
-            guard let self, command.isCurrent(in: self.session.document) else { return }
-            if self.commit("Delete objects", { $0 = EaselDependents.removing(command.ids, from: $0) }) { self.selection.subtract(command.ids) }
-        }
+        guard command(for: sender) != nil else { return }
+        deleteSelection()
     }
     func prepareReplacement(_ next: EaselDocument, commit: @escaping () -> Void) {
         let original = session.document, originalSelection = selection
@@ -2041,15 +2037,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     @objc func copy(_ sender: Any?) {
         if copyTableCells() { return }
-        guard let command = command(for: sender), command.originals.count == 1, let item = command.originals.first,
-              [.text, .image, .link, .webCard, .browser].contains(item.kind) || (item.kind.holdsText && !item.text.isEmpty) else { return }
-        let pasteboard = NSPasteboard.general
-        if let id = item.assetID, let data = try? session.assetData(id) {
-            pasteboard.clearContents(); pasteboard.setData(data, forType: EaselAssetType.of(assetID: id) == .gif ? Self.gifPasteboardType : .png)
-        } else if item.kind.holdsText {
-            do { try EaselStyledText(text: item.text, style: item.resolvedTextStyle, color: item.color, richText: item.richText).write(to: pasteboard) }
-            catch { onError?(error) }
-        } else { pasteboard.clearContents(); pasteboard.setString(item.url ?? item.text, forType: .string) }
+        guard command(for: sender) != nil else { return }
+        copySelection()
     }
     @objc private func openObjectSource(_ sender: Any?) {
         guard let command = command(for: sender), command.originals.count == 1,
@@ -2065,7 +2054,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     @objc func paste(_ sender: Any?) {
         guard hasCurrentMenuOwner(sender) else { return }
-        _ = readPasteboard(NSPasteboard.general)
+        pasteHere(nil)
     }
     private func embeddedPageOwnsTextCommand(_ sender: Any?) -> Bool {
         if (sender as? NSMenuItem)?.representedObject is MenuTarget { return false }
@@ -2253,12 +2242,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             guard let command = command(for: menuItem) else { return false }
             return command.originals.count == 1 && command.originals.first?.url != nil
         }
-        if menuItem.action == #selector(copy(_:)) {
-            guard let command = command(for: menuItem) else { return false }
-            return command.originals.count == 1 && command.originals.allSatisfy {
-                [.text, .image, .link, .webCard, .browser].contains($0.kind) || ($0.kind.holdsText && !$0.text.isEmpty)
-            }
-        }
+        if menuItem.action == #selector(copy(_:)) { return command(for: menuItem) != nil }
+        if menuItem.action == #selector(cut(_:)) { return command(for: menuItem) != nil && canCutSelection }
         if menuItem.action == #selector(pasteAsPlainText) {
             if embeddedPageOwnsTextCommand(menuItem) { return WebpageEditCommands.canPasteMatchingStyle(menuItem, in: window) }
             return NSPasteboard.general.availableType(from: [.string, .URL, .rtfd, .rtf]) != nil
