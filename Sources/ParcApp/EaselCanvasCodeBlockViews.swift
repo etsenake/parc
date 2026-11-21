@@ -29,9 +29,8 @@ enum EaselCodeBlockStyle {
 
     static var textStyle: NoteTextStyle { NoteTheme.textStyle(.code) }
     static var font: NSFont { literal(textStyle.font) }
-    static var boldFont: NSFont { literal(NoteTheme.boldCodeFont(size: textStyle.font.pointSize)) }
-    static var italicFont: NSFont { literal(NSFontManager.shared.convert(textStyle.font, toHaveTrait: .italicFontMask)) }
     static var labelFont: NSFont { NoteTheme.chromeFont(12.5) }
+    private static var tokenStyles: [NoteSyntaxKind: [NSAttributedString.Key: Any]] = [:]
 
     static func indent(language: String?, text: String) -> NoteCodeIndent {
         NoteCodeEditing.indent(forLanguage: EaselCodeBlock.language(language).id, text: text)
@@ -50,28 +49,37 @@ enum EaselCodeBlockStyle {
     static func tokens(_ code: String, language: String?, limit: Int) -> [NoteSyntaxToken] {
         let resolved = EaselCodeBlock.language(language)
         guard resolved.id != NoteCodeLanguage.plainText.id, (code as NSString).length <= limit else { return [] }
-        return NoteSyntaxHighlighter.tokens(in: code, language: resolved)
+        return EaselCodeTokenCache.tokens(code, language: resolved)
     }
 
     static func tokenAttributes(_ kind: NoteSyntaxKind) -> [NSAttributedString.Key: Any] {
-        let name = kind.rawValue
-        var attributes: [NSAttributedString.Key: Any] = [.foregroundColor: NoteTheme.syntaxColor(name)]
-        if NoteTheme.syntaxIsBold(name) || kind == .strong { attributes[.font] = boldFont }
-        if NoteTheme.syntaxIsItalic(name) || kind == .emphasis { attributes[.font] = italicFont }
-        let family = NoteTheme.syntaxFamily(name)
+        if let cached = tokenStyles[kind] { return cached }
+        var attributes = NoteTheme.syntaxAttributes(kind, size: textStyle.font.pointSize)
+        if let bold = attributes[.font] as? NSFont { attributes[.font] = literal(bold) }
+        let family = NoteTheme.syntaxFamily(kind.rawValue)
         if family != "plain" { attributes[.easelSyntaxFamily] = family }
+        tokenStyles[kind] = attributes
         return attributes
     }
 
-    static func attributed(_ code: String, language: String?) -> NSAttributedString {
-        let result = NSMutableAttributedString(string: code, attributes: attributes(language: language))
-        let length = result.length
-        for token in tokens(code, language: language, limit: staticHighlightLimit) where token.range.lowerBound < length {
+    static func apply(_ tokens: [NoteSyntaxToken], to storage: NSTextStorage, base: [NSAttributedString.Key: Any]) {
+        let length = storage.length
+        guard length > 0 else { return }
+        storage.beginEditing()
+        storage.setAttributes(base, range: NSRange(location: 0, length: length))
+        for token in tokens where token.range.lowerBound >= 0 && token.range.lowerBound < length {
             let range = NSRange(location: token.range.lowerBound, length: min(token.range.upperBound, length) - token.range.lowerBound)
             guard range.length > 0 else { continue }
-            result.addAttributes(tokenAttributes(token.kind), range: range)
+            storage.addAttributes(tokenAttributes(token.kind), range: range)
         }
-        return result
+        storage.endEditing()
+    }
+
+    static func attributed(_ code: String, language: String?) -> NSTextStorage {
+        let base = attributes(language: language)
+        let storage = NSTextStorage(string: code, attributes: base)
+        apply(tokens(code, language: language, limit: staticHighlightLimit), to: storage, base: base)
+        return storage
     }
 
     static func lightHex(_ color: NSColor) -> String? {
@@ -115,7 +123,7 @@ final class EaselCodeLayout {
     private(set) var lineCount = 1
 
     init(code: String, language: String?, width: Double) {
-        storage = NSTextStorage(attributedString: EaselCodeBlockStyle.attributed(code, language: language))
+        storage = EaselCodeBlockStyle.attributed(code, language: language)
         container = NSTextContainer(size: NSSize(width: EaselCodeBlock.textWidth(forWidth: width), height: CGFloat.greatestFiniteMagnitude))
         container.lineFragmentPadding = 0
         manager.addTextContainer(container)
@@ -154,13 +162,15 @@ final class EaselCodeLayout {
                         let glyph = manager.glyphIndexForCharacter(at: start)
                         let location = manager.location(forGlyphAt: glyph)
                         let font = attributes[.font] as? NSFont ?? EaselCodeBlockStyle.font
+                        let oblique = ((attributes[.obliqueness] as? NSNumber)?.doubleValue ?? 0) > 0
                         var run = EaselVectorTextRun(x: Double(EaselCodeBlock.sidePadding + rect.minX + location.x),
                                                      y: Double(EaselCodeBlock.headerHeight + rect.minY + location.y),
                                                      text: text.substring(with: NSRange(location: start, length: stop - start)),
                                                      fontFamily: EaselVectorExport.codeFontFamily, fontSize: Double(font.pointSize),
                                                      weight: font.fontDescriptor.symbolicTraits.contains(.bold) ? 700 : 400,
-                                                     italic: font.fontDescriptor.symbolicTraits.contains(.italic))
+                                                     italic: oblique || font.fontDescriptor.symbolicTraits.contains(.italic))
                         run.color = (attributes[.foregroundColor] as? NSColor).flatMap(EaselCodeBlockStyle.lightHex)
+                        run.underline = ((attributes[.underlineStyle] as? NSNumber)?.intValue ?? 0) != 0
                         run.syntax = attributes[.easelSyntaxFamily] as? String
                         result.runs.append(run)
                     }
@@ -186,6 +196,36 @@ final class EaselCodeLayout {
             rects.append(rect.offsetBy(dx: item.frame.x + EaselCodeBlock.sidePadding, dy: item.frame.y + EaselCodeBlock.headerHeight).insetBy(dx: -2, dy: -1))
         }
         return rects.isEmpty ? nil : rects
+    }
+}
+
+@MainActor
+enum EaselCodeTokenCache {
+    private struct Key: Hashable {
+        var text: String
+        var language: String
+    }
+    static let debounceNanoseconds: UInt64 = 100_000_000
+    private static let limit = 64
+    private static var entries: [Key: [NoteSyntaxToken]] = [:]
+    private(set) static var misses = 0
+
+    static func cached(_ code: String, language: String) -> [NoteSyntaxToken]? {
+        entries[Key(text: code, language: language)]
+    }
+
+    static func store(_ tokens: [NoteSyntaxToken], code: String, language: String) {
+        guard (code as NSString).length <= EaselCodeBlockStyle.staticHighlightLimit else { return }
+        if entries.count >= limit { entries.removeAll(keepingCapacity: true) }
+        entries[Key(text: code, language: language)] = tokens
+    }
+
+    static func tokens(_ code: String, language: NoteCodeLanguage) -> [NoteSyntaxToken] {
+        if let hit = cached(code, language: language.id) { return hit }
+        misses += 1
+        let tokens = NoteSyntaxHighlighter.tokens(in: code, language: language)
+        store(tokens, code: code, language: language.id)
+        return tokens
     }
 }
 
@@ -223,7 +263,7 @@ final class EaselCodeTextView: NSTextView {
     var canUndoDocument: (() -> Bool)?
     var canRedoDocument: (() -> Bool)?
     let localUndo = UndoManager()
-    private var highlightGeneration = 0
+    private var highlightTask: Task<Void, Never>?
     private var paintedCode: String?
     private var paintedLanguage: String??
 
@@ -304,36 +344,33 @@ final class EaselCodeTextView: NSTextView {
         guard force || code != paintedCode || paintedLanguage != .some(language) else { return }
         paintedCode = code
         paintedLanguage = .some(language)
-        highlightGeneration &+= 1
-        let generation = highlightGeneration
+        highlightTask?.cancel()
+        highlightTask = nil
         let resolved = EaselCodeBlock.language(language)
         guard resolved.id != NoteCodeLanguage.plainText.id else { paint([], for: code); return }
+        if let cached = EaselCodeTokenCache.cached(code, language: resolved.id) { paint(cached, for: code); return }
         if (code as NSString).length <= EaselCodeBlockStyle.synchronousHighlightLimit {
-            paint(NoteSyntaxHighlighter.tokens(in: code, language: resolved), for: code)
+            paint(EaselCodeTokenCache.tokens(code, language: resolved), for: code)
             return
         }
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let tokens = NoteSyntaxHighlighter.tokens(in: code, language: resolved)
-            await MainActor.run { [weak self] in
-                guard let self, self.highlightGeneration == generation, self.string == code else { return }
-                self.paint(tokens, for: code)
-            }
+        highlightTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: EaselCodeTokenCache.debounceNanoseconds)
+            guard !Task.isCancelled else { return }
+            let tokens = await Task.detached(priority: .userInitiated) { NoteSyntaxHighlighter.tokens(in: code, language: resolved) }.value
+            guard !Task.isCancelled, let self, self.string == code else { return }
+            EaselCodeTokenCache.store(tokens, code: code, language: resolved.id)
+            self.paint(tokens, for: code)
         }
     }
 
+    func cancelHighlighting() {
+        highlightTask?.cancel()
+        highlightTask = nil
+    }
+
     private func paint(_ tokens: [NoteSyntaxToken], for code: String) {
-        guard let manager = layoutManager else { return }
-        let length = (code as NSString).length
-        let whole = NSRange(location: 0, length: length)
-        manager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: whole)
-        manager.removeTemporaryAttribute(.font, forCharacterRange: whole)
-        for token in tokens where token.range.lowerBound < length {
-            let range = NSRange(location: token.range.lowerBound, length: min(token.range.upperBound, length) - token.range.lowerBound)
-            guard range.length > 0 else { continue }
-            var attributes = EaselCodeBlockStyle.tokenAttributes(token.kind)
-            attributes.removeValue(forKey: .easelSyntaxFamily)
-            manager.addTemporaryAttributes(attributes, forCharacterRange: range)
-        }
+        guard let storage = textStorage, storage.string == code, !hasMarkedText() else { return }
+        EaselCodeBlockStyle.apply(tokens, to: storage, base: codeAttributes)
     }
 
     private func isCommandReturn(_ event: NSEvent) -> Bool {

@@ -109,7 +109,7 @@ extension EaselCanvasView {
             }
         } catch { onError?(error); return false }
         if let editor = codeBlocks.editor, let id = codeBlocks.editingID, targets.contains(id) { editor.applyLanguage(stored) }
-        refreshCodeBlockChrome(hidden: false)
+        refreshCodeChrome()
         return true
     }
 
@@ -172,7 +172,7 @@ extension EaselCanvasView {
         }
         invalidateCodeBlock(current.frame)
         needsLayout = true
-        refreshCodeBlockChrome(hidden: false)
+        refreshCodeChrome()
         return codeBlocks.editingID == current.id
     }
 
@@ -193,10 +193,11 @@ extension EaselCanvasView {
         codeBlocks.committedText = nil
         editor.onEdit = nil
         editor.onResign = nil
+        editor.cancelHighlighting()
         if window?.firstResponder === editor { window?.makeFirstResponder(self) }
         editor.removeFromSuperview()
         if let frame { invalidateCodeBlock(frame) }
-        refreshCodeBlockChrome(hidden: false)
+        refreshCodeChrome()
         return true
     }
 
@@ -275,6 +276,10 @@ extension EaselCanvasView {
         codeBlockOverlayViews.contains { view === $0 || view.isDescendant(of: $0) }
     }
 
+    private func refreshCodeChrome() {
+        refreshCodeBlockChrome(hidden: hidesPassiveAnnotations || !canPresentMotion)
+    }
+
     func refreshCodeBlockChrome(hidden: Bool) {
         synchronizeCodeEditor()
         let bar = codeBlocks.bar
@@ -293,9 +298,9 @@ extension EaselCanvasView {
                 guard let self, let bar, self.copyCode(id) else { return }
                 bar.copy.flash("Copied!", symbol: "checkmark")
                 bar.needsLayout = true
-                self.refreshCodeBlockChrome(hidden: false)
+                self.refreshCodeChrome()
             }
-            bar.copy.onSizeChange = { [weak self] in self?.refreshCodeBlockChrome(hidden: false) }
+            bar.copy.onSizeChange = { [weak self] in self?.refreshCodeChrome() }
         }
         let scale = codeScale, size = bar.preferredSize
         let width = size.width / scale, height = size.height / scale

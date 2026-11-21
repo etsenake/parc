@@ -199,7 +199,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     @discardableResult
     func finishImageEditing() -> Bool { cancelPointerInteraction(); return finishEditing() }
     var canFinishEditingForTransfer: Bool {
-        !session.isDeleted && !session.isClosed && !finishingEditor && editor?.hasMarkedText() != true &&
+        !session.isDeleted && !session.isClosed && !finishingEditor && editor?.hasMarkedText() != true && codeBlocks.editor?.hasMarkedText() != true &&
         start == nil && draft == nil && geometryEdit == nil && marqueeRect == nil
     }
     func finishEditingForTransfer() -> Bool {
