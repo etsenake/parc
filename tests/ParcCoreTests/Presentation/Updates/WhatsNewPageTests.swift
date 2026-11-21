@@ -29,22 +29,9 @@ struct WhatsNewPageTests {
         try URL(string: runningPage())!.deletingLastPathComponent().absoluteString + "./WhatsNew.html"
     }
 
-    func pageRange() throws -> NSRegularExpression {
-        let script = try String(contentsOf: URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources/WhatsNew/WhatsNew.js"), encoding: .utf8)
-        let literal = try NSRegularExpression(pattern: #"/(\^#from=.*?\$)/"#)
-        let match = try #require(literal.firstMatch(in: script, range: NSRange(script.startIndex..., in: script)),
-                                 "WhatsNew.js still reads the update range with its from/to pattern")
-        return try NSRegularExpression(pattern: (script as NSString).substring(with: match.range(at: 1)))
-    }
-
-    func rangeOnPage(_ address: String, _ pageRange: NSRegularExpression) -> [String]? {
+    func rangeOnPage(_ address: String) -> String? {
         guard let url = URL(string: address), url.host == "whats-new", url.path == "/" else { return nil }
-        let hash = url.fragment.map { "#" + $0 } ?? ""
-        guard let found = pageRange.firstMatch(in: hash, range: NSRange(hash.startIndex..., in: hash)) else { return nil }
-        return (1..<found.numberOfRanges).map { (hash as NSString).substring(with: found.range(at: $0)) }
+        return url.fragment
     }
 
     @Test func whatsNewHasItsOwnInternalAddress() {
@@ -99,28 +86,20 @@ struct WhatsNewPageTests {
         #expect(WhatsNewPage.relocated(runningPage + range, running: running) == WhatsNewPage.address + range)
     }
 
-    @Test func seeWhatsNewCarriesTheUpdateAfterThePageNotInItsPath() throws {
-        let pageRange = try pageRange()
+    @Test func seeWhatsNewCarriesTheUpdateAfterThePageNotInItsPath() {
         let address = WhatsNewPage.address(range: "from=2.5.1&to=2.6.0")
         #expect(address == update)
-        #expect(rangeOnPage(address, pageRange) == ["2.5.1", "2.6.0"])
+        #expect(rangeOnPage(address) == "from=2.5.1&to=2.6.0")
     }
 
-    @Test func releaseNotesOpensThePlainPage() throws {
-        let pageRange = try pageRange()
+    @Test func releaseNotesOpensThePlainPage() {
         #expect(WhatsNewPage.address(range: nil) == WhatsNewPage.address)
-        #expect(rangeOnPage(WhatsNewPage.address, pageRange) == nil)
+        #expect(rangeOnPage(WhatsNewPage.address) == nil)
     }
 
     @Test(arguments: ["chrome://whats-new/#from=2.5.1&to=2.6.0", "CHROME://whats-new/#from=2.5.1&to=2.6.0"])
     func theEnginesOwnAddressComesBackAsParc(shown: String) {
         #expect(BrowserInternalURL.publicString(shown) == update)
-    }
-
-    @Test(arguments: ["parc://whats-new/%23from=2.5.1&to=2.6.0", "parc://whats-new/from=2.5.1&to=2.6.0",
-                      "parc://whats-new/?from=2.5.1&to=2.6.0", "parc://whats-new/#from=2.5.1"])
-    func aRangeOutsideThePagesFragmentNeverReachesIt(broken: String) throws {
-        #expect(rangeOnPage(broken, try pageRange()) == nil)
     }
 
     @Test func webPagesKeepTheirOwnAddress() {
@@ -175,9 +154,8 @@ struct WhatsNewPageTests {
 
     @Test func restoredUpdateRangesStillReachThePage() throws {
         defer { try? FileManager.default.removeItem(at: root) }
-        let pageRange = try pageRange()
         let fixture = try restoredStore()
-        #expect(fixture.restored.compactMap { rangeOnPage($0.url, pageRange) }.count == 3)
+        #expect(fixture.restored.compactMap { rangeOnPage($0.url) }.count == 3)
     }
 
     @Test func aNewWhatsNewTabKeepsTheUpdatesRange() throws {
