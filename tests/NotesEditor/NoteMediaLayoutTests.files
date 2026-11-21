@@ -1,2 +1,13 @@
 Sources/ParcCore/*.swift
 Sources/ParcApp/NoteMediaSupport.swift
+Sources/ParcApp/NoteCursor.swift
+Sources/ParcApp/NoteTheme.swift
+Sources/ParcApp/NoteAnimation.swift
+Sources/ParcApp/NoteFloatingPanel.swift
+Sources/ParcApp/NoteControls.swift
+Sources/ParcApp/PointerCover.swift
+Sources/ParcApp/PointingHand.swift
+tests/NotesEditor/NoteDesignSystemStubs.swift
+Sources/ParcApp/NoteCustomEmojiImages.swift
+Sources/ParcApp/DocumentDefaultIcon.swift
+Sources/ParcApp/LibraryArtwork.swift
