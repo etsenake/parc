@@ -19,6 +19,7 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
     private var isPresented: Bool { madePanel?.isPresented == true }
     private weak var canvas: EaselCanvasView?
     private weak var observedScroll: NSScrollView?
+    private weak var observedOuter: NSClipView?
     private weak var observedWindow: NSWindow?
     private var viewportObservers: [NSObjectProtocol] = []
     private var responderObservation: NSKeyValueObservation?
@@ -78,27 +79,43 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
     }
 
     private func attach(to canvas: EaselCanvasView) -> Bool {
-        guard let scroll = canvas.enclosingScrollView, let container = scroll.superview, let window = canvas.window else { return false }
+        guard let scroll = canvas.enclosingScrollView, let window = canvas.window,
+              let container = canvas.selectionToolbarContainer ?? scroll.superview,
+              let below = sequence(first: scroll as NSView, next: \.superview).first(where: { $0.superview === container }) else { return false }
         if host.superview !== container {
             host.removeFromSuperview()
-            container.addSubview(host, positioned: .above, relativeTo: scroll)
-        } else if let hostIndex = container.subviews.firstIndex(of: host), let scrollIndex = container.subviews.firstIndex(of: scroll),
-                  hostIndex < scrollIndex {
-            container.addSubview(host, positioned: .above, relativeTo: scroll)
+            container.addSubview(host, positioned: .above, relativeTo: below)
+        } else if let hostIndex = container.subviews.firstIndex(of: host), let belowIndex = container.subviews.firstIndex(of: below),
+                  hostIndex < belowIndex {
+            container.addSubview(host, positioned: .above, relativeTo: below)
         }
-        if host.frame != scroll.frame { host.frame = scroll.frame }
+        fitHost(to: scroll)
         observe(scroll: scroll, window: window)
         return true
     }
 
+    private func fitHost(to scroll: NSScrollView) {
+        guard let container = host.superview else { return }
+        let frame = container === scroll.superview ? scroll.frame : container.bounds
+        if host.frame != frame { host.frame = frame }
+    }
+
     private func observe(scroll: NSScrollView, window: NSWindow) {
-        if observedScroll !== scroll {
+        let outer = scroll.superview?.enclosingScrollView?.contentView
+        if observedScroll !== scroll || observedOuter !== outer {
             for observer in viewportObservers { NotificationCenter.default.removeObserver(observer) }
             observedScroll = scroll
+            observedOuter = outer
             scroll.contentView.postsBoundsChangedNotifications = true
             scroll.postsFrameChangedNotifications = true
             let center = NotificationCenter.default
-            viewportObservers = [
+            if let outer {
+                outer.postsBoundsChangedNotifications = true
+                viewportObservers.append(center.addObserver(forName: NSView.boundsDidChangeNotification, object: outer, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.viewportChanged() }
+                })
+            }
+            viewportObservers += [
                 center.addObserver(forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.viewportChanged() }
                 },
@@ -125,13 +142,14 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
         for observer in viewportObservers { NotificationCenter.default.removeObserver(observer) }
         viewportObservers.removeAll()
         observedScroll = nil
+        observedOuter = nil
         responderObservation = nil
         observedWindow = nil
     }
 
     private func viewportChanged() {
         guard let canvas, let scroll = observedScroll, canvas.enclosingScrollView === scroll, content != nil else { return }
-        if host.frame != scroll.frame { host.frame = scroll.frame }
+        fitHost(to: scroll)
         place(animated: false, reselected: false)
         if let menu, let button = bar.button(for: menu.control) {
             menu.popover.reposition(anchor: host.convert(button.bounds, from: button), edge: .below)
@@ -139,11 +157,13 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
     }
 
     private func place(animated: Bool, reselected: Bool) {
-        guard let canvas, let content, host.superview != nil else { return }
+        guard let canvas, let content, host.superview != nil, let scroll = canvas.enclosingScrollView else { return }
+        fitHost(to: scroll)
         let size = bar.fittingSize
         let selection = host.convert(content.anchor, from: canvas)
-        let clipped = host.visibleRect.intersection(host.bounds)
-        let visible = clipped.isEmpty ? host.bounds : clipped
+        let area = host.convert(scroll.bounds, from: scroll).intersection(host.bounds)
+        let clipped = host.visibleRect.intersection(area)
+        let visible = clipped.isEmpty ? area : clipped
         guard let placement = EaselSelectionToolbarPlacement.place(selection: Self.easelRect(selection), width: size.width,
                                                                    height: size.height, visible: Self.easelRect(visible)) else {
             closeMenu(animated: false)

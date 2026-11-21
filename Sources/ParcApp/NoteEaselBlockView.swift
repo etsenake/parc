@@ -99,6 +99,8 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     private var tracking: NSTrackingArea?
     private var pointerMonitor: Any?
     private var alignmentMenu: NoteFloatingPanel?
+    private let quickActions = EaselQuickActions()
+    private var imagePanel: NSOpenPanel?
 
     override init(block: NoteBlock, editor: NotePageEditor?) {
         super.init(block: block, editor: editor)
@@ -118,6 +120,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         surface.onDone = { [weak self] in self?.finish(restoreFocus: true) }
         surface.onRemove = { [weak self] in self?.removeBlock() }
         surface.onAlign = { [weak self] in self?.toggleAlignmentMenu() }
+        surface.onAdd = { [weak self] in self?.toggleQuickActions() }
         surface.onActivate = { [weak self] event in self?.activate(with: event) }
         surface.noteScrollView = { [weak self] in self?.editor?.canvas.enclosingScrollView }
         for view in [surface, heightHandle, leadingHandle, trailingHandle] as [NSView] { addSubview(view) }
@@ -223,7 +226,9 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         case .success(let next):
             session = next
             sessionDirectory = host.directory
-            surface.show(EaselCanvasView(session: next), viewOnly: !canEdit)
+            let canvas = EaselCanvasView(session: next)
+            canvas.toolState.onQuickActions = { [weak self] in self?.toggleQuickActions() }
+            surface.show(canvas, viewOnly: !canEdit)
             watch = next.objectWillChange.sink { [weak self] (_: Void) in
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.sessionDidChange() } }
             }
@@ -324,6 +329,10 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         if let pointerMonitor { NSEvent.removeMonitor(pointerMonitor) }
         pointerMonitor = nil
         guard surface.active else { return }
+        quickActions.close()
+        if let imagePanel, let window, window.attachedSheet === imagePanel { window.endSheet(imagePanel, returnCode: .cancel) }
+        imagePanel = nil
+        surface.canvas?.tool = .select
         surface.active = false
         surface.canvas?.onImageEditingCancel = nil
         pages?.release()
@@ -334,6 +343,49 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         guard restoreFocus || focusInside, let editor, window.attachedSheet == nil else { return }
         window.makeFirstResponder(editor.canvas)
         if restoreFocus { editor.session.setSelection(.blocks([blockID])) }
+    }
+
+    private func toggleQuickActions() {
+        guard surface.active, !surface.viewOnly, canEdit, let canvas = surface.canvas, let window, window.attachedSheet == nil,
+              !canvas.session.isClosed, !canvas.session.isDeleted else { return }
+        var inserts: [EaselQuickActions.Action] = [
+            .init(id: "insert-image", title: EaselToolPalette.title(for: .image), icon: EaselToolPalette.icon(for: .image), shortcut: nil,
+                  keywords: ["picture", "photo", "file"], section: "Inserts") { [weak self] in self?.chooseImages() },
+        ]
+        if canvas.acceptsMermaid {
+            inserts.append(.init(id: "insert-mermaid", title: EaselToolPalette.title(for: .mermaid), icon: EaselToolPalette.icon(for: .mermaid),
+                                 shortcut: nil, keywords: ["flowchart", "diagram", "chart", "er"], section: "Inserts") { [weak canvas] in
+                _ = canvas?.showMermaidSheet()
+            })
+        }
+        let actions = EaselQuickActions.boardActions(canvas: canvas, inserts: inserts) { [weak self] in self?.focusCanvas() }
+        quickActions.toggle(in: surface, anchor: surface.addAnchor, actions: actions) { [weak self] in
+            guard let self, let window = self.window else { return }
+            let responder = window.firstResponder
+            if responder == nil || responder === window || (responder as? NSView)?.isDescendant(of: self.surface) == true { self.focusCanvas() }
+        }
+    }
+
+    private func focusCanvas() {
+        guard surface.active, let canvas = surface.canvas, let window = canvas.window else { return }
+        window.makeFirstResponder(canvas)
+    }
+
+    private func chooseImages() {
+        guard surface.active, canEdit, let window, window.attachedSheet == nil else { return }
+        let chooser = NSOpenPanel()
+        chooser.allowedContentTypes = [.image]
+        chooser.allowsMultipleSelection = true
+        imagePanel = chooser
+        chooser.beginSheetModal(for: window) { [weak self, weak chooser] response in
+            MainActor.assumeIsolated {
+                guard let self, let chooser, self.imagePanel === chooser else { return }
+                self.imagePanel = nil
+                guard response == .OK, self.surface.active, self.canEdit, let canvas = self.surface.canvas else { return }
+                do { for url in chooser.urls { try canvas.importImageFile(url) } } catch { self.editor?.onError?(error) }
+                self.focusCanvas()
+            }
+        }
     }
 
     private func resizeHeight(by delta: CGFloat, commit: Bool) {
@@ -486,10 +538,16 @@ final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary {
     var onDone: (() -> Void)?
     var onRemove: (() -> Void)?
     var onAlign: (() -> Void)?
+    var onAdd: (() -> Void)?
     var onActivate: ((NSEvent?) -> Void)?
     var noteScrollView: () -> NSScrollView? = { nil }
     private(set) var canvas: EaselCanvasView?
-    var viewOnly = false { didSet { if viewOnly != oldValue { refresh() } } }
+    var viewOnly = false {
+        didSet {
+            canvas?.viewOnly = viewOnly
+            if viewOnly != oldValue { refresh() }
+        }
+    }
     var canAlign = false { didSet { if canAlign != oldValue { refresh() } } }
     var active = false {
         didSet {
@@ -512,6 +570,7 @@ final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary {
     private let icon = NSImageView()
     private let titleLabel: NSTextField
     private let alignButton = NoteToolbarButton(icon: .symbol("text.aligncenter"), label: "Alignment")
+    private let addButton = NoteToolbarButton(icon: .symbol("plus"), label: "Add to the Easel", shortcut: "⌘/")
     private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in a tab")
     private let doneButton = NoteToolbarButton(icon: .symbol("checkmark"), label: "Back to the note")
     private let scroll = NoteEaselScrollView()
@@ -557,9 +616,10 @@ final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary {
         absence.onRemove = { [weak self] in self?.onRemove?() }
         for view in [icon, titleLabel, scroll, shield, absence] as [NSView] { content.addSubview(view) }
         alignButton.onPress = { [weak self] in self?.onAlign?() }
+        addButton.onPress = { [weak self] in self?.onAdd?() }
         openButton.onPress = { [weak self] in self?.onOpen?() }
         doneButton.onPress = { [weak self] in self?.onDone?() }
-        for button in [alignButton, openButton, doneButton] { content.addSubview(button) }
+        for button in [alignButton, addButton, openButton, doneButton] { content.addSubview(button) }
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Easel")
@@ -580,10 +640,14 @@ final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary {
 
     var alignAnchor: NSRect { alignButton.frame }
 
+    var addAnchor: NSRect { addButton.isHidden ? NSRect(x: bounds.midX - 1, y: Self.headerHeight - 1, width: 2, height: 2) : addButton.frame }
+
     func show(_ canvas: EaselCanvasView, viewOnly: Bool) {
         clear()
         self.canvas = canvas
         self.viewOnly = viewOnly
+        canvas.viewOnly = viewOnly
+        canvas.selectionToolbarContainer = self
         scroll.documentView = canvas
         refresh()
         needsLayout = true
@@ -612,6 +676,7 @@ final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary {
         openButton.isHidden = !live
         alignButton.isHidden = !canAlign
         doneButton.isHidden = !active
+        addButton.isHidden = !active || viewOnly
         shield.toolTip = live && !viewOnly ? "Click to edit the Easel" : nil
         needsLayout = true
     }
@@ -641,7 +706,7 @@ final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary {
         }
         icon.frame = NSRect(x: 12, y: (Self.headerHeight - 16) / 2, width: 16, height: 16)
         var right = width - 8
-        for button in [doneButton, openButton, alignButton] where !button.isHidden {
+        for button in [doneButton, addButton, openButton, alignButton] where !button.isHidden {
             let size = NSSize(width: 26, height: 26)
             right -= size.width
             button.frame = NSRect(x: right, y: (Self.headerHeight - size.height) / 2, width: size.width, height: size.height)

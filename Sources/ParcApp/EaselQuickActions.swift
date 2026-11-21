@@ -103,3 +103,48 @@ final class EaselQuickActions {
         return item
     }
 }
+
+extension EaselQuickActions {
+    static func boardActions(canvas: EaselCanvasView, inserts: [Action] = [], focus: @escaping () -> Void) -> [Action] {
+        var actions: [Action] = []
+        func tool(_ tool: EaselTool, _ keywords: [String], section: String) {
+            guard tool.isAvailable else { return }
+            actions.append(.init(id: tool.rawValue, title: tool.title, icon: EaselToolPalette.icon(for: tool), shortcut: tool.key?.label,
+                                 keywords: keywords, section: section) { [weak canvas] in
+                canvas?.activateTool(tool); focus()
+            })
+        }
+        tool(.sticky, ["note", "card", "idea"], section: "Objects")
+        for shape in EaselToolPalette.shapeTools {
+            let shapeTool: EaselTool = shape == .ellipse ? .ellipse : .rectangle
+            actions.append(.init(id: "shape-" + shape.rawValue,
+                                 title: shape == .ellipse ? shapeTool.title : EaselToolPalette.shapeTitle(shape),
+                                 icon: EaselToolPalette.icon(for: shape),
+                                 shortcut: shape == .ellipse || shape == .rectangle ? shapeTool.key?.label : nil,
+                                 keywords: ["shape", shape == .ellipse ? "circle oval" : shape == .rectangle ? "square box" : ""],
+                                 section: "Objects") { [weak canvas] in
+                canvas?.armShape(shape); focus()
+            })
+        }
+        for connector in EaselToolPalette.connectorTools { tool(connector, ["arrow", "line", "connector", "link"], section: "Objects") }
+        tool(.text, ["type", "words", "label", "title"], section: "Objects")
+        tool(.section, ["frame", "area", "group", "region"], section: "Objects")
+        tool(.table, ["grid", "rows", "columns", "cells"], section: "Objects")
+        for drawing in EaselToolPalette.drawTools { tool(drawing, ["draw", "pen", "pencil", "doodle"], section: "Tools") }
+        tool(.stamp, ["emoji", "sticker", "vote", "react"], section: "Tools")
+        tool(.select, ["move", "pointer", "cursor", "arrow"], section: "Tools")
+        tool(.hand, ["pan", "scroll", "move", "grab"], section: "Tools")
+        actions += inserts
+        tool(.codeBlock, ["code", "snippet", "monospace", "program"], section: "Inserts")
+        let zoomSymbols: [EaselZoomCommand: String] = [.zoomIn: "plus.magnifyingglass", .zoomOut: "minus.magnifyingglass",
+                                                       .fit: "viewfinder", .selection: "scope", .actualSize: "1.magnifyingglass"]
+        for command in [EaselZoomCommand.zoomIn, .zoomOut, .fit, .selection, .actualSize] {
+            actions.append(.init(id: "zoom-" + command.rawValue, title: command.title, icon: .symbol(zoomSymbols[command] ?? "magnifyingglass"),
+                                 shortcut: command.shortcut, keywords: ["zoom", "view", "scale"], section: "View",
+                                 isEnabled: command != .selection || canvas.canZoomToSelection) { [weak canvas] in
+                canvas?.zoom(command); focus()
+            })
+        }
+        return actions
+    }
+}

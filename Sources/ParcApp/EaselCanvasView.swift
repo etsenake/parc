@@ -175,6 +175,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         set { tool = newValue ? .marker : .select }
     }
     var fixedCanvasSize: NSSize?
+    var viewOnly = false { didSet { if viewOnly != oldValue { keyboardStructureChanged() } } }
+    weak var selectionToolbarContainer: NSView?
     var insertionColor = EaselInk.automatic
     var adaptsInk = true {
         didSet {
@@ -328,7 +330,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var onKeyEquivalent: ((NSEvent) -> Bool)?
     var onDrawOverlay: ((NSRect, CGFloat) -> Void)?
     override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
+    override var acceptsFirstResponder: Bool { !viewOnly }
     var canAcceptExternalSplitDrop: Bool {
         !session.isDeleted && start == nil && geometryEdit == nil && draft == nil &&
         marqueeRect == nil && editor?.hasMarkedText() != true
@@ -459,7 +461,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return []
     }
     fileprivate var accessibleOwnerAvailable: Bool {
-        !session.isDeleted && !session.isClosed && window != nil && window?.attachedSheet == nil && !isHiddenOrHasHiddenAncestor &&
+        !viewOnly && !session.isDeleted && !session.isClosed && window != nil && window?.attachedSheet == nil && !isHiddenOrHasHiddenAncestor &&
         start == nil && tool == .select && editor?.hasMarkedText() != true
     }
     fileprivate func selectAccessibleObject(_ expected: EaselItem) -> Bool {
