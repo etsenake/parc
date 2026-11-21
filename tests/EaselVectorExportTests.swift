@@ -1,0 +1,110 @@
+import Foundation
+
+@main
+struct EaselVectorExportTests {
+    @MainActor static var assertions = 0
+
+    @MainActor static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
+        assertions += 1
+        if !condition() { fatalError(message) }
+    }
+
+    static let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3uoAAAAASUVORK5CYII=")!
+
+    @MainActor static func main() {
+        bounds()
+        escaping()
+        kinds()
+        text()
+        document()
+        print("EaselVectorExportTests: \(assertions) assertions passed")
+    }
+
+    @MainActor static func bounds() {
+        let empty = EaselVectorExport.contentBounds([])
+        expect(empty.width > 0 && empty.height > 0, "an empty Easel still exports a page")
+        let items = [EaselItem(kind: .rectangle, frame: .init(x: 100, y: 50, width: 200, height: 100)),
+                     EaselItem(kind: .circle, frame: .init(x: -20, y: 300, width: 40, height: 40))]
+        let rect = EaselVectorExport.contentBounds(items, margin: 10)
+        expect(rect.x == -34 && rect.y == 36, "bounds start at the leftmost and topmost object minus margin and stroke")
+        expect(rect.width == 320 + 28 && rect.height == 290 + 28, "bounds cover every object plus margins")
+    }
+
+    @MainActor static func escaping() {
+        expect(EaselVectorExport.escape("<a href=\"x\">&'</a>") == "&lt;a href=&quot;x&quot;&gt;&amp;&#39;&lt;/a&gt;", "markup is escaped")
+        expect(EaselVectorExport.escape("a\u{0}b\u{8}c") == "abc", "control characters that break XML are dropped")
+        expect(EaselVectorExport.safeLink("javascript:alert(1)") == nil, "script links are not exported")
+        expect(EaselVectorExport.safeLink("https://example.com/a?b=1&c=2") == "https://example.com/a?b=1&c=2", "web links survive")
+        expect(EaselVectorExport.number(1.005) == "1" || EaselVectorExport.number(1.005) == "1.01", "numbers round to two places")
+        expect(EaselVectorExport.number(.nan) == "0", "non-finite numbers never reach the SVG")
+        expect(EaselVectorExport.exportFileName("  a/b:c ", fileExtension: "html") == "a-b-c.html", "file names stay safe")
+        expect(EaselVectorExport.exportFileName("", fileExtension: "pdf") == "Untitled Easel.pdf", "untitled Easels get a name")
+    }
+
+    @MainActor static func kinds() {
+        var circle = EaselItem(kind: .circle, frame: .init(x: 0, y: 0, width: 40, height: 20))
+        circle.color = "#FF0000"
+        let svgCircle = EaselVectorExport.element(circle, art: .init())
+        expect(svgCircle.contains("<ellipse cx=\"20\" cy=\"10\" rx=\"20\" ry=\"10\""), "circles become ellipses")
+        expect(svgCircle.contains("stroke:#FF0000"), "chosen colours stay exact")
+        let square = EaselVectorExport.element(EaselItem(kind: .rectangle, frame: .init(x: 1, y: 2, width: 3, height: 4)), art: .init())
+        expect(square.contains("var(--easel-ink)"), "automatic ink adapts to light and dark")
+        var arrow = EaselItem(kind: .arrow, frame: .init(x: 10, y: 10, width: 100, height: 0))
+        arrow.points = [.init(x: 0, y: 0), .init(x: 100, y: 0)]
+        let svgArrow = EaselVectorExport.element(arrow, art: .init())
+        expect(svgArrow.components(separatedBy: "<path").count == 3, "arrows draw a shaft and a head")
+        expect(svgArrow.contains("M10 10L110 10"), "the shaft follows the saved points")
+        var scribble = EaselItem(kind: .freehand, frame: .init(x: 0, y: 0, width: 10, height: 10))
+        scribble.points = [.init(x: 0, y: 0), .init(x: 5, y: 5), .init(x: 10, y: 0)]
+        expect(EaselVectorExport.element(scribble, art: .init()).components(separatedBy: "<path").count == 2, "freehand strokes have no head")
+        let picture = EaselItem(kind: .image, frame: .init(x: 0, y: 0, width: 10, height: 10), assetID: "a")
+        var art = EaselVectorArt()
+        art.images[picture.id] = EaselVectorImage(data: png, mimeType: "image/png")
+        expect(EaselVectorExport.element(picture, art: art).contains("href=\"data:image/png;base64,"), "images are embedded")
+        expect(EaselVectorExport.element(picture, art: .init()).isEmpty, "missing images draw nothing")
+        let web = EaselItem(kind: .webCard, frame: .init(x: 0, y: 0, width: 10, height: 10), url: "https://example.com", assetID: "w")
+        art.images[web.id] = EaselVectorImage(data: png, mimeType: "image/png")
+        let svgWeb = EaselVectorExport.element(web, art: art)
+        expect(svgWeb.hasPrefix("<a href=\"https://example.com\""), "web snapshots link to their source")
+        expect(svgWeb.contains("<image"), "web cards show their snapshot")
+        let link = EaselItem(kind: .link, frame: .init(x: 0, y: 0, width: 220, height: 160), text: "A <b>", url: "https://example.com")
+        let svgLink = EaselVectorExport.element(link, art: .init())
+        expect(svgLink.contains("A &lt;b&gt;") && svgLink.contains("var(--easel-card)"), "link cards show an escaped title on the card fill")
+        expect(EaselVectorExport.imageMimeType(png) == "image/png", "PNG bytes are recognised")
+        expect(EaselVectorExport.imageMimeType(Data([0xFF, 0xD8, 0xFF, 0xE0])) == "image/jpeg", "JPEG bytes are recognised")
+        expect(EaselVectorExport.imageMimeType(Data([1, 2, 3])) == nil, "unknown bytes need converting")
+    }
+
+    @MainActor static func text() {
+        let item = EaselItem(kind: .text, frame: .init(x: 30, y: 40, width: 200, height: 40), text: "Hi")
+        var layout = EaselVectorText()
+        layout.runs = [EaselVectorTextRun(x: 10, y: 20, text: "Hi & bye", fontFamily: "\"EB Garamond\",serif", fontSize: 16, weight: 700,
+                                          italic: true, color: nil, underline: true, link: "https://example.com")]
+        var art = EaselVectorArt()
+        art.texts[item.id] = layout
+        let svg = EaselVectorExport.element(item, art: art)
+        expect(svg.contains("translate(30 40)"), "text sits at its object's origin")
+        expect(svg.contains("Hi &amp; bye"), "text content is escaped")
+        expect(svg.contains("font-family:&quot;EB Garamond&quot;,serif"), "the Easel font is kept")
+        expect(svg.contains("font-weight:700") && svg.contains("font-style:italic") && svg.contains("text-decoration:underline"), "emphasis survives")
+        expect(svg.contains("<a href=\"https://example.com\""), "text links stay links")
+        layout.runs[0].color = "#00FF00"
+        layout.fillPath = "M0 0L10 0L10 10Z"
+        art.texts[item.id] = layout
+        let filled = EaselVectorExport.element(item, art: art)
+        expect(filled.contains("fill:#00FF00") && filled.contains("<path d=\"M0 0L10 0L10 10Z\""), "fills and chosen text colours are exported")
+    }
+
+    @MainActor static func document() {
+        var doc = EaselDocument(id: UUID(), title: "Plan <A>", createdAt: Date(), modifiedAt: Date())
+        doc.items = [EaselItem(kind: .rectangle, frame: .init(x: 0, y: 0, width: 10, height: 10))]
+        let palette = EaselVectorPalette(light: .init(ink: "#111111", card: "#EEEEEE", cardLine: "#DDDDDD", muted: "#777777"),
+                                         dark: .init(ink: "#FAFAFA", card: "#222222", cardLine: "#333333", muted: "#999999"))
+        let html = EaselVectorExport.htmlDocument(doc, art: .init(), palette: palette)
+        expect(html.hasPrefix("<!DOCTYPE html>"), "exports are full HTML documents")
+        expect(html.contains("<title>Plan &lt;A&gt;</title>") && html.contains("<h1 class=\"page-title\">Plan &lt;A&gt;</h1>"), "the title is escaped")
+        expect(html.contains("--easel-ink:#111111") && html.contains("prefers-color-scheme:dark){:root{--easel-ink:#FAFAFA"), "both palettes ship")
+        expect(html.contains("<svg") && html.contains("viewBox=\"-44 -44 98 98\""), "the canvas is an SVG sized to its content")
+        expect(!html.contains("<script"), "exports carry no scripts")
+    }
+}
