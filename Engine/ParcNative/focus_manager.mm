@@ -1,5 +1,7 @@
 #import "focus_manager.h"
 
+#import "dialog_style.h"
+
 #include <cmath>
 
 static void* const PCFocusObservationContext =
@@ -79,6 +81,7 @@ static NSResponder* NormalizedResponder(NSResponder* responder) {
 
 @interface PCNativeFocusRegistration () {
   __weak PCNativeFocusManager* _manager;
+  id<PCNativeScheduling> _scheduler;
   NSString* _key;
   NSUInteger _generation;
 }
@@ -94,6 +97,7 @@ static NSResponder* NormalizedResponder(NSResponder* responder) {
   self = [super init];
   if (self) {
     _manager = manager;
+    _scheduler = manager.scheduler;
     _key = [key copy];
     _generation = generation;
   }
@@ -111,12 +115,10 @@ static NSResponder* NormalizedResponder(NSResponder* responder) {
   if (NSThread.isMainThread) {
     [manager removeKey:key generation:generation];
   } else {
-    // Last token release may occur on a teardown queue. Do not touch AppKit
-    // there or let this stale generation remove a later registration.
     __weak PCNativeFocusManager* weakManager = manager;
-    dispatch_async(dispatch_get_main_queue(), ^{
+    [_scheduler dispatchToMainQueue:^{
       [weakManager removeKey:key generation:generation];
-    });
+    }];
   }
 }
 - (void)dealloc {
@@ -126,11 +128,18 @@ static NSResponder* NormalizedResponder(NSResponder* responder) {
 
 @implementation PCNativeFocusManager
 @synthesize fallbackKey = _fallbackKey;
+@synthesize scheduler = _scheduler;
 - (instancetype)initWithWindow:(NSWindow*)window {
-  return [self initWithWindow:window
+  __block __weak PCNativeFocusManager* manager = nil;
+  self = [self initWithWindow:window
                         clock:^{
-                          return NSDate.date.timeIntervalSince1970;
+                          id<PCNativeScheduling> scheduler =
+                              manager ? manager.scheduler
+                                      : PCNativeSystemScheduling.sharedScheduling;
+                          return scheduler.currentDate.timeIntervalSince1970;
                         }];
+  manager = self;
+  return self;
 }
 - (instancetype)initWithWindow:(NSWindow*)window
                          clock:(NSTimeInterval (^)(void))clock {
@@ -141,6 +150,7 @@ static NSResponder* NormalizedResponder(NSResponder* responder) {
   if (self) {
     _window = window;
     _clock = [clock copy];
+    _scheduler = PCNativeSystemScheduling.sharedScheduling;
     _entries = [NSMutableDictionary dictionary];
     _observing = YES;
     [window addObserver:self

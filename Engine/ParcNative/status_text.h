@@ -3,6 +3,7 @@
 #import <AppKit/AppKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
+@protocol PCNativePresentation, PCNativeScheduling;
 
 typedef NS_ENUM(NSInteger, PCNativeStatusLinkOutcome) {
   PCNativeStatusLinkOutcomeNone,
@@ -16,6 +17,8 @@ typedef NS_ENUM(NSInteger, PCNativeStatusLinkOutcome) {
 
 @interface PCNativeStatusTextController : NSObject
 - (instancetype)initWithPage:(NSView*)page validate:(BOOL (^)(void))validate;
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
+@property(nonatomic, strong) id<PCNativeScheduling> scheduler;
 @property(nonatomic, copy, nullable)
     PCNativeStatusLinkOutcome (^linkOutcome)(NSEventModifierFlags flags, NSURL* url);
 - (void)setAttached:(BOOL)attached;

@@ -3,6 +3,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 @class PCNativeFocusManager;
+@protocol PCNativeScheduling;
 
 typedef NS_ENUM(NSInteger, PCNativeFocusRequestResult) {
   PCNativeFocusRequestRejected,
@@ -36,6 +37,7 @@ typedef NS_ENUM(NSInteger, PCNativeFocusRequestResult) {
 // Optional selected page key. Used only after observing a nil first responder
 // with no fresh pending request; never selects a pane or steals nonnil focus.
 @property(nonatomic, copy, nullable) NSString* fallbackKey;
+@property(nonatomic, strong) id<PCNativeScheduling> scheduler;
 
 - (nullable PCNativeFocusRegistration*)
     registerResponder:(NSResponder*)responder
