@@ -79,13 +79,22 @@ struct EaselRichText: Codable, Equatable {
     static let noteLinkExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdtxt", "mdtext", "txt", "text"]
 
     static func validLink(_ value: String) -> Bool {
+        if isInternalLink(value) { return true }
         guard value.utf8.count <= 16_384, let url = URL(string: value),
-              let scheme = url.scheme?.lowercased(), ["https", "http", "mailto", "tel", "file"].contains(scheme) else { return false }
+              let scheme = url.scheme?.lowercased(), ["https", "http", "mailto", "tel"].contains(scheme) else { return false }
+        return scheme == "mailto" || scheme == "tel" || url.host?.isEmpty == false
+    }
+
+    static func isInternalLink(_ value: String) -> Bool {
+        guard value.utf8.count <= 16_384, let url = URL(string: value), let scheme = url.scheme?.lowercased(),
+              url.user == nil, url.password == nil, url.port == nil else { return false }
         if scheme == "file" {
-            return url.host?.isEmpty != false && url.path.hasPrefix("/") && url.user == nil && url.password == nil
+            return [nil, "", "localhost"].contains(url.host?.lowercased()) && url.path.hasPrefix("/")
                 && noteLinkExtensions.contains(url.pathExtension.lowercased())
         }
-        return scheme == "mailto" || scheme == "tel" || url.host?.isEmpty == false
+        guard scheme == "parc", url.host?.lowercased() == "easel", url.query == nil, url.path.hasPrefix("/"),
+              UUID(uuidString: String(url.path.dropFirst())) != nil else { return false }
+        return url.fragment.map { UUID(uuidString: $0) != nil } ?? true
     }
     func validate(text: String) throws {
         let units = Array(text.utf16)

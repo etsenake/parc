@@ -146,6 +146,7 @@ extension EaselCanvasView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        if isDocumentLocked { return }
         presentContextMenu(for: event)
     }
 

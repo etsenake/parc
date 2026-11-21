@@ -382,7 +382,7 @@ extension BrowserWindowController {
                 guard let self, self.documentTakesInput(tab.id), self.activeProfileID == tab.profileID,
                       self.easelEditors[tab.id]?.documentID == documentID,
                       !self.isClosing, !self.wholeWindowClose,
-                      ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+                      ["http", "https"].contains(url.scheme?.lowercased() ?? "") || InternalPage(urlString: url.absoluteString) != nil else { return }
                 self.openInput(url.absoluteString)
             }
             editor.onOpenNote = { [weak self] url in

@@ -641,6 +641,10 @@ struct EaselDocument: Codable, Identifiable, Equatable {
     var items: [EaselItem] = []
     var pages: [EaselPage]?
     var icon: EaselPageIcon?
+    var locked: Bool?
+    var defaultFamily: EaselTextStyle.Family?
+    var isLocked: Bool { locked == true }
+    var resolvedDefaultFamily: EaselTextStyle.Family { defaultFamily ?? .clean }
 }
 
 struct EaselSummary: Identifiable, Equatable {
@@ -654,7 +658,7 @@ struct EaselSummary: Identifiable, Equatable {
 enum EaselStoreError: Error, LocalizedError {
     case invalidDocument(String), unsupportedVersion(Int), unsafePath, invalidImage, tooLarge, invalidVideo, videoTooLarge
     case invalidAudio, audioTooLarge, invalidPDF, pdfTooLarge, invalidFile, fileTooLarge
-    case missingDocument, deletedDocument, closedDocument, browserInUse
+    case missingDocument, deletedDocument, closedDocument, browserInUse, lockedDocument
 
     var errorDescription: String? {
         switch self {
@@ -675,12 +679,14 @@ enum EaselStoreError: Error, LocalizedError {
         case .deletedDocument: return "This Easel was deleted."
         case .closedDocument: return "This Easel editor is closed. Reopen the Easel to edit it."
         case .browserInUse: return "Finish closing the embedded webpage before changing this Easel."
+        case .lockedDocument: return "This Easel is locked. Unlock it to make changes."
         }
     }
 }
 
 extension Notification.Name {
     static let easelDocumentRemoved = Notification.Name("ParcEaselDocumentRemoved")
+    static let easelDocumentChanged = Notification.Name("ParcEaselDocumentChanged")
 }
 
 @MainActor
@@ -964,7 +970,7 @@ final class EaselStore {
             if item.liveCapture == true && (item.kind != .webCard || item.captureLayout == nil) {
                 throw EaselStoreError.invalidDocument("live capture has no original geometry")
             }
-            if let rawURL = item.url {
+            if let rawURL = item.url, !(item.kind.holdsText && EaselRichText.isInternalLink(rawURL)) {
                 guard rawURL.utf8.count <= 16_384, let url = URL(string: rawURL),
                       ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
                       let host = url.host, !host.isEmpty else { throw EaselStoreError.invalidDocument("card URL") }
@@ -1245,6 +1251,11 @@ final class EaselSession: ObservableObject {
         guard next.id == document.id, next.createdAt == document.createdAt else {
             throw EaselStoreError.invalidDocument("immutable document identity")
         }
+        if document.isLocked {
+            var probe = next
+            probe.locked = document.locked
+            guard probe == document else { throw EaselStoreError.lockedDocument }
+        }
         guard next != document else { return }
         next.modifiedAt = (store?.timestamp() ?? Date())
         try validateReplacement(next)
@@ -1380,5 +1391,6 @@ final class EaselSession: ObservableObject {
     private func updateHistoryState() {
         canUndo = !undoStack.isEmpty
         canRedo = !redoStack.isEmpty
+        NotificationCenter.default.post(name: .easelDocumentChanged, object: document.id)
     }
 }

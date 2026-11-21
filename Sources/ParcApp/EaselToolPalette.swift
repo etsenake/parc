@@ -504,6 +504,7 @@ final class EaselToolPalette: NSView {
     override var isFlipped: Bool { true }
 
     private(set) var preferredWidth: CGFloat = 0
+    var isViewOnly = false { didSet { if isViewOnly != oldValue { closeMenu(animated: false); rebuild() } } }
 
     func button(for insert: Insert) -> NSButton? { placed.first { $0.entry == .insert(insert) }?.button }
 
@@ -658,7 +659,7 @@ final class EaselToolPalette: NSView {
         if showsMermaid { result.append((.insert(.mermaid), 3)) }
         if showsTemplates { result.append((.insert(.templates), 3)) }
         result.append((.zoom, 4))
-        return result
+        return isViewOnly ? result.filter { $0.1 == 0 || $0.1 == 4 } : result
     }
 
     private func rebuild() {

@@ -173,6 +173,9 @@ extension BrowserWindowController {
     func configureNoteOwner(_ tab: BrowserTab, editor: NotePageViewController) {
         let tabID = tab.id, profileID = tab.profileID
         NoteBacklinkIndex.shared.include(NoteFolderPreferences.library(for: profileID))
+        if !isPrivateBrowsing, let easels = try? EaselEditorViewController.sharedStore(directory: store.easelsDirectory(for: profileID)) {
+            NoteBacklinkIndex.shared.include(easels)
+        }
         var current = editor.file.url
         editor.onTitleChange = { [weak self, weak editor] title in
             guard let self, let editor, self.noteEditors[tabID]?.editor === editor else { return }

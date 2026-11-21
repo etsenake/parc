@@ -1208,7 +1208,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if fixedCanvasSize != nil { item.textStyle?.autoWidth = nil }
             item.frame = fittedTextFrame(item)
         } else if kind == .text, edit, text.isEmpty, fixedCanvasSize == nil {
-            item.textStyle = EaselTextStyle(autoWidth: true)
+            item.textStyle = EaselTextStyle(family: session.document.resolvedDefaultFamily, autoWidth: true)
             item.frame = fittedTextFrame(item)
         }
         if let size = fixedCanvasSize {
@@ -1797,6 +1797,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return hit
     }
     override func mouseDown(with event: NSEvent) {
+        if isDocumentLocked { lockedMouseDown(event); return }
         if event.modifierFlags.contains(.control) { presentContextMenu(for: event); return }
         if imageMouseDown(event) { return }
         if tableMouseDown(with: event) { return }
@@ -2113,7 +2114,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         else if sender is NSEvent { nextResponder?.tryToPerform(#selector(NSResponder.cancelOperation(_:)), with: sender) }
     }
     override func keyDown(with event: NSEvent) {
-        guard canvasOwnsKeyFocus else {
+        guard canvasOwnsKeyFocus, !isDocumentLocked else {
             super.keyDown(with: event); return
         }
         if imageKeyDown(event) { return }
@@ -2270,6 +2271,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return false
     }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if isDocumentLocked { return [] }
         if fixedCanvasSize == nil, let operation = contentDrop.begin(sender) { return operation }
         return sender.draggingPasteboard.availableType(from: [EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType, .rtfd, .rtf, .fileURL, Self.gifPasteboardType, .png, .tiff, .URL, .string]) == nil ? [] : .copy
     }
@@ -2335,6 +2337,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard hasCurrentMenuOwner(menuItem) else { return false }
+        if isDocumentLocked, !lockedAllows(menuItem.action) { return false }
         if let verdict = validateImageMenuItem(menuItem) { return verdict }
         if let valid = validateTableMenuItem(menuItem) { return valid }
         if let command = TextFormatCommand(menuItem) {
