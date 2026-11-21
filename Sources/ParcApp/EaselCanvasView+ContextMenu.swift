@@ -110,7 +110,7 @@ extension EaselCanvasView: EaselCanvasMenuSlots {}
 extension EaselCanvasView {
     static var menuPresenterFactory: (@MainActor () -> EaselCanvasMenuPresenting)?
 
-    var menuHost: NSView { enclosingScrollView?.superview ?? superview ?? self }
+    var menuHost: NSView { selectionToolbarContainer ?? enclosingScrollView?.superview ?? superview ?? self }
 
     func presentMenu(_ sections: [[EaselMenuRow]], anchor: NSRect, keyboard: Bool, label: String) {
         let rows = EaselMenuRow.flattened(sections)
