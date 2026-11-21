@@ -55,15 +55,15 @@ enum EaselVectorExport {
     static let margin: Double = 40
     static let automaticInk = "#252525"
 
-    static func contentBounds(_ items: [EaselItem], margin: Double = margin) -> EaselRect {
-        let frames = items.map(paintedFrame).filter { [$0.x, $0.y, $0.width, $0.height].allSatisfy(\.isFinite) }
+    static func contentBounds(_ items: [EaselItem], art: EaselVectorArt = .init(), margin: Double = margin) -> EaselRect {
+        let frames = items.map { exportFrame($0, art: art) }.filter { [$0.x, $0.y, $0.width, $0.height].allSatisfy(\.isFinite) }
         guard let first = frames.first else { return EaselRect(x: 0, y: 0, width: 2 * margin + 320, height: 2 * margin + 200) }
         var minX = first.x, minY = first.y, maxX = first.x + first.width, maxY = first.y + first.height
         for frame in frames.dropFirst() {
             minX = min(minX, frame.x); minY = min(minY, frame.y)
             maxX = max(maxX, frame.x + frame.width); maxY = max(maxY, frame.y + frame.height)
         }
-        let stroke = 4.0
+        let stroke = strokeAllowance
         return EaselRect(x: minX - margin - stroke, y: minY - margin - stroke,
                          width: max(1, maxX - minX) + 2 * (margin + stroke), height: max(1, maxY - minY) + 2 * (margin + stroke))
     }
@@ -115,7 +115,7 @@ enum EaselVectorExport {
 
     static func svg(_ items: [EaselItem], art: EaselVectorArt, title: String) -> String {
         let shown = EaselBoardObjects.displayed(items)
-        let bounds = contentBounds(shown)
+        let bounds = contentBounds(shown, art: art)
         var svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" class=\"easel-svg\""
         svg += " role=\"img\" aria-label=\"" + escape(title) + "\""
         svg += " width=\"" + number(bounds.width) + "\" height=\"" + number(bounds.height) + "\""

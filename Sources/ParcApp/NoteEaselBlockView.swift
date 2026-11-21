@@ -70,9 +70,15 @@ final class NoteEaselHost {
 
     func snapshot(_ block: NoteBlock) -> Data? {
         guard let id = NoteEaselAddress.id(of: block), case .success(let session) = session(id), !session.isDeleted else { return nil }
+        guard let content = EaselPreviewRegion.content(session.document.items) else { return nil }
         let canvas = EaselCanvasView(session: session)
+        canvas.appearance = NSAppearance(named: .aqua)
         canvas.resizeCanvas(viewport: NSSize(width: 800, height: 600))
-        guard let image = canvas.exportImage(backingScale: 2) else { return nil }
+        guard let full = canvas.exportImage(backingScale: 2) else { return nil }
+        let region = EaselPreviewRegion.crop(content)
+        let crop = CGRect(x: (region.x * 2).rounded(), y: (region.y * 2).rounded(), width: (region.width * 2).rounded(),
+                          height: (region.height * 2).rounded()).intersection(CGRect(x: 0, y: 0, width: full.width, height: full.height))
+        guard !crop.isEmpty, let image = full.cropping(to: crop) else { return nil }
         let bitmap = NSBitmapImageRep(cgImage: image)
         bitmap.size = NSSize(width: CGFloat(image.width) / 2, height: CGFloat(image.height) / 2)
         return bitmap.representation(using: .png, properties: [:])

@@ -13,6 +13,7 @@ struct EaselVectorExportTests {
 
     @MainActor static func main() {
         bounds()
+        previews()
         escaping()
         kinds()
         text()
@@ -73,6 +74,46 @@ struct EaselVectorExportTests {
         let rect = EaselVectorExport.contentBounds(items, margin: 10)
         expect(rect.x == -34 && rect.y == 36, "bounds start at the leftmost and topmost object minus margin and stroke")
         expect(rect.width == 320 + 28 && rect.height == 290 + 28, "bounds cover every object plus margins")
+    }
+
+    @MainActor static func previews() {
+        var thick = EaselItem(kind: .rectangle, frame: .init(x: 0, y: 0, width: 100, height: 100))
+        thick.strokeWidth = 40
+        expect(EaselVectorExport.contentBounds([thick], margin: 0).x == -20, "wide outlines stay inside the export")
+        var arrow = EaselItem(kind: .arrow, frame: .init(x: 0, y: 0, width: 100, height: 1), points: [.init(x: 0, y: 0), .init(x: 100, y: 0)])
+        arrow.strokeWidth = 20
+        let headed = EaselVectorExport.contentBounds([arrow], margin: 0)
+        expect(headed.x + headed.width >= 100 + EaselPaintRules.arrowHeadLength(width: 20), "thick arrowheads stay inside the export")
+        arrow.strokeWidth = nil
+        arrow.text = "a fairly long connector label"
+        let labelled = EaselVectorExport.contentBounds([arrow], margin: 0)
+        expect(labelled.x < -60 && labelled.y < -20, "connector labels stay inside the export")
+        var art = EaselVectorArt()
+        art.connectorLabels[arrow.id] = EaselConnectorLabelArt(text: .init(), width: 200, height: 18)
+        let exact = EaselVectorExport.contentBounds([arrow], art: art, margin: 0)
+        expect(exact.x <= -57 && exact.x > -70, "known label sizes give exact bounds")
+
+        var section = EaselItem(kind: .section, frame: .init(x: 100, y: 100, width: 400, height: 300))
+        let inner = EaselItem(kind: .sticky, frame: .init(x: 200, y: 200, width: 100, height: 100))
+        let open = EaselPreviewRegion.content([section, inner])
+        section.contentsHidden = true
+        let closed = EaselPreviewRegion.content([section, inner])
+        expect(open == closed, "objects tucked inside a section stay inside its bounds")
+        expect(EaselPreviewRegion.content([]) == nil, "empty Easels have no preview")
+        var rotated = EaselItem(kind: .rectangle, frame: .init(x: 400, y: 400, width: 200, height: 20))
+        rotated.rotation = 90
+        let turned = EaselPreviewRegion.content([rotated])
+        expect(turned.map { $0.y < 400 - 80 + 1 && $0.height > 200 } == true, "previews frame rotated objects as they look")
+
+        let wide = EaselPreviewRegion.fit(.init(x: 100, y: 100, width: 1600, height: 100), aspect: 0.625, minimumWidth: 800)
+        expect(wide.width == 1600 && wide.height == 1000, "previews keep the card aspect")
+        expect(wide.y == 0, "previews never reach above the canvas")
+        let small = EaselPreviewRegion.fit(.init(x: 1000, y: 1000, width: 100, height: 100), aspect: 0.625, minimumWidth: 800)
+        expect(small.width == 800 && small.x == 650 && small.y == 800, "small boards centre in a minimum-width preview")
+        let tall = EaselPreviewRegion.fit(.init(x: 0, y: 0, width: 100, height: 1000), aspect: 0.5, minimumWidth: 0)
+        expect(tall.width == 2000 && tall.height == 1000, "tall boards widen to fit")
+        let crop = EaselPreviewRegion.crop(.init(x: -40, y: 10, width: 100, height: 50))
+        expect(crop.x == 0 && crop.width == 60 && crop.y == 10 && crop.height == 50, "crops stay on the canvas")
     }
 
     @MainActor static func escaping() {

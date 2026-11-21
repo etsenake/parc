@@ -254,18 +254,12 @@ final class SidebarDocumentThumbnails {
     }
 
     private static func renderEasel(_ session: EaselSession, appearance: NSAppearance) -> NSImage? {
-        let items = session.document.items
-        guard !items.isEmpty else { return nil }
+        guard let content = EaselPreviewRegion.content(session.document.items) else { return nil }
         let canvas = EaselCanvasView(session: session)
         canvas.appearance = appearance
         canvas.resizeCanvas(viewport: NSSize(width: 800, height: 600))
-        let minX = items.map(\.frame.x).min() ?? 0, minY = items.map(\.frame.y).min() ?? 0
-        let maxX = items.map { $0.frame.x + $0.frame.width }.max() ?? 0
-        let maxY = items.map { $0.frame.y + $0.frame.height }.max() ?? 0
-        var region = NSRect(x: minX - 40, y: minY - 40, width: maxX - minX + 80, height: maxY - minY + 80)
-        let width = max(region.width, region.height / aspect, 800)
-        region = NSRect(x: region.midX - width / 2, y: region.midY - width * aspect / 2, width: width, height: width * aspect)
-        region.origin.x = max(0, region.minX); region.origin.y = max(0, region.minY)
+        let area = EaselPreviewRegion.fit(content, aspect: Double(aspect), minimumWidth: 800)
+        let region = NSRect(x: area.x, y: area.y, width: area.width, height: area.height), width = region.width
         let scale = min(2, pixelWidth / width)
         guard let full = canvas.exportImage(backingScale: scale) else { return nil }
         let crop = CGRect(x: (region.minX * scale).rounded(), y: (region.minY * scale).rounded(),
