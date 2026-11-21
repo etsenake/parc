@@ -736,8 +736,8 @@ DecoderLog DecoderErrorsSince(NSDate* since) {
   NSError* error = nil;
   OSLogStore* store = [OSLogStore storeWithScope:OSLogStoreCurrentProcessIdentifier error:&error];
   NSPredicate* decoders = [NSPredicate
-      predicateWithFormat:@"sender == 'AudioCodecs' OR sender == 'AppleVideoDecoder' OR "
-                          @"composedMessage CONTAINS[c] 'decod' OR composedMessage CONTAINS 'Cryptor'"];
+      predicateWithFormat:@"date >= %@ AND (sender == 'AudioCodecs' OR sender == 'AppleVideoDecoder' OR "
+                          @"composedMessage CONTAINS[c] 'decod' OR composedMessage CONTAINS 'Cryptor')", since];
   OSLogEnumerator* entries = store ? [store entriesEnumeratorWithOptions:0
                                                                 position:[store positionWithDate:since]
                                                                predicate:decoders
@@ -921,6 +921,7 @@ class Player : public fp::FairPlayRendererClient {
   bool ended = false;
   std::function<void()> on_have_enough;
   std::function<void()> on_ended;
+  std::function<void()> on_error;
 
   void Start() {
     renderer_.Flush([this] {
@@ -955,8 +956,7 @@ class Player : public fp::FairPlayRendererClient {
     }
   }
   void OnError(fp::RendererError error, const std::string& description) override {
-    errors.push_back(Format("%s: %s", error == fp::RendererError::kDecode ? "decode" : "configuration",
-                            description.c_str()));
+    Fail(Format("%s: %s", error == fp::RendererError::kDecode ? "decode" : "configuration", description.c_str()));
     if (errors.size() <= 3) Log("%s: ERROR %s", name_.c_str(), errors.back().c_str());
   }
   void OnVideoNaturalSizeChange(int32_t width, int32_t height) override {
@@ -987,11 +987,20 @@ class Player : public fp::FairPlayRendererClient {
       buffer.dts = fp::MediaTime::Invalid();
       fp::EnqueueResult result = renderer_.Enqueue(stream, buffer);
       if (result == fp::EnqueueResult::kRejected) {
-        errors.push_back(Format("enqueue of sample %zu rejected", index_ - 1));
+        Fail(Format("enqueue of sample %zu rejected", index_ - 1));
         return;
       }
       ++enqueued;
       if (result == fp::EnqueueResult::kWaitingForKey) return;
+    }
+  }
+
+  void Fail(std::string error) {
+    errors.push_back(std::move(error));
+    if (on_error) {
+      auto f = std::move(on_error);
+      on_error = nullptr;
+      f();
     }
   }
 
@@ -1110,6 +1119,10 @@ std::vector<Step> PlayClip(std::shared_ptr<Clip> clip) {
       done();
     });
     w->player->on_have_enough = [go] { go(true); };
+    if (!must_play) {
+      w->player->on_error = [go] { After(1, [go] { go(false); }); };
+      if (!w->player->errors.empty()) w->player->on_error();
+    }
     w->player->Start();
   });
   steps.push_back([=](Done done) {
@@ -1120,8 +1133,10 @@ std::vector<Step> PlayClip(std::shared_ptr<Clip> clip) {
       }
       done();
     });
+    w->player->on_ended = [finish] { finish(true); };
+    if (clip->expect != Expect::kPlays) w->player->on_error = [finish] { finish(false); };
     if (w->player->ended) finish(true);
-    else w->player->on_ended = [finish] { finish(true); };
+    else if (clip->expect != Expect::kPlays && !w->player->errors.empty()) finish(false);
   });
   steps.push_back([=](Done done) {
     After(1, [=] {

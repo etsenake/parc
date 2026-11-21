@@ -14,7 +14,7 @@ scripts/test-fairplay-codecs.sh
 
 The script compiles the core, `../fmp4_parser.cc` and this directory with
 clang only (C++20, `-Wall -Wextra -Werror`, ARC), then runs the program. It
-needs network access and opens a visible window for about six minutes.
+needs network access and opens a visible window for about five and a half minutes.
 Downloads are cached in `$PARC_FAIRPLAY_CACHE` (default
 `$TMPDIR/parc-fairplay-cache`, shared with the core harness). The program
 samples its stack and exits with status 3 if the main thread stalls for 15 s,
@@ -84,7 +84,14 @@ E-AC-3 decoders fail every packet, but the audio renderer still reports
 rendering and the clock still reaches the end. Only the log
 (`ACCPEDecoderWrapper`, `ParseAC3Header failed`, `Error deserializing packet`)
 shows the failure. Controls under a wrong key, with the right key ID, check
-that each signal notices garbage.
+that each signal notices garbage. The log query filters on the clip's start
+date in its predicate: `positionWithDate:` alone still walks every earlier
+entry, and failing clips log tens of thousands.
+
+A clip that isn't required to play stops waiting one second after its first
+renderer error or rejected enqueue. Such an error rules out a healthy result,
+and the failed clock never reaches the end, so the HAVE_ENOUGH and `OnEnded`
+deadlines would only add dead time.
 
 ## Results
 
