@@ -42,4 +42,16 @@ final class SoftwareUpdateBanner: ObservableObject {
         completedUpdate = nil
         updatedFrom = nil
     }
+
+    func openCompletedReleaseNotes(available: Bool? = nil, using open: (String) -> Void) {
+        Self.openReleaseNotes(fragment: completedUpdateFragment, available: available, using: open)
+        retireCompletedUpdate()
+    }
+
+    static func openReleaseNotes(fragment: String? = nil,
+                                 available: Bool? = nil,
+                                 using open: (String) -> Void) {
+        guard available ?? (releaseNotesURL != nil) else { return }
+        open(WhatsNewPage.address(range: fragment))
+    }
 }

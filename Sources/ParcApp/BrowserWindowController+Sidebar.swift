@@ -523,8 +523,7 @@ extension BrowserWindowController {
         }
         sidebar.onSeeWhatsNew = { [weak self] in
             guard mayActOnUpdate(), let self, self.canOpenPageInNewTab, self.windowCommandSecurityAvailable else { return }
-            self.openReleaseNotes(fragment: updateComplete.completedUpdateFragment)
-            updateComplete.retireCompletedUpdate()
+            updateComplete.openCompletedReleaseNotes(using: self.openPageInNewTab)
         }
         sidebar.onDismissUpdateComplete = { guard mayActOnUpdate() else { return }; updateComplete.retireCompletedUpdate() }
         sidebar.showUpdateComplete(completeVisible)
