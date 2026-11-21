@@ -547,16 +547,18 @@ final class MiniPlayerRow: NSView {
         volumeDismissal.forEach(NSEvent.removeMonitor)
         volumeDismissal = []
     }
-    private func closeVolume(clickedBy event: NSEvent) {
+    var scheduleVolumeLayout: (@escaping @MainActor () -> Void) -> Void = { update in
+        RunLoop.main.perform(inModes: [.default]) { MainActor.assumeIsolated { update() } }
+    }
+
+    func closeVolume(clickedBy event: NSEvent) {
         if event.window === window, [volumeButton, volume].contains(where: {
             $0.bounds.contains($0.convert(event.locationInWindow, from: nil))
         }) { return }
         volumeOpen = false; endVolumeDismissal()
-        RunLoop.main.perform(inModes: [.default]) { [weak self] in
-            MainActor.assumeIsolated { self?.applyVolumeExpansion() }
-        }
+        scheduleVolumeLayout { [weak self] in self?.applyVolumeExpansion() }
     }
-    private func closeVolume(escape event: NSEvent) -> Bool {
+    func closeVolume(escape event: NSEvent) -> Bool {
         guard event.keyCode == 53, event.window === window else { return false }
         let focused = focusedControl != nil || window?.firstResponder === self
         setVolumeOpen(false)
