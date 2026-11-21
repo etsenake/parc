@@ -346,14 +346,13 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         let local = canvas.convert(point, from: nil)
         return canvas.uncoveredVisibleRect.contains(local) ? point : nil
     }
-    func controlTextDidBeginEditing(_ notification: Notification) { titleUndoGroup = UUID() }
+    func controlTextDidBeginEditing(_ notification: Notification) { titleUndoGroup = UUID(); titleIcon.updateHover() }
     func controlTextDidChange(_ notification: Notification) {
         let value = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         do { try session.perform("Rename Easel", coalescing: titleUndoGroup) { $0.title = value } }
         catch { titleField.stringValue = session.document.title; titleField.currentEditor()?.string = session.document.title; show(error) }
     }
-    func controlTextDidBeginEditing(_ notification: Notification) { titleIcon.updateHover() }
     func controlTextDidEndEditing(_ notification: Notification) { titleUndoGroup = nil; titleField.stringValue = session.document.title; titleIcon.updateHover() }
     private func installTitleIcon(in root: NSView) {
         titleIcon.host = { [weak self] in self?.view }
