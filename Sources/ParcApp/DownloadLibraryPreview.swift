@@ -30,12 +30,12 @@ import Quartz
     private var observations: [NSObjectProtocol] = []
     private var motionObservation: NSObjectProtocol?
     private let reduceMotion: () -> Bool
-    private let presentWindow: (NSWindow, NSWindow) -> Void
+    private let presentWindow: @MainActor (NSWindow, NSWindow) -> Void
     private var finishing: DownloadLibraryPreview?
 
     init(itemName: String = "download",
          reduceMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
-         presentWindow: @escaping (NSWindow, NSWindow) -> Void = { window, parent in
+         presentWindow: @escaping @MainActor (NSWindow, NSWindow) -> Void = { window, parent in
              parent.addChildWindow(window, ordered: .above)
              window.makeKeyAndOrderFront(nil)
          }) {
