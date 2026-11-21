@@ -97,7 +97,8 @@ let package = Package(
                 permissions: [.writeToPackageDirectory(reason: "Writes Stubs/Chromium Embedded Framework.framework")]
             )
         ),
-        .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: "."),
+        .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: ".",
+                cSettings: [.headerSearchPath("../../Engine/ParcNative"), .headerSearchPath("../../Sources/ParcEngine")]),
         .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles"], path: "tests/ParcTests",
                     swiftSettings: strict + engineImport),
     ],
