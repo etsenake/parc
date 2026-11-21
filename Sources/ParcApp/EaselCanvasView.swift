@@ -207,6 +207,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     var onImageEditingCancel: (() -> Void)?
+    var lastTextTint: EaselLastTextTint?
     func setInsertionColor(_ color: NSColor) {
         guard let rgb = color.usingColorSpace(.sRGB) else { return }
         let hex = EaselInk.canonicalHex(of: color) ?? String(format: "#%02X%02X%02X", Int((rgb.redComponent * 255).rounded()),
@@ -355,6 +356,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var onOpenURL: ((URL) -> Void)?
     var onOpenNote: ((URL) -> Void)?
     static var textCompletionFactory: (@MainActor () -> EaselTextCompletion)?
+    static var highlightRecorder: (@MainActor (NoteColor) -> Void)?
+    static var highlightRecall: (@MainActor () -> NoteColor?)?
     var onCopiedImage: (() -> Void)?
     var onExportSelection: ((Set<UUID>, EaselSelectionExportFormat) -> Void)?
     var onKeyEquivalent: ((NSEvent) -> Bool)?
@@ -1339,6 +1342,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         text.canUndoDocument = { [weak self] in self?.session.canUndo == true }
         text.canRedoDocument = { [weak self] in self?.session.canRedo == true }
         text.onAlign = { [weak self] alignment in _ = self?.alignText(alignment, editing: true) }
+        text.onRepeatLastTint = { [weak self] in self?.repeatLastTextTint() ?? false }
         text.completion = Self.textCompletionFactory?()
         updateEditor(item)
         if window?.makeFirstResponder(text) == true {

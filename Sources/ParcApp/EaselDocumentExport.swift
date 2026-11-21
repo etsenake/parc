@@ -39,6 +39,11 @@ enum EaselDocumentExport {
                 run.color = hugging ? "#FFFFFF" : (attributes[.foregroundColor] as? NSColor).flatMap(hex)
                 run.underline = (attributes[.underlineStyle] as? Int ?? 0) != 0
                 run.strikethrough = (attributes[.strikethroughStyle] as? Int ?? 0) != 0
+                if let fill = attributes[.backgroundColor] as? NSColor, let stored = try? EaselRichTextCodec.hex(fill) {
+                    let box = manager.boundingRect(forGlyphRange: glyphRange, in: container)
+                    run.mark = EaselVectorMark(x: Double(inset.width + box.minX), y: Double(inset.height + rect.minY),
+                                               width: Double(box.width), height: Double(rect.height), color: stored)
+                }
                 if let link = attributes[.link] as? URL { run.link = link.absoluteString } else { run.link = attributes[.link] as? String }
                 result.runs.append(run)
             }

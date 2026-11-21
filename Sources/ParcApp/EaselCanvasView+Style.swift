@@ -107,6 +107,7 @@ extension EaselCanvasView {
 
     private func colorEditedText(_ choice: EaselColorChoice, in editor: EaselStyledTextView) {
         editor.applyTextColor(EaselInk.color(choice.hex(role: .ink), adaptive: adaptsInk))
+        lastTextTint = .ink(choice)
         EaselStyleDefaults.record(.color(choice), for: [.text], document: session.document.id)
     }
 }
