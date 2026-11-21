@@ -168,7 +168,8 @@ struct ArcSidebarImportTests {
     }
 
     @Test func newContainerIDsAloneLocateThePinnedContainer() throws {
-        #expect(try loadArc().spaces[2].pinned.count == 1)
+        let actual = try loadArc().spaces[2].pinned.count
+        #expect(actual == 1)
     }
 
     @Test func unknownIconIsDroppedAndMissingThemeIsArcsUnthemedSpace() throws {
@@ -177,7 +178,8 @@ struct ArcSidebarImportTests {
     }
 
     @Test func unknownStyleFallsBackToParcsDefaultTheme() throws {
-        #expect(try loadArc().spaces[4].theme == nil)
+        let actual = try loadArc().spaces[4].theme
+        #expect(actual == nil)
     }
 
     @Test func standardFavoritesHoldTabsAndSplitsButSkipFolders() throws {
@@ -188,7 +190,8 @@ struct ArcSidebarImportTests {
     }
 
     @Test func customProfileFavoritesAreRead() throws {
-        #expect(try loadArc().favorites[profileTwo] == [.tab(Tab(title: "Calendar", url: "https://calendar.example.test/"))])
+        let actual = try loadArc().favorites[profileTwo]
+        #expect(actual == [.tab(Tab(title: "Calendar", url: "https://calendar.example.test/"))])
     }
 
     @Test(arguments: ["not json", "[]", #"{"sidebar":{"containers":[{"global":{}}]}}"#])
