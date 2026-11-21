@@ -78,6 +78,8 @@ final class EaselPageSession {
     func assetData(_ id: String) throws -> Data { try base.assetData(id) }
     func assetURL(_ id: String) throws -> URL { try base.assetURL(id) }
     func importPNG(_ data: Data) throws -> String { try base.importPNG(data) }
-    func importAsset(_ data: Data, type: EaselAssetType) throws -> String { try base.importAsset(data, type: type) }
+    func importAsset(_ data: Data, type: EaselAssetType, fileExtension: String? = nil) throws -> String {
+        try base.importAsset(data, type: type, fileExtension: fileExtension)
+    }
     func discardUnusedAssets(_ ids: [String]) { base.discardUnusedAssets(ids) }
 }
