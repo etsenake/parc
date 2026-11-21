@@ -71,7 +71,8 @@ attributes so the next words follow, as one native Undo step. With objects
 selected instead, it recolours their whole text in one document Undo step and
 skips locked objects: a text object's ink and every run change together, while
 shapes and stickies change only their words and keep their outline and paper
-(plain shape or sticky text gets runs of its own for this). Palette colours are
+(plain shape or sticky text gets runs of its own for this). The context menu's
+Text Color offers the palette for any selection that holds text. Palette colours are
 stored as their canonical light hex, so they keep switching to their dark variant
 on dark paper.
 

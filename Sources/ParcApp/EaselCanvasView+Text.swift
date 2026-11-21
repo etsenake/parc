@@ -30,6 +30,14 @@ extension EaselCanvasView {
                 _ = self?.alignText(alignment)
             }
         }))
+        let dark = NoteTheme.isDark(effectiveAppearance)
+        rows.append(EaselMenuRow(id: "text.color", title: "Text Color", symbol: "paintpalette", isEnabled: EaselTextSizing.canAlign(holders),
+                                 children: EaselPalette.colors(for: .ink).compactMap { color in
+            guard let hex = EaselPalette.hex(color, role: .ink) else { return nil }
+            return EaselMenuRow(id: "text.color." + color.id, title: color.title(dark: dark)) { [weak self] in
+                _ = self?.applyTextColor(hex)
+            }
+        }))
         if holders.contains(where: { $0.kind == .text && !$0.isLocked && !EaselTextSizing.isAutoWidth($0) }) {
             rows.append(EaselMenuRow(id: "text.autoWidth", title: "Auto Width", symbol: "arrow.left.and.right") { [weak self] in
                 _ = self?.restoreTextAutoWidth()
