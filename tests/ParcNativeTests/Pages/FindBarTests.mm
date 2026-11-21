@@ -33,7 +33,7 @@
 }
 @end
 static NSWindow *Window() {
-  NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 640, 480) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+  NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 640, 480) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
   window.releasedWhenClosed = NO;
   window.contentView = [[FlippedContainer alloc] initWithFrame:NSMakeRect(0, 0, 640, 480)];
   return window;

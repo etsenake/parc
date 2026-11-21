@@ -51,7 +51,7 @@
 static NSWindow* Window() {
   NSWindow* result = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(100, 100, 900, 700)
-                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered
                     defer:NO];
   result.releasedWhenClosed = NO;

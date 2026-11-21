@@ -23,7 +23,7 @@ static NSEvent* Key(NSWindow* window, unsigned short code,
 
 static PanelInputWindow* MakeWindow() {
   auto* window = [[PanelInputWindow alloc] initWithContentRect:NSMakeRect(0, 0, 500, 400)
-                                                     styleMask:NSWindowStyleMaskTitled
+                                                     styleMask:NSWindowStyleMaskBorderless
                                                        backing:NSBackingStoreBuffered
                                                          defer:NO];
   window.releasedWhenClosed = NO;

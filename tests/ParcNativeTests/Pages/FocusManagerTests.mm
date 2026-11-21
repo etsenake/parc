@@ -65,7 +65,7 @@
 static NSWindow* Window(Class cls = NSWindow.class) {
   NSWindow* window = [[cls alloc]
       initWithContentRect:NSMakeRect(0, 0, 480, 320)
-                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered
                     defer:NO];
   window.releasedWhenClosed = NO;

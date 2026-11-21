@@ -35,7 +35,7 @@ static NSView* Find(NSView* view, NSString* name) {
 static NSWindow* Window() {
   NSWindow* window = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(-2400, -2400, 920, 500)
-                styleMask:NSWindowStyleMaskTitled
+                styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered defer:NO];
   window.releasedWhenClosed = NO;
   ParcNativeMarkVisible(window);

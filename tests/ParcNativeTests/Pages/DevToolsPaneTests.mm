@@ -56,7 +56,7 @@
 - (void)setUp {
   [super setUp];
   _parent = [[KeyWindow alloc] initWithContentRect:NSMakeRect(0, 0, 900, 700)
-                                         styleMask:NSWindowStyleMaskTitled
+                                         styleMask:NSWindowStyleMaskBorderless
                                            backing:NSBackingStoreBuffered
                                              defer:NO];
   _parent.releasedWhenClosed = NO;

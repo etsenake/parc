@@ -375,7 +375,7 @@ static PCExtensionInstallPresenter* Make(
 
 - (void)testAnotherSheetOnTheWindowInterrupts {
   NSWindow* other = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 200, 100)
-                                                styleMask:NSWindowStyleMaskTitled
+                                                styleMask:NSWindowStyleMaskBorderless
                                                   backing:NSBackingStoreBuffered
                                                     defer:NO];
   [_w beginSheet:other completionHandler:nil];
