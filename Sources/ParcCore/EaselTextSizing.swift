@@ -37,7 +37,9 @@ extension EaselRichText.Attributes {
             let result = (value * ratio * 100).rounded() / 100
             return result.isFinite ? min(limit, max(-limit, result)) : value
         }
-        let size = min(512, max(1, scaled(font.size, limit: 512)))
+        let limits = EaselTextStyle.customSizes
+        let proposed = (font.size * ratio).rounded()
+        let size = proposed.isFinite ? min(limits.upperBound, max(limits.lowerBound, proposed)) : font.size
         if size != font.size { font.size = size; font.style = nil }
         kern = scaled(kern, limit: 10_000)
         baseline = scaled(baseline, limit: 10_000)
@@ -255,6 +257,16 @@ enum EaselTextSizing {
         }
         let shifted = style.size.shifted(by: delta)
         return shifted == style.size ? nil : preset(style, size: shifted)
+    }
+
+    static func fits(_ frame: EaselRect, in bounds: EaselRect) -> Bool {
+        frame.width <= bounds.width + 0.5 && frame.height <= bounds.height + 0.5
+    }
+
+    static func placed(_ frame: EaselRect, in bounds: EaselRect) -> EaselRect {
+        EaselRect(x: min(max(frame.x, bounds.x), max(bounds.x, bounds.x + bounds.width - frame.width)),
+                  y: min(max(frame.y, bounds.y), max(bounds.y, bounds.y + bounds.height - frame.height)),
+                  width: frame.width, height: frame.height)
     }
 
     private static func sanitized(_ value: Double, fallback: Double) -> Double {

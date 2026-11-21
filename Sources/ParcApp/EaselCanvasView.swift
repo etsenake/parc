@@ -1544,7 +1544,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     @discardableResult
     func restoreTextAutoWidth() -> Bool {
-        guard !session.isClosed, editor == nil else { return false }
+        guard !session.isClosed, editor == nil, fixedCanvasSize == nil else { return false }
         let changes = session.document.items.filter { selection.contains($0.id) }.compactMap { item -> EaselItem? in
             let value = textMeasure(item)
             return EaselTextSizing.autoWidthFrame(item, naturalWidth: Double(EaselTextLayout.naturalWidth(value))) {
@@ -1774,6 +1774,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         (draft, textPreview) = textGeometry(proposal, edit: edit, handle: resizeHandle, centered: flags.contains(.option))
         if let proposal = draft { draft = fittedBoardGeometry(proposal, edit: edit, handle: resizeHandle) }
         draft = settledCodeBlocks(draft, edit: edit)
+        for item in draft ?? [] where textPreview[item.id] != nil { textPreview[item.id]?.frame = item.frame }
         updateTextSizeBadge()
         window?.invalidateCursorRects(for: self); invalidateIncrementalDisplay(layout: true)
     }
@@ -1782,28 +1783,43 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let scaling = EaselTextSizing.scalesText(edit.originals, handle: handle)
         guard var proposal, let handle, scaling || EaselTextSizing.setsTextWidth(handle) else { return (proposal, [:]) }
         let originals = Dictionary(edit.originals.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        let board = fixedCanvasSize.map { EaselRect(x: 0, y: 0, width: Double($0.width), height: Double($0.height)) }
         var changes: [UUID: EaselItem] = [:]
         for index in proposal.indices {
             guard let original = originals[proposal[index].id], original.kind == .text else { continue }
             var next: EaselItem
             if scaling {
-                let factor = original.frame.width > 0 ? proposal[index].frame.width / original.frame.width : 1
-                guard let scaled = EaselTextSizing.scaled(original, factor: factor) else { continue }
-                let value = textMeasure(scaled)
-                let natural = EaselTextSizing.isAutoWidth(scaled) ? Double(EaselTextLayout.naturalWidth(value)) : 0
-                next = scaled
-                next.frame = EaselTextSizing.scaledFrame(scaled, original: original.frame, proposed: proposal[index].frame, handle: handle,
-                                                         centered: centered, single: edit.originals.count == 1, naturalWidth: natural) {
-                    Double(EaselTextLayout.Layout(value, width: $0).height)
+                let proposed = proposal[index].frame
+                func scale(_ factor: Double) -> EaselItem? {
+                    guard var scaled = EaselTextSizing.scaled(original, factor: factor) else { return nil }
+                    let value = textMeasure(scaled)
+                    let natural = EaselTextSizing.isAutoWidth(scaled) ? Double(EaselTextLayout.naturalWidth(value)) : 0
+                    scaled.frame = EaselTextSizing.scaledFrame(scaled, original: original.frame, proposed: proposed, handle: handle,
+                                                               centered: centered, single: edit.originals.count == 1, naturalWidth: natural) {
+                        Double(EaselTextLayout.Layout(value, width: $0).height)
+                    }
+                    return scaled
                 }
+                var factor = original.frame.width > 0 ? proposed.width / original.frame.width : 1
+                guard var scaled = scale(factor) else { continue }
+                if let board {
+                    for _ in 0..<4 where !EaselTextSizing.fits(scaled.frame, in: board) {
+                        factor *= min(board.width / scaled.frame.width, board.height / scaled.frame.height)
+                        guard let smaller = scale(factor), smaller != scaled else { break }
+                        scaled = smaller
+                    }
+                }
+                next = scaled
                 if edit.resizesRotated { next.frame = EaselRotation.recentred(original, frame: next.frame) }
             } else {
                 var item = original
                 item.frame = edit.resizesRotated ? EaselRotation.localFrame(original, from: proposal[index].frame) : proposal[index].frame
+                if let board, item.frame.width > board.width { item.frame.width = board.width }
                 let value = textMeasure(item)
                 next = EaselTextSizing.widthResized(item) { Double(EaselTextLayout.Layout(value, width: $0).height) }
                 if edit.resizesRotated { next.frame = EaselRotation.recentred(original, frame: next.frame) }
             }
+            if let board { next.frame = EaselTextSizing.placed(next.frame, in: board) }
             proposal[index].frame = next.frame
             changes[next.id] = next
         }
