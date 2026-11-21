@@ -28,7 +28,7 @@ canvas somewhere else.
 
 Return and ⇧Return, the arrows, and ⌘G and ⇧⌘G step through matches while the
 bar is open (with the bar closed they keep their usual meaning).
-Each step glides the canvas to the match, keeping it clear of the bar, zooming
+Each step pops the matched object with a brief glow and glides the canvas to the match, keeping it clear of the bar, zooming
 out when the object is bigger than the view and in to 100% when the board is
 zoomed too far out to read it; a match already in view doesn't move anything.
 Reduce Motion makes the move instant.
@@ -124,7 +124,8 @@ search, and its cards sit in the [empty Easel's welcome](easel-appearance.md#fir
 under the key chips. Each card
 shows the board drawn by the canvas itself, on the Easel's light or dark
 paper. Arrow keys move between cards, Return or Space adds one and Escape
-closes the panel.
+closes the panel. Cards lift and cast a shadow under the pointer or the keyboard
+highlight and squish when pressed (see [Easel motion](easel-motion.md#controls)).
 
 Adding a template is one undo step. It lands centred in the view above
 everything already there, never off the board's top or left edge, and comes
@@ -143,8 +144,10 @@ minute at a time, ⇧ makes that five, up to 99:59. Start runs it, Space or
 Return pauses and resumes, +1 min adds a minute while it runs or is paused
 (it never takes time away mid-run) and Reset goes back to the set length.
 While it runs or is paused the chrome button shows the time left in the
-accent colour, so the panel can stay closed. At 00:00 the button gives a
-gentle shake (a soft fade with Reduce Motion), a quiet "Time's up" toast
+accent colour, so the panel can stay closed. The digits roll as they change
+(up when time is added, down as it counts), Start and Pause cross-fade, and
+pausing blinks the clock. At 00:00 the button shakes and glows in three soft
+pulses (a single soft fade with Reduce Motion), a quiet "Time's up" toast
 appears and VoiceOver announces it.
 
 There is one timer per Easel, shared by every tab showing it. It lives only

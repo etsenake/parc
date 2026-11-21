@@ -119,6 +119,44 @@ or the button comes up. The Recenter chip pops in from 90% on the pop spring
 and fades out. Under Reduce Motion the bar only fades in, the pill and chip
 fade in place, and lifts and flourishes don't play; turning it on settles them.
 
+## Controls
+
+Easel controls move like the Notes ones. Styling tiles, shape cells and template
+cards rise on hover (the Notes highlight spring), their shadow grows, and they
+squish when pressed and spring back on release; wide tiles such as the fill
+modes only squish. Keyboard highlight lifts a tile the same way, and a lifted
+tile draws above its neighbours. A chosen colour's or shape's ring springs
+into place from slightly larger on the check spring, and the selected fill, stroke
+width or dash style is one pill that slides between tiles on the pill spring
+(it fades in on the first choice and out when a mixed selection has none). The Label
+Background box cross-fades when it flips. Recolouring a swatch button in the
+selection toolbar pops it, and a toolbar button whose face changes cross-fades.
+Connector ends and routing are NoteMenuList menus and keep their own motion.
+
+The timer's digits roll vertically, only the columns that change: adding time
+rolls up, counting down rolls down, and rolling digits are clipped to the clock in the
+panel. Start, Pause, Resume and Again cross-fade with a small pop. Pausing blinks the clock
+twice and leaves it dimmed on the chrome button, which no longer animates while
+it sits paused. At 00:00 the chrome button shakes and glows in three softening
+pulses, and a panel that is open shakes the clock and glows behind it; the toast
+and the VoiceOver announcement are unchanged. The page switcher's rows are views of
+their own: new rows fade in with a small rise, removed rows fade out, the rest glide on
+the reorder spring, and the current-page check slides to its new row on the pill
+spring while the two rows cross-fade. The page button, timer button, code Copy chip and
+the web link box squish or cross-fade the same way; a bad web address shakes
+its field and springs the red border. The Copy chip is always wide enough for
+Copied!, so it cross-fades to a check and back without moving the bar. The crop
+zoom knob grows while it is held.
+
+Under Reduce Motion nothing scales, shakes, rolls or slides: lifts, squishes and
+rolls become 0.15 s fades, glows are a single fade, pills and rings fade in
+place, and turning the preference on settles whatever is running. Every effect is
+a Core Animation layer animation that ends on its own; no timer or display link
+stays behind. The scale, shadow, roll direction and pulse maths live in
+`EaselControlMotion`, `EaselDigitRoll` and `EaselPulseTrain` (ParcCore), and
+`EaselControlSurface` and `EaselRollingText` in `EaselCanvasControlMotion.swift` apply
+them.
+
 ## Checks
 
 `scripts/test-easel-motion.sh` covers both threshold directions, inclusive
@@ -126,8 +164,10 @@ initial-band silence, repeated crossings, invalid samples, native magnification
 notifications, source replacement and immediate visibility reversal. Feedback
 is injected, so the component does not emit physical haptics. The windowless
 `EaselObjectMotionTests` suite covers pop, fade, glide, lift and Reduce Motion
-curves, chained glides, ghost bookkeeping and the document diffs, and
-`EaselFloatingBarTests` the tool bar flourishes. Shared capture
+curves, chained glides, ghost bookkeeping and the document diffs,
+`EaselFloatingBarTests` the tool bar flourishes and `EaselControlMotionTests` the
+hover and press scales, hover shadow, digit roll columns and directions and the
+pulse keyframes. Shared capture
 checks protect original pixels and independent in-memory history. The Easel
 canvas suite zooms a real canvas in its scroll view 3,000 times while resizing
 from every bounds change and requires each step to settle.
