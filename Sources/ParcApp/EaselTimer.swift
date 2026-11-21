@@ -152,6 +152,7 @@ final class EaselTimerButton: PointingHandButton {
         focusRingType = .exterior
         title = ""
         wantsLayer = true
+        setEaselTooltip("Timer")
         setAccessibilityRole(.button)
         addSubview(readout)
         let center = NotificationCenter.default
@@ -219,19 +220,15 @@ final class EaselTimerButton: PointingHandButton {
         if resized { invalidateIntrinsicContentSize(); superview?.needsLayout = true; onResize?() }
         switch phase {
         case .idle:
-            toolTip = "Timer"
             setAccessibilityLabel("Timer")
             setAccessibilityValue(nil)
         case .running:
-            toolTip = "Timer · \(label) left"
             setAccessibilityLabel("Timer, running")
             setAccessibilityValue(EaselCountdown.spoken(remaining) + " left")
         case .paused:
-            toolTip = "Timer · paused at \(label)"
             setAccessibilityLabel("Timer, paused")
             setAccessibilityValue(EaselCountdown.spoken(remaining) + " left")
         case .finished:
-            toolTip = "Timer · time's up"
             setAccessibilityLabel("Timer, time's up")
             setAccessibilityValue(nil)
         }

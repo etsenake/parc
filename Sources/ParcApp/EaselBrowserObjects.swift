@@ -327,7 +327,7 @@ final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
         let pageTitle = browser.title.trimmingCharacters(in: .whitespacesAndNewlines)
         header.setPage(title: live && !pageTitle.isEmpty ? pageTitle : (preview?.title ?? EaselWebItemChrome.displayHost(address)),
                        host: EaselWebItemChrome.displayHost(current))
-        header.toolTip = captureLayout == nil ? "Edit webpage address or search" : nil
+        if captureLayout == nil { header.setEaselTooltip("Edit webpage address or search") } else { header.parcTooltip = nil }
         header.onTitle = captureLayout == nil && interactive ? { [weak self] in self?.editAddress() } : nil
         backButton.isEnabled = interactive && page?.canPerformNavigation(.back) == true
         let loading = browser.isLoading

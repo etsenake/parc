@@ -205,7 +205,6 @@ final class EaselEmptyStateChip: NSView {
     private static let keyFont = NoteTheme.nunitoBold(11)
     private static let padding: CGFloat = 8
     private static let keySide = NoteTheme.keycapSide
-    static var installTooltip: ((NSView, EaselEmptyStateHint) -> Void)?
     let hint: EaselEmptyStateHint
     var onPress: (() -> Void)?
     private var hovered = false { didSet { if hovered != oldValue { needsDisplay = true } } }
@@ -214,26 +213,17 @@ final class EaselEmptyStateChip: NSView {
     init(hint: EaselEmptyStateHint) {
         self.hint = hint
         super.init(frame: .zero)
-        toolTip = hint.help
+        setEaselTooltip(hint.name, shortcut: hint.shortcut)
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityLabel(hint.title)
-        setAccessibilityHelp(toolTip)
+        setAccessibilityHelp(hint.help)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect, .cursorUpdate], owner: self))
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var isFlipped: Bool { true }
-
-    private var tooltipInstalled = false
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard !tooltipInstalled, window != nil, let install = Self.installTooltip else { return }
-        tooltipInstalled = true
-        install(self, hint)
-    }
 
     private var keysWidth: CGFloat {
         hint.keys.isEmpty ? 0 : hint.keys.map { keyWidth($0) }.reduce(0, +) + CGFloat(hint.keys.count - 1) * 3 + 7

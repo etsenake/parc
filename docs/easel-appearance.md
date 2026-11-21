@@ -92,8 +92,10 @@ percentage in the Notes chrome font. It sits centered under the title, which is
 Nunito ExtraBold in the Notes title ink over a caption-style status line. Undo
 and redo are 28-point Notes chrome buttons on the title row, with Parc
 tooltips showing ⌘Z and ⇧⌘Z as keycaps; shape picker cells, its pin, template
-cards, the Mermaid sheet's Add and the empty Easel's chips use the same
-tooltips instead of system ones. The ••• button ends
+cards, the Mermaid sheet's Add, the empty Easel's chips (in Easels inside
+notes too), the timer button (a fixed “Timer”, since the countdown shows on
+the button) and the web card's address header use the same tooltips instead of
+system ones. The ••• button ends
 that row; it opens the [page menu](easels.md#page-menu-and-exports). The toolbar
 follows the canvas's current tool and scrolls horizontally when the window is
 narrower than the controls. Its explicit overlay scrollbar preserves the full
