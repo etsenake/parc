@@ -70,11 +70,15 @@ assert controller.count("applySidebarToolbarOwnership()") == 3 and \
 assert "PaneTopBarAdmission.sidebarAddressBarShown(focusedHasTopBar: selectedBrowserToolbar != nil,\n" \
        "                                                   toolbarVisible: BrowserToolbarPreferences.shared.state.isVisible)" \
     in controller, "the URL bar's visibility no longer follows the Toolbar preference"
+address_text = (app / "SidebarAddressText.swift").read_text()
 assert sidebar.count("Self.address(of: state.tabs.first { $0.id == (focusedTabID ?? state.selectedTabIDs.first) })") == 2 \
-    and "SidebarAddressSearchIcon.host(of: url) ?? SidebarAddressSearchIcon.placeholder" in sidebar, \
+    and "SidebarAddressText.label(forPage: tab?.url)" in sidebar \
+    and 'host.hasPrefix("www.") ? String(host.dropFirst(4)) : host' in address_text \
+    and "host(of: url) ?? placeholder" in address_text, \
     "both address paths no longer show the www-less host or the empty URL bar text"
 pill = (app / "SidebarAddressPill.swift").read_text()
-assert 'static let placeholder = "Search or Enter URL…"' in pill and '"magnifyingglass"' in pill \
+assert 'static let placeholder = "Search or Enter URL…"' in address_text \
+    and "static let placeholder = SidebarAddressText.placeholder" in pill and '"magnifyingglass"' in pill \
     and "override func hitTest(_ point: NSPoint) -> NSView? { nil }" in pill[pill.index("class SidebarAddressSearchIcon"):], \
     "the empty URL bar's glyph no longer matches or lets clicks through to the URL bar"
 assert "var extensionPopupsAnchorToSidebar: Bool { sidebar.isPresented && sidebarShowsAddressBar }" in controller \
@@ -151,13 +155,18 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-header-glyphs-") as direct
         "enum SplitOrientation: String, Codable, CaseIterable { case horizontal, vertical }\n")
     text = (root / "Sources/ParcApp/SiteControlCenter.swift").read_text()
     (scratch / "SiteControlCenterArtwork.swift").write_text(text[:text.index("enum SiteControlCenterMetrics")])
+    store = (root / "Sources/ParcCore/BrowserStore.swift").read_text()
+    page = store[store.index("enum InternalPage: Equatable {"):]
+    (scratch / "InternalPage.swift").write_text("import Foundation\n" + page[:page.index("\n}\n") + 3])
     executable = scratch / "checks"
     subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     str(root / "Sources/ParcCore/SpaceTheme.swift"), str(scratch / "SplitOrientation.swift"),
+                    str(scratch / "InternalPage.swift"), str(root / "Sources/ParcCore/NoteFileKind.swift"),
+                    str(root / "Sources/ParcCore/NoteFilePaths.swift"),
                     *[str(scratch / name) for name in slices],
                     str(app / "ExtensionControls.swift"), str(scratch / "SiteControlCenterArtwork.swift"),
                     str(app / "NavigationControlPress.swift"), str(app / "ReloadControl.swift"),
-                    str(app / "TranslucentButtonFace.swift"), str(app / "SidebarAddressPill.swift"),
+                    str(app / "TranslucentButtonFace.swift"), str(app / "SidebarAddressPill.swift"), str(app / "SidebarAddressText.swift"),
                     str(app / "SidebarChromeLayout.swift"), str(app / "ParcMenuColors.swift"),
                     *map(str, tooltip_sources(root, scratch, ["SpaceTheme.swift", "ThemeRenderer.swift", "ReloadControl.swift"])),
                     str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)
