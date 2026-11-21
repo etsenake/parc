@@ -9,17 +9,19 @@ dark.
 ## Making one
 
 A new code block starts with four empty lines in the language you used last,
-and in TypeScript until you pick another. The code block tool places one with
-`placeCodeBlock(in:)`: centred on a click, or as wide as a drag (at least 160
-points); `insertCodeBlock(at:)` drops one in the middle of the view (or at a
-point) for an insert menu. Either way the block is selected and you are typing
-in it straight away, and adding it is one Undo step. The last language lives in the user defaults, so it carries over
-between Easels and launches.
+and in TypeScript until you pick another. The backtick key, the Code block slot
+in the toolbar's inserts and ⌘/ arm the code block tool
+([tools](easel-tools.md)), which places a block with `placeCodeBlock(in:)`:
+centred on a click, or as wide as a drag (at least 160 points), then goes back
+to Select. `insertCodeBlock(at:)` drops one in the middle of the view (or at a
+point) for any other insert menu. Either way the block is selected and you are
+typing in it straight away, and adding it is one Undo step. The last language
+lives in the user defaults, so it carries over between Easels and launches.
 
-⌘Return while typing in a block adds an empty block of the same width and
-language just below it, skipping past anything already there, and starts
-editing it (`insertCodeBlockBelow(_:)`, which the canvas's shared ⌘Return
-quick-create calls for a selected block). Quick-created code blocks get no
+⌘Return, while typing in a block or with one unlocked block selected, adds an
+empty block of the same width and language just below it, skipping past
+anything already there, and starts editing it (`insertCodeBlockBelow(_:)`, also
+what the canvas's quick-create calls). Quick-created code blocks get no
 connector, unlike shapes; FigJam doesn't document one either, and a chain of
 snippets reads fine without arrows.
 
