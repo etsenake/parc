@@ -89,6 +89,10 @@ extension EaselCanvasView {
             let visible = visibleRect.isEmpty ? bounds : visibleRect
             let width = max(180, min(EaselCanvasEmptyStateView.maximumWidth, visible.width - 80))
             let origin = EaselCanvasEmptyStateView.origin
+            let scale = max(CGFloat(magnification), 0.01)
+            let viewport = enclosingScrollView?.contentSize.height ?? visible.height * scale
+            let covered = CGFloat(EaselFloatingBar.cover(Double(toolState.coveredBottom), viewportHeight: Double(viewport)))
+            view.availableHeight = max(0, (viewport - covered) / scale - origin.y)
             let next = NSRect(x: origin.x, y: origin.y, width: EaselCanvasEmptyStateView.frameWidth(content: width), height: view.fittedHeight(width: width))
             if view.frame != next { view.frame = next }
             if !view.isPresented { keyboardStructureChanged() }

@@ -25,7 +25,10 @@ Under the chips, "Or start from a template" heads the template gallery's card
 row ([templates](easel-board-features.md#templates)); the Easel editor hands
 its one `EaselTemplateGallery` to the canvas as an `EaselEmptyStateRow`, the
 card plates line up with the words, and the row drops to fewer columns when the
-view is narrow or zoomed in. Easel blocks in notes show the words and chips
+view is narrow or zoomed in. It also shows only the rows that fit between the
+words and the floating tool bar, so a short window or split never leaves a card
+half under the bar; with no room for a row the heading goes too, and every
+template stays a click away in the tool bar. Easel blocks in notes show the words and chips
 only. The whole group lives on the canvas, so it zooms and scrolls with the
 paper and follows light and dark, and only its chips and cards take clicks:
 clicking anywhere else places or selects as usual. It fades and rises 4 points

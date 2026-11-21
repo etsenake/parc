@@ -10,7 +10,7 @@ struct EaselEmptyStateRow {
     let title: String
     let view: NSView
     let inset: CGFloat
-    let fit: (CGFloat) -> NSSize
+    let fit: (_ width: CGFloat, _ height: CGFloat) -> NSSize
 }
 
 struct EaselEmptyStateHint: Equatable {
@@ -67,6 +67,9 @@ final class EaselCanvasEmptyStateView: NSView {
             laidOutWidth = 0
             needsLayout = true; needsDisplay = true
         }
+    }
+    var availableHeight: CGFloat = .greatestFiniteMagnitude {
+        didSet { if availableHeight != oldValue { laidOutWidth = 0; needsLayout = true } }
     }
     private(set) var isPresented = true
     private var chips: [EaselEmptyStateChip] = []
@@ -132,11 +135,17 @@ final class EaselCanvasEmptyStateView: NSView {
         headingTop = nil
         if let row {
             let top = bottom + Self.sectionGap
-            headingTop = top
-            let size = row.fit(width + row.inset * 2)
-            let next = NSRect(x: lead - row.inset, y: top + Self.headingHeight + 4 - row.inset, width: size.width, height: size.height)
-            if row.view.frame != next { row.view.frame = next }
-            bottom = next.maxY
+            let rowTop = top + Self.headingHeight + 4 - row.inset
+            let size = row.fit(width + row.inset * 2, availableHeight - rowTop)
+            if size.height > 0 {
+                headingTop = top
+                let next = NSRect(x: lead - row.inset, y: rowTop, width: size.width, height: size.height)
+                if row.view.frame != next { row.view.frame = next }
+                row.view.isHidden = false
+                bottom = next.maxY
+            } else {
+                row.view.isHidden = true
+            }
         }
         contentHeight = bottom + 4
         needsDisplay = true
