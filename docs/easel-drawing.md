@@ -52,8 +52,9 @@ paper a highlight multiplies with whatever is under it, so text and pictures
 stay crisp and two overlapping strokes deepen like real ink. On dark paper,
 where multiplying would vanish into the page, it paints normally so it still
 glows. One stroke never darkens where it crosses itself. Exports carry the same
-rule as a blend style inside the SVG, so the HTML page and a standalone SVG
-both keep it, and every highlight carries its own translucency.
+rule on the path itself (`mix-blend-mode` and `stroke-opacity` in its own style),
+so a standalone SVG multiplies and stays translucent without the HTML wrapper;
+a small embedded rule only switches the blend to normal on dark screens.
 
 ## Washi tape
 
@@ -63,6 +64,8 @@ and polygons in Notes colours, described once in ParcCore so the canvas, PDF,
 PNG and HTML all show the same pattern. A strip is 28 points tall, 90% opaque
 with a soft shadow and a lighter top edge, and both ends are torn. The tear is
 seeded by the strip's ID, so every strip tears its own way and keeps it.
+
+In exports each tape gets a pattern id and a clip id made from a per-export counter plus its item id, so repeated ids or two Easels on one page never collide.
 
 The stroke colour retints a design: a palette colour swaps the design's colour
 family, a custom colour becomes the tape itself, and Default keeps each
