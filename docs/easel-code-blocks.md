@@ -61,7 +61,8 @@ checked (Mixed when the selection disagrees); choosing one relabels every
 selected unlocked block in one Undo step (`setCodeLanguage(_:for:)`). A selected
 or edited block also shows Copy in its header's top-right corner, which puts the
 code on the clipboard with trailing blank lines trimmed and briefly says
-Copied!. VoiceOver reads the block as "Code block, TypeScript" and offers Edit
+Copied!: the chip cross-fades to a check and back at the same width, so the bar
+never shifts. VoiceOver reads the block as "Code block, TypeScript" and offers Edit
 code, Copy code and Change language actions. Locked blocks can be copied but not
 edited or relabelled.
 
