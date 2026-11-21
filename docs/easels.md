@@ -166,6 +166,13 @@ decoded pixels. The native cell centers the image, fits within line width minus
 RTFD preserves exact supported attachment bytes. A failed save rolls the editor
 back with its correct native Undo state.
 
+## Images and media
+
+Image objects crop in place, mask to the Notes shapes, carry alt text, swap
+pictures without moving and play GIFs while selected, all without touching the
+stored picture. Their behaviour, saved fields and code owners are in
+[Easel images and media](easel-images.md).
+
 ## Embedded webpages and captured cards
 
 Webpage objects own real auxiliary native pages, scoped to the editor's physical

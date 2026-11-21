@@ -1,0 +1,129 @@
+# Easel images and media
+
+Pictures on an Easel behave like Notes images: they crop, mask and carry alt
+text the same way, and none of it ever rewrites the picture itself. This guide
+covers what people can do with an image object, how the file stores it and
+which code owns each part. Inline pictures inside text objects are a separate
+feature described in [Easels](easels.md#inline-images-in-rich-text).
+
+## Adding pictures
+
+The Add image button, paste and drops take PNG, JPEG, TIFF, HEIC, WebP and GIF.
+Every picture is copied into the Easel's own storage, never linked by path:
+still pictures are stored as PNG with the camera's rotation already applied, so
+a portrait iPhone photo stands up straight, and animated GIFs keep their own
+bytes so they can still play. The store checks each file's first bytes against
+its type before writing it and refuses anything over 30 MB, pictures larger
+than 16,384 pixels on a side or 80 million pixels in all, and anything it can't
+decode. A new picture lands near the middle of the view at up to 480 points
+wide. Pasting prefers GIF data over PNG or TIFF when an app offers both, so a
+GIF copied from a web page stays animated.
+
+## Cropping
+
+Double-click an image, press Return on it, or choose Crop Image from its menu
+(or the selection toolbar) to crop it where it sits. Crop mode shows the whole
+picture with the parts outside the frame dimmed, white corner and edge handles,
+and thirds guides while something is being dragged. The handles change the
+frame, which is the object's size and spot on the Easel; dragging the picture
+repositions it inside the frame, which stays put. Shift keeps the frame's ratio
+while resizing.
+
+A crop bar below the frame, built from the Notes media toolbar parts, holds:
+
+- **Aspect ratio**: Freeform, Original, Square, 4:3, 3:4, 16:9, 9:16 and Circle
+  (a square crop with the circle mask). Fixed ratios fit the largest frame of
+  that shape inside the current one.
+- **Mask**: the Notes mask picker, previewing each shape on this picture.
+- **Rotate 90°**: turns the picture clockwise inside its frame; the frame turns
+  with it about its centre, and 16:9 becomes 9:16.
+- **Zoom**: a slider from 1× (the picture just covers the frame) to 8×, plus
+  zoom out and zoom in buttons. Zooming scales the picture about the frame's
+  centre and never uncovers the frame.
+- **Reset**, **Cancel** and **Save**. Reset shows the whole picture again at
+  1×; Cancel and Escape throw the crop away; Save, Return or a click anywhere
+  else keeps it.
+
+Arrow keys move the picture a point at a time (Shift for ten), `=` and `-`
+zoom, and Tab saves and moves on. Right-clicking during a crop offers the same
+choices, and VoiceOver gets them as actions on the image (move the picture,
+zoom, rotate, show the whole picture, done and cancel). Selecting something
+else saves the crop. Each crop is a single Undo step, and the image keeps its
+original bytes, so cropping again always starts from the whole picture.
+
+Crop mode works in the picture's own orientation: a rotated or flipped object
+is shown upright while it's being cropped and returns to its rotation on Save.
+
+## Masks
+
+Mask clips an image to one of the Notes shapes: rounded rectangle, circle,
+squircle, arch, diamond, hexagon, star or heart. The square shapes (everything
+but the rounded rectangle and the arch) keep the frame square, taking the
+middle of a wider or taller picture. Original removes the mask and keeps the
+crop. Masks come from the context menu, the selection toolbar or the crop bar
+and apply to every selected unlocked image in one Undo step.
+
+## Alt text and replacing
+
+Alt Text… describes an image for people who can't see it, in the same popover
+Notes uses. VoiceOver reads it as the image's value, an ALT badge appears in
+the bottom corner while the pointer is over a described image, and clicking
+the badge edits it. Empty text removes it; up to 4 KB is kept.
+
+Replace Image… swaps in a different picture and keeps the object's exact size
+and spot: the new picture fills the old frame from its middle, like a cover
+crop, and the mask, alt text, rotation and flips stay. The quarter turns go,
+because they belonged to the old picture. A replaced image is one Undo step,
+and Undo brings the old picture back.
+
+## GIFs
+
+An animated GIF shows its first frame, with a small GIF badge, until it is the
+only thing selected. Then it plays, honouring each frame's delay, and stops
+when the selection changes, so only one GIF moves at a time. With Reduce Motion
+on, GIFs stay on their first frame, as they do in Notes. Copying a GIF puts the
+GIF itself on the pasteboard.
+
+## Export
+
+PDF, PNG and Copy as Image draw images through the canvas drawing, so crops,
+turns and masks look exactly as they do on the Easel; a playing GIF exports the
+frame on screen. HTML exports draw a cropped, turned or masked image as an SVG
+picture inside a clip path (the mask's own outline), keep animated GIFs
+animated, and write alt text as the picture's `aria-label` and `<title>`.
+
+## Saved format
+
+All image fields are optional and left out of the file when unused, so an Easel
+from before them opens and looks the same:
+
+| Field | Meaning |
+|---|---|
+| `crop` | A rectangle in 0…1 units of the stored picture; absent means the whole picture. |
+| `quarterTurns` | 1, 2 or 3 clockwise quarter turns of the cropped picture inside the frame. |
+| `mask` | `rounded`, `circle`, `squircle`, `arch`, `diamond`, `hexagon`, `star` or `heart`. |
+| `altText` | The description VoiceOver reads and HTML exports write. |
+
+Validation refuses each field on anything but an image, crops outside the
+picture or thinner than 1% of it, turns outside 1–3, alt text over 4 KB, an
+unknown mask and a GIF asset on any object but an image, so a malformed file is
+rejected whole. Asset names are a lowercase UUID plus `.png` or `.gif`.
+
+## Where the code lives
+
+- `EaselImageFraming` and `EaselImageCropDraft` in ParcCore hold the crop
+  geometry: turning crops between the stored and turned picture, the whole
+  picture behind a frame, zoom, pan, aspect fitting, masking and replacement.
+  They reuse the Notes crop rectangle, handle geometry and mask outlines.
+- `EaselCanvasView+Images.swift` draws images, runs crop mode, the badges and
+  GIF playback, and owns the commands the toolbar, menus and VoiceOver call:
+  `beginImageCrop`, `finishImageCrop(save:)`, `setImageMask`,
+  `editImageAltText`, `chooseReplacementImage` and `replaceImage(id:data:)`.
+- `EaselImageChrome.swift` is the crop bar and the alt text and mask popovers,
+  reached through the canvas's `imageEditing.chrome`. The Easel editor wires it;
+  Easel blocks in notes don't, so they crop with the menu and keys only.
+- `EaselStore` checks asset bytes (`EaselAssetType`) and validates the fields.
+
+`tests/EaselImageFramingTests.swift`, run by `scripts/test-easels.sh`, covers
+the crop geometry, turns, presets, masking, replacement, validation, asset
+sniffing, the saved format and the SVG output without opening a window.
