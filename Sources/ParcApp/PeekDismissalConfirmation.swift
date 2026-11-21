@@ -17,6 +17,13 @@ final class PeekDismissalConfirmation {
     private(set) var attempts = 0
     private var pendingReset: DispatchWorkItem?
     private var generation: UUID?
+    private let schedule: (TimeInterval, DispatchWorkItem) -> Void
+
+    init(schedule: @escaping (TimeInterval, DispatchWorkItem) -> Void = { delay, item in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+    }) {
+        self.schedule = schedule
+    }
 
     static func requiredReason(for dismissal: Dismissal, awaiting reason: Reason?,
                                mediaInput: Bool) -> Reason? {
@@ -58,7 +65,7 @@ final class PeekDismissalConfirmation {
             }
         }
         pendingReset = reset
-        DispatchQueue.main.asyncAfter(deadline: .now() + reason.duration, execute: reset)
+        schedule(reason.duration, reset)
     }
 
     func cancel() {
