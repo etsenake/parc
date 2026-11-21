@@ -199,8 +199,11 @@ struct ShortcutSmileyArtwork {
 }
 
 @MainActor final class ShortcutSmileyView: NSView {
-    private static let artwork: ShortcutSmileyArtwork? = Bundle.main.url(forResource: "smiley", withExtension: "json", subdirectory: "Shortcuts")
+    private static let bundledArtwork: ShortcutSmileyArtwork? = Bundle.main.url(forResource: "smiley", withExtension: "json", subdirectory: "Shortcuts")
         .flatMap { try? Data(contentsOf: $0) }.flatMap(ShortcutSmileyArtwork.init)
+    private let artwork: ShortcutSmileyArtwork?
+    private let reduceMotion: () -> Bool
+    private let schedule: (Timer) -> Void
     private var timer: Timer?
     var now: () -> CFTimeInterval = { CACurrentMediaTime() }
     private var startedAt = 0.0
@@ -211,7 +214,17 @@ struct ShortcutSmileyArtwork {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    override init(frame: NSRect) {
+    override convenience init(frame: NSRect) {
+        self.init(frame: frame, artwork: Self.bundledArtwork,
+                  reduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
+                  schedule: { RunLoop.main.add($0, forMode: .common) })
+    }
+
+    init(frame: NSRect, artwork: ShortcutSmileyArtwork?, reduceMotion: @escaping () -> Bool,
+         schedule: @escaping (Timer) -> Void) {
+        self.artwork = artwork
+        self.reduceMotion = reduceMotion
+        self.schedule = schedule
         super.init(frame: frame); setAccessibilityElement(false)
         motionObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
             object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.restartPlayback() } }
@@ -223,19 +236,19 @@ struct ShortcutSmileyArtwork {
         stopFrames()
         elapsed = 0
         leftRestingPose = false
-        if let artwork = Self.artwork {
+        if let artwork {
             lastDisplayFingerprint = artwork.presentationFingerprint(seconds: 0, size: bounds.size)
         } else {
             lastDisplayFingerprint = nil
         }
         invalidateDisplay()
-        guard window != nil, !isHidden, Self.artwork != nil,
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        guard window != nil, !isHidden, artwork != nil,
+              !reduceMotion() else { return }
         startedAt = now()
         startFrames()
     }
     private func tick(_ timer: Timer) {
-        guard window != nil, !isHidden, self.timer === timer, let artwork = Self.artwork else {
+        guard window != nil, !isHidden, self.timer === timer, let artwork else {
             stopFrames(); return
         }
         elapsed = min(artwork.duration, now() - startedAt)
@@ -255,7 +268,7 @@ struct ShortcutSmileyArtwork {
         let timer = Timer(timeInterval: 1 / 60, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated { self?.tick(timer) }
         }
-        self.timer = timer; RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer; schedule(timer)
     }
     private func stopFrames() { timer?.invalidate(); timer = nil }
     private func invalidateDisplay() {
@@ -263,7 +276,7 @@ struct ShortcutSmileyArtwork {
     }
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        Self.artwork?.draw(in: bounds, seconds: elapsed, context: context)
+        artwork?.draw(in: bounds, seconds: elapsed, context: context)
     }
 }
 
