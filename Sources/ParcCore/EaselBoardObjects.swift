@@ -53,7 +53,7 @@ enum EaselBoardObjects {
     static func stickyHeight(_ item: EaselItem, textHeight: Double) -> Double {
         let minimum = stickyMinimumHeight(item)
         guard textHeight.isFinite, textHeight > 0 else { return minimum }
-        return max(minimum, (textHeight + 2 * stickyInset(item)).rounded(.up))
+        return min(EaselRect.maximumCoordinate, max(minimum, (textHeight + 2 * stickyInset(item)).rounded(.up)))
     }
 
     static func sticky(centeredAt point: EaselPoint, wide: Bool, zIndex: Int) -> EaselItem {
@@ -138,6 +138,19 @@ enum EaselBoardObjects {
         return items.filter { contains(section, $0) }
     }
 
+    static func contents(of section: EaselItem, in items: [EaselItem]) -> [EaselItem] {
+        guard section.kind == .section else { return [] }
+        var found: [EaselItem] = [], seen: Set<UUID> = [section.id], queue = [section]
+        while let current = queue.popLast() {
+            for item in items where !seen.contains(item.id) && contains(current, item) {
+                seen.insert(item.id)
+                found.append(item)
+                if item.kind == .section { queue.append(item) }
+            }
+        }
+        return found
+    }
+
     static func sections(containing point: EaselPoint, in items: [EaselItem]) -> Set<UUID> {
         Set(items.filter { $0.kind == .section && EaselContentHitTest.contains(point, rect: $0.frame) }.map(\.id))
     }
@@ -146,8 +159,8 @@ enum EaselBoardObjects {
         let hiding = items.filter { $0.kind == .section && $0.contentsHidden == true }
         guard !hiding.isEmpty else { return [] }
         var hidden = Set<UUID>()
-        for section in hiding {
-            for item in items where contains(section, item) { hidden.insert(item.id) }
+        for section in hiding where !hidden.contains(section.id) {
+            hidden.formUnion(contents(of: section, in: items).map(\.id))
         }
         return hidden
     }
@@ -180,8 +193,7 @@ enum EaselBoardObjects {
     }
 
     static func sectionName(in items: [EaselItem], excluding id: UUID? = nil) -> String {
-        let taken = Set(items.filter { $0.kind == .section && $0.id != id }
-            .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+        let taken = Set(items.filter { $0.kind == .section && $0.id != id }.map { displayTitle($0).lowercased() })
         let base = sectionName.lowercased()
         guard taken.contains(base) else { return sectionName }
         var number = 2
@@ -241,10 +253,18 @@ enum EaselBoardObjects {
                          width: width, height: height)
     }
 
+    static func withContents(_ ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
+        var result = ids
+        for section in document.items where ids.contains(section.id) && section.kind == .section {
+            result.formUnion(contents(of: section, in: document.items).map(\.id))
+        }
+        return result
+    }
+
     static func deletion(_ ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
         var result = ids
         for section in document.items where ids.contains(section.id) && section.kind == .section && !section.isLocked {
-            for item in document.items where !item.isLocked && contains(section, item) { result.insert(item.id) }
+            for item in contents(of: section, in: document.items) where !item.isLocked { result.insert(item.id) }
         }
         return result
     }
@@ -272,7 +292,7 @@ enum EaselBoardObjects {
         let sections = document.items.filter { ids.contains($0.id) && $0.kind == .section }
         var targets = Set(sections.map(\.id))
         if all {
-            for section in sections { targets.formUnion(members(of: section, in: document.items).map(\.id)) }
+            for section in sections { targets.formUnion(contents(of: section, in: document.items).map(\.id)) }
         }
         return targets
     }
@@ -283,20 +303,23 @@ enum EaselBoardObjects {
         guard !movedSections.isEmpty else { return (next, moved) }
         var before: [UUID: EaselItem] = [:]
         for item in previous.items where before[item.id] == nil { before[item.id] = item }
-        var shifts: [UUID: (dx: Double, dy: Double)] = [:]
+        var shifts: [UUID: (dx: Double, dy: Double)] = [:], placed: [UUID: EaselPoint] = [:]
         for section in movedSections {
             guard let old = before[section.id], old.kind == .section,
                   old.frame.width == section.frame.width, old.frame.height == section.frame.height else { continue }
-            let dx = section.frame.x - old.frame.x, dy = section.frame.y - old.frame.y
+            let x = max(0, section.frame.x), y = max(0, section.frame.y)
+            if x != section.frame.x || y != section.frame.y { placed[section.id] = EaselPoint(x: x, y: y) }
+            let dx = x - old.frame.x, dy = y - old.frame.y
             guard dx.isFinite, dy.isFinite, dx != 0 || dy != 0 else { continue }
-            for member in previous.items where !moved.contains(member.id) && shifts[member.id] == nil && contains(old, member) {
+            for member in contents(of: old, in: previous.items) where !moved.contains(member.id) && shifts[member.id] == nil {
                 shifts[member.id] = (dx, dy)
             }
         }
-        guard !shifts.isEmpty else { return (next, moved) }
+        guard !shifts.isEmpty || !placed.isEmpty else { return (next, moved) }
         var result = next, carried = moved
         for index in result.items.indices {
             let id = result.items[index].id
+            if let point = placed[id] { result.items[index].frame.x = point.x; result.items[index].frame.y = point.y }
             guard let shift = shifts[id], let old = before[id] else { continue }
             result.items[index].frame.x = max(0, old.frame.x + shift.dx)
             result.items[index].frame.y = max(0, old.frame.y + shift.dy)

@@ -39,6 +39,7 @@ struct EaselPoint: Codable, Equatable {
 }
 
 struct EaselRect: Codable, Equatable {
+    static let maximumCoordinate = 1_000_000.0
     var x: Double
     var y: Double
     var width: Double
@@ -461,7 +462,7 @@ final class EaselStore {
         guard Set(document.items.map(\.id)).count == document.items.count else { throw EaselStoreError.invalidDocument("duplicate object ID") }
         for item in document.items {
             let r = item.frame
-            guard [r.x, r.y, r.width, r.height].allSatisfy({ $0.isFinite && abs($0) <= 1_000_000 }),
+            guard [r.x, r.y, r.width, r.height].allSatisfy({ $0.isFinite && abs($0) <= EaselRect.maximumCoordinate }),
                   r.width >= 1, r.height >= 1,
                   item.points.count <= 100_000,
                   item.points.allSatisfy({ $0.x.isFinite && $0.y.isFinite && abs($0.x) <= 1_000_000 && abs($0.y) <= 1_000_000 }),

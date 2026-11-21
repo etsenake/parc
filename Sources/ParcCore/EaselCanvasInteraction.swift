@@ -184,7 +184,7 @@ struct EaselGeometryEdit {
     }
 
     func preservesAspect(shift: Bool, command: Bool) -> Bool {
-        let intrinsic = originals.contains { $0.kind == .image || $0.kind == .webCard || $0.kind == .link }
+        let intrinsic = originals.contains { $0.kind == .image || $0.kind == .webCard || $0.kind == .link || $0.kind == .sticky }
         return !command && (intrinsic || (shift && originals.count > 1))
     }
 
@@ -232,10 +232,12 @@ struct EaselGeometryEdit {
         guard isCurrent(in: document), proposed.count == originals.count,
               Set(proposed.map(\.id)) == ids else { return nil }
         let changes = Dictionary(proposed.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        let styles = Dictionary(originals.map { ($0.id, $0.textStyle) }, uniquingKeysWith: { first, _ in first })
         var next = document
         for index in next.items.indices {
             guard let change = changes[next.items[index].id] else { continue }
             next.items[index].frame = change.frame; next.items[index].points = change.points
+            if let style = styles[change.id], change.textStyle != style { next.items[index].textStyle = change.textStyle }
         }
         return next
     }

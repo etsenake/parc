@@ -41,6 +41,14 @@ struct EaselBoardObjectsTests {
         var section = item(.section, 0, 0, 640, 480, text: "Section")
         section.contentsHidden = true
         expect(accepts([sticky, section]), "Stickies keep a text scale and sections can hide their contents")
+        for edge in [0.25, 8.0] {
+            var bounded = sticky
+            bounded.textStyle = EaselTextStyle(textScale: edge)
+            expect(accepts([bounded]), "A text scale of exactly \(edge) is allowed")
+        }
+        var towering = sticky
+        towering.frame.height = EaselBoardObjects.stickyHeight(sticky, textHeight: 1e12)
+        expect(accepts([towering]), "The tallest sticky still saves")
         for bad in [0.1, 9.0, Double.nan, Double.infinity] {
             var broken = sticky
             broken.textStyle = EaselTextStyle(textScale: bad)
@@ -71,6 +79,11 @@ struct EaselBoardObjectsTests {
         expect(EaselBoardObjects.stickyHeight(square, textHeight: 80) == 220, "Short text keeps the square height")
         expect(EaselBoardObjects.stickyHeight(square, textHeight: 300) == 336, "Long text grows the sticky by its padding")
         expect(EaselBoardObjects.stickyHeight(square, textHeight: .nan) == 220, "Unmeasurable text keeps the minimum")
+        for odd in [Double.infinity, 0, -50] {
+            expect(EaselBoardObjects.stickyHeight(square, textHeight: odd) == 220, "A text height of \(odd) keeps the minimum")
+        }
+        expect(EaselBoardObjects.stickyHeight(square, textHeight: 1e12) == EaselRect.maximumCoordinate,
+               "Enormous text stops growing the sticky at the largest size the file allows")
         var scaled = square
         scaled.textStyle = EaselTextStyle(textScale: 2)
         expect(EaselBoardObjects.stickyMinimumHeight(scaled) == 440 && EaselBoardObjects.stickyInset(scaled) == 36,
@@ -126,6 +139,14 @@ struct EaselBoardObjectsTests {
         let tiny = EaselBoardObjects.resizedSticky(original, proposed: proposed, handle: .bottomRight, alone: true,
                                                    textHeight: { _ in 0 })
         expect(tiny.textStyle?.textScale == 0.25 && tiny.frame.width == 55, "Scaling stops at a quarter")
+        var big = original
+        big.textStyle = EaselTextStyle(textScale: 4)
+        big.frame = EaselRect(x: 0, y: 0, width: 880, height: 880)
+        proposed.frame = EaselRect(x: 0, y: 0, width: 2640, height: 2640)
+        let capped = EaselBoardObjects.resizedSticky(big, proposed: proposed, handle: .bottomRight, alone: true,
+                                                     textHeight: { _ in 0 })
+        expect(capped.textStyle?.textScale == 8 && capped.frame.width == 1760 && capped.frame.height == 1760,
+               "Scaling stops at eight times")
         proposed.frame = EaselRect(x: 100, y: 40, width: 220, height: 280)
         let top = EaselBoardObjects.resizedSticky(original, proposed: proposed, handle: .top, alone: true, textHeight: measure)
         expect(top.frame == original.frame, "Top and bottom drags leave the automatic height alone")
@@ -150,6 +171,10 @@ struct EaselBoardObjectsTests {
         expect(EaselBoardObjects.sectionTitle(String(repeating: "a", count: 500)).count == EaselBoardObjects.sectionTitleLimit,
                "Titles are capped")
         expect(EaselBoardObjects.displayTitle(item(.section, 0, 0, 10, 10, text: "  ")) == "Section", "An empty title shows Section")
+        let blank = [item(.section, 0, 0, 640, 480, text: " ")]
+        expect(EaselBoardObjects.sectionName(in: blank) == "Section 2", "A blank title already shows as Section")
+        let wrapped = [item(.section, 0, 0, 640, 480, text: "Section\n2"), item(.section, 0, 0, 640, 480, text: "")]
+        expect(EaselBoardObjects.sectionName(in: wrapped) == "Section 3", "Names compare the way titles are shown")
     }
 
     static func membership() {
@@ -167,6 +192,21 @@ struct EaselBoardObjectsTests {
         expect(EaselBoardObjects.members(of: inside, in: all).isEmpty, "Only sections have members")
         expect(EaselBoardObjects.sections(containing: EaselPoint(x: 200, y: 200), in: all) == [section.id, nested.id, twin.id],
                "Every section under a point is found")
+        var outer = item(.section, 100, 100, 600, 400)
+        let inner = item(.section, 99.6, 99.6, 300, 200)
+        let sticky = item(.sticky, 99.2, 99.2, 100, 100)
+        let board = document([outer, inner, sticky])
+        expect(!EaselBoardObjects.contains(outer, sticky) && Set(EaselBoardObjects.contents(of: outer, in: board.items).map(\.id)) == [inner.id, sticky.id],
+               "Contents reach through nested sections even when each one overhangs a hair")
+        outer.contentsHidden = true
+        expect(EaselBoardObjects.hiddenIDs(in: [outer, inner, sticky]) == [inner.id, sticky.id], "Hiding reaches nested contents")
+        expect(EaselBoardObjects.deletion([outer.id], in: board) == [outer.id, inner.id, sticky.id], "Deleting reaches nested contents")
+        expect(EaselBoardObjects.lockTargets([outer.id], all: true, in: board) == [outer.id, inner.id, sticky.id],
+               "Lock All reaches nested contents")
+        var moved = board
+        moved.items[0].frame.x += 10
+        let carried = EaselBoardObjects.carryingSectionContents(moved, previous: board, moved: [outer.id])
+        expect(abs(carried.document.items[2].frame.x - 109.2) < 1e-9, "Moving reaches nested contents")
     }
 
     static func paintOrderAndHiding() {
@@ -210,6 +250,12 @@ struct EaselBoardObjectsTests {
                "A locked section never drags its contents into a delete")
         let kept = EaselBoardObjects.removingSections([section.id, sticky.id], from: board)
         expect(kept?.items.map(\.id) == [sticky.id, pinned.id, outside.id], "Removing only the section keeps everything else")
+        expect(EaselBoardObjects.withContents([section.id], in: board) == [section.id, sticky.id, pinned.id],
+               "Copying a section brings everything inside it, locked or not")
+        expect(EaselDependents.removing([section.id], from: board).items.map(\.id) == [pinned.id, outside.id],
+               "The delete pipeline removes a section with its unlocked contents")
+        expect(EaselDependents.removing([section.id], from: board, keepingSectionContents: true).items.map(\.id)
+               == [sticky.id, pinned.id, outside.id], "The keep-contents delete removes just the section")
         expect(EaselBoardObjects.removingSections([sticky.id], from: board) == nil, "Removing sections needs a section")
         expect(EaselBoardObjects.lockTargets([section.id], all: true, in: board) == [section.id, sticky.id, pinned.id],
                "Lock All covers the section and its contents")
@@ -257,6 +303,12 @@ struct EaselBoardObjectsTests {
                "A nested section carries its own contents when it moves alone")
         let unchanged = EaselBoardObjects.carryingSectionContents(before, previous: before, moved: [outside.id])
         expect(unchanged.document == before && unchanged.moved == [outside.id], "Moves without sections pass straight through")
+        var negative = before
+        negative.items[0].frame.x = -60; negative.items[0].frame.y = -30
+        let kept = EaselBoardObjects.carryingSectionContents(negative, previous: before, moved: [section.id])
+        expect(kept.document.items[0].frame.x == 0 && kept.document.items[0].frame.y == 0
+               && kept.document.items[1].frame.x == 50 && kept.document.items[2].frame.y == 60,
+               "A section pushed past the canvas edge stops at zero and its contents stop with it")
     }
 
     static func sectionFrames() {

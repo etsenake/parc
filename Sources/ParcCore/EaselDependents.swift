@@ -7,8 +7,9 @@ enum EaselDependents {
         return rerouteConnectors(attached.document, previous: previous, moved: attached.moved)
     }
 
-    static func removing(_ ids: Set<UUID>, from document: EaselDocument) -> EaselDocument {
-        let removed = ids.union(attachedDependents(of: ids, in: document))
+    static func removing(_ ids: Set<UUID>, from document: EaselDocument, keepingSectionContents: Bool = false) -> EaselDocument {
+        let doomed = keepingSectionContents ? ids : EaselBoardObjects.deletion(ids, in: document)
+        let removed = doomed.union(attachedDependents(of: doomed, in: document))
         var next = document
         next.items.removeAll { removed.contains($0.id) }
         return detachConnectors(next, from: removed)
