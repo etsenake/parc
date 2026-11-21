@@ -26,6 +26,7 @@ Sources/ParcApp/NoteCustomEmojiImages.swift
 Sources/ParcApp/NoteFloatingPanel.swift
 Sources/ParcApp/NoteAnimation.swift
 Sources/ParcApp/NoteControls.swift
+Sources/ParcApp/NoteCursor.swift
 Sources/ParcApp/DocumentDefaultIcon.swift
 Sources/ParcApp/LibraryArtwork.swift
 Sources/ParcApp/SidebarIconCatalog.swift

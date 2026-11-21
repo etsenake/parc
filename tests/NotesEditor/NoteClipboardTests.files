@@ -1,5 +1,6 @@
 Sources/ParcCore/*.swift
 Sources/ParcApp/NoteClipboard.swift
+Sources/ParcApp/NoteClipboardReading.swift
 Sources/ParcApp/NoteMediaImport.swift
 Sources/ParcApp/NoteMediaSupport.swift
 Sources/ParcApp/NoteCursor.swift
