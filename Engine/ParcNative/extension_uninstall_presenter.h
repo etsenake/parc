@@ -2,6 +2,7 @@
 #pragma once
 #import <AppKit/AppKit.h>
 NS_ASSUME_NONNULL_BEGIN
+@protocol PCNativePresentation, PCNativeScheduling;
 typedef NS_ENUM(NSInteger, PCUninstallChoice) {
   PCUninstallAccept,
   PCUninstallCancel,
@@ -23,6 +24,8 @@ typedef NS_ENUM(NSInteger, PCUninstallChoice) {
 - (void)invalidate;
 - (void)setAcceptEnabled:(BOOL)enabled cancelEnabled:(BOOL)cancelEnabled;
 @property(nonatomic, readonly, nullable) NSWindow* sheet;
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
+@property(nonatomic, strong) id<PCNativeScheduling> scheduler;
 @property(nonatomic, readonly, getter=isPresenting) BOOL presenting;
 @end
 NS_ASSUME_NONNULL_END

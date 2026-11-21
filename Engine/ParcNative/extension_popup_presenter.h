@@ -1,6 +1,7 @@
 #pragma once
 #import <AppKit/AppKit.h>
 @class PCNativePageHost;
+@protocol PCNativePresentation, PCNativeScheduling;
 NS_ASSUME_NONNULL_BEGIN
 
 typedef struct {
@@ -83,5 +84,7 @@ typedef NS_ENUM(NSInteger, PCExtensionPopupPhase) {
 @property(nonatomic, readonly) BOOL userHasMovedWindow;
 @property(nonatomic, copy, nullable) NSString* extensionIdentifier;
 @property(nonatomic, copy, nullable) NSColor* backdropColor;
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
+@property(nonatomic, strong) id<PCNativeScheduling> scheduler;
 @end
 NS_ASSUME_NONNULL_END

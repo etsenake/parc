@@ -53,6 +53,8 @@ using namespace parc_dialog;
   BOOL _started;
   BOOL _finished;
 }
+@synthesize presentation = _presentation;
+@synthesize scheduler = _scheduler;
 - (instancetype)initWithWindow:(NSWindow*)window
                          title:(NSString*)title
                        message:(NSString*)message
@@ -72,6 +74,8 @@ using namespace parc_dialog;
     _validate = [validate copy];
     _changed = [changed copy];
     _result = [result copy];
+    _presentation = PCNativeSystemPresentation.sharedPresentation;
+    _scheduler = PCNativeSystemScheduling.sharedScheduling;
     _sheet = [[PCNativeUninstallSheet alloc]
         initWithContentRect:NSMakeRect(0, 0, kWidth, 230)
                   styleMask:NSWindowStyleMaskTitled
@@ -139,7 +143,7 @@ using namespace parc_dialog;
   __attribute__((objc_precise_lifetime)) PCNativeUninstallPresenter* keep =
       self;
   NSWindow* parent = _parent;
-  BOOL result = !_finished && parent && parent.visible &&
+  BOOL result = !_finished && parent && [_presentation isWindowVisible:parent] &&
                 !parent.miniaturized && _validate && _validate();
   (void)keep;
   return result && !_finished && _parent == parent;
@@ -150,7 +154,7 @@ using namespace parc_dialog;
     return;
   }
   _started = YES;
-  [NSRunLoop.mainRunLoop
+  [_scheduler
       performInModes:@[ NSRunLoopCommonModes, NSModalPanelRunLoopMode ]
                block:^{
                  __attribute__((objc_precise_lifetime))
@@ -158,18 +162,21 @@ using namespace parc_dialog;
                  __attribute__((objc_precise_lifetime)) NSWindow* parent =
                      self->_parent;
                  PCNativeUninstallSheet* sheet = self->_sheet;
-                 if (![self valid] || parent.attachedSheet) {
+                 id<PCNativePresentation> presentation = self->_presentation;
+                 if (![self valid] || [presentation attachedSheetOfWindow:parent]) {
                    [self finish:PCUninstallInterrupted];
                    return;
                  }
-                 [parent beginSheet:sheet
+                 [presentation window:parent
+                            beginSheet:sheet
                      completionHandler:^(NSModalResponse) {
                        [self finish:PCUninstallInterrupted];
                      }];
                  if (!self->_finished &&
                      (![self valid] || self->_sheet != sheet ||
-                      sheet.sheetParent != parent ||
-                      parent.attachedSheet != sheet || !sheet.visible)) {
+                      [presentation sheetParentOfWindow:sheet] != parent ||
+                      [presentation attachedSheetOfWindow:parent] != sheet ||
+                      ![presentation isWindowVisible:sheet])) {
                    [self finish:PCUninstallInterrupted];
                  }
                  (void)keep;
@@ -230,10 +237,12 @@ using namespace parc_dialog;
   }
   _checkbox.enabled = NO;
   _checkbox.target = nil;
-  if (sheet.sheetParent) {
-    [sheet.sheetParent endSheet:sheet returnCode:NSModalResponseCancel];
+  if ([_presentation sheetParentOfWindow:sheet]) {
+    [_presentation window:[_presentation sheetParentOfWindow:sheet]
+                 endSheet:sheet
+               returnCode:NSModalResponseCancel];
   }
-  [sheet orderOut:nil];
+  [_presentation orderOutWindow:sheet];
   if (callback) {
     callback(choice);
   }
@@ -253,7 +262,8 @@ using namespace parc_dialog;
   return _sheet;
 }
 - (BOOL)isPresenting {
-  return !_finished && _sheet.sheetParent == _parent && _sheet.visible;
+  return !_finished && [_presentation sheetParentOfWindow:_sheet] == _parent &&
+         [_presentation isWindowVisible:_sheet];
 }
 - (void)dealloc {
   if (_closeObserver) {
@@ -262,7 +272,7 @@ using namespace parc_dialog;
   if (_sheetCloseObserver) {
     [NSNotificationCenter.defaultCenter removeObserver:_sheetCloseObserver];
   }
-  NSCAssert(!_sheet.sheetParent,
+  NSCAssert(![_presentation sheetParentOfWindow:_sheet],
             @"Presented requests require explicit invalidation");
 }
 @end
