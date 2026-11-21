@@ -350,6 +350,7 @@ extension BrowserWindowController {
         }
         guard let documentID = page.easelID else { return }
         if let cached = easelEditors[tab.id], cached.documentID == documentID, cached.profileID == tab.profileID {
+            EaselTabIcons.shared.follow(cached.editor.session)
             pane.showNativeContent(cached.editor.view)
             return
         }
@@ -370,6 +371,7 @@ extension BrowserWindowController {
 
     @discardableResult func configureEaselOwner(_ tab: BrowserTab, documentID: UUID, editor: EaselEditorViewController,
                                                        windowTransfer: EaselBrowserObjects.WindowTransfer? = nil) -> Bool {
+            EaselTabIcons.shared.follow(editor.session)
             editor.onTitleChange = { [weak self] title in
                 self?.store.updateEaselTitle(id: documentID, profileID: tab.profileID, title: title)
             }

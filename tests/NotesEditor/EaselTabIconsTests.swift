@@ -19,6 +19,8 @@ struct EaselTabIconsTests {
             try liveChanges()
             try customEmoji()
             try removal()
+            try missingAsset()
+            try availability()
             keys()
             print("EaselTabIconsTests passed")
         }
@@ -120,6 +122,36 @@ struct EaselTabIconsTests {
         try store.delete(id)
         expectEqual(icons.lookup(profile: profile, id: id), .known(nil), "a deleted Easel's icon is forgotten")
         expect(!heard.isEmpty, "deleting an Easel tells listeners")
+    }
+
+    static func missingAsset() throws {
+        let store = try makeStore("missing-asset")
+        let session = try store.create()
+        let id = session.document.id
+        let asset = try session.importPNG(png)
+        try session.perform("Change Icon") { $0.icon = EaselPageIcon.image(assetID: asset) }
+        let icons = fresh(store)
+        let profile = UUID()
+        guard case .known(.image?) = icons.lookup(profile: profile, id: id) else { failTest("the image icon resolves while its picture exists") }
+        heard = []
+        store.removeAssets([asset])
+        expectEqual(icons.lookup(profile: profile, id: id), .known(nil), "a missing picture falls back to the mark")
+        expect(!heard.isEmpty, "losing the picture tells listeners")
+    }
+
+    static func availability() throws {
+        var checks = 0
+        let availability = EaselStoreAvailability { _ in checks += 1; return true }
+        let directory = URL(fileURLWithPath: "/tmp/easel-availability", isDirectory: true)
+        expect(availability.contains(directory) && availability.contains(directory) && availability.contains(directory), "the store is found")
+        expectEqual(checks, 1, "the store is only checked once")
+        NotificationCenter.default.post(name: .easelDocumentRemoved, object: UUID())
+        expect(availability.contains(directory), "the store is found again")
+        expectEqual(checks, 2, "a removal checks the store again")
+        var missing = 0
+        let absent = EaselStoreAvailability { _ in missing += 1; return false }
+        expect(!absent.contains(directory) && !absent.contains(directory), "a missing store is not found")
+        expectEqual(missing, 2, "a missing store is checked every time so a new one shows up")
     }
 
     static func keys() {
