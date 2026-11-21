@@ -53,6 +53,12 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
+  "$repo_root/tests/EaselMediaImportTests.swift" \
+  -o "$scratch/easel-media-import"
+"$scratch/easel-media-import"
+
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
+  "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/tests/EaselRoundTripTests.swift" \
   -o "$scratch/easel-round-trip"
 "$scratch/easel-round-trip"

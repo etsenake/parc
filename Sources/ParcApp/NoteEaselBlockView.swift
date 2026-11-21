@@ -405,7 +405,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
                 guard let self, let chooser, self.imagePanel === chooser else { return }
                 self.imagePanel = nil
                 guard response == .OK, self.surface.active, self.canEdit, let canvas = self.surface.canvas else { return }
-                do { for url in chooser.urls { try canvas.importImageFile(url) } } catch { self.editor?.onError?(error) }
+                do { try canvas.importMediaFiles(chooser.urls) } catch { self.editor?.onError?(error) }
                 self.focusCanvas()
             }
         }

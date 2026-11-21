@@ -1307,7 +1307,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return false
     }
     func importImage(_ data: Data) throws { try insertImageData(data) }
-    func importImageFile(_ url: URL) throws { try insertMediaFile(url) }
+    func importImageFile(_ url: URL) throws { try importMediaFiles([url]) }
     func beginEditing(_ item: EaselItem, at point: NSPoint? = nil) {
         guard item.kind.holdsText || item.kind == .arrow, !item.isLocked else { return }
         guard finishEditing(), session.document.items.contains(where: { $0 == item }) else { return }
@@ -2242,9 +2242,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if let text = try EaselStyledText.plainText(from: .general) { insert(kind: .text, text: text) }
         } catch { onError?(error) }
     }
-    func readPasteboard(_ pasteboard: NSPasteboard) -> Bool {
+    func readPasteboard(_ pasteboard: NSPasteboard, at point: NSPoint? = nil) -> Bool {
         if readTablePasteboard(pasteboard) { return true }
-        var imported = false
         do {
             if let url = try EaselClipboardURL.read(from: pasteboard) {
                 if fixedCanvasSize == nil { return insertLink(url.absoluteString) }
@@ -2256,11 +2255,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             }
             if let data = pasteboard.data(forType: Self.gifPasteboardType) ?? pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff) { try importImage(data); return true }
             if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
-                for url in urls { try importImageFile(url); imported = true }; return imported
+                try importMediaFiles(urls, at: point); return true
             }
             if let text = try EaselStyledText.plainText(from: pasteboard) { return insert(kind: .text, text: text) }
         } catch { onError?(error) }
-        return imported
+        return false
     }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         if fixedCanvasSize == nil, let operation = contentDrop.begin(sender) { return operation }
@@ -2275,7 +2274,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         if fixedCanvasSize == nil, let result = contentDrop.perform(sender) { return result }
         if let replaced = replaceImage(fromDrop: sender) { return replaced }
-        return withObjectMotion(.appear) { readPasteboard(sender.draggingPasteboard) }
+        return withObjectMotion(.appear) { readPasteboard(sender.draggingPasteboard, at: convert(sender.draggingLocation, from: nil)) }
     }
     func setLiveCapture(_ id: UUID, enabled: Bool) {
         guard fixedCanvasSize == nil, pageObjects != nil,
