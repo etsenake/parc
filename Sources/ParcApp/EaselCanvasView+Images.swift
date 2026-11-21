@@ -31,69 +31,103 @@ final class EaselImageEditing {
     fileprivate var animatedAssets: [String: Bool] = [:]
 }
 
+final class EaselGIFDecoder: @unchecked Sendable {
+    static let maximumAnimatedPixels = 2048 * 2048
+    static let maximumFrames = 5_000
+    let count: Int
+    private let source: CGImageSource
+    private let maxPixel: Int
+
+    init?(data: Data, maxPixel: Int) {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let count = CGImageSourceGetCount(source)
+        guard count > 1, count <= Self.maximumFrames,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0, width * height <= Self.maximumAnimatedPixels else { return nil }
+        self.source = source
+        self.count = count
+        self.maxPixel = max(16, min(maxPixel, max(width, height)))
+    }
+
+    func frame(at index: Int) -> CGImage? {
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+                                        kCGImageSourceShouldCacheImmediately: true]
+        return CGImageSourceCreateThumbnailAtIndex(source, index, options as CFDictionary)
+    }
+
+    func delay(at index: Int) -> TimeInterval {
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
+        let gif = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
+        let value = (gif?[kCGImagePropertyGIFUnclampedDelayTime] as? Double) ?? (gif?[kCGImagePropertyGIFDelayTime] as? Double) ?? 0.1
+        return value.isFinite && value >= 0.02 ? min(value, 10) : 0.1
+    }
+}
+
+private final class EaselGIFFrameBox: @unchecked Sendable {
+    let image: CGImage?
+    let delay: TimeInterval
+    init(image: CGImage?, delay: TimeInterval) { self.image = image; self.delay = delay }
+}
+
 @MainActor
 final class EaselGIFPlayer {
     let itemID: UUID
     let assetID: String
-    private let source: CGImageSource
-    private let delays: [TimeInterval]
+    private let decoder: EaselGIFDecoder
     private let size: NSSize
+    private let queue = DispatchQueue(label: "org.parc.easel-gif", qos: .userInitiated)
     private var index = 0
+    private var running = false
     private var timer: Timer?
     private var tick: (() -> Void)?
     private(set) var frame: NSImage?
 
-    init?(itemID: UUID, assetID: String, data: Data, size: NSSize) {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        let count = CGImageSourceGetCount(source)
-        guard count > 1, count <= 5_000 else { return nil }
+    init?(itemID: UUID, assetID: String, data: Data, size: NSSize, maxPixel: Int) {
+        guard let decoder = EaselGIFDecoder(data: data, maxPixel: maxPixel) else { return nil }
         self.itemID = itemID
         self.assetID = assetID
-        self.source = source
+        self.decoder = decoder
         self.size = size
-        delays = (0..<count).map { index in
-            let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
-            let gif = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
-            let value = (gif?[kCGImagePropertyGIFUnclampedDelayTime] as? Double) ?? (gif?[kCGImagePropertyGIFDelayTime] as? Double) ?? 0.1
-            return value.isFinite && value >= 0.011 ? min(value, 10) : 0.1
-        }
     }
 
     func start(_ tick: @escaping () -> Void) {
         self.tick = tick
-        index = 0
-        show(0)
-        schedule()
+        running = true
+        load(0)
     }
 
     func stop() {
+        running = false
         timer?.invalidate()
         timer = nil
         tick = nil
         frame = nil
     }
 
-    private func schedule() {
-        guard delays.indices.contains(index) else { return }
-        let next = Timer(timeInterval: delays[index], repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.advance() }
+    private func load(_ next: Int) {
+        let decoder = self.decoder
+        queue.async { [weak self] in
+            let box = EaselGIFFrameBox(image: decoder.frame(at: next), delay: decoder.delay(at: next))
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.show(box, at: next) }
+            }
         }
-        RunLoop.main.add(next, forMode: .common)
-        timer = next
     }
 
-    private func advance() {
-        guard timer != nil, !delays.isEmpty else { return }
-        index = (index + 1) % delays.count
-        show(index)
+    private func show(_ box: EaselGIFFrameBox, at next: Int) {
+        guard running else { return }
+        index = next
+        if let image = box.image { frame = NSImage(cgImage: image, size: size) }
         tick?()
-        schedule()
-    }
-
-    private func show(_ index: Int) {
-        let options = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
-        guard let image = CGImageSourceCreateImageAtIndex(source, index, options) else { return }
-        frame = NSImage(cgImage: image, size: size)
+        let timer = Timer(timeInterval: box.delay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.running else { return }
+                self.load((self.index + 1) % self.decoder.count)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 }
 
@@ -685,7 +719,8 @@ extension EaselCanvasView {
               width > 0, height > 0, width <= 16_384, height <= 16_384, Int64(width) * Int64(height) <= 80_000_000 else {
             throw EaselStoreError.invalidImage
         }
-        if EaselAssetType.sniff(data) == .gif, CGImageSourceGetCount(source) > 1 {
+        let frames = CGImageSourceGetCount(source)
+        if EaselAssetType.sniff(data) == .gif, frames > 1, frames <= EaselGIFDecoder.maximumFrames, width * height <= EaselGIFDecoder.maximumAnimatedPixels {
             guard CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else { throw EaselStoreError.invalidImage }
             return (data, .gif, CGSize(width: width, height: height))
         }
@@ -732,11 +767,19 @@ extension EaselCanvasView {
         }
         if let player = imageEditing.gif, player.itemID == item.id, player.assetID == asset { return }
         stopImagePlayback()
+        let backing = window?.backingScaleFactor ?? 2
+        let maxPixel = Int((CGFloat(max(item.frame.width, item.frame.height)) * CGFloat(canvasScale) * backing).rounded(.up))
         guard let data = try? session.assetData(asset), let size = image(asset)?.size,
-              let player = EaselGIFPlayer(itemID: item.id, assetID: asset, data: data, size: size) else { return }
+              let player = EaselGIFPlayer(itemID: item.id, assetID: asset, data: data, size: size, maxPixel: min(4096, maxPixel)) else { return }
         imageEditing.gif = player
         player.start { [weak self] in self?.imagePlaybackAdvanced() }
         imagePlaybackAdvanced()
+    }
+
+    func imageDocumentChanged() {
+        if let crop = imageEditing.crop, !cropIsCurrent(crop) { finishImageCrop(save: false) }
+        if let player = imageEditing.gif,
+           session.document.items.first(where: { $0.id == player.itemID })?.assetID != player.assetID { stopImagePlayback() }
     }
 
     func stopImagePlayback() {
@@ -932,7 +975,7 @@ extension EaselCanvasView {
             EaselMenuRow(id: "crop-mask", title: "Mask", symbol: "square.on.circle", children: masks),
             EaselMenuRow(id: "crop-rotate", title: "Rotate 90°", symbol: "rotate.right", perform: guardedMenuAction { $0.rotateImageCrop() }),
             EaselMenuRow(id: "crop-zoom-in", title: "Zoom In", symbol: "plus.magnifyingglass", shortcut: "=",
-                         isEnabled: draft.zoom < EaselImageCropDraft.maximumZoom - 0.001, perform: guardedMenuAction { $0.zoomImageCrop(by: 1.25) }),
+                         isEnabled: draft.zoom < draft.zoomLimit - 0.001, perform: guardedMenuAction { $0.zoomImageCrop(by: 1.25) }),
             EaselMenuRow(id: "crop-zoom-out", title: "Zoom Out", symbol: "minus.magnifyingglass", shortcut: "-",
                          isEnabled: draft.zoom > 1.001, perform: guardedMenuAction { $0.zoomImageCrop(by: 0.8) }),
             EaselMenuRow(id: "crop-reset", title: "Show Whole Picture", symbol: "arrow.counterclockwise", perform: guardedMenuAction { $0.resetImageCrop() }),

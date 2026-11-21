@@ -37,9 +37,9 @@ A crop bar below the frame, built from the Notes media toolbar parts, holds:
 - **Mask**: the Notes mask picker, previewing each shape on this picture.
 - **Rotate 90°**: turns the picture clockwise inside its frame; the frame turns
   with it about its centre, and 16:9 becomes 9:16.
-- **Zoom**: a slider from 1× (the picture just covers the frame) to 8×, plus
-  zoom out and zoom in buttons. Zooming scales the picture about the frame's
-  centre and never uncovers the frame.
+- **Zoom**: a slider from 1× (the picture just covers the frame) to 8×, or to a
+  tighter saved crop's own zoom, plus zoom out and zoom in buttons. Zooming
+  scales the picture about the frame's centre and never uncovers the frame.
 - **Reset**, **Cancel** and **Save**. Reset shows the whole picture again at
   1×; Cancel and Escape throw the crop away; Save, Return or a click anywhere
   else keeps it.
@@ -48,8 +48,10 @@ Arrow keys move the picture a point at a time (Shift for ten), `=` and `-`
 zoom, and Tab saves and moves on. Right-clicking during a crop offers the same
 choices, and VoiceOver gets them as actions on the image (move the picture,
 zoom, rotate, show the whole picture, done and cancel). Selecting something
-else saves the crop. Each crop is a single Undo step, and the image keeps its
-original bytes, so cropping again always starts from the whole picture.
+else saves the crop, and so does the Easel leaving its window. Each crop is a
+single Undo step, and the image keeps its original bytes, so cropping again
+always starts from the whole picture. If an Undo changes or removes the image
+mid-crop, crop mode ends without saving.
 
 Crop mode works in the picture's own orientation: a rotated or flipped object
 is shown upright while it's being cropped and returns to its rotation on Save.
@@ -72,8 +74,8 @@ the badge edits it. Empty text removes it; up to 4 KB is kept.
 
 Replace Image… swaps in a different picture and keeps the object's exact size
 and spot: the new picture fills the old frame from its middle, like a cover
-crop, and the mask, alt text, rotation and flips stay. The quarter turns go,
-because they belonged to the old picture. Dropping a picture onto the selected
+crop, and the mask, rotation and flips stay. The alt text and quarter turns go,
+because they described the old picture. Dropping a picture onto the selected
 image replaces it the same way, while a drop anywhere else adds a new one. A
 replaced image is one Undo step, and Undo brings the old picture back.
 
@@ -81,7 +83,10 @@ replaced image is one Undo step, and Undo brings the old picture back.
 
 An animated GIF shows its first frame, with a small GIF badge, until it is the
 only thing selected. Then it plays, honouring each frame's delay, and stops
-when the selection changes, so only one GIF moves at a time. With Reduce Motion
+when the selection changes or the Easel leaves the window, so only one GIF
+moves at a time. Frames are decoded off the main thread at the size they're
+shown. GIFs over 2048 × 2048 pixels or 5,000 frames come in as a still picture
+of their first frame. With Reduce Motion
 on, GIFs stay on their first frame, as they do in Notes. Copying a GIF puts the
 GIF itself on the pasteboard.
 
@@ -89,8 +94,8 @@ GIF itself on the pasteboard.
 
 MP4 and MOV videos (including M4V) come in through the Add image button, a
 pasted file or a drop, up to 30 MB; anything bigger gets a friendly "a bit big"
-message instead. Parc checks the file's first bytes, asks macOS's video player
-whether it can play it, reads its size and grabs a poster frame from just after
+message instead. Parc checks the file's ftyp box for a known MP4 or QuickTime
+brand, asks macOS's video player whether it can play it, reads its size and grabs a poster frame from just after
 the start, then copies the video and the poster into the Easel's storage. WebM
 isn't offered, because macOS's own video player (the one Notes video blocks use
 too) can't open it; such files get the same "can't play on an Easel" message as

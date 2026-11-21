@@ -315,9 +315,10 @@ private final class EaselImageCropBar: NSView {
         ratioButton.content = .iconAndText(.symbol("aspectratio"), title)
         ratioButton.setAccessibilityValue(title)
         maskButton.setAccessibilityValue(draft.mask?.title ?? NoteImageMask.noneTitle)
+        zoomSlider.limit = draft.zoomLimit
         zoomSlider.value = draft.zoom
         zoomOutButton.isEnabled = draft.zoom > 1.001
-        zoomInButton.isEnabled = draft.zoom < EaselImageCropDraft.maximumZoom - 0.001
+        zoomInButton.isEnabled = draft.zoom < draft.zoomLimit - 0.001
         resetChip.isEnabled = !(draft.isWhole && draft.turns == 0 && draft.zoom <= 1.001)
         needsLayout = true
         if frame.size != fittingSize { setFrameSize(fittingSize) }
@@ -343,9 +344,9 @@ private final class EaselCropZoomSlider: NSView {
             setAccessibilityValue(Self.label(value))
         }
     }
+    var limit: CGFloat = EaselImageCropDraft.maximumZoom { didSet { if limit != oldValue { needsDisplay = true } } }
     var onChange: ((CGFloat) -> Void)?
     private var tracking = false
-    private static let range: ClosedRange<CGFloat> = 1...EaselImageCropDraft.maximumZoom
     private static let knob: CGFloat = 12
 
     override init(frame: NSRect) {
@@ -367,12 +368,12 @@ private final class EaselCropZoomSlider: NSView {
     private var track: NSRect { NSRect(x: Self.knob / 2 + 4, y: bounds.midY - 1.5, width: max(0, bounds.width - Self.knob - 8), height: 3) }
 
     private var fraction: CGFloat {
-        let span = log(Self.range.upperBound / Self.range.lowerBound)
-        return span > 0 ? min(1, max(0, log(max(value, Self.range.lowerBound) / Self.range.lowerBound) / span)) : 0
+        let span = log(max(1, limit))
+        return span > 0 ? min(1, max(0, log(max(value, 1)) / span)) : 0
     }
 
     private func value(at fraction: CGFloat) -> CGFloat {
-        Self.range.lowerBound * pow(Self.range.upperBound / Self.range.lowerBound, min(1, max(0, fraction)))
+        pow(max(1, limit), min(1, max(0, fraction)))
     }
 
     override func draw(_ dirtyRect: NSRect) {

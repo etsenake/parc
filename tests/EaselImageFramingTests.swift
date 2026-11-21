@@ -102,6 +102,16 @@ struct EaselImageFramingTests {
         let cropped = EaselImageCropDraft(item: item, natural: CGSize(width: 400, height: 100))
         expect(close(cropped.picture, CGRect(x: 0, y: 100, width: 400, height: 100)), "an existing crop opens showing the whole picture")
         expect(cropped.applying(to: item) == item, "saving an untouched draft changes nothing")
+        var tight = image()
+        tight.crop = EaselRect(x: 0.48, y: 0.48, width: 0.04, height: 0.04)
+        tight.frame = EaselRect(x: 0, y: 0, width: 100, height: 100)
+        var zoomed = EaselImageCropDraft(item: tight, natural: CGSize(width: 1000, height: 1000))
+        expect(close(zoomed.zoom, 25) && zoomed.zoomLimit >= 25, "a tight saved crop reopens at its real zoom")
+        let before = zoomed.picture.width
+        zoomed.setZoom(zoomed.zoom * 1.25)
+        expect(zoomed.picture.width >= before - 0.01, "zooming in on a tight crop never zooms out")
+        zoomed.setZoom(zoomed.zoom / 1.25)
+        expect(zoomed.picture.width < before + 0.01 && zoomed.picture.width > before * 0.7, "zooming back out steps down from the real zoom")
     }
 
     @MainActor static func rotation() {
@@ -150,7 +160,8 @@ struct EaselImageFramingTests {
         item.crop = EaselRect(x: 0, y: 0, width: 0.5, height: 0.5)
         let replaced = EaselImageFraming.replacing(item, natural: CGSize(width: 100, height: 100))
         expect(replaced.frame == item.frame, "a replaced image keeps its size and spot")
-        expect(replaced.quarterTurns == nil && replaced.mask == .heart && replaced.altText == "A dog", "replacing keeps the mask and description and drops the turn")
+        expect(replaced.quarterTurns == nil && replaced.mask == .heart && replaced.altText == nil,
+               "replacing keeps the mask and drops the turn and the old picture's description")
         expect(close(replaced.crop, EaselRect(x: 0, y: 0.25, width: 1, height: 0.5)), "the new picture fills the old frame from its middle")
         let sameShape = EaselImageFraming.replacing(item, natural: CGSize(width: 800, height: 400))
         expect(sameShape.crop == nil, "a picture with the same shape needs no crop")
@@ -242,10 +253,16 @@ struct EaselImageFramingTests {
         var mp4 = Data([0, 0, 0, 0x18]); mp4.append(contentsOf: Array("ftypisom".utf8)); mp4.append(Data(count: 12))
         var mov = Data([0, 0, 0, 0x14]); mov.append(contentsOf: Array("ftypqt  ".utf8)); mov.append(Data(count: 12))
         var old = Data([0, 0, 0, 0x08]); old.append(contentsOf: Array("wide".utf8)); old.append(Data(count: 12))
+        var stranger = Data([0, 0, 0, 0x18]); stranger.append(contentsOf: Array("ftypabcd".utf8)); stranger.append(Data(count: 12))
+        var compatible = Data([0, 0, 0, 0x18]); compatible.append(contentsOf: Array("ftypabcd".utf8)); compatible.append(Data(count: 4))
+        compatible.append(contentsOf: Array("mp41".utf8)); compatible.append(Data(count: 4))
+        var flat = gif; flat.replaceSubrange(6..<10, with: [0, 0, 0, 0])
         var webm = Data([0x1A, 0x45, 0xDF, 0xA3, 0x9F, 0x42, 0x86, 0x81, 0x01, 0x42, 0x82, 0x84]); webm.append(contentsOf: Array("webm".utf8))
         var mkv = Data([0x1A, 0x45, 0xDF, 0xA3, 0x9F, 0x42, 0x86, 0x81, 0x01, 0x42, 0x82, 0x88]); mkv.append(contentsOf: Array("matroska".utf8))
-        expect(EaselAssetType.sniff(mp4) == .mp4 && EaselAssetType.sniff(mov) == .mov && EaselAssetType.sniff(old) == .mov,
-               "MP4 and QuickTime movies are recognised by their boxes")
+        expect(EaselAssetType.sniff(mp4) == .mp4 && EaselAssetType.sniff(mov) == .mov, "MP4 and QuickTime movies are recognised by their ftyp box")
+        expect(EaselAssetType.sniff(old) == nil && EaselAssetType.sniff(stranger) == nil, "files without a known movie brand aren't movies")
+        expect(EaselAssetType.sniff(compatible) == .mp4, "a compatible MP4 brand is enough")
+        expect(EaselAssetType.sniff(flat) == nil, "a GIF needs a real size")
         expect(EaselAssetType.sniff(webm) == nil && EaselAssetType.sniff(mkv) == nil, "WebM and other Matroska files aren't stored, since macOS can't play them")
         expect(EaselAssetType.sniff(Data("hello world, not media".utf8)) == nil, "text is not media")
         expect(EaselAssetType.of(assetID: "abc.mov") == .mov && EaselAssetType.of(assetID: "abc.webm") == nil && EaselAssetType.of(assetID: "abc") == nil,

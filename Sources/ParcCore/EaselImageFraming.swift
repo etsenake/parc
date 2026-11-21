@@ -67,7 +67,7 @@ enum EaselImageFraming {
 
     static func replacing(_ item: EaselItem, natural: CGSize) -> EaselItem {
         var next = item
-        next.crop = nil; next.quarterTurns = nil
+        next.crop = nil; next.quarterTurns = nil; next.altText = nil
         let f = item.frame
         guard natural.width > 0, natural.height > 0, f.width > 0, f.height > 0 else { return next }
         let bounds = CGRect(origin: .zero, size: natural)
@@ -103,6 +103,7 @@ struct EaselImageCropDraft: Equatable {
     var aspect: NoteImageCropAspect
     let natural: CGSize
     let original: CGRect
+    let zoomLimit: CGFloat
 
     init(item: EaselItem, natural: CGSize) {
         let f = CGRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height)
@@ -113,6 +114,9 @@ struct EaselImageCropDraft: Equatable {
         mask = item.mask
         aspect = item.mask?.isSquare == true ? .square : .free
         self.natural = natural
+        let picture = self.picture
+        let cover = picture.width > 0 && picture.height > 0 ? max(f.width / picture.width, f.height / picture.height) : 1
+        zoomLimit = max(Self.maximumZoom, cover > 0 && cover.isFinite ? 1 / cover : 1)
     }
 
     var turnedNatural: CGSize { EaselImageFraming.turnedSize(natural, turns: turns) }
@@ -127,7 +131,7 @@ struct EaselImageCropDraft: Equatable {
 
     var zoom: CGFloat {
         let factor = coverFactor
-        return factor > 0 ? min(Self.maximumZoom, max(1, 1 / factor)) : 1
+        return factor > 0 ? min(zoomLimit, max(1, 1 / factor)) : 1
     }
 
     mutating func move(by delta: CGSize) {
@@ -147,7 +151,7 @@ struct EaselImageCropDraft: Equatable {
 
     mutating func setZoom(_ value: CGFloat) {
         guard value.isFinite, picture.width > 0, picture.height > 0 else { return }
-        let target = min(Self.maximumZoom, max(1, value))
+        let target = min(zoomLimit, max(1, value))
         let factor = coverFactor * target
         let center = CGPoint(x: frame.midX, y: frame.midY)
         let size = CGSize(width: picture.width * factor, height: picture.height * factor)

@@ -362,6 +362,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             self.hoveredObjectID = nil
             self.selection.formIntersection(document.items.map(\.id))
             if let edit = self.geometryEdit, !edit.isCurrent(in: document) { self.cancelPointerInteraction() }
+            self.imageDocumentChanged()
             if let end = self.marqueeEnd { self.updateMarquee(to: end, flags: NSEvent.modifierFlags) }
             if let id = self.editingID, let item = document.items.first(where: { $0.id == id }) {
                 self.updateEditor(item)
@@ -1601,7 +1602,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: window)
             NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: window)
         }
-        if newWindow !== window { hoveredObjectID = nil; menuGeneration &+= 1; motion.cancel(); cancelPointerInteraction(); releaseTemporaryHand(); stopZoomAnimation(); stopVideoPlayback() }
+        if newWindow !== window {
+            hoveredObjectID = nil; menuGeneration &+= 1; motion.cancel(); cancelPointerInteraction(); releaseTemporaryHand(); stopZoomAnimation()
+            stopVideoPlayback(); finishImageCrop(save: true); stopImagePlayback()
+            if newWindow != nil { DispatchQueue.main.async { [weak self] in self?.refreshImagePlayback() } }
+        }
         if newWindow !== window { selectionToolbar?.detach() }
         if let newWindow {
             NotificationCenter.default.addObserver(self, selector: #selector(ownerResignedKey),

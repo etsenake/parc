@@ -41,13 +41,25 @@ enum EaselAssetType: String, CaseIterable {
     static func sniff(_ data: Data) -> EaselAssetType? {
         let head = [UInt8](data.prefix(64))
         if head.count >= 24, head.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]), Array(head[12..<16]) == Array("IHDR".utf8) { return .png }
-        if head.count >= 13, head.starts(with: Array("GIF87a".utf8)) || head.starts(with: Array("GIF89a".utf8)) { return .gif }
-        guard head.count >= 12 else { return nil }
-        let size = head[0..<4].reduce(0) { $0 << 8 | Int($1) }, box = String(decoding: head[4..<8], as: UTF8.self)
-        guard size == 1 || size >= 8 else { return nil }
-        if box == "ftyp" { return String(decoding: head[8..<12], as: UTF8.self) == "qt  " ? .mov : .mp4 }
-        return ["moov", "mdat", "wide", "free", "skip", "pnot"].contains(box) ? .mov : nil
+        if head.count >= 13, head.starts(with: Array("GIF87a".utf8)) || head.starts(with: Array("GIF89a".utf8)) {
+            let width = Int(head[6]) | Int(head[7]) << 8, height = Int(head[8]) | Int(head[9]) << 8
+            return width > 0 && height > 0 ? .gif : nil
+        }
+        guard head.count >= 16, String(decoding: head[4..<8], as: UTF8.self) == "ftyp" else { return nil }
+        let size = head[0..<4].reduce(0) { $0 << 8 | Int($1) }
+        guard size >= 16, size % 4 == 0, size <= 4096 else { return nil }
+        var brands = [String(decoding: head[8..<12], as: UTF8.self)]
+        var offset = 16
+        while offset + 4 <= min(size, head.count) {
+            brands.append(String(decoding: head[offset..<(offset + 4)], as: UTF8.self))
+            offset += 4
+        }
+        if brands.contains("qt  ") { return .mov }
+        return brands.contains(where: movieBrands.contains) ? .mp4 : nil
     }
+
+    private static let movieBrands: Set<String> = ["isom", "iso2", "iso3", "iso4", "iso5", "iso6", "mp41", "mp42", "avc1", "M4V ", "M4VP",
+                                                   "M4VH", "MSNV", "NDAS", "dash", "f4v ", "mmp4", "3gp4", "3gp5", "3gp6", "3g2a", "hvc1", "hev1"]
 }
 
 enum EaselStampDesign: String, CaseIterable { case plusOne, dot, heart, question, star, thumbsUp, thumbsDown, smiley }
