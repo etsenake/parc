@@ -19,15 +19,33 @@ the view, beside the selection or in a free strip, whichever covers the least;
 only a selection filling the whole view gets it over the top, pinned top centre.
 `EaselSelectionToolbarPlacement` in ParcCore owns that choice. It lives in a pass-through layer above the canvas's scroll view
 instead of inside the magnified canvas, so it keeps its screen size at every
-zoom, follows scrolling and zooming, and stays inside the canvas viewport. For
-text it offers the typeface and size menus, smaller and bigger steps and the
-text-fill toggle; while text is being edited it adds bold, italic, underline,
-strikethrough, the paragraph menu and Link, and its size controls act on the
-selected range. A ••• button ends every toolbar with the four layer moves,
-Duplicate, Lock and Delete, plus a section's Lock all, Lock background only,
-Hide contents and Delete, keep contents. Its buttons never take keyboard focus from a click, so
+zoom, follows scrolling and zooming, and stays inside the canvas viewport. Its
+controls follow the selection. Text gets typeface and size menus, smaller and
+bigger steps, the style button, text fill, alignment and Link; while text is
+being edited, text, stickies, shapes and tables add bold, italic, underline,
+strikethrough and the paragraph menu, and size controls act on the selected
+range. Shapes lead with the shape picker (all 32 shapes, the current one
+checked), stickies offer wide or square, connectors offer a label, start and
+end heads with Swap Ends, and straight, elbow or curved routing with Reset
+Path. Sections get Rename, images crop, mask, replace and alt text, washi tape
+its pattern, code blocks their language, and tables typeface, size, bold,
+strike, text and cell colour, alignment and merge. The style button shows the
+current colour (a dashed ring when they differ) and opens the Easel style
+picker with colour, custom hex and sampler, then fill and fill opacity,
+outline or line width, dash and a connector's label background, as the
+selection allows; while typing it colours the selected text. Alignment and
+table text colour show the current value, Mixed when cells or objects differ,
+and the alignment menu lists ⌥⌘L, ⌥⌘T and ⌥⌘R, which reach table cells too.
+Several objects add align and distribute, tidy up, group, create section and
+lock; a locked selection shows Locked with Unlock, or Unlock Group when every
+object belongs to one group. A ••• button ends every toolbar with the four
+layer moves, Flip Horizontal (⇧H), Flip Vertical (⇧V), Rotate 90° Left and
+Right, Duplicate, Copy as Image, Lock and Delete, plus a section's Lock all,
+Lock background only, Hide contents and Delete, keep contents. VoiceOver
+reaches the toolbar right after the selected object. Its buttons never take keyboard focus from a click, so
 formatting never ends text editing. Menus are Notes menus opened under their
-button that close on a pick, Escape or an outside click. Every button calls a
+button that close on a pick, Escape or an outside click; the style picker
+stays open so colour, fill and line can be tuned in one visit. Every button calls a
 canvas command, so the toolbar, the Format menu and shortcuts make the same
 change as one Undo step, and a closed or deleted Easel refuses them. The
 original text storage, glyph layout, fill contour, typing history and document
@@ -134,7 +152,8 @@ Document paper, title ink and floating controls resolve from the enclosing
 Space `contentOverBackgroundAppearance`, the same Aqua/DarkAqua override Notes
 inherit.
 
-The toolbar's typeface, size, paragraph and ••• menus are Notes menu lists
+The toolbar's typeface, size, paragraph and ••• menus are Notes menu lists, its
+style and shape pickers the Easel pickers in a Notes popover,
 rather than native pop-up buttons, and its buttons draw SF Symbols or letter
 glyphs. Selected/pressed/disabled washes and native focus
 rings are explicit AppKit feedback adaptations; their drawing never changes
