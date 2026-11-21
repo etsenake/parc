@@ -168,9 +168,12 @@ cells, cells over 64 KB of text, more than 1 MB of text per table, overlapping
 or out-of-range merges, text hidden under a merge, bad fills, a grid on any
 other kind of object and rich text on the table object itself.
 
-The model and its operations live in `EaselTable.swift` and
-`EaselTableData.swift` in ParcCore; drawing, editing and commands live in
-`EaselCanvasView+Tables.swift`.
+The model and its operations live in `EaselTable.swift` (kept free of other
+Easel code so lean test builds can compile it with `EaselStore.swift`),
+geometry, sticky conversion and SVG in `EaselTableLayout.swift`, and parsing and
+CSV in `EaselTableData.swift`, all in ParcCore. Drawing, editing and commands
+live in `EaselCanvasView+Tables.swift`; the toast and the SVG text runs live in
+`EaselTableExport.swift`, outside the canvas test bundles.
 
 ## Checks
 

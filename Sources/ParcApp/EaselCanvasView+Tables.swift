@@ -96,6 +96,14 @@ private extension EaselPoint {
 }
 
 @MainActor
+final class EaselTableNotice: NSObject {
+    static let action = NSSelectorFromString("showEaselTableNotice:")
+    let label: String
+    let detail: String?
+    init(label: String, detail: String? = nil) { self.label = label; self.detail = detail }
+}
+
+@MainActor
 private final class EaselTableMenuToken: NSObject {
     let table: UUID
     let fill: String?
@@ -465,11 +473,11 @@ extension EaselCanvasView {
             drawTableInsertMarker(at: NSPoint(x: f.minX, y: y), line: NSRect(x: f.minX, y: y - 1 / scale, width: f.width, height: 2 / scale), scale: scale)
         case .columnBorder(let index)?:
             let x = CGFloat(grid.columnEdges[index + 1])
-            NoteTableStyle.resizeLine.setFill()
+            NoteTheme.dropIndicatorFallback.setFill()
             NSRect(x: x - 1 / scale, y: f.minY, width: 2 / scale, height: f.height).fill()
         case .rowBorder(let index)?:
             let y = CGFloat(grid.rowEdges[index + 1])
-            NoteTableStyle.resizeLine.setFill()
+            NoteTheme.dropIndicatorFallback.setFill()
             NSRect(x: f.minX, y: y - 1 / scale, width: f.width, height: 2 / scale).fill()
         default:
             break
@@ -481,15 +489,15 @@ extension EaselCanvasView {
         switch drag {
         case .columnBorder(let index):
             guard index + 1 < grid.columnEdges.count else { return }
-            NoteTableStyle.resizeLine.setFill()
+            NoteTheme.dropIndicatorFallback.setFill()
             NSRect(x: CGFloat(grid.columnEdges[index + 1]) - 1 / scale, y: f.minY, width: 2 / scale, height: f.height).fill()
         case .rowBorder(let index):
             guard index + 1 < grid.rowEdges.count else { return }
-            NoteTableStyle.resizeLine.setFill()
+            NoteTheme.dropIndicatorFallback.setFill()
             NSRect(x: f.minX, y: CGFloat(grid.rowEdges[index + 1]) - 1 / scale, width: f.width, height: 2 / scale).fill()
         case .columns(let block, let destination):
             guard block.upperBound < grid.columnCount else { return }
-            NoteTableStyle.selectionFill.setFill()
+            NoteTheme.blockSelection.setFill()
             NSRect(x: CGFloat(grid.columnEdges[block.lowerBound]), y: f.minY,
                    width: CGFloat(grid.columnEdges[block.upperBound + 1] - grid.columnEdges[block.lowerBound]), height: f.height).fill()
             let remaining = (0..<grid.columnCount).filter { !block.contains($0) }
@@ -498,7 +506,7 @@ extension EaselCanvasView {
             NSRect(x: CGFloat(x) - 1.5 / scale, y: f.minY - 4 / scale, width: 3 / scale, height: f.height + 8 / scale).fill()
         case .rows(let block, let destination):
             guard block.upperBound < grid.rowCount else { return }
-            NoteTableStyle.selectionFill.setFill()
+            NoteTheme.blockSelection.setFill()
             NSRect(x: f.minX, y: CGFloat(grid.rowEdges[block.lowerBound]), width: f.width,
                    height: CGFloat(grid.rowEdges[block.upperBound + 1] - grid.rowEdges[block.lowerBound])).fill()
             let remaining = (0..<grid.rowCount).filter { !block.contains($0) }
@@ -512,16 +520,16 @@ extension EaselCanvasView {
 
     private func drawTableGrip(_ r: NSRect, vertical: Bool, active: Bool, hovered: Bool, scale: CGFloat) {
         let plate = NSBezierPath(roundedRect: r, xRadius: 4 / scale, yRadius: 4 / scale)
-        (active ? EaselAppearance.selection : NoteTableStyle.gripFill).setFill()
+        (active ? EaselAppearance.selection : NoteTheme.menuFill).setFill()
         plate.fill()
         if hovered && !active {
             NoteTheme.hoverFill.setFill()
             plate.fill()
         }
         plate.lineWidth = 1 / scale
-        (active ? EaselAppearance.selection : NoteTableStyle.gripStroke).setStroke()
+        (active ? EaselAppearance.selection : NoteTheme.menuHairline).setStroke()
         plate.stroke()
-        (active ? NSColor.white : hovered ? NoteTableStyle.gripActiveInk : NoteTableStyle.gripInk).setFill()
+        (active ? NSColor.white : hovered ? NoteTheme.secondaryInk : NoteTheme.handleInk).setFill()
         let dot = 2 / scale, gap = 2 / scale
         let columns = vertical ? 2 : 3, rows = vertical ? 3 : 2
         let width = CGFloat(columns) * dot + CGFloat(columns - 1) * gap, height = CGFloat(rows) * dot + CGFloat(rows - 1) * gap
@@ -536,9 +544,9 @@ extension EaselCanvasView {
     private func drawTableAddBar(_ r: NSRect, hovered: Bool, scale: CGFloat) {
         guard !r.isEmpty else { return }
         let plate = NSBezierPath(roundedRect: r, xRadius: 4 / scale, yRadius: 4 / scale)
-        (hovered ? NoteTableStyle.barPressedFill : NoteTableStyle.barFill).setFill()
+        (hovered ? NoteTheme.pressedFill : NoteTheme.hoverFill).setFill()
         plate.fill()
-        (hovered ? NoteTheme.secondaryInk : NoteTableStyle.barInk).setStroke()
+        (hovered ? NoteTheme.secondaryInk : NoteTheme.handleInk).setStroke()
         let arm = 4.5 / scale, center = NSPoint(x: r.midX, y: r.midY)
         let plus = NSBezierPath()
         plus.move(to: NSPoint(x: center.x - arm, y: center.y))
@@ -1326,8 +1334,13 @@ extension EaselCanvasView {
         return nil
     }
 
+    func presentTableNotice(_ label: String, detail: String? = nil) {
+        guard let controller = window?.windowController, controller.responds(to: EaselTableNotice.action) else { return }
+        _ = controller.perform(EaselTableNotice.action, with: EaselTableNotice(label: label, detail: detail))
+    }
+
     private func announceTableTrim(_ detail: String) {
-        (window?.windowController as? BrowserWindowController)?.showToast(.standard("Kept what fits", subLabel: detail))
+        presentTableNotice("Kept what fits", detail: detail)
         NSAccessibility.post(element: self, notification: .announcementRequested,
                              userInfo: [.announcement: "Kept what fits. " + detail, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
@@ -1402,12 +1415,12 @@ extension EaselCanvasView {
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         panel.nameFieldStringValue = EaselVectorExport.exportFileName(session.document.title, fileExtension: "csv")
-        panel.beginSheetModal(for: window) { [weak self, weak window] response in
+        panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let destination = panel.url else { return }
             MainActor.assumeIsolated {
                 do {
                     try Data(csv.utf8).write(to: destination, options: .atomic)
-                    (window?.windowController as? BrowserWindowController)?.showToast(.standard("Exported \(destination.lastPathComponent)"))
+                    self?.presentTableNotice("Exported \(destination.lastPathComponent)")
                 } catch {
                     self?.onError?(error)
                 }
@@ -1593,51 +1606,6 @@ extension EaselCanvasView {
     }
 }
 
-@MainActor
-extension EaselDocumentExport {
-    static func tableVectorText(_ item: EaselItem) -> EaselVectorText {
-        guard let table = item.table else { return EaselVectorText() }
-        let grid = EaselTableLayout(table: table, frame: item.frame)
-        var result = EaselVectorText()
-        for cell in table.visibleCells {
-            guard let value = table.cell(cell), !value.text.isEmpty, let box = grid.rect(of: cell, in: table) else { continue }
-            let attributed = EaselRichTextCodec.attributed(value.text, richText: value.richText, style: item.resolvedTextStyle, color: item.color)
-            EaselTextAttachments.bind(attributed, width: max(1, box.width - 20))
-            let layout = EaselTextLayout.Layout(attributed, width: box.width)
-            let offset = CGPoint(x: box.x - item.frame.x, y: box.y - item.frame.y + Double(EaselTableMetrics.cellPadding))
-            result.runs += vectorRuns(layout, style: item.resolvedTextStyle, offset: offset)
-        }
-        return result
-    }
-
-    static func vectorRuns(_ layout: EaselTextLayout.Layout, style: EaselTextStyle, offset: CGPoint) -> [EaselVectorTextRun] {
-        let manager = layout.manager, storage = layout.storage, container = layout.container, inset = EaselTextLayout.inset
-        let text = storage.string as NSString
-        var runs: [EaselVectorTextRun] = []
-        manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { rect, _, _, glyphs, _ in
-            let characters = manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
-            storage.enumerateAttributes(in: characters) { attributes, range, _ in
-                var value = text.substring(with: range).replacingOccurrences(of: "\u{FFFC}", with: "")
-                while let last = value.last, last.isNewline { value.removeLast() }
-                guard !value.isEmpty else { return }
-                let glyphRange = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-                guard glyphRange.length > 0 else { return }
-                let location = manager.location(forGlyphAt: glyphRange.location)
-                let font = attributes[.font] as? NSFont ?? EaselTextAppearance.font(style)
-                var run = EaselVectorTextRun(x: Double(offset.x + inset.width + rect.minX + location.x),
-                                             y: Double(offset.y + inset.height + rect.minY + location.y),
-                                             text: value, fontFamily: cssFamily(font), fontSize: Double(font.pointSize),
-                                             weight: cssWeight(font), italic: font.fontDescriptor.symbolicTraits.contains(.italic))
-                run.color = (attributes[.foregroundColor] as? NSColor).flatMap(hex)
-                run.underline = (attributes[.underlineStyle] as? Int ?? 0) != 0
-                run.strikethrough = (attributes[.strikethroughStyle] as? Int ?? 0) != 0
-                if let link = attributes[.link] as? URL { run.link = link.absoluteString } else { run.link = attributes[.link] as? String }
-                runs.append(run)
-            }
-        }
-        return runs
-    }
-}
 
 extension EaselCanvasView {
     func cutTableCells() -> Bool {
