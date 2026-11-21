@@ -115,9 +115,10 @@ import Testing
     }
 
     @Test func portraitAspect() {
-        #expect(NotePDFLayout.pageAspect(width: 612, height: 792, rotation: 0) == 792.0 / 612.0, "portrait aspect")
-        #expect(NotePDFLayout.pageAspect(width: 612, height: 792, rotation: 90) == 612.0 / 792.0, "rotated pages swap")
-        #expect(NotePDFLayout.pageAspect(width: 612, height: 792, rotation: -270) == 612.0 / 792.0, "negative rotation is normalized")
+        let portrait: CGFloat = 792.0 / 612.0, landscape: CGFloat = 612.0 / 792.0
+        #expect(NotePDFLayout.pageAspect(width: 612, height: 792, rotation: 0) == portrait, "portrait aspect")
+        #expect(NotePDFLayout.pageAspect(width: 612, height: 792, rotation: 90) == landscape, "rotated pages swap")
+        #expect(NotePDFLayout.pageAspect(width: 612, height: 792, rotation: -270) == landscape, "negative rotation is normalized")
         #expect(NotePDFLayout.pageAspect(width: 0, height: 792, rotation: 0) == nil, "empty pages have no aspect")
     }
 

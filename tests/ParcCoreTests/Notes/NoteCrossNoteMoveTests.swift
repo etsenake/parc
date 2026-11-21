@@ -19,11 +19,13 @@ import Testing
         return (source, target, move)
     }
 
-    func settle() {
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+    func settle() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
     }
 
-    @Test func moveLands() {
+    @Test func moveLands() async {
         let (source, target, move) = pair()
         #expect(texts(source) == ["a", "c"], "the block leaves the source")
         #expect(texts(target) == ["x", "b", "b"], "the copy lands at the end of the target")
@@ -31,7 +33,7 @@ import Testing
         #expect(move.isApplied, "the move starts applied")
     }
 
-    @Test func unrelatedUndoLeavesTargetAlone() {
+    @Test func unrelatedUndoLeavesTargetAlone() async {
         let (source, target, _) = pair()
         source.edit("Type") { page in page.blocks[0].text = NoteText("a!") }
         source.undo()
@@ -43,7 +45,7 @@ import Testing
         #expect(texts(source) == ["a!", "c"], "an unrelated undo in the target never touches the source")
     }
 
-    @Test func undoInSourceRestoresBoth() {
+    @Test func undoInSourceRestoresBoth() async {
         let (source, target, move) = pair()
         source.undo()
         #expect(texts(source) == ["a", "b", "c"], "undo puts the block back where it was")
@@ -57,7 +59,7 @@ import Testing
         #expect(texts(target) == ["x", "b"], "older undos never touch a reversed move again")
     }
 
-    @Test func undoInTargetRestoresSource() {
+    @Test func undoInTargetRestoresSource() async {
         let (source, target, move) = pair()
         target.undo()
         #expect(texts(target) == ["x", "b"], "undo in the target removes the copy")
@@ -74,7 +76,7 @@ import Testing
         #expect(texts(source) == ["a", "b", "c"] && texts(target) == ["x", "b"], "undo in the source reverses it again")
     }
 
-    @Test func undoInSourceThenRedoInTarget() {
+    @Test func undoInSourceThenRedoInTarget() async {
         let (source, target, move) = pair()
         source.undo()
         #expect(texts(target) == ["x", "b"] && !target.canUndo && target.redoActionName == "Move Here", "the target's half is undone as a real undo step")
@@ -87,7 +89,7 @@ import Testing
         #expect(texts(source) == ["a", "c"] && texts(target) == ["x", "b", "b"] && move.isApplied, "and redo in the source brings it back")
     }
 
-    @Test func undoInTargetThenRedoInSource() {
+    @Test func undoInTargetThenRedoInSource() async {
         let (source, target, move) = pair()
         target.undo()
         #expect(texts(source) == ["a", "b", "c"] && !source.canUndo && source.redoActionName == "Move to “T”", "the source's half is undone as a real undo step")
@@ -100,7 +102,7 @@ import Testing
         #expect(texts(source) == ["a", "c"] && texts(target) == ["x", "b", "b"] && move.isApplied, "and redo in the target brings it back")
     }
 
-    @Test func targetEditOnTopKeepsItsHistory() {
+    @Test func targetEditOnTopKeepsItsHistory() async {
         let (source, target, move) = pair()
         target.edit("Type") { page in page.blocks[0].text = NoteText("y") }
         source.undo()
@@ -114,7 +116,7 @@ import Testing
         #expect(texts(target) == ["x", "b"] && texts(source) == ["a", "b", "c"], "and the move itself comes after it")
     }
 
-    @Test func editedCopiesSurviveRoundTrip() {
+    @Test func editedCopiesSurviveRoundTrip() async {
         let (source, target, move) = pair()
         let copy = move.copyIDs[0]
         target.edit("Type") { page in page.update(copy) { $0.text = NoteText("b edited") } }
@@ -132,7 +134,7 @@ import Testing
         #expect(texts(target) == ["b edited", "x", "b"], "unrelated undos never re-add copies")
     }
 
-    @Test func unreachableSourceKeepsCopies() {
+    @Test func unreachableSourceKeepsCopies() async {
         let source = NotePageSession(page: NotePage(blocks: [.paragraph("a"), .paragraph("b")]))
         let target = NotePageSession(page: NotePage(blocks: [.paragraph("x")]))
         var reachable = true
@@ -145,15 +147,15 @@ import Testing
         let move = NoteCrossNoteMove.perform([id], from: source, name: "Move", target: access(target), source: gate)!
         reachable = false
         target.undo()
-        settle()
+        await settle()
         #expect(texts(target) == ["x", "b"], "when the source can't take the blocks back, the target keeps them")
         #expect(move.isApplied, "the move stays applied so nothing is lost")
         target.redo()
-        settle()
+        await settle()
         #expect(texts(target) == ["x", "b"] && texts(source) == ["a"], "a redo after the bounce keeps one copy")
     }
 
-    @Test func unreachableTargetKeepsOriginals() {
+    @Test func unreachableTargetKeepsOriginals() async {
         let source = NotePageSession(page: NotePage(blocks: [.paragraph("a"), .paragraph("b")]))
         let target = NotePageSession(page: NotePage(blocks: [.paragraph("x")]))
         let id = source.page.blocks[1].id
@@ -162,7 +164,7 @@ import Testing
         #expect(texts(source) == ["a", "b"] && texts(target) == ["x"], "undo restores the source first")
         target.isReadOnly = true
         source.redo()
-        settle()
+        await settle()
         #expect(texts(source) == ["a", "b"], "when the target can't take the blocks, a redo leaves them in the source")
         #expect(texts(target) == ["x"] && !move.isApplied, "the move stays reversed so nothing is lost")
         target.isReadOnly = false
@@ -170,7 +172,7 @@ import Testing
         #expect(texts(source) == ["a"] && texts(target) == ["x", "b"], "once the target is writable, undoing the bounce moves them for real")
     }
 
-    @Test func reopenedTargetStillFindsCopies() {
+    @Test func reopenedTargetStillFindsCopies() async {
         let source = NotePageSession(page: NotePage(blocks: [.paragraph("a"), .paragraph("b")]))
         var target = NotePageSession(page: NotePage(blocks: [.paragraph("b"), .paragraph("x")]))
         let reach: NoteCrossNoteMove.Access = { body in body(target); return true }

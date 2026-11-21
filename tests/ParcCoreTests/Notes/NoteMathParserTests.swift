@@ -203,7 +203,7 @@ import Testing
         for name in ["tiny", "Huge", "raisebox", "smash", "substack", "genfrac", "colorbox", "fcolorbox", "href", "url", "overgroup", "tripledash"] {
             #expect(NoteMathParser.isBuiltIn(name), "\\\(name) is built in")
         }
-        let wavy = String(describing: parse("\\ce{A\\bond{~-}B}"))
+        let wavy = String(describing: try parse("\\ce{A\\bond{~-}B}"))
         #expect(wavy.contains("raised(-0.1") && wavy.contains("sized(0.5"), "a dashed bond stacks a raised line over a tiny triple dash")
         for bond in ["~", "~-", "~=", "~--", "-~-", "...", "...."] { _ = try parse("\\ce{C\\bond{\(bond)}C}") }
     }
@@ -673,8 +673,8 @@ import Testing
         #expect(try parse("\\ce{H^3HO}") == parse("{\\mathrm{H}{}^{\\hphantom{3}}{}^{\\mathllap{3}}\\mathrm{H}\\mathrm{O}}"), "a bare mass number belongs to the next element")
         #expect(try parse("\\ce{1s^2-N}") == parse("{1\\mathrm{s}^{2}{-}\\mathrm{N}}"), "orbitals")
         #expect(try parse("\\ce{n-Pr}") == parse("{n{-}\\mathrm{Pr}}") && parse("\\ce{iPr}") == parse("{i\\mathrm{Pr}}"), "italic prefixes")
-        #expect(parse("\\ce{\\frac{[Hg^2+][Hg]}{[Hg2^2+]}}") ==
-               try parse("{\\frac{\\lbrack\\mathrm{Hg}^{2+}\\rbrack\\lbrack\\mathrm{Hg}\\rbrack}{\\lbrack\\mathrm{Hg}_{2}^{2+}\\rbrack}}"), "chemistry inside \\frac")
+        #expect(try parse("\\ce{\\frac{[Hg^2+][Hg]}{[Hg2^2+]}}") ==
+               parse("{\\frac{\\lbrack\\mathrm{Hg}^{2+}\\rbrack\\lbrack\\mathrm{Hg}\\rbrack}{\\lbrack\\mathrm{Hg}_{2}^{2+}\\rbrack}}"), "chemistry inside \\frac")
         #expect(try parse("\\ce{A~B}") == parse("{\\mathrm{A}\\ \\mathrm{B}}"), "a tilde is a space")
         #expect(try parse("\\pu{1,2e3 kJ}") == parse("{1{,}2\\cdot 10^{3}~\\mathrm{kJ}}"), "comma decimals stay commas")
         #expect(try parse("\\pu{1.2x10^3 kJ}") == parse("{1.2\\times 10^{3}~\\mathrm{kJ}}") && parse("\\pu{1.2*10^-3 m}") == parse("{1.2\\cdot 10^{-3}~\\mathrm{m}}"), "written-out powers of ten")

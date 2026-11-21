@@ -129,7 +129,9 @@ struct NoteUnsplashTests {
         #expect(elsewhere.provider == nil && elsewhere.sentence == "Photo by Sam", "other sites get a plain credit")
         #expect(elsewhere.profileURL?.absoluteString == "https://example.com/sam", "other links aren't tagged")
         #expect(NoteMediaCredit(name: "Sam", link: "javascript:alert(1)").profileURL == nil, "only web links are clickable")
-        #expect(NoteMediaCredit(name: "  ", link: "https://unsplash.com/@x") == nil, "a credit needs a name")
+        let blank: String? = "  "
+        let nameless = NoteMediaCredit(name: blank, link: "https://unsplash.com/@x")
+        #expect(nameless == nil, "a credit needs a name")
         #expect(NoteMediaCredit(name: " Sam ", link: " ").link == nil, "blank links are dropped")
     }
 
