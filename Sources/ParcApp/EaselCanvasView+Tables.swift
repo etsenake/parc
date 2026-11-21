@@ -1764,7 +1764,16 @@ extension EaselCanvasView {
 
     @discardableResult
     func setTableCellsAlignment(_ alignment: NSTextAlignment) -> Bool {
-        formatTableCells("Align text") { value in
+        if isEditingTableCell, let text = editor {
+            guard !text.hasMarkedText() else { return false }
+            switch alignment {
+            case .center: text.alignCenter(nil)
+            case .right: text.alignRight(nil)
+            default: text.alignLeft(nil)
+            }
+            return true
+        }
+        return formatTableCells("Align text") { value in
             let range = NSRange(location: 0, length: value.length)
             var parts: [(NSRange, NSParagraphStyle?)] = []
             value.enumerateAttribute(.paragraphStyle, in: range) { style, part, _ in parts.append((part, style as? NSParagraphStyle)) }
