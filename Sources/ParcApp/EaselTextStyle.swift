@@ -706,6 +706,17 @@ final class EaselStyledTextView: LocalContentDropTextView {
             if !onBlockEquation() { localUndo.undo() }
             return
         }
+        if admission.character == "-" {
+            let source = string as NSString
+            let line = source.lineRange(for: NSRange(location: admission.insertion.location, length: 0))
+            let content = source.substring(with: line).trimmingCharacters(in: .newlines)
+            if content == "---" || content == "\u{2014}-", paragraphKind() == .text,
+               !EaselTextAppearance.isInlineCode(attributedString().attributes(at: line.location, effectiveRange: nil)) {
+                suppressMarkdown = true; defer { suppressMarkdown = false }
+                applySlashDivider(removing: NSRange(location: line.location, length: (content as NSString).length))
+                return
+            }
+        }
         guard let edit = EaselMarkdownEditing.transform(attributedString(), admission: admission,
                   selection: selectedRange(), typing: typingAttributes, base: objectStyle) else { return }
         suppressMarkdown = true; defer { suppressMarkdown = false }
