@@ -245,4 +245,4 @@ saved bookmark pictures along with the assets.
 `swift test --filter EaselImageFramingTests` covers the crop geometry, turns, presets,
 masking, replacement, validation, asset sniffing, the saved format and the SVG output.
 `EaselStoreTests` covers media placeholders, fields, asset types and placement, and
-`tests/EaselMediaImportTests.swift` the import plan.
+`EaselMediaImportTests` the import plan.
