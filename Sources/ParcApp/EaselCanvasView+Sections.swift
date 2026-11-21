@@ -294,6 +294,12 @@ extension EaselCanvasView {
         invalidateIncrementalDisplay(layout: true)
     }
 
+    func commitPendingSectionRename() {
+        guard let field = boardState.titleField else { return }
+        if let text = field.currentEditor() as? NSTextView, text.hasMarkedText() { text.unmarkText() }
+        commitSectionRename(field.sectionID, field.stringValue)
+    }
+
     private func commitSectionRename(_ id: UUID, _ raw: String) {
         endSectionRename()
         let title = EaselBoardObjects.sectionTitle(raw)

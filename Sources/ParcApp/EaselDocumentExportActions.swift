@@ -21,7 +21,7 @@ extension EaselEditorViewController {
     }
 
     func copyImage() {
-        guard canExportImage, let window = view.window else { return }
+        guard canExportImage, let window = view.window, canvas.finishEditing() else { return }
         withExportPages(in: window) { [weak self] pages in
             guard let self else { return }
             let scale = EaselImageExport.pixelDensity()
@@ -35,7 +35,7 @@ extension EaselEditorViewController {
     }
 
     func export(_ format: EaselPageMenu.ExportFormat) {
-        guard canExportImage, let window = view.window else { return }
+        guard canExportImage, let window = view.window, canvas.finishEditing() else { return }
         if format == .image { exportImage(); return }
         if format == .stickies { exportStickies(EaselSelectionExport.stickies(in: session.document)); return }
         let panel = NSSavePanel()

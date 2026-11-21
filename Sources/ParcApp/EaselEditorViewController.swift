@@ -64,6 +64,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         return true
     }
     func retirePageOwner() {
+        if !session.isClosed, !session.isDeleted { _ = canvas.finishEditing() }
         webpageInput?.cancel(restoreFocus: false); webpageInput = nil; pageObjects?.disposeAfterClosure()
     }
 

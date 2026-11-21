@@ -1397,6 +1397,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     func finishEditing(removingEmpty: Bool = true) -> Bool {
         guard finishCodeEditing() else { return false }
         guard !finishingEditor else { return false }
+        commitPendingSectionRename()
         guard let text = editor, let id = editingID else { return true }
         finishingEditor = true
         defer { finishingEditor = false }
