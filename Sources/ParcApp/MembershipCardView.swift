@@ -6,8 +6,8 @@ import CoreImage
 @MainActor
 enum MembershipCardArtwork {
     static let size = NSSize(width: 240, height: 360)
-    static func image(_ name: String) -> NSImage? {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "MembershipCard") else { return nil }
+    static func image(_ name: String, resources: Bundle = .main) -> NSImage? {
+        guard let url = resources.url(forResource: name, withExtension: "png", subdirectory: "MembershipCard") else { return nil }
         return NSImage(contentsOf: url)
     }
     static func color(_ hex: String) -> NSColor {
@@ -20,13 +20,14 @@ enum MembershipCardArtwork {
         let formatter = DateFormatter(); formatter.dateStyle = .medium; formatter.timeStyle = .none
         return formatter.string(from: state.createdAt)
     }
-    static func render(_ state: MembershipCardState, scale: CGFloat = 3, includeArtwork: Bool = true) -> NSBitmapImageRep? {
+    static func render(_ state: MembershipCardState, scale: CGFloat = 3, includeArtwork: Bool = true,
+                       resources: Bundle = .main) -> NSBitmapImageRep? {
         let picture = NSImage(size: size, flipped: true) { rect in
             let ink = color(MembershipCardState.palettes[state.palette][0])
             NSColor(srgbRed: 1, green: 0.99, blue: 0.92, alpha: 1).setFill()
             NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
             let artwork = NSRect(x: 16, y: 16, width: 208, height: 192)
-            if includeArtwork, let art = staticArtwork(state) { art.draw(in: artwork) }
+            if includeArtwork, let art = staticArtwork(state, resources: resources) { art.draw(in: artwork) }
             let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingTail
             (state.name as NSString).draw(in: NSRect(x: 16, y: 224, width: 208, height: 32), withAttributes: [
                 .font: NSFont.systemFont(ofSize: 23, weight: .bold), .foregroundColor: ink, .paragraphStyle: paragraph])
@@ -39,7 +40,7 @@ enum MembershipCardArtwork {
             ink.setStroke(); let outline = NSBezierPath(roundedRect: ticket, xRadius: 2, yRadius: 2); outline.lineWidth = 1; outline.stroke()
             ("PARC" as NSString).draw(at: NSPoint(x: 21, y: 331), withAttributes: [.font: NSFont.systemFont(ofSize: 8, weight: .bold), .foregroundColor: ink])
             let lines = NSRect(x: 48, y: 329, width: 14, height: 14)
-            if let image = image("Lines") {
+            if let image = image("Lines", resources: resources) {
                 let tinted = image.copy() as! NSImage
                 tinted.lockFocus(); ink.setFill(); NSRect(origin: .zero, size: tinted.size).fill(using: .sourceAtop); tinted.unlockFocus()
                 tinted.draw(in: lines)
@@ -85,10 +86,10 @@ enum MembershipCardArtwork {
         NSGraphicsContext.restoreGraphicsState()
         return bitmap
     }
-    static func staticArtwork(_ state: MembershipCardState) -> NSImage? {
-        guard let mask = image("Shape\(state.shape)") else { return nil }
+    static func staticArtwork(_ state: MembershipCardState, resources: Bundle = .main) -> NSImage? {
+        guard let mask = image("Shape\(state.shape)", resources: resources) else { return nil }
         let field = MembershipCardBlobField(state)
-        let textures = field.colors.map(blobTexture)
+        let textures = field.colors.map { blobTexture($0, resources: resources) }
         let result = NSImage(size: artworkSize, flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             field.background.setFill(); rect.fill()
@@ -114,10 +115,10 @@ enum MembershipCardArtwork {
     static let blobTextureScale: CGFloat = 0.275
     private static var textureCache: [String: (image: CGImage, size: CGSize)] = [:]
     private static let blurContext = CIContext(options: [.cacheIntermediates: false])
-    static func blobTexture(_ color: NSColor) -> (image: CGImage, size: CGSize)? {
+    static func blobTexture(_ color: NSColor, resources: Bundle = .main) -> (image: CGImage, size: CGSize)? {
         let key = color.usingColorSpace(.sRGB).map { "\($0.redComponent),\($0.greenComponent),\($0.blueComponent)" } ?? color.description
-        if let cached = textureCache[key] { return cached }
-        guard let original = image("AnimatingCardBlob") else { return nil }
+        if resources == .main, let cached = textureCache[key] { return cached }
+        guard let original = image("AnimatingCardBlob", resources: resources) else { return nil }
         let pixelsPerPoint: CGFloat = 0.5
         let blob = CGSize(width: blobSize.width * blobTextureScale, height: blobSize.height * blobTextureScale)
         let pad = blobBlur * 3
@@ -139,7 +140,7 @@ enum MembershipCardArtwork {
             .cropped(to: input.extent)
         guard let output = blurContext.createCGImage(blurred, from: input.extent) else { return nil }
         let result = (image: output, size: size)
-        textureCache[key] = result
+        if resources == .main { textureCache[key] = result }
         return result
     }
 }
@@ -270,7 +271,7 @@ final class MembershipCardView: NSView {
             self.field = field
             art.contents = nil
             art.backgroundColor = field.background.cgColor
-            let textures = field.colors.map(MembershipCardArtwork.blobTexture)
+            let textures = field.colors.map { MembershipCardArtwork.blobTexture($0) }
             let center = CGPoint(x: art.bounds.midX, y: art.bounds.midY)
             for blob in field.rest {
                 let rotor = CALayer()
