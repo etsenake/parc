@@ -102,7 +102,7 @@ final class NotePDFDocuments {
 }
 
 @MainActor
-final class NotePDFViewer: PDFView, PDFViewDelegate {
+final class NotePDFViewer: PDFView {
     var routesScrollToNote = false
     var onPageChange: (() -> Void)?
     var onScaleChange: (() -> Void)?
@@ -111,6 +111,7 @@ final class NotePDFViewer: PDFView, PDFViewDelegate {
     var noteScrollView: (() -> NSScrollView?)?
     private var latch = NotePDFScrollLatch()
     private var observers: [NSObjectProtocol] = []
+    private let linkRouter = NotePDFLinkRouter()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -125,7 +126,8 @@ final class NotePDFViewer: PDFView, PDFViewDelegate {
         acceptsDraggedFiles = false
         autoScales = true
         backgroundColor = .clear
-        delegate = self
+        linkRouter.viewer = self
+        delegate = linkRouter
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: .PDFViewPageChanged, object: self, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.onPageChange?() }
@@ -180,10 +182,8 @@ final class NotePDFViewer: PDFView, PDFViewDelegate {
         NotePDFZoom.canZoom(current: scaleFactor, fit: fitScale, zoomIn: zoomingIn)
     }
 
-    nonisolated func pdfViewWillClick(onLink sender: PDFView, with url: URL) {
-        MainActor.assumeIsolated {
-            if let onLink { onLink(url) } else { NSWorkspace.shared.open(url) }
-        }
+    func open(link url: URL) {
+        if let onLink { onLink(url) } else { NSWorkspace.shared.open(url) }
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -260,6 +260,17 @@ final class NotePDFViewer: PDFView, PDFViewDelegate {
         bounds.origin.y = clip.isFlipped ? bounds.origin.y - delta : bounds.origin.y + delta
         clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
         scrollView.reflectScrolledClipView(clip)
+    }
+}
+
+@MainActor
+private final class NotePDFLinkRouter: NSObject, PDFViewDelegate {
+    weak var viewer: NotePDFViewer?
+
+    nonisolated func pdfViewWillClick(onLink sender: PDFView, with url: URL) {
+        MainActor.assumeIsolated {
+            if let viewer { viewer.open(link: url) } else { NSWorkspace.shared.open(url) }
+        }
     }
 }
 
