@@ -46,25 +46,39 @@ enum EaselDrawing {
         return result
     }
 
+    static let simplifyWindow = 512
+
     static func simplified(_ points: [EaselPoint], tolerance: Double) -> [EaselPoint] {
         guard points.count > 2, tolerance.isFinite, tolerance > 0 else { return points }
-        var keep = [Bool](repeating: false, count: points.count)
-        keep[0] = true
-        keep[points.count - 1] = true
-        var ranges = [(0, points.count - 1)]
-        while let (first, last) = ranges.popLast() {
-            guard last > first + 1 else { continue }
-            var farthest = first, distance = 0.0
-            for index in (first + 1)..<last {
-                let value = segmentDistance(points[index], points[first], points[last])
-                if value > distance { distance = value; farthest = index }
-            }
-            guard distance > tolerance else { continue }
-            keep[farthest] = true
-            ranges.append((first, farthest))
-            ranges.append((farthest, last))
+        var spaced = [points[0]]
+        for point in points.dropFirst().dropLast() {
+            guard let kept = spaced.last, hypot(point.x - kept.x, point.y - kept.y) >= tolerance / 2 else { continue }
+            spaced.append(point)
         }
-        return points.indices.compactMap { keep[$0] ? points[$0] : nil }
+        spaced.append(points[points.count - 1])
+        guard spaced.count > 2 else { return spaced }
+        var keep = [Bool](repeating: false, count: spaced.count)
+        var start = 0
+        while start < spaced.count - 1 {
+            let end = min(start + simplifyWindow, spaced.count - 1)
+            keep[start] = true
+            keep[end] = true
+            var ranges = [(start, end)]
+            while let (first, last) = ranges.popLast() {
+                guard last > first + 1 else { continue }
+                var farthest = first, distance = 0.0
+                for index in (first + 1)..<last {
+                    let value = segmentDistance(spaced[index], spaced[first], spaced[last])
+                    if value > distance { distance = value; farthest = index }
+                }
+                guard distance > tolerance else { continue }
+                keep[farthest] = true
+                ranges.append((first, farthest))
+                ranges.append((farthest, last))
+            }
+            start = end
+        }
+        return spaced.indices.compactMap { keep[$0] ? spaced[$0] : nil }
     }
 
     static func finished(_ points: [EaselPoint], scale: Double) -> [EaselPoint] {
@@ -153,29 +167,50 @@ enum EaselDrawing {
         return EaselPaintRules.strokeWidth(item) / 2
     }
 
-    static func touches(_ item: EaselItem, from a: EaselPoint, to b: EaselPoint, radius: Double) -> Bool {
-        guard isErasable(item), [a.x, a.y, b.x, b.y, radius].allSatisfy(\.isFinite) else { return false }
-        let reach = max(0, radius) + reach(of: item)
+    static func eraserRadius(scale: Double) -> Double { eraserRadius / safeScale(scale) }
+
+    static func touches(_ item: EaselItem, from a: EaselPoint, to b: EaselPoint, scale: Double) -> Bool {
+        guard isErasable(item), [a.x, a.y, b.x, b.y].allSatisfy(\.isFinite), !item.points.isEmpty else { return false }
+        let radius = eraserRadius(scale: scale), reach = radius + reach(of: item) + EaselWashi.tooth
+        let f = item.frame, turn = item.resolvedRotation * Double.pi / 180
+        let halfWidth = abs(f.width / 2 * cos(turn)) + abs(f.height / 2 * sin(turn)) + reach
+        let halfHeight = abs(f.width / 2 * sin(turn)) + abs(f.height / 2 * cos(turn)) + reach
+        let center = EaselPoint(x: f.x + f.width / 2, y: f.y + f.height / 2)
+        guard max(a.x, b.x) >= center.x - halfWidth, min(a.x, b.x) <= center.x + halfWidth,
+              max(a.y, b.y) >= center.y - halfHeight, min(a.y, b.y) <= center.y + halfHeight else { return false }
         let points = visualPoints(item)
-        guard let first = points.first else { return false }
-        var minX = first.x, minY = first.y, maxX = first.x, maxY = first.y
-        for point in points.dropFirst() {
-            minX = min(minX, point.x); minY = min(minY, point.y)
-            maxX = max(maxX, point.x); maxY = max(maxY, point.y)
+        if item.resolvedBrush == .washi, let start = points.first, let end = points.last {
+            return tapeDistance(from: a, to: b, start: start, end: end) <= radius
         }
-        guard max(a.x, b.x) >= minX - reach, min(a.x, b.x) <= maxX + reach,
-              max(a.y, b.y) >= minY - reach, min(a.y, b.y) <= maxY + reach else { return false }
-        if points.count == 1 { return segmentDistance(first, a, b) <= reach }
-        for (start, end) in zip(points, points.dropFirst()) where segmentsDistance(a, b, start, end) <= reach { return true }
+        let lineReach = radius + self.reach(of: item)
+        guard points.count > 1 else { return segmentDistance(points[0], a, b) <= lineReach }
+        for (start, end) in zip(points, points.dropFirst()) where segmentsDistance(a, b, start, end) <= lineReach { return true }
         return false
     }
 
-    static func erased(_ items: [EaselItem], from a: EaselPoint, to b: EaselPoint, radius: Double) -> Set<UUID> {
-        Set(items.filter { touches($0, from: a, to: b, radius: radius) }.map(\.id))
+    static func erased(_ items: [EaselItem], from a: EaselPoint, to b: EaselPoint, scale: Double) -> Set<UUID> {
+        Set(items.filter { touches($0, from: a, to: b, scale: scale) }.map(\.id))
+    }
+
+    static func tapeDistance(from a: EaselPoint, to b: EaselPoint, start: EaselPoint, end: EaselPoint) -> Double {
+        let length = hypot(end.x - start.x, end.y - start.y)
+        let turn = length > 0 ? atan2(end.y - start.y, end.x - start.x) : 0
+        func local(_ point: EaselPoint) -> EaselPoint { rotated(EaselPoint(x: point.x - start.x, y: point.y - start.y), by: -turn) }
+        let left = -EaselWashi.tooth, right = length + EaselWashi.tooth, half = EaselWashi.width / 2
+        let corners = [EaselPoint(x: left, y: -half), EaselPoint(x: right, y: -half), EaselPoint(x: right, y: half), EaselPoint(x: left, y: half)]
+        let p = local(a), q = local(b)
+        func inside(_ point: EaselPoint) -> Bool { point.x >= left && point.x <= right && abs(point.y) <= half }
+        if inside(p) || inside(q) { return 0 }
+        var nearest = Double.infinity
+        for (index, corner) in corners.enumerated() {
+            let next = corners[(index + 1) % corners.count]
+            nearest = min(nearest, segmentsDistance(p, q, corner, next))
+        }
+        return nearest
     }
 
     static func canHold(_ item: EaselItem) -> Bool {
-        item.kind != .section && item.kind != .freehand && item.kind != .arrow
+        item.kind != .section && item.kind != .freehand && item.kind != .arrow && !item.isLocked
     }
 
     static func attachmentTarget(for stroke: [EaselPoint], in items: [EaselItem], excluding: Set<UUID> = []) -> UUID? {
@@ -267,13 +302,6 @@ enum EaselAttachments {
         var result = next
         var positions: [UUID: Int] = [:]
         for (index, item) in result.items.enumerated() where positions[item.id] == nil { positions[item.id] = index }
-        for id in moved {
-            guard let index = positions[id], let old = before[id] else { continue }
-            let item = result.items[index]
-            guard attaches(item), placementChanged(old, item), !(item.attachedTo.map(moved.contains) ?? false) else { continue }
-            result.items[index].attachedTo = EaselDrawing.attachmentTarget(for: EaselDrawing.visualPoints(item),
-                                                                           in: result.items, excluding: [id])
-        }
         var frontier = Set(result.items.compactMap { item -> UUID? in
             guard let old = before[item.id], placementChanged(old, item) else { return nil }
             return item.id
@@ -294,7 +322,15 @@ enum EaselAttachments {
             }
             frontier = reached
         }
-        return (result, moved.union(carried))
+        let travelled = moved.union(carried)
+        for id in moved {
+            guard let index = positions[id], let old = before[id] else { continue }
+            let item = result.items[index]
+            guard attaches(item), placementChanged(old, item), !(item.attachedTo.map(travelled.contains) ?? false) else { continue }
+            result.items[index].attachedTo = EaselDrawing.attachmentTarget(for: EaselDrawing.visualPoints(item),
+                                                                           in: result.items, excluding: [id])
+        }
+        return (result, travelled)
     }
 
     static func dependents(of ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {

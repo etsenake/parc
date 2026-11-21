@@ -39,6 +39,7 @@ struct EaselDrawingTests {
         removingDependents()
         pipeline()
         washi()
+        exporting()
         print("EaselDrawingTests passed")
     }
 
@@ -74,6 +75,18 @@ struct EaselDrawingTests {
         }
         expect(EaselDrawing.finished([p(5, 5)], scale: 1) == [p(5, 5), p(5, 5)], "A click becomes a dot with two equal points")
         expect(EaselDrawing.finished([p(1, 1), p(9, 9)], scale: 1) == [p(1, 1), p(9, 9)], "Two points pass through untouched")
+        let spiral = (0..<20_000).map { index -> EaselPoint in
+            let turn = Double(index) * 0.01
+            return p(500 + cos(turn) * (10 + turn * 3), 500 + sin(turn) * (10 + turn * 3))
+        }
+        let tight = EaselDrawing.simplified(spiral, tolerance: 0.35)
+        expect(tight.first == spiral.first && tight.last == spiral.last && tight.count < spiral.count, "A long spiral simplifies and keeps its ends")
+        for point in stride(from: 0, to: spiral.count, by: 97).map({ spiral[$0] }) {
+            let distance = zip(tight, tight.dropFirst()).map { EaselDrawing.segmentDistance(point, $0, $1) }.min() ?? .infinity
+            expect(distance <= 0.35 * 1.5 + 1e-9, "A simplified spiral stays close to what was drawn")
+        }
+        let jitter = (0..<1_000).map { p(Double($0) * 0.01, 0) }
+        expect(EaselDrawing.simplified(jitter, tolerance: 0.35).count == 2, "Samples bunched on one spot collapse quickly")
         let finished = EaselDrawing.finished(wave, scale: 2)
         expect(finished.first == wave.first && finished.last == wave.last, "Finishing keeps the stroke's ends")
         expect(EaselDrawing.finished([], scale: 1).isEmpty, "Nothing drawn finishes as nothing")
@@ -128,20 +141,31 @@ struct EaselDrawingTests {
 
     static func erasing() {
         let marker = stroke([p(0, 0), p(100, 0), p(100, 100)])
-        expect(EaselDrawing.touches(marker, from: p(50, 8), to: p(50, 8), radius: 9), "A click near a stroke catches it")
-        expect(!EaselDrawing.touches(marker, from: p(50, 20), to: p(50, 20), radius: 9), "A click well away misses")
-        expect(EaselDrawing.touches(marker, from: p(50, -50), to: p(60, 60), radius: 1), "A swipe that crosses a stroke catches it")
-        expect(!EaselDrawing.touches(marker, from: p(-50, -50), to: p(-40, 60), radius: 9), "A swipe beside a stroke leaves it")
+        expect(EaselDrawing.touches(marker, from: p(50, 8), to: p(50, 8), scale: 1), "A click near a stroke catches it")
+        expect(!EaselDrawing.touches(marker, from: p(50, 20), to: p(50, 20), scale: 1), "A click well away misses")
+        expect(EaselDrawing.touches(marker, from: p(50, -50), to: p(60, 60), scale: 1), "A swipe that crosses a stroke catches it")
+        expect(!EaselDrawing.touches(marker, from: p(-50, -50), to: p(-40, 60), scale: 1), "A swipe beside a stroke leaves it")
+        expect(!EaselDrawing.touches(marker, from: p(50, 8), to: p(50, 8), scale: 2), "Zoomed in, the eraser shrinks on the board to stay the same on screen")
+        expect(EaselDrawing.touches(marker, from: p(50, 15), to: p(50, 15), scale: 0.5), "Zoomed out, the eraser covers more of the board")
+        expect(near(EaselDrawing.eraserRadius(scale: 2), EaselDrawing.eraserRadius / 2), "The eraser radius scales with zoom")
         var locked = marker
         locked.locked = true
-        expect(!EaselDrawing.touches(locked, from: p(50, 0), to: p(50, 0), radius: 9), "Locked drawings never erase")
+        expect(!EaselDrawing.touches(locked, from: p(50, 0), to: p(50, 0), scale: 1), "Locked drawings never erase")
         let tape = stroke([p(0, 0), p(200, 0)], brush: .washi)
-        expect(EaselDrawing.touches(tape, from: p(100, 20), to: p(100, 20), radius: 9), "Tape is caught across its whole width")
-        expect(!EaselDrawing.touches(tape, from: p(100, 30), to: p(100, 30), radius: 9), "Tape has an edge")
+        expect(EaselDrawing.touches(tape, from: p(100, 20), to: p(100, 20), scale: 1), "Tape is caught across its whole width")
+        expect(!EaselDrawing.touches(tape, from: p(100, 30), to: p(100, 30), scale: 1), "Tape has an edge")
+        expect(!EaselDrawing.touches(tape, from: p(220, 0), to: p(220, 0), scale: 1), "Tape ends are flat, not rounded")
+        expect(EaselDrawing.touches(tape, from: p(208, 0), to: p(208, 0), scale: 1), "The eraser still catches a tape end it overlaps")
+        var turnedTape = tape
+        turnedTape.rotation = 90
+        expect(EaselDrawing.touches(turnedTape, from: p(100, -80), to: p(100, -80), scale: 1), "Rotated tape is caught where it shows")
+        expect(!EaselDrawing.touches(turnedTape, from: p(20, 0), to: p(20, 0), scale: 1), "Rotated tape no longer covers its old spot")
         let note = object(.sticky, 0, 0, 100, 100)
-        expect(!EaselDrawing.touches(note, from: p(50, 50), to: p(50, 50), radius: 9), "The eraser leaves everything but drawings alone")
-        let ids = EaselDrawing.erased([marker, tape, note], from: p(10, -5), to: p(10, 5), radius: 9)
+        expect(!EaselDrawing.touches(note, from: p(50, 50), to: p(50, 50), scale: 1), "The eraser leaves everything but drawings alone")
+        let ids = EaselDrawing.erased([marker, tape, note], from: p(10, -5), to: p(10, 5), scale: 1)
         expect(ids == [marker.id, tape.id], "One swipe collects every drawing it crosses")
+        let far = stroke((0..<5_000).map { p(Double($0) + 1_000, 1_000) })
+        expect(!EaselDrawing.touches(far, from: p(0, 0), to: p(10, 10), scale: 1), "Distant long strokes are skipped by their bounds")
     }
 
     static func choosingTargets() {
@@ -163,6 +187,10 @@ struct EaselDrawingTests {
         tilted.rotation = 90
         expect(EaselDrawing.attachmentTarget(for: [p(100, -80), p(100, 80)], in: [tilted]) == tilted.id, "Rotated objects hold strokes along their turned shape")
         expect(EaselDrawing.attachmentTarget(for: [p(20, 10), p(180, 10)], in: [tilted]) == nil, "A turned object no longer covers its old footprint")
+        var pinned = object(.image, 0, 0, 200, 200, z: 4)
+        pinned.locked = true
+        expect(EaselDrawing.attachmentTarget(for: over, in: [note, pinned]) == note.id, "Locked objects act as background, so highlights stick to what's beneath")
+        expect(EaselDrawing.attachmentTarget(for: over, in: [pinned]) == nil, "A highlight over only a locked object sticks to nothing")
         let ring = object(.circle, 0, 0, 100, 100, z: 1)
         expect(EaselDrawing.attachmentTarget(for: [p(2, 2), p(12, 12)], in: [ring]) == nil, "Circles don't claim their empty corners")
     }
@@ -240,6 +268,16 @@ struct EaselDrawingTests {
         together.items[0].frame.x += 400; together.items[2].frame.x += 400
         expect(EaselAttachments.carry(together, previous: before, moved: [note.id, highlight.id]).items[2].attachedTo == note.id,
                "Moving a highlight with its sticky keeps them together")
+        var stamp = object(.image, 80, 80, 40, 40, z: 3)
+        stamp.attachedTo = note.id
+        var strip = stroke([p(85, 100), p(115, 100)], brush: .washi)
+        strip.attachedTo = stamp.id
+        let layered = document([note, stamp, strip])
+        var both = layered
+        both.items[0].frame.x += 300; both.items[2].frame.x += 300
+        let settled = EaselAttachments.carry(both, previous: layered, moved: [note.id, strip.id])
+        expect(settled.items[1].frame.x == 380 && settled.items[2].attachedTo == stamp.id,
+               "Tape dragged with a sticky stays on the stamp that rode along")
         var marker = stroke([p(20, 50), p(180, 50)])
         marker.attachedTo = nil
         let doodled = document([note, marker])
@@ -259,6 +297,20 @@ struct EaselDrawingTests {
         expect(EaselAttachments.dependents(of: [note.id], in: board) == [first.id, second.id], "Deleting a sticky takes everything stuck to it")
         expect(EaselAttachments.dependents(of: [other.id], in: board).isEmpty, "Nothing is stuck to a lone highlight")
         expect(EaselAttachments.dependents(of: [first.id], in: board) == [second.id], "Dependents follow the chain from where it starts")
+        var loopA = object(.image, 0, 0, 40, 40), loopB = object(.image, 50, 0, 40, 40)
+        loopA.attachedTo = loopB.id; loopB.attachedTo = loopA.id
+        var lost = stroke([p(0, 300), p(50, 300)], brush: .highlighter)
+        lost.attachedTo = UUID()
+        let tangled = document([loopA, loopB, lost, note])
+        expect(EaselAttachments.dependents(of: [loopA.id], in: tangled) == [loopB.id], "Objects stuck to each other don't loop forever")
+        expect(EaselDependents.removing([loopA.id], from: tangled).items.map(\.id) == [lost.id, note.id], "Deleting one of a stuck pair takes both")
+        expect(EaselDependents.removing([note.id], from: tangled).items.map(\.id) == [loopA.id, loopB.id, lost.id],
+               "A highlight stuck to something long gone is left alone")
+        var moved = tangled
+        moved.items[3].frame.x += 10
+        expect(EaselAttachments.carry(moved, previous: tangled, moved: [note.id]).items[2] == lost, "Dangling stickers don't move")
+        let chain = EaselDependents.removing([note.id], from: board)
+        expect(chain.items.map(\.id) == [other.id], "Deleting the bottom of a chain removes every link")
     }
 
     static func pipeline() {
@@ -274,6 +326,39 @@ struct EaselDrawingTests {
         let removed = EaselDependents.removing([note.id], from: board)
         expect(removed.items.isEmpty, "Deleting a sticky deletes the tape stuck to it")
         expect(EaselDependents.removing([tape.id], from: board).items.map(\.id) == [note.id], "Deleting tape leaves its sticky")
+        let section = object(.section, 0, 0, 600, 600, z: 0)
+        let inside = object(.sticky, 50, 50, 200, 200, z: 1)
+        var held = stroke([p(70, 100), p(230, 100)], brush: .highlighter)
+        held.attachedTo = inside.id
+        var outside = stroke([p(150, 580), p(150, 640)], brush: .washi)
+        outside.attachedTo = inside.id
+        let framed = document([section, inside, held, outside])
+        var shifted = framed
+        shifted.items[0].frame.x += 100
+        let result = EaselDependents.settle(shifted, previous: framed, moved: [section.id])
+        expect(result.items[1].frame.x == 150 && result.items[2].frame.x == held.frame.x + 100,
+               "A highlight carried by its section isn't carried again by its sticky")
+        expect(result.items[3].frame.x == outside.frame.x + 100, "Tape hanging off the section still follows its sticky")
+    }
+
+    static func exporting() {
+        let doodle = stroke([p(0, 0), p(10, 0), p(10, 10)])
+        let marker = EaselVectorExport.element(doodle, art: EaselVectorArt())
+        expect(marker.contains("Q") && marker.contains("stroke-linecap:round") && !marker.contains("easel-highlight"),
+               "Doodles export as smooth curves with round ends")
+        let highlight = EaselVectorExport.element(stroke([p(0, 0), p(80, 0)], brush: .highlighter), art: EaselVectorArt())
+        expect(highlight.contains("class=\"easel-highlight\""), "Highlights export with the multiply blend class")
+        let css = EaselVectorExport.css(.standard)
+        expect(css.contains(".easel-highlight{mix-blend-mode:multiply}") && css.contains("{.easel-highlight{mix-blend-mode:normal}}"),
+               "Highlights multiply on light pages and paint normally in dark ones")
+        var strip = stroke([p(10, 10), p(110, 10)], brush: .washi)
+        strip.pattern = "dots"
+        let tape = EaselVectorExport.element(strip, art: EaselVectorArt())
+        expect(tape.contains("<pattern id=\"washi-") && tape.contains("fill:url(#washi-") && tape.contains("<circle"),
+               "Tape exports as a pattern fill drawn from its design")
+        expect(tape.contains("opacity=\"0.9\"") && tape.contains("translate(10 10) rotate(0)"), "Tape keeps its translucency and placement")
+        let svg = EaselVectorExport.svg([strip, doodle], art: EaselVectorArt(), title: "Board")
+        expect(svg.components(separatedBy: "<pattern").count == 2, "Each strip carries one pattern")
     }
 
     static func washi() {

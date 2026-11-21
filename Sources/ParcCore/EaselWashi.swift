@@ -68,8 +68,9 @@ enum EaselWashi {
     static func storedName(_ pattern: EaselWashiPattern) -> String? { pattern == defaultPattern ? nil : pattern.rawValue }
 
     static func placement(_ item: EaselItem) -> EaselWashiPlacement? {
-        let points = EaselDrawing.visualPoints(item)
-        guard let start = points.first, let end = points.last else { return nil }
+        guard let first = item.points.first, let last = item.points.last else { return nil }
+        let start = EaselPoint(x: item.frame.x + first.x, y: item.frame.y + first.y)
+        let end = EaselPoint(x: item.frame.x + last.x, y: item.frame.y + last.y)
         let length = hypot(end.x - start.x, end.y - start.y)
         guard length.isFinite else { return nil }
         return EaselWashiPlacement(origin: start, angle: length > 0 ? atan2(end.y - start.y, end.x - start.x) : 0, length: length)
