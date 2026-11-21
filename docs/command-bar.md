@@ -114,12 +114,9 @@ native. This uses `SidebarTablistBackground`, not another input monitor.
 
 ## Checks
 
-`tests/CommandBar` covers real app decisions for editing, scope, publication
-identity, default ranking, row diffs, submission, menus, typed targets, the
-compact editor's width, caps and column alignment, the resting Control–Space
-field, permanent scroll bars and inline completion anchoring, fade and title.
-Drawn without a window, the pill's and the editor's text and icon must start at
-the same spot and on the same baseline, then glide only sideways, for
-Control–Space, typing and a click. The command-bar scripts build focused
-production components; native search has separate owner/lifecycle coverage.
+The [Command Bar app suites](../tests/ParcTests/CommandBar) exercise editing,
+search results, shortcuts and the compact editor in detached views and
+offscreen windows. The [model suites](../tests/ParcCoreTests/CommandBar) cover
+ranking inputs, command targets, sidebar selection and saved items. Native
+search has separate owner and lifecycle coverage.
 Follow [the working contract](../AGENTS.md) before running checks.

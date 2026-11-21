@@ -102,5 +102,5 @@ Import-focus and original-owner sequence components cover background, minimized
 and obstructed parents, inactive app, key changes during cleanup and refusal.
 `WindowOwnerSequence` exercises revalidation between callback-capable steps.
 `swift test --filter PopupTabHandoffTests` covers admitted, blocked, minimized, fresh and
-private popup handoffs; `scripts/test-shortcut-essentials.sh` covers the Copy
+private popup handoffs; `EssentialsTests` covers the Copy
 routes and their native admission wiring.

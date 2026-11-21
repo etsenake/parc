@@ -364,9 +364,11 @@ retirement, sheet, fullscreen, scrolling or replacement retires the toast.
 
 ## Checks and remaining work
 
-Focused suites include `tests/KeyboardNavigation`, `tests/ContentFocusRequest`,
-`tests/SidebarWindowKeyLoop`, the shortcut/command scripts and the Find/Peek
-components. Full Swift typechecking is the iteration check; finished material
+The [Command Bar app suites](../tests/ParcTests/CommandBar) cover shortcut
+bindings, command admission, Find and Settings presentation. The
+[sidebar keyboard suites](../tests/ParcCoreTests/CommandBar/Keyboard) cover
+selection, announcements and hierarchy. Content focus and the sidebar key
+loop have separate component checks. Full Swift typechecking is the iteration check; finished material
 Swift work also needs whole-module SIL under [the working contract](../AGENTS.md).
 
 Frame-focus changes invalidate pending page shortcuts through a Parc-owned
