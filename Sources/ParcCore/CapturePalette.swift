@@ -8,10 +8,11 @@ struct CapturePaletteDocument: Equatable {
     let title: String
     let icon: String?
     let modifiedAt: Date?
+    let profileID: UUID?
     let id: String
 
-    init(target: Target, title: String, icon: String? = nil, modifiedAt: Date? = nil) {
-        self.target = target; self.title = title; self.icon = icon; self.modifiedAt = modifiedAt
+    init(target: Target, title: String, icon: String? = nil, modifiedAt: Date? = nil, profileID: UUID? = nil) {
+        self.target = target; self.title = title; self.icon = icon; self.modifiedAt = modifiedAt; self.profileID = profileID
         switch target {
         case .easel(let id): self.id = "easel:" + id.uuidString
         case .note(let url): self.id = CaptureNoteTarget.note(url).id
@@ -19,7 +20,7 @@ struct CapturePaletteDocument: Equatable {
     }
 
     init(_ easel: CaptureEaselDestination) {
-        self.init(target: .easel(easel.id), title: easel.title, modifiedAt: easel.modifiedAt)
+        self.init(target: .easel(easel.id), title: easel.title, modifiedAt: easel.modifiedAt, profileID: easel.profileID)
     }
 
     init(_ note: CaptureNoteDestination) {

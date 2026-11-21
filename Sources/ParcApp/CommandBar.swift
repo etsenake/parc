@@ -1559,9 +1559,15 @@ import SwiftUI
         let result = results[table.selectedRow]
         inputIcon.image = icon(for: result)
     }
+    private func documentIcon(_ document: CommandBarDocument) -> NSImage? {
+        guard document.kind == .easel else { return document.icon.flatMap(NoteTabIconArt.shared.image(emoji:)) }
+        guard let profile = document.profileID, let directory = EaselTabIcons.shared.directory(profile),
+              case .image(let image) = NoteTabIconArt.shared.art(for: .easel(directory: directory, id: document.id)) else { return nil }
+        return image
+    }
     private func icon(for result: Result) -> NSImage? {
         result.extensionLaunch?.icon ?? result.url.flatMap { icons[$0] }
-            ?? result.document?.icon.flatMap(NoteTabIconArt.shared.image(emoji:)) ?? Self.iconImage(result.symbol)
+            ?? result.document.flatMap(documentIcon) ?? Self.iconImage(result.symbol)
     }
     func numberOfRows(in tableView: NSTableView) -> Int { results.count }
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {

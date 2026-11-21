@@ -46,14 +46,14 @@ final class NotePasteLinkMenu {
     private let onChoose: (Choice) -> Void
 
     init(url: URL, leading: [Choice], embeddable: Bool, media: NoteBlockKind? = nil, place: Place = .note,
-         onChoose: @escaping (Choice) -> Void) {
+         easelIcon: NoteIcon = .easelMark, onChoose: @escaping (Choice) -> Void) {
         self.url = url
         self.place = place
         self.onChoose = onChoose
         let list = NoteMenuList()
         self.list = list
         list.rowStyle = .detailed
-        list.items = Self.items(for: url, leading: leading, embeddable: embeddable, media: media, place: place)
+        list.items = Self.items(for: url, leading: leading, embeddable: embeddable, media: media, place: place, easelIcon: easelIcon)
         list.prepare(origin: .keyboard)
         panel = NoteFloatingPanel(content: list)
         list.onActivate = { [weak self] item in
@@ -64,13 +64,14 @@ final class NotePasteLinkMenu {
         list.setAccessibilityLabel("Paste link as")
     }
 
-    static func items(for url: URL, leading: [Choice], embeddable: Bool, media: NoteBlockKind?, place: Place) -> [NoteMenuList.Item] {
+    static func items(for url: URL, leading: [Choice], embeddable: Bool, media: NoteBlockKind?, place: Place,
+                      easelIcon: NoteIcon = .easelMark) -> [NoteMenuList.Item] {
         var items = leading.compactMap { row(for: $0, place: place) }
         if let media { insert(media, into: &items, place: place) }
         if place == .note, NoteEaselAddress.id(from: url) != nil {
             items.removeAll { $0.id == Choice.bookmark.rawValue }
             items.append(.init(id: Choice.easel.rawValue, title: "Easel", subtitle: "Show the Easel right in the note",
-                               icon: .easelMark, section: "Paste as"))
+                               icon: easelIcon, section: "Paste as"))
         }
         if embeddable, let embed = row(for: .embed, place: place) { items.append(embed) }
         return items

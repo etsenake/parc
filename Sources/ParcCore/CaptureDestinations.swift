@@ -5,6 +5,7 @@ struct CaptureEaselDestination: Equatable {
     let title: String
     let lastActive: Date?
     var modifiedAt: Date?
+    var profileID: UUID?
 
     struct Activity {
         let id: UUID
@@ -17,7 +18,7 @@ struct CaptureEaselDestination: Equatable {
         for item in activity where item.profileID == profileID && item.date.timeIntervalSinceReferenceDate.isFinite {
             dates[item.id] = max(dates[item.id] ?? .distantPast, item.date)
         }
-        return documents.map { Self(id: $0.id, title: $0.title, lastActive: dates[$0.id], modifiedAt: $0.modifiedAt) }
+        return documents.map { Self(id: $0.id, title: $0.title, lastActive: dates[$0.id], modifiedAt: $0.modifiedAt, profileID: profileID) }
     }
 
     static func ranked(_ destinations: [Self]) -> [Self] {

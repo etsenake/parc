@@ -44,7 +44,9 @@ enum EaselHistoryPanel {
         }
     }
 
-    static func preview(of document: EaselDocument, editor: EaselEditorViewController) -> NSImage? {
+    static func preview(of snapshot: EaselDocument, editor: EaselEditorViewController) -> NSImage? {
+        var document = snapshot
+        document.icon = nil
         var assets: [String: Data] = [:]
         for id in Set(document.items.compactMap(\.assetID)) {
             guard let data = try? editor.session.assetData(id) else { return nil }
@@ -151,12 +153,13 @@ final class EaselHistoryView: NSView, NoteFloatingPanelContent {
         let document = editor.session.document
         versions = [EaselVersion(id: "", savedAt: document.modifiedAt, itemCount: document.items.count)] + history.versions(of: document.id)
         let now = Date()
+        let currentIcon = editor.session.storeDirectory.map { NoteIcon.easel(document.id, directory: $0) } ?? NoteIcon.easelMark
         list.items = versions.enumerated().map { index, version in
             let phrase = NoteRelativeTime.phrase(for: version.savedAt, now: now)
             let title = index == 0 ? "Current version" : phrase.prefix(1).uppercased() + phrase.dropFirst()
             let subtitle = Self.absolute.string(from: version.savedAt) + " · " + Self.objects(version.itemCount)
             return NoteMenuList.Item(id: String(index), title: title, subtitle: subtitle,
-                                     icon: index == 0 ? .easelMark : .symbol("clock"), isChecked: index == selected)
+                                     icon: index == 0 ? currentIcon : .symbol("clock"), isChecked: index == selected)
         }
         let empty = versions.count <= 1
         emptyLabel.isHidden = !empty

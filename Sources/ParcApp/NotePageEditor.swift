@@ -1159,7 +1159,11 @@ final class NotePageEditor {
                                                 from: host.textView)
         let embeddable = NoteClipboard.isEmbeddable(link.url)
         let media = NoteClipboard.linkedMediaKind(link.url)
-        let menu = NotePasteLinkMenu(url: link.url, leading: [.dismiss, .mention, .bookmark], embeddable: embeddable, media: media) { [weak self] choice in
+        let easelIcon = NoteEaselAddress.id(from: link.url).flatMap { id in
+            NoteEaselHost.host(for: self).map { NoteIcon.easel(id, directory: $0.directory) }
+        } ?? NoteIcon.easelMark
+        let menu = NotePasteLinkMenu(url: link.url, leading: [.dismiss, .mention, .bookmark], embeddable: embeddable, media: media,
+                                     easelIcon: easelIcon) { [weak self] choice in
             self?.choosePasteOption(choice)
         }
         pasteMenu = menu

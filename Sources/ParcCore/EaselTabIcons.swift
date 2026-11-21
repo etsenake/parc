@@ -1,0 +1,149 @@
+import Combine
+import Foundation
+
+@MainActor
+final class EaselTabIcons {
+    private struct Entry {
+        var icon: EaselPageIcon?
+        var resolved: NoteTabIcon?
+        var directory: URL
+        var id: UUID
+    }
+
+    private struct Followed {
+        weak var session: EaselSession?
+        var key: String
+        var subscription: AnyCancellable
+    }
+
+    static let shared = EaselTabIcons()
+    static var worker = NoteFileWorker(label: "org.parc.easels.tab-icons", qos: .utility)
+
+    let changes = PassthroughSubject<Set<String>?, Never>()
+    var directory: (UUID) -> URL? = { _ in nil }
+    var store: (URL) -> EaselStore? = { _ in nil }
+    var notesFolder: (URL) -> URL? = { _ in nil }
+    var readIcon: @Sendable (URL, UUID) -> EaselPageIcon? = { EaselStore.readIcon(directory: $0, id: $1) }
+
+    private var known: [String: Entry] = [:]
+    private var reading: Set<String> = []
+    private var followed: [ObjectIdentifier: Followed] = [:]
+    private var subscriptions: [AnyCancellable] = []
+
+    init() {
+        subscriptions = [
+            NoteEmojiLibrary.anyChange.sink { [weak self] _ in self?.resolveAgain() },
+            NoteFolderPreferences.changes.sink { [weak self] _ in self?.resolveAgain() },
+            NotificationCenter.default.publisher(for: .easelDocumentRemoved).sink { [weak self] note in
+                guard let id = note.object as? UUID else { return }
+                self?.forget(id)
+            },
+        ]
+    }
+
+    nonisolated static func key(directory: URL, id: UUID) -> String {
+        "easel:" + directory.standardizedFileURL.path + "|" + id.uuidString.lowercased()
+    }
+
+    nonisolated static func touches(_ change: Set<String>?, key: String) -> Bool {
+        change.map { $0.contains(key) } ?? true
+    }
+
+    func key(profile: UUID, id: UUID) -> String? {
+        directory(profile).map { Self.key(directory: $0, id: id) }
+    }
+
+    func lookup(profile: UUID, id: UUID) -> NoteTabIcons.Lookup {
+        guard let directory = directory(profile) else { return .known(nil) }
+        return lookup(directory: directory, id: id)
+    }
+
+    func lookup(directory: URL, id: UUID) -> NoteTabIcons.Lookup {
+        let key = Self.key(directory: directory, id: id)
+        if let session = store(directory)?.existingSession(id), !session.isClosed, !session.isDeleted { follow(session) }
+        if let entry = known[key] { return .known(entry.resolved) }
+        read(directory: directory, id: id, key: key)
+        return known[key].map { .known($0.resolved) } ?? .pending
+    }
+
+    func learn(_ summaries: [EaselSummary], directory: URL) {
+        for summary in summaries {
+            let key = Self.key(directory: directory, id: summary.id)
+            if let live = store(directory)?.existingSession(summary.id), !live.isClosed, !live.isDeleted { follow(live); continue }
+            guard known[key] == nil else { continue }
+            known[key] = Entry(icon: summary.icon, resolved: resolve(summary.icon, directory: directory), directory: directory, id: summary.id)
+        }
+    }
+
+    func follow(_ session: EaselSession) {
+        guard let directory = session.storeDirectory else { return }
+        let identifier = ObjectIdentifier(session)
+        if let entry = followed[identifier], entry.session === session { return }
+        followed = followed.filter { $0.value.session != nil }
+        let id = session.document.id
+        let key = Self.key(directory: directory, id: id)
+        remember(session.document.icon, directory: directory, id: id, key: key)
+        let subscription = session.$document.map(\.icon).removeDuplicates().dropFirst().sink { [weak self] icon in
+            self?.remember(icon, directory: directory, id: id, key: key)
+        }
+        followed[identifier] = Followed(session: session, key: key, subscription: subscription)
+    }
+
+    func forget() {
+        known.removeAll()
+        reading.removeAll()
+        followed.removeAll()
+    }
+
+    private func forget(_ id: UUID) {
+        let suffix = "|" + id.uuidString.lowercased()
+        let gone = known.keys.filter { $0.hasSuffix(suffix) }
+        guard !gone.isEmpty else { return }
+        for key in gone { known[key] = nil }
+        followed = followed.filter { $0.value.session != nil && !$0.value.key.hasSuffix(suffix) }
+        changes.send(Set(gone))
+    }
+
+    private func remember(_ icon: EaselPageIcon?, directory: URL, id: UUID, key: String) {
+        let previous = known[key]
+        let resolved = resolve(icon, directory: directory)
+        known[key] = Entry(icon: icon, resolved: resolved, directory: directory, id: id)
+        if previous.map({ $0.icon != icon || $0.resolved != resolved }) ?? false { changes.send([key]) }
+    }
+
+    private func read(directory: URL, id: UUID, key: String) {
+        guard reading.insert(key).inserted else { return }
+        let reader = readIcon
+        Self.worker.perform({ reader(directory, id) }) { [weak self] icon in
+            guard let self else { return }
+            self.reading.remove(key)
+            guard self.known[key] == nil else { return }
+            self.known[key] = Entry(icon: icon, resolved: self.resolve(icon, directory: directory), directory: directory, id: id)
+            self.changes.send([key])
+        }
+    }
+
+    private func resolve(_ icon: EaselPageIcon?, directory: URL) -> NoteTabIcon? {
+        guard let icon else { return nil }
+        switch icon.kind {
+        case .emoji:
+            return .emoji(icon.value)
+        case .custom:
+            return notesFolder(directory).flatMap { NoteEmojiLibrary.library(root: $0).imageURL(named: icon.value) }
+                .map { .image(URL(fileURLWithPath: $0.path, isDirectory: false)) }
+        case .image:
+            return store(directory)?.assetFileURL(icon.value).map { .image(URL(fileURLWithPath: $0.path, isDirectory: false)) }
+        }
+    }
+
+    private func resolveAgain() {
+        var changed = Set<String>()
+        for (key, entry) in known where entry.icon?.kind == .custom {
+            let resolved = resolve(entry.icon, directory: entry.directory)
+            guard resolved != entry.resolved else { continue }
+            known[key]?.resolved = resolved
+            changed.insert(key)
+        }
+        if !changed.isEmpty { changes.send(changed) }
+    }
+}

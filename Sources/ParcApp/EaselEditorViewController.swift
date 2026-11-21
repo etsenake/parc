@@ -11,6 +11,10 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         if let store = stores[key] { return store }
         let store = try EaselStore(directory: URL(fileURLWithPath: key, isDirectory: true))
         EaselHistories.attach(to: store)
+        store.onListed = { [weak store] summaries in
+            guard let store else { return }
+            EaselTabIcons.shared.learn(summaries, directory: store.directory)
+        }
         stores[key] = store
         return store
     }

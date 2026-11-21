@@ -45,6 +45,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private var library: NoteLibrary?
     private var subscription: AnyCancellable?
     private var folderSubscription: AnyCancellable?
+    private var easelIconSubscription: AnyCancellable?
     private var observedInputs: DocumentsLibraryInputs?
     private let scopeBar = DocumentsFolderScopeBar()
     private(set) var folderScope: URL?
@@ -101,6 +102,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
                 self?.bindLibrary(); self?.reload(force: true)
             }
             bindLibrary()
+            easelIconSubscription = EaselTabIcons.shared.changes.sink { [weak self] _ in self?.reload() }
         }
         reload(force: true)
     }
