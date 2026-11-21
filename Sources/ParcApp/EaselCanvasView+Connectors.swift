@@ -7,7 +7,7 @@ struct EaselConnectorCanvasState {
         case segment(id: UUID, index: Int, original: EaselItem, vertices: [EaselPoint], origin: NSPoint)
         case curve(id: UUID, handle: EaselConnectorPath.CurveHandle, original: EaselItem)
         case label(id: UUID, original: EaselItem, origin: NSPoint)
-        case inert(id: UUID)
+        case inert(id: UUID, wasSelected: Bool, origin: NSPoint)
         case create(routing: EaselConnectorRouting?, origin: NSPoint, start: EaselConnection?, startPoint: EaselPoint)
         case quickCreate(source: EaselItem, side: EaselConnection.Side, origin: NSPoint)
     }
@@ -479,8 +479,9 @@ extension EaselCanvasView {
             connection.flatMap { lookup[$0.itemID] }.map(EaselConnectorAttachment.resolves) == true
         }
         guard attached, !event.modifierFlags.contains(.shift), !(selection.contains(hit.id) && selection.count > 1) else { return false }
+        let wasSelected = selection == [hit.id]
         selection = [hit.id]
-        connectors.gesture = .inert(id: hit.id)
+        connectors.gesture = .inert(id: hit.id, wasSelected: wasSelected, origin: point)
         invalidateIncrementalDisplay(layout: true)
         return true
     }
@@ -526,8 +527,8 @@ extension EaselCanvasView {
             var next = original
             next.labelPosition = EaselConnectorLabel.position(nearest: EaselPoint(x: point.x, y: point.y), on: route, size: measured)
             connectors.preview = [next]
-        case .inert:
-            break
+        case .inert(_, _, let origin):
+            if hypot(point.x - origin.x, point.y - origin.y) * canvasScale > EaselToolGeometry.dragThreshold { connectors.travelled = true }
         case .create(let routing, let origin, let start, let startPoint):
             guard connectors.travelled || hypot(point.x - origin.x, point.y - origin.y) * canvasScale > EaselToolGeometry.dragThreshold else { return true }
             connectors.travelled = true
@@ -561,8 +562,10 @@ extension EaselCanvasView {
         case .label(_, let original, _):
             if travelled, let next = preview.first { replaceConnector(original, with: next, name: "Move label") }
             else { cancelPointerInteraction(); beginConnectorLabelEditing(original, at: nil) }
-        case .inert:
-            break
+        case .inert(let id, let wasSelected, _):
+            guard wasSelected, !travelled, let item = session.document.items.first(where: { $0.id == id }) else { return true }
+            cancelPointerInteraction()
+            beginConnectorLabelEditing(item, at: point)
         case .create:
             guard travelled, let item = preview.first else { return true }
             if commit("Add connector", { $0.items.append(item) }) { selection = [item.id]; rememberConnectorStyle(item) }

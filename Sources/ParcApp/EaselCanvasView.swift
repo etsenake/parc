@@ -478,6 +478,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         switch name {
         case "Duplicate": return duplicateObjects(sender)
         case "Edit label": beginConnectorLabelEditing(item, at: nil); return editingID == item.id
+        case "Add next": return quickCreate(from: item, side: .right)
         case "Bring to front": return bringToFront(sender)
         case "Copy code": return copyCode(item.id)
         case "Change language": return showCodeLanguageMenu(item.id)
@@ -2444,6 +2445,7 @@ private final class EaselAccessibleObject: NSView {
         names += canvas.boardActionNames(item)
         if item.kind == .code { names.insert(contentsOf: ["Copy code", "Change language"], at: 0) }
         if item.kind == .arrow, !item.isLocked { names.insert("Edit label", at: 0) }
+        if canvas.quickCreates(item), canvas.fixedCanvasSize == nil { names.insert("Add next", at: 0) }
         if item.kind.holdsText || item.kind == .table || item.kind == .code || !canvas.accessibleChildren(id).isEmpty || item.ownsEmbeddedPage { names.insert("Activate", at: 0) }
         let linked = EaselObjectLink.link(of: item) != nil
         return names.map { name in
