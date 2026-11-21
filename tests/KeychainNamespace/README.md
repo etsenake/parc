@@ -33,9 +33,7 @@ Run the inert policy checks, which use fake in-memory Keychain adapters and do
 not launch a browser or access a real Keychain:
 
 ```sh
-xcrun clang++ -std=c++20 -Wall -Wextra -Werror -IEngine/ParcNative \
-  tests/KeychainNamespace/namespace_test.cc -o build/keychain-namespace-test
-build/keychain-namespace-test
+swift test --filter KeychainNamespaceTests
 ```
 
 They cover fresh roots, byte-preserving legacy migration, previous Parc-key

@@ -1,3 +1,4 @@
+#import "ParcNativeTest.h"
 #include "fairplay_identity_policy.h"
 
 #include <cstdio>
@@ -6,15 +7,8 @@
 
 namespace {
 
-unsigned checks = 0;
 
-void Check(bool condition, const char* message) {
-  ++checks;
-  if (!condition) {
-    std::fprintf(stderr, "FAIL: %s\n", message);
-    std::exit(1);
-  }
-}
+#define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
 
 using parc::fairplay_identity::DecideWidevineRequest;
 using parc::fairplay_identity::FrameNavigation;
@@ -147,11 +141,25 @@ void UserAgentRules() {
 
 }
 
-int main() {
+@interface FairPlayIdentityPolicyTests : ParcNativeTestCase
+@end
+
+@implementation FairPlayIdentityPolicyTests
+
+- (void)testSiteListRules {
   SiteListRules();
-  NavigationRules();
-  WidevineRules();
-  UserAgentRules();
-  std::printf("fairplay identity policy: %u checks passed\n", checks);
-  return 0;
 }
+
+- (void)testNavigationRules {
+  NavigationRules();
+}
+
+- (void)testWidevineRules {
+  WidevineRules();
+}
+
+- (void)testUserAgentRules {
+  UserAgentRules();
+}
+
+@end

@@ -120,8 +120,7 @@ state before every host callback and rechecks claims after each one.
 
 ## Checks
 
-`bash scripts/test-private-session-ledger.sh` compiles the ledger with plain
-clang and runs every listed sequence against a simulated Chromium world:
+`swift test --filter PrivateSessionLedgerTests` runs every listed sequence against a simulated Chromium world:
 overlapping creations, both teardown orders, failure at each step, reentry,
 quits that go ahead or are cancelled, destroyed creators, a disabled parent,
 operation leases, abandoned sessions that are still closing, spurious end

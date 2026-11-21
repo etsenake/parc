@@ -66,7 +66,6 @@ a performance/refresh tradeoff.
 ## Sources and checks
 
 The renderer top-band detector, native associated observer and
-`TopBarColorClient` feed `BrowserToolbar`. Relevant checks are
-`tests/TopBandColor/run.py`, the focused top-band-color script and native/client
-component coverage. They exercise candidate decisions, ownership and cache
-behavior; syntax/compiler checks cover integration when run.
+`TopBarColorClient` feed `BrowserToolbar`. `TopBandColorTests` and the
+native/client component checks exercise candidate decisions, ownership and
+cache behavior.

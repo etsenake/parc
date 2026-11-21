@@ -1,3 +1,4 @@
+#import "ParcNativeTest.h"
 #include "private_session_ledger.h"
 
 #include <cstdint>
@@ -13,15 +14,8 @@
 
 namespace {
 
-unsigned checks = 0;
 
-void Check(bool condition, const char* message) {
-  ++checks;
-  if (!condition) {
-    std::fprintf(stderr, "FAIL: %s\n", message);
-    std::exit(1);
-  }
-}
+#define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
 
 struct SessionState {
   int parent = 0;
@@ -967,32 +961,109 @@ void Randomized() {
 
 }
 
-int main() {
+@interface PrivateSessionLedgerTests : ParcNativeTestCase
+@end
+
+@implementation PrivateSessionLedgerTests
+
+- (void)testClaimsAreMoveOnlyAndReleaseOnce {
   ClaimsAreMoveOnlyAndReleaseOnce();
-  OverlappingCreationsShareOneSession();
-  CreationClaimsBeforeLastWindowCloses();
-  FailedCreationAfterLastWindowClosed();
-  LastWindowClosesBeforeCreation();
-  ChromiumOpensDuringTeardown();
-  ChromiumOpensWithAndWithoutPrivateWindows();
-  ChromiumErrorsBeforeAskingForAWindow();
-  FailureAtEachStep();
-  ReentrantCreationNeitherDoubleClaimsNorReleasesEarly();
-  ReentrantWaitersAndTeardownObservers();
-  QuitDuringCreation();
-  CancelledQuitKeepsTheRequest();
-  QuitCancelledTooLateReportsNotReady();
-  WaitingOnAnAbandonedSessionThatIsClosing();
-  QuitWhileSettlingReportsNotSettled();
-  DestroyedCreatorsReleaseTheirClaims();
-  ParentDisabledOrRemovedWhileWaiting();
-  OperationsKeepTheSessionUntilTheyEnd();
-  ClaimDuringRetryKeepsTheSession();
-  ClaimTakenByATeardownObserverDuringRetry();
-  SpuriousEndKeepsWaiting();
-  AwaitWhileQuittingFailsAtOnce();
-  SessionClosedOutsideParcWhileWaiting();
-  Randomized();
-  std::printf("private session ledger: %u checks passed\n", checks);
-  return 0;
 }
+
+- (void)testOverlappingCreationsShareOneSession {
+  OverlappingCreationsShareOneSession();
+}
+
+- (void)testCreationClaimsBeforeLastWindowCloses {
+  CreationClaimsBeforeLastWindowCloses();
+}
+
+- (void)testFailedCreationAfterLastWindowClosed {
+  FailedCreationAfterLastWindowClosed();
+}
+
+- (void)testLastWindowClosesBeforeCreation {
+  LastWindowClosesBeforeCreation();
+}
+
+- (void)testChromiumOpensDuringTeardown {
+  ChromiumOpensDuringTeardown();
+}
+
+- (void)testChromiumOpensWithAndWithoutPrivateWindows {
+  ChromiumOpensWithAndWithoutPrivateWindows();
+}
+
+- (void)testChromiumErrorsBeforeAskingForAWindow {
+  ChromiumErrorsBeforeAskingForAWindow();
+}
+
+- (void)testFailureAtEachStep {
+  FailureAtEachStep();
+}
+
+- (void)testReentrantCreationNeitherDoubleClaimsNorReleasesEarly {
+  ReentrantCreationNeitherDoubleClaimsNorReleasesEarly();
+}
+
+- (void)testReentrantWaitersAndTeardownObservers {
+  ReentrantWaitersAndTeardownObservers();
+}
+
+- (void)testQuitDuringCreation {
+  QuitDuringCreation();
+}
+
+- (void)testCancelledQuitKeepsTheRequest {
+  CancelledQuitKeepsTheRequest();
+}
+
+- (void)testQuitCancelledTooLateReportsNotReady {
+  QuitCancelledTooLateReportsNotReady();
+}
+
+- (void)testWaitingOnAnAbandonedSessionThatIsClosing {
+  WaitingOnAnAbandonedSessionThatIsClosing();
+}
+
+- (void)testQuitWhileSettlingReportsNotSettled {
+  QuitWhileSettlingReportsNotSettled();
+}
+
+- (void)testDestroyedCreatorsReleaseTheirClaims {
+  DestroyedCreatorsReleaseTheirClaims();
+}
+
+- (void)testParentDisabledOrRemovedWhileWaiting {
+  ParentDisabledOrRemovedWhileWaiting();
+}
+
+- (void)testOperationsKeepTheSessionUntilTheyEnd {
+  OperationsKeepTheSessionUntilTheyEnd();
+}
+
+- (void)testClaimDuringRetryKeepsTheSession {
+  ClaimDuringRetryKeepsTheSession();
+}
+
+- (void)testClaimTakenByATeardownObserverDuringRetry {
+  ClaimTakenByATeardownObserverDuringRetry();
+}
+
+- (void)testSpuriousEndKeepsWaiting {
+  SpuriousEndKeepsWaiting();
+}
+
+- (void)testAwaitWhileQuittingFailsAtOnce {
+  AwaitWhileQuittingFailsAtOnce();
+}
+
+- (void)testSessionClosedOutsideParcWhileWaiting {
+  SessionClosedOutsideParcWhileWaiting();
+}
+
+- (void)testRandomized {
+  Randomized();
+}
+
+@end

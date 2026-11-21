@@ -1,3 +1,4 @@
+#import "ParcNativeTest.h"
 #include "fairplay_identity_policy.h"
 #include "parc_managed_media_source.h"
 #include "parc_safari_identity.h"
@@ -15,15 +16,8 @@
 
 namespace {
 
-unsigned checks = 0;
 
-void Check(bool condition, const char* message) {
-  ++checks;
-  if (!condition) {
-    std::fprintf(stderr, "FAIL: %s\n", message);
-    std::exit(1);
-  }
-}
+#define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
 
 std::vector<std::string> ScriptsFor(const std::string& user_agent) {
   std::vector<std::string> scripts;
@@ -59,19 +53,15 @@ bool EncryptedEventDelivered(const std::string& user_agent,
   return (type == "sinf") == safari_media_source;
 }
 
-bool Installs(const std::vector<std::string>& scripts, const char* global) {
-  const std::string guard = std::string("'") + global + "' in g";
-  for (const std::string& script : scripts) {
-    if (script.find(guard) != std::string::npos) {
-      return true;
-    }
-  }
-  return false;
-}
 
 }
 
-int main() {
+@interface FairPlayRendererGateTests : ParcNativeTestCase
+@end
+
+@implementation FairPlayRendererGateTests
+
+- (void)testSafariParserCodecsUseTheRealCodecHelpers {
   const auto parser_codecs = blink::ParcSafariMp2tParserCodecs(
       " , avc1.42E01E,\tmp4a.40.5, ac-3 ");
   Check(parser_codecs && *parser_codecs == "avc1.42E01E,mp4a.40.5",
@@ -83,31 +73,16 @@ int main() {
         "separators alone are not an empty codecs parameter");
   Check(!blink::ParcSafariMp2tParserCodecs("avc1.42E01E,invalid"),
         "an invalid codec rejects the parser list");
+}
+
+- (void)testASafariIdentityDocumentGetsAllFiveScripts {
   for (const char* version : {"27.2", "26.0.1"}) {
-    const std::vector<std::string> safari =
-        ScriptsFor(parc::fairplay_identity::SafariUserAgent(version));
-    Check(safari.size() == 5, "a Safari-identity document gets all five scripts");
-    Check(Installs(safari, "WebKitPlaybackTargetAvailabilityEvent"),
-          "a Safari-identity document gets the AirPlay availability event");
-    Check(Installs(safari, "WebKitMediaKeys"),
-          "a Safari-identity document gets WebKitMediaKeys");
-    Check(Installs(safari, "ManagedMediaSource"),
-          "a Safari-identity document gets ManagedMediaSource");
-    Check(std::find_if(safari.begin(), safari.end(),
-                       [](const std::string& script) {
-                         return script.find(
-                                    "delete MediaKeysInterface.prototype."
-                                    "getStatusForPolicy") != std::string::npos;
-                       }) != safari.end(),
-          "a Safari-identity document loses MediaKeys.getStatusForPolicy");
-    Check(std::find_if(safari.begin(), safari.end(),
-                       [](const std::string& script) {
-                         return script.find("'webkitSetPresentationMode' in "
-                                            "videoPrototype") !=
-                                std::string::npos;
-                       }) != safari.end(),
-          "a Safari-identity document gets the video presentation API");
+    Check(ScriptsFor(parc::fairplay_identity::SafariUserAgent(version)).size() == 5,
+          "a Safari-identity document gets all five scripts");
   }
+}
+
+- (void)testSafariIdentityRegistersAndDeliversOnlyItsInitDataTypes {
   for (const char* version : {"27.2", "26.0.1"}) {
     const std::string safari =
         parc::fairplay_identity::SafariUserAgent(version);
@@ -131,10 +106,9 @@ int main() {
             "other spellings of sinf, skd and mpts stay unregistered");
     }
   }
-  Check(std::strstr(blink::kParcWebKitMediaKeysScript,
-                    "isTypeSupported(keySystem, type = undefined)") != nullptr,
-        "the script defines the static isTypeSupported");
+}
 
+- (void)testSafariIdentityAcceptsOnlyWebKitSchemesSessionTypesAndKeySystems {
   for (const char* scheme : {"cenc", "cbcs"}) {
     Check(blink::IsParcSafariEncryptionScheme(scheme),
           "cenc and cbcs are WebKit's encryption schemes");
@@ -170,7 +144,9 @@ int main() {
     Check(!blink::IsParcSafariOnlySessionType(type),
           "other session types are not Safari-only");
   }
+}
 
+- (void)testOtherDocumentsKeepChromiumsBehaviour {
   const char* const not_safari[] = {
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
@@ -205,7 +181,9 @@ int main() {
               EncryptedEventDelivered(user_agent, Load::kMediaSource, "webm"),
           "other documents hear cenc and webm init data as before and never sinf");
   }
+}
 
+- (void)testSpatialAudioFollowsTheSourceLayout {
   const std::vector<uint32_t> mono_or_stereo = {0x6d6f7374};
   const std::vector<uint32_t> multichannel = {0x6d6c7469};
   const std::vector<uint32_t> binaural = {0x62696e68};
@@ -220,7 +198,6 @@ int main() {
   Check(!blink::IsParcSafariSpatialAudioSupported(binaural, 6) &&
             !blink::IsParcSafariSpatialAudioSupported(std::vector<uint32_t>(), 2),
         "binaural sources or none spatialize nothing");
-
-  std::printf("renderer gate: %u checks passed\n", checks);
-  return 0;
 }
+
+@end

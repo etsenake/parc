@@ -47,8 +47,8 @@ page asks for. The page icons, the About layout and the version and
 metrics-internals wording are text rules inside Chromium's pages: each names
 exactly what it replaces and how many times it must appear, and one that no
 longer matches is skipped and logged, never half applied, leaving Chromium's
-original. So a Chromium upgrade runs `tests/WebUIBranding/check.py` against the
-rebuilt copy, which fails on any changed text or count
+original. `WebUIBrandingTests` run every rule on Chromium-shaped pages; whether
+each rule still matches the rebuilt Chromium is checked against the built pages
 ([upgrading Chromium](../Engine/README.md#upgrading-chromium)).
 
 The task manager's Browser row still shows Chromium's small colour logo: a
@@ -79,6 +79,6 @@ Git retains the original approved input artwork.
 - `scripts/test-portrait-capture.sh`: the real portrait compositor and resources.
 - `python3 -m unittest discover -s tests/BrandMarks -v`: approved-master RGB and
   protected-pixel fingerprints, alpha cleanup, contours and interior colors.
-- `python3 tests/WebUIBranding/check.py`: the engine's vector against
-  `Monochrome.svg`, the branding rules and, with an engine workspace, every
-  Chromium text and page they rely on ([details](../tests/WebUIBranding/README.md)).
+- `swift test --filter WebUIBrandingTests`: the engine's vector against
+  `Monochrome.svg`, the served logos and the branding rules
+  ([details](../tests/WebUIBranding/README.md)).
