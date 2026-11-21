@@ -197,7 +197,7 @@ final class NoteTabIconArt {
             return .image(image)
         }
         if let failed = unreadableThumbnails[stamp] {
-            if NoteTabIcons.clock.now.timeIntervalSince(failed) < Self.unreadableRetryDelay { return .standard }
+            if icons.clock.now.timeIntervalSince(failed) < Self.unreadableRetryDelay { return .standard }
             unreadableThumbnails[stamp] = nil
         }
         let key = owner
@@ -206,14 +206,14 @@ final class NoteTabIconArt {
             return .pending
         }
         loadingThumbnails[stamp] = [key]
-        NoteTabIcons.worker.perform({ Self.thumbnail(file) }) { [weak self] thumbnail in
+        icons.worker.perform({ Self.thumbnail(file) }) { [weak self] thumbnail in
             guard let self else { return }
             let notes = self.loadingThumbnails.removeValue(forKey: stamp) ?? [key]
             if let thumbnail {
                 self.thumbnails.setObject(thumbnail, forKey: stamp.id as NSString)
             } else {
                 if self.unreadableThumbnails.count >= 1_024 { self.unreadableThumbnails.removeAll() }
-                self.unreadableThumbnails[stamp] = NoteTabIcons.clock.now
+                self.unreadableThumbnails[stamp] = self.icons.clock.now
             }
             self.thumbnailsChanged.send(notes)
         }
@@ -221,7 +221,7 @@ final class NoteTabIconArt {
     }
 
     private func currentStamp(of file: URL) -> ThumbnailStamp {
-        let now = NoteTabIcons.clock.now
+        let now = icons.clock.now
         if let sighting = sightings[file.path], abs(now.timeIntervalSince(sighting.checked)) < Self.restampInterval {
             return sighting.stamp
         }

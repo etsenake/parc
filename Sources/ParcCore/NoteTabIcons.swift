@@ -42,15 +42,17 @@ package final class NoteTabIcons {
         var subscriptions: [AnyCancellable]
     }
 
-    package static let shared = NoteTabIcons()
-    package static var worker = NoteFileWorker(label: "org.parc.notes.tab-icons", qos: .utility)
-    package static var clock: NoteFileClock = NoteFileSystemClock.shared
+    package static let shared = NoteTabIcons(files: .shared, worker: NoteFileWorker(label: "org.parc.notes.tab-icons", qos: .utility),
+                                              clock: NoteFileSystemClock.shared)
     package nonisolated static let rememberedNotes = 4_096
 
+    package let files: NoteFiles
+    package let worker: NoteFileWorker
+    package let clock: NoteFileClock
     package let changes = PassthroughSubject<Set<String>?, Never>()
     package var readIcon: @Sendable (URL) -> String? = { NoteTabIcons.frontMatterIcon($0) }
-    package var folderChanges: @MainActor (URL) -> AnyPublisher<Void, Never>? = { note in
-        NoteLibrary.library(for: note).changes.eraseToAnyPublisher()
+    package lazy var folderChanges: @MainActor (URL) -> AnyPublisher<Void, Never>? = { [unowned files] note in
+        files.library(for: note).changes.eraseToAnyPublisher()
     }
 
     private var known: [String: NoteTabIcon?] = [:]
@@ -63,8 +65,11 @@ package final class NoteTabIcons {
     private var announcement: NoteFileTimer?
     private var emojiSubscription: AnyCancellable?
 
-    package init() {
-        emojiSubscription = NoteEmojiLibrary.anyChange.sink { [weak self] _ in self?.emojiLibraryChanged() }
+    package init(files: NoteFiles, worker: NoteFileWorker, clock: NoteFileClock) {
+        self.files = files
+        self.worker = worker
+        self.clock = clock
+        emojiSubscription = files.emojiChanges.sink { [weak self] _ in self?.emojiLibraryChanged() }
     }
 
     private func emojiLibraryChanged() {
@@ -92,7 +97,7 @@ package final class NoteTabIcons {
 
     package func lookup(_ note: URL) -> Lookup {
         guard NoteFileKind(url: note) == .markdown else { return .known(nil) }
-        if let session = NoteFileSession.session(for: note) { return .known(follow(session)) }
+        if let session = files.session(for: note) { return .known(follow(session)) }
         let key = Self.key(note)
         if let icon = known[key] { return .known(icon) }
         read(note, key: key, again: false)
@@ -178,19 +183,19 @@ package final class NoteTabIcons {
         reading[key] = false
         watchFolder(of: note)
         let reader = readIcon, generation = generations[key, default: 0]
-        Self.worker.perform({ reader(note) }) { [weak self] raw in
+        worker.perform({ reader(note) }) { [weak self] raw in
             self?.finishRead(note, key: key, raw: raw, generation: generation)
         }
     }
 
     private func finishRead(_ note: URL, key: String, raw: String?, generation: Int) {
         guard let again = reading.removeValue(forKey: key) else { return }
-        guard generations[key, default: 0] == generation, NoteFileSession.session(for: note) == nil else {
+        guard generations[key, default: 0] == generation, files.session(for: note) == nil else {
             announce([key])
-            if again, NoteFileSession.session(for: note) == nil { read(note, key: key, again: false) }
+            if again, files.session(for: note) == nil { read(note, key: key, again: false) }
             return
         }
-        let icon = NoteTabIcon(raw, resolve: NoteFileEnvironment(documentURL: note, isPlainText: false).resolve)
+        let icon = NoteTabIcon(raw, resolve: NoteFileEnvironment(documentURL: note, isPlainText: false, files: files).resolve)
         let previous = known[key]
         remember(icon, for: key)
         if previous.map({ $0 != icon }) ?? true { announce([key]) }
@@ -207,7 +212,7 @@ package final class NoteTabIcons {
         let keys = Set(known.keys).union(reading.keys).filter { ($0 as NSString).deletingLastPathComponent == folder }
         for key in keys.sorted() {
             let note = URL(fileURLWithPath: key, isDirectory: false)
-            if NoteFileSession.session(for: note) != nil { continue }
+            if files.session(for: note) != nil { continue }
             read(note, key: key, again: true)
         }
     }
@@ -215,7 +220,7 @@ package final class NoteTabIcons {
     private func announce(_ keys: Set<String>?) {
         if let keys, let pending = unannounced { unannounced = pending.union(keys) } else { unannounced = nil }
         guard announcement == nil else { return }
-        announcement = Self.clock.schedule(after: 0) { [weak self] in
+        announcement = clock.schedule(after: 0) { [weak self] in
             guard let self else { return }
             let change = self.unannounced
             self.announcement = nil
