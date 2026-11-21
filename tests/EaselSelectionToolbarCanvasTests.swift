@@ -152,9 +152,9 @@ struct EaselSelectionToolbarCanvasTests {
                && EaselChords.command(characters: "/", keyCode: 44, modifiers: [.command, .shift]) == .focusSelectionToolbar,
                "⇧⌘/ is the toolbar's chord, like the Notes format bar")
         expect(EaselChords.command(characters: "/", keyCode: 44, modifiers: [.command]) == nil, "⌘/ alone is left for Parc")
-        expect(canvas.performChord(.focusSelectionToolbar, editing: false) && fake.focusRequests == 1,
+        expect(canvas.performChord(.focusSelectionToolbar) && fake.focusRequests == 1,
                "The chord hands keyboard focus to the toolbar")
-        expect(canvas.performChord(.focusSelectionToolbar, editing: true) && fake.focusRequests == 2,
+        expect(canvas.performChord(.focusSelectionToolbar) && fake.focusRequests == 2,
                "It works mid-sentence too, so text formatting is reachable from the keyboard")
 
         let element = NSView()

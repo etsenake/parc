@@ -1,12 +1,5 @@
 import AppKit
 
-extension BrowserWindowController {
-    @objc func showEaselTableNotice(_ sender: Any?) {
-        guard let notice = sender as? EaselTableNotice else { return }
-        showToast(.standard(notice.label, subLabel: notice.detail))
-    }
-}
-
 @MainActor
 extension EaselDocumentExport {
     static func tableVectorText(_ item: EaselItem) -> EaselVectorText {

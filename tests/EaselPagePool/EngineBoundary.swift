@@ -114,32 +114,6 @@ import AppKit
     var cancelled = false
     func cancel() { cancelled = true }
 }
-@MainActor class NoteControlButton: NSView {
-    var onPress: (() -> Void)?
-    var acceptsKeyboardFocus = false
-    var isEnabled = true
-    func setToolTip(_ title: String, shortcut: String? = nil) { toolTip = title }
-}
-@MainActor final class NoteToolbarButton: NoteControlButton {
-    enum Content: Hashable { case icon(NoteIcon), text(String), iconAndText(NoteIcon, String) }
-    var content: Content
-    init(_ content: Content, label: String, shortcut: String? = nil) {
-        self.content = content
-        super.init(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
-        setAccessibilityLabel(label)
-    }
-    convenience init(icon: NoteIcon, label: String, shortcut: String? = nil) { self.init(.icon(icon), label: label, shortcut: shortcut) }
-    required init?(coder: NSCoder) { fatalError() }
-}
-@MainActor final class NoteChip: NoteControlButton {
-    enum Style { case ghost, filled }
-    var chipTitle: String, icon: NoteIcon?, style: Style
-    init(_ title: String, icon: NoteIcon? = nil, style: Style = .ghost) {
-        chipTitle = title; self.icon = icon; self.style = style
-        super.init(frame: NSRect(x: 0, y: 0, width: 80, height: 24))
-    }
-    required init?(coder: NSCoder) { fatalError() }
-}
 @MainActor enum NoteMediaMotion { static func instant(_ body: () -> Void) { body() } }
 @MainActor final class NoteMediaImageLoader {
     static let shared = NoteMediaImageLoader()

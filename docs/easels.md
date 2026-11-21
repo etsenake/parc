@@ -346,6 +346,15 @@ to, so a malformed file is rejected whole rather than half drawn.
 exercise atomic saves, rich-text validation, native Undo, ownership, geometry,
 clipboard conversion, export bytes and the SVG/HTML serialiser.
 
+The canvas bundles (`test-easels.sh` window suites, `test-easel-motion.sh`,
+`tests/EaselPagePool/run.py`, the site-film command bar build) compile every
+`EaselCanvas*.swift` by glob plus a fixed list of app files. Canvas files may
+only depend on that list: Note panel and controls, `EaselDocumentExport`,
+`EaselTableExport`, `EaselSelectionExporter`, `EaselShapePicker`, stamp and
+image export, and `NoteDesignSystemStubs`. Keep window-controller and
+view-controller extensions in their own `*Actions.swift` files; when a canvas
+file needs another app file, add it to all those lists in the same change.
+
 Private windows deliberately offer no Easels or Notes and send no captures to
 Easels; the reason is in [capture Library](capture-library.md#private-media-ownership).
 Local documents do not publish to cloud or collaboration services.
