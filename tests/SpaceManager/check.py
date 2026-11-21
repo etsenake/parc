@@ -44,6 +44,7 @@ BoxOfThingsIcon.swift
 CaptureIndicatorPresentation.swift
 CaptureLibraryStore.swift
 CommandBarSiteColor.swift
+DocumentDefaultIcon.swift
 DownloadActivityBadge.swift
 DownloadFileDrag.swift
 DownloadLibraryPreview.swift
@@ -60,6 +61,7 @@ MenuItemImage.swift
 MiniPlayerMotion.swift
 MiniPlayerView.swift
 NavigationControlPress.swift
+NoteTabIconArt.swift
 PageCardShadow.swift
 ParcSplitView.swift
 PointerCover.swift
@@ -69,6 +71,7 @@ SadTabContent.swift
 SavedFocus.swift
 SidebarAccessibility.swift
 SidebarAddressPill.swift
+SidebarAddressText.swift
 SidebarChromeLayout.swift
 SidebarDockStrip.swift
 SidebarFaviconView.swift
@@ -79,6 +82,7 @@ SidebarItemDrag.swift
 SidebarLibraryEntry.swift
 SidebarMotionController.swift
 SidebarMoveAttentionView.swift
+SidebarNotePlacement.swift
 SidebarOutline.swift
 SidebarPinnedHeader.swift
 SidebarPreviewPreferences.swift

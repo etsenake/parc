@@ -44,12 +44,12 @@ easel = (app / "EaselEditorViewController.swift").read_text()
 write("PortraitDesktopSnapshot.swift", "import AppKit\n@MainActor\nenum PortraitDesktopSnapshot {\n    static func capture(screen: NSScreen?) async throws -> NSImage { throw CancellationError() }\n}\n")
 write("EaselStoreOwner.swift", easel[:easel.index("    let session: EaselSession")] + "}\n")
 
-extra = ["CaptureLibraryView", "DocumentsLibraryView", "DocumentDefaultIcon", "DownloadLibraryTable", "DownloadLibraryView", "DownloadThumbnailProvider",
+extra = ["CaptureLibraryView", "DocumentsLibraryView", "DocumentsLibraryCatalog", "DocumentDefaultIcon", "DownloadLibraryTable", "DownloadLibraryView", "DownloadThumbnailProvider",
          "ExternalMediaLibrary", "CaptureLibrarySharing", "MediaLibraryContext", "CaptureMotion", "DownloadArrivalMotion",
          "LibraryRailTile", "LibraryRailIcon", "TopBarColorClient", "CapturePresentation", "ParcBrandMark",
-         "CapturedImage", "PeekWindowLayout", "PeekControls", "CapturePaletteView", "NoteTheme", "NoteAnimation",
+         "CapturedImage", "PeekWindowLayout", "PeekControls", "CapturePaletteView", "CaptureModeBar", "NoteTheme", "NoteAnimation",
          "NoteFloatingPanel", "NoteControls", "NoteCustomEmojiImages"]
-sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [app / name for name in names] + [app / f"{n}.swift" for n in extra] + extracted
+sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [app / name for name in names] + [app / f"{n}.swift" for n in extra if f"{n}.swift" not in names] + extracted
 sources += [root / "tests/KeyboardNavigation/NativeShortcutStub.swift", root / "tests/SpaceManager/NativeHostStub.swift",
             root / "tests/Support/TestFailure.swift"]
 sources += sorted(here.glob("Harness/*.swift"))
