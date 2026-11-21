@@ -71,7 +71,7 @@ Git and release notes retain history.
   [tables](easel-tables.md), [code blocks](easel-code-blocks.md),
   [Mermaid diagrams](easel-mermaid.md), [arranging](easel-arranging.md),
   [rotate and flip](easel-rotation.md), [drawing](easel-drawing.md), [stamps](easel-stamps.md),
-  [mind maps](easel-mind-maps.md).
+  [mind maps](easel-mind-maps.md), [pages](easel-pages.md).
 
 ## Extensions and developer tools
 
