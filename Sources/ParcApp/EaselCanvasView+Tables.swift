@@ -1051,6 +1051,9 @@ extension EaselCanvasView {
         guard let selected = tableCellSelection, !selected.item.isLocked else { return false }
         let id = selected.item.id, table = selected.table, head = selected.head
         let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if flags.contains(.option), flags.isDisjoint(with: [.command, .control]), tableOptionKey(event.keyCode, shift: flags.contains(.shift), selected: selected) {
+            return true
+        }
         switch event.keyCode {
         case 53:
             tableState.clearCells()
@@ -1095,6 +1098,61 @@ extension EaselCanvasView {
         beginEditingTableCell(selected.item, cell: table.anchor(of: tableState.anchor ?? head), selectingAll: true)
         guard let text = editor, editingID == id else { return true }
         text.keyDown(with: event)
+        return true
+    }
+
+    private func tableOptionKey(_ keyCode: UInt16, shift: Bool,
+                                selected: (item: EaselItem, table: EaselTable, range: EaselTableRange, head: EaselTableCoordinate)) -> Bool {
+        let id = selected.item.id, table = selected.table, range = selected.range
+        switch keyCode {
+        case 36, 76:
+            if shift { insertTableColumns(id, at: range.columns.upperBound + 1) } else { insertTableRows(id, at: range.rows.upperBound + 1) }
+        case 125, 126:
+            let destination = range.rows.lowerBound + (keyCode == 126 ? -1 : 1)
+            guard destination >= 0, destination <= table.rowCount - range.rows.count,
+                  table.expanded(EaselTableRange(rows: range.rows, columns: table.all.columns)).rows == range.rows else { NSSound.beep(); return true }
+            if commitTable(range.rows.count == 1 ? "Move Row" : "Move Rows", id, { $0.moveRows(range.rows, to: destination) }) {
+                selectTableCells(id, anchor: EaselTableCoordinate(row: destination, column: range.columns.lowerBound),
+                                 head: EaselTableCoordinate(row: destination + range.rows.count - 1, column: range.columns.upperBound))
+            }
+        case 123, 124:
+            let destination = range.columns.lowerBound + (keyCode == 123 ? -1 : 1)
+            guard destination >= 0, destination <= table.columnCount - range.columns.count,
+                  table.expanded(EaselTableRange(rows: table.all.rows, columns: range.columns)).columns == range.columns else { NSSound.beep(); return true }
+            if commitTable(range.columns.count == 1 ? "Move Column" : "Move Columns", id, { $0.moveColumns(range.columns, to: destination) }) {
+                selectTableCells(id, anchor: EaselTableCoordinate(row: range.rows.lowerBound, column: destination),
+                                 head: EaselTableCoordinate(row: range.rows.upperBound, column: destination + range.columns.count - 1))
+            }
+        case 30, 33:
+            let delta = keyCode == 30 ? 10.0 : -10.0
+            if shift {
+                let minimums = tableRowMinimums(selected.item, table)
+                commitTable("Resize Row", id) { table in
+                    var changed = false
+                    for row in range.rows {
+                        changed = table.setHeight(table.rowHeights[row] + delta, row: row,
+                                                  minimum: minimums.indices.contains(row) ? minimums[row] : EaselTable.minimumRowHeight) || changed
+                    }
+                    return changed
+                }
+            } else {
+                commitTable("Resize Column", id) { table in
+                    var changed = false
+                    for column in range.columns { changed = table.setWidth(table.columnWidths[column] + delta, column: column) || changed }
+                    return changed
+                }
+            }
+        case 49:
+            if shift {
+                selectTableCells(id, anchor: EaselTableCoordinate(row: 0, column: range.columns.lowerBound),
+                                 head: EaselTableCoordinate(row: table.rowCount - 1, column: range.columns.upperBound))
+            } else {
+                selectTableCells(id, anchor: EaselTableCoordinate(row: range.rows.lowerBound, column: 0),
+                                 head: EaselTableCoordinate(row: range.rows.upperBound, column: table.columnCount - 1))
+            }
+        default:
+            return false
+        }
         return true
     }
 

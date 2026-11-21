@@ -34,6 +34,11 @@ Pasting spreadsheet cells also makes a table; see [Data in and out](#data-in-and
 - With cells selected, the arrow keys move the selection, Shift-arrows grow it,
   Delete clears the text (cell colours stay) and Escape goes back to the whole
   table; a second Escape deselects.
+- More keys with cells selected: Option-Return adds a row below and
+  Option-Shift-Return a column to the right; Option-arrows move the selected
+  rows or columns; Option-[ and Option-] make the selected columns narrower or
+  wider (add Shift for rows); Option-Space selects whole rows and
+  Option-Shift-Space whole columns.
 
 Cells use the full Easel text editor: bold, italic, underline, strikethrough,
 links (Command-K), lists, headings, typed Markdown and inline images all work
@@ -58,8 +63,9 @@ Hovering a selected table shows its controls, drawn from the Notes table:
 - Drag a border between two columns or rows to resize it. Columns stop at 48
   points and rows never get shorter than their text. Borders hidden inside a
   merged cell can't be grabbed.
-- Dragging the table's corners or edges resizes the whole grid proportionally,
-  with the same minimums; text never scales.
+- Dragging the table's corners, or its right or bottom edge, resizes the whole
+  grid proportionally with the same minimums; text never scales. The top and
+  left edges belong to the grips and `+` markers.
 
 Rows grow as you type. A row that was hugging its text shrinks back when you
 delete some; a row you made taller by hand keeps its height.
@@ -103,11 +109,14 @@ variant on dark paper and back.
 - **Export Table as CSV…** saves the selected block, or the whole table, as a
   UTF-8 CSV file named after the Easel, then shows the usual "Exported" toast.
 - **Convert to Stickies** swaps the table for one sticky per filled cell, laid
-  out in the table's rows and columns, with cell colours carried over to the
-  matching sticky colours. Undo brings the table back.
+  out in the table's rows and columns: each sticky is the usual square, grows
+  taller for long text, and each row clears the tallest sticky above it. Cell
+  colours carry over to the matching sticky colours, and uncoloured cells get
+  the default sticky paper. Undo brings the table back.
 
 Text that merely contains a tab, multi-line prose and indented code stay text.
-Capture's image editor never turns a paste into a table.
+Capture's image editor never turns a paste into a table. Find and replace
+doesn't look inside table cells yet.
 
 ## Look
 
@@ -127,9 +136,9 @@ Copy as Image draw the canvas itself.
 
 VoiceOver reads a table as "Table" with its shape, for example "3 columns,
 2 rows, 4 filled". Moving the cell selection announces the cell and its text.
-Return or the Edit action starts editing the selected cell (the first cell
-otherwise), and the context menu carries every table command, so nothing needs
-the pointer.
+Return or the Edit cells action starts editing the selected cell (the first
+cell otherwise), and the context menu carries every table command, so nothing
+needs the pointer.
 
 ## Saved format
 

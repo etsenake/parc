@@ -1931,9 +1931,9 @@ private final class EaselAccessibleObject: NSView {
         guard let canvas, let item = canvas.accessibleItem(id), let owner = window, acceptsFirstResponder else { return [] }
         var names = ["Duplicate", "Bring to front", "Delete"]
         if item.url != nil { names.insert("Open source", at: 0) }
-        if item.kind == .text || !canvas.accessibleChildren(id).isEmpty || item.ownsEmbeddedPage { names.insert("Activate", at: 0) }
+        if item.kind == .text || item.kind == .table || !canvas.accessibleChildren(id).isEmpty || item.ownsEmbeddedPage { names.insert("Activate", at: 0) }
         return names.map { name in
-            NSAccessibilityCustomAction(name: name == "Activate" ? (item.kind == .text ? "Edit text" : "Interact with webpage") : name) { [weak canvas, weak owner] in
+            NSAccessibilityCustomAction(name: name == "Activate" ? (item.kind == .text ? "Edit text" : item.kind == .table ? "Edit cells" : "Interact with webpage") : name) { [weak canvas, weak owner] in
                 canvas?.accessibleAction(name, item: item, owner: owner) == true
             }
         } + canvas.imageAccessibilityActions(for: item, owner: owner)
