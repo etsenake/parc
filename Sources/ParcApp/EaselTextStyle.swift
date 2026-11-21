@@ -372,6 +372,10 @@ final class EaselStyledTextView: LocalContentDropTextView {
     var usesEaselObjectLayout = false
     var onObjectLayoutChanged: (() -> Void)?
     var objectStyle = EaselTextStyle() { didSet { refreshObjectFill() } }
+    @discardableResult override func scrollToVisible(_ rect: NSRect) -> Bool {
+        let scrolled = super.scrollToVisible(rect)
+        return EaselCaretReveal.keepClear(rect, of: self) || scrolled
+    }
     func refreshObjectFill() {
         guard usesEaselObjectLayout, let layoutManager else { return }
         let range = NSRange(location: 0, length: (string as NSString).length)

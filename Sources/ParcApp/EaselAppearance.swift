@@ -157,6 +157,23 @@ enum EaselAppearance {
 }
 
 @MainActor
+protocol EaselCoveredViewport: AnyObject {
+    func keepClearOfCover(_ rect: NSRect, from view: NSView) -> Bool
+}
+
+@MainActor
+enum EaselCaretReveal {
+    static func keepClear(_ rect: NSRect, of view: NSView) -> Bool {
+        var ancestor = view.superview
+        while let current = ancestor {
+            if let viewport = current as? EaselCoveredViewport { return viewport.keepClearOfCover(rect, from: view) }
+            ancestor = current.superview
+        }
+        return false
+    }
+}
+
+@MainActor
 final class EaselPaletteButton: PointingHandButton {
     var usesToolbarInk = false
     var caption: String?

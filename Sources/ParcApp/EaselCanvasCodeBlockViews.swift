@@ -254,6 +254,10 @@ enum EaselCodeLayoutCache {
 @MainActor
 final class EaselCodeTextView: NSTextView {
     var language: String?
+    @discardableResult override func scrollToVisible(_ rect: NSRect) -> Bool {
+        let scrolled = super.scrollToVisible(rect)
+        return EaselCaretReveal.keepClear(rect, of: self) || scrolled
+    }
     var onEdit: (() -> Void)?
     var onExit: (() -> Void)?
     var onCommandReturn: (() -> Void)?

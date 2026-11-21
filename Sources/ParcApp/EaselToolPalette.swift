@@ -429,6 +429,7 @@ final class EaselToolPalette: NSView {
     private let current = EaselToolCurrentPill(frame: .zero)
     private var dimTracking: NSTrackingArea?
     private var dimMonitor: Any?
+    private var dimObservers: [NSObjectProtocol] = []
     private var dimmed = false
     private var draggingTool = false
     private var tracksTool = false
@@ -557,7 +558,18 @@ final class EaselToolPalette: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil { setDimmed(false) }
+        for observer in dimObservers { NotificationCenter.default.removeObserver(observer) }
+        dimObservers = []
+        guard let window else { setDimmed(false); return }
+        let center = NotificationCenter.default
+        dimObservers = [
+            center.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setDimmed(false) }
+            },
+            center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setDimmed(false) }
+            },
+        ]
     }
 
     private func setDimmed(_ value: Bool) {
