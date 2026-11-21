@@ -87,6 +87,7 @@ extension EaselCanvasView {
     func cancelToolGesture() {
         if toolState.creation?.tool == .table { cancelTablePlacement() }
         toolState.creation = nil
+        cancelConnectorGesture()
         guard toolState.pan != nil else { return }
         toolState.pan = nil
         refreshToolCursor()
@@ -216,11 +217,13 @@ extension EaselCanvasView {
         toolState.creation = EaselCanvasToolState.Creation(tool: tool, start: point, end: point, flags: event.modifierFlags)
         selection.removeAll()
         hidePlacementPreview()
+        if tool.drawsConnector { beginConnectorCreation(tool.routing == .straight ? nil : tool.routing, at: point, flags: event.modifierFlags) }
         return true
     }
 
     func continueToolGesture(at point: NSPoint, event: NSEvent) -> Bool {
         guard let creation = toolState.creation else { return false }
+        if creation.tool.drawsConnector { updateConnectorCreation(to: point, event: event); return true }
         toolState.creation?.end = point
         toolState.creation?.flags = event.modifierFlags
         if creation.tool == .table { tablePlacementMoved(from: creation.start, to: point); return true }
@@ -230,7 +233,7 @@ extension EaselCanvasView {
     }
 
     func refreshToolGesture(flags: NSEvent.ModifierFlags) {
-        guard toolState.creation != nil, start != nil else { return }
+        guard toolState.creation != nil, start != nil, toolState.creation?.tool.drawsConnector != true else { return }
         toolState.creation?.flags = flags
         refreshCreationDraft()
     }
@@ -241,7 +244,7 @@ extension EaselCanvasView {
         creation.end = point
         creation.flags = event.modifierFlags
         if !creation.dragged, Self.travel(creation) * canvasScale > EaselToolGeometry.dragThreshold { creation.dragged = true }
-        if creation.tool.drawsConnector, !creation.dragged { return true }
+        if creation.tool.drawsConnector { _ = finishConnectorCreation(at: point, event: event); return true }
         let frame = creation.dragged && creation.tool != .sticky
             ? EaselToolGeometry.draggedFrame(from: EaselPoint(creation.start), to: EaselPoint(creation.end),
                                              square: creation.flags.contains(.shift), centered: creation.flags.contains(.option))
@@ -324,20 +327,18 @@ extension EaselCanvasView {
     }
 
     func connectorItem(_ tool: EaselTool, from start: NSPoint, to end: NSPoint, id: UUID) -> EaselItem {
-        let first = connectorEnd(near: constrainedToCanvas(start), excluding: [])
-        let last = connectorEnd(near: constrainedToCanvas(end), excluding: [])
-        let geometry = EaselToolGeometry.lineItemGeometry(from: EaselPoint(first.point), to: EaselPoint(last.point))
+        let first = snappedConnectorEnd(constrainedToCanvas(start), flags: [], other: nil, excluding: nil)
+        let last = snappedConnectorEnd(constrainedToCanvas(end), flags: [], other: first.point, excluding: first.connection?.itemID)
+        connectors.magnet = nil
         let highest = session.document.items.map(\.zIndex).max() ?? 0
-        var item = EaselItem(id: id, kind: .arrow, frame: geometry.frame, zIndex: highest < Int.max ? highest + 1 : highest,
-                             color: insertionColor, points: geometry.points)
-        item.routing = tool.routing == .straight ? nil : tool.routing
-        item.startConnection = first.connection
-        item.endConnection = last.connection
+        let lookup = connectorLookup()
+        var item = EaselConnectorRouter.make(from: first.point, to: last.point, style: Self.connectorStyle(for: session.document.id),
+                                             routing: tool.routing == .straight ? nil : tool.routing,
+                                             startConnection: first.connection, endConnection: last.connection,
+                                             zIndex: highest < Int.max ? highest + 1 : highest) { lookup[$0] }
+        item.id = id
+        stampRememberedStyle(on: &item)
         return item
-    }
-
-    func connectorEnd(near point: NSPoint, excluding ids: Set<UUID>) -> (point: NSPoint, connection: EaselConnection?) {
-        (point, nil)
     }
 
     private func constrainedToCanvas(_ frame: EaselRect) -> EaselRect {
@@ -413,6 +414,7 @@ extension EaselCanvasView {
     func updatePlacementPreview(at point: NSPoint?) {
         toolState.previewPoint = point
         refreshPlacementPreview()
+        connectorToolHover(at: tool.drawsConnector && start == nil ? point : nil)
     }
 
     func hidePlacementPreview() {
