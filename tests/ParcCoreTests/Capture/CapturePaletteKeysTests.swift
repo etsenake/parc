@@ -4,8 +4,11 @@ import Testing
 struct CapturePaletteKeysTests {
     typealias Keys = CapturePaletteKeys
 
-    @Test func arrowsMoveTheSingleHighlight() {
+    @Test func downMovesTheHighlightForward() {
         #expect(Keys.command(.down, focus: .main, highlighted: nil) == .move(1))
+    }
+
+    @Test func upMovesTheHighlightBack() {
         #expect(Keys.command(.up, focus: .main, highlighted: .copy) == .move(-1))
     }
 
@@ -49,8 +52,11 @@ struct CapturePaletteKeysTests {
         #expect(Keys.command(.enter, focus: .main, highlighted: .copy, composing: true) == .pass)
     }
 
-    @Test func leftLeavesASubmenuOnlyFromTheStartOfItsSearch() {
+    @Test func leftLeavesASubmenuFromTheStartOfItsSearch() {
         #expect(Keys.command(.left, focus: .submenu(.easels), highlighted: nil) == .closeSubmenu)
+    }
+
+    @Test func leftInsideTypedTextStillMovesTheCaret() {
         #expect(Keys.command(.left, focus: .submenu(.easels), highlighted: nil, caretAtStart: false) == .pass)
     }
 
@@ -62,13 +68,16 @@ struct CapturePaletteKeysTests {
         #expect(Keys.command(.enter, focus: .submenu(.notes), highlighted: .newNote) == .activate)
     }
 
-    @Test func escapeAndLeftGoBackFromTheFramePage() {
-        #expect(Keys.command(.escape, focus: .frame, highlighted: nil) == .back)
-        #expect(Keys.command(.left, focus: .frame, highlighted: nil) == .back)
+    @Test(arguments: [CapturePaletteKey.escape, .left])
+    func escapeAndLeftGoBackFromTheFramePage(_ key: CapturePaletteKey) {
+        #expect(Keys.command(key, focus: .frame, highlighted: nil) == .back)
     }
 
-    @Test func returnAppliesOnTheFramePageAndTabWalksItsControls() {
+    @Test func returnAppliesOnTheFramePage() {
         #expect(Keys.command(.enter, focus: .frame, highlighted: nil) == .activate)
+    }
+
+    @Test func tabWalksTheFramePageControls() {
         #expect(Keys.command(.tab, focus: .frame, highlighted: nil) == .pass)
     }
 }

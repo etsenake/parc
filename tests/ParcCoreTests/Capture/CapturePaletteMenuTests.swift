@@ -12,29 +12,43 @@ struct CapturePaletteMenuTests {
     }
 
     @Test func theMainPaletteListsQuickActionsThenTheEditGroupThenOneRowPerDestinationKind() {
+        #expect(CapturePaletteMenu.rows(full).map(\.id) == ["library", "copy", "save", "message", "edit", "crop", "frame", "retake", "easels", "notes"])
+    }
+
+    @Test func theEditGroupStartsWithASeparator() {
+        #expect(CapturePaletteMenu.rows(full).filter(\.separatorBefore).map(\.id) == ["edit"])
+    }
+
+    @Test func destinationKindsSitUnderSendTo() {
         let main = CapturePaletteMenu.rows(full)
-        #expect(main.map(\.id) == ["library", "copy", "save", "message", "edit", "crop", "frame", "retake", "easels", "notes"])
-        #expect(main.filter(\.separatorBefore).map(\.id) == ["edit"])
         #expect(main.filter { $0.section == CapturePaletteMenu.sendToTitle }.map(\.id) == ["easels", "notes"])
-        #expect(main.filter(\.hasSubmenu).map(\.id) == ["easels", "notes"])
+    }
+
+    @Test func destinationKindsOpenSubmenus() {
+        #expect(CapturePaletteMenu.rows(full).filter(\.hasSubmenu).map(\.id) == ["easels", "notes"])
     }
 
     @Test func theMainPaletteNeverGrowsWithTheNumberOfEaselsOrNotes() {
-        let main = CapturePaletteMenu.rows(full)
-        #expect(main.count == 10)
-        #expect(!main.contains { $0.action.submenu == nil && $0.id.hasPrefix("easel:") })
-        #expect(!main.contains { $0.title == "Show More" })
+        let many = (0..<30).map { CaptureEaselDestination(id: UUID(), title: "Easel \($0)", lastActive: nil) }
+        let crowded = CapturePaletteContext(easels: destinations.easels + many, notes: destinations.notes, notesAvailable: true)
+        #expect(CapturePaletteMenu.rows(crowded).map(\.id) == CapturePaletteMenu.rows(full).map(\.id))
     }
 
-    @Test func nothingIsCheckedBeforeASaveAndTheFirstHighlightSavesToTheLibrary() {
-        let main = CapturePaletteMenu.rows(full)
-        #expect(main.allSatisfy { !$0.isChecked })
-        #expect(CapturePaletteMenu.firstAvailable(in: main) == "library")
+    @Test func nothingIsCheckedBeforeASave() {
+        #expect(CapturePaletteMenu.rows(full).allSatisfy { !$0.isChecked })
+    }
+
+    @Test func theFirstHighlightSavesToTheLibrary() {
+        #expect(CapturePaletteMenu.firstAvailable(in: CapturePaletteMenu.rows(full)) == "library")
     }
 
     @Test func removeFrameJoinsTheEditGroupOnlyForFramedCaptures() {
         let framed = CapturePaletteMenu.rows(CapturePaletteContext(easels: destinations.easels, framed: true))
         #expect(framed.map(\.id) == ["library", "copy", "save", "message", "edit", "crop", "frame", "removeFrame", "retake", "easels"])
+    }
+
+    @Test func aFramedCaptureOffersToEditItsFrame() {
+        let framed = CapturePaletteMenu.rows(CapturePaletteContext(easels: destinations.easels, framed: true))
         #expect(framed.first { $0.id == "frame" }?.title == "Edit Portrait Frame")
     }
 
@@ -47,6 +61,10 @@ struct CapturePaletteMenuTests {
     @Test func searchMatchesTheCurrentToggleTitle() {
         let saved = CapturePaletteContext(easels: destinations.easels, librarySaved: true)
         #expect(CapturePaletteMenu.rows(saved, query: "saved").map(\.id) == ["library"])
+    }
+
+    @Test func searchIgnoresTheTitleASavedToggleNoLongerShows() {
+        let saved = CapturePaletteContext(easels: destinations.easels, librarySaved: true)
         #expect(CapturePaletteMenu.rows(saved, query: "save to").isEmpty)
     }
 
@@ -54,15 +72,25 @@ struct CapturePaletteMenuTests {
         let menu = CapturePaletteMenu.submenu(.easels, context: full)
         #expect(menu.map(\.id) == ["newEasel", destinations.easelRow(destinations.design), destinations.easelRow(destinations.travel),
                                    destinations.easelRow(destinations.research)])
-        #expect(menu.first?.section == nil)
+    }
+
+    @Test func newEaselSitsAboveTheRecentHeader() {
+        #expect(CapturePaletteMenu.submenu(.easels, context: full).first?.section == nil)
+    }
+
+    @Test func existingEaselsSitUnderTheRecentHeader() {
+        let menu = CapturePaletteMenu.submenu(.easels, context: full)
         #expect(menu.dropFirst().allSatisfy { $0.section == CapturePaletteMenu.recentTitle })
     }
 
     @Test func theNoteSubmenuLeadsWithNewNoteThenNotesInCatalogRecencyOrder() {
         let menu = CapturePaletteMenu.submenu(.notes, context: full)
         #expect(menu.map(\.id) == [CaptureNoteTarget.newNote.id, destinations.notes[0].id, destinations.notes[1].id])
-        #expect(menu[1].title == "Recipes")
         #expect(menu.dropFirst().map(\.id) == CaptureNoteDestination.ranked(destinations.notes).map(\.id))
+    }
+
+    @Test func theMostRecentlyUsedNoteComesFirstAfterNewNote() {
+        #expect(CapturePaletteMenu.submenu(.notes, context: full)[1].title == "Recipes")
     }
 
     @Test func noEaselsMeansJustNewEaselWithNoEmptyHeader() {
@@ -87,8 +115,17 @@ struct CapturePaletteMenuTests {
         let context = CapturePaletteContext(easels: destinations.easels, notes: destinations.notes, framed: true, notesAvailable: true)
         let results = CapturePaletteMenu.rows(context, query: "re")
         #expect(results.map(\.id) == ["removeFrame", "retake", destinations.easelRow(destinations.research), destinations.recipesNote.id])
+    }
+
+    @Test func searchResultsNameTheKindOfEachDocument() {
+        let context = CapturePaletteContext(easels: destinations.easels, notes: destinations.notes, framed: true, notesAvailable: true)
+        let results = CapturePaletteMenu.rows(context, query: "re")
         #expect(results.filter { $0.id.hasPrefix("easel:") || $0.id.hasPrefix("note:") }.map(\.subtitle) == ["Easel", "Note"])
-        #expect(results.allSatisfy { $0.section == nil && !$0.separatorBefore })
+    }
+
+    @Test func searchResultsCarryNoHeadersOrSeparators() {
+        let context = CapturePaletteContext(easels: destinations.easels, notes: destinations.notes, framed: true, notesAvailable: true)
+        #expect(CapturePaletteMenu.rows(context, query: "re").allSatisfy { $0.section == nil && !$0.separatorBefore })
     }
 
     @Test func searchSkipsTheSubmenuRowsThemselves() {
@@ -99,28 +136,44 @@ struct CapturePaletteMenuTests {
         #expect(CapturePaletteMenu.rows(full, query: "new").map(\.id) == ["newEasel", CaptureNoteTarget.newNote.id])
     }
 
-    @Test func literalSpacesAndMissesStayEmpty() {
-        #expect(CapturePaletteMenu.rows(full, query: " research").isEmpty)
-        #expect(CapturePaletteMenu.rows(full, query: "zzzz").isEmpty)
+    @Test(arguments: [" research", "zzzz"])
+    func literalSpacesAndMissesStayEmpty(_ query: String) {
+        #expect(CapturePaletteMenu.rows(full, query: query).isEmpty)
     }
 
     @Test func privateCapturesKeepLibraryAndOutputsButHaveNoSendToSection() {
         let context = CapturePaletteContext(easels: destinations.easels, notes: destinations.notes, easelsAvailable: false, notesAvailable: false)
         #expect(CapturePaletteMenu.rows(context).map(\.id) == ["library", "copy", "save", "message", "edit", "crop", "frame", "retake"])
+    }
+
+    @Test func privateCapturesSearchOnlyTheirActions() {
+        let context = CapturePaletteContext(easels: destinations.easels, notes: destinations.notes, easelsAvailable: false, notesAvailable: false)
         #expect(CapturePaletteMenu.rows(context, query: "re").map(\.id) == ["retake"])
-        #expect(CapturePaletteMenu.submenu(.easels, context: context).isEmpty)
-        #expect(CapturePaletteMenu.submenu(.notes, context: context).isEmpty)
+    }
+
+    @Test(arguments: [CapturePaletteSubmenu.easels, .notes])
+    func privateCapturesHaveEmptySubmenus(_ submenu: CapturePaletteSubmenu) {
+        let context = CapturePaletteContext(easels: destinations.easels, notes: destinations.notes, easelsAvailable: false, notesAvailable: false)
+        #expect(CapturePaletteMenu.submenu(submenu, context: context).isEmpty)
     }
 
     @Test func withoutALibraryDestinationThereIsNoLibraryRowOrEaselSubmenuAndHighlightFallsToCopy() {
         let rows = CapturePaletteMenu.rows(CapturePaletteContext(easels: destinations.easels, libraryAvailable: false))
         #expect(!rows.contains { $0.id == "library" || $0.id == "easels" })
+    }
+
+    @Test func withoutALibraryDestinationTheHighlightFallsToCopy() {
+        let rows = CapturePaletteMenu.rows(CapturePaletteContext(easels: destinations.easels, libraryAvailable: false))
         #expect(CapturePaletteMenu.firstAvailable(in: rows) == "copy")
     }
 
     @Test func aBusyPaletteDisablesEveryRowAndHighlightsNothing() {
         let busy = CapturePaletteMenu.rows(CapturePaletteContext(easels: destinations.easels, notesAvailable: true, busy: true))
         #expect(busy.allSatisfy { !$0.isEnabled })
+    }
+
+    @Test func aBusyPaletteHighlightsNothing() {
+        let busy = CapturePaletteMenu.rows(CapturePaletteContext(easels: destinations.easels, notesAvailable: true, busy: true))
         #expect(CapturePaletteMenu.firstAvailable(in: busy) == nil)
     }
 
@@ -136,7 +189,13 @@ struct CapturePaletteMenuTests {
         let rows = CapturePaletteMenu.submenu(.easels, context: renamed)
         let travelRow = destinations.easelRow(destinations.travel)
         #expect(CapturePaletteMenu.retainedHighlight(travelRow, in: rows) == travelRow)
-        #expect(rows.contains { $0.title == "Trips" })
+    }
+
+    @Test func aRenamedEaselShowsItsNewTitle() {
+        let renamed = CapturePaletteContext(easels: destinations.easels.map {
+            $0.id == destinations.travel ? CaptureEaselDestination(id: destinations.travel, title: "Trips", lastActive: $0.lastActive) : $0
+        })
+        #expect(CapturePaletteMenu.submenu(.easels, context: renamed).contains { $0.title == "Trips" })
     }
 
     @Test func aRowThatBecameUnavailableLosesTheHighlight() {

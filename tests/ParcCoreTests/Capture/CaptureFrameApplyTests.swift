@@ -39,6 +39,9 @@ struct CaptureFrameApplyTests {
 
     @Test func aFrameThatCannotRenderCannotBeApplied() {
         #expect(CaptureFrameApply.state(committed: nil, draft: color, renderable: false) == .unavailable)
+    }
+
+    @Test func anUnavailableFrameIsNeverThePrimaryAction() {
         #expect(!CaptureFrameApply.unavailable.isPrimary)
     }
 }
