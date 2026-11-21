@@ -63,3 +63,18 @@ alignment behind. Text saved without an alignment keeps whatever paragraph
 alignment its runs already carried, such as centred lines pasted from another
 app, so older Easels look the same. Changing the alignment is one Undo step; while
 editing it joins the editor's own Undo history like the text fill does.
+
+## Whole-object links
+
+A selected text object, shape or sticky that isn't being edited can carry one
+link to a web page: ⌘K (Format → Add Link… or Edit Link…) or the context menu's
+Add Link… opens the link field. It takes an `http` or `https`
+address, adds `https://` to a bare domain like `example.com`, and refuses
+anything else; Remove Link clears it. Range links inside the text keep working
+as before while editing. A linked object shows a small round link badge just
+outside its top-right corner at a constant on-screen size, with the pointing
+hand; clicking it opens the page in Parc without selecting the object. VoiceOver
+offers Open link. Locked objects keep their link but refuse a new one. HTML
+exports wrap linked objects in a link so they stay clickable. The link is saved
+in the object's existing `url` field, which link cards and captured pages also
+use for their source; those keep their own Open Source rows instead.

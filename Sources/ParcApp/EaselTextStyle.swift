@@ -124,6 +124,19 @@ enum EaselTextLayout {
         (label as NSString).draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2), withAttributes: attributes)
     }
 
+    static func drawLinkBadge(in rect: NSRect, scale: CGFloat) {
+        let scale = max(scale, 0.05)
+        let circle = NSBezierPath(ovalIn: rect)
+        EaselAppearance.surface.setFill(); circle.fill()
+        EaselAppearance.outline.setStroke(); circle.lineWidth = 1 / scale; circle.stroke()
+        let configuration = NSImage.SymbolConfiguration(pointSize: 9 / scale, weight: .semibold)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [EaselAppearance.selection]))
+        guard let symbol = NSImage(systemSymbolName: "link", accessibilityDescription: nil)?.withSymbolConfiguration(configuration) else { return }
+        let size = symbol.size
+        symbol.draw(in: NSRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height),
+                    from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+    }
+
     static func drawWidthHandle(at point: NSPoint, scale: CGFloat) {
         let mark = NSRect(x: point.x - 3 / scale, y: point.y - 8 / scale, width: 6 / scale, height: 16 / scale)
         EaselAppearance.selection.setFill(); NSBezierPath(roundedRect: mark, xRadius: 3 / scale, yRadius: 3 / scale).fill()

@@ -115,6 +115,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var draft: [EaselItem]?
     private var textPreview: [UUID: EaselItem] = [:]
     private var textSizeBadge: (label: String, rect: NSRect)?
+    private var objectLinkPopover: NSPopover?
     var start: NSPoint?
     var original: [EaselItem] = []
     private var resizeHandle: EaselResizeHandle?
@@ -546,6 +547,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var usesObjectSurfaces: Bool { pageObjects != nil && items.contains { $0.ownsEmbeddedPage } }
     func displayBounds(of item: EaselItem) -> NSRect {
         let pad = 16 / max(canvasScale, 0.2) + 16 + CGFloat(EaselPaintRules.strokeWidth(item)) * 1.5 + boardOverhang(item)
+            + CGFloat(EaselObjectLink.badgeAllowance(item, scale: max(canvasScale, 0.2)))
         return rect(item).insetBy(dx: -pad, dy: -pad)
     }
     private func guideDirtyBounds() -> NSRect {
@@ -628,7 +630,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                         textLayouts.removeValue(forKey: item.id)
                         artwork[item.id]?.needsDisplay = true
                     }
-                    if displayedSelection.contains(item.id) || item.id == hoveredObjectID { overlayChanged = true }
+                    if displayedSelection.contains(item.id) || item.id == hoveredObjectID
+                        || EaselObjectLink.link(of: item) != nil || EaselObjectLink.link(of: previous) != nil { overlayChanged = true }
                 }
             } else {
                 add(displayBounds(of: item))
@@ -871,6 +874,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             }
         }
         drawArrangeDecorations(in: dirtyRect)
+        for item in items where EaselObjectLink.link(of: item) != nil {
+            let r = EaselObjectLink.badgeRect(for: item.frame, scale: canvasScale), badge = NSRect(x: r.x, y: r.y, width: r.width, height: r.height)
+            if badge.intersects(dirtyRect) { EaselTextLayout.drawLinkBadge(in: badge, scale: canvasScale) }
+        }
         if let badge = textSizeBadge, badge.rect.intersects(dirtyRect) { EaselTextLayout.drawSizeBadge(badge.label, in: badge.rect, scale: canvasScale) }
         if session.document.items.isEmpty && editor == nil {
             let placeholder = NSRect(x: 40, y: 50, width: max(180, bounds.width - 80), height: 106)
@@ -1263,6 +1270,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                   formattingEditor != nil || (editor == nil && canvasFocus) else { return false }
             return EaselTextStyleState.canResize(by: command == .bigger ? 1 : -1, styles: selected.map(\.resolvedTextStyle), editor: editor)
         }
+        if command == .link, editor == nil { return objectLinkTarget != nil }
         guard let editor = formattingEditor, editor.isEditable, !editor.hasMarkedText() else { return false }
         switch command {
         case .increaseIndent, .decreaseIndent: return editor.canChangeListIndent(outdent: command == .decreaseIndent)
@@ -1276,7 +1284,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         case .bigger, .smaller: resizeText(by: command == .bigger ? 1 : -1)
         case .increaseIndent, .decreaseIndent:
             _ = editor?.changeListIndent(outdent: command == .decreaseIndent); refreshTextControls()
-        case .link: if let editor { editLink(relativeTo: editor, rect: editor.revealedSelectionRect()) }
+        case .link:
+            if let editor { editLink(relativeTo: editor, rect: editor.revealedSelectionRect()) } else { editObjectLink() }
         default:
             if let emphasis = command.emphasis { applyEmphasis(emphasis) }
             if let kind = command.paragraph { applyParagraph(kind) }
@@ -1336,6 +1345,44 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         if let editor { window?.makeFirstResponder(editor) }
         return true
+    }
+    var objectLinkTarget: EaselItem? {
+        guard editor == nil, let window, window.isKeyWindow, window.attachedSheet == nil, !session.isClosed, !session.isDeleted,
+              !hidesPassiveAnnotations, selection.count == 1,
+              let item = session.document.items.first(where: { selection.contains($0.id) }),
+              EaselObjectLink.canLink(item), !item.isLocked else { return nil }
+        let responder = window.firstResponder
+        guard responder === self || (responder as? EaselAccessibleObject)?.canvas === self
+                || selectionToolbar?.owns(responder) == true else { return nil }
+        return item
+    }
+    @discardableResult
+    func editObjectLink(relativeTo anchor: NSView? = nil) -> Bool {
+        guard let target = objectLinkTarget else { return false }
+        objectLinkPopover?.close()
+        let controller = EaselLinkEditor(value: target.url ?? "", webOnly: true)
+        let popover = NSPopover(); popover.behavior = .transient; popover.contentViewController = controller
+        controller.onCommit = { [weak self, weak popover] link in
+            popover?.close()
+            guard let self, self.session.document.items.contains(target),
+                  let next = EaselObjectLink.linking(self.session.document, id: target.id, to: link) else { return }
+            self.commit(link == nil ? "Remove link" : target.url == nil ? "Add link" : "Edit link") { document in
+                guard document.items.contains(target) else { return }
+                document = next
+            }
+        }
+        objectLinkPopover = popover
+        let badge = EaselObjectLink.badgeRect(for: target.frame, scale: canvasScale)
+        let host = anchor ?? self
+        let place = anchor == nil ? NSRect(x: badge.x, y: badge.y, width: badge.width, height: badge.height) : host.bounds
+        popover.show(relativeTo: place, of: host, preferredEdge: host.isFlipped ? .maxY : .minY)
+        return true
+    }
+    @discardableResult
+    func removeObjectLink() -> Bool {
+        guard let target = objectLinkTarget, target.url != nil,
+              let next = EaselObjectLink.linking(session.document, id: target.id, to: nil) else { return false }
+        return commit("Remove link") { $0 = next }
     }
     var textAlignmentState: EaselTextStyle.Alignment? {
         let ids: Set<UUID> = editingID.map { [$0] } ?? selection
@@ -1455,6 +1502,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             resizeHandle = handle
             beginGeometry()
             lastGeometryPoint = point; invalidateIncrementalDisplay(layout: true); return
+        }
+        if let linked = EaselObjectLink.item(at: .init(x: point.x, y: point.y), in: items, scale: canvasScale),
+           let url = EaselObjectLink.link(of: linked), let onOpenURL {
+            cancelPointerInteraction(); onOpenURL(url); return
         }
         var hit = object(at: point, includingLocked: event.modifierFlags.contains(.shift))
         switch sectionPress(at: point, hit: hit, event: event) {
@@ -1647,6 +1698,12 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         addImageBadgeCursorRects()
         addTableCursorRects()
         addSectionCursorRects()
+        if !drawing, onOpenURL != nil {
+            for item in items where EaselObjectLink.link(of: item) != nil {
+                let r = EaselObjectLink.badgeRect(for: item.frame, scale: canvasScale)
+                addCursorRect(NSRect(x: r.x, y: r.y, width: r.width, height: r.height), cursor: .pointingHand)
+            }
+        }
         if let arrow = selectedArrow {
             for endpoint in EaselArrowEndpoint.allCases where showsArrowAnnotation(endpoint) {
                 guard let r = endpoint.hitRect(in: arrow, scale: canvasScale) else { continue }
@@ -1920,6 +1977,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if let editor = formattingEditor {
                 if command == .link { menuItem.title = editor.hasLink() ? TextFormatCommand.editLinkTitle : TextFormatCommand.addLinkTitle }
                 else { menuItem.state = editor.formatState(command) }
+            } else if command == .link, let target = objectLinkTarget {
+                menuItem.title = target.url == nil ? TextFormatCommand.addLinkTitle : TextFormatCommand.editLinkTitle
             }
             return canFormat(command)
         }
@@ -2126,8 +2185,11 @@ private final class EaselAccessibleObject: NSView {
         names += canvas.boardActionNames(item)
         if item.kind == .code { names.insert(contentsOf: ["Copy code", "Change language"], at: 0) }
         if item.kind == .text || item.kind == .table || item.kind == .code || !canvas.accessibleChildren(id).isEmpty || item.ownsEmbeddedPage { names.insert("Activate", at: 0) }
+        let linked = EaselObjectLink.link(of: item) != nil
         return names.map { name in
-            NSAccessibilityCustomAction(name: name == "Activate" ? (item.kind == .text ? "Edit text" : item.kind == .table ? "Edit cells" : item.kind == .code ? "Edit code" : "Interact with webpage") : name) { [weak canvas, weak owner] in
+            let title = name == "Activate" ? (item.kind == .text ? "Edit text" : item.kind == .table ? "Edit cells" : item.kind == .code ? "Edit code" : "Interact with webpage")
+                : name == "Open source" && linked ? "Open link" : name
+            return NSAccessibilityCustomAction(name: title) { [weak canvas, weak owner] in
                 canvas?.accessibleAction(name, item: item, owner: owner) == true
             }
         } + canvas.imageAccessibilityActions(for: item, owner: owner)

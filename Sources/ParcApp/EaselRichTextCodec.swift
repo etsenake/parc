@@ -171,8 +171,9 @@ final class EaselLinkEditor: NSViewController, NSTextFieldDelegate {
     private let field = NSTextField()
     private let message = NSTextField(labelWithString: "")
     private let value: String
+    private let webOnly: Bool
     var onCommit: ((String?) -> Void)?
-    init(value: String) { self.value = value; super.init(nibName: nil, bundle: nil) }
+    init(value: String, webOnly: Bool = false) { self.value = value; self.webOnly = webOnly; super.init(nibName: nil, bundle: nil) }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func loadView() {
         view = EaselSurfaceView(frame: NSRect(x: 0, y: 0, width: 330, height: 116))
@@ -194,9 +195,10 @@ final class EaselLinkEditor: NSViewController, NSTextFieldDelegate {
     }
     override func viewDidAppear() { super.viewDidAppear(); view.window?.makeFirstResponder(field); field.selectText(nil) }
     @objc private func apply() {
-        let link = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard EaselRichText.validLink(link) else {
-            message.stringValue = "Enter an http, https, mailto or tel link."
+        let raw = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let link = webOnly ? EaselObjectLink.normalized(raw) : EaselRichText.validLink(raw) ? raw : nil
+        guard let link else {
+            message.stringValue = webOnly ? "Enter a web link, like example.com." : "Enter an http, https, mailto or tel link."
             field.layer?.borderWidth = 2; field.layer?.borderColor = EaselAppearance.error.cgColor
             return
         }

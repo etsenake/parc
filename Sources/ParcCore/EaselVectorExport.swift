@@ -119,7 +119,7 @@ enum EaselVectorExport {
         svg += " width=\"" + number(bounds.width) + "\" height=\"" + number(bounds.height) + "\""
         svg += " viewBox=\"" + [bounds.x, bounds.y, bounds.width, bounds.height].map(number).joined(separator: " ") + "\">"
         for item in items.sorted(by: { $0.zIndex < $1.zIndex }) {
-            svg += element(item, art: art)
+            svg += objectLinked(item, element(item, art: art))
         }
         return svg + "</svg>"
     }
@@ -149,6 +149,10 @@ enum EaselVectorExport {
             + number(f.height) + "\" rx=\"" + number(radius) + "\" ry=\"" + number(radius) + "\" style=\"fill:" + fill
             + ";fill-opacity:" + number(opacity) + "\"/>"
         return "<g>" + paper + text(item, layout) + "</g>"
+    }
+
+    static func objectLinked(_ item: EaselItem, _ body: String) -> String {
+        EaselObjectLink.canLink(item) && !body.isEmpty ? linked(body, item.url) : body
     }
 
     static func linked(_ body: String, _ raw: String?) -> String {
