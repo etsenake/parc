@@ -373,7 +373,7 @@ final class EaselMentionCompletion: EaselTextCompletion {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, equation.original.isEmpty {
             _ = view.replace(NSRange(location: index, length: 1), with: nil, name: "Inline Equation")
         } else {
-            _ = view.replace(NSRange(location: index, length: 1), with: .equation(text), name: "Edit Equation")
+            _ = view.replace(NSRange(location: index, length: 1), with: .equation(text), name: "Edit equation")
         }
         previous = view.string
     }
