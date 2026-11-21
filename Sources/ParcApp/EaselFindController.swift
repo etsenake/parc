@@ -7,6 +7,7 @@ final class EaselFindController: NoteFindBarController {
         var rects: [NSRect]
         var object: NSRect?
         var oval = false
+        var radius: CGFloat = 10
         var isCurrent: Bool
         var bounds: NSRect
     }
@@ -173,8 +174,15 @@ final class EaselFindController: NoteFindBarController {
 
     private func commit(_ name: String, _ outcome: EaselFindReplacement) -> Bool {
         var replaced: [UUID: EaselItem] = [:]
+        var resized = Set<UUID>()
         for item in outcome.document.items where outcome.touched.contains(item.id) {
             var next = item
+            if next.kind == .table, let table = next.table,
+               let original = editor.session.document.items.first(where: { $0.id == item.id }), let before = original.table {
+                let rows = Set(Self.changedRows(before, table))
+                next = canvas.normalizedTable(next, table, hugging: rows, previous: before)
+                if next.frame != original.frame { resized.insert(item.id) }
+            }
             if next.kind == .text {
                 let height = EaselTextLayout.Layout(EaselRichTextCodec.attributed(next), width: next.frame.width).height
                 next.frame.height = max(next.frame.height, Double(height))
@@ -187,14 +195,22 @@ final class EaselFindController: NoteFindBarController {
         }
         do {
             try editor.session.perform(name) { document in
+                let previous = document
                 for index in document.items.indices {
                     if let next = replaced[document.items[index].id] { document.items[index] = next }
                 }
+                if !resized.isEmpty { document = EaselDependents.settle(document, previous: previous, moved: resized) }
             }
             return true
         } catch {
             canvas.onError?(error)
             return false
+        }
+    }
+
+    private static func changedRows(_ before: EaselTable, _ after: EaselTable) -> [Int] {
+        after.cells.indices.filter { row in
+            !before.cells.indices.contains(row) || before.cells[row].map(\.text) != after.cells[row].map(\.text)
         }
     }
 
@@ -258,8 +274,15 @@ final class EaselFindController: NoteFindBarController {
             }
         case .section:
             return ([EaselSectionArt.titleTab(item, zoom: Double(canvas.enclosingScrollView?.magnification ?? 1))], false)
+        case .arrow:
+            if let label = canvas.connectorLabelRect(item) { return ([label], false) }
         case .code:
             if match.part == .text, let rects = EaselCodeLayout.rects(for: match.range, in: item), !rects.isEmpty { return (rects, true) }
+        case .table:
+            if case .cell(let row, let column) = match.part, let table = item.table,
+               let cell = EaselTableLayout(table: table, frame: item.frame).rect(of: EaselTableCoordinate(row: row, column: column), in: table) {
+                return ([NSRect(x: cell.x, y: cell.y, width: cell.width, height: cell.height)], false)
+            }
         default:
             break
         }
@@ -301,7 +324,7 @@ final class EaselFindController: NoteFindBarController {
         var items: [UUID: EaselItem] = [:]
         for item in editor.session.document.items where items[item.id] == nil { items[item.id] = item }
         var result: [Highlight] = []
-        var ringed = Set<UUID>()
+        var ringed = Set<EaselFindMatch>()
         for (index, match) in state.matches.enumerated() {
             guard let item = items[match.itemID] else { continue }
             let current = index == state.currentIndex
@@ -310,10 +333,13 @@ final class EaselFindController: NoteFindBarController {
             if geometry.exact {
                 let bounds = geometry.rects.reduce(NSRect.null) { $0.union($1) }.insetBy(dx: -8, dy: -8)
                 result.append(Highlight(rects: geometry.rects, object: nil, isCurrent: current, bounds: bounds))
-            } else if current || !ringed.contains(item.id), let first = geometry.rects.first {
-                ringed.insert(item.id)
-                let frame = first.insetBy(dx: -6, dy: -6)
-                result.append(Highlight(rects: [], object: frame, oval: item.kind == .circle, isCurrent: current,
+            } else if let first = geometry.rects.first {
+                let key = EaselFindMatch(itemID: item.id, part: match.part, range: 0..<0)
+                guard current || !ringed.contains(key) else { continue }
+                ringed.insert(key)
+                let cell = item.kind == .table
+                let frame = cell ? first.insetBy(dx: 2, dy: 2) : first.insetBy(dx: -6, dy: -6)
+                result.append(Highlight(rects: [], object: frame, oval: item.kind == .circle, radius: cell ? 5 : 10, isCurrent: current,
                                         bounds: frame.insetBy(dx: -24, dy: -24)))
             }
         }
@@ -328,7 +354,8 @@ final class EaselFindController: NoteFindBarController {
         let scale = max(scale, 0.1)
         for highlight in highlights where highlight.bounds.intersects(dirty) {
             if let frame = highlight.object {
-                let outline = highlight.oval ? NSBezierPath(ovalIn: frame) : NSBezierPath(roundedRect: frame, xRadius: 10, yRadius: 10)
+                let outline = highlight.oval ? NSBezierPath(ovalIn: frame)
+                    : NSBezierPath(roundedRect: frame, xRadius: highlight.radius, yRadius: highlight.radius)
                 if highlight.isCurrent {
                     NoteTheme.findMatch.setFill()
                     outline.fill()

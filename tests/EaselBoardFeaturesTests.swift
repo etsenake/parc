@@ -16,6 +16,7 @@ struct EaselBoardFeaturesTests {
         replacePlain()
         replaceRich()
         replaceRefusals()
+        findTables()
         sessionRefresh()
         sessionReplace()
         sessionReplaceAll()
@@ -174,6 +175,30 @@ struct EaselBoardFeaturesTests {
         expect(EaselFinder.replace(twice, with: "z", in: board).count == 1, "the same match listed twice replaces once")
         let overlapping = [EaselFindMatch(itemID: text.id, part: .text, range: 0..<2), EaselFindMatch(itemID: text.id, part: .text, range: 1..<2)]
         expect(EaselFinder.replace(overlapping, with: "z", in: board).skippedOther == 2, "overlapping matches refuse the object")
+    }
+
+    @MainActor static func findTables() {
+        var grid = item(.table, "", x: 0, y: 0, width: 280, height: 72)
+        grid.table = EaselTable(columnWidths: [140, 140], rowHeights: [36, 36],
+                                cells: [[EaselTableCell(text: "cat"), EaselTableCell(text: "dog")],
+                                        [EaselTableCell(text: "cat food"), EaselTableCell(text: "")]])
+        let board = document([grid])
+        let matches = EaselFinder.matches(of: "cat", in: board)
+        expect(matches.map(\.part) == [.cell(row: 0, column: 0), .cell(row: 1, column: 0)], "table cells are searched row by row")
+        let outcome = EaselFinder.replace(matches, with: "bird", in: board)
+        let table = outcome.document.items[0].table
+        expect(outcome.count == 2 && table?.cells[0][0].text == "bird" && table?.cells[1][0].text == "bird food", "Replace All rewrites each matching cell")
+        expect(table?.cells[0][1].text == "dog", "other cells stay put")
+        let after = EaselFindMatch(itemID: grid.id, part: .cell(row: 0, column: 0), range: 4..<4)
+        expect(EaselFinder.index(of: after, in: EaselFinder.matches(of: "bird", in: outcome.document), document: outcome.document) == 1,
+               "after replacing a cell the next match is the next cell, not an earlier offset elsewhere")
+        var broken = grid
+        broken.table?.cells[1][0].richText = EaselRichText(runs: [.init(location: 0, length: 3, attributes: attributes("#000000FF"))])
+        let refused = EaselFinder.replace(EaselFinder.matches(of: "cat", in: document([broken])), with: "x", in: document([broken]))
+        expect(refused.count == 0 && refused.skippedOther == 2, "a cell that can't change leaves the whole table alone")
+        let pinned = locked(grid)
+        expect(EaselFinder.replace(EaselFinder.matches(of: "cat", in: document([pinned])), with: "x", in: document([pinned])).skippedLocked == 2,
+               "locked tables are found but not changed")
     }
 
     @MainActor static func sessionRefresh() {

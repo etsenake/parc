@@ -1,7 +1,10 @@
 import Foundation
 
 struct EaselFindMatch: Hashable {
-    enum Part: Hashable { case text }
+    enum Part: Hashable {
+        case text
+        case cell(row: Int, column: Int)
+    }
 
     var itemID: UUID
     var part: Part
@@ -28,15 +31,21 @@ enum EaselFinder {
             return item.text.isEmpty ? [] : [(.text, item.text)]
         case .webCard:
             return item.assetID == nil && !item.text.isEmpty ? [(.text, item.text)] : []
-        case .image, .freehand, .browser, .table, .stamp, .video:
+        case .table:
+            guard let table = item.table else { return [] }
+            return table.visibleCells.compactMap { coordinate in
+                guard let text = table.cell(coordinate)?.text, !text.isEmpty else { return nil }
+                return (.cell(row: coordinate.row, column: coordinate.column), text)
+            }
+        case .image, .freehand, .browser, .stamp, .video:
             return []
         }
     }
 
     static func replaceability(of item: EaselItem) -> EaselReplaceability {
         switch item.kind {
-        case .text, .sticky, .rectangle, .circle, .arrow, .section, .code: return item.isLocked ? .locked : .replaceable
-        case .image, .freehand, .link, .webCard, .browser, .table, .stamp, .video: return .readOnly
+        case .text, .sticky, .rectangle, .circle, .arrow, .section, .code, .table: return item.isLocked ? .locked : .replaceable
+        case .image, .freehand, .link, .webCard, .browser, .stamp, .video: return .readOnly
         }
     }
 
@@ -85,8 +94,16 @@ enum EaselFinder {
         if let exact = matches.firstIndex(of: match) { return exact }
         var order: [UUID: Int] = [:]
         for (offset, item) in readingOrder(document.items).enumerated() where order[item.id] == nil { order[item.id] = offset }
-        let target = (order[match.itemID] ?? Int.max, match.range.lowerBound)
-        return matches.firstIndex { (order[$0.itemID] ?? Int.max, $0.range.lowerBound) >= target } ?? 0
+        func key(_ value: EaselFindMatch) -> (Int, Int, Int) {
+            let part: Int
+            switch value.part {
+            case .text: part = 0
+            case .cell(let row, let column): part = 1 + row * 10_000 + column
+            }
+            return (order[value.itemID] ?? Int.max, part, value.range.lowerBound)
+        }
+        let target = key(match)
+        return matches.firstIndex { key($0) >= target } ?? 0
     }
 
     static func nextReplaceable(after index: Int, in matches: [EaselFindMatch], document: EaselDocument) -> Int? {
@@ -131,42 +148,64 @@ enum EaselFinder {
     static func rewrite(_ item: EaselItem, matches: Set<EaselFindMatch>, with replacement: String) -> (item: EaselItem, changed: Int)? {
         var next = item
         var changed = 0
-        var last = Int.max
+        var parts: [EaselFindMatch.Part: [EaselFindMatch]] = [:]
+        for match in matches { parts[match.part, default: []].append(match) }
+        for (part, group) in parts {
+            switch part {
+            case .text:
+                guard let result = rewrite(next.text, rich: next.richText, group, with: replacement) else { return nil }
+                next.text = result.text
+                next.richText = result.rich
+                changed += result.changed
+            case .cell(let row, let column):
+                let coordinate = EaselTableCoordinate(row: row, column: column)
+                guard var table = next.table, table.visibleCells.contains(coordinate), let cell = table.cell(coordinate),
+                      table.cells.indices.contains(row), table.cells[row].indices.contains(column),
+                      let result = rewrite(cell.text, rich: cell.richText, group, with: replacement) else { return nil }
+                table.cells[row][column].text = result.text
+                table.cells[row][column].richText = result.rich
+                next.table = table
+                changed += result.changed
+            }
+        }
+        return (next, changed)
+    }
+
+    static func rewrite(_ text: String, rich: EaselRichText?, _ matches: [EaselFindMatch],
+                        with replacement: String) -> (text: String, rich: EaselRichText?, changed: Int)? {
+        var value = text, styled = rich, changed = 0, last = Int.max
         for match in matches.sorted(by: { $0.range.lowerBound > $1.range.lowerBound }) {
-            guard match.part == .text, match.range.upperBound <= last else { return nil }
-            switch replacing(match.range, with: replacement, in: next) {
+            guard match.range.upperBound <= last else { return nil }
+            switch replacing(match.range, with: replacement, text: value, rich: styled) {
             case .unchanged: break
             case .failed: return nil
-            case .changed(let updated):
-                next = updated
+            case .changed(let next, let nextRich):
+                value = next
+                styled = nextRich
                 changed += 1
             }
             last = match.range.lowerBound
         }
-        if let rich = next.richText, (try? rich.validate(text: next.text)) == nil { return nil }
-        return (next, changed)
+        if let styled, (try? styled.validate(text: value)) == nil { return nil }
+        return (value, styled, changed)
     }
 
     enum Rewrite: Equatable {
-        case changed(EaselItem), unchanged, failed
+        case changed(String, EaselRichText?), unchanged, failed
     }
 
-    static func replacing(_ range: Range<Int>, with replacement: String, in item: EaselItem) -> Rewrite {
-        let text = item.text as NSString
-        guard range.lowerBound >= 0, range.upperBound <= text.length, !range.isEmpty else { return .failed }
+    static func replacing(_ range: Range<Int>, with replacement: String, text: String, rich: EaselRichText?) -> Rewrite {
+        let source = text as NSString
+        guard range.lowerBound >= 0, range.upperBound <= source.length, !range.isEmpty else { return .failed }
         let nsRange = NSRange(location: range.lowerBound, length: range.count)
-        if let rich = item.richText,
-           rich.runs.contains(where: { $0.attributes.image != nil && $0.location < range.upperBound && range.lowerBound < $0.location + $0.length }) {
+        if let rich, rich.runs.contains(where: { $0.attributes.image != nil && $0.location < range.upperBound && range.lowerBound < $0.location + $0.length }) {
             return .failed
         }
-        guard text.substring(with: nsRange) != replacement else { return .unchanged }
-        var next = item
-        next.text = text.replacingCharacters(in: nsRange, with: replacement)
-        if let rich = item.richText {
-            guard let updated = rich.replacing(range, with: (replacement as NSString).length) else { return .failed }
-            next.richText = updated
-        }
-        return .changed(next)
+        guard source.substring(with: nsRange) != replacement else { return .unchanged }
+        let next = source.replacingCharacters(in: nsRange, with: replacement)
+        guard let rich else { return .changed(next, nil) }
+        guard let updated = rich.replacing(range, with: (replacement as NSString).length) else { return .failed }
+        return .changed(next, updated)
     }
 }
 

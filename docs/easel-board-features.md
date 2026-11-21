@@ -15,8 +15,8 @@ edited in a text object, sticky or shape, the title or the find bar. Inside a
 live webpage on the canvas they stay with that page, as in a note's embeds.
 
 Finding runs as you type over the text the canvas actually shows: text
-objects, stickies, shape text, connector labels, section titles, link cards
-and webpage cards that draw their title. Captured and live webpages show the
+objects, stickies, shape text, connector labels, section titles, table cells,
+code blocks, link cards and webpage cards that draw their title. Captured and live webpages show the
 page itself, so their titles aren't searched, and URLs never are. Objects
 tucked inside a section whose contents are hidden are left out, since nobody
 can see them. Matching ignores case and accents until Match Case is on.
@@ -32,10 +32,11 @@ out when the object is bigger than the view and in to 100% when the board is
 zoomed too far out to read it; a match already in view doesn't move anything.
 Reduce Motion makes the move instant.
 
-Matches are highlighted on the canvas in the Notes find colours. Text objects
-and stickies highlight the matched words themselves, with the current one
-outlined; a section highlights its title tab, and other objects get a soft
-ring, with a stronger ring and wash on the current match. Highlights are
+Matches are highlighted on the canvas in the Notes find colours. Text objects,
+stickies and code blocks highlight the matched words themselves, with the
+current one outlined; a section highlights its title tab, a connector its
+label, a table the matching cell, and other objects get a soft ring, with a
+stronger ring and wash on the current match. Highlights are
 drawing only: they never reach the document, exports or the selection.
 
 Replace changes the current match and moves to the next; Replace All (or
@@ -43,9 +44,10 @@ Replace changes the current match and moves to the next; Replace All (or
 is one undo step. Replace only ever changes the match you can see: if an edit
 made it disappear, the bar shows the new current match first and the next
 press replaces that. A replacement takes the formatting of the first character
-it replaces, never swallows an inline picture, and grows a text object or
-sticky to fit. If any match in an object can't be rewritten, Replace All
-leaves that whole object alone rather than changing half of it.
+it replaces, never swallows an inline picture, and grows a text object,
+sticky or code block to fit; a table refits the rows whose cells changed. If
+any match in an object can't be rewritten, Replace All leaves that whole
+object (or table) alone rather than changing half of it.
 
 Locked objects and card titles are found but can't change. While Replace is
 showing, the count says so ("2 of 5 · locked" or "· read-only") and the
@@ -58,8 +60,8 @@ keyboard.
 The matching, reading order, replacement and the bar's replace and refresh
 rules are pure ParcCore code (`EaselFinder`, `EaselFindSession`,
 `EaselViewportFocus`). Adding a kind that shows text means listing its text in
-`EaselFinder.searchableParts(of:)` and its `replaceability(of:)`; tables and
-code blocks join the same way once they exist.
+`EaselFinder.searchableParts(of:)` (table cells are their own parts) and its
+`replaceability(of:)`.
 
 ## Links to objects
 
@@ -76,7 +78,7 @@ the plain Easel address, and any other fragment is not an Easel link.
 
 `tests/EaselBoardFeaturesTests.swift` is a windowless suite over the ParcCore
 board logic: find order, visibility, matching, replacement across rich text
-runs, per-object refusals, the find session's replace and refresh rules,
-viewport focus and object links. Build it with every `Sources/ParcCore` file
+runs, per-object and per-table refusals, the find session's replace and
+refresh rules, viewport focus and object links. Build it with every `Sources/ParcCore` file
 plus `tests/Support/TestFailure.swift` and run the binary. The views are
 checked by compiling only.
