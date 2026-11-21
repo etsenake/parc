@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-struct EaselDrawingTests {
+struct EaselFreehandDrawingTests {
     func near(_ a: Double, _ b: Double, _ tolerance: Double = 1e-6) -> Bool { abs(a - b) <= tolerance }
 
     func near(_ a: EaselPoint, _ b: EaselPoint, _ tolerance: Double = 1e-6) -> Bool { near(a.x, b.x, tolerance) && near(a.y, b.y, tolerance) }
