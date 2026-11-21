@@ -5,42 +5,26 @@ import re
 root = Path(__file__).resolve().parents[2]
 source = (root / "Sources/ParcApp/DocumentsLibraryView.swift").read_text()
 
-assert "private var observedNotes: [NoteReference] = []" in source, \
-    "missing last-applied notes catalog snapshot"
-assert "private var observedEasels: [EaselSummary] = []" in source, \
-    "missing last-applied easels catalog snapshot"
-assert "private var observedProfileRemovalPending = false" in source, \
-    "missing last-applied profile-removal pending snapshot"
-assert "private func shouldSkipCatalogReload(notes: [NoteReference], easels: [EaselSummary], pending: Bool, query: String) -> Bool" in source, \
-    "shouldSkipCatalogReload predicate missing"
-assert "private func rememberAppliedCatalog(notes: [NoteReference], easels: [EaselSummary], pending: Bool, query: String)" in source, \
-    "rememberAppliedCatalog missing"
+catalog = (root / "Sources/ParcApp/DocumentsLibraryCatalog.swift").read_text()
+fingerprint = re.search(r"struct DocumentsLibraryInputs: Equatable \{(?P<body>.*?)\n\}", catalog, re.S)
+assert fingerprint, "missing the Documents catalog fingerprint"
+for field in ("let notes: [NoteReference]", "let easels: [EaselSummary]", "let pending: Bool", "let query: String",
+              "let noteMatches: [URL]"):
+    assert field in fingerprint.group("body"), f"Documents fingerprint no longer includes {field}"
+assert "private var observedInputs: DocumentsLibraryInputs?" in source, \
+    "missing last-applied catalog snapshot"
 
-reload = re.search(
-    r"func reload\(force: Bool = false\) \{(?P<body>.*?)\n    \}\n\n    private func shouldSkipCatalogReload\(notes:",
-    source, re.S)
+reload = re.search(r"func reload\(force: Bool = false\) \{(?P<body>.*?)\n    \}\n", source, re.S)
 assert reload, "reload(force:) not found"
 body = reload.group("body")
-gate = "if !force && shouldSkipCatalogReload(notes: notes, easels: easels, pending: pending, query: query) { return }"
-remember = "rememberAppliedCatalog(notes: notes, easels: easels, pending: pending, query: query)"
-assert gate in body, "identical catalog must return before search/sort when not forced"
-assert remember in body, "changed/forced catalog must record last apply before rebuild"
-assert body.index(gate) < body.index(remember), "skip gate must precede rememberAppliedCatalog"
-assert body.index(remember) < body.index("library.search(") < body.index("DocumentsLibraryCatalog.visible("), \
-    "remember must precede the note search and the catalog filter/sort"
-
-skip = re.search(
-    r"private func shouldSkipCatalogReload\(notes: \[NoteReference\], easels: \[EaselSummary\], pending: Bool, query: String\) -> Bool \{(?P<body>.*?)\n    \}\n\n    private func rememberAppliedCatalog",
-    source, re.S)
-assert skip, "shouldSkipCatalogReload body not found"
-skip_body = skip.group("body")
-for needle in (
-    "notes == observedNotes",
-    "easels == observedEasels",
-    "pending == observedProfileRemovalPending",
-    "query == observedQuery",
-):
-    assert needle in skip_body, f"Documents fingerprint no longer includes {needle}"
+gate = "if !force && inputs == observedInputs { return }"
+remember = "observedInputs = inputs"
+assert gate in body, "identical catalog must return before filter/sort when not forced"
+assert body.index("DocumentsLibraryCatalog.inputs(") < body.index(gate) < body.index(remember), \
+    "skip gate must follow the fingerprint and precede remembering it"
+assert body.index(remember) < body.index("DocumentsLibraryCatalog.visible(") < body.index("if !sameCards { rebuildCards() }"), \
+    "remember must precede the catalog filter/sort and the card rebuild"
+assert body.count("observedInputs = nil") == 2, "an empty or failed apply must forget the last snapshot"
 
 assert "func controlTextDidChange(_ obj: Notification) { reload(force: true) }" in source, \
     "search filter changes must force reload (not catalog-skip)"
