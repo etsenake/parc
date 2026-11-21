@@ -62,7 +62,11 @@ final class WindowStandardButtons: NSView {
         }
     }
 
-    @objc(_mouseInGroup:) func mouseInGroup(_ button: Any?) -> Bool { mouseInside }
+    var onGroupQuery: ((Bool) -> Void)?
+    @objc(_mouseInGroup:) func mouseInGroup(_ button: Any?) -> Bool {
+        onGroupQuery?(mouseInside)
+        return mouseInside
+    }
 
     override func mouseEntered(with event: NSEvent) { setMouseInside(true) }
     override func mouseMoved(with event: NSEvent) { setMouseInside(true) }
