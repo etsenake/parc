@@ -18,18 +18,19 @@ struct EaselObjectPresentation: Equatable {
 enum EaselObjectEntrance: Equatable {
     case pop
     case drop(tilt: Double)
-    case slam(tilt: Double)
+    case slam(tilt: Double, raised: Bool)
     case quick
     case fade
 
     static let dropTilt = 3.0
     static let slamTilt = 12.0
+    static let pressedSlamTilt = 4.0
 
     static func of(_ item: EaselItem) -> EaselObjectEntrance {
         let side: Double = item.id.uuid.0 & 1 == 0 ? 1 : -1
         switch item.kind {
         case .sticky: return .drop(tilt: dropTilt * side)
-        case .stamp: return .slam(tilt: slamTilt * side)
+        case .stamp: return .slam(tilt: slamTilt * side, raised: false)
         case .arrow, .freehand, .section: return .fade
         default: return .pop
         }
@@ -93,6 +94,11 @@ struct EaselObjectTransition: Equatable {
     static let dropScale = 1.08
     static let dropRise = 8.0
     static let slamScale = 1.6
+    static let raisedScale = 1.15
+    static let raisedOpacity = 0.8
+    static let raisedShadow = 0.8
+    static let breathDepth = 0.015
+    static let breathPeriod = 1.1
     static let vanishScale = 0.85
     static let pulseScale = 1.05
     static let shakeDistance = 4.0
@@ -188,12 +194,14 @@ struct EaselObjectTransition: Equatable {
                 result.rotation = tilt * (1 - settled)
                 result.shadow = max(0, 1 - settled)
                 result.stretch = Self.squashed(result.stretch, by: Self.squash(at: elapsed, from: 0.12, length: 0.22, amount: Self.landingSquash))
-            case .slam(let tilt):
+            case .slam(let tilt, let raised):
                 let settled = EaselObjectSpring.toggle.progress(at: elapsed)
-                result.opacity = Self.easeOut(elapsed / Self.slamFade)
-                result.scale = Self.slamScale + (1 - Self.slamScale) * settled
+                let from = raised ? Self.raisedScale : Self.slamScale
+                let lifted = raised ? Self.raisedOpacity : 0
+                result.opacity = lifted + (1 - lifted) * Self.easeOut(elapsed / Self.slamFade)
+                result.scale = from + (1 - from) * settled
                 result.rotation = tilt * (1 - settled)
-                result.shadow = max(0, 1 - settled) * 0.6
+                result.shadow = max(0, 1 - settled) * (raised ? Self.raisedShadow : 0.6)
             case .quick:
                 result.opacity = Self.easeOut(elapsed / 0.1)
                 result.scale = Self.quickScale + (1 - Self.quickScale) * EaselObjectSpring.settle.progress(at: elapsed)
@@ -256,7 +264,7 @@ struct EaselCarryTilt: Equatable {
             angle += velocity * dt
             left -= dt
         }
-        angle = min(Self.maximum * 1.4, max(-Self.maximum * 1.4, angle))
+        angle = min(Self.maximum, max(-Self.maximum, angle))
     }
 
     var isResting: Bool { abs(angle) < 0.05 && abs(velocity) < 0.5 }
@@ -314,9 +322,29 @@ struct EaselObjectMotion {
     private(set) var ghosts: [EaselItem] = []
     private(set) var previousLooks: [UUID: EaselItem] = [:]
     var carry: EaselObjectCarry?
+    private(set) var raised: [UUID: TimeInterval] = [:]
 
-    var isEmpty: Bool { transitions.isEmpty && carry == nil }
-    var ids: Set<UUID> { Set(transitions.keys).union(carry?.ids ?? []) }
+    var isEmpty: Bool { transitions.isEmpty && carry == nil && raised.isEmpty }
+    var ids: Set<UUID> { Set(transitions.keys).union(carry?.ids ?? []).union(raised.keys) }
+
+    mutating func raise(_ id: UUID, at time: TimeInterval, reduced: Bool) {
+        guard !reduced else { return }
+        raised[id] = raised[id] ?? time
+    }
+
+    mutating func lower(_ id: UUID) { raised.removeValue(forKey: id) }
+
+    func isRaised(_ id: UUID) -> Bool { raised[id] != nil }
+
+    static func raisedPresentation(since elapsed: TimeInterval) -> EaselObjectPresentation {
+        let up = EaselObjectSpring.lift.progress(at: elapsed)
+        let breath = 1 + EaselObjectTransition.breathDepth * sin(2 * Double.pi * max(0, elapsed) / EaselObjectTransition.breathPeriod) * min(1, max(0, elapsed) / 0.3)
+        var result = EaselObjectPresentation.identity
+        result.scale = (1 + (EaselObjectTransition.raisedScale - 1) * up) * breath
+        result.opacity = 1 - (1 - EaselObjectTransition.raisedOpacity) * min(1, up)
+        result.shadow = EaselObjectTransition.raisedShadow * min(1, up)
+        return result
+    }
 
     mutating func appear(_ ids: some Sequence<UUID>, at time: TimeInterval, reduced: Bool) {
         for id in ids { transitions[id] = EaselObjectTransition(effect: .appear(.pop), start: time, reduced: reduced) }
@@ -324,6 +352,7 @@ struct EaselObjectMotion {
 
     mutating func appear(_ entrances: [UUID: EaselObjectEntrance], delays: [UUID: TimeInterval] = [:], at time: TimeInterval, reduced: Bool) {
         for (id, entrance) in entrances {
+            raised.removeValue(forKey: id)
             let delay = reduced ? 0 : max(0, delays[id] ?? 0)
             transitions[id] = EaselObjectTransition(effect: .appear(entrance), start: time + delay, reduced: reduced)
         }
@@ -404,6 +433,7 @@ struct EaselObjectMotion {
 
     func presentation(for id: UUID, at time: TimeInterval) -> EaselObjectPresentation {
         if let carry, carry.ids.contains(id) { return carry.presentation(for: id, at: time) }
+        if let since = raised[id] { return Self.raisedPresentation(since: time - since) }
         return transitions[id]?.presentation(at: time) ?? .identity
     }
 
@@ -440,6 +470,7 @@ struct EaselObjectMotion {
         ghosts.removeAll()
         previousLooks.removeAll()
         carry = nil
+        raised.removeAll()
     }
 
     static func glides(_ item: EaselItem) -> Bool {
@@ -619,7 +650,7 @@ enum EaselBurstPlan {
         let count = 6 + Int(random.next() * 3)
         return (0..<count).map { index in
             let angle = (Double(index) + 0.2 + random.next() * 0.6) / Double(count) * 2 * Double.pi
-            return EaselBurstSpeck(angle: angle, distance: radius * (0.55 + random.next() * 0.45) + 10,
+            return EaselBurstSpeck(angle: angle, distance: radius * (0.9 + random.next() * 0.5) + 6,
                                    size: 3 + random.next() * 2.5, delay: random.next() * 0.04,
                                    spin: (random.next() - 0.5) * 300, hue: random.next())
         }
@@ -634,5 +665,49 @@ enum EaselBurstPlan {
             return EaselBurstSpeck(angle: angle, distance: radius * 0.25 + 8 + random.next() * 10,
                                    size: 7 + random.next() * 6, delay: random.next() * 0.03, spin: 0, hue: random.next())
         }
+    }
+}
+
+enum EaselStampGrowth {
+    static let spring = EaselObjectSpring.press
+
+    static func side(from start: Double, to target: Double, since elapsed: TimeInterval, reduced: Bool) -> Double {
+        guard !reduced, elapsed.isFinite, start.isFinite else { return target }
+        return start + (target - start) * spring.progress(at: elapsed)
+    }
+
+    static func settled(since elapsed: TimeInterval) -> Bool { elapsed >= 0.45 }
+}
+
+enum EaselStampWheelMotion {
+    static let stagger: TimeInterval = 0.022
+    static let fade: TimeInterval = 0.08
+    static let tuck: TimeInterval = 0.18
+    static let hoverScale = 1.14
+    static let startScale = 0.35
+
+    struct Face: Equatable {
+        var reach: Double
+        var scale: Double
+        var opacity: Double
+    }
+
+    static func duration(count: Int) -> TimeInterval { Double(max(0, count - 1)) * stagger + EaselObjectTransition.appearDuration }
+
+    static func fan(slot index: Int, elapsed: TimeInterval) -> Face {
+        let local = elapsed - Double(max(0, index)) * stagger
+        guard local > 0 else { return Face(reach: 0, scale: startScale, opacity: 0) }
+        let spring = EaselObjectSpring.pop.progress(at: local)
+        return Face(reach: spring, scale: startScale + (1 - startScale) * spring, opacity: EaselObjectTransition.easeOut(local / fade))
+    }
+
+    static func tucked(_ face: Face, elapsed: TimeInterval) -> Face {
+        let t = EaselObjectTransition.easeInOut(elapsed / tuck)
+        return Face(reach: face.reach * (1 - 0.6 * t), scale: face.scale * (1 - 0.5 * t), opacity: face.opacity * (1 - t))
+    }
+
+    static func flight(elapsed: TimeInterval) -> (travel: Double, scale: Double, opacity: Double) {
+        let t = EaselObjectTransition.easeOut(elapsed / tuck)
+        return (t, 1.15 - 0.55 * t, 1 - EaselObjectTransition.easeIn(elapsed / tuck) * 0.9)
     }
 }
