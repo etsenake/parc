@@ -31,3 +31,4 @@ Sources/ParcApp/SidebarIconCatalog.swift
 Sources/ParcApp/MenuItemImage.swift
 Sources/ParcApp/ParcBrandMark.swift
 tests/NotesEditor/NoteDesignSystemStubs.swift
+Sources/ParcApp/NoteInputRules.swift
