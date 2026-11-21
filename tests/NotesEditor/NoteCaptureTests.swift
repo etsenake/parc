@@ -105,14 +105,18 @@ struct NoteCaptureTests {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
         let locale = Locale(identifier: "en_US")
-        expectEqual(NoteCaptureText.badge(for: capture, now: date, calendar: calendar, locale: locale), "Snapshot · captured today", "same-day badge")
-        expectEqual(NoteCaptureText.badge(for: capture, now: date.addingTimeInterval(86_400), calendar: calendar, locale: locale),
+        var block = NoteCapture.block(source: "Attachments/a.png", title: "A", capture: capture)
+        expectEqual(NoteCaptureLive.badge(of: block, now: date, calendar: calendar, locale: locale), "Snapshot · captured today",
+                    "the badge matches an Easel snapshot's")
+        expectEqual(NoteCaptureLive.badge(of: block, now: date.addingTimeInterval(86_400), calendar: calendar, locale: locale),
                     "Snapshot · captured yesterday", "next-day badge")
-        let only = NoteCapture(sourceURL: "https://example.com", capturedAt: nil)
-        expectEqual(NoteCaptureText.badge(for: only, now: date, calendar: calendar, locale: locale), "Snapshot only", "captures without geometry say so")
-        var live = capture
-        live.live = true
-        expectEqual(NoteCaptureText.badge(for: live), "Live", "live mode is labelled Live")
+        block.props.capture?.live = true
+        expectEqual(NoteCaptureLive.badge(of: block), "Live", "live mode is labelled Live")
+        expectEqual(NoteCaptureLive.badgeHelp(of: block), EaselWebItemChrome.liveHelp, "live help is the Easel one")
+        var only = block
+        only.props.capture = NoteCapture(sourceURL: "https://example.com")
+        expectEqual(NoteCaptureLive.badge(of: only), "Snapshot only", "captures without geometry say Snapshot only")
+        expectEqual(NoteCaptureLive.badgeHelp(of: only), EaselWebItemChrome.snapshotOnlyHelp, "and explain why")
         expectEqual(NoteCaptureText.title(for: capture, alt: nil), "example.com", "untitled captures fall back to the domain")
     }
 

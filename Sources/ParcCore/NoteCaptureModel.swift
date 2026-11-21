@@ -129,42 +129,9 @@ enum NoteCaptureInsertion {
 }
 
 enum NoteCaptureText {
-    static let liveBadge = "Live"
-    static let makeLiveTitle = "Make Live"
-    static let backToSnapshotTitle = "Back to snapshot"
-    static let makeLiveHelp = "Show this captured region from the live webpage"
-    static let backToSnapshotHelp = "Return to the original captured image"
-    static let snapshotHelp = "The image you captured. Make Live shows the same region from the current webpage."
-    static let snapshotOnlyHelp = "Only a captured visible region can go live. Full-page, cropped, marked-up and Portrait-framed captures keep just their image."
-    static let liveHelp = "Showing the live webpage. The original captured image is kept."
-
     static func displayHost(_ url: URL) -> String {
         guard let host = url.host, !host.isEmpty else { return url.absoluteString }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-    }
-
-    static func badge(for capture: NoteCapture, now: Date = Date(), calendar: Calendar = .current, locale: Locale = .current) -> String {
-        if capture.live && capture.canMakeLive { return liveBadge }
-        let name = capture.canMakeLive ? "Snapshot" : "Snapshot only"
-        guard let date = capture.capturedAt else { return name }
-        return name + " · captured " + capturedPhrase(date, now: now, calendar: calendar, locale: locale)
-    }
-
-    static func help(for capture: NoteCapture) -> String {
-        if capture.live && capture.canMakeLive { return liveHelp }
-        return capture.canMakeLive ? snapshotHelp : snapshotOnlyHelp
-    }
-
-    static func capturedPhrase(_ date: Date, now: Date, calendar: Calendar, locale: Locale) -> String {
-        if calendar.isDate(date, inSameDayAs: now) { return "today" }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
-            return "yesterday"
-        }
-        let formatter = DateFormatter()
-        formatter.calendar = calendar; formatter.locale = locale; formatter.timeZone = calendar.timeZone
-        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
-        formatter.setLocalizedDateFormatFromTemplate(sameYear ? "MMMd" : "yMMMd")
-        return formatter.string(from: date)
     }
 
     static func title(for capture: NoteCapture, alt: String?, pageTitle: String? = nil) -> String {

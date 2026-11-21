@@ -24,6 +24,9 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     private var unsplashPopover: NotePagePopover?
     private var replacePopover: NotePagePopover?
     private var unsplashImport: Task<Void, Never>?
+    private var captureHeader: NoteCaptureSnapshotHeader?
+    private var liveSurface: NoteCaptureLiveSurface?
+    private var liveEducation: ParcDialog?
     private static let creditGap: CGFloat = 3
 
     override init(block: NoteBlock, editor: NotePageEditor?) {
@@ -143,6 +146,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
             view.setSelected(isBlockSelected)
         }
         content?.update(block: block, source: source)
+        refreshCapture()
         refreshCaption()
         refreshCredit()
         refreshAccessibility()
@@ -154,7 +158,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     override func measureHeight(width: CGFloat) -> CGFloat {
         let inset = NoteMediaStyle.verticalInset
         let span = content?.captionSpan(width: width) ?? (x: 0, width: width)
-        let height = inset + (content?.measureHeight(width: width) ?? 44) + inset + captionHeight(width: span.width) + creditHeight
+        let height = inset + captureHeaderHeight + (content?.measureHeight(width: width) ?? 44) + inset + captionHeight(width: span.width) + creditHeight
         return ceil(height)
     }
 
@@ -175,7 +179,101 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         creditLine.isHidden = !showsCredit
     }
 
-    override var handleAnchorY: CGFloat { NoteMediaStyle.verticalInset + (content?.handleAnchorY ?? 14) }
+    override var handleAnchorY: CGFloat {
+        captureHeader != nil ? NoteMediaStyle.verticalInset + EmbeddedPageHeader.height / 2 : NoteMediaStyle.verticalInset + (content?.handleAnchorY ?? 14)
+    }
+
+    private var showsCapture: Bool { mode == .image && NoteCaptureLive.capture(of: block) != nil }
+
+    private var captureHeaderHeight: CGFloat { showsCapture ? EmbeddedPageHeader.height : 0 }
+
+    private var pages: NoteEmbeddedPages? { editor.flatMap { NoteEmbeddedPages.pool(for: $0) } }
+
+    func pageHostDidChange() {
+        refreshCapture()
+        invalidateMeasuredHeight()
+    }
+
+    private func refreshCapture() {
+        guard showsCapture else {
+            captureHeader?.removeFromSuperview()
+            captureHeader = nil
+            detachLiveSurface()
+            content?.isHidden = false
+            return
+        }
+        let header = captureHeader ?? NoteCaptureSnapshotHeader()
+        if captureHeader == nil {
+            header.onMakeLive = { [weak self] in self?.makeLive() }
+            header.onSnapshot = { [weak self] in self?.showSnapshot() }
+            header.onOpen = { [weak self] in
+                guard let self, let address = NoteCaptureLive.capture(of: self.block)?.sourceAddress else { return }
+                self.editor?.open(address)
+            }
+            addSubview(header, positioned: .below, relativeTo: caption)
+            captureHeader = header
+        }
+        header.configure(block: block, canEdit: canEdit)
+        if window != nil, let capture = NoteEmbeddedPages.liveCapture(of: block),
+           let next = pages?.captureSurface(for: blockID, address: capture.address, layout: capture.layout,
+                                            title: NoteCaptureText.title(for: block.props.capture!, alt: block.props.alt)) {
+            if next.superview !== self { addSubview(next, positioned: .below, relativeTo: caption) }
+            if liveSurface !== next { detachLiveSurface() }
+            liveSurface = next
+            next.selected = isBlockSelected
+        } else {
+            detachLiveSurface()
+        }
+        let live = liveSurface != nil
+        header.isHidden = live
+        content?.isHidden = live
+        needsLayout = true
+    }
+
+    private func detachLiveSurface() {
+        if let liveSurface, liveSurface.superview === self { liveSurface.removeFromSuperview() }
+        liveSurface = nil
+    }
+
+    func makeLive() {
+        guard canEdit, NoteCaptureLive.canMakeLive(block), !NoteCaptureLive.ownsLivePage(block), let session = editor?.session else { return }
+        guard UserDefaults.standard.bool(forKey: NoteCaptureSnapshotHeader.educationKey) else {
+            guard liveEducation == nil else { return }
+            let original = block
+            liveEducation = NoteCaptureSnapshotHeader.presentEducation(in: window) { [weak self] in
+                guard let self else { return }
+                self.liveEducation = nil
+                guard self.window != nil, self.editor?.session.page.block(self.blockID) == original else { return }
+                self.makeLive()
+            }
+            if liveEducation == nil { NSSound.beep() }
+            return
+        }
+        session.updateBlock(blockID, name: "Make Captured Region Live") { $0.props.capture?.live = true }
+    }
+
+    func showSnapshot() {
+        guard canEdit, NoteCaptureLive.ownsLivePage(block) else { return }
+        if let pages { pages.showSnapshot(blockID) }
+        else { editor?.session.updateBlock(blockID, name: "Show Captured Image") { $0.props.capture?.live = false } }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let liveSurface, liveSurface.superview === self, !liveSurface.interactive, let pages,
+              liveSurface.takesPageInput(at: event.locationInWindow) else {
+            super.mouseDown(with: event)
+            return
+        }
+        pages.activate(blockID)
+        window?.invalidateCursorRects(for: self)
+        if liveSurface.interactive { window?.postEvent(event, atStart: true) }
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard let liveSurface, liveSurface.superview === self, !liveSurface.interactive else { return }
+        addCursorRect(convert(liveSurface.pageRect, from: liveSurface), cursor: .pointingHand)
+    }
 
     override func layout() {
         super.layout()
@@ -183,7 +281,17 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         let inset = NoteMediaStyle.verticalInset
         let width = bounds.width
         let height = content.measureHeight(width: width)
-        content.frame = NSRect(x: 0, y: inset, width: width, height: height)
+        let headerHeight = captureHeaderHeight
+        content.frame = NSRect(x: 0, y: inset + headerHeight, width: width, height: height)
+        if showsCapture {
+            let image = (content as? NoteImageContentView)?.imageRect ?? NSRect(x: 0, y: 0, width: width, height: height)
+            var header = NoteCaptureSnapshotHeader.frame(imageRect: image, columnWidth: width, alignment: block.props.alignment)
+            header.origin.y = inset
+            NoteAnimation.withoutAnimation {
+                captureHeader?.frame = header
+                liveSurface?.frame = NSRect(x: header.minX, y: inset, width: header.width, height: headerHeight + image.height)
+            }
+        }
         let span = content.captionSpan(width: width)
         layoutCaption(top: content.frame.maxY, x: span.x, width: span.width)
         if showsCredit {
@@ -196,6 +304,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     override func setBlockSelected(_ selected: Bool, animated: Bool) {
         super.setBlockSelected(selected, animated: animated)
         content?.setSelected(selected)
+        if let liveSurface, liveSurface.superview === self { liveSurface.selected = selected }
     }
 
     override func readOnlyDidChange() {
@@ -231,7 +340,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         super.viewDidMoveToWindow()
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers.removeAll()
-        if window == nil { setHovering(false) }
+        if window == nil { setHovering(false) } else if showsCapture { refreshCapture() }
         if let clip = enclosingScrollView?.contentView {
             clip.postsBoundsChangedNotifications = true
             observers.append(NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in

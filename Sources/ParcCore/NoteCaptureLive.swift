@@ -13,6 +13,26 @@ extension NoteCaptureGeometry {
 }
 
 enum NoteCaptureLive {
+    static func chromeItem(of block: NoteBlock) -> EaselItem? {
+        guard let capture = capture(of: block) else { return nil }
+        var item = EaselItem(kind: .webCard, frame: EaselRect(x: 0, y: 0, width: 1, height: 1))
+        item.url = capture.sourceURL
+        item.assetID = block.props.source.flatMap { $0.isEmpty ? nil : $0 }
+        item.capturedAt = capture.capturedAt
+        item.captureLayout = capture.geometry?.easelLayout
+        item.liveCapture = capture.live
+        item.text = block.props.alt ?? ""
+        return item
+    }
+
+    static func badge(of block: NoteBlock, now: Date = Date(), calendar: Calendar = .current, locale: Locale = .current) -> String? {
+        chromeItem(of: block).flatMap { EaselWebItemChrome.badge(for: $0, now: now, calendar: calendar, locale: locale) }
+    }
+
+    static func badgeHelp(of block: NoteBlock) -> String? {
+        chromeItem(of: block).flatMap(EaselWebItemChrome.badgeHelp(for:))
+    }
+
     static func capture(of block: NoteBlock) -> NoteCapture? {
         block.kind == .image ? block.props.capture : nil
     }
@@ -23,7 +43,7 @@ enum NoteCaptureLive {
     }
 
     static func canMakeLive(_ block: NoteBlock) -> Bool {
-        layout(of: block) != nil && block.props.source?.isEmpty == false
+        layout(of: block) != nil && chromeItem(of: block).map(EaselWebItemChrome.canMakeLive) == true
     }
 
     static func ownsLivePage(_ block: NoteBlock) -> Bool {

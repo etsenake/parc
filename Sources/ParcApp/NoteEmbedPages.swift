@@ -5,13 +5,17 @@ extension NotePageEditor: EmbeddedPageOwner {
     var embeddedPagesOpen: Bool { true }
 
     func embeddedPage(_ id: UUID, wants url: String, variant: EmbeddedPageFingerprint?) -> Bool {
-        guard variant == nil, let block = session.page.block(NoteBlockID(id)) else { return false }
+        guard let block = session.page.block(NoteBlockID(id)) else { return false }
+        if let capture = NoteEmbeddedPages.liveCapture(of: block) {
+            return variant == EmbeddedPageFingerprint(capture.layout) && capture.address.absoluteString == url
+        }
+        guard variant == nil else { return false }
         return NoteEmbeddedPages.address(of: block)?.absoluteString == url
     }
 
     func embeddedPageFingerprint(for ids: Set<UUID>) -> EmbeddedPageFingerprint {
         EmbeddedPageFingerprint(Dictionary(uniqueKeysWithValues: ids.compactMap { id in
-            session.page.block(NoteBlockID(id)).flatMap(NoteEmbeddedPages.address(of:)).map { (id, $0.absoluteString) }
+            session.page.block(NoteBlockID(id)).flatMap(NoteEmbeddedPages.pageKey(of:)).map { (id, $0) }
         }))
     }
 
@@ -35,6 +39,18 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
     static func address(of block: NoteBlock) -> URL? {
         guard block.kind == .embed, let source = block.props.source else { return nil }
         return NoteMediaSource.webURL(from: source)
+    }
+
+    static func liveCapture(of block: NoteBlock) -> (address: URL, layout: EaselCaptureLayout)? {
+        guard let address = NoteCaptureLive.liveAddress(of: block), let layout = NoteCaptureLive.layout(of: block) else { return nil }
+        return (address, layout)
+    }
+
+    static func pageKey(of block: NoteBlock) -> String? {
+        if let capture = liveCapture(of: block), let geometry = block.props.capture?.geometry {
+            return "capture " + capture.address.absoluteString + " " + geometry.viewportAttribute + " " + geometry.scrollAttribute + " " + geometry.regionAttribute
+        }
+        return address(of: block)?.absoluteString
     }
 
     static func pool(for editor: NotePageEditor) -> NoteEmbeddedPages? { pools[ObjectIdentifier(editor)] }
@@ -106,7 +122,10 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
     }
 
     private static func notifyBlocks(of editor: NotePageEditor) {
-        for view in editor.canvas.materializedViews { (view as? NoteEmbedBlockView)?.pageHostDidChange() }
+        for view in editor.canvas.materializedViews {
+            (view as? NoteEmbedBlockView)?.pageHostDidChange()
+            (view as? NoteMediaBlockView)?.pageHostDidChange()
+        }
     }
 
     private init(editor: NotePageEditor, binding: PCNativeBrowserWindow, profilePath: String,
@@ -153,12 +172,52 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
         return surface
     }
 
+    func captureSurface(for block: NoteBlockID, address: URL, layout: EaselCaptureLayout, title: String) -> NoteCaptureLiveSurface? {
+        if let existing = entries[block.raw], existing.originalURL != address.absoluteString || existing.variant != EmbeddedPageFingerprint(layout) { return nil }
+        let profilePath = self.profilePath
+        guard let entry = surface(id: block.raw, url: address.absoluteString, variant: EmbeddedPageFingerprint(layout), make: {
+            NoteCaptureLiveSurface(address: address, layout: layout, title: title, profilePath: profilePath)
+        }), let surface = entry.surface as? NoteCaptureLiveSurface else { return nil }
+        if surface.onDone == nil {
+            surface.onDone = { [weak self] in self?.finishInteraction(block) }
+            surface.onOpen = { [weak self] url in self?.onOpen?(url) }
+            surface.onSnapshot = { [weak self] in self?.showSnapshot(block) }
+        }
+        surface.selected = editor.session.selection == .blocks([block])
+        return surface
+    }
+
+    func showSnapshot(_ block: NoteBlockID) {
+        guard !editor.session.isReadOnly, let original = editor.session.page.block(block), NoteCaptureLive.ownsLivePage(original) else { return }
+        let finish = { [weak self] in
+            guard let self, let current = self.editor.session.page.block(block), current == original else { return }
+            if self.activeBlock == block { self.deactivate() }
+            self.editor.session.updateBlock(block, name: "Show Captured Image") { $0.props.capture?.live = false }
+            if let window = self.editor.canvas.window, window.attachedSheet == nil {
+                window.makeFirstResponder(self.editor.canvas)
+                self.editor.session.setSelection(.blocks([block]))
+            }
+        }
+        guard let entry = entries[block.raw], entry.page?.isClosed == false else { finish(); return }
+        guard !gate.isTransferring, !gate.isRetiring else { return }
+        retiring.insert(block.raw)
+        EmbeddedPagePool.requestRetirement(of: [(self, entry)], owners: [self], valid: { [weak self] in
+            guard let self else { return false }
+            return self.entries[block.raw] === entry && self.editor.session.page.block(block) == original
+        }, completion: { [weak self] allowed in
+            guard let self else { return }
+            self.retiring.remove(block.raw)
+            if allowed { finish() }
+            Self.notifyBlocks(of: self.editor)
+        })
+    }
+
     override func loadURL(for url: URL, entry: EmbeddedPageEntry) -> URL {
         (entry.surface as? NoteEmbedSurface)?.liveAddress ?? url
     }
 
     override func referrer(for entry: EmbeddedPageEntry) -> URL? {
-        NoteEmbedAddress.embedderReferrer(appID: Bundle.main.bundleIdentifier)
+        entry.surface is NoteCaptureLiveSurface ? nil : NoteEmbedAddress.embedderReferrer(appID: Bundle.main.bundleIdentifier)
     }
 
     func activate(_ block: NoteBlockID) {
@@ -249,7 +308,7 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
         let point = root.superview.map { $0.convert(event.locationInWindow, from: nil) } ?? event.locationInWindow
         let hit = root.hitTest(point)
         for (id, entry) in entries {
-            guard let surface = entry.surface as? NoteEmbedSurface, surface.window === window,
+            guard let surface = entry.surface as? NoteEmbeddedPageInputSurface, surface.window === window,
                   let block = surface.superview, surface.takesPageInput(at: event.locationInWindow),
                   hit === block || hit?.isDescendant(of: surface.browser) == true, wants(id, entry) else { continue }
             return id
@@ -287,7 +346,7 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
         let route = scrollLatch.receive(phase, deltaX: Double(event.scrollingDeltaX), deltaY: Double(event.scrollingDeltaY),
                                         time: event.timestamp, pageUnderPointer: page)
         if starts || previous != scrollLatch.latchedPage { latchedSource = nil }
-        for (id, entry) in entries { (entry.surface as? NoteEmbedSurface)?.scrollLatched = scrollLatch.latchedPage == id }
+        for (id, entry) in entries { (entry.surface as? NoteEmbeddedPageInputSurface)?.scrollLatched = scrollLatch.latchedPage == id }
         guard route == .note else { return false }
         scrollNote(with: event, phase: phase)
         return true
