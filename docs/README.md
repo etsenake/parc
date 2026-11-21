@@ -65,7 +65,8 @@ Git and release notes retain history.
   [document grid](documents-library-grid.md).
 - [Easels](easels.md), [appearance](easel-appearance.md), [motion](easel-motion.md),
   [images and media](easel-images.md), [live captures](easel-live-captures.md),
-  [embedded pages](embedded-pages.md), [board features](easel-board-features.md).
+  [embedded pages](embedded-pages.md), [board features](easel-board-features.md),
+  [tables](easel-tables.md).
 
 ## Extensions and developer tools
 

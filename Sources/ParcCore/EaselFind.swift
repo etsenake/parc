@@ -19,7 +19,7 @@ enum EaselFinder {
         switch item.kind {
         case .text, .sticky, .rectangle, .circle, .arrow, .section, .link, .webCard, .browser:
             return item.text.isEmpty ? [] : [(.text, item.text)]
-        case .image, .freehand:
+        case .image, .freehand, .table:
             return []
         }
     }
@@ -28,7 +28,7 @@ enum EaselFinder {
         guard !item.isLocked else { return false }
         switch item.kind {
         case .text, .sticky, .rectangle, .circle, .arrow, .section: return true
-        case .image, .freehand, .link, .webCard, .browser: return false
+        case .image, .freehand, .link, .webCard, .browser, .table: return false
         }
     }
 

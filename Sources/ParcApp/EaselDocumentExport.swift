@@ -128,6 +128,8 @@ enum EaselDocumentExport {
                 } else if let id = item.assetID, let data = try? session.assetData(id) {
                     art.images[item.id] = webImage(data)
                 }
+            case .table:
+                art.texts[item.id] = tableVectorText(item)
             case .rectangle, .circle, .arrow, .freehand, .link:
                 break
             }

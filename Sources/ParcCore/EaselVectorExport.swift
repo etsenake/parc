@@ -133,6 +133,7 @@ enum EaselVectorExport {
             return card(item)
         case .link: return card(item)
         case .sticky, .section: return board(item, art.texts[item.id])
+        case .table: return table(item, art.texts[item.id])
         }
     }
 

@@ -3,7 +3,7 @@ import Combine
 import Darwin
 
 enum EaselItemKind: String, Codable, CaseIterable {
-    case text, image, rectangle, circle, arrow, freehand, webCard, browser, link, sticky, section
+    case text, image, rectangle, circle, arrow, freehand, webCard, browser, link, sticky, section, table
 
     var holdsText: Bool { self == .text || self == .sticky || self == .rectangle || self == .circle }
 }
@@ -231,6 +231,7 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var mask: EaselImageMask?
     var altText: String?
     var quarterTurns: Int?
+    var table: EaselTable?
     var ownsEmbeddedPage: Bool { kind == .browser || (kind == .webCard && captureLayout != nil && liveCapture == true) }
     var resolvedShape: EaselShape? {
         switch kind {
@@ -529,6 +530,8 @@ final class EaselStore {
             if item.kind == .image && item.assetID == nil { throw EaselStoreError.invalidDocument("image has no asset") }
             if [.link, .webCard, .browser].contains(item.kind) && item.url == nil { throw EaselStoreError.invalidDocument("card has no URL") }
             if [.arrow, .freehand].contains(item.kind) && item.points.count < 2 { throw EaselStoreError.invalidDocument("drawing has fewer than two points") }
+            if (item.kind == .table) != (item.table != nil) { throw EaselStoreError.invalidDocument("table grid on the wrong object") }
+            try item.table?.validate()
         }
     }
 
