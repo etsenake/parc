@@ -260,7 +260,25 @@ extension EaselCanvasView {
               let new = after.items.first(where: { $0.id == id }), new.kind == .sticky,
               old.frame.width == new.frame.width, old.frame.y == new.frame.y,
               abs(old.frame.height - new.frame.height) > 0.5 else { return }
-        canvasFeedback.growths[id] = .init(from: presentedStickyHeight(old), to: new.frame.height, start: CACurrentMediaTime())
+        canvasFeedback.growths[id] = .init(from: presentedStickyHeight(old), to: new.frame.height, start: CACurrentMediaTime(), result: new)
         startCanvasFeedback()
+    }
+
+    func updateStickyEditorMask() {
+        guard let editor, let layer = editor.layer else { return }
+        guard let id = editingID, canvasFeedback.growths[id] != nil,
+              let item = session.document.items.first(where: { $0.id == id }), item.kind == .sticky else {
+            if layer.mask != nil { layer.mask = nil }
+            return
+        }
+        let paperBottom = CGFloat(item.frame.y + presentedStickyHeight(item))
+        let visible = max(0, min(editor.bounds.height, paperBottom - editor.frame.minY))
+        let mask = layer.mask ?? CALayer()
+        mask.backgroundColor = NSColor.black.cgColor
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        let top = layer.contentsAreFlipped() ? 0 : editor.bounds.height - visible
+        mask.frame = CGRect(x: -editor.bounds.width, y: top, width: editor.bounds.width * 3, height: visible)
+        if layer.mask !== mask { layer.mask = mask }
+        CATransaction.commit()
     }
 }
