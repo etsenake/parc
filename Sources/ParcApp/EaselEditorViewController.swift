@@ -26,7 +26,6 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private var titleUndoGroup: UUID?
     private var undoButton: NSButton!
     private var redoButton: NSButton!
-    private var webpageButton: NSButton?
     private var palette: EaselToolPalette?
     private let recenter = NoteChip("Recenter", icon: .symbol("scope"), style: .filled)
     private var recenterShown = false
@@ -38,7 +37,6 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private var pageButtonWidth: CGFloat = 0
     var emptyTemplates: EaselTemplateGallery?
     private(set) var pageObjects: EaselBrowserObjects?
-    private var webpageInput: EaselWebInput?
     private var webpageOwnerValid: (() -> Bool)?
     @discardableResult func configurePages(binding: PCNativeBrowserWindow, profilePath: String,
                         validOwner: @escaping () -> Bool, activeOwner: @escaping () -> Bool,
@@ -57,22 +55,21 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         webpageOwnerValid = validOwner
         pageObjects?.onContextImage = contextImage
         pageObjects?.onError = { [weak self] in self?.show($0) }
-        webpageButton?.isEnabled = true; canvas.needsLayout = true
+        canvas.needsLayout = true
         return true
     }
-    func refreshPageVisibility() { webpageInput?.validate(); pageObjects?.refreshVisibility(); canvas.refreshMotionOwnership(); canvas.needsLayout = true }
+    func refreshPageVisibility() { pageObjects?.refreshVisibility(); canvas.refreshMotionOwnership(); canvas.needsLayout = true }
     func beginPageOwnerWindowTransfer(_ transfer: EaselBrowserObjects.WindowTransfer) -> Bool {
         guard pageObjects?.beginWindowTransfer(transfer) == true else { return false }
-        webpageInput?.cancel(restoreFocus: false); webpageInput = nil
         return true
     }
     func retirePageOwner() {
         if !session.isClosed, !session.isDeleted { canvas.finishImageCrop(save: true); _ = canvas.finishEditing() }
-        webpageInput?.cancel(restoreFocus: false); webpageInput = nil; pageObjects?.disposeAfterClosure()
+        pageObjects?.disposeAfterClosure()
     }
 
     var canPrepareForProfileRelocation: Bool {
-        !session.isClosed && canvas.canFinishEditingForTransfer && webpageInput == nil &&
+        !session.isClosed && canvas.canFinishEditingForTransfer &&
             (titleField.currentEditor() as? NSTextView)?.hasMarkedText() != true
     }
     func prepareForProfileRelocation() -> Bool {
@@ -85,7 +82,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     }
 
     var canAcceptExternalSplitDrop: Bool {
-        canvas.canAcceptExternalSplitDrop && webpageInput == nil &&
+        canvas.canAcceptExternalSplitDrop &&
         (titleField.currentEditor() as? NSTextView)?.hasMarkedText() != true
     }
 
@@ -147,6 +144,8 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         palette.onShape = { [weak self] shape in self?.canvas.armShape(shape); self?.focusCanvas() }
         palette.onMindMap = { [weak self] in _ = self?.canvas.insertMindMap() }
         palette.onInsert = { [weak self] insert, control in self?.insert(insert, from: control) }
+        palette.onInsertKind = { [weak self] kind in self?.insert(kind) }
+        palette.canInsert = { [weak self] kind in self?.canInsert(kind) == true }
         palette.onZoom = { [weak self] command in self?.canvas.zoom(command) }
         palette.onZoomTo = { [weak self] value in self?.canvas.zoom(toMagnification: value) }
         palette.onDrag = { [weak self] tool, point, ended in self?.dragTool(tool, to: point, ended: ended) }
@@ -187,8 +186,6 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             b.heightAnchor.constraint(equalToConstant: chromeSize).isActive = true
             chrome.addArrangedSubview(b); return b
         }
-        webpageButton = palette.button(for: .webpage)
-        webpageButton?.isEnabled = pageObjects != nil
         configurePageSwitcher(in: chrome, height: chromeSize)
         let timer = makeTimerButton()
         chrome.addArrangedSubview(timer)
@@ -290,25 +287,30 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         }
     }
     private func quickActionList() -> [EaselQuickActions.Action] {
-        var inserts: [(EaselToolPalette.Insert, [String])] = [(.image, ["picture", "photo", "file"]), (.link, ["url", "bookmark", "address"]),
-                                                              (.webpage, ["site", "browser", "page", "web"])]
-        if canvas.acceptsMermaid { inserts.append((.mermaid, ["flowchart", "diagram", "chart", "er"])) }
-        if canvas.acceptsTemplates { inserts.append((.templates, ["template", "starter", "kanban", "retro", "brainstorm", "board"])) }
-        let actions = inserts.map { insert, keywords in
+        var inserts = EaselQuickActions.catalogInserts(canvas: canvas) { [weak self] in self?.focusCanvas() }
+        var extras: [(EaselToolPalette.Insert, [String])] = []
+        if canvas.acceptsMermaid { extras.append((.mermaid, ["flowchart", "diagram", "chart", "er"])) }
+        if canvas.acceptsTemplates { extras.append((.templates, ["template", "starter", "kanban", "retro", "brainstorm", "board"])) }
+        inserts += extras.map { insert, keywords in
             EaselQuickActions.Action(id: "insert-" + insert.rawValue, title: EaselToolPalette.title(for: insert),
-                                     icon: EaselToolPalette.icon(for: insert), shortcut: nil, keywords: keywords, section: "Add",
-                                     isEnabled: insert != .webpage || pageObjects != nil) { [weak self] in
+                                     icon: EaselToolPalette.icon(for: insert), shortcut: nil, keywords: keywords, section: "Add") { [weak self] in
                 guard let self, let control = self.palette?.button(for: insert) else { return }
                 self.insert(insert, from: control)
             }
         }
-        return EaselQuickActions.boardActions(canvas: canvas, inserts: actions) { [weak self] in self?.focusCanvas() }
+        return EaselQuickActions.boardActions(canvas: canvas, inserts: inserts) { [weak self] in self?.focusCanvas() }
+    }
+    private func canInsert(_ kind: EaselInsertKind) -> Bool {
+        kind != .embed || (pageObjects != nil && webpageOwnerValid?() == true)
+    }
+    private func insert(_ kind: EaselInsertKind) {
+        guard !session.isClosed, view.window?.attachedSheet == nil, !view.isHiddenOrHasHiddenAncestor, canInsert(kind),
+              let itemKind = kind.itemKind else { return }
+        canvas.placeEmptyObject(itemKind)
+        focusCanvas()
     }
     private func insert(_ insert: EaselToolPalette.Insert, from control: NSButton) {
         switch insert {
-        case .image: addImage()
-        case .link: addLink(control)
-        case .webpage: addWebpage()
         case .mermaid: _ = canvas.showMermaidSheet()
         case .templates: EaselTemplatePanel.present(editor: self, from: control)
         }
@@ -348,45 +350,5 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     func exportImage() {
         guard canExportImage, let window = view.window else { return }
         EaselImageExport.run(canvas: canvas, title: session.document.title, in: window) { [weak self] in self?.canExportImage == true }
-    }
-    private func addImage() {
-        guard let window = view.window else { return }
-        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image] + EaselCanvasView.movieTypes; panel.allowsMultipleSelection = true
-        panel.beginSheetModal(for: window) { [weak self] result in
-            guard result == .OK, let self else { return }
-            do { try self.canvas.importMediaFiles(panel.urls) } catch { self.show(error) }
-        }
-    }
-    private func addWebpage() {
-        guard webpageOwnerValid?() == true, view.window?.attachedSheet == nil,
-              !view.isHiddenOrHasHiddenAncestor else { return }
-        webpageInput?.cancel(); canvas.cancelOperation(nil)
-        let documentID = session.document.id
-        let input = EaselWebInput(submitTitle: "Add Webpage", validOwner: { [weak self] in
-            guard let self else { return false }
-            return !self.session.isClosed && self.session.document.id == documentID && self.webpageOwnerValid?() == true
-                && !self.view.isHiddenOrHasHiddenAncestor
-        }, submit: { [weak self] url, _ in
-            self?.canvas.insertLink(url.absoluteString, browser: true) == true
-        })
-        webpageInput = input
-        input.onClose = { [weak self, weak input] in if self?.webpageInput === input { self?.webpageInput = nil } }
-        guard let webpageButton, input.show(from: webpageButton) else { input.cancel(restoreFocus: false); return }
-    }
-    private func addLink(_ sender: NSButton) {
-        guard !session.isClosed, let window = view.window, window.attachedSheet == nil else { return }
-        webpageInput?.cancel(); canvas.cancelOperation(nil)
-        let documentID = session.document.id
-        let input = EaselWebInput(submitTitle: "Add Link", allowsSearch: false, validOwner: { [weak self, weak window] in
-            guard let self, let window else { return false }
-            return !self.session.isClosed && self.session.document.id == documentID && self.view.window === window
-                && !self.view.isHiddenOrHasHiddenAncestor
-        }, submit: { [weak self] url, _ in
-            guard let self, !self.session.isClosed else { return false }
-            return self.canvas.insertLink(url.absoluteString)
-        })
-        webpageInput = input
-        input.onClose = { [weak self, weak input] in if self?.webpageInput === input { self?.webpageInput = nil } }
-        if !input.show(from: sender) { input.cancel(restoreFocus: false) }
     }
 }

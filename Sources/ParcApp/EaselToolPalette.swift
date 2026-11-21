@@ -395,8 +395,19 @@ final class EaselFieldMenuView: NSView, NoteFloatingPanelContent {
 
 @MainActor
 final class EaselToolPalette: NSView {
-    enum Insert: String { case image, link, webpage, mermaid, templates }
-    enum Menu { case shapes, connectors, draw }
+    enum Insert: String { case mermaid, templates }
+    enum Menu {
+        case shapes, connectors, draw, media, web, code
+
+        var group: EaselInsertKind.Group? {
+            switch self {
+            case .media: return .media
+            case .web: return .web
+            case .code: return .code
+            case .shapes, .connectors, .draw: return nil
+            }
+        }
+    }
 
     private enum Entry: Hashable {
         case tool(EaselTool)
@@ -420,6 +431,8 @@ final class EaselToolPalette: NSView {
     var onMindMap: (() -> Void)?
     static let mindMapSymbol = "point.3.connected.trianglepath.dotted"
     var onInsert: ((Insert, NSButton) -> Void)?
+    var onInsertKind: ((EaselInsertKind) -> Void)?
+    var canInsert: (EaselInsertKind) -> Bool = { _ in true }
     var onZoom: ((EaselZoomCommand) -> Void)?
     var onZoomTo: ((Double) -> Void)?
     var onDrag: ((EaselTool, NSPoint?, Bool) -> Void)?
@@ -440,6 +453,7 @@ final class EaselToolPalette: NSView {
     private var shape: EaselShape = .rectangle
     private var connector: EaselTool = .elbowConnector
     private var brush: EaselTool = .marker
+    private var lastKind: [EaselInsertKind.Group: EaselInsertKind] = [.media: .image, .web: .embed, .code: .codeBlock]
     private var zoomPercent = 100
     private let pill = EaselToolbarPill(frame: .zero)
     private let scroller = EaselPaletteScroller()
@@ -638,10 +652,9 @@ final class EaselToolPalette: NSView {
         for tool in [EaselTool.text, .section, .table] where tool.isAvailable { result.append((.tool(tool), 1)) }
         if Self.drawTools.contains(where: \.isAvailable) { result.append((.menu(.draw), 2)) }
         if EaselTool.stamp.isAvailable { result.append((.tool(.stamp), 2)) }
-        result.append((.insert(.image), 3))
-        result.append((.insert(.link), 3))
-        result.append((.insert(.webpage), 3))
-        if EaselTool.codeBlock.isAvailable { result.append((.tool(.codeBlock), 3)) }
+        result.append((.menu(.media), 3))
+        result.append((.menu(.web), 3))
+        result.append((.menu(.code), 3))
         if showsMermaid { result.append((.insert(.mermaid), 3)) }
         if showsTemplates { result.append((.insert(.templates), 3)) }
         result.append((.zoom, 4))
@@ -684,6 +697,7 @@ final class EaselToolPalette: NSView {
                 self.toggle(.menu(menu), from: button)
             }
             if menu == .shapes { attachDrag(to: button) { [weak self] in self?.shape == .ellipse ? .ellipse : .rectangle } }
+            if menu == .code { attachDrag(to: button) { [weak self] in self?.lastKind[.code] == .codeBlock ? .codeBlock : nil } }
         case .insert:
             break
         case .zoom:
@@ -733,6 +747,8 @@ final class EaselToolPalette: NSView {
             case .shapes: onShape?(shape)
             case .connectors: onTool?(connector, button)
             case .draw: onTool?(brush.isAvailable ? brush : .marker, button)
+            case .media, .web, .code:
+                if let group = menu.group, let kind = lastKind[group] { perform(kind, from: button) }
             }
         case .insert(let insert):
             closeMenu()
@@ -742,8 +758,14 @@ final class EaselToolPalette: NSView {
         }
     }
 
+    private func perform(_ kind: EaselInsertKind, from button: NSButton?) {
+        if kind == .codeBlock { onTool?(.codeBlock, button) } else { onInsertKind?(kind) }
+    }
+
     private func isActive(_ menu: Menu) -> Bool {
         switch menu {
+        case .media, .web: return false
+        case .code: return tool == .codeBlock
         case .shapes: return tool == .rectangle || tool == .ellipse
         case .connectors: return tool.drawsConnector
         case .draw: return Self.drawTools.contains(tool)
@@ -760,17 +782,25 @@ final class EaselToolPalette: NSView {
                 button.setToolTip(tool.title, shortcut: tool.key?.label, anchor: .top)
                 button.isChecked = false
                 button.isCurrent = self.tool == tool
+            case .menu(let menu) where menu.group != nil:
+                guard let group = menu.group else { continue }
+                let last = lastKind[group] ?? group.firstKind
+                button.content = .icon(group.icon)
+                button.setAccessibilityLabel(group.title)
+                button.setToolTip("Add " + last.title, shortcut: last == .codeBlock ? EaselTool.codeBlock.key?.label : nil, anchor: .top)
+                button.isChecked = openEntry == item.entry
+                button.isCurrent = isActive(menu)
             case .menu(let menu):
                 let variant: EaselTool
                 switch menu {
                 case .shapes: variant = shape == .ellipse ? .ellipse : .rectangle
                 case .connectors: variant = connector
-                case .draw: variant = brush
+                case .draw, .media, .web, .code: variant = brush
                 }
                 let title: String
                 switch menu {
                 case .shapes: title = shape == .ellipse ? EaselTool.ellipse.title : Self.shapeTitle(shape)
-                case .connectors, .draw: title = variant.title
+                case .connectors, .draw, .media, .web, .code: title = variant.title
                 }
                 button.content = .icon(menu == .shapes ? Self.icon(for: shape) : Self.icon(for: variant))
                 button.setAccessibilityLabel(title)
@@ -844,6 +874,7 @@ final class EaselToolPalette: NSView {
         case .menu(let menu):
             let menuList = NoteMenuList()
             menuList.items = menuItems(menu)
+            if menu.group != nil { menuList.rowStyle = .detailed }
             menuList.onActivate = { [weak self] item in self?.activate(menu: menu, item: item) }
             menuList.onCancel = { [weak self] in self?.closeMenu() }
             content = menuList
@@ -918,6 +949,13 @@ final class EaselToolPalette: NSView {
             }
             guard onMindMap != nil else { return shapes }
             return shapes + [NoteMenuList.Item(id: "mind-map", title: "Mind map", icon: .symbol(Self.mindMapSymbol), separatorBefore: true)]
+        case .media, .web, .code:
+            guard let group = menu.group else { return [] }
+            return group.kinds.map { kind in
+                NoteMenuList.Item(id: kind.rawValue, title: kind.title, subtitle: kind.summary, icon: kind.icon,
+                                  shortcut: kind == .codeBlock ? EaselTool.codeBlock.key?.label : nil,
+                                  isChecked: lastKind[group] == kind, isEnabled: canInsert(kind))
+            }
         case .connectors:
             return Self.connectorTools.map { tool in
                 NoteMenuList.Item(id: tool.rawValue, title: tool.title, icon: Self.icon(for: tool), shortcut: tool.key?.label,
@@ -939,6 +977,11 @@ final class EaselToolPalette: NSView {
             else if let shape = EaselShape(rawValue: item.id) { onShape?(shape) }
         case .connectors, .draw:
             if let tool = EaselTool(rawValue: item.id) { onTool?(tool, nil) }
+        case .media, .web, .code:
+            guard let group = menu.group, let kind = EaselInsertKind(rawValue: item.id), canInsert(kind) else { return }
+            lastKind[group] = kind
+            refreshStates()
+            perform(kind, from: nil)
         }
     }
 
@@ -1017,9 +1060,6 @@ final class EaselToolPalette: NSView {
 
     static func icon(for insert: Insert) -> NoteIcon {
         switch insert {
-        case .image: return .symbol("photo")
-        case .link: return .symbol("link")
-        case .webpage: return .symbol("globe")
         case .mermaid: return .symbol("flowchart")
         case .templates: return .symbol("square.grid.2x2")
         }
@@ -1027,9 +1067,6 @@ final class EaselToolPalette: NSView {
 
     static func title(for insert: Insert) -> String {
         switch insert {
-        case .image: return "Add image"
-        case .link: return "Add link"
-        case .webpage: return "Add webpage"
         case .mermaid: return "Add Mermaid diagram"
         case .templates: return "Templates"
         }
