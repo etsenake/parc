@@ -159,6 +159,6 @@ In a note's Easel block the keys, panning and zooming work the same, without a
 toolbar. The capture editor keeps its own buttons and ignores tool letters, but
 Space panning and the zoom keys work there too.
 
-`scripts/test-notes-editor.sh EaselToolTests` checks every key, layout
+`swift test --filter EaselToolTests` checks every key, layout
 fallbacks, tool behaviour, placement and connector geometry, zoom steps,
 fitting, the wheel limits and ⌘-scroll glide routing without opening a window.

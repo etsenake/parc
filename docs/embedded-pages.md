@@ -157,7 +157,7 @@ window's key loop and accessibility tree; a note embed's header stays reachable.
 The Easel pool component exercises injected engines and disposable document
 stores, including cancellation, ownership rejection, rollback and retirement;
 it opens windows, so it runs only where that is allowed.
-`bash scripts/test-notes-editor.sh EmbeddedPageLifecycle` covers the owner
+`swift test --filter EmbeddedPageLifecycleTests` covers the owner
 gate and the sleep rule, `NoteEmbedModel` covers height clamping, the embed
 players and the `height` round trip, and `NoteEmbedInput` covers first-click
 activation, scroll latching and chaining, and the Escape confirmation.

@@ -133,5 +133,5 @@ All three are optional.
 - `Sources/ParcCore/EaselDrawingExport.swift`: SVG and HTML for every brush.
 - `Sources/ParcApp/EaselCanvasView+Brushes.swift`: drawing, strokes, the eraser
   and the pattern command.
-- `bash scripts/test-notes-editor.sh EaselDrawingTests` runs the windowless
+- `swift test --filter EaselFreehandDrawingTests` runs the windowless
   suite.

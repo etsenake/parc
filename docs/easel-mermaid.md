@@ -153,7 +153,7 @@ Easel items. `EaselCanvasView+Mermaid.swift` places them on the canvas and holds
 the paste hook, and `EaselMermaidSheet.swift` is the insert sheet.
 The canvas reaches the sheet through `EaselCanvasView.mermaidSheetFactory`,
 set at launch, so the canvas test bundles that compile every `EaselCanvas*`
-file don't need the sheet. `bash scripts/test-notes-editor.sh EaselMermaid`
+file don't need the sheet. `swift test --filter EaselMermaidTests`
 runs the windowless suite. It covers parsing, styles, refusals, hostile input
 (each case must finish quickly), layout direction, spacing, sections, cycles,
 the mapping, routing and validation of every produced Easel. The sheet and
