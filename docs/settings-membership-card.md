@@ -58,7 +58,7 @@ The dedicated pane is 680 × 560. Common Settings focus ownership preserves
 per-pane focus and exact-control return after sheets; common hover ownership
 handles lifecycle. Card animation is separate from pane/modal transitions.
 
-`scripts/test-membership-card.sh` uses disposable files and inert components for
-persistence, generation, Unicode/name validation, failed/stale writes, corrupt or
-future data, shared ownership, accessibility, detached cleanup and static/live
-artwork agreement. Renderer fixtures cover all four masks.
+`MembershipCardStoreTests` uses disposable files to cover persistence, name
+validation, failed and stale writes, corrupt and future data, and shared ownership.
+`MembershipCardTests` covers card actions, accessibility, arrangement, rendered
+artwork and sharing. Renderer fixtures cover all four masks.
