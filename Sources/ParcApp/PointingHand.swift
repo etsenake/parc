@@ -18,6 +18,7 @@ extension NSView {
 
 class PointingHandButton: NSButton {
     var showsPointingHand: Bool { isEnabled }
+    var setCursor: (NSCursor) -> Void = { $0.set() }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -29,7 +30,7 @@ class PointingHandButton: NSButton {
     }
     override var isEnabled: Bool { didSet { if isEnabled != oldValue { refreshPointingHand(showsPointingHand) } } }
     override func cursorUpdate(with event: NSEvent) {
-        if showsPointingHand { NSCursor.pointingHand.set() } else { super.cursorUpdate(with: event) }
+        if showsPointingHand { setCursor(.pointingHand) } else { super.cursorUpdate(with: event) }
     }
 }
 
