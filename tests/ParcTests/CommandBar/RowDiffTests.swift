@@ -82,7 +82,7 @@ struct RowDiffTableTests {
         }
     }
 
-    struct Fixture {
+    @MainActor struct Fixture {
         let data = Rows()
         let table = NSTableView(frame: NSRect(x: 0, y: 0, width: 300, height: 250))
         let window: NSWindow

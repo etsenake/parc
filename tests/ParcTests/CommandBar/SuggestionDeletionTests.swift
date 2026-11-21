@@ -137,7 +137,8 @@ struct SuggestionDeletionTests {
         CommandBarTestSupport.prepareAppKit()
         let local = CommandResultCell(title: "New Note", detail: "", accessory: "⌘N", isTab: false, icon: nil, enabled: true)
         local.setHovered(true)
-        #expect(local.subviews.compactMap { $0 as? NSButton }.allSatisfy(\.isHidden))
+        let visibleButtons = local.subviews.compactMap { $0 as? NSButton }.filter { !$0.isHidden }
+        #expect(visibleButtons.isEmpty)
     }
 
     @Test func aCommandWithoutANativeProviderHasNoDeleteAction() {

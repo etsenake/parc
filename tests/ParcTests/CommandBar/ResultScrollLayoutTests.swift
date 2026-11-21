@@ -12,7 +12,7 @@ struct ResultScrollLayoutTests {
         var testDescription: String { "style \(style), scroller \(scroller), width \(width), rows \(rows)" }
     }
 
-    static let layouts: [Layout] = [0, 1, 2, 4].flatMap { style in
+    nonisolated static let layouts: [Layout] = [0, 1, 2, 4].flatMap { style in
         [1, 0].flatMap { scroller in
             [180, 300, 520].flatMap { width in
                 [1, 25, 0].map { Layout(style: style, scroller: scroller, width: CGFloat(width), rows: $0) }
@@ -20,14 +20,14 @@ struct ResultScrollLayoutTests {
         }
     }
 
-    static let scrollingLayouts = layouts.filter { $0.rows == 25 }
+    nonisolated static let scrollingLayouts = layouts.filter { $0.rows == 25 }
 
     final class Rows: NSObject, NSTableViewDataSource {
         var count = 0
         func numberOfRows(in tableView: NSTableView) -> Int { count }
     }
 
-    struct Fixture {
+    @MainActor struct Fixture {
         let rows = Rows()
         let table = CommandResultsTable()
         let scroll = CommandResultsScrollView()

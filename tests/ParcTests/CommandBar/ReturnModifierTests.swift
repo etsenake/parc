@@ -32,7 +32,7 @@ struct ReturnModifierTests {
         var testDescription: String { "key \(keyCode) flags \(flags.rawValue)" }
     }
 
-    static let returnKeys: [ReturnKey] = [UInt16(36), 76].flatMap { key in
+    nonisolated static let returnKeys: [ReturnKey] = [UInt16(36), 76].flatMap { key in
         [
             ReturnKey(keyCode: key, flags: [], selector: "insertNewline:", expected: .ordinary),
             ReturnKey(keyCode: key, flags: .option, selector: "insertNewlineIgnoringFieldEditor:", expected: .split),
