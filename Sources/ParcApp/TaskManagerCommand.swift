@@ -8,6 +8,12 @@ enum TaskManagerRoute: Equatable {
         if showsNativePage { return pageCanOpen() ? .page : nil }
         return windowCanOpen() ? .window : nil
     }
+    func perform(openPage: () -> Bool, openWindow: () -> Bool) -> Bool {
+        switch self {
+        case .page: openPage()
+        case .window: openWindow()
+        }
+    }
 }
 
 @MainActor
