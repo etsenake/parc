@@ -89,7 +89,7 @@ import SwiftUI
     private let privacyInfoButton = CommandBarPrivacyInfoButton()
     private let privacyPolicy: CommandBarSearchPrivacyPolicy
     private let shortcuts: KeyboardShortcuts
-    private let loadFavicon: @MainActor (URL, String, @escaping (NSImage?) -> Void) -> Void
+    private let loadFavicon: @MainActor (URL, String, @escaping @Sendable (NSImage?) -> Void) -> Void
     private var privacyBannerVisible = false
     private var showsPrivacyBanner: Bool { privacyBannerVisible && sidebarAnchor == nil && !addressOnly }
     private var privacyBannerHeight: CGFloat { privacyBanner.isHidden ? 0 : privacyBanner.frame.height }
@@ -247,7 +247,7 @@ import SwiftUI
          makeOmnibox: @MainActor (String, PCNativePage?, PCNativeBrowserWindow?) -> PCNativeOmnibox? = {
              PCNativeOmnibox(profilePath: $0, page: $1, window: $2)
          },
-         loadFavicon: @escaping @MainActor (URL, String, @escaping (NSImage?) -> Void) -> Void = {
+         loadFavicon: @escaping @MainActor (URL, String, @escaping @Sendable (NSImage?) -> Void) -> Void = {
              PCNativeBrowserApplication.favicon(for: $0, profilePath: $1, completion: $2)
          }) {
         self.shortcuts = shortcuts ?? .shared
