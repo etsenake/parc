@@ -73,6 +73,9 @@ final class WebpageWindowGrabber: NSView {
     private weak var sequenceWindow: NSWindow?
     private var monitor: Any?
     private var committing = false
+    var currentEvent: @MainActor () -> NSEvent? = { NSApp?.currentEvent }
+    var currentCursor: @MainActor () -> NSCursor = { NSCursor.current }
+    var performDrag: @MainActor (NSWindow, NSEvent) -> Void = { window, event in window.performDrag(with: event) }
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
     override var mouseDownCanMoveWindow: Bool { false }
@@ -101,11 +104,11 @@ final class WebpageWindowGrabber: NSView {
         super.viewWillMove(toWindow: newWindow)
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard !committing, let event = NSApp?.currentEvent,
+        guard !committing, let event = currentEvent(),
               event.type == .leftMouseDown || event.type == .leftMouseDragged,
               super.hitTest(point) === self, let window, event.window === window else { return nil }
         if event.type == .leftMouseDragged, drag.phase == .inactive { return nil }
-        let eligible = owner != nil && isCurrent?() == true && !isHiddenOrHasHiddenAncestor && NSCursor.current == NSCursor.arrow && eligibility?(event) == true
+        let eligible = owner != nil && isCurrent?() == true && !isHiddenOrHasHiddenAncestor && currentCursor() == NSCursor.arrow && eligibility?(event) == true
         if event.type == .leftMouseDown {
             cancel(); drag.begin(eligible: eligible); sequenceWindow = eligible ? window : nil
             return nil
@@ -115,7 +118,7 @@ final class WebpageWindowGrabber: NSView {
         case .inactive: return nil
         case .began:
             committing = true
-            window.performDrag(with: event)
+            performDrag(window, event)
             committing = false
             guard self.window === window, sequenceWindow === window, owner != nil,
                   !isHiddenOrHasHiddenAncestor, isCurrent?() == true else { cancel(); return nil }
