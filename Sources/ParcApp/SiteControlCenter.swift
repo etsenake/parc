@@ -712,6 +712,13 @@ final class SiteControlCenterDismissal {
     private var retiring: [ObjectIdentifier: any SiteControlCenterPresentation] = [:]
     private var generation = UUID()
     private var pendingAction: (() -> Void)?
+    private let schedule: (@escaping @MainActor () -> Void) -> Void
+
+    init(schedule: @escaping (@escaping @MainActor () -> Void) -> Void = { work in
+        DispatchQueue.main.async { work() }
+    }) {
+        self.schedule = schedule
+    }
 
     func track(_ controller: any SiteControlCenterPresentation) {
         guard controller.isAwaitingNativeClose else { return }
@@ -742,7 +749,7 @@ final class SiteControlCenterDismissal {
     private func enqueueAction() {
         guard pendingAction != nil else { return }
         let token = generation
-        DispatchQueue.main.async { [weak self] in self?.runAction(token) }
+        schedule { [weak self] in self?.runAction(token) }
     }
 
     private func runAction(_ token: UUID) {
