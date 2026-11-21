@@ -20,6 +20,7 @@ extension EaselCanvasView {
         cancelPointerInteraction()
         guard !session.isClosed, !session.isDeleted, finishEditing() else { return false }
         let doomed = removableIDs(for: selection)
+        refuseLocked(selection)
         guard !doomed.isEmpty else { return false }
         let next = EaselArrange.dissolvingSingletonGroups(EaselDependents.removing(doomed, from: session.document))
         prepareReplacement(next) { [weak self] in
@@ -30,7 +31,11 @@ extension EaselCanvasView {
     }
 
     @discardableResult
-    func copySelection() -> Bool { copyObjects(selection) }
+    func copySelection() -> Bool {
+        guard copyObjects(selection) else { return false }
+        flashCopiedSelection(selection)
+        return true
+    }
 
     @discardableResult
     func cutSelection() -> Bool {
@@ -139,6 +144,7 @@ extension EaselCanvasView {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         guard pasteboard.setData(png, forType: .png) else { onError?(CocoaError(.fileWriteUnknown)); return false }
+        flashCopiedSelection(selection)
         onCopiedImage?()
         return true
     }

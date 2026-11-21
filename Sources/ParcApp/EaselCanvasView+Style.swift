@@ -63,14 +63,14 @@ extension EaselCanvasView {
         guard !targets.isEmpty, finishImageEditing() else { return false }
         let ids = Set(targets.map(\.id))
         var families = Set<EaselStyleFamily>()
-        let saved = commit(change.actionName, coalescing: group) { document in
+        let saved = withObjectMotion(.restyle) { commit(change.actionName, coalescing: group) { document in
             for index in document.items.indices where ids.contains(document.items[index].id) && !document.items[index].isLocked {
                 var item = document.items[index]
                 guard EaselStyle.apply(change, to: &item) else { continue }
                 if let family = EaselStyleFamily.of(item) { families.insert(family) }
                 document.items[index] = item
             }
-        }
+        } }
         guard saved else { return false }
         EaselStyleDefaults.record(change, for: families, document: session.document.id)
         return true

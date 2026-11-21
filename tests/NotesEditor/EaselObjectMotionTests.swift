@@ -33,10 +33,12 @@ struct EaselObjectMotionTests {
         let id = UUID()
         motion.appear([id], at: 10, reduced: false)
         let first = motion.presentation(for: id, at: 10)
-        expect(near(first.opacity, 0) && near(first.scale, 0.95), "an appearing object starts faded at 95%")
+        expect(near(first.opacity, 0) && near(first.scale, 0.8), "an appearing object starts faded at 80%")
         let middle = motion.presentation(for: id, at: 10.1)
-        expect(middle.opacity > 0.9 && middle.scale > 0.95 && middle.scale < 1, "the fade finishes before the pop")
-        expect(motion.presentation(for: id, at: 10.2).isIdentity, "an appearing object ends at rest")
+        expect(middle.opacity > 0.9 && middle.scale > 0.8 && middle.scale < 1, "the fade finishes before the pop")
+        let peak = stride(from: 10.0, to: 10.42, by: 0.005).map { motion.presentation(for: id, at: $0).scale }.max() ?? 0
+        expect(peak > 1.002 && peak < 1.03, "the pop overshoots a touch on the pop spring")
+        expect(motion.presentation(for: id, at: 10.43).isIdentity, "an appearing object ends at rest")
         expect(motion.presentation(for: UUID(), at: 10.05).isIdentity, "other objects stay at rest")
     }
 
@@ -45,9 +47,10 @@ struct EaselObjectMotionTests {
         let item = box(0, 0)
         motion.vanish([item], at: 0, reduced: false)
         expect(motion.ghosts.map(\.id) == [item.id], "a deleted object leaves a ghost while it fades")
-        let middle = motion.presentation(for: item.id, at: 0.075)
-        expect(middle.opacity < 1 && middle.opacity > 0 && middle.scale < 1, "the ghost fades and shrinks a touch")
-        expect(near(motion.presentation(for: item.id, at: 0.15).opacity, 0), "the ghost ends invisible")
+        let middle = motion.presentation(for: item.id, at: 0.09)
+        expect(middle.opacity < 1 && middle.opacity > 0 && middle.scale < 1, "the ghost fades and shrinks")
+        expect(motion.presentation(for: item.id, at: 0.1799).scale < 0.86, "the poof shrinks to 85%")
+        expect(near(motion.presentation(for: item.id, at: 0.18).opacity, 0), "the ghost ends invisible")
         motion.prune(at: 0.2)
         expect(motion.ghosts.isEmpty && motion.isEmpty, "finished ghosts are dropped")
     }
