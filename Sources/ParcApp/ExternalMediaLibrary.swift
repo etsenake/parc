@@ -576,13 +576,13 @@ actor ExternalMediaDisk {
         guard roots == scannedRoots, !remote, readable.allSatisfy({ Self.isReadable($0.key) == $0.value }) else { return try scan(systemFolders: systemFolders) }
         return nil
     }
-    func update(paths: Set<String>) throws -> Change {
-        let now = ContinuousClock.now
+    func update(paths: Set<String>, at time: ContinuousClock.Instant? = nil) throws -> Change {
+        let now = time ?? ContinuousClock.now
         lastEvent = lastEvent.filter { now - $0.value < Self.settleDelay }
         return try change(paths, at: now, coalescing: true)
     }
-    func settle() throws -> Change {
-        let now = ContinuousClock.now
+    func settle(at time: ContinuousClock.Instant? = nil) throws -> Change {
+        let now = time ?? ContinuousClock.now
         return try change(Set(settling.filter { now - $0.value >= Self.settleDelay }.keys), at: now, coalescing: false)
     }
     private func change(_ paths: Set<String>, at now: ContinuousClock.Instant, coalescing: Bool) throws -> Change {
