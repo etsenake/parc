@@ -70,13 +70,13 @@ struct SidebarKeyboardCloseTests {
         #expect(fixture.target([.folder(fixture.folder.id), .tab(fixture.today.id)], in: state) == nil)
     }
 
-    @MainActor private func withStore(_ fixture: Fixture, check: (BrowserStore) throws -> Void) throws {
+    @MainActor private func withStore(_ state: BrowserState, check: (BrowserStore) throws -> Void) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(fixture.state).write(to: directory.appendingPathComponent("session.json"))
+        try encoder.encode(state).write(to: directory.appendingPathComponent("session.json"))
         let store = try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 1_900_000_000) })
         store.scheduleDeferredSave = { _, _ in }
         try check(store)
@@ -85,7 +85,7 @@ struct SidebarKeyboardCloseTests {
     @Test(arguments: [false, true])
     @MainActor func aSavedCloseRequiresTheOriginalSelectionAtConsent(current: Bool) throws {
         let fixture = Fixture()
-        try withStore(fixture) { store in
+        try withStore(fixture.state) { store in
             let before = store.state
             var confirm: (() -> Bool)?
             var finish: ((Bool) -> Void)?
@@ -115,7 +115,7 @@ struct SidebarKeyboardCloseTests {
     @Test(arguments: [false, true])
     @MainActor func aMixedCloseCommitsItsEntireCollectionOnlyAfterConsent(consent: Bool) throws {
         let fixture = Fixture()
-        try withStore(fixture) { store in
+        try withStore(fixture.state) { store in
             let before = store.state
             let target = try #require(fixture.target([.folder(fixture.folder.id), .tab(fixture.today.id)], in: before))
             var approve: (() -> Bool)?
@@ -135,5 +135,62 @@ struct SidebarKeyboardCloseTests {
             #expect(committed == consent)
             #expect(store.state.folders.contains(fixture.folder) == !consent)
         }
+    }
+}
+
+extension SidebarKeyboardCloseTests {
+    @Test @MainActor func deletingOnlyEmptyFoldersRequiresNoPageConsent() throws {
+        let fixture = Fixture()
+        try withStore(fixture.state) { store in
+            let before = store.state
+            let target = try #require(fixture.target([.folder(fixture.empty.id), .folder(fixture.nested.id)], in: before))
+            var admissions = 0
+            var result: Result<Bool, Error>?
+            store.requestPageRetirement = { _, _, _ in admissions += 1 }
+            store.deleteFolder(target.items, shouldCommit: { true }) { result = $0 }
+            let committed = try result?.get()
+            #expect(committed == true)
+            #expect(admissions == 0)
+            #expect(store.state.folders == [fixture.folder])
+            #expect(store.state.tabs == before.tabs)
+        }
+    }
+
+    @Test @MainActor func undoRestoresTheOriginalFolderTreeAndTabs() throws {
+        let fixture = Fixture()
+        try withStore(fixture.state) { store in
+            let before = store.state
+            let target = try #require(fixture.target([.folder(fixture.folder.id), .tab(fixture.today.id)], in: before))
+            var result: Result<Bool, Error>?
+            var undo: FolderDeletionUndo?
+            store.deleteFolder(target.items, shouldCommit: { true }, didCommit: { undo = $0 }) { result = $0 }
+            let archived = try result?.get()
+            try #require(archived == true)
+            let record = try #require(undo)
+            #expect(try store.undoFolderDeletion(record, shouldCommit: { true }))
+            #expect(Set(store.state.folders.map(\.id)) == Set(before.folders.map(\.id)))
+            #expect(store.state.folders.allSatisfy(before.folders.contains))
+            let location = SidebarContainerLocation(spaceID: fixture.space.id, folderID: nil, section: .pinned)
+            #expect(SidebarHierarchy.children(in: location, state: store.state) == SidebarHierarchy.children(in: location, state: before))
+            #expect(store.state.tabs == before.tabs)
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func aHiddenSplitChildCannotBeClosedAsAnIndependentRow(saved: Bool) throws {
+        let fixture = Fixture()
+        var state = fixture.state
+        var second = fixture.today
+        let first = saved ? fixture.saved : fixture.today
+        second.id = UUID()
+        second.kind = first.kind
+        second.folderID = first.folderID
+        state.tabs.append(second)
+        let split = BrowserSplitLayout(sidebarAnchorID: first.id, spaceID: fixture.space.id,
+                                      tabIDs: [first.id, second.id], widthFactors: [0.25, 0.75])
+        state.splitLayouts = [split]
+        let grouped = try #require(fixture.target([.split(split.id)], in: state))
+        #expect(grouped.archivesItems == !saved)
+        #expect(fixture.target([.tab(first.id)], in: state) == nil)
     }
 }

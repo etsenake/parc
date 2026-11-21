@@ -95,3 +95,91 @@ struct FindPresentationTests {
         #expect(closes == (composing ? 0 : 1))
     }
 }
+
+extension FindPresentationTests {
+    @MainActor private final class HoverWindow: NSWindow {
+        var key = true
+        var pointer = NSPoint(x: 33, y: 33)
+        override var isKeyWindow: Bool { key }
+        override var mouseLocationOutsideOfEventStream: NSPoint { pointer }
+    }
+
+    @MainActor private struct HoverFixture {
+        let window: HoverWindow
+        let surface: NSView
+        let control = PageFindButton(frame: NSRect(x: 20, y: 20, width: 26, height: 26))
+
+        init() {
+            _ = NSApplication.shared
+            let frame = NSRect(x: 0, y: 0, width: 400, height: 100)
+            window = HoverWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            surface = NSView(frame: frame)
+            window.contentView = surface
+            surface.addSubview(control)
+        }
+
+        func movePointer() throws {
+            let event = try #require(NSEvent.mouseEvent(with: .mouseMoved, location: window.pointer,
+                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 0, pressure: 0))
+            control.mouseMoved(with: event)
+        }
+    }
+
+    enum HoverLoss: CaseIterable { case overlappingView, otherKeyWindow, resigned, outside, hidden, detached }
+
+    @Test(arguments: HoverLoss.allCases)
+    @MainActor func theFindControlClearsHoverWhenThePointerLosesItsOwner(reason: HoverLoss) throws {
+        let fixture = HoverFixture()
+        try fixture.movePointer()
+        try #require(fixture.control.isHovered)
+        switch reason {
+        case .overlappingView:
+            fixture.surface.addSubview(NSView(frame: fixture.control.frame), positioned: .above, relativeTo: fixture.control)
+            try fixture.movePointer()
+        case .otherKeyWindow: fixture.window.key = false; try fixture.movePointer()
+        case .resigned: NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: fixture.window)
+        case .outside: fixture.window.pointer = NSPoint(x: 100, y: 80); try fixture.movePointer()
+        case .hidden: fixture.control.isHidden = true
+        case .detached: fixture.control.removeFromSuperview()
+        }
+        #expect(!fixture.control.isHovered)
+    }
+
+    @Test(arguments: [(false, 0.071), (true, 0.077)])
+    @MainActor func theHoverDecorationUsesTheWindowAppearance(dark: Bool, alpha: Double) throws {
+        let fixture = HoverFixture()
+        fixture.control.appearance = dark ? CommandBarTestSupport.dark : CommandBarTestSupport.light
+        try fixture.movePointer()
+        fixture.control.updateLayer()
+        let fill = try #require(fixture.control.layer?.backgroundColor)
+        #expect(abs(fill.alpha - alpha) < 0.00001)
+        fixture.control.isEnabled = false
+        fixture.control.updateLayer()
+        #expect(fixture.control.layer?.backgroundColor?.alpha == 0)
+    }
+
+    @Test @MainActor func trackingUpdatesDoNotStackFindHoverAreas() {
+        let fixture = HoverFixture()
+        fixture.control.updateTrackingAreas()
+        fixture.control.updateTrackingAreas()
+        let areas = fixture.control.trackingAreas.filter { !$0.options.contains(.cursorUpdate) }
+        #expect(areas.count == 1)
+        #expect(areas.first?.options.contains([.mouseMoved, .activeInKeyWindow, .inVisibleRect]) == true)
+    }
+
+    @Test @MainActor func aHiddenNextButtonReturnsFocusToTheQuery() throws {
+        _ = NSApplication.shared
+        let frame = NSRect(x: 0, y: 0, width: 300, height: 32)
+        let window = HoverWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let view = PageFindView(frame: frame)
+        window.contentView = view
+        view.update(result: .matches(ordinal: 1, total: 7), available: true)
+        try #require(window.makeFirstResponder(view.next))
+        try #require(window.firstResponder === view.next)
+        view.update(result: .notFound, available: true)
+        #expect(view.field.currentEditor() === window.firstResponder)
+    }
+}

@@ -96,3 +96,56 @@ struct LiveBindingTests {
         #expect(item.keyEquivalent == chord.key)
     }
 }
+
+extension LiveBindingTests {
+    @MainActor private final class PeekWindow: NSWindow {
+        var key = true
+        override var isKeyWindow: Bool { key }
+        override var isVisible: Bool { true }
+    }
+
+    @Test(arguments: [(false, true), (true, false), (true, true)])
+    @MainActor func onlyTheOriginalKeyPeekCanBeOpened(current: Bool, key: Bool) {
+        _ = NSApplication.shared
+        let window = PeekWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+                                styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.key = key
+        var promotions = 0
+        let command = PeekOpenCommand(window: window, targetIsAvailable: { current }, execute: { promotions += 1 })
+        #expect(command.perform() == (current && key))
+        #expect(!command.perform())
+        #expect(promotions == (current && key ? 1 : 0))
+    }
+
+    enum Copy: CaseIterable { case address, selectedText, noPage, noBinding }
+
+    @Test(arguments: Copy.allCases)
+    func theCopyCueRequiresTheCurrentPagesExactURLAndAnActiveChord(copy: Copy) throws {
+        let suite = "Parc.LiveBinding." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let upsell = SuperCopyUpsell(defaults: defaults)
+        let url = "https://example.test/a?b=1"
+        let chord = KeyboardShortcut(key: "c", flags: [.command, .shift])
+        let message = upsell.message(copied: copy == .selectedText ? "example" : url,
+                                    pageURL: copy == .noPage ? nil : url, shortcut: copy == .noBinding ? nil : chord,
+                                    now: .distantPast)
+        #expect(message == (copy == .address ? "Copy links faster by pressing ⇧⌘C" : nil))
+    }
+
+    @Test(arguments: [(1, false), (2, true)])
+    func theCopyCueUsesCalendarDaysForItsCooldown(days: Int, offers: Bool) throws {
+        let suite = "Parc.LiveBinding." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var upsell = SuperCopyUpsell(defaults: defaults)
+        upsell.calendar = Calendar(identifier: .gregorian)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let later = try #require(upsell.calendar.date(byAdding: .day, value: days, to: now))
+        let address = "https://example.test/"
+        let chord = KeyboardShortcut(key: "c", flags: [.command, .shift])
+        upsell.recordShown(now: now)
+        #expect((upsell.message(copied: address, pageURL: address, shortcut: chord, now: later) != nil) == offers)
+    }
+}

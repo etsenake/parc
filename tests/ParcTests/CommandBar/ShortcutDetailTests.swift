@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcCore
 
 struct ShortcutDetailTests {
     @MainActor private final class Window: NSWindow {
@@ -17,6 +18,7 @@ struct ShortcutDetailTests {
         let window: Window
         let caps: ShortcutKeycapView
         let picker: NSPopUpButton
+        let defaults: UserDefaults
 
         init() throws {
             _ = NSApplication.shared
@@ -24,13 +26,21 @@ struct ShortcutDetailTests {
             let menu = NSMenu(title: "File")
             registry = KeyboardShortcuts(mainMenu: { menu }, observesKeyboardLayout: false)
             registry.configure(directory: directory)
-            for (id, title, key) in [("closeTab:", "Archive Tab", "w"), ("captureFullPage:", "Capture Full Page", "")] {
+            for (id, title, key) in [("closeTab:", "Archive Tab", "w"), ("captureFullPage:", "Capture Full Page", ""), ("capturePage:", "Capture Portion…", "2")] {
                 let item = NSMenuItem(title: title, action: NSSelectorFromString(id), keyEquivalent: key)
                 item.keyEquivalentModifierMask = .command
                 menu.addItem(item)
                 registry.register(item, group: menu.title)
             }
-            view = ShortcutsSettingsView(shortcuts: registry, numberedTargetDefaults: try #require(UserDefaults(suiteName: suite)))
+            for number in [1, 9] {
+                let item = NSMenuItem(title: "Go to Sidebar Item " + String(number),
+                    action: NSSelectorFromString("goToSidebarItem:"), keyEquivalent: String(number))
+                item.keyEquivalentModifierMask = .command
+                menu.addItem(item)
+                registry.register(item, group: "Tabs", bindingID: NumberedTarget.itemBindingID(number))
+            }
+            defaults = try #require(UserDefaults(suiteName: suite))
+            view = ShortcutsSettingsView(shortcuts: registry, numberedTargetDefaults: defaults)
             window = Window(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.contentView = view
@@ -45,6 +55,11 @@ struct ShortcutDetailTests {
 
         func removeAction() throws -> NSMenuItem {
             try #require(view.commandMenu(for: "closeTab:")?.items.first { $0.title == "Remove Shortcut" })
+        }
+
+        func button(_ title: String) throws -> NSButton {
+            let matches = view.subviews.compactMap { $0 as? NSButton }
+            return try #require(matches.first { $0.title == title })
         }
 
         func invoke(_ item: NSMenuItem) throws {
@@ -110,5 +125,61 @@ struct ShortcutDetailTests {
         try fixture.invoke(fixture.removeAction())
         #expect(fixture.registry.shortcut(for: "closeTab:") == nil)
         #expect(fixture.caps.accessibilityValue() as? String == before)
+    }
+}
+
+extension ShortcutDetailTests {
+    @Test(arguments: [(1, false, true, false), (9, false, false, true), (9, true, true, true)])
+    @MainActor func numberedItemSettingsMatchTheSelectedCommand(number: Int, ninthMode: Bool,
+                                                                 showsFavorites: Bool, showsNinth: Bool) throws {
+        let fixture = try Fixture()
+        fixture.defaults.set(ninthMode, forKey: NumberedTarget.ninthItemKey)
+        try #require(fixture.view.selectCommand(NumberedTarget.itemBindingID(number)))
+        let favorites = try fixture.button("Include Favorites in ordering.")
+        let ninth = try fixture.button("Switch to ninth tab.")
+        #expect(favorites.isHidden == !showsFavorites)
+        #expect(ninth.isHidden == !showsNinth)
+    }
+
+    @Test @MainActor func theNinthItemTogglePersistsAndRevealsFavoritesOrdering() throws {
+        let fixture = try Fixture()
+        try #require(fixture.view.selectCommand(NumberedTarget.itemBindingID(9)))
+        let favorites = try fixture.button("Include Favorites in ordering.")
+        let ninth = try fixture.button("Switch to ninth tab.")
+        ninth.performClick(nil)
+        #expect(fixture.defaults.bool(forKey: NumberedTarget.ninthItemKey))
+        #expect(!favorites.isHidden)
+        #expect(ninth.frame.maxY <= favorites.frame.minY)
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func theCaptureDragControlDoesNotChangeTheKeyboardBinding(unassigned: Bool) throws {
+        let fixture = try Fixture()
+        if unassigned { try fixture.registry.set(nil, for: "capturePage:") }
+        let binding = fixture.registry.shortcut(for: "capturePage:")
+        try #require(fixture.view.selectCommand("capturePage:"))
+        let drag = try fixture.button("Hold Command and Shift to start a Capture.")
+        try #require(!drag.isHidden)
+        drag.performClick(nil)
+        #expect(!CaptureGesturePreference.isEnabled(defaults: fixture.defaults))
+        #expect(fixture.registry.shortcut(for: "capturePage:") == binding)
+    }
+
+    @Test @MainActor func aConsumedRemoveMenuCannotChangeTheBindingAgain() throws {
+        let fixture = try Fixture()
+        let item = try fixture.removeAction()
+        try fixture.invoke(item)
+        let revision = fixture.registry.revision
+        try fixture.invoke(item)
+        #expect(fixture.registry.revision == revision)
+    }
+
+    @Test @MainActor func resettingAnUnboundCommandRestoresTheRealMenuBinding() throws {
+        let fixture = try Fixture()
+        try fixture.registry.set(nil, for: "closeTab:")
+        let reset = try #require(fixture.view.commandMenu(for: "closeTab:")?.items.last)
+        try #require(reset.isEnabled)
+        try fixture.invoke(reset)
+        #expect(fixture.registry.shortcut(for: "closeTab:") == KeyboardShortcut(key: "w", flags: .command))
     }
 }

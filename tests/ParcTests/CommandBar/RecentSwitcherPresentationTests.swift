@@ -124,3 +124,34 @@ struct RecentSwitcherPresentationTests {
         #expect(fixture.content.itemFrames.isEmpty)
     }
 }
+
+extension RecentSwitcherPresentationTests {
+    @Test(arguments: [false, true])
+    @MainActor func aReserveCardOnlyPublishesAVisiblePreviewAfterPromotion(promoted: Bool) throws {
+        let fixture = Fixture()
+        var items = fixture.items
+        items[1].isHidden = !promoted
+        fixture.content.setItems(items, focused: 0)
+        fixture.content.publish(frames: fixture.frames)
+        let job = try #require(fixture.queue.job)
+        job.perform()
+        #expect(fixture.content.itemFrames["two"] == fixture.frames["two"])
+        #expect(fixture.content.visibleItemIndexes == (promoted ? [0, 1] : [0]))
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func onlyAPromotedReserveCardCanDispatchPointerInput(promoted: Bool) {
+        let fixture = Fixture()
+        var items = fixture.items
+        items[1].isHidden = !promoted
+        fixture.content.setItems(items, focused: 0)
+        var hovered: [Int] = [], chosen: [Int] = []
+        fixture.content.onHover = { hovered.append($0) }
+        fixture.content.onChoose = { chosen.append($0) }
+        fixture.content.hover("two")
+        fixture.content.choose("two")
+        let expected = promoted ? [1] : []
+        #expect(hovered == expected)
+        #expect(chosen == expected)
+    }
+}

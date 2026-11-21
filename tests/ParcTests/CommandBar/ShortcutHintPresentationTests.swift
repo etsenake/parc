@@ -181,3 +181,24 @@ struct ShortcutHintPresentationTests {
         #expect(fixture.hint.state.accessory == nil)
     }
 }
+
+extension ShortcutHintPresentationTests {
+    @Test(arguments: [(0.0, 0.3, true), (0.85, 0.6, false), (1.0, 0.95, false)])
+    @MainActor func theCuePaletteAdjustsItsSpaceColorForLegibility(gray: Double, expected: Double, dark: Bool) {
+        let color = NSColor(displayP3Red: gray, green: gray, blue: gray, alpha: 1)
+        let palette = ParcToastPalette(colors: [color])
+        #expect(abs(palette.background.redComponent - expected) < 0.0001)
+        #expect(palette.isDark == dark)
+        #expect(palette.foreground == (dark ? .white : .black))
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func refreshingACueUsesItsCurrentPrivateWindowColor(isPrivate: Bool) throws {
+        let fixture = Fixture()
+        let basic = NSColor(displayP3Red: 0.054, green: 0.06, blue: 0.075, alpha: 1)
+        let theme = SpaceTheme.singleColor(try #require(ThemeColor(hex: "303030")))
+        fixture.hint.update(theme: theme, basicBackground: isPrivate ? basic : nil)
+        #expect(fixture.hint.state.theme == theme)
+        #expect(fixture.hint.state.basicBackground === (isPrivate ? basic : nil))
+    }
+}
