@@ -33,7 +33,8 @@ final class SpaceThemeEditorView: NSView {
     private enum Input { case pad, intensity, noise }
     private var activeInput: Input?
     private let background = NSVisualEffectView()
-    private let pad = ThemeColorPad()
+    private let resources: ThemeEditorResources
+    private let pad: ThemeColorPad
     private let intensity = ThemeIntensityControl()
     private let noise: ThemeNoiseControl
     private var appearanceButtons: [ThemeAppearanceButton] = []
@@ -52,11 +53,15 @@ final class SpaceThemeEditorView: NSView {
     init(theme: SpaceTheme, presetPage: Int = 0,
          scrollPublisher: ((AnyPublisher<Double, Never>) -> AnyPublisher<Double, Never>)? = nil,
          scrollTime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
-         performHapticFeedback: @escaping @MainActor () -> Void = ThemeHapticFeedback.perform) {
+         performHapticFeedback: @escaping @MainActor () -> Void = ThemeHapticFeedback.perform,
+         resources: ThemeEditorResources? = nil) {
+        let resources = resources ?? .main
+        self.resources = resources
+        pad = ThemeColorPad(grid: resources.image("DotGrid"))
         editor = SpaceThemeEditorState(theme: theme)
         committedTheme = theme
         page = presetPage
-        noise = ThemeNoiseControl(scrollPublisher: scrollPublisher, now: scrollTime)
+        noise = ThemeNoiseControl(scrollPublisher: scrollPublisher, now: scrollTime, resources: resources)
         self.performHapticFeedback = performHapticFeedback
         super.init(frame: NSRect(x: 0, y: 0, width: 356, height: 508))
         page = min(families.count - 1, max(0, page))
@@ -74,7 +79,7 @@ final class SpaceThemeEditorView: NSView {
         }
         pad.onEnd = { [weak self] in self?.completeGesture() }
         for (index, appearance) in AppAppearance.allCases.enumerated() {
-            let button = ThemeAppearanceButton(appearance: appearance)
+            let button = ThemeAppearanceButton(appearance: appearance, resources: resources.bundle)
             button.onAction = { [weak self] in
                 guard let self else { return }
                 self.finishEditing()
@@ -258,7 +263,7 @@ final class SpaceThemeEditorView: NSView {
     private func loadPresetPage() {
         let family = families[page]
         for (index, button) in presets.enumerated() {
-            button.color = ThemeEditorResources.preset(page: page, index: index)?.color
+            button.color = resources.preset(page: page, index: index)?.color
             button.isEnabled = button.color != nil
             button.setAccessibilityLabel("\(family) color \(index + 1)")
             LiveShortcutToolTip.set(button, "\(family) \(index + 1)", anchor: .bottom)
@@ -266,7 +271,7 @@ final class SpaceThemeEditorView: NSView {
         previous.isEnabled = page > 0; next.isEnabled = page < families.count - 1
     }
     private func selectPreset(_ index: Int) {
-        guard let preset = ThemeEditorResources.preset(page: page, index: index),
+        guard let preset = resources.preset(page: page, index: index),
               let rgb = preset.color.usingColorSpace(.displayP3),
               let themeColor = ThemeColor(red: min(1, max(0, rgb.redComponent)), green: min(1, max(0, rgb.greenComponent)),
                                          blue: min(1, max(0, rgb.blueComponent)), colorSpace: .displayP3) else { return }
@@ -313,7 +318,9 @@ final class SpaceThemeEditorView: NSView {
     }
 }
 
-private enum ThemeEditorResources {
+@MainActor
+final class ThemeEditorResources {
+    static let main = ThemeEditorResources(bundle: .main)
     struct Preset: Decodable {
         let name: String
         let red: Double
@@ -328,10 +335,8 @@ private enum ThemeEditorResources {
             ThemeEditorResources.color(ThemeColor(red: red, green: green, blue: blue, colorSpace: colorSpace)!)
         }
     }
-    static func url(_ name: String, extension ext: String) -> URL? {
-        Bundle.main.url(forResource: name, withExtension: ext, subdirectory: "ThemeEditor")
-    }
-    private static let presets: [Preset] = {
+    let bundle: Bundle
+    private lazy var presets: [Preset] = {
         guard let url = url("presets", extension: "json"), let data = try? Data(contentsOf: url),
               let records = try? JSONDecoder().decode([Preset].self, from: data),
               records.count == 45, records.allSatisfy({
@@ -341,18 +346,22 @@ private enum ThemeEditorResources {
               }), Set(records.map { $0.page * 9 + $0.index }).count == 45 else { return [] }
         return records
     }()
-    private static let images: [String: NSImage] = {
+    private lazy var images: [String: NSImage] = {
         var result: [String: NSImage] = [:]
         for name in ["DotGrid", "GrainKnob", "SandKnob", "DenimKnob", "TweedKnob"] {
             if let url = url(name, extension: "png"), let image = NSImage(contentsOf: url) { result[name] = image }
         }
         return result
     }()
-    static func image(_ name: String) -> NSImage? { images[name] }
-    static func preset(page: Int, index: Int) -> Preset? {
+    init(bundle: Bundle) { self.bundle = bundle }
+    private func url(_ name: String, extension ext: String) -> URL? {
+        bundle.url(forResource: name, withExtension: ext, subdirectory: "ThemeEditor")
+    }
+    func image(_ name: String) -> NSImage? { images[name] }
+    func preset(page: Int, index: Int) -> Preset? {
         presets.first { $0.page == page && $0.index == index }
     }
-    static func color(_ value: ThemeColor) -> NSColor {
+    nonisolated static func color(_ value: ThemeColor) -> NSColor {
         switch value.colorSpace {
         case .sRGB: return NSColor(srgbRed: value.red, green: value.green, blue: value.blue, alpha: 1)
         case .displayP3: return NSColor(displayP3Red: value.red, green: value.green, blue: value.blue, alpha: 1)
@@ -639,7 +648,7 @@ private final class ThemeColorPad: NSView {
     var onChange: ((Double, Double) -> Void)?
     var onEnd: (() -> Void)?
     var emptyStateText: String? { didSet { needsDisplay = true } }
-    private let grid = ThemeEditorResources.image("DotGrid")
+    private let grid: NSImage?
     private let handleContainer = CALayer()
     private var handles: [CALayer] = []
     private var hovered: Int?
@@ -649,8 +658,9 @@ private final class ThemeColorPad: NSView {
     private var motionObserver: NSObjectProtocol?
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+    init(grid: NSImage?) {
+        self.grid = grid
+        super.init(frame: .zero)
         wantsLayer = true; layer?.cornerRadius = 8; layer?.cornerCurve = .continuous; layer?.masksToBounds = true
         layer?.addSublayer(handleContainer)
         setAccessibilityElement(true)
@@ -1001,10 +1011,12 @@ private final class ThemeNoiseControl: NSControl {
     private var scrollDelivery: AnyCancellable?
     private var lastScrollTime: TimeInterval = 0
     private let tooltipAnchor = TooltipAnchorView()
+    private let resources: ThemeEditorResources
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     init(scrollPublisher: ((AnyPublisher<Double, Never>) -> AnyPublisher<Double, Never>)?,
-         now: @escaping () -> TimeInterval) {
+         now: @escaping () -> TimeInterval, resources: ThemeEditorResources) {
+        self.resources = resources
         self.scrollPublisher = scrollPublisher ?? {
             $0.throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true).eraseToAnyPublisher()
         }
@@ -1054,7 +1066,7 @@ private final class ThemeNoiseControl: NSControl {
         let knob = knobRect, side = knob.width * 1.2 * knobMotion.motion.scale
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(ovalIn: knob).addClip()
-        ThemeEditorResources.image(name)?.draw(in: NSRect(x: knob.midX - side / 2, y: knob.midY - side / 2, width: side, height: side),
+        resources.image(name)?.draw(in: NSRect(x: knob.midX - side / 2, y: knob.midY - side / 2, width: side, height: side),
                                                from: .zero, operation: .sourceOver,
                                                fraction: 0.6, respectFlipped: true, hints: nil)
         NSGraphicsContext.restoreGraphicsState()
