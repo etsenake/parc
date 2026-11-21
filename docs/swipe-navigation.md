@@ -300,7 +300,7 @@ boundary.
   `overscroll-behavior: none`, vertical cancel, reversal, hold and selection,
   background windows, and a Peek's first-page dismissal with spring-back,
   flicks, reversal and the single tap.
-- `tests/HistorySwipeDriver` drives the forwarder's Swift half:
+- `swift test --filter HistorySwipeDriverTests` drives the forwarder's Swift half:
   sessions, commits and list picks, refused and late navigation, engine
   cancels, clock ticks, AppKit tracking and Peek dismissals.
 - `tests/HistorySwipeTargets` covers which panes can swipe.
