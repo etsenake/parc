@@ -185,12 +185,21 @@ final class BrowserImportCoordinator {
     }
 
     static func isSafari(_ source: PCNativeImportSource) -> Bool {
-        Bundle(url: source.appURL)?.bundleIdentifier == "com.apple.Safari"
+        isSafari(applicationAt: source.appURL)
     }
+
+    static func isSafari(applicationAt url: URL) -> Bool {
+        Bundle(url: url)?.bundleIdentifier == "com.apple.Safari"
+    }
+
     static func keychainNote(for source: PCNativeImportSource) -> String? {
-        guard !isSafari(source), !firefoxFamily.keys.contains(source.identifier),
-              source.identifier != "com.openai.atlas" else { return nil }
-        let name = source.displayName, key = source.identifier == "net.imput.helium" ? "Storage Key" : "Safe Storage key"
+        keychainNote(identifier: source.identifier, name: source.displayName, applicationAt: source.appURL)
+    }
+
+    static func keychainNote(identifier: String, name: String, applicationAt url: URL) -> String? {
+        guard !isSafari(applicationAt: url), !firefoxFamily.keys.contains(identifier),
+              identifier != "com.openai.atlas" else { return nil }
+        let key = identifier == "net.imput.helium" ? "Storage Key" : "Safe Storage key"
         return "macOS may ask to let Parc use \(name)’s \(key). It unlocks the bookmarks, passwords and cookies \(name) keeps encrypted."
     }
     static let arcBundleIdentifier = "company.thebrowser.Browser"
@@ -198,7 +207,11 @@ final class BrowserImportCoordinator {
     var isArcSource: Bool { source.map(Self.isArc) == true }
     static let firefoxFamily: [String: BrowserPasswordExport] = ["org.mozilla.firefox": .firefox, "app.zen-browser.zen": .zen]
     static func passwordExport(for source: PCNativeImportSource) -> BrowserPasswordExport? {
-        isSafari(source) ? .safari : firefoxFamily[source.identifier]
+        passwordExport(identifier: source.identifier, applicationAt: source.appURL)
+    }
+
+    static func passwordExport(identifier: String, applicationAt url: URL) -> BrowserPasswordExport? {
+        isSafari(applicationAt: url) ? .safari : firefoxFamily[identifier]
     }
     var passwordExport: BrowserPasswordExport? { source.flatMap(Self.passwordExport) }
     var offersICloudPasswordChoice: Bool { supportsICloudPasswords && passwordExport == .safari }
