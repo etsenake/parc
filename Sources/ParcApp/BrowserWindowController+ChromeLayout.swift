@@ -17,6 +17,22 @@ enum CommandBarAddressSource {
     }
 }
 
+enum WindowPaneFocus {
+    static func currentTab(fullscreen: UUID?, focused: UUID?, selection: [UUID]) -> UUID? {
+        if let fullscreen { return fullscreen }
+        if let focused, selection.contains(focused) { return focused }
+        return selection.first
+    }
+
+    @MainActor
+    static func visitHits<Pane: NSView>(at point: NSPoint, panes: [UUID: Pane], rendered: [UUID],
+                                        focus: (UUID) -> Void) {
+        for (id, pane) in panes where rendered.contains(id) {
+            if pane.bounds.contains(pane.convert(point, from: nil)) { focus(id) }
+        }
+    }
+}
+
 extension BrowserWindowController {
     func layoutChrome() {
         let fingerprint = chromeGeometryFingerprint()

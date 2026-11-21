@@ -611,9 +611,7 @@ extension BrowserWindowController {
     }
 
     var currentTabID: UUID? {
-        if let nativeFullscreenTabID { return nativeFullscreenTabID }
-        if let focusedTabID, selectedTabIDs.contains(focusedTabID) { return focusedTabID }
-        return selectedTabIDs.first
+        WindowPaneFocus.currentTab(fullscreen: nativeFullscreenTabID, focused: focusedTabID, selection: selectedTabIDs)
     }
     var currentBrowser: PCBrowserView? {
         if let peek = activePeek { return peek.browser }

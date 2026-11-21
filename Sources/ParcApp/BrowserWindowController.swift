@@ -1000,8 +1000,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     self.sidebarPointerDown = self.sidebarPresentation == .floating && self.sidebarContainer.frame.contains(point)
                     if self.sidebarPresentation == .floating && !self.sidebarPointerDown { self.setSidebarPresentation(.hidden) }
                     if self.sidebarPresentation == .hidden || !self.sidebarContainer.frame.contains(point) {
-                        for (id, pane) in self.panes where self.renderedPaneIDs.contains(id) {
-                            if pane.bounds.contains(pane.convert(event.locationInWindow, from: nil)) { self.focusedTabID = id; self.updateNavigation(); self.requestNativeSelection() }
+                        WindowPaneFocus.visitHits(at: event.locationInWindow, panes: self.panes,
+                                                  rendered: self.renderedPaneIDs) { id in
+                            self.focusedTabID = id; self.updateNavigation(); self.requestNativeSelection()
                         }
                     }
                 }
