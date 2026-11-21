@@ -28,6 +28,15 @@ final class EaselCanvasToolState {
     var onQuickActions: (() -> Void)?
 }
 
+extension EaselCanvasView: EaselCoveredViewport {
+    func keepClearOfCover(_ rect: NSRect, from view: NSView) -> Bool {
+        guard toolState.coveredBottom > 0, window != nil, rect.minX.isFinite, rect.minY.isFinite else { return false }
+        let local = convert(rect, from: view)
+        guard local.maxY > uncoveredVisibleRect.maxY else { return false }
+        return scrollToVisible(local)
+    }
+}
+
 extension EaselKeyModifiers {
     init(_ flags: NSEvent.ModifierFlags) {
         var value: EaselKeyModifiers = []
