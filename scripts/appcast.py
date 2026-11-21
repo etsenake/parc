@@ -86,7 +86,7 @@ def main():
     if args.published.tzinfo is None:
         parser.error("--published needs a UTC offset")
     info = plistlib.loads((args.app / "Contents/Info.plist").read_bytes())
-    tools = sparkle.fetch(ROOT / "build/sparkle") / "bin"
+    tools = sparkle.resolve(ROOT).tools
     if args.ed_key_file:
         key = ["--ed-key-file", args.ed_key_file]
     else:

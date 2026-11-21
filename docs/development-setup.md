@@ -186,10 +186,11 @@ measure the intended configuration before making performance claims.
 
 ## Check Swift without building an engine or app
 
-The checker compiles the whole app module with the release compile's own
-flags, which it shares with `scripts/build.py` through `scripts/compiler.py`:
-warnings as errors, ARM64 macOS 13, the checkout's current native bridge headers
-and Sparkle. The direct facade needs no engine headers or built package.
+The app is a Swift package at the repository root. `scripts/check-swift.py`
+builds its `Parc` target through SwiftPM with the package's own settings:
+warnings as errors, the Swift 5 language mode, macOS 13 and the checkout's
+bridge headers. The build weak-links the committed engine stub, so it needs no
+engine build. `scripts/build.py` packages through the same package build.
 
 Run:
 
@@ -200,43 +201,42 @@ python3 scripts/check-swift.py --mode sil
 python3 scripts/check-swift.py --mode release
 ```
 
-The default `typecheck` mode is for iteration. `--mode sil` emits whole-module
-SIL to `/dev/null` with `-Onone`, catching compiler stages that plain
-typechecking omits, including definite initialization. `--mode release` is the
-release's optimized app compile (`-O`, whole-module, one thread per core) through
-object files, without linking, so it also covers what SIL mode checks. Run it
-before publishing material Swift changes, as required by
-[the working contract](../AGENTS.md). The [release command](master-release.md#pipeline)
-runs it on the commit it is about to release before committing the version.
+The default `typecheck` mode is the incremental debug build in `.build`, the
+same cache `swift build` and `swift test` use. `--mode sil` is a whole-module
+debug build, which runs every mandatory SIL diagnostic, including definite
+initialization, across the module at once. `--mode release` is the release's
+optimized whole-module build for ARM64. Both write to a scratch folder inside
+the receipt and remove it. Run release mode before publishing material Swift
+changes, as required by [the working contract](../AGENTS.md). The
+[release command](master-release.md#pipeline) runs it on the commit it is about
+to release before committing the version.
 
-Every compiler and linker warning is an error. `-warnings-as-errors` alone
-doesn't guarantee that: Swift deliberately keeps some downgraded concurrency
+Every compiler and linker warning is an error. `treatAllWarnings` alone doesn't
+guarantee that: Swift deliberately keeps some downgraded concurrency
 diagnostics, such as a non-Sendable closure handed to a Dispatch API, as
-warnings and exits successfully. The checker fails any run whose compiler log
+warnings and exits successfully. The checker fails any run whose build log
 holds a warning. Packaging stops the same way for the Swift app, the native
 facade, Dock tile and restart helper (all built with `-Wall -Wextra -Werror`),
 the icon renderer and the signing keychain helper, and every one of their links
-also passes the linker's `-fatal_warnings`.
+also passes the linker's `-fatal_warnings`. Packaging links the app itself from
+the package's objects with the old link command, against the sealed engine and
+the pinned Sparkle, so the shipped binary keeps its load commands and run paths.
 
 The script finds its own checkout regardless of the shell's working directory.
 Use `--repo /absolute/other-worktree` to select another checkout, or add
 `--source-archive` for an extracted source tree that isn't a Git checkout, as the
-release does; that skips the Git HEAD checks and relies on the input hashes. The
-checker uses self-contained declarations in `Engine/ParcNative`.
+release does; that skips the Git HEAD checks and relies on the input hashes.
 
 Each execution creates a fresh directory under `build/swift-checks` containing
 `start.json`, `compiler.log` and `result.json`. Use `--output-dir` and `--label`
 to choose another location/name; an existing receipt directory is never
-overwritten. Release mode writes its objects to a temporary folder inside the
-receipt directory and removes them. A passing result requires compiler exit
-zero, no warning in the log, unchanged Git HEAD and unchanged hashes/file
-membership for the Swift sources, bridge headers, source lock, checker and its
-compiler module. The receipt records the command, any warnings,
-selected compiler/SDK, source hashes and Git state. `--plan` validates input
-paths and prints the command/hashes without invoking the compiler or writing
-receipts.
+overwritten. A passing result requires build exit zero, no warning in the log,
+unchanged Git HEAD and unchanged hashes/file membership for the Swift sources,
+bridge headers, manifest, pinned dependencies, engine stub, source lock, checker
+and its compiler module. `--plan` validates input paths and prints the
+command/hashes without building or writing receipts.
 
-The checker's own tests use temporary source trees and a fake compiler:
+The checker's own tests use temporary source trees and a fake build tool:
 
 ```sh
 python3 -m unittest discover -s tests/BuildTools -v
@@ -258,10 +258,15 @@ depends on it.
 
 `ParcCoreTests` (in `tests/ParcCoreTests`) tests the `ParcCore` library, which has
 no AppKit or engine dependency. `ParcTests` (in `tests/ParcTests`) tests the `Parc`
-app module with `@testable import Parc`. Sparkle comes from
-`PARC_SPARKLE_FRAMEWORKS` (default: the `build/sparkle` cache). Put a test in the
-lowest target that can reach the code under test, in a folder named for its
-feature area.
+app module with `@testable import Parc`. Put a test in the lowest target that
+can reach the code under test, in a folder named for its feature area.
+
+Sparkle is a package dependency on the official `sparkle-project/Sparkle`
+package, pinned to the exact version in `Package.resolved`, so a fresh clone
+builds with no manual step. SwiftPM verifies the release archive against the
+checksum the pinned package declares, and packaging embeds that framework.
+Scripted builds pass `--disable-keychain` so a credential prompt can never stall
+dependency resolution.
 
 Package builds never need an engine binary. Debug and test builds weak-link
 `Stubs/Chromium Embedded Framework.framework`, a text stub of what the engine

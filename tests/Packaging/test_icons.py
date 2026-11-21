@@ -82,9 +82,22 @@ class PackagingIconTests(unittest.TestCase):
         (framework / "Versions/Current").symlink_to("B")
         self.commands = []
         self.signed_entitlements = []
-        fetch = patch.object(pkg.sparkle, "fetch", return_value=self.sparkle)
-        fetch.start()
-        self.addCleanup(fetch.stop)
+        self.package_builds = []
+        self.objects = self.root / "Parc.o"
+        self.objects.write_bytes(b"package object fixture")
+        for name, value in (("run", self.fake_package_build),
+                            ("package_objects", lambda scratch, configuration: [self.objects])):
+            patched = patch.object(pkg.compiler, name, value)
+            patched.start()
+            self.addCleanup(patched.stop)
+        artifact = patch.object(pkg.sparkle, "artifact", return_value=pkg.sparkle.Release(self.sparkle, self.root / "bin"))
+        artifact.start()
+        self.addCleanup(artifact.stop)
+
+    def fake_package_build(self, command, **kwargs):
+        self.package_builds.append(tuple(command))
+        Path(command[command.index("--scratch-path") + 1]).mkdir(parents=True)
+        return ""
 
     @staticmethod
     def fake_icons(resources):
@@ -177,7 +190,7 @@ class PackagingIconTests(unittest.TestCase):
             lock = json.loads((REPO / "Engine/source-lock.json").read_text())
             self.assertEqual(info["ParcChromiumVersion"], lock["chromium"]["tag"])
             self.assertFalse([key for key in info if key.startswith("SU")])
-            self.assertEqual(report["sparkle"], {"version": pkg.sparkle.VERSION, "sha256": pkg.sparkle.SHA256,
+            self.assertEqual(report["sparkle"], {"version": pkg.sparkle.VERSION, "checksum": pkg.sparkle.CHECKSUM,
                                                  "update_feed": None})
             embedded = app / "Contents/Frameworks" / pkg.SPARKLE
             self.assertEqual(sorted(path.name for path in embedded.iterdir()),
@@ -287,20 +300,24 @@ class PackagingIconTests(unittest.TestCase):
                     self.assertEqual((helper / "Contents/Resources" / helper_info["CFBundleIconFile"]).read_bytes(), data)
         self.assertEqual(icons[0], icons[1])
         self.assertEqual(families[0], families[1])
-        compiles = [cmd for cmd in self.commands if cmd[:2] == ("xcrun", "swiftc")]
+        links = [cmd for cmd in self.commands if cmd[:2] == ("xcrun", "swiftc")]
         self.assertFalse(any("install_name_tool" in str(arg) for cmd in self.commands for arg in cmd))
-        self.assertEqual(len(compiles), 2)
-        for compile in compiles:
-            self.assertEqual(compile[compile.index(str(self.sparkle)) - 1], "-F")
-            self.assertEqual(compile[compile.index("Sparkle") - 1], "-framework")
-        self.assertTrue(all("-v" in cmd and "-warnings-as-errors" in cmd for cmd in compiles))
-        self.assertTrue(all(cmd[cmd.index("-fatal_warnings") - 1] == "-Xlinker" for cmd in compiles))
+        self.assertEqual(len(links), 2)
+        for link in links:
+            self.assertEqual(link[link.index(str(self.sparkle)) - 1], "-F")
+            self.assertEqual(link[link.index("Sparkle") - 1], "-framework")
+            self.assertEqual(link[link.index(pkg.ENGINE_NAME) - 1], "-framework")
+            self.assertIn(str(self.objects), link)
+            self.assertNotIn("-weak_framework", link)
+        self.assertTrue(all("-v" in cmd for cmd in links))
+        self.assertTrue(all(cmd[cmd.index("-fatal_warnings") - 1] == "-Xlinker" for cmd in links))
+        self.assertEqual([cmd[cmd.index("--configuration") + 1] for cmd in self.package_builds], ["debug", "release"])
+        self.assertTrue(all(cmd[:3] == ("xcrun", "swift", "build") and "--product" in cmd for cmd in self.package_builds))
+        self.assertNotIn("-debug-info-format", self.package_builds[0])
+        self.assertEqual(self.package_builds[1][self.package_builds[1].index("-debug-info-format") + 1], "none")
         native_links = [cmd for cmd in self.commands if cmd[:2] == ("xcrun", "clang") and "-c" not in cmd and "-M" not in cmd]
         self.assertEqual(len(native_links), 4)
         self.assertTrue(all("-Wl,-fatal_warnings" in cmd and "-Werror" in cmd for cmd in native_links))
-        self.assertIn("-g", compiles[0]); self.assertIn("-Onone", compiles[0]); self.assertNotIn("-O", compiles[0])
-        self.assertIn("-O", compiles[1]); self.assertNotIn("-Onone", compiles[1]); self.assertNotIn("-g", compiles[1])
-        self.assertIn("-whole-module-optimization", compiles[1]); self.assertNotIn("-whole-module-optimization", compiles[0])
         signs = [cmd for cmd in self.commands if cmd[0] == "/usr/bin/codesign" and "--sign" in cmd]
         self.assertEqual(len(signs), 28)
         self.assertTrue(all("--deep" not in cmd for cmd in signs))

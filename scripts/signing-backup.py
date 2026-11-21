@@ -116,7 +116,7 @@ def backup_identity():
 
 
 def generate_keys():
-    return [str(sparkle.fetch(ROOT / 'build/sparkle') / 'bin/generate_keys'), '--account', sparkle.ACCOUNT]
+    return [str(sparkle.resolve(ROOT).tools / 'generate_keys'), '--account', sparkle.ACCOUNT]
 
 
 def backup_sparkle():
