@@ -138,6 +138,7 @@ enum EaselVectorExport {
         case .sticky, .section: return board(item, art.texts[item.id])
         case .table: return table(item, art.texts[item.id])
         case .code: return codeBlock(item, art.texts[item.id])
+        case .stamp: return stamp(item, art.images[item.id])
         }
     }
 

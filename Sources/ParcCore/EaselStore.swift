@@ -3,7 +3,7 @@ import Combine
 import Darwin
 
 enum EaselItemKind: String, Codable, CaseIterable {
-    case text, image, rectangle, circle, arrow, freehand, webCard, browser, link, sticky, section, table, code
+    case text, image, rectangle, circle, arrow, freehand, webCard, browser, link, sticky, section, table, code, stamp
 
     var holdsText: Bool { self == .text || self == .sticky || self == .rectangle || self == .circle }
 }
@@ -47,6 +47,114 @@ enum EaselAssetType: String, CaseIterable {
         guard size == 1 || size >= 8 else { return nil }
         if box == "ftyp" { return String(decoding: head[8..<12], as: UTF8.self) == "qt  " ? .mov : .mp4 }
         return ["moov", "mdat", "wide", "free", "skip", "pnot"].contains(box) ? .mov : nil
+    }
+}
+
+enum EaselStampDesign: String, CaseIterable { case plusOne, dot, heart, question, star, thumbsUp, thumbsDown, smiley }
+
+enum EaselStampFace: Hashable {
+    case design(EaselStampDesign)
+    case emoji(String)
+    case icon(String)
+
+    static let iconPrefix = "icon:"
+    static let maximumEmojiBytes = 64
+    static let maximumSymbolLength = 96
+
+    init?(item: EaselItem) {
+        guard item.kind == .stamp else { return nil }
+        if let name = item.stamp {
+            guard item.text.isEmpty, let design = EaselStampDesign(rawValue: name) else { return nil }
+            self = .design(design)
+        } else {
+            guard let face = EaselStampFace(text: item.text) else { return nil }
+            self = face
+        }
+    }
+
+    init?(text: String) {
+        if text.hasPrefix(Self.iconPrefix) {
+            let name = String(text.dropFirst(Self.iconPrefix.count))
+            guard Self.isSymbolName(name) else { return nil }
+            self = .icon(name)
+        } else {
+            guard Self.isEmoji(text) else { return nil }
+            self = .emoji(text)
+        }
+    }
+
+    init?(token: String) {
+        guard let colon = token.firstIndex(of: ":") else { return nil }
+        let value = String(token[token.index(after: colon)...])
+        switch String(token[..<colon]) {
+        case "stamp":
+            guard let design = EaselStampDesign(rawValue: value) else { return nil }
+            self = .design(design)
+        case "emoji":
+            guard Self.isEmoji(value) else { return nil }
+            self = .emoji(value)
+        case "icon":
+            guard Self.isSymbolName(value) else { return nil }
+            self = .icon(value)
+        default:
+            return nil
+        }
+    }
+
+    var token: String {
+        switch self {
+        case .design(let design): return "stamp:" + design.rawValue
+        case .emoji(let character): return "emoji:" + character
+        case .icon(let name): return "icon:" + name
+        }
+    }
+
+    var stamp: String? {
+        if case .design(let design) = self { return design.rawValue }
+        return nil
+    }
+
+    var text: String {
+        switch self {
+        case .design: return ""
+        case .emoji(let character): return character
+        case .icon(let name): return Self.iconPrefix + name
+        }
+    }
+
+    var isIcon: Bool {
+        if case .icon = self { return true }
+        return false
+    }
+
+    func apply(to item: inout EaselItem) {
+        item.stamp = stamp
+        item.text = text
+    }
+
+    static func isEmoji(_ text: String) -> Bool {
+        guard !text.isEmpty, text.utf8.count <= maximumEmojiBytes, text.count == 1, let character = text.first else { return false }
+        let scalars = character.unicodeScalars
+        guard !scalars.contains(where: { $0.properties.generalCategory == .control || $0.properties.isWhitespace }) else { return false }
+        return scalars.contains { scalar in
+            scalar.properties.isEmojiPresentation || scalar.value == 0xFE0F || scalar.value == 0x20E3
+                || (0x1F1E6...0x1F1FF).contains(scalar.value)
+        }
+    }
+
+    static func isSymbolName(_ name: String) -> Bool {
+        guard !name.isEmpty, name.utf8.count <= maximumSymbolLength, !name.hasPrefix("."), !name.hasSuffix("."),
+              !name.contains("..") else { return false }
+        return name.utf8.allSatisfy { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) || $0 == 46 }
+    }
+
+    static func validationProblem(_ item: EaselItem) -> String? {
+        guard item.kind == .stamp else { return item.stamp == nil ? nil : "stamp face on a non-stamp object" }
+        guard EaselStampFace(item: item) != nil else { return "stamp face" }
+        guard item.points.isEmpty, item.url == nil, item.assetID == nil, item.richText == nil, item.textStyle == nil else {
+            return "stamp contents"
+        }
+        return nil
     }
 }
 
@@ -237,6 +345,7 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var quarterTurns: Int?
     var table: EaselTable?
     var language: String?
+    var stamp: String?
     var ownsEmbeddedPage: Bool { kind == .browser || (kind == .webCard && captureLayout != nil && liveCapture == true) }
     var resolvedShape: EaselShape? {
         switch kind {
@@ -589,6 +698,7 @@ final class EaselStore {
             }
             if style.autoWidth != nil && item.kind != .text { throw EaselStoreError.invalidDocument("auto width on a non-text object") }
         }
+        if let problem = EaselStampFace.validationProblem(item) { throw EaselStoreError.invalidDocument(problem) }
     }
 
     private static func validateMedia(_ item: EaselItem) throws {

@@ -132,6 +132,10 @@ enum EaselDocumentExport {
                 }
             case .table:
                 art.texts[item.id] = tableVectorText(item)
+            case .stamp:
+                if case .icon(let name)? = EaselStampFace(item: item) {
+                    art.images[item.id] = EaselStampArtwork.iconMask(name, size: NSSize(width: item.frame.width, height: item.frame.height), scale: max(4, scale))
+                }
             case .rectangle, .circle, .arrow, .freehand, .link:
                 break
             }

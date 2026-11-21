@@ -822,6 +822,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             case .section: drawSection(item, showsEditor: showsEditor)
             case .table:
                 drawTable(item, showsEditor: showsEditor)
+            case .stamp:
+                EaselStampArtwork.draw(item, in: r, ink: ink)
             }
     }
     fileprivate func drawDecorations(in dirtyRect: NSRect) {
@@ -2156,6 +2158,7 @@ private final class EaselAccessibleObject: NSView {
         case .sticky: return "Sticky note"
         case .section: return EaselBoardObjects.displayTitle(item)
         case .code: return "Code block, " + EaselCodeBlock.displayName(item.language)
+        case .stamp: return EaselStampArtwork.accessibilityLabel(item)
         default: return item.kind.rawValue.capitalized
         }
     }
@@ -2163,7 +2166,7 @@ private final class EaselAccessibleObject: NSView {
         canvas?.accessibleItem(id)?.kind == .section ? NSAccessibility.Subrole(rawValue: "AXLandmarkRegion") : nil
     }
     override func accessibilityValue() -> Any? {
-        guard let item = canvas?.accessibleItem(id) else { return nil }
+        guard let item = canvas?.accessibleItem(id), item.kind != .stamp else { return nil }
         if item.kind == .image { return item.altText ?? item.url }
         if let table = item.table { return table.accessibilitySummary }
         if item.kind == .section { return canvas?.sectionSummary(item) }
