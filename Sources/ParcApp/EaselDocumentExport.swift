@@ -178,11 +178,37 @@ enum EaselDocumentExport {
             case .pdf:
                 mediaArt(item, session: session, scale: scale, into: &art)
             case .equation:
-                art.equations[item.id] = EaselEquationArtwork.vector(item.text)
+                art.equations[item.id] = equationArt(item.text)
             case .freehand, .link:
                 break
             }
         }
         return art
+    }
+}
+
+extension EaselDocumentExport {
+    static func equationArt(_ tex: String) -> EaselVectorEquation? {
+        guard !EaselEquation.isBlank(tex) else { return nil }
+        if let failure = EaselEquationArtwork.error(of: tex) {
+            return EaselVectorEquation(width: 0, height: 0, parts: [], error: failure.message)
+        }
+        guard let rendering = EaselEquationArtwork.rendering(tex, ink: .black) else { return nil }
+        var flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: rendering.size.height)
+        let parts = rendering.outlines().compactMap { outline -> EaselVectorEquationPart? in
+            guard let flipped = outline.path.copy(using: &flip) else { return nil }
+            let data = svgPath(flipped)
+            guard !data.isEmpty else { return nil }
+            switch outline.color {
+            case .inherited: return EaselVectorEquationPart(path: data)
+            case .link: return EaselVectorEquationPart(path: data, opacity: 0.42)
+            case .muted:
+                let muted = NSColor(cgColor: NoteMathRendering.mutedInk(for: .black))
+                return EaselVectorEquationPart(path: data, color: muted.flatMap(hex), opacity: 0.85)
+            case .custom(let color):
+                return EaselVectorEquationPart(path: data, color: NSColor(cgColor: color).flatMap(hex))
+            }
+        }
+        return EaselVectorEquation(width: Double(rendering.size.width), height: Double(rendering.size.height), parts: parts)
     }
 }
