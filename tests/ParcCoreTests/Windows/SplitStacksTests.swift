@@ -1,15 +1,9 @@
 import Foundation
+import Testing
+@testable import ParcCore
 
-@main @MainActor
+@MainActor
 struct SplitStacksTests {
-    static var assertions = 0
-    static func expect(_ value: @autoclosure () throws -> Bool, _ message: String,
-                       file: StaticString = #file, line: UInt = #line) throws {
-        assertions += 1
-        if try !value() { failTest(message, file: file, line: line) }
-    }
-    static func main() { exitOnFailure(runChecks) }
-
     static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -27,21 +21,7 @@ struct SplitStacksTests {
         return BrowserSplitLayout(id: UUID(), sidebarAnchorID: ids.first, customTitle: title, spaceID: space, tabIDs: ids,
                                   orientation: orientation, widthFactors: value.flattenedFactors, stacks: value)
     }
-
-    static func runChecks() throws {
-        try flatSplitsStayByteIdentical()
-        try stackedSplitsRoundTripAndOlderBuildsReadThemFlat()
-        try corruptStacksLoadFlat()
-        try modelEdits()
-        try storeEdits()
-        try closingCollapsesAndUndoRestores()
-        try copiesCarryStacks()
-        try favoritesWindowsAndMoves()
-        try arcNestedSplits()
-        print("SplitStacksTests passed \(assertions) checks")
-    }
-
-    static func flatSplitsStayByteIdentical() throws {
+    @Test static func flatSplitsStayByteIdentical() throws {
         let flat = BrowserSplitLayout(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!,
             sidebarAnchorID: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!, customTitle: "Pair",
             spaceID: UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!,
@@ -65,10 +45,10 @@ struct SplitStacksTests {
         }
         """
         let written = String(decoding: try encoder.encode(flat), as: UTF8.self)
-        try expect(written == previousBuild, "A flat split saves exactly the bytes the previous build wrote, with no stacks key")
+        #expect(written == previousBuild, "A flat split saves exactly the bytes the previous build wrote, with no stacks key")
         let read = try JSONDecoder().decode(BrowserSplitLayout.self, from: Data(previousBuild.utf8))
-        try expect(read == flat && read.stacks == nil, "The previous build's flat split reads back unchanged")
-        try expect(String(decoding: try encoder.encode(read), as: UTF8.self) == previousBuild, "Reading and saving a flat split is byte-identical")
+        #expect(read == flat && read.stacks == nil, "The previous build's flat split reads back unchanged")
+        #expect(String(decoding: try encoder.encode(read), as: UTF8.self) == previousBuild, "Reading and saving a flat split is byte-identical")
 
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-split-stacks-flat-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -82,12 +62,12 @@ struct SplitStacksTests {
         try reopened.save()
         let second = try Data(contentsOf: session)
         let layouts = (try JSONSerialization.jsonObject(with: first) as? [String: Any])?["splitLayouts"] as? [[String: Any]] ?? []
-        try expect(layouts.count == 1 && layouts.allSatisfy { $0["stacks"] == nil }, "A flat split in session.json carries no stacks key")
-        try expect(first == second && reopened.state.splitLayouts == store.state.splitLayouts,
+        #expect(layouts.count == 1 && layouts.allSatisfy { $0["stacks"] == nil }, "A flat split in session.json carries no stacks key")
+        #expect(first == second && reopened.state.splitLayouts == store.state.splitLayouts,
                    "A flat session survives a reload and save byte for byte")
     }
 
-    static func stackedSplitsRoundTripAndOlderBuildsReadThemFlat() throws {
+    @Test static func stackedSplitsRoundTripAndOlderBuildsReadThemFlat() throws {
         struct PreviousBuildLayout: Codable {
             var id: UUID?, sidebarAnchorID: UUID?, customTitle: String?, spaceID: UUID
             var tabIDs: [UUID], orientation: SplitOrientation?, widthFactors: [Double]
@@ -96,19 +76,19 @@ struct SplitStacksTests {
         let layout = stacked(ids, space: space, sizes: [1, 2], slots: [0.5, 0.5], stacks: [[1], [0.25, 0.75]], title: "Trio")
         let data = try encoder.encode(layout)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        try expect(json?["stacks"] != nil, "A stacked split saves its stacks")
-        try expect(close(layout.widthFactors, [0.5, 0.125, 0.375]) && layout.widthFactors.reduce(0, +) == 1,
+        #expect(json?["stacks"] != nil, "A stacked split saves its stacks")
+        #expect(close(layout.widthFactors, [0.5, 0.125, 0.375]) && layout.widthFactors.reduce(0, +) == 1,
                    "Width factors stay a valid flat row for older builds")
         let read = try JSONDecoder().decode(BrowserSplitLayout.self, from: data)
-        try expect(read == layout, "A stacked split reads back unchanged")
+        #expect(read == layout, "A stacked split reads back unchanged")
 
         let older = try JSONDecoder().decode(PreviousBuildLayout.self, from: data)
-        try expect(older.tabIDs == ids && BrowserSplitLayout.normalized(older.widthFactors, count: 3) != nil
+        #expect(older.tabIDs == ids && BrowserSplitLayout.normalized(older.widthFactors, count: 3) != nil
                    && abs(older.widthFactors.reduce(0, +) - 1) < 1e-9,
                    "An older build reads a stacked split as one flat row that passes its own checks")
         let olderSave = try JSONEncoder().encode(older)
         let afterOlder = try JSONDecoder().decode(BrowserSplitLayout.self, from: olderSave)
-        try expect(afterOlder.stacks == nil && afterOlder.tabIDs == ids && close(afterOlder.widthFactors, layout.widthFactors),
+        #expect(afterOlder.stacks == nil && afterOlder.tabIDs == ids && close(afterOlder.widthFactors, layout.widthFactors),
                    "After an older build saves, the split comes back flat with every pane")
 
         let profile = BrowserProfile(id: UUID(), name: "Profile")
@@ -118,10 +98,10 @@ struct SplitStacksTests {
                                           kind: .today, createdAt: Date(), lastAccessed: Date(), savedURL: "https://x.test", savedTitle: "X") }
         state.splitLayouts = [layout]
         try BrowserStore.validateSaved(state)
-        try expect(true, "Whole-session validation accepts a stacked split")
+        #expect(true, "Whole-session validation accepts a stacked split")
     }
 
-    static func corruptStacksLoadFlat() throws {
+    @Test static func corruptStacksLoadFlat() throws {
         let space = UUID(), ids = [UUID(), UUID(), UUID()]
         let flat = BrowserSplitLayout(spaceID: space, tabIDs: ids, widthFactors: [0.25, 0.25, 0.5])
         let base = try JSONSerialization.jsonObject(with: try JSONEncoder().encode(flat)) as! [String: Any]
@@ -142,21 +122,21 @@ struct SplitStacksTests {
             var json = base
             json["stacks"] = stacks
             let read = try JSONDecoder().decode(BrowserSplitLayout.self, from: try JSONSerialization.data(withJSONObject: json))
-            try expect(read.stacks == nil && read.tabIDs == ids && read.widthFactors == flat.widthFactors,
+            #expect(read.stacks == nil && read.tabIDs == ids && read.widthFactors == flat.widthFactors,
                        "Stacks with \(reason) load as a flat split")
         }
         var unsettled = base
         unsettled["stacks"] = ["slotSizes": [2, 1], "slotFactors": [1, 3], "stackFactors": [[2, 2], [5]]]
         unsettled["widthFactors"] = [-1, 0, 7]
         let fixed = try JSONDecoder().decode(BrowserSplitLayout.self, from: try JSONSerialization.data(withJSONObject: unsettled))
-        try expect(fixed.stacks == BrowserSplitStacks(slotSizes: [2, 1], slotFactors: [0.25, 0.75], stackFactors: [[0.5, 0.5], [1]])
+        #expect(fixed.stacks == BrowserSplitStacks(slotSizes: [2, 1], slotFactors: [0.25, 0.75], stackFactors: [[0.5, 0.5], [1]])
                    && close(fixed.widthFactors, [0.125, 0.125, 0.75]),
                    "Valid stacks with unnormalised weights settle and rebuild the flat row")
 
         var drifting = base
         drifting["stacks"] = ["slotSizes": [1, 2], "slotFactors": [0.5, 0.5000000009], "stackFactors": [[1], [0.5, 0.5000000009]]]
         let drift = try JSONDecoder().decode(BrowserSplitLayout.self, from: try JSONSerialization.data(withJSONObject: drifting))
-        try expect(drift.stacks?.slotSizes == [1, 2] && abs(drift.widthFactors.reduce(0, +) - 1) < 1e-12
+        #expect(drift.stacks?.slotSizes == [1, 2] && abs(drift.widthFactors.reduce(0, +) - 1) < 1e-12
                    && BrowserSplitLayout.normalized(drift.widthFactors, count: 3) != nil,
                    "Weights that only nearly sum to one settle, so the rebuilt flat row stays valid")
 
@@ -175,97 +155,97 @@ struct SplitStacksTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try JSONSerialization.data(withJSONObject: session).write(to: root.appendingPathComponent("session.json"))
         let store = try BrowserStore(directory: root, now: { Date(timeIntervalSince1970: 1_800_000_000) })
-        try expect(store.state.tabs.map(\.id) == ids && store.state.splitLayouts.count == 1
+        #expect(store.state.tabs.map(\.id) == ids && store.state.splitLayouts.count == 1
                    && store.state.splitLayouts[0].tabIDs == ids && store.state.splitLayouts[0].stacks == nil,
                    "A session with corrupt stacks still opens, with that split flat")
     }
 
-    static func modelEdits() throws {
+    @Test static func modelEdits() throws {
         let space = UUID(), a = UUID(), b = UUID(), c = UUID(), x = UUID(), y = UUID()
         let pair = BrowserSplitLayout(spaceID: space, tabIDs: [a, b], widthFactors: [0.4, 0.6])
         let trio = pair.insertingIntoStack(x, besidePaneAt: 0, after: true)!
-        try expect(trio.tabIDs == [a, x, b] && trio.orientation == .horizontal
+        #expect(trio.tabIDs == [a, x, b] && trio.orientation == .horizontal
                    && trio.stacks == BrowserSplitStacks(slotSizes: [2, 1], slotFactors: [0.4, 0.6], stackFactors: [[0.5, 0.5], [1]]),
                    "Adding below a pane of a flat split creates a stack inside that pane's column")
         let above = pair.insertingIntoStack(x, besidePaneAt: 1, after: false)!
-        try expect(above.tabIDs == [a, x, b] && above.stacks?.slotSizes == [1, 2], "Adding above a pane puts the new pane first in its stack")
+        #expect(above.tabIDs == [a, x, b] && above.stacks?.slotSizes == [1, 2], "Adding above a pane puts the new pane first in its stack")
         let quad = trio.insertingIntoStack(y, besidePaneAt: 1, after: true)!
-        try expect(quad.tabIDs == [a, x, y, b] && quad.stacks?.slotSizes == [3, 1]
+        #expect(quad.tabIDs == [a, x, y, b] && quad.stacks?.slotSizes == [3, 1]
                    && close(quad.stacks!.stackFactors[0], [1.0 / 3, 1.0 / 3, 1.0 / 3]),
                    "A pane already in a stack adds to that same stack")
-        try expect(quad.insertingIntoStack(UUID(), besidePaneAt: 0, after: true) == nil, "No stack insert at four panes")
-        try expect(BrowserSplitLayout(spaceID: space, tabIDs: [a], widthFactors: [1]).insertingIntoStack(x, besidePaneAt: 0, after: true) == nil,
+        #expect(quad.insertingIntoStack(UUID(), besidePaneAt: 0, after: true) == nil, "No stack insert at four panes")
+        #expect(BrowserSplitLayout(spaceID: space, tabIDs: [a], widthFactors: [1]).insertingIntoStack(x, besidePaneAt: 0, after: true) == nil,
                    "A single page can't be stacked")
 
-        try expect(quad.position(of: y)?.slot == 0 && quad.position(of: y)?.index == 2 && quad.paneID(slot: 1, index: 0) == b && quad.slotRange(0) == 0..<3
+        #expect(quad.position(of: y)?.slot == 0 && quad.position(of: y)?.index == 2 && quad.paneID(slot: 1, index: 0) == b && quad.slotRange(0) == 0..<3
                    && quad.slotBoundaries == [0, 3, 4] && quad.mainRowInsertionIndex(after: x) == 3
                    && pair.mainRowInsertionIndex(after: a) == 1 && pair.slotBoundaries == [0, 1, 2],
                    "Reading order runs slot by slot, then down each stack")
 
         var collapsed = trio
         collapsed.removePane(at: 1)
-        try expect(collapsed.tabIDs == [a, b] && collapsed.stacks == nil && collapsed.widthFactors == [0.4, 0.6]
+        #expect(collapsed.tabIDs == [a, b] && collapsed.stacks == nil && collapsed.widthFactors == [0.4, 0.6]
                    && collapsed.orientation == .horizontal, "A stack left with one pane becomes an ordinary slot")
         var column = trio
         column.removePane(at: 2)
-        try expect(column.tabIDs == [a, x] && column.stacks == nil && column.orientation == .vertical && column.widthFactors == [0.5, 0.5],
+        #expect(column.tabIDs == [a, x] && column.stacks == nil && column.orientation == .vertical && column.widthFactors == [0.5, 0.5],
                    "A split left with a single stacked column becomes a flat split in the stack's direction")
         var smaller = quad
         smaller.removePane(at: 0)
-        try expect(smaller.tabIDs == [x, y, b] && smaller.stacks?.slotSizes == [2, 1] && close(smaller.stacks!.stackFactors[0], [0.5, 0.5]),
+        #expect(smaller.tabIDs == [x, y, b] && smaller.stacks?.slotSizes == [2, 1] && close(smaller.stacks!.stackFactors[0], [0.5, 0.5]),
                    "Removing from a stack of three keeps a stack of two")
-        try expect(BrowserSplitLayout.focusSuccessor(smaller.tabIDs, removedAt: 0) == x,
+        #expect(BrowserSplitLayout.focusSuccessor(smaller.tabIDs, removedAt: 0) == x,
                    "The focus successor is the pane now at the old reading-order index")
         var flatRemoval = BrowserSplitLayout(spaceID: space, tabIDs: [a, b, c], widthFactors: [0.2, 0.3, 0.5])
         flatRemoval.removePane(at: 1)
-        try expect(flatRemoval.tabIDs == [a, c] && flatRemoval.widthFactors == [0.2, 0.5], "A flat removal is untouched")
+        #expect(flatRemoval.tabIDs == [a, c] && flatRemoval.widthFactors == [0.2, 0.5], "A flat removal is untouched")
 
         let wide = stacked([a, b, c], space: space, sizes: [1, 2], slots: [0.3, 0.7], stacks: [[1], [0.25, 0.75]])
         let slotMove = wide.movingSlot(of: b, by: -1)!
-        try expect(slotMove.tabIDs == [b, c, a] && slotMove.stacks?.slotSizes == [2, 1] && slotMove.stacks?.slotFactors == [0.7, 0.3]
+        #expect(slotMove.tabIDs == [b, c, a] && slotMove.stacks?.slotSizes == [2, 1] && slotMove.stacks?.slotFactors == [0.7, 0.3]
                    && slotMove.stacks?.stackFactors == [[0.25, 0.75], [1]], "Moving along the main row moves the pane's whole slot")
-        try expect(wide.movingSlot(of: a, by: 1)?.tabIDs == [b, c, a] && wide.movingSlot(of: a, by: -1) == nil,
+        #expect(wide.movingSlot(of: a, by: 1)?.tabIDs == [b, c, a] && wide.movingSlot(of: a, by: -1) == nil,
                    "A pane alone in its slot moves its slot")
         let inner = wide.movingWithinStack(c, by: -1)!
-        try expect(inner.tabIDs == [a, c, b] && inner.stacks?.stackFactors == [[1], [0.75, 0.25]] && inner.stacks?.slotFactors == [0.3, 0.7],
+        #expect(inner.tabIDs == [a, c, b] && inner.stacks?.stackFactors == [[1], [0.75, 0.25]] && inner.stacks?.slotFactors == [0.3, 0.7],
                    "Moving across reorders within the stack")
-        try expect(wide.movingWithinStack(a, by: 1) == nil && wide.movingWithinStack(b, by: -1) == nil, "Moving across needs a stack neighbour")
+        #expect(wide.movingWithinStack(a, by: 1) == nil && wide.movingWithinStack(b, by: -1) == nil, "Moving across needs a stack neighbour")
 
         let turned = wide.transposed()
-        try expect(turned.orientation == .vertical && turned.stacks == wide.stacks && turned.tabIDs == wide.tabIDs
+        #expect(turned.orientation == .vertical && turned.stacks == wide.stacks && turned.tabIDs == wide.tabIDs
                    && turned.transposed() == wide, "Convert transposes both levels together and keeps reading order")
 
         let expanded = wide.expanded(focusing: c)!
-        try expect(expanded.stacks!.slotFactors[1] > 0.999 && expanded.stacks!.stackFactors[1][1] > 0.999
+        #expect(expanded.stacks!.slotFactors[1] > 0.999 && expanded.stacks!.stackFactors[1][1] > 0.999
                    && expanded.stacks!.stackFactors[0] == [1], "Expand gives the focused pane the maximum share on both levels")
-        try expect(pair.expanded(focusing: a)?.widthFactors == pair.expandedFactors(focusing: a), "A flat Expand keeps today's factors")
+        #expect(pair.expanded(focusing: a)?.widthFactors == pair.expandedFactors(focusing: a), "A flat Expand keeps today's factors")
         let even = wide.equalized()!
-        try expect(even.stacks == BrowserSplitStacks(slotSizes: [1, 2], slotFactors: [0.5, 0.5], stackFactors: [[1], [0.5, 0.5]]),
+        #expect(even.stacks == BrowserSplitStacks(slotSizes: [1, 2], slotFactors: [0.5, 0.5], stackFactors: [[1], [0.5, 0.5]]),
                    "Make All Equal evens the slots, then each stack")
-        try expect(BrowserSplitLayout(spaceID: space, tabIDs: [a, b, c], widthFactors: [0.2, 0.3, 0.5]).equalized()?.widthFactors
+        #expect(BrowserSplitLayout(spaceID: space, tabIDs: [a, b, c], widthFactors: [0.2, 0.3, 0.5]).equalized()?.widthFactors
                    == BrowserSplitLayout.normalized([1, 1, 1], count: 3), "A flat Make All Equal keeps today's factors")
         let quadStack = stacked([a, x, y, b], space: space, sizes: [3, 1], slots: [0.5, 0.5], stacks: [[0.2, 0.3, 0.5], [1]])
         let pairResize = quadStack.resizingDivider(1, inSlot: 0, leadingShare: 0.5)!
-        try expect(close(pairResize.stacks!.stackFactors[0], [0.2, 0.4, 0.4]) && pairResize.stacks!.slotFactors == [0.5, 0.5],
+        #expect(close(pairResize.stacks!.stackFactors[0], [0.2, 0.4, 0.4]) && pairResize.stacks!.slotFactors == [0.5, 0.5],
                    "A stack divider resizes only its two neighbours")
         let mainResize = quadStack.resizingDivider(0, inSlot: nil, leadingShare: 0.25)!
-        try expect(close(mainResize.stacks!.slotFactors, [0.25, 0.75]) && mainResize.stacks!.stackFactors == quadStack.stacks!.stackFactors,
+        #expect(close(mainResize.stacks!.slotFactors, [0.25, 0.75]) && mainResize.stacks!.stackFactors == quadStack.stacks!.stackFactors,
                    "A main-row divider resizes only its two slots")
-        try expect(quadStack.resizingDivider(2, inSlot: 0, leadingShare: 0.5) == nil && quadStack.resizingDivider(0, inSlot: 1, leadingShare: 0.5) == nil
+        #expect(quadStack.resizingDivider(2, inSlot: 0, leadingShare: 0.5) == nil && quadStack.resizingDivider(0, inSlot: 1, leadingShare: 0.5) == nil
                    && quadStack.resizingDivider(0, inSlot: 0, leadingShare: 1) == nil, "Dividers that don't exist refuse")
-        try expect(close(quadStack.resizingStack(0, factors: [1, 1, 2])!.stacks!.stackFactors[0], [0.25, 0.25, 0.5])
+        #expect(close(quadStack.resizingStack(0, factors: [1, 1, 2])!.stacks!.stackFactors[0], [0.25, 0.25, 0.5])
                    && quadStack.resizingSlots([1, 3])!.stacks!.slotFactors == [0.25, 0.75], "Stack and slot weights normalise")
 
         var subset = BrowserSplitLayout(id: quadStack.id, spaceID: space, tabIDs: [x, y, b], widthFactors: [0.3, 0.3, 0.4], stacks: nil)
         subset.restack(from: quadStack)
-        try expect(subset.stacks?.slotSizes == [2, 1] && subset.stacks?.slotFactors == [0.5, 0.5], "A projection keeps a surviving stack")
+        #expect(subset.stacks?.slotSizes == [2, 1] && subset.stacks?.slotFactors == [0.5, 0.5], "A projection keeps a surviving stack")
         var broken = BrowserSplitLayout(id: quadStack.id, spaceID: space, tabIDs: [a, b, y], widthFactors: [0.3, 0.3, 0.4], stacks: nil)
         broken.restack(from: quadStack)
-        try expect(broken.stacks == nil && broken.tabIDs == [a, b, y] && broken.widthFactors.count == 3,
+        #expect(broken.stacks == nil && broken.tabIDs == [a, b, y] && broken.widthFactors.count == 3,
                    "A reordered projection that splits a stack drops to flat")
         var untouched = BrowserSplitLayout(spaceID: space, tabIDs: [b, a], widthFactors: [0.6, 0.4])
         untouched.restack(from: pair)
-        try expect(untouched.widthFactors == [0.6, 0.4] && untouched.stacks == nil, "Restacking from a flat split changes nothing")
+        #expect(untouched.widthFactors == [0.6, 0.4] && untouched.stacks == nil, "Restacking from a flat split changes nothing")
     }
 
     static func fixture(_ name: String, orientation: SplitOrientation = .horizontal) throws
@@ -291,68 +271,68 @@ struct SplitStacksTests {
         return (store, root, profile, space, ids, layout)
     }
 
-    static func storeEdits() throws {
+    @Test static func storeEdits() throws {
         let f = try fixture("edits")
         defer { try? FileManager.default.removeItem(at: f.root) }
         let store = f.store, a = f.ids[0], b = f.ids[1], c = f.ids[2]
-        try expect(store.activeSplitLayout == f.layout, "A stacked split loads and stays the active split")
+        #expect(store.activeSplitLayout == f.layout, "A stacked split loads and stays the active split")
 
-        try expect(store.moveSplitPane(a, offset: 1, expected: store.activeSplitLayout!), "Move along the main row commits")
-        try expect(store.state.selectedTabIDs == [b, c, a] && store.activeSplitLayout?.stacks?.slotSizes == [2, 1],
+        #expect(store.moveSplitPane(a, offset: 1, expected: store.activeSplitLayout!), "Move along the main row commits")
+        #expect(store.state.selectedTabIDs == [b, c, a] && store.activeSplitLayout?.stacks?.slotSizes == [2, 1],
                    "Moving a lone pane moves its slot past the whole stack")
-        try expect(!store.moveSplitPane(b, offset: -1, expected: store.activeSplitLayout!), "The first slot can't move earlier")
-        try expect(store.moveSplitPaneWithinStack(c, offset: -1, expected: store.activeSplitLayout!)
+        #expect(!store.moveSplitPane(b, offset: -1, expected: store.activeSplitLayout!), "The first slot can't move earlier")
+        #expect(store.moveSplitPaneWithinStack(c, offset: -1, expected: store.activeSplitLayout!)
                    && store.state.selectedTabIDs == [c, b, a], "Move across reorders the stack and the selection")
-        try expect(!store.moveSplitPaneWithinStack(a, offset: -1, expected: store.activeSplitLayout!), "A lone pane has no stack to move in")
+        #expect(!store.moveSplitPaneWithinStack(a, offset: -1, expected: store.activeSplitLayout!), "A lone pane has no stack to move in")
 
         let beforeFlip = store.activeSplitLayout!
-        try expect(store.flipSplitOrientation(expected: beforeFlip), "Convert commits")
-        try expect(store.activeSplitLayout?.orientation == .vertical && store.activeSplitLayout?.stacks == beforeFlip.stacks,
+        #expect(store.flipSplitOrientation(expected: beforeFlip), "Convert commits")
+        #expect(store.activeSplitLayout?.orientation == .vertical && store.activeSplitLayout?.stacks == beforeFlip.stacks,
                    "Convert keeps the stacks perpendicular")
-        try expect(store.setSplitLayout(orientation: .horizontal, widthFactors: store.activeSplitLayout!.widthFactors)
+        #expect(store.setSplitLayout(orientation: .horizontal, widthFactors: store.activeSplitLayout!.widthFactors)
                    && store.activeSplitLayout?.orientation == .horizontal && store.activeSplitLayout?.stacks == beforeFlip.stacks,
                    "The orientation command keeps the stacks")
 
         let current = store.activeSplitLayout!
-        try expect(!store.resizeSplit(expected: current, widthFactors: [0.2, 0.3, 0.5]) && store.activeSplitLayout == current,
+        #expect(!store.resizeSplit(expected: current, widthFactors: [0.2, 0.3, 0.5]) && store.activeSplitLayout == current,
                    "A flat resize can't flatten a stacked split")
-        try expect(store.resizeSplit(expected: current, resized: current.expanded(focusing: b)!)
+        #expect(store.resizeSplit(expected: current, resized: current.expanded(focusing: b)!)
                    && store.activeSplitLayout!.stacks!.slotFactors[0] > 0.999 && store.activeSplitLayout!.stacks!.stackFactors[0][1] > 0.999,
                    "Expand commits on both levels")
-        try expect(store.resizeSplit(expected: store.activeSplitLayout!, resized: store.activeSplitLayout!.equalized()!)
+        #expect(store.resizeSplit(expected: store.activeSplitLayout!, resized: store.activeSplitLayout!.equalized()!)
                    && store.activeSplitLayout?.stacks?.slotFactors == [0.5, 0.5] && store.activeSplitLayout?.stacks?.stackFactors == [[0.5, 0.5], [1]],
                    "Make All Equal commits")
         let equal = store.activeSplitLayout!
-        try expect(store.resizeSplit(expected: equal, resized: equal.resizingDivider(0, inSlot: 0, leadingShare: 0.25)!)
+        #expect(store.resizeSplit(expected: equal, resized: equal.resizingDivider(0, inSlot: 0, leadingShare: 0.25)!)
                    && store.activeSplitLayout?.stacks?.stackFactors[0] == [0.25, 0.75], "A stack divider resize commits")
         var stranger = store.activeSplitLayout!.transposed()
-        try expect(!store.resizeSplit(expected: store.activeSplitLayout!, resized: stranger), "A resize can't change orientation")
+        #expect(!store.resizeSplit(expected: store.activeSplitLayout!, resized: stranger), "A resize can't change orientation")
         stranger = store.activeSplitLayout!.movingSlot(of: a, by: -1)!
-        try expect(!store.resizeSplit(expected: store.activeSplitLayout!, resized: stranger), "A resize can't change panes or slots")
+        #expect(!store.resizeSplit(expected: store.activeSplitLayout!, resized: stranger), "A resize can't change panes or slots")
 
         let addRight = SplitPaneInsertion(paneID: c, operation: .addAfter, state: store.state)
         let addLeft = SplitPaneInsertion(paneID: b, operation: .addBefore, state: store.state)
-        try expect(addRight?.index == 2 && addRight?.target == .insert(2) && addLeft?.index == 0,
+        #expect(addRight?.index == 2 && addRight?.target == .insert(2) && addLeft?.index == 0,
                    "Add Left and Add Right on a stacked pane add a full-length slot beside its whole stack")
         let insertion = SplitPaneInsertion(paneID: a, stackingAfter: true, state: store.state)!
-        try expect(insertion.target == .stack(2, after: true) && insertion.index == 3 && insertion.orientation == .horizontal,
+        #expect(insertion.target == .stack(2, after: true) && insertion.index == 3 && insertion.orientation == .horizontal,
                    "Split This Pane targets the pane's stack")
         let added = UUID()
-        try expect(store.insertSplitPane(insertion, tabID: added, navigationURL: URL(string: "https://new.test/"), creation: nil,
+        #expect(store.insertSplitPane(insertion, tabID: added, navigationURL: URL(string: "https://new.test/"), creation: nil,
                                          savedHomeIDs: [:], documents: [:]), "Split This Pane commits a new pane")
-        try expect(store.state.selectedTabIDs == [c, b, a, added] && store.activeSplitLayout?.stacks?.slotSizes == [2, 2],
+        #expect(store.state.selectedTabIDs == [c, b, a, added] && store.activeSplitLayout?.stacks?.slotSizes == [2, 2],
                    "The new pane joins the lone pane's slot as a new stack")
-        try expect(SplitPaneInsertion(paneID: a, stackingAfter: true, state: store.state) == nil, "Split This Pane refuses at four panes")
+        #expect(SplitPaneInsertion(paneID: a, stackingAfter: true, state: store.state) == nil, "Split This Pane refuses at four panes")
         let addOperation = SplitPaneInsertion(paneID: a, operation: .addAfter, state: store.state)
-        try expect(addOperation == nil, "Today's Add still refuses at four panes")
+        #expect(addOperation == nil, "Today's Add still refuses at four panes")
 
-        try expect(store.separateTabFromSplit(added, expected: store.activeSplitLayout!, focusedID: added),
+        #expect(store.separateTabFromSplit(added, expected: store.activeSplitLayout!, focusedID: added),
                    "Separate commits on a stacked pane")
-        try expect(store.state.selectedTabIDs == [added] && store.state.splitLayouts.first?.tabIDs == [c, b, a]
+        #expect(store.state.selectedTabIDs == [added] && store.state.splitLayouts.first?.tabIDs == [c, b, a]
                    && store.state.splitLayouts.first?.stacks?.slotSizes == [2, 1], "Separating collapses that stack back to one pane")
     }
 
-    static func closingCollapsesAndUndoRestores() throws {
+    @Test static func closingCollapsesAndUndoRestores() throws {
         do {
             let f = try fixture("close")
             defer { try? FileManager.default.removeItem(at: f.root) }
@@ -364,39 +344,39 @@ struct SplitStacksTests {
             windows.record(intent, in: store.state)
             let undo = ClosedTabsUndo(prompt: .clear, ids: [c], spaceID: f.space.id, profileID: f.profile.id, focusedTabID: c,
                                       before: before, after: store.state)!
-            try expect(store.state.selectedTabIDs == [a, b] && store.state.splitLayouts.count == 1
+            #expect(store.state.selectedTabIDs == [a, b] && store.state.splitLayouts.count == 1
                        && store.state.splitLayouts[0].stacks == nil && store.state.splitLayouts[0].widthFactors == [0.5, 0.5],
                        "Closing a stacked pane collapses its stack and keeps the column's share")
-            try expect(try store.undoClosedTabs(undo, shouldCommit: { true }), "Undo restores the pane")
-            try expect(store.state.splitLayouts.first?.tabIDs == [a, b, c] && store.state.splitLayouts.first?.stacks == f.layout.stacks,
+            #expect(try store.undoClosedTabs(undo, shouldCommit: { true }), "Undo restores the pane")
+            #expect(store.state.splitLayouts.first?.tabIDs == [a, b, c] && store.state.splitLayouts.first?.stacks == f.layout.stacks,
                        "Undo puts the pane back in its old stack with its old share")
             store.closeTabs([c])
             let reopened = windows.next(in: store.state)
-            try expect(reopened?.membership != nil, "Reopen records the pane's split")
-            try expect(try store.restoreClosedItem(reopened!), "Reopen restores the pane")
-            try expect(store.state.splitLayouts.first?.tabIDs == [a, b, c] && store.state.splitLayouts.first?.stacks == f.layout.stacks,
+            #expect(reopened?.membership != nil, "Reopen records the pane's split")
+            #expect(try store.restoreClosedItem(reopened!), "Reopen restores the pane")
+            #expect(store.state.splitLayouts.first?.tabIDs == [a, b, c] && store.state.splitLayouts.first?.stacks == f.layout.stacks,
                        "Reopen Closed Tab rejoins the old stack")
 
             let beforeFlip = store.state
             store.closeTabs([b])
             let flipUndo = ClosedTabsUndo(prompt: .clear, ids: [b], spaceID: f.space.id, profileID: f.profile.id, focusedTabID: b,
                                           before: beforeFlip, after: store.state)!
-            try expect(store.flipSplitOrientation(expected: store.activeSplitLayout!), "The survivors can be converted after a close")
-            try expect(try store.undoClosedTabs(flipUndo, shouldCommit: { true }), "Undo after a convert restores the pane")
-            try expect(store.state.splitLayouts.first?.tabIDs == [a, b, c] && store.state.splitLayouts.first?.orientation == .vertical
+            #expect(store.flipSplitOrientation(expected: store.activeSplitLayout!), "The survivors can be converted after a close")
+            #expect(try store.undoClosedTabs(flipUndo, shouldCommit: { true }), "Undo after a convert restores the pane")
+            #expect(store.state.splitLayouts.first?.tabIDs == [a, b, c] && store.state.splitLayouts.first?.orientation == .vertical
                        && store.state.splitLayouts.first?.stacks?.slotSizes == [1, 2]
                        && store.state.splitLayouts.first?.stacks?.slotFactors == [0.5, 0.5],
                        "After a convert the pane rejoins its old mate's slot in the new direction, leaving the other slot's share alone")
-            try expect(store.flipSplitOrientation(expected: store.state.splitLayouts.first!), "Converting back commits")
+            #expect(store.flipSplitOrientation(expected: store.state.splitLayouts.first!), "Converting back commits")
             store.setSplit([a, b, c])
 
             let beforeTwo = store.state
             store.closeTabs([b, c])
             let pairUndo = ClosedTabsUndo(prompt: .clear, ids: [b, c], spaceID: f.space.id, profileID: f.profile.id, focusedTabID: nil,
                                           before: beforeTwo, after: store.state)!
-            try expect(store.state.splitLayouts.isEmpty && store.state.selectedTabIDs == [a], "Closing the whole stack dissolves the split")
-            try expect(try store.undoClosedTabs(pairUndo, shouldCommit: { true }), "Undo restores both panes")
-            try expect(store.state.splitLayouts.first?.tabIDs == [a, b, c] && store.state.splitLayouts.first?.stacks == f.layout.stacks,
+            #expect(store.state.splitLayouts.isEmpty && store.state.selectedTabIDs == [a], "Closing the whole stack dissolves the split")
+            #expect(try store.undoClosedTabs(pairUndo, shouldCommit: { true }), "Undo restores both panes")
+            #expect(store.state.splitLayouts.first?.tabIDs == [a, b, c] && store.state.splitLayouts.first?.stacks == f.layout.stacks,
                        "Undo rebuilds the stacked shape from the dissolved split")
         }
         do {
@@ -408,16 +388,16 @@ struct SplitStacksTests {
             store.closeTabs(Set(f.ids))
             windows.record(intent, in: store.state)
             let archived = store.state.tabs.filter { f.ids.contains($0.id) }
-            try expect(archived.allSatisfy { $0.archivedAt != nil && $0.archiveProvenance?.split?.stacks == f.layout.stacks },
+            #expect(archived.allSatisfy { $0.archivedAt != nil && $0.archiveProvenance?.split?.stacks == f.layout.stacks },
                        "Archived panes carry the stacked shape")
             let record = windows.next(in: store.state)!
-            try expect(record.split?.stacks == f.layout.stacks && (try store.restoreClosedItem(record)),
+            #expect(try record.split?.stacks == f.layout.stacks && (try store.restoreClosedItem(record)),
                        "Reopening a closed stacked split restores it as one group")
-            try expect(store.state.splitLayouts.first?.tabIDs == f.ids && store.state.splitLayouts.first?.stacks == f.layout.stacks,
+            #expect(store.state.splitLayouts.first?.tabIDs == f.ids && store.state.splitLayouts.first?.stacks == f.layout.stacks,
                        "The whole group regroups in its full stacked shape")
             store.closeTabs(Set(f.ids))
             let restored = store.restoreArchivedTab(f.ids[0], destination: .previousSpace(fallbackSpaceID: f.space.id))
-            try expect(restored == f.ids && store.state.splitLayouts.first?.stacks == f.layout.stacks,
+            #expect(restored == f.ids && store.state.splitLayouts.first?.stacks == f.layout.stacks,
                        "Restoring from the Archive brings back the stacked shape")
         }
         do {
@@ -428,11 +408,11 @@ struct SplitStacksTests {
             store.closeTabs([a])
             let undo = ClosedTabsUndo(prompt: .clear, ids: [a], spaceID: f.space.id, profileID: f.profile.id, focusedTabID: a,
                                       before: before, after: store.state)!
-            try expect(store.state.splitLayouts.first?.tabIDs == [b, c] && store.state.splitLayouts.first?.orientation == .vertical
+            #expect(store.state.splitLayouts.first?.tabIDs == [b, c] && store.state.splitLayouts.first?.orientation == .vertical
                        && store.state.splitLayouts.first?.stacks == nil, "Closing the lone column leaves the stack as a flat split")
-            try expect(try store.undoClosedTabs(undo, shouldCommit: { true }), "Undo restores the lone pane")
+            #expect(try store.undoClosedTabs(undo, shouldCommit: { true }), "Undo restores the lone pane")
             let layout = store.state.splitLayouts.first
-            try expect(layout?.tabIDs == [a, b, c] && layout?.stacks == f.layout.stacks && layout?.orientation == .horizontal,
+            #expect(layout?.tabIDs == [a, b, c] && layout?.stacks == f.layout.stacks && layout?.orientation == .horizontal,
                        "A pane without an old stack rejoins as its own slot beside the column it left")
         }
         do {
@@ -442,14 +422,14 @@ struct SplitStacksTests {
             let index = state.tabs.firstIndex { $0.id == f.ids[2] }!
             state.tabs[index].archivedAt = Date(timeIntervalSince1970: 20)
             let layouts = BrowserStore.reconciledSplitLayouts(in: state, activeSpaceID: f.space.id)
-            try expect(layouts.first?.tabIDs == [f.ids[0], f.ids[1]] && layouts.first?.stacks == nil && layouts.first?.widthFactors == [0.5, 0.5],
+            #expect(layouts.first?.tabIDs == [f.ids[0], f.ids[1]] && layouts.first?.stacks == nil && layouts.first?.widthFactors == [0.5, 0.5],
                        "Reconciling away a stacked pane collapses its stack")
-            try expect(BrowserStore.reconciledSplitLayouts(in: f.store.state, activeSpaceID: f.space.id) == f.store.state.splitLayouts,
+            #expect(BrowserStore.reconciledSplitLayouts(in: f.store.state, activeSpaceID: f.space.id) == f.store.state.splitLayouts,
                        "Reconciling an intact stacked split changes nothing")
         }
     }
 
-    static func copiesCarryStacks() throws {
+    @Test static func copiesCarryStacks() throws {
         let f = try fixture("copies")
         defer { try? FileManager.default.removeItem(at: f.root) }
         let store = f.store
@@ -457,12 +437,12 @@ struct SplitStacksTests {
         let duplicate = SidebarDuplicateTarget(items: [.split(f.layout.id)], spaceID: f.space.id, profileID: f.profile.id, state: store.state)!
         let copied = try store.duplicateSidebarItems(duplicate, destinations: urls)!
         let copy = store.state.splitLayouts.first { $0.id != f.layout.id }
-        try expect(copy?.stacks == f.layout.stacks && copy?.tabIDs == copied.tabIDs && Set(copied.tabIDs).isDisjoint(with: f.ids),
+        #expect(copy?.stacks == f.layout.stacks && copy?.tabIDs == copied.tabIDs && Set(copied.tabIDs).isDisjoint(with: f.ids),
                    "Duplicate carries the stacks onto fresh pane identities")
         let today = SidebarContainerLocation(spaceID: f.space.id, folderID: nil, section: .today)
         let target = SidebarItemsCopy(items: [.split(f.layout.id)], spaceID: f.space.id, profileID: f.profile.id, state: store.state)!
         let result = try store.copySidebarItems(target, to: today, before: nil, destinations: urls)
-        try expect(result != nil && store.state.splitLayouts.filter { $0.stacks == f.layout.stacks }.count == 3,
+        #expect(result != nil && store.state.splitLayouts.filter { $0.stacks == f.layout.stacks }.count == 3,
                    "Option-drag copies carry the stacks")
 
         let profile = BrowserProfile(id: UUID(), name: "Profile")
@@ -479,11 +459,11 @@ struct SplitStacksTests {
         let move = CommandBarFolderMove.snapshot(source: source, state: state).first { $0.folder.folderID == folder.id }!
         let commandCopy = CommandBarFolderCopy(move: move, destinations: Dictionary(uniqueKeysWithValues: ids.map { ($0, "https://c.test") }),
                                                state: state, now: Date())!
-        try expect(commandCopy.groups.count == 1 && commandCopy.groups[0].stacks == layout.stacks
+        #expect(commandCopy.groups.count == 1 && commandCopy.groups[0].stacks == layout.stacks
                    && Set(commandCopy.groups[0].tabIDs).isDisjoint(with: ids), "Pin to folder copies carry the stacks onto fresh IDs")
     }
 
-    static func favoritesWindowsAndMoves() throws {
+    @Test static func favoritesWindowsAndMoves() throws {
         do {
             let f = try fixture("favorite")
             defer { try? FileManager.default.removeItem(at: f.root) }
@@ -493,27 +473,27 @@ struct SplitStacksTests {
             let favorite = store.state.tabs.first { $0.id == favoriteID }!
             let request = FavoriteSplitRequest(favorite: favorite, spaceID: f.space.id, selection: f.ids, focusedID: b,
                                                state: store.state, homeIDs: [favoriteID: UUID()])!
-            try expect(request.paneIDs == [a, b, c, favoriteID], "A Favorite joins after the focused pane's whole slot")
-            try expect(try store.commitFavoriteSplit(request) == favoriteID, "The Favorite joins the stacked split")
+            #expect(request.paneIDs == [a, b, c, favoriteID], "A Favorite joins after the focused pane's whole slot")
+            #expect(try store.commitFavoriteSplit(request) == favoriteID, "The Favorite joins the stacked split")
             let layout = store.activeSplitLayout
-            try expect(layout?.tabIDs == [a, b, c, favoriteID] && layout?.stacks?.slotSizes == [1, 2, 1]
+            #expect(layout?.tabIDs == [a, b, c, favoriteID] && layout?.stacks?.slotSizes == [1, 2, 1]
                        && close(layout!.stacks!.stackFactors[1], [0.25, 0.75]), "Joining a Favorite keeps the stack intact")
 
             let pane = UUID()
             let opened = store.insertCommandBarSplit(after: b, expectedSelection: store.state.selectedTabIDs, tabID: pane,
                                                      newURL: URL(string: "https://pane.test/"))
-            try expect(!opened, "Open in Split View still refuses at four panes")
+            #expect(!opened, "Open in Split View still refuses at four panes")
         }
         do {
             let f = try fixture("command-bar")
             defer { try? FileManager.default.removeItem(at: f.root) }
             let store = f.store, a = f.ids[0], b = f.ids[1], c = f.ids[2]
             let pane = UUID()
-            try expect(store.commandBarSplitHomes(after: b, expectedSelection: f.ids, tabID: pane, isNew: true) == [],
+            #expect(store.commandBarSplitHomes(after: b, expectedSelection: f.ids, tabID: pane, isNew: true) == [],
                        "Command bar homes see the main-row insertion")
-            try expect(store.insertCommandBarSplit(after: b, expectedSelection: f.ids, tabID: pane, newURL: URL(string: "https://pane.test/")),
+            #expect(store.insertCommandBarSplit(after: b, expectedSelection: f.ids, tabID: pane, newURL: URL(string: "https://pane.test/")),
                        "Open in Split View commits")
-            try expect(store.state.selectedTabIDs == [a, b, c, pane] && store.activeSplitLayout?.stacks?.slotSizes == [1, 2, 1],
+            #expect(store.state.selectedTabIDs == [a, b, c, pane] && store.activeSplitLayout?.stacks?.slotSizes == [1, 2, 1],
                        "Open in Split View adds a main-row slot after the focused pane's stack")
         }
         do {
@@ -523,21 +503,21 @@ struct SplitStacksTests {
             let other = store.open("https://other.test/")
             store.setSplit(f.ids)
             let layout = store.activeSplitLayout!
-            try expect(!store.dropTabIntoSplit(other, expectedSelection: f.ids, expectedLayout: layout, target: .insert(2), orientation: .horizontal),
+            #expect(!store.dropTabIntoSplit(other, expectedSelection: f.ids, expectedLayout: layout, target: .insert(2), orientation: .horizontal),
                        "A main-row drop inside a stack refuses")
-            try expect(!store.dropTabIntoSplit(other, expectedSelection: f.ids, expectedLayout: layout, target: .insert(1), orientation: .vertical),
+            #expect(!store.dropTabIntoSplit(other, expectedSelection: f.ids, expectedLayout: layout, target: .insert(1), orientation: .vertical),
                        "A drop can't flip a stacked split")
             let replaced = SplitDropTransaction.make(source: other, selection: f.ids, layout: layout, target: .replace(2),
                                                      orientation: .horizontal, spaceID: f.space.id)
-            try expect(replaced?.tabIDs == [a, b, other] && replaced?.stacks == layout.stacks && replaced?.id == layout.id,
+            #expect(replaced?.tabIDs == [a, b, other] && replaced?.stacks == layout.stacks && replaced?.id == layout.id,
                        "Replacing a stacked pane keeps its slot, stack position and weights")
-            try expect(store.dropTabIntoSplit(other, expectedSelection: f.ids, expectedLayout: layout, target: .insert(1), orientation: .horizontal),
+            #expect(store.dropTabIntoSplit(other, expectedSelection: f.ids, expectedLayout: layout, target: .insert(1), orientation: .horizontal),
                        "A main-row drop at a slot edge commits")
-            try expect(store.state.selectedTabIDs == [a, other, b, c] && store.activeSplitLayout?.stacks?.slotSizes == [1, 1, 2],
+            #expect(store.state.selectedTabIDs == [a, other, b, c] && store.activeSplitLayout?.stacks?.slotSizes == [1, 1, 2],
                        "The main-row drop adds a whole slot")
             store.setSplit([a, b, c])
             let back = store.activeSplitLayout
-            try expect(back == nil || back?.tabIDs == [a, b, c], "Re-selecting three panes is allowed")
+            #expect(back == nil || back?.tabIDs == [a, b, c], "Re-selecting three panes is allowed")
         }
         do {
             let f = try fixture("stack-drop")
@@ -545,10 +525,10 @@ struct SplitStacksTests {
             let store = f.store, a = f.ids[0], b = f.ids[1], c = f.ids[2]
             let other = store.open("https://other.test/")
             store.setSplit(f.ids)
-            try expect(store.dropTabIntoSplit(other, expectedSelection: f.ids, expectedLayout: store.activeSplitLayout!,
+            #expect(store.dropTabIntoSplit(other, expectedSelection: f.ids, expectedLayout: store.activeSplitLayout!,
                                               target: .stack(0, after: false), orientation: .vertical),
                        "A perpendicular drop commits")
-            try expect(store.state.selectedTabIDs == [other, a, b, c] && store.activeSplitLayout?.stacks?.slotSizes == [2, 2]
+            #expect(store.state.selectedTabIDs == [other, a, b, c] && store.activeSplitLayout?.stacks?.slotSizes == [2, 2]
                        && store.activeSplitLayout?.orientation == .horizontal, "The dropped tab stacks above the pane")
         }
         do {
@@ -556,10 +536,10 @@ struct SplitStacksTests {
             defer { try? FileManager.default.removeItem(at: f.root) }
             let store = f.store, b = f.ids[1], c = f.ids[2]
             let tab = UUID()
-            try expect(try store.dropExternalURLIntoSplit(URL(string: "https://link.test/")!, tabID: tab, spaceID: f.space.id,
+            #expect(try store.dropExternalURLIntoSplit(URL(string: "https://link.test/")!, tabID: tab, spaceID: f.space.id,
                 profileID: f.profile.id, expectedSelection: f.ids, expectedLayout: store.activeSplitLayout!,
                 target: .stack(2, after: true), orientation: .horizontal, creation: nil), "An external link drop can stack")
-            try expect(store.state.selectedTabIDs == [f.ids[0], b, c, tab] && store.activeSplitLayout?.stacks?.slotSizes == [1, 3],
+            #expect(store.state.selectedTabIDs == [f.ids[0], b, c, tab] && store.activeSplitLayout?.stacks?.slotSizes == [1, 3],
                        "The link joins the stack below the pane")
         }
         do {
@@ -567,13 +547,13 @@ struct SplitStacksTests {
             defer { try? FileManager.default.removeItem(at: f.root) }
             let a = f.ids[0], b = f.ids[1], c = f.ids[2]
             var presentation = WindowPresentation(state: f.store.state, ready: true)
-            try expect(presentation.splitLayout == f.layout, "A window presents the stacked split")
+            #expect(presentation.splitLayout == f.layout, "A window presents the stacked split")
             presentation.reconcile(f.store.state, available: { $0 != c })
-            try expect(presentation.splitLayout?.tabIDs == [a, b] && presentation.splitLayout?.stacks == nil
+            #expect(presentation.splitLayout?.tabIDs == [a, b] && presentation.splitLayout?.stacks == nil
                        && presentation.splitLayout?.widthFactors == [0.5, 0.5], "A window projection that breaks a stack drops to flat")
             var column = WindowPresentation(state: f.store.state, ready: true)
             column.reconcile(f.store.state, available: { $0 != a })
-            try expect(column.splitLayout?.tabIDs == [b, c] && column.splitLayout?.orientation == .vertical
+            #expect(column.splitLayout?.tabIDs == [b, c] && column.splitLayout?.orientation == .vertical
                        && column.splitLayout?.widthFactors == [0.25, 0.75], "A projection onto one stack shows that stack flat")
         }
         do {
@@ -583,11 +563,11 @@ struct SplitStacksTests {
             let moved = SplitCrossSpaceAdd.relocated(f.store.state, source: f.ids[2], into: elsewhere, profileID: f.profile.id,
                                                      pane: nil, homeID: nil, now: Date())
             let left = moved?.splitLayouts.first { $0.id == f.layout.id }
-            try expect(left?.tabIDs == [f.ids[0], f.ids[1]] && left?.stacks == nil, "A cross-Space move out of a stack collapses it")
+            #expect(left?.tabIDs == [f.ids[0], f.ids[1]] && left?.stacks == nil, "A cross-Space move out of a stack collapses it")
         }
     }
 
-    static func arcNestedSplits() throws {
+    @Test static func arcNestedSplits() throws {
         func document(_ items: [Any], pinned: [String]) throws -> Data {
             try JSONSerialization.data(withJSONObject: ["sidebar": ["containers": [["global": [:]], [
                 "items": [["P", ["id": "P", "childrenIds": pinned, "data": ["itemContainer": [:]]]]].flatMap { $0 } + items,
@@ -604,7 +584,7 @@ struct SplitStacksTests {
         guard case let .stackedSplit(_, _, tabs, orientation, stacks)? = nested.spaces[0].pinned.first else {
             throw NSError(domain: "Arc nested split stays stacked", code: 1)
         }
-        try expect(tabs.map(\.title) == ["A", "B", "C"] && orientation == .horizontal && nested.skippedItemCount == 0
+        #expect(tabs.map(\.title) == ["A", "B", "C"] && orientation == .horizontal && nested.skippedItemCount == 0
                    && stacks == BrowserSplitStacks(slotSizes: [1, 2], slotFactors: [0.4, 0.6], stackFactors: [[1], [0.25, 0.75]]),
                    "A perpendicular nested Arc split becomes a stack")
 
@@ -614,7 +594,7 @@ struct SplitStacksTests {
         guard case let .split(_, _, sameTabs, _, factors)? = same.spaces[0].pinned.first else {
             throw NSError(domain: "Arc same-direction split flattens", code: 1)
         }
-        try expect(sameTabs.map(\.title) == ["A", "B", "C"] && close(factors, [0.5, 0.25, 0.25]),
+        #expect(sameTabs.map(\.title) == ["A", "B", "C"] && close(factors, [0.5, 0.25, 0.25]),
                    "A same-direction nested Arc split joins the main row")
 
         items = split("G", ["A", "N"], "horizontal", []) + split("N", ["B", "M"], "vertical", []) + split("M", ["C", "D"], "horizontal", [])
@@ -623,7 +603,7 @@ struct SplitStacksTests {
         guard case let .split(_, _, deepTabs, _, _)? = deep.spaces[0].pinned.first else {
             throw NSError(domain: "Arc third level flattens", code: 1)
         }
-        try expect(deepTabs.map(\.title) == ["A", "B", "C", "D"] && deep.skippedItemCount == 0,
+        #expect(deepTabs.map(\.title) == ["A", "B", "C", "D"] && deep.skippedItemCount == 0,
                    "A third Arc level flattens without dropping tabs")
 
         items = split("G", ["A", "N", "E"], "horizontal", []) + split("N", ["B", "C", "D"], "vertical", [])
@@ -636,11 +616,11 @@ struct SplitStacksTests {
             case .folder: return []
             }
         }
-        try expect(crowdedTitles == ["A", "B", "C", "D", "E"], "A nested Arc split over four panes flattens and keeps every tab")
+        #expect(crowdedTitles == ["A", "B", "C", "D", "E"], "A nested Arc split over four panes flattens and keeps every tab")
 
         items = split("G", ["A", "N", "E"], "horizontal", []) + split("N", [], "vertical", []) + tab("A") + tab("E")
         let hollow = try ArcSidebarImport(data: document(items, pinned: ["G"]))
-        try expect(hollow.skippedItemCount == 1, "An empty nested Arc split counts as skipped")
+        #expect(hollow.skippedItemCount == 1, "An empty nested Arc split counts as skipped")
 
         func favorites(_ items: [Any], top: [String]) throws -> Data {
             try JSONSerialization.data(withJSONObject: ["sidebar": ["containers": [[
@@ -657,7 +637,7 @@ struct SplitStacksTests {
         _ = try favoriteStore.importArcSidebar(favoriteArc, profiles: [(.standard, "Personal")],
                                                standardProfileID: favoriteStore.state.profiles[0].id)
         let partial = favoriteStore.state.splitLayouts.first
-        try expect(partial?.tabIDs.count == 2 && partial?.orientation == .vertical && partial?.stacks == nil
+        #expect(partial?.tabIDs.count == 2 && partial?.orientation == .vertical && partial?.stacks == nil
                    && close(partial?.widthFactors ?? [], [0.25, 0.75]),
                    "A stacked Arc Favorite whose first pane already exists keeps the rest stacked the way Arc showed it")
 
@@ -666,6 +646,6 @@ struct SplitStacksTests {
         let store = try BrowserStore(directory: root, now: { Date(timeIntervalSince1970: 1_800_000_000) })
         _ = try store.importArcSidebar(nested, profiles: [(.standard, "Personal")], standardProfileID: store.state.profiles[0].id)
         let imported = store.state.splitLayouts.first
-        try expect(imported?.stacks == stacks && imported?.tabIDs.count == 3, "Importing the nested Arc split saves the stack")
+        #expect(imported?.stacks == stacks && imported?.tabIDs.count == 3, "Importing the nested Arc split saves the stack")
     }
 }
