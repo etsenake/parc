@@ -295,11 +295,16 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         }
     }
     private func dragTool(_ tool: EaselTool, to point: NSPoint?, ended: Bool) {
-        guard ended else { canvas.previewPlacement(tool, atWindowPoint: point); return }
+        let target = point.flatMap { canvasDropPoint($0) }
+        guard ended else { canvas.previewPlacement(tool, atWindowPoint: target); return }
         canvas.previewPlacement(nil, atWindowPoint: nil)
-        guard let point, scroll.bounds.contains(scroll.convert(point, from: nil)),
-              palette.map({ !$0.bounds.contains($0.convert(point, from: nil)) }) ?? true else { return }
-        if canvas.placeTool(tool, atWindowPoint: point) { focusCanvas() }
+        guard let target else { return }
+        if canvas.placeTool(tool, atWindowPoint: target) { focusCanvas() }
+    }
+    private func canvasDropPoint(_ point: NSPoint) -> NSPoint? {
+        guard scroll.bounds.contains(scroll.convert(point, from: nil)) else { return nil }
+        let local = canvas.convert(point, from: nil)
+        return canvas.uncoveredVisibleRect.contains(local) ? point : nil
     }
     func controlTextDidChange(_ notification: Notification) {
         let value = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
