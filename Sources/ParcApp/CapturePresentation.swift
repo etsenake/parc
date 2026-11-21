@@ -78,7 +78,7 @@ enum CapturePresentation {
 }
 
 @MainActor enum CaptureArtwork {
-    static let directory = Bundle.main.resourceURL?.appendingPathComponent("Capture", isDirectory: true)
+    nonisolated static let directory = Bundle.main.resourceURL?.appendingPathComponent("Capture", isDirectory: true)
     static func image(_ name: String, in directory: URL? = directory) -> NSImage? {
         guard let directory, let image = NSImage(contentsOf: directory.appendingPathComponent(name + ".pdf")) else { return nil }
         for suffix in [".png", "@2x.png"] {
