@@ -82,6 +82,7 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
     private var washGeneratedAt: CFTimeInterval = -.infinity
     private var pendingWash: DispatchWorkItem?
     private(set) lazy var overlays = FavoriteTileOverlays(host: self)
+    var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     private(set) lazy var windowActivity = FavoriteWindowActivity { [weak self] dim in self?.dimmed = dim }
 
     init(title: String, monogram: String, url: String) {
@@ -520,7 +521,7 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
             layer.frame = frame
         }
         layer.transform = next; CATransaction.commit()
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, window != nil else {
+        guard !reducesMotion(), window != nil else {
             layer.removeAnimation(forKey: "favoritePress"); return
         }
         let spring = CASpringAnimation(keyPath: "transform")
