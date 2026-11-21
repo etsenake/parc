@@ -93,7 +93,8 @@ enum NoteMarkdownCheck {
         return parts.joined(separator: " ")
     }
 
-    static func checkModelRoundTrip(_ page: NotePage, _ label: String, sourceLocation: SourceLocation = #_sourceLocation) {
+    @discardableResult
+    static func checkModelRoundTrip(_ page: NotePage, _ label: String, sourceLocation: SourceLocation = #_sourceLocation) -> Bool {
         let markdown = NoteMarkdown.serialize(page)
         let reparsed = NoteMarkdown.parse(markdown)
         if !same(page, reparsed) {
@@ -107,10 +108,13 @@ enum NoteMarkdownCheck {
             \(describe(reparsed.blocks))
             \(reparsed.settings)
             """, sourceLocation: sourceLocation)
+            return false
         }
+        return true
     }
 
-    static func checkExact(_ source: String, _ label: String, sourceLocation: SourceLocation = #_sourceLocation) {
+    @discardableResult
+    static func checkExact(_ source: String, _ label: String, sourceLocation: SourceLocation = #_sourceLocation) -> Bool {
         let page = NoteMarkdown.parse(source)
         let output = NoteMarkdown.serialize(page)
         if output != source {
@@ -121,8 +125,10 @@ enum NoteMarkdownCheck {
             \(output)--- model
             \(describe(page.blocks))
             """, sourceLocation: sourceLocation)
+            checkModelRoundTrip(page, label, sourceLocation: sourceLocation)
+            return false
         }
-        checkModelRoundTrip(page, label, sourceLocation: sourceLocation)
+        return checkModelRoundTrip(page, label, sourceLocation: sourceLocation)
     }
 
     static func stableProblems(_ source: String, _ label: String) -> [String] {
@@ -148,7 +154,10 @@ enum NoteMarkdownCheck {
         return problems
     }
 
-    static func checkStable(_ source: String, _ label: String, sourceLocation: SourceLocation = #_sourceLocation) {
-        for problem in stableProblems(source, label) { report(problem, sourceLocation: sourceLocation) }
+    @discardableResult
+    static func checkStable(_ source: String, _ label: String, sourceLocation: SourceLocation = #_sourceLocation) -> Bool {
+        let problems = stableProblems(source, label)
+        for problem in problems { report(problem, sourceLocation: sourceLocation) }
+        return problems.isEmpty
     }
 }
