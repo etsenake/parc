@@ -34,6 +34,8 @@ enum EaselMarkdownEditing {
                 kind = [.heading1, .heading2, .heading3, .heading4][match.range(at: 1).length - 1]; prefix = match.range
             } else if let match = first(#"^> "#, in: local.string), NSMaxRange(match.range) == caret {
                 kind = .quote; prefix = match.range
+            } else if let match = first(#"^\[ ?\] "#, in: local.string), NSMaxRange(match.range) == caret {
+                kind = .checklist; prefix = match.range
             } else if let match = first(#"^(\t{0,6})(-|\*) "#, in: local.string), NSMaxRange(match.range) == caret {
                 kind = .bullets; prefix = match.range; depth = match.range(at: 1).length
             } else if let match = first(#"^(\t{0,6})1\.\s"#, in: local.string), NSMaxRange(match.range) == caret {

@@ -60,7 +60,7 @@ struct EaselConnectorCanvasState {
 @MainActor
 final class EaselConnectorLabelLayout {
     let storage: NSTextStorage
-    let manager = NSLayoutManager()
+    let manager: NSLayoutManager = EaselChecklistLayoutManager()
     let container: NSTextContainer
 
     init(_ value: NSAttributedString) {

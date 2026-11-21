@@ -668,6 +668,7 @@ extension EaselParagraphEditing.Kind {
         case .heading4: return .heading4
         case .bullets: return .bulletedList
         case .numbers: return .numberedList
+        case .checklist: return .todoList
         case .quote: return .quote
         }
     }

@@ -1726,6 +1726,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if beginToolGesture(at: point, event: event) { return }
         if offerUnlock(at: point) { cancelPointerInteraction(); return }
         if mindMapControlPress(at: point) { cancelPointerInteraction(); return }
+        if checklistPress(at: point) { cancelPointerInteraction(); return }
         if beginConnectorGesture(at: point, event: event) { return }
         if let handle = resizeHandle(at: point) {
             if event.clickCount == 2, EaselTextSizing.setsTextWidth(handle), restoreTextAutoWidth() { cancelPointerInteraction(); return }
@@ -1989,6 +1990,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         addLockBadgeCursorRects()
         addTableCursorRects()
         addSectionCursorRects()
+        addChecklistCursorRects()
         if !drawing, onOpenURL != nil {
             for item in items where EaselObjectLink.hasLink(item) {
                 let r = EaselObjectLink.badgeRect(for: EaselRotation.bounds(of: item), scale: canvasScale)

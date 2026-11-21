@@ -13,6 +13,7 @@ Sources/ParcApp/EaselTextHighlight.swift
 Sources/ParcApp/NoteFormatShortcut.swift
 Sources/ParcApp/EaselTextAttachment.swift
 Sources/ParcApp/EaselParagraphEditing.swift
+Sources/ParcApp/EaselChecklistText.swift
 Sources/ParcApp/EaselMarkdownEditing.swift
 Sources/ParcApp/NoteCustomEmojiImages.swift
 Sources/ParcApp/EaselStampArtwork.swift

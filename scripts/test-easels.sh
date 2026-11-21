@@ -74,6 +74,12 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
+  "$repo_root/tests/EaselChecklistTests.swift" \
+  -o "$scratch/easel-checklist"
+"$scratch/easel-checklist"
+
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
+  "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/tests/EaselPagesTests.swift" \
   -o "$scratch/easel-pages"
 "$scratch/easel-pages"
@@ -149,6 +155,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
+  "$repo_root/Sources/ParcApp/EaselChecklistText.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/tests/EaselTextStyleTests.swift" \
   -o "$style_bundle/MacOS/EaselTextStyle"
@@ -173,6 +180,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
+  "$repo_root/Sources/ParcApp/EaselChecklistText.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvas"*.swift \
@@ -224,6 +232,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
+  "$repo_root/Sources/ParcApp/EaselChecklistText.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvas"*.swift \
@@ -278,6 +287,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
+  "$repo_root/Sources/ParcApp/EaselChecklistText.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvas"*.swift \

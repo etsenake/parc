@@ -11,6 +11,7 @@ struct EaselVectorTextRun: Equatable {
     var color: String?
     var underline = false
     var strikethrough = false
+    var dimmed = false
     var link: String?
     var syntax: String?
     var mark: EaselVectorMark?
@@ -32,9 +33,24 @@ struct EaselVectorInlineImage: Equatable {
     var image: EaselVectorImage
 }
 
+struct EaselVectorRule: Equatable {
+    var x1: Double
+    var x2: Double
+    var y: Double
+}
+
+struct EaselVectorCheckbox: Equatable {
+    var x: Double
+    var y: Double
+    var size: Double
+    var checked: Bool
+}
+
 struct EaselVectorText: Equatable {
     var runs: [EaselVectorTextRun] = []
     var images: [EaselVectorInlineImage] = []
+    var rules: [EaselVectorRule] = []
+    var checkboxes: [EaselVectorCheckbox] = []
     var fillPath: String?
     var fillColor: String = "#000000"
 }
@@ -51,6 +67,8 @@ struct EaselVectorPalette: Equatable {
         var card: String
         var cardLine: String
         var muted: String
+        var rule = "rgba(31,27,46,.13)"
+        var todo = "#2702C2"
     }
     var light: Swatch
     var dark: Swatch
@@ -58,7 +76,8 @@ struct EaselVectorPalette: Equatable {
 
     static let standard = EaselVectorPalette(
         light: Swatch(ink: "#1F1B2E", card: "#F6F5F9", cardLine: "rgba(31,27,46,.12)", muted: "rgba(31,27,46,.62)"),
-        dark: Swatch(ink: "#EDEBFA", card: "#24212F", cardLine: "rgba(255,255,255,.14)", muted: "rgba(237,235,250,.62)"))
+        dark: Swatch(ink: "#EDEBFA", card: "#24212F", cardLine: "rgba(255,255,255,.14)", muted: "rgba(237,235,250,.62)",
+                    rule: "rgba(255,255,255,.15)", todo: "#9380E0"))
 }
 
 struct EaselVectorArt {
@@ -358,14 +377,33 @@ enum EaselVectorExport {
     }
 
     static func text(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
-        guard let layout, !layout.runs.isEmpty || !layout.images.isEmpty || layout.fillPath != nil else { return "" }
+        guard let layout, !layout.runs.isEmpty || !layout.images.isEmpty || !layout.rules.isEmpty || !layout.checkboxes.isEmpty
+                || layout.fillPath != nil else { return "" }
         var result = "<g transform=\"translate(" + number(item.frame.x) + " " + number(item.frame.y) + ")\">"
         if let fill = layout.fillPath, !fill.isEmpty {
             result += "<path d=\"" + escape(fill) + "\" style=\"fill:" + (color(layout.fillColor) ?? "#000000") + "\"/>"
         }
         for run in layout.runs where !run.text.isEmpty { result += textRun(run) }
         for placed in layout.images { result += inlineImage(placed) }
+        for rule in layout.rules { result += ruleLine(rule) }
+        for box in layout.checkboxes { result += checkbox(box) }
         return result + "</g>"
+    }
+
+    static func ruleLine(_ rule: EaselVectorRule) -> String {
+        "<line x1=\"" + number(rule.x1) + "\" y1=\"" + number(rule.y) + "\" x2=\"" + number(rule.x2) + "\" y2=\"" + number(rule.y)
+            + "\" style=\"stroke:var(--easel-rule,rgba(128,128,128,.3));stroke-width:1\"/>"
+    }
+
+    static func checkbox(_ box: EaselVectorCheckbox) -> String {
+        let radius = box.size / 2
+        let open = "<circle cx=\"" + number(box.x + radius) + "\" cy=\"" + number(box.y + radius) + "\" r=\""
+        guard box.checked else {
+            return open + number(radius - 0.75) + "\" style=\"fill:none;stroke:var(--easel-muted);stroke-width:1.5\"/>"
+        }
+        let points = [(0.27, 0.52), (0.44, 0.68), (0.74, 0.34)].map { number(box.x + box.size * $0.0) + " " + number(box.y + box.size * $0.1) }
+        return open + number(radius) + "\" style=\"fill:var(--easel-todo,#2702C2)\"/><path d=\"M" + points[0] + "L" + points[1] + "L" + points[2]
+            + "\" style=\"fill:none;stroke:#FFFFFF;stroke-width:" + number(box.size * 0.11) + ";stroke-linecap:round;stroke-linejoin:round\"/>"
     }
 
     static func inlineImage(_ placed: EaselVectorInlineImage) -> String {
@@ -378,6 +416,7 @@ enum EaselVectorExport {
         if run.weight != 400 { style += ";font-weight:" + String(run.weight) }
         if run.italic { style += ";font-style:italic" }
         style += ";fill:" + (run.color.map(paint) ?? "var(--easel-ink)")
+        if run.dimmed { style += ";fill-opacity:.45" }
         let decorations = [run.underline ? "underline" : nil, run.strikethrough ? "line-through" : nil].compactMap { $0 }
         if !decorations.isEmpty { style += ";text-decoration:" + decorations.joined(separator: " ") }
         let body = markRect(run.mark) + "<text x=\"" + number(run.x) + "\" y=\"" + number(run.y) + "\" xml:space=\"preserve\" style=\"" + escape(style) + "\">"
@@ -395,7 +434,8 @@ enum EaselVectorExport {
 
     static func css(_ palette: EaselVectorPalette) -> String {
         func variables(_ swatch: EaselVectorPalette.Swatch) -> String {
-            "--easel-ink:" + swatch.ink + ";--easel-card:" + swatch.card + ";--easel-card-line:" + swatch.cardLine + ";--easel-muted:" + swatch.muted + ";"
+            "--easel-ink:" + swatch.ink + ";--easel-card:" + swatch.card + ";--easel-card-line:" + swatch.cardLine + ";--easel-muted:" + swatch.muted
+                + ";--easel-rule:" + swatch.rule + ";--easel-todo:" + swatch.todo + ";"
         }
         return ":root{" + variables(palette.light) + EaselPalette.cssDeclarations(dark: false) + "}\n"
             + "@media screen and (prefers-color-scheme:dark){:root{" + variables(palette.dark) + EaselPalette.cssDeclarations(dark: true) + "}}\n"
