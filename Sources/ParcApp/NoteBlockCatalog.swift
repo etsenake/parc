@@ -1,7 +1,7 @@
 import Foundation
 
 enum NoteCatalogSection: String, CaseIterable, Hashable {
-    case basic, media, advanced, inline, colors, actions
+    case basic, media, advanced, inline, colors, actions, easel
 
     var title: String {
         switch self {
@@ -11,6 +11,7 @@ enum NoteCatalogSection: String, CaseIterable, Hashable {
         case .inline: return "Inline"
         case .colors: return "Colors"
         case .actions: return "Actions"
+        case .easel: return "Add to the Easel"
         }
     }
 
@@ -106,6 +107,7 @@ enum NoteCatalogEffect: Hashable {
     case inline(NoteCatalogInline)
     case color(NoteColorStyle?)
     case action(NoteCatalogAction)
+    case host(String)
 }
 
 enum NoteCatalogIcon: Hashable {
@@ -275,7 +277,7 @@ enum NoteBlockCatalog {
         return nil
     }
 
-    private static func rank(_ candidates: [NoteCatalogItem], _ query: String, keepEmpty: Bool) -> [NoteCatalogItem] {
+    static func rank(_ candidates: [NoteCatalogItem], _ query: String, keepEmpty: Bool) -> [NoteCatalogItem] {
         guard !query.isEmpty else { return keepEmpty ? candidates : [] }
         let scored = candidates.compactMap { item in score(item, query: query).map { (item, $0) } }
         let strong = scored.filter { $0.1 >= strongMatchScore }
@@ -683,6 +685,8 @@ enum NoteCatalogApplier {
         var next = page
         next.update(position.block) { $0.setText(remaining, in: position.field) }
         switch effect {
+        case .host:
+            return nil
         case .block(.linkToNote):
             return NoteCatalogOutcome(name: "Link to Note", page: next, selection: .caret(caret), followUp: .pickNote(caret))
         case .block(.newNote):

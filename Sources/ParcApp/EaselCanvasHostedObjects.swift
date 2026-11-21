@@ -27,7 +27,7 @@ extension EaselCanvasView {
     }
 
     @discardableResult
-    func placeEmptyObject(_ kind: EaselItemKind) -> UUID? {
+    func placeEmptyObject(_ kind: EaselItemKind, beside target: EaselRect? = nil) -> UUID? {
         guard fixedCanvasSize == nil, !session.isClosed, EaselMediaPlacement.placesEmpty(kind) else { return nil }
         cancelPointerInteraction()
         guard finishEditing() else { return nil }
@@ -36,7 +36,8 @@ extension EaselCanvasView {
         let visible = EaselRect(x: shown.minX, y: shown.minY, width: shown.width, height: shown.height)
         let top = session.document.items.map(\.zIndex).max() ?? 0
         guard top < Int.max,
-              let frame = EaselMediaPlacement.placeholderFrame(for: kind, visible: visible, occupied: session.document.items.map(\.frame)) else { return nil }
+              let placed = EaselMediaPlacement.placeholderFrame(for: kind, visible: visible, occupied: session.document.items.map(\.frame)) else { return nil }
+        let frame = target ?? placed
         let item = EaselItem(kind: kind, frame: frame, zIndex: top + 1, color: insertionColor)
         guard withObjectMotion(.appear, { commit(EaselMediaPlacement.addName(for: kind), { $0.items.append(item) }) }) else { return nil }
         selection = [item.id]

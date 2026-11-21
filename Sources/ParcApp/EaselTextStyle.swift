@@ -715,7 +715,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
               Self.validFormattingRanges(ranges, length: attributedString().length) else { return }
         commitParagraph(EaselParagraphEditing.apply(kind, to: attributedString(), selections: ranges, typing: typingAttributes, base: objectStyle, bodyPointSize: paragraphBodyPointSize), name: kind.rawValue)
     }
-    private func commitParagraph(_ edit: EaselParagraphEditing.Edit, name: String) {
+    func commitParagraph(_ edit: EaselParagraphEditing.Edit, name: String) {
         do { _ = try EaselRichTextCodec.snapshot(edit.text) } catch { onClipboardError?(error); return }
         let originalSelections = selectedRanges.map(\.rangeValue)
         localUndo.disableUndoRegistration()
