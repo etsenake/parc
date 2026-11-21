@@ -38,6 +38,8 @@ NS_SWIFT_UI_ACTOR
     NS_SWIFT_NAME(browserView(_:didChangeTitle:));
 - (void)browserView:(PCBrowserView*)view
        didChangeURL:(NSURL*)URL NS_SWIFT_NAME(browserView(_:didChangeURL:));
+- (void)browserViewDidChangeHistory:(PCBrowserView*)view
+    NS_SWIFT_NAME(browserViewDidChangeHistory(_:));
 - (void)browserView:(PCBrowserView*)view
     didChangeLoading:(BOOL)loading
            canGoBack:(BOOL)back

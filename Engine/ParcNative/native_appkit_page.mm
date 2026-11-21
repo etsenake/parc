@@ -6,6 +6,8 @@
 #include "native_cast.h"
 #include "native_internal_urls.h"
 #include "components/sessions/content/content_serialized_navigation_builder.h"
+#include "components/sessions/content/content_serialized_navigation_driver.h"
+#include "components/sessions/content/extended_info_handler.h"
 #include "components/sessions/content/session_tab_helper.h"
 #include "components/sessions/core/serialized_navigation_entry.h"
 #include "components/sessions/core/session_constants.h"
@@ -49,6 +51,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "base/uuid.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/devtools/devtools_toggle_action.h"
@@ -79,6 +82,7 @@
 #include "content/public/browser/clear_site_data_utils.h"
 #include "content/public/browser/media_session.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/page.h"
 #include "content/public/browser/navigation_entry.h"
@@ -698,6 +702,149 @@ class HistoryDeletionNotifier final : public base::SupportsUserData::Data,
                           history::HistoryServiceObserver>
       observation_{this};
 };
+constexpr char kHistoryEntryKey[] = "parc_history_entry";
+class HistoryEntryIdentifier final : public base::SupportsUserData::Data {
+ public:
+  explicit HistoryEntryIdentifier(std::string value) : value_(std::move(value)) {}
+  std::unique_ptr<base::SupportsUserData::Data> Clone() override {
+    return std::make_unique<HistoryEntryIdentifier>(value_);
+  }
+  const std::string& value() const { return value_; }
+
+ private:
+  const std::string value_;
+};
+bool IsHistoryEntryIdentifier(const std::string& value) {
+  return !value.empty() && value.size() <= 64 &&
+         std::all_of(value.begin(), value.end(), [](char c) {
+           return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') ||
+                  (c >= 'A' && c <= 'Z') || c == '-';
+         });
+}
+std::string HistoryEntryIdentifierOf(content::NavigationEntry* entry) {
+  auto* data = static_cast<HistoryEntryIdentifier*>(
+      entry->GetUserData(kHistoryEntryKey));
+  return data ? data->value() : std::string();
+}
+void SetHistoryEntryIdentifier(content::NavigationEntry* entry,
+                               const std::string& value) {
+  if (value.empty()) {
+    entry->RemoveUserData(kHistoryEntryKey);
+  } else {
+    entry->SetUserData(kHistoryEntryKey,
+                       std::make_unique<HistoryEntryIdentifier>(value));
+  }
+}
+class HistoryEntryIdentifierHandler final
+    : public sessions::ExtendedInfoHandler {
+ public:
+  std::string GetExtendedInfo(content::NavigationEntry* entry) const override {
+    return HistoryEntryIdentifierOf(entry);
+  }
+  void RestoreExtendedInfo(const std::string& info,
+                           content::NavigationEntry* entry) override {
+    if (IsHistoryEntryIdentifier(info)) {
+      SetHistoryEntryIdentifier(entry, info);
+    }
+  }
+};
+void RegisterHistoryEntryIdentifiers() {
+  CHECK(NSThread.isMainThread);
+  static bool registered = false;
+  if (registered) {
+    return;
+  }
+  registered = true;
+  sessions::ContentSerializedNavigationDriver::GetInstance()
+      ->RegisterExtendedInfoHandler(
+          kHistoryEntryKey, std::make_unique<HistoryEntryIdentifierHandler>());
+}
+class HistoryEntryTracker final : public content::WebContentsObserver {
+ public:
+  HistoryEntryTracker(content::WebContents& contents,
+                      base::RepeatingClosure changed)
+      : content::WebContentsObserver(&contents), changed_(std::move(changed)) {
+    RegisterHistoryEntryIdentifiers();
+  }
+  uint64_t revision() const { return revision_; }
+  void Assign() {
+    auto* contents = web_contents();
+    if (!contents) {
+      return;
+    }
+    auto& controller = contents->GetController();
+    std::set<std::string> seen;
+    for (int i = 0; i < controller.GetEntryCount(); ++i) {
+      content::NavigationEntry* entry = controller.GetEntryAtIndex(i);
+      if (entry->IsInitialEntry()) {
+        continue;
+      }
+      std::string value = HistoryEntryIdentifierOf(entry);
+      if (!IsHistoryEntryIdentifier(value) || !seen.insert(value).second) {
+        value = base::Uuid::GenerateRandomV4().AsLowercaseString();
+        seen.insert(value);
+        SetHistoryEntryIdentifier(entry, value);
+      }
+    }
+    Remember();
+  }
+
+ private:
+  void Remember() {
+    entries_.clear();
+    auto* contents = web_contents();
+    if (!contents) {
+      return;
+    }
+    auto& controller = contents->GetController();
+    for (int i = 0; i < controller.GetEntryCount(); ++i) {
+      content::NavigationEntry* entry = controller.GetEntryAtIndex(i);
+      entries_.emplace_back(entry->GetUniqueID(),
+                            HistoryEntryIdentifierOf(entry));
+    }
+    remembered_ = true;
+  }
+  void Changed() {
+    ++revision_;
+    changed_.Run();
+  }
+  void DidStartNavigation(content::NavigationHandle*) override { Remember(); }
+  void NavigationEntryCommitted(
+      const content::LoadCommittedDetails& details) override {
+    auto& controller = web_contents()->GetController();
+    content::NavigationEntry* entry = controller.GetLastCommittedEntry();
+    const int index = controller.GetLastCommittedEntryIndex();
+    const bool known = std::any_of(
+        entries_.begin(), entries_.end(), [entry](const auto& remembered) {
+          return entry && remembered.first == entry->GetUniqueID();
+        });
+    if (remembered_ && entry && details.entry == entry && !known) {
+      const bool replaced = details.did_replace_entry && index >= 0 &&
+                            index < static_cast<int>(entries_.size());
+      SetHistoryEntryIdentifier(
+          entry, replaced ? entries_[index].second : std::string());
+    }
+    Remember();
+    Changed();
+  }
+  void NavigationListPruned(const content::PrunedDetails&) override {
+    Remember();
+    Changed();
+  }
+  void NavigationEntriesDeleted() override {
+    Remember();
+    Changed();
+  }
+  void DidFinishNavigation(content::NavigationHandle* navigation) override {
+    if (navigation->IsInPrimaryMainFrame() && !navigation->HasCommitted()) {
+      Changed();
+    }
+  }
+  base::RepeatingClosure changed_;
+  std::vector<std::pair<int, std::string>> entries_;
+  bool remembered_ = false;
+  uint64_t revision_ = 0;
+};
 }
 class NativePageState final
     : public content::WebContentsObserver,
@@ -736,9 +883,15 @@ class NativePageState final
         base::BindRepeating(&NativePageState::NetworkActivityChanged,
                             base::Unretained(this)));
     network_activity_->Bind(contents.GetPrimaryMainFrame(), true);
+    history_entries_ = std::make_unique<HistoryEntryTracker>(
+        contents, base::BindRepeating(&NativePageState::Notify,
+                                      base::Unretained(this)));
     if (auto* profile = Profile::FromBrowserContext(contents.GetBrowserContext())) {
       HistoryDeletionNotifier::EnsureFor(*profile);
     }
+  }
+  HistoryEntryTracker* history_entries() const {
+    return history_entries_.get();
   }
   ~NativePageState() override {
     find_observation_.Reset();
@@ -1626,6 +1779,7 @@ class NativePageState final
   base::WeakPtr<content::Page> painted_page_;
   base::OneShotTimer loading_hold_timer_;
   std::unique_ptr<PageNetworkActivityWatcher> network_activity_;
+  std::unique_ptr<HistoryEntryTracker> history_entries_;
   NativePageShellNotifyState last_shell_notify_;
 };
 void MarkNativePageEmbedded(PCNativePage* page) {
@@ -2000,6 +2154,7 @@ bool IsSessionOmittedFromRestore(SessionID session_id) {
 @end
 @implementation PCNativeNavigationEntry
 @synthesize identifier = _identifier;
+@synthesize persistentIdentifier = _persistentIdentifier;
 @synthesize title = _title;
 @synthesize URL = _URL;
 @synthesize favicon = _favicon;
@@ -2008,6 +2163,8 @@ bool IsSessionOmittedFromRestore(SessionID session_id) {
   if (self) {
     _index = index;
     _identifier = entry->GetUniqueID();
+    _persistentIdentifier =
+        base::SysUTF8ToNSString(parc::HistoryEntryIdentifierOf(entry));
     _title = base::SysUTF16ToNSString(entry->GetTitleForDisplay());
     _URL = [NSURL URLWithString:base::SysUTF8ToNSString(parc::PublicInternalURL(entry->GetVirtualURL()).spec())];
     const auto& icon = entry->GetFavicon();
@@ -2454,6 +2611,8 @@ class RenderFrameViewportObserver final
                         archivePath:(base::FilePath)path;
 - (std::unique_ptr<content::WebContents>)restoredContentsForProfile:(Profile*)profile
                                                              hidden:(bool)hidden;
+- (nullable PCNativeNavigationState*)stateAtEntry:(const std::string&)identifier
+                                         endingAt:(const std::string&)last;
 @end
 namespace {
 constexpr int kNavigationArchiveVersion = 1;
@@ -2503,6 +2662,7 @@ constexpr int kMaxArchivedNavigationSize =
       _index >= static_cast<int>(_navigations.size())) {
     return nullptr;
   }
+  parc::RegisterHistoryEntryIdentifiers();
   content::WebContents::CreateParams params(profile);
   params.initially_hidden = hidden;
   auto contents = content::WebContents::Create(params);
@@ -2526,6 +2686,45 @@ constexpr int kMaxArchivedNavigationSize =
   contents->GetController().Restore(index, content::RestoreType::kRestored,
                                     &entries);
   return contents;
+}
+- (PCNativeNavigationState*)stateAtEntry:(const std::string&)identifier
+                                endingAt:(const std::string&)last {
+  CHECK(NSThread.isMainThread);
+  const int count = static_cast<int>(_navigations.size());
+  int index = -1;
+  int end = count;
+  for (int i = 0; i < count; ++i) {
+    const auto& info = _navigations[i].extended_info_map();
+    const auto found = info.find(parc::kHistoryEntryKey);
+    const std::string value = found == info.end() ? std::string() : found->second;
+    if (value.empty()) {
+      continue;
+    }
+    if (index < 0 && value == identifier) {
+      index = i;
+    }
+    if (!last.empty() && value == last) {
+      end = i + 1;
+    }
+  }
+  if (index < 0) {
+    return nil;
+  }
+  if (end <= index) {
+    end = count;
+  }
+  std::vector<sessions::SerializedNavigationEntry> navigations(
+      _navigations.begin(), _navigations.begin() + end);
+  for (int i = 0; i < end; ++i) {
+    navigations[i].set_index(i);
+  }
+  PCNativeNavigationState* state = [[PCNativeNavigationState alloc] init];
+  state->_navigations = std::move(navigations);
+  state->_index = index;
+  state->_profile = _profile;
+  state->_archivePath = _archivePath;
+  state->_archived = _archived;
+  return state;
 }
 @end
 
@@ -2658,6 +2857,103 @@ constexpr int kMaxArchivedNavigationSize =
       initWithNavigations:std::move(navigations)
                     index:index
               archivePath:base::FilePath(base::SysNSStringToUTF8(path))];
+}
+@end
+
+namespace parc {
+namespace {
+content::WebContents* HistoryContents(PCNativePage* page) {
+  CHECK(NSThread.isMainThread);
+  auto* contents = page.closed ? nullptr : ContentsForNativePage(page);
+  return contents && !page.embedded && !contents->IsBeingDestroyed() &&
+                 [page state]->history_entries()
+             ? contents
+             : nullptr;
+}
+}
+}
+
+@implementation PCNativePage (HistoryEntries)
+- (NSUInteger)historyRevision {
+  return parc::HistoryContents(self) ? [self state]->history_entries()->revision() : 0;
+}
+- (NSArray<PCNativeNavigationEntry*>*)historyEntries {
+  auto* contents = parc::HistoryContents(self);
+  if (!contents) return @[];
+  [self state]->history_entries()->Assign();
+  auto& controller = contents->GetController();
+  NSMutableArray<PCNativeNavigationEntry*>* entries = [NSMutableArray array];
+  for (int i = 0; i < controller.GetEntryCount(); ++i) {
+    content::NavigationEntry* entry = controller.GetEntryAtIndex(i);
+    if (entry->IsInitialEntry()) continue;
+    [entries addObject:[[PCNativeNavigationEntry alloc] initWithEntry:entry
+                                                                index:i]];
+  }
+  return [entries copy];
+}
+- (NSInteger)currentHistoryIndex {
+  auto* contents = parc::HistoryContents(self);
+  if (!contents) return -1;
+  auto& controller = contents->GetController();
+  const int current = controller.GetCurrentEntryIndex();
+  if (current < 0 || current >= controller.GetEntryCount() ||
+      controller.GetEntryAtIndex(current)->IsInitialEntry()) {
+    return -1;
+  }
+  NSInteger index = 0;
+  for (int i = 0; i < current; ++i) {
+    if (!controller.GetEntryAtIndex(i)->IsInitialEntry()) ++index;
+  }
+  return index;
+}
+- (BOOL)historyNavigationPending {
+  auto* contents = parc::HistoryContents(self);
+  return contents && contents->GetController().GetPendingEntry();
+}
+- (BOOL)goToHistoryEntry:(NSString*)persistentIdentifier {
+  auto* contents = parc::HistoryContents(self);
+  const std::string identifier = base::SysNSStringToUTF8(persistentIdentifier ?: @"");
+  if (!contents || identifier.empty() || parc::IsNativePageRetiring(self)) return NO;
+  auto& controller = contents->GetController();
+  for (int i = 0; i < controller.GetEntryCount(); ++i) {
+    content::NavigationEntry* entry = controller.GetEntryAtIndex(i);
+    if (entry->IsInitialEntry() || parc::HistoryEntryIdentifierOf(entry) != identifier) {
+      continue;
+    }
+    if (i != controller.GetCurrentEntryIndex()) controller.GoToIndex(i);
+    return YES;
+  }
+  return NO;
+}
+- (BOOL)removeHistoryEntriesAfterCurrent {
+  auto* contents = parc::HistoryContents(self);
+  if (!contents || parc::IsNativePageRetiring(self)) return NO;
+  auto& controller = contents->GetController();
+  if (!controller.CanPruneAllButLastCommitted()) return NO;
+  std::set<int> ahead;
+  for (int i = controller.GetLastCommittedEntryIndex() + 1;
+       i < controller.GetEntryCount(); ++i) {
+    ahead.insert(controller.GetEntryAtIndex(i)->GetUniqueID());
+  }
+  if (ahead.empty()) return YES;
+  controller.DeleteNavigationEntries(base::BindRepeating(
+      [](const std::set<int>& ids, content::NavigationEntry* entry) {
+        return ids.contains(entry->GetUniqueID());
+      },
+      std::move(ahead)));
+  return YES;
+}
++ (NSObject*)navigationState:(NSObject*)state
+              atHistoryEntry:(NSString*)persistentIdentifier
+               endingAtEntry:(NSString*)lastPersistentIdentifier {
+  CHECK(NSThread.isMainThread);
+  if (![state isKindOfClass:[PCNativeNavigationState class]] ||
+      !persistentIdentifier.length) {
+    return nil;
+  }
+  return [static_cast<PCNativeNavigationState*>(state)
+      stateAtEntry:base::SysNSStringToUTF8(persistentIdentifier)
+          endingAt:base::SysNSStringToUTF8(lastPersistentIdentifier ?: @"")];
 }
 @end
 

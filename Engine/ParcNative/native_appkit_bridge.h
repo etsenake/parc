@@ -1445,6 +1445,7 @@ NS_SWIFT_UI_ACTOR
 __attribute__((visibility("default")))
 @interface PCNativeNavigationEntry : NSObject
 @property(nonatomic, readonly) int identifier;
+@property(nonatomic, readonly, copy) NSString* persistentIdentifier;
 @property(nonatomic, readonly, copy) NSString* title;
 @property(nonatomic, readonly, nullable) NSURL* URL;
 @property(nonatomic, readonly, nullable) NSImage* favicon;
@@ -1520,6 +1521,20 @@ NS_SWIFT_UI_ACTOR
 @property(nonatomic, readonly, nullable) PCNativePage* alternateNavigationSourcePage
     NS_SWIFT_NAME(alternateNavigationSourcePage);
 @property(nonatomic, readonly) BOOL alternateNavigationPlacesAtTop;
+@end
+
+NS_SWIFT_UI_ACTOR
+@interface PCNativePage (HistoryEntries)
+@property(nonatomic, readonly) NSUInteger historyRevision;
+@property(nonatomic, readonly, copy) NSArray<PCNativeNavigationEntry*>* historyEntries;
+@property(nonatomic, readonly) NSInteger currentHistoryIndex;
+@property(nonatomic, readonly) BOOL historyNavigationPending;
+- (BOOL)goToHistoryEntry:(NSString*)persistentIdentifier NS_SWIFT_NAME(goToHistoryEntry(_:));
+- (BOOL)removeHistoryEntriesAfterCurrent NS_SWIFT_NAME(removeHistoryEntriesAfterCurrent());
++ (nullable NSObject*)navigationState:(NSObject*)state
+                       atHistoryEntry:(NSString*)persistentIdentifier
+                        endingAtEntry:(nullable NSString*)lastPersistentIdentifier
+    NS_SWIFT_NAME(navigationState(_:at:endingAt:));
 @end
 
 typedef NS_ENUM(NSInteger, PCNativeLinkCopyFormat) {

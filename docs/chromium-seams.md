@@ -81,6 +81,13 @@ With CEF gone, Parc owns Chromium's embedder classes and uses them before anythi
   JavaScript dialogs and new pages reach Parc through Chromium's own interfaces. The delegate's
   `OpenURLFromTab` also offers a Command-clicked link to a note file to the app before Chromium
   makes a tab for it.
+- Each native page's history entries carry a Parc identifier in the entry's user data. Parc
+  registers a session extended-info handler with Chromium's serialized-navigation driver, so the
+  identifier is written into saved navigation and read back on restore, and Parc's page observer
+  keeps it across entry replacements, clears copies on new entries and reports history changes.
+  Notes and Easels in a tab's history attach to these identifiers, which survive session restore,
+  closing and reopening a page and window and Profile moves without a Chromium change
+  ([navigation](navigation.md#links-to-markdown-and-text-files)).
 - Blocked pop-ups keep Chromium's own blocker. The browser client swaps the blocker's pop-up delegate
   factory through Chrome's public static accessor (named for tests, but the only seam), and Parc's
   WebContentsDelegate records renderer-link pop-ups with the same blocker before its own routing. A

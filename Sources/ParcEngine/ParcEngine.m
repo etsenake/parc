@@ -302,6 +302,8 @@ static NSArray<PCImportedExtensionFailure*>* PCResultFailures(
   PCBrowserView* _closeLease;
   NSString* _publishedTitle;
   NSURL* _publishedURL;
+  BOOL _hasPublishedHistory;
+  NSUInteger _publishedHistoryRevision;
   BOOL _hasPublishedLoading;
   BOOL _publishedLoading;
   BOOL _publishedBack;
@@ -366,6 +368,7 @@ static NSArray<PCImportedExtensionFailure*>* PCResultFailures(
   _delegate = delegate;
   _publishedTitle = nil;
   _publishedURL = nil;
+  _hasPublishedHistory = NO;
   _hasPublishedLoading = NO;
   _hasPublishedCapture = NO;
   _hasPublishedCrash = NO;
@@ -884,6 +887,19 @@ static NSArray<PCImportedExtensionFailure*>* PCResultFailures(
       return;
     }
     _publishedURL = [url copy];
+  }
+  if ([page respondsToSelector:@selector(historyRevision)]) {
+    const NSUInteger revision = page.historyRevision;
+    if ((!_hasPublishedHistory || revision != _publishedHistoryRevision) &&
+        [target respondsToSelector:@selector(browserViewDidChangeHistory:)]) {
+      [target browserViewDidChangeHistory:self];
+      if (_disposed || _nativePage != page || self.delegate != target ||
+          page.observer != self) {
+        return;
+      }
+      _hasPublishedHistory = YES;
+      _publishedHistoryRevision = revision;
+    }
   }
   if (_disposed || _nativePage != page || self.delegate != target ||
       page.observer != self) {
