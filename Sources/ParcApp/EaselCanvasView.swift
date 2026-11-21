@@ -517,7 +517,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard selectAccessibleObject(expected) else { return false }
         if expected.kind == .section { beginSectionRename(expected.id); return boardState.titleField != nil }
         if expected.kind.holdsText { beginEditing(expected); return editingID == expected.id }
-        if expected.kind == .image || expected.kind == .video { return openMedia(expected) }
+        if expected.kind.isMedia { return openMedia(expected) }
         if expected.kind == .table { return activateTable(expected) }
         if expected.kind == .code { return beginCodeEditing(expected) }
         if expected.kind == .equation { return beginEquationEditing(expected.id) }
@@ -794,7 +794,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     override func layout() {
         super.layout(); motion.bind(enclosingScrollView); refreshTextControls(); synchronizeAccessibleObjects(); refreshEquationChrome()
-        layoutVideoSurface()
         refreshSnapshotHeader()
         positionSectionTitleField()
         synchronizePageSelection()
@@ -829,7 +828,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         if decoration.frame != bounds { decoration.frame = bounds; overlayDirty = true }
         if overlayDirty { decoration.needsDisplay = true }
-        ordered.append(contentsOf: videoSurfaces)
         ordered.append(decoration)
         if let burst = burstOverlay { ordered.append(burst) }
         if let preview = toolState.previewView { ordered.append(preview) }
@@ -1716,7 +1714,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if let snapshotHeader, hit === snapshotHeader || hit.isDescendant(of: snapshotHeader) { return hit }
         if hit === editor || editor.map({ hit.isDescendant(of: $0) }) == true || ownsCodeBlockView(hit) { return hit }
         if let field = boardState.titleField, hit === field || hit.isDescendant(of: field) { return hit }
-        if videoSurfaceHit(hit) { return hit }
+        if hostedObjectHit(hit), resizeHandle(at: convert(point, from: superview)) == nil { return hit }
         let local = convert(point, from: superview)
         guard tool == .select, !toolState.spaceHeld, resizeHandle(at: local) == nil, connectorChrome(at: local) == nil,
               let item = object(at: local, includingLocked: true), item.ownsEmbeddedPage, selection == [item.id],
@@ -1774,7 +1772,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if event.clickCount == 2, !enteredGroup {
             cancelPointerInteraction()
             if hit.kind.holdsText { beginEditing(hit, at: point) }
-            else if hit.kind == .image || hit.kind == .video { openMedia(hit) }
+            else if hit.kind.isMedia { openMedia(hit) }
             else if hit.kind == .code { beginCodeEditing(hit, at: point) }
             else if hit.kind == .equation { beginEquationEditing(hit.id) }
             else if !hit.ownsEmbeddedPage, let raw = hit.url, let url = URL(string: raw) { onOpenURL?(url) }
@@ -2209,6 +2207,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         if let dropped = dropSidebarDocument(sender) { return dropped }
         if fixedCanvasSize == nil, let result = contentDrop.perform(sender) { return result }
+        if let filled = fillPlaceholder(fromDrop: sender) { return filled }
         if let replaced = replaceImage(fromDrop: sender) { return replaced }
         return withObjectMotion(.appear) { readPasteboard(sender.draggingPasteboard, at: convert(sender.draggingLocation, from: nil)) }
     }

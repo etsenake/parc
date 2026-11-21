@@ -226,7 +226,9 @@ struct EaselImageFramingTests {
         var bare = video; bare.poster = nil
         expect((try? session([bare], assets: [movie: png])) != nil, "a poster is optional")
         var noAsset = video; noAsset.assetID = nil
-        expect((try? session([noAsset], assets: [poster: png])) == nil, "a video needs its movie")
+        expect((try? session([noAsset], assets: [poster: png])) == nil, "a poster needs its movie")
+        noAsset.poster = nil
+        expect((try? session([noAsset], assets: [:])) != nil, "an empty video is a placeholder")
         var stillVideo = video; stillVideo.assetID = poster
         expect((try? session([stillVideo], assets: [poster: png])) == nil, "a video's asset must be a movie")
         var gifPoster = video; gifPoster.poster = UUID().uuidString.lowercased() + ".gif"

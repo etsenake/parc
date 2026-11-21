@@ -3,7 +3,7 @@ import AVFoundation
 import PDFKit
 import UniformTypeIdentifiers
 
-private struct EaselPreparedMedia {
+struct EaselPreparedMedia {
     var url: URL
     var name: String?
     var source: EaselMediaImportPlan.Source
@@ -80,18 +80,20 @@ extension EaselCanvasView {
         return item.id
     }
 
-    private func prepareMedia(_ url: URL) throws -> EaselPreparedMedia {
+    func prepareMedia(_ url: URL, as kind: EaselItemKind? = nil) throws -> EaselPreparedMedia {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey])
         guard values.isRegularFile == true, let size = values.fileSize, size > 0 else { throw EaselStoreError.invalidFile }
         let movie = values.contentType?.conforms(to: .movie) == true
         let image = values.contentType?.conforms(to: .image) == true
         let ext = url.pathExtension.isEmpty ? nil : url.pathExtension
-        let probable = EaselMediaImportPlan.classify(sniffed: nil, fileExtension: ext, isImage: image, isMovie: movie, byteCount: size)
+        let asFile = kind == .file
+        let probable = asFile ? .file : EaselMediaImportPlan.classify(sniffed: nil, fileExtension: ext, isImage: image, isMovie: movie, byteCount: size)
         guard let probable else { throw EaselStoreError.invalidFile }
         guard size <= EaselStore.maximumAssetBytes else { throw EaselMediaImportPlan.tooLargeError(for: probable) }
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
-        guard let source = EaselMediaImportPlan.classify(sniffed: EaselAssetType.sniff(data), fileExtension: ext, isImage: image,
-                                                         isMovie: movie, byteCount: data.count) else { throw EaselStoreError.invalidFile }
+        let classified = asFile ? .file : EaselMediaImportPlan.classify(sniffed: EaselAssetType.sniff(data), fileExtension: ext, isImage: image,
+                                                                         isMovie: movie, byteCount: data.count)
+        guard let source = classified else { throw EaselStoreError.invalidFile }
         let name = EaselMediaImportPlan.cleanFileName(url.lastPathComponent)
         var entry = EaselPreparedMedia(url: url, name: name, source: source, data: data, type: .file, fileExtension: nil)
         switch source {
@@ -119,7 +121,7 @@ extension EaselCanvasView {
         return entry
     }
 
-    private static func loadFacts(_ entry: inout EaselPreparedMedia) async throws {
+    static func loadFacts(_ entry: inout EaselPreparedMedia) async throws {
         switch entry.source {
         case .video:
             guard entry.type.isVideo, EaselAssetType.sniff(entry.data)?.isVideo == true else { throw EaselStoreError.invalidVideo }

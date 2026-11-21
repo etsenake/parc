@@ -235,6 +235,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
             sessionDirectory = host.directory
             let canvas = EaselCanvasView(session: next)
             EaselWebObjects.install(on: canvas)
+            canvas.hostedObjects.append(EaselMediaObjects.inNote(canvas) { [weak self] in self?.editor })
             canvas.toolState.onQuickActions = { [weak self] in self?.toggleQuickActions() }
             let panels = EaselPanels(container: { [weak self] in self?.editor?.canvas.overlayView },
                                      search: { [weak self] query, limit in self?.editor?.environment.searchNotes(query, limit: limit) ?? [] })

@@ -160,9 +160,10 @@ struct EaselStoreTests {
         expect(fileID == uuid.uuidString.lowercased() + ".file.png", "Other files keep their extension behind a file marker")
         expect(EaselAssetType.of(assetID: fileID) == .file && EaselAssetType.fileExtension(of: fileID) == "png", "A file asset keeps its own type and extension")
         expect(EaselAssetType.assetID(uuid, type: .file, fileExtension: "../x") == uuid.uuidString.lowercased() + ".file", "Unsafe extensions are dropped")
-        expect(EaselAssetType.of(assetID: uuid.uuidString.lowercased() + ".png.file") == nil, "Only file assets carry a second extension")
-        expect(EaselAssetType.of(assetID: uuid.uuidString.lowercased() + ".file.a/b") == nil, "Path characters never reach an asset name")
-        expect(EaselAssetType.of(assetID: uuid.uuidString.uppercased() + ".png") == nil, "Asset names are lowercase")
+        expect(!EaselAssetType.isSafeAssetID(uuid.uuidString.lowercased() + ".png.file"), "Only file assets carry a second extension")
+        expect(!EaselAssetType.isSafeAssetID(uuid.uuidString.lowercased() + ".file.a/b"), "Path characters never reach an asset name")
+        expect(!EaselAssetType.isSafeAssetID(uuid.uuidString.uppercased() + ".png"), "Asset names are lowercase")
+        expect(EaselAssetType.isSafeAssetID(fileID) && EaselAssetType.isSafeAssetID(uuid.uuidString.lowercased() + ".png"), "Store names pass")
         try withDirectory { directory in
             let store = try EaselStore(directory: directory)
             let session = try store.create()

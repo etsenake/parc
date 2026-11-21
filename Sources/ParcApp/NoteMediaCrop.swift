@@ -384,7 +384,7 @@ final class NoteImageCropEditor: NSView {
     }
 
     private func anchorRect(of view: NSView) -> NSRect? {
-        guard let overlay = owner?.host?.editor?.canvas.overlayView else { return nil }
+        guard let overlay = owner?.host?.mediaOverlay else { return nil }
         return overlay.convert(view.bounds, from: view)
     }
 
@@ -399,7 +399,7 @@ final class NoteImageCropEditor: NSView {
 
     private func toggleRatios() {
         if popover?.isOpen == true { popover?.close(); return }
-        guard let overlay = owner?.host?.editor?.canvas.overlayView, let anchor = anchorRect(of: ratioButton) else { return }
+        guard let overlay = owner?.host?.mediaOverlay, let anchor = anchorRect(of: ratioButton) else { return }
         let locked = mask?.isSquare == true
         let list = NoteMenuList(items: NoteImageCropAspect.allCases.map { option in
             NoteMenuList.Item(id: option.id, title: option.title, isChecked: option == aspect,

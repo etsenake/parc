@@ -52,9 +52,8 @@ final class NoteMediaZoomOverlay: NSView {
 
     @discardableResult
     static func present(image: NoteMediaImage, source: URL?, from rect: NSRect, of view: NSView,
-                        in canvas: NotePageCanvasView, onClose: (() -> Void)? = nil,
+                        in canvas: NSView, overlay host: NSView, onClose: (() -> Void)? = nil,
                         crop: NoteImageCrop? = nil, mask: NoteImageMask? = nil) -> NoteMediaZoomOverlay {
-        let host = canvas.overlayView
         let visible = canvas.visibleRect.isEmpty ? canvas.bounds : canvas.visibleRect
         let frame = host.convert(visible, from: canvas)
         let overlay = NoteMediaZoomOverlay(image: image, source: source, origin: .zero)

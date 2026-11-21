@@ -52,9 +52,14 @@ enum EaselAssetType: String, CaseIterable {
     }
 
     static func of(assetID: String) -> EaselAssetType? {
-        guard let parts = assetParts(assetID) else { return nil }
-        return parts.type
+        let parts = assetID.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 2 else { return nil }
+        let last = parts[parts.count - 1]
+        if parts.count >= 3, parts[parts.count - 2] == EaselAssetType.file.rawValue, isSafeExtension(last) { return .file }
+        return EaselAssetType(rawValue: last)
     }
+
+    static func isSafeAssetID(_ id: String) -> Bool { assetParts(id) != nil }
 
     static func fileExtension(of assetID: String) -> String? {
         guard let parts = assetParts(assetID) else { return nil }
@@ -154,7 +159,11 @@ struct EaselLinkPreviewData: Codable, Equatable {
     var isEmpty: Bool { [title, summary, siteName, image, icon].allSatisfy { $0 == nil } }
 
     var assetIDs: [String] {
-        [image, icon].compactMap { $0 }.filter { EaselAssetType.of(assetID: $0) == .png }
+        [image, icon].compactMap { $0 }.filter(Self.isAssetID)
+    }
+
+    static func isAssetID(_ value: String) -> Bool {
+        EaselAssetType.isSafeAssetID(value) && EaselAssetType.of(assetID: value) == .png
     }
 
     static func isAddress(_ raw: String) -> Bool {
@@ -167,7 +176,7 @@ struct EaselLinkPreviewData: Codable, Equatable {
         guard !isEmpty, [title, summary, siteName].allSatisfy({ $0.map(EaselMediaText.isValid) != false }) else { return false }
         return [image, icon].allSatisfy { value in
             guard let value else { return true }
-            return EaselAssetType.of(assetID: value) == .png || Self.isAddress(value)
+            return Self.isAssetID(value) || Self.isAddress(value)
         }
     }
 }
@@ -826,7 +835,7 @@ final class EaselStore {
     }
 
     fileprivate func assetURL(_ id: String) throws -> URL {
-        guard EaselAssetType.of(assetID: id) != nil else { throw EaselStoreError.unsafePath }
+        guard EaselAssetType.isSafeAssetID(id) else { throw EaselStoreError.unsafePath }
         try checkDirectories()
         let url = assetsDirectory.appendingPathComponent(id)
         try ensureRegularFile(url, maximumBytes: Self.maximumAssetBytes)
@@ -1057,7 +1066,7 @@ final class EaselStore {
         if let type, type.isVideo != (item.kind == .video) || (type == .gif && item.kind != .image) {
             throw EaselStoreError.invalidDocument("media on an object that can't play it")
         }
-        if let poster = item.poster, item.kind != .video || EaselAssetType.of(assetID: poster) != .png {
+        if let poster = item.poster, item.kind != .video || EaselAssetType.of(assetID: poster) != .png || item.isEmptyPlaceholder {
             throw EaselStoreError.invalidDocument("video poster")
         }
         if let type, let owner = type.kind, owner != item.kind { throw EaselStoreError.invalidDocument("media on an object that can't play it") }

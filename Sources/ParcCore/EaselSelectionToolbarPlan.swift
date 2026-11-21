@@ -22,6 +22,7 @@ enum EaselToolbarSubject: String, CaseIterable, Equatable {
     }
 
     init(_ item: EaselItem) {
+        if item.kind.isMedia, item.isEmptyPlaceholder { self = .media; return }
         self = EaselStyleFamily.of(item) == .icons ? .icon : EaselToolbarSubject(item.kind)
     }
 

@@ -234,7 +234,9 @@ back with its correct native Undo state.
 
 Image objects crop in place, mask to the Notes shapes, carry alt text, swap
 pictures without moving and play GIFs while selected, all without touching the
-stored picture. Their behaviour, saved fields and code owners are in
+stored picture. Videos, audio, files and PDFs wear the Notes players, cards and
+PDF viewer, and every media kind can start empty like a note's block. Their
+behaviour, saved fields and code owners are in
 [Easel images and media](easel-images.md).
 
 ## Embedded webpages and captured cards
@@ -388,6 +390,10 @@ second page exists, and an object without one belongs to the first page
 The page icon is an optional document `icon` with a `kind` (`emoji`, `custom` or `image`)
 and a `value` (the emoji, the custom emoji name, or a PNG asset ID); it stays out of
 the file while there is none, and a damaged icon rejects the file.
+Media objects are the `image`, `video`, `audio`, `file` and `pdf` kinds; with
+neither an asset nor a link they are empty placeholders, as are `link` and
+`browser` objects without a `url`, and their `fileName`, `credit` and bookmark
+`preview` fields are described in [images and media](easel-images.md#saved-format).
 Validation refuses each field on objects it doesn't belong
 to, so a malformed file is rejected whole rather than half drawn.
 
