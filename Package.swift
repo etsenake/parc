@@ -99,6 +99,7 @@ let package = Package(
         ),
         .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: "."),
         .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles"], path: "tests/ParcTests",
+                    resources: [.copy("Notes/Fixtures")],
                     swiftSettings: strict + engineImport),
     ],
     swiftLanguageModes: [.v5],
