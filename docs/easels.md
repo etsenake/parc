@@ -41,7 +41,8 @@ canvas/document Undo. Composition is never serialized as a finished edit.
 Durable saves coalesce within the editing UUID while native Undo retains its
 own transactions; another owner's edits invalidate obsolete local history.
 Point and area text, width handles and alignment are described in
-[Easel text](easel-text.md).
+[Easel text](easel-text.md). Typing in stickies and section titles is in
+[stickies and sections](easel-stickies-sections.md).
 
 ## Selection toolbar
 
