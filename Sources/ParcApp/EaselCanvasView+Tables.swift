@@ -1920,6 +1920,7 @@ struct EaselTableSlide {
     var start: TimeInterval = 0
     var original: EaselItem?
     var previousBounds = NSRect.null
+    var result: EaselItem?
 }
 
 extension EaselCanvasView {
@@ -1931,6 +1932,7 @@ extension EaselCanvasView {
         next.start = CACurrentMediaTime()
         next.original = slide.opening ? nil : before
         next.previousBounds = displayBounds(of: before)
+        next.result = after
         canvasFeedback.tables[before.id] = next
         startCanvasFeedback()
         return true
