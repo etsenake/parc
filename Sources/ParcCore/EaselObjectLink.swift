@@ -9,8 +9,7 @@ enum EaselObjectLink {
     static func hasLink(_ item: EaselItem) -> Bool { item.url != nil && canLink(item) }
 
     static func link(of item: EaselItem) -> URL? {
-        guard canLink(item), let raw = item.url, let url = URL(string: raw),
-              ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        guard canLink(item), let raw = item.url, let safe = normalized(raw), let url = URL(string: safe) else { return nil }
         return url
     }
 
