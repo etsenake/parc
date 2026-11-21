@@ -1301,7 +1301,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             }) else { return false }
         }
         text.retire(); text.delegate = nil
-        editor = nil; editingID = nil; textUndoGroup = nil; editingTextSnapshot = nil
+        editor = nil; editingID = nil; textUndoGroup = nil; editingTextSnapshot = nil; connectors.pendingLabel = nil
         text.removeFromSuperview(); refreshTextControls(); invalidateIncrementalDisplay(layout: true); keyboardStructureChanged()
         return true
     }
@@ -1454,6 +1454,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             guard let i = document.items.firstIndex(where: { $0.id == id }) else { return }
             document.items[i].text = payload.text; document.items[i].richText = payload.richText
             document.items[i].frame = fittedFrame(document.items[i])
+            if let pending = self.connectors.pendingLabel, pending.id == id, document.items[i].kind == .arrow,
+               !payload.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                document.items[i].labelPosition = pending.position
+            }
         }
         if saved {
             editingTextSnapshot = (payload.text, payload.richText)

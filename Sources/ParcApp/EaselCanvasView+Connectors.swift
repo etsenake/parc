@@ -48,6 +48,7 @@ struct EaselConnectorCanvasState {
     var magnet: Magnet?
     var quickHover: (id: UUID, side: EaselConnection.Side)?
     var toolHover: UUID?
+    var pendingLabel: (id: UUID, position: Double)?
     var routes: [UUID: (key: RouteKey, drawing: EaselConnectorDrawing)] = [:]
     var labels: [UUID: (key: LabelKey, layout: EaselConnectorLabelLayout)] = [:]
     var draftGeneration = 0
@@ -468,7 +469,7 @@ extension EaselCanvasView {
             return true
         }
         guard let hit = object(at: point), hit.kind == .arrow else { return false }
-        if event.clickCount >= 2 {
+        if event.clickCount >= 2, !hit.isLocked, fixedCanvasSize == nil {
             selection = [hit.id]
             cancelPointerInteraction()
             beginConnectorLabelEditing(hit, at: point)
@@ -653,19 +654,14 @@ extension EaselCanvasView {
         guard item.kind == .arrow, !item.isLocked, fixedCanvasSize == nil,
               let current = session.document.items.first(where: { $0.id == item.id }) else { return }
         selection = [current.id]
-        var target = current
+        var pending: (id: UUID, position: Double)?
         if let point, current.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            let route = connectorDrawing(for: current)?.route, route.length > 0 {
             let position = route.nearest(to: EaselPoint(x: point.x, y: point.y)).arc / route.length
-            if abs(position - current.resolvedLabelPosition) > 0.01 {
-                guard commit("Place label", { document in
-                    guard let index = document.items.firstIndex(where: { $0.id == current.id }) else { return }
-                    document.items[index].labelPosition = min(1, max(0, position))
-                }), let placed = session.document.items.first(where: { $0.id == current.id }) else { return }
-                target = placed
-            }
+            if abs(position - current.resolvedLabelPosition) > 0.01 { pending = (current.id, min(1, max(0, position))) }
         }
-        beginEditing(target, at: nil)
+        beginEditing(current, at: nil)
+        if editingID == current.id { connectors.pendingLabel = pending }
     }
 
     func editConnectorLabel() {
