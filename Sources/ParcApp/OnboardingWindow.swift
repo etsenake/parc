@@ -1007,10 +1007,12 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         let help: OnboardingPasswordHelp
         if let existing = passwordHelp { help = existing }
         else {
-            help = OnboardingPasswordHelp.install(in: root) { [weak self] in self?.setupCard.setAccessibilityHidden(false) }
+            help = OnboardingPasswordHelp.install(in: root) { [weak self] in
+                if let self { OnboardingPasswordHelp.cover([self.setupCard], hidden: false) }
+            }
             passwordHelp = help
         }
-        setupCard.setAccessibilityHidden(true)
+        OnboardingPasswordHelp.cover([setupCard], hidden: true)
         help.export = browserImport?.passwordExport ?? .safari
         help.present()
     }
@@ -1021,7 +1023,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             passwordHelp?.removeFromSuperview()
             passwordHelp = nil
         }
-        setupCard.setAccessibilityHidden(false)
+        OnboardingPasswordHelp.cover([setupCard], hidden: false)
     }
 
     private func renderBrowserImport(_ importer: BrowserImportViewController) {

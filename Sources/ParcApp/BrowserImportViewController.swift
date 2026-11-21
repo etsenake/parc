@@ -536,7 +536,7 @@ final class BrowserImportViewController: NSViewController {
 
     private func coverContent(_ covered: Bool) {
         guard !closed else { return }
-        root.subviews.forEach { if $0 !== passwordHelp { $0.setAccessibilityHidden(covered) } }
+        OnboardingPasswordHelp.cover(root.subviews, hidden: covered, except: passwordHelp)
         updateCloseKey()
     }
 

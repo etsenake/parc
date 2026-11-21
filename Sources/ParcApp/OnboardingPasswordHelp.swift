@@ -30,6 +30,10 @@ final class OnboardingPasswordHelp: NSView {
         return help
     }
 
+    static func cover(_ views: [NSView], hidden: Bool, except help: OnboardingPasswordHelp? = nil) {
+        for view in views where view !== help { view.setAccessibilityHidden(hidden) }
+    }
+
     func present(animated: Bool = true) {
         guard !isPresented, let window else { return }
         previousResponder = window.firstResponder
