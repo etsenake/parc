@@ -1,6 +1,6 @@
 # Native site permission checks
 
-`bash tests/NativeSitePermissions/run.sh` exercises the production AppKit
+`swift test --filter SitePermissionPresenterTests` exercises the production AppKit
 presenter, its transient popover and the main run loop. Inspect the runner and
 follow [the working contract](../../AGENTS.md) before running window-based checks.
 

@@ -1,6 +1,6 @@
 # Native responder coordination
 
-Run `tests/NativeFocusManager/run.sh` on macOS with Xcode command-line tools. It compiles the Parc-owned focus manager and page host against AppKit, then runs isolated assertions with warnings treated as errors. The tests create real, hidden NSWindows; they do not launch a browser or Chromium, show windows, read profiles, or use another browser's binary.
+Run `swift test --filter FocusManagerTests`. It compiles the Parc-owned focus manager and page host against AppKit with warnings treated as errors, then runs one test per behaviour. The tests create real, hidden NSWindows; they do not launch a browser or Chromium, show windows, read profiles, or use another browser's binary.
 
 The component is a per-window responder registry, not a pane-cycle implementation. The shell supplies stable keys, retains each registration token, and provides any eligible pane ordering separately. `focusedKey` reflects the exact registered normalized actual responder: a page-host ancestor can preserve renderer focus without falsely reporting that the host itself received focus. Native text-field editors normalize to their containing NSTextField, preserving the selection during repeated requests.
 
@@ -21,5 +21,3 @@ request cannot change a later native control or physical window.
 The suite exercises actual native focus, automatic KVO ordering, external focus changes, real NSTextField editing and selection, descendant preservation, same-window validation, live page-host reparenting, weak ownership, registration replacement, teardown, reentrant callbacks, owner release during resign/become delivery, and deferred page-host focus through the real main run loop. Queued page focus is also superseded by a later native control, original host transfer, renderer replacement or invalidation; a new explicit request may focus the current renderer. A controlled NSWindow subclass injects refusal, acceptance without focus, and nil actual focus to test pending/fallback boundaries reproducibly; these injected states are not claims about normal AppKit behavior.
 
 The shell supplies shortcut precedence, accessibility selection, hidden/modal eligibility and pane order through its real page/content identities. One responder should have one active key per manager; aliases have no specified callback-selection order.
-
-Check the production implementation with the pinned Chromium Clang, generated Parc browser Objective-C++ settings, ARC and warnings treated as errors using `python3 -B tests/NativeFocusManager/check-chromium.py /absolute/path/to/chromium/src`. It writes diagnostic records under ignored `build/tests/`; it compiles without linking the engine.

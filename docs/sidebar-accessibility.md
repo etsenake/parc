@@ -258,9 +258,9 @@ neither focus nor selection, and only a running screen reader speaks them.
 
 | Check | Coverage |
 |---|---|
-| `tests/SidebarAccessibility/check.py` | Exposed labels, chain ordering, focus guards, saved responder rules and source wiring, including Control-Space entry and silent list refreshes |
+| `tests/SidebarAccessibility/check.py` | Exposed labels, chain ordering, focus guards and saved responder rules |
 | `scripts/test-keyboard-navigation.sh` | Control-Space announcement text, one per arrow press, list ends and folder state |
-| `tests/SidebarOutline/check.py` | Row/cell hierarchy, geometry, stable identities, disclosure, selection and accessibility selection, including source checks that it never activates |
+| `tests/SidebarOutline/check.py` | Row/cell hierarchy, geometry, stable identities, disclosure, selection and accessibility selection |
 | `tests/SidebarWindowKeyLoop/check.py` | Bidirectional traversal, renderer replacement, hidden sidebar, Peek and closed-loop exclusions |
 | `tests/SidebarMiniPlayerFocus/check.py` | Mini-player keyboard actions and visible rings |
 | `tests/SidebarChrome/check.py` | Dock order, Space identifiers and header controls |

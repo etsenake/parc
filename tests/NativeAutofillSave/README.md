@@ -160,10 +160,10 @@ include the real local-save controller reaching this continuation.
 ## Executable AppKit checks
 
 ```sh
-bash tests/NativeAutofillSave/run.sh
+swift test --filter 'Autofill(Save|Presentation)Tests'
 ```
 
-Build output stays in `build/tests/native-autofill-save/`. The suite creates
+The suites create
 real offscreen AppKit windows, custom sheets and native buttons. It exercises
 deferred start/results, Save/Decline/Return/Escape, duplicate calls, external
 sheet dismissal, existing-sheet conflict, queued and displayed parent close,
@@ -172,32 +172,6 @@ validator reentry, callback reentry/replacement, unrelated-window filtering and
 request retention/release. The presentation-outcome suite covers hidden/minimized
 parents, cancellation, validator reentry and owner release. No browser/Profile
 or real payment data is accessed.
-
-## Actual Chromium interface check
-
-```sh
-python3 tests/NativeAutofillSave/check-chromium.py /path/to/chromium/src
-python3 tests/NativeAutofillSave/check-upstream.py /path/to/chromium/src
-```
-
-The checker reuses the bounded literal flags reader in NativeLocationBar and
-the actual ObjC++ rule, with ARC and `-Werror`. It requires the
-generated `native_components`, `autofill_save_sessions` and `session_tests`
-targets; it checks the presenter, production session, handler and regression sources with
-their respective settings. Missing targets are an error before compilation.
-The checker uses `//parc/native` and `//parc/tests/parc_native_autofill` targets;
-it requires the direct engine's exact generated target graph.
-Logs, command records and caches stay in the ignored test build directory. The
-checker performs no generation, GN, Ninja, source-checkout writes, downloads or
-synthetic-header substitution.
-
-The upstream checker resolves each modified Autofill `.cc` file's actual CXX
-object owner from generated Ninja files. It retains the generated compiler
-flags, module dependencies and private module name, and verifies the applied
-source hashes against the manifest. It records source, compiler, target flags,
-toolchain and overlay identities. Missing or ambiguous target ownership fails
-before compilation. This checks the complete changed translation units,
-including the modified existing Chromium test sources.
 
 ## Real controller regression target
 

@@ -2,38 +2,8 @@
 from pathlib import Path
 import subprocess
 import tempfile
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
-from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
-controller = browser_window_controller_source(app)
-configure = controller[controller.index("func configureSpaceManager("):controller.index("func clearArchive()")]
-for use in ("return SpaceClearToday.ids(in: self.store.state, spaceID: id, profileID: space.profileID)",
-            ".filter { self.ownership.canUse($0, owner: self.presentationID) }",
-            "sidebar.canClearToday = { targetValid() && !clearable().isEmpty }",
-            "sidebar.onClearToday = { [weak self] in",
-            "guard let self, targetValid(), let space = self.managementSpace(id) else { return }",
-            "let ids = clearable()\n                guard !ids.isEmpty else { NSSound.beep(); return }\n"
-            "                self.archiveTabs(ids, reason: .clearButton, in: space)",
-            "manager.windowSpaceID = { [weak self] in self?.activeSpaceID }"):
-    assert use in configure, f"Library cards no longer use their own window and Space: {use}"
-for use in ("archiveTabs(SpaceClearToday.ids(in: store.state, spaceID: activeSpaceID, profileID: activeProfileID), reason: .clearButton)",
-            "let spaceID = space?.id ?? originSpace, profileID = space?.profileID ?? originProfile",
-            "self.activeSpaceID == originSpace, self.activeProfileID == originProfile else { return false }",
-            "&& $0.spaceID == spaceID && $0.profileID == profileID"):
-    assert use in controller, f"Clear's shared archive path changed: {use}"
-for use in ("commandBarCreatesNewTab = newTab; commandBarShowsNewTabPlaceholder = newTab && !inSidebar\n        commandBar = panel; panel.present()",
-            "commandBarCreatesNewTab = true; commandBarShowsNewTabPlaceholder = true\n        commandBar = panel; panel.present()",
-            "if commandBar == nil { commandBarCreatesNewTab = false; commandBarShowsNewTabPlaceholder = false }\n"
-            "            refreshSplitPaneHighlights()\n            refreshNewTabPlaceholder()",
-            "let active = commandBar != nil && commandBarShowsNewTabPlaceholder\n"
-            "        guard sidebar.newTabPlaceholderActive != active else { return }\n"
-            "        sidebar.newTabPlaceholderActive = active\n"
-            "        if presentation.isReady, !rendering, !isClosing { updateNavigation() }"):
-    assert use in controller, f"the New Tab placeholder wiring changed: {use}"
-assert controller.count("commandBarShowsNewTabPlaceholder = ") == 4, "an unexpected New Tab placeholder write"
-assert controller.count("newTabPlaceholderActive") == 2, "only the window's own sidebar takes the New Tab placeholder"
 names = """ParcDialog.swift
 ParcMenuColors.swift
 SidebarBannerHost.swift

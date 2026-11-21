@@ -56,10 +56,6 @@ availability, the catalog and tiles count only extensions allowed in Incognito,
 and that an allowed extension without an action still leaves availability false,
 while the normal window still counts all.
 
-`check-chromium.py SOURCE_TREE` requires the complete current applied source/hash
-cohort and exact generated object membership, then runs only syntax checks using
-each owning target's actual flags. It refuses an unintegrated candidate.
-
 The production bridge and tests share the native extension target. The
 [native runtime suite](../NativeRuntime/README.md) exercises real action
 snapshots, model pin order, stale selection refusal and selected-tab grants.

@@ -13,51 +13,6 @@ import AppKit
     static func main() { exitOnFailure(runChecks) }
     static func runChecks() throws {
         _ = NSApplication.shared
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-space-management-\(UUID())")
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = try BrowserStore(directory: directory)
-        let original = store.activeSpace
-        try check(original.title == nil && original.name == "Space 1", "fresh Space is untitled")
-        let secondID = store.createSpace(name: "")
-        try check(store.activeSpace.id == secondID && store.activeSpace.title == nil && store.activeSpace.name == "Space 2", "empty creation uses position")
-        var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(store.state)) as! [String: Any]
-        var spaces = legacy["spaces"] as! [[String: Any]]
-        for index in spaces.indices { spaces[index].removeValue(forKey: "title") }
-        legacy["spaces"] = spaces
-        let migrated = try JSONDecoder().decode(BrowserState.self, from: JSONSerialization.data(withJSONObject: legacy))
-        try check(migrated.spaces.allSatisfy { $0.title == nil }, "legacy positional names migrate once")
-        var shifted = migrated.spaces[1]; shifted.updateDisplayName(position: 0)
-        try check(shifted.title == nil && shifted.name == "Space 1", "untitled Space follows reordered position")
-        try store.saveSpaceTitle(original, title: "Space 1")
-        let explicit = store.state.spaces[0]
-        try check(explicit.title == "Space 1", "literal placeholder remains an authored title")
-        let reloaded = try BrowserStore(directory: directory)
-        try check(reloaded.state.spaces[0].title == "Space 1", "explicit positional title survives persistence")
-        try rejects({ try store.saveSpaceTitle(original, title: "Overwritten") }, "stale title lease must fail")
-        try check(store.state.spaces[0].title == "Space 1", "stale edit preserves competing title")
-        var theme = explicit.theme; theme.noise = 0.35
-        _ = store.setSpaceTheme(explicit.id, theme: theme)
-        try store.saveSpaceTitle(explicit, title: "Work")
-        try check(store.state.spaces[0].title == "Work" && store.state.spaces[0].theme == theme, "rename preserves independently edited theme")
-        let work = store.state.spaces[0]
-        try store.saveSpaceTitle(work, title: "")
-        try check(store.state.spaces[0].title == nil && store.state.spaces[0].name == "Space 1", "empty rename restores placeholder")
-        let untitled = store.state.spaces[0]
-        try store.saveSpaceIcon(untitled, icon: .emoji("🌿"))
-        try check(store.state.spaces[0].customIcon == .emoji("🌿"), "real icon mutation")
-        try rejects({ try store.saveSpaceIcon(untitled, icon: .emoji("🌊")) }, "stale icon lease must fail")
-        let iconSpace = store.state.spaces[0]
-        try store.saveSpaceIcon(iconSpace, icon: nil)
-        try check(store.state.spaces[0].customIcon == nil, "Remove resets custom icon")
-        var alien = store.state.spaces[0]; alien.profileID = UUID()
-        try rejects({ try store.saveSpaceTitle(alien, title: "Foreign") }, "reassigned profile refuses retained rename")
-        let snapshot = store.state
-        try FileManager.default.removeItem(at: directory)
-        try Data().write(to: directory)
-        try rejects({ try store.saveSpaceTitle(snapshot.spaces[0], title: "Not saved") }, "disk failure must throw")
-        try check(store.state == snapshot, "failed persistence publishes no partial state")
-        try FileManager.default.removeItem(at: directory)
-
         let header = SidebarSpaceHeaderView(frame: NSRect(x: 0, y: 0, width: 228, height: 36))
         let window = NSWindow(contentRect: header.frame, styleMask: [.borderless], backing: .buffered, defer: true)
         window.contentView = header

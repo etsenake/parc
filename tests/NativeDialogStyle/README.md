@@ -17,10 +17,10 @@ NSAlert-shaped decision sheet.
 ## Executable AppKit checks
 
 ```sh
-bash tests/NativeDialogStyle/run.sh
+swift test --filter DialogStyleTests
 ```
 
-The suite builds under ignored `build/tests/native-dialog-style/` and opens
+The suite opens
 offscreen test windows. Its 34 assertions cover page-window sheet attachment,
 responses from clicks, Return, keypad Enter and Escape, a chosen Escape button,
 another owner ending the sheet, prompt lifetime without an owner, footer

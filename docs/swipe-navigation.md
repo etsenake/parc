@@ -76,11 +76,9 @@ and over any visible split pane.
   key or Parc resigning active don't.
 
 A background swipe never activates Parc, raises the window, changes the
-selected pane or moves keyboard focus. `python3 tests/HistorySwipeTargets/check.py`
-runs model tests of which panes can swipe, checks that the shell, engine and
-session rules keep each refusal and commit through the per-page path, and
-checks that those rules and both halves of the forwarder call none of the
-focus, key-window or activation APIs.
+selected pane or moves keyboard focus. `tests/HistorySwipeTargets/main.swift`
+runs model tests of which panes can swipe and keeps each refusal and commit on
+the per-page path.
 
 ## How Dia does it
 
@@ -256,11 +254,10 @@ restarts the wait, and a resting hand's tremor can't cancel it.
 - It works in background windows, like the plain swipe. The Back/Forward
   chooser remains the keyboard and VoiceOver path to the same history.
 
-`python3 tests/HistorySwipeOverlay/check.py` model-tests the overlay's geometry
-and motion, including the fold back into the circle and the reopen, the lean,
-Reduce Motion, narrow panes, long lists and runs through the real recognizer,
-then compiles the view itself to check its pane clip, click-through,
-accessibility, material, shadow and ring.
+`tests/HistorySwipeOverlay` model-tests the overlay's geometry and motion,
+including the fold back into the circle and the reopen, the lean, Reduce Motion,
+narrow panes, long lists and runs through the real recognizer, and checks the
+view's pane clip, click-through, accessibility, material, shadow and ring.
 
 ## Peek dismissal
 
@@ -298,17 +295,16 @@ hold, in light, dark and private themes and under Reduce Motion, before tests
 or review. A live look-and-feel pass in Parc follows that guide's runtime
 boundary.
 
-- `python3 tests/HistorySwipe/check.py` runs the recognizer over recorded event
+- `swift test --filter HistorySwipeRecognizerTests` runs the recognizer over recorded event
   sequences: trackpad, Magic Mouse, page-consumed scroll,
   `overscroll-behavior: none`, vertical cancel, reversal, hold and selection,
   background windows, and a Peek's first-page dismissal with spring-back,
   flicks, reversal and the single tap.
-- `python3 tests/HistorySwipeDriver/check.py` drives the forwarder's Swift half:
+- `tests/HistorySwipeDriver` drives the forwarder's Swift half:
   sessions, commits and list picks, refused and late navigation, engine
   cancels, clock ticks, AppKit tracking and Peek dismissals.
-- `python3 tests/HistorySwipeTargets/check.py` covers which panes can swipe and
-  the focus-free rules above.
-- `python3 tests/PeekSwipeDismissal/check.py` covers the Peek's drag, close,
+- `tests/HistorySwipeTargets` covers which panes can swipe.
+- `tests/PeekSwipeDismissal` covers the Peek's drag, close,
   refusal, Hang up and motion on the real recognizer.
 - Swift typecheck and whole-module SIL cover the app; the engine build compiles
   the forwarder's engine half.

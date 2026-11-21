@@ -72,18 +72,6 @@ implement that presentation.
 
 ## Verification
 
-```sh
-python3 tests/NativeBrowserWindow/check-chromium.py /absolute/path/to/chromium/src
-```
-
-The checker compiles the complete Objective-C++ implementation with the pinned
-Chromium compiler, actual generated `//parc:browser` Objective-C++ flags, ARC and
-warnings as errors. A static assertion requires every pure virtual BrowserWindow
-and color-source method. The script reads the checkout,
-invokes only its compiler in syntax-only mode, and writes commands/diagnostics
-under ignored `build/tests/native-browser-window/`. It does not run generators,
-modify the engine checkout, link, or launch a browser.
-
 The separate page-host and window-association executable tests cover their
 component lifetimes. Activation, beforeunload, fullscreen, Profile selection and
 registry dispatch are owned by the adapter and its connected native services.

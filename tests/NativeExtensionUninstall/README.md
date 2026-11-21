@@ -95,18 +95,8 @@ overlay installs at the shared native-extension test directory.
 Run from the repository root:
 
 ```sh
-bash tests/NativeExtensionUninstall/run.sh
-python3 tests/NativeExtensionUninstall/check-chromium.py /path/to/chromium/src --output-name Release_GN_arm64
+swift test --filter ExtensionUninstallTests
 ```
-
-The compiler checker requires the applied reviewed overlay and generated targets;
-it has no compatibility fallback. It verifies mapped source/header/patch-output
-hashes, actual ObjC++ object membership and each upstream CXX owner, preserving
-real flags, ARC, warnings-as-errors and module settings. It performs no generation,
-linking or test execution and supplies no fake headers. Logs, command/hash records
-and the standalone executable stay under ignored
-`build/tests/native-extension-uninstall/`. Apply/generate/build through the
-reviewed engine source workflow before running the actual-target check.
 
 The confirmation result returns to Chromium's removal controller. Its policy,
 report-abuse handling and extension registry own the removal outcome; the sheet

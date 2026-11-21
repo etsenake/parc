@@ -199,16 +199,9 @@ images live in ignored `work/start-page/`.
 - `Sources/ParcApp/TabCloseFade.swift` and
   `BrowserWindowController+CloseFade.swift`: the close fade.
 
-```sh
-python3 tests/StartPage/check.py
-python3 tests/StartPageMark/check.py
-python3 tests/EmptyWindow/check.py
-```
-
-The first checks the paper's tint, glows, appearance and swipe hand-off, and
-runs the close fade on a pretend clock: its curve and lock, when the real close
-starts, "Leave site?", refusal, interruption and Reduce Motion. The
-empty-window check covers the sidebar rule, Command-T and Command-L routing,
-the start page's focus conditions, how the window wires the close fade, and
-that closing, clearing or a page closing itself keeps the window on its Space
-whatever page the engine picks next.
+`tests/StartPage` checks the paper's tint, glows, appearance and swipe hand-off,
+and runs the close fade on a pretend clock: its curve and lock, when the real
+close starts, "Leave site?", refusal, interruption and Reduce Motion.
+`tests/EmptyWindow` covers the sidebar rule, Command-T and Command-L routing,
+the start page's focus conditions, and that closing, clearing or a page closing
+itself keeps the window on its Space whatever page the engine picks next.

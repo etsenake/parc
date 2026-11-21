@@ -26,7 +26,7 @@ the browser-test fixture requires valid Chromium process/context initialization.
 
 ## Native dismissal input component
 
-`bash tests/NativeExtensionSidePanel/run-input.sh` compiles and executes only the
+`swift test --filter ExtensionSidePanelInputTests` runs only the
 production AppKit Escape-admission helper against inert windows and NSEvents.
 It creates no Browser, Profile, extension or renderer, performs no activation and
 drives no browser. The component controls the key-window predicate so event

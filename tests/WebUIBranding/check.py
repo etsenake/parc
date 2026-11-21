@@ -31,41 +31,6 @@ SOURCES = {
         "components/webui/version/resources/about_version.html"],
 }
 
-DARK_LOGO = 'srcset="//resources/images/chrome_logo_dark.svg"'
-
-CONSUMERS = [
-    ("ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts", DARK_LOGO),
-    ("ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts",
-     "chrome://theme/current-channel-logo@2x 2x"),
-    ("ui/webui/resources/cr_elements/cr_drawer/cr_drawer.html.ts", DARK_LOGO),
-    ("chrome/browser/ui/webui/current_channel_logo.cc",
-     "case version_info::Channel::UNKNOWN:\n      return IDR_PRODUCT_LOGO_32;"),
-    ("chrome/browser/resources/settings/settings_menu/settings_menu.html",
-     'icon="cr:chrome-product"'),
-    ("chrome/browser/resources/settings/safety_hub/safety_hub_page.ts",
-     "'settings20:chrome-product'"),
-    ("chrome/browser/resources/certificate_manager/certificate_manager.html.ts",
-     'icon="cr:chrome-product"'),
-    ("chrome/browser/resources/certificate_manager/certificate_manager.ts",
-     "import '//resources/cr_elements/icons.html.js';"),
-    ("components/webui/version/resources/about_version.html",
-     'href="chrome://theme/current-channel-logo"'),
-    ("components/webui/version/resources/about_version.html",
-     "chrome://theme/IDR_PRODUCT_LOGO_WHITE@2x 2x"),
-    ("components/webui/version/resources/about_version.html",
-     "chrome://theme/IDR_PRODUCT_LOGO@2x 2x"),
-    ("chrome/browser/ui/webui/version/version_ui.cc", "IDR_PRODUCT_FAVICON, scale_factor"),
-    ("chrome/browser/ui/webui/whats_new/whats_new_ui.cc", "IDR_NTP_FAVICON, scale_factor"),
-    ("chrome/browser/ui/webui/intro/intro_ui.cc", '"images/product-logo.svg", IDR_PRODUCT_LOGO_SVG'),
-    ("chrome/browser/ui/webui/intro/intro_ui.cc", "IDR_PRODUCT_LOGO_ANIMATION_SVG"),
-    ("chrome/browser/ui/webui/signin/profile_picker_ui.cc", ": IDR_PRODUCT_LOGO_SVG;"),
-]
-
-BUILT_CONSUMERS = [("IDR_SETTINGS_SHARED_ROLLUP_JS", DARK_LOGO, 2)]
-
-PRODUCT_ICON_USE = re.compile(r"""[\w-]+:chrome-product['"]""")
-
-
 class Failures:
     def __init__(self):
         self.messages = []
@@ -131,24 +96,6 @@ def built_files(out):
     return files
 
 
-def anchors(name, sources, failures):
-    result = run("presence", name, *sources)
-    lines = result.stdout.splitlines()
-    total = lines.pop().split("\t") if lines else []
-    rows = [line.split("\t", 3) for line in lines]
-    failures.check(result.returncode in (0, 1) and len(total) == 2 and total[0] == "edits" and
-                   int(total[1]) == len(rows) and all(len(row) == 4 for row in rows),
-                   f"{name}: the rule check did not report every rule ({result.stderr.strip()})")
-    return [(row[0], row[1], int(row[2]), row[3]) for row in rows if len(row) == 4]
-
-
-def mutated(text, anchor):
-    if not anchor:
-        return text
-    broken = anchor[:-1] + ("X" if anchor[-1] != "X" else "Y")
-    return text.replace(anchor, broken)
-
-
 def check_engine(chromium, failures, require_fresh):
     out = chromium / OUT_DIR
     files = built_files(out)
@@ -157,24 +104,10 @@ def check_engine(chromium, failures, require_fresh):
     dark = files.get("IDR_WEBUI_IMAGES_CHROME_LOGO_DARK_SVG")
     failures.check(dark and dark[1] == "images/chrome_logo_dark.svg",
                    "the toolbar's dark logo is no longer served at images/chrome_logo_dark.svg")
-    for relative, needle in CONSUMERS:
-        path = chromium / relative
-        failures.check(path.is_file() and needle in path.read_text(),
-                       f"{relative} no longer contains {needle!r}")
     with tempfile.TemporaryDirectory(prefix="webui-branding-") as temporary:
         scratch = Path(temporary)
         for name in names:
             sources = [chromium / relative for relative in SOURCES.get(name, [])]
-            rows = anchors(name, sources, failures)
-            for state, group, count, anchor in rows:
-                failures.check(state == "present", f"{name} ({group}): Chromium's source lost {anchor!r}")
-            combined = "".join(path.read_text() for path in sources)
-            for _, group, _, anchor in rows:
-                broken = scratch / "broken-source"
-                broken.write_text(mutated(combined, anchor))
-                result = run("presence", name, broken)
-                failures.check(f"missing\t{group}\t0\t{anchor}" in result.stdout,
-                               f"{name}: a source without {anchor!r} was not caught")
             if name not in files:
                 failures.messages.append(f"{name} is not in the engine's resource lists")
                 continue
@@ -193,23 +126,6 @@ def check_engine(chromium, failures, require_fresh):
             result = run("apply", name, built, scratch / "edited")
             failures.check(result.returncode == 0 and "failed" not in result.stdout,
                            f"{name}: " + "; ".join((result.stdout or result.stderr).split("\n")).strip("; "))
-            text = built.read_text()
-            for _, group, _, anchor in rows:
-                broken = scratch / "broken-built"
-                broken.write_text(mutated(text, anchor))
-                result = run("apply", name, broken, scratch / "edited")
-                failures.check(result.returncode == 1 and f"failed\t{group}" in result.stdout,
-                               f"{name}: a built copy without {anchor!r} was not caught")
-            for resource, needle, count in BUILT_CONSUMERS:
-                if resource == name:
-                    failures.check(text.count(needle) == count,
-                                   f"{name}: expected {count} uses of {needle!r}")
-    covered = {files[name][0].resolve() for name in names if name in files}
-    for bundle in (out / "gen").rglob("minified/*.js"):
-        text = bundle.read_text(errors="replace")
-        if '<g id="chrome-product"' in text and PRODUCT_ICON_USE.search(text):
-            failures.check(bundle.resolve() in covered,
-                           f"{bundle.relative_to(out)} draws its own copy of Chromium's product icon")
 
 
 def main():

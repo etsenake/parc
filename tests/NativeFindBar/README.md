@@ -15,11 +15,10 @@ Find presentation and keyboard behavior are documented in
 Read [the working contract](../../AGENTS.md) before running these checks.
 
 ```sh
-bash tests/NativeFindBar/run.sh
-python3 tests/NativeFindBar/check-chromium.py /path/to/chromium/src
+swift test --filter FindBarTests
 ```
 
-The standalone AppKit suite compiles with Apple Clang, ARC and
+The AppKit suite compiles with ARC and
 `-Wall -Wextra -Werror`, then executes real offscreen
 NSWindows/NSTextFields, their field editors and the main run loop. It checks
 native insertion and marked-text composition, programmatic updates without
@@ -29,15 +28,6 @@ focus, weak delegate ownership, invalid contexts and reentrant teardown. A
 regression reparents the destination pane to another window during focus-loss
 callback delivery: attachment rejects that now-invalid context.
 
-The separate checker reads the actual generated
-`obj/parc/native/native_components.ninja` and `obj/parc/browser.ninja`
-Objective-C++ settings and uses the pinned Chromium compiler, without modifying
-the checkout or invoking GN/Ninja. It syntax-checks the AppKit view and Chromium
-bridge with warnings treated as errors and requires the real upstream generated
-prerequisites. Logs, arguments and dependencies are ignored under
-`build/tests/native-find-bar/`.
-
-## Integration and lifetime
 
 `NativeBrowserWindow::CreateFindBar()` delegates to `AppKitBrowserHost`, which
 constructs `NativeFindBar`. Chromium's `FindBarController` owns and sets up that
