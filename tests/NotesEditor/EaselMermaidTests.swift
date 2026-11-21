@@ -197,7 +197,7 @@ struct EaselMermaidTests {
         expect(value.groups.contains { $0.title == "Spaced title" && $0.id.hasPrefix("subGraph") }, "Spaced titles get generated IDs")
         expect(value.node("one") == nil && value.node("two") == nil, "Links to subgraphs don't make extra nodes")
         expect(value.node("three") == nil && edge(value, "three", "two") != nil, "Links to later subgraphs resolve to the subgraph")
-        expect(refusal("flowchart TD\nA\nend") == .syntax(line: 3, detail: "there's an end without a subgraph to close"),
+        expect(refusal("flowchart TD\nA\nend") == .syntax(line: 3, detail: "there’s an end without a subgraph to close"),
                "A stray end is reported on its line")
         expect(diagram("flowchart TD\nsubgraph S\nA\n").node("A")?.group == "S", "An unclosed subgraph closes at the end")
     }
