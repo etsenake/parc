@@ -1046,7 +1046,7 @@ extension EaselCanvasView {
         do { payload = try EaselStyledText.capture(text.attributedString(), style: text.objectStyle, color: text.objectColor) }
         catch { onError?(error); updateTableCellEditor(item); return true }
         guard payload.text.utf8.count <= EaselTable.maximumCellBytes else {
-            onError?(EaselStoreError.tooLarge)
+            onError?(EaselStoreError.cellTooLarge)
             updateTableCellEditor(item)
             return true
         }

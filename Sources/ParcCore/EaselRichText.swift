@@ -161,7 +161,7 @@ struct EaselRichText: Codable, Equatable {
     }
     func validate(text: String) throws {
         let units = Array(text.utf16)
-        guard units.count <= 1_048_576, runs.count <= 16_384 else { throw EaselStoreError.tooLarge }
+        guard units.count <= 1_048_576, runs.count <= 16_384 else { throw EaselStoreError.textTooLarge }
         func validBoundary(_ position: Int) -> Bool {
             position == 0 || position == units.count || !(0xD800...0xDBFF).contains(units[position - 1]) || !(0xDC00...0xDFFF).contains(units[position])
         }
@@ -189,7 +189,7 @@ struct EaselRichText: Codable, Equatable {
                     throw EaselStoreError.invalidDocument("inline image range")
                 }
                 imageBytes += image.data.count
-                guard imageBytes <= 4_194_304 else { throw EaselStoreError.tooLarge }
+                guard imageBytes <= 4_194_304 else { throw EaselStoreError.textPictureTooLarge }
             }
             if let inline = a.inline {
                 try inline.validate()
@@ -198,7 +198,7 @@ struct EaselRichText: Codable, Equatable {
                 }
                 imageBytes += inline.image?.count ?? 0
                 inlineBytes += inline.payloadBytes
-                guard imageBytes <= 4_194_304, inlineBytes <= Inline.maximumPayloadBytes else { throw EaselStoreError.tooLarge }
+                guard imageBytes <= 4_194_304, inlineBytes <= Inline.maximumPayloadBytes else { throw EaselStoreError.textPictureTooLarge }
             }
             if let p = a.paragraph {
                 guard (0...4).contains(p.alignment), (-1...1).contains(p.direction), (0...5).contains(p.lineBreak),

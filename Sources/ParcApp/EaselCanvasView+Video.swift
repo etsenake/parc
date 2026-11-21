@@ -30,7 +30,7 @@ extension EaselCanvasView {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey])
         let movie = values.contentType?.conforms(to: .movie) == true
         guard values.isRegularFile == true, let size = values.fileSize else { throw EaselStoreError.invalidImage }
-        guard size <= EaselStore.maximumAssetBytes else { throw movie ? EaselStoreError.videoTooLarge : EaselStoreError.tooLarge }
+        guard size <= EaselStore.maximumAssetBytes else { throw movie ? EaselStoreError.videoTooLarge : EaselStoreError.assetImageTooLarge }
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
         if movie || EaselAssetType.sniff(data)?.isVideo == true {
             try insertVideo(data, from: url)

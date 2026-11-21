@@ -665,7 +665,7 @@ struct EaselSummary: Identifiable, Equatable {
 }
 
 enum EaselStoreError: Error, LocalizedError {
-    case invalidDocument(String), unsupportedVersion(Int), unsafePath, invalidImage, tooLarge, invalidVideo, videoTooLarge
+    case invalidDocument(String), unsupportedVersion(Int), unsafePath, invalidImage, imageTooLarge(megabytes: Int), easelTooLarge(megabytes: Int), tooMuch(String), invalidVideo, videoTooLarge
     case invalidAudio, audioTooLarge, invalidPDF, pdfTooLarge, invalidFile, fileTooLarge
     case missingDocument, deletedDocument, closedDocument, browserInUse, lockedDocument
     case invalidWebLink, imageDownloadFailed, pdfDownloadFailed, staleObject
@@ -676,7 +676,9 @@ enum EaselStoreError: Error, LocalizedError {
         case .unsupportedVersion(let version): return "This Easel uses unsupported format version \(version)."
         case .unsafePath: return "The Easel storage path is unsafe."
         case .invalidImage: return "The image could not be imported."
-        case .tooLarge: return "The Easel or image exceeds the local storage limit."
+        case .imageTooLarge(let megabytes): return "That picture is a bit big for an Easel. Pictures up to \(megabytes) MB fit."
+        case .easelTooLarge(let megabytes): return "This Easel is a bit big to save. Easels up to \(megabytes) MB fit."
+        case .tooMuch(let sentence): return sentence
         case .invalidVideo: return "That video can’t play on an Easel. MP4 and MOV videos can."
         case .videoTooLarge: return "That video is a bit big for an Easel. Videos up to 30 MB fit."
         case .invalidAudio: return "That audio can’t play on an Easel. M4A, MP3, WAV, AAC and AIFF files can."
@@ -698,6 +700,20 @@ enum EaselStoreError: Error, LocalizedError {
     }
 }
 
+extension EaselStoreError {
+    static var assetImageTooLarge: EaselStoreError { .imageTooLarge(megabytes: EaselStore.maximumAssetBytes / 1_048_576) }
+    static var documentTooLarge: EaselStoreError { .easelTooLarge(megabytes: EaselStore.maximumDocumentBytes / 1_048_576) }
+    static var memoryTooLarge: EaselStoreError { .easelTooLarge(megabytes: 256) }
+    static var textPictureTooLarge: EaselStoreError { .imageTooLarge(megabytes: 4) }
+    static let tableTooLarge = EaselStoreError.tooMuch("That table has a lot of text. Tables hold up to 1 MB of it.")
+    static let cellTooLarge = EaselStoreError.tooMuch("That's a lot of text for one cell. Cells hold up to 64 KB.")
+    static let textTooLarge = EaselStoreError.tooMuch("That's a lot of text for one object. About a million characters fit.")
+    static let pasteTooLarge = EaselStoreError.tooMuch("That's a bit much to copy or paste at once. Text up to 1 MB fits, or 8 MB with pictures.")
+    static let objectsTooLarge = EaselStoreError.tooMuch("That's a lot of objects to copy or paste at once. Up to 128 MB fits.")
+    static let templateTooLarge = EaselStoreError.tooMuch("That doesn't fit on this Easel. Easels hold up to 10,000 objects.")
+    static let exportTooLarge = EaselStoreError.tooMuch("That image is too big to export. Up to 32,768 pixels a side and 128 million in all fit.")
+}
+
 extension Notification.Name {
     static let easelDocumentRemoved = Notification.Name("ParcEaselDocumentRemoved")
     static let easelDocumentChanged = Notification.Name("ParcEaselDocumentChanged")
@@ -706,7 +722,7 @@ extension Notification.Name {
 
 @MainActor
 final class EaselStore {
-    static let maximumAssetBytes = 30 * 1024 * 1024
+    nonisolated static let maximumAssetBytes = 30 * 1024 * 1024
     nonisolated static let maximumDocumentBytes = 8 * 1024 * 1024
     let directory: URL
     private let now: () -> Date
@@ -829,7 +845,7 @@ final class EaselStore {
             if type.isAudio { throw EaselStoreError.audioTooLarge }
             if type == .pdf { throw EaselStoreError.pdfTooLarge }
             if type == .file { throw EaselStoreError.fileTooLarge }
-            throw EaselStoreError.tooLarge
+            throw EaselStoreError.assetImageTooLarge
         }
         guard EaselAssetType.accepts(data, as: type) else {
             if type.isVideo { throw EaselStoreError.invalidVideo }
@@ -911,7 +927,7 @@ final class EaselStore {
         try checkDirectories()
         let url = documentURL(id)
         guard FileManager.default.fileExists(atPath: url.path) else { throw EaselStoreError.missingDocument }
-        try ensureRegularFile(url, maximumBytes: Self.maximumDocumentBytes)
+        try ensureRegularFile(url, maximumBytes: Self.maximumDocumentBytes, tooLarge: .documentTooLarge)
         let document = Self.repairingStackOrder(Self.repairingDuplicateIDs(try JSONDecoder().decode(EaselDocument.self, from: Data(contentsOf: url))))
         guard document.id == id else { throw EaselStoreError.invalidDocument("document ID does not match its file") }
         try validate(document)
@@ -1107,10 +1123,10 @@ final class EaselStore {
         guard values.isDirectory == true, values.isSymbolicLink != true else { throw EaselStoreError.unsafePath }
     }
 
-    private func ensureRegularFile(_ url: URL, maximumBytes: Int? = nil) throws {
+    private func ensureRegularFile(_ url: URL, maximumBytes: Int? = nil, tooLarge: EaselStoreError = .fileTooLarge) throws {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
         guard values.isRegularFile == true, values.isSymbolicLink != true else { throw EaselStoreError.unsafePath }
-        if let maximumBytes, (values.fileSize ?? Int.max) > maximumBytes { throw EaselStoreError.tooLarge }
+        if let maximumBytes, (values.fileSize ?? Int.max) > maximumBytes { throw tooLarge }
     }
 
     private func atomicWrite(_ data: Data, to destination: URL) throws {
@@ -1203,7 +1219,7 @@ private final class EaselDocumentWriter: @unchecked Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(document)
-        guard data.count <= maximumBytes else { throw EaselStoreError.tooLarge }
+        guard data.count <= maximumBytes else { throw EaselStoreError.documentTooLarge }
         let key = url.path
         if lastWrittenBytes[key] == data {
             return
@@ -1254,11 +1270,11 @@ final class EaselSession: ObservableObject {
     private func persist(_ document: EaselDocument) throws {
         try requireWritable()
         if let store { try store.persist(document); return }
-        guard memoryAssets.values.reduce(0, { $0 + $1.count }) <= Self.maximumMemoryAssetBytes else { throw EaselStoreError.tooLarge }
+        guard memoryAssets.values.reduce(0, { $0 + $1.count }) <= Self.maximumMemoryAssetBytes else { throw EaselStoreError.memoryTooLarge }
         try EaselStore.validate(document) { id in
             guard self.memoryAssets[id] != nil else { throw EaselStoreError.invalidImage }
         }
-        guard try JSONEncoder().encode(document).count <= EaselStore.maximumDocumentBytes else { throw EaselStoreError.tooLarge }
+        guard try JSONEncoder().encode(document).count <= EaselStore.maximumDocumentBytes else { throw EaselStoreError.documentTooLarge }
     }
 
     func assetData(_ id: String) throws -> Data {
@@ -1407,7 +1423,7 @@ final class EaselSession: ObservableObject {
         try requireWritable()
         if let store { return try store.importAsset(data, type: type, fileExtension: fileExtension) }
         try EaselStore.checkAsset(data, type: type)
-        guard memoryAssets.values.reduce(data.count, { $0 + $1.count }) <= Self.maximumMemoryAssetBytes else { throw EaselStoreError.tooLarge }
+        guard memoryAssets.values.reduce(data.count, { $0 + $1.count }) <= Self.maximumMemoryAssetBytes else { throw EaselStoreError.memoryTooLarge }
         let id = EaselAssetType.assetID(UUID(), type: type, fileExtension: fileExtension); memoryAssets[id] = data
         return id
     }

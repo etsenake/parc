@@ -317,7 +317,7 @@ struct EaselStyledText: Codable, Equatable {
         let images = EaselTextAttachments.hasImages(value)
         let native = try value.data(from: NSRange(location: 0, length: value.length),
             documentAttributes: [.documentType: images ? NSAttributedString.DocumentType.rtfd : NSAttributedString.DocumentType.rtf])
-        guard encoded.count <= 8_388_608, native.count <= (images ? 8_388_608 : 4_194_304) else { throw EaselStoreError.tooLarge }
+        guard encoded.count <= 8_388_608, native.count <= (images ? 8_388_608 : 4_194_304) else { throw EaselStoreError.pasteTooLarge }
         let item = NSPasteboardItem()
         item.setData(encoded, forType: Self.pasteboardType)
         item.setData(native, forType: images ? .rtfd : .rtf)
@@ -329,18 +329,18 @@ struct EaselStyledText: Codable, Equatable {
         let text: String
         if let string = pasteboard.string(forType: .string) ?? pasteboard.string(forType: .URL) { text = string }
         else if let data = pasteboard.data(forType: .rtfd) {
-            guard data.count <= 8_388_608 else { throw EaselStoreError.tooLarge }
+            guard data.count <= 8_388_608 else { throw EaselStoreError.pasteTooLarge }
             text = try NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.rtfd], documentAttributes: nil).string
         } else if let rtf = pasteboard.data(forType: .rtf) {
-            guard rtf.count <= 4_194_304 else { throw EaselStoreError.tooLarge }
+            guard rtf.count <= 4_194_304 else { throw EaselStoreError.pasteTooLarge }
             text = try NSAttributedString(data: rtf, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil).string
         } else { return nil }
-        guard text.utf8.count <= 1_048_576 else { throw EaselStoreError.tooLarge }
+        guard text.utf8.count <= 1_048_576 else { throw EaselStoreError.pasteTooLarge }
         return EaselTextAttachments.plainString(text)
     }
     @MainActor static func read(from pasteboard: NSPasteboard) throws -> EaselStyledText? {
         if let type = pasteboard.availableType(from: [pasteboardType, previousPasteboardType, legacyPasteboardType]), let data = pasteboard.data(forType: type) {
-            guard data.count <= 8_388_608 else { throw EaselStoreError.tooLarge }
+            guard data.count <= 8_388_608 else { throw EaselStoreError.pasteTooLarge }
             var value = try JSONDecoder().decode(Self.self, from: data)
             try value.validate()
             for run in value.richText?.runs ?? [] { if let image = run.attributes.image { _ = try EaselTextAttachments.image(data: image.data) } }
@@ -348,7 +348,7 @@ struct EaselStyledText: Codable, Equatable {
         }
         let type = pasteboard.availableType(from: [.rtfd, .rtf])
         guard let type, let data = pasteboard.data(forType: type) else { return nil }
-        guard data.count <= (type == .rtfd ? 8_388_608 : 4_194_304) else { throw EaselStoreError.tooLarge }
+        guard data.count <= (type == .rtfd ? 8_388_608 : 4_194_304) else { throw EaselStoreError.pasteTooLarge }
         let decoded = try NSAttributedString(data: data,
             options: [.documentType: type == .rtfd ? NSAttributedString.DocumentType.rtfd : NSAttributedString.DocumentType.rtf], documentAttributes: nil)
         let value = try EaselTextAttachments.normalized(decoded)
@@ -754,7 +754,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
                 data = try value.data(from: NSRange(location: 0, length: value.length),
                     documentAttributes: [.documentType: type == .rtfd ? NSAttributedString.DocumentType.rtfd : NSAttributedString.DocumentType.rtf])
             } else { return false }
-            guard data.count <= (type == .rtf ? 4_194_304 : 8_388_608) else { throw EaselStoreError.tooLarge }
+            guard data.count <= (type == .rtf ? 4_194_304 : 8_388_608) else { throw EaselStoreError.pasteTooLarge }
             return board.setData(data, forType: type)
         } catch { onClipboardError?(error); return false }
     }
