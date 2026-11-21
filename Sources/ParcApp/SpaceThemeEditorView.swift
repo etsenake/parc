@@ -35,7 +35,7 @@ final class SpaceThemeEditorView: NSView {
     private let background = NSVisualEffectView()
     private let pad = ThemeColorPad()
     private let intensity = ThemeIntensityControl()
-    private let noise = ThemeNoiseControl()
+    private let noise: ThemeNoiseControl
     private var appearanceButtons: [ThemeAppearanceButton] = []
     private var appearanceObservation: NSKeyValueObservation?
     private var presets: [ThemePresetButton] = []
@@ -50,10 +50,13 @@ final class SpaceThemeEditorView: NSView {
     override var intrinsicContentSize: NSSize { NSSize(width: 356, height: 508) }
 
     init(theme: SpaceTheme, presetPage: Int = 0,
+         scrollPublisher: ((AnyPublisher<Double, Never>) -> AnyPublisher<Double, Never>)? = nil,
+         scrollTime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
          performHapticFeedback: @escaping @MainActor () -> Void = ThemeHapticFeedback.perform) {
         editor = SpaceThemeEditorState(theme: theme)
         committedTheme = theme
         page = presetPage
+        noise = ThemeNoiseControl(scrollPublisher: scrollPublisher, now: scrollTime)
         self.performHapticFeedback = performHapticFeedback
         super.init(frame: NSRect(x: 0, y: 0, width: 356, height: 508))
         page = min(families.count - 1, max(0, page))
@@ -993,13 +996,20 @@ private final class ThemeNoiseControl: NSControl {
     private var cancelledScroll = false
     private var cancelledScrollUntil: TimeInterval = 0
     private let scrollEvents = PassthroughSubject<Double, Never>()
+    private let scrollPublisher: (AnyPublisher<Double, Never>) -> AnyPublisher<Double, Never>
+    private let now: () -> TimeInterval
     private var scrollDelivery: AnyCancellable?
     private var lastScrollTime: TimeInterval = 0
     private let tooltipAnchor = TooltipAnchorView()
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+    init(scrollPublisher: ((AnyPublisher<Double, Never>) -> AnyPublisher<Double, Never>)?,
+         now: @escaping () -> TimeInterval) {
+        self.scrollPublisher = scrollPublisher ?? {
+            $0.throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true).eraseToAnyPublisher()
+        }
+        self.now = now
+        super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.slider); setAccessibilityLabel("Theme texture and noise")
         setAccessibilityHelp("Click to cycle textures. Rotate or scroll to adjust noise.")
@@ -1085,8 +1095,7 @@ private final class ThemeNoiseControl: NSControl {
     }
 
     private func observeScroll() {
-        scrollDelivery = scrollEvents
-            .throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true)
+        scrollDelivery = scrollPublisher(scrollEvents.eraseToAnyPublisher())
             .sink { [weak self] delta in
                 guard let self, self.pointerInsideCenter, !self.cancelledScroll,
                       self.startPoint == nil, !self.rotationSequenceActive,
@@ -1098,9 +1107,9 @@ private final class ThemeNoiseControl: NSControl {
     }
 
     private func cancelScrollInput() {
-        if scrollSequenceActive || ProcessInfo.processInfo.systemUptime < lastScrollTime + 0.2 {
+        if scrollSequenceActive || now() < lastScrollTime + 0.2 {
             cancelledScroll = true
-            cancelledScrollUntil = ProcessInfo.processInfo.systemUptime + 0.2
+            cancelledScrollUntil = now() + 0.2
         }
         scrollDelivery?.cancel(); observeScroll()
     }
