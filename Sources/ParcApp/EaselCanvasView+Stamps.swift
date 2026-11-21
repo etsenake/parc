@@ -63,7 +63,7 @@ final class EaselCanvasStampState {
 extension EaselCanvasView {
     var stampCursor: NSCursor { stamps.cursor(for: stamps.face, library: stampEmojiLibrary) }
 
-    var stampEmojiLibrary: NoteEmojiLibrary? { EaselNoteEnvironment(folder: notesFolder?()).emojiLibrary }
+    var stampEmojiLibrary: NoteEmojiLibrary? { notesFolder?().map { NoteEmojiLibrary.library(for: $0.appendingPathComponent("Easel", isDirectory: false)) } }
 
     static var stampPanelsFactory: (@MainActor () -> EaselStampPanelsPresenting)?
 
