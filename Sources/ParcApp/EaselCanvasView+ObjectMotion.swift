@@ -87,7 +87,7 @@ extension EaselCanvasView {
                 entrances[id] = objectMotion.timeline.isRaised(id)
                     ? .slam(tilt: EaselObjectEntrance.pressedSlamTilt * side, raised: true) : EaselObjectEntrance.of(item)
             }
-            let delays = cascade(added)
+            let delays = cascade(added.filter { frames[$0].map(EaselObjectEntrance.cascades) ?? false })
             objectMotion.timeline.appear(entrances, delays: delays, at: now, reduced: reduced)
             touched.formUnion(added)
             let stamps = ordered.filter { added.contains($0) && frames[$0]?.kind == .stamp && onScreen($0) }
@@ -112,7 +112,9 @@ extension EaselCanvasView {
             let delays = cascade(offsets.keys)
             objectMotion.timeline.glide(offsets, fades: true, lands: true, delays: delays, at: now, reduced: reduced)
             let rest = added.filter { offsets[$0] == nil && chosen.contains($0) }
-            objectMotion.timeline.appear(rest, at: now, reduced: reduced)
+            var entrances: [UUID: EaselObjectEntrance] = [:]
+            for id in rest { if let item = frames[id] { entrances[id] = EaselObjectEntrance.of(item) } }
+            objectMotion.timeline.appear(entrances, at: now, reduced: reduced)
             touched.formUnion(offsets.keys); touched.formUnion(rest)
         case .arrange:
             let all = EaselObjectMotion.moves(from: before, to: after)
@@ -134,7 +136,7 @@ extension EaselCanvasView {
             guard !change.isEmpty else { return }
             let added = admitted(change.added)
             var entrances: [UUID: EaselObjectEntrance] = [:]
-            for id in added { entrances[id] = .quick }
+            for id in added { if let item = frames[id] { entrances[id] = EaselObjectEntrance.returning(item) } }
             objectMotion.timeline.appear(entrances, at: now, reduced: reduced)
             let leaving = admitted(change.removed.map(\.id))
             objectMotion.timeline.vanish(change.removed.filter { leaving.contains($0.id) }, at: now, reduced: reduced)
@@ -631,6 +633,15 @@ extension EaselCanvasView {
         }
         for (path, animation) in animations { layer.add(animation, forKey: Self.surfaceKey + "vanish." + path) }
         CATransaction.commit()
+    }
+
+    func glideObjects(_ offsets: [UUID: EaselPoint], delays: [UUID: TimeInterval], fades: Bool) {
+        guard canAnimateObjects, !offsets.isEmpty else { return }
+        objectMotion.timeline.glide(offsets, fades: fades, delays: delays, at: CACurrentMediaTime(), reduced: reduceMotion)
+        objectMotion.pendingSurfaces.formUnion(offsets.keys)
+        needsLayout = true
+        startObjectMotionDriver()
+        objectMotionFrame()
     }
 
     func raiseStampDraft(_ id: UUID) {

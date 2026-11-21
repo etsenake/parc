@@ -511,10 +511,6 @@ extension EaselCanvasView {
         var staged = before
         let leaving = Set(nodes.map(\.id))
         staged.items.removeAll { leaving.contains($0.id) }
-        let parents = nodes.compactMap { anchor(for: $0)?.id }
-        if parents.count == nodes.count {
-            withObjectMotion(.copies(sources: parents, copies: nodes.map(\.id))) { recordObjectMotion(from: staged, to: after) }
-        }
         let tree = EaselMindMap.tree(of: after.items)
         func depth(_ id: UUID) -> Int {
             var steps = 0, current = id
@@ -523,6 +519,12 @@ extension EaselCanvasView {
                 current = parent; steps += 1
             }
             return steps
+        }
+        let parents = nodes.compactMap { anchor(for: $0)?.id }
+        if parents.count == nodes.count {
+            let offsets = EaselObjectMotion.copyOffsets(sources: parents, copies: nodes.map(\.id), before: staged, after: after)
+            let stagger = EaselFeedbackCurve.unfoldDelays(depths: nodes.map { depth($0.id) })
+            glideObjects(offsets, delays: Dictionary(zip(nodes.map(\.id), stagger), uniquingKeysWith: { first, _ in first }), fades: true)
         }
         let depths = branches.map { branch in branch.endConnection.map { depth($0.itemID) } ?? 0 }
         let delays = EaselFeedbackCurve.unfoldDelays(depths: depths)

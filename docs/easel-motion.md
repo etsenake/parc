@@ -74,9 +74,11 @@ fade. A new sticky drops like paper: it lands from 108%, 8 points higher and
 tilted 3°, while its lifted shadow tightens on the settle spring. A stamp slams
 down from 160% and clear with 12° of extra tilt, overshoots to about 90% on the
 toggle spring, and leaves an ink ring and a burst of specks in its colour.
-Connectors, doodles and sections fade in. Commands that add several objects at
-once (templates, paste, Mermaid import, duplicated groups) stagger them outward
-from the group's centre, the whole spread within 0.25 s.
+Doodles and sections fade in, and new connectors only fade while they draw
+themselves on, never scaling. Commands that add several objects at once
+(templates, paste, Mermaid import, duplicated groups) stagger them outward from
+the group's centre, the whole spread within 0.25 s; expanding a mind-map branch
+staggers its topics by depth so each glides out as its branch arrives.
 
 Deleting or cutting puffs objects away: they shrink to 85% and fade in 0.18 s,
 and up to eight of them leave a small puff of soft specks. Duplicates and
@@ -88,7 +90,7 @@ dash, arrowhead, shape and font changes cross-fade from the old look over
 0.15 s.
 
 Undo and redo animate structural changes quickly: objects that come back pop
-from 92%, ones that leave poof without specks, moved, resized or turned ones
+from 92% (connectors fade), ones that leave poof without specks, moved, resized or turned ones
 glide back to where they were, and restyled ones cross-fade. Undoing typing,
 table edits and anything else that only changes words stays instant, as do
 live drags, pinches, drawn and dragged-out objects. Connectors attached to a
