@@ -11,6 +11,7 @@ extension BrowserWindowController {
         if let easel = InternalPage(urlString: value)?.easelID {
             guard !isPrivateBrowsing, !isPopupWindow else { return false }
             openEaselAddress(easel, inPane: tabID)
+            if let target = EaselObjectAddress.target(of: value) { revealEaselObject(target.object, in: target.easel) }
             return true
         }
         guard let file = InternalPage.noteFile(value) else { return false }

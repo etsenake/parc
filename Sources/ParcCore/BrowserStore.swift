@@ -2363,7 +2363,7 @@ enum InternalPage: Equatable {
         if let file = Self.noteFile(urlString) { self = .note(file); return }
         guard let value = URLComponents(string: urlString), value.scheme?.lowercased() == "parc",
               value.host?.lowercased() == "easel", value.user == nil, value.password == nil,
-              value.port == nil, value.query == nil, value.fragment == nil,
+              value.port == nil, value.query == nil, value.fragment.map({ UUID(uuidString: $0) != nil }) ?? true,
               value.path.hasPrefix("/"), let id = UUID(uuidString: String(value.path.dropFirst())) else { return nil }
         self = .easel(id)
     }

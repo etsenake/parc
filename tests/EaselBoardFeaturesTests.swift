@@ -20,6 +20,7 @@ struct EaselBoardFeaturesTests {
         sessionReplace()
         sessionReplaceAll()
         viewportFocus()
+        objectLinks()
         print("EaselBoardFeaturesTests: \(assertions) assertions passed")
     }
 
@@ -279,5 +280,17 @@ struct EaselBoardFeaturesTests {
         expect(focused?.magnification == 1 && focused?.center == EaselPoint(x: 500, y: 350), "focusing a link shows its object at 100%")
         let bad = EaselRect(x: .nan, y: 0, width: 1, height: 1)
         expect(EaselViewportFocus.plan(target: bad, visible: visible, magnification: 1, minimum: 0.33, maximum: 4) == nil, "bad geometry is ignored")
+    }
+
+    @MainActor static func objectLinks() {
+        let easel = UUID(), object = UUID()
+        let link = EaselObjectAddress.urlString(easel: easel, object: object)
+        expect(link == "parc://easel/" + easel.uuidString.lowercased() + "#" + object.uuidString.lowercased(), "object links are the Easel link plus the object id")
+        expect(EaselObjectAddress.target(of: link)?.easel == easel && EaselObjectAddress.target(of: link)?.object == object, "object links round trip")
+        expect(InternalPage(urlString: link) == .easel(easel), "an object link still opens its Easel")
+        expect(InternalPage(urlString: link)?.urlString == InternalPage.easel(easel).urlString, "tabs keep the plain Easel address")
+        expect(InternalPage(urlString: "parc://easel/" + easel.uuidString + "#heading") == nil, "other fragments aren't Easel links")
+        expect(InternalPage(urlString: "parc://easel/" + easel.uuidString + "?x=1#" + object.uuidString) == nil, "queries still aren't Easel links")
+        expect(EaselObjectAddress.target(of: InternalPage.easel(easel).urlString) == nil, "a plain Easel link names no object")
     }
 }

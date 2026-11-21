@@ -1,9 +1,9 @@
 # Easel board features
 
 Board-wide tools that work across a whole Easel rather than on one object:
-find and replace. They sit beside the [Easel editing contract](easels.md) and
-use the Notes look ([appearance](easel-appearance.md)) and motion rules
-([motion](easel-motion.md)).
+find and replace, and links to a single object. They sit beside the
+[Easel editing contract](easels.md) and use the Notes look
+([appearance](easel-appearance.md)) and motion rules ([motion](easel-motion.md)).
 
 ## Find and replace
 
@@ -61,11 +61,22 @@ rules are pure ParcCore code (`EaselFinder`, `EaselFindSession`,
 `EaselFinder.searchableParts(of:)` and its `replaceability(of:)`; tables and
 code blocks join the same way once they exist.
 
+## Links to objects
+
+Copy Link to Object in an object's context menu copies the Easel's address
+with the object's id after a `#`, for example
+`parc://easel/<easel id>#<object id>`, and shows the Copied toast. Opening it
+from anywhere Parc follows Easel links (a note, the command bar, a pasted
+address) opens the Easel the usual way, then selects that object and glides
+the canvas to it at up to 100%. If the object has since been deleted, the
+Easel still opens and a toast says the object isn't there anymore. Tabs keep
+the plain Easel address, and any other fragment is not an Easel link.
+
 ## Checks
 
 `tests/EaselBoardFeaturesTests.swift` is a windowless suite over the ParcCore
 board logic: find order, visibility, matching, replacement across rich text
-runs, per-object refusals, the find session's replace and refresh rules and
-viewport focus. Build it with every `Sources/ParcCore` file
+runs, per-object refusals, the find session's replace and refresh rules,
+viewport focus and object links. Build it with every `Sources/ParcCore` file
 plus `tests/Support/TestFailure.swift` and run the binary. The views are
 checked by compiling only.
