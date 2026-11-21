@@ -324,10 +324,10 @@ struct IconSettingsTests {
         let fixture = try IconSettingsFixture()
         defer { fixture.close() }
         fixture.icons.select("AfterHours")
-        fixture.drainMainQueue()
+        fixture.refreshPendingSelection()
         fixture.sorbet.mouseDown(with: fixture.mouse(.leftMouseDown, on: fixture.sorbet))
         fixture.icons.select("Original")
-        fixture.drainMainQueue()
+        fixture.refreshPendingSelection()
         let applied = fixture.applications
         fixture.sorbet.mouseUp(with: fixture.mouse(.leftMouseUp, on: fixture.sorbet))
         #expect(fixture.applications == applied)

@@ -21,9 +21,10 @@ final class IconSettingsFixture {
     private final class State {
         var applications = 0
         var applicationActive = true
+        var pendingRefreshes: [@MainActor () -> Void] = []
     }
 
-    private let state = State()
+    private let state: State
     var applications: Int { state.applications }
     var applicationActive: Bool {
         get { state.applicationActive }
@@ -35,6 +36,8 @@ final class IconSettingsFixture {
     var afterHours: IconChoiceRow { rows[2] }
 
     init() throws {
+        let state = State()
+        self.state = state
         _ = NSApplication.shared
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let artwork = directory.appendingPathComponent("AppIcons", isDirectory: true)
@@ -44,7 +47,7 @@ final class IconSettingsFixture {
         let png = try Self.solidPNG()
         for id in Self.variantIDs { try png.write(to: artwork.appendingPathComponent(id + ".png")) }
         icons = AppIconController(resources: directory)
-        view = IconSettingsView(icons: icons)
+        view = IconSettingsView(icons: icons) { state.pendingRefreshes.append($0) }
         window = IconSettingsWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 920),
                                     styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -53,7 +56,6 @@ final class IconSettingsFixture {
         backdrop.addSubview(view)
         view.layoutSubtreeIfNeeded()
         rows = Self.rows(in: view)
-        let state = state
         icons.configure(preferenceURL: directory.appendingPathComponent("choice.json")) { _ in
             state.applications += 1
             return nil
@@ -93,8 +95,10 @@ final class IconSettingsFixture {
         row.keyUp(with: key(.keyUp, code))
     }
 
-    func drainMainQueue() {
-        RunLoop.main.run(mode: .default, before: .distantPast)
+    func refreshPendingSelection() {
+        let work = state.pendingRefreshes
+        state.pendingRefreshes.removeAll()
+        work.forEach { $0() }
     }
 
     private static func rows(in view: NSView) -> [IconChoiceRow] {
