@@ -167,22 +167,21 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func invalidArchivePoliciesPreserveSession() throws {
+    @Test(arguments: [-1.0, 2.0, 20.0 / 3600, 999.0])
+    static func invalidArchivePoliciesPreserveSession(hours: Double) throws {
         try withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             try store.save()
             let file = directory.appendingPathComponent("session.json")
             let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
-            for hours in [-1.0, 2.0, 20.0 / 3600, 999.0] {
-                var state = store.state
-                state.profiles[0].autoArchiveHours = hours
-                let bytes = try encoder.encode(state)
-                try bytes.write(to: file)
-                var rejected = false
-                do { _ = try BrowserStore(directory: directory) } catch { rejected = true }
-                #expect(rejected, "Invalid or debug-only persisted policies must not become accidental Never or arbitrary timers")
-                #expect(try Data(contentsOf: file) == bytes, "Rejecting an invalid archive policy must preserve the existing session file")
-            }
+            var state = store.state
+            state.profiles[0].autoArchiveHours = hours
+            let bytes = try encoder.encode(state)
+            try bytes.write(to: file)
+            var rejected = false
+            do { _ = try BrowserStore(directory: directory) } catch { rejected = true }
+            #expect(rejected, "Invalid or debug-only persisted policies must not become accidental Never or arbitrary timers")
+            #expect(try Data(contentsOf: file) == bytes, "Rejecting an invalid archive policy must preserve the existing session file")
         }
     }
 
@@ -431,37 +430,36 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func archiveOriginalItemRevalidation() throws {
-        for change in ["space", "document", "title"] {
-            try withDirectory { directory in
-                var now = Date(timeIntervalSince1970: 1_800_000_000)
-                let store = try BrowserStore(directory: directory, now: { now })
-                let source = store.activeSpaceID
-                let destination = store.createSpace(name: "Destination")
-                store.selectSpace(source)
-                let original = store.open("https://original.example")
-                _ = store.open("https://current.example")
-                store.archiveExpiredTabs()
-                now.addTimeInterval(13 * 3600)
-                var request: (() -> Bool)?, finish: ((Bool) -> Void)?
-                var result: [[UUID]] = []
-                store.requestPageRetirement = { ids, validate, complete in
-                    if ids == [original] { request = validate; finish = complete }
-                }
-                store.archiveExpiredTabs(protectedTabIDs: []) { result.append($0) }
-                #expect(request != nil && result.isEmpty, "The original item waits for native retirement")
-                switch change {
-                case "space": store.moveTab(original, toSpace: destination)
-                case "document": store.updateTab(original, url: "https://replacement.example")
-                default: store.updateTab(original, title: "Updated page title")
-                }
-                let accepted = request?() == true
-                #expect(accepted == (change == "title"), "A changed original \(change) is distinguished from a metadata-only title refresh")
-                finish?(accepted)
-                finish?(accepted)
-                #expect(result == [accepted ? [original] : []] && store.retiringTabIDs.isEmpty, "Original-item revalidation completes once and releases its reservation")
-                #expect(((try tab(original, in: store)).archivedAt != nil) == accepted, "Only an unchanged original item follows accepted retirement into Archive")
+    @Test(arguments: ["space", "document", "title"])
+    static func archiveRevalidatesTheOriginalItem(change: String) throws {
+        try withDirectory { directory in
+            var now = Date(timeIntervalSince1970: 1_800_000_000)
+            let store = try BrowserStore(directory: directory, now: { now })
+            let source = store.activeSpaceID
+            let destination = store.createSpace(name: "Destination")
+            store.selectSpace(source)
+            let original = store.open("https://original.example")
+            _ = store.open("https://current.example")
+            store.archiveExpiredTabs()
+            now.addTimeInterval(13 * 3600)
+            var request: (() -> Bool)?, finish: ((Bool) -> Void)?
+            var result: [[UUID]] = []
+            store.requestPageRetirement = { ids, validate, complete in
+                if ids == [original] { request = validate; finish = complete }
             }
+            store.archiveExpiredTabs(protectedTabIDs: []) { result.append($0) }
+            #expect(request != nil && result.isEmpty, "The original item waits for native retirement")
+            switch change {
+            case "space": store.moveTab(original, toSpace: destination)
+            case "document": store.updateTab(original, url: "https://replacement.example")
+            default: store.updateTab(original, title: "Updated page title")
+            }
+            let accepted = request?() == true
+            #expect(accepted == (change == "title"), "A changed original \(change) is distinguished from a metadata-only title refresh")
+            finish?(accepted)
+            finish?(accepted)
+            #expect(result == [accepted ? [original] : []] && store.retiringTabIDs.isEmpty, "Original-item revalidation completes once and releases its reservation")
+            #expect(((try tab(original, in: store)).archivedAt != nil) == accepted, "Only an unchanged original item follows accepted retirement into Archive")
         }
     }
 
@@ -471,6 +469,7 @@ extension BrowserStoreTests {
             let now = Date(timeIntervalSince1970: 1_800_000_000)
             let store = try BrowserStore(directory: directory, now: { now })
             let scheduler = DataFixtures.DeferredSave(store)
+            store.archiveExpiredTabs()
             let selected = store.open("https://selected.example")
             try store.save()
             let file = directory.appendingPathComponent("session.json")

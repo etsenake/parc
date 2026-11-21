@@ -96,7 +96,7 @@ struct ProfileRemovalTests {
         let store = fixture.store
         let reservation = try #require(store.reserveProfileWrite(fixture.deleting))
 
-        await reservation.perform {
+        _ = await reservation.perform {
             #expect(throws: (any Error).self) { try store.stageProfileRemoval(fixture.deleting, expectedName: "Work") }
         }
     }

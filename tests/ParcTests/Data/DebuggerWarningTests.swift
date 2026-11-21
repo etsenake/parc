@@ -39,7 +39,7 @@ struct DebuggerWarningTests {
     @MainActor @Test func aVisiblePageAnnouncesItsNewWarning() {
         let warning = Token()
         let announcements = DebuggerWarningAnnouncements<Token>()
-        #expect(announcements.claim([warning]).elementsEqual([warning], by: ===))
+        #expect(announcements.claim([warning]).map(ObjectIdentifier.init) == [ObjectIdentifier(warning)])
     }
 
     @MainActor @Test func aWarningAlreadyAnnouncedDoesNotRepeatAfterBecomingVisibleAgain() {
@@ -56,7 +56,7 @@ struct DebuggerWarningTests {
         let announcements = DebuggerWarningAnnouncements<Token>()
         _ = announcements.claim([first])
 
-        #expect(announcements.claim([first, second]).elementsEqual([second], by: ===))
+        #expect(announcements.claim([first, second]).map(ObjectIdentifier.init) == [ObjectIdentifier(second)])
     }
 
     enum RowChange: CaseIterable {

@@ -82,7 +82,7 @@ struct BrowserImportFocusTests {
         let order = BrowserImportFocus.keyViews(in: [accessory, importer])
 
         let expected: [NSView] = [accessoryButton, upper, right, host, field, hidden, disabled, lower, focusable, nested]
-        #expect(order.elementsEqual(expected, by: ===))
+        #expect(order.map(ObjectIdentifier.init) == expected.map(ObjectIdentifier.init))
     }
 
     @MainActor @Test func emptySetupOffersNoKeyViews() {

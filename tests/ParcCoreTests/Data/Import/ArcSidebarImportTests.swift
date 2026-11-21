@@ -3,7 +3,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct ArcSidebarImportTests {
     typealias Item = ArcSidebarImport.Item
     typealias Tab = ArcSidebarImport.Tab
@@ -62,7 +61,7 @@ struct ArcSidebarImportTests {
         let created: [BrowserSpace]
     }
 
-    func withImport(_ body: (Imported, URL) throws -> Void) throws {
+    @MainActor func withImport(_ body: (Imported, URL) throws -> Void) throws {
         try DataFixtures.withTemporaryDirectory { directory in
             let arc = try loadArc()
             let importedAt = importedAt
@@ -225,7 +224,7 @@ struct ArcSidebarImportTests {
         #expect(manyArc.spaces[0].pinned.count == ArcSidebarImport.maximumItems - 1 && manyArc.skippedItemCount == 4)
     }
 
-    @Test func aFailedSessionWriteLeavesNothingBehind() throws {
+    @MainActor @Test func aFailedSessionWriteLeavesNothingBehind() throws {
         try DataFixtures.withTemporaryDirectory { directory in
             let arc = try loadArc()
             let importedAt = importedAt
@@ -245,6 +244,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func importDoesNotChangeTheActiveSpaceAndAddsTwoProfiles() throws {
         try withImport { imported, _ in
             #expect(imported.store.activeSpaceID == imported.activeBefore)
@@ -253,6 +253,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func everyArcSpaceBecomesANewSpaceInArcsOrder() throws {
         try withImport { imported, _ in
             let sideProjects = try #require(imported.state.profiles.first { $0.name == "Side Projects" })
@@ -264,6 +265,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func untitledSpaceTakesItsPositionalNameAndImportedSpacesUseTheDefaultSymbol() throws {
         try withImport { imported, _ in
             #expect(imported.created[1].name == "Space \(imported.spacesBefore + 2)")
@@ -271,6 +273,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func iconAndThemeAreAppliedAndUnreadableThemeBecomesTheDefault() throws {
         try withImport { imported, _ in
             let created = imported.created
@@ -280,6 +283,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func eachArcProfilesDestinationIsTheFirstSpaceCreatedForIt() throws {
         try withImport { imported, _ in
             let sideProjects = try #require(imported.state.profiles.first { $0.name == "Side Projects" })
@@ -294,6 +298,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func pinnedRootOrderIsArcsOrderAndTheSplitSurvivesReconciliation() throws {
         try withImport { imported, _ in
             let state = imported.state
@@ -312,6 +317,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func aTabKeepsItsTitleRenameAndMute() throws {
         try withImport { imported, _ in
             let state = imported.state
@@ -324,6 +330,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func foldersKeepNameIconNestingAndOrder() throws {
         try withImport { imported, _ in
             let state = imported.state
@@ -340,6 +347,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func todayTabsComeInArcsOrderAndStartTheirArchiveClockAtTheImport() throws {
         try withImport { imported, _ in
             let state = imported.state
@@ -353,12 +361,14 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func eachImportedSpaceRemembersItsArcSpace() throws {
         try withImport { imported, _ in
             #expect(imported.state.arcImportedSpaces["734FF6CE-5A92-54B8-8106-4F9A92236F11"] == imported.created[0].id)
         }
     }
 
+    @MainActor
     @Test func favoritesStopAtParcsLimitKeepArcsOrderAndSkipDuplicates() throws {
         try withImport { imported, _ in
             let state = imported.state
@@ -375,6 +385,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func aFavoritesSplitSurvivesTheImport() throws {
         try withImport { imported, _ in
             let state = imported.state
@@ -389,6 +400,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func aFavoritesOnlyProfileGetsItsFavorites() throws {
         try withImport { imported, _ in
             let sideProjects = try #require(imported.state.profiles.first { $0.name == "Side Projects" })
@@ -397,6 +409,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func theImportIsDurable() throws {
         try withImport { imported, directory in
             let state = imported.state
@@ -409,6 +422,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func importingTheSameSpacesAgainAddsNoCopies() throws {
         try withImport { imported, _ in
             let again = try imported.store.importArcSidebar(imported.arc, profiles: [(.standard, "Personal")],
@@ -420,6 +434,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func aLaterImportReusesTheSameParcProfileAndAnExistingSpace() throws {
         try withImport { imported, _ in
             let spacesBeforeReuse = imported.store.state.spaces.count
@@ -446,6 +461,7 @@ struct ArcSidebarImportTests {
         #expect(links.skippedItemCount == 4)
     }
 
+    @MainActor
     @Test func aSplitPageAlreadyInFavoritesIsNotAddedTwice() throws {
         try DataFixtures.withTemporaryDirectory { directory in
             let store = try BrowserStore(directory: directory)
@@ -463,6 +479,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func anUnknownStandardProfileIsRefused() throws {
         try withImport { imported, _ in
             #expect(throws: (any Error).self) {
@@ -484,6 +501,7 @@ struct ArcSidebarImportTests {
                                                   profiles: [.standard]).isEmpty)
     }
 
+    @MainActor
     @Test func arcsArchiveAgeAppliesToTheProfileTheDefaultAndEducation() throws {
         try DataFixtures.withTemporaryDirectory { directory in
             let store = try BrowserStore(directory: directory)
@@ -496,6 +514,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func anImportFromBeforeTheRecordMatchesSpacesByNameAndPinnedPages() throws {
         try DataFixtures.withTemporaryDirectory { directory in
             let arc = try loadArc()
@@ -512,6 +531,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func aChosenTargetProfileTakesTheArcProfilesSpaces() throws {
         try DataFixtures.withTemporaryDirectory { directory in
             let arc = try loadArc()
@@ -528,6 +548,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func aTargetProfileThatDoesNotExistIsRefusedAndWritesNothing() throws {
         try DataFixtures.withTemporaryDirectory { directory in
             let arc = try loadArc()
@@ -542,6 +563,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func aTargetProfileBeingRemovedIsRefused() throws {
         try DataFixtures.withTemporaryDirectory { directory in
             let arc = try loadArc()
@@ -565,7 +587,7 @@ struct ArcSidebarImportTests {
         let namesake: UUID
     }
 
-    func withCustomPrimary(_ body: (CustomPrimary) throws -> Void) throws {
+    @MainActor func withCustomPrimary(_ body: (CustomPrimary) throws -> Void) throws {
         try DataFixtures.withTemporaryDirectory { directory in
             let arc = try loadArc()
             let store = try BrowserStore(directory: directory)
@@ -580,6 +602,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func aPrimaryProfilesSpacesJoinTheOpenedProfile() throws {
         try withCustomPrimary { custom in
             let projects = try #require(custom.state.profiles.first { $0.name == "Side Projects" })
@@ -591,6 +614,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func aParcProfileNamedLikeThePrimaryIsLeftAloneAndTheOpenedProfileKeepsItsName() throws {
         try withCustomPrimary { custom in
             #expect(custom.state.profiles.count == custom.before.profiles.count + 1
@@ -600,6 +624,7 @@ struct ArcSidebarImportTests {
         }
     }
 
+    @MainActor
     @Test func favoritesFollowTheirOwnArcProfile() throws {
         try withCustomPrimary { custom in
             let projects = try #require(custom.state.profiles.first { $0.name == "Side Projects" })

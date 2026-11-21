@@ -179,25 +179,24 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func closingLastSavedTabDoesNotReselectIt() throws {
-        for kind in [TabKind.pinned, .favorite] {
-            try withDirectory { directory in
-                let store = try BrowserStore(directory: directory)
-                let saved = store.open("https://saved.example.org", kind: kind)
-                store.updateTab(saved, title: "Current article", url: "https://saved.example.org/article")
-                store.closeTab(saved)
-                #expect(store.state.selectedTabIDs.isEmpty, "Closing the only \(kind.rawValue) must leave the start view instead of selecting it again")
-                #expect(store.visibleTabs.map(\.id) == [saved], "Closing a saved tab must keep its destination in the sidebar")
-                let destination = try tab(saved, in: store)
-                #expect(destination.archivedAt == nil && destination.url == destination.savedURL
-                           && destination.title == destination.savedTitle, "Closing the last saved tab must reset its page without archiving or deleting it")
-                store.selectTab(saved)
-                #expect(store.selectedTabID == saved, "The saved destination must remain explicitly selectable after closing")
-                let other = store.open("https://other.example.org")
-                store.selectTab(saved)
-                store.closeTab(saved)
-                #expect(store.selectedTabID == other, "Closing a selected saved tab must still select an available neighboring tab")
-            }
+    @Test(arguments: [TabKind.pinned, .favorite])
+    static func closingLastSavedTabDoesNotReselectIt(kind: TabKind) throws {
+        try withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let saved = store.open("https://saved.example.org", kind: kind)
+            store.updateTab(saved, title: "Current article", url: "https://saved.example.org/article")
+            store.closeTab(saved)
+            #expect(store.state.selectedTabIDs.isEmpty, "Closing the only \(kind.rawValue) must leave the start view instead of selecting it again")
+            #expect(store.visibleTabs.map(\.id) == [saved], "Closing a saved tab must keep its destination in the sidebar")
+            let destination = try tab(saved, in: store)
+            #expect(destination.archivedAt == nil && destination.url == destination.savedURL
+                       && destination.title == destination.savedTitle, "Closing the last saved tab must reset its page without archiving or deleting it")
+            store.selectTab(saved)
+            #expect(store.selectedTabID == saved, "The saved destination must remain explicitly selectable after closing")
+            let other = store.open("https://other.example.org")
+            store.selectTab(saved)
+            store.closeTab(saved)
+            #expect(store.selectedTabID == other, "Closing a selected saved tab must still select an available neighboring tab")
         }
     }
 
@@ -499,9 +498,6 @@ extension BrowserStoreTests {
             store.renameProfile(originalProfile, name: "Personal research")
             store.setSpaceTheme(originalSpace, theme: .singleColor(ThemeColor(hex: "a1b2c3")!))
             #expect(store.activeSpace.theme.primaryColor?.hex == "A1B2C3", "A valid hexadecimal Space color must be normalized")
-            for invalid in ["", "123", "1234567", "#112233", "GG1122"] {
-                #expect(ThemeColor(hex: invalid) == nil, "Invalid legacy color cannot enter the theme model: \(invalid)")
-            }
             store.renameProfile(originalProfile, name: "")
             store.renameProfile(UUID(), name: "Unknown")
             #expect(store.state.profiles.first { $0.id == originalProfile }?.name == "Personal research", "Empty or unknown profile rename requests must not erase an existing name")
@@ -521,7 +517,19 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func themeColorsAndLinkedPalettes() throws {
+    @Test(arguments: ["", "123", "1234567", "#112233", "GG1122", "ＡＡ0000"])
+    nonisolated static func invalidHexCannotEnterTheThemeModel(_ invalid: String) {
+        #expect(ThemeColor(hex: invalid) == nil)
+    }
+
+    @Test(arguments: ["000000", "FFFFFF", "808080", "0123AB", "F20B85", "B9B5D4"])
+    nonisolated static func hslConversionPreservesTheOriginalColor(_ value: String) throws {
+        let color = try #require(ThemeColor(hex: value))
+        let hsl = color.hsl
+        #expect(ThemeColor.hsl(hue: hsl.hue, saturation: hsl.saturation, lightness: hsl.lightness)?.hex == value)
+    }
+
+    @Test nonisolated static func themeColorsAndLinkedPalettes() throws {
         func close(_ actual: ThemeColor?, _ expected: (Double, Double, Double), _ message: String) throws {
             guard let actual else { throw Failure(description: message + " (no color)") }
             #expect(abs(actual.red - expected.0) < 1e-9 && abs(actual.green - expected.1) < 1e-9
@@ -532,11 +540,6 @@ extension BrowserStoreTests {
         try close(.hsl(hue: -1.0 / 3, saturation: 1, lightness: 0.5), (0, 0, 1), "Hue wraps across zero")
         try close(.hsl(hue: 2, saturation: 0.5, lightness: 0.25), (0.375, 0.125, 0.125), "Low-lightness HSL is not HSB")
         try close(.hsl(hue: 0, saturation: 0.5, lightness: 0.75), (0.875, 0.625, 0.625), "High-lightness HSL branch")
-        for value in ["000000", "FFFFFF", "808080", "0123AB", "F20B85", "B9B5D4"] {
-            let color = ThemeColor(hex: value)!
-            let hsl = color.hsl
-            #expect(ThemeColor.hsl(hue: hsl.hue, saturation: hsl.saturation, lightness: hsl.lightness)?.hex == value, "HSL conversion must preserve an existing color: \(value)")
-        }
         #expect(ThemeColor.hsl(hue: .nan, saturation: 1, lightness: 0.5) == nil, "Nonfinite hue is rejected")
         #expect(ThemeColor(red: 1.1, green: 0, blue: 0) == nil, "Out-of-range components are rejected")
         #expect(ThemeColor(hex: "ＡＡ0000") == nil, "Hex input is ASCII, not visually similar Unicode")
