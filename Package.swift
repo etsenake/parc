@@ -5,17 +5,7 @@ import PackageDescription
 let root = Context.packageDirectory
 let nativeHeaders = root + "/Engine/ParcNative"
 
-func sparkleCache() -> String {
-    let script = (try? String(contentsOfFile: root + "/scripts/sparkle.py", encoding: .utf8)) ?? ""
-    func value(_ name: String) -> String {
-        guard let line = script.split(separator: "\n").first(where: { $0.hasPrefix(name + " = \"") }) else { return "" }
-        return String(line.dropFirst(name.count + 4).dropLast())
-    }
-    return root + "/build/sparkle/Sparkle-\(value("VERSION"))-\(value("SHA256").prefix(12))"
-}
-
 let engineStubs = root + "/Stubs"
-let sparkleFrameworks = Context.environment["PARC_SPARKLE_FRAMEWORKS"] ?? sparkleCache()
 
 let strict: [SwiftSetting] = [.treatAllWarnings(as: .error)]
 let nativeFlags: [CSetting] = [.unsafeFlags(["-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-Werror"])]
@@ -26,13 +16,13 @@ let facadeFlags: [CSetting] = nativeFlags + [
     .headerSearchPath("../../../Engine/ParcNative"), .headerSearchPath("../../../Sources/ParcEngine"),
 ]
 let engineImport: [SwiftSetting] = [
-    .unsafeFlags(["-Xcc", "-I", "-Xcc", nativeHeaders, "-Xcc", "-DOS_MAC=1", "-F", sparkleFrameworks]),
+    .unsafeFlags(["-Xcc", "-I", "-Xcc", nativeHeaders, "-Xcc", "-DOS_MAC=1"]),
 ]
-let frameworkRuntime = ["-Xlinker", "-rpath", "-Xlinker", sparkleFrameworks]
 
 let package = Package(
     name: "Parc",
     platforms: [.macOS(.v13)],
+    dependencies: [.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1")],
     targets: [
         .target(name: "ParcCore", path: "Sources/ParcCore", swiftSettings: strict),
         .target(
@@ -51,14 +41,12 @@ let package = Package(
         ),
         .executableTarget(
             name: "Parc",
-            dependencies: ["ParcCore", "ParcEngine"],
+            dependencies: ["ParcCore", "ParcEngine", .product(name: "Sparkle", package: "Sparkle")],
             path: "Sources/ParcApp",
             swiftSettings: strict + engineImport,
             linkerSettings: [
-                .unsafeFlags(["-F", sparkleFrameworks,
-                              "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
                               "-Xlinker", "-fatal_warnings"]),
-                .linkedFramework("Sparkle"),
                 .linkedFramework("Cocoa"),
                 .linkedFramework("QuartzCore"),
                 .linkedFramework("AVFoundation"),
@@ -101,8 +89,7 @@ let package = Package(
         ),
         .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: "."),
         .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles"], path: "tests/ParcTests",
-                    swiftSettings: strict + engineImport,
-                    linkerSettings: [.unsafeFlags(frameworkRuntime)]),
+                    swiftSettings: strict + engineImport),
     ],
     swiftLanguageModes: [.v5],
     cxxLanguageStandard: .cxx20

@@ -11,9 +11,6 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts/check-swift.py"
-spec = importlib.util.spec_from_file_location("parc_sparkle_check", SCRIPT.with_name("sparkle.py"))
-sparkle = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(sparkle)
 FAKE_XCRUN = """#!/usr/bin/env python3
 import os, pathlib, sys
 args = sys.argv[1:]
@@ -29,8 +26,11 @@ else:
     print('test compiler diagnostics')
     if os.environ.get('FAKE_COMPILER_WARNING'):
         print(os.environ['FAKE_COMPILER_WARNING'])
-    if os.environ.get('FAKE_RECORD_CWD'):
-        pathlib.Path(os.environ['FAKE_RECORD_CWD']).write_text(os.getcwd())
+    if '--scratch-path' in args:
+        scratch = pathlib.Path(args[args.index('--scratch-path') + 1])
+        (scratch / 'objects').mkdir(parents=True)
+        if os.environ.get('FAKE_RECORD_SCRATCH'):
+            pathlib.Path(os.environ['FAKE_RECORD_SCRATCH']).write_text(str(scratch))
     if os.environ.get('FAKE_MUTATE_INPUT'):
         path = pathlib.Path(os.environ['FAKE_MUTATE_INPUT'])
         path.write_text(path.read_text() + '// changed during check\\n')
@@ -53,6 +53,8 @@ class CheckSwiftTests(unittest.TestCase):
             "Sources/ParcCore/Model.swift": "struct Model {}\n",
             "Sources/ParcApp/App.swift": "struct App {}\n",
             "Sources/ParcEngine/ParcEngine.h": "#import <Cocoa/Cocoa.h>\n",
+            "Package.swift": "// swift-tools-version: 6.2\n",
+            "Package.resolved": "{}\n",
             "Engine/ParcNative/native_appkit_bridge.h": "#pragma once\n",
             "Engine/source-lock.json": "{}\n",
             ".gitignore": "/build/\n",
@@ -60,10 +62,6 @@ class CheckSwiftTests(unittest.TestCase):
             file = self.repo / name
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_text(content)
-        self.sparkle = sparkle.directory(self.repo / "build/sparkle")
-        self.sparkle_header = self.sparkle / "Sparkle.framework/Versions/B/Headers/Sparkle.h"
-        self.sparkle_header.parent.mkdir(parents=True)
-        self.sparkle_header.write_text("#pragma once\n")
         self.headers.mkdir(parents=True, exist_ok=True)
         (self.headers / "native_application_protocols.h").write_text("#pragma once\n")
         subprocess.run(["git", "init", "--quiet", str(self.repo)], check=True)
@@ -83,7 +81,7 @@ class CheckSwiftTests(unittest.TestCase):
         self.env = {**os.environ, "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"]}
         self.env.pop("PARC_CHROMIUM_SOURCE", None)
         for name in ("FAKE_MUTATE_INPUT", "FAKE_ADD_SOURCE", "FAKE_COMPILER_EXIT", "FAKE_ADD_BEFORE_COMPILER",
-                     "FAKE_COMPILER_WARNING", "FAKE_RECORD_CWD"):
+                     "FAKE_COMPILER_WARNING", "FAKE_RECORD_SCRATCH"):
             self.env.pop(name, None)
 
     def run_check(self, *extra, headers=True):
@@ -102,11 +100,13 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
         self.assertFalse(plan["executed"])
         self.assertEqual(plan["source_count"], 2)
-        self.assertIn(str(self.repo / "Sources/ParcApp/App.swift"), plan["command"])
-        self.assertIn(str(self.headers), plan["command"])
-        self.assertTrue(plan["sparkle_cached"])
-        for flag in ("-warnings-as-errors", "-whole-module-optimization", "-typecheck"):
-            self.assertIn(flag, plan["command"])
+        command = plan["command"]
+        self.assertEqual(command[:3], ["xcrun", "swift", "build"])
+        self.assertEqual(command[command.index("--package-path") + 1], str(self.repo))
+        self.assertEqual(command[command.index("--target") + 1], "Parc")
+        self.assertEqual(command[command.index("--configuration") + 1], "debug")
+        self.assertIn("--disable-keychain", command)
+        self.assertNotIn("--scratch-path", command)
 
     def test_direct_bridge_needs_no_engine_tree(self):
         facade = self.repo / "Sources/ParcEngine/ParcEngine.h"
@@ -117,9 +117,7 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         plan = json.loads(result.stdout)
         self.assertEqual(plan["bridge_headers"], str(header.parent))
-        self.assertIn(str(self.headers), plan["command"])
         self.assertIn(str(header), plan["inputs"])
-
 
     def test_direct_bridge_missing_declaration_fails_before_output(self):
         (self.repo / "Sources/ParcEngine/ParcEngine.h").write_text('#import "native_application_protocols.h"\n')
@@ -130,32 +128,31 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertIn("native_application_protocols.h", result.stderr)
         self.assertFalse(self.output.exists())
 
-    def test_sil_retains_finished_row_flags(self):
+    def test_sil_mode_is_a_whole_module_debug_build(self):
         result = self.run_check("--mode", "sil", "--plan")
         self.assertEqual(result.returncode, 0, result.stderr)
         command = json.loads(result.stdout)["command"]
-        self.assertNotIn("-typecheck", command)
-        self.assertEqual(command[command.index("-emit-sil"):command.index("-emit-sil") + 4],
-                         ["-emit-sil", "-Onone", "-o", "/dev/null"])
+        self.assertEqual(command[command.index("--configuration") + 1], "debug")
+        self.assertEqual(command[command.index("-Xswiftc") + 1], "-whole-module-optimization")
+        self.assertEqual(Path(command[command.index("--scratch-path") + 1]).parent, self.output / "case")
 
-
-    def test_release_mode_uses_release_optimization_without_linking(self):
+    def test_release_mode_builds_the_release_configuration_for_arm64(self):
         result = self.run_check("--mode", "release", "--plan")
         self.assertEqual(result.returncode, 0, result.stderr)
         command = json.loads(result.stdout)["command"]
-        for flag in ("-warnings-as-errors", "-O", "-whole-module-optimization", "-num-threads", "-c"):
-            self.assertIn(flag, command)
-        for flag in ("-typecheck", "-emit-sil", "-Onone", "-o"):
-            self.assertNotIn(flag, command)
+        self.assertEqual(command[command.index("--configuration") + 1], "release")
+        self.assertEqual(command[command.index("--arch") + 1], "arm64")
+        self.assertEqual(command[command.index("-debug-info-format") + 1], "none")
+        self.assertNotIn("-Xswiftc", command)
 
-    def test_release_mode_writes_objects_only_to_a_removed_directory(self):
-        recorded = Path(self.temp.name) / "compiler cwd"
-        self.env["FAKE_RECORD_CWD"] = str(recorded)
+    def test_release_mode_writes_its_build_only_to_a_removed_directory(self):
+        recorded = Path(self.temp.name) / "scratch record"
+        self.env["FAKE_RECORD_SCRATCH"] = str(recorded)
         result = self.run_check("--mode", "release")
         self.assertEqual(result.returncode, 0, result.stderr)
-        objects = Path(recorded.read_text())
-        self.assertEqual(objects.resolve().parent, (self.output / "case").resolve())
-        self.assertFalse(objects.exists())
+        scratch = Path(recorded.read_text())
+        self.assertEqual(scratch.parent, self.output / "case")
+        self.assertFalse(scratch.exists())
         self.assertEqual(sorted(path.name for path in (self.output / "case").iterdir()),
                          ["compiler.log", "result.json", "start.json"])
 
@@ -201,8 +198,7 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertEqual(receipt["compiler_exit"], 0)
         self.assertEqual(receipt["warnings"], [])
         self.assertIn(str(self.headers / "native_application_protocols.h"), receipt["inputs"])
-        self.assertIn(str(self.sparkle_header), receipt["inputs"])
-        self.assertEqual(receipt["command"][receipt["command"].index(str(self.sparkle)) - 1], "-F")
+        self.assertIn(str(self.repo / "Package.resolved"), receipt["inputs"])
         self.assertIn("test compiler diagnostics", (self.output / "case/compiler.log").read_text())
 
     def test_compiler_failure_is_preserved(self):

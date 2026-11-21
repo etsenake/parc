@@ -1027,8 +1027,6 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
     protocols = repo / "Engine/ParcNative/native_application_protocols.h"
     if not protocols.is_file():
         raise Refusal("Required application protocol header is missing: " + str(protocols))
-    progress(f"packaging: fetching Sparkle {sparkle.VERSION}")
-    sparkle_release = sparkle.fetch(repo / "build/sparkle")
     with tempfile.TemporaryDirectory(prefix=".parc-package-", dir=output.parent) as temporary:
         stage = Path(temporary)
         development = stage / "development"
@@ -1084,21 +1082,22 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
             raise Refusal("Native Swift application sources are missing")
         progress(f"packaging: building the Swift package ({configuration})")
         scratch = stage / "swiftpm"
-        compiler.run(compiler.swift_build(repo, configuration, scratch=scratch), capture=False,
-                     env=compiler.package_environment(sparkle_release))
+        compiler.run(compiler.swift_build(repo, configuration, scratch=scratch), capture=False)
         try:
             objects = compiler.package_objects(scratch, configuration)
-        except ValueError as error:
+            sparkle_release = sparkle.artifact(repo, scratch)
+        except (OSError, ValueError) as error:
             raise Refusal(str(error)) from error
         progress(f"packaging: linking the Swift app ({len(objects)} objects, swiftc -v)")
         run("xcrun", "swiftc", "-v", "-target", compiler.SWIFT_TARGET, *objects,
-            "-F", frameworks, "-framework", ENGINE_NAME, "-F", sparkle_release,
+            "-F", frameworks, "-framework", ENGINE_NAME, "-F", sparkle_release.frameworks,
             "-framework", "Sparkle", "-framework", "Cocoa", "-framework", "QuartzCore", "-framework", "AVFoundation", "-framework", "AVKit",
             "-framework", "CoreSpotlight",
             "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks", "-Xlinker", "-fatal_warnings",
             "-o", contents / "MacOS/Parc", capture=False)
+        progress(f"packaging: embedding Sparkle {sparkle.VERSION}")
+        sparkle_framework = embed_sparkle(sparkle_release.frameworks, frameworks)
         shutil.rmtree(scratch)
-        sparkle_framework = embed_sparkle(sparkle_release, frameworks)
         progress("packaging: copying Swift runtime and signing")
         swift_runtime = stage / "swift-runtime"
         swift_runtime.mkdir()
@@ -1221,7 +1220,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                   "application_icon": {"file": icon_file, "sha256": sha(resources / icon_file)},
                   "signing_identity": identity, "signing_team": team, "signed_images": signed,
                   "notarized": False, "widevine": widevine_report,
-                  "sparkle": {"version": sparkle.VERSION, "sha256": sparkle.SHA256,
+                  "sparkle": {"version": sparkle.VERSION, "checksum": sparkle.CHECKSUM,
                               "update_feed": info.get("SUFeedURL")},
                   "signing_verification": "app deep/strict and sibling components strict verification passed",
                   "runtime_verified": False,

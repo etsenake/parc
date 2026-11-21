@@ -99,7 +99,8 @@ print('sparkle:edSignature="{SIGNATURE}" length="%d"' % (os.path.getsize(args[-1
     def write(self, *key, published=PUBLISHED.isoformat()):
         argv = ["appcast.py", str(self.app), str(self.archive), str(self.output), "--published", published, *key]
         with patch.object(sys, "argv", argv), patch.object(appcast, "ROOT", self.root), \
-                patch.object(appcast.sparkle, "fetch", return_value=self.root / "Sparkle"):
+                patch.object(appcast.sparkle, "resolve",
+                             return_value=appcast.sparkle.Release(self.root / "Sparkle", self.root / "Sparkle/bin")):
             appcast.main()
         return self.output.read_bytes()
 

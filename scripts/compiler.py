@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import re
 import shlex
@@ -19,13 +18,10 @@ class Warnings(ValueError):
     pass
 
 
-def package_environment(sparkle_release: Path) -> dict[str, str]:
-    return {**os.environ, "PARC_SPARKLE_FRAMEWORKS": str(sparkle_release)}
-
-
 def swift_build(repo: Path, configuration: str, *, scratch: Path | None = None, target: str | None = None,
                 extra: tuple[str, ...] = ()) -> list[str]:
-    command = ["xcrun", "swift", "build", "--package-path", str(repo), "--configuration", configuration]
+    command = ["xcrun", "swift", "build", "--package-path", str(repo), "--configuration", configuration,
+               "--disable-keychain"]
     if scratch is not None:
         command += ["--scratch-path", str(scratch)]
     if configuration == "release":
