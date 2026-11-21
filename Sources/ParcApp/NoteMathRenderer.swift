@@ -329,3 +329,83 @@ enum NoteMathRenderer {
         return attachment
     }
 }
+
+struct NoteMathOutline {
+    var path: CGPath
+    var color: NoteMathInkColor
+}
+
+extension NoteMathRendering {
+    func outlines(width: CGFloat? = nil) -> [NoteMathOutline] {
+        let available = max(width ?? size.width, size.width)
+        let baselineY = -entry.frame.minY
+        var collected = NoteMathOutlineCollector()
+        collected.add(entry.box.inks, at: CGPoint(x: equationOffset(width: available) - entry.equationFrame.minX, y: baselineY))
+        for (mark, frame) in zip(entry.box.tags, entry.tagFrames) {
+            collected.add(mark.box.inks, at: CGPoint(x: (available - frame.maxX).rounded(), y: baselineY + mark.baseline))
+        }
+        return collected.outlines
+    }
+}
+
+private struct NoteMathOutlineCollector {
+    private(set) var outlines: [NoteMathOutline] = []
+    private var current: CGMutablePath?
+
+    mutating func add(_ inks: [NoteMathInk], at base: CGPoint) {
+        for ink in inks {
+            let point = CGPoint(x: base.x + ink.origin.x, y: base.y + ink.origin.y)
+            guard let shape = Self.shape(of: ink.content, at: point) else { continue }
+            if let last = outlines.last, Self.matches(last.color, ink.color), let mutable = current {
+                mutable.addPath(shape)
+            } else {
+                let mutable = CGMutablePath()
+                mutable.addPath(shape)
+                current = mutable
+                outlines.append(NoteMathOutline(path: mutable, color: ink.color))
+            }
+        }
+    }
+
+    private static func matches(_ first: NoteMathInkColor, _ second: NoteMathInkColor) -> Bool {
+        switch (first, second) {
+        case (.inherited, .inherited), (.muted, .muted), (.link, .link): return true
+        case (.custom(let one), .custom(let two)): return CFEqual(one, two)
+        default: return false
+        }
+    }
+
+    private static func shape(of content: NoteMathInk.Content, at point: CGPoint) -> CGPath? {
+        switch content {
+        case .glyph(let glyph, let font):
+            var move = CGAffineTransform(translationX: point.x, y: point.y)
+            return CTFontCreatePathForGlyph(font, glyph, &move)
+        case .rule(let size):
+            return CGPath(rect: CGRect(origin: point, size: size), transform: nil)
+        case .line(let line):
+            let path = CGMutablePath()
+            let runs = CTLineGetGlyphRuns(line) as? [CTRun] ?? []
+            for run in runs {
+                let count = CTRunGetGlyphCount(run)
+                guard count > 0 else { continue }
+                var glyphs = [CGGlyph](repeating: 0, count: count)
+                var positions = [CGPoint](repeating: .zero, count: count)
+                CTRunGetGlyphs(run, CFRange(location: 0, length: count), &glyphs)
+                CTRunGetPositions(run, CFRange(location: 0, length: count), &positions)
+                let attributes = CTRunGetAttributes(run) as NSDictionary
+                guard let value = attributes[kCTFontAttributeName], CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() else { continue }
+                let font = unsafeBitCast(value as CFTypeRef, to: CTFont.self)
+                for index in 0..<count {
+                    var move = CGAffineTransform(translationX: point.x + positions[index].x, y: point.y + positions[index].y)
+                    if let glyphPath = CTFontCreatePathForGlyph(font, glyphs[index], &move) { path.addPath(glyphPath) }
+                }
+            }
+            return path.isEmpty ? nil : path
+        case .segment(let vector, let width):
+            let line = CGMutablePath()
+            line.move(to: point)
+            line.addLine(to: CGPoint(x: point.x + vector.dx, y: point.y + vector.dy))
+            return line.copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 10)
+        }
+    }
+}
