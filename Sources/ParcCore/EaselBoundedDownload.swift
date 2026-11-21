@@ -31,7 +31,7 @@ package final class EaselBoundedDownload: NSObject, URLSessionDataDelegate, @unc
     private var received = Data()
     private var failure: Failure?
 
-    private init(limit: Int) { self.limit = limit }
+    package init(limit: Int) { self.limit = limit }
 
     private func begin(_ continuation: CheckedContinuation<Data, Error>) {
         lock.lock()

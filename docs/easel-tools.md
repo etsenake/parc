@@ -197,5 +197,5 @@ Space panning and the zoom keys work there too.
 `swift test --filter EaselToolTests` checks every key, layout
 fallbacks, tool behaviour, placement and connector geometry, zoom steps,
 fitting, the wheel limits and ⌘-scroll glide routing without opening a window;
-`scripts/test-notes-editor.sh EaselFloatingBarTests` checks the bar layout,
+`swift test --filter EaselFloatingBarTests` checks the bar layout,
 covered inset, fit centring and flourish curves.
