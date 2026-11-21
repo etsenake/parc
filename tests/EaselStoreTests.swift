@@ -342,6 +342,10 @@ struct EaselStoreTests {
             expectThrows("filename/document ID mismatch") { _ = try EaselStore(directory: directory).load(session.document.id) }
             try Data(repeating: 32, count: EaselStore.maximumDocumentBytes + 1).write(to: url)
             expectThrows("oversized document") { _ = try EaselStore(directory: directory).load(session.document.id) }
+            let store = try EaselStore(directory: directory)
+            let healthy = try store.create(title: "Healthy")
+            try Data("{}".utf8).write(to: directory.appendingPathComponent("documents/stray.json"))
+            expect(try! store.list().map(\.id) == [healthy.document.id], "One unreadable or stray Easel file does not hide the other Easels")
         }
     }
 

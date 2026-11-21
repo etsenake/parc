@@ -139,11 +139,9 @@ final class EaselStore {
         return try FileManager.default.contentsOfDirectory(at: documentsDirectory,
                     includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
             .filter { $0.pathExtension == "json" }
-            .map { url in
-                guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent) else {
-                    throw EaselStoreError.unsafePath
-                }
-                let document = try read(id)
+            .compactMap { url in
+                guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent),
+                      let document = try? read(id) else { return nil }
                 return EaselSummary(id: id, title: document.title,
                                     modifiedAt: document.modifiedAt, itemCount: document.items.count)
             }
