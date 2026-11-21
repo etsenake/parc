@@ -1405,9 +1405,7 @@ extension EaselCanvasView {
             guard let fill else { return nil }
             if let color = EaselPalette.color(for: fill, role: .fill), let sticky = EaselPalette.hex(color, role: .sticky) { return sticky }
             return fill
-        }, textHeight: { sticky in
-            Double(EaselTextLayout.Layout(EaselRichTextCodec.attributed(sticky), width: EaselBoardObjects.stickyTextBox(sticky).width).height)
-        })
+        }, textHeight: { EaselStickyText.height($0) })
         guard !stickies.isEmpty else { NSSound.beep(); return }
         let base = (session.document.items.map(\.zIndex).max() ?? 0) + 1
         for index in stickies.indices { stickies[index].zIndex = base + index }
@@ -1771,5 +1769,72 @@ extension EaselCanvasView {
             guard let position = document.items.firstIndex(where: { $0.id == item.id }) else { return }
             document.items[position] = updated
         }
+    }
+}
+
+extension EaselCanvasView {
+    func tableMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] {
+        guard context.items.count == 1, let item = context.items.first, item.kind == .table, let table = item.table,
+              selectedTable?.id == item.id else { return [] }
+        let id = item.id, locked = item.isLocked
+        let canAddRow = !locked && table.rowCount < EaselTable.maximumRows && (table.rowCount + 1) * table.columnCount <= EaselTable.maximumCells
+        let canAddColumn = !locked && table.columnCount < EaselTable.maximumColumns && table.rowCount * (table.columnCount + 1) <= EaselTable.maximumCells
+        var rows: [EaselMenuRow] = []
+        let current = tableSelectionFill
+        let dark = NoteTheme.isDark(effectiveAppearance)
+        var colors = [EaselMenuRow(id: "table.color.default", title: "Default", isChecked: current == .some(nil),
+                                   perform: guardedMenuAction { $0.setTableCellFill(nil) })]
+        for color in EaselPalette.colors(for: .fill) {
+            guard let hex = EaselPalette.hex(color, role: .fill) else { continue }
+            colors.append(EaselMenuRow(id: "table.color." + color.id, title: color.title(dark: dark), isChecked: current == .some(hex),
+                                       perform: guardedMenuAction { $0.setTableCellFill(hex) }))
+        }
+        if let selected = tableCellSelection {
+            let range = selected.range
+            rows.append(EaselMenuRow(id: "table.rowAbove", title: "Insert Row Above", symbol: "arrow.up.to.line", isEnabled: canAddRow, separatorBefore: true,
+                                     perform: guardedMenuAction { $0.insertTableRows(id, at: range.rows.lowerBound) }))
+            rows.append(EaselMenuRow(id: "table.rowBelow", title: "Insert Row Below", symbol: "arrow.down.to.line", isEnabled: canAddRow,
+                                     perform: guardedMenuAction { $0.insertTableRows(id, at: range.rows.upperBound + 1) }))
+            rows.append(EaselMenuRow(id: "table.columnLeft", title: "Insert Column Left", symbol: "arrow.left.to.line", isEnabled: canAddColumn,
+                                     perform: guardedMenuAction { $0.insertTableColumns(id, at: range.columns.lowerBound) }))
+            rows.append(EaselMenuRow(id: "table.columnRight", title: "Insert Column Right", symbol: "arrow.right.to.line", isEnabled: canAddColumn,
+                                     perform: guardedMenuAction { $0.insertTableColumns(id, at: range.columns.upperBound + 1) }))
+            if tableSelectedRows() != nil, tableSelectedColumns() == nil {
+                rows.append(EaselMenuRow(id: "table.duplicateRows", title: range.rows.count == 1 ? "Duplicate Row" : "Duplicate Rows",
+                                         symbol: "plus.square.on.square", isEnabled: !locked, perform: guardedMenuAction { $0.duplicateTableRows() }))
+            } else if tableSelectedColumns() != nil, tableSelectedRows() == nil {
+                rows.append(EaselMenuRow(id: "table.duplicateColumns", title: range.columns.count == 1 ? "Duplicate Column" : "Duplicate Columns",
+                                         symbol: "plus.square.on.square", isEnabled: !locked, perform: guardedMenuAction { $0.duplicateTableColumns() }))
+            }
+            if table.hasMerges(in: range) {
+                rows.append(EaselMenuRow(id: "table.unmerge", title: "Unmerge Cells", symbol: "arrow.left.and.line.vertical.and.arrow.right",
+                                         isEnabled: !locked, separatorBefore: true, perform: guardedMenuAction { $0.unmergeTableCells() }))
+            } else {
+                rows.append(EaselMenuRow(id: "table.merge", title: "Merge Cells", symbol: "arrow.right.and.line.vertical.and.arrow.left",
+                                         isEnabled: !locked && table.canMerge(range), separatorBefore: true, perform: guardedMenuAction { $0.mergeTableCells() }))
+            }
+            rows.append(EaselMenuRow(id: "table.clear", title: "Clear Contents", symbol: "eraser",
+                                     isEnabled: !locked && range.cells.contains { !(table.cell($0)?.text.isEmpty ?? true) },
+                                     perform: guardedMenuAction { $0.clearTableCells() }))
+            rows.append(EaselMenuRow(id: "table.color", title: "Color", symbol: "paintpalette", isEnabled: !locked, children: colors))
+            rows.append(EaselMenuRow(id: "table.deleteRows", title: range.rows.count == 1 ? "Delete Row" : "Delete Rows", symbol: "trash",
+                                     isEnabled: !locked && range.rows.count < table.rowCount, isDestructive: true, separatorBefore: true,
+                                     perform: guardedMenuAction { $0.deleteTableRows() }))
+            rows.append(EaselMenuRow(id: "table.deleteColumns", title: range.columns.count == 1 ? "Delete Column" : "Delete Columns", symbol: "trash",
+                                     isEnabled: !locked && range.columns.count < table.columnCount, isDestructive: true,
+                                     perform: guardedMenuAction { $0.deleteTableColumns() }))
+        } else {
+            rows.append(EaselMenuRow(id: "table.addRow", title: "Add Row", symbol: "plus", isEnabled: canAddRow, separatorBefore: true,
+                                     perform: guardedMenuAction { canvas in canvas.insertTableRows(id, at: canvas.tableItem(id)?.table?.rowCount ?? table.rowCount) }))
+            rows.append(EaselMenuRow(id: "table.addColumn", title: "Add Column", symbol: "plus", isEnabled: canAddColumn,
+                                     perform: guardedMenuAction { canvas in canvas.insertTableColumns(id, at: canvas.tableItem(id)?.table?.columnCount ?? table.columnCount) }))
+            rows.append(EaselMenuRow(id: "table.color", title: "Color", symbol: "paintpalette", isEnabled: !locked, children: colors))
+        }
+        rows.append(EaselMenuRow(id: "table.csv", title: "Export Table as CSV…", symbol: "tablecells", isEnabled: window?.attachedSheet == nil,
+                                 separatorBefore: true, perform: guardedMenuAction { $0.exportTableCSV() }))
+        rows.append(EaselMenuRow(id: "table.stickies", title: "Convert to Stickies", symbol: "note.text",
+                                 isEnabled: !locked && table.visibleCells.contains { !(table.cell($0)?.text.isEmpty ?? true) },
+                                 perform: guardedMenuAction { $0.convertTableToStickies() }))
+        return rows
     }
 }
