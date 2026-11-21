@@ -618,6 +618,7 @@ private final class ThemeInputEvent: NSEvent {
         window.isReleasedWhenClosed = false
         window.contentView = view
         view.layoutSubtreeIfNeeded()
+        drain()
         defer { window.contentView = nil; window.close(); NSCursor.arrow.set() }
         let pad = control("Theme color pad", view), knob = knobs(pad)[0]
         let start = drawn(knob, pad, in: view)
@@ -753,7 +754,7 @@ private final class ThemeInputEvent: NSEvent {
         near(view.theme.noise, 0, "second Undo reverses the complete physical rotation")
 
         let intensity = control("Theme intensity", view)
-        let point = NSPoint(x: 16 + (intensity.bounds.width - 32) * 0.4, y: intensity.bounds.midY)
+        let point = NSPoint(x: 20 + (intensity.bounds.width - 40) * 0.4, y: intensity.bounds.midY)
         intensity.mouseDown(with: mouse(.leftMouseDown, intensity, point))
         _ = intensity.accessibilityPerformIncrement()
         near(view.theme.intensity, 0.45, "intensity AX begins from the completed drag")
