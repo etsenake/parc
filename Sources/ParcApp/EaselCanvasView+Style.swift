@@ -104,75 +104,86 @@ extension EaselCanvasView {
 }
 
 @MainActor
-final class EaselStyleMenuTarget: NSObject, NSMenuItemValidation {
-    final class Choice: NSObject {
-        let change: EaselStyleChange
-        init(_ change: EaselStyleChange) { self.change = change }
+final class EaselStyleMenuTarget: NSObject {
+    final class Action: NSObject {
+        let perform: (() -> Void)?
+        init(_ perform: (() -> Void)?) { self.perform = perform }
     }
 
-    weak var canvas: EaselCanvasView?
-    let selection: Set<UUID>
-
-    init(canvas: EaselCanvasView, selection: Set<UUID>) {
-        self.canvas = canvas
-        self.selection = selection
-    }
-
-    @objc func choose(_ sender: NSMenuItem) {
-        guard let canvas, canvas.selection == selection, let choice = sender.representedObject as? Choice else { return }
-        canvas.applyStyle(choice.change)
-    }
-
-    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        guard let canvas, canvas.selection == selection, let choice = menuItem.representedObject as? Choice else { return false }
-        return canvas.styleTargets.contains { EaselStyle.applies(choice.change, to: $0) }
-    }
+    @objc func choose(_ sender: NSMenuItem) { (sender.representedObject as? Action)?.perform?() }
 }
 
 extension EaselCanvasView {
-    func styleMenuItems() -> [NSMenuItem] {
+    func styleMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] {
+        guard context.target != .canvas else { return [] }
+        return styleRows(textColor: false)
+    }
+
+    func styleRows(textColor: Bool) -> [EaselMenuRow] {
         guard let controls = styleControls else { return [] }
         let summary = styleSummary, dark = NoteTheme.isDark(effectiveAppearance)
-        let target = EaselStyleMenuTarget(canvas: self, selection: selection)
-        func row(_ title: String, _ change: EaselStyleChange, checked: Bool, image: NSImage? = nil) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: #selector(EaselStyleMenuTarget.choose(_:)), keyEquivalent: "")
-            item.target = target
-            item.representedObject = EaselStyleMenuTarget.Choice(change)
-            item.state = checked ? .on : .off
-            item.image = image
-            return item
+        func row(_ id: String, _ title: String, _ change: EaselStyleChange, checked: Bool, separated: Bool = false) -> EaselMenuRow {
+            EaselMenuRow(id: "style." + id, title: title, isChecked: checked, separatorBefore: separated,
+                         perform: guardedMenuAction { $0.applyStyle(change) })
         }
-        func parent(_ title: String, _ rows: [NSMenuItem]) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-            let menu = NSMenu(title: title)
-            rows.forEach(menu.addItem)
-            item.submenu = menu
-            item.representedObject = target
-            return item
+        var rows: [EaselMenuRow] = []
+        if textColor || Set(styleTargets.compactMap(EaselStyleFamily.of)) != [.text] {
+            rows.append(EaselMenuRow(id: "style.color", title: "Color", symbol: "paintpalette", children: controls.colors.map { color in
+                row("color." + color.id, color.title(dark: dark), .color(.palette(color)), checked: summary.color == .palette(color))
+            }))
         }
-        var items = [parent("Color", controls.colors.map { color in
-            row(color.title(dark: dark), .color(.palette(color)), checked: summary.color == .palette(color),
-                image: Self.swatchImage(EaselInk.color(EaselPalette.stored(color, role: controls.colorRole), adaptive: true, role: controls.colorRole),
-                                        role: controls.colorRole))
-        })]
         if controls.fill {
-            items.append(parent("Fill", EaselFillMode.allCases.map { row($0.title, .fill($0), checked: summary.fill == $0) }))
+            rows.append(EaselMenuRow(id: "style.fill", title: "Fill", symbol: "square.fill", children: EaselFillMode.allCases.map {
+                row("fill." + $0.rawValue, $0.title, .fill($0), checked: summary.fill == $0)
+            }))
         }
-        if !controls.weights.isEmpty || controls.dash {
-            var rows = controls.weights.map { weight in
-                row(weight == .none ? "No Outline" : weight.title, .weight(weight), checked: summary.weight == weight)
+        if !controls.weights.isEmpty || controls.dash || controls.labelBackground {
+            var children = controls.weights.map { weight in
+                row("weight." + weight.rawValue, weight == .none ? "No Outline" : weight.title, .weight(weight), checked: summary.weight == weight)
             }
             if controls.dash {
-                if !rows.isEmpty { rows.append(.separator()) }
-                rows += EaselStrokeDash.allCases.map { row($0.rawValue.capitalized, .dash($0), checked: summary.dash == $0) }
+                children += EaselStrokeDash.allCases.enumerated().map { index, dash in
+                    row("dash." + dash.rawValue, dash.rawValue.capitalized, .dash(dash), checked: summary.dash == dash,
+                        separated: index == 0 && !children.isEmpty)
+                }
             }
             if controls.labelBackground {
-                rows.append(.separator())
-                rows.append(row("Label Background", .labelBackground(summary.labelBackground != true), checked: summary.labelBackground == true))
+                children.append(row("label", "Label Background", .labelBackground(summary.labelBackground != true),
+                                    checked: summary.labelBackground == true, separated: !children.isEmpty))
             }
-            items.append(parent(controls.lineTitle, rows))
+            rows.append(EaselMenuRow(id: "style.line", title: controls.lineTitle, symbol: "line.diagonal", children: children))
         }
-        return items
+        return rows
+    }
+
+    func styleMenuItems() -> [NSMenuItem] {
+        let rows = styleRows(textColor: true)
+        guard !rows.isEmpty, let controls = styleControls else { return [] }
+        let target = EaselStyleMenuTarget()
+        func item(_ row: EaselMenuRow) -> NSMenuItem {
+            let made = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
+            made.state = row.isChecked ? .on : .off
+            if row.children.isEmpty {
+                made.action = #selector(EaselStyleMenuTarget.choose(_:))
+                made.target = target
+                made.representedObject = EaselStyleMenuTarget.Action(row.perform)
+            } else {
+                let menu = NSMenu(title: row.title)
+                for child in row.children {
+                    if child.separatorBefore { menu.addItem(.separator()) }
+                    menu.addItem(item(child))
+                }
+                made.submenu = menu
+                made.representedObject = target
+            }
+            let prefix = "style.color."
+            if row.id.hasPrefix(prefix), let color = EaselPaletteColor(id: String(row.id.dropFirst(prefix.count))) {
+                made.image = Self.swatchImage(EaselInk.color(EaselPalette.stored(color, role: controls.colorRole), adaptive: true,
+                                                             role: controls.colorRole), role: controls.colorRole)
+            }
+            return made
+        }
+        return rows.map(item)
     }
 
     static func swatchImage(_ color: NSColor, role: EaselColorRole) -> NSImage {
