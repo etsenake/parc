@@ -122,6 +122,22 @@ struct EaselRichTextInlineTests {
         expect(after.document.items[0].text == "See \u{FFFC} later" && after.document.items[0].richText?.inline(at: 4) == note,
                "replace around a mention keeps it")
 
+        let noteText = EaselRichText.noteText(text, rich: mentioned)
+        expect(noteText.string == text && noteText.marks(at: 4).atom == note.atom && noteText.marks(at: 0).atom == nil,
+               "Easel text becomes Notes text with the mention as an atom")
+        var reminder = mention
+        reminder.remind = true
+        let reminding = rich(text, inlineAt: 4, .date(reminder))
+        var board = document
+        board.items = [EaselItem(kind: .text, frame: EaselRect(x: 0, y: 0, width: 100, height: 40), text: text, richText: reminding), item]
+        expect(board.reminderPage.blocks.count == 1, "only text with reminders reaches the reminder page")
+        expect(board.dateMentions == [reminder], "dates are collected from the whole Easel")
+        let profile = UUID(), easelID = UUID()
+        let file = URL(fileURLWithPath: "/Library/Parc/Profiles/" + profile.uuidString + "/Easels/documents/" + easelID.uuidString.lowercased() + ".json")
+        expect(EaselReminderOwner(file: file) == EaselReminderOwner(file: file) && EaselReminderOwner(file: file)?.id == easelID
+               && EaselReminderOwner(file: file)?.profile == profile, "reminder owners are recognised from the Easel file")
+        expect(EaselReminderOwner(file: URL(fileURLWithPath: "/Users/someone/Parc Notes/Roadmap.md")) == nil, "notes are not Easel owners")
+
         print("EaselRichTextInlineTests passed \(assertions) assertions")
     }
 }
