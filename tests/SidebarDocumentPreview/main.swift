@@ -1,0 +1,66 @@
+import Foundation
+
+var count = 0
+func check(_ value: @autoclosure () -> Bool, _ description: String) {
+    count += 1
+    guard value() else { fatalError("SidebarDocumentPreview: \(description)") }
+}
+
+let id = UUID()
+let note = URL(fileURLWithPath: "/Users/someone/Notes/Plan.md")
+check(SidebarDocumentKind(url: note) == .note(note), "a Markdown file is a note")
+check(SidebarDocumentKind(url: URL(fileURLWithPath: "/tmp/list.txt")) != nil, "a text file is a note")
+check(SidebarDocumentKind(url: URL(fileURLWithPath: "/tmp/paper.pdf")) == nil, "other files stay web tabs")
+check(SidebarDocumentKind(url: URL(string: "https://example.com/a.md")!) == nil, "web Markdown is a web tab")
+check(SidebarDocumentKind(url: URL(string: "parc://easel/" + id.uuidString.lowercased())!) == .easel(id), "Easel address")
+check(SidebarDocumentKind(url: URL(string: "parc://easel/" + id.uuidString + "?x=1")!) == nil, "Easel address with a query")
+check(SidebarDocumentKind(url: URL(string: "parc://easel/nope")!) == nil, "Easel address without an ID")
+check(SidebarDocumentKind(url: URL(string: "parc://settings/")!) == nil, "other internal pages")
+check(SidebarDocumentKind.note(note).cacheKey == SidebarDocumentKind.note(URL(fileURLWithPath: "/Users/someone/Notes/./Plan.md")).cacheKey, "note keys use the standardized path")
+check(SidebarDocumentKind.easel(id).cacheKey != SidebarDocumentKind.note(note).cacheKey, "kinds never share keys")
+
+let easel = SidebarDocumentKind.easel(id), page = SidebarDocumentKind.note(note)
+check(SidebarDocumentPreviewText.missing(page) == "This note moved or was deleted", "missing note")
+check(SidebarDocumentPreviewText.missing(easel) == "This Easel was deleted", "missing Easel")
+check(SidebarDocumentPreviewText.objects(0) == "No objects yet", "no objects")
+check(SidebarDocumentPreviewText.objects(1) == "1 object", "one object")
+check(SidebarDocumentPreviewText.objects(12) == "12 objects", "many objects")
+check(SidebarDocumentPreviewText.subtitle(easel, content: .init(objectCount: 3)) == "Easel · 3 objects", "Easel subtitle counts objects")
+check(SidebarDocumentPreviewText.subtitle(easel, content: .init()) == "Easel", "Easel subtitle before the count")
+check(SidebarDocumentPreviewText.subtitle(easel, content: .init(availability: .missing, objectCount: 3)) == "Easel", "missing Easel has no count")
+check(SidebarDocumentPreviewText.subtitle(page, content: .init(snippet: "Hello")) == "Note", "note subtitle")
+check(SidebarDocumentPreviewText.body(page, content: .init(snippet: "  Hello  ")) == "Hello", "note body is the snippet")
+check(SidebarDocumentPreviewText.body(page, content: .init()) == "Empty note", "empty note body")
+check(SidebarDocumentPreviewText.body(page, content: .init(availability: .missing, snippet: "Old")) == "This note moved or was deleted", "missing note body")
+check(SidebarDocumentPreviewText.body(easel, content: .init(objectCount: 0)) == "No objects yet", "empty Easel body")
+
+check(SidebarDocumentPreviewButtons.buttons(availability: .available, peekAdmitsDocuments: false) == [.copyLink, .split], "documents offer Copy Link and Split View")
+check(SidebarDocumentPreviewButtons.buttons(availability: .available, peekAdmitsDocuments: true) == [.peek, .copyLink, .split], "Peek only when it admits documents")
+check(SidebarDocumentPreviewButtons.buttons(availability: .missing, peekAdmitsDocuments: true).isEmpty, "a missing document offers nothing")
+
+typealias Cache = SidebarThumbnailCache<String, Int>
+let start = Date(timeIntervalSinceReferenceDate: 1000)
+var cache = Cache(capacity: 2, interval: 1)
+let light = Cache.Key(document: "a", appearance: "light"), dark = Cache.Key(document: "a", appearance: "dark")
+check(cache.renderDelay(light, now: start) == 0, "first render is immediate")
+cache.store("a1", for: light, revision: 1, now: start)
+check(cache.fresh(light, revision: 1) == "a1", "fresh hit")
+check(cache.fresh(light, revision: 2) == nil, "an edit makes the thumbnail stale")
+check(cache.latest(light) == "a1", "the stale thumbnail stays showable")
+check(cache.fresh(dark, revision: 1) == nil, "appearances are separate")
+check(abs(cache.renderDelay(light, now: start.addingTimeInterval(0.25)) - 0.75) < 0.0001, "renders are throttled")
+check(cache.renderDelay(light, now: start.addingTimeInterval(1.5)) == 0, "throttle expires")
+check(cache.renderDelay(light, now: start.addingTimeInterval(-5)) == 1, "a clock step back waits a full interval")
+cache.store("a2", for: dark, revision: 1, now: start)
+cache.invalidate(document: "a")
+check(cache.latest(light) == nil && cache.latest(dark) == nil, "invalidation drops every appearance")
+check(cache.renderDelay(light, now: start.addingTimeInterval(0.5)) > 0, "invalidation keeps the throttle")
+let b = Cache.Key(document: "b", appearance: "light"), c = Cache.Key(document: "c", appearance: "light")
+cache.store("a", for: light, revision: 1, now: start)
+cache.store("b", for: b, revision: 1, now: start)
+cache.touch(light)
+cache.store("c", for: c, revision: 1, now: start)
+check(cache.count == 2 && cache.latest(b) == nil && cache.latest(light) == "a", "least recently used thumbnail is evicted")
+cache.removeAll()
+check(cache.count == 0 && cache.renderDelay(light, now: start) == 0, "remove all")
+print("SidebarDocumentPreview: \(count) checks passed")

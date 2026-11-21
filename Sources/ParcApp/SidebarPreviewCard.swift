@@ -18,6 +18,10 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     private let settings = ActionButton("Previews Settings", symbol: "gearshape")
     private let split = ActionButton("Open in Split View", symbol: "rectangle.split.2x1")
     private let peek = ActionButton("Open in Peek")
+    private let copyLink = ActionButton("Copy Link", symbol: "link")
+    private let fallback = NSTextField(wrappingLabelWithString: "")
+    private let document: SidebarDocumentKind?
+    private var documentButtons: [SidebarDocumentButton] = []
     private let site = NSTextField(labelWithString: "")
     private let picture = SidebarPreviewPicture()
     private let showsPicture: Bool
@@ -34,22 +38,24 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     private var providerIconRequested = false
     private var trackedMenu: NSMenu?
 
-    init(title: String, domain: SidebarRecentDomain?, providerURL: URL?, picture image: NSImage? = nil, site: String = "") {
-        self.domain = domain; self.providerURL = providerURL; showsPicture = image != nil
+    init(title: String, domain: SidebarRecentDomain?, providerURL: URL?, picture image: NSImage? = nil, site: String = "",
+         document: SidebarDocumentKind? = nil) {
+        self.domain = domain; self.providerURL = providerURL; self.document = document
+        showsPicture = image != nil || document != nil
         super.init(frame: .zero)
-        if domain != nil || image != nil { fill = SidebarPreviewColors.background }
+        if domain != nil || showsPicture { fill = SidebarPreviewColors.background }
         let primary = SidebarPreviewColors.primary(1), secondary = SidebarPreviewColors.primary(0.5)
-        if domain != nil || image != nil {
-            icon.image = NSImage(systemSymbolName: image != nil ? "globe" : "doc.text", accessibilityDescription: nil)
+        if domain != nil || showsPicture {
+            icon.image = NSImage(systemSymbolName: showsPicture ? "globe" : "doc.text", accessibilityDescription: nil)
             icon.imageScaling = .scaleProportionallyUpOrDown; icon.contentTintColor = secondary
             heading.font = .systemFont(ofSize: 13, weight: .semibold); heading.textColor = primary
             heading.lineBreakMode = .byTruncatingTail
         }
-        if let image {
+        if showsPicture {
             heading.stringValue = title
             self.site.stringValue = site
             self.site.font = .systemFont(ofSize: 11); self.site.textColor = secondary; self.site.lineBreakMode = .byTruncatingTail
-            for (button, label) in [(split, "Open in Split View"), (peek, "Open in Peek")] {
+            for (button, label) in [(split, "Open in Split View"), (peek, "Open in Peek"), (copyLink, "Copy Link")] {
                 Self.styleHeaderButton(button, label: label, tint: secondary)
                 button.showsHoverFill = true
             }
@@ -63,8 +69,21 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
                 guard self.offersPeek?(row) == true else { self.refreshPeek(); return }
                 self.onAction?(row, .peek)
             }
+            copyLink.actionBlock = { [weak self] in
+                guard let self, let row = self.rows.first else { return }
+                self.onAction?(row, .copyURL)
+            }
             picture.image = image
-            for view in [icon, heading, self.site, split, picture] as [NSView] { content.addSubview(view) }
+            for view in [icon, heading, self.site, picture] as [NSView] { content.addSubview(view) }
+            if document == nil { content.addSubview(split) }
+            else {
+                fallback.font = .systemFont(ofSize: 13); fallback.textColor = secondary
+                fallback.maximumNumberOfLines = 0; fallback.lineBreakMode = .byTruncatingTail
+                fallback.cell?.truncatesLastVisibleLine = true
+                fallback.isHidden = image != nil
+                content.addSubview(fallback)
+                picture.setAccessibilityElement(image != nil); picture.setAccessibilityRole(.image)
+            }
             setAccessibilityElement(false)
             return
         }
@@ -133,9 +152,9 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
         return header + min(SidebarPreviewMetrics.maximumHeight - header, body)
     }
     private func pictureHeight(width: CGFloat) -> CGFloat {
-        let size = picture.image?.size ?? .zero
-        guard size.width > 0 else { return 0 }
         let inset = SidebarPreviewMetrics.pictureInset
+        let size = picture.image?.size ?? (document != nil ? NSSize(width: 16, height: 10) : .zero)
+        guard size.width > 0 else { return 0 }
         let fitted = ((width - 2 * inset) * size.height / size.width).rounded()
         return min(SidebarPreviewMetrics.maximumHeight - SidebarPreviewMetrics.header - inset, fitted)
     }
@@ -150,13 +169,15 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
             let inset = SidebarPreviewMetrics.pictureInset, top = ((header - 31) / 2).rounded(.down)
             icon.frame = NSRect(x: 13, y: (header - 16) / 2, width: 16, height: 16)
             split.frame = NSRect(x: width - 32, y: (header - 24) / 2, width: 24, height: 24)
-            peek.frame = split.frame.offsetBy(dx: -26, dy: 0)
-            let trailing = peek.superview == nil ? split.frame.minX : peek.frame.minX
+            copyLink.frame = split.frame.offsetBy(dx: -26, dy: 0)
+            peek.frame = (copyLink.superview == nil ? split.frame : copyLink.frame).offsetBy(dx: -26, dy: 0)
+            let trailing = [peek, copyLink, split].first { $0.superview != nil }?.frame.minX ?? width - 8
             let textX = icon.frame.maxX + 8, textWidth = max(0, trailing - textX - 8)
             heading.frame = NSRect(x: textX, y: top, width: textWidth, height: 17)
             site.frame = NSRect(x: textX, y: top + 17, width: textWidth, height: 14)
             picture.frame = NSRect(x: inset, y: header, width: max(0, width - 2 * inset),
                                    height: max(0, bounds.height - header - inset))
+            fallback.frame = picture.frame.insetBy(dx: 14, dy: 12)
             return
         }
         if domain != nil {
@@ -199,7 +220,36 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     func setPicture(_ image: NSImage) {
         guard showsPicture else { return }
         picture.image = image; needsLayout = true
+        if document != nil { fallback.isHidden = true; picture.setAccessibilityElement(true) }
         onHeightChange?()
+    }
+    func setDocument(_ value: SidebarDocumentContent, picture image: NSImage?) {
+        guard let document, !isRetired else { return }
+        site.stringValue = SidebarDocumentPreviewText.subtitle(document, content: value)
+        fallback.stringValue = SidebarDocumentPreviewText.body(document, content: value)
+        picture.setAccessibilityLabel(heading.stringValue + ", " + fallback.stringValue)
+        let missing = value.availability == .missing
+        documentButtons = SidebarDocumentPreviewButtons.buttons(availability: value.availability, peekAdmitsDocuments: false)
+        if missing { picture.image = nil }
+        else if let image { picture.image = image }
+        fallback.isHidden = picture.image != nil
+        picture.setAccessibilityElement(picture.image != nil)
+        for (button, kind) in [(copyLink, SidebarDocumentButton.copyLink), (split, .split)] {
+            let shown = documentButtons.contains(kind)
+            guard shown != (button.superview != nil) else { continue }
+            if shown { content.addSubview(button) }
+            else {
+                if window?.firstResponder === button { window?.makeFirstResponder(nil) }
+                button.removeFromSuperview()
+            }
+        }
+        refreshPeek()
+        needsLayout = true
+        onHeightChange?()
+    }
+    func setTitle(_ title: String) {
+        guard showsPicture else { return }
+        heading.stringValue = title
     }
     func setRows(_ values: [SidebarPreviewRow]) {
         dataGeneration &+= 1; rows = values
@@ -217,12 +267,12 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     }
     func refreshPeek() {
         guard showsPicture, !isRetired else { return }
-        let offered = rows.first.map { offersPeek?($0) == true } ?? false
+        let offered = (document == nil || documentButtons.contains(.split)) && (rows.first.map { offersPeek?($0) == true } ?? false)
         guard offered != (peek.superview != nil) else { return }
         if offered {
             content.addSubview(peek)
         } else {
-            if window?.firstResponder === peek { window?.makeFirstResponder(split) }
+            if window?.firstResponder === peek { window?.makeFirstResponder(split.superview == nil ? nil : split) }
             peek.removeFromSuperview()
         }
         needsLayout = true
@@ -300,7 +350,7 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
             menu.addItem(MenuAction.item(title) { [weak self] in self?.onAction?(value, action) })
         }
         if value.tabID != nil {
-            add("Copy URL", .copyURL)
+            add(value.isDocument ? "Copy Link" : "Copy URL", .copyURL)
             if offersPeek?(value) == true { add("Open in Peek", .peek) }
             add("Open in Split View", .split)
             add("Duplicate", .duplicate)

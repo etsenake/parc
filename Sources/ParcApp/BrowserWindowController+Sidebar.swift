@@ -45,8 +45,30 @@ extension BrowserWindowController {
                   let lease = page.observePreview(in: window, handler: deliver) else { return nil }
             return { lease.invalidate() }
         }
+        previews.requestDocument = { [weak self] source, kind, deliver in
+            guard let self, let window = self.window, self.activeProfileID == source.profileID, !self.isClosing else { return nil }
+            let profileID = source.profileID
+            let lease = SidebarDocumentThumbnails.shared.observe(kind, title: source.title,
+                appearance: self.rootView.palette.contentAppearance ?? window.effectiveAppearance,
+                easels: { [weak self] in
+                    guard let self else { throw EaselStoreError.missingDocument }
+                    return try EaselEditorViewController.sharedStore(directory: self.store.easelsDirectory(for: profileID))
+                },
+                noteEasels: { [weak self] url in
+                    guard let editor = self?.noteEditors.values.first(where: { NoteFilePaths.sameItem($0.url, url) })?.editor.editor else { return nil }
+                    return NoteEaselHost.host(for: editor)
+                }, deliver: deliver)
+            return { lease.invalidate() }
+        }
         previews.favicon = { [weak self] url, profileID, completion in
             guard let self, self.activeProfileID == profileID, !self.isClosing else { return }
+            switch SidebarDocumentKind(url: url) {
+            case .note(let file)?:
+                NoteTabIconArt.shared.requestImage(forNote: file, completion: completion); return
+            case .easel?:
+                completion(DocumentDefaultIcon.easel.image(size: NoteTabIconArt.side)); return
+            case nil: break
+            }
             PCNativeBrowserApplication.favicon(for: url, profilePath: self.store.independentEngineProfilePath(for: profileID)) { image in
                 MainActor.assumeIsolated { completion(image) }
             }
@@ -70,9 +92,15 @@ extension BrowserWindowController {
                 return SidebarPreviewSource(target: target, profileID: profileID, spaceID: activeSpaceID,
                     selectedTabIDs: selectedTabIDs, focusedTabID: focusedTabID, theme: activeSpace.theme, title: domain.title, domain: domain, originalURL: url, rows: [])
             }
-            guard SidebarPreviewPreference.tabPictures.isEnabled, !selectedTabIDs.contains(id),
-                  let page = browsers[id]?.nativePage, !page.isClosed else { return nil }
+            guard SidebarPreviewPreference.tabPictures.isEnabled, !selectedTabIDs.contains(id) else { return nil }
             let title = SidebarPreviewRow.folderTitle(custom: tab.customTitle, url: url, title: tab.title)
+            if let document = SidebarDocumentKind(url: url) {
+                return SidebarPreviewSource(target: target, profileID: profileID, spaceID: activeSpaceID,
+                    selectedTabIDs: selectedTabIDs, focusedTabID: focusedTabID, theme: activeSpace.theme, title: title,
+                    domain: nil, originalURL: url,
+                    rows: [SidebarPreviewRow(id: id.uuidString, tabID: id, title: title, url: url, visitedAt: nil)], document: document)
+            }
+            guard let page = browsers[id]?.nativePage, !page.isClosed else { return nil }
             return SidebarPreviewSource(target: target, profileID: profileID, spaceID: activeSpaceID,
                 selectedTabIDs: selectedTabIDs, focusedTabID: focusedTabID, theme: activeSpace.theme, title: title,
                 domain: nil, originalURL: url,

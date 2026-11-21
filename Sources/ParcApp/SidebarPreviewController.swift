@@ -58,6 +58,7 @@ struct SidebarPreviewRow: Equatable {
     var isBadged = false
 
     var hasIcon: Bool { tabID != nil }
+    var isDocument: Bool { SidebarDocumentKind(url: url) != nil }
     func subtitle(now: Date = Date()) -> String {
         if isBadged { return "Recently Added" }
         if tabID == nil { return RecentPageText.subtitle(url: url, visitedAt: visitedAt, now: now) }
@@ -96,6 +97,7 @@ struct SidebarPreviewSource: Equatable {
     let domain: SidebarRecentDomain?
     let originalURL: URL?
     let rows: [SidebarPreviewRow]
+    var document: SidebarDocumentKind? = nil
 
     var showsPicture: Bool {
         if case .tab = target { return domain == nil }
@@ -105,7 +107,8 @@ struct SidebarPreviewSource: Equatable {
     func hasSameOwner(as other: SidebarPreviewSource) -> Bool {
         target == other.target && profileID == other.profileID && spaceID == other.spaceID
             && selectedTabIDs == other.selectedTabIDs && focusedTabID == other.focusedTabID && theme == other.theme
-            && domain == other.domain && (showsPicture || (title == other.title && originalURL == other.originalURL))
+            && domain == other.domain && document == other.document
+            && (showsPicture || (title == other.title && originalURL == other.originalURL))
     }
 }
 
@@ -148,6 +151,7 @@ final class SidebarPreviewController {
     var offers: ((SidebarPreviewSource, SidebarPreviewRow, SidebarPreviewAction) -> Bool)?
     var requestRecent: ((SidebarRecentDomain, UUID, @escaping ([SidebarPreviewRow]) -> Void) -> (() -> Void)?)?
     var requestPicture: ((UUID, @escaping (NSImage?) -> Void) -> (() -> Void)?)?
+    var requestDocument: ((SidebarPreviewSource, SidebarDocumentKind, @escaping (SidebarDocumentUpdate) -> Void) -> (() -> Void)?)?
     var favicon: ((URL, UUID, @escaping (NSImage?) -> Void) -> Void)?
     var onPresentationChange: (() -> Void)?
     var openSettings: (() -> Void)?
@@ -254,7 +258,8 @@ final class SidebarPreviewController {
         guard var current else { return }
         if let card, current.domain == nil, let fresh = source?(current.target), fresh != current, fresh.hasSameOwner(as: current) {
             current = fresh; self.current = fresh; card.setRows(fresh.rows)
-            if fresh.showsPicture { card.setHeading(fresh.title, site: Self.site(fresh.originalURL)) }
+            if fresh.document != nil { card.setTitle(fresh.title) }
+            else if fresh.showsPicture { card.setHeading(fresh.title, site: Self.site(fresh.originalURL)) }
         }
         guard valid(current), let next = anchorRect(current.target) else {
             dismiss(); return
@@ -353,6 +358,7 @@ final class SidebarPreviewController {
     }
     private func commit(_ value: SidebarPreviewSource, token: UInt64) {
         guard generation == token, valid(value) else { dismiss(); return }
+        if let document = value.document { commitDocument(value, kind: document, token: token); return }
         if value.showsPicture, case .tab(let id) = value.target { commitPicture(value, tabID: id, token: token); return }
         guard let domain = value.domain else { present(value, rows: value.rows, token: token); return }
         let timeout = scheduleTimeout(token: token)
@@ -384,6 +390,26 @@ final class SidebarPreviewController {
         if cancel == nil { timeout.cancel(); self.timeout = nil }
         onPresentationChange?()
     }
+    private func commitDocument(_ value: SidebarPreviewSource, kind: SidebarDocumentKind, token: UInt64) {
+        var latest = SidebarDocumentUpdate(content: SidebarDocumentContent(), picture: nil, settled: false)
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, self.generation == token, self.card == nil else { return }
+            self.timeout = nil
+            self.present(value, rows: value.rows, document: latest, token: token)
+        }
+        self.timeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(500), execute: timeout)
+        let cancel = requestDocument?(value, kind) { [weak self] update in
+            guard let self, self.generation == token else { return }
+            latest = update
+            if let card = self.card { card.setDocument(update.content, picture: update.picture); return }
+            guard update.picture != nil || update.settled, self.timeout?.isCancelled == false else { return }
+            self.timeout?.cancel(); self.timeout = nil
+            self.present(value, rows: value.rows, document: update, token: token)
+        }
+        if generation == token { cancelQuery = cancel } else { cancel?() }
+        onPresentationChange?()
+    }
     private static func site(_ url: URL?) -> String {
         url.map { SidebarAddressSearchIcon.host(of: $0) ?? $0.absoluteString } ?? ""
     }
@@ -397,10 +423,12 @@ final class SidebarPreviewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(500), execute: timeout)
         return timeout
     }
-    private func present(_ value: SidebarPreviewSource, rows: [SidebarPreviewRow], picture: NSImage? = nil, token: UInt64) {
+    private func present(_ value: SidebarPreviewSource, rows: [SidebarPreviewRow], picture: NSImage? = nil,
+                         document: SidebarDocumentUpdate? = nil, token: UInt64) {
         guard generation == token, card == nil, current == value, valid(value), let host else { return }
         let card = SidebarPreviewCard(title: value.title, domain: value.domain, providerURL: value.originalURL,
-                                      picture: picture, site: Self.site(value.originalURL))
+                                      picture: picture ?? document?.picture,
+                                      site: value.document == nil ? Self.site(value.originalURL) : "", document: value.document)
         card.placement = SidebarPreviewPlacement(row: anchor, location: location(value.target))
         let live: () -> SidebarPreviewSource? = { [weak self] in
             guard let self, self.generation == token, let current = self.current,
@@ -410,7 +438,9 @@ final class SidebarPreviewController {
         card.onAction = { [weak self] row, action in
             guard let self, let value = live() else { return }
             if action == .copyURL {
-                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(row.url.absoluteString, forType: .string)
+                NSPasteboard.general.clearContents()
+                if row.isDocument { NSPasteboard.general.writeObjects([row.url as NSURL]) }
+                NSPasteboard.general.setString(row.url.absoluteString, forType: .string)
             } else if case .copyIssueID(let id) = action {
                 NSPasteboard.general.clearContents(); NSPasteboard.general.setString(id, forType: .string)
             } else {
@@ -434,6 +464,7 @@ final class SidebarPreviewController {
             }
         }
         card.setRows(rows)
+        if let document { card.setDocument(document.content, picture: document.picture) }
         previousResponder = window?.firstResponder
         self.card = card
         host.addSubview(card, positioned: .above, relativeTo: nil)

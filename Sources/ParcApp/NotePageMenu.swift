@@ -485,7 +485,8 @@ final class NotePagePrintView: NSView {
     let header: NotePageHeaderView
     let title: String
 
-    init(page: NotePage, title: String, environment: NoteEnvironment, easels: NoteEaselHost? = nil) {
+    init(page: NotePage, title: String, environment: NoteEnvironment, easels: NoteEaselHost? = nil,
+         appearance: NSAppearance? = NSAppearance(named: .aqua)) {
         var copy = page
         copy.settings.fullWidth = false
         let session = NotePageSession(page: copy)
@@ -495,7 +496,7 @@ final class NotePagePrintView: NSView {
         header = NotePageHeaderView(editor: editor, file: nil, title: title)
         self.title = title
         super.init(frame: NSRect(x: 0, y: 0, width: Self.canvasWidth, height: 1200))
-        appearance = NSAppearance(named: .aqua)
+        self.appearance = appearance
         setAccessibilityElement(false)
         let canvas = editor.canvas!
         canvas.frame = bounds
@@ -510,14 +511,15 @@ final class NotePagePrintView: NSView {
     override var isFlipped: Bool { true }
 
     static func prepare(page: NotePage, title: String, environment: NoteEnvironment, easels: NoteEaselHost? = nil,
+                        appearance: NSAppearance? = NSAppearance(named: .aqua),
                         completion: @escaping (NotePagePrintView) -> Void) {
         var pending = 0
         var finished = false
         func finish() {
             guard !finished else { return }
             finished = true
-            NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
-                completion(NotePagePrintView(page: page, title: title, environment: environment, easels: easels))
+            (appearance ?? NSAppearance(named: .aqua))?.performAsCurrentDrawingAppearance {
+                completion(NotePagePrintView(page: page, title: title, environment: environment, easels: easels, appearance: appearance))
             }
         }
         func arrived() {
@@ -537,7 +539,7 @@ final class NotePagePrintView: NSView {
                 if let icon = bookmark.iconURL.flatMap(URL.init(string:)) { mediaImages.append((icon, 64)) }
             }
         }
-        let diagrams = Array(diagramRequests(in: page, dark: false).values)
+        let diagrams = Array(diagramRequests(in: page, dark: appearance.map(NoteTheme.isDark) ?? false).values)
         pending = chromeImages.count + mediaImages.count + pdfs.count + (diagrams.isEmpty ? 0 : 1)
         guard pending > 0 else { finish(); return }
         if !diagrams.isEmpty { NoteMermaidRenderer.shared.renderAll(diagrams) { _ in arrived() } }

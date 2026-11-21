@@ -93,6 +93,37 @@ thumbnail itself is refreshed.
 The card has no keyboard entry; the sidebar's Preview items stay with Recents
 and folders.
 
+## Note and Easel cards
+
+With the same **A picture of other open tabs** preference, hovering a note or
+Easel tab that isn't on screen shows the tab picture card's chrome, dwell,
+placement, motion and dismissal. The header shows the tab's icon (the note's
+emoji or image icon, the coral note mark, or the Easel mark), its title and
+"Note" or "Easel · 3 objects". The picture is the document itself at 16:10: the
+top of the note (cover, icon, title and its first twelve blocks) drawn by the
+same view Notes prints with, or the Easel's objects framed to fit, both in the
+Space's light or dark content appearance on white or black paper. Until a
+picture is ready, or for an empty document, the same frame shows the library
+snippet ("Empty note", "No objects yet"). A note or Easel that moved or was
+deleted shows "This note moved or was deleted" or "This Easel was deleted" and
+no buttons.
+
+Peek doesn't admit documents, so the buttons are Copy Link (`link`, 26 pt left
+of Split View, copying the file or `parc://easel/` address) and Open in Split
+View. The card appears when a picture or the final text arrives, or after the
+same 500 ms with the snippet, and a later picture replaces the text in place.
+
+Pictures are drawn without a window: a detached print view cached with
+`cacheDisplay`, and the Easel's own image export on a detached canvas. Unloaded
+notes are read and parsed off the main thread. `SidebarDocumentThumbnails`
+keeps the last 48 pictures per document and appearance, keyed by the open
+note's first blocks and title, the closed file's modification date and size,
+or the Easel's modification date and object count, so an edit or save makes
+the picture stale. A shown card follows edits to an open note or Easel and
+redraws at most once a second, showing the stale picture meanwhile. Folder
+cards list notes and Easels with these icons and offer Copy Link in place of
+Copy URL; their rows keep the list's 16 pt icons rather than page pictures.
+
 While any preview card is shown, the window's tooltips stay hidden: the row's
 title tooltip waits 1.5 s and would otherwise open over a card that already
 shows the title, and right after another tooltip it opens almost at once.
@@ -218,6 +249,7 @@ picture preference is enabled. These are local preferences, not service accounts
 Focused preview components exercise original-identity query/thumbnail leases,
 modifier routes, title rules, geometry, invalidation and focus return.
 `tests/SidebarPreview/check.py` also plays the entrance and exit with Reduce
-Motion simulated off and on. `tests/SidebarPreviewHeader/check.py` builds tab
+Motion simulated off and on. `tests/SidebarDocumentPreview/check.py` covers document
+kinds, card text, buttons and the thumbnail cache. `tests/SidebarPreviewHeader/check.py` builds tab
 picture cards without a window and checks the Open in Peek button against the
 Peek offer, its action, the header widths and the artwork.
