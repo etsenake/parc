@@ -113,8 +113,8 @@ final class NoteEaselPages: EaselBrowserObjectHosting {
         let profilePath = pool.profilePath, layout = item.captureLayout
         let address = URL(string: url) ?? URL(string: "about:blank")!
         guard let entry = pool.surface(id: key, url: url, variant: variant, make: {
-            EaselBrowserSurface(profilePath: profilePath, address: address, captureLayout: layout)
-        }), let view = entry.surface as? EaselBrowserSurface else { return nil }
+            NoteEmbedSurface(address: address, profilePath: profilePath, host: .easel, captureLayout: layout)
+        }), let view = entry.surface as? NoteEmbedSurface else { return nil }
         guard view.onDone == nil else { return view }
         let id = item.id
         view.onDone = { [weak self, weak entry] in

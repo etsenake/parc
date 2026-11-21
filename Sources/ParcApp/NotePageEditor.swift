@@ -40,6 +40,7 @@ final class NotePageEditor {
     private var emojiSubscription: AnyCancellable?
     private var isApplying = false
     private var pasteMenu: NotePasteLinkMenu?
+    private var pasteLink: NotePastedLink?
     private var lastReadOnly: Bool?
     private var pendingReveal: String?
 
@@ -204,7 +205,7 @@ final class NotePageEditor {
             if lastReadOnly != isReadOnly { applyReadOnly() }
             canvas.layoutSubtreeIfNeeded()
         }
-        if let menu = pasteMenu, session.selection != .caret(menu.link.end) { dismissPasteMenu() }
+        if pasteMenu != nil, let link = pasteLink, session.selection != .caret(link.end) { dismissPasteMenu() }
         selection.apply(session.selection)
         isApplying = false
         if change.kind != .selection, hadFocus, change.origin == nil || change.origin != focusedOrigin {
@@ -1158,10 +1159,11 @@ final class NotePageEditor {
                                                 from: host.textView)
         let embeddable = NoteClipboard.isEmbeddable(link.url)
         let media = NoteClipboard.linkedMediaKind(link.url)
-        let menu = NotePasteLinkMenu(link: link, embeddable: embeddable, media: media) { [weak self] choice in
+        let menu = NotePasteLinkMenu(url: link.url, leading: [.dismiss, .mention, .bookmark], embeddable: embeddable, media: media) { [weak self] choice in
             self?.choosePasteOption(choice)
         }
         pasteMenu = menu
+        pasteLink = link
         menu.present(in: canvas.overlayView, anchor: anchor)
         guard media == nil, !embeddable, let scheme = link.url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
         NoteLinkKindProbe.kind(of: link.url) { [weak self, weak menu] kind in
@@ -1182,14 +1184,14 @@ final class NotePageEditor {
     }
 
     private func choosePasteOption(_ choice: NotePasteLinkMenu.Choice) {
-        guard let link = pasteMenu?.link else { return }
+        guard pasteMenu != nil, let link = pasteLink else { return }
         dismissPasteMenu()
         guard !isReadOnly, choice != .dismiss, let block = session.page.block(link.position.block),
               let text = block.text(in: link.position.field) else { return }
         let range = link.position.offset..<(link.position.offset + link.length)
         guard range.upperBound <= text.length, text.runs(in: range).allSatisfy({ $0.marks.link == link.url.absoluteString }) else { return }
         switch choice {
-        case .dismiss:
+        case .dismiss, .link:
             return
         case .mention:
             let atom = NoteText.atom(.link(url: link.url.absoluteString, title: link.title ?? ""), marks: text.marks(at: range.lowerBound).withoutAtom.unlinked)
@@ -1218,6 +1220,7 @@ final class NotePageEditor {
     func dismissPasteMenu() {
         guard let menu = pasteMenu else { return }
         pasteMenu = nil
+        pasteLink = nil
         menu.dismiss()
     }
 
@@ -1355,105 +1358,4 @@ struct NotePastedLink: Hashable {
     var title: String?
 
     var end: NotePosition { NotePosition(position.block, position.offset + length, field: position.field) }
-}
-
-@MainActor
-final class NotePasteLinkMenu {
-    enum Choice: String {
-        case dismiss, mention, bookmark, embed, easel, pdf, image, video, audio
-
-        var blockKind: NoteBlockKind {
-            switch self {
-            case .pdf: return .pdf
-            case .image: return .image
-            case .video: return .video
-            case .audio: return .audio
-            case .bookmark: return .bookmark
-            case .easel: return .easel
-            case .dismiss, .mention, .embed: return .embed
-            }
-        }
-
-        var title: String {
-            switch self {
-            case .dismiss: return "Dismiss"
-            case .mention: return "Mention"
-            case .bookmark: return "Bookmark"
-            case .embed: return "Embed"
-            case .easel: return "Easel"
-            case .pdf: return "PDF"
-            case .image: return "Image"
-            case .video: return "Video"
-            case .audio: return "Audio"
-            }
-        }
-    }
-
-    let link: NotePastedLink
-    let list: NoteMenuList
-    private let panel: NoteFloatingPanel
-    private let onChoose: (Choice) -> Void
-
-    init(link: NotePastedLink, embeddable: Bool, media: NoteBlockKind? = nil, onChoose: @escaping (Choice) -> Void) {
-        self.link = link
-        self.onChoose = onChoose
-        let list = NoteMenuList()
-        self.list = list
-        var items: [NoteMenuList.Item] = [
-            .init(id: Choice.dismiss.rawValue, title: "Dismiss", subtitle: "Keep it as a link", icon: .symbol("link"), section: "Paste as"),
-            .init(id: Choice.mention.rawValue, title: "Mention", subtitle: "A tidy inline chip", icon: .symbol("at"), section: "Paste as"),
-            .init(id: Choice.bookmark.rawValue, title: "Bookmark", subtitle: "A card with a preview", icon: .symbol("bookmark"), section: "Paste as"),
-        ]
-        if let media { Self.insert(media, into: &items) }
-        if NoteEaselAddress.id(from: link.url) != nil {
-            items.removeAll { $0.id == Choice.bookmark.rawValue }
-            items.append(.init(id: Choice.easel.rawValue, title: "Easel", subtitle: "Show the Easel right in the note",
-                               icon: .easelMark, section: "Paste as"))
-        }
-        if embeddable {
-            items.append(.init(id: Choice.embed.rawValue, title: "Embed", subtitle: "Show it right in the note",
-                               icon: .symbol("play.rectangle"), section: "Paste as"))
-        }
-        list.rowStyle = .detailed
-        list.items = items
-        list.prepare(origin: .keyboard)
-        panel = NoteFloatingPanel(content: list)
-        list.onActivate = { [weak self] item in
-            guard let choice = Choice(rawValue: item.id) else { return }
-            self?.onChoose(choice)
-        }
-        list.onCancel = { [weak self] in self?.onChoose(.dismiss) }
-        list.setAccessibilityLabel("Paste link as")
-    }
-
-    func present(in host: NSView, anchor: NSRect) {
-        panel.present(in: host, anchor: anchor, edge: .below, animated: true)
-    }
-
-    func offer(_ kind: NoteBlockKind) {
-        var items = list.items
-        let highlighted = list.highlightedIndex.flatMap { items.indices.contains($0) ? items[$0].id : nil }
-        guard Self.insert(kind, into: &items) else { return }
-        list.items = items
-        if let highlighted, let index = items.firstIndex(where: { $0.id == highlighted }) { list.highlightedIndex = index }
-    }
-
-    @discardableResult
-    private static func insert(_ kind: NoteBlockKind, into items: inout [NoteMenuList.Item]) -> Bool {
-        let row: NoteMenuList.Item
-        switch kind {
-        case .image: row = .init(id: Choice.image.rawValue, title: "Image", subtitle: "Show the picture in the note", icon: .symbol("photo"), section: "Paste as")
-        case .video: row = .init(id: Choice.video.rawValue, title: "Video", subtitle: "Play it right in the note", icon: .symbol("play.rectangle"), section: "Paste as")
-        case .audio: row = .init(id: Choice.audio.rawValue, title: "Audio", subtitle: "Play it right in the note", icon: .symbol("waveform"), section: "Paste as")
-        case .pdf: row = .init(id: Choice.pdf.rawValue, title: "PDF", subtitle: "Read it right in the note", icon: .symbol("doc.richtext"), section: "Paste as")
-        default: return false
-        }
-        guard !items.contains(where: { $0.id == row.id }) else { return false }
-        if kind == .pdf { items.append(row) } else { items.insert(row, at: min(1, items.count)) }
-        return true
-    }
-
-    func dismiss() {
-        panel.dismiss(animated: true)
-    }
 }
