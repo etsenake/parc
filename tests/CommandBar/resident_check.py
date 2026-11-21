@@ -37,7 +37,7 @@ assert len(calls) == 4, f"an unexpected teardown outside the lifetime policy: {l
 assert source.count("else { dismiss(restoreFocus: false); return }") == 1, "only the palette's present guard may dismiss directly"
 assert source.count("respond(to: .escape(scoped: isScoped || scopeInvalidated))") == 2, "Escape bypasses the lifetime policy"
 submit = body("submitResult")
-assert submit.count("respond(to: .submitted)") == 3 and "dismiss(" not in submit, "a submission bypasses the lifetime policy"
+assert submit.count("respond(to: .submitted)") == 4 and "dismiss(" not in submit, "a submission bypasses the lifetime policy"
 assert "refocusAfterAction()" in submit, "a resident submission no longer hands focus back"
 assert source.count("guard isOwnerValid?() != false else { respond(to: .ownerInvalid); return }") == 2
 assert "guard self.isOwnerValid?() != false else { self.respond(to: .ownerInvalid); return }" in source
