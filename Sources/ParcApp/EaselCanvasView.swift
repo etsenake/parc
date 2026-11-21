@@ -61,6 +61,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             self.selectionToolbar?.settle()
             self.imageZoomChanged()
             self.settleObjectMotion()
+            self.settleCanvasFeedback()
         })
     weak var pageObjects: EaselBrowserObjectHosting? { didSet { needsLayout = true } }
     var artwork: [UUID: NSView] = [:]
@@ -148,6 +149,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     let brushes = EaselCanvasBrushes()
     private var guides: EaselAlignmentGuides?
     var alignmentGuidesEnabled = true
+    let canvasFeedback = EaselCanvasFeedbackState()
+    var currentGuideLines: [EaselAlignmentGuides.Line] { (guides?.lines ?? []) + canvasFeedback.sizeLines }
     var arrangeState = EaselCanvasArrangeState() {
         didSet { if arrangeState.enteredGroup != oldValue.enteredGroup { refreshDecorations() } }
     }
@@ -605,7 +608,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private func guideDirtyBounds() -> NSRect {
         var dirty = NSRect.null
         let pad = 4 / max(canvasScale, 0.2)
-        for line in guides?.lines ?? [] {
+        for line in currentGuideLines {
             for segment in line.targetSegments + line.anchorSegments {
                 let origin = NSPoint(x: min(segment.start.x, segment.end.x), y: min(segment.start.y, segment.end.y))
                 let size = NSSize(width: max(1, abs(segment.end.x - segment.start.x)),
@@ -894,14 +897,14 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     override func draw(_ dirtyRect: NSRect) {
         NSColor.clear.setFill(); dirtyRect.fill(using: .copy)
         if !usesObjectSurfaces {
-            drawPresentedObjects(in: dirtyRect)
+            paintingLive { drawPresentedObjects(in: dirtyRect) }
             drawDecorations(in: dirtyRect)
         }
         rememberPaintedArtwork()
     }
     fileprivate func drawObject(id: UUID) {
         guard let item = items.first(where: { $0.id == id }) else { return }
-        drawObject(item)
+        paintingLive { drawObject(item) }
     }
     func drawObject(_ item: EaselItem, showsEditor: Bool = true) {
             let turned = EaselCanvasRotation.begin(item, straight: showsEditor && editingID == item.id)
@@ -997,19 +1000,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             easelSelectionColor.setStroke()
             let outline = NSBezierPath(rect: marqueeRect); outline.lineWidth = 1 / canvasScale; outline.stroke()
         }
-        let highlights = guides?.lines ?? []
-        if guideDirtyBounds().intersects(dirtyRect) {
-            for (segments, color) in [(highlights.flatMap(\.targetSegments), EaselAppearance.guide),
-                                      (highlights.flatMap(\.anchorSegments), easelSelectionColor)] {
-                let path = NSBezierPath(); path.lineWidth = 2.5 / canvasScale
-                path.lineCapStyle = .round; path.lineJoinStyle = .round
-                for segment in segments {
-                    path.move(to: NSPoint(x: segment.start.x, y: segment.start.y))
-                    path.line(to: NSPoint(x: segment.end.x, y: segment.end.y))
-                }
-                color.setStroke(); path.stroke()
-            }
-        }
+        if guideDirtyBounds().intersects(dirtyRect) { drawGuideLines(currentGuideLines) }
         drawArrangeDecorations(in: dirtyRect)
         for item in items where EaselObjectLink.hasLink(item) {
             let r = EaselObjectLink.badgeRect(for: EaselRotation.bounds(of: item), scale: canvasScale), badge = NSRect(x: r.x, y: r.y, width: r.width, height: r.height)
@@ -1720,6 +1711,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         draft = nil; textPreview = [:]; start = nil; original = []; stroke = []; geometryEdit = nil
         marqueeRect = nil; marqueeEnd = nil; tentativeSelection = nil
         selectionBeforeGesture = []; resizeHandle = nil; guides = nil
+        resetSnapFeedback()
         resetSectionGesture()
         cancelConnectorGesture()
         rotationDrag = nil; rotationTurn = nil; invalidateRotationChrome()
@@ -1740,6 +1732,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         if newWindow !== window {
             hoveredObjectID = nil; menuGeneration &+= 1; motion.cancel(); settleObjectMotion(); cancelPointerInteraction(); releaseTemporaryHand(); stopZoomAnimation()
+            settleCanvasFeedback()
             stopVideoPlayback(); finishImageCrop(save: true); stopImagePlayback()
             if newWindow != nil { DispatchQueue.main.async { [weak self] in self?.refreshImagePlayback() } }
         }
@@ -1791,6 +1784,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if imageMouseDown(event) { return }
         if tableMouseDown(with: event) { return }
         hoveredObjectID = nil
+        settleCanvasFeedback()
         motion.cancel(); cancelPointerInteraction(); guard finishEditing() else { return }; window?.makeFirstResponder(self)
         if beginNavigationGesture(event) { return }
         let point = convert(event.locationInWindow, from: nil); start = point; original = session.document.items
@@ -1814,7 +1808,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         if rotateZone(at: point) != nil,
            let drag = EaselRotationDrag(items: items.filter { movableSelection.contains($0.id) }, pointer: EaselPoint(x: point.x, y: point.y)) {
-            rotationDrag = drag; beginGeometry()
+            rotationDrag = drag; beginGeometry(); primeRotationSnap(drag.baseRotation ?? 0)
             lastGeometryPoint = point; invalidateIncrementalDisplay(layout: true); return
         }
         var hit = object(at: point, includingLocked: event.modifierFlags.contains(.shift))
@@ -1898,6 +1892,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                   let turned = edit.rotated(by: delta, around: drag.pivot) else { return }
             draft = turned
             rotationTurn = drag.baseRotation.map { EaselRotation.normalized($0 + delta) } ?? EaselRotation.normalized(delta)
+            noteRotationSnap(flags.contains(.command) ? nil : rotationTurn)
             EaselCanvasRotation.cursor(toward: EaselPoint(x: pointer.x - drag.pivot.x, y: pointer.y - drag.pivot.y)).set()
             invalidateRotationChrome(); invalidateIncrementalDisplay(layout: true); return
         }
@@ -1923,12 +1918,17 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                                      preserveAspect: scalingText || edit.preservesAspect(shift: flags.contains(.shift), command: flags.contains(.command)),
                                      aspectGuideRatio: intrinsicGuideRatio, viewport: .init(x: visibleRect.minX, y: visibleRect.minY,
                                                      width: visibleRect.width, height: visibleRect.height))
-        (draft, textPreview) = textGeometry(proposal, edit: edit, handle: resizeHandle, centered: flags.contains(.option))
+        let sized = equalSizeSnap(proposal, edit: edit, handle: resizeHandle, centered: flags.contains(.option),
+                                  enabled: alignmentGuidesEnabled && !flags.contains(.command) && !scalingText
+                                      && !edit.preservesAspect(shift: flags.contains(.shift), command: flags.contains(.command)))
+        noteGuideFeedback(currentGuideLines)
+        (draft, textPreview) = textGeometry(sized, edit: edit, handle: resizeHandle, centered: flags.contains(.option))
         if let proposal = draft { draft = fittedBoardGeometry(proposal, edit: edit, handle: resizeHandle) }
         draft = settledCodeBlocks(draft, edit: edit)
         for item in draft ?? [] where textPreview[item.id] != nil { textPreview[item.id]?.frame = item.frame }
         let dragged = resizeHandle == nil && edit.ids.count == 1 ? draft?.first(where: { edit.ids.contains($0.id) }) : nil
         refreshMindMapDrop(id: dragged?.id, frame: dragged?.frame, pointer: point)
+        noteSectionCarry(resizeHandle == nil ? draft : nil, originals: edit.originals)
         updateTextSizeBadge()
         window?.invalidateCursorRects(for: self); invalidateIncrementalDisplay(layout: true)
     }
@@ -2041,11 +2041,12 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                   guides?.matchesCanvas(width: bounds.width) == true {
             guard resizing || dragDistance > 3 else { return }
             if rotationDrag == nil, !resizing, commitMindMapDrop() { return }
-            commit(rotationDrag != nil ? "Rotate objects" : resizing ? "Resize objects" : "Move objects", coalescing: finishDuplicateDrag(), moved: edit.ids) { document in
+            let carried = commit(rotationDrag != nil ? "Rotate objects" : resizing ? "Resize objects" : "Move objects", coalescing: finishDuplicateDrag(), moved: edit.ids) { document in
                 guard let next = edit.applying(draft, to: document) else { return }
                 let fitted = fittedTables(textPreview.isEmpty ? next : EaselTextSizing.merging(Array(textPreview.values), into: next), ids: edit.ids)
                 document = fitted
             }
+            if carried { flashSectionCarry() }
         }
     }
     override func resetCursorRects() {
