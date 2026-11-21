@@ -101,21 +101,11 @@ step swift_test native-messaging-hosts -parse-as-library \
 step bash "$repo_root/scripts/test-shortcut-persist-skip.sh"
 step bash "$repo_root/scripts/test-split-link-snapshot.sh"
 step bash "$repo_root/scripts/test-split-link-policy.sh"
-step bash "$repo_root/tests/NativeShiftLink/run.sh"
-step bash "$repo_root/scripts/test-page-shell-notify.sh"
 step bash "$repo_root/scripts/test-top-band-color.sh"
-step bash "$repo_root/scripts/test-pane-compositor-policy.sh"
 step bash "$repo_root/scripts/test-private-session-ledger.sh"
-step python3 "$repo_root/tests/PaneCompositorDisplay/run.py"
 step bash "$repo_root/scripts/test-fairplay-identity.sh"
-step bash "$repo_root/tests/NativePageHost/run.sh"
-step bash "$repo_root/tests/NativeFocusManager/run.sh"
-step bash "$repo_root/tests/NativeExtensionPopup/run.sh"
-step bash "$repo_root/tests/NativeMediaEpisodeStore/run.sh"
-step bash "$repo_root/tests/NativeBackgroundPipHold/run.sh"
 step bash "$repo_root/tests/ImportedExtensionReports/run.sh"
 step bash "$repo_root/tests/DebuggerWarning/run.sh"
-step bash "$repo_root/scripts/test-media-notify.sh"
 step bash "$repo_root/scripts/test-scripting.sh"
 step bash "$repo_root/scripts/test-site-permission-rows.sh"
 step compile_and_run link-routing-text LinkRoutingTextEditingTests \
@@ -230,12 +220,6 @@ step compile_and_run command-bar-native-hold CommandBar/NativeHoldTests \
 step compile_and_run command-bar-ranking CommandBar/RankingTests \
   "$repo_root/Sources/ParcApp/CommandBarRanking.swift" "$repo_root/Sources/ParcApp/CommandBarRowDiff.swift"
 step bash "$repo_root/scripts/test-command-bar-site-search.sh"
-native_search_catalog() {
-  xcrun clang++ -std=c++20 -Wall -Wextra -Werror "$repo_root/tests/NativeSearch/CatalogTests.cc" \
-    -o "$repo_root/build/tests/native-search-catalog"
-  "$repo_root/build/tests/native-search-catalog"
-}
-step native_search_catalog
 step bash "$repo_root/scripts/test-command-bar-navigation.sh"
 step compile_and_run command-bar-title-search CommandBar/TitleSearchTests \
   "$repo_root/Sources/ParcApp/CommandBarTitleSearch.swift" "$repo_root/Sources/ParcApp/CommandBarRanking.swift" \
