@@ -128,7 +128,8 @@ enum EaselVectorExport {
         switch item.kind {
         case .text: return text(item, art.texts[item.id])
         case .rectangle, .circle: return shape(item)
-        case .arrow, .freehand: return stroke(item)
+        case .arrow: return stroke(item)
+        case .freehand: return drawing(item)
         case .image: return art.images[item.id].map { framedImage(item, $0) } ?? ""
         case .webCard, .browser:
             if let picture = art.images[item.id] { return linked(image(item, picture, corner: 8), item.url) }
@@ -281,6 +282,7 @@ enum EaselVectorExport {
             + ".easel-canvas{margin:0;overflow-x:auto;line-height:0}\n"
             + ".easel-svg{display:block;max-width:100%;height:auto;margin:0 auto}\n"
             + ".easel-svg a{cursor:pointer}\n" + codeCSS(palette.code)
+            + highlightCSS
     }
 
     static func htmlDocument(_ document: EaselDocument, art: EaselVectorArt, palette: EaselVectorPalette = .standard) -> String {
