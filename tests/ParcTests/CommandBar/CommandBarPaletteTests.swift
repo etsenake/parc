@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcCore
 
 @MainActor
 struct CommandBarPaletteTests {
@@ -88,7 +89,7 @@ struct CommandBarPaletteTests {
         var testDescription: String { name }
     }
 
-    static let inks: [Ink] = [
+    nonisolated static let inks: [Ink] = [
         Ink(name: "dark hover", color: { CommandBarPalette.rowHover }, dark: true, expected: SIMD4(1, 1, 1, 0.05)),
         Ink(name: "light hover", color: { CommandBarPalette.rowHover }, dark: false, expected: SIMD4(0, 0, 0, 0.05)),
         Ink(name: "dark primary text", color: { CommandBarPalette.textPrimary }, dark: true, expected: SIMD4(1, 1, 1, 0.8)),

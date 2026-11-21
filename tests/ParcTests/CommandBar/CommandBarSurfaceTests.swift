@@ -6,7 +6,7 @@ import Testing
 struct CommandBarSurfaceTests {
     typealias Support = CommandBarTestSupport
 
-    struct Fixture {
+    @MainActor struct Fixture {
         let window: NSWindow
         let surface: PopoverBackgroundView
 

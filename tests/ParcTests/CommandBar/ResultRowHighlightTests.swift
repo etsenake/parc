@@ -6,7 +6,7 @@ import Testing
 struct ResultRowHighlightTests {
     typealias Support = CommandBarTestSupport
 
-    struct Fixture {
+    @MainActor struct Fixture {
         let window: NSWindow
         let row = CommandResultRowView(frame: NSRect(x: 0, y: 0, width: 600, height: 50))
         let palette = CommandBarPalette(theme: CommandBarPaletteTests.pinkTheme())

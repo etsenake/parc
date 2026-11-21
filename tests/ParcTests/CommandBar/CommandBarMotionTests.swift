@@ -4,7 +4,7 @@ import Testing
 
 @MainActor
 struct CommandBarMotionTests {
-    struct Fixture {
+    @MainActor struct Fixture {
         let view: CommandBarShadowView
         let bar = NSRect(x: 100, y: 200, width: 700, height: 326)
 
