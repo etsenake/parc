@@ -1,3 +1,5 @@
+import Foundation
+
 @MainActor
 struct OnboardingReplayTransition {
     enum CloseResult: Equatable {
@@ -35,5 +37,14 @@ struct OnboardingReplayTransition {
     mutating func takeDeferredTermination() -> (() -> Void)? {
         defer { deferredTermination = nil }
         return deferredTermination
+    }
+
+    static func restoreOwner<Owner: AnyObject>(savedID: UUID?, returning owner: Owner?,
+                                               owners: [Owner], sessionID: (Owner) -> UUID,
+                                               ready: (Owner) -> Bool, standard: (Owner) -> Bool,
+                                               make: () throws -> Owner) rethrows -> Owner {
+        if let savedID { return try owners.first { sessionID($0) == savedID } ?? make() }
+        if let owner, let live = owners.first(where: { $0 === owner && ready($0) }) { return live }
+        return try owners.first { standard($0) && ready($0) } ?? make()
     }
 }

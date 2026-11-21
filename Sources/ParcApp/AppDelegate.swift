@@ -610,17 +610,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func restoreReplayWindow() throws -> BrowserWindowController? {
-        guard let saved = replayWindow else {
-            if let original = replayReturnOwner,
-               let live = windows.first(where: { $0 === original && $0.hasReadyPresentation }) { return live }
-            return try windows.first(where: { $0.store === store && !$0.isPopupWindow && $0.hasReadyPresentation })
-                ?? makeBrowserWindow(renderInitialSelection: true, showImmediately: false)
+        let saved = replayWindow
+        return try OnboardingReplayTransition.restoreOwner(savedID: saved?.record.id, returning: replayReturnOwner,
+            owners: windows, sessionID: { $0.sessionID }, ready: { $0.hasReadyPresentation },
+            standard: { $0.store === store && !$0.isPopupWindow }) {
+            let owner = try makeBrowserWindow(renderInitialSelection: true, showImmediately: false,
+                                              restoredRecord: saved?.record)
+            if let saved { owner.window?.setFrame(saved.frame, display: false) }
+            return owner
         }
-        if let owner = windows.first(where: { $0.sessionID == saved.record.id }) { return owner }
-        let owner = try makeBrowserWindow(renderInitialSelection: true, showImmediately: false,
-                                          restoredRecord: saved.record)
-        owner.window?.setFrame(saved.frame, display: false)
-        return owner
     }
 
     private func makeOnboardingReplay(_ mode: OnboardingWindow.Mode) throws -> OnboardingWindow {
