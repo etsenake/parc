@@ -231,4 +231,71 @@ struct SiteControlCenterTests {
         #expect(!presenter.isShown)
         #expect(closed == 1)
     }
+
+    @MainActor
+    private final class CardFixture {
+        let parent: NSWindow
+        let anchor: NSView
+        let presenter: SiteControlCenterController
+        let panel: NSWindow
+
+        init() throws {
+            _ = NSApplication.shared
+            let parent = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 600, height: 700),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            parent.isReleasedWhenClosed = false
+            parent.appearance = NSAppearance(named: .darkAqua)
+            let anchor = NSView(frame: CGRect(x: 280, y: 420, width: 32, height: 32))
+            parent.contentView?.addSubview(anchor)
+            var panel: NSWindow?
+            let presenter = SiteControlCenterController(model: SiteControlCenterModel(), orderPanel: { created, _ in panel = created })
+            presenter.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY,
+                           expectedWindow: parent, when: { true })
+            self.parent = parent
+            self.anchor = anchor
+            self.presenter = presenter
+            self.panel = try #require(panel)
+        }
+
+        func card(in view: NSView?) -> SiteControlCenterCard? {
+            guard let view else { return nil }
+            return (view as? SiteControlCenterCard) ?? view.subviews.lazy.compactMap { self.card(in: $0) }.first
+        }
+    }
+
+    @MainActor @Test func aCardUsesItsParentsAppearanceAndAnnouncesItselfAsAPopover() throws {
+        let fixture = try CardFixture()
+        defer { fixture.presenter.close() }
+
+        #expect(fixture.presenter.isAnchored(to: fixture.anchor))
+        #expect(fixture.panel.accessibilityRole() == .popover)
+        #expect(fixture.panel.accessibilityLabel() == "Site Control Center")
+        #expect(fixture.panel.appearance?.name == .darkAqua)
+        #expect(!fixture.panel.isVisible)
+    }
+
+    enum CloseSignal: CaseIterable { case escape, parentClosing }
+
+    @MainActor @Test(arguments: CloseSignal.allCases)
+    func theCardRunsBothCloseCallbacksOnce(_ signal: CloseSignal) throws {
+        let fixture = try CardFixture()
+        defer { fixture.presenter.close() }
+        var events: [String] = []
+        fixture.presenter.onClose = { events.append("close") }
+        fixture.presenter.onDidClose = { events.append("did close") }
+
+        switch signal {
+        case .escape:
+            let card = try #require(fixture.card(in: fixture.panel.contentView))
+            card.cancelOperation(nil)
+        case .parentClosing:
+            NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: fixture.parent)
+        }
+
+        #expect(events == ["close", "did close"])
+        fixture.presenter.close()
+        #expect(events == ["close", "did close"])
+        #expect(!fixture.presenter.isShown)
+        #expect(!fixture.presenter.isAwaitingNativeClose)
+    }
 }
