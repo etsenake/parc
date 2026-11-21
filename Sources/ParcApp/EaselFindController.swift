@@ -223,6 +223,7 @@ final class EaselFindController: NoteFindBarController {
         state.step(delta)
         revealCurrent()
         refreshViews()
+        if let match = state.currentMatch { canvas.pulseObjects([match.itemID]) }
     }
 
     private func recompute(keeping match: EaselFindMatch?, reveal shouldReveal: Bool) {
