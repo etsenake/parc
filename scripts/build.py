@@ -1018,7 +1018,6 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         version = app_version.read(repo)
     except ValueError as error:
         raise Refusal(str(error)) from error
-    optimization = ["-g", "-Onone"] if configuration == "debug" else compiler.release_swift_optimization()
     for name in ("native_engine_entry.h", "native_appkit_bridge.h"):
         if not (repo / "Engine/ParcNative" / name).is_file():
             raise Refusal("Independent native engine source is not integrated")
@@ -1048,15 +1047,8 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         notices = resources / "EngineLicenses"
         notices.mkdir()
         shutil.copy2(source / "LICENSE", notices / "Chromium-LICENSE.txt")
-        headers = repo / "Engine/ParcNative"
         common = ["-arch", "arm64", "-mmacosx-version-min=13.0", "-Wall", "-Wextra", "-Werror", "-O2"]
-        progress("packaging: compiling native facade and helpers")
-        run("xcrun", "clang", *common, "-Wno-unused-parameter", "-fobjc-arc", "-fblocks",
-            "-I", headers, "-I", repo / "Sources/ParcEngine",
-            "-DOS_MAC=1", "-c", facade, "-o", stage / "ParcEngine.o")
-        run("xcrun", "clang", *common, "-Wno-unused-parameter", "-fobjc-arc", "-fblocks",
-            "-I", headers, "-I", repo / "Sources/ParcEngine", "-c",
-            repo / "Sources/ParcEngine/VideoPiPWindow.m", "-o", stage / "VideoPiPWindow.o")
+        progress("packaging: compiling helpers")
         helper = engine / manifest["helper"]["image"]
         if {"sha256": sha(helper), "mode": stat.S_IMODE(helper.stat().st_mode), "image": manifest["helper"]["image"]} != manifest["helper"]:
             raise Refusal("GN helper differs from sealed engine")
@@ -1088,16 +1080,24 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
             helper_apps.append((helper, jit, suffix == CDM_HELPER))
         run("xcrun", "clang", *common, "-Wl,-fatal_warnings", repo / "Sources/ParcRestart/main.c",
             "-o", contents / "MacOS/ParcRestart")
-        swift = [path for directory in compiler.APP_SWIFT_DIRECTORIES for path in sorted((repo / directory).glob("*.swift"))]
-        if not swift:
+        if not any((repo / directory).glob("*.swift") for directory in compiler.APP_SWIFT_DIRECTORIES):
             raise Refusal("Native Swift application sources are missing")
-        progress(f"packaging: compiling Swift app ({len(swift)} sources, swiftc -v)")
-        run("xcrun", "swiftc", "-v", *compiler.app_swift_flags(repo, sparkle_release), *optimization, *swift,
-            stage / "ParcEngine.o", stage / "VideoPiPWindow.o", "-F", frameworks, "-framework", ENGINE_NAME,
+        progress(f"packaging: building the Swift package ({configuration})")
+        scratch = stage / "swiftpm"
+        compiler.run(compiler.swift_build(repo, configuration, scratch=scratch), capture=False,
+                     env=compiler.package_environment(sparkle_release))
+        try:
+            objects = compiler.package_objects(scratch, configuration)
+        except ValueError as error:
+            raise Refusal(str(error)) from error
+        progress(f"packaging: linking the Swift app ({len(objects)} objects, swiftc -v)")
+        run("xcrun", "swiftc", "-v", "-target", compiler.SWIFT_TARGET, *objects,
+            "-F", frameworks, "-framework", ENGINE_NAME, "-F", sparkle_release,
             "-framework", "Sparkle", "-framework", "Cocoa", "-framework", "QuartzCore", "-framework", "AVFoundation", "-framework", "AVKit",
             "-framework", "CoreSpotlight",
             "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks", "-Xlinker", "-fatal_warnings",
             "-o", contents / "MacOS/Parc", capture=False)
+        shutil.rmtree(scratch)
         sparkle_framework = embed_sparkle(sparkle_release, frameworks)
         progress("packaging: copying Swift runtime and signing")
         swift_runtime = stage / "swift-runtime"

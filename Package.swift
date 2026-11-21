@@ -14,8 +14,7 @@ func sparkleCache() -> String {
     return root + "/build/sparkle/Sparkle-\(value("VERSION"))-\(value("SHA256").prefix(12))"
 }
 
-let engineFrameworks = Context.environment["PARC_ENGINE_FRAMEWORKS"]
-    ?? "/Volumes/Parc/chromium/src/out/ParcDistribution_GN_arm64"
+let engineStubs = root + "/Stubs"
 let sparkleFrameworks = Context.environment["PARC_SPARKLE_FRAMEWORKS"] ?? sparkleCache()
 
 let strict: [SwiftSetting] = [.treatAllWarnings(as: .error)]
@@ -29,8 +28,7 @@ let facadeFlags: [CSetting] = nativeFlags + [
 let engineImport: [SwiftSetting] = [
     .unsafeFlags(["-Xcc", "-I", "-Xcc", nativeHeaders, "-Xcc", "-DOS_MAC=1", "-F", sparkleFrameworks]),
 ]
-let frameworkRuntime = ["-Xlinker", "-rpath", "-Xlinker", engineFrameworks,
-                        "-Xlinker", "-rpath", "-Xlinker", sparkleFrameworks]
+let frameworkRuntime = ["-Xlinker", "-rpath", "-Xlinker", sparkleFrameworks]
 
 let package = Package(
     name: "Parc",
@@ -48,8 +46,7 @@ let package = Package(
                 .unsafeFlags(["-O2"], .when(configuration: .release)),
             ],
             linkerSettings: [
-                .unsafeFlags(["-F", engineFrameworks]),
-                .linkedFramework("Chromium Embedded Framework"),
+                .unsafeFlags(["-F", engineStubs, "-Xlinker", "-weak_framework", "-Xlinker", "Chromium Embedded Framework"]),
             ]
         ),
         .executableTarget(
@@ -94,7 +91,16 @@ let package = Package(
                     cSettings: facadeFlags + [.headerSearchPath("../Shared")]),
         .testTarget(name: "EngineFacadeOldEngineTests", path: "tests/EngineFacadeTests/OldEngine",
                     cSettings: facadeFlags + [.headerSearchPath("../Shared")]),
-        .testTarget(name: "ParcTests", dependencies: ["Parc"], path: "tests/ParcTests",
+        .plugin(
+            name: "GenerateEngineStub",
+            capability: .command(
+                intent: .custom(verb: "generate-engine-stub",
+                                description: "Regenerate the engine framework text stub from the bridge headers"),
+                permissions: [.writeToPackageDirectory(reason: "Writes Stubs/Chromium Embedded Framework.framework")]
+            )
+        ),
+        .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: "."),
+        .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles"], path: "tests/ParcTests",
                     swiftSettings: strict + engineImport,
                     linkerSettings: [.unsafeFlags(frameworkRuntime)]),
     ],
