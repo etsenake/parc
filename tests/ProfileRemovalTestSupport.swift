@@ -48,3 +48,6 @@ enum PCNativeProfileRemovalState { case removed, pending, failed }
     }
 }
 
+@MainActor enum NoteFolderPreferences {
+    static func removeProfile(_ profileID: UUID) {}
+}
