@@ -68,7 +68,7 @@ Git and release notes retain history.
   [motion](easel-motion.md), [connectors and quick create](easel-connectors.md),
   [images and media](easel-images.md), [live captures](easel-live-captures.md),
   [embedded pages](embedded-pages.md), [board features](easel-board-features.md),
-  [tables](easel-tables.md), [code blocks](easel-code-blocks.md),
+  [tables](easel-tables.md), [code blocks](easel-code-blocks.md), [block equations](easel-equations.md),
   [Mermaid diagrams](easel-mermaid.md), [arranging](easel-arranging.md),
   [rotate and flip](easel-rotation.md), [drawing](easel-drawing.md), [stamps](easel-stamps.md),
   [mind maps](easel-mind-maps.md), [pages](easel-pages.md).

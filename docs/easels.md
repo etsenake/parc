@@ -353,7 +353,7 @@ moves with) apply to any object. Text, shapes and stickies hold rich text;
 sections keep a plain title. Tables keep their grid, cell text and merges in a
 `table` field described in [Easel tables](easel-tables.md#saved-format), and
 [code blocks](easel-code-blocks.md#saved-format) keep their code in `text` with an
-optional `language`. Mind-map nodes and branches carry an optional `mindMap`
+optional `language`. [Block equations](easel-equations.md#saved-format) keep their TeX in `text`. Mind-map nodes and branches carry an optional `mindMap`
 link ([mind maps](easel-mind-maps.md#saved-format)). A text style may carry `alignment`, `customSize` (8 to 400
 points, overriding the preset size) and, on text objects only, `autoWidth` for
 point text; absent means the preset size and fixed-width area text.
