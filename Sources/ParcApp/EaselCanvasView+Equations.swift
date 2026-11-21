@@ -17,7 +17,7 @@ extension EaselCanvasView {
     }
 
     @discardableResult
-    func placeEmptyEquation(tex: String = "") -> UUID? {
+    func placeEmptyEquation(tex: String = "", beside target: EaselRect? = nil) -> UUID? {
         guard canEditEquations else { return nil }
         cancelPointerInteraction()
         guard finishEditing() else { return nil }
@@ -27,13 +27,13 @@ extension EaselCanvasView {
         let top = session.document.items.map(\.zIndex).max() ?? 0
         let text = EaselEquation.clamped(tex)
         guard top < Int.max,
-              var frame = EaselMediaPlacement.placeholderFrame(for: .equation, visible: visible, occupied: session.document.items.map(\.frame)) else { return nil }
+              var frame = target ?? EaselMediaPlacement.placeholderFrame(for: .equation, visible: visible, occupied: session.document.items.map(\.frame)) else { return nil }
         if !EaselEquation.isBlank(text) {
             frame = EaselEquation.frame(natural: EaselEquationArtwork.natural(text), scale: 1,
                                         centeredOn: EaselPoint(x: frame.x + frame.width / 2, y: frame.y + frame.height / 2))
         }
         let item = EaselItem(kind: .equation, frame: frame, zIndex: top + 1, text: text, color: insertionColor)
-        let group = UUID()
+        let group = session.adoptedGroup ?? UUID()
         guard withObjectMotion(.appear, { commit(EaselMediaPlacement.addName(for: .equation), coalescing: group, { $0.items.append(item) }) }) else { return nil }
         selection = [item.id]
         window?.makeFirstResponder(self)

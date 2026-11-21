@@ -34,7 +34,7 @@ final class EaselSlashCompletion: EaselTextCompletion {
         list.maximumHeight = 372
         list.filtersOnTyping = false
         list.fixedWidth = NoteSlashMenuController.blockMenuWidth
-        list.noResultsTitle = "Nothing by that name. Keep typing?"
+        list.noResultsTitle = "Nothing by that name. Try another word?"
         list.setAccessibilityLabel("Insert")
         list.onActivate = { [weak self] item in self?.choose(item.id) }
         list.onCancel = { [weak self] in self?.cancel() }
@@ -200,16 +200,15 @@ final class EaselSlashCompletion: EaselTextCompletion {
             guard let kind = Self.paragraph(id) else { NSSound.beep(); return }
             view.applySlashParagraph(kind, removing: range)
         case .emoji:
-            view.insertCompletion("", replacing: range, name: "Slash")
+            view.insertCompletion("", replacing: range, name: "Remove slash")
             openEmojiPicker(at: range.location)
         case .object(let object):
-            view.insertCompletion("", replacing: range, name: "Slash")
-            if canvas?.placeSlashObject(object) != true { NSSound.beep() }
+            if canvas?.placeSlashObject(object, removing: range, in: view) != true { NSSound.beep() }
         case .mention, .date:
-            view.insertCompletion("", replacing: range, name: "Slash")
+            view.insertCompletion("", replacing: range, name: "Remove slash")
             if row.action == .date { view.beginDate() } else { view.beginMention() }
         case .inlineEquation:
-            view.insertCompletion("", replacing: range, name: "Slash")
+            view.insertCompletion("", replacing: range, name: "Remove slash")
             view.insertInlineEquation()
         case .divider:
             view.applySlashDivider(removing: range)

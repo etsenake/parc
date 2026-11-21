@@ -141,7 +141,8 @@ caret. Below them, **Add to the
 Easel** places a Sticky, Shape, Image, Video, Audio, File, PDF, Embed,
 Bookmark, Block equation, Table or Code block beside the text, to its right or
 below it when something is already there (`EaselSlashPlacement`), selected and
-as one Undo step, using the same empty placeholders as the toolbar's Add menus.
+as one Undo step that also covers removing the `/query` and the empty text it
+leaves behind, using the same empty placeholders as the toolbar's Add menus.
 The object rows come from `EaselSlashCatalog`, whose windowless tests cover the
 rows, search and placement.
 
@@ -157,7 +158,10 @@ stored value onto a colour that follows the appearance, and copying or saving
 always goes back to the light value. HTML and SVG exports draw a rounded
 rectangle behind the words filled with a `--easel-mark-*` variable that has light
 and dark values. **Code** (⌘E) toggles the Notes inline code look, a monospaced
-face over a soft grey fill; turning it off restores the object's typeface.
+face over a soft grey fill; turning it off restores the object's typeface. Code
+words that are also highlighted keep the Code button on (the highlight shows in
+place of the grey fill, and clearing it brings the grey back), and ⌘E on them
+removes the code and keeps the highlight.
 ⇧⌘H repeats the last colour or highlight, shared with Notes for highlights.
 **Turn Into** is the toolbar's paragraph menu, showing the Notes rows and icons
 for Text, Headings, lists (including To-do list) and Quote. The @ button starts a mention in place of the
