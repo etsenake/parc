@@ -23,6 +23,7 @@ final class EaselTemplateCard: PointingHandButton {
     let template: EaselTemplate
     var isCurrent = false { didSet { if isCurrent != oldValue { needsDisplay = true; refreshSurface() } } }
     var onHover: ((EaselTemplateCard) -> Void)?
+    var onHoverEnd: ((EaselTemplateCard) -> Void)?
     private var hoverTracking: NSTrackingArea?
     static let size = NSSize(width: 152, height: 132)
     static let thumbnailHeight: CGFloat = 92
@@ -60,6 +61,7 @@ final class EaselTemplateCard: PointingHandButton {
     }
 
     override func mouseEntered(with event: NSEvent) { onHover?(self) }
+    override func mouseExited(with event: NSEvent) { onHoverEnd?(self) }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true; refreshSurface() }
 
     override func highlight(_ flag: Bool) {
@@ -136,6 +138,7 @@ final class EaselTemplateGallery: NSView, NoteFloatingPanelContent {
     private let subtitleLabel = NSTextField(labelWithString: "Start from a board and make it yours.")
     private(set) var cards: [EaselTemplateCard] = []
     private(set) var current: Int?
+    private var pointerDriven = false
 
     init(columns: Int = 4, showsHeader: Bool = true) {
         self.columns = max(1, columns)
@@ -153,7 +156,15 @@ final class EaselTemplateGallery: NSView, NoteFloatingPanelContent {
             let card = EaselTemplateCard(template: template)
             card.target = self
             card.action = #selector(cardPressed(_:))
-            card.onHover = { [weak self] card in self?.setCurrent(self?.cards.firstIndex { $0 === card }) }
+            card.onHover = { [weak self] card in
+                guard let self else { return }
+                self.pointerDriven = true
+                self.setCurrent(self.cards.firstIndex { $0 === card })
+            }
+            card.onHoverEnd = { [weak self] card in
+                guard let self, self.pointerDriven, let current = self.current, self.cards[current] === card else { return }
+                self.setCurrent(nil)
+            }
             cards.append(card)
             addSubview(card)
         }
@@ -222,6 +233,7 @@ final class EaselTemplateGallery: NSView, NoteFloatingPanelContent {
         guard flags.isEmpty || (flags == .shift && event.keyCode == 48) else { return false }
         let count = shownCount
         guard count > 0 else { return false }
+        pointerDriven = false
         let index = current
         func move(_ delta: Int) {
             guard let index else { setCurrent(delta < 0 ? count - 1 : 0); return }
