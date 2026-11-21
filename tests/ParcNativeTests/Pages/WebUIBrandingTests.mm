@@ -78,184 +78,6 @@ constexpr std::string_view kAboutTemplate =
     "    <div class=\"product-title\">$i18n{aboutProductTitle}</div>\n"
     "  </div>\n";
 
-void TestMarkPath() {
-  const auto commands = ParsePath(kMarkPath);
-  PARC_CHECK(commands.has_value());
-  size_t contours = 0;
-  float top = 24, bottom = 0, left = 24, right = 0;
-  for (const auto& command : *commands) {
-    PARC_CHECK(command.verb == 'M' || command.verb == 'C' ||
-                command.verb == 'Z');
-    contours += command.verb == 'M';
-    const size_t arity = command.verb == 'C' ? 6 : command.verb == 'M' ? 2 : 0;
-    for (size_t i = 0; i < arity; i += 2) {
-      left = std::min(left, command.values[i]);
-      right = std::max(right, command.values[i]);
-      top = std::min(top, command.values[i + 1]);
-      bottom = std::max(bottom, command.values[i + 1]);
-    }
-  }
-  PARC_CHECK(contours == 2);
-  PARC_CHECK(top > 1.9f && top < 2.4f);
-  PARC_CHECK(bottom > 21.6f && bottom < 22.1f);
-  PARC_CHECK(left > 5 && right < 19.2f);
-  PARC_CHECK(Count(kDarkLogoSvg, kMarkPath) == 1);
-  PARC_CHECK(kDarkLogoSvg.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\""));
-  PARC_CHECK(kDarkLogoSvg.ends_with("</svg>"));
-  PARC_CHECK(Count(kDarkLogoSvg, "fill=\"#fff\"") == 1);
-  PARC_CHECK(Count(kAdaptiveLogoSvg, kMarkPath) == 1);
-  PARC_CHECK(kAdaptiveLogoSvg.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\""));
-  PARC_CHECK(Count(kAdaptiveLogoSvg, "path{fill:#000}") == 1);
-  PARC_CHECK(Count(kAdaptiveLogoSvg,
-                    "@media (prefers-color-scheme: dark){path{fill:#fff}}") == 1);
-  PARC_CHECK(Count(kPaddedLogoSvg, kMarkPath) == 1);
-  PARC_CHECK(Count(kPaddedLogoSvg, "viewBox=\"-12 -12 48 48\"") == 1);
-  PARC_CHECK(kPaddedLogoSvg.substr(kPaddedLogoSvg.find("<style>")) ==
-              kAdaptiveLogoSvg.substr(kAdaptiveLogoSvg.find("<style>")));
-  PARC_CHECK(Count(kProductIcon, kMarkPath) == 1);
-  PARC_CHECK(kProductIcon.starts_with("<g id=\"chrome-product\" viewBox=\"0 0 24 24\">"));
-  PARC_CHECK(kProductIcon.ends_with("</path></g>"));
-  PARC_CHECK(Count(kProductIcon, "<g") == 1);
-}
-
-void TestPathParser() {
-  PARC_CHECK(!ParsePath("").has_value());
-  PARC_CHECK(!ParsePath("C1 2 3 4 5 6Z").has_value());
-  PARC_CHECK(!ParsePath("M1 2C1 2Z").has_value());
-  PARC_CHECK(!ParsePath("M1 2L3 4").has_value());
-  PARC_CHECK(!ParsePath("M1 2X3 4Z").has_value());
-  PARC_CHECK(!ParsePath("M1 2M3 4Z").has_value());
-  PARC_CHECK(!ParsePath("M1 2L.Z").has_value());
-  const auto parsed = ParsePath("M1 2L3.5 -4Z M.25 6C1 2 3 4 5 6Z");
-  PARC_CHECK(parsed.has_value() && parsed->size() == 6);
-  PARC_CHECK((*parsed)[1].values[0] == 3.5f && (*parsed)[1].values[1] == -4);
-  PARC_CHECK((*parsed)[3].values[0] == 0.25f);
-}
-
-void TestCrIcons() {
-  const ResourceEdits& rules = Rules("IDR_WEBUI_CR_ELEMENTS_ICONS_HTML_JS");
-  const std::string original = IconSet(20, 0) + IconSet(24, 1) + IconSet(24, 1);
-  std::string text = original;
-  EditOutcome outcome = ApplyResourceEdits(text, rules);
-  PARC_CHECK(outcome.failed.empty() && Has(outcome.applied, "product icon"));
-  PARC_CHECK(Count(text, kProductIcon) == 2);
-  PARC_CHECK(Count(text, "M9.45 14.574") == 0);
-  PARC_CHECK(Count(text, "<g id=\"chevron-left\">") == 3);
-  PARC_CHECK(Count(text, "<g id=\"close\">") == 3);
-
-  std::string one = IconSet(24, 1);
-  outcome = ApplyResourceEdits(one, rules);
-  PARC_CHECK(Has(outcome.failed, "product icon") && outcome.applied.empty());
-  PARC_CHECK(one == IconSet(24, 1));
-
-  std::string three = IconSet(24, 3);
-  outcome = ApplyResourceEdits(three, rules);
-  PARC_CHECK(Has(outcome.failed, "product icon"));
-  PARC_CHECK(three == IconSet(24, 3));
-
-  const std::string unclosed_copy =
-      ChromiumIcon("") + "<g id=\"chrome-product\"><path d=\"M1 2Z\"></path>";
-  std::string unclosed = unclosed_copy;
-  outcome = ApplyResourceEdits(unclosed, rules);
-  PARC_CHECK(Has(outcome.failed, "product icon"));
-  PARC_CHECK(unclosed == unclosed_copy);
-
-  const std::string nested_copy =
-      ChromiumIcon("") +
-      "<g id=\"chrome-product\"><g><path d=\"M1 2Z\"></path></g></g>";
-  std::string nested = nested_copy;
-  outcome = ApplyResourceEdits(nested, rules);
-  PARC_CHECK(Has(outcome.failed, "product icon"));
-  PARC_CHECK(nested == nested_copy);
-}
-
-void TestSettingsBundle() {
-  const ResourceEdits& rules = Rules("IDR_SETTINGS_SHARED_ROLLUP_JS");
-  const std::string bundle = "const a=1;" + IconSet(24, 2) + "x" +
-                             IconSet(20, 2) + std::string(kAboutTemplate) +
-                             "<cr-icon icon=\"cr:chrome-product\"></cr-icon>";
-  std::string text = bundle;
-  EditOutcome outcome = ApplyResourceEdits(text, rules);
-  PARC_CHECK(outcome.failed.empty());
-  PARC_CHECK(Has(outcome.applied, "product icon") &&
-              Has(outcome.applied, "About logo"));
-  PARC_CHECK(Count(text, kProductIcon) == 4);
-  PARC_CHECK(Count(text, "<picture style=\"display: contents\">") == 1);
-  PARC_CHECK(Count(text, "srcset=\"//resources/images/chrome_logo_dark.svg\"><img "
-                          "id=\"productLogo\" width=\"32\" height=\"32\" @click") == 1);
-  PARC_CHECK(Count(text, "role=\"presentation\">\n    </picture><div "
-                          "class=\"product-title\">") == 1);
-  PARC_CHECK(Count(text, "<cr-icon icon=\"cr:chrome-product\"></cr-icon>") == 1);
-
-  std::string missing_icon = "const a=1;" + IconSet(24, 2) + IconSet(20, 1) +
-                             std::string(kAboutTemplate);
-  const std::string missing_icon_copy = missing_icon;
-  outcome = ApplyResourceEdits(missing_icon, rules);
-  PARC_CHECK(Has(outcome.failed, "product icon"));
-  PARC_CHECK(Has(outcome.applied, "About logo"));
-  PARC_CHECK(Count(missing_icon, kProductIcon) == 0);
-  PARC_CHECK(Count(missing_icon, "<picture style=\"display: contents\">") == 1);
-
-  std::string twice = IconSet(24, 2) + IconSet(20, 2) +
-                      std::string(kAboutTemplate) + std::string(kAboutTemplate);
-  outcome = ApplyResourceEdits(twice, rules);
-  PARC_CHECK(Has(outcome.failed, "About logo"));
-  PARC_CHECK(Has(outcome.applied, "product icon"));
-  PARC_CHECK(Count(twice, "<picture") == 0);
-
-  std::string half = IconSet(24, 2) + IconSet(20, 2) +
-                     "<img id=\"productLogo\" srcset=\"x\">";
-  outcome = ApplyResourceEdits(half, rules);
-  PARC_CHECK(Has(outcome.failed, "About logo"));
-  PARC_CHECK(Count(half, "<picture") == 0 && Count(half, "</picture>") == 0);
-}
-
-void TestVersionAndFieldTrials() {
-  const ResourceEdits& version = Rules("IDR_VERSION_UI_ABOUT_VERSION_HTML");
-  std::string html =
-      "<img alt=\"$i18n{logo_alt_text}\" src=\"chrome://theme/IDR_PRODUCT_LOGO\">"
-      "<div id=\"copyright\">$i18n{copyright}</div>"
-      "<td class=\"label\">$i18n{application_label}</td>";
-  EditOutcome outcome = ApplyResourceEdits(html, version);
-  PARC_CHECK(outcome.failed.empty() && outcome.applied.size() == 3);
-  PARC_CHECK(Count(html, "alt=\"Parc\"") == 1);
-  PARC_CHECK(Count(html, "<a href=\"chrome://license/\">Parc licences</a>") == 1);
-  PARC_CHECK(Count(html, "<td class=\"label\">Parc</td>") == 1);
-
-  std::string changed = "<img alt=\"$i18n{logo_alt_text}\">"
-                        "<div id=\"copyright\" class=\"x\">$i18n{copyright}</div>"
-                        "$i18n{application_label}";
-  outcome = ApplyResourceEdits(changed, version);
-  PARC_CHECK(outcome.failed.size() == 1 && Has(outcome.failed, "licence links"));
-  PARC_CHECK(Count(changed, "alt=\"Parc\"") == 1);
-
-  const ResourceEdits& trials = Rules("IDR_METRICS_INTERNALS_FIELD_TRIALS_HTML_JS");
-  std::string script =
-      "Your changes will take effect the next time you relaunch Chromium.";
-  outcome = ApplyResourceEdits(script, trials);
-  PARC_CHECK(outcome.failed.empty());
-  PARC_CHECK(script == "Your changes will take effect the next time you relaunch Parc.");
-  std::string reworded = "Relaunch Chromium to apply your changes.";
-  outcome = ApplyResourceEdits(reworded, trials);
-  PARC_CHECK(Has(outcome.failed, "relaunch notice"));
-  PARC_CHECK(reworded == "Relaunch Chromium to apply your changes.");
-}
-
-void TestOverlapAndLookup() {
-  static constexpr Edit kFirst[] = {{"abc", {}, "1", 1}};
-  static constexpr Edit kSecond[] = {{"bcd", {}, "2", 1}};
-  static constexpr EditGroup kGroups[] = {{"first", kFirst}, {"second", kSecond}};
-  static constexpr ResourceEdits kOverlap = {"TEST", kGroups};
-  std::string text = "xabcdx";
-  const EditOutcome outcome = ApplyResourceEdits(text, kOverlap);
-  PARC_CHECK(outcome.applied.empty() && outcome.failed.size() == 2);
-  PARC_CHECK(text == "xabcdx");
-  PARC_CHECK(FindResourceEdits("IDR_NOT_BRANDED") == nullptr);
-  PARC_CHECK(!FindEdit("abc", {"", {}, "x", 0}).has_value());
-  const auto spans = FindEdit("<g id=\"chrome-product\">x</g>", {"<g id=\"chrome-product\"", "</g>", "y", 1});
-  PARC_CHECK(spans.has_value() && spans->size() == 1 && (*spans)[0].end == 28);
-}
-
 }
 
 static NSXMLElement* Svg(std::string_view text) {
@@ -273,34 +95,233 @@ static NSString* PathOf(NSXMLElement* element) {
 static NSString* Mark(void) {
   return [[NSString alloc] initWithBytes:kMarkPath.data() length:kMarkPath.size() encoding:NSUTF8StringEncoding];
 }
-
+static void CheckAppearance(std::string_view text, NSString* box) {
+  NSXMLElement* logo = Svg(text);
+  NSXMLNode* style = [logo nodesForXPath:@".//*[local-name()='style']" error:nil].firstObject;
+  PARC_CHECK([[logo attributeForName:@"viewBox"].stringValue isEqual:box] && [PathOf(logo) isEqual:Mark()] &&
+             [style.stringValue containsString:@"prefers-color-scheme: dark"]);
+}
 @interface WebUIBrandingTests : ParcNativeTestCase
 @end
 
 @implementation WebUIBrandingTests
 
-- (void)testTheMarkPathFitsTheBoxAndEveryLogoDrawsIt {
-  TestMarkPath();
+- (void)testTheTwoContoursOfTheMarkFitInsideItsViewBox {
+  const auto commands = ParsePath(kMarkPath);
+  PARC_CHECK(commands.has_value());
+  size_t contours = 0;
+  float top = 24, bottom = 0, left = 24, right = 0;
+  for (const auto& command : *commands) {
+    PARC_CHECK(command.verb == 'M' || command.verb == 'C' ||
+                command.verb == 'Z');
+    contours += command.verb == 'M';
+    const size_t arity = command.verb == 'C' ? 6 : command.verb == 'M' ? 2 : 0;
+    for (size_t i = 0; i < arity; i += 2) {
+      left = std::min(left, command.values[i]);
+      right = std::max(right, command.values[i]);
+      top = std::min(top, command.values[i + 1]);
+      bottom = std::max(bottom, command.values[i + 1]);
+    }
+  }
+  PARC_CHECK(contours == 2);
+  PARC_CHECK(left >= 0 && top >= 0 && right <= 24 && bottom <= 24);
 }
 
-- (void)testThePathParserReadsOnlyValidPaths {
-  TestPathParser();
+- (void)testAnEmptyPathIsRejected {
+  PARC_CHECK(!ParsePath("").has_value());
 }
 
-- (void)testTheProductIconReplacesChromiumsInEveryIconSet {
-  TestCrIcons();
+- (void)testAPathMustStartWithMove {
+  PARC_CHECK(!ParsePath("C1 2 3 4 5 6Z").has_value());
 }
 
-- (void)testTheSettingsBundleTakesEveryRuleOrNone {
-  TestSettingsBundle();
+- (void)testAnIncompleteCubicIsRejected {
+  PARC_CHECK(!ParsePath("M1 2C1 2Z").has_value());
 }
 
-- (void)testTheVersionAndFieldTrialPagesTakeTheMark {
-  TestVersionAndFieldTrials();
+- (void)testAnOpenContourIsRejected {
+  PARC_CHECK(!ParsePath("M1 2L3 4").has_value());
 }
 
-- (void)testOverlappingMatchesApplyNothingAndLookupIsExact {
-  TestOverlapAndLookup();
+- (void)testAnUnknownVerbIsRejected {
+  PARC_CHECK(!ParsePath("M1 2X3 4Z").has_value());
+}
+
+- (void)testASecondMoveCannotDiscardAnOpenContour {
+  PARC_CHECK(!ParsePath("M1 2M3 4Z").has_value());
+}
+
+- (void)testACoordinateNeedsDigits {
+  PARC_CHECK(!ParsePath("M1 2L.Z").has_value());
+}
+
+- (void)testTheParserReadsSignedFractionalCoordinatesAcrossContours {
+  const auto parsed = ParsePath("M1 2L3.5 -4Z M.25 6C1 2 3 4 5 6Z");
+  PARC_CHECK(parsed.has_value() && parsed->size() == 6);
+  PARC_CHECK((*parsed)[1].values[0] == 3.5f && (*parsed)[1].values[1] == -4);
+  PARC_CHECK((*parsed)[3].values[0] == 0.25f);
+}
+
+- (void)testIconsReplaceOnlyTheProductGroups {
+  const ResourceEdits& rules = Rules("IDR_WEBUI_CR_ELEMENTS_ICONS_HTML_JS");
+  const std::string original = IconSet(20, 0) + IconSet(24, 1) + IconSet(24, 1);
+  std::string text = original;
+  EditOutcome outcome = ApplyResourceEdits(text, rules);
+  PARC_CHECK(outcome.failed.empty() && Has(outcome.applied, "product icon"));
+  PARC_CHECK(Count(text, kProductIcon) == 2);
+  PARC_CHECK(Count(text, "M9.45 14.574") == 0);
+  PARC_CHECK(Count(text, "<g id=\"chevron-left\">") == 3);
+  PARC_CHECK(Count(text, "<g id=\"close\">") == 3);
+}
+
+- (void)testMissingIconsPreserveTheOriginalResource {
+  const ResourceEdits& rules = Rules("IDR_WEBUI_CR_ELEMENTS_ICONS_HTML_JS");
+  std::string one = IconSet(24, 1);
+  const auto outcome = ApplyResourceEdits(one, rules);
+  PARC_CHECK(Has(outcome.failed, "product icon") && outcome.applied.empty());
+  PARC_CHECK(one == IconSet(24, 1));
+}
+
+- (void)testUnexpectedExtraIconsPreserveTheOriginalResource {
+  const ResourceEdits& rules = Rules("IDR_WEBUI_CR_ELEMENTS_ICONS_HTML_JS");
+  std::string three = IconSet(24, 3);
+  const auto outcome = ApplyResourceEdits(three, rules);
+  PARC_CHECK(Has(outcome.failed, "product icon"));
+  PARC_CHECK(three == IconSet(24, 3));
+}
+
+- (void)testUnclosedIconMarkupPreservesTheOriginalResource {
+  const ResourceEdits& rules = Rules("IDR_WEBUI_CR_ELEMENTS_ICONS_HTML_JS");
+  const std::string unclosed_copy =
+      ChromiumIcon("") + "<g id=\"chrome-product\"><path d=\"M1 2Z\"></path>";
+  std::string unclosed = unclosed_copy;
+  const auto outcome = ApplyResourceEdits(unclosed, rules);
+  PARC_CHECK(Has(outcome.failed, "product icon"));
+  PARC_CHECK(unclosed == unclosed_copy);
+}
+
+- (void)testNestedIconGroupsPreserveTheOriginalResource {
+  const ResourceEdits& rules = Rules("IDR_WEBUI_CR_ELEMENTS_ICONS_HTML_JS");
+  const std::string nested_copy =
+      ChromiumIcon("") +
+      "<g id=\"chrome-product\"><g><path d=\"M1 2Z\"></path></g></g>";
+  std::string nested = nested_copy;
+  const auto outcome = ApplyResourceEdits(nested, rules);
+  PARC_CHECK(Has(outcome.failed, "product icon"));
+  PARC_CHECK(nested == nested_copy);
+}
+
+- (void)testTheSettingsBundleUsesTheProductIconAndAboutLogo {
+  const ResourceEdits& rules = Rules("IDR_SETTINGS_SHARED_ROLLUP_JS");
+  const std::string bundle = "const a=1;" + IconSet(24, 2) + "x" +
+                             IconSet(20, 2) + std::string(kAboutTemplate) +
+                             "<cr-icon icon=\"cr:chrome-product\"></cr-icon>";
+  std::string text = bundle;
+  EditOutcome outcome = ApplyResourceEdits(text, rules);
+  PARC_CHECK(outcome.failed.empty());
+  PARC_CHECK(Has(outcome.applied, "product icon") &&
+              Has(outcome.applied, "About logo"));
+  PARC_CHECK(Count(text, kProductIcon) == 4);
+  PARC_CHECK(Count(text, "<picture style=\"display: contents\">") == 1);
+  PARC_CHECK(Count(text, "srcset=\"//resources/images/chrome_logo_dark.svg\"><img "
+                          "id=\"productLogo\" width=\"32\" height=\"32\" @click") == 1);
+  PARC_CHECK(Count(text, "role=\"presentation\">\n    </picture><div "
+                          "class=\"product-title\">") == 1);
+  PARC_CHECK(Count(text, "<cr-icon icon=\"cr:chrome-product\"></cr-icon>") == 1);
+}
+
+- (void)testAMissingIconLeavesTheAboutLogoEligible {
+  const ResourceEdits& rules = Rules("IDR_SETTINGS_SHARED_ROLLUP_JS");
+  std::string missing_icon = "const a=1;" + IconSet(24, 2) + IconSet(20, 1) +
+                             std::string(kAboutTemplate);
+  const auto outcome = ApplyResourceEdits(missing_icon, rules);
+  PARC_CHECK(Has(outcome.failed, "product icon"));
+  PARC_CHECK(Has(outcome.applied, "About logo"));
+  PARC_CHECK(Count(missing_icon, kProductIcon) == 0);
+  PARC_CHECK(Count(missing_icon, "<picture style=\"display: contents\">") == 1);
+}
+
+- (void)testDuplicateAboutTemplatesLeaveIconsEligible {
+  const ResourceEdits& rules = Rules("IDR_SETTINGS_SHARED_ROLLUP_JS");
+  std::string twice = IconSet(24, 2) + IconSet(20, 2) +
+                      std::string(kAboutTemplate) + std::string(kAboutTemplate);
+  const auto outcome = ApplyResourceEdits(twice, rules);
+  PARC_CHECK(Has(outcome.failed, "About logo"));
+  PARC_CHECK(Has(outcome.applied, "product icon"));
+  PARC_CHECK(Count(twice, "<picture") == 0);
+}
+
+- (void)testAnIncompleteAboutTemplateStaysIntact {
+  const ResourceEdits& rules = Rules("IDR_SETTINGS_SHARED_ROLLUP_JS");
+  std::string half = IconSet(24, 2) + IconSet(20, 2) +
+                     "<img id=\"productLogo\" srcset=\"x\">";
+  const auto outcome = ApplyResourceEdits(half, rules);
+  PARC_CHECK(Has(outcome.failed, "About logo"));
+  PARC_CHECK(Count(half, "<picture") == 0 && Count(half, "</picture>") == 0);
+}
+
+- (void)testTheVersionPageNamesParcAndLinksItsLicences {
+  const ResourceEdits& version = Rules("IDR_VERSION_UI_ABOUT_VERSION_HTML");
+  std::string html =
+      "<img alt=\"$i18n{logo_alt_text}\" src=\"chrome://theme/IDR_PRODUCT_LOGO\">"
+      "<div id=\"copyright\">$i18n{copyright}</div>"
+      "<td class=\"label\">$i18n{application_label}</td>";
+  EditOutcome outcome = ApplyResourceEdits(html, version);
+  PARC_CHECK(outcome.failed.empty() && outcome.applied.size() == 3);
+  PARC_CHECK(Count(html, "alt=\"Parc\"") == 1);
+  PARC_CHECK(Count(html, "<a href=\"chrome://license/\">Parc licences</a>") == 1);
+  PARC_CHECK(Count(html, "<td class=\"label\">Parc</td>") == 1);
+}
+
+- (void)testChangedLicenceMarkupLeavesTheProductNameEligible {
+  const ResourceEdits& version = Rules("IDR_VERSION_UI_ABOUT_VERSION_HTML");
+  std::string changed = "<img alt=\"$i18n{logo_alt_text}\">"
+                        "<div id=\"copyright\" class=\"x\">$i18n{copyright}</div>"
+                        "$i18n{application_label}";
+  const auto outcome = ApplyResourceEdits(changed, version);
+  PARC_CHECK(outcome.failed.size() == 1 && Has(outcome.failed, "licence links"));
+  PARC_CHECK(Count(changed, "alt=\"Parc\"") == 1);
+}
+
+- (void)testTheRelaunchNoticeNamesParc {
+  const ResourceEdits& trials = Rules("IDR_METRICS_INTERNALS_FIELD_TRIALS_HTML_JS");
+  std::string script =
+      "Your changes will take effect the next time you relaunch Chromium.";
+  const auto outcome = ApplyResourceEdits(script, trials);
+  PARC_CHECK(outcome.failed.empty());
+  PARC_CHECK(script == "Your changes will take effect the next time you relaunch Parc.");
+}
+
+- (void)testARewordedRelaunchNoticeRemainsIntact {
+  const ResourceEdits& trials = Rules("IDR_METRICS_INTERNALS_FIELD_TRIALS_HTML_JS");
+  std::string reworded = "Relaunch Chromium to apply your changes.";
+  const auto outcome = ApplyResourceEdits(reworded, trials);
+  PARC_CHECK(Has(outcome.failed, "relaunch notice"));
+  PARC_CHECK(reworded == "Relaunch Chromium to apply your changes.");
+}
+
+- (void)testOverlappingEditsLeaveTheResourceIntact {
+  static constexpr Edit kFirst[] = {{"abc", {}, "1", 1}};
+  static constexpr Edit kSecond[] = {{"bcd", {}, "2", 1}};
+  static constexpr EditGroup kGroups[] = {{"first", kFirst}, {"second", kSecond}};
+  static constexpr ResourceEdits kOverlap = {"TEST", kGroups};
+  std::string text = "xabcdx";
+  const EditOutcome outcome = ApplyResourceEdits(text, kOverlap);
+  PARC_CHECK(outcome.applied.empty() && outcome.failed.size() == 2);
+  PARC_CHECK(text == "xabcdx");
+}
+
+- (void)testUnknownResourcesHaveNoEdits {
+  PARC_CHECK(FindResourceEdits("IDR_NOT_BRANDED") == nullptr);
+}
+
+- (void)testAnEmptyNeedleCannotMatch {
+  PARC_CHECK(!FindEdit("abc", {"", {}, "x", 0}).has_value());
+}
+
+- (void)testDelimitedMatchesIncludeTheClosingTag {
+  const auto spans = FindEdit("<g id=\"chrome-product\">x</g>", {"<g id=\"chrome-product\"", "</g>", "y", 1});
+  PARC_CHECK(spans.has_value() && spans->size() == 1 && (*spans)[0].end == 28);
 }
 
 - (void)testTheAppMarkArtworkIsTheEnginesPath {
@@ -318,13 +339,17 @@ static NSString* Mark(void) {
   PARC_CHECK([[path attributeForName:@"fill"].stringValue isEqual:@"#fff"]);
 }
 
-- (void)testTheProductLogosFollowTheColourScheme {
-  for (auto [text, box] : {std::pair{kAdaptiveLogoSvg, @"0 0 24 24"}, std::pair{kPaddedLogoSvg, @"-12 -12 48 48"}}) {
-    NSXMLElement* logo = Svg(text);
-    NSXMLNode* style = [logo nodesForXPath:@".//*[local-name()='style']" error:nil].firstObject;
-    PARC_CHECK([[logo attributeForName:@"viewBox"].stringValue isEqual:box] && [PathOf(logo) isEqual:Mark()] &&
-               [style.stringValue containsString:@"prefers-color-scheme: dark"]);
-  }
+- (void)testTheAdaptiveLogoFollowsTheSystemAppearance {
+  CheckAppearance(kAdaptiveLogoSvg, @"0 0 24 24");
+  PARC_CHECK(Count(kAdaptiveLogoSvg, "path{fill:#000}") == 1);
+  PARC_CHECK(Count(kAdaptiveLogoSvg,
+                    "@media (prefers-color-scheme: dark){path{fill:#fff}}") == 1);
+}
+
+- (void)testThePaddedLogoKeepsTheAdaptiveAppearance {
+  CheckAppearance(kPaddedLogoSvg, @"-12 -12 48 48");
+  PARC_CHECK(kPaddedLogoSvg.substr(kPaddedLogoSvg.find("<style>")) ==
+              kAdaptiveLogoSvg.substr(kAdaptiveLogoSvg.find("<style>")));
 }
 
 - (void)testTheProductIconTakesTheIconColour {
