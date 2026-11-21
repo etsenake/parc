@@ -49,8 +49,10 @@ final class MiniPlayerMotion {
         animatedLayers.removeAllObjects()
     }
 
-    func layout(in root: NSView, deck: NSView, companion: NSView?, animated: Bool, changes: () -> Void) {
-        let canAnimate = animated && root.window != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    func layout(in root: NSView, deck: NSView, companion: NSView?, animated: Bool,
+                reduceMotion: @autoclosure () -> Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+                changes: () -> Void) {
+        let canAnimate = animated && root.window != nil && !reduceMotion()
         var before = canAnimate ? deckSnapshots(deck) : []
         if canAnimate, let companion, let entry = snapshot(companion) { before.append(entry) }
         if !canAnimate { settle() }
