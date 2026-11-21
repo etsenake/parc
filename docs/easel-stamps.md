@@ -80,5 +80,5 @@ canvas drawing; HTML and SVG export use `EaselVectorExport`.
 - Wheel and picker: `Sources/ParcApp/EaselStampPanels.swift`, installed through
   `EaselCanvasView.stampPanelsFactory`.
 - Tests: `swift test --filter EaselStampTests` and
-  `scripts/test-notes-editor.sh EaselStampArtworkTests`, both windowless. Wheel and picker code is
+  `swift test --filter EaselStampArtworkTests`, both windowless. Wheel and picker code is
   compile-only.

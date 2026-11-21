@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import Parc
@@ -57,6 +58,17 @@ final class NoteEditorTemporaryFolder {
 
 @MainActor
 enum NoteEditorFixtures {
+    static let fontNames = ["Nunito-ExtraBold", "Nunito-Regular", "Nunito-Bold", "Nunito-Italic", "Nunito-BoldItalic",
+                            "EBGaramond-VariableFont_wght", "SpaceMono-Regular", "SpaceMono-Bold"]
+
+    static func registerFonts() {
+        for name in fontNames {
+            if let url = Bundle.module.url(forResource: name, withExtension: "ttf", subdirectory: "Fixtures") {
+                CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+            }
+        }
+    }
+
     static func useMathFont() {
         let url = Bundle.module.url(forResource: "STIXTwoMath-Regular", withExtension: "otf", subdirectory: "Fixtures")!
         NoteMathRenderer.useFont(at: url)
@@ -87,5 +99,30 @@ enum NoteEditorBlocks {
     }
     static func todo(_ text: String = "", checked: Bool = false, _ children: [NoteBlock] = []) -> NoteBlock {
         block(.todo, text, children) { $0.checked = checked }
+    }
+
+    static func tag(_ block: NoteBlock) -> String {
+        switch block.kind {
+        case .paragraph: return "p"
+        case .heading: return (block.props.toggleable ? "th" : "h") + String(block.props.level) + (block.isCollapsed ? "-" : "")
+        case .bulletedItem: return "ul"
+        case .numberedItem: return "ol" + (block.props.listStart.map { "@\($0)" } ?? "")
+        case .todo: return block.props.checked ? "done" : "todo"
+        case .toggle: return block.props.expanded ? "toggle" : "toggle-"
+        case .equation: return "eq"
+        default: return block.kind.rawValue
+        }
+    }
+
+    static func outline(_ blocks: [NoteBlock], depth: Int = 0) -> String {
+        blocks.map { block -> String in
+            var line = String(repeating: "  ", count: depth) + tag(block)
+            let text = block.kind.hasText ? block.text.plainText : ""
+            if !text.isEmpty { line += " " + text.replacingOccurrences(of: "\n", with: "⏎") }
+            if let grid = block.props.table { line += " " + grid.rows.map { $0.map(\.plainText).joined(separator: "|") }.joined(separator: "/") }
+            if !block.props.caption.isEmpty { line += " [" + block.props.caption.plainText + "]" }
+            let nested = outline(block.children, depth: depth + 1)
+            return nested.isEmpty ? line : line + "\n" + nested
+        }.joined(separator: "\n")
     }
 }

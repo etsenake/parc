@@ -179,6 +179,7 @@ extension NoteEditorProcessWide {
             var emoji: NSImage?
             art.requestImage(forNote: try note("Later.md", icon: "🐢")) { emoji = $0 }
             jobs.runAll()
+            clock.advance(0.01)
             #expect(emoji != nil)
         }
 
@@ -187,6 +188,7 @@ extension NoteEditorProcessWide {
             var answer: NSImage?
             art.requestImage(forNote: try note("Never.md", icon: "nope")) { answer = $0 }
             jobs.runAll()
+            clock.advance(0.01)
             #expect(answer === noteMark)
         }
 
@@ -196,6 +198,9 @@ extension NoteEditorProcessWide {
             var picture: NSImage?
             art.requestImage(forNote: try note("Framed.md", icon: "Attachments/tall.png")) { picture = $0 }
             jobs.runAll()
+            clock.advance(0.01)
+            jobs.runAll()
+            clock.advance(0.01)
             #expect(picture?.size == NSSize(width: 16, height: 16))
         }
 

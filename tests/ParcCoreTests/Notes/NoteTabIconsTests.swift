@@ -182,29 +182,74 @@ extension NoteProcessWide {
         #expect(icons.follow(plain) == nil, "text sessions never show an icon")
     }
 
-    @Test func aColdLookupWaitsForTheBackgroundRead() async throws {
+    final class Heard {
+        var announcements: [Set<String>?] = []
+    }
+
+    func deferredIcons() -> (NoteTabIcons, NoteFileDeferredJobs, Heard, AnyCancellable) {
         let icons = freshIcons()
-        NoteTabIcons.clock = NoteFileSystemClock.shared
-        NoteTabIcons.worker = NoteFileWorker(label: "org.parc.tests.tab-icons")
-        defer {
-            NoteTabIcons.clock = clock
-            NoteTabIcons.worker = .inline
-        }
-        var heard: [Set<String>?] = []
-        let watch = icons.changes.sink { heard.append($0) }
+        let jobs = NoteFileDeferredJobs()
+        NoteTabIcons.worker = NoteFileWorker(deferred: jobs)
+        let heard = Heard()
+        let watch = icons.changes.sink { heard.announcements.append($0) }
+        return (icons, jobs, heard, watch)
+    }
+
+    @Test func aColdLookupWaitsForTheBackgroundRead() {
+        let (icons, _, _, watch) = deferredIcons()
         defer { watch.cancel() }
         let url = note("Slow.md", iconNote("🐢"))
-        #expect(icons.lookup(url) == .pending, "a cold lookup waits for the background read")
-        #expect(icons.lookup(url) == .pending, "and doesn't start a second read")
-        #expect(await NoteFileTestSupport.spin(timeout: 5) { !heard.isEmpty }, "the background read announces itself")
-        #expect(icons.lookup(url) == .known(.emoji("🐢")), "then the icon is known")
+        #expect(icons.lookup(url) == .pending)
+    }
+
+    @Test func aColdLookupDoesNotStartASecondRead() {
+        let (icons, jobs, _, watch) = deferredIcons()
+        defer { watch.cancel() }
+        let url = note("Slow.md", iconNote("🐢"))
+        let reads = ReadCounter()
+        icons.readIcon = { reads.bump(); return NoteTabIcons.frontMatterIcon($0) }
+        _ = icons.lookup(url)
+        _ = icons.lookup(url)
+        jobs.runAll()
+        #expect(reads.count == 1)
+    }
+
+    @Test func theBackgroundReadAnnouncesItselfAndThenTheIconIsKnown() {
+        let (icons, jobs, heard, watch) = deferredIcons()
+        defer { watch.cancel() }
+        let url = note("Slow.md", iconNote("🐢"))
+        _ = icons.lookup(url)
+        jobs.runAll()
+        clock.advance(0.01)
+        #expect(!heard.announcements.isEmpty)
+        #expect(icons.lookup(url) == .known(.emoji("🐢")))
+    }
+
+    func rereadAfterTwoFolderChanges() -> (NoteTabIcons, Heard, URL, AnyCancellable) {
+        let (icons, jobs, heard, watch) = deferredIcons()
+        let url = note("Slow.md", iconNote("🐢"))
+        _ = icons.lookup(url)
+        jobs.runAll()
+        clock.advance(0.01)
         _ = note("Slow.md", iconNote("🐇"))
         signalFolder(of: url)
         signalFolder(of: url)
-        #expect(await NoteFileTestSupport.spin(timeout: 5) { heard.count >= 2 }, "rereads land in the background")
-        #expect(icons.lookup(url) == .known(.emoji("🐇")), "with the new icon")
-        _ = await NoteFileTestSupport.spin(timeout: 0.3) { false }
-        #expect(heard.count == 2, "two quick folder changes still announce once")
+        jobs.runAll()
+        clock.advance(0.01)
+        return (icons, heard, url, watch)
+    }
+
+    @Test func rereadsLandInTheBackgroundWithTheNewIcon() {
+        let (icons, heard, url, watch) = rereadAfterTwoFolderChanges()
+        defer { watch.cancel() }
+        #expect(heard.announcements.count >= 2)
+        #expect(icons.lookup(url) == .known(.emoji("🐇")))
+    }
+
+    @Test func twoQuickFolderChangesStillAnnounceOnce() {
+        let (_, heard, _, watch) = rereadAfterTwoFolderChanges()
+        defer { watch.cancel() }
+        #expect(heard.announcements.count == 2)
     }
 
     @Test func followingReadsTheLiveIcon() throws {
@@ -232,36 +277,50 @@ extension NoteProcessWide {
         clock.advance(0)
     }
 
-    @Test func theColdReadIsStuckInTheBackground() async throws {
-        let icons = freshIcons()
-        let gate = DispatchSemaphore(value: 0)
-        NoteTabIcons.clock = NoteFileSystemClock.shared
-        NoteTabIcons.worker = NoteFileWorker(label: "org.parc.tests.tab-icons.stale")
-        defer {
-            NoteTabIcons.clock = clock
-            NoteTabIcons.worker = .inline
-        }
-        var heard: [Set<String>?] = []
-        let watch = icons.changes.sink { heard.append($0) }
-        defer { watch.cancel() }
+    func staleRead() throws -> (NoteTabIcons, NoteFileSession, URL, Heard, NoteFileDeferredJobs, AnyCancellable) {
+        let (icons, jobs, heard, watch) = deferredIcons()
         let url = note("Stale.md", iconNote("🔥"))
-        icons.readIcon = { note in
-            gate.wait()
-            return NoteTabIcons.frontMatterIcon(note)
-        }
-        #expect(icons.lookup(url) == .pending, "the cold read is stuck in the background")
+        #expect(icons.lookup(url) == .pending)
         let session = try NoteFileSession.open(url)
         session.retain()
         session.page.edit("Change Icon", kind: .settings) { $0.settings.icon = "💧" }
-        #expect(icons.follow(session) == .emoji("💧"), "the open session has a newer icon")
-        gate.signal()
-        #expect(await NoteFileTestSupport.spin(timeout: 5) { !heard.isEmpty }, "the stale read still settles waiters")
-        #expect(icons.lookup(url) == .known(.emoji("💧")), "the stale read doesn't beat the session")
-        icons.readIcon = { NoteTabIcons.frontMatterIcon($0) }
+        return (icons, session, url, heard, jobs, watch)
+    }
+
+    @Test func theOpenSessionHasANewerIconThanTheStuckColdRead() throws {
+        let (icons, session, _, _, _, watch) = try staleRead()
+        defer { watch.cancel(); session.release() }
+        #expect(icons.follow(session) == .emoji("💧"))
+    }
+
+    @Test func theStaleReadStillSettlesWaiters() throws {
+        let (icons, session, _, heard, jobs, watch) = try staleRead()
+        defer { watch.cancel(); session.release() }
+        _ = icons.follow(session)
+        jobs.runAll()
+        clock.advance(0.01)
+        #expect(!heard.announcements.isEmpty)
+    }
+
+    @Test func theStaleReadDoesNotBeatTheSession() throws {
+        let (icons, session, url, _, jobs, watch) = try staleRead()
+        defer { watch.cancel(); session.release() }
+        _ = icons.follow(session)
+        jobs.runAll()
+        clock.advance(0.01)
+        #expect(icons.lookup(url) == .known(.emoji("💧")))
+    }
+
+    @Test func afterClosingTheSessionsIconIsRememberedNotTheStaleRead() throws {
+        let (icons, session, url, _, jobs, watch) = try staleRead()
+        defer { watch.cancel() }
+        _ = icons.follow(session)
+        jobs.runAll()
+        clock.advance(0.01)
         try session.flush()
         session.release()
-        #expect(NoteFileSession.session(for: url) == nil, "the session closes")
-        #expect(icons.lookup(url) == .known(.emoji("💧")), "after closing, the session's icon is remembered, not the stale read")
+        #expect(NoteFileSession.session(for: url) == nil)
+        #expect(icons.lookup(url) == .known(.emoji("💧")))
     }
 
     final class ReadCounter: @unchecked Sendable {

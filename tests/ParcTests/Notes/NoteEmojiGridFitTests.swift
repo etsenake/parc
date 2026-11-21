@@ -5,12 +5,14 @@ import Testing
 
 @MainActor
 struct NoteEmojiGridFitTests {
-    func catalog() -> (NoteEmojiCatalog, UserDefaults, String) {
+    static let sampleItems: [NoteEmojiGridView.Item] = {
         let suite = "Parc.Notes.EmojiGridFitTests." + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
         let url = Bundle.module.url(forResource: "emoji", withExtension: "json", subdirectory: "Fixtures")!
-        return (NoteEmojiCatalog(url: url, defaults: defaults), defaults, suite)
-    }
+        let catalog = NoteEmojiCatalog(url: url, defaults: defaults)
+        return catalog.all.prefix(60).map { NoteEmojiGridView.Item(emoji: $0, character: $0.character) }
+    }()
 
     func checkRows(_ grid: NoteEmojiGridView) {
         #expect(!grid.isEmpty)
@@ -31,9 +33,7 @@ struct NoteEmojiGridFitTests {
 
     @Test(arguments: NoteEmojiGridFitTests.spans)
     func theGridFitsEveryWidth(span: Int) {
-        let (catalog, defaults, suite) = catalog()
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let items = Array(catalog.all.prefix(60).map { NoteEmojiGridView.Item(emoji: $0, character: $0.character) })
+        let items = Self.sampleItems
         let grid = NoteEmojiGridView()
         for gutter: CGFloat in [0, 11, 15, 17] {
             for width in [CGFloat(span), CGFloat(span) - gutter] {
@@ -46,9 +46,7 @@ struct NoteEmojiGridFitTests {
     }
 
     @Test func theLastColumnClearsAnOverlayScroller() {
-        let (catalog, defaults, suite) = catalog()
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let items = Array(catalog.all.prefix(60).map { NoteEmojiGridView.Item(emoji: $0, character: $0.character) })
+        let items = Self.sampleItems
         let grid = NoteEmojiGridView()
         grid.setSections([NoteEmojiGridView.Section(category: nil, title: nil, items: items)], width: 408, minimumHeight: 0, span: 408, gutter: 17)
         grid.layoutGrid(width: 408, minimumHeight: 0, span: 408, gutter: 17)

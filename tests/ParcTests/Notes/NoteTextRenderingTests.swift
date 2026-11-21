@@ -333,9 +333,15 @@ struct NoteTextRenderingTests {
         #expect(abs(glyphs.midX - width / 2) < 2)
     }
 
-    func svgs() throws -> (inline: NotePageEquationArtwork.SVG, display: NotePageEquationArtwork.SVG) {
-        (try #require(NotePageEquationArtwork.svg("x^2 + y^2 = z^2", display: false)),
-         try #require(NotePageEquationArtwork.svg("\\frac{a}{b} = c", display: true)))
+    @MainActor struct Artworks {
+        let inline: (markup: String, size: CGSize)
+        let display: (markup: String, size: CGSize)
+    }
+
+    func svgs() throws -> Artworks {
+        let inline = try #require(NotePageEquationArtwork.svg("x^2 + y^2 = z^2", display: false))
+        let display = try #require(NotePageEquationArtwork.svg("\\frac{a}{b} = c", display: true))
+        return Artworks(inline: (inline.markup, inline.size), display: (display.markup, display.size))
     }
 
     @Test func artworkCarriesLightAndDarkInk() throws {
@@ -398,7 +404,7 @@ struct NoteTextRenderingTests {
         #expect(exportedHTML(mathPage()).contains("img.equation{vertical-align:middle;max-width:100%}"))
     }
 
-    struct Numbered {
+    @MainActor struct Numbered {
         let labelled = NoteBlock(.equation, text: "\\begin{equation} E = mc^2 \\label{energy} \\end{equation}")
         let page: NotePage
         let numbering: NotePageMathNumbering

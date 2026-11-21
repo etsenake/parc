@@ -15,7 +15,7 @@ struct DocumentsLibraryCatalogTests {
         return reference
     }
 
-    struct Samples {
+    @MainActor struct Samples {
         let trip: NoteReference
         let groceries: NoteReference
         let journal: NoteReference

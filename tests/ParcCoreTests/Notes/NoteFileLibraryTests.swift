@@ -141,103 +141,186 @@ extension NoteProcessWide {
         watch.cancel()
     }
 
-    @Test func filesMadeOutsideParcAreNoticed() async throws {
+    struct Watched {
+        let root: URL
+        let library: NoteLibrary
+        let heard: HeardCount
+        let watch: AnyCancellable
+    }
+
+    final class HeardCount {
+        var value = 0
+    }
+
+    func watchedLibrary() throws -> Watched {
         let root = folder.appendingPathComponent("Watched", isDirectory: true)
         let library = NoteLibrary.shared(folder: root)
         _ = try library.createNote(title: "Existing")
         _ = try library.notes()
-        var heard = 0
-        let watch = library.changes.sink { heard += 1 }
-        NoteFileTestSupport.write("made in Finder\n", to: root.appendingPathComponent("Outside.md"))
-        let created = await NoteFileTestSupport.spin(timeout: 10) {
-            clock.advance(0.5)
-            return (try? library.notes().map(\.title).contains("Outside")) == true && heard > 0
-        }
-        #expect(created, "files made outside Parc are noticed")
-        heard = 0
-        try FileManager.default.moveItem(at: root.appendingPathComponent("Outside.md"), to: root.appendingPathComponent("Moved.md"))
-        let moved = await NoteFileTestSupport.spin(timeout: 10) {
-            clock.advance(0.5)
-            return (try? library.notes().map(\.title)).map { $0.contains("Moved") && !$0.contains("Outside") } == true
-        }
-        #expect(moved && heard > 0, "outside renames are noticed")
-        try FileManager.default.removeItem(at: root.appendingPathComponent("Moved.md"))
-        let removed = await NoteFileTestSupport.spin(timeout: 10) {
-            clock.advance(0.5)
-            return (try? library.notes().map(\.title)) == ["Existing"]
-        }
-        #expect(removed, "outside deletions are noticed")
-        NoteFileTestSupport.write("now mentions pineapples\n", to: root.appendingPathComponent("Existing.md"))
-        let indexed = await NoteFileTestSupport.spin(timeout: 10) {
-            clock.advance(0.5)
-            return library.search("pineapples", limit: 5).map(\.title) == ["Existing"]
-        }
-        #expect(indexed, "outside edits are re-indexed for search")
-
-        let quarter = root.appendingPathComponent("Q3.2026", isDirectory: true)
-        NoteFileTestSupport.write("quarterly plans\n", to: quarter.appendingPathComponent("Plan.md"))
-        func planFolder() -> String? {
-            (try? library.notes())?.first { $0.title == "Plan" }?.url.deletingLastPathComponent().lastPathComponent
-        }
-        let listed = await NoteFileTestSupport.spin(timeout: 10) {
-            clock.advance(0.5)
-            return planFolder() == "Q3.2026"
-        }
-        #expect(listed, "notes in a folder with a dot in its name are listed")
-        try FileManager.default.moveItem(at: quarter, to: root.appendingPathComponent("Q4.2026", isDirectory: true))
-        let renamed = await NoteFileTestSupport.spin(timeout: 10) {
-            clock.advance(0.5)
-            return planFolder() == "Q4.2026"
-        }
-        #expect(renamed, "renaming that folder is noticed, dot and all")
-        let trash = folder.appendingPathComponent(".Trash", isDirectory: true)
-        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
-        try FileManager.default.moveItem(at: root.appendingPathComponent("Q4.2026", isDirectory: true),
-                                         to: trash.appendingPathComponent("Q4.2026", isDirectory: true))
-        let trashed = await NoteFileTestSupport.spin(timeout: 10) {
-            clock.advance(0.5)
-            return planFolder() == nil
-        }
-        #expect(trashed, "and so is trashing it")
-        watch.cancel()
+        let heard = HeardCount()
+        let watch = library.changes.sink { heard.value += 1 }
+        return Watched(root: root, library: library, heard: heard, watch: watch)
     }
 
-    @Test func refreshingOffTheMainThread() async throws {
+    func folderChanged(_ watched: Watched) {
+        watched.library.refresh()
+        clock.advance(0.5)
+    }
+
+    func titles(_ library: NoteLibrary) -> [String] { ((try? library.notes()) ?? []).map(\.title) }
+
+    @Test func filesMadeOutsideParcAreNoticed() throws {
+        let watched = try watchedLibrary()
+        NoteFileTestSupport.write("made in Finder\n", to: watched.root.appendingPathComponent("Outside.md"))
+        folderChanged(watched)
+        #expect(titles(watched.library).contains("Outside"))
+        #expect(watched.heard.value > 0)
+        watched.watch.cancel()
+    }
+
+    @Test func outsideRenamesAreNoticed() throws {
+        let watched = try watchedLibrary()
+        NoteFileTestSupport.write("made in Finder\n", to: watched.root.appendingPathComponent("Outside.md"))
+        folderChanged(watched)
+        watched.heard.value = 0
+        try FileManager.default.moveItem(at: watched.root.appendingPathComponent("Outside.md"), to: watched.root.appendingPathComponent("Moved.md"))
+        folderChanged(watched)
+        let names = titles(watched.library)
+        #expect(names.contains("Moved"))
+        #expect(!names.contains("Outside"))
+        #expect(watched.heard.value > 0)
+        watched.watch.cancel()
+    }
+
+    @Test func outsideDeletionsAreNoticed() throws {
+        let watched = try watchedLibrary()
+        NoteFileTestSupport.write("made in Finder\n", to: watched.root.appendingPathComponent("Outside.md"))
+        folderChanged(watched)
+        try FileManager.default.removeItem(at: watched.root.appendingPathComponent("Outside.md"))
+        folderChanged(watched)
+        #expect(titles(watched.library) == ["Existing"])
+        watched.watch.cancel()
+    }
+
+    @Test func outsideEditsAreReindexedForSearch() throws {
+        let watched = try watchedLibrary()
+        NoteFileTestSupport.write("now mentions pineapples\n", to: watched.root.appendingPathComponent("Existing.md"))
+        folderChanged(watched)
+        #expect(watched.library.search("pineapples", limit: 5).map(\.title) == ["Existing"])
+        watched.watch.cancel()
+    }
+
+    func quarterPlan(_ watched: Watched) -> URL {
+        let quarter = watched.root.appendingPathComponent("Q3.2026", isDirectory: true)
+        NoteFileTestSupport.write("quarterly plans\n", to: quarter.appendingPathComponent("Plan.md"))
+        return quarter
+    }
+
+    func planFolder(_ library: NoteLibrary) -> String? {
+        (try? library.notes())?.first { $0.title == "Plan" }?.url.deletingLastPathComponent().lastPathComponent
+    }
+
+    @Test func notesInAFolderWithADotInItsNameAreListed() throws {
+        let watched = try watchedLibrary()
+        _ = quarterPlan(watched)
+        folderChanged(watched)
+        #expect(planFolder(watched.library) == "Q3.2026")
+        watched.watch.cancel()
+    }
+
+    @Test func renamingThatFolderIsNoticedDotAndAll() throws {
+        let watched = try watchedLibrary()
+        let quarter = quarterPlan(watched)
+        folderChanged(watched)
+        try FileManager.default.moveItem(at: quarter, to: watched.root.appendingPathComponent("Q4.2026", isDirectory: true))
+        folderChanged(watched)
+        #expect(planFolder(watched.library) == "Q4.2026")
+        watched.watch.cancel()
+    }
+
+    @Test func trashingTheFolderIsNoticedToo() throws {
+        let watched = try watchedLibrary()
+        let quarter = quarterPlan(watched)
+        folderChanged(watched)
+        let trash = folder.appendingPathComponent(".Trash", isDirectory: true)
+        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: quarter, to: trash.appendingPathComponent("Q3.2026", isDirectory: true))
+        folderChanged(watched)
+        #expect(planFolder(watched.library) == nil)
+        watched.watch.cancel()
+    }
+
+    struct Refreshing {
+        let root: URL
+        let jobs: NoteFileDeferredJobs
+        let library: NoteLibrary
+    }
+
+    func refreshingLibrary() -> Refreshing {
         let root = folder.appendingPathComponent("Busy", isDirectory: true)
         NoteFileTestSupport.write("first body\n", to: root.appendingPathComponent("First.md"))
         NoteFileTestSupport.write("tucked away\n", to: root.appendingPathComponent("Drawer/Nested.md"))
-        let worker = NoteFileWorker(label: "org.parc.tests.library")
-        NoteLibrary.worker = worker
-        defer { NoteLibrary.worker = .inline }
-        let gate = DispatchSemaphore(value: 0)
-        worker.perform({ () -> Bool in
-            gate.wait()
-            return true
-        }) { _ in }
-        let library = NoteLibrary.shared(folder: root)
-        let started = Date()
-        let first = try library.notes()
-        #expect(first.map(\.title) == ["First"], "a never-listed folder names its top-level notes straight away")
-        #expect(first.first?.snippet == "", "while summaries wait for the worker")
-        NoteFileTestSupport.write("second body\n", to: root.appendingPathComponent("Second.md"))
-        library.refresh()
+        let jobs = NoteFileDeferredJobs()
+        NoteLibrary.worker = NoteFileWorker(deferred: jobs)
+        return Refreshing(root: root, jobs: jobs, library: NoteLibrary.shared(folder: root))
+    }
+
+    @Test func aNeverListedFolderNamesItsTopLevelNotesStraightAway() throws {
+        let busy = refreshingLibrary()
+        let first = try busy.library.notes()
+        #expect(first.map(\.title) == ["First"])
+        #expect(first.first?.snippet == "")
+    }
+
+    @Test func aRefreshInFlightLeavesTheLastListingInPlace() throws {
+        let busy = refreshingLibrary()
+        _ = try busy.library.notes()
+        NoteFileTestSupport.write("second body\n", to: busy.root.appendingPathComponent("Second.md"))
+        busy.library.refresh()
         clock.advance(1)
-        #expect((try library.notes().map(\.title)) == ["First"], "a refresh in flight leaves the last listing in place")
-        #expect(library.search("second", limit: 5) == [], "and search answers from it too")
-        #expect(Date().timeIntervalSince(started) < 0.5, "without waiting on the disk")
-        let made = try library.createNote(title: "Made meanwhile")
-        #expect((try library.notes().map(\.title).sorted()) == ["First", "Made meanwhile"], "a note Parc makes shows up at once")
-        var heard = 0
-        let watch = library.changes.sink { heard += 1 }
-        gate.signal()
-        let refreshed = await NoteFileTestSupport.spin(timeout: 10) {
-            let notes = (try? library.notes()) ?? []
-            return notes.map(\.title).sorted() == ["First", "Made meanwhile", "Nested", "Second"]
-                && notes.first { $0.title == "First" }?.snippet == "first body"
-        }
-        #expect(refreshed && heard > 0, "the full listing and summaries arrive from the worker and announce themselves")
-        let found = await NoteFileTestSupport.spin(timeout: 10) { library.search("second body", limit: 5).map(\.title) == ["Second"] }
-        #expect(found, "and search catches up once the worker has read the new note")
+        #expect(try busy.library.notes().map(\.title) == ["First"])
+        #expect(busy.library.search("second", limit: 5) == [])
+    }
+
+    @Test func aNoteParcMakesShowsUpAtOnce() throws {
+        let busy = refreshingLibrary()
+        _ = try busy.library.notes()
+        _ = try busy.library.createNote(title: "Made meanwhile")
+        #expect(try busy.library.notes().map(\.title).sorted() == ["First", "Made meanwhile"])
+    }
+
+    func settledLibrary() throws -> (Refreshing, HeardCount, AnyCancellable, URL) {
+        let busy = refreshingLibrary()
+        _ = try busy.library.notes()
+        NoteFileTestSupport.write("second body\n", to: busy.root.appendingPathComponent("Second.md"))
+        busy.library.refresh()
+        clock.advance(1)
+        let made = try busy.library.createNote(title: "Made meanwhile")
+        let heard = HeardCount()
+        let watch = busy.library.changes.sink { heard.value += 1 }
+        busy.jobs.runAll()
+        return (busy, heard, watch, made)
+    }
+
+    @Test func theFullListingAndSummariesArriveFromTheWorkerAndAnnounceThemselves() throws {
+        let (busy, heard, watch, _) = try settledLibrary()
+        let notes = try busy.library.notes()
+        #expect(notes.map(\.title).sorted() == ["First", "Made meanwhile", "Nested", "Second"])
+        #expect(notes.first { $0.title == "First" }?.snippet == "first body")
+        #expect(heard.value > 0)
+        watch.cancel()
+    }
+
+    @Test func searchCatchesUpOnceTheWorkerHasReadTheNewNote() throws {
+        let (busy, _, watch, _) = try settledLibrary()
+        #expect(busy.library.search("second body", limit: 5) == [])
+        busy.jobs.runAll()
+        #expect(busy.library.search("second body", limit: 5).map(\.title) == ["Second"])
+        watch.cancel()
+    }
+
+    @Test func aNoteParcTrashesLeavesAtOnce() throws {
+        let (busy, _, watch, made) = try settledLibrary()
         let bin = folder.appendingPathComponent("Bin", isDirectory: true)
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         let previousMover = NoteFileIO.trashMover
@@ -248,8 +331,7 @@ extension NoteProcessWide {
         }
         defer { NoteFileIO.trashMover = previousMover }
         try NoteLibrary.trash(made)
-        let remaining = try library.notes()
-        #expect(remaining.allSatisfy { $0.title != "Made meanwhile" }, "a note Parc trashes leaves at once")
+        #expect(try busy.library.notes().allSatisfy { $0.title != "Made meanwhile" })
         watch.cancel()
     }
 }

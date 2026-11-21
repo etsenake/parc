@@ -104,7 +104,7 @@ struct NoteFormatMenuTests {
         #expect(displaced(chord("1", [.command, .control], keyCode: 18), defaults: rebound) == nil)
     }
 
-    struct Menu {
+    @MainActor struct Menu {
         let items: [TextFormatCommand: NSMenuItem]
         let format: NSMenu
         let font: NSMenu

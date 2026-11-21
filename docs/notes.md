@@ -352,6 +352,6 @@ sounds and no haptics.
 `swift test --filter Note` (or a suite name such as `MarkdownCodecTests`) runs the
 model and editing rules, the Markdown codec (including generated round-trip
 pages), files and folders, HTML, syntax, math, emoji, note tabs and the Easel
-model suites in `tests/ParcCoreTests/Notes/`. `scripts/test-notes.sh` still
-builds the remaining view and menu suites in `tests/NotesEditor/`; pass a suite
-name to run one.
+model suites in `tests/ParcCoreTests/Notes/`. The view, menu, clipboard, layout
+and Easel-part suites live in `tests/ParcTests/Notes/` and run the same way,
+for example `swift test --filter NoteClipboardTests`.
