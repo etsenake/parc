@@ -74,6 +74,7 @@ struct EaselStoreTests {
         try mediaPlaceholdersAndFields()
         try mediaAssetTypes()
         mediaPlacement()
+        try pageIconPersistence()
         print("EaselStore: \(assertions) assertions passed (27 test groups)")
     }
 
@@ -211,6 +212,79 @@ struct EaselStoreTests {
         expect(EaselMediaPlacement.accessibilityLabel(empty) == "Empty PDF", "VoiceOver names an empty PDF")
         empty.kind = .audio
         expect(EaselMediaPlacement.accessibilityLabel(empty) == "Empty audio", "VoiceOver names empty audio")
+    }
+
+    @MainActor static func pageIconPersistence() throws {
+        try withDirectory { directory in
+            let store = try EaselStore(directory: directory)
+            let session = try store.create()
+            let id = session.document.id
+            expect(session.document.icon == nil, "New Easels have no icon")
+            expect(!String(decoding: try! Data(contentsOf: file(directory, id)), as: UTF8.self).contains("\"icon\""),
+                   "An Easel without an icon leaves the icon out of its file")
+            try session.perform("Change Icon") { $0.icon = EaselPageIcon.emoji("🚀") }
+            expect(try! EaselStore(directory: directory).load(id).document.icon == EaselPageIcon(kind: .emoji, value: "🚀"),
+                   "An emoji icon survives a reopen")
+            expect(EaselStore.readIcon(directory: directory, id: id) == EaselPageIcon(kind: .emoji, value: "🚀"),
+                   "The icon can be read without opening the Easel")
+            try session.undo()
+            expect(session.document.icon == nil, "One undo takes the icon away")
+            try session.redo()
+            expect(session.document.icon?.value == "🚀", "One redo brings it back")
+            try session.perform("Change Icon") { $0.icon = EaselPageIcon.custom(named: "party-parrot") }
+            expect(try! EaselStore(directory: directory).load(id).document.icon == EaselPageIcon(kind: .custom, value: "party-parrot"),
+                   "A custom emoji icon is saved by name")
+            let asset = try session.importPNG(png)
+            try session.perform("Change Icon") { $0.icon = EaselPageIcon.image(assetID: asset) }
+            expect(try! store.list().first?.icon == EaselPageIcon(kind: .image, value: asset), "Library summaries carry the icon")
+            session.discardUnusedAssets([asset])
+            expect(store.assetFileURL(asset) != nil, "An image icon's asset is kept while the icon uses it")
+            try session.perform("Remove Icon") { $0.icon = nil }
+            expect(!String(decoding: try! Data(contentsOf: file(directory, id)), as: UTF8.self).contains("\"icon\""),
+                   "Removing the icon leaves the file as it was")
+            try session.undo()
+            session.discardUnusedAssets([asset])
+            expect(store.assetFileURL(asset) != nil, "Undo history keeps a removed icon's asset")
+            expect(EaselPageIcon.emoji("🚀🚀") == nil && EaselPageIcon.emoji("rocket") == nil && EaselPageIcon.emoji("1") == nil,
+                   "Only a single emoji is an emoji icon")
+            expect(EaselPageIcon.emoji("👩🏽‍🚀")?.value == "👩🏽‍🚀" && EaselPageIcon.emoji("🇨🇦") != nil, "Joined and flag emoji count")
+            expect(EaselPageIcon.custom(named: "Party Parrot") == nil && EaselPageIcon.custom(named: "") == nil
+                   && EaselPageIcon.custom(named: "--") == nil && EaselPageIcon.custom(named: "a_b+c-1") != nil,
+                   "Custom names follow the emoji name rules")
+            expect(EaselPageIcon.image(assetID: asset.replacingOccurrences(of: ".png", with: ".gif")) == nil, "Only PNG assets can be icons")
+            let before = session.document
+            expectThrows("an emoji icon with two emoji") { try session.perform("Invalid") { $0.icon = EaselPageIcon(kind: .emoji, value: "🚀🚀") } }
+            expectThrows("an emoji icon holding words") { try session.perform("Invalid") { $0.icon = EaselPageIcon(kind: .emoji, value: "rocket") } }
+            expectThrows("a custom icon with a bad name") { try session.perform("Invalid") { $0.icon = EaselPageIcon(kind: .custom, value: "Bad Name") } }
+            expectThrows("an image icon that isn't an asset") { try session.perform("Invalid") { $0.icon = EaselPageIcon(kind: .image, value: "../../x.png") } }
+            expectThrows("an image icon whose asset is missing") {
+                try session.perform("Invalid") { $0.icon = EaselPageIcon(kind: .image, value: UUID().uuidString.lowercased() + ".png") }
+            }
+            expectThrows("an image icon that is a video") {
+                try session.perform("Invalid") { $0.icon = EaselPageIcon(kind: .image, value: UUID().uuidString.lowercased() + ".mp4") }
+            }
+            expect(session.document == before, "Refused icons leave the Easel as it was")
+            var raw = try JSONSerialization.jsonObject(with: Data(contentsOf: file(directory, id))) as! [String: Any]
+            raw["icon"] = ["kind": "emoji", "value": "abc"]
+            try JSONSerialization.data(withJSONObject: raw).write(to: file(directory, id))
+            expect(EaselStore.readIcon(directory: directory, id: id) == nil, "A damaged icon reads as no icon")
+            expectThrows("a damaged icon in a file") { _ = try EaselStore(directory: directory).load(id) }
+            raw.removeValue(forKey: "icon")
+            try JSONSerialization.data(withJSONObject: raw).write(to: file(directory, id))
+            expect(try! EaselStore(directory: directory).load(id).document.icon == nil, "Older files without an icon open as before")
+        }
+        try withDirectory { directory in
+            let source = try EaselStore(directory: directory.appendingPathComponent("a"))
+            let destination = try EaselStore(directory: directory.appendingPathComponent("b"))
+            let session = try source.create()
+            let asset = try session.importPNG(png)
+            try session.perform("Change Icon") { $0.icon = EaselPageIcon.image(assetID: asset) }
+            let id = session.document.id
+            try source.retireSessionForRelocation(id)
+            expect(try! source.relocate(id, to: destination) == [asset], "Moving an Easel to another Profile brings its icon image along")
+            expect(destination.assetFileURL(asset) != nil && (try! destination.load(id)).document.icon?.value == asset,
+                   "The moved Easel still has its icon")
+        }
     }
 
     @MainActor static func damagedStackOrder() throws {
