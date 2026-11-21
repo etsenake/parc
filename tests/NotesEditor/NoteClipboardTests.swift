@@ -552,6 +552,8 @@ struct NoteClipboardTests {
         reading = NoteClipboard.Reading(string: "https://example.com/a")
         expect(NoteClipboard.choose(reading, plainOnly: false, canReadHTML: true) == .url, "a lone URL offers the link menu")
         expect(NoteClipboard.choose(reading, plainOnly: true, canReadHTML: true) == .plainText, "plain paste skips the link menu")
+        reading = NoteClipboard.Reading(html: "<span style=\"color: blue\">https://example.com/a.mp3</span>", string: "https://example.com/a.mp3")
+        expect(NoteClipboard.choose(reading, plainOnly: false, canReadHTML: true) == .url, "a URL copied as rich text from another app is still a link")
         reading = NoteClipboard.Reading(string: "# Notes\n- one")
         expect(NoteClipboard.choose(reading, plainOnly: false, canReadHTML: true) == .markdown, "Markdown text parses")
         reading = NoteClipboard.Reading(string: "just words")

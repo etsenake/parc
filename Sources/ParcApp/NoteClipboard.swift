@@ -122,13 +122,11 @@ enum NoteClipboard {
         if reading.archive != nil { return .blocks }
         if !reading.files.isEmpty { return .files }
         let text = reading.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let textIsLink = text.isEmpty || webURL(in: text) != nil
-        if reading.image != nil, textIsLink, !htmlHasText(reading.html) { return .image }
+        let textLink = webURL(in: text)
+        if reading.image != nil, text.isEmpty || textLink != nil, !htmlHasText(reading.html) { return .image }
+        if textLink != nil { return .url }
         if canReadHTML, let html = reading.html, htmlHasText(html) || reading.string == nil { return .html }
-        if !text.isEmpty {
-            if webURL(in: text) != nil { return .url }
-            return looksLikeMarkdown(text) ? .markdown : .plainText
-        }
+        if !text.isEmpty { return looksLikeMarkdown(text) ? .markdown : .plainText }
         if reading.url != nil { return .url }
         if reading.image != nil { return .image }
         return .nothing
