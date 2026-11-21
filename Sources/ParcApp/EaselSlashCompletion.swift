@@ -9,6 +9,7 @@ final class EaselTextCompletions: EaselTextCompletion {
     func attach(_ view: EaselStyledTextView) { parts.forEach { $0.attach(view) } }
     func textDidChange(in view: EaselStyledTextView) { parts.forEach { $0.textDidChange(in: view) } }
     func handle(_ selector: Selector, in view: EaselStyledTextView) -> Bool { parts.contains { $0.handle(selector, in: view) } }
+    func perform(_ request: EaselTextRequest, in view: EaselStyledTextView) -> Bool { parts.contains { $0.perform(request, in: view) } }
     func dismiss() { parts.forEach { $0.dismiss() } }
     func detach() { parts.forEach { $0.detach() } }
 }
@@ -224,7 +225,7 @@ final class EaselSlashCompletion: EaselTextCompletion {
 
     private func openEmojiPicker(at location: Int) {
         guard let view, let host, let rect = caretRect(at: location) else { return }
-        let picker = NoteEmojiPicker(showsRandom: true)
+        let picker = NoteEmojiPicker(showsRandom: true, library: EaselNoteEnvironment(folder: canvas?.notesFolder?()).emojiLibrary)
         let panel = NoteFloatingPanel(content: picker)
         panel.maximumHeight = 400
         pickerPanel = panel
@@ -233,6 +234,7 @@ final class EaselSlashCompletion: EaselTextCompletion {
             guard let view else { return }
             view.window?.makeFirstResponder(view)
             let caret = min(location, (view.string as NSString).length)
+            if NoteCustomEmojiName.name(inReference: character) != nil, view.insertCustomEmoji(character, replacing: NSRange(location: caret, length: 0)) { return }
             view.insertCompletion(character, replacing: NSRange(location: caret, length: 0), name: "Emoji")
         }
         picker.onCancel = { [weak self, weak view] in

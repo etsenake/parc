@@ -356,13 +356,25 @@ struct EaselStyledText: Codable, Equatable {
     }
 }
 
+enum EaselTextRequest {
+    case mention(dates: Bool)
+    case inlineEquation
+    case activate(Int)
+    case customEmoji(String, NSRange)
+}
+
 @MainActor
 protocol EaselTextCompletion: AnyObject {
     func attach(_ view: EaselStyledTextView)
     func textDidChange(in view: EaselStyledTextView)
     func handle(_ selector: Selector, in view: EaselStyledTextView) -> Bool
+    func perform(_ request: EaselTextRequest, in view: EaselStyledTextView) -> Bool
     func dismiss()
     func detach()
+}
+
+extension EaselTextCompletion {
+    func perform(_ request: EaselTextRequest, in view: EaselStyledTextView) -> Bool { false }
 }
 
 final class EaselStyledTextView: LocalContentDropTextView {
@@ -470,6 +482,57 @@ final class EaselStyledTextView: LocalContentDropTextView {
     }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil { retire(); completion = nil }; super.viewWillMove(toWindow: newWindow)
+    }
+    func beginMention() { _ = completion?.perform(.mention(dates: false), in: self) }
+    func beginDate() { _ = completion?.perform(.mention(dates: true), in: self) }
+    func insertInlineEquation() { _ = completion?.perform(.inlineEquation, in: self) }
+    func insertCustomEmoji(_ reference: String, replacing range: NSRange) -> Bool {
+        completion?.perform(.customEmoji(reference, range), in: self) == true
+    }
+    @discardableResult
+    func replace(_ range: NSRange, with inline: EaselRichText.Inline?, name: String) -> Bool {
+        let before = attributedString()
+        guard isEditable, !hasMarkedText(), Self.validFormattingRanges([range], length: before.length) else { return false }
+        var typing = range.location < before.length ? before.attributes(at: range.location, effectiveRange: nil) : typingAttributes
+        if range.length == 0, range.location > 0, range.location <= before.length {
+            typing = before.attributes(at: range.location - 1, effectiveRange: nil)
+        }
+        typing.removeValue(forKey: .attachment)
+        let replacement = inline.map { EaselInlineText.character($0, attributes: typing) } ?? NSAttributedString()
+        var after = typing; after.removeValue(forKey: .link)
+        var edit = EaselParagraphEditing.Edit(text: NSMutableAttributedString(attributedString: before), selection: range, typing: after)
+        EaselParagraphEditing.replace(&edit, range: range, with: replacement)
+        edit.selection = NSRange(location: range.location + replacement.length, length: 0)
+        let suppressed = suppressMarkdown; suppressMarkdown = true
+        defer { suppressMarkdown = suppressed }
+        commitParagraph(edit, name: name)
+        return attributedString().isEqual(to: edit.text)
+    }
+    func previewInline(_ inline: EaselRichText.Inline, at index: Int) {
+        guard let storage = textStorage, index >= 0, index < storage.length,
+              storage.attribute(.attachment, at: index, effectiveRange: nil) is EaselInlineAttachment else { return }
+        localUndo.disableUndoRegistration()
+        storage.addAttribute(.attachment, value: EaselInlineAttachment(inline: inline), range: NSRange(location: index, length: 1))
+        localUndo.enableUndoRegistration()
+        layoutManager?.invalidateLayout(forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
+        needsDisplay = true
+        onObjectLayoutChanged?()
+    }
+    func inlineIndex(at point: NSPoint) -> Int? {
+        guard let layoutManager, let textContainer, (string as NSString).length > 0 else { return nil }
+        let local = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        var fraction: CGFloat = 0
+        let glyph = layoutManager.glyphIndex(for: local, in: textContainer, fractionOfDistanceThroughGlyph: &fraction)
+        let rect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+        guard rect.contains(local) else { return nil }
+        let index = layoutManager.characterIndexForGlyph(at: glyph)
+        return EaselInlineText.inline(at: index, in: attributedString()) == nil ? nil : index
+    }
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 1, event.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty,
+           let index = inlineIndex(at: convert(event.locationInWindow, from: nil)),
+           completion?.perform(.activate(index), in: self) == true { return }
+        super.mouseDown(with: event)
     }
     func finishComposition() {
         guard hasMarkedText() else { return }

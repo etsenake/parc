@@ -88,6 +88,7 @@ final class EaselInlineCell: NSTextAttachmentCell {
 
 @MainActor
 enum EaselInlineText {
+    static let datesChanged = Notification.Name("EaselInlineText.datesChanged")
     static func character(_ inline: EaselRichText.Inline, attributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
         var attrs = attributes
         attrs.removeValue(forKey: .link)
