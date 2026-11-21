@@ -96,6 +96,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private var trackedCanvasScale: Double?
     private var trackedHidesAnnotations = false
     private var trackedEditingID: UUID?
+    private var trackedEditingCell: EaselTableCoordinate?
     private var trackedHiddenCounts: [UUID: Int] = [:]
     private var trackedChrome = NSRect.null
     private var textLayouts: [UUID: CachedTextLayout] = [:]
@@ -632,11 +633,13 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         trackedCanvasScale = canvasScale
         trackedHidesAnnotations = hidesPassiveAnnotations
         trackedEditingID = paintedEditingID
+        trackedEditingCell = paintedEditingCell
         trackedHiddenCounts = hiddenSectionCounts
         trackedChrome = chrome ?? controlChromeBounds
     }
     private var controlChromeBounds: NSRect { mindMapChromeBounds().union(connectorChromeBounds()) }
     private var paintedEditingID: UUID? { editor == nil ? nil : editingID }
+    private var paintedEditingCell: EaselTableCoordinate? { paintedEditingID == nil ? nil : tableState.editingCell }
     private var hiddenSectionCounts: [UUID: Int] {
         let all = session.document.items
         var counts: [UUID: Int] = [:]
@@ -649,6 +652,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard let trackedCanvasScale, trackedCanvasScale == canvasScale,
               trackedHidesAnnotations == hidesPassiveAnnotations,
               trackedEditingID == paintedEditingID,
+              trackedEditingCell == paintedEditingCell,
               trackedHover == hoveredObjectID,
               trackedMarquee == marqueeRect,
               trackedSelection == displayedSelection,
@@ -701,7 +705,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 if displayedSelection.contains(item.id) || item.id == hoveredObjectID { overlayChanged = true }
             }
         }
-        if trackedEditingID != paintedEditingID {
+        if trackedEditingID != paintedEditingID || trackedEditingCell != paintedEditingCell {
             overlayChanged = true
             for id in Set([trackedEditingID, paintedEditingID].compactMap { $0 }) {
                 guard let item = current.first(where: { $0.id == id }) ?? trackedItems[id] else { continue }
