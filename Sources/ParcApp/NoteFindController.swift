@@ -9,7 +9,26 @@ protocol NoteFindPaintable: AnyObject {
 extension NoteTextView: NoteFindPaintable {}
 
 @MainActor
-final class NoteFindController {
+protocol NoteFindBarController: AnyObject {
+    var query: String { get }
+    var options: NoteFindOptions { get }
+    var countLabel: String { get }
+    var hasMatches: Bool { get }
+    var canReplace: Bool { get }
+    var isVisible: Bool { get }
+    func show(replacing: Bool)
+    func hide()
+    func findNext()
+    func findPrevious()
+    func setQuery(_ text: String)
+    func setMatchCase(_ value: Bool)
+    func toggleReplacing()
+    func replaceCurrent()
+    func replaceAll()
+}
+
+@MainActor
+final class NoteFindController: NoteFindBarController {
     private struct Painted {
         weak var view: (any NoteFindPaintable)?
     }
@@ -36,6 +55,8 @@ final class NoteFindController {
     }
 
     var isVisible: Bool { panel?.isPresented == true }
+
+    var hasMatches: Bool { !matches.isEmpty }
 
     var currentMatch: NoteFindMatch? {
         guard let currentIndex, matches.indices.contains(currentIndex) else { return nil }
@@ -430,7 +451,7 @@ final class NoteFindBar: NSView {
     static let rowHeight: CGFloat = NoteTheme.fieldHeight
     static let padding: CGFloat = 6
 
-    unowned let controller: NoteFindController
+    unowned let controller: any NoteFindBarController
     let findField = NoteSearchField(placeholder: "Find in note")
     let replaceField = NoteSearchField(placeholder: "Replace with")
     let countLabel = NSTextField(labelWithString: "")
@@ -443,13 +464,14 @@ final class NoteFindBar: NSView {
     let replaceEvery = NoteChip("Replace All", style: .filled)
     private(set) var isReplacing = false
 
-    init(controller: NoteFindController) {
+    init(controller: any NoteFindBarController, placeholder: String = "Find in note", label: String = "Find in Note") {
         self.controller = controller
         super.init(frame: NSRect(x: 0, y: 0, width: Self.width, height: Self.rowHeight + Self.padding * 2))
         wantsLayer = true
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Find in Note")
+        setAccessibilityLabel(label)
+        findField.placeholder = placeholder
         countLabel.font = NoteTheme.chromeFont(12)
         countLabel.textColor = NoteTheme.menuTertiaryInk
         countLabel.alignment = .right
@@ -530,9 +552,9 @@ final class NoteFindBar: NSView {
 
     func refresh() {
         countLabel.stringValue = controller.countLabel
-        countLabel.textColor = controller.matches.isEmpty && !controller.query.isEmpty
+        countLabel.textColor = !controller.hasMatches && !controller.query.isEmpty
             ? NoteTheme.destructiveInk : NoteTheme.menuTertiaryInk
-        let hasMatches = !controller.matches.isEmpty
+        let hasMatches = controller.hasMatches
         previous.isEnabled = hasMatches
         next.isEnabled = hasMatches
         replaceOne.isEnabled = hasMatches && controller.canReplace
