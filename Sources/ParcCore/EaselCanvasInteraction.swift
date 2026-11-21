@@ -89,19 +89,23 @@ struct EaselGeometryEdit {
         documentID = document.id; originals = selected
     }
 
+    private init(documentID: UUID, originals: [EaselItem]) { self.documentID = documentID; self.originals = originals }
+
     func isCurrent(in document: EaselDocument) -> Bool {
         guard document.id == documentID else { return false }
         let current = Dictionary(document.items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         return originals.allSatisfy { original in
             guard let item = current[original.id] else { return false }
             return item.kind == original.kind && item.frame == original.frame && item.points == original.points
+                && item.rotation == original.rotation && item.flipHorizontal == original.flipHorizontal && item.flipVertical == original.flipVertical
         }
     }
 
     func translated(x: Double, y: Double) -> [EaselItem] {
         guard x.isFinite, y.isFinite else { return originals }
-        let dx = max(-(originals.map { $0.frame.x }.min() ?? 0), x)
-        let dy = max(-(originals.map { $0.frame.y }.min() ?? 0), y)
+        let box = EaselRotation.bounds(of: originals)
+        let dx = max(-(originals.map { $0.frame.x }.min() ?? 0), -max(0, box?.x ?? 0), x)
+        let dy = max(-(originals.map { $0.frame.y }.min() ?? 0), -max(0, box?.y ?? 0), y)
         return originals.map { item in
             var next = item; next.frame.x += dx; next.frame.y += dy; return next
         }
@@ -109,16 +113,42 @@ struct EaselGeometryEdit {
 
     var bounds: EaselRect { Self.bounds(of: originals)! }
 
-    static func bounds(of items: [EaselItem]) -> EaselRect? {
-        guard let first = items.first else { return nil }
-        var left = first.frame.x, top = first.frame.y
-        var right = left + first.frame.width, bottom = top + first.frame.height
-        for item in items.dropFirst() {
-            left = min(left, item.frame.x); top = min(top, item.frame.y)
-            right = max(right, item.frame.x + item.frame.width)
-            bottom = max(bottom, item.frame.y + item.frame.height)
-        }
-        return .init(x: left, y: top, width: right - left, height: bottom - top)
+    static func bounds(of items: [EaselItem]) -> EaselRect? { EaselRotation.bounds(of: items) }
+
+    var resizesRotated: Bool { originals.count == 1 && originals.first.map(EaselRotation.isRotated) == true }
+    var canRotate: Bool { EaselRotation.canRotate(originals) }
+    var canFlip: Bool { EaselRotation.canFlip(originals) }
+
+    func rotated(by delta: Double, around pivot: EaselPoint) -> [EaselItem]? {
+        guard let proposed = EaselRotation.rotated(originals, by: delta, around: pivot) else { return nil }
+        return Self.validGeometry(proposed) ? proposed : nil
+    }
+
+    func flipped(horizontally: Bool) -> [EaselItem]? {
+        guard let proposed = EaselRotation.flipped(originals, horizontally: horizontally) else { return nil }
+        return Self.validGeometry(proposed) ? proposed : nil
+    }
+
+    private func rotatedResize(using handle: EaselResizeHandle, x: Double, y: Double,
+                               centering: EaselResizeCentering, preservingAspect: Bool) -> [EaselItem]? {
+        guard let item = originals.first, x.isFinite, y.isFinite,
+              let inverse = EaselRotation.transform(for: item).inverted else { return nil }
+        let local = inverse.applyVector(EaselPoint(x: x, y: y))
+        let offset = item.frame.width + item.frame.height + abs(local.x) + abs(local.y) + 1
+        var shifted = EaselRotation.upright(item)
+        shifted.frame.x = offset; shifted.frame.y = offset
+        let upright = EaselGeometryEdit(documentID: documentID, originals: [shifted])
+        let resized = preservingAspect ? upright.resizedPreservingAspect(using: handle, x: local.x, y: local.y, centering: centering)
+            : upright.resized(using: handle, x: local.x, y: local.y, centering: centering)
+        guard let proposal = resized?.first else { return nil }
+        var frame = proposal.frame
+        frame.x += item.frame.x - offset; frame.y += item.frame.y - offset
+        var next = item
+        next.frame = EaselRotation.recentred(item, frame: frame)
+        next.points = proposal.points
+        if proposal.flipHorizontal == true { next.flipHorizontal = item.flipHorizontal == true ? nil : true }
+        if proposal.flipVertical == true { next.flipVertical = item.flipVertical == true ? nil : true }
+        return Self.validGeometry([next]) ? [next] : nil
     }
 
     func resized(using handle: EaselResizeHandle, x: Double, y: Double, centered: Bool) -> [EaselItem]? {
@@ -126,6 +156,7 @@ struct EaselGeometryEdit {
     }
 
     func resized(using handle: EaselResizeHandle, x: Double, y: Double, centering: EaselResizeCentering) -> [EaselItem]? {
+        if resizesRotated { return rotatedResize(using: handle, x: x, y: y, centering: centering, preservingAspect: false) }
         guard let proposal = resizingFrame(using: handle, x: x, y: y, centering: centering) else { return nil }
         return mapped(to: proposal.frame, flipX: proposal.flipX, flipY: proposal.flipY)
     }
@@ -152,6 +183,7 @@ struct EaselGeometryEdit {
 
     func resizedPreservingAspect(using handle: EaselResizeHandle, x: Double, y: Double,
                                   centering: EaselResizeCentering) -> [EaselItem]? {
+        if resizesRotated { return rotatedResize(using: handle, x: x, y: y, centering: centering, preservingAspect: true) }
         guard let plain = resizingFrame(using: handle, x: x, y: y, centering: centering) else { return nil }
         let r = plain.frame
         let ratio = bounds.width / bounds.height
@@ -204,7 +236,14 @@ struct EaselGeometryEdit {
         let original = bounds
         let scaleX = target.width / original.width, scaleY = target.height / original.height
         let proposed = originals.map { item in
+            if EaselRotation.isRotated(item) {
+                return Self.mappedRotated(item, from: original, to: target, scaleX: scaleX, scaleY: scaleY, flipX: flipX, flipY: flipY)
+            }
             var next = item
+            if EaselRotation.isFlippable(item.kind), item.kind != .freehand {
+                if flipX { next.flipHorizontal = item.flipHorizontal == true ? nil : true }
+                if flipY { next.flipVertical = item.flipVertical == true ? nil : true }
+            }
             let width = item.frame.width * scaleX, height = item.frame.height * scaleY
             let relativeX = (item.frame.x - original.x) * scaleX
             let relativeY = (item.frame.y - original.y) * scaleY
@@ -219,11 +258,27 @@ struct EaselGeometryEdit {
         }
         return Self.validGeometry(proposed) ? proposed : nil
     }
+    private static func mappedRotated(_ item: EaselItem, from original: EaselRect, to target: EaselRect,
+                                      scaleX: Double, scaleY: Double, flipX: Bool, flipY: Bool) -> EaselItem {
+        let box = EaselRotation.bounds(of: item), size = EaselRotation.scaledSize(item, scaleX: scaleX, scaleY: scaleY)
+        let width = box.width * scaleX, height = box.height * scaleY
+        let relativeX = (box.x - original.x) * scaleX, relativeY = (box.y - original.y) * scaleY
+        let middle = EaselPoint(x: target.x + (flipX ? target.width - relativeX - width : relativeX) + width / 2,
+                                y: target.y + (flipY ? target.height - relativeY - height : relativeY) + height / 2)
+        var next = item
+        next.frame = EaselRect(x: middle.x - size.width / 2, y: middle.y - size.height / 2, width: size.width, height: size.height)
+        let localX = item.frame.width > 0 ? size.width / item.frame.width : 1
+        let localY = item.frame.height > 0 ? size.height / item.frame.height : 1
+        next.points = item.points.map { EaselPoint(x: $0.x * localX, y: $0.y * localY) }
+        if flipX { next = EaselRotation.mirrored(next, horizontally: true, across: middle, moves: false) }
+        if flipY { next = EaselRotation.mirrored(next, horizontally: false, across: middle, moves: false) }
+        return next
+    }
     private static func validGeometry(_ proposed: [EaselItem]) -> Bool {
         proposed.allSatisfy { item in
-            let r = item.frame
+            let r = item.frame, origin = EaselRotation.isRotated(item) ? EaselRotation.center(of: r) : EaselPoint(x: r.x, y: r.y)
             return [r.x, r.y, r.width, r.height].allSatisfy { $0.isFinite && abs($0) <= 1_000_000 } &&
-                r.x >= 0 && r.y >= 0 && r.width >= 1 && r.height >= 1 &&
+                origin.x >= 0 && origin.y >= 0 && r.width >= 1 && r.height >= 1 &&
                 item.points.allSatisfy { $0.x.isFinite && $0.y.isFinite && abs($0.x) <= 1_000_000 && abs($0.y) <= 1_000_000 }
         }
     }
@@ -238,6 +293,8 @@ struct EaselGeometryEdit {
             guard let change = changes[next.items[index].id] else { continue }
             next.items[index].frame = change.frame; next.items[index].points = change.points
             if let style = styles[change.id], change.textStyle != style { next.items[index].textStyle = change.textStyle }
+            next.items[index].rotation = change.rotation; next.items[index].waypoints = change.waypoints
+            next.items[index].flipHorizontal = change.flipHorizontal; next.items[index].flipVertical = change.flipVertical
         }
         return next
     }
@@ -280,6 +337,7 @@ enum EaselContentHitTest {
         if item.resolvedShape != nil, !EaselShapeGeometry.usesOriginalLook(item) {
             return EaselShapeGeometry.hits(point, item: item, selected: selected, scale: scale)
         }
+        if let upright = EaselRotation.uprightHit(point, item: item) { return contains(upright.point, item: upright.item, selected: selected, scale: scale) }
         let r = item.frame, minimum = 30 / scale
         let target = EaselRect(x: r.x - max(0, minimum - r.width) / 2,
                                y: r.y - max(0, minimum - r.height) / 2,
@@ -303,6 +361,7 @@ enum EaselContentHitTest {
         if item.resolvedShape != nil, !EaselShapeGeometry.usesOriginalLook(item) {
             return EaselShapeGeometry.intersects(rect, item: item, selected: selected)
         }
+        if let rotated = EaselRotation.intersects(rect, item: item, selected: selected) { return rotated }
         if selected { return intersects(rect, item.frame) }
         let r = item.frame
         switch item.kind {
@@ -407,9 +466,9 @@ struct EaselAlignmentGuides {
         ] : []
         guides = canvasGuides + items.filter { !edit.ids.contains($0.id) }.flatMap { item in
             [EaselAnchor.top, .bottom, .left, .right, .centerY, .centerX].map {
-                Guide(itemID: item.id, frame: item.frame, anchor: $0, spacing: false)
+                Guide(itemID: item.id, frame: EaselRotation.bounds(of: item), anchor: $0, spacing: false)
             } + [EaselAnchor.top, .bottom, .left, .right].map {
-                Guide(itemID: item.id, frame: item.frame, anchor: $0, spacing: true)
+                Guide(itemID: item.id, frame: EaselRotation.bounds(of: item), anchor: $0, spacing: true)
             }
         }
         let original = edit.bounds
@@ -430,8 +489,8 @@ struct EaselAlignmentGuides {
         lines.removeAll()
         var x = translation.x, y = translation.y
         var centering: EaselResizeCentering = centered ? .both : []
-        if activeAtDragBegin.contains(.centerX) { centering.insert(.horizontal) }
-        if activeAtDragBegin.contains(.centerY) { centering.insert(.vertical) }
+        if activeAtDragBegin.contains(.centerX), !edit.resizesRotated { centering.insert(.horizontal) }
+        if activeAtDragBegin.contains(.centerY), !edit.resizesRotated { centering.insert(.vertical) }
         func proposed(_ x: Double, _ y: Double) -> [EaselItem]? {
             if let endpoint { return edit.movingEndpoint(endpoint, x: x, y: y) }
             if let handle {
@@ -441,8 +500,10 @@ struct EaselAlignmentGuides {
             return edit.translated(x: x, y: y)
         }
         guard edit.isCurrent(in: document), scale.isFinite, scale > 0, var result = proposed(x, y) else { return nil }
-        guard enabled else { for index in guides.indices { guides[index].translationAtSnap = nil }; return result }
-        let current = Dictionary(document.items.map { ($0.id, $0.frame) }, uniquingKeysWith: { _, last in last })
+        guard enabled, handle == nil || !edit.resizesRotated else {
+            for index in guides.indices { guides[index].translationAtSnap = nil }; return result
+        }
+        let current = Dictionary(document.items.map { ($0.id, EaselRotation.bounds(of: $0)) }, uniquingKeysWith: { _, last in last })
         var accepted: [Int] = []
         for index in guides.indices {
             let guide = guides[index]

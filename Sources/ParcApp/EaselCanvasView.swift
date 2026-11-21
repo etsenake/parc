@@ -235,7 +235,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     func exportImage(backingScale: CGFloat, pages: [UUID: EaselPageSnapshot] = [:]) -> CGImage? {
         let content = EaselBoardObjects.displayed(session.document.items)
         let width = bounds.width
-        let size = fixedCanvasSize ?? NSSize(width: width, height: max(width, content.map { $0.frame.y + $0.frame.height }.max() ?? 0) + 60)
+        let size = fixedCanvasSize ?? NSSize(width: width, height: max(width, content.map { EaselCanvasRotation.bounds($0).maxY }.max() ?? 0) + 60)
         let pixels = NSSize(width: (size.width * backingScale).rounded(), height: (size.height * backingScale).rounded())
         guard backingScale > 0, pixels.width >= 1, pixels.height >= 1, pixels.width < 1e9, pixels.height < 1e9 else { return nil }
         for id in content.compactMap(\.assetID) { _ = image(id) }
@@ -380,8 +380,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             return
         }
         let viewport = enclosingScrollView?.contentView.bounds.size ?? viewport
-        let right = session.document.items.map { $0.frame.x + $0.frame.width + 80 }.max() ?? 0
-        let bottom = session.document.items.map { $0.frame.y + $0.frame.height + 180 }.max() ?? 0
+        let right = session.document.items.map { EaselCanvasRotation.bounds($0).maxX + 80 }.max() ?? 0
+        let bottom = session.document.items.map { EaselCanvasRotation.bounds($0).maxY + 180 }.max() ?? 0
         let size = NSSize(width: max(viewport.width, right), height: max(viewport.height, 1400, bottom))
         if size != frame.size { setFrameSize(size) }
     }
@@ -402,7 +402,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         for item in session.document.items {
             let node = accessibleObjects[item.id] ?? EaselAccessibleObject(canvas: self, id: item.id)
             accessibleObjects[item.id] = node
-            let frame = rect(displayed[item.id] ?? item)
+            let frame = EaselCanvasRotation.bounds(displayed[item.id] ?? item)
             if node.frame != frame { node.frame = frame; changed = true }
             node.updateAccessibilityContent(item)
             if node.superview !== self { addSubview(node) }
@@ -546,7 +546,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     func displayBounds(of item: EaselItem) -> NSRect {
         let pad = 16 / max(canvasScale, 0.2) + 16 + CGFloat(EaselPaintRules.strokeWidth(item)) * 1.5 + boardOverhang(item)
             + CGFloat(EaselObjectLink.badgeAllowance(item, scale: max(canvasScale, 0.2)))
-        return rect(item).insetBy(dx: -pad, dy: -pad).union(connectorOverhang(item))
+        return EaselCanvasRotation.bounds(item).insetBy(dx: -pad, dy: -pad).union(connectorOverhang(item))
     }
     private func guideDirtyBounds() -> NSRect {
         var dirty = NSRect.null
@@ -737,7 +737,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if let old = artwork[item.id], old !== objectView { old.removeFromSuperview() }
             artwork[item.id] = objectView
             let previous = trackedItems[item.id]
-            let nextFrame = rect(item).insetBy(dx: -boardOverhang(item), dy: -boardOverhang(item)).union(connectorOverhang(item))
+            let nextFrame = (item.ownsEmbeddedPage ? rect(item) : EaselCanvasRotation.bounds(item))
+                .insetBy(dx: -boardOverhang(item), dy: -boardOverhang(item)).union(connectorOverhang(item))
             if objectView.frame != nextFrame { objectView.frame = nextFrame }
             if previous == nil || contentRedrawRequired(previous!, item) {
                 objectView.needsDisplay = true
@@ -774,6 +775,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         drawObject(item)
     }
     private func drawObject(_ item: EaselItem, showsEditor: Bool = true) {
+            let turned = EaselCanvasRotation.begin(item, upright: showsEditor && editingID == item.id)
+            defer { if turned { NSGraphicsContext.restoreGraphicsState() } }
             let r = rect(item), ink = color(item.color)
             ink.setStroke()
             switch item.kind {
@@ -874,6 +877,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     private func drawSelectionOutline(_ item: EaselItem, exclusive: Bool) {
+        let turned = EaselCanvasRotation.begin(item, upright: editingID == item.id)
+        defer { if turned { NSGraphicsContext.restoreGraphicsState() } }
         let r = rect(item), path: NSBezierPath
         var width: CGFloat = 2.5
         switch item.kind {

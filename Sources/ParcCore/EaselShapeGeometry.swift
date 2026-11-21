@@ -1,52 +1,5 @@
 import Foundation
 
-struct EaselTransform: Equatable {
-    var a = 1.0, b = 0.0, c = 0.0, d = 1.0, tx = 0.0, ty = 0.0
-
-    static let identity = EaselTransform()
-
-    static func rotation(degrees: Double, around center: EaselPoint) -> EaselTransform {
-        guard degrees.isFinite, degrees.truncatingRemainder(dividingBy: 360) != 0 else { return .identity }
-        let radians = degrees * .pi / 180, cosine = cos(radians), sine = sin(radians)
-        return EaselTransform(a: cosine, b: sine, c: -sine, d: cosine,
-                              tx: center.x - center.x * cosine + center.y * sine,
-                              ty: center.y - center.x * sine - center.y * cosine)
-    }
-
-    var isIdentity: Bool { self == .identity }
-
-    func apply(_ point: EaselPoint) -> EaselPoint {
-        EaselPoint(x: a * point.x + c * point.y + tx, y: b * point.x + d * point.y + ty)
-    }
-
-    var inverted: EaselTransform? {
-        let determinant = a * d - b * c
-        guard determinant.isFinite, abs(determinant) > 1e-12 else { return nil }
-        return EaselTransform(a: d / determinant, b: -b / determinant, c: -c / determinant, d: a / determinant,
-                              tx: (c * ty - d * tx) / determinant, ty: (b * tx - a * ty) / determinant)
-    }
-
-    static func mirror(horizontally: Bool, vertically: Bool, around center: EaselPoint) -> EaselTransform {
-        guard horizontally || vertically else { return .identity }
-        return EaselTransform(a: horizontally ? -1 : 1, b: 0, c: 0, d: vertically ? -1 : 1,
-                              tx: horizontally ? 2 * center.x : 0, ty: vertically ? 2 * center.y : 0)
-    }
-
-    func concatenating(_ next: EaselTransform) -> EaselTransform {
-        EaselTransform(a: next.a * a + next.c * b, b: next.b * a + next.d * b,
-                       c: next.a * c + next.c * d, d: next.b * c + next.d * d,
-                       tx: next.a * tx + next.c * ty + next.tx, ty: next.b * tx + next.d * ty + next.ty)
-    }
-
-    func bounds(of r: EaselRect) -> EaselRect {
-        let corners = [EaselPoint(x: r.x, y: r.y), EaselPoint(x: r.x + r.width, y: r.y),
-                       EaselPoint(x: r.x + r.width, y: r.y + r.height), EaselPoint(x: r.x, y: r.y + r.height)].map(apply)
-        let xs = corners.map(\.x), ys = corners.map(\.y)
-        let minX = xs.min() ?? r.x, minY = ys.min() ?? r.y
-        return EaselRect(x: minX, y: minY, width: (xs.max() ?? minX) - minX, height: (ys.max() ?? minY) - minY)
-    }
-}
-
 struct EaselPath: Equatable {
     enum Element: Equatable {
         case move(EaselPoint)

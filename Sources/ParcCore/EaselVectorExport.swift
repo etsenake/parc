@@ -127,6 +127,27 @@ enum EaselVectorExport {
     }
 
     static func element(_ item: EaselItem, art: EaselVectorArt) -> String {
+        transformed(item, kindElement(item, art: art))
+    }
+
+    static func transformed(_ item: EaselItem, _ body: String) -> String {
+        guard !body.isEmpty, EaselRotation.isTransformed(item) else { return body }
+        let middle = EaselRotation.center(of: item.frame), angle = EaselRotation.degrees(of: item)
+        var steps: [String] = []
+        if angle != 0 { steps.append("rotate(" + [angle, middle.x, middle.y].map(number).joined(separator: " ") + ")") }
+        let mirrorX = EaselRotation.mirrorsHorizontally(item), mirrorY = EaselRotation.mirrorsVertically(item)
+        if mirrorX || mirrorY {
+            steps.append("translate(" + number(middle.x) + " " + number(middle.y) + ") scale(" + (mirrorX ? "-1" : "1") + " "
+                + (mirrorY ? "-1" : "1") + ") translate(" + number(-middle.x) + " " + number(-middle.y) + ")")
+        }
+        return "<g transform=\"" + steps.joined(separator: " ") + "\">" + body + "</g>"
+    }
+
+    static func matrix(_ transform: EaselTransform) -> String {
+        "matrix(" + [transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty].map(number).joined(separator: " ") + ")"
+    }
+
+    static func kindElement(_ item: EaselItem, art: EaselVectorArt) -> String {
         switch item.kind {
         case .text: return text(item, art.texts[item.id])
         case .rectangle, .circle: return shape(item)

@@ -3,3 +3,4 @@ Sources/ParcCore/EaselTable.swift
 Sources/ParcCore/EaselRichText.swift
 Sources/ParcCore/EaselCanvasInteraction.swift
 Sources/ParcCore/EaselShapeGeometry.swift
+Sources/ParcCore/EaselTransform.swift
