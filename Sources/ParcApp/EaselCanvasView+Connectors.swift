@@ -620,7 +620,7 @@ extension EaselCanvasView {
             context = EaselSettleContext(previous: previous)
             connectors.settleContext = (previous.modifiedAt, previous.id, context)
         }
-        let items = EaselDependents.settle(preview, context: context, moved: moved).items
+        let items = EaselDependents.settle(preview, context: context, moved: moved, tidy: false).items
         connectors.settledPreview = (connectors.draftGeneration, previous.modifiedAt, previous.id, items)
         return items
     }

@@ -328,6 +328,27 @@ struct EaselTextStyle: Codable, Equatable {
     var pointSize: Double { customSize ?? presetPointSize }
 }
 
+struct EaselMindMapLink: Codable, Equatable {
+    enum Side: String, Codable, CaseIterable { case left, right }
+    var parent: UUID?
+    var side: Side?
+    var collapsed: Bool?
+
+    static func holdsNode(_ kind: EaselItemKind) -> Bool {
+        kind == .text || kind == .sticky || kind == .rectangle || kind == .circle
+    }
+
+    static func validationProblem(_ item: EaselItem) -> String? {
+        guard let link = item.mindMap else { return nil }
+        guard link.parent != item.id else { return "a mind map node that is its own parent" }
+        if item.kind == .arrow {
+            return link.parent != nil && link.side == nil && link.collapsed == nil ? nil : "mind map branch"
+        }
+        guard holdsNode(item.kind) else { return "mind map link on an object that can't be a node" }
+        return link.side == nil || link.parent != nil ? nil : "mind map side on a root"
+    }
+}
+
 struct EaselItem: Codable, Identifiable, Equatable {
     var id = UUID()
     var kind: EaselItemKind
@@ -375,6 +396,7 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var language: String?
     var stamp: String?
     var poster: String?
+    var mindMap: EaselMindMapLink?
     var ownsEmbeddedPage: Bool { kind == .browser || (kind == .webCard && captureLayout != nil && liveCapture == true) }
     var resolvedShape: EaselShape? {
         switch kind {
@@ -734,6 +756,7 @@ final class EaselStore {
             if style.autoWidth != nil && item.kind != .text { throw EaselStoreError.invalidDocument("auto width on a non-text object") }
         }
         if let problem = EaselStampFace.validationProblem(item) { throw EaselStoreError.invalidDocument(problem) }
+        if let problem = EaselMindMapLink.validationProblem(item) { throw EaselStoreError.invalidDocument(problem) }
     }
 
     private static func validateMedia(_ item: EaselItem) throws {

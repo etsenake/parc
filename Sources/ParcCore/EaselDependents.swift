@@ -27,8 +27,9 @@ enum EaselDependents {
         settle(next, context: EaselSettleContext(previous: previous), moved: moved)
     }
 
-    static func settle(_ next: EaselDocument, context: EaselSettleContext, moved: Set<UUID>) -> EaselDocument {
-        let sections = carrySectionContents(next, previous: context.previous, moved: moved)
+    static func settle(_ next: EaselDocument, context: EaselSettleContext, moved: Set<UUID>, tidy: Bool = true) -> EaselDocument {
+        let mindMaps = EaselMindMap.settling(next, previous: context.previous, moved: moved, tidy: tidy)
+        let sections = carrySectionContents(mindMaps.document, previous: context.previous, moved: mindMaps.moved)
         let attached = followAttachments(sections.document, previous: context.previous, moved: sections.moved)
         return rerouteConnectors(attached.document, context: context, moved: attached.moved).document
     }
@@ -37,7 +38,7 @@ enum EaselDependents {
         let removed = removalClosure(ids, in: document, keepingSectionContents: keepingSectionContents)
         var next = document
         next.items.removeAll { removed.contains($0.id) }
-        return detachConnectors(next, from: removed)
+        return detachConnectors(EaselMindMap.detaching(removed, from: document, in: next), from: removed)
     }
 
     static func removalClosure(_ ids: Set<UUID>, in document: EaselDocument, keepingSectionContents: Bool = false) -> Set<UUID> {
@@ -52,6 +53,7 @@ enum EaselDependents {
             var reached = Set<UUID>()
             for id in frontier { reached.formUnion(followers[id] ?? []) }
             reached.formUnion(attachedDependents(of: frontier, in: document))
+            reached.formUnion(EaselMindMap.removalDependents(of: frontier, in: document))
             if !keepingSectionContents { reached.formUnion(sectionContents(of: frontier, in: document)) }
             frontier = reached.intersection(present).subtracting(removed)
             removed.formUnion(frontier)

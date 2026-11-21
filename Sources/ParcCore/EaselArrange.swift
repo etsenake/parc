@@ -520,7 +520,7 @@ enum EaselArrange {
             connection.itemID = target
             return connection
         }
-        return originals.enumerated().map { index, item in
+        let copied: [EaselItem] = originals.enumerated().map { index, item in
             var copy = item
             copy.id = fresh[index]
             copy.groupID = item.groupID.flatMap { kept.contains($0) ? $0 : groups[$0] }
@@ -534,6 +534,7 @@ enum EaselArrange {
             move(&copy, dx: offset.x, dy: offset.y)
             return copy
         }
+        return EaselMindMap.relinked(copied, ids: ids)
     }
 
     static func appending(_ originals: [EaselItem], to document: EaselDocument, offset: EaselPoint,

@@ -157,8 +157,9 @@ enum EaselBoardObjects {
 
     static func hiddenIDs(in items: [EaselItem]) -> Set<UUID> {
         let hiding = items.filter { $0.kind == .section && $0.contentsHidden == true }
-        guard !hiding.isEmpty else { return [] }
-        var hidden = Set<UUID>()
+        let folded = EaselMindMap.hiddenIDs(in: items)
+        guard !hiding.isEmpty else { return folded }
+        var hidden = folded
         for section in hiding where !hidden.contains(section.id) {
             hidden.formUnion(contents(of: section, in: items).map(\.id))
         }
