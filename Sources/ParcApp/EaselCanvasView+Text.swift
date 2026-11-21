@@ -5,20 +5,27 @@ extension EaselCanvasView {
         guard context.target != .canvas else { return [] }
         let holders = context.items.filter { $0.kind.holdsText }
         guard !holders.isEmpty else { return [] }
+        let targets = Set(context.items.map(\.id))
+        let act: (@escaping (EaselCanvasView) -> Void) -> () -> Void = { action in
+            { [weak self] in
+                guard let self else { return }
+                let present = targets.intersection(Set(self.session.document.items.map(\.id)))
+                guard !present.isEmpty else { return }
+                if self.selection != present { self.selection = present }
+                action(self)
+            }
+        }
         var rows: [EaselMenuRow] = []
         if context.items.count == 1, let item = context.items.first, EaselObjectLink.canLink(item) {
             let link = EaselObjectLink.link(of: item)
             rows.append(EaselMenuRow(id: "text.link", title: link == nil ? TextFormatCommand.addLinkTitle : TextFormatCommand.editLinkTitle,
-                                     symbol: "link", shortcut: "⌘K", isEnabled: !item.isLocked, separatorBefore: true) { [weak self] in
-                _ = self?.editObjectLink()
-            })
+                                     symbol: "link", shortcut: "⌘K", isEnabled: !item.isLocked, separatorBefore: true,
+                                     perform: act { _ = $0.editObjectLink() }))
             if let link {
-                rows.append(EaselMenuRow(id: "text.link.open", title: "Open Link", symbol: "arrow.up.forward.square") { [weak self] in
-                    self?.onOpenURL?(link)
-                })
-                rows.append(EaselMenuRow(id: "text.link.remove", title: "Remove Link", symbol: "minus.circle", isEnabled: !item.isLocked) { [weak self] in
-                    _ = self?.removeObjectLink()
-                })
+                rows.append(EaselMenuRow(id: "text.link.open", title: "Open Link", symbol: "arrow.up.forward.square",
+                                         perform: act { $0.onOpenURL?(link) }))
+                rows.append(EaselMenuRow(id: "text.link.remove", title: "Remove Link", symbol: "minus.circle", isEnabled: !item.isLocked,
+                                         perform: act { _ = $0.removeObjectLink() }))
             }
         }
         let current = EaselTextSizing.sharedAlignment(holders)
@@ -26,22 +33,17 @@ extension EaselCanvasView {
                                  isEnabled: EaselTextSizing.canAlign(holders), separatorBefore: rows.isEmpty,
                                  children: EaselTextStyle.Alignment.allCases.map { alignment in
             EaselMenuRow(id: "text.align." + alignment.rawValue, title: alignment.title, symbol: Self.alignmentSymbol(alignment),
-                         shortcut: alignment.shortcut, isChecked: alignment == current) { [weak self] in
-                _ = self?.alignText(alignment)
-            }
+                         shortcut: alignment.shortcut, isChecked: alignment == current, perform: act { _ = $0.alignText(alignment) })
         }))
         let dark = NoteTheme.isDark(effectiveAppearance)
         rows.append(EaselMenuRow(id: "text.color", title: "Text Color", symbol: "paintpalette", isEnabled: EaselTextSizing.canAlign(holders),
                                  children: EaselPalette.colors(for: .ink).compactMap { color in
             guard let hex = EaselPalette.hex(color, role: .ink) else { return nil }
-            return EaselMenuRow(id: "text.color." + color.id, title: color.title(dark: dark)) { [weak self] in
-                _ = self?.applyTextColor(hex)
-            }
+            return EaselMenuRow(id: "text.color." + color.id, title: color.title(dark: dark), perform: act { _ = $0.applyTextColor(hex) })
         }))
-        if holders.contains(where: { $0.kind == .text && !$0.isLocked && !EaselTextSizing.isAutoWidth($0) }) {
-            rows.append(EaselMenuRow(id: "text.autoWidth", title: "Auto Width", symbol: "arrow.left.and.right") { [weak self] in
-                _ = self?.restoreTextAutoWidth()
-            })
+        if fixedCanvasSize == nil, holders.contains(where: { $0.kind == .text && !$0.isLocked && !EaselTextSizing.isAutoWidth($0) }) {
+            rows.append(EaselMenuRow(id: "text.autoWidth", title: "Auto Width", symbol: "arrow.left.and.right",
+                                     perform: act { _ = $0.restoreTextAutoWidth() }))
         }
         return rows
     }
