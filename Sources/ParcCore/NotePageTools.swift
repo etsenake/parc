@@ -744,4 +744,8 @@ enum NotePagePagination {
         }
         return bottom
     }
+
+    static func settledBottom(adjusted: CGFloat, preferred: CGFloat, bottom: CGFloat, limit: CGFloat) -> CGFloat {
+        min(bottom, max(min(limit, bottom), min(adjusted, preferred)))
+    }
 }

@@ -436,10 +436,11 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
             guard let self else { return }
             self.isPreparingPrint = false
             guard !self.isTornDown, let window = self.view.window, window.attachedSheet == nil else { return }
-            let operation = printView.printOperation(info: printView.printInfo())
-            operation.showsPrintPanel = true
-            operation.showsProgressPanel = true
-            operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+            do {
+                try printView.pdfPrintOperation().runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+            } catch {
+                self.editor.onError?(error)
+            }
         }
     }
 }

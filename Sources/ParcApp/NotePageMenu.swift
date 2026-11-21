@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import PDFKit
 import UniformTypeIdentifiers
 
 @MainActor
@@ -577,12 +578,10 @@ final class NotePagePrintView: NSView {
         }
     }
 
-    func printInfo(saving destination: URL? = nil) -> NSPrintInfo {
+    func writePDF(to destination: URL) throws {
         let info = NSPrintInfo.shared.copy() as? NSPrintInfo ?? NSPrintInfo()
-        if let destination {
-            info.jobDisposition = .save
-            info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = destination
-        }
+        info.jobDisposition = .save
+        info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = destination
         info.horizontalPagination = .fit
         info.verticalPagination = .automatic
         info.isHorizontallyCentered = true
@@ -591,20 +590,30 @@ final class NotePagePrintView: NSView {
         info.rightMargin = Self.horizontalMargin
         info.topMargin = Self.verticalMargin
         info.bottomMargin = Self.verticalMargin
-        return info
-    }
-
-    func printOperation(info: NSPrintInfo) -> NSPrintOperation {
         let operation = NSPrintOperation(view: self, printInfo: info)
         operation.jobTitle = title.isEmpty ? "Untitled" : title
-        return operation
-    }
-
-    func writePDF(to destination: URL) throws {
-        let operation = printOperation(info: printInfo(saving: destination))
         operation.showsPrintPanel = false
         operation.showsProgressPanel = false
         guard operation.run() else { throw CocoaError(.fileWriteUnknown) }
+    }
+
+    func pdfPrintOperation() throws -> NSPrintOperation {
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("pdf")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try writePDF(to: temporary)
+        let info = NSPrintInfo.shared.copy() as? NSPrintInfo ?? NSPrintInfo()
+        info.leftMargin = 0
+        info.rightMargin = 0
+        info.topMargin = 0
+        info.bottomMargin = 0
+        guard let document = PDFDocument(data: try Data(contentsOf: temporary)),
+              let operation = document.printOperation(for: info, scalingMode: .pageScaleDownToFit, autoRotate: true) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        operation.jobTitle = title.isEmpty ? "Untitled" : title
+        operation.showsPrintPanel = true
+        operation.showsProgressPanel = true
+        return operation
     }
 
     var printSpans: [NotePagePrintSpan] {
@@ -623,7 +632,7 @@ final class NotePagePrintView: NSView {
         let preferred = NotePagePagination.pageBreak(proposed: oldBottom, limit: bottomLimit, spans: printSpans)
         newBottom.pointee = preferred
         super.adjustPageHeightNew(newBottom, top: oldTop, bottom: preferred, limit: bottomLimit)
-        newBottom.pointee = max(bottomLimit, min(newBottom.pointee, preferred))
+        newBottom.pointee = NotePagePagination.settledBottom(adjusted: newBottom.pointee, preferred: preferred, bottom: oldBottom, limit: bottomLimit)
     }
 
     override func draw(_ dirtyRect: NSRect) {

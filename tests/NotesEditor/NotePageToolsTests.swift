@@ -268,6 +268,11 @@ struct NotePageToolsTests {
         let chained = [NotePagePrintSpan(minY: 900, maxY: 1010, keepsTogether: true), NotePagePrintSpan(minY: 850, maxY: 960, keepsTogether: true)]
         expect(NotePagePagination.pageBreak(proposed: 1000, limit: 800, spans: chained) == 850, "overlapping blocks keep moving the break up")
         expect(NotePagePagination.pageBreak(proposed: 1000, limit: 800, spans: []) == 1000, "an empty page breaks where AppKit asked")
+        expect(NotePagePagination.settledBottom(adjusted: 984, preferred: 984, bottom: 1000, limit: 800) == 984, "a moved break is kept")
+        expect(NotePagePagination.settledBottom(adjusted: 700, preferred: 984, bottom: 1000, limit: 800) == 800, "a break never lands above the limit")
+        expect(NotePagePagination.settledBottom(adjusted: 1200, preferred: 1000, bottom: 1000, limit: 800) == 1000, "a break never passes the page bottom")
+        expect(NotePagePagination.settledBottom(adjusted: 500, preferred: 500, bottom: 500, limit: 800) == 500,
+               "a short last page ends where its content ends, even though AppKit's limit lies past it")
     }
 
     static func replacing() {
