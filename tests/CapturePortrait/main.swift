@@ -186,32 +186,32 @@ struct PortraitChecks {
         precondition(!PortraitDesktopSnapshot.Candidate(id: 3, processID: 3, bounds: display,
             bundle: "com.apple.dock", title: "Dock", layer: 20).isWallpaper(for: display))
         let view = PortraitCaptureView(source: source, pageColor: .green, composition: style, defaults: defaults)
-        view.layoutSubtreeIfNeeded()
+        view.setFrameSize(view.fittingSize); view.layoutSubtreeIfNeeded()
         precondition(view.bounds.size == NSSize(width: PortraitCaptureLayout.width, height: PortraitCaptureLayout.height),
-                     "the popover's padding and 140×96 preview")
-        precondition(view.captureButton.frame.size == NSSize(width: PortraitCaptureLayout.contentWidth, height: PortraitCaptureLayout.captureHeight),
-                     "SkeuPrimaryButtonStyle capture control is 32 points tall")
-        let previewImage = view.subviews.compactMap { $0 as? NSImageView }.first!
-        precondition(previewImage.frame.size == NSSize(width: PortraitCaptureLayout.preview.width - 5, height: PortraitCaptureLayout.preview.height - 5),
-                     "preview inset 2.5 inside the 140×96 thumbnail")
+                     "The Frame page fills the palette card's width")
+        precondition(view.applyState == .unchanged && !view.captureButton.isEnabled, "Reopening an applied frame leaves Apply quiet")
+        precondition(view.previewImage.map { max($0.width, $0.height) > 440 && CGFloat(max($0.width, $0.height)) <= PortraitCaptureLayout.previewSide } == true,
+                     "The live preview renders large for the page-sized image")
         let buttons = view.subviews.compactMap { $0 as? NSButton }
         let websiteButton = buttons.first { $0.accessibilityLabel() == "Use Website Color" }!
-        websiteButton.performClick(nil)
-        precondition(view.composition.options.background == .color)
+        let desktopButton = buttons.first { $0.accessibilityLabel() == "Use Desktop Wallpaper" }!
+        let colorButton = buttons.first { $0.accessibilityLabel() == "Use a color" }!
         websiteButton.performClick(nil)
         precondition(view.composition.options.background == .page)
-        let desktopButton = buttons.first { $0.accessibilityLabel() == "Use Desktop Wallpaper" }!
         desktopButton.performClick(nil)
         precondition(view.composition.options.background == .desktop)
+        colorButton.performClick(nil)
+        precondition(view.composition.options.background == .color)
         let colorSlider = view.subviews.compactMap { $0 as? NSSlider }.first!
         colorSlider.doubleValue = 0.7
         colorSlider.sendAction(colorSlider.action!, to: colorSlider.target)
         precondition(view.composition.options.background == .color && view.composition.options.fraction == 0.7)
+        precondition(view.applyState == .pending && view.captureButton.isEnabled, "A changed frame makes Apply the primary button")
         var applied = false; view.onCapture = { applied = true }; view.captureButton.performClick(nil)
         precondition(applied && view.composition.options.fraction == 0.7)
         var canceled = false; view.onCancel = { canceled = true }; view.cancelOperation(nil); precondition(canceled)
-        view.showError(String(repeating: "A desktop error. ", count: 16)); view.layoutSubtreeIfNeeded()
-        precondition(view.subviews.filter { !($0 is NSVisualEffectView) }.allSatisfy { view.bounds.contains($0.frame) })
+        view.showError(String(repeating: "A desktop error. ", count: 16)); view.setFrameSize(view.fittingSize); view.layoutSubtreeIfNeeded()
+        precondition(view.subviews.allSatisfy { view.bounds.contains($0.frame) })
         defaults.set(PortraitCaptureOptions.Background.desktop.rawValue, forKey: "parc.capture.portrait.background")
         let unavailableView = PortraitCaptureView(source: source, pageColor: .green, defaults: defaults)
         precondition(!unavailableView.captureButton.isEnabled)
@@ -233,7 +233,7 @@ struct PortraitChecks {
                 previewView.layoutSubtreeIfNeeded(); window.orderFront(nil); window.displayIfNeeded()
                 try await Task.sleep(nanoseconds: 50_000_000)
                 defer { window.orderOut(nil) }
-                let rendered = previewView.subviews.compactMap { $0 as? NSImageView }.first!.image!.cgImage(forProposedRect: nil, context: nil, hints: nil)!
+                let rendered = previewView.previewImage!
                 precondition(sample(rendered, x: 160, y: 175)[0] > 245, "Nested AppKit drawing must preserve source pixels")
                 precondition(sample(rendered, x: 153, y: 175)[1] > 20, "Nested AppKit drawing must preserve the translucent frame")
                 try png(rendered).write(to: URL(fileURLWithPath: directory).appendingPathComponent("render-\(name).png"))

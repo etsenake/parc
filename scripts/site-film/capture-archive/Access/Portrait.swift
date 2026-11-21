@@ -4,7 +4,5 @@ extension PortraitCaptureView {
         options.background = .color; options.fraction = value
         refresh()
     }
-    var harnessPreview: NSImageView { preview }
-    var harnessMaterial: NSView { material }
     var harnessSlider: NSSlider { slider }
 }

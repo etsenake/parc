@@ -23,6 +23,10 @@ struct PortraitCaptureOptions {
     func saveWatermark(to defaults: UserDefaults = .standard) {
         defaults.set(!watermark, forKey: "parc.capture.portrait.hideWatermark")
     }
+    var settings: CaptureFrameSettings {
+        CaptureFrameSettings(background: CaptureFrameSettings.Background(rawValue: background.rawValue) ?? .color,
+                             fraction: fraction, watermark: watermark)
+    }
 }
 
 enum PortraitCaptureError: LocalizedError {
@@ -70,14 +74,15 @@ enum PortraitCaptureRenderer {
         return CGSize(width: ceil(source.width * ratio) + 384, height: ceil(source.height * ratio) + 384)
     }
     static func render(source: CGImage, options: PortraitCaptureOptions, palette: [NSColor],
-                       pageColor: NSColor?, desktop: NSImage?, backingScale: CGFloat = 1, preview: Bool = false) throws -> CGImage {
+                       pageColor: NSColor?, desktop: NSImage?, backingScale: CGFloat = 1, preview: Bool = false,
+                       previewSide: CGFloat = 440) throws -> CGImage {
         guard backingScale.isFinite, backingScale >= 1, backingScale <= 4 else { throw PortraitCaptureError.encoding }
         guard options.background != .desktop || desktop != nil else { throw PortraitCaptureError.desktopUnavailable }
         guard let selected = blendedColor(options.fraction, palette: palette),
               let fallback = blendedColor(0.95, palette: palette) else { throw PortraitCaptureError.resources }
         let color = options.background == .page ? (pageColor?.usingColorSpace(.sRGB) ?? fallback) : selected
         let size = outputSize(source: CGSize(width: CGFloat(source.width) / backingScale, height: CGFloat(source.height) / backingScale))
-        let scale = preview ? min(backingScale, 440 / max(size.width, size.height)) : backingScale
+        let scale = preview ? min(backingScale, previewSide / max(size.width, size.height)) : backingScale
         let width = max(1, Int(ceil(size.width * scale))), height = max(1, Int(ceil(size.height * scale)))
         let space = source.colorSpace?.model == .rgb ? source.colorSpace! : CGColorSpace(name: CGColorSpace.sRGB)!
         guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
@@ -211,24 +216,23 @@ struct PortraitCaptureComposition {
 }
 
 enum PortraitCaptureLayout {
-    static let padding: CGFloat = 10
-    static let spacing: CGFloat = 8
-    static let captureHeight: CGFloat = 32
-    static let preview = CGSize(width: 140, height: 96)
-    static let previewInset: CGFloat = 2.5
-    static let previewInnerCorner: CGFloat = 2.5
-    static let previewOuterCorner: CGFloat = 5
-    static let previewChromeAlpha: CGFloat = 0.4
-    static let previewShadowAlpha: CGFloat = 0.15
-    static let watermarkPad: CGFloat = 4
-    static let watermarkSide: CGFloat = 24
-    static let sliderTravel: CGFloat = 152
-    static let optionSide: CGFloat = 24
-    static let cardCorner: CGFloat = 10
-    static var contentWidth: CGFloat { sliderTravel + spacing + optionSide + spacing + optionSide }
-    static var width: CGFloat { padding * 2 + contentWidth }
+    static let padding: CGFloat = 12
+    static let spacing: CGFloat = 10
+    static let headerHeight: CGFloat = 44
+    static let tileGap: CGFloat = 8
+    static let swatchHeight: CGFloat = 50
+    static let tileHeight: CGFloat = 70
+    static let swatchCorner: CGFloat = 7
+    static let sliderHeight: CGFloat = 24
+    static let watermarkHeight: CGFloat = 26
+    static let buttonHeight: CGFloat = 38
+    static let buttonGap: CGFloat = 8
+    static let previewSide: CGFloat = 1600
+    static var width: CGFloat { CapturePresentation.paletteWidth }
+    static var contentWidth: CGFloat { width - padding * 2 }
+    static var tileWidth: CGFloat { floor((contentWidth - tileGap * 2) / 3) }
     static var height: CGFloat {
-        padding + captureHeight + spacing + preview.height + spacing + optionSide + padding
+        headerHeight + tileHeight + spacing + sliderHeight + spacing + watermarkHeight + spacing * 1.5 + buttonHeight + padding
     }
 }
 
@@ -236,17 +240,21 @@ enum PortraitCaptureLayout {
 final class PortraitCaptureView: NSView {
     var onCapture: (() -> Void)?
     var onCancel: (() -> Void)?
+    var onPreview: ((CGImage?) -> Void)?
     var onResize: (() -> Void)?
-    let captureButton = PortraitPrimaryButton(title: "Apply Frame")
-    private let material = NSVisualEffectView()
-    private let previewChrome = PortraitPreviewChrome()
-    private let preview = NSImageView()
+    let captureButton = ParcDialogButton(title: "Apply", primary: true)
+    let cancelButton = ParcDialogButton(title: "Cancel", primary: false)
+    private let back = NoteToolbarButton(icon: .symbol("chevron.left"), label: "Back to capture actions")
+    private let titleLabel = NSTextField(labelWithString: "Portrait Frame")
+    private let colorTile = PortraitBackgroundTile(title: "Color", label: "Use a color")
+    private let websiteTile = PortraitBackgroundTile(title: "Website", label: "Use Website Color")
+    private let wallpaperTile = PortraitBackgroundTile(title: "Wallpaper", label: "Use Desktop Wallpaper")
     private let slider = NSSlider(value: 0.95, minValue: 0, maxValue: 1, target: nil, action: nil)
-    private let watermark = PortraitOptionButton(label: "Parc watermark", symbol: "p.circle")
-    private let website = PortraitOptionButton(label: "Use Website Color", symbol: "globe")
-    private let wallpaper = PortraitOptionButton(label: "Use Desktop Wallpaper", symbol: "desktopcomputer")
+    private let watermark = ParcSelectionCheckbox(title: "Parc watermark", tint: NoteTheme.accent,
+                                                  labelAttributes: [.font: NoteTheme.menuTitleFont(), .foregroundColor: NoteTheme.menuInk])
     private let status = NSTextField(wrappingLabelWithString: "")
     private var options: PortraitCaptureOptions
+    private let committed: CaptureFrameSettings?
     private let source: CGImage
     private let pageColor: NSColor?
     private var desktop: NSImage?
@@ -258,51 +266,55 @@ final class PortraitCaptureView: NSView {
     private var desktopGeneration = 0
     private var wantsSavedDesktop = false
     private var desktopError: String?
-    private var motionObserver: NSObjectProtocol?
+    private var renderable = true
+    private(set) var previewImage: CGImage?
+    private(set) var applyState = CaptureFrameApply.pending
     override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
 
     init(source: CGImage, pageColor: NSColor?, backingScale: CGFloat = 1,
          composition: PortraitCaptureComposition? = nil, defaults: UserDefaults = .standard) {
         self.source = source; self.pageColor = composition?.pageColor ?? pageColor
         self.palette = composition?.palette ?? PortraitCaptureRenderer.palette()
         self.options = composition?.options ?? PortraitCaptureOptions(defaults: defaults)
+        self.committed = composition?.options.settings
         self.desktop = composition?.desktop
         self.backingScale = composition?.backingScale ?? backingScale
         self.defaults = defaults
         super.init(frame: NSRect(x: 0, y: 0, width: PortraitCaptureLayout.width, height: PortraitCaptureLayout.height))
-        wantsLayer = true; layer?.cornerRadius = PortraitCaptureLayout.cardCorner
-        layer?.cornerCurve = .continuous
-        layer?.shadowOpacity = 0.25; layer?.shadowRadius = 10
-        material.material = .popover; material.blendingMode = .withinWindow; material.state = .active
-        material.wantsLayer = true; material.layer?.cornerRadius = PortraitCaptureLayout.cardCorner
-        material.layer?.cornerCurve = .continuous; material.layer?.masksToBounds = true
-        addSubview(material)
-        setAccessibilityElement(true); setAccessibilityRole(.group); setAccessibilityLabel("Frame in Portrait Mode")
+        setAccessibilityElement(true); setAccessibilityRole(.group); setAccessibilityLabel("Portrait Frame")
+        titleLabel.font = NoteTheme.nunitoExtraBold(14.5); titleLabel.textColor = NoteTheme.menuInk
+        titleLabel.lineBreakMode = .byTruncatingTail
+        back.acceptsKeyboardFocus = true; back.focusRingType = .exterior
+        back.onPress = { [weak self] in self?.onCancel?() }
         captureButton.target = self; captureButton.action = #selector(capture)
-        captureButton.keyEquivalent = "\r"; captureButton.keyEquivalentModifierMask = []
-        preview.imageScaling = .scaleProportionallyUpOrDown; preview.setAccessibilityLabel("Portrait image preview")
-        preview.wantsLayer = true
-        preview.layer?.cornerRadius = PortraitCaptureLayout.previewInnerCorner
-        preview.layer?.masksToBounds = true
-        website.target = self; website.action = #selector(changeWebsite)
-        website.swatch = self.pageColor
-        website.setAccessibilityIdentifier("Portrait Capture Website Tint Button")
-        wallpaper.target = self; wallpaper.action = #selector(changeDesktop)
-        wallpaper.isEnabled = desktop != nil; wallpaper.thumbnail = desktop
-        wallpaper.setAccessibilityIdentifier("Portrait Capture Desktop Wallpaper Button")
-        LiveShortcutToolTip.set(wallpaper, desktop == nil ? "Desktop wallpaper has not been loaded." : "Use Desktop Wallpaper")
+        cancelButton.target = self; cancelButton.action = #selector(cancel)
+        colorTile.onPress = { [weak self] in self?.choose(.color) }
+        websiteTile.onPress = { [weak self] in self?.choose(.page) }
+        wallpaperTile.onPress = { [weak self] in self?.choose(.desktop) }
+        colorTile.gradient = palette
+        websiteTile.swatch = self.pageColor ?? PortraitCaptureRenderer.blendedColor(0.95, palette: palette)
+        websiteTile.setAccessibilityIdentifier("Portrait Capture Website Tint Button")
+        wallpaperTile.placeholderSymbol = "desktopcomputer"
+        wallpaperTile.thumbnail = desktop; wallpaperTile.isEnabled = desktop != nil
+        wallpaperTile.setAccessibilityIdentifier("Portrait Capture Desktop Wallpaper Button")
+        wallpaperTile.setToolTip(desktop == nil ? "Desktop wallpaper has not been loaded." : "Use Desktop Wallpaper")
         let sliderCell = PortraitColorSliderCell(); sliderCell.palette = palette
         slider.cell = sliderCell; slider.minValue = 0; slider.maxValue = 1
         slider.target = self; slider.action = #selector(changeColor); slider.doubleValue = options.fraction; slider.isContinuous = true
         slider.setAccessibilityLabel("Portrait background color")
         watermark.target = self; watermark.action = #selector(changeWatermark)
-        watermark.image = ParcBrandMark.image(.monochrome)
-        LiveShortcutToolTip.set(watermark, "Hide Watermark")
+        watermark.setAccessibilityLabel("Parc watermark")
         watermark.setAccessibilityIdentifier("Portrait Capture Watermark Toggle")
-        status.font = .systemFont(ofSize: 11); status.textColor = .secondaryLabelColor
-        for view in [captureButton, previewChrome, preview, watermark, slider, website, wallpaper, status] { addSubview(view) }
-        captureButton.nextKeyView = watermark; watermark.nextKeyView = slider; slider.nextKeyView = website
-        website.nextKeyView = wallpaper; wallpaper.nextKeyView = captureButton
+        status.font = NoteTheme.menuSubtitleFont(); status.textColor = NoteTheme.menuSecondaryInk
+        status.isHidden = true
+        for view in [back, titleLabel, colorTile, websiteTile, wallpaperTile, slider, watermark, status, cancelButton, captureButton] as [NSView] {
+            addSubview(view)
+        }
+        nextKeyView = colorTile
+        colorTile.nextKeyView = websiteTile; websiteTile.nextKeyView = wallpaperTile; wallpaperTile.nextKeyView = slider
+        slider.nextKeyView = watermark; watermark.nextKeyView = cancelButton; cancelButton.nextKeyView = captureButton
+        captureButton.nextKeyView = back; back.nextKeyView = colorTile
         if options.background == .desktop && desktop == nil {
             wantsSavedDesktop = true; options.background = .color; desktopError = "Loading desktop wallpaper…"
         }
@@ -310,99 +322,132 @@ final class PortraitCaptureView: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow == nil { CaptureMotion.settleImageBlend(preview); desktopTask?.cancel(); desktopTask = nil; previewTask?.cancel(); previewTask = nil; desktopGeneration += 1 }
+        if newWindow == nil { desktopTask?.cancel(); desktopTask = nil; previewTask?.cancel(); previewTask = nil; desktopGeneration += 1 }
         super.viewWillMove(toWindow: newWindow)
     }
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if let motionObserver { NSWorkspace.shared.notificationCenter.removeObserver(motionObserver) }; motionObserver = nil
-        if window != nil {
-            motionObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
-                object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated {
-                    guard let self, NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-                    CaptureMotion.settleImageBlend(self.preview)
-                } }
-        }
-    }
-    deinit { if let motionObserver { NSWorkspace.shared.notificationCenter.removeObserver(motionObserver) } }
     override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); refresh() }
+    override var fittingSize: NSSize { NSSize(width: PortraitCaptureLayout.width, height: PortraitCaptureLayout.height + statusHeight) }
+    override var intrinsicContentSize: NSSize { fittingSize }
+
+    private var statusHeight: CGFloat {
+        guard !status.isHidden else { return 0 }
+        let size = status.sizeThatFits(NSSize(width: PortraitCaptureLayout.contentWidth, height: .greatestFiniteMagnitude))
+        return ceil(size.height) + PortraitCaptureLayout.spacing
+    }
+
     override func layout() {
         super.layout()
         let L = PortraitCaptureLayout.self
-        material.frame = bounds
-        var y = L.padding
-        captureButton.frame = NSRect(x: L.padding, y: y, width: L.contentWidth, height: L.captureHeight)
-        y += L.captureHeight + L.spacing
-        let previewX = L.padding + (L.contentWidth - L.preview.width) / 2
-        let previewRect = NSRect(x: previewX, y: y, width: L.preview.width, height: L.preview.height)
-        previewChrome.frame = previewRect
-        preview.frame = previewRect.insetBy(dx: L.previewInset, dy: L.previewInset)
-        watermark.frame = NSRect(x: previewRect.minX + L.watermarkPad,
-                                 y: previewRect.maxY - L.watermarkPad - L.watermarkSide,
-                                 width: L.watermarkSide, height: L.watermarkSide)
-        y += L.preview.height + L.spacing
-        slider.frame = NSRect(x: L.padding, y: y, width: L.sliderTravel, height: L.optionSide)
-        website.frame = NSRect(x: L.padding + L.sliderTravel + L.spacing, y: y, width: L.optionSide, height: L.optionSide)
-        wallpaper.frame = NSRect(x: website.frame.maxX + L.spacing, y: y, width: L.optionSide, height: L.optionSide)
-        y += L.optionSide + L.padding
-        status.frame = NSRect(x: L.padding, y: y, width: L.contentWidth, height: max(0, bounds.height - y - L.padding))
+        back.frame = NSRect(x: 8, y: (L.headerHeight - 28) / 2, width: 28, height: 28)
+        titleLabel.frame = NSRect(x: back.frame.maxX + 4, y: (L.headerHeight - 20) / 2, width: bounds.width - back.frame.maxX - 4 - L.padding, height: 20)
+        var y = L.headerHeight
+        for (index, tile) in [colorTile, websiteTile, wallpaperTile].enumerated() {
+            tile.frame = NSRect(x: L.padding + CGFloat(index) * (L.tileWidth + L.tileGap), y: y, width: L.tileWidth, height: L.tileHeight)
+        }
+        y += L.tileHeight + L.spacing
+        slider.frame = NSRect(x: L.padding, y: y, width: L.contentWidth, height: L.sliderHeight)
+        y += L.sliderHeight + L.spacing
+        let mark = watermark.fittedSize(maxWidth: L.contentWidth)
+        watermark.frame = NSRect(x: L.padding, y: y + (L.watermarkHeight - mark.height) / 2, width: mark.width, height: mark.height)
+        y += L.watermarkHeight + L.spacing
+        if !status.isHidden {
+            let height = statusHeight - L.spacing
+            status.frame = NSRect(x: L.padding, y: y, width: L.contentWidth, height: height)
+            y += height + L.spacing
+        }
+        y += L.spacing / 2
+        let applyWidth = ceil(captureButton.bodyWidth) + 1, cancelWidth = ceil(cancelButton.bodyWidth) + 1
+        captureButton.frame = NSRect(x: bounds.width - L.padding - applyWidth, y: y, width: applyWidth, height: L.buttonHeight)
+        cancelButton.frame = NSRect(x: captureButton.frame.minX - L.buttonGap - cancelWidth, y: y, width: cancelWidth, height: L.buttonHeight)
     }
+
     var composition: PortraitCaptureComposition {
         PortraitCaptureComposition(options: options, palette: palette, pageColor: pageColor, desktop: desktop, backingScale: backingScale)
     }
+
     func loadDesktop(screen: NSScreen?,
                      provider: @escaping @MainActor (NSScreen?) async throws -> NSImage = PortraitDesktopSnapshot.capture) {
         guard desktop == nil, desktopTask == nil else { return }
         desktopGeneration += 1
         let generation = desktopGeneration
-        LiveShortcutToolTip.set(wallpaper, "Loading desktop wallpaper…")
+        wallpaperTile.setToolTip("Loading desktop wallpaper…")
         desktopTask = Task { [weak self] in
             do {
                 let result = try await provider(screen)
                 guard !Task.isCancelled, let self, self.desktopGeneration == generation else { return }
-                self.desktop = result; self.wallpaper.thumbnail = result; self.wallpaper.isEnabled = true
-                LiveShortcutToolTip.set(self.wallpaper, "Use Desktop Wallpaper")
+                self.desktop = result; self.wallpaperTile.thumbnail = result; self.wallpaperTile.isEnabled = true
+                self.wallpaperTile.setToolTip("Use Desktop Wallpaper")
                 if self.wantsSavedDesktop { self.options.background = .desktop; self.wantsSavedDesktop = false }
                 self.desktopError = nil; self.desktopTask = nil; self.refresh()
             } catch {
                 guard !Task.isCancelled, let self, self.desktopGeneration == generation else { return }
-                LiveShortcutToolTip.set(self.wallpaper, error.localizedDescription)
+                self.wallpaperTile.setToolTip(error.localizedDescription)
                 self.desktopTask = nil
                 if self.wantsSavedDesktop {
                     self.desktopError = error.localizedDescription
-                    self.captureButton.isEnabled = false; self.showError(error.localizedDescription)
+                    self.renderable = false; self.updateApply(); self.showError(error.localizedDescription)
                 }
             }
         }
     }
+
     func showError(_ message: String) {
-        status.stringValue = message
-        let height = max(44, status.sizeThatFits(NSSize(width: PortraitCaptureLayout.contentWidth, height: CGFloat.greatestFiniteMagnitude)).height)
-        setFrameSize(NSSize(width: PortraitCaptureLayout.width, height: PortraitCaptureLayout.height + PortraitCaptureLayout.padding + height))
-        needsLayout = true; onResize?()
+        guard status.stringValue != message || status.isHidden else { return }
+        status.stringValue = message; status.isHidden = message.isEmpty
+        invalidateIntrinsicContentSize(); needsLayout = true; onResize?()
         NSAccessibility.post(element: status, notification: .valueChanged)
+        if !message.isEmpty { CaptureMotion.announce(message, from: self) }
     }
-    @objc private func capture() {
-        previewTask?.cancel(); previewTask = nil
-        if captureButton.isEnabled { onCapture?() }
+
+    private func clearError() {
+        guard !status.isHidden else { return }
+        status.stringValue = ""; status.isHidden = true
+        invalidateIntrinsicContentSize(); needsLayout = true; onResize?()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { super.keyDown(with: event); return }
+        let key: CapturePaletteKey?
+        switch event.keyCode {
+        case 36, 76: key = .enter
+        case 53: key = .escape
+        case 123 where window?.firstResponder === self: key = .left
+        default: key = nil
+        }
+        guard let key else { super.keyDown(with: event); return }
+        switch CapturePaletteKeys.command(key, focus: .frame, highlighted: nil) {
+        case .activate: applyOrReturn()
+        case .back: onCancel?()
+        default: super.keyDown(with: event)
+        }
     }
     override func cancelOperation(_ sender: Any?) { onCancel?() }
-    @objc private func changeWebsite() {
-        wantsSavedDesktop = false; desktopError = nil
-        options.background = options.background == .page ? .color : .page
-        options.saveBackground(to: defaults); refresh()
+
+    private func applyOrReturn() {
+        switch applyState {
+        case .pending: capture()
+        case .unchanged: onCancel?()
+        case .unavailable: NSSound.beep()
+        }
     }
-    @objc private func changeDesktop() {
-        guard desktop != nil else { return }
+
+    @objc private func capture() {
+        previewTask?.cancel(); previewTask = nil
+        if applyState.isPrimary { onCapture?() }
+    }
+    @objc private func cancel() { onCancel?() }
+
+    private func choose(_ background: PortraitCaptureOptions.Background) {
+        guard background != .desktop || desktop != nil else { return }
         wantsSavedDesktop = false; desktopError = nil
-        options.background = options.background == .desktop ? .color : .desktop
+        options.background = background
         options.saveBackground(to: defaults); refresh()
     }
     @objc private func changeColor() {
         wantsSavedDesktop = false; desktopError = nil
         options.background = .color; options.fraction = slider.doubleValue
         options.saveColor(to: defaults); options.saveBackground(to: defaults)
-        website.state = .off; wallpaper.state = .off
+        updateTiles(); updateApply()
         guard previewTask == nil else { return }
         previewTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 50_000_000)
@@ -411,142 +456,108 @@ final class PortraitCaptureView: NSView {
         }
     }
     @objc private func changeWatermark() {
-        options.watermark.toggle(); options.saveWatermark(to: defaults); refresh()
+        options.watermark = watermark.state == .on; options.saveWatermark(to: defaults); refresh()
     }
+
+    private func updateTiles() {
+        colorTile.isChecked = options.background == .color
+        websiteTile.isChecked = options.background == .page
+        wallpaperTile.isChecked = options.background == .desktop
+        colorTile.swatch = PortraitCaptureRenderer.blendedColor(options.fraction, palette: palette)
+        watermark.state = options.watermark ? .on : .off
+    }
+
+    private func updateApply() {
+        applyState = CaptureFrameApply.state(committed: committed, draft: options.settings, renderable: renderable)
+        captureButton.isEnabled = applyState.isPrimary
+    }
+
     private func refresh() {
         previewTask?.cancel(); previewTask = nil
-        watermark.state = options.watermark ? .on : .off
-        watermark.setAccessibilityValue(options.watermark ? "On" : "Off")
-        website.state = options.background == .page ? .on : .off
-        wallpaper.state = options.background == .desktop ? .on : .off
+        updateTiles()
         do {
             let image = try PortraitCaptureRenderer.render(source: source, options: options, palette: palette,
-                pageColor: pageColor, desktop: desktop, backingScale: backingScale, preview: true)
-            let previous = preview.image
-            preview.image = wantsSavedDesktop ? nil : NSImage(cgImage: image, size: NSSize(width: CGFloat(image.width) / 2, height: CGFloat(image.height) / 2))
-            CaptureMotion.blendPortrait(preview, previous: previous)
-            captureButton.isEnabled = !wantsSavedDesktop
-            if wantsSavedDesktop, let desktopError { showError(desktopError) }
-            else { status.stringValue = ""; setFrameSize(NSSize(width: PortraitCaptureLayout.width, height: PortraitCaptureLayout.height)); needsLayout = true; onResize?() }
-        } catch { captureButton.isEnabled = false; showError(error.localizedDescription) }
-    }
-}
-
-@MainActor
-final class PortraitPrimaryButton: PointingHandButton {
-    init(title: String) {
-        super.init(frame: .zero)
-        self.title = title
-        isBordered = false; bezelStyle = .inline
-        wantsLayer = true
-        layer?.cornerRadius = 6
-        layer?.cornerCurve = .continuous
-        focusRingType = .exterior
-        font = .systemFont(ofSize: 13, weight: .semibold)
-        setButtonType(.momentaryLight)
-        setAccessibilityRole(.button)
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: PortraitCaptureLayout.captureHeight) }
-    override func draw(_ dirtyRect: NSRect) {
-        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let pressed = isHighlighted
-        let gray1 = NSColor(srgbRed: 0.085, green: 0.085, blue: 0.085, alpha: 1)
-        let face = dark ? (pressed ? gray1.withAlphaComponent(0.88) : gray1)
-            : (pressed ? NSColor(white: 0.88, alpha: 1) : .white)
-        let path = NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6)
-        NSGraphicsContext.saveGraphicsState()
-        path.addClip()
-        face.setFill(); path.fill()
-        if let context = NSGraphicsContext.current?.cgContext, let gradient = NSGradient(colors: [.white, NSColor.black.withAlphaComponent(0.22)]) {
-            context.saveGState()
-            context.setAlpha(dark ? 0.08 : 0.13)
-            gradient.draw(from: NSPoint(x: 0, y: isFlipped ? 0 : bounds.maxY),
-                          to: NSPoint(x: 0, y: isFlipped ? bounds.maxY : 0), options: [])
-            context.restoreGState()
+                pageColor: pageColor, desktop: desktop, backingScale: backingScale, preview: true,
+                previewSide: PortraitCaptureLayout.previewSide)
+            renderable = !wantsSavedDesktop
+            previewImage = wantsSavedDesktop ? nil : image
+            if wantsSavedDesktop, let desktopError { showError(desktopError) } else { clearError() }
+        } catch {
+            renderable = false; previewImage = nil
+            showError(error.localizedDescription)
         }
-        NSColor.white.withAlphaComponent(dark ? 0.22 : 0.08).setStroke()
-        let highlight = NSBezierPath(roundedRect: bounds.insetBy(dx: -0.5, dy: -0.5).offsetBy(dx: 0, dy: isFlipped ? -1 : 1), xRadius: 6, yRadius: 6)
-        highlight.lineWidth = 1; highlight.stroke()
-        NSGraphicsContext.restoreGraphicsState()
-        if isEnabled {
-            NSColor.black.withAlphaComponent(dark ? 0.87 : 0.5).setStroke()
-            let hairline = NSBezierPath(roundedRect: bounds.insetBy(dx: -0.25, dy: -0.25), xRadius: 6, yRadius: 6)
-            hairline.lineWidth = 0.25; hairline.stroke()
-        }
-        let color = (dark ? NSColor.white : NSColor.black).withAlphaComponent(isEnabled ? 0.8 : 0.3)
-        let text = NSAttributedString(string: title, attributes: [
-            .font: font ?? NSFont.systemFont(ofSize: 13, weight: .semibold),
-            .foregroundColor: color
-        ])
-        let size = text.size()
-        text.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2))
+        updateApply()
+        onPreview?(previewImage)
     }
 }
 
 @MainActor
-private final class PortraitPreviewChrome: NSView {
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.cornerRadius = PortraitCaptureLayout.previewOuterCorner
-        layer?.cornerCurve = .continuous
-        layer?.backgroundColor = NSColor.white.withAlphaComponent(PortraitCaptureLayout.previewChromeAlpha).cgColor
-        layer?.shadowColor = NSColor.black.cgColor
-        layer?.shadowOpacity = Float(PortraitCaptureLayout.previewShadowAlpha)
-        layer?.shadowRadius = 4
-        layer?.shadowOffset = NSSize(width: 0, height: -1)
-        layer?.masksToBounds = false
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-}
-
-@MainActor
-private final class PortraitOptionButton: PointingHandButton {
+private final class PortraitBackgroundTile: NoteControlButton {
     var swatch: NSColor? { didSet { needsDisplay = true } }
     var thumbnail: NSImage? { didSet { needsDisplay = true } }
-    private var hovered = false
-    private var tracking: NSTrackingArea?
-    init(label: String, symbol: String) {
-        super.init(frame: .zero)
-        title = ""; image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        isBordered = false; imagePosition = .imageOnly; imageScaling = .scaleProportionallyDown
-        focusRingType = .exterior; setButtonType(.momentaryChange)
-        setAccessibilityLabel(label); LiveShortcutToolTip.set(self, label)
+    var gradient: [NSColor] = [] { didSet { needsDisplay = true } }
+    var placeholderSymbol: String? { didSet { needsDisplay = true } }
+    override var isChecked: Bool { didSet { setAccessibilityValue(isChecked ? 1 : 0) } }
+    private let tileTitle: String
+
+    init(title: String, label: String) {
+        tileTitle = title
+        super.init(frame: NSRect(x: 0, y: 0, width: 77, height: PortraitCaptureLayout.tileHeight))
+        acceptsKeyboardFocus = true; focusRingType = .exterior
+        setAccessibilityRole(.radioButton); setAccessibilityLabel(label); setAccessibilityValue(0)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    override func updateTrackingAreas() {
-        if let tracking { removeTrackingArea(tracking) }
-        let value = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
-        tracking = value; addTrackingArea(value); super.updateTrackingAreas()
+
+    private var swatchRect: NSRect {
+        NSRect(x: 1.5, y: 1.5, width: bounds.width - 3, height: PortraitCaptureLayout.swatchHeight - 3)
     }
-    override func mouseEntered(with event: NSEvent) { hovered = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { hovered = false; needsDisplay = true }
-    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); hovered = false; needsDisplay = true }
-    override func draw(_ dirtyRect: NSRect) {
-        let rect = bounds.insetBy(dx: 1, dy: 1)
-        let path = NSBezierPath(ovalIn: rect)
-        NSGraphicsContext.saveGraphicsState(); path.addClip()
-        (swatch ?? NSColor.controlBackgroundColor).setFill(); path.fill()
-        if let thumbnail {
-            thumbnail.draw(in: rect, from: .zero, operation: .sourceOver, fraction: isEnabled ? 1 : 0.4, respectFlipped: true, hints: nil)
-        }
-        if hovered || isHighlighted { NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.18 : 0.08).setFill(); path.fill() }
-        NSGraphicsContext.restoreGraphicsState()
-        (state == .on ? NSColor.controlAccentColor : NSColor.separatorColor).setStroke()
-        path.lineWidth = state == .on ? 2 : 1; path.stroke()
-        if swatch == nil && thumbnail == nil, let image {
-            if let context = NSGraphicsContext.current?.cgContext {
-                context.saveGState()
-                if isFlipped { context.translateBy(x: 0, y: bounds.height); context.scaleBy(x: 1, y: -1) }
-                ParcBrandMark.drawMonochrome(image, in: rect.insetBy(dx: 5, dy: 4),
-                    color: NSColor.labelColor.withAlphaComponent(isEnabled ? 1 : 0.35), context: context)
-                context.restoreGState()
+
+    override func fill(hovered: Bool, pressed: Bool, checked: Bool) -> NSColor? { nil }
+
+    override func drawContent(in bounds: NSRect, ink: NSColor) {
+        let rect = swatchRect, corner = PortraitCaptureLayout.swatchCorner
+        let path = NSBezierPath(roundedRect: rect, xRadius: corner, yRadius: corner)
+        NSGraphicsContext.saveGraphicsState()
+        path.addClip()
+        if let thumbnail, thumbnail.size.width > 0, thumbnail.size.height > 0 {
+            let scale = max(rect.width / thumbnail.size.width, rect.height / thumbnail.size.height)
+            let size = NSSize(width: thumbnail.size.width * scale, height: thumbnail.size.height * scale)
+            thumbnail.draw(in: NSRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height),
+                           from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
+        } else if let swatch {
+            swatch.setFill(); path.fill()
+            if gradient.count > 1, let strip = NSGradient(colors: gradient) {
+                strip.draw(in: NSRect(x: rect.minX, y: rect.maxY - 9, width: rect.width, height: 9), angle: 0)
+            }
+        } else {
+            NoteTheme.fieldFill.setFill(); path.fill()
+            if let placeholderSymbol, let symbol = NoteIconRenderer.symbol(placeholderSymbol, pointSize: 16, weight: .semibold) {
+                NoteIconRenderer.drawTemplate(symbol, centeredIn: rect, tint: NoteTheme.menuTertiaryInk)
             }
         }
+        if isHovered || isPressed { NoteTheme.menuInk.withAlphaComponent(isPressed ? 0.16 : 0.08).setFill(); path.fill() }
+        NSGraphicsContext.restoreGraphicsState()
+        if isChecked {
+            NoteTheme.accent.setStroke()
+            let ring = NSBezierPath(roundedRect: rect.insetBy(dx: -0.25, dy: -0.25), xRadius: corner, yRadius: corner)
+            ring.lineWidth = 2.5; ring.stroke()
+        } else {
+            NoteTheme.menuHairline.setStroke()
+            path.lineWidth = 1 / (window?.backingScaleFactor ?? 2); path.stroke()
+        }
+        let font = NoteTheme.chromeFont(12)
+        let paragraph = NSMutableParagraphStyle(); paragraph.alignment = .center; paragraph.lineBreakMode = .byTruncatingTail
+        let label = NSAttributedString(string: tileTitle, attributes: [
+            .font: font, .foregroundColor: isChecked ? NoteTheme.menuInk : NoteTheme.menuSecondaryInk, .paragraphStyle: paragraph])
+        let height = ceil(font.ascender - font.descender)
+        label.draw(with: NSRect(x: 0, y: PortraitCaptureLayout.swatchHeight + 3, width: bounds.width, height: height),
+                   options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
-    override func drawFocusRingMask() { NSBezierPath(ovalIn: bounds.insetBy(dx: 1, dy: 1)).fill() }
-    override var focusRingMaskBounds: NSRect { bounds }
+
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: swatchRect, xRadius: PortraitCaptureLayout.swatchCorner, yRadius: PortraitCaptureLayout.swatchCorner).fill()
+    }
+    override var focusRingMaskBounds: NSRect { swatchRect }
 }
 
 @MainActor

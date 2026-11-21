@@ -69,8 +69,8 @@ import AppKit
         slider.doubleValue = fraction
         let rect = (slider.cell as! NSSliderCell).knobRect(flipped: true)
         slider.doubleValue = saved
-        let local = portrait.convert(NSPoint(x: rect.midX, y: rect.midY), from: slider)
-        return NSPoint(x: portrait.frame.minX + local.x, y: portrait.frame.minY + local.y)
+        let local = overlay.convert(NSPoint(x: rect.midX, y: rect.midY), from: slider)
+        return center(NSRect(origin: local, size: .zero))
     }
 
     func row(_ index: Int) -> NSPoint { center(overlay.harnessRowFrame(index)) }
@@ -90,7 +90,7 @@ import AppKit
         recorder.beat(2.3, "drag-ended", "handleCaptureGesture(.ended) at overlay \(p1); onRegion fires; showBusy() for 6 frames")
         recorder.beat(2.4, "preview", "showPreview(pixels, sourceRect:) — picture alpha 0→1 over 1.0 s cubic(0.215,0.61,0.355,1); frame, shadow, palette appear at once")
         recorder.beat(4.0, "click-frame", "click Frame in Portrait Mode")
-        recorder.beat(4.1, "portrait-open", "showConfiguration() + PortraitCaptureView at window (1022,22), no entrance animation")
+        recorder.beat(4.1, "portrait-open", "showFramePage(): the Frame page pushes inside the palette card and the captured image shows the live framed result")
         recorder.beat(4.4, "slider-drag", "slider 0.95→0.35; refresh every 50 ms; old thumbnail fades out with spring response 0.5 damping 0.7")
         recorder.beat(6.1, "apply", "Apply Frame pressed face 8 frames, then applyFrame + setFramed(true) + showPreview (no reveal)")
         recorder.beat(6.5, "save", "Save to Library: setLibraryBusy(true), then setLibrarySaved(true) at 6.75")
@@ -140,24 +140,13 @@ import AppKit
                 if t >= 4.1 - 1e-6 {
                     phase = 5
                     overlay.harnessPress(frameIndex, false); overlay.harnessHover(nil)
-                    overlay.showConfiguration()
                     let view = PortraitCaptureView(source: image!.unframedPixels, pageColor: pageColor, backingScale: image!.backingScale,
                                                    composition: image!.frame, defaults: defaults)
-                    view.appearance = NSAppearance(named: .aqua)
-                    view.setFrameOrigin(NSPoint(x: card.maxX - view.frame.width - 12, y: card.minY + 12))
-                    view.harnessMaterial.isHidden = true
-                    view.layer?.backgroundColor = NSColor(srgbRed: 0.96, green: 0.96, blue: 0.96, alpha: 1).cgColor
-                    scene.insert(view)
-                    view.layoutSubtreeIfNeeded()
+                    view.onPreview = { [weak overlay] image in overlay?.showDraft(image) }
+                    overlay.showFramePage(view, preview: view.previewImage)
+                    overlay.layoutSubtreeIfNeeded()
                     portrait = view
-                    let preview = view.harnessPreview
-                    let shadow = NSImageView(frame: preview.frame)
-                    shadow.imageScaling = preview.imageScaling
-                    shadow.wantsLayer = true; shadow.layer?.cornerRadius = preview.layer?.cornerRadius ?? 0; shadow.layer?.masksToBounds = true
-                    shadow.alphaValue = 0
-                    view.addSubview(shadow, positioned: .above, relativeTo: preview)
-                    ghost = shadow
-                    applyPoint = NSPoint(x: view.frame.minX + view.captureButton.frame.midX, y: view.frame.minY + view.captureButton.frame.midY)
+                    applyPoint = center(overlay.convert(view.captureButton.bounds, from: view.captureButton))
                     path = PointerPath(keys: [(4.1, frameRowPoint), (4.35, knob(0.95)), (4.45, knob(0.95))])
                     print("portrait card", view.frame, "slider", view.harnessSlider.frame, "apply", view.captureButton.frame)
                 }
@@ -167,13 +156,12 @@ import AppKit
                     let f = 0.95 + (0.35 - 0.95) * Curve.easeInOut(Curve.progress(t, 4.45, 5.6))
                     dragPoint = knob(f)
                     if frame % 3 == 0 && abs(f - lastFraction) > 0.0005, let portrait {
-                        ghost?.image = portrait.harnessPreview.image
                         ghostStart = t
                         portrait.harnessFraction(f)
                         lastFraction = f
                     }
                     if t >= 5.6, abs(lastFraction - 0.35) > 0.0005, let portrait {
-                        ghost?.image = portrait.harnessPreview.image; ghostStart = t
+                        ghostStart = t
                         portrait.harnessFraction(0.35); lastFraction = 0.35
                     }
                 }

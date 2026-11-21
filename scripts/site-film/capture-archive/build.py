@@ -42,7 +42,7 @@ assert toast.count("            ParcToastMaterial()\n") == 1
 write("ParcToast.swift", toast.replace("            ParcToastMaterial()\n", "            Color(white: 0.92)\n"))
 easel = (app / "EaselEditorViewController.swift").read_text()
 write("PortraitDesktopSnapshot.swift", "import AppKit\n@MainActor\nenum PortraitDesktopSnapshot {\n    static func capture(screen: NSScreen?) async throws -> NSImage { throw CancellationError() }\n}\n")
-write("EaselStoreOwner.swift", easel[:easel.index("    private let session:")] + "}\n")
+write("EaselStoreOwner.swift", easel[:easel.index("    let session: EaselSession")] + "}\n")
 
 extra = ["CaptureLibraryView", "DocumentsLibraryView", "DocumentDefaultIcon", "DownloadLibraryTable", "DownloadLibraryView", "DownloadThumbnailProvider",
          "ExternalMediaLibrary", "CaptureLibrarySharing", "MediaLibraryContext", "CaptureMotion", "DownloadArrivalMotion",

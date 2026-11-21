@@ -39,16 +39,13 @@ import AppKit
                 }
             }
         }
-        let light = CaptureAppearance.background(false).usingColorSpace(.sRGB)!
-        let dark = CaptureAppearance.background(true).usingColorSpace(.sRGB)!
+        let light = CaptureAppearance.imageBackground(false).usingColorSpace(.sRGB)!
+        let dark = CaptureAppearance.imageBackground(true).usingColorSpace(.sRGB)!
         precondition(light.redComponent == 1 && dark.blueComponent > dark.redComponent)
-        precondition(CaptureAppearance.hover(false) != CaptureAppearance.selected)
-        precondition(CaptureAppearance.hoveredSelected != CaptureAppearance.selected)
-        precondition(CaptureAppearance.toggle(true) != CaptureAppearance.text(true))
         precondition(CaptureArtwork.directory == Bundle.main.resourceURL?.appendingPathComponent("Capture", isDirectory: true),
                      "The artwork loads from the bundle's Capture resources")
         let cursor = CaptureArtwork.image("camera-cross-cursor")!
         precondition(cursor.size.height == 50 && cursor.representations.count >= 3 && !cursor.isTemplate)
-        print("Capture presentation passed: source anchors, crop mapping, \(layouts) fitted layouts, appearance states and cursor renditions.")
+        print("Capture presentation passed: source anchors, crop mapping, \(layouts) fitted layouts, image frame appearance and cursor renditions.")
     }
 }

@@ -6,13 +6,19 @@ recaptures the page; removing it restores the original PNG byte for byte.
 
 ## Controls and image output
 
-The frame card has 10-point outside padding and 8-point vertical spacing. Its
-primary Apply Frame action responds to Return; Escape dismisses. A 140 × 96
-preview preserves the output's aspect ratio with 2.5-point inner padding/corners
-and 5-point outer corners. The watermark control sits at bottom-leading with
-4-point padding. Website Color and Desktop Wallpaper are independent choices
-beside a 12-point color track with a 24-point white knob, 152-point travel and
-8-point end padding. Latest color changes are throttled at 50 ms.
+Frame in Portrait Mode pushes a Portrait Frame page inside the capture
+palette's card, with a back button, and the captured image beside it becomes the
+live preview of the framed result at page size, rendered up to 1,600 pixels on
+its longest side and blended on each change. The page offers Color, Website and
+Wallpaper as picture tiles, the chosen one ringed in the Notes accent; the
+12-point color track with its 24-point white knob sits under them, and moving it
+picks Color; a Parc watermark checkbox follows. Cancel and Apply are Parc's
+dialog buttons. Apply is the primary blue button only while there is a change to
+apply: always when adding a frame, and after a change when editing one;
+otherwise it stays muted. Return applies a pending change or goes back when
+nothing changed; Escape, Left on the page, Cancel and the back button return to
+the palette. Latest color changes are throttled at 50 ms. `CaptureFrameApply`
+holds the Apply rule.
 
 Composition uses logical points: the source is bounded by
 `min(1, 2160 / width, 2160 / height)`, rounded upward, and the canvas adds
@@ -46,9 +52,10 @@ preview identical to later exports and reframes. It deliberately does not
 refresh wallpaper during a slider drag or after Apply. The async result belongs
 to that exact frame editor; removal/cancellation increments its generation and
 cancels the task, and stale callbacks cannot change another capture. Saved
-Desktop preferences wait for the actual image; failure preserves a blank
-preview/error and blocks Apply across other refreshes until the user explicitly
-chooses Website or the color slider. Denied, absent or failed desktop
+Desktop preferences wait for the actual image; until then, and after a failure,
+the preview shows the unframed capture with the error and Apply stays
+unavailable across other refreshes until the user explicitly chooses Color,
+Website or the color slider. Denied, absent or failed desktop
 capture leaves a descriptive error/help and usable Website/Color choices;
 missing desktop pixels never silently render a different background.
 

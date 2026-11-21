@@ -3,7 +3,6 @@ import AppKit
 enum CapturePresentation {
     static let paletteWidth: CGFloat = 273
     static let paletteInset: CGFloat = 10
-    static let rowHeight: CGFloat = 32
     static let cornerRadius: CGFloat = 7
     static let imageBorder: CGFloat = 4
 
@@ -71,15 +70,7 @@ enum CapturePresentation {
     static func dark(_ appearance: NSAppearance) -> Bool {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
     }
-    static func background(_ dark: Bool) -> NSColor { dark ? rgb(0.071, 0.059, 0.180) : .white }
     static func imageBackground(_ dark: Bool) -> NSColor { dark ? rgb(21 / 255, 28 / 255, 48 / 255) : .white }
-    static func text(_ dark: Bool) -> NSColor { dark ? .white.withAlphaComponent(0.9) : .black }
-    static func selectedText(_ dark: Bool) -> NSColor { .white.withAlphaComponent(dark ? 1 : 0.95) }
-    static func field(_ dark: Bool) -> NSColor { (dark ? NSColor.white : .black).withAlphaComponent(0.07) }
-    static func hover(_ dark: Bool) -> NSColor { dark ? rgb(0.227, 0.220, 0.408) : rgb(0.067, 0.078, 0.333, 0.1) }
-    static let selected = NSColor(displayP3Red: 0.1921568627, green: 0.2235294118, blue: 0.9843137255, alpha: 1)
-    static let hoveredSelected = NSColor(displayP3Red: 0.161, green: 0.180, blue: 0.757, alpha: 1)
-    static func toggle(_ dark: Bool) -> NSColor { dark ? NSColor(displayP3Red: 0.839, green: 0.843, blue: 0.984, alpha: 1) : selected }
     static let hint = NSColor(displayP3Red: 0.204, green: 0.021, blue: 0.580, alpha: 0.8)
     private static func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> NSColor {
         NSColor(srgbRed: r, green: g, blue: b, alpha: a)

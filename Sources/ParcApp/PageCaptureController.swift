@@ -263,7 +263,6 @@ final class PageCaptureController: NSObject {
 
     private func configurePortrait() {
         guard state == .preview, let image, valid(), lease.isValid, let parent else { return }
-        portrait?.removeFromSuperview()
         let view = PortraitCaptureView(source: image.unframedPixels, pageColor: capturedPageColor,
                                        backingScale: image.backingScale, composition: image.frame)
         view.onCapture = { [weak self, weak view] in
@@ -271,25 +270,15 @@ final class PageCaptureController: NSObject {
             self.reconcile()
             guard self.state == .configuringPortrait, let image = self.image else { return }
             do { try image.applyFrame(view.composition); self.showPreview(changed: true) }
-            catch { view.showError(error.localizedDescription); self.parent?.makeFirstResponder(view.captureButton) }
+            catch { view.showError(error.localizedDescription); self.parent?.makeFirstResponder(view) }
         }
         view.onCancel = { [weak self] in self?.cancelEditingOrDismiss() }
+        view.onPreview = { [weak self] image in self?.overlay.showDraft(image) }
+        view.onResize = { [weak self] in self?.overlay.palette.view.frameContentSizeChanged() }
         portrait = view; state = .configuringPortrait
-        overlay.showConfiguration()
-        if let host {
-            host.addSubview(view, positioned: .above, relativeTo: overlay)
-            let top = host.isFlipped ? sourceFrame.minY + 12 : sourceFrame.maxY - view.frame.height - 12
-            view.frame.origin = NSPoint(x: min(max(host.bounds.minX + 12, sourceFrame.maxX - view.frame.width - 12),
-                                             host.bounds.maxX - view.frame.width - 12),
-                                        y: min(max(host.bounds.minY + 12, top), host.bounds.maxY - view.frame.height - 12))
-        }
-        view.onResize = { [weak self, weak view] in
-            guard let self, let view, self.portrait === view, let host = self.host else { return }
-            view.frame.origin.y = min(max(host.bounds.minY + 12, view.frame.origin.y),
-                                      max(host.bounds.minY + 12, host.bounds.maxY - view.frame.height - 12))
-        }
+        overlay.showFramePage(view, preview: view.previewImage)
         view.loadDesktop(screen: parent.screen)
-        parent.makeFirstResponder(view.captureButton)
+        parent.makeFirstResponder(view)
     }
 
     private func cancelEditingOrDismiss() {
@@ -322,7 +311,7 @@ final class PageCaptureController: NSObject {
 
     private func showPreview(changed: Bool) {
         guard let image else { return }
-        portrait?.removeFromSuperview(); portrait = nil
+        portrait = nil
         state = .preview
         captureKind = image.frame != nil ? .portrait : acquisitionMode == .region ? .region : acquisitionMode == .fullPage ? .fullPage : .viewport
         overlay.setFramed(image.frame != nil)
@@ -573,6 +562,7 @@ final class PageCaptureOverlay: NSView {
     private let spinner = NSProgressIndicator()
     private var paletteShown = false
     private var committedPixels: CGImage?
+    private var drafting = false
     private var outputBusy = false
     private var libraryBusy = false
     private var selection: NSRect?
@@ -638,16 +628,6 @@ final class PageCaptureOverlay: NSView {
         updateKeyLoop(); setAccessibilityValue(CaptureModeHint.accessibilityValue(mode: selectionMode, targeted: false))
         if let window { updateHover(convert(window.mouseLocationOutsideOfEventStream, from: nil)) }
     }
-    func showConfiguration() {
-        settlePresentation()
-        endSelection()
-        selecting = false; editing = false; busy = false; selection = nil; start = nil
-        picture.isHidden = true; pictureFrame.isHidden = true; setPaletteShown(false); hint.isHidden = true
-        cancel.isHidden = true
-        spinner.stopAnimation(nil); spinner.isHidden = true
-        updateKeyLoop()
-        needsDisplay = true; window?.invalidateCursorRects(for: self)
-    }
     func showBusy() {
         settlePresentation()
         endSelection()
@@ -674,7 +654,9 @@ final class PageCaptureOverlay: NSView {
         endSelection()
         editing = false; selecting = false; busy = false; selection = nil
         committedPixels = image
+        let previous = drafting ? picture.image : nil
         picture.image = NSImage(cgImage: image, size: .zero); imageSize = NSSize(width: image.width, height: image.height)
+        if drafting { drafting = false; CaptureMotion.blendPortrait(picture, previous: previous) }
         picture.isHidden = false; pictureFrame.isHidden = false; hint.isHidden = true
         modeChrome.hide(animated: true); cancel.isHidden = true; spinner.stopAnimation(nil); spinner.isHidden = true
         if shown { palette.reset() }
@@ -684,6 +666,19 @@ final class PageCaptureOverlay: NSView {
     func showError(_ message: String) {
         palette.setStatus(message)
         CaptureMotion.announce(message, from: self)
+    }
+    func showFramePage(_ page: NSView, preview: CGImage?) {
+        palette.showFramePage(page)
+        showDraft(preview)
+        setAccessibilityValue("Frame the captured image. The preview shows the framed result.")
+    }
+    func showDraft(_ image: CGImage?) {
+        guard let shown = image ?? committedPixels else { return }
+        let previous = picture.image
+        picture.image = NSImage(cgImage: shown, size: .zero); imageSize = NSSize(width: shown.width, height: shown.height)
+        drafting = image != nil
+        needsLayout = true
+        CaptureMotion.blendPortrait(picture, previous: previous)
     }
     private func setPaletteShown(_ shown: Bool) {
         guard shown != paletteShown else { return }
