@@ -1,8 +1,8 @@
 # Easel board features
 
 Board-wide tools that work across a whole Easel rather than on one object:
-find and replace, and links to a single object. They sit beside the
-[Easel editing contract](easels.md) and use the Notes look
+find and replace, links to a single object and Easel History. They sit beside
+the [Easel editing contract](easels.md) and use the Notes look
 ([appearance](easel-appearance.md)) and motion rules ([motion](easel-motion.md)).
 
 ## Find and replace
@@ -74,11 +74,33 @@ the canvas to it at up to 100%. If the object has since been deleted, the
 Easel still opens and a toast says the object isn't there anymore. Tabs keep
 the plain Easel address, and any other fragment is not an Easel link.
 
+## Easel History
+
+Easel History, in the ••• page menu, keeps restorable versions of an Easel the
+way Note History does for notes. Parc keeps the Easel as it was when you
+started changing it, then a snapshot at most every five minutes while you
+work and one more two minutes after you stop. Edits made in an Easel block in
+a note count too, since they're the same Easel. Identical states are never
+stored twice. Snapshots are whole Easel files kept beside the Easels, in a
+`history` folder named after each Easel, and point at the same stored images,
+so nothing is copied twice. Each Easel keeps its newest 40 snapshots, up to
+96 MB. Deleting an Easel deletes its history; moving one to another Profile
+starts its history afresh there.
+
+The panel lists the current version and each snapshot with when it was saved
+and how many objects it had, and previews the selected one drawn exactly as
+the canvas would draw it, on the Easel's own light or dark paper. Restore
+first keeps the current state as a snapshot, then brings back the old one as
+a single undo step, so ⌘Z returns to where you were. ↑ and ↓ move through the
+list and Return restores. A version whose pictures are missing can't be
+previewed and won't restore, and the Easel stays as it was.
+
 ## Checks
 
 `tests/EaselBoardFeaturesTests.swift` is a windowless suite over the ParcCore
 board logic: find order, visibility, matching, replacement across rich text
 runs, per-object and per-table refusals, the find session's replace and
-refresh rules, viewport focus and object links. Build it with every `Sources/ParcCore` file
+refresh rules, viewport focus, object links, and history names, caps and
+recording against a temporary store. Build it with every `Sources/ParcCore` file
 plus `tests/Support/TestFailure.swift` and run the binary. The views are
 checked by compiling only.

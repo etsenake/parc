@@ -276,7 +276,8 @@ The ••• button at the end of the title row opens the Easel's page menu, bu
 from the same floating menu, rows, highlight, motion and keyboard handling as
 the Notes page menu: Copy Link (the Easel's `parc://easel/…` address), Copy as
 Image (a PNG on the pasteboard), Export (Image…, HTML File…, PDF…), Show in
-Library, Duplicate, and Delete Easel…, with the object count and last edit
+Library, [Easel History](easel-board-features.md#easel-history), Duplicate, and
+Delete Easel…, with the object count and last edit
 underneath. Easels have no lock. Exports are named after the Easel's title and
 end with the Notes "Exported …" toast.
 

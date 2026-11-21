@@ -417,6 +417,8 @@ final class EaselStore {
     var documentsDirectory: URL { directory.appendingPathComponent("documents", isDirectory: true) }
     private var assetsDirectory: URL { directory.appendingPathComponent("assets", isDirectory: true) }
     private let documentWriter = EaselDocumentWriter()
+    var onSessionCreated: ((EaselSession) -> Void)?
+    var onDocumentRemoved: ((UUID) -> Void)?
 
     init(directory: URL, now: @escaping () -> Date = Date.init) throws {
         self.directory = directory.standardizedFileURL
@@ -473,6 +475,7 @@ final class EaselStore {
         documentWriter.forget(url)
         syncDirectory(documentsDirectory)
         sessions.removeValue(forKey: id)?.value?.markDeleted()
+        onDocumentRemoved?(id)
     }
 
     fileprivate func timestamp() -> Date { now() }
@@ -546,6 +549,7 @@ final class EaselStore {
         }
         syncDirectory(documentsDirectory); destination.syncDirectory(destination.documentsDirectory)
         sessions.removeValue(forKey: id); destination.sessions.removeValue(forKey: id)
+        onDocumentRemoved?(id)
         return copied
     }
 
@@ -567,6 +571,7 @@ final class EaselStore {
     private func session(_ document: EaselDocument) -> EaselSession {
         let value = EaselSession(store: self, document: document)
         sessions[document.id] = WeakSession(value)
+        onSessionCreated?(value)
         return value
     }
 

@@ -10,6 +10,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         let key = directory.standardizedFileURL.path
         if let store = stores[key] { return store }
         let store = try EaselStore(directory: URL(fileURLWithPath: key, isDirectory: true))
+        EaselHistories.attach(to: store)
         stores[key] = store
         return store
     }

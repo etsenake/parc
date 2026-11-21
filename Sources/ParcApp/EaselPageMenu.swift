@@ -85,6 +85,7 @@ final class EaselPageMenu {
                                         isEnabled: actions.showInLibrary != nil)
         library.separatorBefore = true
         result.append(library)
+        result.append(.init(id: "history", title: "Easel History", icon: .symbol("clock.arrow.circlepath"), isEnabled: canAct))
         result.append(.init(id: "duplicate", title: "Duplicate", icon: .symbol("plus.square.on.square"),
                             isEnabled: canAct && actions.duplicate != nil))
         var delete = NoteMenuList.Item(id: "delete", title: "Delete Easel…", icon: .symbol("trash"),
@@ -100,6 +101,7 @@ final class EaselPageMenu {
         case "copy-image": close(); editor.copyImage()
         case "export": presentExport(from: row)
         case "library": close(); actions.showInLibrary?()
+        case "history": close(); EaselHistoryPanel.present(editor: editor)
         case "duplicate": close(); actions.duplicate?()
         case "delete": close(); actions.delete?()
         default: break
