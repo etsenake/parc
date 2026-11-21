@@ -157,7 +157,7 @@ page that doesn't exist and a list made only of dividers.
 merging a page's edits back, validation and the pure page operations (add,
 rename, move, duplicate with fresh IDs and remapped connector, attachment,
 group and mind-map references, delete with contents, and Move to Page). It
-has its own windowless suite, `tests/EaselPagesTests.swift`.
+has its own suite, `tests/ParcCoreTests/Easels/EaselPagesTests.swift`.
 `EaselPageSession` gives the canvas a session whose document is the current
 page and whose edits merge back into the whole Easel, so every canvas feature
 sees one page without knowing pages exist. `EaselCanvasView+Pages.swift`
