@@ -45,10 +45,11 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         didSet {
             guard isHovered != oldValue else { return }
             let delay = SidebarChromeLayout.SpaceHeader.editButtonHoverDelay(hovered: isHovered)
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                MainActor.assumeIsolated { self?.updateEditButton(animated: self?.showsIcon == false) }
-            }
+            scheduleHoverUpdate(delay) { [weak self] in self?.updateEditButton(animated: self?.showsIcon == false) }
         }
+    }
+    var scheduleHoverUpdate: (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, body in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { body() } }
     }
     static var ellipsis: NSImage? {
         NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "")?

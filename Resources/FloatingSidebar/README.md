@@ -10,7 +10,7 @@ for top, left, bottom and right, so only the clear middle stretches.
 `FloatingSidebarSurface.shadowImage` in `ThemeRenderer.swift` combines both
 bitmaps at the 1× point size with those cap insets and draws the result at 20%
 opacity. `scripts/build.py` copies this directory to
-`Contents/Resources/FloatingSidebar`; the focused `tests/FloatingSidebarSurface`
-checks cover packaging and resource integrity. See
+`Contents/Resources/FloatingSidebar`; `FloatingSidebarArtworkTests` checks a copy
+of both bitmaps in the test fixtures, so replace that copy with the artwork. See
 [floating surface](../../docs/sidebar-motion.md#floating-surface) for how the
 shadow fits the sidebar.

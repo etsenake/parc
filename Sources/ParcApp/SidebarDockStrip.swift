@@ -73,6 +73,7 @@ final class SidebarDockStrip: NSScrollView {
     override func mouseMoved(with event: NSEvent) { updateHover() }
     override func mouseExited(with event: NSEvent) { updateHover() }
     var offerScroll: (NSEvent) -> Bool = { _ in false }
+    var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     var overflows: Bool {
         let clip = contentView, size = clip.bounds.size
         let low = clip.constrainBoundsRect(NSRect(origin: NSPoint(x: -1e6, y: clip.bounds.minY), size: size)).minX
@@ -130,7 +131,7 @@ final class SidebarDockStrip: NSScrollView {
         let dark = dark ?? (effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
         let ink = NSColor(srgbRed: dark ? 1 : 0, green: dark ? 1 : 0, blue: dark ? 1 : 0, alpha: 0.5)
         let fill = SidebarRowAppearance.controlFill(pressed: false, dark: dark)
-        let animate = animated && window != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let animate = animated && window != nil && !reduceMotion()
         NSAnimationContext.runAnimationGroup { context in
             context.allowsImplicitAnimation = animate
             if !animate { context.duration = 0 }
@@ -161,7 +162,7 @@ final class SidebarDockStrip: NSScrollView {
         let proposed = NSRect(origin: NSPoint(x: layoutState.items[index].midX - clip.bounds.width / 2, y: clip.bounds.minY), size: clip.bounds.size)
         let origin = clip.constrainBoundsRect(proposed).origin
         guard origin != clip.bounds.origin else { return }
-        if animated, window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        if animated, window != nil, !reduceMotion() {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.16; context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 context.allowsImplicitAnimation = true

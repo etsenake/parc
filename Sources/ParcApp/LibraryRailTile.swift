@@ -51,7 +51,9 @@ final class LibraryRailTile: PointingHandButton {
     let progress: DownloadActivityBadge?
     fileprivate private(set) var showsProgress = false
     private let animationName: LibraryRailAnimation.Name
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    var loadAnimation: @MainActor (LibraryRailAnimation.Name) -> LibraryRailAnimation? = { LibraryRailAnimation.named($0) }
+    var scheduleTicker: (Timer) -> Void = { RunLoop.main.add($0, forMode: .common) }
     var now: () -> CFTimeInterval = { CACurrentMediaTime() }
     private let fill = NSView()
     private let art = LibraryRailTileArt()
@@ -102,7 +104,7 @@ final class LibraryRailTile: PointingHandButton {
             if !emphasis.isSettled(at: now()) { startTicking() }
         }
     }
-    var animation: LibraryRailAnimation? { LibraryRailAnimation.named(animationName) }
+    var animation: LibraryRailAnimation? { loadAnimation(animationName) }
     var currentEmphasis: CGFloat { CGFloat(emphasis.value(at: now())) }
     fileprivate var currentFrame: Double {
         guard let animation else { return 0 }
@@ -111,7 +113,7 @@ final class LibraryRailTile: PointingHandButton {
                                                elapsed: now() - playback.start)
     }
     private func playSelection() {
-        guard window != nil, !reduceMotion, playback == nil, let animation,
+        guard window != nil, !reduceMotion(), playback == nil, let animation,
               let from = animation.frame(forMarker: "hover-start"),
               let end = animation.frame(forMarker: "selection-end") else { return }
         playback = (now(), from, end)
@@ -125,7 +127,7 @@ final class LibraryRailTile: PointingHandButton {
                 self.tick()
             }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        scheduleTicker(timer)
         ticker = timer
     }
     private func tick() {
@@ -186,7 +188,7 @@ final class LibraryRailTile: PointingHandButton {
         let inset = pressed ? Self.pressedInset : 0
         fill.frame = bounds.insetBy(dx: inset, dy: inset)
         CATransaction.commit()
-        guard springing, window != nil, !reduceMotion else { return }
+        guard springing, window != nil, !reduceMotion() else { return }
         layer.add(LibraryRailMotion.pressSpring("bounds", from: NSValue(rect: fromBounds), to: NSValue(rect: layer.bounds)), forKey: "bounds")
         layer.add(LibraryRailMotion.pressSpring("position", from: NSValue(point: fromPosition), to: NSValue(point: layer.position)),
                   forKey: "position")

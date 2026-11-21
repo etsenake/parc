@@ -490,6 +490,7 @@ enum IncognitoWindowTheme {
 @MainActor
 final class ThemeRendererView: NSView {
     var onLayout: (() -> Void)?
+    var onCanvasCommit: ((MTLCommandBuffer) -> Void)?
     weak var coordinateSpace: NSView? { didSet { invalidateCoordinates() } }
     var theme = SpaceTheme() { didSet { if theme != oldValue { refreshTheme() } } }
     var incognito = false { didSet { if incognito != oldValue { refreshTheme() } } }
@@ -839,8 +840,9 @@ final class ThemeRendererView: NSView {
         }
         let from = pagingTransition.map { (theme: $0.from, isDark: ThemeSurfaceStyle(theme: $0.from, appearance: appearance).backgroundIsDark) }
             ?? (theme: theme, isDark: surfaceStyle.backgroundIsDark)
-        renderer?.draw(in: canvas, theme: from.theme, isDark: from.isDark, next: next,
-                       isActive: isActive, pointSize: size, sampleRect: sampleRect)
+        let command = renderer?.draw(in: canvas, theme: from.theme, isDark: from.isDark, next: next,
+                                     isActive: isActive, pointSize: size, sampleRect: sampleRect)
+        if let command { onCanvasCommit?(command) }
     }
 }
 
@@ -878,6 +880,11 @@ private final class ThemeMetalCanvas: MTKView {
 
     static var shadowImage: NSImage? {
         if let cachedShadow { return cachedShadow }
+        cachedShadow = shadowImage(in: directory)
+        return cachedShadow
+    }
+
+    static func shadowImage(in directory: URL?) -> NSImage? {
         guard let directory,
               let data = try? Data(contentsOf: directory.appendingPathComponent("CellDropShadow.png")),
               let base = NSBitmapImageRep(data: data) else { return nil }
@@ -890,7 +897,6 @@ private final class ThemeMetalCanvas: MTKView {
             image.addRepresentation(double)
         }
         image.capInsets = NSEdgeInsets(top: 19, left: 19, bottom: 20, right: 20)
-        cachedShadow = image
         return image
     }
 
@@ -1071,21 +1077,22 @@ private final class ThemeMetalRenderer {
         return context.makeImage()
     }
 
+    @discardableResult
     func draw(in view: MTKView, theme: SpaceTheme, isDark: Bool, next requested: (theme: SpaceTheme, isDark: Bool, progress: Float)? = nil,
-              isActive: Bool, pointSize: NSSize, sampleRect: SIMD4<Float>) {
+              isActive: Bool, pointSize: NSSize, sampleRect: SIMD4<Float>) -> MTLCommandBuffer? {
         let transition = requested == nil ? nil : self.transition
         let next = transition == nil ? nil : requested
         let incoming = next?.theme.rendersColor == true
         guard pointSize.width > 0, pointSize.height > 0,
               let drawable = view.currentDrawable, let outputPass = view.currentRenderPassDescriptor,
-              let command = queue.makeCommandBuffer() else { return }
+              let command = queue.makeCommandBuffer() else { return nil }
         outputPass.colorAttachments[0].loadAction = .clear
         outputPass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
         let progress = next?.progress ?? 0
         guard (theme.rendersColor && progress < 1) || (incoming && progress > 0) else {
             command.makeRenderCommandEncoder(descriptor: outputPass)?.endEncoding()
             command.present(drawable); command.commit()
-            return
+            return command
         }
         var uniforms = ThemeGradientUniforms(theme: theme, backgroundIsDark: isDark, pointSize: pointSize,
                                              underlay: underlay(theme, isDark: isDark))
@@ -1096,7 +1103,7 @@ private final class ThemeMetalRenderer {
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = gradient
         pass.colorAttachments[0].loadAction = .dontCare; pass.colorAttachments[0].storeAction = .store
-        guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { return }
+        guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { return nil }
         encoder.setRenderPipelineState(transition?.gradient ?? gradientPipeline)
         encoder.setVertexBytes(&line, length: MemoryLayout<ThemeGradientUniforms>.stride, index: 0)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<ThemeGradientUniforms>.stride, index: 0)
@@ -1111,7 +1118,7 @@ private final class ThemeMetalRenderer {
             return (ThemeOutputUniforms(theme: theme, isActive: isActive, pointSize: pointSize,
                                         sampleRect: sampleRect, hasTexture: overlay != nil), overlay)
         }
-        guard let display = command.makeRenderCommandEncoder(descriptor: outputPass) else { return }
+        guard let display = command.makeRenderCommandEncoder(descriptor: outputPass) else { return nil }
         let current = output(theme)
         var currentUniforms = current.0
         display.setFragmentTexture(gradient, index: 0); display.setFragmentTexture(current.1, index: 1)
@@ -1128,6 +1135,7 @@ private final class ThemeMetalRenderer {
         }
         display.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         display.endEncoding(); command.present(drawable); command.commit()
+        return command
     }
 
     private static let shader = #"""
