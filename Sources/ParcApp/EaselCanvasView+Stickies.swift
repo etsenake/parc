@@ -83,25 +83,104 @@ enum EaselStickyText {
 }
 
 @MainActor
+final class EaselPaperCache {
+    struct Key: Hashable {
+        let width: Int, height: Int, color: UInt32, scale: Int, dark: Bool, pixels: Int
+    }
+    private var images: [Key: CGImage] = [:]
+    private var order: [Key] = []
+    private var pixelTotal = 0
+    private let pixelBudget = 8_000_000
+
+    func image(_ key: Key, make: () -> CGImage?) -> CGImage? {
+        if let image = images[key] {
+            if let index = order.firstIndex(of: key) { order.remove(at: index) }
+            order.append(key)
+            return image
+        }
+        guard let image = make() else { return nil }
+        images[key] = image; order.append(key); pixelTotal += image.width * image.height
+        while pixelTotal > pixelBudget, order.count > 1 {
+            let oldest = order.removeFirst()
+            if let gone = images.removeValue(forKey: oldest) { pixelTotal -= gone.width * gone.height }
+        }
+        return image
+    }
+}
+
+@MainActor
 enum EaselStickyArt {
+    static let cache = EaselPaperCache()
+
     static func cornerRadius(scale: Double) -> CGFloat { CGFloat(max(1.5, 4 * scale)) }
 
-    static func overhang(_ item: EaselItem) -> CGFloat { CGFloat(30 * EaselBoardObjects.textScale(item)) }
+    static func overhang(_ item: EaselItem) -> CGFloat { reach(scale: EaselBoardObjects.textScale(item)) }
 
-    static func drawPaper(_ paper: NSColor?, in frame: NSRect, scale: Double, dark: Bool) {
-        guard let paper, frame.width > 0, frame.height > 0, let context = NSGraphicsContext.current?.cgContext else { return }
+    static func reach(scale: Double) -> CGFloat { CGFloat(30 * scale) + 2 }
+
+    static func drawPaper(_ paper: NSColor?, in frame: NSRect, scale: Double, dark: Bool, cacheable: Bool) {
+        guard let paper, frame.width > 0, frame.height > 0, let graphics = NSGraphicsContext.current else { return }
+        let context = graphics.cgContext, ctm = context.ctm
+        let device = sqrt(abs(ctm.a * ctm.d - ctm.b * ctm.c))
+        let outer = frame.insetBy(dx: -reach(scale: scale), dy: -reach(scale: scale))
+        let pixels = outer.width * outer.height * device * device
+        if cacheable, graphics.isDrawingToScreen, device > 0, device <= 4, pixels <= 1_500_000,
+           let rgb = paper.usingColorSpace(.sRGB) {
+            let channels = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent, rgb.alphaComponent]
+                .map { UInt32(max(0, min(255, ($0 * 255).rounded()))) }
+            let key = EaselPaperCache.Key(width: Int((frame.width * 4).rounded()), height: Int((frame.height * 4).rounded()),
+                                          color: channels[0] << 24 | channels[1] << 16 | channels[2] << 8 | channels[3],
+                                          scale: Int((scale * 1000).rounded()), dark: dark, pixels: Int((device * 4).rounded()))
+            let local = NSRect(x: reach(scale: scale), y: reach(scale: scale), width: frame.width, height: frame.height)
+            let size = NSSize(width: outer.width, height: outer.height)
+            if let image = cache.image(key, make: { render(paper, in: local, canvas: size, scale: scale, dark: dark, device: device) }) {
+                context.saveGState()
+                context.translateBy(x: outer.minX, y: outer.maxY)
+                context.scaleBy(x: 1, y: -1)
+                context.draw(image, in: CGRect(x: 0, y: 0, width: outer.width, height: outer.height))
+                context.restoreGState()
+                return
+            }
+        }
+        drawSheet(paper, in: frame, scale: scale, dark: dark)
+    }
+
+    private static func render(_ paper: NSColor, in frame: NSRect, canvas: NSSize, scale: Double, dark: Bool, device: CGFloat) -> CGImage? {
+        let width = Int((canvas.width * device).rounded(.up)), height = Int((canvas.height * device).rounded(.up))
+        guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: device, y: -device)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        drawSheet(paper, in: frame, scale: scale, dark: dark)
+        NSGraphicsContext.restoreGraphicsState()
+        return context.makeImage()
+    }
+
+    static func drawSheet(_ paper: NSColor, in frame: NSRect, scale: Double, dark: Bool) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
         let unit = CGFloat(scale), radius = cornerRadius(scale: scale)
         let sheet = NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius)
         let liftHeight = min(frame.height * 0.45, 72 * unit)
-        let lift = NSRect(x: frame.minX + 6 * unit, y: frame.maxY - liftHeight, width: max(1, frame.width - 12 * unit), height: liftHeight)
+        let lift = NSBezierPath(roundedRect: NSRect(x: frame.minX + 6 * unit, y: frame.maxY - liftHeight,
+                                                    width: max(1, frame.width - 12 * unit), height: liftHeight),
+                                xRadius: radius, yRadius: radius)
+        let caster = paper.withAlphaComponent(1)
+        NSGraphicsContext.saveGraphicsState()
+        let outside = NSBezierPath(rect: frame.insetBy(dx: -reach(scale: scale) - 8, dy: -reach(scale: scale) - 8))
+        outside.append(sheet); outside.windingRule = .evenOdd; outside.addClip()
         context.saveGState()
         shadow(context, drop: 6 * unit, blur: 12 * unit, alpha: dark ? 0.55 : 0.2)
-        paper.setFill(); NSBezierPath(roundedRect: lift, xRadius: radius, yRadius: radius).fill()
+        caster.setFill(); lift.fill()
         context.restoreGState()
         context.saveGState()
         shadow(context, drop: unit, blur: 2.5 * unit, alpha: dark ? 0.5 : 0.18)
-        paper.setFill(); sheet.fill()
+        caster.setFill(); sheet.fill()
         context.restoreGState()
+        NSGraphicsContext.restoreGraphicsState()
+        paper.setFill(); sheet.fill()
         NSGraphicsContext.saveGraphicsState()
         sheet.addClip()
         let finish = NSGradient(colorsAndLocations: (NSColor.white.withAlphaComponent(dark ? 0.05 : 0.16), 0),
@@ -133,10 +212,14 @@ extension EaselCanvasView {
         let frame = rect(item)
         let dark = adaptsInk && NoteTheme.isDark(NSAppearance.currentDrawing())
         EaselStickyArt.drawPaper(EaselPaint(item, adaptive: adaptsInk).fillColor, in: frame,
-                                 scale: EaselBoardObjects.textScale(item), dark: dark)
+                                 scale: EaselBoardObjects.textScale(item), dark: dark, cacheable: showsEditor)
         guard !(showsEditor && editingID == item.id && editor != nil), !item.text.isEmpty else { return }
         let box = EaselBoardObjects.stickyTextBox(item)
+        let radius = EaselStickyArt.cornerRadius(scale: EaselBoardObjects.textScale(item))
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius).addClip()
         stickyLayout(item, width: box.width).draw(at: NSPoint(x: box.x, y: box.y), style: item.resolvedTextStyle)
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func stickyLayout(_ item: EaselItem, width: Double) -> EaselTextLayout.Layout {

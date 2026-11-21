@@ -25,6 +25,19 @@ enum EaselSectionArt {
         return tab
     }
 
+    static func vectorTitle(_ section: EaselItem) -> EaselVectorSectionTitle {
+        let font = titleFont(scale: 1), attributes: [NSAttributedString.Key: Any] = [.font: font]
+        let room = max(0, section.frame.width - 2 * EaselBoardObjects.sectionTitlePadding)
+        var title = EaselBoardObjects.displayTitle(section)
+        func width(_ text: String) -> Double { Double(ceil((text as NSString).size(withAttributes: attributes).width)) }
+        if width(title) > room {
+            var characters = Array(title)
+            while !characters.isEmpty, width(String(characters) + "…") > room { characters.removeLast() }
+            title = String(characters).trimmingCharacters(in: .whitespaces) + "…"
+        }
+        return EaselVectorSectionTitle(text: title, width: width(title), baseline: Double(font.ascender + font.descender) / 2)
+    }
+
     static func border(_ section: EaselItem, adaptive: Bool) -> NSColor {
         let ink = EaselInk.color(section.color, adaptive: adaptive)
         return ink.withAlphaComponent(EaselInk.isAutomatic(section.color) ? 0.22 : 0.5)

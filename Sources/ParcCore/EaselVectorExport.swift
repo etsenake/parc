@@ -48,6 +48,7 @@ struct EaselVectorArt {
     var images: [UUID: EaselVectorImage] = [:]
     var connectorRoutes: [UUID: EaselConnectorRoute] = [:]
     var connectorLabels: [UUID: EaselConnectorLabelArt] = [:]
+    var sectionTitles: [UUID: EaselVectorSectionTitle] = [:]
 }
 
 enum EaselVectorExport {
@@ -55,7 +56,7 @@ enum EaselVectorExport {
     static let automaticInk = "#252525"
 
     static func contentBounds(_ items: [EaselItem], margin: Double = margin) -> EaselRect {
-        let frames = items.map(\.frame).filter { [$0.x, $0.y, $0.width, $0.height].allSatisfy(\.isFinite) }
+        let frames = items.map(paintedFrame).filter { [$0.x, $0.y, $0.width, $0.height].allSatisfy(\.isFinite) }
         guard let first = frames.first else { return EaselRect(x: 0, y: 0, width: 2 * margin + 320, height: 2 * margin + 200) }
         var minX = first.x, minY = first.y, maxX = first.x + first.width, maxY = first.y + first.height
         for frame in frames.dropFirst() {
@@ -113,12 +114,13 @@ enum EaselVectorExport {
     static func paint(_ hex: String) -> String { paint(hex, role: .ink) }
 
     static func svg(_ items: [EaselItem], art: EaselVectorArt, title: String) -> String {
-        let bounds = contentBounds(items)
+        let shown = EaselBoardObjects.displayed(items)
+        let bounds = contentBounds(shown)
         var svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" class=\"easel-svg\""
         svg += " role=\"img\" aria-label=\"" + escape(title) + "\""
         svg += " width=\"" + number(bounds.width) + "\" height=\"" + number(bounds.height) + "\""
         svg += " viewBox=\"" + [bounds.x, bounds.y, bounds.width, bounds.height].map(number).joined(separator: " ") + "\">"
-        for item in items.sorted(by: { $0.zIndex < $1.zIndex }) {
+        for item in shown {
             svg += objectLinked(item, element(item, art: art))
         }
         return svg + "</svg>"
