@@ -379,6 +379,19 @@ final class EaselStyledTextView: LocalContentDropTextView {
         needsDisplay = true; onObjectLayoutChanged?()
     }
     var paragraphBodyPointSize: CGFloat?
+    nonisolated(unsafe) var fontScale = 1.0
+    nonisolated func authoredFont(_ font: NSFont?) -> NSFont? { Self.authoredFont(font, scale: fontScale) }
+    nonisolated static func authoredFont(_ font: NSFont?, scale: Double) -> NSFont? { font.map { resizedFont($0, by: 1 / scale) } }
+    private nonisolated static func resizedFont(_ font: NSFont, by factor: Double) -> NSFont {
+        guard factor.isFinite, factor > 0, abs(factor - 1) > 0.0005 else { return font }
+        return CTFontCreateCopyWithAttributes(font, CGFloat((Double(font.pointSize) * factor * 1000).rounded() / 1000), nil, nil) as NSFont
+    }
+    private func scalingFonts(_ attributes: [NSAttributedString.Key: Any], by factor: Double) -> [NSAttributedString.Key: Any] {
+        guard let font = attributes[.font] as? NSFont else { return attributes }
+        var result = attributes
+        result[.font] = Self.resizedFont(font, by: factor)
+        return result
+    }
     var objectColor = EaselInk.automatic
     var adaptsInk = false
     var caretColor: NSColor = .textColor { didSet { refreshObjectFill() } }
@@ -620,11 +633,15 @@ final class EaselStyledTextView: LocalContentDropTextView {
         return result
     }
 
-    func format(_ name: String, ranges suppliedRanges: [NSRange]? = nil, _ change: ([NSAttributedString.Key: Any]) throws -> [NSAttributedString.Key: Any]) {
+    func format(_ name: String, ranges suppliedRanges: [NSRange]? = nil, _ authoredChange: ([NSAttributedString.Key: Any]) throws -> [NSAttributedString.Key: Any]) {
         guard isEditable, !hasMarkedText() else { return }
         let selections = selectedRanges.map(\.rangeValue)
         let ranges = suppliedRanges ?? [selectedRange()]
         guard Self.validFormattingRanges(ranges, length: attributedString().length) else { return }
+        let scale = fontScale
+        func change(_ attrs: [NSAttributedString.Key: Any]) throws -> [NSAttributedString.Key: Any] {
+            scalingFonts(try authoredChange(scalingFonts(attrs, by: 1 / scale)), by: scale)
+        }
         if ranges.count == 1, ranges[0].length == 0 {
             do { typingAttributes = try change(authoredAttributes(typingAttributes)) } catch { onClipboardError?(error) }
             window?.makeFirstResponder(self); return
@@ -899,9 +916,12 @@ extension TextFormatCommand {
 enum EaselTextStyleState {
     static func selectedStyles(in editor: EaselStyledTextView) -> [EaselTextStyle?] {
         let range = editor.selectedRange()
-        if range.length == 0 { return [(editor.typingAttributes[.font] as? NSFont).flatMap(EaselTextAppearance.paletteStyle)] }
+        if range.length == 0 { return [editor.authoredFont(editor.typingAttributes[.font] as? NSFont).flatMap(EaselTextAppearance.paletteStyle)] }
         var selected: [EaselTextStyle?] = []
-        editor.attributedString().enumerateAttribute(.font, in: range) { face, _, _ in selected.append((face as? NSFont).flatMap(EaselTextAppearance.paletteStyle)) }
+        let scale = editor.fontScale
+        editor.attributedString().enumerateAttribute(.font, in: range) { face, _, _ in
+            selected.append(EaselStyledTextView.authoredFont(face as? NSFont, scale: scale).flatMap(EaselTextAppearance.paletteStyle))
+        }
         return selected
     }
     static func canResize(by delta: Int, styles: [EaselTextStyle], editor: EaselStyledTextView?) -> Bool {
@@ -934,8 +954,13 @@ enum EaselTextStyleState {
         var sizes: [Double] = []
         if let editor {
             let range = editor.selectedRange()
-            if range.length == 0 { sizes = [Double((editor.typingAttributes[.font] as? NSFont)?.pointSize ?? 0)] }
-            else { editor.attributedString().enumerateAttribute(.font, in: range) { face, _, _ in sizes.append(Double((face as? NSFont)?.pointSize ?? 0)) } }
+            if range.length == 0 { sizes = [Double(editor.authoredFont(editor.typingAttributes[.font] as? NSFont)?.pointSize ?? 0)] }
+            else {
+                let scale = editor.fontScale
+                editor.attributedString().enumerateAttribute(.font, in: range) { face, _, _ in
+                    sizes.append(Double(EaselStyledTextView.authoredFont(face as? NSFont, scale: scale)?.pointSize ?? 0))
+                }
+            }
         } else { sizes = styles.map(\.pointSize) }
         guard let first = sizes.first, first > 0, sizes.allSatisfy({ abs($0 - first) < 0.01 }) else { return nil }
         return first

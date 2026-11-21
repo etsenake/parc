@@ -4,6 +4,7 @@ enum EaselTextPlacement {
     static func box(for item: EaselItem) -> EaselRect {
         switch item.kind {
         case .rectangle, .circle: return item.resolvedShape.map { EaselShapeGeometry.textRect($0, in: item.frame) } ?? item.frame
+        case .sticky: return EaselBoardObjects.stickyTextBox(item)
         default: return item.frame
         }
     }
@@ -35,6 +36,8 @@ enum EaselTextPlacement {
         case .text:
             let height = textHeight()
             return height.isFinite ? max(item.frame.height, height) : nil
+        case .sticky:
+            return EaselBoardObjects.stickyHeight(item, textHeight: textHeight())
         default:
             return nil
         }

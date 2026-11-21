@@ -562,6 +562,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     func color(_ hex: String) -> NSColor { EaselInk.color(hex, adaptive: adaptsInk) }
     func displayedText(_ item: EaselItem) -> NSAttributedString {
+        if item.kind == .sticky { return EaselStickyText.presented(item, adaptive: adaptsInk) }
         let value = EaselTextPresentation.displayed(EaselRichTextCodec.attributed(item), for: item)
         return adaptsInk ? EaselInk.adapting(value) : value
     }
@@ -1254,7 +1255,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if !text.hasLoadedDocument || text.string != item.text || current != desired {
             text.retire()
             text.textStorage?.setAttributedString(target); text.resetEditingHistory()
-            if target.length == 0 {
+            if target.length == 0, item.kind == .sticky {
+                text.typingAttributes = EaselStickyText.typingAttributes(item, color: color(item.color))
+            } else if target.length == 0 {
                 text.typingAttributes = EaselTextPresentation.typingAttributes([.font: EaselTextAppearance.font(item.resolvedTextStyle),
                                                                                 .foregroundColor: color(item.color)], for: item)
             }
@@ -1263,6 +1266,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         EaselTextPresentation.enforce(item, in: text)
         text.hasLoadedDocument = true
         text.objectStyle = item.resolvedTextStyle; text.objectColor = item.color
+        text.fontScale = item.kind == .sticky ? EaselBoardObjects.textScale(item) : 1
         placeEditor(text, for: item)
         let length = (text.string as NSString).length
         text.selectedRanges = selected.map { value in
@@ -1328,6 +1332,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     private func measuredTextHeight(_ item: EaselItem) -> Double {
+        if item.kind == .sticky { return EaselStickyText.height(item) }
         let value = item.text.isEmpty ? EaselTextAppearance.attributed(" ", style: item.resolvedTextStyle, color: item.color)
             : EaselTextPresentation.displayed(EaselRichTextCodec.attributed(item), for: item)
         return EaselTextLayout.Layout(value, width: EaselTextPlacement.box(for: item).width).height
@@ -1462,7 +1467,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         EaselTextPresentation.enforce(item, in: text)
         let payload: EaselStyledText
-        do { payload = try EaselStyledText.capture(EaselTextPresentation.stored(text.attributedString(), for: item), style: text.objectStyle, color: text.objectColor) }
+        let authored = item.kind == .sticky ? EaselStickyText.stored(text.attributedString(), for: item)
+            : EaselTextPresentation.stored(text.attributedString(), for: item)
+        do { payload = try EaselStyledText.capture(authored, style: text.objectStyle, color: text.objectColor) }
         catch { onError?(error); if let item = session.document.items.first(where: { $0.id == id }) { updateEditor(item) }; return }
         let saved = commit("Edit text", coalescing: textUndoGroup) { document in
             guard let i = document.items.firstIndex(where: { $0.id == id }) else { return }

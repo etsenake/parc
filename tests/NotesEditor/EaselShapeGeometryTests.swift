@@ -328,8 +328,8 @@ struct EaselShapeGeometryTests {
                && EaselTextPlacement.canvasBox(for: flipped).y < frame.y + 10,
                "Flipped shapes draw text upright in their own space and edit it at the mirrored spot on the canvas")
         let sticky = EaselItem(kind: .sticky, frame: frame)
-        expect(EaselTextPlacement.box(for: sticky) == frame && !EaselTextPlacement.retiresWhenEmpty(sticky),
-               "Stickies keep their text even when it's empty")
+        expect(EaselTextPlacement.box(for: sticky) == EaselBoardObjects.stickyTextBox(sticky) && !EaselTextPlacement.retiresWhenEmpty(sticky),
+               "Stickies type inside their padding and keep their text even when it's empty")
     }
 
     static func checkNewShapes() {

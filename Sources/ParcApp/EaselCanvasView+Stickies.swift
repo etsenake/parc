@@ -26,63 +26,6 @@ struct EaselStickyLayoutKey: Equatable {
 }
 
 @MainActor
-enum EaselStickyText {
-    static func scaled(_ value: NSAttributedString, by scale: Double) -> NSAttributedString {
-        resized(value, by: scale, rounding: false)
-    }
-
-    static func unscaled(_ value: NSAttributedString, by scale: Double) -> NSAttributedString {
-        guard scale.isFinite, scale > 0 else { return value }
-        return resized(value, by: 1 / scale, rounding: true)
-    }
-
-    private nonisolated static func resized(_ value: NSAttributedString, by factor: Double, rounding: Bool) -> NSAttributedString {
-        guard factor.isFinite, factor > 0, abs(factor - 1) > 0.0005, value.length > 0 else { return value }
-        let size: (Double) -> Double = { points in rounding ? (points * factor * 1000).rounded() / 1000 : points * factor }
-        let result = NSMutableAttributedString(attributedString: value)
-        result.enumerateAttributes(in: NSRange(location: 0, length: result.length)) { attributes, range, _ in
-            if let font = attributes[.font] as? NSFont {
-                let points = CGFloat(size(Double(font.pointSize)))
-                result.addAttribute(.font, value: NSFont(descriptor: font.fontDescriptor, size: points) ?? font, range: range)
-            }
-            if let kern = attributes[.kern] as? NSNumber { result.addAttribute(.kern, value: size(kern.doubleValue), range: range) }
-            if let offset = attributes[.baselineOffset] as? NSNumber {
-                result.addAttribute(.baselineOffset, value: size(offset.doubleValue), range: range)
-            }
-            if let paragraph = attributes[.paragraphStyle] as? NSParagraphStyle,
-               let copy = paragraph.mutableCopy() as? NSMutableParagraphStyle {
-                func scaled(_ value: CGFloat) -> CGFloat { CGFloat(size(Double(value))) }
-                copy.headIndent = scaled(paragraph.headIndent)
-                copy.firstLineHeadIndent = scaled(paragraph.firstLineHeadIndent)
-                copy.tailIndent = scaled(paragraph.tailIndent)
-                copy.lineSpacing = scaled(paragraph.lineSpacing)
-                copy.paragraphSpacing = scaled(paragraph.paragraphSpacing)
-                copy.paragraphSpacingBefore = scaled(paragraph.paragraphSpacingBefore)
-                copy.minimumLineHeight = scaled(paragraph.minimumLineHeight)
-                copy.maximumLineHeight = scaled(paragraph.maximumLineHeight)
-                copy.defaultTabInterval = scaled(paragraph.defaultTabInterval)
-                copy.tabStops = paragraph.tabStops.map {
-                    NSTextTab(textAlignment: $0.alignment, location: scaled($0.location), options: $0.options)
-                }
-                result.addAttribute(.paragraphStyle, value: copy, range: range)
-            }
-        }
-        return result
-    }
-
-    static func presented(_ item: EaselItem, adaptive: Bool) -> NSAttributedString {
-        let value = scaled(EaselRichTextCodec.attributed(item), by: EaselBoardObjects.textScale(item))
-        return adaptive ? EaselInk.adapting(value) : value
-    }
-
-    static func height(_ item: EaselItem) -> Double {
-        let box = EaselBoardObjects.stickyTextBox(item)
-        let value = item.text.isEmpty ? NSAttributedString() : presented(item, adaptive: false)
-        return value.length == 0 ? 0 : Double(EaselTextLayout.Layout(value, width: box.width).height)
-    }
-}
-
-@MainActor
 final class EaselPaperCache {
     struct Key: Hashable {
         let width: Int, height: Int, color: UInt32, scale: Int, dark: Bool, pixels: Int

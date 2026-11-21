@@ -5,7 +5,9 @@ import UniformTypeIdentifiers
 enum EaselDocumentExport {
     static func vectorText(_ item: EaselItem) -> EaselVectorText {
         let box = EaselTextPlacement.box(for: item)
-        let layout = EaselTextLayout.Layout(EaselTextPresentation.displayed(EaselRichTextCodec.attributed(item), for: item), width: box.width, height: box.height)
+        let source = item.kind == .sticky ? EaselStickyText.presented(item, adaptive: false)
+            : EaselTextPresentation.displayed(EaselRichTextCodec.attributed(item), for: item)
+        let layout = EaselTextLayout.Layout(source, width: box.width, height: box.height)
         let manager = layout.manager, storage = layout.storage, container = layout.container
         let shown = manager.characterRange(forGlyphRange: manager.glyphRange(for: container), actualGlyphRange: nil)
         let placed = EaselTextPlacement.origin(for: item, textHeight: Double(layout.height),
