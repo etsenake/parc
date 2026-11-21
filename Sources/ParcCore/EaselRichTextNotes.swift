@@ -88,14 +88,14 @@ extension EaselRichText {
         }
         while location < source.length {
             let unit = source.character(at: location)
-            if unit == 0xFFFC, let atom = atoms[location] {
-                if let inline = atom.inline { append(inline.readable(now: now), from: location, to: location + 1) }
+            if unit == 0xFFFC {
+                if let inline = atoms[location]?.inline { append(inline.readable(now: now), from: location, to: location + 1) }
                 location += 1
                 continue
             }
             let piece = location
             var next = location + 1
-            while next < source.length, !(source.character(at: next) == 0xFFFC && atoms[next] != nil) { next += 1 }
+            while next < source.length, source.character(at: next) != 0xFFFC { next += 1 }
             let part = source.substring(with: NSRange(location: piece, length: next - piece))
             for offset in 0..<(next - piece) {
                 starts.append(piece + offset)
@@ -147,6 +147,11 @@ extension EaselDocument {
 }
 
 struct EaselReminderOwner: Equatable {
+    static func destination(of id: UUID, in directories: [URL], exists: (URL) -> Bool) -> URL? {
+        let name = id.uuidString.lowercased() + ".json"
+        return directories.lazy.map { $0.appendingPathComponent(name) }.first(where: exists)
+    }
+
     var profile: UUID
     var id: UUID
     var file: URL

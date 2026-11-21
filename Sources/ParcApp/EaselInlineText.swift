@@ -115,7 +115,13 @@ enum EaselInlineText {
         value.enumerateAttribute(.attachment, in: NSRange(location: 0, length: value.length)) { object, range, _ in
             if let inline = (object as? EaselInlineAttachment)?.inline { places.append((range, inline)) }
         }
+        var orphans: [NSRange] = []
+        (value.string as NSString).enumerateSubstrings(in: NSRange(location: 0, length: value.length), options: .byComposedCharacterSequences) { piece, range, _, _ in
+            if piece == "\u{FFFC}", value.attribute(.attachment, at: range.location, effectiveRange: nil) == nil { orphans.append(range) }
+        }
+        for range in orphans.reversed() { result.deleteCharacters(in: range) }
         for (range, inline) in places.reversed() {
+            let range = NSRange(location: range.location - orphans.filter { $0.location < range.location }.count, length: range.length)
             var attrs = value.attributes(at: range.location, effectiveRange: nil)
             attrs.removeValue(forKey: .attachment)
             if inline.kind == .note, let url = inline.noteURL { attrs[.link] = url }
@@ -129,15 +135,15 @@ enum EaselInlineText {
     }
 
     private static func inlineSpoken(_ text: String, rich: EaselRichText?) -> String {
-        guard let rich, rich.runs.contains(where: { $0.attributes.isAtomic }) else { return text }
+        guard let rich, rich.runs.contains(where: { $0.attributes.isAtomic }) else { return text.replacingOccurrences(of: "\u{FFFC}", with: "") }
         let source = text as NSString
         var result = "", location = 0
         for run in rich.runs where run.attributes.isAtomic && run.location >= location && run.location < source.length {
-            result += source.substring(with: NSRange(location: location, length: run.location - location))
+            result += source.substring(with: NSRange(location: location, length: run.location - location)).replacingOccurrences(of: "\u{FFFC}", with: "")
             if let inline = run.attributes.inline { result += NoteAtomRendering.accessibilityText(for: inline.atom) }
             location = run.location + run.length
         }
-        if location < source.length { result += source.substring(from: location) }
+        if location < source.length { result += source.substring(from: location).replacingOccurrences(of: "\u{FFFC}", with: "") }
         return result
     }
 
@@ -147,7 +153,7 @@ enum EaselInlineText {
         guard let inline = (attributes[.attachment] as? EaselInlineAttachment)?.inline else {
             return raw.replacingOccurrences(of: "\u{FFFC}", with: "")
         }
-        if images, hasArtwork(inline) { return "" }
+        if images, exportArtwork(inline) != nil { return "" }
         return inline.readable(now: Date())
     }
 
@@ -159,7 +165,20 @@ enum EaselInlineText {
         }
     }
 
+    private static var equationArtwork: [String: EaselVectorImage?] = [:]
+
     static func exportArtwork(_ inline: EaselRichText.Inline) -> EaselVectorImage? {
+        if inline.kind == .equation, let tex = inline.tex, let cached = equationArtwork[tex] { return cached }
+        let made = makeArtwork(inline)
+        if inline.kind == .equation, let tex = inline.tex {
+            if equationArtwork.count >= 256 { equationArtwork.removeAll() }
+            equationArtwork[tex] = made
+        }
+        return made
+    }
+
+    private static func makeArtwork(_ inline: EaselRichText.Inline) -> EaselVectorImage? {
+        guard hasArtwork(inline) else { return nil }
         switch inline.kind {
         case .emoji:
             return inline.image.map { EaselVectorImage(data: $0, mimeType: "image/png") }
