@@ -67,7 +67,7 @@ in", "Move topic", "Attach to mind map", "Collapse branch").
 ## Layout
 
 Layout is pure ParcCore (`EaselMindMap`), tested in
-`tests/EaselMindMapTests.swift`. It's a tidy tree: children stack in a column
+`tests/ParcCoreTests/Easels/EaselMindMapTests.swift`. It's a tidy tree: children stack in a column
 beside their parent, centred on it, in their current top-to-bottom order.
 
 - The root's children sit 72 points out; deeper levels 48 points; siblings

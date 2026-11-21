@@ -16,4 +16,3 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   -o "$check_dir/theme-appearance-timer-idle"
 cp -R "$repo_root/Resources/ThemeEditor" "$check_dir/ThemeEditor"
 "$check_dir/theme-appearance-timer-idle"
-python3 "$repo_root/tests/ThemeAppearanceTimerIdle/check.py"

@@ -71,7 +71,7 @@ Presentation, reversible editing and destination dispatch share that lease;
 none may substitute the later selected page or another document with the same
 name. The importer commits exact PNG bytes and metadata to the selected UUID.
 
-`scripts/test-capture-palette.sh` runs the palette model: structure, submenus,
+`tests/ParcCoreTests/Capture` runs the palette model under `swift test`: structure, submenus,
 search, private availability, highlight retention, keys and the frame Apply
 state. `CaptureDestinationTests` exercises the real payload builder, importer,
 persistent Easel store and Undo session with generated PNGs and a disposable

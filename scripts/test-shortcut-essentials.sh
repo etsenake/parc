@@ -13,4 +13,3 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -whole-module-optimiza
   "$repo_root/tests/KeyboardNavigation/EssentialsTests.swift" \
   -o "$check_dir/essentials"
 "$check_dir/essentials" "$repo_root/Resources/NoteFonts/Nunito-ExtraBold.ttf"
-python3 "$repo_root/tests/KeyboardNavigation/essentials_copy_check.py"

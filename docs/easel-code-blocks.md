@@ -103,5 +103,5 @@ height is the header, one 22-point line per visual line and the bottom padding.
   export runs, the editor and the header bar.
 - `Sources/ParcApp/EaselCanvasView+CodeBlocks.swift`: drawing, creation,
   editing, language, copy and resize on the canvas.
-- `tests/EaselCodeBlockTests.swift`: windowless model, validation, geometry and
-  SVG checks (`bash scripts/test-easels.sh` runs it with the other Easel suites).
+- `tests/ParcCoreTests/Easels/EaselCodeBlockTests.swift`: model, validation,
+  geometry and SVG checks, run by `swift test`.
