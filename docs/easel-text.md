@@ -49,10 +49,12 @@ and Smaller step from a custom size to the next preset above or below it.
 
 ## Alignment
 
-Text, shapes and stickies align their whole text left, centre or right. Shapes
-start centred; text and stickies start on the left. There is no justify. While
+Text, shapes and stickies align their whole text left, centre or right with
+⌥⌘L, ⌥⌘T and ⌥⌘R, whether the objects are selected or one is being edited; with
+nothing that holds text selected, the chords fall through to Parc. Shapes start
+centred; text and stickies start on the left. There is no justify. While
 editing, Format → Text → Align Left, Center and Right change the whole object
-too, so one alignment always covers every paragraph.
+too, so one alignment always covers every paragraph. Locked objects keep theirs.
 
 The alignment is stored once on the object's text style (`alignment`) and never
 in its rich-text runs: the editor shows it on every paragraph and strips it
