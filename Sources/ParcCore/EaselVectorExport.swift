@@ -127,7 +127,7 @@ enum EaselVectorExport {
         case .text: return text(item, art.texts[item.id])
         case .rectangle, .circle: return shape(item)
         case .arrow, .freehand: return stroke(item)
-        case .image: return art.images[item.id].map { image(item, $0, corner: 0) } ?? ""
+        case .image: return art.images[item.id].map { framedImage(item, $0) } ?? ""
         case .webCard, .browser:
             if let picture = art.images[item.id] { return linked(image(item, picture, corner: 8), item.url) }
             return card(item)
@@ -201,6 +201,31 @@ enum EaselVectorExport {
         let label = item.text.isEmpty ? "" : " aria-label=\"" + escape(item.text) + "\""
         result += "<image " + geometry + " preserveAspectRatio=\"none\"" + clip + label + " href=\"" + picture.dataURI + "\"/>"
         return result
+    }
+
+    static func framedImage(_ item: EaselItem, _ picture: EaselVectorImage) -> String {
+        let f = item.frame
+        let frame = CGRect(x: f.x, y: f.y, width: f.width, height: f.height)
+        let alt = item.altText.flatMap { $0.isEmpty ? nil : escape($0) }
+        let label = alt.map { " role=\"img\" aria-label=\"" + $0 + "\"" } ?? ""
+        let title = alt.map { "<title>" + $0 + "</title>" } ?? ""
+        func element(_ rect: CGRect, _ extra: String) -> String {
+            "<image x=\"" + number(Double(rect.minX)) + "\" y=\"" + number(Double(rect.minY)) + "\" width=\"" + number(Double(rect.width))
+                + "\" height=\"" + number(Double(rect.height)) + "\" preserveAspectRatio=\"none\"" + extra + " href=\"" + picture.dataURI + "\""
+        }
+        guard EaselImageFraming.isFramed(item) else {
+            return title.isEmpty ? element(frame, label) + "/>" : element(frame, label) + ">" + title + "</image>"
+        }
+        let turns = item.resolvedQuarterTurns
+        let full = EaselImageFraming.pictureRect(frame: frame, crop: item.crop, turns: turns)
+        let source = EaselImageFraming.sourceRect(picture: full, turns: turns)
+        let id = "frame-" + item.id.uuidString.lowercased()
+        let shape = item.mask.map { "<path d=\"" + NoteImageMask.svgData($0.path(in: frame)) + "\"/>" }
+            ?? "<rect x=\"" + number(f.x) + "\" y=\"" + number(f.y) + "\" width=\"" + number(f.width) + "\" height=\"" + number(f.height) + "\"/>"
+        let rotate = turns == 0 ? "" : " transform=\"rotate(" + number(Double(turns) * 90) + " " + number(Double(full.midX)) + " "
+            + number(Double(full.midY)) + ")\""
+        return "<clipPath id=\"" + id + "\">" + shape + "</clipPath><g clip-path=\"url(#" + id + ")\"" + label + ">" + title
+            + element(source, rotate) + "/></g>"
     }
 
     static func card(_ item: EaselItem) -> String {

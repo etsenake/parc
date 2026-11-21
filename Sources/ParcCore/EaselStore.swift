@@ -26,6 +26,30 @@ enum EaselConnectorRouting: String, Codable, CaseIterable { case straight, elbow
 
 enum EaselBrush: String, Codable, CaseIterable { case marker, highlighter, washi }
 
+enum EaselImageMask: String, Codable, CaseIterable { case rounded, circle, squircle, arch, diamond, hexagon, star, heart }
+
+enum EaselAssetType: String, CaseIterable {
+    case png, gif, mp4, mov
+
+    var isVideo: Bool { self == .mp4 || self == .mov }
+
+    static func of(assetID: String) -> EaselAssetType? {
+        guard let dot = assetID.lastIndex(of: ".") else { return nil }
+        return EaselAssetType(rawValue: String(assetID[assetID.index(after: dot)...]))
+    }
+
+    static func sniff(_ data: Data) -> EaselAssetType? {
+        let head = [UInt8](data.prefix(64))
+        if head.count >= 24, head.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]), Array(head[12..<16]) == Array("IHDR".utf8) { return .png }
+        if head.count >= 13, head.starts(with: Array("GIF87a".utf8)) || head.starts(with: Array("GIF89a".utf8)) { return .gif }
+        guard head.count >= 12 else { return nil }
+        let size = head[0..<4].reduce(0) { $0 << 8 | Int($1) }, box = String(decoding: head[4..<8], as: UTF8.self)
+        guard size == 1 || size >= 8 else { return nil }
+        if box == "ftyp" { return String(decoding: head[8..<12], as: UTF8.self) == "qt  " ? .mov : .mp4 }
+        return ["moov", "mdat", "wide", "free", "skip", "pnot"].contains(box) ? .mov : nil
+    }
+}
+
 struct EaselConnection: Codable, Equatable {
     enum Side: String, Codable, CaseIterable { case top, right, bottom, left }
     var itemID: UUID
@@ -203,6 +227,10 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var pattern: String?
     var attachedTo: UUID?
     var contentsHidden: Bool?
+    var crop: EaselRect?
+    var mask: EaselImageMask?
+    var altText: String?
+    var quarterTurns: Int?
     var ownsEmbeddedPage: Bool { kind == .browser || (kind == .webCard && captureLayout != nil && liveCapture == true) }
     var resolvedShape: EaselShape? {
         switch kind {
@@ -218,6 +246,7 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var resolvedRouting: EaselConnectorRouting { routing ?? .straight }
     var resolvedBrush: EaselBrush { brush ?? .marker }
     var resolvedLabelPosition: Double { labelPosition ?? 0.5 }
+    var resolvedQuarterTurns: Int { quarterTurns ?? 0 }
 }
 
 struct EaselDocument: Codable, Identifiable, Equatable {
@@ -238,7 +267,7 @@ struct EaselSummary: Identifiable, Equatable {
 }
 
 enum EaselStoreError: Error, LocalizedError {
-    case invalidDocument(String), unsupportedVersion(Int), unsafePath, invalidImage, tooLarge
+    case invalidDocument(String), unsupportedVersion(Int), unsafePath, invalidImage, tooLarge, invalidVideo, videoTooLarge
     case missingDocument, deletedDocument, closedDocument, browserInUse
 
     var errorDescription: String? {
@@ -248,6 +277,8 @@ enum EaselStoreError: Error, LocalizedError {
         case .unsafePath: return "The Easel storage path is unsafe."
         case .invalidImage: return "The image could not be imported."
         case .tooLarge: return "The Easel or image exceeds the local storage limit."
+        case .invalidVideo: return "That video can't play on an Easel. MP4 and MOV videos can."
+        case .videoTooLarge: return "That video is a bit big for an Easel. Videos up to 30 MB fit."
         case .missingDocument: return "The Easel does not exist."
         case .deletedDocument: return "This Easel was deleted."
         case .closedDocument: return "This Easel editor is closed. Reopen the Easel to edit it."
@@ -340,20 +371,23 @@ final class EaselStore {
         documentWriter.write(document, to: url, maximumBytes: maximumBytes, wait: false) { _ in }
     }
 
-    fileprivate func importPNG(_ data: Data) throws -> String {
-        guard data.count <= Self.maximumAssetBytes else { throw EaselStoreError.tooLarge }
-        guard data.count >= 24, data.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]),
-              Array(data[12..<16]) == Array("IHDR".utf8) else { throw EaselStoreError.invalidImage }
+    fileprivate func importAsset(_ data: Data, type: EaselAssetType) throws -> String {
+        try Self.checkAsset(data, type: type)
         try checkDirectories()
-        let id = UUID().uuidString.lowercased() + ".png"
+        let id = UUID().uuidString.lowercased() + "." + type.rawValue
         try atomicWrite(data, to: assetsDirectory.appendingPathComponent(id))
         return id
     }
 
+    fileprivate static func checkAsset(_ data: Data, type: EaselAssetType) throws {
+        guard data.count <= maximumAssetBytes else { throw type.isVideo ? EaselStoreError.videoTooLarge : EaselStoreError.tooLarge }
+        guard EaselAssetType.sniff(data) == type else { throw type.isVideo ? EaselStoreError.invalidVideo : EaselStoreError.invalidImage }
+    }
+
     fileprivate func assetURL(_ id: String) throws -> URL {
-        guard id == id.lowercased(), id.hasSuffix(".png"),
-              UUID(uuidString: String(id.dropLast(4))) != nil,
-              id.count == 40 else { throw EaselStoreError.unsafePath }
+        guard id == id.lowercased(), let type = EaselAssetType.of(assetID: id),
+              UUID(uuidString: String(id.dropLast(type.rawValue.count + 1))) != nil,
+              id.count == 37 + type.rawValue.count else { throw EaselStoreError.unsafePath }
         try checkDirectories()
         let url = assetsDirectory.appendingPathComponent(id)
         try ensureRegularFile(url, maximumBytes: Self.maximumAssetBytes)
@@ -477,6 +511,7 @@ final class EaselStore {
                 try richText.validate(text: item.text)
             }
             try validateStyle(item)
+            try validateMedia(item)
             if let id = item.assetID { try asset(id) }
             if let layout = item.captureLayout {
                 guard item.kind == .webCard, item.assetID != nil, layout.isValid else {
@@ -532,6 +567,26 @@ final class EaselStore {
             }
         }
         if item.contentsHidden != nil && item.kind != .section { throw EaselStoreError.invalidDocument("hidden contents on a non-section object") }
+    }
+
+    private static func validateMedia(_ item: EaselItem) throws {
+        if let crop = item.crop {
+            guard item.kind == .image, [crop.x, crop.y, crop.width, crop.height].allSatisfy(\.isFinite),
+                  crop.x >= 0, crop.y >= 0, crop.width >= 0.01, crop.height >= 0.01,
+                  crop.x + crop.width <= 1.000_001, crop.y + crop.height <= 1.000_001 else {
+                throw EaselStoreError.invalidDocument("image crop")
+            }
+        }
+        if item.mask != nil && item.kind != .image { throw EaselStoreError.invalidDocument("mask on a non-image object") }
+        if let turns = item.quarterTurns, item.kind != .image || !(1...3).contains(turns) {
+            throw EaselStoreError.invalidDocument("image turn")
+        }
+        if let alt = item.altText, item.kind != .image || alt.utf8.count > 4096 {
+            throw EaselStoreError.invalidDocument("alt text")
+        }
+        if let id = item.assetID, let type = EaselAssetType.of(assetID: id), type.isVideo || (type == .gif && item.kind != .image) {
+            throw EaselStoreError.invalidDocument("media on an object that can't play it")
+        }
     }
 
     private func documentURL(_ id: UUID) -> URL {
@@ -788,14 +843,14 @@ final class EaselSession: ObservableObject {
         try persist(document)
     }
 
-    func importPNG(_ data: Data) throws -> String {
+    func importPNG(_ data: Data) throws -> String { try importAsset(data, type: .png) }
+
+    func importAsset(_ data: Data, type: EaselAssetType) throws -> String {
         try requireWritable()
-        if let store { return try store.importPNG(data) }
-        guard data.count <= EaselStore.maximumAssetBytes,
-              data.count >= 24, data.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]),
-              Array(data[12..<16]) == Array("IHDR".utf8) else { throw EaselStoreError.invalidImage }
+        if let store { return try store.importAsset(data, type: type) }
+        try EaselStore.checkAsset(data, type: type)
         guard memoryAssets.values.reduce(data.count, { $0 + $1.count }) <= Self.maximumMemoryAssetBytes else { throw EaselStoreError.tooLarge }
-        let id = UUID().uuidString.lowercased() + ".png"; memoryAssets[id] = data
+        let id = UUID().uuidString.lowercased() + "." + type.rawValue; memoryAssets[id] = data
         return id
     }
 
