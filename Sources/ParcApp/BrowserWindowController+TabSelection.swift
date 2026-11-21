@@ -473,7 +473,7 @@ extension BrowserWindowController {
                 case nil: if privateWindow { component.template = RecentSwitcherArtwork.incognito.map { .init(image: $0, title: nil) } }
                 }
                 if let page = InternalPage(urlString: tab.url) {
-                    component.favicon = NoteDefaultIcon.fallback(named: page.sidebarFallbackSymbol)
+                    component.favicon = DocumentDefaultIcon.fallback(named: page.sidebarFallbackSymbol)
                     if let note = page.noteURL {
                         switch NoteTabIconArt.shared.art(forNote: note) {
                         case .image(let image): component.favicon = image

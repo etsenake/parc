@@ -2150,10 +2150,13 @@ struct BrowserStoreTests {
         let canonical = InternalPage.easel(id).urlString
         try expect(canonical == "parc://easel/" + id.uuidString.lowercased(), "Easel routes must use a canonical opaque document ID")
         try expect(InternalPage(urlString: canonical) == .easel(id), "The internal route must round-trip its typed identity")
-        try expect(InternalPage.easel(id).sidebarFallbackSymbol == "square.on.square"
+        try expect(InternalPage.easel(id).sidebarFallbackSymbol == InternalPage.easelFallbackSymbol
                    && InternalPage.note(URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")).sidebarFallbackSymbol == InternalPage.noteFallbackSymbol
                    && InternalPage.sidebarFallbackSymbol(urlString: "https://example.org") == "globe",
                    "Easel and Note rows keep distinct still glyphs; web rows keep the globe fallback")
+        try expect(CommandBarCommandPresentation.symbol(forCommandID: "createEasel:") == InternalPage.easelFallbackSymbol
+                   && CommandBarCommandPresentation.symbol(forCommandID: "createNote:") == InternalPage.noteFallbackSymbol,
+                   "New Easel and New Note commands show the same Library marks as their rows")
         for address in ["parc://easel/not-a-uuid", "parc://easel/" + id.uuidString + "/more",
                         canonical + "?profile=other", canonical + "#fragment", "parc://user@easel/" + id.uuidString,
                         "parc://easel:88/" + id.uuidString, "parc://other/" + id.uuidString,

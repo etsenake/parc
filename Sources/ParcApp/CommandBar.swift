@@ -1199,7 +1199,7 @@ import SwiftUI
         func addDocument(_ document: CommandBarDocument, contentScore: Double? = nil) {
             add(Result(id: document.key, title: document.title.isEmpty ? (document.kind == .note ? "Untitled" : "Untitled Easel") : document.title,
                        detail: document.kind == .note ? "Note" : "Easel",
-                       symbol: document.kind == .note ? InternalPage.noteFallbackSymbol : InternalPage.easel(document.id).sidebarFallbackSymbol,
+                       symbol: document.kind == .note ? InternalPage.noteFallbackSymbol : InternalPage.easelFallbackSymbol,
                        document: document),
                 .init(archetype: .document, key: document.key, texts: [document.title], contentScore: contentScore))
         }
@@ -1304,7 +1304,7 @@ import SwiftUI
         if (editState.query.isEmpty || (addressOnly && !addressWasEdited)) && !isScoped { refreshResults(requestNative: false) }
     }
     private static func iconImage(_ name: String) -> NSImage? {
-        NoteDefaultIcon.fallback(named: name) ?? SidebarPlusMenuArtwork.image(name)
+        DocumentDefaultIcon.fallback(named: name) ?? SidebarPlusMenuArtwork.image(name)
     }
     private static func title(for command: KeyboardShortcuts.MenuCommand) -> String {
         CommandBarTypedCommand.commandBarTitle(forMenuCommand: command.id, menuTitle: command.title)

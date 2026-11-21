@@ -505,8 +505,7 @@ final class NoteEaselSurface: NSView {
         ring.opacity = 0
         layer?.addSublayer(ring)
         content.layer?.addSublayer(headerRule)
-        icon.image = NoteMediaStyle.symbol(InternalPage.easel(UUID()).sidebarFallbackSymbol, size: 13, weight: .medium)
-        icon.contentTintColor = NoteTheme.secondaryInk
+        icon.image = DocumentDefaultIcon.easel.image(size: 16)
         icon.setAccessibilityElement(false)
         titleLabel.setAccessibilityElement(false)
         scroll.hasVerticalScroller = true
@@ -750,8 +749,7 @@ final class NoteEaselPickerView: NoteMediaContentHostlessCard, NSTextFieldDelega
         readOnlyLabel = NoteMediaStyle.label("No Easel here yet", font: NoteMediaStyle.titleFont, color: NoteTheme.secondaryInk)
         super.init(frame: frame)
         icon.imageScaling = .scaleProportionallyUpOrDown
-        icon.contentTintColor = NoteTheme.tertiaryInk
-        icon.image = NoteMediaStyle.symbol(InternalPage.easel(UUID()).sidebarFallbackSymbol, size: 16, weight: .medium)
+        icon.image = DocumentDefaultIcon.easel.image(size: 16)
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
@@ -790,7 +788,7 @@ final class NoteEaselPickerView: NoteMediaContentHostlessCard, NSTextFieldDelega
             let isNew: Bool
             if case .create = choice.action { isNew = true } else { isNew = false }
             return NoteMenuList.Item(id: String(index), title: choice.title, subtitle: choice.subtitle,
-                                     icon: .symbol(isNew ? "plus" : InternalPage.easel(UUID()).sidebarFallbackSymbol),
+                                     icon: isNew ? .symbol("plus") : .easelMark,
                                      section: isNew ? nil : "Easels in this Profile", separatorBefore: isNew && index > 0)
         }
         if let list, panel != nil {

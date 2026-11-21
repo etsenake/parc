@@ -78,11 +78,12 @@ enum NoteIconRenderer {
             guard let image = NoteCustomEmojiImages.image(at: url) else { return }
             let side = min(rect.width, rect.height, (pointSize * 1.25).rounded())
             NoteCustomEmojiImages.draw(image, fittingIn: NSRect(x: rect.midX - side / 2, y: rect.midY - side / 2, width: side, height: side))
-        case .noteMark:
+        case .noteMark, .easelMark:
             let side = min(rect.width, rect.height, (pointSize * 1.25).rounded())
-            NoteDefaultIcon.image(size: side).draw(in: NSRect(x: (rect.midX - side / 2).rounded(), y: (rect.midY - side / 2).rounded(),
-                                                              width: side, height: side),
-                                                   from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            let mark: DocumentDefaultIcon = icon == .noteMark ? .note : .easel
+            mark.image(size: side).draw(in: NSRect(x: (rect.midX - side / 2).rounded(), y: (rect.midY - side / 2).rounded(),
+                                                   width: side, height: side),
+                                        from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         }
     }
 

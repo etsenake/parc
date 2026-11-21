@@ -239,7 +239,7 @@ extension BrowserWindowController {
 
     static func noteVisitIcon(_ entry: TabNoteVisit.Entry) -> NSImage? {
         if let file = TabNoteVisit.noteFile(entry) { return NoteTabIconArt.shared.image(forNote: file) }
-        return TabNoteVisit.document(entry).flatMap { NoteDefaultIcon.fallback(named: $0.sidebarFallbackSymbol) }
+        return TabNoteVisit.document(entry).flatMap { DocumentDefaultIcon.fallback(named: $0.sidebarFallbackSymbol) }
     }
 
     func openDocumentOverPage(_ document: InternalPage, title: String, sourceID: UUID, page: PCNativePage?,

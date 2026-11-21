@@ -158,7 +158,8 @@ import Foundation
         expect(Text.calculatorAnswer(contents: "2+2 = 4", input: "2+2 ") == nil, "an untrimmed query misses the answer")
 
         typealias Command = CommandBarCommandPresentation
-        expect(Command.symbol(commandID: "createEasel:", title: "New Easel") == "scribble.variable", "the Easel symbol")
+        expect(Command.symbol(commandID: "createEasel:", title: "New Easel") == "parc.easel", "New Easel shows the Library Easel mark")
+        expect(Command.symbol(commandID: "createNote:", title: "New Note") == "parc.note", "New Note shows the Library note mark")
         expect(Command.symbol(commandID: "toggleShowToolbar:", title: "Hide Toolbar") == "rectangle.topthird.inset.filled",
                "a toggled title keeps its icon")
         expect(Command.symbol(commandID: "toggleReaderMode:", title: "Exit Reader") == "newspaper", "Exit Reader")

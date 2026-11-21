@@ -6,6 +6,7 @@ enum NoteIcon: Hashable {
     case emoji(String)
     case image(URL)
     case noteMark
+    case easelMark
 
     static func feather(_ code: UInt32) -> NoteIcon {
         .glyph(Unicode.Scalar(code).map { String(Character($0)) } ?? "")

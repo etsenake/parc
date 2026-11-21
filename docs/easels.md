@@ -10,6 +10,12 @@ Easels opened before it to the page as it was, and Forward returns to them
 ([navigation](navigation.md#links-to-markdown-and-text-files)). Local editing
 and export do not require a collaboration service.
 
+An Easel's icon is the Library card's Easel mark, light or dark with the
+appearance, drawn from the same `DocumentDefaultIcon` as the note mark: sidebar
+rows, Favorites, the folded Pinned peek, folders, the tab switcher, command bar
+rows and New Easel, history menus and swipes, and Easel blocks, pickers and
+paste choices in notes.
+
 ## Object-wide text styles
 
 The whole-selection palette offers four families and five sizes:

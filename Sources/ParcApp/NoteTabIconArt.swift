@@ -82,7 +82,7 @@ final class NoteTabIconArt {
     func image(forNote note: URL, size: CGFloat = side) -> NSImage? {
         switch art(forNote: note, size: size) {
         case .image(let image): return image
-        case .standard: return NoteDefaultIcon.image(size: size)
+        case .standard: return DocumentDefaultIcon.note.image(size: size)
         case .pending: return nil
         }
     }
@@ -90,7 +90,7 @@ final class NoteTabIconArt {
     func requestImage(forNote note: URL, size: CGFloat = side, completion: @escaping (NSImage?) -> Void) {
         switch art(forNote: note, size: size) {
         case .image(let image): completion(image)
-        case .standard: completion(NoteDefaultIcon.image(size: size))
+        case .standard: completion(DocumentDefaultIcon.note.image(size: size))
         case .pending:
             waiterCounter += 1
             waiters[waiterCounter] = Waiter(note: note, size: size, completion: completion)
@@ -106,7 +106,7 @@ final class NoteTabIconArt {
                 waiter.completion(image)
             case .standard:
                 waiters[id] = nil
-                waiter.completion(NoteDefaultIcon.image(size: waiter.size))
+                waiter.completion(DocumentDefaultIcon.note.image(size: waiter.size))
             }
         }
     }

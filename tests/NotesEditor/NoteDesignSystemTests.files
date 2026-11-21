@@ -7,5 +7,5 @@ Sources/ParcApp/PointerCover.swift
 Sources/ParcApp/PointingHand.swift
 tests/NotesEditor/NoteDesignSystemStubs.swift
 Sources/ParcApp/NoteCustomEmojiImages.swift
-Sources/ParcApp/NoteDefaultIcon.swift
+Sources/ParcApp/DocumentDefaultIcon.swift
 Sources/ParcApp/LibraryArtwork.swift

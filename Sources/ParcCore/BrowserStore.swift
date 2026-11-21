@@ -2401,10 +2401,11 @@ enum InternalPage: Equatable {
     }
     var untitledTitle: String { noteURL != nil ? "Untitled" : "Untitled Easel" }
     static let noteFallbackSymbol = "parc.note"
+    static let easelFallbackSymbol = "parc.easel"
     var sidebarFallbackSymbol: String {
         switch self {
         case .note: return Self.noteFallbackSymbol
-        case .easel: return "square.on.square"
+        case .easel: return Self.easelFallbackSymbol
         }
     }
     static func sidebarFallbackSymbol(urlString: String) -> String {

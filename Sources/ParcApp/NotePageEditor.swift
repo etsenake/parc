@@ -1385,7 +1385,7 @@ final class NotePasteLinkMenu {
         if NoteEaselAddress.id(from: link.url) != nil {
             items.removeAll { $0.id == Choice.bookmark.rawValue }
             items.append(.init(id: Choice.easel.rawValue, title: "Easel", subtitle: "Show the Easel right in the note",
-                               icon: .symbol("square.on.square"), section: "Paste as"))
+                               icon: .easelMark, section: "Paste as"))
         }
         if embeddable {
             items.append(.init(id: Choice.embed.rawValue, title: "Embed", subtitle: "Show it right in the note",

@@ -92,7 +92,7 @@ with tempfile.TemporaryDirectory(prefix="parc-pinned-section-") as directory:
         + sidebar[:sidebar.index("final class MenuAction")])
     (scratch / "SidebarRows.swift").write_text("import AppKit\n" + sidebar[:sidebar.index("final class SidebarTabRow")])
     plate = [*store_sources, app / "SidebarChromeLayout.swift", app / "SidebarRowAppearance.swift",
-             app / "SidebarPinnedHeader.swift", app / "NoteDefaultIcon.swift", app / "LibraryArtwork.swift",
+             app / "SidebarPinnedHeader.swift", app / "DocumentDefaultIcon.swift", app / "LibraryArtwork.swift",
              app / "SidebarOutline.swift", scratch / "SidebarRows.swift",
              app / "TranslucentButtonFace.swift", app / "PointerCover.swift", app / "ReloadControl.swift", app / "PointingHand.swift"]
     if core / "SidebarOutlineConfigureSkip.swift" not in plate:
@@ -100,7 +100,7 @@ with tempfile.TemporaryDirectory(prefix="parc-pinned-section-") as directory:
     suites = {
         "model": [*sorted(core.glob("*.swift")), here / "ModelTests.swift"],
         "header": [*store_sources, app / "SidebarChromeLayout.swift", app / "SidebarRowAppearance.swift",
-                   app / "SidebarPinnedHeader.swift", app / "NoteDefaultIcon.swift", app / "LibraryArtwork.swift",
+                   app / "SidebarPinnedHeader.swift", app / "DocumentDefaultIcon.swift", app / "LibraryArtwork.swift",
                    app / "PinnedSectionPreferences.swift",
                    *tooltip_sources(root, scratch, store_sources), here / "HeaderTests.swift"],
         "outline": [core / "SidebarOutlineConfigureSkip.swift", app / "SidebarOutline.swift", app / "SidebarChromeLayout.swift",

@@ -65,7 +65,7 @@ struct NoteTabIconArtTests {
         expectEqual(emoji.size, NSSize(width: NoteTabIconArt.side, height: NoteTabIconArt.side), "emoji fill the icon slot")
         expect(art.image(forNote: note("Rocket 2.md", icon: "🚀")) === emoji, "the same emoji reuses its image")
         guard case .standard = art.art(forNote: note("Words.md", icon: "rocket")) else { failTest("words fall back to the library note mark") }
-        expect(art.image(forNote: note("Words 2.md", icon: "rocket")) === NoteDefaultIcon.image(size: NoteTabIconArt.side), "iconless notes draw the library note mark")
+        expect(art.image(forNote: note("Words 2.md", icon: "rocket")) === DocumentDefaultIcon.note.image(size: NoteTabIconArt.side), "iconless notes draw the library note mark")
         guard case .standard = art.art(forNote: folder.appendingPathComponent("Plain.txt")) else { failTest("text notes use the library note mark") }
         guard case .image(let picture) = art.art(forNote: note("Pictured.md", icon: "Attachments/wide.png")) else {
             failTest("image icons get a thumbnail")
@@ -76,6 +76,13 @@ struct NoteTabIconArtTests {
         }
         expect(art.image(emoji: "🌵") != nil, "library emoji render")
         expect(art.image(emoji: "cactus") == nil, "library words don't")
+        expect(DocumentDefaultIcon(symbol: InternalPage.noteFallbackSymbol) == .note
+               && DocumentDefaultIcon(symbol: InternalPage.easelFallbackSymbol) == .easel
+               && DocumentDefaultIcon(symbol: "globe") == nil, "note and Easel rows resolve to their Library marks")
+        let easel = DocumentDefaultIcon.easel.image(size: NoteTabIconArt.side)
+        expect(DocumentDefaultIcon.fallback(named: InternalPage.sidebarFallbackSymbol(urlString: InternalPage.easel(UUID()).urlString)) === easel
+               && easel !== DocumentDefaultIcon.note.image(size: NoteTabIconArt.side), "iconless Easels draw the Library Easel mark, not the note mark")
+        expectEqual(easel.accessibilityDescription, "Easel", "the Easel mark reads as an Easel")
     }
 
     static func waiting(_ icons: NoteTabIcons) throws {
@@ -90,7 +97,7 @@ struct NoteTabIconArtTests {
         let art = NoteTabIconArt(icons: icons)
         var emoji: NSImage?, emojiDone = false, symbolDone = false, picture: NSImage?
         art.requestImage(forNote: note("Later.md", icon: "🐢")) { emoji = $0; emojiDone = true }
-        art.requestImage(forNote: note("Never.md", icon: "nope")) { expect($0 === NoteDefaultIcon.image(size: NoteTabIconArt.side), "iconless notes answer the library note mark"); symbolDone = true }
+        art.requestImage(forNote: note("Never.md", icon: "nope")) { expect($0 === DocumentDefaultIcon.note.image(size: NoteTabIconArt.side), "iconless notes answer the library note mark"); symbolDone = true }
         art.requestImage(forNote: note("Framed.md", icon: "Attachments/tall.png")) { picture = $0 }
         expect(!emojiDone && !symbolDone && picture == nil, "cold requests wait for the background")
         expect(NoteFileTestSupport.spin(timeout: 5) { emojiDone && symbolDone && picture != nil }, "waiting requests settle")

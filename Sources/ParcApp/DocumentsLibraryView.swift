@@ -476,7 +476,7 @@ private final class DocumentCard: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     private func updateArtwork() {
-        icon.image = isNote ? NoteDefaultIcon.card(dark: dark) : LibraryArtwork.card("easel", dark: dark, side: DocumentCardChrome.artwork)
+        icon.image = (isNote ? DocumentDefaultIcon.note : .easel).card(dark: dark)
     }
     override func updateLayer() {
         let radius = DocumentCardChrome.radius

@@ -12,5 +12,5 @@ Sources/ParcApp/TranslucentButtonFace.swift
 Sources/ParcApp/SidebarIconCatalog.swift
 Sources/ParcApp/ReloadControl.swift
 tests/NotesEditor/NoteDesignSystemStubs.swift
-Sources/ParcApp/NoteDefaultIcon.swift
+Sources/ParcApp/DocumentDefaultIcon.swift
 Sources/ParcApp/LibraryArtwork.swift
