@@ -101,8 +101,9 @@ Holding Shift while dragging keeps the move on its stronger direction,
 horizontal or vertical.
 
 Arrow keys nudge the selection by one point, or ten with Shift. A run of
-nudges on the same selection is one Undo step, so holding an arrow key and
-pressing ⌘Z puts everything back where the run started.
+nudges on the same selection with no pause longer than a second is one Undo
+step, so holding an arrow key and pressing ⌘Z puts everything back where the
+run started.
 
 Duplicating or copying an object brings along whatever is stuck to it. Copies
 get fresh IDs. Group membership, connector ends, sticky-on targets and
