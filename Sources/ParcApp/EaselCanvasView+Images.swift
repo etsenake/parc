@@ -29,14 +29,16 @@ final class EaselImageEditing {
     fileprivate var gif: EaselGIFPlayer?
     var video: EaselVideoSurface?
     fileprivate var animatedAssets: [String: Bool] = [:]
+    fileprivate var zoomCheck = 0
 }
 
 final class EaselGIFDecoder: @unchecked Sendable {
     static let maximumAnimatedPixels = 2048 * 2048
     static let maximumFrames = 5_000
     let count: Int
+    let maxPixel: Int
+    let fullPixel: Int
     private let source: CGImageSource
-    private let maxPixel: Int
 
     init?(data: Data, maxPixel: Int) {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
@@ -47,7 +49,8 @@ final class EaselGIFDecoder: @unchecked Sendable {
               width > 0, height > 0, width * height <= Self.maximumAnimatedPixels else { return nil }
         self.source = source
         self.count = count
-        self.maxPixel = max(16, min(maxPixel, max(width, height)))
+        fullPixel = max(width, height)
+        self.maxPixel = max(16, min(maxPixel, fullPixel))
     }
 
     func frame(at index: Int) -> CGImage? {
@@ -79,6 +82,7 @@ final class EaselGIFPlayer {
     private let queue = DispatchQueue(label: "org.parc.easel-gif", qos: .userInitiated)
     private var index = 0
     private var running = false
+    private var generation = 0
     private var timer: Timer?
     private var tick: (() -> Void)?
     private(set) var frame: NSImage?
@@ -91,13 +95,19 @@ final class EaselGIFPlayer {
         self.size = size
     }
 
+    var decodedPixel: Int { decoder.maxPixel }
+    var fullPixel: Int { decoder.fullPixel }
+
     func start(_ tick: @escaping () -> Void) {
+        timer?.invalidate()
+        generation &+= 1
         self.tick = tick
         running = true
-        load(0)
+        load(0, generation: generation)
     }
 
     func stop() {
+        generation &+= 1
         running = false
         timer?.invalidate()
         timer = nil
@@ -105,25 +115,25 @@ final class EaselGIFPlayer {
         frame = nil
     }
 
-    private func load(_ next: Int) {
+    private func load(_ next: Int, generation: Int) {
         let decoder = self.decoder
         queue.async { [weak self] in
             let box = EaselGIFFrameBox(image: decoder.frame(at: next), delay: decoder.delay(at: next))
             DispatchQueue.main.async { [weak self] in
-                MainActor.assumeIsolated { self?.show(box, at: next) }
+                MainActor.assumeIsolated { self?.show(box, at: next, generation: generation) }
             }
         }
     }
 
-    private func show(_ box: EaselGIFFrameBox, at next: Int) {
-        guard running else { return }
+    private func show(_ box: EaselGIFFrameBox, at next: Int, generation: Int) {
+        guard running, generation == self.generation else { return }
         index = next
         if let image = box.image { frame = NSImage(cgImage: image, size: size) }
         tick?()
         let timer = Timer(timeInterval: box.delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.running else { return }
-                self.load((self.index + 1) % self.decoder.count)
+                guard let self, self.running, self.generation == generation else { return }
+                self.load((self.index + 1) % self.decoder.count, generation: generation)
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -765,15 +775,33 @@ extension EaselCanvasView {
             stopImagePlayback()
             return
         }
-        if let player = imageEditing.gif, player.itemID == item.id, player.assetID == asset { return }
+        let maxPixel = gifPixelSize(for: item)
+        if let player = imageEditing.gif, player.itemID == item.id, player.assetID == asset,
+           maxPixel <= player.decodedPixel || player.decodedPixel >= player.fullPixel { return }
         stopImagePlayback()
-        let backing = window?.backingScaleFactor ?? 2
-        let maxPixel = Int((CGFloat(max(item.frame.width, item.frame.height)) * CGFloat(canvasScale) * backing).rounded(.up))
         guard let data = try? session.assetData(asset), let size = image(asset)?.size,
-              let player = EaselGIFPlayer(itemID: item.id, assetID: asset, data: data, size: size, maxPixel: min(4096, maxPixel)) else { return }
+              let player = EaselGIFPlayer(itemID: item.id, assetID: asset, data: data, size: size, maxPixel: maxPixel) else { return }
         imageEditing.gif = player
         player.start { [weak self] in self?.imagePlaybackAdvanced() }
         imagePlaybackAdvanced()
+    }
+
+    func imageZoomChanged() {
+        guard imageEditing.gif != nil else { return }
+        imageEditing.zoomCheck &+= 1
+        let check = imageEditing.zoomCheck
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self, self.imageEditing.zoomCheck == check else { return }
+            self.refreshImagePlayback()
+        }
+    }
+
+    private func gifPixelSize(for item: EaselItem) -> Int {
+        let crop = item.crop.map { max(1 / max($0.width, 0.0001), 1 / max($0.height, 0.0001)) } ?? 1
+        let side = CGFloat(max(item.frame.width, item.frame.height)) * CGFloat(max(1, crop))
+        let needed = side * CGFloat(canvasScale) * (window?.backingScaleFactor ?? 2)
+        guard needed.isFinite else { return 4096 }
+        return Int(min(4096, max(1, needed)).rounded(.up))
     }
 
     func imageDocumentChanged() {

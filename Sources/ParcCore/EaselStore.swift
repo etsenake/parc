@@ -45,9 +45,12 @@ enum EaselAssetType: String, CaseIterable {
             let width = Int(head[6]) | Int(head[7]) << 8, height = Int(head[8]) | Int(head[9]) << 8
             return width > 0 && height > 0 ? .gif : nil
         }
-        guard head.count >= 16, String(decoding: head[4..<8], as: UTF8.self) == "ftyp" else { return nil }
-        let size = head[0..<4].reduce(0) { $0 << 8 | Int($1) }
-        guard size >= 16, size % 4 == 0, size <= 4096 else { return nil }
+        guard head.count >= 12 else { return nil }
+        let size = head[0..<4].reduce(0) { $0 << 8 | Int($1) }, box = String(decoding: head[4..<8], as: UTF8.self)
+        guard box == "ftyp" else {
+            return (size == 1 || size >= 8) && ["moov", "mdat", "wide", "free", "skip", "pnot"].contains(box) ? .mov : nil
+        }
+        guard head.count >= 16, size >= 16, size % 4 == 0, size <= 4096 else { return nil }
         var brands = [String(decoding: head[8..<12], as: UTF8.self)]
         var offset = 16
         while offset + 4 <= min(size, head.count) {
@@ -55,11 +58,10 @@ enum EaselAssetType: String, CaseIterable {
             offset += 4
         }
         if brands.contains("qt  ") { return .mov }
-        return brands.contains(where: movieBrands.contains) ? .mp4 : nil
+        return stillImageBrands.contains(brands[0]) ? nil : .mp4
     }
 
-    private static let movieBrands: Set<String> = ["isom", "iso2", "iso3", "iso4", "iso5", "iso6", "mp41", "mp42", "avc1", "M4V ", "M4VP",
-                                                   "M4VH", "MSNV", "NDAS", "dash", "f4v ", "mmp4", "3gp4", "3gp5", "3gp6", "3g2a", "hvc1", "hev1"]
+    private static let stillImageBrands: Set<String> = ["heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1", "avif", "avis"]
 }
 
 enum EaselStampDesign: String, CaseIterable { case plusOne, dot, heart, question, star, thumbsUp, thumbsDown, smiley }

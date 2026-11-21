@@ -85,7 +85,7 @@ An animated GIF shows its first frame, with a small GIF badge, until it is the
 only thing selected. Then it plays, honouring each frame's delay, and stops
 when the selection changes or the Easel leaves the window, so only one GIF
 moves at a time. Frames are decoded off the main thread at the size they're
-shown. GIFs over 2048 × 2048 pixels or 5,000 frames come in as a still picture
+shown, crop included, and decode sharper again after zooming in. GIFs over 2048 × 2048 pixels or 5,000 frames come in as a still picture
 of their first frame. With Reduce Motion
 on, GIFs stay on their first frame, as they do in Notes. Copying a GIF puts the
 GIF itself on the pasteboard.
@@ -94,8 +94,9 @@ GIF itself on the pasteboard.
 
 MP4 and MOV videos (including M4V) come in through the Add image button, a
 pasted file or a drop, up to 30 MB; anything bigger gets a friendly "a bit big"
-message instead. Parc checks the file's ftyp box for a known MP4 or QuickTime
-brand, asks macOS's video player whether it can play it, reads its size and grabs a poster frame from just after
+message instead. Parc checks the file's first box (an MP4 or QuickTime ftyp
+that isn't a HEIC or AVIF still, or an older QuickTime movie's first box),
+asks macOS's video player whether it can play it, reads its size and grabs a poster frame from just after
 the start, then copies the video and the poster into the Easel's storage. WebM
 isn't offered, because macOS's own video player (the one Notes video blocks use
 too) can't open it; such files get the same "can't play on an Easel" message as

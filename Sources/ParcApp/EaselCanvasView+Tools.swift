@@ -602,6 +602,7 @@ extension EaselCanvasView {
         invalidateIncrementalDisplay(layout: true)
         refreshPlacementPreview()
         window?.invalidateCursorRects(for: self)
+        imageZoomChanged()
     }
 }
 

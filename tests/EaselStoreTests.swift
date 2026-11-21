@@ -459,6 +459,15 @@ struct EaselStoreTests {
             let session = try EaselStore(directory: directory).create()
             expectThrows("invalid image carrier") { _ = try session.importPNG(Data("not PNG".utf8)) }
             expectThrows("oversized image") { _ = try session.importPNG(Data(repeating: 0, count: EaselStore.maximumAssetBytes + 1)) }
+            var legacy = Data([0, 0, 0, 0x08]); legacy.append(contentsOf: Array("wide".utf8))
+            legacy.append(contentsOf: [0, 0, 0, 0x10]); legacy.append(contentsOf: Array("mdat".utf8)); legacy.append(Data(count: 8))
+            expect((try? session.importAsset(legacy, type: .mov))?.hasSuffix(".mov") == true, "a wide and mdat led QuickTime movie still imports")
+            var av1 = Data([0, 0, 0, 0x18]); av1.append(contentsOf: Array("ftypav01".utf8)); av1.append(Data(count: 4))
+            av1.append(contentsOf: Array("iso8".utf8)); av1.append(Data(count: 4))
+            expect((try? session.importAsset(av1, type: .mp4))?.hasSuffix(".mp4") == true, "an AV1 MP4 imports")
+            var heic = Data([0, 0, 0, 0x18]); heic.append(contentsOf: Array("ftypheic".utf8)); heic.append(Data(count: 4))
+            heic.append(contentsOf: Array("mif1".utf8)); heic.append(Data(count: 4))
+            expectThrows("HEIC still image as a video") { _ = try session.importAsset(heic, type: .mp4) }
             let id = try session.importPNG(png)
             expect(id.count == 40 && id.hasSuffix(".png"), "Asset name is generated, not user-supplied")
             expectThrows("path traversal") { _ = try session.assetURL("../outside.png") }

@@ -58,6 +58,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         settleAnnotations: { [weak self] in
             guard let self else { return }
             self.selectionToolbar?.settle()
+            self.imageZoomChanged()
         })
     weak var pageObjects: EaselBrowserObjectHosting? { didSet { needsLayout = true } }
     var artwork: [UUID: NSView] = [:]
