@@ -49,27 +49,31 @@ package enum NoteCaptureDelivery {
     package static let editName = "Add Capture"
 
     package static func deliver(_ input: NoteCaptureInput, to target: CaptureNoteTarget, notesFolder: URL) throws -> Result {
+        try deliver(input, to: target, notesFolder: notesFolder, in: .shared)
+    }
+
+    package static func deliver(_ input: NoteCaptureInput, to target: CaptureNoteTarget, notesFolder: URL, in files: NoteFiles) throws -> Result {
         guard !input.pngData.isEmpty else { throw NoteCaptureDeliveryError.empty }
         let note: URL
         var created = false
         switch target {
         case .newNote:
-            note = try NoteLibrary.createNote(in: notesFolder, title: input.pageTitle)
+            note = try files.createNote(in: notesFolder, title: input.pageTitle)
             created = true
         case .note(let url):
             guard NoteFilePaths.isOpenableFile(url) else { throw NoteFileError.missing }
             note = url
         }
         do {
-            return try insert(input, into: note)
+            return try insert(input, into: note, in: files)
         } catch {
             if created { try? FileManager.default.removeItem(at: note) }
             throw error
         }
     }
 
-    package static func insert(_ input: NoteCaptureInput, into note: URL) throws -> Result {
-        let file = try NoteFileSession.open(note)
+    package static func insert(_ input: NoteCaptureInput, into note: URL, in files: NoteFiles) throws -> Result {
+        let file = try files.open(note)
         file.retain()
         defer { file.release() }
         let session = file.page
