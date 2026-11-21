@@ -147,9 +147,11 @@ struct EaselTextStyle: Codable, Equatable {
     }
     enum Fill: String, Codable { case none, contentHugging }
     enum Alignment: String, Codable, CaseIterable { case left, center, right }
+    static let textScales = 0.25...8.0
     var fill: Fill?
     var resolvedFill: Fill { fill ?? .none }
     var alignment: Alignment?
+    var textScale: Double?
     var family: Family = .clean
     var size: Size = .body
     var pointSize: Double {
@@ -199,6 +201,7 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var brush: EaselBrush?
     var pattern: String?
     var attachedTo: UUID?
+    var contentsHidden: Bool?
     var ownsEmbeddedPage: Bool { kind == .browser || (kind == .webCard && captureLayout != nil && liveCapture == true) }
     var resolvedShape: EaselShape? {
         switch kind {
@@ -522,6 +525,12 @@ final class EaselStore {
             throw EaselStoreError.invalidDocument("brush on a non-drawing object")
         }
         if item.attachedTo == item.id { throw EaselStoreError.invalidDocument("an object attached to itself") }
+        if let scale = item.textStyle?.textScale {
+            guard item.kind == .sticky, scale.isFinite, EaselTextStyle.textScales.contains(scale) else {
+                throw EaselStoreError.invalidDocument("text scale")
+            }
+        }
+        if item.contentsHidden != nil && item.kind != .section { throw EaselStoreError.invalidDocument("hidden contents on a non-section object") }
     }
 
     private func documentURL(_ id: UUID) -> URL {

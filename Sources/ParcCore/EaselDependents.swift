@@ -16,7 +16,7 @@ enum EaselDependents {
 
     private static func carrySectionContents(_ next: EaselDocument, previous: EaselDocument,
                                              moved: Set<UUID>) -> (document: EaselDocument, moved: Set<UUID>) {
-        (next, moved)
+        EaselBoardObjects.carryingSectionContents(next, previous: previous, moved: moved)
     }
 
     private static func followAttachments(_ next: EaselDocument, previous: EaselDocument) -> EaselDocument {
