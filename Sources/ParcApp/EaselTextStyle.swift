@@ -815,6 +815,13 @@ final class EaselStyledTextView: LocalContentDropTextView {
             return next
         }
     }
+    func applyTextColor(_ color: NSColor) {
+        format("Text color") { attrs in
+            var next = attrs
+            next[.foregroundColor] = color
+            return next
+        }
+    }
     func revealedSelectionRect() -> NSRect {
         let selection = selectedRange()
         scrollRangeToVisible(selection)
