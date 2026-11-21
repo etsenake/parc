@@ -443,12 +443,12 @@ extension EaselCanvasView {
         if sourceChanged { window?.invalidateCursorRects(for: self) }
     }
 
-    func connectorTarget(at point: NSPoint, excluding id: UUID?) -> EaselItem? {
+    func connectorTarget(at point: NSPoint, excluding id: UUID?, also others: Set<UUID> = []) -> EaselItem? {
         guard fixedCanvasSize == nil else { return nil }
         let reach = CGFloat(EaselConnectorAttachment.magnetReach / canvasScale)
         let local = EaselPoint(x: point.x, y: point.y)
         return items.reversed().first { item in
-            guard item.id != id, EaselConnectorAttachment.canAttach(to: item) else { return false }
+            guard item.id != id, !others.contains(item.id), EaselConnectorAttachment.canAttach(to: item) else { return false }
             let bounds = EaselShapeGeometry.visualBounds(of: item)
             let grown = NSRect(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height).insetBy(dx: -reach, dy: -reach)
             guard grown.contains(point) else { return false }
@@ -457,9 +457,10 @@ extension EaselCanvasView {
         }
     }
 
-    func snappedConnectorEnd(_ point: NSPoint, flags: NSEvent.ModifierFlags, other: EaselPoint?, excluding id: UUID?) -> (connection: EaselConnection?, point: EaselPoint) {
+    func snappedConnectorEnd(_ point: NSPoint, flags: NSEvent.ModifierFlags, other: EaselPoint?, excluding id: UUID?,
+                             also others: Set<UUID> = []) -> (connection: EaselConnection?, point: EaselPoint) {
         var location = EaselPoint(x: point.x, y: point.y)
-        let target = connectorTarget(at: point, excluding: id)
+        let target = connectorTarget(at: point, excluding: id, also: others)
         if let target {
             let snap = EaselConnectorAttachment.snap(location, to: target, pin: flags.contains(.command), scale: canvasScale)
             connectors.magnet = snap.connection.map { EaselConnectorCanvasState.Magnet(target: $0.itemID, side: $0.side, pinned: $0.anchor == nil ? nil : snap.point) }
@@ -561,7 +562,7 @@ extension EaselCanvasView {
         case .quickCreate(let source, let side, let origin):
             guard connectors.travelled || hypot(point.x - origin.x, point.y - origin.y) * canvasScale > EaselToolGeometry.dragThreshold else { return true }
             connectors.travelled = true
-            connectors.preview = quickCreatePreview(from: source, side: side, toward: point)
+            connectors.preview = quickCreatePreview(from: source, side: side, toward: point, flags: event.modifierFlags)
         }
         return true
     }

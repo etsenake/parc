@@ -106,8 +106,13 @@ No click on the object first: clicking a dot makes the next object of the same
 kind, size and style 40 points away in that direction and starts its text.
 Shapes always get a connector from the source; stickies don't. Clicking the same
 side again stacks the new object below or above the last one instead of
-overlapping anything. Dragging a dot places the new object wherever it's dropped,
-with a connector for stickies and shapes alike. Command-Return does the same as
+overlapping anything. Dragging a dot draws a connector out of that side, so joining two things never
+needs the connector tool. Let go on another object, or within reach of one of
+its magnets, and the two are joined with nothing new made: the target's magnets
+show where the end will land, Command pins it to the exact spot, and the new
+connector ends up selected. Let go on empty paper, inside a section or over a
+drawing, and a new object lands there with a connector, for stickies and shapes
+alike. Letting go back on the source changes nothing. Command-Return does the same as
 clicking the right-hand dot, also while typing in the sticky or shape. The 40-point
 gap is the same everywhere so rows and stacks line up.
 

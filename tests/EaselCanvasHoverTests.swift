@@ -31,14 +31,55 @@ struct EaselCanvasHoverTests {
         canvas.updateMindMapHover(at: point)
     }
 
-    @MainActor static func press() -> NSEvent {
-        NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+    @MainActor static func press(_ type: NSEvent.EventType = .leftMouseDown) -> NSEvent {
+        NSEvent.mouseEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
                            context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+    }
+
+    @MainActor static func dragDot(_ canvas: EaselCanvasView, from source: EaselItem, side: EaselConnection.Side, to point: NSPoint) {
+        let center = NSPoint(x: source.frame.x + source.frame.width / 2, y: source.frame.y + source.frame.height / 2)
+        hover(canvas, source.id, at: center)
+        let dot = canvas.quickCreateDot(for: source, side: side)
+        hover(canvas, nil, at: dot)
+        canvas.start = dot
+        expect(canvas.beginConnectorGesture(at: dot, event: press()), "Pressing a hovered dot starts a drag out of it")
+        _ = canvas.continueConnectorGesture(to: point, event: press(.leftMouseDragged))
+        _ = canvas.endConnectorGesture(at: point, event: press(.leftMouseUp))
+        canvas.start = nil
+    }
+
+    @MainActor static func checkDraggingDots(_ date: Date) throws {
+        let left = EaselItem(kind: .sticky, frame: .init(x: 100, y: 100, width: 160, height: 160), zIndex: 1, color: "#FFE58F")
+        let right = EaselItem(kind: .sticky, frame: .init(x: 500, y: 100, width: 160, height: 160), zIndex: 2, color: "#FFE58F")
+        let section = EaselItem(kind: .section, frame: .init(x: 400, y: 500, width: 600, height: 400), zIndex: 0, text: "Ideas")
+        let cover = EaselItem(kind: .section, frame: .init(x: 60, y: 60, width: 240, height: 240), zIndex: 10, text: "On top")
+        let document = EaselDocument(id: UUID(), title: "Links", createdAt: date, modifiedAt: date, items: [section, left, right, cover])
+        let session = try EaselSession(inMemory: document, assets: [:])
+        let canvas = EaselCanvasView(session: session)
+        func count(_ kind: EaselItemKind) -> Int { session.document.items.filter { $0.kind == kind }.count }
+
+        dragDot(canvas, from: left, side: .right, to: NSPoint(x: 580, y: 180))
+        let links = session.document.items.filter { $0.kind == .arrow }
+        expect(count(.sticky) == 2, "Dropping a dot on another sticky makes nothing new")
+        expect(links.count == 1 && links.first.map {
+            $0.startConnection?.itemID == left.id && $0.startConnection?.side == .right && $0.endConnection?.itemID == right.id
+        } == true, "Dropping a dot on another sticky joins the two from that side")
+        expect(links.first.map { canvas.selection == [$0.id] } == true, "The new connector ends up selected")
+        try session.undo()
+        expect(count(.arrow) == 0, "Joining is one Undo step")
+
+        dragDot(canvas, from: left, side: .right, to: NSPoint(x: 150, y: 150))
+        expect(count(.sticky) == 2 && count(.arrow) == 0, "Letting go back on the source changes nothing, even under a section on top")
+
+        dragDot(canvas, from: left, side: .bottom, to: NSPoint(x: 700, y: 700))
+        expect(count(.sticky) == 3 && count(.arrow) == 1, "Letting go inside a section places a new sticky there instead of joining the section")
+        _ = canvas.finishEditing(removingEmpty: false)
     }
 
     @MainActor static func runChecks() throws {
         EaselCanvasView.selectionToolbarFactory = { SilentSelectionToolbar() }
         let date = Date()
+        try checkDraggingDots(date)
         let sticky = EaselItem(kind: .sticky, frame: .init(x: 100, y: 100, width: 160, height: 160), zIndex: 1, color: "#FFE58F")
         var locked = EaselItem(kind: .rectangle, frame: .init(x: 600, y: 100, width: 120, height: 80), zIndex: 2)
         locked.locked = true

@@ -168,9 +168,24 @@ extension EaselCanvasView {
         return withObjectMotion(.copies(sources: [current.id], copies: [created.id])) { commitQuickCreate(created, connector: connector) }
     }
 
-    func quickCreatePreview(from source: EaselItem, side: EaselConnection.Side, toward point: NSPoint) -> [EaselItem] {
+    func quickCreatePreview(from source: EaselItem, side: EaselConnection.Side, toward point: NSPoint,
+                            flags: NSEvent.ModifierFlags = []) -> [EaselItem] {
         let document = session.document
         let top = document.items.map(\.zIndex).max() ?? 0
+        let previewIDs = Set(connectors.preview.map(\.id))
+        let containers = document.items.filter { $0.kind == .section || $0.kind == .freehand }.map(\.id)
+        let snap = snappedConnectorEnd(point, flags: flags.subtracting(.shift), other: nil, excluding: source.id,
+                                       also: previewIDs.union(containers))
+        let target = snap.connection.flatMap { connection in document.items.first { $0.id == connection.itemID } }
+        let home = EaselShapeGeometry.visualBounds(of: source)
+        if NSRect(x: home.x, y: home.y, width: home.width, height: home.height).contains(point), (target?.zIndex ?? Int.min) < source.zIndex {
+            connectors.magnet = nil
+            return []
+        }
+        if let connection = snap.connection {
+            let id = connectors.preview.count == 1 ? connectors.preview[0].id : UUID()
+            return [quickCreateLink(from: source, side: side, to: connection, at: snap.point, id: id, zIndex: top + 1, in: document)]
+        }
         let ids = connectors.preview.count == 2 ? (connectors.preview[0].id, connectors.preview[1].id) : (UUID(), UUID())
         let width = source.frame.width
         let height = source.kind == .sticky ? min(source.frame.height, EaselBoardObjects.stickyMinimumHeight(source)) : source.frame.height
@@ -180,8 +195,31 @@ extension EaselCanvasView {
         return [created, connector]
     }
 
+    func quickCreateLink(from source: EaselItem, side: EaselConnection.Side, to connection: EaselConnection, at point: EaselPoint,
+                         id: UUID, zIndex: Int, in document: EaselDocument) -> EaselItem {
+        let lookup = Dictionary(document.items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        let style = Self.connectorStyle(for: session.document.id)
+        var connector = EaselConnectorRouter.make(from: EaselConnectorAttachment.magnet(side, on: source), to: point, style: style,
+                                                  routing: style.routing, startConnection: EaselConnection(itemID: source.id, side: side),
+                                                  endConnection: connection, zIndex: zIndex) { lookup[$0] }
+        connector.id = id
+        connector.zIndex = zIndex
+        stampRememberedStyle(on: &connector)
+        return connector
+    }
+
     func finishQuickCreateDrag(from source: EaselItem, side: EaselConnection.Side, preview: [EaselItem]) {
-        guard preview.count == 2, session.document.items.contains(where: { $0 == source }) else { return }
+        guard session.document.items.contains(where: { $0 == source }) else { return }
+        if preview.count == 1, let link = preview.first, link.kind == .arrow, let target = link.endConnection?.itemID,
+           session.document.items.contains(where: { $0.id == target && EaselConnectorAttachment.canAttach(to: $0) }) {
+            if commit("Add connector", { $0.items.append(link) }) {
+                if let stored = session.document.items.first(where: { $0.id == link.id }) { rememberConnectorStyle(stored) }
+                selection = [link.id]
+                window?.makeFirstResponder(self)
+            }
+            return
+        }
+        guard preview.count == 2 else { return }
         commitQuickCreate(preview[0], connector: preview[1])
     }
 
