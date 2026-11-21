@@ -22,8 +22,7 @@ in this order, with a hairline between groups:
 
 A slot whose tool isn't ready yet stays off the toolbar and its key does
 nothing, so the bar never shows a button that can't do its job. Each tool
-reports that through `EaselTool.isAvailable` (today the stamp waits for its
-objects; templates appear when a templates owner sets the toolbar's hook). Buttons use the Notes states:
+reports that through `EaselTool.isAvailable` (templates appear when a templates owner sets the toolbar's hook). Buttons use the Notes states:
 secondary ink at rest, hover and pressed washes, and the checked fill for the
 current tool or an open picker. Every button shows the pointing hand, and its
 tooltip shows the name and key, such as “Sticky note S”.
@@ -88,9 +87,8 @@ the layout types; on non-Latin layouts they fall back to the key's position.
 | ⇧0 or ⌘0 | Zoom to 100% | ⌘= / ⌘− | Zoom in / out |
 | = or ⇧+ | Zoom in | − or ⇧− | Zoom out |
 
-The map also holds ⇧M highlighter, W washi tape, ⇧⌫ eraser and E stamp; each
-starts working when its feature lands, and until then the key does nothing
-(⇧⌫ deletes the selection, as plain Delete does). ⇧H and ⇧V flip the
+The map also holds ⇧M highlighter, W washi tape, ⇧⌫ eraser and E stamp
+([stamps](easel-stamps.md)). ⇧H and ⇧V flip the
 selection, and ⌥← / ⌥→ turn it ([rotate and flip](easel-rotation.md)).
 
 The key map is one table in `EaselKeyCommands.bindings`; other features add
