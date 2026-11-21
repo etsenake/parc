@@ -87,7 +87,9 @@ import SwiftUI
     var onSearchSettings: (() -> Void)?
     private let privacyBanner = CommandBarSearchPrivacyBanner()
     private let privacyInfoButton = CommandBarPrivacyInfoButton()
-    private let privacyPolicy = CommandBarSearchPrivacyPolicy(defaults: .standard)
+    private let privacyPolicy: CommandBarSearchPrivacyPolicy
+    private let shortcuts: KeyboardShortcuts
+    private let loadFavicon: @MainActor (URL, String, @escaping (NSImage?) -> Void) -> Void
     private var privacyBannerVisible = false
     private var showsPrivacyBanner: Bool { privacyBannerVisible && sidebarAnchor == nil && !addressOnly }
     private var privacyBannerHeight: CGFloat { privacyBanner.isHidden ? 0 : privacyBanner.frame.height }
@@ -240,7 +242,17 @@ import SwiftUI
     private var nativeHold = CommandBarNativeHold()
     private var nativeHoldDeadline: DispatchWorkItem?
 
-    init(parent: NSWindow, tabs: [BrowserTab], history: [BrowserHistoryEntry], historyRevision: UInt64 = 0, historyExcludedURL: String? = nil, spaces: [CommandBarSpaceAction] = [], folders: [CommandBarFolderAction] = [], favoriteAction: CommandBarFavoriteAction? = nil, folderMoves: [CommandBarFolderMove] = [], favoriteRename: CommandBarFavoriteRenameAction? = nil, documents: (() -> [CommandBarDocument])? = nil, typedCommands: [CommandBarTypedCommand] = [], currentURL: String?, profilePath: String, page: PCNativePage?, nativeWindow: PCNativeBrowserWindow? = nil, sidebarAnchor: NSView? = nil, addressOnly: Bool = false, popup: Bool = false, currentPageTitle: String? = nil, initialEdit: (String, NSRange)? = nil, extensionDisposition: PCNativeOmniboxExtensionDisposition? = .currentTab, theme: SpaceTheme = SpaceTheme(), contentAppearance: NSAppearance? = nil, resident: Bool = false) {
+    init(parent: NSWindow, tabs: [BrowserTab], history: [BrowserHistoryEntry], historyRevision: UInt64 = 0, historyExcludedURL: String? = nil, spaces: [CommandBarSpaceAction] = [], folders: [CommandBarFolderAction] = [], favoriteAction: CommandBarFavoriteAction? = nil, folderMoves: [CommandBarFolderMove] = [], favoriteRename: CommandBarFavoriteRenameAction? = nil, documents: (() -> [CommandBarDocument])? = nil, typedCommands: [CommandBarTypedCommand] = [], currentURL: String?, profilePath: String, page: PCNativePage?, nativeWindow: PCNativeBrowserWindow? = nil, sidebarAnchor: NSView? = nil, addressOnly: Bool = false, popup: Bool = false, currentPageTitle: String? = nil, initialEdit: (String, NSRange)? = nil, extensionDisposition: PCNativeOmniboxExtensionDisposition? = .currentTab, theme: SpaceTheme = SpaceTheme(), contentAppearance: NSAppearance? = nil, resident: Bool = false,
+         shortcuts: KeyboardShortcuts? = nil, privacyDefaults: UserDefaults = .standard,
+         makeOmnibox: @MainActor (String, PCNativePage?, PCNativeBrowserWindow?) -> PCNativeOmnibox? = {
+             PCNativeOmnibox(profilePath: $0, page: $1, window: $2)
+         },
+         loadFavicon: @escaping @MainActor (URL, String, @escaping (NSImage?) -> Void) -> Void = {
+             PCNativeBrowserApplication.favicon(for: $0, profilePath: $1, completion: $2)
+         }) {
+        self.shortcuts = shortcuts ?? .shared
+        self.privacyPolicy = CommandBarSearchPrivacyPolicy(defaults: privacyDefaults)
+        self.loadFavicon = loadFavicon
         self.resident = resident
         self.addressOnly = addressOnly
         self.popup = popup
@@ -335,17 +347,17 @@ import SwiftUI
         container.onLayout = { [weak self] in self?.layoutContents() }
         container.onAppearanceChange = { [weak self] in self?.applyPalette() }
         applyPalette()
-        adoptCommands(KeyboardShortcuts.shared.menuCommands(in: parent))
-        bindings = KeyboardShortcuts.shared.$revision.dropFirst().sink { [weak self] _ in
+        adoptCommands(self.shortcuts.menuCommands(in: parent))
+        bindings = self.shortcuts.$revision.dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { [weak self] in
                 guard let self, let parent = self.parent, !self.dismissed else { return }
-                self.adoptCommands(KeyboardShortcuts.shared.menuCommands(in: parent))
+                self.adoptCommands(self.shortcuts.menuCommands(in: parent))
                 self.refreshResults(requestNative: false)
             }
         }
-        let session = PCNativeOmnibox(profilePath: profilePath, page: page, window: nativeWindow)
+        let session = makeOmnibox(profilePath, page, nativeWindow)
         omnibox = session
-        session.snapshotChanged = { [weak self, weak session] snapshot in
+        session?.snapshotChanged = { [weak self, weak session] snapshot in
             guard let self, !self.dismissed, snapshot.revision >= self.snapshotRevision else { return }
             guard self.isOwnerValid?() != false else { self.respond(to: .ownerInvalid); return }
             if self.actionsScope { self.snapshotRevision = snapshot.revision; return }
@@ -979,7 +991,7 @@ import SwiftUI
                 continue
             }
             guard ["https", "http"].contains(url.scheme?.lowercased() ?? ""), requestedIcons.insert(url).inserted else { continue }
-            PCNativeBrowserApplication.favicon(for: url, profilePath: profilePath) { [weak self] image in
+            loadFavicon(url, profilePath) { [weak self] image in
                 MainActor.assumeIsolated { self?.adoptIcon(image, for: url) }
             }
         }
@@ -1371,7 +1383,7 @@ import SwiftUI
         if let action = result.folderMove { return canMoveToFolder?(action) == true }
         if let action = result.favoriteRename { return canRenameFavorite?(action) == true }
         if let command = result.typedCommand { return canPerformTypedCommand?(command) == true }
-        return result.command.map { KeyboardShortcuts.shared.canPerformMenuCommand($0) } ?? true
+        return result.command.map { shortcuts.canPerformMenuCommand($0) } ?? true
     }
     private func select(row: Int, explicit: Bool, projectCompletion: Bool = false, preserveEditorSelection: Bool = false) {
         guard results.indices.contains(row) else { return }
@@ -1592,7 +1604,7 @@ import SwiftUI
     }
     private func accessoryText(_ result: Result) -> String {
         let shortcut = result.favoriteRename != nil
-            ? KeyboardShortcuts.shared.activeShortcut(for: "renameCurrentItem:") : result.command?.shortcut
+            ? shortcuts.activeShortcut(for: "renameCurrentItem:") : result.command?.shortcut
         return result.tabID != nil || result.archivedTabID != nil ? (result.caption ?? .switchToTab).text : shortcut?.display ?? ""
     }
     private func isDeletable(_ result: Result) -> Bool {
@@ -1723,7 +1735,7 @@ import SwiftUI
         scopeColor = site.flatMap { CommandBarSiteColor.bundledColor(template: $0.template, searchHost: $0.host, prepopulated: $0.prepopulated) }
         applyPalette()
         guard scopeColor == nil, let host = site?.host, !host.isEmpty, let page = siteVisit(searchHost: host) else { return }
-        PCNativeBrowserApplication.favicon(for: page, profilePath: profilePath) { [weak self] image in
+        loadFavicon(page, profilePath) { [weak self] image in
             MainActor.assumeIsolated {
                 guard let self, self.scopeColorRequest == request, !self.dismissed,
                       let image, let pixels = CommandBarSiteColor.faviconPixels(image) else { return }
@@ -2120,7 +2132,7 @@ import SwiftUI
         else if let command = result.typedCommand { performTyped?(command) }
         else if let muted = result.muteAllTabs { if muteAllTabs?(muted) != true { NSSound.beep() } }
         else if let command = result.command {
-            if paneCommand?(command) != true, !KeyboardShortcuts.shared.performMenuCommand(command) { NSSound.beep() }
+            if paneCommand?(command) != true, !shortcuts.performMenuCommand(command) { NSSound.beep() }
         }
         else if let id = result.tabID { selectTab?(id) }
         else if result.managesPasswords { managePasswords?() }
