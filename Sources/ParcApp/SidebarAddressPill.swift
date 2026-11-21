@@ -136,13 +136,14 @@ import QuartzCore
         if window.map(isOpen) != true { end() }
     }
 
-    init(onEnd: @escaping () -> Void) {
+    init(nextTurn: (@escaping @MainActor () -> Void) -> Void = { work in DispatchQueue.main.async { work() } },
+         onEnd: @escaping () -> Void) {
         self.onEnd = onEnd
         observers.append(NotificationCenter.default.addObserver(forName: NSPopover.willShowNotification, object: nil,
                                                                 queue: nil) { [weak self] notification in
             MainActor.assumeIsolated { self?.follow(notification.object as? NSPopover) }
         })
-        DispatchQueue.main.async { [weak self] in
+        nextTurn { [weak self] in
             MainActor.assumeIsolated { if self?.popover == nil { self?.end() } }
         }
     }
