@@ -264,18 +264,25 @@ Sparkle from `PARC_SPARKLE_FRAMEWORKS` (default: the `build/sparkle` cache). The
 engine is loaded, never started. Put a test in the lowest target that can reach
 the code under test, in a folder named for its feature area.
 
-Engine components that build without Chromium are in the `ParcNative` library:
-an explicit list of `Engine/ParcNative` sources compiled as Objective-C++ with
-ARC and warnings as errors. `ParcNativeTests` (in `tests/ParcNativeTests`) tests
-them with Objective-C XCTest cases built on `ParcNativeTestCase`; check with
-`PARC_CHECK` or the suite's `Check(condition, message)`, which stop the test at
-the first failure. Name these tests with the `Tests` class suffix and filter by
-class, for example `swift test --filter PageHostTests`. To test another
-Chromium-free source, add it to the `ParcNative` source list. Never edit an
-engine input for a test. The `EngineFacade*Tests` targets compile the app's
-engine facade against test doubles of the native classes. Each set of doubles
-gets its own target, so the old-engine target fails to link if the facade names
-a class older engines lack.
+Engine components that build without Chromium are in the `ParcNative` library.
+`tests/ParcNativeLibrary` holds a symlink to each `Engine/ParcNative` source it
+compiles, so adding a Chromium-free source means adding a symlink. Its
+`include` folder holds the header shims for Chromium include paths.
+`ParcNativeTests` (in `tests/ParcNativeTests`) tests the library with
+Objective-C XCTest cases built on `ParcNativeTestCase`. Check with `PARC_CHECK`
+or the suite's `Check(condition, message)`; both stop the test at the first
+failure. Name the classes with a `Tests` suffix and filter by class, for example
+`swift test --filter PageHostTests`. Never edit an engine input for a test.
+
+Native tests never wait in real time. `ParcNativeAdvance(seconds)` moves the test
+clock, fires the engine timers that fall due and then settles the run loop.
+`ParcNativeSettle()` handles only the work that is already pending. The clock
+covers `systemUptime`, `NSDate` and `NSTimer` when Parc code calls them. Parc's
+own `NSAnimationContext` animations and AppKit sheet moves run at zero duration.
+
+The `EngineFacade*Tests` targets compile the app's engine facade against test
+doubles of the native classes. Each set of doubles gets its own target, so the
+old-engine target fails to link if the facade names a class older engines lack.
 
 Write one behaviour per `@Test`, named as a plain sentence in camelCase, and
 build only the fixture that behaviour needs. Check with `#expect`, and use
