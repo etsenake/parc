@@ -33,17 +33,22 @@ change as one Undo step, and a closed or deleted Easel refuses them. The
 original text storage, glyph layout, fill contour, typing history and document
 transactions remain the only text owners.
 
-The tool strip is the Notes format bar: a 36-point Notes menu card with its
-hairline and shadow, holding seven icon-only 28-point tools in
-select / image / text / circle / square / arrow / scribble order. Tools use the
-Notes button states: secondary ink at rest, hover and pressed washes, and the
-checked fill and ink for the current tool. It sits centered under the title,
-which is Nunito ExtraBold in the Notes title ink over a caption-style status
-line. Link, webpage, undo and redo are 28-point Notes chrome buttons on the
-title row so those actions remain reachable without joining the strip. The ••• button ends that
-row; it opens the [page menu](easels.md#page-menu-and-exports). The strip still follows the actual drawing mode and
-scrolls horizontally when the window is narrower than the controls. Its explicit overlay scrollbar preserves the full control
-height even under the system legacy-scrollbar preference. The ordinary Add Link action now presents the existing
+The tool palette under the title is the Notes format bar: a 36-point Notes menu
+card with its hairline and shadow, holding 28-point Notes toolbar buttons
+grouped as navigation, objects, tools, inserts and zoom, with hairline dividers
+between groups ([tools and navigation](easel-tools.md) lists the slots). Buttons
+use the Notes button states: secondary ink at rest, hover and pressed washes,
+and the checked fill and ink for the current tool or an open picker; variant
+buttons carry the Notes disclosure chevron, and the zoom slot shows its
+percentage in the Notes chrome font. It sits centered under the title, which is
+Nunito ExtraBold in the Notes title ink over a caption-style status line. Undo
+and redo are 28-point Notes chrome buttons on the title row. The ••• button ends
+that row; it opens the [page menu](easels.md#page-menu-and-exports). The toolbar
+follows the canvas's current tool and scrolls horizontally when the window is
+narrower than the controls. Its explicit overlay scrollbar preserves the full
+control height even under the system legacy-scrollbar preference. Placement
+ghosts are dashed outlines in the Notes accent over a 10% accent wash, and the
+Recenter chip is a filled Notes chip. The ordinary Add Link action now presents the existing
 window-owned URL editor, with a compact address-only layout. Its original
 owner/visibility/IME/cancellation gates also cover this presentation. The rich
 range-link editor retains its separate original-range/revision guard. Both use
