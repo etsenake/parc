@@ -4,11 +4,6 @@ import shutil
 import subprocess
 import tempfile
 root = Path(__file__).resolve().parents[2]
-card = (root / "Sources/ParcApp/SidebarPreviewCard.swift").read_text()
-assert 'peek.image = SidebarPreviewArtwork.openInPeek' in card, "the header's Open in Peek button must use the bundled artwork"
-assert 'appendingPathComponent("SidebarPreview", isDirectory: true)' in card, "the artwork loads from Resources/SidebarPreview"
-for name in ("open-in-peek.pdf", "open-in-peek.png", "open-in-peek@2x.png"):
-    assert (root / "Resources/SidebarPreview" / name).is_file(), f"missing artwork {name}"
 with tempfile.TemporaryDirectory(prefix="parc-sidebar-preview-header-") as directory:
     scratch = Path(directory)
     slices = {

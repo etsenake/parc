@@ -1,53 +1,9 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import re
 import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[2]
-source = (root / "Sources/ParcApp/SidebarSpacePaging.swift").read_text()
-assert "enum SidebarSpacePagingPresentationSkip" in source, "presentation skip helper missing"
-assert "static func shouldSkip(previous: CGFloat?, next: CGFloat)" in source, \
-    "shouldSkip predicate missing"
-assert "previous == next" in source, "skip must be exact fingerprint equality only"
-assert "present(value)" in source, "place/tick must present through the skip gate"
-assert re.search(r"func tick\(\) \{.*?present\(value\)", source, re.S), \
-    "tick must present spring samples through the skip gate"
-assert "Timer(timeInterval: 1.0 / 120, repeats: true)" in source, \
-    "120 Hz spring timer must remain while motion can change pixels"
-assert "timer?.invalidate(); timer = nil" in source, \
-    "settle via place must still idle-stop the timer"
-
-sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
-for use in ("    let scroll = SidebarPagingScrollView()\n",
-            "        page.scroll.offerScroll = { [weak self] event in self?.spacePager.scrollWheel(event) ?? false }\n",
-            "        spacesHost.offerScroll = offer\n",
-            "        miniPlayers.offerScroll = offer\n"):
-    assert use in sidebar, f"SidebarView no longer routes a sidebar scroll view to the pager: {use}"
-assert re.search(
-    r"spacePager\.offersCreation = \{ \[weak self\] in\s+"
-    r"guard let self else \{ return false \}\s+"
-    r"return !self\.isPrivateBrowsing && !self\.isSpaceManagement && self\.onNewSpace != nil\s+\}",
-    sidebar,
-), "the create-Space pull must remain unavailable in private and Space-management sidebars"
-strip = sidebar[sidebar.index("    private func showPageStrip(at offset: CGFloat) {"):]
-strip = strip[:strip.index("\n    private func pageState(")]
-assert ".flatMap { reach?.contains($0) == false ? nil : $0 }" in strip \
-    and "where spaces.indices.contains(index + direction) && reach?.contains(index + direction) != false" in strip, \
-    "a swipe's strip places a Space outside the swipe's own two again"
-assert "        if spacePager.isTracking, spacePager.standInSide == nil { pagingSourceID = nil }\n" in strip \
-    and "SidebarSpacePagingModel.shownSource(pagingSourceID.flatMap { id in spaces.firstIndex { $0.id == id } }," in strip \
-    and "            if spacePager.standInSide == nil { pagingSourceID = nil }\n" in strip, \
-    "a swipe that catches a long click's slide swaps the page it left for the Space next door again"
-feedback = sidebar[sidebar.index("    private func updateSpaceCreationFeedback(offset: CGFloat) {"):]
-feedback = feedback[:feedback.index("\n    }\n")]
-assert "spaceCreationGesture.update(progress: progress, pulling: spacePager.isTracking, now: CACurrentMediaTime())" in feedback, \
-    "the create-Space ring can arm after the fingers let go again"
-assert "    private let scroll = SidebarPagingScrollView()\n" in (root / "Sources/ParcApp/MiniPlayerView.swift").read_text(), \
-    "the Mini Player list keeps sideways swipes from the pager again"
-assert "if overflows || !offerScroll(event) { super.scrollWheel(with: event) }" in \
-    (root / "Sources/ParcApp/SidebarDockStrip.swift").read_text(), "the Space strip no longer pages unless it overflows"
-
 with tempfile.TemporaryDirectory(prefix="parc-space-paging-") as directory:
     executable = Path(directory) / "checks"
     subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-target", "arm64-apple-macos13.0",

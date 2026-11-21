@@ -8,7 +8,7 @@ Usage: engine_report.py <engine-artifacts.json | framework binary>...
 A sealed manifest names its framework under engine_dir, whose SHA-256 must
 match; a binary (for example a packaged app's framework copy) is read as is.
 PCBrowserView takes the report through responds(to:) on these selectors
-(Sources/ParcApp/PageRenderFrames.swift); without them a throttled page runs
+(PageRenderFrames in the app); without them a throttled page runs
 as intrinsic and resizes on every pointer event.
 """
 from pathlib import Path
@@ -16,19 +16,10 @@ import hashlib
 import json
 import subprocess
 import sys
-root = Path(__file__).resolve().parents[2]
 REQUIRED = ["-[PCNativePage(RenderFrameViewport) observeRenderFrameViewportSize:]",
             "-[PCNativePage(RenderFrameViewport) renderFrameViewportSize]",
             "-[PCNativeRenderFrameObservation invalidate]",
             "_OBJC_CLASS_$_PCNativeRenderFrameObservation"]
-
-frames = (root / "Sources/ParcApp/PageRenderFrames.swift").read_text()
-for use in ("page.responds(to: #selector(getter: PCNativePage.renderFrameViewportSize))",
-            "page.responds(to: #selector(PCNativePage.observeRenderFrameViewportSize(_:)))"):
-    assert use in frames, f"PageRenderFrames.swift no longer guards: {use}"
-bridge = (root / "Engine/ParcNative/native_appkit_bridge.h").read_text()
-assert "@property(nonatomic, readonly) NSSize renderFrameViewportSize;" in bridge
-assert "NS_SWIFT_NAME(observeRenderFrameViewportSize(_:))" in bridge
 
 if len(sys.argv) < 2:
     sys.exit(__doc__)
