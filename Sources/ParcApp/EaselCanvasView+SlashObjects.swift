@@ -2,7 +2,8 @@ import AppKit
 
 extension EaselCanvasView {
     var slashContext: EaselSlashContext {
-        EaselSlashContext(objects: fixedCanvasSize == nil && !editingLabel && !isEditingTableCell && !viewOnly)
+        EaselSlashContext(mention: true, date: true, inlineEquation: true,
+                          objects: fixedCanvasSize == nil && !editingLabel && !isEditingTableCell && !viewOnly)
     }
 
     var slashMenuAvailable: Bool { !editingLabel && !isEditingTableCell && !viewOnly }

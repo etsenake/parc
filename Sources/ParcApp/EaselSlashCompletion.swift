@@ -205,7 +205,13 @@ final class EaselSlashCompletion: EaselTextCompletion {
         case .object(let object):
             view.insertCompletion("", replacing: range, name: "Slash")
             if canvas?.placeSlashObject(object) != true { NSSound.beep() }
-        case .divider, .mention, .date, .inlineEquation:
+        case .mention, .date:
+            view.insertCompletion("", replacing: range, name: "Slash")
+            if row.action == .date { view.beginDate() } else { view.beginMention() }
+        case .inlineEquation:
+            view.insertCompletion("", replacing: range, name: "Slash")
+            view.insertInlineEquation()
+        case .divider:
             NSSound.beep()
         }
     }
