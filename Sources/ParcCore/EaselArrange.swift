@@ -64,6 +64,65 @@ enum EaselLayerMove: String, CaseIterable {
     }
 }
 
+struct EaselClipboardPayload: Codable, Equatable {
+    static let currentVersion = 1
+    static let typeIdentifier = "org.parc.easel-objects.v1"
+    static let maximumBytes = 128 * 1024 * 1024
+    static let maximumItems = 10_000
+    static let maximumAssetBytes = 30 * 1024 * 1024
+
+    var version = currentVersion
+    var documentID: UUID?
+    var items: [EaselItem]
+    var assets: [String: Data] = [:]
+
+    static func assetIDs(of ids: Set<UUID>, in document: EaselDocument) -> Set<String> {
+        Set(document.items.filter { ids.contains($0.id) }.compactMap(\.assetID))
+    }
+
+    static func capturing(_ ids: Set<UUID>, in document: EaselDocument, assets available: [String: Data]) throws -> EaselClipboardPayload? {
+        let chosen = EaselArrange.paintOrder(document).filter { ids.contains($0.id) }
+        guard !chosen.isEmpty else { return nil }
+        let whole = EaselArrange.completeGroups(ids, in: document)
+        let items = chosen.map { item -> EaselItem in
+            var copy = item
+            if let group = copy.groupID, !whole.contains(group) { copy.groupID = nil }
+            copy.movedToFrontAt = nil
+            return copy
+        }
+        var assets: [String: Data] = [:]
+        for id in Set(items.compactMap(\.assetID)) { assets[id] = available[id] }
+        let payload = EaselClipboardPayload(documentID: document.id, items: items, assets: assets)
+        try payload.validate()
+        return payload
+    }
+
+    func encoded() throws -> Data {
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        let data = try encoder.encode(self)
+        guard data.count <= Self.maximumBytes else { throw EaselStoreError.tooLarge }
+        return data
+    }
+
+    static func decoded(_ data: Data) throws -> EaselClipboardPayload {
+        guard data.count <= maximumBytes else { throw EaselStoreError.tooLarge }
+        let payload = try PropertyListDecoder().decode(Self.self, from: data)
+        try payload.validate()
+        return payload
+    }
+
+    func validate() throws {
+        guard version == Self.currentVersion, !items.isEmpty, items.count <= Self.maximumItems,
+              Set(items.map(\.id)).count == items.count,
+              items.allSatisfy({ $0.assetID.map { assets[$0] != nil } ?? true }),
+              assets.count <= items.count, assets.values.allSatisfy({ !$0.isEmpty && $0.count <= Self.maximumAssetBytes }),
+              assets.keys.allSatisfy({ $0.count <= 64 && !$0.contains("/") }) else {
+            throw EaselStoreError.invalidDocument("pasted Easel objects")
+        }
+    }
+}
+
 struct EaselDuplication: Equatable {
     var document: EaselDocument
     var copies: [UUID]

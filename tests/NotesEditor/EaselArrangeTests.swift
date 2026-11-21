@@ -31,6 +31,7 @@ struct EaselArrangeTests {
         locking()
         duplication()
         pastePlacement()
+        clipboard()
         chords()
         print("EaselArrangeTests passed")
     }
@@ -232,6 +233,46 @@ struct EaselArrangeTests {
                "Paste after cut lands where it was")
         expect(EaselArrange.pasteOffset(content: content, anchor: .viewport, viewport: viewport) == EaselPoint(x: 200, y: 1150),
                "Without a pointer or source, paste lands in the middle of the view")
+    }
+
+    static func clipboard() {
+        var a = box(0, 0, kind: .image, z: 2), b = box(200, 0, z: 1)
+        a.assetID = "11111111-1111-1111-1111-111111111111.png"
+        let group = UUID(); a.groupID = group; b.groupID = group
+        var c = box(400, 0, z: 3)
+        let other = UUID(); c.groupID = other
+        let d = box(600, 0, z: 4)
+        var e = d; e.id = UUID(); e.groupID = other
+        let board = document([a, b, c, e])
+        let bytes = Data([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3])
+        expect(EaselClipboardPayload.assetIDs(of: [a.id, b.id], in: board) == [a.assetID ?? ""], "Copy knows which pictures to bring")
+        expect((try? EaselClipboardPayload.capturing([a.id], in: board, assets: [:])) == nil, "Copy refuses when a picture can't be read")
+        guard let payload = try? EaselClipboardPayload.capturing([a.id, b.id, c.id], in: board, assets: [a.assetID ?? "": bytes]) else {
+            failTest("Copy captures the selection")
+        }
+        expect(payload.items.map(\.id) == [b.id, a.id, c.id], "Copied objects keep their stacking order")
+        expect(payload.items.first { $0.id == c.id }?.groupID == nil, "A group that wasn't copied whole lets its member go")
+        expect(payload.items.first { $0.id == a.id }?.groupID == group, "A whole group travels as a group")
+        expect(payload.assets == [a.assetID ?? "": bytes] && payload.documentID == board.id, "Image bytes and the source Easel ride along")
+        guard let data = try? payload.encoded(), let decoded = try? EaselClipboardPayload.decoded(data) else {
+            failTest("The payload survives the pasteboard")
+        }
+        expect(decoded == payload, "Decoding gives back exactly what was copied")
+        expect((try? EaselClipboardPayload.decoded(Data("nonsense".utf8))) == nil, "Junk on the pasteboard is refused")
+        var broken = payload
+        broken.assets = [:]
+        expect((try? broken.validate()) == nil, "A payload missing its image bytes is refused")
+        var future = payload
+        future.version = 99
+        expect((try? EaselClipboardPayload.decoded(future.encoded())) == nil, "A newer payload version is refused rather than misread")
+        guard let pasted = EaselArrange.appending(payload.items, to: board, offset: EaselPoint(x: 10, y: 10)) else {
+            failTest("Pasting appends copies")
+        }
+        let copies = pasted.document.items.filter { pasted.copies.contains($0.id) }
+        expect(Set(copies.compactMap(\.groupID)).count == 1 && !copies.contains { $0.groupID == group },
+               "Pasted groups get a group of their own")
+        expect(copies.count == 3 && Set(pasted.document.items.map(\.id)).count == 7, "Pasting never reuses an ID")
+        expect(EaselArrange.duplicating([d.id], in: document([d])) != nil, "A lone object duplicates")
     }
 
     static func chords() {
