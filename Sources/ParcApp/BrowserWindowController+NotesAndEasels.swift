@@ -2,7 +2,7 @@ import AppKit
 import Combine
 
 extension BrowserWindowController {
-    func openLocalNoteAddress(_ input: String) -> Bool {
+    func openLocalNoteAddress(_ input: String, inPane tabID: UUID? = nil) -> Bool {
         let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if InternalPage.isRetiredNoteAddress(value) {
             showNoteError(NoteTabError.retiredAddress)
@@ -13,7 +13,7 @@ extension BrowserWindowController {
         if isPrivateBrowsing || isPopupWindow {
             onOpenNoteInRegularWindow?(target)
         } else {
-            openNote(url: target)
+            openNote(url: target, inPane: tabID)
         }
         return true
     }

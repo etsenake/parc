@@ -27,7 +27,13 @@ with no application commands, document actions or Actions scope. It navigates th
 original current tab. The large palette retains commands and tab switching.
 Clicking the URL in a page toolbar, on a single page, split pane, Note, Easel or
 Peek, first makes that pane current and then takes Command–L's path, so the
-palette opens centred and Return navigates the pane that was clicked.
+palette opens centred and Return navigates the pane that was clicked. In a
+split, New Parc Note, New Easel, a note or Easel row and a typed Markdown or
+text file address go to that pane too: a note opens over a web page the way a
+[note link](navigation.md#links-to-markdown-and-text-files) does, so Back
+returns to the page, and otherwise the pane shows the document as if its
+address were typed. Outside a split they keep opening their own tab
+(`PaneDocumentRoute`).
 
 The resident bar is the large palette's session hosted in a slot the start page
 provides, with the same results, commands, scopes and submission. It rests as the

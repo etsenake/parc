@@ -688,10 +688,15 @@ extension BrowserWindowController {
         panel.onManagePasswords = { [weak self] in if isOriginal() { self?.showPasswordManager() } }
         panel.noteLibrary = isPrivateBrowsing || isPopupWindow || store.isProfileRemovalPending(commandProfile)
             ? nil : NoteFolderPreferences.library(for: commandProfile)
+        let documentPane = newTab || commandPeek != nil ? nil : commandTab
         panel.onOpenDocument = { [weak self] document in
             guard isOriginal(), let self else { return }
-            if let url = document.url { self.openNote(url: url) }
-            else if document.kind == .easel { self.openEasel(id: document.id, title: document.title) }
+            if let url = document.url { self.openNote(url: url, inPane: documentPane) }
+            else if document.kind == .easel { self.openEasel(id: document.id, title: document.title, inPane: documentPane) }
+        }
+        panel.onPaneCommand = { [weak self] command in
+            guard let documentPane, isOriginal(), let self, self.commandBar == nil else { return false }
+            return self.createsDocumentInPane(command, tabID: documentPane)
         }
         panel.removedHistoryURLs = { [weak self] revision in
             self?.store.removedHistoryURLs(profileID: commandProfile, after: revision)

@@ -70,6 +70,7 @@ import SwiftUI
     private var submissionDepth = 0
     var onManagePasswords: (() -> Void)?
     var onOpenDocument: ((CommandBarDocument) -> Void)?
+    var onPaneCommand: ((KeyboardShortcuts.MenuCommand) -> Bool)?
     var noteLibrary: NoteLibrary? {
         didSet {
             noteMatches = nil
@@ -2085,7 +2086,7 @@ import SwiftUI
         let splitInput = onSplitInput, splitNavigation = onSplitNavigation, splitTab = onSplitTab
         let splitCommandHandler = onSplitCommand
         let managePasswords = onManagePasswords, focusSpace = onFocusSpace, openFolder = onOpenFolder
-        let openDocument = onOpenDocument
+        let openDocument = onOpenDocument, paneCommand = onPaneCommand
         let muteAllTabs = onMuteAllTabs, performTyped = onPerformTypedCommand
         let performFavorite = onPerformFavorite, moveToFolder = onMoveToFolder, renameFavorite = onRenameFavorite, copyToFolder = onCopyToFolder
         let stillValid = isOwnerValid, rejectDestination = onRejectedDestination
@@ -2116,7 +2117,9 @@ import SwiftUI
         else if let action = result.favoriteRename { renameFavorite?(action) }
         else if let command = result.typedCommand { performTyped?(command) }
         else if let muted = result.muteAllTabs { if muteAllTabs?(muted) != true { NSSound.beep() } }
-        else if let command = result.command { if !KeyboardShortcuts.shared.performMenuCommand(command) { NSSound.beep() } }
+        else if let command = result.command {
+            if paneCommand?(command) != true, !KeyboardShortcuts.shared.performMenuCommand(command) { NSSound.beep() }
+        }
         else if let id = result.tabID { selectTab?(id) }
         else if result.managesPasswords { managePasswords?() }
         else if let document = result.document { openDocument?(document) }

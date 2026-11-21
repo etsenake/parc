@@ -47,7 +47,7 @@ extension BrowserWindowController {
     }
 
     func resolveInput(_ input: String, typedText: String? = nil, replacing tabID: UUID?) {
-        if openLocalNoteAddress(input) { return }
+        if openLocalNoteAddress(input, inPane: tabID) { return }
         if let tabID, !prepareNotesToClose([tabID]) { return }
         let spaceID = activeSpaceID
         let profileID = activeProfileID
@@ -125,7 +125,7 @@ extension BrowserWindowController {
     func openSearchNavigation(_ navigation: PCNativeSearchNavigation, replacing tabID: UUID?) {
         guard navigation.profilePath == store.independentEngineProfilePath(for: activeProfileID),
               presentation.isReady, !isClosing, !wholeWindowClose, transferringTabIDs.isEmpty else { return }
-        if openLocalNoteAddress(navigation.url.absoluteString) { return }
+        if openLocalNoteAddress(navigation.url.absoluteString, inPane: tabID) { return }
         if let tabID {
             guard currentTabID == tabID, !store.retiringTabIDs.contains(tabID), !closingTabIDs.contains(tabID) else { return }
             performWindowCommand {
