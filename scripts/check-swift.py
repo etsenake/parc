@@ -21,9 +21,6 @@ import sys
 import time
 
 REPO = Path(__file__).resolve().parents[1]
-sparkle_spec = importlib.util.spec_from_file_location("parc_sparkle", Path(__file__).with_name("sparkle.py"))
-sparkle = importlib.util.module_from_spec(sparkle_spec)
-sparkle_spec.loader.exec_module(sparkle)
 compiler_spec = importlib.util.spec_from_file_location("parc_compiler", Path(__file__).with_name("compiler.py"))
 compiler = importlib.util.module_from_spec(compiler_spec)
 compiler_spec.loader.exec_module(compiler)
@@ -62,19 +59,16 @@ def swift_sources(repo: Path) -> list[Path]:
     return sources
 
 
-def snapshot(repo: Path, bridge_headers: Path, sparkle_release: Path) -> tuple[list[Path], dict[str, str]]:
+def snapshot(repo: Path, bridge_headers: Path) -> tuple[list[Path], dict[str, str]]:
     sources = swift_sources(repo)
     files = set(sources)
-    sparkle_code = sparkle_release / "Sparkle.framework/Versions/B"
-    for directory in (repo / "Sources/ParcEngine", repo / "Engine/ParcNative", sparkle_code / "Headers",
-                      sparkle_code / "PrivateHeaders", sparkle_code / "Modules"):
+    for directory in (repo / "Sources/ParcEngine", repo / "Engine/ParcNative"):
         files.update(directory.rglob("*.h"))
         files.update(directory.rglob("*.modulemap"))
     files.update((repo / "Sources/ParcEngine").glob("*.m"))
     files.update(path for path in bridge_headers.rglob("*") if path.is_file())
-    files.add(repo / "Package.swift")
+    files.update(path for path in (repo / "Package.swift", repo / "Package.resolved") if path.is_file())
     files.update((repo / "Stubs").rglob("*.tbd"))
-    files.update(path for path in (repo / "scripts/sparkle.py",) if path.is_file())
     files.add(repo / "Engine/source-lock.json")
     files.add(Path(__file__).resolve())
     files.add(Path(compiler.__file__).resolve())
@@ -121,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
         state = None if args.source_archive else git_state(repo)
         bridge_headers = repo / "Engine/ParcNative"
         protocol_header = bridge_headers / "native_application_protocols.h"
-        for required in (repo / "Package.swift", repo / "Sources/ParcEngine/ParcEngine.h",
+        for required in (repo / "Package.swift", repo / "Package.resolved", repo / "Sources/ParcEngine/ParcEngine.h",
                          repo / "Engine/ParcNative/native_appkit_bridge.h",
                          protocol_header):
             if not required.is_file():
@@ -133,16 +127,12 @@ def main(argv: list[str] | None = None) -> int:
         output = parent / label
         if output.exists() or output.is_symlink():
             raise Refusal(f"Receipt directory already exists; use a fresh --label: {output}")
-        cache = repo / "build/sparkle"
-        sparkle_release = sparkle.directory(cache) if args.plan else sparkle.fetch(cache)
-        sources, before = snapshot(repo, bridge_headers, sparkle_release)
+        sources, before = snapshot(repo, bridge_headers)
         scratch = None if args.mode == "typecheck" else output / "swiftpm"
         command = compiler_command(repo, args.mode, scratch)
-        environment = compiler.package_environment(sparkle_release)
         record = {
             "schema_version": 1, "mode": args.mode, "repo": str(repo), "git_before": state,
-            "bridge_headers": str(bridge_headers), "sparkle_release": str(sparkle_release),
-            "sparkle_cached": sparkle_release.is_dir(), "command": command, "inputs": before,
+            "bridge_headers": str(bridge_headers), "command": command, "inputs": before,
             "source_count": len(sources), "output": str(output),
             "scope": "Swift package build only; no engine ABI, packaged app or runtime verification",
         }
@@ -167,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
         compiler_exit = None
         with (output / "compiler.log").open("x") as log:
             try:
-                compiler_exit = subprocess.run(command, cwd=repo, env=environment, stdout=log,
+                compiler_exit = subprocess.run(command, cwd=repo, stdout=log,
                                                stderr=subprocess.STDOUT).returncode
             except OSError as exc:
                 error = str(exc)
@@ -179,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         head_unchanged = False
         after_state = None
         try:
-            after_sources, after = snapshot(repo, bridge_headers, sparkle_release)
+            after_sources, after = snapshot(repo, bridge_headers)
             unchanged = after == before and after_sources == sources
             after_state = None if args.source_archive else git_state(repo)
             head_unchanged = args.source_archive or after_state["head"] == state["head"]

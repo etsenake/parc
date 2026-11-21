@@ -11,10 +11,11 @@ package struct EaselVectorTextRun: Equatable {
     package var color: String?
     package var underline = false
     package var strikethrough = false
+    package var dimmed = false
     package var link: String?
     package var syntax: String?
-
-    package init(x: Double, y: Double, text: String, fontFamily: String, fontSize: Double, weight: Int = 400, italic: Bool = false, color: String? = nil, underline: Bool = false, strikethrough: Bool = false, link: String? = nil, syntax: String? = nil) {
+    package var mark: EaselVectorMark?
+    package init(x: Double, y: Double, text: String, fontFamily: String, fontSize: Double, weight: Int = 400, italic: Bool = false, color: String? = nil, underline: Bool = false, strikethrough: Bool = false, dimmed: Bool = false, link: String? = nil, syntax: String? = nil, mark: EaselVectorMark? = nil) {
         self.x = x
         self.y = y
         self.text = text
@@ -25,18 +26,79 @@ package struct EaselVectorTextRun: Equatable {
         self.color = color
         self.underline = underline
         self.strikethrough = strikethrough
+        self.dimmed = dimmed
         self.link = link
         self.syntax = syntax
+        self.mark = mark
+    }
+}
+
+package struct EaselVectorMark: Equatable {
+    package var x: Double
+    package var y: Double
+    package var width: Double
+    package var height: Double
+    package var color: String
+    package init(x: Double, y: Double, width: Double, height: Double, color: String) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.color = color
+    }
+}
+
+package struct EaselVectorInlineImage: Equatable {
+    package var x: Double
+    package var y: Double
+    package var width: Double
+    package var height: Double
+    package var image: EaselVectorImage
+    package init(x: Double, y: Double, width: Double, height: Double, image: EaselVectorImage) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.image = image
+    }
+}
+
+package struct EaselVectorRule: Equatable {
+    package var x1: Double
+    package var x2: Double
+    package var y: Double
+    package init(x1: Double, x2: Double, y: Double) {
+        self.x1 = x1
+        self.x2 = x2
+        self.y = y
+    }
+}
+
+package struct EaselVectorCheckbox: Equatable {
+    package var x: Double
+    package var y: Double
+    package var size: Double
+    package var checked: Bool
+    package init(x: Double, y: Double, size: Double, checked: Bool) {
+        self.x = x
+        self.y = y
+        self.size = size
+        self.checked = checked
     }
 }
 
 package struct EaselVectorText: Equatable {
     package var runs: [EaselVectorTextRun] = []
+    package var images: [EaselVectorInlineImage] = []
+    package var rules: [EaselVectorRule] = []
+    package var checkboxes: [EaselVectorCheckbox] = []
     package var fillPath: String?
     package var fillColor: String = "#000000"
-
-    package init(runs: [EaselVectorTextRun] = [], fillPath: String? = nil, fillColor: String = "#000000") {
+    package init(runs: [EaselVectorTextRun] = [], images: [EaselVectorInlineImage] = [], rules: [EaselVectorRule] = [], checkboxes: [EaselVectorCheckbox] = [], fillPath: String? = nil, fillColor: String = "#000000") {
         self.runs = runs
+        self.images = images
+        self.rules = rules
+        self.checkboxes = checkboxes
         self.fillPath = fillPath
         self.fillColor = fillColor
     }
@@ -45,12 +107,11 @@ package struct EaselVectorText: Equatable {
 package struct EaselVectorImage: Equatable {
     package var data: Data
     package var mimeType: String
-    package var dataURI: String { "data:" + mimeType + ";base64," + data.base64EncodedString() }
-
     package init(data: Data, mimeType: String) {
         self.data = data
         self.mimeType = mimeType
     }
+    package var dataURI: String { "data:" + mimeType + ";base64," + data.base64EncodedString() }
 }
 
 package struct EaselVectorPalette: Equatable {
@@ -59,18 +120,20 @@ package struct EaselVectorPalette: Equatable {
         package var card: String
         package var cardLine: String
         package var muted: String
-
-        package init(ink: String, card: String, cardLine: String, muted: String) {
+        package var rule = "rgba(31,27,46,.13)"
+        package var todo = "#2702C2"
+        package init(ink: String, card: String, cardLine: String, muted: String, rule: String = "rgba(31,27,46,.13)", todo: String = "#2702C2") {
             self.ink = ink
             self.card = card
             self.cardLine = cardLine
             self.muted = muted
+            self.rule = rule
+            self.todo = todo
         }
     }
     package var light: Swatch
     package var dark: Swatch
     package var code: EaselCodePalette = .standard
-
     package init(light: Swatch, dark: Swatch, code: EaselCodePalette = .standard) {
         self.light = light
         self.dark = dark
@@ -79,7 +142,8 @@ package struct EaselVectorPalette: Equatable {
 
     package static let standard = EaselVectorPalette(
         light: Swatch(ink: "#1F1B2E", card: "#F6F5F9", cardLine: "rgba(31,27,46,.12)", muted: "rgba(31,27,46,.62)"),
-        dark: Swatch(ink: "#EDEBFA", card: "#24212F", cardLine: "rgba(255,255,255,.14)", muted: "rgba(237,235,250,.62)"))
+        dark: Swatch(ink: "#EDEBFA", card: "#24212F", cardLine: "rgba(255,255,255,.14)", muted: "rgba(237,235,250,.62)",
+                    rule: "rgba(255,255,255,.15)", todo: "#9380E0"))
 }
 
 package struct EaselVectorArt {
@@ -88,13 +152,16 @@ package struct EaselVectorArt {
     package var connectorRoutes: [UUID: EaselConnectorRoute] = [:]
     package var connectorLabels: [UUID: EaselConnectorLabelArt] = [:]
     package var sectionTitles: [UUID: EaselVectorSectionTitle] = [:]
-
-    package init(texts: [UUID: EaselVectorText] = [:], images: [UUID: EaselVectorImage] = [:], connectorRoutes: [UUID: EaselConnectorRoute] = [:], connectorLabels: [UUID: EaselConnectorLabelArt] = [:], sectionTitles: [UUID: EaselVectorSectionTitle] = [:]) {
+    package var mediaDetails: [UUID: String] = [:]
+    package var equations: [UUID: EaselVectorEquation] = [:]
+    package init(texts: [UUID: EaselVectorText] = [:], images: [UUID: EaselVectorImage] = [:], connectorRoutes: [UUID: EaselConnectorRoute] = [:], connectorLabels: [UUID: EaselConnectorLabelArt] = [:], sectionTitles: [UUID: EaselVectorSectionTitle] = [:], mediaDetails: [UUID: String] = [:], equations: [UUID: EaselVectorEquation] = [:]) {
         self.texts = texts
         self.images = images
         self.connectorRoutes = connectorRoutes
         self.connectorLabels = connectorLabels
         self.sectionTitles = sectionTitles
+        self.mediaDetails = mediaDetails
+        self.equations = equations
     }
 }
 
@@ -175,7 +242,9 @@ package enum EaselVectorExport {
     }
 
     package static func element(_ item: EaselItem, art: EaselVectorArt) -> String {
-        transformed(item, kindElement(item, art: art))
+        guard !item.isEmptyPlaceholder else { return "" }
+        let credit = item.kind == .image && art.images[item.id] != nil ? creditElement(item) : ""
+        return transformed(item, kindElement(item, art: art)) + credit
     }
 
     package static func transformed(_ item: EaselItem, _ body: String) -> String {
@@ -205,12 +274,14 @@ package enum EaselVectorExport {
         case .webCard, .browser:
             if let picture = art.images[item.id] { return linked(image(item, picture, corner: 8), item.url) }
             return card(item)
-        case .link: return card(item)
+        case .link: return bookmark(item)
         case .sticky, .section: return board(item, art.texts[item.id], title: art.sectionTitles[item.id])
         case .table: return table(item, art.texts[item.id])
         case .code: return codeBlock(item, art.texts[item.id])
         case .stamp: return stamp(item, art.images[item.id])
-        case .video: return art.images[item.id].map { poster(item, $0) } ?? ""
+        case .video: return art.images[item.id].map { poster(item, $0) } ?? linkedVideoElement(item)
+        case .audio, .file, .pdf: return mediaElement(item, art: art)
+        case .equation: return equation(item, art.equations[item.id])
         }
     }
 
@@ -341,14 +412,78 @@ package enum EaselVectorExport {
         return linked(result + "</g></g>", item.url)
     }
 
+    package static func bookmark(_ item: EaselItem) -> String {
+        guard let url = item.url, !url.isEmpty else { return "" }
+        let f = item.frame
+        let clip = "bookmark-" + item.id.uuidString.lowercased()
+        var result = "<g class=\"easel-bookmark\"><rect x=\"" + number(f.x) + "\" y=\"" + number(f.y) + "\" width=\"" + number(f.width)
+            + "\" height=\"" + number(f.height) + "\" rx=\"10\" ry=\"10\" style=\"fill:var(--easel-card);stroke:var(--easel-card-line);stroke-width:1\"/>"
+        result += "<clipPath id=\"" + clip + "\"><rect x=\"" + number(f.x + 16) + "\" y=\"" + number(f.y + 8) + "\" width=\""
+            + number(max(0, f.width - 32)) + "\" height=\"" + number(max(0, f.height - 16)) + "\"/></clipPath><g clip-path=\"url(#" + clip + ")\">"
+        result += "<text x=\"" + number(f.x + 16) + "\" y=\"" + number(f.y + 31) + "\" style=\"font-family:var(--font);font-size:14.5px;font-weight:700;fill:"
+            + paint(item.color) + "\">" + escape(EaselBookmarkCard.title(of: item)) + "</text>"
+        if let summary = EaselBookmarkCard.summary(of: item) {
+            let perLine = max(8, Int((f.width - 32) / 6.6))
+            for (index, line) in wrap(summary, perLine: perLine, lines: 2).enumerated() {
+                result += "<text x=\"" + number(f.x + 16) + "\" y=\"" + number(f.y + 52 + Double(index) * 18) + "\" style=\"font-family:var(--font);font-size:13px;fill:var(--easel-muted)\">"
+                    + escape(line) + "</text>"
+            }
+        }
+        result += "<text x=\"" + number(f.x + 16) + "\" y=\"" + number(f.y + f.height - 18) + "\" style=\"font-family:var(--font);font-size:12.5px;fill:var(--easel-muted)\">"
+            + escape(EaselBookmarkCard.siteLine(of: item)) + "</text>"
+        return linked(result + "</g></g>", url)
+    }
+
+    package static func wrap(_ text: String, perLine: Int, lines: Int) -> [String] {
+        guard perLine > 1, lines > 0 else { return [] }
+        var result: [String] = [], current = "", truncated = false
+        for word in text.split(whereSeparator: \.isWhitespace).map(String.init) {
+            let candidate = current.isEmpty ? word : current + " " + word
+            if candidate.count <= perLine { current = candidate; continue }
+            if !current.isEmpty { result.append(current) }
+            if result.count == lines { truncated = true; current = ""; break }
+            current = String(word.prefix(perLine))
+        }
+        if !current.isEmpty {
+            if result.count < lines { result.append(current) } else { truncated = true }
+        }
+        if truncated, let last = result.last { result[result.count - 1] = String(last.prefix(perLine - 1)) + "…" }
+        return result
+    }
+
     package static func text(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
-        guard let layout, !layout.runs.isEmpty || layout.fillPath != nil else { return "" }
+        guard let layout, !layout.runs.isEmpty || !layout.images.isEmpty || !layout.rules.isEmpty || !layout.checkboxes.isEmpty
+                || layout.fillPath != nil else { return "" }
         var result = "<g transform=\"translate(" + number(item.frame.x) + " " + number(item.frame.y) + ")\">"
         if let fill = layout.fillPath, !fill.isEmpty {
             result += "<path d=\"" + escape(fill) + "\" style=\"fill:" + (color(layout.fillColor) ?? "#000000") + "\"/>"
         }
         for run in layout.runs where !run.text.isEmpty { result += textRun(run) }
+        for placed in layout.images { result += inlineImage(placed) }
+        for rule in layout.rules { result += ruleLine(rule) }
+        for box in layout.checkboxes { result += checkbox(box) }
         return result + "</g>"
+    }
+
+    package static func ruleLine(_ rule: EaselVectorRule) -> String {
+        "<line x1=\"" + number(rule.x1) + "\" y1=\"" + number(rule.y) + "\" x2=\"" + number(rule.x2) + "\" y2=\"" + number(rule.y)
+            + "\" style=\"stroke:var(--easel-rule,rgba(128,128,128,.3));stroke-width:1\"/>"
+    }
+
+    package static func checkbox(_ box: EaselVectorCheckbox) -> String {
+        let radius = box.size / 2
+        let open = "<circle cx=\"" + number(box.x + radius) + "\" cy=\"" + number(box.y + radius) + "\" r=\""
+        guard box.checked else {
+            return open + number(radius - 0.75) + "\" style=\"fill:none;stroke:var(--easel-muted);stroke-width:1.5\"/>"
+        }
+        let points = [(0.27, 0.52), (0.44, 0.68), (0.74, 0.34)].map { number(box.x + box.size * $0.0) + " " + number(box.y + box.size * $0.1) }
+        return open + number(radius) + "\" style=\"fill:var(--easel-todo,#2702C2)\"/><path d=\"M" + points[0] + "L" + points[1] + "L" + points[2]
+            + "\" style=\"fill:none;stroke:#FFFFFF;stroke-width:" + number(box.size * 0.11) + ";stroke-linecap:round;stroke-linejoin:round\"/>"
+    }
+
+    package static func inlineImage(_ placed: EaselVectorInlineImage) -> String {
+        "<image x=\"" + number(placed.x) + "\" y=\"" + number(placed.y) + "\" width=\"" + number(placed.width) + "\" height=\""
+            + number(placed.height) + "\" preserveAspectRatio=\"xMidYMid meet\" href=\"" + escape(placed.image.dataURI) + "\"/>"
     }
 
     package static func textRun(_ run: EaselVectorTextRun) -> String {
@@ -356,16 +491,26 @@ package enum EaselVectorExport {
         if run.weight != 400 { style += ";font-weight:" + String(run.weight) }
         if run.italic { style += ";font-style:italic" }
         style += ";fill:" + (run.color.map(paint) ?? "var(--easel-ink)")
+        if run.dimmed { style += ";fill-opacity:.45" }
         let decorations = [run.underline ? "underline" : nil, run.strikethrough ? "line-through" : nil].compactMap { $0 }
         if !decorations.isEmpty { style += ";text-decoration:" + decorations.joined(separator: " ") }
-        let body = "<text x=\"" + number(run.x) + "\" y=\"" + number(run.y) + "\" xml:space=\"preserve\" style=\"" + escape(style) + "\">"
+        let body = markRect(run.mark) + "<text x=\"" + number(run.x) + "\" y=\"" + number(run.y) + "\" xml:space=\"preserve\" style=\"" + escape(style) + "\">"
             + escape(run.text) + "</text>"
         return linked(body, run.link)
     }
 
+    package static func markRect(_ mark: EaselVectorMark?) -> String {
+        guard let mark, mark.width > 0, mark.height > 0, mark.color.range(of: "^#[0-9A-Fa-f]{8}$", options: .regularExpression) != nil else { return "" }
+        let value = mark.color.uppercased()
+        let fill = EaselPalette.markVariable(for: value).map { "var(" + $0 + "," + value + ")" } ?? value
+        return "<rect x=\"" + number(mark.x) + "\" y=\"" + number(mark.y) + "\" width=\"" + number(mark.width) + "\" height=\""
+            + number(mark.height) + "\" rx=\"3\" ry=\"3\" style=\"fill:" + fill + "\"/>"
+    }
+
     package static func css(_ palette: EaselVectorPalette) -> String {
         func variables(_ swatch: EaselVectorPalette.Swatch) -> String {
-            "--easel-ink:" + swatch.ink + ";--easel-card:" + swatch.card + ";--easel-card-line:" + swatch.cardLine + ";--easel-muted:" + swatch.muted + ";"
+            "--easel-ink:" + swatch.ink + ";--easel-card:" + swatch.card + ";--easel-card-line:" + swatch.cardLine + ";--easel-muted:" + swatch.muted
+                + ";--easel-rule:" + swatch.rule + ";--easel-todo:" + swatch.todo + ";"
         }
         return ":root{" + variables(palette.light) + EaselPalette.cssDeclarations(dark: false) + "}\n"
             + "@media screen and (prefers-color-scheme:dark){:root{" + variables(palette.dark) + EaselPalette.cssDeclarations(dark: true) + "}}\n"

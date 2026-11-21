@@ -10,6 +10,7 @@ package final class NoteCrossNoteMove {
     private let reachTarget: Access
     private var seen: [Side: NotePageSession] = [:]
     private let name: String
+    private let schedule: @Sendable (@escaping @Sendable () -> Void) -> Void
     private var originals: [NoteBlock]
     private var placements: [NoteInsertion]
     private var copies: [NoteBlock]
@@ -18,8 +19,10 @@ package final class NoteCrossNoteMove {
     package var originalIDs: [NoteBlockID] { originals.map(\.id) }
     package var copyIDs: [NoteBlockID] { copies.map(\.id) }
 
-    private init(name: String, originals: [NoteBlock], placements: [NoteInsertion], source: @escaping Access, target: @escaping Access) {
+    private init(name: String, originals: [NoteBlock], placements: [NoteInsertion], source: @escaping Access, target: @escaping Access,
+                 schedule: @escaping @Sendable (@escaping @Sendable () -> Void) -> Void) {
         self.name = name
+        self.schedule = schedule
         self.originals = originals
         self.placements = placements
         self.copies = originals.map { $0.withFreshIDs() }
@@ -68,7 +71,8 @@ package final class NoteCrossNoteMove {
     }
 
     package static func perform(_ ids: [NoteBlockID], from session: NotePageSession, name: String,
-                        target: @escaping Access, source: Access? = nil) -> NoteCrossNoteMove? {
+                        target: @escaping Access, source: Access? = nil,
+                        schedule: @escaping @Sendable (@escaping @Sendable () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) -> NoteCrossNoteMove? {
         let page = session.page
         let top = page.topLevelSelection(ids)
         let blocks = top.compactMap { page.block($0) }
@@ -79,7 +83,7 @@ package final class NoteCrossNoteMove {
             return true
         }
         let move = NoteCrossNoteMove(name: name, originals: blocks, placements: top.map { placement(of: $0, in: page) },
-                                     source: sourceAccess, target: target)
+                                     source: sourceAccess, target: target, schedule: schedule)
         move.seen[.source] = session
         var landed = false
         let reached = move.target { other in
@@ -154,7 +158,7 @@ package final class NoteCrossNoteMove {
     }
 
     private func settle(_ body: @escaping @MainActor (NoteCrossNoteMove) -> Void) {
-        DispatchQueue.main.async { [self] in
+        schedule { [self] in
             MainActor.assumeIsolated { body(self) }
         }
     }

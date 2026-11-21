@@ -13,6 +13,7 @@ final class EaselPageSwitcherButton: PointingHandButton {
             setAccessibilityValue(pageName)
             invalidateIntrinsicContentSize()
             needsDisplay = true
+            EaselControlSurface.crossfade(self, pops: 0.97)
         }
     }
 
@@ -22,6 +23,12 @@ final class EaselPageSwitcherButton: PointingHandButton {
         focusRingType = .exterior
         title = ""
         setButtonType(.momentaryChange)
+        wantsLayer = true
+        NoteAnimation.observeReduceMotion(self) { [weak self] in
+            guard let self else { return }
+            NoteAnimation.settle(self)
+            EaselControlSurface.apply(self, hovered: false, pressed: false, casts: false)
+        }
         setAccessibilityRole(.popUpButton)
         setAccessibilityLabel("Pages")
         setAccessibilityValue(pageName)
@@ -48,12 +55,25 @@ final class EaselPageSwitcherButton: PointingHandButton {
         super.updateTrackingAreas()
     }
 
-    override func mouseEntered(with event: NSEvent) { pointerInside = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { pointerInside = false; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { hoverChanged(true) }
+    override func mouseExited(with event: NSEvent) { hoverChanged(false) }
     override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); pointerInside = false; needsDisplay = true }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
     override var state: NSControl.StateValue { didSet { needsDisplay = true } }
-    override func highlight(_ flag: Bool) { super.highlight(flag); needsDisplay = true }
+
+    private func hoverChanged(_ inside: Bool) {
+        guard inside != pointerInside else { return }
+        pointerInside = inside
+        needsDisplay = true
+        EaselControlSurface.crossfade(self, duration: NoteAnimation.hoverDuration, pops: nil)
+    }
+
+    override func highlight(_ flag: Bool) {
+        let released = !flag && isHighlighted
+        super.highlight(flag)
+        needsDisplay = true
+        EaselControlSurface.apply(self, hovered: false, pressed: flag, released: released, casts: false)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let radius = NoteTheme.controlRadius
@@ -166,6 +186,12 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         }
     }
 
+    enum RowKey: Hashable {
+        case page(UUID?)
+        case add
+        case addDivider
+    }
+
     static let width: CGFloat = 264
     static let dividerHeight: CGFloat = 18
     static let maximumListHeight: CGFloat = 420
@@ -184,6 +210,8 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
     private var renaming: Int?
     private let field = NSTextField()
     private let plate = NSView()
+    private let marker = EaselPageMarkerView()
+    private var rowViews: [RowKey: EaselPageRowView] = [:]
     private let scroll = NSScrollView()
     private let document = EaselPageListDocumentView()
     private var rowMenu: NotePagePopover?
@@ -224,6 +252,8 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         field.isHidden = true
         field.setAccessibilityLabel("Page name")
         document.addSubview(field)
+        marker.isHidden = true
+        document.addSubview(marker)
         setAccessibilityElement(true)
         setAccessibilityRole(.list)
         setAccessibilityLabel("Pages")
@@ -288,10 +318,86 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         }
         document.frame = NSRect(x: 0, y: 0, width: Self.width, height: contentHeight)
         needsLayout = true
-        document.needsDisplay = true
+        let animated = window != nil && !rowViews.isEmpty
+        reconcileRows(animated: animated)
+        placeMarker(animated: animated)
+        redrawRows()
         window?.invalidateCursorRects(for: document)
         rebuildAccessibility()
         preferredSizeDidChange?()
+    }
+
+    private func key(of entry: Entry) -> RowKey {
+        switch entry {
+        case .page(let row): return .page(row.id)
+        case .add: return .add
+        case .addDivider: return .addDivider
+        }
+    }
+
+    private func rowViewFrame(_ index: Int) -> NSRect {
+        let frame = frames[index]
+        let extra = EaselPageRowView.topExtra(for: entries[index])
+        return NSRect(x: 0, y: frame.minY - extra, width: Self.width, height: frame.height + extra)
+    }
+
+    private func reconcileRows(animated: Bool) {
+        var seen = Set<RowKey>()
+        for index in entries.indices where frames.indices.contains(index) {
+            let entry = entries[index]
+            let rowKey = key(of: entry)
+            seen.insert(rowKey)
+            let target = rowViewFrame(index)
+            if let view = rowViews[rowKey] {
+                let becameCurrent = view.entry.row?.isCurrent != entry.row?.isCurrent
+                view.configure(entry: entry, index: index, itemFrame: frames[index])
+                if becameCurrent, animated { EaselControlSurface.crossfade(view, duration: NoteAnimation.hoverDuration, pops: nil) }
+                if view.frame != target {
+                    if animated { NoteAnimation.slide(view, to: target, spring: .reorder) } else { view.frame = target }
+                }
+            } else {
+                let view = EaselPageRowView(list: self, entry: entry, index: index, itemFrame: frames[index])
+                view.frame = target
+                document.addSubview(view, positioned: .below, relativeTo: field)
+                rowViews[rowKey] = view
+                if animated { NoteAnimation.insert(view) }
+            }
+        }
+        for (rowKey, view) in rowViews where !seen.contains(rowKey) {
+            rowViews[rowKey] = nil
+            if animated {
+                NoteAnimation.remove(view) { [weak view] in view?.removeFromSuperview() }
+            } else {
+                view.removeFromSuperview()
+            }
+        }
+    }
+
+    private func placeMarker(animated: Bool) {
+        guard let index = entries.firstIndex(where: { $0.row?.isCurrent == true && $0.row?.isDivider == false }),
+              frames.indices.contains(index) else {
+            marker.isHidden = true
+            return
+        }
+        let target = NSRect(x: frames[index].minX + 8, y: (frames[index].midY - 10).rounded(), width: 20, height: 20)
+        if marker.isHidden {
+            marker.isHidden = false
+            marker.frame = target
+            if animated { NoteAnimation.insert(marker) }
+            return
+        }
+        guard marker.frame != target else { return }
+        guard animated else {
+            marker.frame = target
+            return
+        }
+        NoteAnimation.slide(marker, to: target, spring: .pill)
+        NoteAnimation.pop(marker, from: 0.7, spring: .pill)
+    }
+
+    fileprivate func redrawRows() {
+        document.needsDisplay = true
+        for view in rowViews.values { view.needsDisplay = true }
     }
 
     override func layout() {
@@ -308,7 +414,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         super.viewDidChangeEffectiveAppearance()
         refreshPlate()
         field.textColor = NoteTheme.menuInk
-        document.needsDisplay = true
+        redrawRows()
     }
 
     private func firstEnabled() -> Int? { entries.indices.first { isEnabled($0) } }
@@ -362,7 +468,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
             }
         }
         if let target, !highlightFromPointer { reveal(target) }
-        document.needsDisplay = true
+        redrawRows()
         updateAccessibilitySelection()
     }
 
@@ -499,7 +605,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         field.isHidden = false
         window?.makeFirstResponder(field)
         field.currentEditor()?.selectAll(nil)
-        document.needsDisplay = true
+        redrawRows()
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -516,7 +622,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         if commit, entries.indices.contains(index), let row = entries[index].row, value != row.name {
             if switcher?.actions.rename(row.id, value) != true { NSSound.beep() }
         }
-        document.needsDisplay = true
+        redrawRows()
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
@@ -640,7 +746,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         let pageFrames = entries.indices.filter { entries[$0].row != nil }.map { frames[$0] }
         dropIndex = pageFrames.firstIndex { point.y < $0.midY } ?? pageFrames.count
         document.autoscroll(with: NSApp.currentEvent ?? NSEvent())
-        document.needsDisplay = true
+        redrawRows()
     }
 
     fileprivate func pointerUp(at point: NSPoint) {
@@ -650,7 +756,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
             dragging = nil
             dropIndex = nil
             refreshPlate()
-            document.needsDisplay = true
+            redrawRows()
             window?.invalidateCursorRects(for: document)
         }
         if let source = dragging, let dropIndex, let from = pageIndex(of: source), let row = entries[source].row {
@@ -783,26 +889,89 @@ private final class EaselPageListDocumentView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        guard let list, let y = list.dropLineY else { return }
+        NoteTheme.checkedInk.setFill()
+        NSBezierPath(roundedRect: NSRect(x: NoteTheme.menuInset + 4, y: y - 1, width: bounds.width - NoteTheme.menuInset * 2 - 8, height: 2),
+                     xRadius: 1, yRadius: 1).fill()
+    }
+}
+
+@MainActor
+private final class EaselPageMarkerView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        setAccessibilityElement(false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let check = NoteIconRenderer.symbol("checkmark", pointSize: 11.5, weight: .bold) else { return }
+        NoteIconRenderer.drawTemplate(check, centeredIn: bounds, tint: NoteTheme.checkedInk)
+    }
+}
+
+@MainActor
+private final class EaselPageRowView: NSView {
+    private(set) var entry: EaselPageListView.Entry
+    private(set) var index: Int
+    private var itemFrame: NSRect
+    private weak var list: EaselPageListView?
+
+    static func topExtra(for entry: EaselPageListView.Entry) -> CGFloat {
+        if case .add = entry { return NoteTheme.menuSeparatorSlot }
+        return 0
+    }
+
+    init(list: EaselPageListView, entry: EaselPageListView.Entry, index: Int, itemFrame: NSRect) {
+        self.list = list
+        self.entry = entry
+        self.index = index
+        self.itemFrame = itemFrame
+        super.init(frame: .zero)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        setAccessibilityElement(false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
+
+    func configure(entry: EaselPageListView.Entry, index: Int, itemFrame: NSRect) {
+        self.entry = entry
+        self.index = index
+        self.itemFrame = itemFrame
+        needsDisplay = true
+    }
+
+    private var local: NSRect {
+        NSRect(x: itemFrame.minX, y: Self.topExtra(for: entry), width: itemFrame.width, height: itemFrame.height)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
         guard let list else { return }
-        for placed in list.placed where placed.frame.intersects(dirtyRect) {
-            NSGraphicsContext.saveGraphicsState()
-            if !list.enabled(placed.index) { NSGraphicsContext.current?.cgContext.setAlpha(NoteTheme.disabledRowOpacity) }
-            if placed.index == list.draggedIndex { NSGraphicsContext.current?.cgContext.setAlpha(0.4) }
-            switch placed.entry {
-            case .page(let row) where row.isDivider: drawDivider(in: placed.frame)
-            case .page(let row): drawPage(row, in: placed.frame, index: placed.index, list: list)
-            case .add:
-                drawSeparator(at: placed.frame.minY - NoteTheme.menuSeparatorSlot / 2, frame: placed.frame)
-                drawAction("New Page", symbol: "plus", in: placed.frame)
-            case .addDivider: drawAction("New Divider", symbol: "minus", in: placed.frame)
-            }
-            NSGraphicsContext.restoreGraphicsState()
+        let frame = local
+        NSGraphicsContext.saveGraphicsState()
+        if !list.enabled(index) { NSGraphicsContext.current?.cgContext.setAlpha(NoteTheme.disabledRowOpacity) }
+        if index == list.draggedIndex { NSGraphicsContext.current?.cgContext.setAlpha(0.4) }
+        switch entry {
+        case .page(let row) where row.isDivider: drawSeparator(at: frame.midY, frame: frame)
+        case .page(let row): drawPage(row, in: frame, list: list)
+        case .add:
+            drawSeparator(at: frame.minY - NoteTheme.menuSeparatorSlot / 2, frame: frame)
+            drawAction("New Page", symbol: "plus", in: frame)
+        case .addDivider: drawAction("New Divider", symbol: "minus", in: frame)
         }
-        if let y = list.dropLineY {
-            NoteTheme.checkedInk.setFill()
-            NSBezierPath(roundedRect: NSRect(x: NoteTheme.menuInset + 4, y: y - 1, width: bounds.width - NoteTheme.menuInset * 2 - 8, height: 2),
-                         xRadius: 1, yRadius: 1).fill()
-        }
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func titleAttributes(_ ink: NSColor) -> [NSAttributedString.Key: Any] {
@@ -811,16 +980,15 @@ private final class EaselPageListDocumentView: NSView {
         return [.font: NoteTheme.menuTitleFont(), .foregroundColor: ink, .paragraphStyle: paragraph]
     }
 
-    private func drawPage(_ row: EaselPageSwitcher.Row, in frame: NSRect, index: Int, list: EaselPageListView) {
+    private func drawPage(_ row: EaselPageSwitcher.Row, in frame: NSRect, list: EaselPageListView) {
         let box = NSRect(x: frame.minX + 8, y: (frame.midY - 10).rounded(), width: 20, height: 20)
-        if row.isCurrent, let check = NoteIconRenderer.symbol("checkmark", pointSize: 11.5, weight: .bold) {
-            NoteIconRenderer.drawTemplate(check, centeredIn: box, tint: NoteTheme.checkedInk)
-        } else {
+        if !row.isCurrent {
             NoteIconRenderer.draw(.symbol("doc"), in: box, tint: NoteTheme.menuSecondaryInk, pointSize: 13,
                                   weight: NoteIconRenderer.symbolWeight(for: NoteTheme.menuTitleFont()))
         }
         var right = frame.maxX - 10
-        if list.showsMoreButton(index), let more = list.moreButtonFrame(for: index) {
+        if list.showsMoreButton(index), let documentMore = list.moreButtonFrame(for: index) {
+            let more = documentMore.offsetBy(dx: -self.frame.minX, dy: -self.frame.minY)
             NoteTheme.hoverFill.setFill()
             NSBezierPath(roundedRect: more, xRadius: NoteTheme.controlRadius, yRadius: NoteTheme.controlRadius).fill()
             if let glyph = NoteIconRenderer.symbol("ellipsis", pointSize: 11, weight: .bold) {
@@ -841,10 +1009,6 @@ private final class EaselPageListDocumentView: NSView {
                                                  height: height),
                                     options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
                                     attributes: titleAttributes(row.isCurrent ? NoteTheme.checkedInk : NoteTheme.menuInk))
-    }
-
-    private func drawDivider(in frame: NSRect) {
-        drawSeparator(at: frame.midY, frame: frame)
     }
 
     private func drawSeparator(at y: CGFloat, frame: NSRect) {

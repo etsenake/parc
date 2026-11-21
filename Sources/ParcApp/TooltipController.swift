@@ -114,7 +114,17 @@ final class TooltipAnchorView: NSView {
         didSet { if palette != oldValue, presentedOwnPalette == nil { presenter?.setPalette(palette ?? .neutral) } }
     }
     var isSuppressed = false {
-        didSet { if isSuppressed && !oldValue { hide(TooltipTiming.exitDuration) } }
+        didSet { if isSuppressed && !oldValue { hideSuppressedTooltip() } }
+    }
+    weak var exemptView: NSView? {
+        didSet {
+            guard exemptView !== oldValue else { return }
+            if let old = oldValue, state.isPresented, let view = currentView, view === old || view.isDescendant(of: old) {
+                hide(TooltipTiming.exitDuration)
+            } else if isSuppressed {
+                hideSuppressedTooltip()
+            }
+        }
     }
     private(set) weak var hitTestingView: NSView?
 
@@ -222,8 +232,18 @@ final class TooltipAnchorView: NSView {
         }
     }
 
-    private func isEligible(_ configuration: TooltipConfiguration) -> Bool {
-        if isSuppressed { return false }
+    private func isExempt(_ view: NSView) -> Bool {
+        guard let exemptView else { return false }
+        return view === exemptView || view.isDescendant(of: exemptView)
+    }
+
+    private func hideSuppressedTooltip() {
+        guard state.isPresented, let view = currentView, !isExempt(view) else { return }
+        hide(TooltipTiming.exitDuration)
+    }
+
+    private func isEligible(_ configuration: TooltipConfiguration, for view: NSView) -> Bool {
+        if isSuppressed && !isExempt(view) { return false }
         if configuration.requiresShortcut && shortcut(for: configuration) == nil { return false }
         return TooltipEligibility.permits(pressedMouseButtons: NSEvent.pressedMouseButtons, modifierFlags: NSEvent.modifierFlags,
                                    allowed: configuration.allowedModifierKeys) { [window] in
@@ -237,7 +257,7 @@ final class TooltipAnchorView: NSView {
     }
 
     private func schedule(_ view: NSView) {
-        guard let configuration = view.parcTooltip, isEligible(configuration) else { return }
+        guard let configuration = view.parcTooltip, isEligible(configuration, for: view) else { return }
         switch state.schedule(ObjectIdentifier(view), anchor: configuration.anchor, behavior: configuration.behavior, now: Self.now()) {
         case .present?: present(view)
         case .presentAfter(let delay)?:
@@ -252,7 +272,7 @@ final class TooltipAnchorView: NSView {
     private func present(_ view: NSView) {
         presentationTimer?.invalidate(); presentationTimer = nil
         guard let window, view.window === window, !view.isHiddenOrHasHiddenAncestor,
-              let configuration = view.parcTooltip, isEligible(configuration) else {
+              let configuration = view.parcTooltip, isEligible(configuration, for: view) else {
             state.cancelSchedule(); updateMonitor(); return
         }
         let shortcut = shortcut(for: configuration)
@@ -314,7 +334,7 @@ final class TooltipAnchorView: NSView {
     private func configurationDidChange(for view: NSView) {
         guard state.target == ObjectIdentifier(view) else { return }
         if state.isPresented {
-            if let configuration = view.parcTooltip, isEligible(configuration), isPointer(over: view) {
+            if let configuration = view.parcTooltip, isEligible(configuration, for: view), isPointer(over: view) {
                 present(view)
             } else {
                 hide(TooltipTiming.exitDuration)

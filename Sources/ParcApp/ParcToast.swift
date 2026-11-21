@@ -513,6 +513,22 @@ private final class ParcToastFocusElement: NSView {
     override func accessibilityPerformPress() -> Bool { owner?.press(target) ?? false }
 }
 
+struct ParcToastClock {
+    var repeating: @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> () -> Void
+    var after: @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> () -> Void
+
+    static let system = ParcToastClock(
+        repeating: { interval, work in
+            let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in MainActor.assumeIsolated { work() } }
+            return { timer.invalidate() }
+        },
+        after: { delay, work in
+            let item = DispatchWorkItem { MainActor.assumeIsolated { work() } }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+            return { item.cancel() }
+        })
+}
+
 @MainActor
 final class ParcToastPresentation: NSView {
     let state: ParcToastState
@@ -527,8 +543,9 @@ final class ParcToastPresentation: NSView {
     private weak var panel: ParcToastWindow?
     private var host: NSHostingView<ParcToastCard>!
     private var focusElements: [ParcToastFocus: ParcToastFocusElement] = [:]
-    private var timer: Timer?
-    private var closeWork: DispatchWorkItem?
+    private let clock: ParcToastClock
+    private var cancelTimer: (() -> Void)?
+    private var cancelClose: (() -> Void)?
     private var observers: [NSObjectProtocol] = []
     private var workspaceObserver: NSObjectProtocol?
     private var scrollMonitor: Any?
@@ -540,8 +557,9 @@ final class ParcToastPresentation: NSView {
 
     init(content: ParcToastContent, theme: SpaceTheme, basicBackground: NSColor? = nil, duration: TimeInterval = ParcToastTiming.duration,
          onTap: (() -> Void)? = nil, onRetry: (() -> Void)? = nil,
-         share: @escaping @MainActor ([URL], NSPoint?) -> Void = { _, _ in }) {
+         share: @escaping @MainActor ([URL], NSPoint?) -> Void = { _, _ in }, clock: ParcToastClock = .system) {
         state = ParcToastState(content: content, theme: theme, basicBackground: basicBackground)
+        self.clock = clock
         self.duration = duration; self.onTap = onTap; self.onRetry = onRetry; self.share = share
         super.init(frame: NSRect(x: 0, y: 0, width: ParcToastPlacement.windowSide, height: ParcToastPlacement.windowSide))
         state.appKitFocusTargets = Set(keyboardTargets)
@@ -566,7 +584,7 @@ final class ParcToastPresentation: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     deinit {
-        timer?.invalidate(); closeWork?.cancel()
+        cancelTimer?(); cancelClose?()
         observers.forEach(NotificationCenter.default.removeObserver)
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
@@ -606,11 +624,9 @@ final class ParcToastPresentation: NSView {
             guard let self, !self.isRetiring else { return }
             self.state.show()
         }
-        timer = Timer.scheduledTimer(withTimeInterval: duration, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, !self.isRetiring, !self.containsPointer, self.state.focused == nil else { return }
-                self.retire(animated: true, finished: true)
-            }
+        cancelTimer = clock.repeating(duration) { [weak self] in
+            guard let self, !self.isRetiring, !self.containsPointer, self.state.focused == nil else { return }
+            self.retire(animated: true, finished: true)
         }
         NSAccessibility.post(element: self, notification: .announcementRequested,
             userInfo: [.announcement: state.content.accessibilityText,
@@ -771,20 +787,18 @@ final class ParcToastPresentation: NSView {
         let shouldAnimate = animated && panel?.isVisible == true && !state.reduceMotion
         isRetiring = true; onTap = nil; onRetry = nil
         if returningFocus { returnFocus() } else { endKeyboardFocus() }
-        timer?.invalidate(); timer = nil
+        cancelTimer?(); cancelTimer = nil
         panel?.ignoresMouseEvents = true
         state.hide(animated: shouldAnimate)
         let retire = onRetire; onRetire = nil
         retire?(finished)
         guard shouldAnimate else { closePresentation(); return }
-        let work = DispatchWorkItem { [weak self] in self?.closePresentation() }
-        closeWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + ParcToastTiming.retirement, execute: work)
+        cancelClose = clock.after(ParcToastTiming.retirement) { [weak self] in self?.closePresentation() }
     }
 
     private func closePresentation() {
         isRetiring = true
-        timer?.invalidate(); timer = nil; closeWork?.cancel(); closeWork = nil
+        cancelTimer?(); cancelTimer = nil; cancelClose?(); cancelClose = nil
         observers.forEach(NotificationCenter.default.removeObserver); observers.removeAll()
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
         workspaceObserver = nil
@@ -882,14 +896,18 @@ final class ParcToastPresenter {
     var basicBackground: NSColor?
     var onIdle: (() -> Void)?
     var yieldsShortcut: (NSEvent) -> Bool = { _ in false }
-    init(share: @escaping @MainActor ([URL], NSPoint?) -> Void = { _, _ in }) { self.share = share }
+    private let clock: ParcToastClock
+    init(share: @escaping @MainActor ([URL], NSPoint?) -> Void = { _, _ in }, clock: ParcToastClock = .system) {
+        self.share = share
+        self.clock = clock
+    }
 
     @discardableResult
     func show(_ content: ParcToastContent, in parent: NSWindow, over anchor: NSView?, theme: SpaceTheme,
               duration: TimeInterval = ParcToastTiming.duration, onTap: (() -> Void)? = nil,
               onRetry: (() -> Void)? = nil, onRetire: (() -> Void)? = nil) -> ParcToastPresentation? {
         let next = ParcToastPresentation(content: content, theme: theme, basicBackground: basicBackground,
-                                        duration: duration, onTap: onTap, onRetry: onRetry, share: share)
+                                        duration: duration, onTap: onTap, onRetry: onRetry, share: share, clock: clock)
         next.yieldsShortcut = yieldsShortcut
         guard next.present(in: parent, over: anchor) else { return nil }
         let previous = current

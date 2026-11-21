@@ -50,7 +50,7 @@ enum DocumentsLibraryCatalog {
             DocumentsLibraryItem(identity: .note(note.url.standardizedFileURL), title: displayTitle(note.title, untitled: untitledNote),
                                  emoji: emoji(note.icon), preview: preview(note.snippet), detail: "Note", modified: note.modifiedAt)
         } + easels.map { easel in
-            DocumentsLibraryItem(identity: .easel(easel.id), title: displayTitle(easel.title, untitled: untitledEasel), emoji: nil,
+            DocumentsLibraryItem(identity: .easel(easel.id), title: displayTitle(easel.title, untitled: untitledEasel), emoji: easel.icon.flatMap { $0.kind == .emoji ? $0.value : nil },
                                  preview: "", detail: "Easel · \(easel.itemCount) objects", modified: easel.modifiedAt)
         }
     }

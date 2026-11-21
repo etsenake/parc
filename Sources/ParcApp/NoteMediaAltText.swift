@@ -33,6 +33,7 @@ final class NoteMediaAltBadge: NoteMediaControl {
         layer?.shadowOpacity = 1
         layer?.shadowRadius = 4
         layer?.shadowOffset = CGSize(width: 0, height: -1)
+        addCursorUpdateArea()
         refresh()
     }
 
@@ -51,11 +52,14 @@ final class NoteMediaAltBadge: NoteMediaControl {
             guard let self, !self.isRevealed else { return }
             self.isHidden = true
         }
-        window?.invalidateCursorRects(for: self)
+        if ownsPointer(atWindowPoint: window?.mouseLocationOutsideOfEventStream ?? .zero) { window?.refreshCursorUnderPointer() }
     }
 
-    override func resetCursorRects() {
-        if isRevealed, isEnabled { addCursorRect(bounds, cursor: .pointingHand) }
+    override func resetCursorRects() {}
+
+    override func cursorUpdate(with event: NSEvent) {
+        if isRevealed, isEnabled, applyNoteCursor(.pointingHand, for: event) { return }
+        if isRevealed { super.cursorUpdate(with: event) } else { nextResponder?.cursorUpdate(with: event) }
     }
 
     override func pressDidChange() {

@@ -87,7 +87,8 @@ final class NoteButtonPillView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(area)
         tracking = area
     }
@@ -103,8 +104,8 @@ final class NoteButtonPillView: NSView {
         onHover?(value)
     }
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(.pointingHand, for: event) { super.cursorUpdate(with: event) }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -208,7 +209,6 @@ final class NoteButtonBlockView: NoteBlockView {
     override func readOnlyDidChange() {
         if isReadOnly { closeEditor(reselect: false, animated: true) }
         refreshGear(animated: false)
-        window?.invalidateCursorRects(for: self)
     }
 
     override func themeDidChange() {
@@ -262,13 +262,18 @@ final class NoteButtonBlockView: NoteBlockView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         tracking = area
     }
 
-    override func mouseEntered(with event: NSEvent) {
-        isHovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+    override func mouseEntered(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+
+    override func mouseMoved(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+
+    private func setHovered(_ hovered: Bool) {
+        guard hovered != isHovered else { return }
+        isHovered = hovered
         refreshGear(animated: true)
     }
 

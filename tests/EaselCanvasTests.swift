@@ -1,11 +1,22 @@
 import AppKit
-import ObjectiveC
 
-extension NSPopover {
-    @objc fileprivate func easelTestSuppressShow(relativeTo rect: NSRect, of view: NSView, preferredEdge: NSRectEdge) {}
-    @objc fileprivate func easelTestRecordShow(relativeTo rect: NSRect, of view: NSView, preferredEdge: NSRectEdge) {
-        MainActor.assumeIsolated { EaselCanvasTests.shownPopovers.append((self, rect, view)) }
+@MainActor private final class RecordedPanel: EaselPanelHandle {
+    var isOpen = true
+    func close() { isOpen = false }
+}
+
+@MainActor private final class RecordingPanels: EaselPanelPresenting {
+    var links: [EaselLinkRequest] = []
+    var sizes: [EaselTextSizeRequest] = []
+    var staysOpen = true
+    private func handle() -> EaselPanelHandle {
+        let panel = RecordedPanel()
+        panel.isOpen = staysOpen
+        return panel
     }
+    func presentLinkEditor(_ request: EaselLinkRequest) -> EaselPanelHandle? { links.append(request); return handle() }
+    func presentTextSizeEditor(_ request: EaselTextSizeRequest) -> EaselPanelHandle? { sizes.append(request); return handle() }
+    func hoverLink(_ request: EaselLinkHoverRequest?) {}
 }
 
 @MainActor private final class FormatKeyWindow: NSWindow {
@@ -44,7 +55,6 @@ extension NSPopover {
 @main
 struct EaselCanvasTests {
     @MainActor static var count = 0
-    @MainActor static var shownPopovers: [(NSPopover, NSRect, NSView)] = []
     @MainActor fileprivate static let capturedMenu = CapturedCanvasMenu()
     @MainActor static func contextMenu(_ canvas: EaselCanvasView, _ event: NSEvent) -> [EaselMenuRow] {
         EaselCanvasView.menuPresenterFactory = { capturedMenu }
@@ -264,16 +274,13 @@ struct EaselCanvasTests {
 
         editor.setSelectedRange(NSRange(location: 0, length: 6))
         expect(validate(.link) && items[.link]!.title == TextFormatCommand.addLinkTitle, "Add Link is offered for selected text")
-        let nativeShow = class_getInstanceMethod(NSPopover.self, #selector(NSPopover.show(relativeTo:of:preferredEdge:)))!
-        let recordShow = class_getInstanceMethod(NSPopover.self, #selector(NSPopover.easelTestRecordShow(relativeTo:of:preferredEdge:)))!
-        method_exchangeImplementations(nativeShow, recordShow)
-        shownPopovers = []
+        let panels = RecordingPanels()
+        canvas.panels = panels
         run(.link)
-        method_exchangeImplementations(nativeShow, recordShow)
-        let shown = shownPopovers.first
-        expect(shown?.2 === editor && shown?.0.contentViewController is EaselLinkEditor, "Menu link opens the shared link editor on the text box")
-        expect(shown.map { !$0.1.isEmpty && editor.bounds.contains($0.1) && $0.1.width < editor.bounds.width } == true, "The link editor points at the selected words, not the whole box")
-        editor.localUndo.beginUndoGrouping(); (shown?.0.contentViewController as? EaselLinkEditor)?.onCommit?("https://example.com/"); editor.localUndo.endUndoGrouping()
+        let shown = panels.links.first
+        expect(shown?.host === editor && shown?.webOnly == false, "Menu link opens the shared link editor on the text box")
+        expect(shown.map { !$0.anchor.isEmpty && editor.bounds.contains($0.anchor) && $0.anchor.width < editor.bounds.width } == true, "The link editor points at the selected words, not the whole box")
+        editor.localUndo.beginUndoGrouping(); shown?.commit("https://example.com/"); editor.localUndo.endUndoGrouping()
         expect(editor.hasLink() && validate(.link) && items[.link]!.title == TextFormatCommand.editLinkTitle, "A linked selection offers Edit Link")
         editor.setSelectedRange(NSRange(location: 0, length: 0))
         expect(!validate(.link), "Linking needs selected text")
@@ -475,12 +482,10 @@ struct EaselCanvasTests {
                created.frame.width > 120 && created.frame.width < 280 && created.frame.height < 40,
                "Blank-canvas insertion makes point text fitted to the prompt at the click")
         let linked = currentEditor()
-        let nativeShow = class_getInstanceMethod(NSPopover.self, #selector(NSPopover.show(relativeTo:of:preferredEdge:)))!
-        let hiddenShow = class_getInstanceMethod(NSPopover.self, #selector(NSPopover.easelTestSuppressShow(relativeTo:of:preferredEdge:)))!
-        method_exchangeImplementations(nativeShow, hiddenShow)
-        linked.editLink(relativeTo: linked)
-        method_exchangeImplementations(nativeShow, hiddenShow)
-        expect(!linked.hasPendingRangeAction, "A retained closed Link popover is not a pending range action")
+        let closedPanels = RecordingPanels()
+        closedPanels.staysOpen = false
+        linked.editLink(relativeTo: linked, presenter: closedPanels)
+        expect(!linked.hasPendingRangeAction, "A retained closed link panel is not a pending range action")
         let closingID = session.document.items.last!.id
         replace(linked, with: " ")
         window.makeFirstResponder(canvas)

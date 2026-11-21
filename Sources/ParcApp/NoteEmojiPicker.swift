@@ -208,11 +208,12 @@ final class NoteEmojiButton: PointingHandButton {
 
 @MainActor
 final class NoteEmojiSearchBox: NSView {
-    let field = NSTextField()
+    let field = NoteInputField()
     private let glyph = NSImageView()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        addCursorUpdateArea()
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
@@ -250,6 +251,11 @@ final class NoteEmojiSearchBox: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(field)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if applyNoteCursor(.iBeam, for: event) { return }
+        super.cursorUpdate(with: event)
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -590,7 +596,7 @@ final class NoteEmojiGridView: NSView {
         overlayIndex = nil
         updateOverlay(animated: false)
         needsDisplay = true
-        window?.invalidateCursorRects(for: self)
+        refreshCursor()
     }
 
     func cellFrame(of index: Int) -> NSRect {
@@ -849,9 +855,26 @@ final class NoteEmojiGridView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeInActiveApp, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(area)
         tracking = area
+    }
+
+    private func pointerCursor(at point: NSPoint) -> NSCursor {
+        headerAction(at: point) != nil || index(at: point) != nil ? .pointingHand : .arrow
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if applyNoteCursor(pointerCursor(at: convert(event.locationInWindow, from: nil)), for: event) { return }
+        super.cursorUpdate(with: event)
+    }
+
+    func refreshCursor() {
+        guard let window, window.isKeyWindow else { return }
+        let point = window.mouseLocationOutsideOfEventStream
+        guard ownsPointer(atWindowPoint: point) else { return }
+        pointerCursor(at: convert(point, from: nil)).set()
     }
 
     override func mouseEntered(with event: NSEvent) { hover(at: event.locationInWindow) }
@@ -863,11 +886,13 @@ final class NoteEmojiGridView: NSView {
 
     private func hover(at windowPoint: NSPoint) {
         guard pressed == nil else { return }
-        guard isTopmost(atWindowPoint: windowPoint) else {
+        guard ownsPointer(atWindowPoint: windowPoint) else {
             if !highlightFromKeyboard { setHighlight(nil, fromKeyboard: false) }
             return
         }
-        let index = index(at: convert(windowPoint, from: nil))
+        let point = convert(windowPoint, from: nil)
+        pointerCursor(at: point).set()
+        let index = index(at: point)
         if index == nil && highlightFromKeyboard { return }
         setHighlight(index, fromKeyboard: false)
     }
@@ -925,20 +950,6 @@ final class NoteEmojiGridView: NSView {
         onEditCustom?(custom)
     }
 
-    override func resetCursorRects() {
-        let visible = visibleRect
-        for index in headers.indices {
-            if let frame = actionFrame(ofHeaderAt: index)?.intersection(visible), !frame.isEmpty { addCursorRect(frame, cursor: .pointingHand) }
-        }
-        var rowIndex = firstRow(endingBelow: visible.minY)
-        while rowIndex < rows.count, rows[rowIndex].y < visible.maxY {
-            let row = rows[rowIndex]
-            let rect = NSRect(x: originX, y: row.y, width: CGFloat(row.count) * Self.cell, height: Self.cell).intersection(visible)
-            if !rect.isEmpty { addCursorRect(rect, cursor: .pointingHand) }
-            rowIndex += 1
-        }
-    }
-
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         updateOverlay(animated: false)
@@ -992,6 +1003,8 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
     var onRemove: (() -> Void)?
     var onCancel: (() -> Void)?
     var currentEmoji: String? { didSet { grid.currentCharacter = currentEmoji } }
+    var freezesRecents = false
+    private var frozenRecents: [String]?
 
     let catalog: NoteEmojiCatalog
     let showsRemove: Bool
@@ -1120,7 +1133,7 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
         let custom = library?.emoji ?? []
         if custom.isEmpty { grid.isEditingCustom = false }
         if query.isEmpty {
-            let recents = catalog.recents.compactMap(recentItem)
+            let recents = recentCharacters().compactMap(recentItem)
             if !recents.isEmpty {
                 sections.append(NoteEmojiGridView.Section(category: .recents, title: NoteEmojiCategory.recents.displayName, items: recents))
             }
@@ -1150,6 +1163,14 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
         if !query.isEmpty, !grid.isEmpty { grid.setHighlight(0, fromKeyboard: true, animated: false) }
         scrollTo(y: 0)
         categoryBar.select(query.isEmpty ? grid.firstCategory : nil, animated: false)
+    }
+
+    private func recentCharacters() -> [String] {
+        guard freezesRecents else { return catalog.recents }
+        if let frozenRecents { return frozenRecents }
+        let snapshot = catalog.recents
+        frozenRecents = snapshot
+        return snapshot
     }
 
     override func layout() {
@@ -1290,6 +1311,7 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
+        frozenRecents = nil
         library?.refreshIfNeeded()
         toneStrip.selected = catalog.skinTone
         toneButton.face = .emoji(NoteEmojiDrawing.toneHand(catalog.skinTone))
@@ -1312,7 +1334,7 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
 
     private func scrolled() {
         grid.refreshHover()
-        window?.invalidateCursorRects(for: grid)
+        grid.refreshCursor()
         guard !programmaticScroll, query.isEmpty else { return }
         let clip = scrollView.contentView.bounds
         let atBottom = clip.maxY >= grid.frame.height - 1 && clip.minY > 0
@@ -1490,6 +1512,7 @@ final class NoteEmojiSuggestionRow: NSView {
         self.index = index
         self.list = list
         super.init(frame: .zero)
+        addCursorUpdateArea()
         glyph.font = NoteEmojiDrawing.font(size: 18)
         glyph.alignment = .center
         name.font = .systemFont(ofSize: 13)
@@ -1540,7 +1563,10 @@ final class NoteEmojiSuggestionRow: NSView {
         name.frame = NSRect(x: 40, y: (height - 17) / 2, width: max(0, code.frame.minX - 48), height: 17)
     }
 
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+    override func cursorUpdate(with event: NSEvent) {
+        if applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
+    }
 
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { .button }
@@ -1661,7 +1687,7 @@ final class NoteEmojiSuggestionList: NSView {
         setFrameSize(preferredSize)
         needsLayout = true
         placeHighlight(animated: false)
-        window?.invalidateCursorRects(for: self)
+        if let window, ownsPointer(atWindowPoint: window.mouseLocationOutsideOfEventStream) { window.refreshCursorUnderPointer() }
         onResultsChange?(suggestions.count)
     }
 
@@ -1747,7 +1773,7 @@ final class NoteEmojiSuggestionList: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard isTopmost(atWindowPoint: event.locationInWindow), let index = row(at: event) else { return }
+        guard ownsPointer(atWindowPoint: event.locationInWindow), let index = row(at: event) else { return }
         select(index, animated: true)
     }
 

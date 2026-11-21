@@ -226,6 +226,7 @@ private final class NoteColorSwatchView: NSView {
     var onPress: (() -> Void)?
     var onHover: ((Bool) -> Void)?
     private var isPressed = false
+    private var isHovered = false
 
     init(choice: NoteColorChoice) {
         self.choice = choice
@@ -293,18 +294,33 @@ private final class NoteColorSwatchView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         for area in trackingAreas where area.owner === self { removeTrackingArea(area) }
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
                                        owner: self))
     }
 
     override func mouseEntered(with event: NSEvent) {
-        onHover?(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+        isHovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        onHover?(isHovered)
+        applyNoteCursor(.pointingHand, for: event)
     }
 
-    override func mouseExited(with event: NSEvent) { onHover?(false) }
+    override func mouseMoved(with event: NSEvent) {
+        let hovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        if hovered != isHovered {
+            isHovered = hovered
+            onHover?(hovered)
+        }
+        applyNoteCursor(.pointingHand, for: event)
+    }
 
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
-    override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        onHover?(false)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(.pointingHand, for: event) { super.cursorUpdate(with: event) }
+    }
 
     private func setPressed(_ pressed: Bool) {
         guard pressed != isPressed, let layer else { return }

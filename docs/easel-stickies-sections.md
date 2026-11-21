@@ -23,7 +23,8 @@ in the sticky's padded text box (`EaselBoardObjects.stickyTextBox`) and types
 from the top in the sticky's own text style, alignment and formatting.
 
 The sticky grows taller as the text wraps and shrinks back to its square as
-text goes, never below its minimum. The height refit rides in the same text
+text goes, never below its minimum, easing to each new height on the settle
+spring (instantly under Reduce Motion). The height refit rides in the same text
 commit as the typing, so one Undo takes back a whole editing session's
 typing and growth together. While an input method is composing, the editor
 keeps its frame and nothing is saved until the composition lands. Emptying a
@@ -63,7 +64,8 @@ A section contains whatever lies entirely inside it, including smaller
 sections. Sections paint behind other objects, nested ones above their
 parents. Moving a section carries its contents; resizing it changes only
 what it contains. A click inside a section's empty area starts a marquee, and
-a short click selects the section.
+a short click selects the section. Carrying objects over a section they would
+join lights up its tray, and dropping them in flashes its border once.
 
 ### Title
 

@@ -18,10 +18,18 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/PointerCover.swift" \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
+  "$repo_root/Sources/ParcApp/NoteClipboardReading.swift" \
+  "$repo_root/Sources/ParcApp/EaselClipboardText.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
+  "$repo_root/Sources/ParcApp/NoteInputRules.swift" \
+  "$repo_root/Sources/ParcApp/EaselInlineText.swift" \
+  "$repo_root/Sources/ParcApp/NoteTextAttachments.swift" \
+  "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
+  "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
+  "$repo_root/Sources/ParcApp/EaselChecklistText.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvas"*.swift \
@@ -33,7 +41,13 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/Sources/ParcApp/EaselShapePicker.swift" \
   "$repo_root/Sources/ParcApp/NoteAnimation.swift" \
   "$repo_root/Sources/ParcApp/NoteFloatingPanel.swift" \
+  "$repo_root/Sources/ParcApp/NoteCursor.swift" \
   "$repo_root/Sources/ParcApp/NoteControls.swift" \
+  "$repo_root/Sources/ParcApp/NoteMathFont.swift" \
+  "$repo_root/Sources/ParcApp/NoteMathLayout.swift" \
+  "$repo_root/Sources/ParcApp/NoteMathRenderer.swift" \
+  "$repo_root/Sources/ParcApp/NoteEquationArtwork.swift" \
+  "$repo_root/Sources/ParcApp/NoteCodeFont.swift" \
   "$repo_root/Sources/ParcApp/NoteCustomEmojiImages.swift" \
   "$repo_root/Sources/ParcApp/DocumentDefaultIcon.swift" \
   "$repo_root/Sources/ParcApp/LibraryArtwork.swift" \

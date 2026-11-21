@@ -19,11 +19,24 @@ Saves refuse a document with duplicate object IDs. A file that already has
 them opens with the later copies given new IDs, and an unreadable file is left
 out of Easel lists rather than hiding every other Easel.
 
-An Easel's icon is the Library card's Easel mark, light or dark with the
-appearance, drawn from the same `DocumentDefaultIcon` as the note mark: sidebar
-rows, Favorites, the folded Pinned peek, folders, the tab switcher, command bar
-rows and New Easel, history menus and swipes, and Easel blocks, pickers and
-paste choices in notes.
+An Easel has a page icon like a note: hover its title row for Add icon (a
+random emoji) or click the icon to open the Notes icon picker, with its emoji,
+custom emoji and Upload tabs and Remove. The icon sits before the title; a change
+or removal is one undo step. It is saved on the Easel as an emoji, a custom emoji
+name from the Profile's notes folder, or a small PNG kept as an Easel asset
+(uploads and links are scaled to 280 px, and a linked image is downloaded so the
+Easel stays self-contained). Easels without an icon are unchanged on disk.
+
+The icon replaces the Easel mark everywhere the Easel shows, from the same shared
+source notes use (`EaselTabIcons`, read through `NoteTabIconArt`, with the same
+rounded thumbnail for images): sidebar rows, Favorites, the folded Pinned peek,
+folders, the tab switcher, command bar rows, history menus and swipes, Easel
+blocks, pickers and paste choices in notes, and the capture palette. Library
+cards show an emoji icon, as note cards do. Without an icon the Library card's
+Easel mark stays, light or dark with the appearance, drawn from the same
+`DocumentDefaultIcon` as the note mark; New Easel keeps the mark. Open windows
+update as soon as the icon changes, including through undo, and a custom emoji
+that is renamed away or deleted falls back to the mark.
 
 ## Object-wide text styles
 
@@ -61,7 +74,11 @@ and stickies get an alignment menu, text a palette colour menu, and, one at a
 time, a Link button that edits
 the object's own link (or the selected words' link while typing), washi tape a pattern menu, and a table its
 typeface, size, bold, strike, text and cell colour, alignment and Merge or
-Unmerge cells, switching to range formatting while a cell is edited. A fully locked
+Unmerge cells, switching to range formatting while a cell is edited. While text
+is edited the bar also carries the Notes format bar's Highlight (Notion's nine
+backgrounds), Code and Turn Into, with ⇧⌘H repeating the last colour; see
+[Easel text](easel-text.md#highlight-code-and-turn-into). `/` in text opens the
+Notes block menu ([slash menu](easel-text.md#slash-menu)). A fully locked
 selection shows only a Locked button whose menu unlocks it, a section with its
 contents. A single webpage, captured card or link keeps its own page
 header instead. A control appears only once its canvas command exists, and the
@@ -84,12 +101,31 @@ Changing fill breaks typing coalescing and preserves selection, attributed runs
 and exact Undo history. Text geometry comes from the native editor, including
 paragraphs and attachments, instead of estimating line height independently.
 
+## Link and size panels
+
+Every box an Easel opens from its own controls is a Notes floating panel: the
+object and range link editors, the custom text size panel and the picker that
+appears when you choose Add Image to Easel on a web image (a card with the
+picture and its site, a field to name a new Easel or find an existing one, and
+rows for “New Easel” and each Easel). Panels reach the canvas through
+`EaselPanelPresenting`, so canvas bundles and tests don't link the Note panels;
+the editor and Easel blocks in notes each supply `EaselPanels` over their own
+host view. [Text](easel-text.md#range-links) describes link behaviour.
+
 ## Range formatting and persistence
 
 Rich text stores contiguous UTF-16 runs. Reject gaps, overlaps, overflow,
 surrogate splits, unsafe links, nonfinite fonts, excessive runs and unsupported
-attributes before mutation. Supported data includes fonts/axes, colors,
-emphasis, links, kerning, baseline offsets, paragraph tabs/lists and images.
+attributes before mutation. A run link is an `http`, `https`, `mailto` or `tel`
+address, or a `file:` address of a Markdown or text note (a link to a note).
+Supported data includes fonts/axes, colors,
+emphasis, links, kerning, baseline offsets, paragraph tabs/lists, images and
+inline runs. An inline run (`EaselRichText.Inline`) sits on one U+FFFC and is a
+note mention (a `file:` note or `parc://easel/` address and a title), a date
+(start, end, time, reminder, lead, time zone and format, mirroring the Notes
+`NoteDateMention`), an inline equation (TeX up to 4 KB) or a custom emoji (name
+plus at most 1 MB of PNG); each kind refuses the others' fields and unused
+fields stay out of the file. `EaselRichTextNotes.swift` maps them to `NoteAtom`.
 Missing fonts use a local fallback; opening a document does not download fonts.
 
 Paragraph commands apply to all intersecting paragraphs, excluding the next
@@ -101,8 +137,13 @@ multiple selections refuse without partial edits.
 
 ## Clipboard boundary
 
-Copy publishes the private version-3 rich carrier plus RTF/RTFD and plain text;
-versions 1 and 2 remain readable. Cut mutates only after publication succeeds.
+Copy publishes the private version-3 rich carrier plus RTF/RTFD, plain text,
+HTML and Markdown; versions 1 and 2 remain readable. Inline runs travel in the
+carrier and become their words (the note's title, `@Today`, the TeX or
+`:name:`) in RTF and plain text. Pasting HTML, Markdown or
+a Notes copy into text keeps headings, lists, links, bold, italic, strike and
+code, using the Notes readers mapped onto the Easel's paragraph and font
+attributes; the private carrier still wins when it is present. Cut mutates only after publication succeeds.
 Private ranges are rebased. Explicit plain paste keeps receiving attributes.
 
 The private rich carrier takes precedence over its fallback, even when fallback
@@ -125,7 +166,12 @@ Return continues it, an empty line or Backspace at its start ends it and Tab
 nests it. Single asterisks, underscores and hyphens around eligible words apply
 bold, italic and strike-through; backticks around any run of characters on one
 line make inline code, monospaced on a soft grey fill that reads on light and
-dark paper. Unsupported punctuation and doubled delimiters stay literal.
+dark paper. The Notes shortcuts come from the same table as notes
+(`NoteInputRules.inlineMatch` and `symbolMatch`): `**bold**`, `__bold__`,
+`~strike~`, `~~strike~~`, `==highlight==` (yellow), `$math$` (an inline
+equation), and `->`, `<-`, `<->`, `=>`, `>=`, `<=` and `--` for arrows,
+comparisons and an em dash, never in code. `$$` as the whole text places a
+Block equation beside it. Unsupported punctuation stays literal.
 
 Paste, composition, Undo and programmatic insertion never trigger conversion.
 A conversion is one native transaction with exact selection/attribute Undo.
@@ -201,7 +247,9 @@ back with its correct native Undo state.
 
 Image objects crop in place, mask to the Notes shapes, carry alt text, swap
 pictures without moving and play GIFs while selected, all without touching the
-stored picture. Their behaviour, saved fields and code owners are in
+stored picture. Videos, audio, files and PDFs wear the Notes players, cards and
+PDF viewer, and every media kind can start empty like a note's block. Their
+behaviour, saved fields and code owners are in
 [Easel images and media](easel-images.md).
 
 ## Embedded webpages and captured cards
@@ -223,17 +271,49 @@ says “Snapshot only” and explains why in its tooltip. A live card shows a Li
 badge, **Back to snapshot**, Reload (Stop while loading), Open in a tab and a
 ••• menu with Site Information. A webpage object shows Back, Reload, Open and a
 ••• menu with Forward, Edit Address or Search… and Site Information; clicking
-its title also edits the address. The check mark (“Back to the Easel”) appears
-while a page has input. Warming up, alignment failures, closed and crashed
-pages use the embed block's bookmark card with a short status and Retry.
-`EaselWebItemChrome` decides the state, labels and header placement.
+its title also edits the address. The ••• menu is a Notes menu list. The check
+mark (“Back to the Easel”) appears while a page has input. Warming up,
+alignment failures, closed and crashed pages use the embed block's bookmark
+card with a short status and Retry. `EaselWebItemChrome` decides the state,
+labels and header placement. The page itself is the note embed's surface, so
+YouTube, Vimeo, Loom, Spotify and Figma links play in their embed players and
+the first load carries Parc's Referer, exactly as in a note.
+
+### Embed and Bookmark objects
+
+Inserting an Embed or a Bookmark places an empty object that wears the Notes
+link entry card (“Paste a link to embed…” or “Paste a link to bookmark…”) with
+its field focused. Like webpages, an unselected one takes a first click as
+selection; once it's the only selection its field and chip take clicks and
+keys. Escape returns to the canvas and leaves the empty object, Delete removes
+it, and a locked Easel block in a note shows the read-only “No embed here yet”.
+Submitting fills the object as one Undo step, resized around its centre to
+640 × 420 for an embed or 480 × 120 for a bookmark; a bad link gets the
+entry's shake and hint. Embed also searches: text that isn't an address opens
+DuckDuckGo rows (All, Images, Videos, News, Maps, Shopping) under the entry,
+with Images highlighted, and arrows and Return pick one.
+
+A link object is the Notes bookmark card (`NoteLinkCardView`): title, two lines
+of summary, the site line with its favicon and the preview picture, shimmering
+while it loads. The preview fetched by `NoteLinkMetadata` is saved on the object
+as `preview` without an Undo step, the way webpage navigation is recorded, so
+the card reads the same offline and in exports. A click selects it, and a double
+click or VoiceOver's press opens the link. PDF, PNG and Copy as Image draw the
+card's title, summary and site; HTML and SVG exports draw it as a card linking
+to its address (`EaselBookmarkCard`, `EaselVectorExport.bookmark`). The provider
+is `EaselWebObjects`, registered by the Easel tab and by Easel blocks in notes.
 
 ### Webpage address, search and durable navigation
 
-Address entry accepts credential-free HTTP(S), adding HTTPS when appropriate.
-Search uses DuckDuckGo with All, Images, Videos, News, Maps and Shopping; Images
-is the default. Encode a query once, preserve literal plus signs and use
-`iaxm=maps` for Maps. This is an explicit URL/search flow, without autocomplete.
+Edit Address or Search… opens the Notes link entry in a floating panel under
+the page header, filled with the page's address (or the last search). Text that
+reads as an address opens it; anything else offers the DuckDuckGo rows, with
+the last category chosen highlighted (Images to begin with).
+`EaselWebNavigation.entry` decides: a credential-free HTTP(S) address with a
+real host (a dotted name ending in letters, an IPv4 address or localhost) is an
+address, adding HTTPS when needed, and everything else is a search. Searches
+encode a query once, preserve literal plus signs and use `iaxm=maps` for Maps.
+There's no autocomplete.
 
 Admission checks the original owner, composition and validation errors. A
 selected real page's committed URL updates durable object metadata. Other
@@ -260,7 +340,14 @@ One Undo restores the original attributes and selection. Composition and
 attachment-bearing labels refuse before mutation. Later typing and explicit
 plain paste do not inherit the pasted link.
 
-The canvas accepts URL-only pasteboards as local link objects, and plain text
+A lone URL pasted on the canvas lands as a bookmark at the pointer or the
+visible centre and opens the Notes “Paste as” menu beside it, built by the same
+`NotePasteLinkMenu` a note uses: Link (a text object holding the link),
+Bookmark (highlighted, and what Escape or a click away keeps), Embed, and
+Image, Video, Audio or PDF when the address is that kind of file. Video and
+audio stay links; a picture or PDF is downloaded into the Easel. Each choice
+replaces the bookmark as one Undo step. A URL pasted while editing text keeps
+the text-link behaviour above. Plain text
 that reads as a Mermaid flowchart or ER diagram becomes editable shapes, arrows
 and sections ([Mermaid diagrams](easel-mermaid.md)). Capture's memory-only
 image editor instead inserts annotation text and never creates an Easel or
@@ -281,9 +368,14 @@ from the same floating menu, rows, highlight, motion and keyboard handling as
 the Notes page menu: Copy Link (the Easel's `parc://easel/…` address), Copy as
 Image (a PNG on the pasteboard), Export (Image…, HTML File…, PDF…), Show in
 Library, [Easel History](easel-board-features.md#easel-history), Duplicate, and
-Delete Easel…, with the object count and last edit
-underneath. Easels have no lock. Exports are named after the Easel's title and
-end with the Notes "Exported …" toast.
+Delete Easel…, with the object count, word count, reading time and last edit
+underneath. Lock Easel makes the canvas view-only
+([board features](easel-board-features.md#lock-easel)), and Copy as Markdown and
+Export → Markdown File… write the Easel in reading order. The four Notes font
+cards at the top set the default text for new objects (Default, Serif, Mono and
+Wide map to Clean, Fancy, Mono and Hip); existing objects keep their own. File ›
+Print prints the PDF the export draws, one sheet per page. Exports are named
+after the Easel's title and end with the Notes "Exported …" toast.
 
 HTML exports are one self-contained file in the Notes export style: the title
 over the Easel drawn as SVG sized to the content bounds plus margins. Shapes,
@@ -336,14 +428,24 @@ moves with) apply to any object. Text, shapes and stickies hold rich text;
 sections keep a plain title. Tables keep their grid, cell text and merges in a
 `table` field described in [Easel tables](easel-tables.md#saved-format), and
 [code blocks](easel-code-blocks.md#saved-format) keep their code in `text` with an
-optional `language`. Mind-map nodes and branches carry an optional `mindMap`
+optional `language`. [Block equations](easel-equations.md#saved-format) keep their TeX in `text`. Mind-map nodes and branches carry an optional `mindMap`
 link ([mind maps](easel-mind-maps.md#saved-format)). A text style may carry `alignment`, `customSize` (8 to 400
 points, overriding the preset size) and, on text objects only, `autoWidth` for
 point text; absent means the preset size and fixed-width area text.
+The document may carry `locked` (a locked Easel) and `defaultFamily` (the text
+family for new objects); both stay out of the file until used. Text and
+object links may be note addresses (`file://`) or Easel addresses.
 An Easel with more than one page keeps a `pages` list (`id`, `name`) on the
 document and a `page` ID on each object; both stay out of the file until a
 second page exists, and an object without one belongs to the first page
 ([pages](easel-pages.md#saved-format)).
+The page icon is an optional document `icon` with a `kind` (`emoji`, `custom` or `image`)
+and a `value` (the emoji, the custom emoji name, or a PNG asset ID); it stays out of
+the file while there is none, and a damaged icon rejects the file.
+Media objects are the `image`, `video`, `audio`, `file` and `pdf` kinds; with
+neither an asset nor a link they are empty placeholders, as are `link` and
+`browser` objects without a `url`, and their `fileName`, `credit` and bookmark
+`preview` fields are described in [images and media](easel-images.md#saved-format).
 Validation refuses each field on objects it doesn't belong
 to, so a malformed file is rejected whole rather than half drawn.
 

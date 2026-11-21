@@ -46,6 +46,7 @@ class CompilerWarningTests(unittest.TestCase):
             "libtool: warning: 'e.o' has no symbols",
             "Sources/ParcRestart/main.c:12: warning: implicit conversion",
             "ld: warning: duplicate -rpath '/a' ignored",
+            "/repo/Package.swift: Parc-product: ld: warning: duplicate -rpath '/a' ignored",
             "ld: fatal warning(s) induced error (-fatal_warnings)",
             "Sources/ParcApp/App.swift:3:1: error: cannot find 'x' in scope",
             "1 warning generated.",
@@ -60,6 +61,7 @@ class CompilerWarningTests(unittest.TestCase):
             "libtool: warning: 'e.o' has no symbols",
             "Sources/ParcRestart/main.c:12: warning: implicit conversion",
             "ld: warning: duplicate -rpath '/a' ignored",
+            "/repo/Package.swift: Parc-product: ld: warning: duplicate -rpath '/a' ignored",
         ])
 
     def test_undecodable_output_still_reaches_the_scan(self):
@@ -181,12 +183,38 @@ class PackagingCompilerTests(unittest.TestCase):
         checked.assert_not_called()
         other.assert_called_once()
 
-    def test_release_swift_flags_keep_warnings_as_errors(self):
-        flags = compiler.app_swift_flags(Path("/repo"), Path("/sparkle"))
-        self.assertIn("-warnings-as-errors", flags)
-        self.assertEqual(flags[flags.index("-target") + 1], compiler.SWIFT_TARGET)
-        self.assertEqual(flags[flags.index("-F") + 1], "/sparkle")
-        self.assertEqual(compiler.release_swift_optimization()[:2], ["-O", "-whole-module-optimization"])
+    def test_package_builds_never_wait_on_the_keychain(self):
+        for configuration in ("debug", "release"):
+            with self.subTest(configuration=configuration):
+                self.assertIn("--disable-keychain", compiler.swift_build(Path("/repo"), configuration))
+
+    def test_release_package_builds_are_arm64_without_debug_info(self):
+        command = compiler.swift_build(Path("/repo"), "release", scratch=Path("/scratch"))
+        self.assertEqual(command[command.index("--arch") + 1], "arm64")
+        self.assertEqual(command[command.index("-debug-info-format") + 1], "none")
+        self.assertEqual(command[command.index("--scratch-path") + 1], "/scratch")
+
+    def test_package_builds_keep_linker_defaults_of_the_old_link(self):
+        command = compiler.swift_build(Path("/repo"), "debug")
+        self.assertIn("--disable-dead-strip", command)
+        self.assertIn("--disable-local-rpath", command)
+
+    def test_package_objects_come_from_the_product_link_file_list(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            scratch = Path(temporary)
+            objects = [scratch / "objects dir" / "Parc.o", scratch / "ParcCore.o"]
+            for path in objects:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"object")
+            listing = scratch / "out/Intermediates.noindex/Parc.build/Release/Parc-p.build/Objects-normal/arm64/Parc.LinkFileList"
+            listing.parent.mkdir(parents=True)
+            listing.write_text(" ".join(f'"{path}"' for path in objects))
+            self.assertEqual(compiler.package_objects(scratch, "release"), objects)
+
+    def test_missing_link_file_list_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(ValueError, "link file list"):
+                compiler.package_objects(Path(temporary), "release")
 
 
 if __name__ == "__main__":

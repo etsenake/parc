@@ -22,8 +22,9 @@ enum EaselTemplateThumbnails {
 @MainActor
 final class EaselTemplateCard: PointingHandButton {
     let template: EaselTemplate
-    var isCurrent = false { didSet { if isCurrent != oldValue { needsDisplay = true } } }
+    var isCurrent = false { didSet { if isCurrent != oldValue { needsDisplay = true; refreshSurface() } } }
     var onHover: ((EaselTemplateCard) -> Void)?
+    var onHoverEnd: ((EaselTemplateCard) -> Void)?
     private var hoverTracking: NSTrackingArea?
     static let size = NSSize(width: 152, height: 132)
     static let thumbnailHeight: CGFloat = 92
@@ -34,7 +35,13 @@ final class EaselTemplateCard: PointingHandButton {
         isBordered = false
         title = ""
         focusRingType = .none
+        wantsLayer = true
         setButtonType(.momentaryChange)
+        NoteAnimation.observeReduceMotion(self) { [weak self] in
+            guard let self else { return }
+            NoteAnimation.settle(self)
+            self.refreshSurface()
+        }
         setEaselTooltip(template.blurb)
         setAccessibilityRole(.button)
         setAccessibilityLabel(template.title + " template")
@@ -55,8 +62,33 @@ final class EaselTemplateCard: PointingHandButton {
     }
 
     override func mouseEntered(with event: NSEvent) { onHover?(self) }
-    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
-    override func highlight(_ flag: Bool) { super.highlight(flag); needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { onHoverEnd?(self) }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true; refreshSurface() }
+
+    override func highlight(_ flag: Bool) {
+        let released = !flag && isHighlighted
+        super.highlight(flag)
+        needsDisplay = true
+        refreshSurface(released: released)
+    }
+
+    private var thumbnailPath: CGPath {
+        var rect = NSRect(x: 6, y: 6, width: bounds.width - 12, height: Self.thumbnailHeight)
+        if layer?.isGeometryFlipped != isFlipped { rect.origin.y = bounds.height - rect.maxY }
+        return CGPath(roundedRect: rect, cornerWidth: NoteTheme.controlRadius, cornerHeight: NoteTheme.controlRadius, transform: nil)
+    }
+
+    func refreshSurface(released: Bool = false) {
+        EaselControlSurface.apply(self, hovered: isCurrent, pressed: isHighlighted, released: released,
+                                  hover: EaselControlMotion.cardHoverScale, press: EaselControlMotion.cardPressedScale,
+                                  shadowPath: thumbnailPath)
+    }
+
+    override func layout() {
+        super.layout()
+        guard let layer else { return }
+        NoteAnimation.withoutAnimation { layer.shadowPath = thumbnailPath }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let radius = NoteTheme.controlRadius + 2
@@ -101,11 +133,13 @@ final class EaselTemplateGallery: NSView, NoteFloatingPanelContent {
     var onCancel: (() -> Void)?
     var preferredSizeDidChange: (() -> Void)?
     var columns: Int { didSet { if columns != oldValue { needsLayout = true; invalidateIntrinsicContentSize(); preferredSizeDidChange?() } } }
+    var maximumRows: Int? { didSet { if maximumRows != oldValue { needsLayout = true; invalidateIntrinsicContentSize(); preferredSizeDidChange?() } } }
     let showsHeader: Bool
     private let titleLabel = NSTextField(labelWithString: "Templates")
     private let subtitleLabel = NSTextField(labelWithString: "Start from a board and make it yours.")
     private(set) var cards: [EaselTemplateCard] = []
     private(set) var current: Int?
+    private var pointerDriven = false
 
     init(columns: Int = 4, showsHeader: Bool = true) {
         self.columns = max(1, columns)
@@ -123,7 +157,15 @@ final class EaselTemplateGallery: NSView, NoteFloatingPanelContent {
             let card = EaselTemplateCard(template: template)
             card.target = self
             card.action = #selector(cardPressed(_:))
-            card.onHover = { [weak self] card in self?.setCurrent(self?.cards.firstIndex { $0 === card }) }
+            card.onHover = { [weak self] card in
+                guard let self else { return }
+                self.pointerDriven = true
+                self.setCurrent(self.cards.firstIndex { $0 === card })
+            }
+            card.onHoverEnd = { [weak self] card in
+                guard let self, self.pointerDriven, let current = self.current, self.cards[current] === card else { return }
+                self.setCurrent(nil)
+            }
             cards.append(card)
             addSubview(card)
         }
@@ -138,10 +180,22 @@ final class EaselTemplateGallery: NSView, NoteFloatingPanelContent {
         max(1, Int((width - 2 * inset + gap) / (EaselTemplateCard.size.width + gap)))
     }
 
+    static func rows(fitting height: CGFloat) -> Int {
+        let rows = (height - 2 * inset + gap) / (EaselTemplateCard.size.height + gap)
+        guard rows.isFinite, rows < 1000 else { return rows.isNaN ? 0 : 1000 }
+        return max(0, Int(rows))
+    }
+
+    var shownCount: Int {
+        guard let maximumRows else { return cards.count }
+        let limit = maximumRows.multipliedReportingOverflow(by: max(1, columns))
+        return limit.overflow ? cards.count : min(cards.count, max(0, limit.partialValue))
+    }
+
     private var headerHeight: CGFloat { showsHeader ? 52 : 0 }
 
     override var fittingSize: NSSize {
-        let count = cards.count
+        let count = shownCount
         let rows = (count + columns - 1) / columns
         let shown = min(columns, max(1, count))
         let width = 2 * Self.inset + CGFloat(shown) * EaselTemplateCard.size.width + CGFloat(shown - 1) * Self.gap
@@ -157,7 +211,10 @@ final class EaselTemplateGallery: NSView, NoteFloatingPanelContent {
             titleLabel.frame = NSRect(x: Self.inset + 6, y: 14, width: bounds.width - 2 * Self.inset - 12, height: 22)
             subtitleLabel.frame = NSRect(x: Self.inset + 6, y: 36, width: bounds.width - 2 * Self.inset - 12, height: 16)
         }
+        let shown = shownCount
+        if let current, current >= shown { setCurrent(nil) }
         for (index, card) in cards.enumerated() {
+            card.isHidden = index >= shown
             let row = index / columns, column = index % columns
             card.frame = NSRect(x: Self.inset + CGFloat(column) * (EaselTemplateCard.size.width + Self.gap),
                                 y: headerHeight + Self.inset + CGFloat(row) * (EaselTemplateCard.size.height + Self.gap),
@@ -166,7 +223,7 @@ final class EaselTemplateGallery: NSView, NoteFloatingPanelContent {
     }
 
     func setCurrent(_ index: Int?) {
-        let next = index.flatMap { cards.indices.contains($0) ? $0 : nil }
+        let next = index.flatMap { $0 >= 0 && $0 < shownCount ? $0 : nil }
         current = next
         for (offset, card) in cards.enumerated() { card.isCurrent = offset == next }
         if let next { NSAccessibility.post(element: cards[next], notification: .focusedUIElementChanged) }
@@ -175,8 +232,9 @@ final class EaselTemplateGallery: NSView, NoteFloatingPanelContent {
     func handleKeyDown(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
         guard flags.isEmpty || (flags == .shift && event.keyCode == 48) else { return false }
-        let count = cards.count
+        let count = shownCount
         guard count > 0 else { return false }
+        pointerDriven = false
         let index = current
         func move(_ delta: Int) {
             guard let index else { setCurrent(delta < 0 ? count - 1 : 0); return }
@@ -241,9 +299,12 @@ extension EaselEditorViewController {
         gallery.onPick = { [weak self] template in self?.canvas.insertTemplate(template) }
         emptyTemplates = gallery
         canvas.onboarding.templateRow = EaselEmptyStateRow(title: "Or start from a template", view: gallery,
-                                                           inset: EaselTemplateGallery.inset + 6) { [weak gallery] width in
+                                                           inset: EaselTemplateGallery.inset + 6) { [weak gallery] width, height in
             guard let gallery else { return .zero }
             gallery.columns = min(4, EaselTemplateGallery.columns(fitting: width))
+            let rows = EaselTemplateGallery.rows(fitting: height)
+            guard rows > 0 else { return .zero }
+            gallery.maximumRows = rows
             return gallery.fittingSize
         }
         canvas.refreshOnboarding()

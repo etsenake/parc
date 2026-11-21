@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import ParcCore
@@ -268,5 +269,54 @@ enum NoteLinkedNote {
         let decoded = target.removingPercentEncoding ?? target
         let last = (decoded as NSString).lastPathComponent
         return (last as NSString).deletingPathExtension
+    }
+}
+
+extension NSView {
+    func isPointerTarget(atWindowPoint point: NSPoint) -> Bool {
+        guard let content = window?.contentView, !isHiddenOrHasHiddenAncestor,
+              let hit = content.hitTest(content.superview?.convert(point, from: nil) ?? point) else { return false }
+        return hit === self
+    }
+
+    func addCursorZoneArea() {
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.cursorUpdate, .mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                       owner: self))
+    }
+
+    func refreshCursorIfPointerOwned() {
+        guard let window, window.isKeyWindow, ownsPointer(atWindowPoint: window.mouseLocationOutsideOfEventStream) else { return }
+        window.refreshCursorUnderPointer()
+    }
+}
+
+@MainActor
+struct NoteZoneCursor {
+    private var active = false
+    private let includesDescendants: Bool
+
+    init(includesDescendants: Bool = false) { self.includesDescendants = includesDescendants }
+
+    mutating func cursorUpdate(_ cursor: NSCursor?, in view: NSView, event: NSEvent) -> Bool {
+        let applied = apply(cursor, in: view, event: event)
+        active = applied
+        return applied
+    }
+
+    mutating func moved(_ cursor: NSCursor?, in view: NSView, event: NSEvent) {
+        if apply(cursor, in: view, event: event) { return }
+        guard active else { return }
+        active = false
+        view.window?.refreshCursorUnderPointer()
+    }
+
+    mutating func exited() { active = false }
+
+    private mutating func apply(_ cursor: NSCursor?, in view: NSView, event: NSEvent) -> Bool {
+        let point = event.locationInWindow
+        guard let cursor, includesDescendants ? view.ownsPointer(atWindowPoint: point) : view.isPointerTarget(atWindowPoint: point) else { return false }
+        cursor.set()
+        active = true
+        return true
     }
 }

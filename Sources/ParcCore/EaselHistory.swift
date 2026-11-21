@@ -18,6 +18,12 @@ package struct EaselHistoryPolicy: Equatable {
     package var idleDelay: TimeInterval = 120
     package var maximumVersions = 40
     package var maximumBytes = 96 * 1024 * 1024
+    package init(minimumInterval: TimeInterval = 300, idleDelay: TimeInterval = 120, maximumVersions: Int = 40, maximumBytes: Int = 96 * 1024 * 1024) {
+        self.minimumInterval = minimumInterval
+        self.idleDelay = idleDelay
+        self.maximumVersions = maximumVersions
+        self.maximumBytes = maximumBytes
+    }
 
     package func shouldRecord(lastRecordedAt: Date?, now: Date) -> Bool {
         guard let lastRecordedAt else { return true }
@@ -96,7 +102,7 @@ package final class EaselHistory {
         let url = folder(for: id).appendingPathComponent(version.id)
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
         guard values.isRegularFile == true, values.isSymbolicLink != true else { throw EaselStoreError.unsafePath }
-        guard (values.fileSize ?? Int.max) <= Self.maximumDocumentBytes else { throw EaselStoreError.tooLarge }
+        guard (values.fileSize ?? Int.max) <= Self.maximumDocumentBytes else { throw EaselStoreError.documentTooLarge }
         let document = try JSONDecoder().decode(EaselDocument.self, from: Data(contentsOf: url))
         guard document.id == id else { throw EaselStoreError.invalidDocument("the version belongs to another Easel") }
         return EaselStore.repairingStackOrder(EaselStore.repairingDuplicateIDs(document))

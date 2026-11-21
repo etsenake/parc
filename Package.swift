@@ -5,35 +5,25 @@ import PackageDescription
 let root = Context.packageDirectory
 let nativeHeaders = root + "/Engine/ParcNative"
 
-func sparkleCache() -> String {
-    let script = (try? String(contentsOfFile: root + "/scripts/sparkle.py", encoding: .utf8)) ?? ""
-    func value(_ name: String) -> String {
-        guard let line = script.split(separator: "\n").first(where: { $0.hasPrefix(name + " = \"") }) else { return "" }
-        return String(line.dropFirst(name.count + 4).dropLast())
-    }
-    return root + "/build/sparkle/Sparkle-\(value("VERSION"))-\(value("SHA256").prefix(12))"
-}
-
 let engineStubs = root + "/Stubs"
-let sparkleFrameworks = Context.environment["PARC_SPARKLE_FRAMEWORKS"] ?? sparkleCache()
 
 let strict: [SwiftSetting] = [.treatAllWarnings(as: .error)]
-let nativeFlags: [CSetting] = [.unsafeFlags(["-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-Werror"])]
+let nativeFlags: [CSetting] = [.enableWarning("all"), .enableWarning("extra"), .treatAllWarnings(as: .error)]
 let presentationFlags: [CSetting] = [.unsafeFlags(["-include", root + "/tests/ParcNativeTests/Support/ParcNativePresentation.h"])]
 let facadeFlags: [CSetting] = nativeFlags + [
-    .unsafeFlags(["-Wno-unused-parameter", "-Wno-incomplete-implementation", "-Wno-objc-property-implementation",
-                  "-Wno-objc-protocol-property-synthesis", "-Wno-protocol", "-Wno-objc-root-class", "-Wno-nullability-completeness"]),
+    .disableWarning("unused-parameter"), .disableWarning("incomplete-implementation"),
+    .disableWarning("objc-property-implementation"), .disableWarning("objc-protocol-property-synthesis"),
+    .disableWarning("protocol"), .disableWarning("objc-root-class"), .disableWarning("nullability-completeness"),
     .define("OS_MAC", to: "1"), .headerSearchPath("../../ParcNativeTests/Support"),
     .headerSearchPath("../../../Engine/ParcNative"), .headerSearchPath("../../../Sources/ParcEngine"),
 ]
-let engineImport: [SwiftSetting] = [
-    .unsafeFlags(["-Xcc", "-I", "-Xcc", nativeHeaders, "-Xcc", "-DOS_MAC=1", "-F", sparkleFrameworks]),
-]
-let frameworkRuntime = ["-Xlinker", "-rpath", "-Xlinker", sparkleFrameworks]
+let engineImport: [SwiftSetting] = [.unsafeFlags(["-Xcc", "-I", "-Xcc", nativeHeaders])]
 
 let package = Package(
     name: "Parc",
     platforms: [.macOS(.v13)],
+    products: [.executable(name: "Parc", targets: ["ParcMain"])],
+    dependencies: [.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1")],
     targets: [
         .target(name: "ParcCore", path: "Sources/ParcCore", swiftSettings: strict),
         .target(
@@ -43,23 +33,20 @@ let package = Package(
             cSettings: [
                 .headerSearchPath("../../Engine/ParcNative"),
                 .define("OS_MAC", to: "1"),
-                .unsafeFlags(["-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter"]),
+                .enableWarning("all"), .enableWarning("extra"), .treatAllWarnings(as: .error),
+                .disableWarning("unused-parameter"),
                 .unsafeFlags(["-O2"], .when(configuration: .release)),
             ],
             linkerSettings: [
                 .unsafeFlags(["-F", engineStubs, "-Xlinker", "-weak_framework", "-Xlinker", "Chromium Embedded Framework"]),
             ]
         ),
-        .executableTarget(
+        .target(
             name: "Parc",
-            dependencies: ["ParcCore", "ParcEngine"],
+            dependencies: ["ParcCore", "ParcEngine", .product(name: "Sparkle", package: "Sparkle")],
             path: "Sources/ParcApp",
             swiftSettings: strict + engineImport,
             linkerSettings: [
-                .unsafeFlags(["-F", sparkleFrameworks,
-                              "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
-                              "-Xlinker", "-fatal_warnings"]),
-                .linkedFramework("Sparkle"),
                 .linkedFramework("Cocoa"),
                 .linkedFramework("QuartzCore"),
                 .linkedFramework("AVFoundation"),
@@ -67,17 +54,27 @@ let package = Package(
                 .linkedFramework("CoreSpotlight"),
             ]
         ),
+        .executableTarget(
+            name: "ParcMain",
+            dependencies: ["Parc", "ParcEngine"],
+            path: "Sources/ParcMain",
+            swiftSettings: strict + engineImport,
+            linkerSettings: [
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
+                              "-Xlinker", "-fatal_warnings"]),
+            ]
+        ),
         .testTarget(name: "ParcCoreTests", dependencies: ["ParcCore"], path: "tests/ParcCoreTests",
                     swiftSettings: strict),
         .target(name: "ParcNative", path: "tests/ParcNativeLibrary",
-                cSettings: presentationFlags + nativeFlags + [.unsafeFlags(["-Wno-unused-parameter"]),
+                cSettings: presentationFlags + nativeFlags + [.disableWarning("unused-parameter"),
                                           .headerSearchPath("../../Engine/ParcNative")],
                 linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("QuartzCore"),
                                  .linkedFramework("Security"), .linkedFramework("SecurityInterface")]),
         .testTarget(name: "ParcNativeTests", dependencies: ["ParcNative"], path: "tests/ParcNativeTests",
                     exclude: ["Artwork/Borderless.png", "Artwork/Monochrome.png"],
                     resources: [.copy("Dialogs/certificate-fixture.pem"), .copy("Artwork/Monochrome.svg")],
-                    cSettings: presentationFlags + nativeFlags + [.unsafeFlags(["-Wno-unused-parameter"]), .headerSearchPath("Support"), .headerSearchPath("../../Engine/ParcNative"),
+                    cSettings: presentationFlags + nativeFlags + [.disableWarning("unused-parameter"), .headerSearchPath("Support"), .headerSearchPath("../../Engine/ParcNative"),
                                               .headerSearchPath("../../Engine/ParcHost/native"), .headerSearchPath("../../Engine/ParcRenderer"), .headerSearchPath("../../Engine/ParcChromium"),
                                               .headerSearchPath("Media/FairPlayIdentityDoubles/include"),
                                               .headerSearchPath("../../Sources/ParcEngine")]),
@@ -96,8 +93,7 @@ let package = Package(
         ),
         .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: "."),
         .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles"], path: "tests/ParcTests",
-                    swiftSettings: strict + engineImport,
-                    linkerSettings: [.unsafeFlags(frameworkRuntime)]),
+                    swiftSettings: strict + engineImport),
     ],
     swiftLanguageModes: [.v5],
     cxxLanguageStandard: .cxx20

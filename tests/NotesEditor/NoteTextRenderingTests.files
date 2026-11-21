@@ -6,6 +6,7 @@ Sources/ParcApp/NoteMath*.swift
 tests/NotesEditor/NotesTestKit.swift
 Sources/ParcApp/NoteCustomEmojiImages.swift
 Sources/ParcApp/NoteFloatingPanel.swift
+Sources/ParcApp/NoteCursor.swift
 Sources/ParcApp/NoteAnimation.swift
 Sources/ParcApp/NoteControls.swift
 Sources/ParcApp/PointerCover.swift

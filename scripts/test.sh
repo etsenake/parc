@@ -128,6 +128,7 @@ step compile_and_run folder-document-close FolderDocumentCloseTests \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
+  "$repo_root/Sources/ParcCore/NoteFileKind.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift"
 step compile_and_run profile-removal ProfileRemovalTests
 step compile_and_run profile-removal-controller ProfileRemovalControllerTests \
@@ -138,12 +139,14 @@ step compile_and_run sidebar-plural-duplicate SidebarPluralDuplicateTests \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
+  "$repo_root/Sources/ParcCore/NoteFileKind.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift"
 step compile_and_run sidebar-split-copy SidebarSplitCopyTests
 step compile_and_run duplicate-undo DuplicateUndoTests \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
+  "$repo_root/Sources/ParcCore/NoteFileKind.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift" \
   "$repo_root/Sources/ParcApp/DuplicateUndo.swift"
@@ -152,6 +155,7 @@ step compile_and_run sidebar-plural-removal SidebarPluralRemovalTests \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
+  "$repo_root/Sources/ParcCore/NoteFileKind.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift"
 
@@ -162,6 +166,7 @@ step compile_and_run sidebar-keyboard-close SidebarKeyboardCloseTests \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
+  "$repo_root/Sources/ParcCore/NoteFileKind.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift"
 
@@ -169,6 +174,7 @@ step compile_and_run closed-items ClosedItemsTests \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
+  "$repo_root/Sources/ParcCore/NoteFileKind.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift"
 step compile_and_run split-stacks SplitStacksTests \
@@ -271,6 +277,7 @@ step compile_and_run command-bar-document-alias CommandBar/DocumentAliasTests \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
+  "$repo_root/Sources/ParcCore/NoteFileKind.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift"
 
 step compile_and_run command-bar-folder-move CommandBar/FolderMoveTests \
@@ -404,6 +411,7 @@ step compile_and_run sidebar-window-move SidebarWindowMoveTests \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselPageModel.swift" \
   "$repo_root/Sources/ParcCore/EaselTable.swift" \
+  "$repo_root/Sources/ParcCore/NoteFileKind.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift"
 
 step swift_test dock-reopen -warnings-as-errors -parse-as-library "$repo_root/Sources/ParcCore/DockReopen.swift" \

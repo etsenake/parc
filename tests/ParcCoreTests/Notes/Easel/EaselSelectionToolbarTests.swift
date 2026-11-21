@@ -55,7 +55,7 @@ struct EaselSelectionToolbarTests {
         #expect(!plan([.text, .text], editing: true).joined().contains(.bold), "Several text objects never show range controls")
         for kind in [EaselItemKind.sticky, .rectangle] {
             let words = plan([kind], editing: true)
-            #expect(words == [[.color], [.bold, .italic, .underline, .strikethrough], [.paragraph], [.alignment], [.link], [.more]], "Typing in a sticky or shape swaps object tools for colour, emphasis, lists, alignment and a link")
+            #expect(words == [[.color, .highlight], [.bold, .italic, .underline, .strikethrough, .code, .equation], [.paragraph], [.alignment], [.link, .mention], [.more]], "Typing in a sticky or shape swaps object tools for colour, emphasis, lists, alignment and a link")
         }
         #expect(plan([.arrow], editing: true) == [[.bold, .strikethrough], [.more]], "A connector label only takes bold and strikethrough")
     }

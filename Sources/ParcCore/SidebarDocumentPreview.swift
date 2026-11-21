@@ -34,7 +34,6 @@ package struct SidebarDocumentContent: Equatable, Sendable {
     package var availability: SidebarDocumentAvailability = .available
     package var snippet = ""
     package var objectCount: Int?
-
     package init(availability: SidebarDocumentAvailability = .available, snippet: String = "", objectCount: Int? = nil) {
         self.availability = availability
         self.snippet = snippet
@@ -43,7 +42,7 @@ package struct SidebarDocumentContent: Equatable, Sendable {
 }
 
 package enum SidebarDocumentButton: Equatable, Sendable {
-    case peek, copyLink, split
+    case peek, split
 }
 
 package enum SidebarDocumentPreviewText {
@@ -76,9 +75,9 @@ package enum SidebarDocumentPreviewText {
 }
 
 package enum SidebarDocumentPreviewButtons {
-    package static func buttons(availability: SidebarDocumentAvailability, peekAdmitsDocuments: Bool) -> [SidebarDocumentButton] {
+    package static func buttons(availability: SidebarDocumentAvailability, offersPeek: Bool) -> [SidebarDocumentButton] {
         guard availability == .available else { return [] }
-        return (peekAdmitsDocuments ? [.peek] : []) + [.copyLink, .split]
+        return (offersPeek ? [.peek] : []) + [.split]
     }
 }
 
@@ -86,7 +85,6 @@ package struct SidebarThumbnailCache<Image, Revision: Hashable> {
     package struct Key: Hashable {
         package let document: String
         package let appearance: String
-
         package init(document: String, appearance: String) {
             self.document = document
             self.appearance = appearance
@@ -96,11 +94,6 @@ package struct SidebarThumbnailCache<Image, Revision: Hashable> {
     private struct Entry {
         var image: Image
         var revision: Revision
-
-        package init(image: Image, revision: Revision) {
-            self.image = image
-            self.revision = revision
-        }
     }
 
     package let capacity: Int

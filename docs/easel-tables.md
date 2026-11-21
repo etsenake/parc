@@ -53,6 +53,9 @@ stay hidden.
 
 ## Rows and columns
 
+Inserted and duplicated rows and columns slide open in place and deleted ones
+close up, on the settle spring; Reduce Motion skips the slide.
+
 Hovering a table shows its controls, drawn from the Notes table. They stay
 while the pointer moves out onto the bars and markers, and they work on the
 first click, leaving the table selected.

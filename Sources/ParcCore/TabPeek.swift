@@ -4,6 +4,7 @@ package struct TabPeekCandidate: Equatable {
     package enum Holder: Equatable { case here, elsewhere(movable: Bool), nobody }
     package enum Page: Equatable { case live(String), creating, unloaded(loadable: Bool), failed, closed }
     package enum Shown: Equatable { case none, peek(canClose: Bool), tab(UUID, canClose: Bool) }
+    package enum Content: Equatable { case web, document, unsupported }
 
     package var tabID: UUID
     package var windowAdmits = true
@@ -12,12 +13,11 @@ package struct TabPeekCandidate: Equatable {
     package var profileMatches = true
     package var onScreen = false
     package var busy = false
-    package var document = false
+    package var content = Content.web
     package var holder = Holder.here
     package var page = Page.unloaded(loadable: true)
     package var shown = Shown.none
-
-    package init(tabID: UUID, windowAdmits: Bool = true, parentCanHost: Bool = true, inActiveSpace: Bool = true, profileMatches: Bool = true, onScreen: Bool = false, busy: Bool = false, document: Bool = false, holder: TabPeekCandidate.Holder = Holder.here, page: TabPeekCandidate.Page = Page.unloaded(loadable: true), shown: TabPeekCandidate.Shown = Shown.none) {
+    package init(tabID: UUID, windowAdmits: Bool = true, parentCanHost: Bool = true, inActiveSpace: Bool = true, profileMatches: Bool = true, onScreen: Bool = false, busy: Bool = false, content: Content = Content.web, holder: Holder = Holder.here, page: Page = Page.unloaded(loadable: true), shown: Shown = Shown.none) {
         self.tabID = tabID
         self.windowAdmits = windowAdmits
         self.parentCanHost = parentCanHost
@@ -25,7 +25,7 @@ package struct TabPeekCandidate: Equatable {
         self.profileMatches = profileMatches
         self.onScreen = onScreen
         self.busy = busy
-        self.document = document
+        self.content = content
         self.holder = holder
         self.page = page
         self.shown = shown
@@ -33,7 +33,7 @@ package struct TabPeekCandidate: Equatable {
 }
 
 package enum TabPeekRefusal: Error, Equatable {
-    case window, parent, space, profile, onScreen, busy, document, heldElsewhere, failed, closed, unloadable, peekBusy
+    case window, parent, space, profile, onScreen, busy, unsupported, heldElsewhere, failed, closed, unloadable, peekBusy
 }
 
 package enum TabPeekPlan: Equatable {
@@ -51,7 +51,7 @@ package enum TabPeekAdmission {
         guard candidate.parentCanHost else { return .failure(.parent) }
         guard candidate.inActiveSpace else { return .failure(.space) }
         guard candidate.profileMatches else { return .failure(.profile) }
-        guard !candidate.document else { return .failure(.document) }
+        guard candidate.content != .unsupported else { return .failure(.unsupported) }
         guard !candidate.onScreen else { return .failure(.onScreen) }
         guard !candidate.busy else { return .failure(.busy) }
         let opening: TabPeekPlan
@@ -89,7 +89,6 @@ package struct TabPeekHoldFacts: Equatable {
     package var tabUsable = true
     package var tabDisplayed = false
     package var parentCurrent = true
-
     package init(pageInCard: Bool = true, windowOpen: Bool = true, tabUsable: Bool = true, tabDisplayed: Bool = false, parentCurrent: Bool = true) {
         self.pageInCard = pageInCard
         self.windowOpen = windowOpen
@@ -197,7 +196,6 @@ package struct TabPeekSplitFacts: Equatable {
     package var parentSelected = true
     package var panes = 1
     package var windowReady = true
-
     package init(peekInteractive: Bool = true, tabUsable: Bool = true, parentSelected: Bool = true, panes: Int = 1, windowReady: Bool = true) {
         self.peekInteractive = peekInteractive
         self.tabUsable = tabUsable

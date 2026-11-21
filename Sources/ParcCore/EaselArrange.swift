@@ -75,7 +75,6 @@ package struct EaselClipboardPayload: Codable, Equatable {
     package var documentID: UUID?
     package var items: [EaselItem]
     package var assets: [String: Data] = [:]
-
     package init(version: Int = currentVersion, documentID: UUID? = nil, items: [EaselItem], assets: [String: Data] = [:]) {
         self.version = version
         self.documentID = documentID
@@ -110,12 +109,12 @@ package struct EaselClipboardPayload: Codable, Equatable {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         let data = try encoder.encode(self)
-        guard data.count <= Self.maximumBytes else { throw EaselStoreError.tooLarge }
+        guard data.count <= Self.maximumBytes else { throw EaselStoreError.objectsTooLarge }
         return data
     }
 
     package static func decoded(_ data: Data) throws -> EaselClipboardPayload {
-        guard data.count <= maximumBytes else { throw EaselStoreError.tooLarge }
+        guard data.count <= maximumBytes else { throw EaselStoreError.objectsTooLarge }
         let payload = try PropertyListDecoder().decode(Self.self, from: data)
         try payload.validate()
         return payload
@@ -135,6 +134,10 @@ package struct EaselClipboardPayload: Codable, Equatable {
 package struct EaselDuplication: Equatable {
     package var document: EaselDocument
     package var copies: [UUID]
+    package init(document: EaselDocument, copies: [UUID]) {
+        self.document = document
+        self.copies = copies
+    }
 }
 
 package enum EaselArrange {
@@ -144,6 +147,10 @@ package enum EaselArrange {
     package struct Unit: Equatable {
         package var ids: [UUID]
         package var frame: EaselRect
+        package init(ids: [UUID], frame: EaselRect) {
+            self.ids = ids
+            self.frame = frame
+        }
     }
 
     package static func visualFrame(_ item: EaselItem) -> EaselRect {
@@ -204,6 +211,11 @@ package enum EaselArrange {
         package var selection: Set<UUID>
         package var enteredGroup: UUID?
         package var enteredByClick: Bool
+        package init(selection: Set<UUID>, enteredGroup: UUID? = nil, enteredByClick: Bool) {
+            self.selection = selection
+            self.enteredGroup = enteredGroup
+            self.enteredByClick = enteredByClick
+        }
     }
 
     package static func unlocked(_ ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {

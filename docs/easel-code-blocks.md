@@ -64,8 +64,9 @@ you hover, fading in and out like Notes' code block bar and staying while the
 pointer moves onto it. Hovering a different block while one is selected shows the
 hovered block's Copy; the selected one's returns when the pointer leaves. Copy
 acts on the block it sits on, selected or not, puts the code on the clipboard
-with trailing blank lines trimmed and briefly says Copied!, holding the bar up
-until that fades. VoiceOver reads the block as "Code block, TypeScript" and offers Edit
+with trailing blank lines trimmed and briefly says Copied!: the chip cross-fades
+to a check and back at the same width, so the bar never shifts, and it holds the
+bar up until that fades. VoiceOver reads the block as "Code block, TypeScript" and offers Edit
 code, Copy code and Change language actions. Locked blocks can be copied but not
 edited or relabelled.
 

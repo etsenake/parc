@@ -167,7 +167,8 @@ final class SidebarPreviewController {
     private var anchor = NSRect.zero
     private var card: SidebarPreviewCard? {
         didSet {
-            guard let window, (card == nil) != (oldValue == nil) else { return }
+            guard let window else { return }
+            TooltipController.controller(for: window).exemptView = card
             TooltipController.controller(for: window).isSuppressed = card != nil
         }
     }

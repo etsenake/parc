@@ -64,14 +64,17 @@ extension EaselCanvasView {
         guard !targets.isEmpty, finishImageEditing() else { return false }
         let ids = Set(targets.map(\.id))
         var families = Set<EaselStyleFamily>()
-        let saved = commit(change.actionName, coalescing: group) { document in
-            for index in document.items.indices where ids.contains(document.items[index].id) && !document.items[index].isLocked {
-                var item = document.items[index]
-                guard EaselStyle.apply(change, to: &item) else { continue }
-                if let family = EaselStyleFamily.of(item) { families.insert(family) }
-                document.items[index] = item
+        func save() -> Bool {
+            commit(change.actionName, coalescing: group) { document in
+                for index in document.items.indices where ids.contains(document.items[index].id) && !document.items[index].isLocked {
+                    var item = document.items[index]
+                    guard EaselStyle.apply(change, to: &item) else { continue }
+                    if let family = EaselStyleFamily.of(item) { families.insert(family) }
+                    document.items[index] = item
+                }
             }
         }
+        let saved = group == nil ? withObjectMotion(.restyle) { save() } : save()
         guard saved else { return false }
         EaselStyleDefaults.record(change, for: families, document: session.document.id)
         return true
@@ -83,8 +86,18 @@ extension EaselCanvasView {
     }
 
     func stampRememberedStyle(on item: inout EaselItem) {
+        stampDefaultFamily(on: &item)
         guard adaptsInk else { return }
         EaselStyleDefaults.memory.stamp(&item, document: session.document.id)
+    }
+
+    func stampDefaultFamily(on item: inout EaselItem) {
+        let family = session.document.resolvedDefaultFamily
+        guard family != .clean, item.kind.holdsText else { return }
+        var style = item.textStyle ?? EaselTextStyle()
+        guard style.family == .clean else { return }
+        style.family = family
+        item.textStyle = style
     }
 
     private func editingColorChoice(_ editor: EaselStyledTextView, item: EaselItem) -> EaselColorChoice? {
@@ -105,6 +118,7 @@ extension EaselCanvasView {
 
     private func colorEditedText(_ choice: EaselColorChoice, in editor: EaselStyledTextView) {
         editor.applyTextColor(EaselInk.color(choice.hex(role: .ink), adaptive: adaptsInk))
+        lastTextTint = .ink(choice)
         EaselStyleDefaults.record(.color(choice), for: [.text], document: session.document.id)
     }
 }

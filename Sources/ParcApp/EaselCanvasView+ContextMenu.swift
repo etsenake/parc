@@ -83,6 +83,7 @@ protocol EaselCanvasMenuSlots {
     func mediaMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
     func tableMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
     func codeMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
+    func equationMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
     func drawingMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
     func stampMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
     func zoomMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
@@ -102,6 +103,7 @@ extension EaselCanvasMenuSlots {
     func mediaMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
     func tableMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
     func codeMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
+    func equationMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
     func drawingMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
     func stampMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
     func zoomMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
@@ -145,6 +147,7 @@ extension EaselCanvasView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        if isDocumentLocked { return }
         presentContextMenu(for: event)
     }
 
@@ -246,7 +249,7 @@ extension EaselCanvasView {
         }
         let locking = EaselArrange.shouldLock(ids, in: document)
         arrange.append(row("lock", locking ? "Lock" : "Unlock", locking ? "lock" : "lock.open", "⇧⌘L") { $0.toggleLock() })
-        arrange += sectionMenuRows(context) + shapeMenuRows(context) + transformMenuRows(context) + pageMenuRows(context)
+        arrange += sectionMenuRows(context) + shapeMenuRows(context) + transformMenuRows(context) + pageMenuRows(context) + sendMenuRows(context)
         var object: [EaselMenuRow] = []
         if context.target == .object, let item = context.items.first, let raw = item.url, !item.kind.holdsText {
             if pageObjects != nil, fixedCanvasSize == nil, EaselWebItemChrome.canMakeLive(item) {
@@ -269,7 +272,7 @@ extension EaselCanvasView {
             object += EaselMenuRow.bridging(connector.submenu?.items ?? [], prefix: "connector", anchors: [connector])
         }
         object += mindMapMenuRows(context) + textMenuRows(context) + linkMenuRows(context) + mediaMenuRows(context) + tableMenuRows(context)
-            + codeMenuRows(context) + connectorMenuRows(context) + styleMenuRows(context) + drawingMenuRows(context)
+            + codeMenuRows(context) + equationMenuRows(context) + connectorMenuRows(context) + styleMenuRows(context) + drawingMenuRows(context)
             + stampMenuRows(context)
         let view = [row("copy-image", "Copy as Image", "photo.on.rectangle") { $0.copySelectionAsImage() }, exportSelectionMenuRow(), selectAll]
             + zoomMenuRows(context)

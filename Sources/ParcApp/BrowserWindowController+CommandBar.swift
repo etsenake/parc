@@ -67,7 +67,7 @@ extension BrowserWindowController {
             all = cache.documents
         } else {
             let easelList = try? easels.list()
-            all = (easelList ?? []).map { CommandBarDocument(kind: .easel, id: $0.id, title: $0.title) }
+            all = (easelList ?? []).map { CommandBarDocument(kind: .easel, id: $0.id, title: $0.title, profileID: profileID) }
             commandBarDocumentCache = easelList != nil ? (profileID, stamp, all) : nil
         }
         let open = store.state.openTabs(where: { $0.profileID == profileID }).compactMap { InternalPage(urlString: $0.url) }
@@ -186,6 +186,7 @@ extension BrowserWindowController {
         }
     }
     func presentCommandBar(newTab: Bool, inSidebar: Bool = false, addressAnchor: NSView? = nil, initialEdit: (String, NSRange)? = nil) {
+        let newTab = newTab || activePeek is DocumentPeekController
         let originalProfileID = activeProfileID
         guard let original = window, ownsWindowCommandFocus, original.attachedSheet == nil,
               canOwnDownloadDialog(for: originalProfileID), windowCommandSecurityAvailable else { return }
@@ -292,7 +293,7 @@ extension BrowserWindowController {
         let commandProfile = activeProfileID
         let commandTab = currentTabID
         let sourcePeek = activePeek
-        let commandPeek = newTab ? nil : sourcePeek
+        let commandPeek = newTab ? nil : sourcePeek as? PeekController
         let commandBrowser = currentBrowser
         let commandPage = selectedNativePage()
         let isOriginal: () -> Bool = { [weak self, weak window] in

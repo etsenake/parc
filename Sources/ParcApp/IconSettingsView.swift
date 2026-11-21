@@ -160,8 +160,9 @@ final class IconChoiceRow: PointingHandButton {
     }
     override var acceptsFirstResponder: Bool { isEnabled }
     override var canBecomeKeyView: Bool { selected && super.canBecomeKeyView }
+    var applicationIsActive: () -> Bool = { NSApp.isActive }
     var showsIconFocusRing: Bool {
-        window?.isKeyWindow == true && NSApp.isActive && window?.firstResponder === self
+        window?.isKeyWindow == true && applicationIsActive() && window?.firstResponder === self
     }
     override func becomeFirstResponder() -> Bool {
         needsDisplay = true

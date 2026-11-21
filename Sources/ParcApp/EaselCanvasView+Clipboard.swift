@@ -21,6 +21,7 @@ extension EaselCanvasView {
         cancelPointerInteraction()
         guard !session.isClosed, !session.isDeleted, finishEditing() else { return false }
         let doomed = removableIDs(for: selection)
+        refuseLocked(selection)
         guard !doomed.isEmpty else { return false }
         let next = EaselArrange.dissolvingSingletonGroups(EaselDependents.removing(doomed, from: session.document))
         prepareReplacement(next) { [weak self] in
@@ -31,7 +32,11 @@ extension EaselCanvasView {
     }
 
     @discardableResult
-    func copySelection() -> Bool { copyObjects(selection) }
+    func copySelection() -> Bool {
+        guard copyObjects(selection) else { return false }
+        flashCopiedSelection(selection)
+        return true
+    }
 
     @discardableResult
     func cutSelection() -> Bool {
@@ -82,19 +87,21 @@ extension EaselCanvasView {
             let joined = NSMutableAttributedString()
             for (index, object) in worded.enumerated() {
                 if index > 0 { joined.append(NSAttributedString(string: "\n\n")) }
-                joined.append(EaselRichTextCodec.attributed(object))
+                joined.append(EaselInlineText.readable(EaselRichTextCodec.attributed(object)))
             }
             let images = EaselTextAttachments.hasImages(joined)
             let native = try joined.data(from: NSRange(location: 0, length: joined.length),
                 documentAttributes: [.documentType: images ? NSAttributedString.DocumentType.rtfd : NSAttributedString.DocumentType.rtf])
             if native.count <= 8_388_608 { item.setData(native, forType: images ? .rtfd : .rtf) }
         }
+        EaselClipboardText.writeFlavours(for: EaselMarkdown.blocks(for: worded.isEmpty ? [] : objects), into: item)
         let plain = objects.compactMap(clipboardWords).joined(separator: "\n\n")
         if !plain.isEmpty { item.setString(plain, forType: .string) }
     }
 
     private func clipboardWords(_ item: EaselItem) -> String? {
-        let words = EaselTextAttachments.plainString(item.text).trimmingCharacters(in: .whitespacesAndNewlines)
+        if item.kind == .equation { return EaselEquationArtwork.plainText(item) }
+        let words = EaselRichText.readable(item.text, rich: item.richText).trimmingCharacters(in: .whitespacesAndNewlines)
         if [.link, .webCard, .browser].contains(item.kind), let url = item.url {
             return words.isEmpty || words == url ? url : words + "\n" + url
         }
@@ -140,6 +147,7 @@ extension EaselCanvasView {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         guard pasteboard.setData(png, forType: .png) else { onError?(CocoaError(.fileWriteUnknown)); return false }
+        flashCopiedSelection(selection)
         onCopiedImage?()
         return true
     }

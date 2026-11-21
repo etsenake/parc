@@ -16,7 +16,7 @@ extension EaselCanvasView {
         let limit = EaselRect.maximumCoordinate - 1
         guard document.items.count + placed.items.count <= 10_000,
               placed.bounds.x + placed.bounds.width < limit, placed.bounds.y + placed.bounds.height < limit else {
-            onError?(EaselStoreError.tooLarge)
+            onError?(EaselStoreError.templateTooLarge)
             return false
         }
         guard withObjectMotion(.appear, { commit("Add \(template.title) template") { $0.items.append(contentsOf: placed.items) } }) else { return false }

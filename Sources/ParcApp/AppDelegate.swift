@@ -251,6 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 return .exit(failureExitCode)
             }
             store = opened
+            EaselTabIcons.shared.configure(store: opened)
             store.tabHistory?.prune(keeping: store.state.settings.restoreSession
                 ? Set(store.state.tabs.lazy.filter { $0.archivedAt == nil }.map(\.id)) : [])
             historyDeletionObserver = NotificationCenter.default.addObserver(
@@ -283,9 +284,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             TooltipController.eventChord = { KeyboardShortcuts.shared.chord(for: $0) }
             TooltipController.symbolicChord = { KeyboardShortcuts.shared.symbolicChord(for: $0) }
             EaselCanvasView.selectionToolbarFactory = { EaselSelectionToolbar() }
-            EaselCanvasView.textCompletionFactory = { EaselEmojiCompletion() }
+            EaselCanvasView.textCompletionFactory = { EaselTextCompletions([EaselSlashCompletion(), EaselMentionCompletion(), EaselEmojiCompletion()]) }
+            EaselCanvasView.highlightRecorder = { NoteColorRecents.record(.background($0)) }
+            EaselCanvasView.highlightRecall = { NoteColorRecents.load().first(where: \.isBackground)?.color }
             EaselCanvasView.mermaidSheetFactory = { EaselMermaidSheet(canvas: $0, text: $1) }
             EaselCanvasView.menuPresenterFactory = { EaselObjectMenuPresenter() }
+            EaselCanvasView.equationEditorFactory = { host, source, inside in NoteEquationEditSession(source: source, host: host, isInsideOwner: inside) }
             EaselCanvasView.stampPanelsFactory = { EaselStampPanels() }
             KeyboardShortcuts.shared.onDiscoveryChange = {
                 NotificationCenter.default.post(name: LiveShortcutToolTip.didChange, object: nil)
@@ -395,9 +399,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         guard Bundle.main.bundleIdentifier != nil, Bundle.main.bundlePath.hasSuffix(".app") else { return }
+        NoteCoverSupply.install()
         UNUserNotificationCenter.current().delegate = NoteReminderCenter.shared
         NoteReminderCenter.shared.onOpenNote = { [weak self] url in
             guard let self, !self.terminationInProgress else { return }
+            if let easel = EaselReminderOwner(file: url) { EaselInlineDates.open(easel, in: self.windows, front: self.front); return }
             self.application(NSApp, open: [url])
         }
     }

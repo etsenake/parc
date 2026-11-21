@@ -16,6 +16,7 @@ package enum EaselObjectLink {
     package static func normalized(_ raw: String) -> String? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.utf8.count <= 16_384, !text.contains(where: { $0.isWhitespace }) else { return nil }
+        if EaselRichText.isInternalLink(text) { return text }
         let explicit = text.range(of: "^[A-Za-z][A-Za-z0-9+.-]*://", options: .regularExpression) != nil
         guard let url = URL(string: explicit ? text : "https://" + text),
               let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),

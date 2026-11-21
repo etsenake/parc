@@ -34,7 +34,7 @@ final class NoteCaptureLiveSurface: NSView, NoteEmbeddedPageInputSurface {
             guard interactive != oldValue else { return }
             refresh()
             refreshRing(animated: true)
-            if let superview { window?.invalidateCursorRects(for: superview) }
+            superview?.refreshCursorIfPointerOwned()
         }
     }
     var selected = false { didSet { if selected != oldValue { refreshRing(animated: true) } } }

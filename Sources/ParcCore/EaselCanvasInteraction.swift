@@ -73,11 +73,9 @@ package enum EaselArrowEndpoint: CaseIterable {
 
 package struct EaselResizeCentering: OptionSet {
     package let rawValue: Int
-
     package init(rawValue: Int) {
         self.rawValue = rawValue
     }
-
     package static let horizontal = Self(rawValue: 1)
     package static let vertical = Self(rawValue: 2)
     package static let both: Self = [.horizontal, .vertical]
@@ -221,7 +219,7 @@ package struct EaselGeometryEdit {
     }
 
     package func preservesAspect(shift: Bool, command: Bool) -> Bool {
-        let intrinsic = originals.contains { $0.kind == .image || $0.kind == .video || $0.kind == .webCard || $0.kind == .link || $0.kind == .sticky || $0.kind == .stamp }
+        let intrinsic = originals.contains { $0.kind == .image || $0.kind == .video || $0.kind == .webCard || $0.kind == .link || $0.kind == .sticky || $0.kind == .stamp || $0.kind == .equation }
         return !command && (intrinsic || (shift && originals.count > 1))
     }
 
@@ -438,7 +436,6 @@ package struct EaselAlignmentGuides {
     package struct Segment: Equatable {
         package let start: EaselPoint
         package let end: EaselPoint
-
         package init(start: EaselPoint, end: EaselPoint) {
             self.start = start
             self.end = end
@@ -449,7 +446,6 @@ package struct EaselAlignmentGuides {
         package let coordinate: Double
         package let targetSegments: [Segment]
         package let anchorSegments: [Segment]
-
         package init(anchor: EaselAnchor, coordinate: Double, targetSegments: [Segment], anchorSegments: [Segment]) {
             self.anchor = anchor
             self.coordinate = coordinate

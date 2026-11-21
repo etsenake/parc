@@ -2679,6 +2679,9 @@ package final class BrowserStore: ObservableObject {
     package var isEphemeral: Bool { privateEnginePath != nil }
     private let clock: () -> Date
     private var pendingSave: DispatchWorkItem?
+    package var scheduleDeferredSave: (TimeInterval, DispatchWorkItem) -> Void = { delay, task in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: task)
+    }
     private var pendingSaveSnapshot: BrowserState?
     private let sessionWriter = SessionFileWriter()
     package var closedPageHistory = ClosedPageHistory<AnyObject>()
@@ -6019,6 +6022,8 @@ package final class BrowserStore: ObservableObject {
         scheduleSave()
     }
 
+    package func flushPendingWrites() { sessionWriter.drain() }
+
     private func scheduleSave() {
         guard !isEphemeral else { return }
         let snapshot = persisted(state)
@@ -6032,7 +6037,7 @@ package final class BrowserStore: ObservableObject {
         }
         pendingSave = task
         pendingSaveSnapshot = snapshot
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: task)
+        scheduleDeferredSave(0.25, task)
     }
 
     private func persistSnapshot(_ snapshot: BrowserState, wait: Bool) throws {
@@ -6502,6 +6507,7 @@ private final class SessionFileWriter: @unchecked Sendable {
     private var historyPreserved = false
     private var backups: SessionBackups?
 
+    func drain() { queue.sync {} }
     func preserveHistoryFile() { queue.sync { historyPreserved = true } }
     func keepBackups(_ value: SessionBackups) { queue.sync { backups = value } }
     func backUpIfDue(_ snapshot: BrowserState, at date: Date) {

@@ -38,7 +38,7 @@ MARKDOWN = (".md", ".markdown", ".mdc")
 CHANGE_KEYS = ("type", "scope", "summary", "breaking")
 OVERLAY = "Engine/ParcHost/overlay.json"
 LOCK = "Engine/source-lock.json"
-SWIFT_INPUTS = ("Sources", "Engine/ParcNative", LOCK, "scripts")
+SWIFT_INPUTS = ("Package.swift", "Package.resolved", "Sources", "Stubs", "Engine/ParcNative", LOCK, "scripts")
 CHECK_ROUNDS = 5
 
 
@@ -661,11 +661,6 @@ class Release:
         folder = Path(self.state['run']) / 'swift-check' / commit
         source = folder / 'source'
         release_inputs.create(self.root, source, commit)
-        cache, link = self.root / 'build/sparkle', source / 'build/sparkle'
-        cache.mkdir(parents=True, exist_ok=True)
-        if not link.exists() and not link.is_symlink():
-            link.parent.mkdir(exist_ok=True)
-            link.symlink_to(cache)
         label = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:8]
         self.emit('Compiling ' + commit + ' in release mode before the version commit')
         try:

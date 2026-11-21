@@ -192,15 +192,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var favoriteBadgeIcons: [UUID: (image: NSImage, data: Data)] = [:]
     var lastFavoriteOverlayFingerprint: String?
     var promotingPeek = false { didSet { noteReturnGate() } }
-    var activePeek: PeekController? {
+    var activePeek: PeekCard? {
         guard let id = peekHostID else { return nil }
         return peek(over: id)
     }
+    var activePagePeek: PeekController? { activePeek as? PeekController }
     var peekHostID: UUID? {
         PeekBackdrop.hostID(currentTabID: currentTabID, showsStartPage: showsStartPage, activeSpaceID: activeSpaceID)
     }
-    func peek(over id: UUID) -> PeekController? {
-        if let held = tabPeeks.current?.shownController, held.parentTabID == id, !held.page.isClosed,
+    func peek(over id: UUID) -> PeekCard? {
+        if let held = tabPeeks.current?.shownController, held.parentTabID == id, !held.contentIsClosed,
            browsers[id]?.nativePage === held.parentPage { return held }
         return peeks.values.first { $0.parentTabID == id && !$0.page.isClosed
             && PeekBackdrop.peekStays(parent: $0.parentPage, hostPage: browsers[id]?.nativePage) }
@@ -587,6 +588,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let cutoff = Date().addingTimeInterval(-Self.discardAfter)
         var shown = Set(renderedPaneIDs).union(selectedTabIDs)
         if let pending = pendingNativeSelection?.tabID { shown.insert(pending) }
+        if let held = tabPeeks.current?.tabID { shown.insert(held) }
         for (id, browser) in browsers where !shown.contains(id) && !closingTabIDs.contains(id)
             && !transferringTabIDs.contains(id) && !peeks.values.contains(where: { $0.parentTabID == id })
             && tabPeeks.current?.tabID != id {
@@ -1099,7 +1101,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, canNavigatePeekLinkFrom page: PCNativePage) -> Bool {
-        guard let peek = activePeek, peek.page === page, !page.isClosed, !peek.closePending, !promotingPeek,
+        guard let peek = activePagePeek, peek.page === page, !page.isClosed, !peek.closePending, !promotingPeek,
               PCNativeBrowserApplication.owner(of: page) === browser, peek.canInteract?() == true else { return false }
         return windowAdmitsPeek(browser, overLibrary: archivePreviews[peek.identity] != nil, ignoringCommandBar: true)
     }
@@ -1238,7 +1240,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func selectedNativePage() -> PCNativePage? {
         if let peek = activePeek, peek.isLeaving { return peek.parentPage }
         if let page = currentBrowser?.nativePage { return page }
-        guard let id = currentTabID else { return nil }
+        guard let id = activePeek == nil ? currentTabID : peekedDocumentTabID else { return nil }
         return embeddedPagePool(forTabID: id)?.selectedPage
     }
     func paneNativePage(_ id: UUID) -> PCNativePage? {
@@ -1270,9 +1272,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, canHandlePeekEscapeFrom page: PCNativePage) -> Bool {
-        if browser === nativeBinding, activePeek == nil, selectedNativePage() === page,
+        if browser === nativeBinding, activePeek == nil || activePeek is DocumentPeekController, selectedNativePage() === page,
            let pool = NoteEmbeddedPages.escapeOwner(for: page) { return pool.canLeave(from: page) }
-        guard browser === nativeBinding, let peek = activePeek,
+        guard browser === nativeBinding, let peek = activePagePeek,
               peek.page === page, presentedPeek(for: page) === peek,
               selectedNativePage() === page, PCNativeBrowserApplication.owner(of: page) === browser,
               browser.window === window, commandBar == nil, libraryView == nil,
@@ -1285,13 +1287,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, handlePeekEscapeFrom page: PCNativePage,
                        prefersConfirmation: Bool) {
-        if browser === nativeBinding, activePeek == nil, selectedNativePage() === page,
+        if browser === nativeBinding, activePeek == nil || activePeek is DocumentPeekController, selectedNativePage() === page,
            let pool = NoteEmbeddedPages.escapeOwner(for: page) {
             pool.pageEscape(page, prefersConfirmation: prefersConfirmation)
             return
         }
         guard nativeBrowser(browser, canHandlePeekEscapeFrom: page),
-              let peek = activePeek, peek.page === page else { return }
+              let peek = activePagePeek, peek.page === page else { return }
         peek.rendererEscape(prefersConfirmation: prefersConfirmation)
     }
 
@@ -1370,7 +1372,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return shortcutHint?.containsPointer == true
     }
     func visibleNativePages() -> [PCNativePage] {
-        let peek = activePeek.flatMap { $0.view.isHidden ? nil : $0 }
+        let shown = activePeek.flatMap { $0.view.isHidden ? nil : $0 }
+        let peekPages: [PCNativePage]
+        if let peek = shown as? PeekController { peekPages = [peek.page] }
+        else if shown != nil, let id = peekedDocumentTabID { peekPages = embeddedPagePool(forTabID: id)?.visiblePages ?? [] }
+        else { peekPages = [] }
         let parents: [PCNativePage] = renderedPaneIDs.compactMap { id in
             guard let browser = browsers[id], !browser.isHiddenOrHasHiddenAncestor else { return nil }
             return browser.nativePage
@@ -1380,7 +1386,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard pane.superview === splitView, let browser = pane.browser, !browser.isHiddenOrHasHiddenAncestor else { return nil }
             return browser.nativePage
         }
-        return parents + embedded + held + (peek.map { [$0.page] } ?? [])
+        return parents + embedded + held + peekPages
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, containerFor page: PCNativePage,
@@ -1513,7 +1519,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         pendingNativeSelection = nil
         if let peek = activePeek, peek.parentPage === page {
             DispatchQueue.main.async { [weak self, weak peek] in
-                guard let self, let peek, self.activePeek === peek, !peek.page.isClosed,
+                guard let self, let peek, self.activePeek === peek, !peek.contentIsClosed,
                       !self.isClosing, !self.wholeWindowClose else { return }
                 self.nativeBinding?.synchronizeSelectionAndLayout()
             }
@@ -1548,7 +1554,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func nativeBrowserShowProfiles(_ browser: PCNativeBrowserWindow) { if browser === nativeBinding { showSettings(pane: .spaces) } }
     func nativeBrowser(_ browser: PCNativeBrowserWindow, bookmarkURL url: URL) {
         guard browser === nativeBinding else { return }
-        if let peek = activePeek, peek.browser.url == url { promotePeek(peek, split: false) }
+        if let peek = activePagePeek, peek.browser.url == url { promotePeek(peek, split: false) }
         if let id = currentTabID, activePeek == nil, currentBrowser?.url == url {
             if store.state.tab(id)?.kind == .favorite { _ = moveFavoriteToPinned(id) }
             else { store.setKind(id, .pinned) }

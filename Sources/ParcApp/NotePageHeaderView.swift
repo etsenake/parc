@@ -36,6 +36,11 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
     private var reservesErrorSpace = false
     private var iconPopover: NotePagePopover?
     private var coverPopover: NotePagePopover?
+    private weak var iconPicker: NotePageIconPicker?
+    private weak var coverPicker: NoteCoverPicker?
+    private weak var coverAnchorView: NSView?
+    private var iconAnchor: NSRect?
+    private var coverAnchor: NSRect?
 
     init(editor: NotePageEditor, file: NoteFileSession?, title: String? = nil) {
         self.editor = editor
@@ -192,6 +197,29 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             if let frame = layout.backlinks { backlinks.frame = frame }
         }
         lastHeight = layout.height
+        keepIconPickerAnchored()
+        keepCoverPickerAnchored()
+    }
+
+    private func pickerAnchor(for view: NSView) -> NSRect {
+        let overlay = editor.canvas.overlayView
+        return overlay.convert(view.bounds, from: view)
+    }
+
+    private func keepIconPickerAnchored() {
+        guard let iconPopover, iconPopover.isOpen, !iconView.isHidden else { return }
+        let anchor = pickerAnchor(for: iconView)
+        guard anchor != iconAnchor else { return }
+        iconAnchor = anchor
+        iconPopover.reposition(anchor: anchor)
+    }
+
+    private func keepCoverPickerAnchored() {
+        guard let coverPopover, coverPopover.isOpen, let view = coverAnchorView, !view.isHiddenOrHasHiddenAncestor else { return }
+        let anchor = pickerAnchor(for: view)
+        guard anchor != coverAnchor else { return }
+        coverAnchor = anchor
+        coverPopover.reposition(anchor: anchor)
     }
 
     private func chipVisible(_ chip: NoteChip) -> Bool {
@@ -211,13 +239,17 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
     override func mouseEntered(with event: NSEvent) {
-        setHovered(true)
+        setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -365,6 +397,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             }
         }
         coverView.onOpen = { [weak self] url in self?.editor.open(url) }
+        coverView.onLayout = { [weak self] in self?.keepCoverPickerAnchored() }
         properties.onHeightChange = { [weak self] in self?.relayoutIfHeightChanged() }
     }
 
@@ -388,9 +421,13 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             coverView.setPosition(cover.position)
         }
         coverView.credit = next.cover?.credit
+        coverPicker?.hasCover = next.cover != nil
+        if next.cover == nil { coverPopover?.close() }
         if previous?.icon != next.icon {
             iconView.icon = isPlainText ? nil : next.icon
             if animated, next.icon != nil { NoteAnimation.pop(iconView, from: NoteAnimation.checkPopScale, spring: .pop) }
+            iconPicker?.current = next.icon
+            if (next.icon ?? "").isEmpty { iconPopover?.close() }
         }
         properties.isEditable = editable
         properties.reload(next.properties)
@@ -533,6 +570,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         let character = NoteEmojiCatalog.shared.character(for: emoji)
         NoteEmojiCatalog.shared.recordUse(character)
         editor.session.updateSettings(name: "Add Icon") { $0.icon = character }
+        presentIconPicker()
     }
 
     func addRandomCover() {
@@ -563,14 +601,12 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         let picker = NotePageIconPicker(environment: editor.environment, current: settings.icon)
         let popover = NotePagePopover(content: picker)
         popover.exempt(iconView)
-        picker.onPick = { [weak self, weak popover] icon in
+        picker.onPick = { [weak self] icon in
             NoteEmojiCatalog.shared.recordUse(icon)
             self?.editor.session.updateSettings(name: "Change Icon") { $0.icon = icon }
-            popover?.close()
         }
-        picker.onImage = { [weak self, weak popover] source in
+        picker.onImage = { [weak self] source in
             self?.editor.session.updateSettings(name: "Change Icon") { $0.icon = source }
-            popover?.close()
         }
         picker.onRemove = { [weak self, weak popover] in
             self?.editor.session.updateSettings(name: "Remove Icon") { $0.icon = nil }
@@ -578,10 +614,17 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         }
         picker.onCancel = { [weak popover] in popover?.close() }
         picker.onError = { [weak self] error in self?.editor.onError?(error) }
-        popover.onClose = { [weak self] in self?.iconPopover = nil }
+        popover.onClose = { [weak self, weak popover] in
+            guard let self, self.iconPopover === popover else { return }
+            self.iconPopover = nil
+            self.iconAnchor = nil
+        }
         iconPopover = popover
-        let overlay = editor.canvas.overlayView
-        popover.present(in: overlay, anchor: overlay.convert(iconView.bounds, from: iconView), edge: .below)
+        iconPicker = picker
+        layoutSubtreeIfNeeded()
+        let anchor = pickerAnchor(for: iconView)
+        iconAnchor = anchor
+        popover.present(in: editor.canvas.overlayView, anchor: anchor, edge: .below)
         picker.focus()
     }
 
@@ -591,9 +634,8 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         let picker = NoteCoverPicker(environment: editor.environment, hasCover: settings.cover != nil)
         let popover = NotePagePopover(content: picker)
         popover.exempt(anchorView)
-        picker.onChoose = { [weak self, weak popover] cover in
+        picker.onChoose = { [weak self] cover in
             self?.editor.session.updateSettings(name: "Change Cover") { $0.cover = cover }
-            popover?.close()
         }
         picker.onOpen = { [weak self] url in self?.editor.open(url) }
         picker.onRemove = { [weak self, weak popover] in
@@ -601,14 +643,20 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             popover?.close()
         }
         picker.onError = { [weak self] error in self?.editor.onError?(error) }
-        popover.onClose = { [weak self] in
-            self?.coverPopover = nil
-            self?.coverView.controlsPinned = false
+        popover.onClose = { [weak self, weak popover] in
+            guard let self, self.coverPopover === popover else { return }
+            self.coverPopover = nil
+            self.coverAnchor = nil
+            self.coverView.controlsPinned = false
         }
         coverPopover = popover
+        coverPicker = picker
+        coverAnchorView = anchorView
         coverView.controlsPinned = true
-        let overlay = editor.canvas.overlayView
-        popover.present(in: overlay, anchor: overlay.convert(anchorView.bounds, from: anchorView), edge: .below, alignment: .trailing)
+        layoutSubtreeIfNeeded()
+        let anchor = pickerAnchor(for: anchorView)
+        coverAnchor = anchor
+        popover.present(in: editor.canvas.overlayView, anchor: anchor, edge: .below, alignment: .trailing)
     }
 }
 
@@ -889,8 +937,16 @@ final class NotePageImageLoader {
 final class NotePageIconView: NSView {
     let environment: NoteEnvironment
     var onPress: (() -> Void)?
-    var isEditable = true { didSet { window?.invalidateCursorRects(for: self); needsDisplay = true } }
+    var isEditable = true {
+        didSet {
+            needsDisplay = true
+            guard isEditable != oldValue, let window, ownsPointer(atWindowPoint: window.mouseLocationOutsideOfEventStream) else { return }
+            window.refreshCursorUnderPointer()
+        }
+    }
     var icon: String? { didSet { if icon != oldValue { reloadImage(); needsDisplay = true; updateAccessibility() } } }
+    var isCompact = false { didSet { if isCompact != oldValue { needsDisplay = true } } }
+    var noun = "Note" { didSet { if noun != oldValue { updateAccessibility() } } }
     private var image: NSImage?
     private var isHovered = false
     private var isPressed = false
@@ -918,7 +974,7 @@ final class NotePageIconView: NSView {
 
     private func updateAccessibility() {
         let name = icon.flatMap { NoteCustomEmojiName.name(inReference: $0) ?? NoteEmojiCatalog.shared.entry(for: $0)?.displayName }
-        setAccessibilityLabel(name.map { "Note icon, \($0)" } ?? (icon == nil ? "Note icon" : "Note icon, image"))
+        setAccessibilityLabel(name.map { "\(noun) icon, \($0)" } ?? (icon == nil ? "\(noun) icon" : "\(noun) icon, image"))
         setAccessibilityHelp("Change icon")
     }
 
@@ -939,13 +995,15 @@ final class NotePageIconView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         drawInOwnAppearance {
+            let inset: CGFloat = isCompact ? (bounds.height * 0.1).rounded() : 8
             if isEditable && (isHovered || isPressed) {
                 (isPressed ? NoteTheme.pressedFill : NoteTheme.hoverFill).setFill()
-                NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8).fill()
+                let radius: CGFloat = isCompact ? 6 : 8
+                NSBezierPath(roundedRect: bounds.insetBy(dx: isCompact ? 0 : 2, dy: isCompact ? 0 : 2), xRadius: radius, yRadius: radius).fill()
             }
             guard let icon else { return }
             if NoteCustomEmojiName.isReference(icon) {
-                let box = bounds.insetBy(dx: 8, dy: 8)
+                let box = bounds.insetBy(dx: inset, dy: inset)
                 if let image {
                     NoteCustomEmojiImages.draw(image, fittingIn: box)
                 } else {
@@ -955,7 +1013,7 @@ final class NotePageIconView: NSView {
                 return
             }
             if NotePageImageLoader.isImageSource(icon) {
-                let box = bounds.insetBy(dx: 8, dy: 8)
+                let box = bounds.insetBy(dx: inset, dy: inset)
                 guard let image, image.size.width > 0, image.size.height > 0 else {
                     NoteTheme.mediaPlaceholderFill.setFill()
                     NSBezierPath(roundedRect: box, xRadius: 8, yRadius: 8).fill()
@@ -970,7 +1028,8 @@ final class NotePageIconView: NSView {
                 NSGraphicsContext.restoreGraphicsState()
                 return
             }
-            let font = NSFont(name: "AppleColorEmoji", size: 62) ?? .systemFont(ofSize: 62)
+            let emojiSize: CGFloat = isCompact ? (bounds.height * 0.75).rounded() : 62
+            let font = NSFont(name: "AppleColorEmoji", size: emojiSize) ?? .systemFont(ofSize: emojiSize)
             let text = NSAttributedString(string: icon, attributes: [.font: font])
             let size = text.size()
             text.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2))
@@ -980,20 +1039,24 @@ final class NotePageIconView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect, .cursorUpdate], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect, .cursorUpdate], owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { isHovered = false; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+    override func mouseMoved(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+    override func mouseExited(with event: NSEvent) { setHovered(false) }
 
-    override func cursorUpdate(with event: NSEvent) {
-        if isEditable { NSCursor.pointingHand.set() } else { super.cursorUpdate(with: event) }
+    private func setHovered(_ value: Bool) {
+        guard value != isHovered else { return }
+        isHovered = value
+        needsDisplay = true
     }
 
-    override func resetCursorRects() {
-        if isEditable { addCursorRect(bounds, cursor: .pointingHand) }
+    override func cursorUpdate(with event: NSEvent) {
+        if isEditable, applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -1032,6 +1095,7 @@ final class NotePageCoverView: NSView {
     var onRemove: (() -> Void)?
     var onSavePosition: ((Double) -> Void)?
     var onOpen: ((URL) -> Void)?
+    var onLayout: (() -> Void)?
     var isEditable = true { didSet { refreshControls(animated: false) } }
     var controlsInset: CGFloat = 16 { didSet { needsLayout = true } }
     var controlsPinned = false { didSet { refreshControls(animated: true) } }
@@ -1207,6 +1271,7 @@ final class NotePageCoverView: NSView {
         hintLabel.frame = NSRect(x: 12, y: (30 - hintSize.height) / 2, width: hintSize.width, height: hintSize.height)
         let failure = failureLabel.intrinsicContentSize
         failureLabel.frame = NSRect(x: (bounds.width - failure.width) / 2, y: (bounds.height - failure.height) / 2, width: failure.width, height: failure.height)
+        onLayout?()
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -1234,19 +1299,43 @@ final class NotePageCoverView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect, .cursorUpdate], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect, .cursorUpdate], owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
     override func mouseEntered(with event: NSEvent) {
-        isHovered = true
-        refreshControls(animated: true)
+        setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+        guard isRepositioning, dragStart == nil, isOwnSurface(atWindowPoint: event.locationInWindow) else { return }
+        applyNoteCursor(.openHand, for: event)
     }
 
     override func mouseExited(with event: NSEvent) {
-        isHovered = false
+        setHovered(false)
+    }
+
+    private func setHovered(_ value: Bool) {
+        guard value != isHovered else { return }
+        isHovered = value
         refreshControls(animated: true)
+    }
+
+    private func isOwnSurface(atWindowPoint point: NSPoint) -> Bool {
+        guard let superview else { return false }
+        return hitTest(superview.convert(point, from: nil)) === self
+    }
+
+    private var surfaceCursor: NSCursor {
+        isRepositioning ? (dragStart == nil ? .openHand : .closedHand) : .arrow
+    }
+
+    private func refreshCursor() {
+        guard let window, ownsPointer(atWindowPoint: window.mouseLocationOutsideOfEventStream) else { return }
+        window.refreshCursorUnderPointer()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -1258,11 +1347,8 @@ final class NotePageCoverView: NSView {
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        if isRepositioning { (dragStart == nil ? NSCursor.openHand : NSCursor.closedHand).set() } else { super.cursorUpdate(with: event) }
-    }
-
-    override func resetCursorRects() {
-        if isRepositioning { addCursorRect(bounds, cursor: dragStart == nil ? .openHand : .closedHand) }
+        if applyNoteCursor(surfaceCursor, for: event) { return }
+        super.cursorUpdate(with: event)
     }
 
     func beginRepositioning() {
@@ -1273,7 +1359,7 @@ final class NotePageCoverView: NSView {
         needsLayout = true
         refreshControls(animated: true)
         window?.makeFirstResponder(self)
-        window?.invalidateCursorRects(for: self)
+        refreshCursor()
     }
 
     func endRepositioning(save: Bool) {
@@ -1287,13 +1373,13 @@ final class NotePageCoverView: NSView {
         }
         needsLayout = true
         refreshControls(animated: true)
-        window?.invalidateCursorRects(for: self)
+        refreshCursor()
     }
 
     override func mouseDown(with event: NSEvent) {
         guard isRepositioning else { super.mouseDown(with: event); return }
         dragStart = (convert(event.locationInWindow, from: nil), position)
-        NSCursor.closedHand.set()
+        applyNoteCursor(.closedHand, for: event)
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -1309,7 +1395,7 @@ final class NotePageCoverView: NSView {
     override func mouseUp(with event: NSEvent) {
         guard isRepositioning else { return }
         dragStart = nil
-        NSCursor.openHand.set()
+        applyNoteCursor(isOwnSurface(atWindowPoint: event.locationInWindow) ? .openHand : nil, for: event)
     }
 
     override func keyDown(with event: NSEvent) {

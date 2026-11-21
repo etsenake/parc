@@ -57,7 +57,7 @@ final class EaselQuickActions {
     private var popover: NotePagePopover?
     var isOpen: Bool { popover?.isOpen == true }
 
-    func toggle(in host: NSView, anchor: NSRect, actions: [Action], onClose: @escaping () -> Void) {
+    func toggle(in host: NSView, anchor: NSRect, edge: NoteFloatingPanel.Edge = .below, actions: [Action], onClose: @escaping () -> Void) {
         if isOpen { popover?.close(); return }
         let view = EaselQuickActionsView(frame: .zero)
         let recents = Self.recentIDs.compactMap { id in actions.first { $0.id == id && $0.isEnabled } }
@@ -90,7 +90,7 @@ final class EaselQuickActions {
             onClose()
         }
         popover = next
-        next.present(in: host, anchor: anchor, edge: .below, alignment: .center)
+        next.present(in: host, anchor: anchor, edge: edge, alignment: .center)
         view.list.prepare(origin: .keyboard)
         view.field.focus()
     }
@@ -106,6 +106,19 @@ final class EaselQuickActions {
 }
 
 extension EaselQuickActions {
+    static func catalogInserts(canvas: EaselCanvasView, canInsert: ((EaselInsertKind) -> Bool)? = nil, focus: @escaping () -> Void) -> [Action] {
+        guard canvas.fixedCanvasSize == nil else { return [] }
+        return EaselInsertKind.allCases.compactMap { kind in
+            guard let itemKind = kind.itemKind else { return nil }
+            return Action(id: "insert-" + kind.rawValue, title: kind.title, icon: kind.icon, shortcut: nil, keywords: kind.keywords,
+                          section: "Add",
+                          isEnabled: canInsert?(kind) ?? (kind != .embed || canvas.pageObjects != nil)) { [weak canvas] in
+                canvas?.placeEmptyObject(itemKind)
+                focus()
+            }
+        }
+    }
+
     static func boardActions(canvas: EaselCanvasView, inserts: [Action] = [], focus: @escaping () -> Void) -> [Action] {
         var actions: [Action] = []
         func tool(_ tool: EaselTool, _ keywords: [String], section: String) {

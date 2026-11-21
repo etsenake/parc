@@ -439,7 +439,7 @@ final class NoteTextBlockView: NoteBlockView, NoteTextHost {
 @MainActor
 final class NoteTodoCheckbox: NSView {
     var onToggle: (() -> Void)?
-    var isEnabled = true { didSet { if oldValue != isEnabled { refreshAppearance(); window?.invalidateCursorRects(for: self) } } }
+    var isEnabled = true { didSet { if oldValue != isEnabled { refreshAppearance(); refreshPointingHand(isEnabled) } } }
     private(set) var isChecked = false
     private let mark = CALayer()
     private var isPressed = false
@@ -453,6 +453,7 @@ final class NoteTodoCheckbox: NSView {
         setAccessibilityRole(.checkBox)
         setAccessibilityLabel("Done")
         refreshAppearance()
+        addCursorUpdateArea()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -493,14 +494,9 @@ final class NoteTodoCheckbox: NSView {
 
     func refreshAppearance() {
         let scale = window?.backingScaleFactor ?? 2
-        let name = isChecked ? "checkmark.circle.fill" : "circle"
-        let colors: [NSColor] = isChecked ? [.white, NoteTheme.todoCheckFill] : [NoteTheme.todoBox]
         var image: CGImage?
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let resolved = colors.map { NSColor(cgColor: $0.cgColor) ?? $0 }
-            let configuration = NSImage.SymbolConfiguration(pointSize: NoteTheme.todoBoxSize, weight: .regular)
-                .applying(NSImage.SymbolConfiguration(paletteColors: resolved))
-            guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration) else { return }
+            guard let symbol = NoteTheme.todoGlyph(checked: isChecked) else { return }
             var rect = NSRect(origin: .zero, size: NSSize(width: symbol.size.width * scale, height: symbol.size.height * scale))
             image = symbol.cgImage(forProposedRect: &rect, context: nil, hints: [.ctm: AffineTransform(scale: scale)])
         }
@@ -511,8 +507,8 @@ final class NoteTodoCheckbox: NSView {
         setAccessibilityValue(isChecked ? 1 : 0)
     }
 
-    override func resetCursorRects() {
-        if isEnabled { addCursorRect(bounds, cursor: .pointingHand) }
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(isEnabled ? .pointingHand : .arrow, for: event) { super.cursorUpdate(with: event) }
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -625,16 +621,27 @@ final class NoteToggleDisclosure: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let area { removeTrackingArea(area) }
-        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(next)
         area = next
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true; refreshAppearance() }
+    override func mouseEntered(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
 
-    override func mouseExited(with event: NSEvent) { isHovered = false; refreshAppearance() }
+    override func mouseMoved(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
 
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+    override func mouseExited(with event: NSEvent) { setHovered(false) }
+
+    private func setHovered(_ hovered: Bool) {
+        guard hovered != isHovered else { return }
+        isHovered = hovered
+        refreshAppearance()
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(.pointingHand, for: event) { super.cursorUpdate(with: event) }
+    }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -719,14 +726,27 @@ final class NoteCalloutIconButton: PointingHandButton {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let area { removeTrackingArea(area) }
-        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(next)
         area = next
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
 
-    override func mouseExited(with event: NSEvent) { isHovered = false; needsDisplay = true }
+    override func mouseMoved(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+
+    override func mouseExited(with event: NSEvent) { setHovered(false) }
+
+    private func setHovered(_ hovered: Bool) {
+        guard hovered != isHovered else { return }
+        isHovered = hovered
+        needsDisplay = true
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(showsPointingHand ? .pointingHand : .arrow, for: event) { super.cursorUpdate(with: event) }
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard isEnabled, let layer else { super.mouseDown(with: event); return }
@@ -771,16 +791,27 @@ final class NoteToggleHintView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let area { removeTrackingArea(area) }
-        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(next)
         area = next
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
 
-    override func mouseExited(with event: NSEvent) { isHovered = false; needsDisplay = true }
+    override func mouseMoved(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
 
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+    override func mouseExited(with event: NSEvent) { setHovered(false) }
+
+    private func setHovered(_ hovered: Bool) {
+        guard hovered != isHovered else { return }
+        isHovered = hovered
+        needsDisplay = true
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if !applyNoteCursor(.pointingHand, for: event) { super.cursorUpdate(with: event) }
+    }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 

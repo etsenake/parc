@@ -149,8 +149,6 @@ struct EaselTextStyleTests {
         let selected = pixels(selectedTool).colorAt(x: 14, y: 14)!.usingColorSpace(.sRGB)!
         expect(selected.blueComponent > selected.redComponent && selected.blueComponent > selected.greenComponent && selected.alphaComponent > 0,
                "The selected tool cell takes the Notes checked fill")
-        let link = EaselLinkEditor(value: "https://example.com")
-        link.view.frame.origin = NSPoint(x: 400, y: 160); root.addSubview(link.view)
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             root.appearance = NSAppearance(named: appearance)
             root.layoutSubtreeIfNeeded(); root.displayIfNeeded()
@@ -316,7 +314,7 @@ struct EaselTextStyleTests {
         let unsupportedFace = NSAttributedString(attributedString: view.attributedString())
         toggle(.italic)
         expect(failures == 1 && view.attributedString().isEqual(to: unsupportedFace), "An explicit unsupported font is refused, never silently replaced")
-        load([.font: original, key: "invalid"])
+        load([.font: original, key: "invalid"], text: "Authored")
         let malformed = NSAttributedString(attributedString: view.attributedString()), beforeRefusal = boundaries
         view.toggle(.bold)
         expect(failures == 2 && view.attributedString().isEqual(to: malformed) && boundaries == beforeRefusal, "Malformed original-font metadata is refused atomically")
@@ -340,6 +338,7 @@ struct EaselTextStyleTests {
         let label = (original.string as NSString).range(of: "café 👩🏽‍💻")
         original.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: label)
         view.textStorage?.setAttributedString(original); view.setSelectedRange(label)
+        let stored = NSAttributedString(attributedString: view.attributedString())
         board.clearContents(); board.setString("https://example.com/new?q=one%20two", forType: .URL)
         expect(view.readablePasteboardTypes.contains(.URL), "URL-only native paste is advertised")
         view.localUndo.beginUndoGrouping(); expect(view.pasteContent(from: board), "URL-only clipboard links the original selected words"); view.localUndo.endUndoGrouping()
@@ -348,7 +347,7 @@ struct EaselTextStyleTests {
         expect((view.attributedString().attribute(.underlineStyle, at: label.location, effectiveRange: nil) as? Int) == NSUnderlineStyle.single.rawValue, "Existing label styling survives link paste")
         expect(view.typingAttributes[.link] == nil && view.selectedRange() == NSRange(location: NSMaxRange(label), length: 0), "New typing stays outside the pasted link")
         view.undo(nil)
-        expect(view.attributedString().isEqual(to: original) && view.selectedRange() == label, "One native undo restores original text, attributes and selection")
+        expect(view.attributedString().isEqual(to: stored) && view.selectedRange() == label, "One native undo restores original text, attributes and selection")
         view.redo(nil); expect(try! EaselRichTextCodec.snapshot(view.attributedString()) == pasted, "Redo restores exact pasted-link ranges")
         let selfURL = "https://example.com/old"
         view.textStorage?.setAttributedString(NSAttributedString(string: selfURL, attributes: [.font: NSFont.systemFont(ofSize: 15), .link: URL(string: selfURL)!]))
@@ -703,7 +702,15 @@ struct EaselTextStyleTests {
             view.setSelectedRange(NSRange(location: finished.length + 1, length: 5))
             expect(!view.hasEmphasis(emphasis), "Conversion restores original typing attributes for following text")
         }
-        for literal in ["**bold**", "~~strike~~", "``", "[label](https://example.com)", "*incomplete", "*punctuation!*", "word*bold*", #"\*escaped*"#, "+ list", "2. list", "##### heading", ">quote"] {
+        for (source, shown) in [("**bold**", "bold"), ("~~strike~~", "strike")] {
+            load(""); type(source)
+            expect(view.string == shown, "Notes typing shortcuts convert in Easel text: \(source)")
+            let attrs = view.attributedString().attributes(at: 0, effectiveRange: nil)
+            let styled = source.hasPrefix("**") ? (attrs[.font] as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) == true
+                : (attrs[.strikethroughStyle] as? NSNumber)?.intValue == NSUnderlineStyle.single.rawValue
+            expect(styled, "A Notes typing shortcut leaves the real native range attribute: \(source)")
+        }
+        for literal in ["``", "[label](https://example.com)", "*incomplete", "*punctuation!*", "word*bold*", #"\*escaped*"#, "+ list", "2. list", "##### heading", ">quote"] {
             load(""); type(literal)
             expect(view.string == literal, "Unsupported or incomplete syntax remains literal: \(literal)")
         }
@@ -724,7 +731,7 @@ struct EaselTextStyleTests {
         let rtf = board.data(forType: .rtf)!
         board.clearContents(); board.setData(rtf, forType: .rtf); load("")
         grouped { expect(view.pasteContent(from: board), "Native RTF paste succeeds") }
-        expect(view.string == "# Heading\n*word*", "Imported RTF text is not parsed as markdown")
+        expect(view.string == "Heading\nword", "RTF whose plain text reads as Markdown pastes the way it does in a note")
         load(""); type("`let x = 1`")
         expect(view.string == "let x = 1", "Typed backticks become inline code")
         let code = view.attributedString().attributes(at: 0, effectiveRange: nil)
@@ -732,6 +739,11 @@ struct EaselTextStyleTests {
                "Inline code is monospaced on a soft fill")
         expect((view.typingAttributes[.font] as? NSFont)?.fontDescriptor.symbolicTraits.contains(.monoSpace) != true, "Typing after code is plain again")
         expect(EaselTextAppearance.isInlineCode(code) && !EaselTextAppearance.isInlineCode(view.typingAttributes), "Inline code is recognised, plain text isn't")
+        var marked = code
+        marked[.backgroundColor] = EaselTextHighlight.color(.yellow)
+        expect(EaselTextAppearance.isInlineCode(marked), "Highlighted inline code is still code")
+        marked[.font] = EaselTextAppearance.font(.init())
+        expect(!EaselTextAppearance.isInlineCode(marked), "A highlight on plain text isn't code")
         load(""); type("> ")
         expect(view.string == "\t\u{258E}\t" && view.paragraphKind() == .quote, "A typed > starts a quote")
         type("Quoted"); grouped { view.insertNewline(nil) }

@@ -56,7 +56,7 @@ extension EaselCanvasView {
         }
         let kids = EaselMindMap.starterTexts.enumerated().map { mindMapText($1, size: .body, zIndex: top + 2 + $0) }
         guard let next = EaselMindMap.creatingMap(root: root, children: kids, in: session.document),
-              commit("Add mind map", { $0 = next }) else { return false }
+              growingMindMap(from: kids.map { _ in root.id }, kids.map(\.id), { commit("Add mind map", { $0 = next }) }) else { return false }
         focusMindMapNode(root.id, editing: true)
         return true
     }
@@ -70,7 +70,7 @@ extension EaselCanvasView {
         guard top < Int.max - 8 else { return false }
         let kids = EaselMindMap.starterTexts.enumerated().map { mindMapText($1, size: .body, zIndex: top + 1 + $0) }
         guard let next = EaselMindMap.creatingMap(root: root, children: kids, in: session.document),
-              commit("Make mind map", { $0 = next }) else { return false }
+              growingMindMap(from: kids.map { _ in root.id }, kids.map(\.id), { commit("Make mind map", { $0 = next }) }) else { return false }
         focusMindMapNode(kids[0].id, editing: true)
         return true
     }
@@ -102,7 +102,7 @@ extension EaselCanvasView {
         if template.kind == .text { template.frame = fittedTextFrame(template) }
         if template.kind == .sticky { template.frame.height = min(template.frame.height, EaselBoardObjects.stickyMinimumHeight(template)) }
         guard let next = EaselMindMap.adding(template, to: parentID, side: wantedSide, at: index, in: document),
-              commit(sibling ? "Add sibling" : "Add child", { $0 = next }) else { return false }
+              growingMindMap(from: [parentID], [template.id], { commit(sibling ? "Add sibling" : "Add child", { $0 = next }) }) else { return false }
         focusMindMapNode(template.id, editing: true)
         return true
     }
@@ -129,8 +129,10 @@ extension EaselCanvasView {
     func setMindMapCollapsed(_ collapsed: Bool, ids: Set<UUID>) -> Bool {
         guard mindMapsWritable else { return false }
         cancelPointerInteraction(); guard finishEditing() else { return false }
+        let before = session.document
         guard let next = EaselMindMap.settingCollapsed(collapsed, ids, in: session.document),
               commit(collapsed ? "Collapse branch" : "Expand branch", { $0 = next }) else { return false }
+        foldMindMap(from: before, toward: ids)
         if collapsed { selection.subtract(EaselBoardObjects.hiddenIDs(in: session.document.items)) }
         NSAccessibility.post(element: self, notification: .layoutChanged)
         return true
@@ -283,6 +285,7 @@ extension EaselCanvasView {
     }
 
     func drawMindMapChrome(in dirtyRect: NSRect) {
+        drawMindMapFolds(in: dirtyRect)
         let scale = CGFloat(canvasScale)
         drawMindMapDrop(scale: scale)
         let controls = mindMapControls()
@@ -357,7 +360,7 @@ extension EaselCanvasView {
         clearMindMapDrop()
         let attaching = !isMindMapNode(pending.id)
         guard let next = EaselMindMap.moving(pending.id, to: pending.drop, in: session.document) else { return false }
-        guard commit(attaching ? "Attach to mind map" : "Move topic", { $0 = next }) else { return false }
+        guard revealingConnectors({ commit(attaching ? "Attach to mind map" : "Move topic", { $0 = next }) }) else { return false }
         selection = [pending.id]
         NSAccessibility.post(element: self, notification: .layoutChanged)
         return true
@@ -464,6 +467,87 @@ extension EaselCanvasView {
         case "Collapse branch": return setMindMapCollapsed(true, ids: [item.id])
         case "Expand branch": return setMindMapCollapsed(false, ids: [item.id])
         default: return false
+        }
+    }
+}
+
+extension EaselCanvasView {
+    func growingMindMap(from parents: [UUID], _ children: [UUID], _ body: () -> Bool) -> Bool {
+        let before = session.document
+        let saved = withObjectMotion(.copies(sources: parents, copies: children)) { revealingConnectors(body) }
+        guard saved else { return false }
+        withObjectMotion(.arrange) { recordObjectMotion(from: before, to: session.document) }
+        return true
+    }
+
+    func foldMindMap(from before: EaselDocument, toward ids: Set<UUID>) {
+        guard canAnimateObjects else { return }
+        let after = session.document
+        let wasHidden = EaselBoardObjects.hiddenIDs(in: before.items), nowHidden = EaselBoardObjects.hiddenIDs(in: after.items)
+        let folding = nowHidden.subtracting(wasHidden), unfolding = wasHidden.subtracting(nowHidden)
+        let anchors = after.items.filter { ids.contains($0.id) }
+        guard !anchors.isEmpty else { return }
+        func center(_ item: EaselItem) -> EaselPoint { EaselPoint(x: item.frame.x + item.frame.width / 2, y: item.frame.y + item.frame.height / 2) }
+        let lineage = EaselMindMap.tree(of: after.items)
+        let anchorByID = Dictionary(anchors.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func anchor(for item: EaselItem) -> EaselItem? {
+            let node = item.kind == .arrow ? item.endConnection?.itemID ?? item.id : item.id
+            if let found = lineage.foldAnchor(of: node, among: ids), let match = anchorByID[found] { return match }
+            let c = center(item)
+            return anchors.min { hypot(center($0).x - c.x, center($0).y - c.y) < hypot(center($1).x - c.x, center($1).y - c.y) }
+        }
+        let reduced = feedbackReducesMotion, now = CACurrentMediaTime()
+        let visible = visibleRect.isEmpty ? bounds : visibleRect
+        func admitted(_ items: [EaselItem]) -> [EaselItem] {
+            let live = items.filter { !$0.ownsEmbeddedPage }
+            guard live.count > EaselCanvasObjectMotionState.crowd else { return live }
+            return reduced ? [] : live.filter { displayBounds(of: $0).intersects(visible) }
+        }
+        let folded = admitted(before.items.filter { folding.contains($0.id) })
+        for item in folded {
+            guard let target = anchor(for: item) else { continue }
+            let from = center(item), to = center(target)
+            canvasFeedback.folds.append(.init(item: item, offset: EaselPoint(x: to.x - from.x, y: to.y - from.y), start: now, reduced: reduced))
+        }
+        if !folded.isEmpty { startCanvasFeedback() }
+        let opened = admitted(after.items.filter { unfolding.contains($0.id) })
+        guard !opened.isEmpty else { return }
+        let nodes = opened.filter { $0.kind != .arrow }, branches = opened.filter { $0.kind == .arrow }
+        var staged = before
+        let leaving = Set(nodes.map(\.id))
+        staged.items.removeAll { leaving.contains($0.id) }
+        let tree = lineage
+        func depth(_ id: UUID) -> Int {
+            var steps = 0, current = id
+            while let parent = tree.nodes[current]?.parent, steps <= tree.nodes.count {
+                if ids.contains(current) { break }
+                current = parent; steps += 1
+            }
+            return steps
+        }
+        let parents = nodes.compactMap { anchor(for: $0)?.id }
+        if parents.count == nodes.count {
+            let offsets = EaselObjectMotion.copyOffsets(sources: parents, copies: nodes.map(\.id), before: staged, after: after)
+            let stagger = EaselFeedbackCurve.unfoldDelays(depths: nodes.map { depth($0.id) })
+            glideObjects(offsets, delays: Dictionary(zip(nodes.map(\.id), stagger), uniquingKeysWith: { first, _ in first }), fades: true)
+        }
+        let depths = branches.map { branch in branch.endConnection.map { depth($0.itemID) } ?? 0 }
+        let delays = EaselFeedbackCurve.unfoldDelays(depths: depths)
+        revealConnectors(branches.map(\.id))
+        for (branch, delay) in zip(branches, delays) where delay > 0 {
+            canvasFeedback.reveals[branch.id]?.start += delay
+        }
+    }
+
+    func drawMindMapFolds(in dirtyRect: NSRect) {
+        guard !canvasFeedback.folds.isEmpty else { return }
+        let now = CACurrentMediaTime()
+        for fold in canvasFeedback.folds {
+            let box = displayBounds(of: fold.item)
+            guard box.union(box.offsetBy(dx: fold.offset.x, dy: fold.offset.y)).intersects(dirtyRect) else { continue }
+            let shown = EaselFeedbackCurve.foldPresentation(now - fold.start, toward: fold.offset, reduced: fold.reduced)
+            let frame = rect(fold.item)
+            withPresentation(shown, around: NSPoint(x: frame.midX, y: frame.midY)) { drawObject(fold.item, showsEditor: false) }
         }
     }
 }

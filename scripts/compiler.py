@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import re
 import shlex
@@ -10,7 +9,7 @@ import threading
 
 SWIFT_TARGET = "arm64-apple-macos13.0"
 APP_PRODUCT = "Parc"
-APP_SWIFT_DIRECTORIES = ("Sources/ParcCore", "Sources/ParcApp")
+APP_SWIFT_DIRECTORIES = ("Sources/ParcCore", "Sources/ParcApp", "Sources/ParcMain")
 WARNING = re.compile(r"^(?:\S[^:]*:\d+(?::\d+)?: |<unknown>:0: "
                      r"|(?:\S[^:]*: [\w.+-]+: )?(?:clang(?:\+\+)?|cc|c\+\+|swiftc?|swift-frontend|swift-driver|ld|ld64\.lld|libtool): )?warning: ")
 
@@ -19,13 +18,10 @@ class Warnings(ValueError):
     pass
 
 
-def package_environment(sparkle_release: Path) -> dict[str, str]:
-    return {**os.environ, "PARC_SPARKLE_FRAMEWORKS": str(sparkle_release)}
-
-
 def swift_build(repo: Path, configuration: str, *, scratch: Path | None = None, target: str | None = None,
                 extra: tuple[str, ...] = ()) -> list[str]:
-    command = ["xcrun", "swift", "build", "--package-path", str(repo), "--configuration", configuration]
+    command = ["xcrun", "swift", "build", "--package-path", str(repo), "--configuration", configuration,
+               "--disable-keychain"]
     if scratch is not None:
         command += ["--scratch-path", str(scratch)]
     if configuration == "release":

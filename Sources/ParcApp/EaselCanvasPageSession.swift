@@ -6,6 +6,7 @@ import ParcCore
 final class EaselPageSession {
     let base: EaselSession
     private(set) var page: UUID?
+    var adoptedGroup: UUID?
     private var cache: (base: EaselDocument, page: UUID?, view: EaselDocument)?
 
     init(_ base: EaselSession, page: UUID? = nil) {
@@ -43,7 +44,7 @@ final class EaselPageSession {
 
     func perform(_ name: String, coalescing group: UUID? = nil, _ mutation: (inout EaselDocument) throws -> Void) throws {
         let page = currentPage
-        try base.perform(name, coalescing: group) { document in
+        try base.perform(name, coalescing: group ?? adoptedGroup) { document in
             var view = EaselPages.view(document, page: page)
             try mutation(&view)
             document = EaselPages.merging(view, page: page, into: document)
@@ -79,6 +80,8 @@ final class EaselPageSession {
     func assetData(_ id: String) throws -> Data { try base.assetData(id) }
     func assetURL(_ id: String) throws -> URL { try base.assetURL(id) }
     func importPNG(_ data: Data) throws -> String { try base.importPNG(data) }
-    func importAsset(_ data: Data, type: EaselAssetType) throws -> String { try base.importAsset(data, type: type) }
+    func importAsset(_ data: Data, type: EaselAssetType, fileExtension: String? = nil) throws -> String {
+        try base.importAsset(data, type: type, fileExtension: fileExtension)
+    }
     func discardUnusedAssets(_ ids: [String]) { base.discardUnusedAssets(ids) }
 }

@@ -95,7 +95,7 @@ final class EaselFindController: NoteFindBarController {
         guard restoringFocus, let window = editor.view.window else { return }
         if let match, canvas.selectOnly(match.itemID) {
             window.makeFirstResponder(canvas)
-        } else if let responder = returnResponder, (responder as? NSView)?.window === window {
+        } else if let responder = returnResponder as? NSView, SavedFocus.mayReturn(to: responder, in: window) {
             window.makeFirstResponder(responder)
         } else {
             window.makeFirstResponder(canvas)
@@ -224,6 +224,7 @@ final class EaselFindController: NoteFindBarController {
         state.step(delta)
         revealCurrent()
         refreshViews()
+        if let match = state.currentMatch { canvas.pulseObjects([match.itemID]) }
     }
 
     private func recompute(keeping match: EaselFindMatch?, reveal shouldReveal: Bool) {

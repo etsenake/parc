@@ -23,6 +23,9 @@ final class NoteLinkEditorView: NSView, NoteFloatingPanelContent {
     private let linkTarget: (URL) -> String
     private var results: [NoteReference] = []
     private(set) var normalized: String?
+    var accepts: (String) -> Bool = { _ in true }
+    var emptyTitle = "Paste a link or find a note"
+    var noMatchTitle = "That’s not a link, and no notes match."
 
     init(existingLink: String?, search: @escaping (String) -> [NoteReference], linkTarget: @escaping (URL) -> String) {
         self.existingLink = existingLink
@@ -77,7 +80,7 @@ final class NoteLinkEditorView: NSView, NoteFloatingPanelContent {
 
     func refresh() {
         let query = self.query
-        normalized = NoteLinkInput.normalize(query)
+        normalized = NoteLinkInput.normalize(query).flatMap { accepts($0) ? $0 : nil }
         var items: [NoteMenuList.Item] = []
         if let normalized {
             var item = NoteMenuList.Item(id: "apply", title: NoteLinkInput.displayText(normalized))
@@ -108,7 +111,7 @@ final class NoteLinkEditorView: NSView, NoteFloatingPanelContent {
             remove.isDestructive = true
             items.append(remove)
         }
-        list.noResultsTitle = query.isEmpty ? "Paste a link or find a note" : "That’s not a link, and no notes match."
+        list.noResultsTitle = query.isEmpty ? emptyTitle : noMatchTitle
         list.setItems(items, keepingHighlight: false)
         if let first = items.first(where: \.isEnabled), !query.isEmpty || existingLink == nil {
             list.highlight(id: first.id, animated: false)

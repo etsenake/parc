@@ -19,7 +19,7 @@ struct EaselToolbarButtonModel: Equatable {
         case symbolAndText(String, String)
     }
     enum Mark: Equatable { case none, italic, underline, strikethrough }
-    enum Opens: Equatable { case nothing, menu, stylePicker, shapePicker }
+    enum Opens: Equatable { case nothing, menu, stylePicker, shapePicker, highlightPicker }
 
     var control: EaselToolbarControl
     var face: Face
@@ -114,7 +114,7 @@ extension EaselCanvasView {
             return selected.count == 1 && selected.allSatisfy { EaselObjectLink.canLink($0) && !$0.isLocked }
         case .more: return true
         case .codeLanguage: return selected.allSatisfy { $0.kind == .code } && selected.contains { !$0.isLocked }
-        default: return selectionToolbarBoardSupports(control, selected: selected) ?? connectorToolbarSupports(control, selected: selected) ?? false
+        default: return selectionToolbarTextSupports(control, selected: selected) ?? selectionToolbarBoardSupports(control, selected: selected) ?? connectorToolbarSupports(control, selected: selected) ?? false
         }
     }
 
@@ -143,7 +143,7 @@ extension EaselCanvasView {
                          isChecked: editor?.hasEmphasis(emphasis) == true, isEnabled: !composing, mark: Self.mark(for: emphasis))
         case .paragraph:
             let kind = editor?.paragraphKind()
-            return .init(control: control, face: .text(kind?.rawValue ?? "Mixed"), name: "Paragraph style",
+            return .init(control: control, face: .text(kind?.rawValue ?? "Mixed"), name: "Turn Into",
                          isEnabled: !composing && editor?.selectedRanges.count == 1, opens: .menu, showsDisclosure: true)
         case .textFill:
             return .init(control: control, face: .symbol("highlighter"), name: "Text fill",
@@ -162,7 +162,7 @@ extension EaselCanvasView {
             let title = languages.count == 1 ? languages.first.map { EaselCodeBlock.displayName($0) } ?? "Mixed" : "Mixed"
             return .init(control: control, face: .text(title), name: "Language", opens: .menu, showsDisclosure: true)
         default:
-            return selectionToolbarBoardButton(control, selected: selected) ?? connectorToolbarButton(control, selected: selected)
+            return selectionToolbarTextButton(control) ?? selectionToolbarBoardButton(control, selected: selected) ?? connectorToolbarButton(control, selected: selected)
                 ?? .init(control: control, face: .symbol("ellipsis"), name: "More", opens: .menu)
         }
     }
@@ -185,8 +185,7 @@ extension EaselCanvasView {
         case .paragraph:
             let current = editor?.paragraphKind()
             return EaselParagraphEditing.Kind.allCases.map { kind in
-                EaselToolbarMenuEntry(id: kind.rawValue, title: kind.rawValue, isChecked: kind == current,
-                                      separatorBefore: kind == .bullets)
+                EaselToolbarMenuEntry(id: kind.rawValue, title: kind.rawValue, isChecked: kind == current)
             }
         case .codeLanguage:
             let current = selectedCodeLanguages
@@ -219,7 +218,7 @@ extension EaselCanvasView {
             guard editor.selectedRange().length > 0, !editor.hasMarkedText() else { return false }
             editLink(relativeTo: anchor ?? editor, rect: anchor == nil ? editor.revealedSelectionRect() : nil)
         default:
-            guard performSelectionToolbarBoard(control, anchor: anchor) == true || performConnectorToolbar(control) == true else { return false }
+            guard performSelectionToolbarText(control) == true || performSelectionToolbarBoard(control, anchor: anchor) == true || performConnectorToolbar(control) == true else { return false }
         }
         refreshTextControls()
         return true

@@ -1,7 +1,7 @@
 import Foundation
 
 package enum EaselToolbarSubject: String, CaseIterable, Equatable {
-    case text, sticky, shape, connector, section, image, drawing, page, table, code, stamp, icon
+    case text, sticky, shape, connector, section, image, drawing, page, table, code, stamp, icon, media, equation
 
     package init(_ kind: EaselItemKind) {
         switch kind {
@@ -16,17 +16,20 @@ package enum EaselToolbarSubject: String, CaseIterable, Equatable {
         case .table: self = .table
         case .code: self = .code
         case .stamp: self = .stamp
+        case .audio, .file, .pdf: self = .media
+        case .equation: self = .equation
         }
     }
 
     package init(_ item: EaselItem) {
+        if item.kind.isMedia, item.isEmptyPlaceholder { self = .media; return }
         self = EaselStyleFamily.of(item) == .icons ? .icon : EaselToolbarSubject(item.kind)
     }
 
     package var takesStyle: Bool {
         switch self {
-        case .text, .sticky, .shape, .connector, .section, .drawing, .icon: return true
-        case .image, .page, .table, .code, .stamp: return false
+        case .text, .sticky, .shape, .connector, .section, .drawing, .icon, .equation: return true
+        case .image, .page, .table, .code, .stamp, .media: return false
         }
     }
 }
@@ -34,13 +37,13 @@ package enum EaselToolbarSubject: String, CaseIterable, Equatable {
 package enum EaselToolbarControl: String, CaseIterable, Hashable {
     case unlock, sectionTitle, shape, connectorLabel
     case typeface, textSize, smaller, larger
-    case bold, italic, underline, strikethrough, paragraph
-    case color, textFill, startHead, endHead, routing
+    case bold, italic, underline, strikethrough, code, equation, paragraph
+    case color, highlight, textFill, startHead, endHead, routing
     case stickyShape, pattern
     case crop, imageMask, replaceImage, altText
     case mergeCells, cellFill
     case codeLanguage
-    case alignment, link
+    case alignment, link, mention
     case arrange, tidyUp, group, createSection, lock
     case more
 }
@@ -68,20 +71,21 @@ package enum EaselSelectionToolbarPlan {
     }
 
     private static let emphasis: [EaselToolbarControl] = [.bold, .italic, .underline, .strikethrough]
+    private static let marks: [EaselToolbarControl] = emphasis + [.code, .equation]
 
     package static func controls(for subject: EaselToolbarSubject, editingText: Bool) -> [[EaselToolbarControl]] {
         switch subject {
         case .text:
             return editingText
-                ? [[.typeface, .textSize, .smaller, .larger], emphasis, [.paragraph], [.color, .textFill], [.alignment], [.link]]
+                ? [[.typeface, .textSize, .smaller, .larger], marks, [.paragraph], [.color, .highlight, .textFill], [.alignment], [.link, .mention]]
                 : [[.typeface, .textSize, .smaller, .larger], [.color, .textFill], [.alignment], [.link]]
         case .sticky:
             return editingText
-                ? [[.color], emphasis, [.paragraph], [.alignment], [.link]]
+                ? [[.color, .highlight], marks, [.paragraph], [.alignment], [.link, .mention]]
                 : [[.color], [.alignment], [.link], [.stickyShape]]
         case .shape:
             return editingText
-                ? [[.color], emphasis, [.paragraph], [.alignment], [.link]]
+                ? [[.color, .highlight], marks, [.paragraph], [.alignment], [.link, .mention]]
                 : [[.shape], [.color], [.alignment], [.link]]
         case .connector:
             return editingText ? [[.bold, .strikethrough]] : [[.connectorLabel], [.color], [.startHead, .endHead], [.routing]]
@@ -93,7 +97,9 @@ package enum EaselSelectionToolbarPlan {
             return [[.crop, .imageMask, .replaceImage, .altText]]
         case .drawing:
             return [[.color, .pattern]]
-        case .page, .stamp:
+        case .equation:
+            return [[.color]]
+        case .page, .stamp, .media:
             return []
         case .table:
             return editingText
@@ -122,7 +128,6 @@ package struct EaselSelectionToolbarPlacement: Equatable {
 
     package var frame: EaselRect
     package var edge: Edge
-
     package init(frame: EaselRect, edge: Edge) {
         self.frame = frame
         self.edge = edge

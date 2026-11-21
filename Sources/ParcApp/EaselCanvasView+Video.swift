@@ -1,44 +1,7 @@
 import AppKit
 import AVFoundation
-import AVKit
 import ParcCore
 import UniformTypeIdentifiers
-
-@MainActor
-final class EaselVideoSurface: AVPlayerView {
-    let itemID: UUID
-    let assetID: String
-    var onEscape: (() -> Void)?
-
-    init(itemID: UUID, assetID: String, frame: NSRect) {
-        self.itemID = itemID
-        self.assetID = assetID
-        super.init(frame: frame)
-        controlsStyle = .inline
-        showsFullScreenToggleButton = true
-        allowsPictureInPicturePlayback = true
-        videoGravity = .resizeAspect
-        wantsLayer = true
-        layer?.cornerRadius = 8
-        layer?.cornerCurve = .continuous
-        layer?.masksToBounds = true
-        setAccessibilityLabel("Video player")
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53, event.modifierFlags.intersection([.command, .option, .control]).isEmpty, let onEscape {
-            onEscape()
-            return
-        }
-        super.keyDown(with: event)
-    }
-
-    override func cancelOperation(_ sender: Any?) {
-        if let onEscape { onEscape() } else { super.cancelOperation(sender) }
-    }
-}
 
 @MainActor
 enum EaselVideoFacts {
@@ -64,13 +27,11 @@ enum EaselVideoFacts {
 extension EaselCanvasView {
     static let movieTypes: [UTType] = [.mpeg4Movie, .quickTimeMovie, .movie]
 
-    var playingVideo: EaselVideoSurface? { imageEditing.video }
-
     func insertMediaFile(_ url: URL) throws {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey])
         let movie = values.contentType?.conforms(to: .movie) == true
         guard values.isRegularFile == true, let size = values.fileSize else { throw EaselStoreError.invalidImage }
-        guard size <= EaselStore.maximumAssetBytes else { throw movie ? EaselStoreError.videoTooLarge : EaselStoreError.tooLarge }
+        guard size <= EaselStore.maximumAssetBytes else { throw movie ? EaselStoreError.videoTooLarge : EaselStoreError.assetImageTooLarge }
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
         if movie || EaselAssetType.sniff(data)?.isVideo == true {
             try insertVideo(data, from: url)
@@ -131,7 +92,7 @@ extension EaselCanvasView {
                         from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         }
         NSGraphicsContext.restoreGraphicsState()
-        guard controls, imageEditing.video?.itemID != item.id, let disc = videoPlayRect(in: r) else { return }
+        guard controls, let disc = videoPlayRect(in: r) else { return }
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.18)
@@ -164,7 +125,7 @@ extension EaselCanvasView {
     func videoPlayTarget(at point: NSPoint) -> EaselItem? {
         guard let item = items.last(where: {
             !$0.isLocked && NSRect(x: $0.frame.x, y: $0.frame.y, width: $0.frame.width, height: $0.frame.height).contains(point)
-        }), item.kind == .video, imageEditing.video?.itemID != item.id,
+        }), item.kind == .video, !isPlayingVideo(item.id),
               let disc = videoPlayRect(in: NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height)),
               disc.contains(point) else { return nil }
         return item
@@ -172,62 +133,25 @@ extension EaselCanvasView {
 
     @discardableResult
     func playVideo(_ id: UUID) -> Bool {
-        guard let item = session.document.items.first(where: { $0.id == id && $0.kind == .video }), let assetID = item.assetID,
-              let url = try? session.assetURL(assetID), window != nil, !session.isClosed else { return false }
-        if imageEditing.video?.itemID == id { imageEditing.video?.player?.play(); return true }
+        guard session.document.items.contains(where: { $0.id == id && $0.kind == .video }), window != nil, !session.isClosed else { return false }
         finishImageCrop(save: true)
-        stopVideoPlayback()
         if selection != [id] { selection = [id] }
-        let surface = EaselVideoSurface(itemID: id, assetID: assetID,
-                                        frame: NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height))
-        surface.onEscape = { [weak self] in self?.pauseVideo(returningFocus: true) }
-        let player = AVPlayer(url: url)
-        surface.player = player
-        imageEditing.video = surface
-        addSubview(surface, positioned: .above, relativeTo: nil)
-        player.play()
-        artwork[id]?.needsDisplay = true
-        setNeedsDisplay(NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height))
         needsLayout = true
-        NSAccessibility.post(element: self, notification: .layoutChanged)
-        return true
+        layoutSubtreeIfNeeded()
+        let played = performHostedAction(.play, on: id)
+        if played { NSAccessibility.post(element: self, notification: .layoutChanged) }
+        return played
     }
 
     func pauseVideo(returningFocus: Bool = false) {
-        guard let surface = imageEditing.video else { return }
-        surface.player?.pause()
+        guard let id = playingHostedVideo else { return }
+        performHostedAction(.pause, on: id)
         if returningFocus { window?.makeFirstResponder(self) }
     }
 
     func stopVideoPlayback() {
-        guard let surface = imageEditing.video else { return }
-        imageEditing.video = nil
-        surface.player?.pause()
-        surface.player = nil
-        surface.removeFromSuperview()
-        if let item = session.document.items.first(where: { $0.id == surface.itemID }) {
-            let r = NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height)
-            setNeedsDisplay(r.insetBy(dx: -4, dy: -4))
-            artwork[item.id]?.needsDisplay = true
-        }
+        guard playingHostedVideo != nil else { return }
+        performHostedAction(.stopAll, on: nil)
         NSAccessibility.post(element: self, notification: .layoutChanged)
-    }
-
-    var videoSurfaces: [NSView] { imageEditing.video.map { [$0] } ?? [] }
-
-    func layoutVideoSurface() {
-        guard let surface = imageEditing.video else { return }
-        guard window != nil, !isHiddenOrHasHiddenAncestor,
-              let item = session.document.items.first(where: { $0.id == surface.itemID }), item.assetID == surface.assetID else {
-            stopVideoPlayback()
-            return
-        }
-        let frame = NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height)
-        if surface.superview === self, surface.frame != frame { surface.frame = frame }
-    }
-
-    func videoSurfaceHit(_ hit: NSView) -> Bool {
-        guard let surface = imageEditing.video else { return false }
-        return hit === surface || hit.isDescendant(of: surface)
     }
 }

@@ -223,14 +223,6 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
         })
     }
 
-    override func loadURL(for url: URL, entry: EmbeddedPageEntry) -> URL {
-        (entry.surface as? NoteEmbedSurface)?.liveAddress ?? url
-    }
-
-    override func referrer(for entry: EmbeddedPageEntry) -> URL? {
-        entry.surface is NoteCaptureLiveSurface ? nil : NoteEmbedAddress.embedderReferrer(appID: Bundle.main.bundleIdentifier)
-    }
-
     func activate(_ block: NoteBlockID) {
         guard let entry = entries[block.raw], wants(block.raw, entry) else { return }
         synchronize(wanted: { [unowned self] in self.wants($0, $1) }, selection: block.raw, interacting: true)

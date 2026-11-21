@@ -25,7 +25,7 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
     private static var thumbnails: [String: NSImage] = [:]
 
     let environment: NoteEnvironment
-    let hasCover: Bool
+    var hasCover: Bool { didSet { removeChip.isHidden = !hasCover } }
     let tabs = Tab.available
     var onChoose: ((NoteCover) -> Void)?
     var onRemove: (() -> Void)?
@@ -312,13 +312,20 @@ final class NoteCoverTile: PointingHandButton {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { isHovered = false; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+    override func mouseMoved(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+    override func mouseExited(with event: NSEvent) { setHovered(false) }
+
+    private func setHovered(_ value: Bool) {
+        guard value != isHovered else { return }
+        isHovered = value
+        needsDisplay = true
+    }
 
     override func mouseDown(with event: NSEvent) {
         press(true)
@@ -483,11 +490,11 @@ final class NotePageIconPicker: NSView, NoteFloatingPanelContent {
     private let linkField = NoteSearchField(placeholder: "Or paste an image link…")
     private let librarySwitch = NoteToggleSwitch(label: "Add to this folder’s emoji")
     private let libraryLabel = NSTextField(labelWithString: "Also add it to this folder’s emoji")
-    private let hasIcon: Bool
+    var current: String? { didSet { if current != oldValue { refreshCurrent() } } }
 
     init(environment: NoteEnvironment, current: String?) {
         self.environment = environment
-        hasIcon = !(current ?? "").isEmpty
+        self.current = current
         picker = NoteEmojiPicker(showsRemove: false, showsRandom: true, library: environment.emojiLibrary)
         super.init(frame: NSRect(x: 0, y: 0, width: NoteEmojiPicker.preferredSize.width,
                                  height: NoteEmojiPicker.preferredSize.height + Self.tabHeight))
@@ -495,12 +502,11 @@ final class NotePageIconPicker: NSView, NoteFloatingPanelContent {
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Icon Picker")
-        if let current, !NotePageImageLoader.isImageSource(current) { picker.currentEmoji = current }
+        picker.freezesRecents = true
         picker.onPick = { [weak self] emoji in self?.onPick?(emoji) }
         picker.onCancel = { [weak self] in self?.onCancel?() }
         emojiTab.onPress = { [weak self] in self?.select(.emoji) }
         uploadTab.onPress = { [weak self] in self?.select(.upload) }
-        removeChip.isHidden = !hasIcon
         removeChip.setToolTip("Remove icon")
         removeChip.onPress = { [weak self] in self?.onRemove?() }
         dropZone.onFile = { [weak self] url in self?.importFile(url) }
@@ -514,11 +520,18 @@ final class NotePageIconPicker: NSView, NoteFloatingPanelContent {
         for view in [emojiTab, uploadTab, removeChip, separator, picker, dropZone, linkField, librarySwitch, libraryLabel] as [NSView] {
             addSubview(view)
         }
+        refreshCurrent()
         select(.emoji)
         refreshAppearance()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private func refreshCurrent() {
+        let icon = (current ?? "").isEmpty ? nil : current
+        picker.currentEmoji = icon.flatMap { NotePageImageLoader.isImageSource($0) ? nil : $0 }
+        removeChip.isHidden = icon == nil
+    }
 
     override var isFlipped: Bool { true }
     override var intrinsicContentSize: NSSize {

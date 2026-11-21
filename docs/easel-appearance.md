@@ -25,7 +25,10 @@ Under the chips, "Or start from a template" heads the template gallery's card
 row ([templates](easel-board-features.md#templates)); the Easel editor hands
 its one `EaselTemplateGallery` to the canvas as an `EaselEmptyStateRow`, the
 card plates line up with the words, and the row drops to fewer columns when the
-view is narrow or zoomed in. Easel blocks in notes show the words and chips
+view is narrow or zoomed in. It also shows only the rows that fit between the
+words and the floating tool bar, so a short window or split never leaves a card
+half under the bar; with no room for a row the heading goes too, and every
+template stays a click away in the tool bar. Easel blocks in notes show the words and chips
 only. The whole group lives on the canvas, so it zooms and scrolls with the
 paper and follows light and dark, and only its chips and cards take clicks:
 clicking anywhere else places or selects as usual. It fades and rises 4 points
@@ -81,14 +84,14 @@ change as one Undo step, and a closed or deleted Easel refuses them. The
 original text storage, glyph layout, fill contour, typing history and document
 transactions remain the only text owners.
 
-The tool palette under the title is the Notes format bar: a 36-point Notes menu
+The floating tool bar is the Notes format bar: a 36-point Notes menu
 card with its hairline and shadow, holding 28-point Notes toolbar buttons
 grouped as navigation, objects, tools, inserts and zoom, with hairline dividers
 between groups ([tools and navigation](easel-tools.md) lists the slots). Buttons
 use the Notes button states: secondary ink at rest, hover and pressed washes,
-and the checked fill and ink for the current tool or an open picker; variant
+a sliding checked pill and checked ink for the current tool, the checked fill for an open picker; variant
 buttons carry the Notes disclosure chevron, and the zoom slot shows its
-percentage in the Notes chrome font. It sits centered under the title, which is
+percentage in the Notes chrome font. It floats centred at the bottom of the Easel. The title is
 Nunito ExtraBold in the Notes title ink over a caption-style status line. Undo
 and redo are 28-point Notes chrome buttons on the title row, with Parc
 tooltips showing ⌘Z and ⇧⌘Z as keycaps; shape picker cells, its pin, template
@@ -101,12 +104,10 @@ follows the canvas's current tool and scrolls horizontally when the window is
 narrower than the controls. Its explicit overlay scrollbar preserves the full
 control height even under the system legacy-scrollbar preference. Placement
 ghosts are dashed outlines in the Notes accent over a 10% accent wash, and the
-Recenter chip is a filled Notes chip. The ordinary Add Link action now presents the existing
-window-owned URL editor, with a compact address-only layout. Its original
-owner/visibility/IME/cancellation gates also cover this presentation. The rich
-range-link editor retains its separate original-range/revision guard. Both use
-plain controls, eight-point corners, semantic outlines and visible invalid-URL
-feedback; no browser page is created by either editor itself.
+Recenter chip is a filled Notes chip. The object and range link editors, the custom text size panel and the
+add-an-image Easel picker are Notes floating panels ([text](easel-text.md#range-links)).
+The range-link editor keeps its original-range/revision guard; no browser page
+is created by any editor itself.
 
 ## Ink and saved colours
 
@@ -193,9 +194,8 @@ style and shape pickers the Easel pickers in a Notes popover,
 rather than native pop-up buttons, and its buttons draw SF Symbols or letter
 glyphs. Selected/pressed/disabled washes and native focus
 rings are explicit AppKit feedback adaptations; their drawing never changes
-logical state. The rich-link editor's Remove/Apply actions and the webpage
-Address/Search controls retain their existing semantic layout. These are
-native presentation choices.
+logical state. The webpage Address/Search controls keep their existing semantic layout. These
+are native presentation choices.
 
 The focus/geometry action owners and shared annotation
 eligibility predicates are integrated at drawing, hit admission, cursor

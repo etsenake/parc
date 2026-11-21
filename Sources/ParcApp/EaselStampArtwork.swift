@@ -22,16 +22,17 @@ enum EaselStampArtwork {
     private static var unavailableSymbols: Set<String> = []
     private static var emojiSizes: [String: NSSize] = [:]
 
-    static func draw(_ item: EaselItem, in rect: NSRect, ink: NSColor) {
+    static func draw(_ item: EaselItem, in rect: NSRect, ink: NSColor, library: NoteEmojiLibrary? = nil) {
         guard let face = EaselStampFace(item: item) else { return }
-        draw(face, in: rect, ink: ink)
+        draw(face, in: rect, ink: ink, library: library)
     }
 
-    static func draw(_ face: EaselStampFace, in rect: NSRect, ink: NSColor) {
+    static func draw(_ face: EaselStampFace, in rect: NSRect, ink: NSColor, library: NoteEmojiLibrary? = nil) {
         guard rect.width > 0, rect.height > 0, rect.width.isFinite, rect.height.isFinite else { return }
         switch face {
         case .design(let design): drawDesign(design, in: rect)
-        case .emoji(let character): drawEmoji(character, in: rect)
+        case .emoji(let character):
+            if let name = EaselStampFace.customName(in: character) { drawCustomEmoji(name, character, in: rect, library: library) } else { drawEmoji(character, in: rect) }
         case .icon(let name): drawIcon(name, in: rect, color: ink)
         }
     }
@@ -130,6 +131,32 @@ enum EaselStampArtwork {
             .draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
     }
 
+    static var customEmojiLibrary: NoteEmojiLibrary? {
+        let libraries = NoteFolderPreferences.allFolders.map { NoteEmojiLibrary.library(root: $0) }
+        return libraries.first { !$0.isEmpty } ?? libraries.first
+    }
+
+    static func customEmojiImage(_ name: String, library: NoteEmojiLibrary? = nil) -> NSImage? {
+        NoteCustomEmojiImages.image(name, in: library ?? customEmojiLibrary)
+    }
+
+    private static func drawCustomEmoji(_ name: String, _ reference: String, in rect: NSRect, library: NoteEmojiLibrary?) {
+        let side = min(rect.width, rect.height) * CGFloat(EaselStamps.emojiScale)
+        guard side >= 1 else { return }
+        let target = NSRect(x: rect.midX - side / 2, y: rect.midY - side / 2, width: side, height: side)
+        if let image = customEmojiImage(name, library: library), image.size.width > 0, image.size.height > 0 {
+            let fit = min(side / image.size.width, side / image.size.height)
+            let size = NSSize(width: image.size.width * fit, height: image.size.height * fit)
+            image.draw(in: NSRect(x: target.midX - size.width / 2, y: target.midY - size.height / 2, width: size.width, height: size.height),
+                       from: .zero, operation: .sourceOver, fraction: 1)
+            return
+        }
+        let font = NSFont.systemFont(ofSize: max(1, min(side, side * 2.2 / CGFloat(max(reference.count, 1)))), weight: .semibold)
+        let text = NSAttributedString(string: reference, attributes: [.font: font, .foregroundColor: NoteTheme.menuSecondaryInk])
+        let size = text.size()
+        text.draw(at: NSPoint(x: target.midX - size.width / 2, y: target.midY - size.height / 2))
+    }
+
     static func symbol(_ name: String) -> NSImage? {
         if let cached = symbols[name] { return cached }
         guard !unavailableSymbols.contains(name) else { return nil }
@@ -195,6 +222,7 @@ enum EaselStampArtwork {
 
     private static func emojiName(_ face: EaselStampFace) -> String? {
         guard case .emoji(let character) = face else { return nil }
+        if let name = EaselStampFace.customName(in: character) { return name }
         return NoteEmojiCatalog.shared.entry(for: character)?.displayName
     }
 }

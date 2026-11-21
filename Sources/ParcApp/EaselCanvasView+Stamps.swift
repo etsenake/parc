@@ -8,6 +8,7 @@ protocol EaselStampPanelsPresenting: AnyObject {
     var isPickerOpen: Bool { get }
     var onPick: ((EaselStampFace) -> Void)? { get set }
     var onPickerClose: (() -> Void)? { get set }
+    var emojiLibrary: NoteEmojiLibrary? { get set }
     func presentWheel(in host: NSView, at point: NSPoint, below control: NSRect?, recents: [EaselStampFace], current: EaselStampFace)
     func presentPicker(in host: NSView, at point: NSPoint)
     func close(animated: Bool)
@@ -22,6 +23,9 @@ final class EaselCanvasStampState {
         let began: CFTimeInterval
         let tilt: Double
         var side: Double
+        var stage = 0
+        var stageStart: CFTimeInterval = 0
+        var stageFrom: Double = 0
     }
 
     static let recentsKey = "easel.stampRecents"
@@ -43,11 +47,11 @@ final class EaselCanvasStampState {
         set { UserDefaults.standard.set(newValue, forKey: Self.recentsKey) }
     }
 
-    func cursor(for face: EaselStampFace) -> NSCursor {
+    func cursor(for face: EaselStampFace, library: NoteEmojiLibrary?) -> NSCursor {
         if let cached = cursors[face.token] { return cached }
         let side: CGFloat = 30
         let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { rect in
-            EaselStampArtwork.draw(face, in: rect.insetBy(dx: 4, dy: 4), ink: NoteTheme.menuInk)
+            EaselStampArtwork.draw(face, in: rect.insetBy(dx: 4, dy: 4), ink: NoteTheme.menuInk, library: library)
             return true
         }
         let made = NSCursor(image: image, hotSpot: NSPoint(x: side / 2, y: side / 2))
@@ -58,7 +62,9 @@ final class EaselCanvasStampState {
 }
 
 extension EaselCanvasView {
-    var stampCursor: NSCursor { stamps.cursor(for: stamps.face) }
+    var stampCursor: NSCursor { stamps.cursor(for: stamps.face, library: stampEmojiLibrary) }
+
+    var stampEmojiLibrary: NoteEmojiLibrary? { notesFolder?().map { NoteEmojiLibrary.library(for: $0.appendingPathComponent("Easel", isDirectory: false)) } }
 
     static var stampPanelsFactory: (@MainActor () -> EaselStampPanelsPresenting)?
 
@@ -97,6 +103,7 @@ extension EaselCanvasView {
     func openStampWheel(from control: NSView? = nil) {
         guard tool == .stamp, window != nil, let panels = stampPanels else { return }
         let host = menuHost
+        panels.emojiLibrary = stampEmojiLibrary
         let below: NSRect? = control.flatMap { $0.window === window ? host.convert($0.bounds, from: $0) : nil }
         panels.presentWheel(in: host, at: host.convert(stampAnchor(), from: self), below: below,
                             recents: EaselStamps.hubFaces(stamps.recents), current: stamps.face)
@@ -106,6 +113,7 @@ extension EaselCanvasView {
     func openStampPicker() {
         guard tool == .stamp, window != nil, let panels = stampPanels else { return }
         let host = menuHost
+        panels.emojiLibrary = stampEmojiLibrary
         panels.presentPicker(in: host, at: host.convert(stampAnchor(), from: self))
     }
 
@@ -126,6 +134,7 @@ extension EaselCanvasView {
         stamps.press = EaselCanvasStampState.Press(id: UUID(), face: stamps.face, point: point, began: CACurrentMediaTime(),
                                                    tilt: EaselStamps.tilt(using: &stamps.random), side: EaselStamps.sizes[0])
         refreshStampDraft()
+        if let id = stamps.press?.id { raiseStampDraft(id) }
         stamps.timer?.invalidate()
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
             guard let self else { timer.invalidate(); return }
@@ -148,7 +157,8 @@ extension EaselCanvasView {
         stamps.timer?.invalidate()
         stamps.timer = nil
         let side = EaselStamps.side(heldFor: CACurrentMediaTime() - press.began)
-        guard placeStamp(press.face, at: point, side: side, tilt: press.tilt, id: press.id) else { return false }
+        seedStampSlam(press.id, drawnSide: press.side, placedSide: side)
+        guard placeStamp(press.face, at: point, side: side, tilt: press.tilt, id: press.id, pointer: true) else { return false }
         stopStampPress()
         return true
     }
@@ -159,6 +169,7 @@ extension EaselCanvasView {
     }
 
     private func stopStampPress() {
+        if let id = stamps.press?.id { lowerStampDraft(id) }
         stamps.timer?.invalidate()
         stamps.timer = nil
         stamps.press = nil
@@ -168,10 +179,19 @@ extension EaselCanvasView {
 
     private func growStamp() {
         guard let press = stamps.press, start != nil else { cancelStampPress(); return }
-        let target = EaselStamps.side(heldFor: CACurrentMediaTime() - press.began)
-        var side = press.side
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || abs(target - side) < 0.5 { side = target } else { side += (target - side) * 0.28 }
-        guard side != press.side else { return }
+        let now = CACurrentMediaTime()
+        let stage = EaselStamps.stage(heldFor: now - press.began)
+        if stage != press.stage {
+            stamps.press?.stage = stage
+            stamps.press?.stageStart = now
+            stamps.press?.stageFrom = press.side
+            EaselCanvasHaptics.snap()
+        }
+        guard let current = stamps.press else { return }
+        let side = EaselStampGrowth.side(from: current.stage == 0 ? current.side : current.stageFrom, to: EaselStamps.sizes[current.stage],
+                                         since: now - current.stageStart,
+                                         reduced: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        guard abs(side - press.side) > 0.01 else { return }
         stamps.press?.side = side
         refreshStampDraft()
     }
@@ -196,10 +216,11 @@ extension EaselCanvasView {
     }
 
     @discardableResult
-    private func placeStamp(_ face: EaselStampFace, at point: NSPoint, side: Double, tilt: Double, id: UUID) -> Bool {
+    private func placeStamp(_ face: EaselStampFace, at point: NSPoint, side: Double, tilt: Double, id: UUID, pointer: Bool = false) -> Bool {
         guard !session.isClosed, !session.isDeleted, fixedCanvasSize == nil, finishEditing() else { return false }
         let item = stampItem(face, at: point, side: side, tilt: tilt, id: id)
-        guard commit("Add stamp", { $0.items.append(item) }) else { return false }
+        guard withObjectMotion(.appear, { commit("Add stamp", { $0.items.append(item) }) }) else { return false }
+        if pointer { EaselCanvasHaptics.thud() }
         stamps.recents = EaselStamps.recording(face, in: stamps.recents)
         window?.makeFirstResponder(self)
         announceStamp("Added \(EaselStampArtwork.accessibilityLabel(face).lowercased())")
@@ -228,7 +249,8 @@ extension EaselCanvasView {
             stamp.attachedTo = target
             placed.append(stamp)
         }
-        guard !placed.isEmpty, commit(placed.count == 1 ? "Add stamp" : "Add stamps", { $0.items.append(contentsOf: placed) }) else { return false }
+        guard !placed.isEmpty, withObjectMotion(.appear, { commit(placed.count == 1 ? "Add stamp" : "Add stamps", { $0.items.append(contentsOf: placed) }) })
+        else { return false }
         stamps.recents = EaselStamps.recording(face, in: stamps.recents)
         announceStamp("Added \(EaselStampArtwork.accessibilityLabel(face).lowercased())")
         return true

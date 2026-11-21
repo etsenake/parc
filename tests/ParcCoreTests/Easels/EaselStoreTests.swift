@@ -258,8 +258,6 @@ import Testing
             expectThrows("non-finite geometry") { try session.perform("Bad") { $0.items = [EaselItem(kind: .text, frame: .init(x: .nan, y: 0, width: 1, height: 1))] } }
             expectThrows("negative size") { try session.perform("Bad") { $0.items = [EaselItem(kind: .text, frame: .init(x: 0, y: 0, width: -2, height: 1))] } }
             expectThrows("duplicate ID") { try session.perform("Bad") { let item = EaselItem(kind: .text, frame: frame); $0.items = [item, item] } }
-            expectThrows("image requires asset") { try session.perform("Bad") { $0.items = [EaselItem(kind: .image, frame: frame)] } }
-            expectThrows("link requires URL") { try session.perform("Bad") { $0.items = [EaselItem(kind: .link, frame: frame)] } }
             expectThrows("javascript URL") { try session.perform("Bad") { $0.items = [EaselItem(kind: .link, frame: frame, url: "javascript:alert(1)")] } }
             expectThrows("file URL") { try session.perform("Bad") { $0.items = [EaselItem(kind: .link, frame: frame, url: "file:///tmp/example")] } }
             expectThrows("arrow requires endpoints") { try session.perform("Bad") { $0.items = [EaselItem(kind: .arrow, frame: frame)] } }
@@ -268,7 +266,7 @@ import Testing
             expectThrows("immutable ID") { try session.perform("Bad") { $0.id = UUID() } }
             expectThrows("immutable creation time") { try session.perform("Bad") { $0.createdAt = .distantPast } }
             expectThrows("version mutation") { try session.perform("Bad") { $0.version = 20 } }
-            expectThrows("mutation throwing") { try session.perform("Bad") { $0.title = "Uncommitted"; throw EaselStoreError.tooLarge } }
+            expectThrows("mutation throwing") { try session.perform("Bad") { $0.title = "Uncommitted"; throw EaselStoreError.documentTooLarge } }
             #expect(session.document == original, "Failed transactions never publish")
             #expect(!session.canUndo && !session.canRedo, "Failed transactions add no history")
             #expect(try! Data(contentsOf: file(directory, original.id)) == bytes, "Failed validation preserves original file exactly")

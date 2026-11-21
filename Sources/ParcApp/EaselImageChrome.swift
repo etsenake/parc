@@ -313,7 +313,11 @@ private final class EaselImageCropBar: NSView {
     func update(_ draft: EaselImageCropDraft) {
         self.draft = draft
         let title = draft.mask == .circle ? "Circle" : draft.aspect.title
-        ratioButton.content = .iconAndText(.symbol("aspectratio"), title)
+        let ratio = NoteToolbarButton.Content.iconAndText(.symbol("aspectratio"), title)
+        if ratioButton.content != ratio {
+            ratioButton.content = ratio
+            EaselControlSurface.crossfade(ratioButton, duration: NoteAnimation.hoverDuration, pops: nil)
+        }
         ratioButton.setAccessibilityValue(title)
         maskButton.setAccessibilityValue(draft.mask?.title ?? NoteImageMask.noneTitle)
         zoomSlider.limit = draft.zoomLimit
@@ -342,16 +346,31 @@ private final class EaselCropZoomSlider: NSView {
         didSet {
             guard value != oldValue else { return }
             needsDisplay = true
+            placeKnob()
             setAccessibilityValue(Self.label(value))
         }
     }
-    var limit: CGFloat = EaselImageCropDraft.maximumZoom { didSet { if limit != oldValue { needsDisplay = true } } }
+    var limit: CGFloat = EaselImageCropDraft.maximumZoom { didSet { if limit != oldValue { needsDisplay = true; placeKnob() } } }
+    private let knobLayer = CALayer()
     var onChange: ((CGFloat) -> Void)?
     private var tracking = false
     private static let knob: CGFloat = 12
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        wantsLayer = true
+        knobLayer.bounds = CGRect(x: 0, y: 0, width: Self.knob, height: Self.knob)
+        knobLayer.cornerRadius = Self.knob / 2
+        knobLayer.borderWidth = 0.5
+        knobLayer.shadowRadius = 3
+        knobLayer.shadowOffset = CGSize(width: 0, height: 1)
+        knobLayer.shadowOpacity = 1
+        layer?.addSublayer(knobLayer)
+        NoteAnimation.observeReduceMotion(self) { [weak self] in
+            guard let self else { return }
+            NoteAnimation.settle(self)
+            NoteAnimation.withoutAnimation { self.knobLayer.transform = CATransform3DIdentity }
+        }
         setAccessibilityElement(true)
         setAccessibilityRole(.slider)
         setAccessibilityLabel("Zoom")
@@ -377,6 +396,33 @@ private final class EaselCropZoomSlider: NSView {
         pow(max(1, limit), min(1, max(0, fraction)))
     }
 
+    private func placeKnob() {
+        let bar = track
+        NoteAnimation.withoutAnimation {
+            knobLayer.position = CGPoint(x: bar.minX + bar.width * fraction, y: bounds.midY)
+            knobLayer.backgroundColor = NoteTheme.resolved(NoteTheme.menuFill, in: self)
+            knobLayer.borderColor = NoteTheme.resolved(NoteTheme.menuHairline, in: self)
+            knobLayer.shadowColor = NoteTheme.menuShadow.cgColor
+        }
+    }
+
+    private func grow(_ grown: Bool) {
+        guard !NoteAnimation.reduceMotion else { return }
+        NoteAnimation.springScale(knobLayer, to: grown ? 1.3 : 1, spring: grown ? .highlight : .press, key: NoteAnimation.keyPrefix + "easel.crop.knob")
+        NoteAnimation.spring(knobLayer, "shadowRadius", to: CGFloat(grown ? 6 : 3), spring: .highlight, key: NoteAnimation.keyPrefix + "easel.crop.knob.shadow")
+    }
+
+    override func layout() {
+        super.layout()
+        placeKnob()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+        placeKnob()
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         let bar = track
         NoteTheme.menuHairline.setFill()
@@ -384,27 +430,13 @@ private final class EaselCropZoomSlider: NSView {
         let filled = NSRect(x: bar.minX, y: bar.minY, width: bar.width * fraction, height: bar.height)
         NoteTheme.menuSecondaryInk.setFill()
         NSBezierPath(roundedRect: filled, xRadius: 1.5, yRadius: 1.5).fill()
-        let center = NSPoint(x: bar.minX + bar.width * fraction, y: bounds.midY)
-        let knob = NSRect(x: center.x - Self.knob / 2, y: center.y - Self.knob / 2, width: Self.knob, height: Self.knob)
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NoteTheme.menuShadow
-        shadow.shadowBlurRadius = 3
-        shadow.shadowOffset = NSSize(width: 0, height: -1)
-        shadow.set()
-        NoteTheme.menuFill.setFill()
-        NSBezierPath(ovalIn: knob).fill()
-        NSGraphicsContext.restoreGraphicsState()
-        NoteTheme.menuHairline.setStroke()
-        let rim = NSBezierPath(ovalIn: knob.insetBy(dx: 0.25, dy: 0.25))
-        rim.lineWidth = 0.5
-        rim.stroke()
     }
 
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 
     override func mouseDown(with event: NSEvent) {
         tracking = true
+        grow(true)
         update(with: event)
     }
 
@@ -416,6 +448,7 @@ private final class EaselCropZoomSlider: NSView {
     override func mouseUp(with event: NSEvent) {
         guard tracking else { return }
         tracking = false
+        grow(false)
         update(with: event)
     }
 

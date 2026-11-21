@@ -138,8 +138,13 @@ extension BrowserWindowController {
         } else if let peek = activePeek {
             available = { [weak self, weak peek] in
                 guard let self, let peek else { return false }
-                return common() && self.activePeek === peek && self.presentedPeek(for: peek.page) === peek
-                    && self.selectedNativePage() === peek.page && peek.canPrepareExit
+                guard common(), self.activePeek === peek, peek.canPrepareExit else { return false }
+                if let card = peek as? DocumentPeekController {
+                    guard let responder = self.window?.firstResponder as? NSView else { return true }
+                    return responder !== card.document && !responder.isDescendant(of: card.document)
+                }
+                guard let peek = peek as? PeekController else { return false }
+                return self.presentedPeek(for: peek.page) === peek && self.selectedNativePage() === peek.page
             }
             execute = { [weak peek] in
                 guard let peek, peek.canRequestExit else { return false }
@@ -476,12 +481,12 @@ extension BrowserWindowController {
                 }
                 if let page = InternalPage(urlString: tab.url) {
                     component.favicon = DocumentDefaultIcon.fallback(named: page.sidebarFallbackSymbol)
-                    if let note = page.noteURL {
-                        switch NoteTabIconArt.shared.art(forNote: note) {
+                    if let subject = NoteTabIconArt.Subject(tab: tab) {
+                        switch NoteTabIconArt.shared.art(for: subject) {
                         case .image(let image): component.favicon = image
                         case .pending:
                             component.faviconRequest = { completion in
-                                NoteTabIconArt.shared.requestImage(forNote: note, completion: completion)
+                                NoteTabIconArt.shared.requestImage(for: subject, completion: completion)
                             }
                         case .standard: break
                         }

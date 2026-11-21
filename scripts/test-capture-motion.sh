@@ -16,8 +16,8 @@ pathlib.Path(sys.argv[2]).write_text(
 PY
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
   "$check_root/Components.swift" "$repo_root/Sources/ParcCore/"*.swift "$repo_root/Sources/ParcApp/CapturePaletteView.swift" \
-  "$repo_root/Sources/ParcApp/CaptureModeBar.swift" "$repo_root/Sources/ParcApp/NoteTheme.swift" "$repo_root/Sources/ParcApp/NoteAnimation.swift" "$repo_root/Sources/ParcApp/NoteFloatingPanel.swift" \
-  "$repo_root/Sources/ParcApp/NoteControls.swift" "$repo_root/Sources/ParcApp/NoteCustomEmojiImages.swift" \
+  "$repo_root/Sources/ParcApp/CaptureModeBar.swift" "$repo_root/Sources/ParcApp/NoteTheme.swift" "$repo_root/Sources/ParcApp/NoteAnimation.swift" "$repo_root/Sources/ParcApp/NoteFloatingPanel.swift" "$repo_root/Sources/ParcApp/NoteCursor.swift" \
+  "$repo_root/Sources/ParcApp/NoteControls.swift" "$repo_root/Sources/ParcApp/NoteCustomEmojiImages.swift" "$repo_root/Sources/ParcApp/NoteIconEasel.swift" \
   "$repo_root/Sources/ParcApp/DocumentDefaultIcon.swift" "$repo_root/Sources/ParcApp/LibraryArtwork.swift" "$repo_root/tests/NotesEditor/NoteDesignSystemStubs.swift" \
   "$repo_root/Sources/ParcApp/CapturePresentation.swift" "$repo_root/Sources/ParcApp/CaptureMotion.swift" \
   "$repo_root/Sources/ParcApp/DownloadArrivalMotion.swift" "$repo_root/Sources/ParcApp/DownloadLibraryPreview.swift" \

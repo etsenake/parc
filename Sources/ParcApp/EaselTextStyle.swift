@@ -34,7 +34,11 @@ enum EaselTextAppearance {
     @MainActor static func isInlineCode(_ attributes: [NSAttributedString.Key: Any]) -> Bool {
         guard let fill = attributes[.backgroundColor] as? NSColor, let font = attributes[.font] as? NSFont,
               font.fontDescriptor.symbolicTraits.contains(.monoSpace) else { return false }
+        if EaselTextHighlight.note(of: fill) != nil { return isSystemMonospaced(font) }
         return (try? EaselRichTextCodec.hex(fill)) == (try? EaselRichTextCodec.hex(inlineCodeFill))
+    }
+    static func isSystemMonospaced(_ font: NSFont) -> Bool {
+        font.fontName.hasPrefix(".AppleSystemUIFontMonospaced") || font.fontName.hasPrefix(".SFMono")
     }
     static func color(_ hex: String) -> NSColor {
         let value = UInt32(hex.dropFirst(), radix: 16) ?? 0x252525
@@ -91,7 +95,7 @@ enum EaselTextLayout {
 
     @MainActor final class Layout {
         let storage: NSTextStorage
-        let manager = NSLayoutManager()
+        let manager: NSLayoutManager = EaselChecklistLayoutManager()
         let container: NSTextContainer
         let inset: NSSize
         init(_ value: NSAttributedString, width: CGFloat, height: CGFloat = 1_000_000, scale: Double = 1) {
@@ -310,15 +314,15 @@ struct EaselStyledText: Codable, Equatable {
     @MainActor func write(to pasteboard: NSPasteboard) throws {
         try validate()
         let encoded = try JSONEncoder().encode(self)
-        let value = attributed
+        let value = EaselInlineText.readable(attributed)
         let images = EaselTextAttachments.hasImages(value)
         let native = try value.data(from: NSRange(location: 0, length: value.length),
             documentAttributes: [.documentType: images ? NSAttributedString.DocumentType.rtfd : NSAttributedString.DocumentType.rtf])
-        guard encoded.count <= 8_388_608, native.count <= (images ? 8_388_608 : 4_194_304) else { throw EaselStoreError.tooLarge }
+        guard encoded.count <= 8_388_608, native.count <= (images ? 8_388_608 : 4_194_304) else { throw EaselStoreError.pasteTooLarge }
         let item = NSPasteboardItem()
         item.setData(encoded, forType: Self.pasteboardType)
         item.setData(native, forType: images ? .rtfd : .rtf)
-        item.setString(EaselTextAttachments.plainString(text), forType: .string)
+        item.setString(EaselRichText.readable(text, rich: richText), forType: .string)
         pasteboard.clearContents()
         guard pasteboard.writeObjects([item]) else { throw CocoaError(.fileWriteUnknown) }
     }
@@ -326,18 +330,18 @@ struct EaselStyledText: Codable, Equatable {
         let text: String
         if let string = pasteboard.string(forType: .string) ?? pasteboard.string(forType: .URL) { text = string }
         else if let data = pasteboard.data(forType: .rtfd) {
-            guard data.count <= 8_388_608 else { throw EaselStoreError.tooLarge }
+            guard data.count <= 8_388_608 else { throw EaselStoreError.pasteTooLarge }
             text = try NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.rtfd], documentAttributes: nil).string
         } else if let rtf = pasteboard.data(forType: .rtf) {
-            guard rtf.count <= 4_194_304 else { throw EaselStoreError.tooLarge }
+            guard rtf.count <= 4_194_304 else { throw EaselStoreError.pasteTooLarge }
             text = try NSAttributedString(data: rtf, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil).string
         } else { return nil }
-        guard text.utf8.count <= 1_048_576 else { throw EaselStoreError.tooLarge }
+        guard text.utf8.count <= 1_048_576 else { throw EaselStoreError.pasteTooLarge }
         return EaselTextAttachments.plainString(text)
     }
     @MainActor static func read(from pasteboard: NSPasteboard) throws -> EaselStyledText? {
         if let type = pasteboard.availableType(from: [pasteboardType, previousPasteboardType, legacyPasteboardType]), let data = pasteboard.data(forType: type) {
-            guard data.count <= 8_388_608 else { throw EaselStoreError.tooLarge }
+            guard data.count <= 8_388_608 else { throw EaselStoreError.pasteTooLarge }
             var value = try JSONDecoder().decode(Self.self, from: data)
             try value.validate()
             for run in value.richText?.runs ?? [] { if let image = run.attributes.image { _ = try EaselTextAttachments.image(data: image.data) } }
@@ -345,7 +349,7 @@ struct EaselStyledText: Codable, Equatable {
         }
         let type = pasteboard.availableType(from: [.rtfd, .rtf])
         guard let type, let data = pasteboard.data(forType: type) else { return nil }
-        guard data.count <= (type == .rtfd ? 8_388_608 : 4_194_304) else { throw EaselStoreError.tooLarge }
+        guard data.count <= (type == .rtfd ? 8_388_608 : 4_194_304) else { throw EaselStoreError.pasteTooLarge }
         let decoded = try NSAttributedString(data: data,
             options: [.documentType: type == .rtfd ? NSAttributedString.DocumentType.rtfd : NSAttributedString.DocumentType.rtf], documentAttributes: nil)
         let value = try EaselTextAttachments.normalized(decoded)
@@ -357,13 +361,25 @@ struct EaselStyledText: Codable, Equatable {
     }
 }
 
+enum EaselTextRequest {
+    case mention(dates: Bool)
+    case inlineEquation
+    case activate(Int)
+    case customEmoji(String, NSRange)
+}
+
 @MainActor
 protocol EaselTextCompletion: AnyObject {
     func attach(_ view: EaselStyledTextView)
     func textDidChange(in view: EaselStyledTextView)
     func handle(_ selector: Selector, in view: EaselStyledTextView) -> Bool
+    func perform(_ request: EaselTextRequest, in view: EaselStyledTextView) -> Bool
     func dismiss()
     func detach()
+}
+
+extension EaselTextCompletion {
+    func perform(_ request: EaselTextRequest, in view: EaselStyledTextView) -> Bool { false }
 }
 
 final class EaselStyledTextView: LocalContentDropTextView {
@@ -375,6 +391,10 @@ final class EaselStyledTextView: LocalContentDropTextView {
     var usesEaselObjectLayout = false
     var onObjectLayoutChanged: (() -> Void)?
     var objectStyle = EaselTextStyle() { didSet { refreshObjectFill() } }
+    @discardableResult override func scrollToVisible(_ rect: NSRect) -> Bool {
+        let scrolled = super.scrollToVisible(rect)
+        return EaselCaretReveal.keepClear(rect, of: self) || scrolled
+    }
     func refreshObjectFill() {
         guard usesEaselObjectLayout, let layoutManager else { return }
         let range = NSRange(location: 0, length: (string as NSString).length)
@@ -411,12 +431,40 @@ final class EaselStyledTextView: LocalContentDropTextView {
     var canRedoDocument: (() -> Bool)?
     override var undoManager: UndoManager? { localUndo }
     var onEditBoundary: (() -> Void)?
-    private var linkPopover: NSPopover?
-    weak var pendingPopover: NSPopover?
-    var hasPendingRangeAction: Bool { linkPopover?.isShown == true || pendingPopover?.isShown == true }
+    private var linkPanel: EaselPanelHandle?
+    weak var pendingPanel: EaselPanelHandle?
+    var hasPendingRangeAction: Bool { linkPanel?.isOpen == true || pendingPanel?.isOpen == true }
     private var editRevision = UUID()
     private var suppressMarkdown = false
     var onAlign: ((EaselTextStyle.Alignment) -> Void)?
+    var onBlockEquation: (() -> Bool)?
+    var onRepeatLastTint: (() -> Bool)?
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        installChecklistLayout()
+    }
+    override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
+        super.init(frame: frameRect, textContainer: container)
+        installChecklistLayout()
+    }
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        installChecklistLayout()
+    }
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addChecklistCursorRects()
+    }
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.type == .keyDown, isEditable, !hasMarkedText(), selectedRanges.count == 1, window?.firstResponder === self else {
+            return super.performKeyEquivalent(with: event)
+        }
+        if handleChecklistKey(event) { return true }
+        if NoteFormatShortcut.lastColor.matches(event) { return onRepeatLastTint?() ?? false }
+        if NoteFormatShortcut.code.matches(event) { toggleInlineCode(); return true }
+        if NoteFormatShortcut.equation.matches(event), completion?.perform(.inlineEquation, in: self) == true { return true }
+        return super.performKeyEquivalent(with: event)
+    }
     override func alignLeft(_ sender: Any?) { if let onAlign { onAlign(.left) } else { super.alignLeft(sender) } }
     override func alignCenter(_ sender: Any?) { if let onAlign { onAlign(.center) } else { super.alignCenter(sender) } }
     override func alignRight(_ sender: Any?) { if let onAlign { onAlign(.right) } else { super.alignRight(sender) } }
@@ -439,6 +487,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         EaselTextAttachments.bind(attributedString(), container: textContainer)
         typingAttributes.removeValue(forKey: .attachment)
         refreshObjectFill()
+        window?.invalidateCursorRects(for: self)
         super.didChangeText()
         if !suppressMarkdown, !localUndo.isUndoing, !localUndo.isRedoing { completion?.textDidChange(in: self) }
     }
@@ -459,11 +508,63 @@ final class EaselStyledTextView: LocalContentDropTextView {
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil { retire(); completion = nil }; super.viewWillMove(toWindow: newWindow)
     }
+    func beginMention() { _ = completion?.perform(.mention(dates: false), in: self) }
+    func beginDate() { _ = completion?.perform(.mention(dates: true), in: self) }
+    func insertInlineEquation() { _ = completion?.perform(.inlineEquation, in: self) }
+    func insertCustomEmoji(_ reference: String, replacing range: NSRange) -> Bool {
+        completion?.perform(.customEmoji(reference, range), in: self) == true
+    }
+    @discardableResult
+    func replace(_ range: NSRange, with inline: EaselRichText.Inline?, name: String) -> Bool {
+        let before = attributedString()
+        guard isEditable, !hasMarkedText(), Self.validFormattingRanges([range], length: before.length) else { return false }
+        var typing = range.location < before.length ? before.attributes(at: range.location, effectiveRange: nil) : typingAttributes
+        if range.length == 0, range.location > 0, range.location <= before.length {
+            typing = before.attributes(at: range.location - 1, effectiveRange: nil)
+        }
+        typing.removeValue(forKey: .attachment)
+        let replacement = inline.map { EaselInlineText.character($0, attributes: typing) } ?? NSAttributedString()
+        var after = typing; after.removeValue(forKey: .link)
+        var edit = EaselParagraphEditing.Edit(text: NSMutableAttributedString(attributedString: before), selection: range, typing: after)
+        EaselParagraphEditing.replace(&edit, range: range, with: replacement)
+        edit.selection = NSRange(location: range.location + replacement.length, length: 0)
+        let suppressed = suppressMarkdown; suppressMarkdown = true
+        defer { suppressMarkdown = suppressed }
+        commitParagraph(edit, name: name)
+        return attributedString().isEqual(to: edit.text)
+    }
+    func previewInline(_ inline: EaselRichText.Inline, at index: Int) {
+        guard let storage = textStorage, index >= 0, index < storage.length,
+              storage.attribute(.attachment, at: index, effectiveRange: nil) is EaselInlineAttachment else { return }
+        localUndo.disableUndoRegistration()
+        storage.addAttribute(.attachment, value: EaselInlineAttachment(inline: inline), range: NSRange(location: index, length: 1))
+        localUndo.enableUndoRegistration()
+        layoutManager?.invalidateLayout(forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
+        needsDisplay = true
+        onObjectLayoutChanged?()
+    }
+    func inlineIndex(at point: NSPoint) -> Int? {
+        guard let layoutManager, let textContainer, (string as NSString).length > 0 else { return nil }
+        let local = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        var fraction: CGFloat = 0
+        let glyph = layoutManager.glyphIndex(for: local, in: textContainer, fractionOfDistanceThroughGlyph: &fraction)
+        let rect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+        guard rect.contains(local) else { return nil }
+        let index = layoutManager.characterIndexForGlyph(at: glyph)
+        return EaselInlineText.inline(at: index, in: attributedString()) == nil ? nil : index
+    }
+    override func mouseDown(with event: NSEvent) {
+        if checklistPress(atWindowPoint: event.locationInWindow) { return }
+        if event.clickCount == 1, event.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty,
+           let index = inlineIndex(at: convert(event.locationInWindow, from: nil)),
+           completion?.perform(.activate(index), in: self) == true { return }
+        super.mouseDown(with: event)
+    }
     func finishComposition() {
         guard hasMarkedText() else { return }
         unmarkText(); didChangeText()
     }
-    func retire() { linkPopover?.close(); linkPopover = nil; completion?.dismiss(); editRevision = UUID() }
+    func retire() { linkPanel?.close(); linkPanel = nil; completion?.dismiss(); editRevision = UUID() }
     func resetEditingHistory() {
         let level = localUndo.groupingLevel, automatic = localUndo.groupsByEvent
         localUndo.groupsByEvent = false
@@ -487,6 +588,9 @@ final class EaselStyledTextView: LocalContentDropTextView {
             if !plain, let url = try EaselClipboardURL.read(from: board) {
                 return try pasteLink(url)
             }
+            if !plain, let styled = EaselClipboardText.attributed(from: board, typing: typingAttributes, base: objectStyle) {
+                return try pastePlainText(styled.string, styled: styled)
+            }
             if !plain, let payload = try EaselStyledText.read(from: board) {
                 let pasted = EaselStickyText.scaled(payload.attributed, by: fontScale)
                 insertText(adaptsInk ? EaselInk.adapting(pasted) : pasted, replacementRange: selectedRange()); return true
@@ -500,12 +604,12 @@ final class EaselStyledTextView: LocalContentDropTextView {
         } catch { onClipboardError?(error) }
         return false
     }
-    private func pastePlainText(_ text: String) throws -> Bool {
+    private func pastePlainText(_ text: String, styled: NSAttributedString? = nil) throws -> Bool {
         let before = attributedString(), range = selectedRange()
         guard Self.validFormattingRanges([range], length: before.length) else { return false }
         var typing = typingAttributes
         typing.removeValue(forKey: .attachment); typing.removeValue(forKey: .link)
-        let input = NSAttributedString(string: text, attributes: typing)
+        let input = styled ?? NSAttributedString(string: text, attributes: typing)
         var replacement = range
         if (before.string as NSString).substring(with: range).contains("\n"), NSMaxRange(range) < before.length {
             let ending = (before.string as NSString).paragraphRange(for: NSRange(location: NSMaxRange(range), length: 0))
@@ -566,6 +670,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         return attributedString().isEqual(to: edit.text)
     }
     override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        if replacementRange.location == NSNotFound { _ = leaveDivider() }
         let range = replacementRange.location == NSNotFound ? selectedRange() : replacementRange
         let markdown = markdownAdmission(insertString, replacement: range)
         defer { if let markdown { applyMarkdown(markdown) } }
@@ -600,29 +705,57 @@ final class EaselStyledTextView: LocalContentDropTextView {
     }
     private func applyMarkdown(_ admission: EaselMarkdownEditing.Admission) {
         guard isEditable, !suppressMarkdown, !hasMarkedText(), selectedRanges.count == 1,
-              !localUndo.isUndoing, !localUndo.isRedoing,
-              let edit = authoredEdit({ EaselMarkdownEditing.transform($0, admission: admission,
+              !localUndo.isUndoing, !localUndo.isRedoing else { return }
+        if admission.character == "$", string == "$$", let onBlockEquation {
+            var cleared = EaselParagraphEditing.Edit(text: NSMutableAttributedString(attributedString: attributedString()),
+                                                     selection: NSRange(location: 0, length: 0), typing: typingAttributes)
+            EaselParagraphEditing.replace(&cleared, range: NSRange(location: 0, length: cleared.text.length), with: NSAttributedString())
+            suppressMarkdown = true; defer { suppressMarkdown = false }
+            commitParagraph(cleared, name: "Block equation")
+            if !onBlockEquation() { localUndo.undo() }
+            return
+        }
+        if admission.character == "-" {
+            let source = string as NSString
+            let line = source.lineRange(for: NSRange(location: admission.insertion.location, length: 0))
+            let content = source.substring(with: line).trimmingCharacters(in: .newlines)
+            if content == "---" || content == "\u{2014}-", paragraphKind() == .text,
+               !EaselTextAppearance.isInlineCode(attributedString().attributes(at: line.location, effectiveRange: nil)) {
+                suppressMarkdown = true; defer { suppressMarkdown = false }
+                applySlashDivider(removing: NSRange(location: line.location, length: (content as NSString).length))
+                return
+            }
+        }
+        guard let edit = authoredEdit({ EaselMarkdownEditing.transform($0, admission: admission,
                   selection: selectedRange(), typing: $1, base: objectStyle) }) else { return }
         suppressMarkdown = true; defer { suppressMarkdown = false }
         commitParagraph(edit, name: "Format Markdown")
     }
     override var writablePasteboardTypes: [NSPasteboard.PasteboardType] {
         guard let selected = try? selectedPayload() else { return [] }
-        return [EaselStyledText.pasteboardType, EaselTextAttachments.hasImages(selected.attributed) ? .rtfd : .rtf, .string]
+        return [EaselStyledText.pasteboardType, EaselTextAttachments.hasImages(selected.attributed) ? .rtfd : .rtf, .string,
+                .html, NoteClipboard.markdownType]
     }
     override func writeSelection(to board: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
         do {
             guard let selected = try selectedPayload() else { return false }
             try selected.validate()
-            if type == .string { return board.setString(EaselTextAttachments.plainString(selected.text), forType: type) }
+            if type == .string { return board.setString(EaselRichText.readable(selected.text, rich: selected.richText), forType: type) }
+            if type == .html || type == NoteClipboard.markdownType {
+                let blocks = EaselMarkdown.blocks(text: selected.text, richText: selected.richText)
+                let item = NSPasteboardItem()
+                EaselClipboardText.writeFlavours(for: blocks, into: item)
+                guard let value = item.string(forType: type) else { return false }
+                return board.setString(value, forType: type)
+            }
             let data: Data
             if type == EaselStyledText.pasteboardType { data = try JSONEncoder().encode(selected) }
             else if type == .rtfd || (type == .rtf && !EaselTextAttachments.hasImages(selected.attributed)) {
-                let value = selected.attributed
+                let value = EaselInlineText.readable(selected.attributed)
                 data = try value.data(from: NSRange(location: 0, length: value.length),
                     documentAttributes: [.documentType: type == .rtfd ? NSAttributedString.DocumentType.rtfd : NSAttributedString.DocumentType.rtf])
             } else { return false }
-            guard data.count <= (type == .rtf ? 4_194_304 : 8_388_608) else { throw EaselStoreError.tooLarge }
+            guard data.count <= (type == .rtf ? 4_194_304 : 8_388_608) else { throw EaselStoreError.pasteTooLarge }
             return board.setData(data, forType: type)
         } catch { onClipboardError?(error); return false }
     }
@@ -721,7 +854,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         edit.typing = EaselStickyText.scaledAttributes(edit.typing, by: scale)
         return edit
     }
-    private func commitParagraph(_ edit: EaselParagraphEditing.Edit, name: String) {
+    func commitParagraph(_ edit: EaselParagraphEditing.Edit, name: String) {
         do { _ = try EaselRichTextCodec.snapshot(edit.text) } catch { onClipboardError?(error); return }
         let originalSelections = selectedRanges.map(\.rangeValue)
         localUndo.disableUndoRegistration()
@@ -760,7 +893,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         if let edit = authoredEdit({ EaselParagraphEditing.indent($0, selection: selectedRange(), typing: $1, outdent: outdent, base: objectStyle) }) {
             commitParagraph(edit, name: outdent ? "Decrease list indent" : "Increase list indent"); return true
         }
-        return [.bullets, .numbers, .quote].contains(paragraphKind())
+        return [.bullets, .numbers, .checklist, .quote].contains(paragraphKind())
     }
     override func insertTab(_ sender: Any?) {
         let markdown = markdownAdmission("\t", replacement: selectedRange())
@@ -771,6 +904,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         if !changeListIndent(outdent: true) { super.insertBacktab(sender) }
     }
     override func insertNewline(_ sender: Any?) {
+        if leaveDivider() { return }
         let markdown = markdownAdmission("\n", replacement: selectedRange())
         defer { if let markdown { applyMarkdown(markdown) } }
         guard isEditable, !hasMarkedText(), selectedRanges.count == 1,
@@ -785,6 +919,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         if selection.length > 0 {
             insertText("", replacementRange: selection); return
         }
+        if deleteAdjacentDivider(forward: false) { return }
         guard let range = EaselParagraphEditing.ranges(string, selection: selection).first else { super.deleteBackward(sender); return }
         let prefix = EaselParagraphEditing.markerRange(value, paragraph: range)
         let attrs = range.location < value.length ? value.attributes(at: range.location, effectiveRange: nil) : typingAttributes
@@ -800,6 +935,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         super.deleteBackward(sender)
     }
     override func deleteForward(_ sender: Any?) {
+        if deleteAdjacentDivider(forward: true) { return }
         let selection = selectedRange(), length = (string as NSString).length
         if isEditable, !hasMarkedText(), selectedRanges.count == 1,
            selection.length > 0 || (selection.location < length && (string as NSString).substring(with: NSRange(location: selection.location, length: 1)).rangeOfCharacter(from: .newlines) != nil) {
@@ -874,22 +1010,26 @@ final class EaselStyledTextView: LocalContentDropTextView {
             .offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y).intersection(visibleRect)
         return rect.isEmpty ? (visibleRect.isEmpty ? bounds : visibleRect) : rect
     }
-    func editLink(relativeTo anchor: NSView, rect: NSRect? = nil, ranges suppliedRanges: [NSRange]? = nil, validate: (() -> Bool)? = nil) {
+    func removeLink(in range: NSRange) {
+        guard Self.validFormattingRanges([range], length: attributedString().length), range.length > 0, !hasMarkedText() else { return }
+        format("Remove link", ranges: [range]) { attrs in var next = attrs; next[.link] = nil; return next }
+    }
+    func editLink(relativeTo anchor: NSView, rect: NSRect? = nil, ranges suppliedRanges: [NSRange]? = nil,
+                  presenter: EaselPanelPresenting?, validate: (() -> Bool)? = nil) {
         let ranges = suppliedRanges ?? [selectedRange()], originalSelections = selectedRanges
         guard Self.validFormattingRanges(ranges, length: attributedString().length), ranges.allSatisfy({ $0.length > 0 }),
-              !hasMarkedText(), window != nil else { return }
-        linkPopover?.close()
+              !hasMarkedText(), window != nil, let presenter else { return }
+        linkPanel?.close()
         let range = ranges[0], revision = editRevision
         let value = attributedString().attribute(.link, at: range.location, effectiveRange: nil)
-        let controller = EaselLinkEditor(value: (value as? URL)?.absoluteString ?? value as? String ?? "")
-        let popover = NSPopover(); popover.behavior = .transient; popover.contentViewController = controller
-        linkPopover = popover
-        controller.onCommit = { [weak self, weak popover] link in
-            guard let self, self.editRevision == revision, self.selectedRanges == originalSelections, self.window != nil, validate?() != false else { popover?.close(); return }
+        let existing = (value as? URL)?.absoluteString ?? value as? String
+        let request = EaselLinkRequest(link: existing, webOnly: false, host: anchor, anchor: rect ?? anchor.bounds) { [weak self] link in
+            guard let self, self.editRevision == revision, self.selectedRanges == originalSelections, self.window != nil,
+                  validate?() != false else { return }
             self.format(link == nil ? "Remove link" : "Edit link", ranges: ranges) { attrs in var next = attrs; next[.link] = link; return next }
-            popover?.close(); self.linkPopover = nil
+            self.linkPanel = nil
         }
-        popover.show(relativeTo: rect ?? anchor.bounds, of: anchor, preferredEdge: rect != nil && anchor.isFlipped ? .minY : .maxY)
+        linkPanel = presenter.presentLinkEditor(request)
     }
 
     @objc func undo(_ sender: Any?) {

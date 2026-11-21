@@ -2,7 +2,10 @@
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "Tooltip"))
+from support import tooltip_sources
 root = Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix="parc-sidebar-preview-header-") as directory:
     scratch = Path(directory)
@@ -24,6 +27,8 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-preview-header-") as direc
         str(root / "Sources/ParcCore/SidebarPreviewActivation.swift"),
         str(root / "Sources/ParcCore/NoteFileKind.swift"), str(root / "Sources/ParcCore/SidebarDocumentPreview.swift"),
         *[str(scratch / name) for name in slices],
+        *[str(path) for path in tooltip_sources(root, scratch, ["SpaceTheme.swift", "ThemeRenderer.swift", "ReloadControl.swift",
+                                                                 "PointerCover.swift", "PointingHand.swift"])],
         str(root / "Sources/ParcApp/PopoverBackgroundView.swift"),
         str(root / "Sources/ParcApp/SidebarPreviewPresentation.swift"),
         str(root / "Sources/ParcApp/SidebarPreviewCard.swift"),

@@ -554,7 +554,7 @@ final class NotePDFContentView: NoteMediaContentView, NoteMediaResizing {
     private var menuMonitor: Any?
     private weak var fullScreen: NotePDFFullScreenOverlay?
 
-    override init(host: NoteMediaBlockView) {
+    override init(host: NoteMediaHost) {
         super.init(host: host)
         frameView.wantsLayer = true
         frameView.layer?.cornerRadius = NoteMediaStyle.cardRadius
@@ -709,7 +709,7 @@ final class NotePDFContentView: NoteMediaContentView, NoteMediaResizing {
         viewer.onScaleChange = { [weak self] in self?.refreshControls() }
         viewer.onLink = { [weak self] url in self?.host?.open(url) }
         viewer.onEscape = { [weak self] in self?.returnToNote() }
-        viewer.noteScrollView = { [weak self] in self?.host?.editor?.canvas.enclosingScrollView }
+        viewer.noteScrollView = { [weak self] in self?.host?.mediaCanvas?.enclosingScrollView }
         frameView.addSubview(viewer)
         self.viewer = viewer
         return viewer
@@ -733,7 +733,7 @@ final class NotePDFContentView: NoteMediaContentView, NoteMediaResizing {
     private func returnToNote() {
         guard let host, let window else { return }
         window.makeFirstResponder(host)
-        host.editor?.session.setSelection(.blocks([host.blockID]))
+        host.focusHostBlock()
     }
 
     private func viewOriginal() {
@@ -742,7 +742,7 @@ final class NotePDFContentView: NoteMediaContentView, NoteMediaResizing {
     }
 
     private func refreshAccessibility() {
-        let name = props.alt.flatMap { $0.isEmpty ? nil : $0 } ?? source.fileName
+        let name = props.alt.flatMap { $0.isEmpty ? nil : $0 } ?? host?.mediaFileName ?? source.fileName
         var label = "PDF" + (name.isEmpty ? "" : ": " + name)
         if let document, !document.isLocked { label += ", " + NotePDFPages.summary(count: document.pageCount) }
         setAccessibilityLabel(label)
@@ -822,7 +822,7 @@ final class NotePDFContentView: NoteMediaContentView, NoteMediaResizing {
         var chips: [NoteControlButton] = []
         if editable {
             if !fullWidth { chips.append(alignChip) }
-            if host?.captionVisible != true { chips.append(captionChip) }
+            if host?.offersCaption == true { chips.append(captionChip) }
         }
         if document != nil, !locked { chips.append(fullScreenChip) }
         chips.append(downloadChip)
@@ -870,16 +870,17 @@ final class NotePDFContentView: NoteMediaContentView, NoteMediaResizing {
         } else if !active {
             controls.hide()
         }
-        let showsHandles = active && editable && viewerFrame.height >= 36
+        let showsHandles = active && editable && viewerFrame.height >= 36 && host?.offersColumnLayout == true
         for handle in [leadingHandle, trailingHandle] { handle.setRevealed(showsHandles) }
     }
 
     @discardableResult
     func presentFullScreen() -> Bool {
-        guard let document, !document.isLocked, let host, let canvas = host.editor?.canvas, fullScreen == nil else { return false }
-        let title = props.alt.flatMap { $0.isEmpty ? nil : $0 } ?? source.fileName
+        guard let document, !document.isLocked, let host, let canvas = host.mediaCanvas, let stage = host.mediaOverlay,
+              fullScreen == nil else { return false }
+        let title = props.alt.flatMap { $0.isEmpty ? nil : $0 } ?? host.mediaFileName
         let overlay = NotePDFFullScreenOverlay.present(document: document, title: title.isEmpty ? "PDF" : title,
-                                                       page: viewer?.pageIndex ?? 0, from: frameView.frame, of: self, in: canvas)
+                                                       page: viewer?.pageIndex ?? 0, from: frameView.frame, of: self, in: canvas, overlay: stage)
         overlay.onDownload = { [weak self] in self?.host?.download() }
         overlay.onOpenOriginal = { [weak self] in self?.viewOriginal() }
         overlay.onLink = { [weak self] url in self?.host?.open(url) }
@@ -930,7 +931,7 @@ final class NotePDFContentView: NoteMediaContentView, NoteMediaResizing {
 
     private func toggleAlignmentMenu() {
         if alignmentMenu != nil { dismissMenu(); return }
-        guard let overlay = host?.editor?.canvas.overlayView else { return }
+        guard let overlay = host?.mediaOverlay else { return }
         let list = NoteMenuList()
         list.items = NoteAlignment.allCases.map { alignment in
             NoteMenuList.Item(id: alignment.rawValue, title: NoteImageContentView.alignmentTitle(alignment),
@@ -1009,7 +1010,7 @@ final class NotePDFFullScreenOverlay: NSView {
     private let closeChip = NoteToolbarButton(icon: .symbol("xmark"), label: "Close", shortcut: "ESC")
     private var originRect: NSRect = .zero
     private weak var previousResponder: NSResponder?
-    private weak var canvas: NotePageCanvasView?
+    private weak var canvas: NSView?
     private var observers: [NSObjectProtocol] = []
     private var closing = false
     private static let header: CGFloat = 56
@@ -1057,8 +1058,7 @@ final class NotePDFFullScreenOverlay: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     static func present(document: PDFDocument, title: String, page: Int, from rect: NSRect, of view: NSView,
-                        in canvas: NotePageCanvasView) -> NotePDFFullScreenOverlay {
-        let host = canvas.overlayView
+                        in canvas: NSView, overlay host: NSView) -> NotePDFFullScreenOverlay {
         let overlay = NotePDFFullScreenOverlay(document: document, title: title)
         overlay.canvas = canvas
         overlay.frame = host.convert(canvas.visibleRect.isEmpty ? canvas.bounds : canvas.visibleRect, from: canvas)
