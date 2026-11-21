@@ -55,7 +55,10 @@ plus Back, Reload (Stop while loading) and Open, which opens the page in a tab.
 While a page warms up, can't open, closes or crashes, the block shows the
 bookmark-style card with a short status and Retry. YouTube, Vimeo, Loom,
 Spotify and Figma links load their embed players; Open still uses the address
-in the file.
+in the file. A note's first load sends Parc's app identifier
+(`https://<bundle id>`) as its Referer with a strict-origin-when-cross-origin
+policy, as an iframe would. YouTube's player refuses to play without one
+(Error 153).
 
 The page is a fixed height that people change with the handle on the bottom
 edge. The height is stored as `height` in the block's

@@ -121,9 +121,10 @@ NS_SWIFT_UI_ACTOR
     NS_SWIFT_NAME(init(frame:adoptingNativePage:));
 @property(nonatomic, readonly, nullable) PCNativePage* nativePage;
 - (nullable PCNativeEmbeddedPageRequest*)beginEmbeddedNavigation:(NSURL*)URL
+    referrer:(nullable NSURL*)referrer
     validateOwner:(BOOL (^)(void))validateOwner
     completion:(void (^)(PCNativePage* _Nullable, NSError* _Nullable))completion
-    NS_SWIFT_NAME(beginEmbeddedNavigation(_:validateOwner:completion:));
+    NS_SWIFT_NAME(beginEmbeddedNavigation(_:referrer:validateOwner:completion:));
 @property(nonatomic, readonly) BOOL hasPageInfo;
 @property(nonatomic, readonly) BOOL canShowSiteInfo;
 - (BOOL)showSiteInfoFromView:(NSView*)anchor

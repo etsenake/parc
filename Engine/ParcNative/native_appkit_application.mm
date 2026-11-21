@@ -1731,6 +1731,7 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   parc::WithNativeRoutingBrowser(self, path, std::move(admitted));
 }
 - (PCNativeEmbeddedPageRequest*)createEmbeddedPageWithURL:(NSURL*)url
+    referrer:(NSURL*)referrer
     profilePath:(NSString*)path container:(NSView*)container
     validateOwner:(BOOL (^)(void))validateOwner
     completion:(void (^)(PCNativePage*, NSError*))completion {
@@ -1744,6 +1745,7 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   __weak NSView* weak_container = container;
   NSString* original_path = [path copy];
   NSURL* original_url = [url copy];
+  NSURL* original_referrer = [referrer copy];
   auto create = base::BindOnce(^{
     PCNativeBrowserWindow* binding = weak_binding;
     NSWindow* window = original_window;
@@ -1762,7 +1764,7 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
     }
     auto admitted = base::BindOnce(
         [](PCNativeBrowserWindow* binding, NSWindow* __weak original_window,
-           NSView* __weak weak_container, NSString* path, NSURL* url,
+           NSView* __weak weak_container, NSString* path, NSURL* url, NSURL* referrer,
            BOOL (^validateOwner)(void), PCNativeEmbeddedPageRequest* request,
            BrowserWindowInterface* browser, bool created, NSError* error) {
           const auto weak_browser = browser ? browser->GetWeakPtr() :
@@ -1817,14 +1819,19 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
             [request finishWithPage:nil error:parc::Error(@"The embedded renderer has no navigation owner.")];
             return;
           }
+          const GURL referrer_url(referrer.absoluteString.UTF8String ?: "");
           contents_weak->GetController().LoadURL(
-              GURL(url.absoluteString.UTF8String), content::Referrer(),
+              GURL(url.absoluteString.UTF8String),
+              referrer_url.is_valid() && referrer_url.SchemeIs(url::kHttpsScheme)
+                  ? content::Referrer(referrer_url,
+                        network::mojom::ReferrerPolicy::kStrictOriginWhenCrossOrigin)
+                  : content::Referrer(),
               ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED |
                                         ui::PAGE_TRANSITION_FROM_ADDRESS_BAR),
               std::string());
           [request finishWithPage:page error:nil];
         }, binding, original_window, weak_container, original_path, original_url,
-        [validateOwner copy], request);
+        original_referrer, [validateOwner copy], request);
     if ([binding state].private_mode) {
       Profile* profile = parc::NativePrivateProfileForWindow(binding, original_path);
       auto found = profile ? [binding state].browsers.find(profile) : [binding state].browsers.end();

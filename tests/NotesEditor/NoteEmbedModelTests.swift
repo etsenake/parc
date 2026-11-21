@@ -45,6 +45,12 @@ struct NoteEmbedModelTests {
                "Figma files open in Figma's embed viewer")
         expect(live("https://example.com/page?x=1") == "https://example.com/page?x=1", "other pages load as they are")
         expect(live("https://www.youtube.com/watch?v=bad%20id") == "https://www.youtube.com/watch?v=bad%20id", "odd ids keep the original page")
+        expect(NoteEmbedAddress.embedderReferrer(appID: "Com.Example.Parc")?.absoluteString == "https://com.example.parc",
+               "embeds name the app as their referrer, as YouTube's player requires")
+        expect(NoteEmbedAddress.embedderReferrer(appID: nil) == nil && NoteEmbedAddress.embedderReferrer(appID: "") == nil,
+               "no app identifier means no referrer")
+        expect(NoteEmbedAddress.embedderReferrer(appID: "bad id/x") == nil && NoteEmbedAddress.embedderReferrer(appID: ".parc") == nil,
+               "identifiers that aren't host names send no referrer")
     }
 
     static func roundTrip() {

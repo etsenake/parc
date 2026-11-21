@@ -832,10 +832,11 @@ __attribute__((visibility("default")))
                  background:(BOOL)background
                  completion:(void (^)(PCNativePage* _Nullable, NSError* _Nullable))completion;
 - (PCNativeEmbeddedPageRequest*)createEmbeddedPageWithURL:(NSURL*)url
+    referrer:(nullable NSURL*)referrer
     profilePath:(NSString*)profilePath container:(NSView*)container
     validateOwner:(BOOL (^)(void))validateOwner
     completion:(void (^)(PCNativePage* _Nullable, NSError* _Nullable))completion
-    NS_SWIFT_NAME(createEmbeddedPage(url:profilePath:container:validateOwner:completion:));
+    NS_SWIFT_NAME(createEmbeddedPage(url:referrer:profilePath:container:validateOwner:completion:));
 - (void)synchronizeSelectionAndLayout;
 - (void)synchronizeLayout;
 - (BOOL)returnPictureInPictureToOpener;

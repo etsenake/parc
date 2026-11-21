@@ -62,6 +62,12 @@ enum NoteEmbedAddress {
         return url
     }
 
+    static func embedderReferrer(appID: String?) -> URL? {
+        guard let appID = appID?.lowercased(), !appID.isEmpty, appID.count <= 253, !appID.hasPrefix("."), !appID.hasSuffix("."),
+              appID.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-") }) else { return nil }
+        return URL(string: "https://" + appID)
+    }
+
     private static func valid(_ id: String) -> Bool {
         !id.isEmpty && id.count <= 64 && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
     }

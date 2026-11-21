@@ -262,7 +262,8 @@ class EmbeddedPagePool: NSObject, PCBrowserViewDelegate {
                 && entry.surface.window === binding.window && !entry.surface.isHiddenOrHasHiddenAncestor
                 && self.wants(id, entry)
         }
-        entry.request = entry.surface.browser.beginEmbeddedNavigation(loadURL(for: url, entry: entry), validateOwner: validate) { [weak self, weak entry] page, error in
+        entry.request = entry.surface.browser.beginEmbeddedNavigation(loadURL(for: url, entry: entry), referrer: referrer(for: entry),
+                                                                      validateOwner: validate) { [weak self, weak entry] page, error in
             MainActor.assumeIsolated {
                 guard let self, let entry else { return }
                 guard entry.attempt == attempt, self.entries[id] === entry else { return }
@@ -283,6 +284,8 @@ class EmbeddedPagePool: NSObject, PCBrowserViewDelegate {
     }
 
     func loadURL(for url: URL, entry: EmbeddedPageEntry) -> URL { url }
+
+    func referrer(for entry: EmbeddedPageEntry) -> URL? { nil }
 
     func synchronize(wanted: (UUID, EmbeddedPageEntry) -> Bool, selection: UUID?, interacting: Bool) {
         let before = selectedPage

@@ -543,6 +543,7 @@ static NSArray<PCImportedExtensionFailure*>* PCResultFailures(
   }
 }
 - (PCNativeEmbeddedPageRequest*)beginEmbeddedNavigation:(NSURL*)URL
+    referrer:(NSURL*)referrer
     validateOwner:(BOOL (^)(void))validateOwner
     completion:(void (^)(PCNativePage*, NSError*))completion {
   NSCAssert(NSThread.isMainThread, @"Embedded creation must be on main");
@@ -554,7 +555,7 @@ static NSArray<PCImportedExtensionFailure*>* PCResultFailures(
   _pendingURL = URL;
   _creationError = nil;
   __weak PCBrowserView* weak = self;
-  _embeddedRequest = [binding createEmbeddedPageWithURL:URL profilePath:_profilePath container:self
+  _embeddedRequest = [binding createEmbeddedPageWithURL:URL referrer:referrer profilePath:_profilePath container:self
       validateOwner:^BOOL {
         PCBrowserView* view = weak;
         return view && !view->_disposed && view->_creating &&

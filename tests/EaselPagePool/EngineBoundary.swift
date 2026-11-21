@@ -4,6 +4,7 @@ import AppKit
 @MainActor final class PCNativeRendererCrash { var title = "Crash"; var message = ""; var actionTitle = "Reload" }
 @MainActor final class PCNativeCaptureState {}
 @MainActor final class PCNativeContextImage { var isValid = true }
+@MainActor final class PCNativeHistorySwipeSource { weak var overlayContainer: NSView? }
 @MainActor protocol PCBrowserViewDelegate: AnyObject {}
 @MainActor final class PCNativeBrowserWindow {
     weak var window: NSWindow?
@@ -72,7 +73,7 @@ import AppKit
     var requestedURL: URL?
     init(frame: NSRect, profilePath: String) { self.profilePath = profilePath; super.init(frame: frame) }
     required init?(coder: NSCoder) { fatalError() }
-    func beginEmbeddedNavigation(_ url: URL, validateOwner: @escaping () -> Bool,
+    func beginEmbeddedNavigation(_ url: URL, referrer: URL?, validateOwner: @escaping () -> Bool,
                                  completion: @escaping (PCNativePage?, Error?) -> Void) -> PCNativeEmbeddedPageRequest? {
         guard validateOwner() else { return nil }
         creations += 1; requestedURL = url
