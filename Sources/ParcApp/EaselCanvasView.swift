@@ -962,7 +962,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let next = !toolOwnsPointer && start == nil && editor == nil && !session.isClosed
             && isTopmost(atWindowPoint: event.locationInWindow)
             ? hoverTarget(at: point, hit: object(at: point) ?? object(at: point, includingLocked: true)) : nil
-        if hoveredObjectID != next { hoveredObjectID = next; invalidateIncrementalDisplay() }
+        if hoveredObjectID != next { hoveredObjectID = next; invalidateIncrementalDisplay(); window?.invalidateCursorRects(for: self) }
         updateTableHover(at: point)
         updateConnectorHover(at: point)
         updatePlacementPreview(at: isTopmost(atWindowPoint: event.locationInWindow) ? point : nil)
@@ -1911,6 +1911,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         addCursorRect(bounds, cursor: toolCursor)
         guard !toolState.spaceHeld, toolState.pan == nil, tool == .select else { return }
         addImageBadgeCursorRects()
+        addLockBadgeCursorRects()
         addTableCursorRects()
         addSectionCursorRects()
         if !drawing, onOpenURL != nil {

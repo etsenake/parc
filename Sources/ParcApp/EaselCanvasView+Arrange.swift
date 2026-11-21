@@ -255,6 +255,10 @@ extension EaselCanvasView {
         lockBadgeItems.last { lockBadgeRect(for: $0).insetBy(dx: -3 / arrangeScale, dy: -3 / arrangeScale).contains(point) }
     }
 
+    func addLockBadgeCursorRects() {
+        for item in lockBadgeItems { addCursorRect(lockBadgeRect(for: item), cursor: .pointingHand) }
+    }
+
     func offerUnlock(at point: NSPoint) -> Bool {
         guard let item = lockBadge(at: point) else { return false }
         presentUnlockMenu(for: item)

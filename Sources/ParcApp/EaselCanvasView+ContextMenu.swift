@@ -132,11 +132,12 @@ extension EaselCanvasView {
     func presentUnlockMenu(for item: EaselItem) {
         let unlockIDs = item.groupID.map { EaselArrange.members(of: $0, in: session.document) } ?? [item.id]
         let unlock = EaselMenuRow(id: "unlock", title: unlockIDs.count > 1 ? "Unlock Group" : "Unlock", symbol: "lock.open",
-                                  shortcut: "⇧⌘L", perform: guardedMenuAction { canvas in
+                                  perform: guardedMenuAction { canvas in
             guard canvas.setLock(false, ids: unlockIDs) else { return }
             canvas.selection = unlockIDs.intersection(Set(canvas.session.document.items.map(\.id)))
         })
-        presentMenu([[unlock]], anchor: lockBadgeRect(for: item), keyboard: NSApp.currentEvent?.type == .keyDown, label: "Locked object")
+        presentMenu([[unlock]], anchor: lockBadgeRect(for: item), keyboard: NSApp.currentEvent?.type == .keyDown,
+                    label: unlockIDs.count > 1 ? "Locked group" : "Locked object")
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -184,6 +185,7 @@ extension EaselCanvasView {
         let ids = Set(context.items.map(\.id))
         let point = NSPoint(x: context.point.x, y: context.point.y)
         let pasteable = canPasteObjects
+        let pastesHere = NSPasteboard.general.availableType(from: [Self.objectsPasteboardType]) != nil
         let plain = NSPasteboard.general.availableType(from: [.string, .URL, .rtfd, .rtf]) != nil
         let guides = EaselMenuRow(id: "guides", title: "Use Alignment Guides", symbol: "ruler", isChecked: alignmentGuidesEnabled,
                                   perform: guardedMenuAction { canvas in
@@ -193,7 +195,7 @@ extension EaselCanvasView {
         let selectAll = row("select-all", "Select All", "rectangle.dashed", "⌘A") { $0.selectAll(nil) }
         guard context.target != .canvas else {
             return [
-                [row("paste-here", "Paste Here", "doc.on.clipboard", "⌘V", enabled: pasteable) { $0.pasteHere(point) },
+                [row("paste-here", pastesHere ? "Paste Here" : "Paste", "doc.on.clipboard", "⌘V", enabled: pasteable) { $0.pasteHere(point) },
                  row("paste-plain", "Paste as Plain Text", "doc.plaintext", enabled: plain) { $0.pastePlainText(at: point) }],
                 [selectAll] + zoomMenuRows(context) + boardMenuRows(context),
                 [guides],
