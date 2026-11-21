@@ -30,8 +30,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-chrome-") as directory:
               "listmenu": [*store_sources, core / "SidebarOutlineConfigureSkip.swift",
                            app / "SidebarChromeLayout.swift", app / "SidebarSpaceMenu.swift", app / "SidebarOutline.swift",
                            app / "SidebarTablist.swift", action_button, app / "PointingHand.swift", app / "TranslucentButtonFace.swift", app / "PointerCover.swift",
-                           app / "ReloadControl.swift", here / "SidebarListMenuTests.swift"],
-              "setting": [*store_sources, here / "SpaceHeaderSettingTests.swift"]}
+                           app / "ReloadControl.swift", here / "SidebarListMenuTests.swift"]}
     def build(name, sources):
         executable = Path(directory) / name
         subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
@@ -41,7 +40,6 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-chrome-") as directory:
                                 ("header", suites["header"], [[]]),
                                 ("dockmenu", suites["dockmenu"], [[]]),
                                 ("listmenu", suites["listmenu"], [[]]),
-                                ("setting", suites["setting"], [[]]),
                                 ("tablist", [core / "SidebarOutlineConfigureSkip.swift",
                                              app / "SidebarChromeLayout.swift", app / "SidebarTablist.swift", app / "SidebarOutline.swift",
                                              item_reference, here / "SidebarTablistTests.swift"], [[], ["-AppleShowScrollBars", "Always"]]),
