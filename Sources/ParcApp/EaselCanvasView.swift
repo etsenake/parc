@@ -1830,7 +1830,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     func editCustomTextSize(relativeTo anchor: NSView? = nil, rect: NSRect? = nil) {
         guard !session.isClosed, !session.isDeleted, editor?.hasMarkedText() != true else { return }
-        let styles = session.document.items.filter { selection.contains($0.id) && $0.kind == .text }.map(\.resolvedTextStyle)
+        let styles = session.document.items.filter { selection.contains($0.id) && $0.kind.holdsText }.map(\.resolvedTextStyle)
         guard !styles.isEmpty else { return }
         let owner = editor, ranges = editor?.selectedRanges, ids = selection
         let controller = EaselTextSizeEditor(value: EaselTextStyleState.points(of: styles, editor: owner))
