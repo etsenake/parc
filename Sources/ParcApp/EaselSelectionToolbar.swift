@@ -211,6 +211,7 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
             var item = NoteMenuList.Item(id: entry.id, title: entry.title, icon: entry.symbol.map { .symbol($0) }, shortcut: entry.shortcut,
                                          isChecked: entry.isChecked, isEnabled: entry.isEnabled, isDestructive: entry.isDestructive)
             item.separatorBefore = entry.separatorBefore
+            item.iconTint = entry.tint
             return item
         })
         list.minimumWidth = 180

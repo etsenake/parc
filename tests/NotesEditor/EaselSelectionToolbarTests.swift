@@ -45,6 +45,11 @@ struct EaselSelectionToolbarTests {
         expect(section == [[.sectionTitle], [.color], [.more]], "Sections offer a title edit, colour and the ••• menu with their lock and hide options")
         expect(plan([.image]).first == [.crop, .imageMask, .replaceImage, .altText], "Images group crop, mask, replace and alt text")
         expect(plan([.freehand]).first == [.color, .brushWidth, .pattern], "Drawings offer colour, width and tape pattern")
+        let table = plan([.table]).joined()
+        expect([.typeface, .textSize, .bold, .strikethrough, .color, .cellFill, .alignment, .mergeCells].allSatisfy(table.contains),
+               "Tables offer typeface, size, bold, strike, text and cell colour, alignment and merge")
+        expect(plan([.table], editing: true).joined().contains(.italic) && !plan([.table], editing: true).joined().contains(.mergeCells),
+               "Editing a cell swaps table tools for range formatting")
         let text = plan([.text]).joined()
         expect([.typeface, .textSize, .smaller, .larger, .color, .textFill, .alignment, .link].allSatisfy(text.contains), "Text keeps the rail's family, size, fill and link plus colour and alignment")
         expect(!text.contains(.bold), "Range emphasis waits for text editing, like the rail")
@@ -125,4 +130,3 @@ struct EaselSelectionToolbarTests {
         expect(EaselChords.reserved.allSatisfy { EaselChords.table[$0] == nil }, "The toolbar chord never takes a reserved Parc chord")
     }
 }
-

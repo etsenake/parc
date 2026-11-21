@@ -42,6 +42,7 @@ struct EaselToolbarMenuEntry: Equatable {
     var isEnabled = true
     var isDestructive = false
     var separatorBefore = false
+    var tint: NSColor?
 }
 
 struct EaselSelectionToolbarContent: Equatable {
@@ -99,6 +100,7 @@ extension EaselCanvasView {
     }
 
     private func selectionToolbarSupports(_ control: EaselToolbarControl, selected: [EaselItem]) -> Bool {
+        if let table = selectionToolbarTableSupports(control, selected: selected) { return table }
         let textOnly = selected.allSatisfy { $0.kind == .text }
         switch control {
         case .typeface, .textSize, .smaller, .larger, .textFill: return textOnly
@@ -110,6 +112,7 @@ extension EaselCanvasView {
     }
 
     private func selectionToolbarButton(_ control: EaselToolbarControl, selected: [EaselItem]) -> EaselToolbarButtonModel {
+        if let table = selectionToolbarTableButton(control, selected: selected) { return table }
         let styles = selectionToolbarStyles
         let composing = editor?.hasMarkedText() == true
         switch control {
@@ -153,6 +156,7 @@ extension EaselCanvasView {
     }
 
     func selectionToolbarMenu(for control: EaselToolbarControl) -> [EaselToolbarMenuEntry] {
+        if let table = selectionToolbarTableMenu(control) { return table }
         let styles = selectionToolbarStyles
         switch control {
         case .typeface:
@@ -183,6 +187,10 @@ extension EaselCanvasView {
     @discardableResult
     func performSelectionToolbar(_ control: EaselToolbarControl, anchor: NSView? = nil) -> Bool {
         guard !session.isClosed, !session.isDeleted else { return false }
+        if let table = performSelectionToolbarTable(control) {
+            if table { refreshTextControls() }
+            return table
+        }
         switch control {
         case .smaller, .larger:
             guard EaselTextStyleState.canResize(by: control == .larger ? 1 : -1, styles: selectionToolbarStyles, editor: editor) else { return false }
@@ -207,6 +215,10 @@ extension EaselCanvasView {
     @discardableResult
     func performSelectionToolbarMenu(_ control: EaselToolbarControl, entry id: String) -> Bool {
         guard !session.isClosed, !session.isDeleted else { return false }
+        if let table = performSelectionToolbarTableMenu(control, entry: id) {
+            if table { refreshTextControls() }
+            return table
+        }
         switch control {
         case .typeface:
             guard let family = EaselTextStyle.Family(rawValue: id) else { return false }

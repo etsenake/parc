@@ -26,6 +26,7 @@ enum EaselToolbarControl: String, CaseIterable, Hashable {
     case color, textFill, outline, connectorStyle, startHead, endHead, routing
     case stickyShape, brushWidth, pattern
     case crop, imageMask, replaceImage, altText
+    case mergeCells, cellFill
     case codeLanguage
     case alignment, link
     case arrange, tidyUp, group, createSection, lock
@@ -75,7 +76,7 @@ enum EaselSelectionToolbarPlan {
         case .table:
             return editingText
                 ? [[.typeface, .textSize], [.bold, .italic, .underline, .strikethrough], [.paragraph], [.color], [.alignment], [.link]]
-                : [[.typeface, .textSize], [.bold, .strikethrough], [.color], [.alignment]]
+                : [[.typeface, .textSize], [.bold, .strikethrough], [.color, .cellFill], [.alignment], [.mergeCells]]
         case .code:
             return [[.codeLanguage]]
         }

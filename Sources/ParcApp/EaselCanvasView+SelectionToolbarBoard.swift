@@ -13,7 +13,7 @@ extension EaselCanvasView {
         case .imageMask: return selectedImage != nil && hasImageChrome
         case .altText:
             return hasImageChrome && selected.count == 1 && selected.first.map { EaselToolbarSubject($0.kind) == .image } == true
-        default: return nil
+        default: return selectionToolbarStyleSupports(control, selected: selected)
         }
     }
 
@@ -58,7 +58,7 @@ extension EaselCanvasView {
             return .init(control: control, face: .symbolAndText("text.below.photo", "Alt text"), name: "Alt text",
                          isEnabled: ready && item?.isLocked == false)
         default:
-            return nil
+            return selectionToolbarStyleButton(control, selected: selected)
         }
     }
 
@@ -83,7 +83,7 @@ extension EaselCanvasView {
         case .more:
             return selectionToolbarMoreMenu()
         default:
-            return nil
+            return selectionToolbarStyleMenu(control)
         }
     }
 
@@ -169,7 +169,7 @@ extension EaselCanvasView {
         case .more:
             return performSelectionToolbarMore(id)
         default:
-            return nil
+            return performSelectionToolbarStyleMenu(control, entry: id)
         }
     }
 

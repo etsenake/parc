@@ -53,7 +53,10 @@ mixed selections keep only the controls every kind shares, and several objects
 add align and distribute, tidy up, group, create section and lock tools.
 Stickies get a wide toggle, sections a Rename button and pictures Crop, Mask,
 Replace and Alt text (Mask and Alt text only in the Easel editor, which hosts
-their pickers); the toolbar steps away while a picture is cropped. A fully locked
+their pickers); the toolbar steps away while a picture is cropped. Text, shapes
+and stickies get an alignment menu, washi tape a pattern menu, and a table its
+typeface, size, bold, strike, text and cell colour, alignment and Merge or
+Unmerge cells, switching to range formatting while a cell is edited. A fully locked
 selection shows only a Locked button whose menu unlocks it, a section with its
 contents. A single webpage, captured card or link keeps its own page
 header instead. A control appears only once its canvas command exists, and the
