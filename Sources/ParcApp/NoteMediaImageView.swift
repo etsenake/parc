@@ -45,7 +45,7 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
     private weak var responderBeforeCrop: NSResponder?
     static let cropMaximumHeight: CGFloat = 560
 
-    override init(host: NoteMediaBlockView) {
+    override init(host: NoteMediaHost) {
         super.init(host: host)
         addCursorZoneArea()
         frameLayer.masksToBounds = true
@@ -377,7 +377,7 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
         var chips: [NoteControlButton] = []
         if editable {
             if !fullWidth { chips.append(alignChip) }
-            if host?.captionVisible != true { chips.append(captionChip) }
+            if host?.offersCaption == true { chips.append(captionChip) }
             chips.append(replaceChip)
         }
         chips.append(downloadChip)
@@ -489,7 +489,7 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
                        forKey: "media.settle")
     }
 
-    private var overlay: NSView? { host?.editor?.canvas.overlayView }
+    private var overlay: NSView? { host?.mediaOverlay }
 
     private func toggleMoreMenu() {
         if morePopover?.isOpen == true { morePopover?.close(); return }
@@ -636,7 +636,7 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
         animatesNextLayout = window != nil
         host.invalidateMeasuredHeight()
         needsLayout = true
-        host.editor?.canvas.layoutSubtreeIfNeeded()
+        host.mediaCanvas?.layoutSubtreeIfNeeded()
         layoutSubtreeIfNeeded()
         editor.appear()
         window?.makeFirstResponder(editor)
@@ -688,7 +688,7 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
 
     private func toggleAlignmentMenu() {
         if alignmentMenu != nil { dismissMenu(); return }
-        guard let overlay = host?.editor?.canvas.overlayView else { return }
+        guard let overlay = host?.mediaOverlay else { return }
         let list = NoteMenuList()
         list.items = NoteAlignment.allCases.map { alignment in
             NoteMenuList.Item(id: alignment.rawValue, title: Self.alignmentTitle(alignment),

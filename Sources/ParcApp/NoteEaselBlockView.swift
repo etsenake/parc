@@ -234,6 +234,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
             sessionDirectory = host.directory
             let canvas = EaselCanvasView(session: next)
             EaselWebObjects.install(on: canvas)
+            canvas.hostedObjects.append(EaselMediaObjects.inNote(canvas) { [weak self] in self?.editor })
             canvas.toolState.onQuickActions = { [weak self] in self?.toggleQuickActions() }
             canvas.onError = { [weak self] error in self?.editor?.onError?(error) }
             canvas.onCopiedImage = { [weak self] in self?.editor?.formatBar.showToast(.copiedImage) }

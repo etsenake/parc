@@ -9,9 +9,7 @@ enum NoteMediaProblem: Equatable {
 
 @MainActor
 final class NoteMediaBlockView: NoteCaptionedBlockView {
-    private enum Mode: Equatable {
-        case empty, pending, problem(NoteMediaProblem), image, video, audio, file, pdf
-    }
+    private typealias Mode = NoteMediaMode
 
     private var mode: Mode?
     private var content: NoteMediaContentView?
@@ -75,6 +73,16 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
 
     var kind: NoteBlockKind { block.kind }
     var nounPhrase: String { NoteMediaCopy.noun(for: kind) }
+    var mediaFileName: String { source.fileName }
+    var offersCaption: Bool { !captionVisible }
+    var offersColumnLayout: Bool { true }
+    var offersShowInFinder: Bool { true }
+    var mediaOverlay: NSView? { editor?.canvas.overlayView }
+    var mediaCanvas: NSView? { editor?.canvas }
+
+    func focusHostBlock() {
+        editor?.session.setSelection(.blocks([blockID]))
+    }
 
     override func update(_ block: NoteBlock) {
         let previous = self.block
@@ -88,24 +96,8 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     }
 
     private func resolveMode() -> Mode {
-        let source = self.source
-        if let failure, failure.source == block.props.source { return .problem(failure.problem) }
-        switch source.readiness(for: kind, importing: isImporting) {
-        case .empty: return .empty
-        case .missing: return .problem(.missing)
-        case .importing: return .pending
-        case .ready: break
-        }
-        if case .remote(let url) = source, kind == .image, let error = NoteMediaImageLoader.shared.failure(for: url) {
-            return .problem(Self.problem(for: error))
-        }
-        switch kind {
-        case .image: return .image
-        case .video: return .video
-        case .audio: return .audio
-        case .pdf: return editor?.isPlainText == true ? .file : .pdf
-        default: return .file
-        }
+        let problem = failure.flatMap { $0.source == block.props.source ? $0.problem : nil }
+        return Mode.resolve(kind: kind, source: source, importing: isImporting, failure: problem, plainText: editor?.isPlainText == true)
     }
 
     static func problem(for error: NoteMediaImageError) -> NoteMediaProblem {
@@ -130,17 +122,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         if next != mode || content == nil {
             mode = next
             content?.removeFromSuperview()
-            let view: NoteMediaContentView
-            switch next {
-            case .empty: view = NoteMediaEmptyCard(host: self)
-            case .pending: view = NoteMediaPendingCard(host: self)
-            case .problem(let problem): view = NoteMediaProblemCard(host: self, problem: problem)
-            case .image: view = NoteImageContentView(host: self)
-            case .video: view = NoteVideoContentView(host: self)
-            case .audio: view = NoteAudioContentView(host: self)
-            case .file: view = NoteFileContentView(host: self)
-            case .pdf: view = NotePDFContentView(host: self)
-            }
+            let view = next.makeContent(host: self)
             addSubview(view, positioned: .below, relativeTo: caption)
             content = view
             view.setHovered(isHovering)
@@ -487,48 +469,28 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         guard canEdit else { return }
         guard offersUnsplash, let editor else { replace(); return }
         replacePopover?.close(animated: false)
-        let list = NoteMenuList(items: [
-            NoteMenuList.Item(id: "upload", title: "Upload…", icon: .symbol("square.and.arrow.up")),
-            NoteMenuList.Item(id: "unsplash", title: "Unsplash…", icon: .symbol("photo.on.rectangle.angled")),
-        ])
-        list.minimumWidth = 180
-        let popover = NotePagePopover(content: list)
-        popover.exempt(anchor)
-        list.onActivate = { [weak self, weak popover, weak anchor] item in
-            popover?.close(animated: false)
-            guard let self else { return }
-            if item.id == "unsplash" { self.presentUnsplash(from: anchor ?? self) } else { self.replace() }
-        }
-        list.onCancel = { [weak popover] in popover?.close() }
-        popover.onKeyDown = { [weak list] event in list?.handleKeyDown(event) ?? false }
-        popover.onClose = { [weak self] in self?.replacePopover = nil }
-        replacePopover = popover
-        let overlay = editor.canvas.overlayView
-        popover.present(in: overlay, anchor: overlay.convert(anchor.bounds, from: anchor), edge: .below, alignment: .trailing)
+        replacePopover = NoteMediaPanels.presentReplaceMenu(from: anchor, in: editor.canvas.overlayView,
+            upload: { [weak self] in self?.replace() },
+            unsplash: { [weak self] anchor in
+                guard let self else { return }
+                self.presentUnsplash(from: anchor ?? self)
+            },
+            closed: { [weak self] in self?.replacePopover = nil })
     }
 
     func presentUnsplash(from anchor: NSView) {
         guard offersUnsplash, let editor else { return }
         unsplashPopover?.close(animated: false)
-        let browser = NoteUnsplashBrowser(orientation: nil)
-        let popover = NotePagePopover(content: browser)
-        popover.exempt(anchor)
-        browser.onOpen = { [weak self] url in self?.open(url) }
-        browser.onPick = { [weak self, weak browser, weak popover] photo in
-            guard let self, let browser else { return }
-            self.importUnsplash(photo, browser: browser, popover: popover)
-        }
-        popover.onClose = { [weak self] in
-            guard let self else { return }
-            self.unsplashPopover = nil
-            self.unsplashImport?.cancel()
-            self.unsplashImport = nil
-        }
-        unsplashPopover = popover
-        let overlay = editor.canvas.overlayView
         let alignment: NoteFloatingPanel.Alignment = anchor === self || anchor is NoteMediaEmptyCard ? .leading : .trailing
-        popover.present(in: overlay, anchor: overlay.convert(anchor.bounds, from: anchor), edge: .below, alignment: alignment)
-        browser.focus()
+        unsplashPopover = NoteMediaPanels.presentUnsplash(from: anchor, in: editor.canvas.overlayView, alignment: alignment,
+            open: { [weak self] url in self?.open(url) },
+            pick: { [weak self] photo, browser, popover in self?.importUnsplash(photo, browser: browser, popover: popover) },
+            closed: { [weak self] in
+                guard let self else { return }
+                self.unsplashPopover = nil
+                self.unsplashImport?.cancel()
+                self.unsplashImport = nil
+            })
     }
 
     private func importUnsplash(_ photo: NoteUnsplashPhoto, browser: NoteUnsplashBrowser, popover: NotePagePopover?) {
@@ -636,7 +598,8 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
 
     func zoom(image: NoteMediaImage, from rect: NSRect, in view: NSView, crop: NoteImageCrop? = nil, mask: NoteImageMask? = nil) {
         guard let canvas = editor?.canvas else { return }
-        NoteMediaZoomOverlay.present(image: image, source: source.url, from: rect, of: view, in: canvas, crop: crop, mask: mask)
+        NoteMediaZoomOverlay.present(image: image, source: source.url, from: rect, of: view, in: canvas, overlay: canvas.overlayView,
+                                     crop: crop, mask: mask)
     }
 
     var imageContent: NoteImageContentView? { content as? NoteImageContentView }
@@ -753,9 +716,9 @@ enum NoteMediaCopy {
 
 @MainActor
 class NoteMediaContentView: NSView {
-    weak var host: NoteMediaBlockView?
+    weak var host: NoteMediaHost?
 
-    init(host: NoteMediaBlockView) {
+    init(host: NoteMediaHost) {
         self.host = host
         super.init(frame: .zero)
         wantsLayer = true
@@ -783,7 +746,7 @@ class NoteMediaCardView: NoteMediaContentView {
     var cardHovered = false { didSet { if oldValue != cardHovered { refreshCard() } } }
     var cardSelected = false { didSet { if oldValue != cardSelected { refreshCard() } } }
 
-    override init(host: NoteMediaBlockView) {
+    override init(host: NoteMediaHost) {
         super.init(host: host)
         card.cornerRadius = NoteMediaStyle.cardRadius
         card.cornerCurve = .continuous
@@ -840,7 +803,7 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
     private var enteringLink = false
     private static let height: CGFloat = 52
 
-    override init(host: NoteMediaBlockView) {
+    override init(host: NoteMediaHost) {
         let kind = host.kind
         title = NoteMediaStyle.label(NoteMediaCopy.addPrompt(for: kind), font: NoteMediaStyle.titleFont, color: NoteTheme.secondaryInk)
         uploadChip = NoteChip("Upload", icon: .symbol(kind == .file || kind == .pdf ? "arrow.up.doc" : "square.and.arrow.up"))
@@ -1085,7 +1048,7 @@ final class NoteMediaProblemCard: NoteMediaCardView {
     private let deleteChip = NoteToolbarButton(icon: .symbol("trash"), label: "Delete")
     private static let height: CGFloat = 64
 
-    init(host: NoteMediaBlockView, problem: NoteMediaProblem) {
+    init(host: NoteMediaHost, problem: NoteMediaProblem) {
         self.problem = problem
         title = NoteMediaStyle.label(NoteMediaCopy.problemTitle(problem, kind: host.kind), font: NoteMediaStyle.titleFont, color: NoteTheme.ink)
         detail = NoteMediaStyle.label("", font: NoteMediaStyle.detailFont, color: NoteTheme.tertiaryInk)
@@ -1159,7 +1122,7 @@ final class NoteMediaPendingCard: NoteMediaCardView {
     private let title: NSTextField
     private static let height: CGFloat = 52
 
-    override init(host: NoteMediaBlockView) {
+    override init(host: NoteMediaHost) {
         title = NoteMediaStyle.label("Bringing your \(host.nounPhrase) in…", font: NoteMediaStyle.titleFont, color: NoteTheme.secondaryInk)
         super.init(host: host)
         shimmer.cornerRadius = NoteMediaStyle.cardRadius
@@ -1196,7 +1159,7 @@ final class NoteFileContentView: NoteMediaContentView {
     private var pressed = false
     private static let height: CGFloat = 40
 
-    override init(host: NoteMediaBlockView) {
+    override init(host: NoteMediaHost) {
         name = NoteMediaStyle.label("", font: NoteMediaStyle.nunito(15, weight: .bold), color: NoteTheme.ink)
         name.lineBreakMode = .byTruncatingMiddle
         size = NoteMediaStyle.label("", font: NoteMediaStyle.detailFont, color: NoteTheme.tertiaryInk)
@@ -1230,7 +1193,7 @@ final class NoteFileContentView: NoteMediaContentView {
     override var handleAnchorY: CGFloat { Self.height / 2 }
 
     override func update(block: NoteBlock, source: NoteMediaSource) {
-        name.stringValue = source.fileName
+        name.stringValue = host?.mediaFileName ?? source.fileName
         switch source {
         case .local(let url):
             icon.image = NSWorkspace.shared.icon(forFile: url.path)
@@ -1278,7 +1241,7 @@ final class NoteFileContentView: NoteMediaContentView {
 
     override func setHovered(_ hovered: Bool) {
         self.hovered = hovered
-        finderChip.isHidden = !(hovered && isLocal)
+        finderChip.isHidden = !(hovered && isLocal && host?.offersShowInFinder == true)
         openChip.isHidden = !(hovered && !isLocal && host?.source.url != nil)
         let target: Float = hovered ? 1 : 0
         let from = fill.presentation()?.opacity ?? fill.opacity
@@ -1335,3 +1298,5 @@ final class NoteFileContentView: NoteMediaContentView {
         }
     }
 }
+
+extension NoteMediaBlockView: NoteMediaHost {}
