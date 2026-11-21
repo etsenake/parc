@@ -92,7 +92,7 @@ Undo and relocation. Make live depends only on the saved card (image, web
 address and valid region geometry), so it stays available after deselecting,
 switching tabs, reopening the Easel or relaunching. The live page uses the
 shared embed header described in [Easel editing](easels.md#embedded-webpages-and-captured-cards);
-single-selection input reuses the browser-object surface. The region fits
+single-selection input reuses the shared embed surface (`NoteEmbedSurface`). The region fits
 beneath that header without changing its aspect ratio or showing neighboring
 page pixels. Oversized canvas objects letterbox at the original renderer's
 maximum viewport extent. Browser zoom is accounted for without changing the
