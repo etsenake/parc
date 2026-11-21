@@ -23,6 +23,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private(set) lazy var pageMenu = EaselPageMenu(editor: self)
     private(set) lazy var find = EaselFindController(editor: self)
     private var subscription: AnyCancellable?
+    private var titleUndoGroup: UUID?
     private var undoButton: NSButton!
     private var redoButton: NSButton!
     private var webpageButton: NSButton?
@@ -285,13 +286,14 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         guard let point, scroll.bounds.contains(scroll.convert(point, from: nil)) else { return }
         if canvas.placeTool(tool, atWindowPoint: point) { focusCanvas() }
     }
+    func controlTextDidBeginEditing(_ notification: Notification) { titleUndoGroup = UUID() }
     func controlTextDidChange(_ notification: Notification) {
         let value = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
-        do { try session.perform("Rename Easel") { $0.title = value } }
+        do { try session.perform("Rename Easel", coalescing: titleUndoGroup) { $0.title = value } }
         catch { titleField.stringValue = session.document.title; titleField.currentEditor()?.string = session.document.title; show(error) }
     }
-    func controlTextDidEndEditing(_ notification: Notification) { titleField.stringValue = session.document.title }
+    func controlTextDidEndEditing(_ notification: Notification) { titleUndoGroup = nil; titleField.stringValue = session.document.title }
     private func show(_ error: Error) { status.stringValue = error.localizedDescription; NSSound.beep() }
     @objc private func undoChange() { canvas.undo(nil) }
     @objc private func redoChange() { canvas.redo(nil) }
