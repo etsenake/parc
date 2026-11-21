@@ -36,6 +36,7 @@ final class EaselColorPicker: NSView, NoteFloatingPanelContent {
     private var rows: [[EaselColorPickerTile]] = []
     private var headers: [(title: String, frame: NSRect)] = []
     private let plate = CALayer()
+    private var pills: [String: CALayer] = [:]
     private let hexField = NoteSearchField(placeholder: "Hex code")
     private var footerRect = NSRect.zero
     private var contentHeight: CGFloat = 0
@@ -67,6 +68,11 @@ final class EaselColorPicker: NSView, NoteFloatingPanelContent {
         }
         addSubview(hexField)
         hexField.textField.setAccessibilityLabel("Custom color hex code")
+        NoteAnimation.observeReduceMotion(self) { [weak self] in
+            guard let self else { return }
+            NoteAnimation.settle(self)
+            self.rows.flatMap { $0 }.forEach { $0.refreshSurface() }
+        }
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Style")
@@ -203,11 +209,41 @@ final class EaselColorPicker: NSView, NoteFloatingPanelContent {
             case .dash(let dash): checked = summary.dash == dash
             case .labelBackground: checked = summary.labelBackground == true
             }
-            if popping, checked, !view.isChecked { _ = NoteAnimation.pop(view) }
-            view.isChecked = checked
+            view.setChecked(checked, animated: popping && window != nil)
             view.setAccessibilityLabel(title(for: view))
         }
+        placePills(animated: popping && window != nil)
         setNeedsDisplay(footerRect)
+    }
+
+    private static func group(of tile: Tile) -> String? {
+        switch tile {
+        case .fill: return "fill"
+        case .weight: return "weight"
+        case .dash: return "dash"
+        default: return nil
+        }
+    }
+
+    private func pill(_ group: String) -> CALayer {
+        if let pill = pills[group] { return pill }
+        let pill = EaselControlSurface.makePill()
+        layer?.insertSublayer(pill, above: plate)
+        pills[group] = pill
+        return pill
+    }
+
+    private func placePills(animated: Bool) {
+        var frames: [String: CGRect] = [:]
+        for view in rows.flatMap({ $0 }) where view.isChecked {
+            if let group = Self.group(of: view.tile) { frames[group] = view.frame }
+        }
+        for group in ["fill", "weight", "dash"] {
+            guard frames[group] != nil || pills[group] != nil else { continue }
+            let pill = pill(group)
+            EaselControlSurface.recolor(pill, in: self)
+            EaselControlSurface.movePill(pill, to: frames[group], animated: animated)
+        }
     }
 
     private func title(for view: EaselColorPickerTile) -> String {
@@ -453,13 +489,14 @@ private final class EaselColorPickerTile: NSView {
     let glyph: Bool
     var customHex: String? { didSet { if oldValue != customHex { needsDisplay = true } } }
     var opacity: Double? { didSet { if oldValue != opacity { needsDisplay = true; refreshValue() } } }
-    var isChecked = false { didSet { if oldValue != isChecked { needsDisplay = true; setAccessibilitySelected(isChecked) } } }
-    var isHighlighted = false { didSet { if oldValue != isHighlighted { needsDisplay = true } } }
+    private(set) var isChecked = false
+    var isHighlighted = false { didSet { if oldValue != isHighlighted { needsDisplay = true; refreshSurface() } } }
     var onPress: (() -> Void)?
     var onHover: ((Bool) -> Void)?
     var onScrub: ((Double, Bool) -> Void)?
     private var isPressed = false
     private var scrubbing: Double?
+    private var ring: CALayer?
 
     init(tile: EaselColorPicker.Tile, role: EaselColorRole, glyph: Bool) {
         self.tile = tile
@@ -468,6 +505,8 @@ private final class EaselColorPickerTile: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
+        if case .color = tile { installRing() }
+        if case .custom = tile { installRing() }
         setAccessibilityElement(true)
         switch tile {
         case .sampler: setAccessibilityRole(.button)
@@ -482,6 +521,45 @@ private final class EaselColorPickerTile: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    private func installRing() {
+        let ring = EaselControlSurface.makeRing()
+        layer?.addSublayer(ring)
+        self.ring = ring
+    }
+
+    func setChecked(_ checked: Bool, animated: Bool) {
+        guard checked != isChecked else { return }
+        isChecked = checked
+        needsDisplay = true
+        setAccessibilitySelected(checked)
+        if let ring {
+            EaselControlSurface.setRing(ring, in: self, shown: checked, animated: animated)
+        } else if animated, tile == .labelBackground {
+            EaselControlSurface.crossfade(self, duration: NoteAnimation.hoverDuration, pops: nil)
+        }
+    }
+
+    private var lifts: Bool { tile != .opacity && frame.width <= 44 }
+    private var castsShadow: Bool {
+        switch tile {
+        case .color, .custom: return true
+        default: return false
+        }
+    }
+
+    func refreshSurface(released: Bool = false) {
+        let small = frame.width <= 44
+        EaselControlSurface.apply(self, hovered: isHighlighted && lifts, pressed: isPressed && tile != .opacity, released: released,
+                                  press: small ? EaselControlMotion.pressedScale : EaselControlMotion.cardPressedScale,
+                                  casts: castsShadow)
+    }
+
+    override func layout() {
+        super.layout()
+        guard let ring else { return }
+        NoteAnimation.withoutAnimation { ring.frame = bounds.insetBy(dx: 0.75, dy: 0.75) }
+    }
 
     var displayedOpacity: Double { scrubbing ?? opacity ?? 1 }
     var valueText: String { opacity == nil && scrubbing == nil ? "Mixed" : Self.percent(displayedOpacity) }
@@ -509,16 +587,13 @@ private final class EaselColorPickerTile: NSView {
         case .sampler:
             NoteIconRenderer.draw(.symbol("eyedropper"), in: bounds, tint: ink, pointSize: 14)
         case .fill(let mode):
-            drawCheckedPlate()
             drawFillIcon(mode, in: NSRect(x: 10, y: bounds.midY - 7, width: 14, height: 14))
             drawLabel(mode.title, x: 32)
         case .opacity:
             drawOpacity()
         case .weight(let weight):
-            drawCheckedPlate()
             drawWeight(weight)
         case .dash(let dash):
-            drawCheckedPlate()
             drawDash(dash)
         case .labelBackground:
             drawLabelBackground()
@@ -574,11 +649,6 @@ private final class EaselColorPickerTile: NSView {
             color.withAlphaComponent(0.75).setFill()
             NSBezierPath(roundedRect: bar, xRadius: 5, yRadius: 5).fill()
         }
-        if isChecked {
-            let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.75, dy: 0.75), xRadius: 8, yRadius: 8)
-            ring.lineWidth = 1.5
-            NoteTheme.checkedInk.setStroke(); ring.stroke()
-        }
     }
 
     private func drawEmptyCustom() {
@@ -588,12 +658,6 @@ private final class EaselColorPickerTile: NSView {
         path.setLineDash([2.5, 2.5], count: 2, phase: 0)
         NoteTheme.menuHairline.setStroke(); path.stroke()
         NoteIconRenderer.draw(.symbol("plus"), in: bounds, tint: ink, pointSize: 11)
-    }
-
-    private func drawCheckedPlate() {
-        guard isChecked else { return }
-        NoteTheme.checkedFill.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: NoteTheme.controlRadius, yRadius: NoteTheme.controlRadius).fill()
     }
 
     private func drawLabel(_ text: String, x: CGFloat) {
@@ -691,6 +755,7 @@ private final class EaselColorPickerTile: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         needsDisplay = true
+        if let ring { NoteAnimation.withoutAnimation { ring.borderColor = NoteTheme.resolved(NoteTheme.checkedInk, in: self) } }
     }
 
     override func updateTrackingAreas() {
@@ -705,13 +770,11 @@ private final class EaselColorPickerTile: NSView {
     override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
 
     private func setPressed(_ pressed: Bool) {
-        guard pressed != isPressed, let layer else { return }
+        guard pressed != isPressed else { return }
         isPressed = pressed
         needsDisplay = true
         guard tile != .opacity else { return }
-        let centre = NoteAnimation.layerPoint(NSPoint(x: bounds.midX, y: bounds.midY), in: self)
-        let transform = pressed ? NoteAnimation.scaleTransform(NoteAnimation.pressedScale, about: centre) : CATransform3DIdentity
-        NoteAnimation.spring(layer, "transform", to: NSValue(caTransform3D: transform), spring: .press, key: NoteAnimation.keyPrefix + "easel.style.press")
+        refreshSurface(released: !pressed)
     }
 
     override func mouseDown(with event: NSEvent) {

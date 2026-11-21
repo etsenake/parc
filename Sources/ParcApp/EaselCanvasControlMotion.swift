@@ -8,6 +8,7 @@ enum EaselControlSurface {
     static let shakeKey = NoteAnimation.keyPrefix + "easel.control.shake"
     static let glowKey = NoteAnimation.keyPrefix + "easel.control.glow"
     static let morphKey = NoteAnimation.keyPrefix + "easel.control.morph"
+    static let blinkKey = NoteAnimation.keyPrefix + "easel.control.blink"
     static let glowName = "parc.easel.control.glow"
     static let restingShadowRadius: CGFloat = 2
     static let liftedShadowRadius: CGFloat = 8
@@ -23,6 +24,7 @@ enum EaselControlSurface {
         let target = scale == 1 ? CATransform3DIdentity : NoteAnimation.scaleTransform(scale, about: centre)
         NoteAnimation.spring(layer, "transform", to: NSValue(caTransform3D: target), spring: pressed || released ? .press : .highlight,
                              key: scaleKey)
+        NoteAnimation.withoutAnimation { layer.zPosition = hovered || pressed ? 2 : 0 }
         guard casts else { return }
         let dark = NoteTheme.isDark(view.effectiveAppearance)
         NoteAnimation.withoutAnimation {
@@ -149,13 +151,25 @@ enum EaselControlSurface {
         layer.add(shake, forKey: key)
     }
 
-    static func glow(_ view: NSView, color: NSColor, radius: CGFloat = NoteTheme.controlRadius) {
+    static func blink(_ layer: CALayer, resting: Float = 1, key: String = blinkKey) {
+        NoteAnimation.withoutAnimation { layer.opacity = resting }
+        NoteAnimation.settle(layer, keys: [key])
+        guard !NoteAnimation.reduceMotion else { return }
+        let blink = CAKeyframeAnimation(keyPath: "opacity")
+        blink.values = [1, 0.2, 1, 0.2, resting].map { NSNumber(value: $0) }
+        blink.keyTimes = [0, 0.2, 0.45, 0.7, 1].map { NSNumber(value: $0) }
+        blink.duration = 0.55
+        blink.timingFunction = NoteCurve.easeInOut
+        _ = NoteAnimation.run(blink, on: layer, key: key)
+    }
+
+    static func glow(_ view: NSView, color: NSColor, radius: CGFloat = NoteTheme.controlRadius, around: NSRect? = nil) {
         view.wantsLayer = true
         guard let host = view.layer, view.window != nil else { return }
         let glow = host.sublayers?.first { $0.name == glowName } ?? CALayer()
         glow.name = glowName
         NoteAnimation.withoutAnimation {
-            glow.frame = host.bounds
+            glow.frame = around ?? host.bounds
             glow.cornerRadius = radius
             glow.cornerCurve = .continuous
             glow.backgroundColor = NoteTheme.resolved(color.withAlphaComponent(0.28), in: view)
@@ -164,7 +178,7 @@ enum EaselControlSurface {
             glow.shadowOffset = .zero
             glow.shadowOpacity = 0.8
             glow.opacity = 0
-            if glow.superlayer == nil { host.addSublayer(glow) }
+            if glow.superlayer == nil { host.insertSublayer(glow, at: 0) }
         }
         let animation: CAAnimation
         if NoteAnimation.reduceMotion {
