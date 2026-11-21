@@ -95,6 +95,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private var trackedGuideBounds = NSRect.null
     private var trackedCanvasScale: Double?
     private var trackedHidesAnnotations = false
+    private var trackedEditingID: UUID?
     private var textLayouts: [UUID: CachedTextLayout] = [:]
     private(set) var presentationNoOpSkipCount = 0
     private(set) var presentationDirtyCount = 0
@@ -622,10 +623,13 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         trackedGuideBounds = guideDirtyBounds()
         trackedCanvasScale = canvasScale
         trackedHidesAnnotations = hidesPassiveAnnotations
+        trackedEditingID = paintedEditingID
     }
+    private var paintedEditingID: UUID? { editor == nil ? nil : editingID }
     private func presentationMatchesPaintedArtwork() -> Bool {
         guard let trackedCanvasScale, trackedCanvasScale == canvasScale,
               trackedHidesAnnotations == hidesPassiveAnnotations,
+              trackedEditingID == paintedEditingID,
               trackedHover == hoveredObjectID,
               trackedMarquee == marqueeRect,
               trackedSelection == displayedSelection,
@@ -674,6 +678,13 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 add(displayBounds(of: item))
                 artwork[item.id]?.needsDisplay = true
                 if displayedSelection.contains(item.id) || item.id == hoveredObjectID { overlayChanged = true }
+            }
+        }
+        if trackedEditingID != paintedEditingID {
+            for id in Set([trackedEditingID, paintedEditingID].compactMap { $0 }) {
+                guard let item = current.first(where: { $0.id == id }) ?? trackedItems[id] else { continue }
+                add(displayBounds(of: item))
+                artwork[id]?.needsDisplay = true
             }
         }
         func addSelectionChrome(_ ids: Set<UUID>, _ source: [EaselItem]) {

@@ -1098,6 +1098,26 @@ struct EaselCanvasTests {
         expect(canvas.presentationDirtyCount > dirtyBeforeClear,
                "Clearing selection after a presentation no-op still applies a dirty rect")
         canvas.displayIfNeeded()
+        let sticky = EaselItem(kind: .sticky, frame: .init(x: 300, y: 300, width: 220, height: 220), text: "Hello world 23")
+        try session.perform("Sticky") { $0.items.append(sticky) }
+        await drainDocumentPublishes()
+        guard let placed = session.document.items.first(where: { $0.id == sticky.id }) else {
+            expect(false, "Seeded sticky lands on the board"); return
+        }
+        canvas.selection = [sticky.id]
+        canvas.displayIfNeeded()
+        let dirtyBeforeEditing = canvas.presentationDirtyCount
+        canvas.beginEditing(placed)
+        expect(canvas.editingID == sticky.id && canvas.editor != nil, "Selected sticky enters text editing")
+        expect(canvas.presentationDirtyCount > dirtyBeforeEditing && canvas.needsDisplay,
+               "Starting a sticky edit repaints the sticky so its drawn text gives way to the editor")
+        canvas.displayIfNeeded()
+        let dirtyBeforeFinishing = canvas.presentationDirtyCount
+        canvas.finishEditing()
+        expect(canvas.editingID == nil && canvas.selection == [sticky.id], "Finishing the edit keeps the sticky selected")
+        expect(canvas.presentationDirtyCount > dirtyBeforeFinishing && canvas.needsDisplay,
+               "Finishing a sticky edit with nothing else changed repaints the sticky so its text comes back")
+        canvas.displayIfNeeded()
 
         let browser = EaselItem(kind: .browser, frame: .init(x: 80, y: 80, width: 400, height: 300), url: "https://example.org/original")
         let cover = EaselItem(kind: .rectangle, frame: .init(x: 500, y: 40, width: 80, height: 80), zIndex: 2)
