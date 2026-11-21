@@ -1,6 +1,7 @@
 // Copyright 2026 Parc contributors.
 #import "native_appkit_page.h"
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <map>
@@ -13,11 +14,14 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
 #include "base/scoped_observation.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
@@ -56,17 +60,85 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/base_window.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/rect_f.h"
 #import "window_security_reservation.h"
 
+namespace parc {
+namespace {
+constexpr NSUInteger kMaxScrollContainers = 8;
+bool ScrollLocatorPartValid(std::string_view text, bool tag) {
+  return !text.empty() && text.size() <= (tag ? 64u : 5u) &&
+      std::all_of(text.begin(), text.end(), [tag](char c) {
+        return tag ? base::IsAsciiAlphaNumeric(c) || c == '-' || c == '_' || c == '.'
+                   : base::IsAsciiDigit(c);
+      });
+}
+bool ScrollAnchorValid(NSString* anchor) {
+  if (!anchor) return true;
+  const std::string text = base::SysNSStringToUTF8(anchor);
+  if (text.empty() || text.size() > 128 || !base::IsAsciiAlpha(text[0])) return false;
+  int digits = 0;
+  for (char c : text) {
+    if (!base::IsAsciiAlphaNumeric(c) && c != '-' && c != '_') return false;
+    digits = base::IsAsciiDigit(c) ? digits + 1 : 0;
+    if (digits >= 3) return false;
+  }
+  return true;
+}
+bool ScrollPathValid(NSString* path) {
+  if (!path) return false;
+  const std::string text = base::SysNSStringToUTF8(path);
+  if (text.empty()) return true;
+  if (text.size() > 2048) return false;
+  const auto steps = base::SplitStringPiece(text, ">", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
+  if (steps.size() > 128) return false;
+  for (std::string_view step : steps) {
+    if (step == "^") continue;
+    const size_t colon = step.find(':');
+    if (colon == std::string_view::npos || !ScrollLocatorPartValid(step.substr(0, colon), true) ||
+        !ScrollLocatorPartValid(step.substr(colon + 1), false)) return false;
+  }
+  return true;
+}
+bool BoundedFinite(double value) { return std::isfinite(value) && std::abs(value) <= 1000000; }
+}
+}
+
+@implementation PCNativeCaptureScrollContainer
+@synthesize anchorID = _anchorID, path = _path, scrollOffset = _scrollOffset, frame = _frame;
+- (instancetype)initWithAnchorID:(NSString*)anchorID path:(NSString*)path
+    scrollOffset:(NSPoint)scrollOffset frame:(NSRect)frame {
+  if (!parc::ScrollAnchorValid(anchorID) || !parc::ScrollPathValid(path) ||
+      !parc::BoundedFinite(scrollOffset.x) || !parc::BoundedFinite(scrollOffset.y) ||
+      !parc::BoundedFinite(frame.origin.x) || !parc::BoundedFinite(frame.origin.y) ||
+      !parc::BoundedFinite(frame.size.width) || !parc::BoundedFinite(frame.size.height) ||
+      frame.size.width < 0 || frame.size.height < 0) return nil;
+  if ((self = [super init])) {
+    _anchorID = [anchorID copy];
+    _path = [path copy];
+    _scrollOffset = scrollOffset;
+    _frame = frame;
+  }
+  return self;
+}
+@end
 @interface PCNativeCaptureLayout ()
-- (instancetype)initWithViewport:(NSSize)viewport scroll:(NSPoint)scroll region:(NSRect)region;
+- (instancetype)initWithViewport:(NSSize)viewport scroll:(NSPoint)scroll region:(NSRect)region
+                 scrollContainers:(NSArray<PCNativeCaptureScrollContainer*>*)scrollContainers;
 @end
 @implementation PCNativeCaptureLayout
 @synthesize viewportSize = _viewportSize, scrollOffset = _scrollOffset, region = _region;
-- (instancetype)initWithViewport:(NSSize)viewport scroll:(NSPoint)scroll region:(NSRect)region {
-  if ((self = [super init])) { _viewportSize = viewport; _scrollOffset = scroll; _region = region; }
+@synthesize scrollContainers = _scrollContainers;
+- (instancetype)initWithViewport:(NSSize)viewport scroll:(NSPoint)scroll region:(NSRect)region
+                 scrollContainers:(NSArray<PCNativeCaptureScrollContainer*>*)scrollContainers {
+  if ((self = [super init])) {
+    _viewportSize = viewport;
+    _scrollOffset = scroll;
+    _region = region;
+    _scrollContainers = [scrollContainers copy] ?: @[];
+  }
   return self;
 }
 @end
@@ -143,6 +215,86 @@ std::u16string ElementQuery(NSPoint point, double zoom) {
     return null;
   })())JS";
   return base::UTF8ToUTF16(script);
+}
+std::u16string GeometryQuery(gfx::PointF centre) {
+  std::string script = "(() => { const px = " + base::NumberToString(centre.x()) +
+      ", py = " + base::NumberToString(centre.y()) + R"JS(;
+    const v = visualViewport;
+    if (!v) return null;
+    const geometry = {width:innerWidth, height:innerHeight, x:v.pageLeft, y:v.pageTop, scale:v.scale};
+    if (!Number.isFinite(v.scale) || v.scale <= 0) return geometry;
+    const cx = px / v.scale + v.offsetLeft, cy = py / v.scale + v.offsetTop;
+    const stableID = id => /^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(id) && !/[0-9]{3}/.test(id);
+    const locate = el => {
+      const steps = [];
+      for (let node = el; node;) {
+        if (node === document.documentElement) return {anchor:null, path:steps.reverse().join('>')};
+        if (node.id && stableID(node.id) && node.getRootNode() === document &&
+            document.getElementById(node.id) === node) return {anchor:node.id, path:steps.reverse().join('>')};
+        const parent = node.parentElement, root = node.parentNode;
+        const holder = parent || (root instanceof ShadowRoot && root.mode === 'open' ? root : null);
+        if (!holder || !/^[A-Za-z0-9._-]{1,64}$/.test(node.localName)) return null;
+        steps.push(node.localName + ':' +
+            Array.prototype.filter.call(holder.children, c => c.localName === node.localName).indexOf(node));
+        if (parent) { node = parent; } else { steps.push('^'); node = root.host; }
+      }
+      return null;
+    };
+    let hit = document.elementFromPoint(cx, cy);
+    while (hit && hit.shadowRoot) {
+      const inner = hit.shadowRoot.elementFromPoint(cx, cy);
+      if (!inner || inner === hit) break;
+      hit = inner;
+    }
+    const scroller = document.scrollingElement || document.documentElement;
+    const scrolls = value => value === 'auto' || value === 'scroll' || value === 'overlay';
+    const containers = [];
+    for (let el = hit; el && el !== document.documentElement && el !== scroller;) {
+      const style = getComputedStyle(el);
+      if (el.scrollTop || el.scrollLeft ||
+          (scrolls(style.overflowY) && el.scrollHeight > el.clientHeight + 1) ||
+          (scrolls(style.overflowX) && el.scrollWidth > el.clientWidth + 1)) {
+        const at = locate(el);
+        if (at) {
+          const r = el.getBoundingClientRect();
+          containers.push({anchor:at.anchor, path:at.path, x:el.scrollLeft, y:el.scrollTop,
+                           left:r.left + scrollX, top:r.top + scrollY, width:r.width, height:r.height});
+          if (containers.length === 8) break;
+        } else if (el.scrollTop || el.scrollLeft) {
+          geometry.containers = null;
+          return geometry;
+        }
+      }
+      el = el.parentElement || (el.parentNode instanceof ShadowRoot ? el.parentNode.host : null);
+    }
+    geometry.containers = containers.reverse();
+    return geometry;
+  })())JS";
+  return base::UTF8ToUTF16(script);
+}
+std::optional<NSArray<PCNativeCaptureScrollContainer*>*> ScrollContainersFrom(
+    const base::DictValue& dict) {
+  const base::ListValue* list = dict.FindList("containers");
+  if (!list || list->size() > kMaxScrollContainers) return std::nullopt;
+  NSMutableArray<PCNativeCaptureScrollContainer*>* containers = [NSMutableArray array];
+  for (const base::Value& value : *list) {
+    const auto* entry = value.GetIfDict();
+    if (!entry) return std::nullopt;
+    const base::Value* anchor = entry->Find("anchor");
+    const std::string* path = entry->FindString("path");
+    auto x = entry->FindDouble("x"), y = entry->FindDouble("y");
+    auto left = entry->FindDouble("left"), top = entry->FindDouble("top");
+    auto width = entry->FindDouble("width"), height = entry->FindDouble("height");
+    if (!anchor || !(anchor->is_none() || anchor->is_string()) || !path ||
+        !x || !y || !left || !top || !width || !height) return std::nullopt;
+    auto container = [[PCNativeCaptureScrollContainer alloc]
+        initWithAnchorID:anchor->is_string() ? base::SysUTF8ToNSString(anchor->GetString()) : nil
+        path:base::SysUTF8ToNSString(*path) scrollOffset:NSMakePoint(*x, *y)
+        frame:NSMakeRect(*left, *top, *width, *height)];
+    if (!container) return std::nullopt;
+    [containers addObject:container];
+  }
+  return containers;
 }
 struct EncodedCapture {
   std::vector<uint8_t> png;
@@ -415,13 +567,12 @@ class PageCapture final : public content::WebContentsObserver,
  private:
   void ReadGeometry(uint64_t request, bool after_copy, SkBitmap bitmap) {
     if (!completion_ || request != request_ || !Valid()) return;
-    constexpr char16_t script[] = uR"JS((() => {
-      const v = visualViewport;
-      return v ? {width:innerWidth, height:innerHeight,
-        x:v.pageLeft, y:v.pageTop, scale:v.scale} : null;
-    })())JS";
+    const double zoom = blink::ZoomLevelToZoomFactor(content::HostZoomMap::GetZoomLevel(web_contents()));
+    const gfx::PointF centre = std::isfinite(zoom) && zoom > 0 ?
+        gfx::PointF(capture_area_.CenterPoint().x() / zoom, capture_area_.CenterPoint().y() / zoom) :
+        gfx::PointF();
     document_.AsRenderFrameHostIfValid()->ExecuteJavaScriptInIsolatedWorld(
-        script, base::BindOnce(&PageCapture::GeometryRead, weak_factory_.GetWeakPtr(),
+        GeometryQuery(centre), base::BindOnce(&PageCapture::GeometryRead, weak_factory_.GetWeakPtr(),
           request, after_copy, std::move(bitmap)), ISOLATED_WORLD_ID_CHROME_INTERNAL);
   }
   void GeometryRead(uint64_t request, bool after_copy, SkBitmap bitmap, base::Value value) {
@@ -442,10 +593,14 @@ class PageCapture final : public content::WebContentsObserver,
             std::abs(*x) <= 1000000 && std::abs(*y) <= 1000000 && *scale > 0 &&
             std::isfinite(zoom) && zoom > 0) {
           const double factor = zoom * *scale;
-          capture_layout_ = [[PCNativeCaptureLayout alloc]
-              initWithViewport:NSMakeSize(*w, *h) scroll:NSMakePoint(*x, *y)
-              region:NSMakeRect(capture_area_.x() / factor, capture_area_.y() / factor,
-                  capture_area_.width() / factor, capture_area_.height() / factor)];
+          auto containers = ScrollContainersFrom(*dict);
+          if (containers) {
+            capture_layout_ = [[PCNativeCaptureLayout alloc]
+                initWithViewport:NSMakeSize(*w, *h) scroll:NSMakePoint(*x, *y)
+                region:NSMakeRect(capture_area_.x() / factor, capture_area_.y() / factor,
+                    capture_area_.width() / factor, capture_area_.height() / factor)
+                scrollContainers:*containers];
+          }
         }
       }
       EncodeSurface(request, std::move(bitmap));
@@ -871,9 +1026,10 @@ namespace parc {
 class LiveCapturePosition final : public std::enable_shared_from_this<LiveCapturePosition> {
  public:
   LiveCapturePosition(PCNativePage* page, NSRect region, NSPoint scroll,
+                      NSArray<PCNativeCaptureScrollContainer*>* containers,
                       double width, void (^completion)(BOOL))
       : page_(page), window_(page.nativeView.window), region_(region), scroll_(scroll),
-        width_(width), completion_([completion copy]) {
+        containers_(ContainersScript(containers)), width_(width), completion_([completion copy]) {
     auto* contents = ContentsForNativePage(page);
     if (contents && contents->GetPrimaryMainFrame()) {
       contents_ = contents->GetWeakPtr();
@@ -904,11 +1060,12 @@ class LiveCapturePosition final : public std::enable_shared_from_this<LiveCaptur
     auto n = [](double value) { return base::NumberToString(value); };
     std::string script = R"JS((() => {
       if (!document.body || !['interactive','complete'].includes(document.readyState)) return false;
+      let aligned = true;)JS" + containers_ + R"JS(
       document.body.style.transformOrigin = 'top left';
       document.body.style.transform = 'scale()JS" + n(scale) + ") translate(" +
         n(-region_.origin.x) + "px," + n(-region_.origin.y) + R"JS(px)';
       window.scroll({left:)JS" + n(scroll_.x * scale) + ",top:" + n(scroll_.y * scale) + R"JS(,behavior:'instant'});
-      return Math.abs(scrollX - )JS" + n(scroll_.x * scale) + ") < 3 && Math.abs(scrollY - " +
+      return aligned && Math.abs(scrollX - )JS" + n(scroll_.x * scale) + ") < 3 && Math.abs(scrollY - " +
         n(scroll_.y * scale) + ") < 3; })()";
     auto self = shared_from_this();
     document_.AsRenderFrameHostIfValid()->ExecuteJavaScriptInIsolatedWorld(
@@ -920,6 +1077,51 @@ class LiveCapturePosition final : public std::enable_shared_from_this<LiveCaptur
         }, self), ISOLATED_WORLD_ID_CHROME_INTERNAL);
   }
  private:
+  std::string ContainersScript(NSArray<PCNativeCaptureScrollContainer*>* containers) const {
+    if (containers.count == 0) return std::string();
+    base::ListValue list;
+    for (PCNativeCaptureScrollContainer* container in containers) {
+      base::DictValue entry;
+      if (container.anchorID) entry.Set("anchor", base::SysNSStringToUTF8(container.anchorID));
+      else entry.Set("anchor", base::Value());
+      entry.Set("path", base::SysNSStringToUTF8(container.path));
+      entry.Set("x", container.scrollOffset.x);
+      entry.Set("y", container.scrollOffset.y);
+      entry.Set("left", container.frame.origin.x);
+      entry.Set("top", container.frame.origin.y);
+      entry.Set("width", container.frame.size.width);
+      entry.Set("height", container.frame.size.height);
+      list.Append(std::move(entry));
+    }
+    auto json = base::WriteJson(list);
+    if (!json) return "aligned = false;";
+    auto n = [](double value) { return base::NumberToString(value); };
+    return "const containers = " + *json + R"JS(;
+      const find = (anchor, path) => {
+        let node = anchor === null ? document.documentElement : document.getElementById(anchor);
+        for (const step of path ? path.split('>') : []) {
+          if (!node) return null;
+          if (step === '^') { node = node.shadowRoot; continue; }
+          const [tag, index] = step.split(':');
+          node = Array.prototype.filter.call(node.children, c => c.localName === tag)[Number(index)];
+        }
+        return node instanceof Element ? node : null;
+      };
+      document.body.style.transform = '';
+      for (const c of containers) {
+        c.element = find(c.anchor, c.path);
+        if (!c.element) { aligned = false; continue; }
+        c.element.scrollTo({left:c.x, top:c.y, behavior:'instant'});
+        if (Math.abs(c.element.scrollLeft - c.x) >= 3 || Math.abs(c.element.scrollTop - c.y) >= 3) aligned = false;
+      }
+      window.scroll({left:)JS" + n(scroll_.x) + ",top:" + n(scroll_.y) + R"JS(,behavior:'instant'});
+      for (const c of containers) {
+        if (!c.element) continue;
+        const r = c.element.getBoundingClientRect();
+        if (Math.abs(r.left + scrollX - c.left) > 4 || Math.abs(r.top + scrollY - c.top) > 4 ||
+            Math.abs(r.width - c.width) > 4 || Math.abs(r.height - c.height) > 4) aligned = false;
+      })JS";
+  }
   void Finish(bool success) {
     timer_.Stop();
     cancelled_ = true;
@@ -934,6 +1136,7 @@ class LiveCapturePosition final : public std::enable_shared_from_this<LiveCaptur
   content::WeakDocumentPtr document_;
   NSRect region_;
   NSPoint scroll_;
+  std::string containers_;
   double width_;
   int attempts_ = 0;
   bool cancelled_ = false;
@@ -963,13 +1166,24 @@ class LiveCapturePosition final : public std::enable_shared_from_this<LiveCaptur
 }
 - (PCNativeLiveCapturePosition*)positionLiveCapture:(NSRect)region scrollOffset:(NSPoint)scroll
     displayWidth:(double)width completion:(void (^)(BOOL))completion {
+  return [self positionLiveCapture:region scrollOffset:scroll scrollContainers:@[]
+                      displayWidth:width completion:completion];
+}
+- (PCNativeLiveCapturePosition*)positionLiveCapture:(NSRect)region scrollOffset:(NSPoint)scroll
+    scrollContainers:(NSArray<PCNativeCaptureScrollContainer*>*)containers
+    displayWidth:(double)width completion:(void (^)(BOOL))completion {
+  if (!containers || containers.count > parc::kMaxScrollContainers) return nil;
+  for (id container in containers) {
+    if (![container isKindOfClass:[PCNativeCaptureScrollContainer class]]) return nil;
+  }
   if (!self.embeddedOwnerValid || !completion || !std::isfinite(width) || width <= 0 || width > 1000000 ||
       !std::isfinite(region.origin.x) || !std::isfinite(region.origin.y) ||
       !std::isfinite(region.size.width) || !std::isfinite(region.size.height) ||
       !std::isfinite(scroll.x) || !std::isfinite(scroll.y) || region.origin.x < 0 || region.origin.y < 0 ||
       region.size.width <= 0 || region.size.height <= 0 || NSMaxX(region) > 16385 || NSMaxY(region) > 16385 ||
       std::abs(scroll.x) > 1000000 || std::abs(scroll.y) > 1000000) return nil;
-  auto state = std::make_shared<parc::LiveCapturePosition>(self, region, scroll, width, completion);
+  auto state = std::make_shared<parc::LiveCapturePosition>(self, region, scroll, containers, width,
+                                                           completion);
   if (!state->Valid()) return nil;
   auto request = [[PCNativeLiveCapturePosition alloc] initWithState:state];
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,

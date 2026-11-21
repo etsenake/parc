@@ -15,6 +15,12 @@ import AppKit
     let image: NSImage?
     init(image: NSImage?) { self.image = image }
 }
+@MainActor final class PCNativeCaptureScrollContainer: NSObject {
+    let anchorID: String?, path: String, scrollOffset: NSPoint, frame: NSRect
+    init?(anchorID: String?, path: String, scrollOffset: NSPoint, frame: NSRect) {
+        self.anchorID = anchorID; self.path = path; self.scrollOffset = scrollOffset; self.frame = frame
+    }
+}
 @MainActor final class PCNativePage: NSObject {
     var supportsSnapshot = true
     var refusesSnapshot = false, withholdsSnapshot = false
@@ -37,8 +43,11 @@ import AppKit
     var delayPositions = false
     var positionReplies: [(Bool) -> Void] = []
     var positionRequests: [PCNativeLiveCapturePosition] = []
-    func positionLiveCapture(_ region: NSRect, scrollOffset: NSPoint, displayWidth: Double, completion: @escaping (Bool) -> Void) -> PCNativeLiveCapturePosition? {
+    var positionContainers: [[PCNativeCaptureScrollContainer]] = []
+    func positionLiveCapture(_ region: NSRect, scrollOffset: NSPoint, scrollContainers: [PCNativeCaptureScrollContainer],
+                             displayWidth: Double, completion: @escaping (Bool) -> Void) -> PCNativeLiveCapturePosition? {
         positions.append((region, scrollOffset, displayWidth))
+        positionContainers.append(scrollContainers)
         let request = PCNativeLiveCapturePosition()
         positionRequests.append(request)
         if delayPositions { positionReplies.append(completion) }

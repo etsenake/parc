@@ -428,7 +428,8 @@ private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
         if !framing.revealsPage { showLiningUp() }
         positioning = page.positionLiveCapture(NSRect(x: layout.region.x, y: layout.region.y,
             width: layout.region.width, height: layout.region.height),
-            scrollOffset: NSPoint(x: layout.scroll.x, y: layout.scroll.y), displayWidth: width) { [weak self, weak page] success in
+            scrollOffset: NSPoint(x: layout.scroll.x, y: layout.scroll.y),
+            scrollContainers: layout.nativeScrollContainers, displayWidth: width) { [weak self, weak page] success in
                 MainActor.assumeIsolated {
                     guard let self, let page, self.positionGeneration == generation,
                           self.browser.nativePage === page, page.embeddedOwnerValid else { return }
@@ -512,4 +513,20 @@ private final class EaselSnapshotHeader: NSView {
 @MainActor
 private final class EaselLiveCaptureClip: NSView {
     override var isFlipped: Bool { true }
+}
+
+extension EaselScrollContainer {
+    init(_ native: PCNativeCaptureScrollContainer) {
+        self.init(anchorID: native.anchorID, path: native.path, scroll: EaselPoint(x: native.scrollOffset.x, y: native.scrollOffset.y),
+                  frame: EaselRect(x: native.frame.minX, y: native.frame.minY, width: native.frame.width, height: native.frame.height))
+    }
+}
+
+extension EaselCaptureLayout {
+    @MainActor var nativeScrollContainers: [PCNativeCaptureScrollContainer] {
+        (scrollContainers ?? []).compactMap {
+            PCNativeCaptureScrollContainer(anchorID: $0.anchorID, path: $0.path, scrollOffset: NSPoint(x: $0.scroll.x, y: $0.scroll.y),
+                                           frame: NSRect(x: $0.frame.x, y: $0.frame.y, width: $0.frame.width, height: $0.frame.height))
+        }
+    }
 }

@@ -17,6 +17,20 @@ its original document, native page, Profile, window, screenshot policy and
 security ownership. Changed geometry leaves the ordinary genuine PNG intact
 but offers no live-region capability. Full-page captures have no region layout.
 
+The same geometry read records the scroll context under the region's centre:
+every scrolled or scrollable ancestor of the element there (up to eight,
+outermost first, crossing open shadow roots), with its scroll offset and its
+document-space frame. Each panel is found again by a locator: the nearest
+ancestor with a readable, unique id (generated-looking ids with digit runs are
+skipped) followed by tag-and-index steps, or a path from the root element.
+App shells and single-page apps whose content scrolls inside a panel rather
+than the window are framed this way. A scrolled panel that can't be located,
+such as one inside a closed shadow root, leaves the capture without a region
+layout rather than framing the wrong content. Window-only captures, and every
+card saved before panels were recorded, store no panel list and keep
+window-only framing. Notes save the same list in the capture's `scrollers`
+attribute.
+
 Element captures from capture mode's element selector take the same path: the
 element's viewport rectangle, outset by two points and clipped to the viewport,
 is captured as a region and gets the same geometry (`EaselCaptureGeometry`).
@@ -41,6 +55,14 @@ page, native window and embedded owner. Navigation, destruction, retirement or
 transfer invalidates pending work. A five-second deadline bounds a nonresponsive
 renderer; there are at most twenty attempts, spaced 100 ms apart. Stale callbacks cannot replace a newer
 position or report it as successful.
+
+When the capture recorded scroll panels, each attempt first clears Parc's
+framing transform, restores every panel's scroll offset outermost first and
+then the window's original offset, and checks that each panel reached its
+offset and sits at its recorded frame within a few CSS pixels. Only then does
+the attempt count as aligned; it reapplies the framing transform either way,
+so a retry never shows an unframed page. Fonts and images that shift layout
+late are absorbed by the same bounded retries.
 
 The live page stays covered by the status card (“Lining up the region you
 captured…”) from admission until positioning succeeds, so an unframed page is

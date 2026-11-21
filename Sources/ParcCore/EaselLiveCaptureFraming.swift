@@ -21,6 +21,13 @@ enum EaselCaptureGeometry {
         return layout.isValid ? layout : nil
     }
 
+    static func captured(viewport: EaselPoint, scroll: EaselPoint, region: EaselRect,
+                         scrollContainers: [EaselScrollContainer]) -> EaselCaptureLayout? {
+        let layout = EaselCaptureLayout(viewport: viewport, scroll: scroll, region: region,
+                                        scrollContainers: scrollContainers.isEmpty ? nil : scrollContainers)
+        return layout.isValid ? layout : nil
+    }
+
     static func displaySize(_ layout: EaselCaptureLayout, availableWidth: Double, availableHeight: Double,
                             pageZoom: Double) -> (width: Double, height: Double) {
         let aspect = layout.region.width / layout.region.height

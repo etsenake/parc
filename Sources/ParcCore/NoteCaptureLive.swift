@@ -3,12 +3,16 @@ import Foundation
 extension NoteCaptureGeometry {
     init(_ layout: EaselCaptureLayout) {
         self.init(viewportWidth: layout.viewport.x, viewportHeight: layout.viewport.y, scrollX: layout.scroll.x, scrollY: layout.scroll.y,
-                  regionX: layout.region.x, regionY: layout.region.y, regionWidth: layout.region.width, regionHeight: layout.region.height)
+                  regionX: layout.region.x, regionY: layout.region.y, regionWidth: layout.region.width, regionHeight: layout.region.height,
+                  scrollers: layout.scrollContainers.map(EaselScrollContainer.encode))
     }
 
-    var easelLayout: EaselCaptureLayout {
-        EaselCaptureLayout(viewport: EaselPoint(x: viewportWidth, y: viewportHeight), scroll: EaselPoint(x: scrollX, y: scrollY),
-                           region: EaselRect(x: regionX, y: regionY, width: regionWidth, height: regionHeight))
+    var easelLayout: EaselCaptureLayout? {
+        let containers = scrollers.map(EaselScrollContainer.decode)
+        if containers == .some(nil) { return nil }
+        return EaselCaptureLayout(viewport: EaselPoint(x: viewportWidth, y: viewportHeight), scroll: EaselPoint(x: scrollX, y: scrollY),
+                                  region: EaselRect(x: regionX, y: regionY, width: regionWidth, height: regionHeight),
+                                  scrollContainers: containers ?? nil)
     }
 }
 

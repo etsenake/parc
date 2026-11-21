@@ -37,6 +37,19 @@ struct NoteCaptureTests {
         expect(NoteCaptureGeometry(viewport: "0,800", scroll: "0,0", region: "0,0,1,1") == nil, "an empty viewport is refused")
         expectEqual(NoteCaptureGeometry(layout).scrollAttribute, "0,1200.5", "fractional scroll offsets keep their CSS pixels")
         expect(NoteCapture(sourceURL: "https://a.com", geometry: nil, live: true).live == false, "a capture without geometry can't be live")
+        var panelled = layout
+        panelled.scrollContainers = [EaselScrollContainer(anchorID: "feed", path: "div:0>^>section:2", scroll: EaselPoint(x: 0, y: 2400.25),
+                                                          frame: EaselRect(x: 0, y: 64, width: 900, height: 736))]
+        let attributes = NoteCapture(sourceURL: "https://example.com", geometry: NoteCaptureGeometry(panelled)).attributes
+        let values = Dictionary(attributes.compactMap { key, value in value.map { (key, $0) } }, uniquingKeysWith: { a, _ in a })
+        expectEqual(values[NoteCapture.scrollersKey], "#feed div:0>^>section:2 0,2400.25 0,64,900,736", "inner scroll panels are saved with the capture")
+        expectEqual(NoteCapture(values: values, flags: [])?.geometry?.easelLayout, panelled, "saved scroll panels come back exactly")
+        expect(NoteCapture(sourceURL: "https://example.com", geometry: NoteCaptureGeometry(layout)).attributes.allSatisfy { $0.0 != NoteCapture.scrollersKey },
+               "window-only captures save no scroll panels")
+        var broken = values
+        broken[NoteCapture.scrollersKey] = "#feed div;0 0,0 0,0,1,1"
+        let unreadable = NoteCapture.block(source: "Attachments/a.png", title: "A", capture: NoteCapture(values: broken, flags: [])!)
+        expect(!NoteCaptureLive.canMakeLive(unreadable), "an unreadable scroll panel record never goes live with the wrong framing")
     }
 
     static func liveDecision() {

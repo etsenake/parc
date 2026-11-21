@@ -9,6 +9,7 @@ struct NoteCaptureGeometry: Hashable, Codable {
     var regionY: Double
     var regionWidth: Double
     var regionHeight: Double
+    var scrollers: String?
 
     var isValid: Bool {
         [viewportWidth, viewportHeight, scrollX, scrollY, regionX, regionY, regionWidth, regionHeight]
@@ -16,22 +17,24 @@ struct NoteCaptureGeometry: Hashable, Codable {
             && viewportWidth >= 1 && viewportHeight >= 1 && viewportWidth <= 16_384 && viewportHeight <= 16_384
             && regionX >= 0 && regionY >= 0 && regionWidth > 0 && regionHeight > 0
             && regionX + regionWidth <= viewportWidth + 1 && regionY + regionHeight <= viewportHeight + 1
+            && scrollers.map { !$0.isEmpty && $0.utf8.count <= 24_576 } != false
     }
 
     var aspectRatio: Double { regionWidth / regionHeight }
 
     init(viewportWidth: Double, viewportHeight: Double, scrollX: Double, scrollY: Double,
-         regionX: Double, regionY: Double, regionWidth: Double, regionHeight: Double) {
+         regionX: Double, regionY: Double, regionWidth: Double, regionHeight: Double, scrollers: String? = nil) {
         self.viewportWidth = viewportWidth; self.viewportHeight = viewportHeight
         self.scrollX = scrollX; self.scrollY = scrollY
         self.regionX = regionX; self.regionY = regionY; self.regionWidth = regionWidth; self.regionHeight = regionHeight
+        self.scrollers = scrollers
     }
 
-    init?(viewport: String?, scroll: String?, region: String?) {
+    init?(viewport: String?, scroll: String?, region: String?, scrollers: String? = nil) {
         guard let viewport = Self.numbers(viewport, count: 2), let scroll = Self.numbers(scroll, count: 2),
               let region = Self.numbers(region, count: 4) else { return nil }
         self.init(viewportWidth: viewport[0], viewportHeight: viewport[1], scrollX: scroll[0], scrollY: scroll[1],
-                  regionX: region[0], regionY: region[1], regionWidth: region[2], regionHeight: region[3])
+                  regionX: region[0], regionY: region[1], regionWidth: region[2], regionHeight: region[3], scrollers: scrollers)
         guard isValid else { return nil }
     }
 
@@ -60,6 +63,7 @@ struct NoteCapture: Hashable, Codable {
     var live = false
 
     static let sourceKey = "capture", dateKey = "captured", viewportKey = "viewport", scrollKey = "scroll", regionKey = "region"
+    static let scrollersKey = "scrollers"
     static let liveFlag = "live"
 
     var sourceAddress: URL? {
@@ -76,6 +80,7 @@ struct NoteCapture: Hashable, Codable {
         if let geometry, geometry.isValid {
             items += [(Self.viewportKey, geometry.viewportAttribute), (Self.scrollKey, geometry.scrollAttribute),
                       (Self.regionKey, geometry.regionAttribute)]
+            if let scrollers = geometry.scrollers { items.append((Self.scrollersKey, scrollers)) }
             if live { items.append((Self.liveFlag, nil)) }
         }
         return items
@@ -92,7 +97,7 @@ struct NoteCapture: Hashable, Codable {
         guard let source = values[Self.sourceKey]?.trimmingCharacters(in: .whitespacesAndNewlines), !source.isEmpty else { return nil }
         self.init(sourceURL: source, capturedAt: values[Self.dateKey].flatMap(Self.dateFormatter.date(from:)),
                   geometry: NoteCaptureGeometry(viewport: values[Self.viewportKey], scroll: values[Self.scrollKey],
-                                                region: values[Self.regionKey]),
+                                                region: values[Self.regionKey], scrollers: values[Self.scrollersKey]),
                   live: flags.contains(Self.liveFlag))
     }
 

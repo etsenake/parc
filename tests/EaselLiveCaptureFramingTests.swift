@@ -17,6 +17,7 @@ struct EaselLiveCaptureFramingTests {
             elementLayout()
             framingShowsExactlyTheElement()
             framingState()
+            scrollContainers()
             print("EaselLiveCaptureFramingTests: \(assertions) assertions passed")
         }
     }
@@ -76,5 +77,49 @@ struct EaselLiveCaptureFramingTests {
         expect(!state.revealsPage, "A new document is covered again until it is framed")
         expect(state.positioned(success: false, pageStillLoading: false) == .backToSnapshot && !state.revealsPage,
                "A loaded page that can't be framed goes back to the snapshot")
+    }
+
+    @MainActor static func scrollContainers() {
+        let panel = EaselScrollContainer(anchorID: "main", path: "div:1>^>section:0", scroll: .init(x: 0, y: 2400.5),
+                                         frame: .init(x: 240, y: 64, width: 1040, height: 736))
+        expect(panel.isValid, "A located inner panel with its scroll offset is valid")
+        expect(EaselScrollContainer.isValidAnchor("sidebar-nav") && EaselScrollContainer.isValidAnchor("feed_2"), "Readable ids anchor a locator")
+        expect(!EaselScrollContainer.isValidAnchor("ember1234") && !EaselScrollContainer.isValidAnchor(":r1:")
+               && !EaselScrollContainer.isValidAnchor("1main") && !EaselScrollContainer.isValidAnchor("main panel"),
+               "Generated or odd ids never anchor a locator")
+        expect(EaselScrollContainer.isValidPath("") && EaselScrollContainer.isValidPath("main:0>div:12"), "Tag and index steps are valid")
+        expect(!EaselScrollContainer.isValidPath("div") && !EaselScrollContainer.isValidPath("div:x") && !EaselScrollContainer.isValidPath("div:1>")
+               && !EaselScrollContainer.isValidPath("di v:1") && !EaselScrollContainer.isValidPath("div:123456"), "Malformed steps are refused")
+        var negative = panel; negative.frame.width = -1
+        expect(!negative.isValid, "A negative panel size is refused")
+
+        let root = EaselScrollContainer(anchorID: nil, path: "", scroll: .init(x: -30, y: 0), frame: .init(x: 0, y: 0, width: 500, height: 400))
+        let encoded = EaselScrollContainer.encode([root, panel])
+        expect(encoded == "- - -30,0 0,0,500,400;#main div:1>^>section:0 0,2400.5 240,64,1040,736", "Panels encode compactly, outermost first")
+        expect(EaselScrollContainer.decode(encoded) == [root, panel], "Encoded panels decode exactly")
+        expect(EaselScrollContainer.decode("") == nil && EaselScrollContainer.decode("#main div:1 0,0 0,0,1") == nil
+               && EaselScrollContainer.decode("main div:1 0,0 0,0,1,1") == nil && EaselScrollContainer.decode("#main div:1 0,nan 0,0,1,1") == nil,
+               "Malformed panel records are refused")
+        expect(EaselScrollContainer.decode(Array(repeating: "- - 0,0 0,0,1,1", count: 9).joined(separator: ";")) == nil, "At most eight panels")
+
+        let viewport = EaselPoint(x: 1280, y: 800), region = EaselRect(x: 300, y: 200, width: 400, height: 300)
+        let windowOnly = EaselCaptureGeometry.captured(viewport: viewport, scroll: .init(x: 0, y: 0), region: region, scrollContainers: [])
+        expect(windowOnly != nil && windowOnly?.scrollContainers == nil, "A capture without inner panels keeps window-only framing")
+        let panelled = EaselCaptureGeometry.captured(viewport: viewport, scroll: .init(x: 0, y: 0), region: region, scrollContainers: [panel])
+        expect(panelled?.scrollContainers == [panel], "A capture inside a scrolled panel records it")
+        expect(EaselCaptureGeometry.captured(viewport: viewport, scroll: .init(x: 0, y: 0), region: region, scrollContainers: [negative]) == nil,
+               "Unusable panel records never produce a live region")
+        var empty = windowOnly!; empty.scrollContainers = []
+        expect(!empty.isValid, "An empty panel list is not the saved form")
+        var crowded = windowOnly!; crowded.scrollContainers = Array(repeating: panel, count: 9)
+        expect(!crowded.isValid, "More than eight panels are refused")
+
+        let old = #"{"viewport":{"x":1280,"y":800},"scroll":{"x":0,"y":0},"region":{"x":300,"y":200,"width":400,"height":300}}"#
+        let decoded = try? JSONDecoder().decode(EaselCaptureLayout.self, from: Data(old.utf8))
+        expect(decoded == windowOnly, "Cards saved before panels existed keep window-only framing")
+        let reencoded = (try? JSONEncoder().encode(windowOnly!)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        expect(!reencoded.contains("scrollContainers"), "Window-only cards save exactly as before")
+        let saved = try? JSONDecoder().decode(EaselCaptureLayout.self, from: JSONEncoder().encode(panelled!))
+        expect(saved == panelled, "Panels persist with the card")
     }
 }

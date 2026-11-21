@@ -42,10 +42,23 @@ NS_SWIFT_UI_ACTOR
 @class PCNativePage;
 NS_SWIFT_UI_ACTOR
 __attribute__((visibility("default")))
+@interface PCNativeCaptureScrollContainer : NSObject
+@property(nonatomic, readonly, copy, nullable) NSString* anchorID;
+@property(nonatomic, readonly, copy) NSString* path;
+@property(nonatomic, readonly) NSPoint scrollOffset;
+@property(nonatomic, readonly) NSRect frame;
+- (nullable instancetype)initWithAnchorID:(nullable NSString*)anchorID path:(NSString*)path
+    scrollOffset:(NSPoint)scrollOffset frame:(NSRect)frame NS_DESIGNATED_INITIALIZER;
+- (instancetype)init NS_UNAVAILABLE;
++ (instancetype)new NS_UNAVAILABLE;
+@end
+NS_SWIFT_UI_ACTOR
+__attribute__((visibility("default")))
 @interface PCNativeCaptureLayout : NSObject
 @property(nonatomic, readonly) NSSize viewportSize;
 @property(nonatomic, readonly) NSPoint scrollOffset;
 @property(nonatomic, readonly) NSRect region;
+@property(nonatomic, readonly, copy) NSArray<PCNativeCaptureScrollContainer*>* scrollContainers;
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
 @end
@@ -1566,6 +1579,11 @@ NS_SWIFT_UI_ACTOR
     scrollOffset:(NSPoint)scrollOffset displayWidth:(double)displayWidth
     completion:(void (^)(BOOL))completion
     NS_SWIFT_NAME(positionLiveCapture(_:scrollOffset:displayWidth:completion:));
+- (nullable PCNativeLiveCapturePosition*)positionLiveCapture:(NSRect)region
+    scrollOffset:(NSPoint)scrollOffset
+    scrollContainers:(NSArray<PCNativeCaptureScrollContainer*>*)scrollContainers
+    displayWidth:(double)displayWidth completion:(void (^)(BOOL))completion
+    NS_SWIFT_NAME(positionLiveCapture(_:scrollOffset:scrollContainers:displayWidth:completion:));
 @end
 
 NS_SWIFT_UI_ACTOR

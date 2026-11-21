@@ -919,6 +919,7 @@ final class NoteHTMLConversion {
         block.props.capture = NoteCapture(values: [
             NoteCapture.sourceKey: node["data-capture"], NoteCapture.dateKey: node["data-captured"],
             NoteCapture.viewportKey: node["data-viewport"], NoteCapture.scrollKey: node["data-scroll"], NoteCapture.regionKey: node["data-region"],
+            NoteCapture.scrollersKey: node["data-scrollers"],
         ].compactMapValues { $0 }, flags: node["data-live"] == nil ? [] : [NoteCapture.liveFlag])
         return block
     }

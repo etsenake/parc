@@ -286,8 +286,9 @@ import AppKit
         let session = try store.create(title: "Captured region")
         let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3uoAAAAASUVORK5CYII=")!
         let asset = try session.importPNG(png)
+        let panel = EaselScrollContainer(anchorID: "main", path: "div:1", scroll: .init(x: 0, y: 900), frame: .init(x: 0, y: 64, width: 1000, height: 636))
         let layout = EaselCaptureLayout(viewport: .init(x: 1000, y: 700), scroll: .init(x: 10, y: 300),
-            region: .init(x: 20, y: 40, width: 300, height: 200))
+            region: .init(x: 20, y: 40, width: 300, height: 200), scrollContainers: [panel])
         let item = EaselItem(kind: .webCard, frame: .init(x: 0, y: 0, width: 480, height: 320),
             url: "https://fixture.invalid/captured", assetID: asset, captureLayout: layout, liveCapture: true)
         try session.perform("Seed capture") { $0.items = [item] }
@@ -308,6 +309,9 @@ import AppKit
         expect(pool.pages.first === page && pool.selectedPage === page, "Live card participates in page selection and closure ownership")
         expect(page.positions.last?.0 == NSRect(x: 20, y: 40, width: 300, height: 200) && page.positions.last?.1 == NSPoint(x: 10, y: 300),
             "Positioning consumes the original crop and document offset")
+        expect(page.positionContainers.last?.map { [$0.anchorID ?? "", $0.path] } == [["main", "div:1"]]
+               && page.positionContainers.last?.first?.scrollOffset == NSPoint(x: 0, y: 900),
+            "Positioning restores the inner scroll panels the region was captured from")
         expect(wrapper.frame.size == NSSize(width: 1000, height: 700), "Original viewport preserves page layout independent of card size")
         expect(pool.snapshotForWindowTransfer()?.pages.values.first === page, "Live region is included in whole-window child transfer")
         page.url = URL(string: "https://fixture.invalid/later")

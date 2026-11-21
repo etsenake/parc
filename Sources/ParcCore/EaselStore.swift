@@ -18,10 +18,88 @@ struct EaselRect: Codable, Equatable {
     var height: Double
 }
 
+struct EaselScrollContainer: Codable, Equatable {
+    static let maximumCount = 8
+
+    var anchorID: String?
+    var path: String
+    var scroll: EaselPoint
+    var frame: EaselRect
+
+    var isValid: Bool {
+        [scroll.x, scroll.y, frame.x, frame.y, frame.width, frame.height].allSatisfy { $0.isFinite && abs($0) <= 1_000_000 }
+            && frame.width >= 0 && frame.height >= 0 && (anchorID.map(Self.isValidAnchor) ?? true) && Self.isValidPath(path)
+    }
+
+    static func isValidAnchor(_ id: String) -> Bool {
+        guard let first = id.unicodeScalars.first, id.utf8.count <= 128, first.isASCII, CharacterSet.letters.contains(first) else { return false }
+        var digits = 0
+        for scalar in id.unicodeScalars {
+            guard scalar.isASCII, CharacterSet.alphanumerics.contains(scalar) || scalar == "-" || scalar == "_" else { return false }
+            digits = CharacterSet.decimalDigits.contains(scalar) ? digits + 1 : 0
+            if digits >= 3 { return false }
+        }
+        return true
+    }
+
+    static func isValidPath(_ path: String) -> Bool {
+        if path.isEmpty { return true }
+        let steps = path.split(separator: ">", omittingEmptySubsequences: false)
+        guard path.utf8.count <= 2048, steps.count <= 128 else { return false }
+        return steps.allSatisfy { step in
+            if step == "^" { return true }
+            let parts = step.split(separator: ":", omittingEmptySubsequences: false)
+            guard parts.count == 2, (1...64).contains(parts[0].utf8.count), (1...5).contains(parts[1].utf8.count) else { return false }
+            return parts[0].unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "-_.".unicodeScalars.contains($0)) }
+                && parts[1].unicodeScalars.allSatisfy { $0.isASCII && CharacterSet.decimalDigits.contains($0) }
+        }
+    }
+
+    static func encode(_ containers: [EaselScrollContainer]) -> String {
+        containers.map { container in
+            [container.anchorID.map { "#" + $0 } ?? "-", container.path.isEmpty ? "-" : container.path,
+             number([container.scroll.x, container.scroll.y]),
+             number([container.frame.x, container.frame.y, container.frame.width, container.frame.height])].joined(separator: " ")
+        }.joined(separator: ";")
+    }
+
+    static func decode(_ text: String) -> [EaselScrollContainer]? {
+        guard !text.isEmpty, text.utf8.count <= 24_576 else { return nil }
+        let entries = text.split(separator: ";", omittingEmptySubsequences: false)
+        guard entries.count <= maximumCount else { return nil }
+        var containers: [EaselScrollContainer] = []
+        for entry in entries {
+            let fields = entry.split(separator: " ", omittingEmptySubsequences: false)
+            guard fields.count == 4, fields[0] == "-" || fields[0].hasPrefix("#"),
+                  let scroll = numbers(fields[2], count: 2), let frame = numbers(fields[3], count: 4) else { return nil }
+            let container = EaselScrollContainer(anchorID: fields[0] == "-" ? nil : String(fields[0].dropFirst()),
+                path: fields[1] == "-" ? "" : String(fields[1]), scroll: EaselPoint(x: scroll[0], y: scroll[1]),
+                frame: EaselRect(x: frame[0], y: frame[1], width: frame[2], height: frame[3]))
+            guard container.isValid else { return nil }
+            containers.append(container)
+        }
+        return containers
+    }
+
+    private static func numbers(_ text: Substring, count: Int) -> [Double]? {
+        let values = text.split(separator: ",", omittingEmptySubsequences: false).compactMap { Double($0) }
+        return values.count == count && text.split(separator: ",", omittingEmptySubsequences: false).count == count
+            && values.allSatisfy(\.isFinite) ? values : nil
+    }
+
+    private static func number(_ values: [Double]) -> String {
+        values.map { value in
+            let rounded = value.isFinite ? (value * 100).rounded() / 100 : 0
+            return rounded == rounded.rounded() ? String(Int(rounded)) : String(rounded)
+        }.joined(separator: ",")
+    }
+}
+
 struct EaselCaptureLayout: Codable, Equatable {
     var viewport: EaselPoint
     var scroll: EaselPoint
     var region: EaselRect
+    var scrollContainers: [EaselScrollContainer]? = nil
 
     var isValid: Bool {
         [viewport.x, viewport.y, scroll.x, scroll.y, region.x, region.y, region.width, region.height]
@@ -29,6 +107,7 @@ struct EaselCaptureLayout: Codable, Equatable {
             && viewport.x >= 1 && viewport.y >= 1 && viewport.x <= 16_384 && viewport.y <= 16_384
             && region.x >= 0 && region.y >= 0 && region.width > 0 && region.height > 0
             && region.x + region.width <= viewport.x + 1 && region.y + region.height <= viewport.y + 1
+            && (scrollContainers.map { !$0.isEmpty && $0.count <= EaselScrollContainer.maximumCount && $0.allSatisfy(\.isValid) } ?? true)
     }
 }
 
