@@ -132,8 +132,8 @@ into a closed query reopens it, and clicking away closes it. Code spans, table
 cells and connector labels never open it.
 
 The rows are the Notes catalog rows that make sense in text: Text, Heading 1–3,
-Bulleted and Numbered list, Quote, Mention, Date, Inline equation and Emoji,
-plus To-do and Divider once those exist in Easel text. Picking a row removes
+Bulleted and Numbered list, To-do, Quote, Divider, Mention, Date, Inline
+equation and Emoji. Picking a row removes
 the typed `/query` and turns the paragraph into it as one native Undo step;
 Mention and Date open the mention menu, Inline equation opens the equation
 editor and Emoji opens the Notes emoji picker (with the custom section) at the
@@ -160,10 +160,9 @@ and dark values. **Code** (⌘E) toggles the Notes inline code look, a monospace
 face over a soft grey fill; turning it off restores the object's typeface.
 ⇧⌘H repeats the last colour or highlight, shared with Notes for highlights.
 **Turn Into** is the toolbar's paragraph menu, showing the Notes rows and icons
-for Text, Headings, lists and Quote. The @ button starts a mention in place of the
+for Text, Headings, lists (including To-do list) and Quote. The @ button starts a mention in place of the
 selection and the equation button (⇧⌘E) turns it into an inline equation, both
-the same ones typing `@` or `$` makes. To-do and Divider rows and the Turn Into
-to-do wait for checklists and dividers in Easel text.
+the same ones typing `@` or `$` makes.
 
 ## Emoji
 
@@ -205,3 +204,33 @@ as Notes does (“Page, Roadmap”, “Reminder, Tomorrow 9:00 AM”), and copyi
 writes their words to RTF and plain text. PDF and PNG exports draw them as on
 the canvas; HTML and SVG write mentions and dates as words and equations and
 custom emoji as pictures.
+
+## To-do lists and dividers
+
+**To-do list** is a paragraph kind in text objects, stickies and shapes (connector
+labels draw and export them too): pick it from Turn Into, the `/` menu (To-do) or type `[] `
+at the start of a line. Each item shows the Notes to-do box (the same symbol,
+colours and size rule, `NoteTheme.todoGlyph`) and a ticked item fades its words
+like a ticked Notes to-do. Clicking the box ticks it without moving the caret,
+⌘↩ ticks every item the selection touches (all ticked becomes all open), and
+the box pops with the Notes check spring unless Reduce Motion is on. A text
+object, sticky or shape that isn't being edited ticks from a click on its
+box too, as one Undo step, and its boxes show the pointing hand. Return starts
+a new unticked item, Return on an empty item and Backspace at the start turn
+it back into text, and Tab nests it. Ticking while editing is one native Undo
+step.
+
+A divider is a quiet rule across the paragraph in the Notes divider colour.
+Insert it from the `/` menu (Divider) or `EaselStyledTextView.insertDivider()`;
+the caret always lands on a fresh paragraph below, Return or typing inside a
+divider moves there, and Backspace or Delete next to one removes it.
+
+Both are list paragraphs whose marker is saved in the existing list `marker`
+field (`☐` open, `☑` ticked, `―` divider, all ParcCore `EaselChecklist`
+constants), so old files are unchanged and the 128-byte marker limit still
+holds. `EaselChecklistLayoutManager` hides the marker glyph and draws the box or
+rule (canvas, PDF and PNG use it through `EaselTextLayout.Layout`); HTML and SVG
+exports draw a ring or a filled tick circle, a line and faded runs, with
+`--easel-rule` and `--easel-todo` variables for light and dark. Plain-text and
+RTF fallbacks keep the marker character as readable text, VoiceOver reads
+resting items as “To-do, …”, “Done, …” and “Divider”.
