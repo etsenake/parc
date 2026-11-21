@@ -61,11 +61,12 @@ struct OnboardingImportFlowTests {
         #expect(draft.displayedStepNumber() == 4)
     }
 
-    @Test func everyMoveAlongTheNewOrderSlidesTheRightWay() {
-        let direction = OnboardingExperience.direction
-        #expect(direction(.bookmarks, .favorites) == .forward && direction(.favorites, .bookmarks) == .back)
-        #expect(direction(.favorites, .continuedImport) == .forward && direction(.continuedImport, .favorites) == .back)
-        #expect(direction(.continuedImport, .theme) == .forward && direction(.theme, .favorites) == .back)
+    @Test(arguments: [(Stage.bookmarks, Stage.favorites, OnboardingExperience.TransitionDirection.forward),
+                      (.favorites, .bookmarks, .back), (.favorites, .continuedImport, .forward),
+                      (.continuedImport, .favorites, .back), (.continuedImport, .theme, .forward),
+                      (.theme, .favorites, .back)])
+    func importNavigationSlidesInTheDirectionOfTheStageOrder(move: (Stage, Stage, OnboardingExperience.TransitionDirection)) {
+        #expect(OnboardingExperience.direction(from: move.0, to: move.1) == move.2)
     }
 
     @Test func leavingFavoritesWhileAnImportStillHasPagesResumesAtTheImportNotPastIt() {

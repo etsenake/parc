@@ -5,6 +5,20 @@ import Testing
 struct MembershipCardStoreTests {
     let date = Date(timeIntervalSince1970: 1_800_000_000)
 
+    private var sample: MembershipCardState {
+        MembershipCardState(name: "Ada Lovelace", createdAt: date, palette: 2, shape: 1,
+                            title: "ARCHITECT", backgroundBlobInfo: Array(1...14) + [1])
+    }
+
+    private struct Seed: RandomNumberGenerator {
+        var value: UInt64 = 2026
+
+        mutating func next() -> UInt64 {
+            value = (value &* 6_364_136_223_846_793_005) &+ 1
+            return value
+        }
+    }
+
     @MainActor private func store(in directory: PresentationScratch, name: String = "Ada Lovelace") -> (store: MembershipCardStore, url: URL) {
         let url = directory.url.appendingPathComponent("card.json")
         return (MembershipCardStore(url: url, initialName: name, now: { date }), url)
@@ -28,7 +42,7 @@ struct MembershipCardStoreTests {
         let directory = try PresentationScratch("parc-card")
         defer { directory.remove() }
         let (store, url) = store(in: directory)
-        let reopened = MembershipCardStore(url: url, initialName: "Different", now: { Date() })
+        let reopened = MembershipCardStore(url: url, initialName: "Different", now: { date.addingTimeInterval(1) })
         #expect(reopened.state == store.state)
     }
 
@@ -46,11 +60,13 @@ struct MembershipCardStoreTests {
         #expect(next.name == previous.name && next.createdAt == previous.createdAt)
     }
 
-    @Test @MainActor func randomizingChangesTheArtwork() throws {
-        let (previous, next) = try regenerateCard()
-        #expect(next.shape != previous.shape)
-        #expect(next.palette != previous.palette)
-        #expect(next.backgroundBlobInfo != previous.backgroundBlobInfo)
+    @Test func randomizingChangesTheArtwork() {
+        var generator = Seed()
+        let original = sample
+        let next = original.regenerated(using: &generator)
+        #expect(next.shape != original.shape)
+        #expect(next.palette != original.palette)
+        #expect(next.backgroundBlobInfo != original.backgroundBlobInfo)
         #expect(next.isValid)
     }
 
@@ -86,8 +102,7 @@ struct MembershipCardStoreTests {
 
     @Test(arguments: ["\u{2028}", "\u{2029}"])
     func savedTitlesAndNamesMustRemainOnOneLine(separator: String) {
-        var random = SystemRandomNumberGenerator()
-        let initial = MembershipCardState.make(name: "Ada Lovelace", date: date, using: &random)
+        let initial = sample
         var invalid = initial
         invalid.title = "ONE" + separator + "TWO"
         #expect(!invalid.isValid)
