@@ -314,7 +314,7 @@ require the budget to fail.
 |---|---|
 | `tests/SidebarMotion/check.py` | Transition frames, generation ownership, animation definitions and redraw policies |
 | `SidebarHoverModelTests`, `SidebarHoverTrackerTests` | Region geometry, timers, hysteresis and dismissal guards |
-| `tests/FloatingSidebarSurface/check.py` | Surface properties, material transitions and theme mixing |
+| `FloatingSidebarArtworkTests`, `FloatingSidebarSurfaceTests`, `FloatingSidebarSwipeTests`, `FloatingSidebarSwipeDockTests`, `FloatingSidebarSwipeCommitTests` | Surface properties, material transitions and theme mixing |
 | `SidebarWindowButtonsTests` | Native button layout and pointer-state reconciliation |
 | `tests/SidebarPlusMenu/check.py` | HUD geometry, palette and dismissal behavior |
 | `tests/SidebarPacing/check.py` | Bounded AppKit layout work and continuity |
