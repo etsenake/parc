@@ -432,6 +432,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
     private var editRevision = UUID()
     private var suppressMarkdown = false
     var onAlign: ((EaselTextStyle.Alignment) -> Void)?
+    var onBlockEquation: (() -> Bool)?
     var onRepeatLastTint: (() -> Bool)?
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown, isEditable, !hasMarkedText(), selectedRanges.count == 1, window?.firstResponder === self else {
@@ -678,8 +679,17 @@ final class EaselStyledTextView: LocalContentDropTextView {
     }
     private func applyMarkdown(_ admission: EaselMarkdownEditing.Admission) {
         guard isEditable, !suppressMarkdown, !hasMarkedText(), selectedRanges.count == 1,
-              !localUndo.isUndoing, !localUndo.isRedoing,
-              let edit = authoredEdit({ EaselMarkdownEditing.transform($0, admission: admission,
+              !localUndo.isUndoing, !localUndo.isRedoing else { return }
+        if admission.character == "$", string == "$$", let onBlockEquation {
+            var cleared = EaselParagraphEditing.Edit(text: NSMutableAttributedString(attributedString: attributedString()),
+                                                     selection: NSRange(location: 0, length: 0), typing: typingAttributes)
+            EaselParagraphEditing.replace(&cleared, range: NSRange(location: 0, length: cleared.text.length), with: NSAttributedString())
+            suppressMarkdown = true; defer { suppressMarkdown = false }
+            commitParagraph(cleared, name: "Block Equation")
+            if !onBlockEquation() { localUndo.undo() }
+            return
+        }
+        guard let edit = authoredEdit({ EaselMarkdownEditing.transform($0, admission: admission,
                   selection: selectedRange(), typing: $1, base: objectStyle) }) else { return }
         suppressMarkdown = true; defer { suppressMarkdown = false }
         commitParagraph(edit, name: "Format Markdown")

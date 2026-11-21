@@ -1359,6 +1359,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         text.canRedoDocument = { [weak self] in self?.session.canRedo == true }
         text.onAlign = { [weak self] alignment in _ = self?.alignText(alignment, editing: true) }
         text.onRepeatLastTint = { [weak self] in self?.repeatLastTextTint() ?? false }
+        if fixedCanvasSize == nil, item.kind != .arrow {
+            let frame = item.frame
+            text.onBlockEquation = { [weak self] in self?.placeEmptyObject(.equation, beside: frame) != nil }
+        }
         text.completion = Self.textCompletionFactory?()
         updateEditor(item)
         if window?.makeFirstResponder(text) == true {
