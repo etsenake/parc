@@ -123,7 +123,7 @@ extension EaselCanvasView {
         let link = connected ?? (current.kind != .sticky)
         let connector = link ? quickCreateConnector(from: current, side: side, to: created, targetSide: Self.opposite(side),
                                                     zIndex: top + 2, in: document) : nil
-        return commitQuickCreate(created, connector: connector)
+        return withObjectMotion(.copies(sources: [current.id], copies: [created.id])) { commitQuickCreate(created, connector: connector) }
     }
 
     func quickCreatePreview(from source: EaselItem, side: EaselConnection.Side, toward point: NSPoint) -> [EaselItem] {

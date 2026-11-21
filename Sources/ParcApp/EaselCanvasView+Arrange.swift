@@ -43,7 +43,7 @@ extension EaselCanvasView {
         let document = session.document
         guard let next = transform(document) else { return false }
         let settled = EaselDependents.settle(next, previous: document, moved: moved)
-        return commit(name) { $0 = settled }
+        return withObjectMotion(.arrange) { commit(name) { $0 = settled } }
     }
 
     @discardableResult
@@ -58,7 +58,8 @@ extension EaselCanvasView {
             offset = repeated
         }
         guard let duplication = EaselArrange.duplicating(selection, in: document, offset: offset),
-              commit("Duplicate objects", { $0 = duplication.document }) else { return false }
+              withObjectMotion(.copies(sources: sources, copies: duplication.copies), { commit("Duplicate objects", { $0 = duplication.document }) })
+        else { return false }
         arrangeState.lastDuplicate = (sources, duplication.copies)
         selection = Set(duplication.copies)
         return true
@@ -102,7 +103,8 @@ extension EaselCanvasView {
     @discardableResult
     func moveLayer(_ move: EaselLayerMove) -> Bool {
         guard beginArrangeCommand(), let next = EaselArrange.layered(session.document, ids: selection, move) else { return false }
-        return commit(move.title) { $0 = next }
+        let forward = move == .front || move == .forward
+        return withObjectMotion(.layer(forward: forward, ids: selection)) { commit(move.title) { $0 = next } }
     }
 
     @discardableResult

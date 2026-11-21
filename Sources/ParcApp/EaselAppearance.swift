@@ -136,8 +136,9 @@ enum EaselAppearance {
         scroll.drawsBackground = false; scroll.hasHorizontalScroller = true; scroll.autohidesScrollers = true
         scroll.scrollerStyle = .overlay
     }
-    static func drawHandle(at point: NSPoint, scale: CGFloat) {
-        let mark = NSRect(x: point.x - 4 / scale, y: point.y - 4 / scale, width: 8 / scale, height: 8 / scale)
+    static func drawHandle(at point: NSPoint, scale: CGFloat, grow: CGFloat = 1) {
+        let radius = 4 * grow / scale
+        let mark = NSRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
         selection.setFill(); NSBezierPath(ovalIn: mark).fill()
         surface.setFill(); NSBezierPath(ovalIn: mark.insetBy(dx: 2.5 / scale, dy: 2.5 / scale)).fill()
     }

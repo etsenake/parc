@@ -278,7 +278,7 @@ extension EaselCanvasView {
         if let size = fixedCanvasSize {
             item.frame = EaselToolGeometry.constrained(item.frame, to: EaselRect(x: 0, y: 0, width: size.width, height: size.height))
         }
-        guard commit("Add sticky note", { $0.items.append(item) }) else { return false }
+        guard withObjectMotion(.appear, { commit("Add sticky note", { $0.items.append(item) }) }) else { return false }
         selection = [item.id]; window?.makeFirstResponder(self)
         beginEditing(item)
         return true

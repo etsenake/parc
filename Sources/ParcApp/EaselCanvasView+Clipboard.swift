@@ -23,7 +23,7 @@ extension EaselCanvasView {
         guard !doomed.isEmpty else { return false }
         let next = EaselArrange.dissolvingSingletonGroups(EaselDependents.removing(doomed, from: session.document))
         prepareReplacement(next) { [weak self] in
-            guard let self, self.commit("Delete objects", { $0 = next }) else { return }
+            guard let self, self.withObjectMotion(.vanish, { self.commit("Delete objects", { $0 = next }) }) else { return }
             self.selection.subtract(doomed)
         }
         return true
@@ -151,8 +151,10 @@ extension EaselCanvasView {
 
     @discardableResult
     func pasteHere(_ point: NSPoint?) -> Bool {
-        if let pasted = pasteObjects(from: .general, at: point) { return pasted }
-        return readPasteboard(.general)
+        withObjectMotion(.appear) {
+            if let pasted = pasteObjects(from: .general, at: point) { return pasted }
+            return readPasteboard(.general)
+        }
     }
 
     @discardableResult

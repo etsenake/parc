@@ -259,6 +259,8 @@ extension EaselCanvasView {
         creation.flags = event.modifierFlags
         if !creation.dragged, Self.travel(creation) * canvasScale > EaselToolGeometry.dragThreshold { creation.dragged = true }
         if creation.tool.drawsConnector { _ = finishConnectorCreation(at: point, event: event); return true }
+        if !creation.dragged { objectMotion.intent = .appear }
+        defer { objectMotion.intent = nil }
         let frame = creation.dragged && creation.tool != .sticky
             ? EaselToolGeometry.draggedFrame(from: EaselPoint(creation.start), to: EaselPoint(creation.end),
                                              square: creation.flags.contains(.shift), centered: creation.flags.contains(.option))
@@ -393,6 +395,8 @@ extension EaselCanvasView {
         guard placing.isAvailable, placing.createsObjects, !placing.draws, !session.isClosed else { return false }
         cancelPointerInteraction()
         guard finishEditing() else { return false }
+        objectMotion.intent = .appear
+        defer { objectMotion.intent = nil }
         if let placed = placeWithOwner(placing, from: point, to: point,
                                        frame: EaselToolGeometry.placedFrame(placing, at: EaselPoint(point)), dragged: false) {
             return placed
