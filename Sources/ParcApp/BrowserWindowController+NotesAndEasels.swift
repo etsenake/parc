@@ -276,7 +276,7 @@ extension BrowserWindowController {
                 profile.id != profileID && FileManager.default.fileExists(atPath: self.store.easelsDirectory(for: profile.id)
                     .appendingPathComponent("documents", isDirectory: true).appendingPathComponent(name).path)
             }
-        })
+        }, keyLoopChanged: { [weak self] in self?.windowKeyViews.relink() })
     }
 
     func notePagesCanSleep(_ note: NotePane, lastShown: Date) -> Bool {

@@ -31,6 +31,11 @@ protocol EmbeddedPageSurface: NSView {
 }
 
 @MainActor
+protocol EmbeddedKeyLoopMember: NSView {
+    var keyLoopAvailable: Bool { get }
+}
+
+@MainActor
 final class EmbeddedPageEntry {
     let identity = UUID()
     var originalURL: String
@@ -194,7 +199,8 @@ class EmbeddedPagePool: NSObject, PCBrowserViewDelegate {
         return entry.surface
     }
     static func excludesFromKeyboardNavigation(_ view: NSView) -> Bool {
-        (view as? EmbeddedPageSurface).map { !$0.inputAvailable } ?? false
+        if let surface = view as? EmbeddedPageSurface { return !surface.inputAvailable }
+        return (view as? EmbeddedKeyLoopMember).map { !$0.keyLoopAvailable } ?? false
     }
     var pages: [PCNativePage] { entries.values.compactMap { $0.page }.filter { !$0.isClosed } }
     var hasPendingCreation: Bool { entries.values.contains { $0.request != nil } }

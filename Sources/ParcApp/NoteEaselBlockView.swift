@@ -10,12 +10,15 @@ final class NoteEaselHost {
     let directory: URL
     let open: (UUID, String) -> Void
     let elsewhere: (UUID) -> Bool
+    let keyLoopChanged: () -> Void
 
-    private init(editor: NotePageEditor, directory: URL, open: @escaping (UUID, String) -> Void, elsewhere: @escaping (UUID) -> Bool) {
+    private init(editor: NotePageEditor, directory: URL, open: @escaping (UUID, String) -> Void, elsewhere: @escaping (UUID) -> Bool,
+                 keyLoopChanged: @escaping () -> Void) {
         self.editor = editor
         self.directory = directory.standardizedFileURL
         self.open = open
         self.elsewhere = elsewhere
+        self.keyLoopChanged = keyLoopChanged
     }
 
     static func host(for editor: NotePageEditor) -> NoteEaselHost? {
@@ -24,16 +27,18 @@ final class NoteEaselHost {
     }
 
     static func configure(_ editor: NotePageEditor, directory: URL, open: @escaping (UUID, String) -> Void,
-                          elsewhere: @escaping (UUID) -> Bool) {
+                          elsewhere: @escaping (UUID) -> Bool, keyLoopChanged: @escaping () -> Void) {
         let previous = host(for: editor)
         hosts = hosts.filter { $0.value.editor != nil }
-        hosts[ObjectIdentifier(editor)] = NoteEaselHost(editor: editor, directory: directory, open: open, elsewhere: elsewhere)
+        hosts[ObjectIdentifier(editor)] = NoteEaselHost(editor: editor, directory: directory, open: open, elsewhere: elsewhere,
+                                                        keyLoopChanged: keyLoopChanged)
         if previous?.directory != directory.standardizedFileURL { notifyBlocks(of: editor) }
     }
 
     static func adopt(_ host: NoteEaselHost?, for editor: NotePageEditor) {
         guard let host else { return }
-        hosts[ObjectIdentifier(editor)] = NoteEaselHost(editor: editor, directory: host.directory, open: host.open, elsewhere: host.elsewhere)
+        hosts[ObjectIdentifier(editor)] = NoteEaselHost(editor: editor, directory: host.directory, open: host.open, elsewhere: host.elsewhere,
+                                                        keyLoopChanged: host.keyLoopChanged)
     }
 
     static func retire(_ editor: NotePageEditor) {
@@ -281,6 +286,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
                 return event
             }
         }
+        host?.keyLoopChanged()
         window.makeFirstResponder(canvas)
         window.invalidateCursorRects(for: self)
         if let event { window.postEvent(event, atStart: true) }
@@ -298,6 +304,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         guard surface.active else { return }
         surface.active = false
         surface.canvas?.onImageEditingCancel = nil
+        host?.keyLoopChanged()
         guard let window else { return }
         window.invalidateCursorRects(for: self)
         let focusInside = (window.firstResponder as? NSView).map { $0 === surface || $0.isDescendant(of: surface) } ?? false
@@ -632,8 +639,9 @@ final class NoteEaselSurface: NSView {
 }
 
 @MainActor
-private final class NoteEaselScrollView: NSScrollView {
+private final class NoteEaselScrollView: NSScrollView, EmbeddedKeyLoopMember {
     var isActive: () -> Bool = { false }
+    var keyLoopAvailable: Bool { isActive() }
     var noteScrollView: () -> NSScrollView? = { nil }
     private var latch = NoteEmbedScrollLatch()
     private let pageID = UUID()

@@ -50,7 +50,7 @@ titled from the search; pasting a `parc://easel/…` link offers Easel too. The 
 document, so edits in either place are the same Easel. Its header shows the
 title and Open, which opens the Easel in a tab. Side handles change its width
 and the alignment button places it, as with images and PDFs, and the bottom
-handle sets its height. Scrolling passes over the canvas until it's clicked; the
+handle sets its height. Scrolling and Tab pass over the canvas until it's clicked; the
 click activates it, moves the keyboard into it and reaches the canvas. Then
 scrolling pans the canvas and carries on into the note at its edge, as an embed
 does, and Escape with nothing selected, the check mark or a click outside
