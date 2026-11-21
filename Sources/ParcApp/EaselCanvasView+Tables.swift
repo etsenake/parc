@@ -252,7 +252,7 @@ extension EaselCanvasView {
     @discardableResult
     func commitTable(_ name: String, _ id: UUID, coalescing group: UUID? = nil, hugging rows: Set<Int> = [],
                      _ change: (inout EaselTable) -> Bool) -> Bool {
-        guard !session.isClosed, let index = session.document.items.firstIndex(where: { $0.id == id }),
+        guard !session.isClosed, !session.isDeleted, let index = session.document.items.firstIndex(where: { $0.id == id }),
               session.document.items[index].kind == .table, !session.document.items[index].isLocked,
               let original = session.document.items[index].table else { return false }
         var table = original
@@ -627,7 +627,7 @@ extension EaselCanvasView {
     func placeTable(from start: NSPoint, to end: NSPoint?) -> Bool {
         cancelTablePlacement()
         cancelPointerInteraction()
-        guard !session.isClosed, finishEditing() else { return false }
+        guard !session.isClosed, !session.isDeleted, finishEditing() else { return false }
         let layout = EaselTableGeometry.placement(from: EaselPoint(start), to: end.map(EaselPoint.init))
         return addTable(EaselTableGeometry.item(columns: layout.columns, rows: layout.rows, frame: layout.frame,
                                                 zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1), name: "Add table")
@@ -636,7 +636,7 @@ extension EaselCanvasView {
     @discardableResult
     func insertTable(columns: Int = EaselTable.defaultColumns, rows: Int = EaselTable.defaultRows) -> Bool {
         cancelPointerInteraction()
-        guard !session.isClosed, finishEditing() else { return false }
+        guard !session.isClosed, !session.isDeleted, finishEditing() else { return false }
         let width = Double(columns) * EaselTable.defaultColumnWidth, height = Double(rows) * EaselTable.defaultRowHeight
         let frame = EaselRect(x: max(30, Double(visibleRect.midX) - width / 2), y: max(0, Double(visibleRect.minY) + 90), width: width, height: height)
         return addTable(EaselTableGeometry.item(columns: columns, rows: rows, frame: frame,
@@ -704,7 +704,7 @@ extension EaselCanvasView {
     }
 
     func tableMouseDown(with event: NSEvent) -> Bool {
-        guard !drawing, !session.isClosed, event.type == .leftMouseDown else { return false }
+        guard !drawing, !session.isClosed, !session.isDeleted, event.type == .leftMouseDown else { return false }
         let point = convert(event.locationInWindow, from: nil)
         let modifiers = event.modifierFlags.intersection([.shift, .command, .option, .control])
         let wasEditing = editingTable.flatMap { item in tableState.editingCell.map { (id: item.id, cell: $0) } }
@@ -882,7 +882,7 @@ extension EaselCanvasView {
     }
 
     func beginEditingTableCell(_ item: EaselItem, cell requested: EaselTableCoordinate, at point: NSPoint? = nil, selectingAll: Bool = false) {
-        guard let table = item.table, table.contains(requested), !item.isLocked, !session.isClosed else { return }
+        guard let table = item.table, table.contains(requested), !item.isLocked, !session.isClosed, !session.isDeleted else { return }
         let cell = table.anchor(of: requested)
         guard finishEditing(), let current = tableItem(item.id), let frame = tableCellEditorFrame(current, cell) else { return }
         if selection != [current.id] { selection = [current.id] }
