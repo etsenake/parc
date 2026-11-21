@@ -18,8 +18,7 @@ extension EaselCanvasView {
             onError?(EaselStoreError.tooLarge)
             return false
         }
-        do { try session.perform("Add \(template.title) template") { $0.items.append(contentsOf: placed.items) } }
-        catch { onError?(error); return false }
+        guard withObjectMotion(.appear, { commit("Add \(template.title) template") { $0.items.append(contentsOf: placed.items) } }) else { return false }
         selection = Set(placed.items.map(\.id))
         resizeCanvas(viewport: enclosingScrollView?.contentSize ?? visible.size)
         window?.makeFirstResponder(self)

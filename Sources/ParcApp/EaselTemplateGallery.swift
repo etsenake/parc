@@ -236,25 +236,21 @@ enum EaselTemplatePanel {
 extension EaselEditorViewController {
     func installEmptyTemplates(in root: NSView) {
         guard canvas.acceptsTemplates, emptyTemplates == nil else { return }
-        let gallery = EaselTemplateGallery(columns: 4)
-        gallery.isHidden = true
+        let gallery = EaselTemplateGallery(columns: 4, showsHeader: false)
         gallery.onPick = { [weak self] template in self?.canvas.insertTemplate(template) }
-        root.addSubview(gallery)
         emptyTemplates = gallery
+        canvas.onboarding.templateRow = EaselEmptyStateRow(title: "Or start from a template", view: gallery,
+                                                           inset: EaselTemplateGallery.inset + 6) { [weak gallery] width in
+            guard let gallery else { return .zero }
+            gallery.columns = min(4, EaselTemplateGallery.columns(fitting: width))
+            return gallery.fittingSize
+        }
+        canvas.refreshOnboarding()
     }
 
     func refreshEmptyTemplates() {
-        guard isViewLoaded, let gallery = emptyTemplates, let scroll = canvas.enclosingScrollView else { return }
-        let host = view
-        let area = host.convert(scroll.frame, from: scroll.superview)
-        let origin = host.convert(NSPoint(x: 28, y: 166), from: canvas)
-        let columns = min(4, EaselTemplateGallery.columns(fitting: area.maxX - origin.x - 16))
-        gallery.columns = columns
-        let size = gallery.fittingSize
-        let frame = NSRect(x: origin.x.rounded(), y: origin.y.rounded(), width: size.width, height: size.height)
-        let shows = session.document.items.isEmpty && canvas.acceptsTemplates && !session.isClosed
-            && frame.minY >= area.minY && frame.minY < area.maxY - 60
-        if gallery.frame != frame { gallery.frame = frame }
-        if gallery.isHidden == shows { gallery.isHidden = !shows; onKeyboardStructureChange?() }
+        guard isViewLoaded else { return }
+        if !canvas.acceptsTemplates, canvas.onboarding.templateRow != nil { canvas.onboarding.templateRow = nil }
+        canvas.refreshOnboarding()
     }
 }

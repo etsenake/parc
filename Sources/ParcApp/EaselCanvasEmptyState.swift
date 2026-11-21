@@ -3,7 +3,14 @@ import AppKit
 enum EaselEmptyStateAction: Equatable {
     case tool(EaselTool)
     case findAnything
-    case templates
+}
+
+@MainActor
+struct EaselEmptyStateRow {
+    let title: String
+    let view: NSView
+    let inset: CGFloat
+    let fit: (CGFloat) -> NSSize
 }
 
 struct EaselEmptyStateHint: Equatable {
@@ -32,22 +39,37 @@ struct EaselEmptyStateHint: Equatable {
 
 @MainActor
 final class EaselCanvasEmptyStateView: NSView {
-    static let origin = NSPoint(x: 40, y: 50)
-    static let maximumWidth: CGFloat = 560
+    static let leading: CGFloat = 24
+    static let origin = NSPoint(x: 40 - leading, y: 50)
+    static let textWidth: CGFloat = 560
+    static let maximumWidth: CGFloat = 680
     private static let titleFont = NoteTheme.nunitoExtraBold(28)
     private static let bodyFont = NoteTheme.nunitoRegular(15)
+    private static let headingFont = NoteTheme.nunitoBold(13)
     private static let title = "A place for your ideas"
     private static let body = "Press a key, then click to drop it in. Everything saves right here on your Mac."
     private static let bodyTop: CGFloat = 46
     private static let chipHeight: CGFloat = 28
     private static let chipGap: CGFloat = 6
+    private static let sectionGap: CGFloat = 26
+    private static let headingHeight: CGFloat = 18
 
     var onAction: ((EaselEmptyStateAction) -> Void)?
-    var showsTemplates = false { didSet { if showsTemplates != oldValue { rebuild() } } }
     var showsFindAnything = true { didSet { if showsFindAnything != oldValue { rebuild() } } }
+    var row: EaselEmptyStateRow? {
+        didSet {
+            guard row?.view !== oldValue?.view else { return }
+            oldValue?.view.removeFromSuperview()
+            if let view = row?.view { addSubview(view) }
+            laidOutWidth = 0
+            needsLayout = true; needsDisplay = true
+        }
+    }
     private(set) var isPresented = true
     private var chips: [EaselEmptyStateChip] = []
     private var laidOutWidth: CGFloat = 0
+    private var headingTop: CGFloat?
+    private var contentHeight: CGFloat = 0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -65,15 +87,14 @@ final class EaselCanvasEmptyStateView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard isPresented, !isHidden else { return nil }
         let local = convert(point, from: superview)
-        return chips.first { $0.frame.contains(local) }
+        if let chip = chips.first(where: { $0.frame.contains(local) }) { return chip }
+        if let view = row?.view, !view.isHidden, view.frame.contains(local), let hit = view.hitTest(local), hit !== view { return hit }
+        return nil
     }
 
     private func rebuild() {
         chips.forEach { $0.removeFromSuperview() }
-        var hints = EaselEmptyStateHint.all.filter { showsFindAnything || $0.action != .findAnything }
-        if showsTemplates {
-            hints.append(EaselEmptyStateHint(title: "Start from a template", keys: [], help: "Browse ready-made boards", action: .templates))
-        }
+        let hints = EaselEmptyStateHint.all.filter { showsFindAnything || $0.action != .findAnything }
         chips = hints.map { hint in
             let chip = EaselEmptyStateChip(hint: hint)
             chip.onPress = { [weak self] in self?.onAction?(hint.action) }
@@ -85,22 +106,37 @@ final class EaselCanvasEmptyStateView: NSView {
     }
 
     func fittedHeight(width: CGFloat) -> CGFloat {
-        layoutChips(width: width)
-        return (chips.map(\.frame.maxY).max() ?? Self.bodyTop + bodyHeight(width: width)) + 4
+        arrange(width: width)
+        return contentHeight
     }
 
-    @discardableResult
-    private func layoutChips(width: CGFloat) -> CGFloat {
-        guard width != laidOutWidth else { return width }
+    static func frameWidth(content width: CGFloat) -> CGFloat { width + leading * 2 }
+
+    private func textWidth(_ width: CGFloat) -> CGFloat { min(Self.textWidth, width) }
+
+    private func arrange(width: CGFloat) {
+        guard width != laidOutWidth else { return }
         laidOutWidth = width
-        var x: CGFloat = 0, y = Self.bodyTop + bodyHeight(width: width) + 14
+        let text = textWidth(width), lead = Self.leading
+        var x: CGFloat = 0, y = Self.bodyTop + bodyHeight(width: text) + 14
         for chip in chips {
             let size = chip.fittingWidth
-            if x > 0, x + size > width { x = 0; y += Self.chipHeight + Self.chipGap }
-            chip.frame = NSRect(x: x, y: y, width: size, height: Self.chipHeight)
+            if x > 0, x + size > text { x = 0; y += Self.chipHeight + Self.chipGap }
+            chip.frame = NSRect(x: lead + x, y: y, width: size, height: Self.chipHeight)
             x += size + Self.chipGap
         }
-        return width
+        var bottom = (chips.map(\.frame.maxY).max() ?? Self.bodyTop + bodyHeight(width: text))
+        headingTop = nil
+        if let row {
+            let top = bottom + Self.sectionGap
+            headingTop = top
+            let size = row.fit(width + row.inset * 2)
+            let next = NSRect(x: lead - row.inset, y: top + Self.headingHeight + 4 - row.inset, width: size.width, height: size.height)
+            if row.view.frame != next { row.view.frame = next }
+            bottom = next.maxY
+        }
+        contentHeight = bottom + 4
+        needsDisplay = true
     }
 
     private func bodyHeight(width: CGFloat) -> CGFloat {
@@ -111,14 +147,18 @@ final class EaselCanvasEmptyStateView: NSView {
 
     override func layout() {
         super.layout()
-        layoutChips(width: bounds.width)
+        arrange(width: bounds.width - Self.leading * 2)
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        (Self.title as NSString).draw(at: .zero, withAttributes: [.font: Self.titleFont, .foregroundColor: NoteTheme.titlePlaceholderInk])
-        (Self.body as NSString).draw(with: NSRect(x: 0, y: Self.bodyTop, width: bounds.width, height: bodyHeight(width: bounds.width) + 4),
+        let text = textWidth(bounds.width - Self.leading * 2), lead = Self.leading
+        (Self.title as NSString).draw(at: NSPoint(x: lead, y: 0), withAttributes: [.font: Self.titleFont, .foregroundColor: NoteTheme.titlePlaceholderInk])
+        (Self.body as NSString).draw(with: NSRect(x: lead, y: Self.bodyTop, width: text, height: bodyHeight(width: text) + 4),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: Self.bodyFont, .foregroundColor: NoteTheme.placeholderInk])
+        if let row, let top = headingTop {
+            (row.title as NSString).draw(at: NSPoint(x: lead, y: top), withAttributes: [.font: Self.headingFont, .foregroundColor: NoteTheme.secondaryInk])
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -133,9 +173,17 @@ final class EaselCanvasEmptyStateView: NSView {
         setAccessibilityElement(presented)
         if presented { isHidden = false }
         let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let duration: TimeInterval = animated ? (presented ? 0.2 : 0.15) : 0
+        let duration: TimeInterval = animated ? (reduced ? 0.15 : (presented ? 0.2 : 0.15)) : 0
+        if presented, animated, !reduced, let layer {
+            let rise = CABasicAnimation(keyPath: "position")
+            rise.fromValue = NSValue(point: NSPoint(x: 0, y: 4)); rise.toValue = NSValue(point: .zero)
+            rise.isAdditive = true; rise.duration = duration
+            rise.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer.add(rise, forKey: "parc.easel.empty.rise")
+        }
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = reduced ? min(duration, 0.15) : duration
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             context.allowsImplicitAnimation = duration > 0
             animator().alphaValue = presented ? 1 : 0
         } completionHandler: { [weak self] in
@@ -203,8 +251,7 @@ final class EaselEmptyStateChip: NSView {
             x += width + 3
         }
         if !hint.keys.isEmpty { x += 4 }
-        let attributes: [NSAttributedString.Key: Any] = [.font: Self.font,
-            .foregroundColor: hint.action == .templates ? NoteTheme.accent : NoteTheme.secondaryInk]
+        let attributes: [NSAttributedString.Key: Any] = [.font: Self.font, .foregroundColor: NoteTheme.secondaryInk]
         let size = (hint.title as NSString).size(withAttributes: attributes)
         (hint.title as NSString).draw(at: NSPoint(x: x, y: (bounds.height - size.height) / 2), withAttributes: attributes)
     }

@@ -9,7 +9,9 @@ final class EaselCanvasOnboardingState {
     var hintItem: UUID?
     var hintGeneration = 0
     var sawObjects = false
-    var onBrowseTemplates: (() -> Void)?
+    var templateRow: EaselEmptyStateRow? {
+        didSet { emptyState?.row = templateRow }
+    }
     var defaults: UserDefaults = .standard
     var hintSeen = false
 }
@@ -82,16 +84,18 @@ extension EaselCanvasView {
         guard let view = onboarding.emptyState else { return }
         if shows {
             if view.superview !== self { addSubview(view, positioned: .below, relativeTo: nil) }
-            view.showsTemplates = onboarding.onBrowseTemplates != nil
+            if view.row?.view !== onboarding.templateRow?.view { view.row = onboarding.templateRow }
             view.showsFindAnything = toolState.onQuickActions != nil
             let visible = visibleRect.isEmpty ? bounds : visibleRect
             let width = max(180, min(EaselCanvasEmptyStateView.maximumWidth, visible.width - 80))
             let origin = EaselCanvasEmptyStateView.origin
-            let next = NSRect(x: origin.x, y: origin.y, width: width, height: view.fittedHeight(width: width))
+            let next = NSRect(x: origin.x, y: origin.y, width: EaselCanvasEmptyStateView.frameWidth(content: width), height: view.fittedHeight(width: width))
             if view.frame != next { view.frame = next }
+            if !view.isPresented { keyboardStructureChanged() }
             view.setPresented(true, animated: window != nil && onboarding.sawObjects)
         } else if view.superview != nil {
             let animated = window != nil && !usesObjectSurfaces
+            if view.isPresented { keyboardStructureChanged() }
             view.setPresented(false, animated: animated)
             if !animated { view.removeFromSuperview() }
         }
@@ -105,8 +109,6 @@ extension EaselCanvasView {
             tool = next
         case .findAnything:
             toolState.onQuickActions?()
-        case .templates:
-            onboarding.onBrowseTemplates?()
         }
     }
 
