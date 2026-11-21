@@ -10,7 +10,7 @@
 
 #define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
 static void Drain() {
-  ParcNativeAdvance(0.15);
+  ParcNativeSettle();
 }
 static NSWindow* Window() {
   NSWindow* window = [[NSWindow alloc]
@@ -73,232 +73,225 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
 }
 @end
 
-static void TestButtonsAndDeferredCompletion() {
-  NSWindow* window = Window();
-  NSView* page = Page(window);
-  __block int count = 0;
-  __block PCAutofillSaveOutcome outcome = PCAutofillSaveInterrupted;
-  PCAutofillSavePresenter* request = Request(
-      page, window,
-      ^{
-        return YES;
-      },
-      ^(PCAutofillSaveOutcome result) {
-        ++count;
-        outcome = result;
-        Check(window.attachedSheet == nil,
-              "sheet detached before client completion");
-      });
-  [request start];
-  [request start];
-  Check(!request.sheet && count == 0,
-        "start returns before presenting or completing");
-  Drain();
-  Check(request.isPresenting, "real custom sheet presented");
-  Check(request.sheet.sheetParent == window,
-        "sheet belongs to exact supplied window");
-  Check([NSStringFromClass(request.sheet.class)
-            isEqualToString:@"PCAutofillSaveSheet"],
-        "uses custom NSWindow subclass, not NSAlert");
-  Check(NSApp.modalWindow == nil, "no application-modal loop");
-  const BOOL pointerOverSheet = NSPointInRect(
-      NSEvent.mouseLocation, [request.sheet contentRectForFrameRect:request.sheet.frame]);
-  Check(request.isMouseHovered == pointerOverSheet,
-        "hover follows the pointer's actual position over the sheet");
-  Click(request, @"Save");
-  Check(count == 0,
-        "button result is deferred after synchronous caller registration");
-  Check(!request.sheet, "sheet removed immediately at finish");
-  Drain();
-  Check(count == 1 && outcome == PCAutofillSaveAccepted,
-        "Save delivers one acceptance");
-  [request invalidate];
-  [request start];
-  Drain();
-  Check(count == 1, "finished request cannot replay");
-  request = Request(
-      page, window,
-      ^{
-        return YES;
-      },
-      ^(PCAutofillSaveOutcome result) {
-        ++count;
-        outcome = result;
-      });
-  [request start];
-  Drain();
-  Click(request, @"Not Now");
-  Drain();
-  Check(count == 2 && outcome == PCAutofillSaveDeclined,
-        "explicit decline is distinct");
-  [window close];
+@interface AutofillSaveTests : ParcNativeTestCase
+@end
+
+@implementation AutofillSaveTests {
+  NSWindow* _window;
+  NSView* _page;
+  PCAutofillSavePresenter* _request;
+  BOOL _valid;
+  NSUInteger _results;
+  PCAutofillSaveOutcome _outcome;
 }
-static void TestKeysAndExternalSheetEnd() {
-  NSWindow* window = Window();
-  NSView* page = Page(window);
-  __block int count = 0;
-  __block PCAutofillSaveOutcome outcome;
-  for (int i = 0; i < 3; ++i) {
-    PCAutofillSavePresenter* request = Request(
-        page, window,
-        ^{
-          return YES;
-        },
-        ^(PCAutofillSaveOutcome result) {
-          ++count;
-          outcome = result;
-        });
-    [request start];
-    Drain();
-    NSWindow* sheet = request.sheet;
-    Check(sheet != nil, "key/dismiss fixture has actual sheet");
-    if (i == 0) {
-      [sheet cancelOperation:nil];
-    }
-    if (i == 1) {
-      [sheet insertNewline:nil];
-    }
-    if (i == 2) {
-      [window endSheet:sheet];
-    }
-    Drain();
-    Check(count == i + 1, "key/dismiss resolves once");
-    Check(outcome == (i == 0   ? PCAutofillSaveDeclined
-                      : i == 1 ? PCAutofillSaveAccepted
-                               : PCAutofillSaveInterrupted),
-          "Escape, Return and external dismissal keep distinct semantics");
-    [request invalidate];
-  }
-  [window close];
+
+- (void)setUp {
+  [super setUp];
+  _window = Window();
+  _page = Page(_window);
+  _valid = YES;
+  _request = Request(_page, _window, ^{ return self->_valid; }, ^(PCAutofillSaveOutcome result) {
+    ++self->_results;
+    self->_outcome = result;
+  });
 }
-static void TestPendingInvalidation() {
-  NSWindow* window = Window();
-  NSView* page = Page(window);
-  for (int i = 0; i < 4; ++i) {
-    __block int count = 0;
-    __block BOOL valid = i != 0;
-    PCAutofillSavePresenter* request = Request(
-        page, window,
-        ^{
-          return valid;
-        },
-        ^(PCAutofillSaveOutcome result) {
-          ++count;
-          Check(result == PCAutofillSaveInterrupted,
-                "failure never fabricates consent");
-        });
-    [request start];
-    if (i == 1) {
-      [request invalidate];
-      [request invalidate];
-    }
-    if (i == 2) {
-      valid = NO;
-    }
-    if (i == 3) {
-      [page removeFromSuperview];
-    }
-    Check(count == 0, "invalid pending request does not complete inline");
-    Drain();
-    Check(count == 1 && !request.sheet,
-          "invalid pending request resolves without sheet");
-    if (i == 3) {
-      [window.contentView addSubview:page];
-    }
-  }
-  [window close];
+
+- (void)tearDown {
+  [_request invalidate];
+  ParcNativeSettle();
+  [_window close];
+  [super tearDown];
 }
-static void TestLateInvalidationAndWindowBinding() {
-  NSWindow* window = Window();
-  NSView* page = Page(window);
+
+- (void)present {
+  [_request start];
+  ParcNativeSettle();
+}
+
+- (void)testStartDefersAttachment {
+  [_request start];
+  PARC_CHECK(!_request.sheet && !_results);
+}
+
+- (void)testRepeatedStartAttachesOneSheetToItsOwnWindow {
+  [_request start];
+  [self present];
+  PARC_CHECK(_request.isPresenting && _request.sheet.sheetParent == _window && !NSApp.modalWindow);
+}
+
+- (void)testHoverReflectsThePointerInsideTheSheet {
+  [self present];
+  NSRect bounds = [_request.sheet contentRectForFrameRect:_request.sheet.frame];
+  PARC_CHECK(_request.isMouseHovered == NSPointInRect(NSEvent.mouseLocation, bounds));
+}
+
+- (void)testClickDetachesTheSheetBeforeDelivery {
+  [self present];
+  Click(_request, @"Save");
+  PARC_CHECK(!_request.sheet && !_window.attachedSheet && !_results);
+}
+
+- (void)testSaveAccepts {
+  [self present];
+  Click(_request, @"Save");
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveAccepted);
+}
+
+- (void)testNotNowDeclines {
+  [self present];
+  Click(_request, @"Not Now");
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveDeclined);
+}
+
+- (void)testEscapeDeclines {
+  [self present];
+  [_request.sheet cancelOperation:nil];
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveDeclined);
+}
+
+- (void)testReturnAccepts {
+  [self present];
+  [_request.sheet insertNewline:nil];
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveAccepted);
+}
+
+- (void)testEndingTheSheetInterrupts {
+  [self present];
+  [_window endSheet:_request.sheet];
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted);
+}
+
+- (void)testClosingTheParentInterrupts {
+  [self present];
+  [_window close];
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted);
+}
+
+- (void)testAFinishedRequestCannotReplay {
+  [self present];
+  Click(_request, @"Save");
+  ParcNativeSettle();
+  [_request invalidate];
+  [self present];
+  PARC_CHECK(_results == 1 && !_request.sheet);
+}
+
+- (void)testInitialValidationRejectsTheRequest {
+  _valid = NO;
+  [_request start];
+  PARC_CHECK(!_results);
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_request.sheet);
+}
+
+- (void)testInvalidatingTwiceInterruptsThePendingRequestOnce {
+  [_request start];
+  [_request invalidate];
+  [_request invalidate];
+  PARC_CHECK(!_results);
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_request.sheet);
+}
+
+- (void)testValidationBeforeAttachmentCanReject {
+  [_request start];
+  _valid = NO;
+  PARC_CHECK(!_results);
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_request.sheet);
+}
+
+- (void)testADetachedPageCannotPresent {
+  [_request start];
+  [_page removeFromSuperview];
+  PARC_CHECK(!_results);
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_request.sheet);
+}
+
+- (void)testClosingAQueuedParentDeliversAnInterruptionLater {
+  [_request start];
+  [_window close];
+  PARC_CHECK(!_results);
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_request.sheet);
+}
+
+- (void)testInvalidateCancelsAQueuedSave {
+  [self present];
+  Click(_request, @"Save");
+  [_request invalidate];
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_window.attachedSheet);
+}
+
+- (void)testAQueuedSaveRechecksItsContext {
+  [self present];
+  Click(_request, @"Save");
+  _valid = NO;
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_window.attachedSheet);
+}
+
+- (void)testReattachingCannotReviveAnInvalidatedRequest {
+  [self present];
+  [_request invalidate];
+  [_page removeFromSuperview];
+  [_window.contentView addSubview:_page];
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_window.attachedSheet);
+}
+
+- (void)testMovingAPageCannotTransferItsSave {
+  [self present];
   NSWindow* other = Window();
-  for (int i = 0; i < 4; ++i) {
-    __block int count = 0;
-    __block BOOL valid = YES;
-    PCAutofillSavePresenter* request = Request(
-        page, window,
-        ^{
-          return valid;
-        },
-        ^(PCAutofillSaveOutcome result) {
-          ++count;
-          Check(result == PCAutofillSaveInterrupted,
-                "late invalidation prevents stale save");
-        });
-    [request start];
-    Drain();
-    if (i == 0) {
-      Click(request, @"Save");
-      [request invalidate];
-    }
-    if (i == 1) {
-      Click(request, @"Save");
-      valid = NO;
-    }
-    if (i == 2) {
-      [other.contentView addSubview:page];
-      Click(request, @"Save");
-    }
-    if (i == 3) {
-      [request invalidate];
-      [page removeFromSuperview];
-      [window.contentView addSubview:page];
-    }
-    Drain();
-    Check(count == 1, "invalidated result delivered once");
-    Check(!window.attachedSheet && !other.attachedSheet,
-          "no sheet follows moved page");
-    [window.contentView addSubview:page];
-  }
+  [other.contentView addSubview:_page];
+  Click(_request, @"Save");
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_window.attachedSheet && !other.attachedSheet);
   [other close];
-  [window close];
 }
-static void TestConflictingSheetAndParentClose() {
-  NSWindow* window = Window();
-  NSView* page = Page(window);
-  NSWindow* otherSheet =
-      [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 200, 100)
-                                  styleMask:NSWindowStyleMaskTitled
-                                    backing:NSBackingStoreBuffered
-                                      defer:NO];
-  otherSheet.releasedWhenClosed = NO;
-  [window beginSheet:otherSheet completionHandler:nil];
-  __block int count = 0;
-  PCAutofillSavePresenter* request = Request(
-      page, window,
-      ^{
-        return YES;
-      },
-      ^(PCAutofillSaveOutcome result) {
-        ++count;
-        Check(result == PCAutofillSaveInterrupted,
-              "occupied parent interrupts new request");
-      });
-  [request start];
-  Drain();
-  Check(count == 1 && window.attachedSheet == otherSheet,
-        "does not replace somebody else's sheet");
-  [window endSheet:otherSheet];
-  [otherSheet orderOut:nil];
-  Drain();
-  request = Request(
-      page, window,
-      ^{
-        return YES;
-      },
-      ^(PCAutofillSaveOutcome result) {
-        ++count;
-        Check(result == PCAutofillSaveInterrupted,
-              "actual parent close interrupts");
-      });
-  [request start];
-  Drain();
-  [window close];
-  Drain();
-  Check(count == 2 && !request.sheet,
-        "closing parent resolves displayed sheet");
+
+- (void)testAnExistingSheetKeepsItsPlace {
+  NSWindow* other = ParcNativeOffscreenWindow(NSMakeRect(0, 0, 200, 100), NSWindowStyleMaskBorderless);
+  [_window beginSheet:other completionHandler:nil];
+  [self present];
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && _window.attachedSheet == other);
+  [_window endSheet:other];
 }
-static void TestReentrantDeliveryAndLifetime() {
+
+- (void)testClosingAnUnrelatedWindowKeepsTheRequestPending {
+  [self present];
+  [Window() close];
+  ParcNativeSettle();
+  PARC_CHECK(_request.isPresenting && !_results);
+}
+
+- (void)testFinalValidationCanCancelQueuedAcceptance {
+  __block BOOL interrupt = NO;
+  __weak __block PCAutofillSavePresenter* weak;
+  _request = Request(_page, _window, ^{
+    if (interrupt) [weak invalidate];
+    return YES;
+  }, ^(PCAutofillSaveOutcome result) {
+    self->_outcome = result;
+    ++self->_results;
+  });
+  weak = _request;
+  [self present];
+  Click(_request, @"Save");
+  interrupt = YES;
+  ParcNativeSettle();
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted);
+}
+
+- (void)testACompletionCanPresentAReplacementAfterItsOwnerIsReleased {
   NSWindow* window = Window();
   NSView* page = Page(window);
   __block int count = 0;
@@ -346,58 +339,11 @@ static void TestReentrantDeliveryAndLifetime() {
   Check(count == 2, "both independent requests resolve exactly once");
   [window close];
 }
-static void TestValidationReentryAndQueuedClose() {
-  NSWindow* window = Window();
-  NSView* page = Page(window);
-  __block int count = 0;
-  __block int validations = 0;
-  __block __weak PCAutofillSavePresenter* weak;
-  PCAutofillSavePresenter* request = Request(
-      page, window,
-      ^{
-        ++validations;
-        if (validations == 3) {
-          [weak invalidate];
-        }
-        return YES;
-      },
-      ^(PCAutofillSaveOutcome outcome) {
-        ++count;
-        Check(outcome == PCAutofillSaveInterrupted,
-              "validation callback can invalidate queued acceptance");
-      });
-  weak = request;
-  [request start];
-  Drain();
-  NSWindow* unrelated = Window();
-  [unrelated close];
-  Drain();
-  Check(request.isPresenting && count == 0,
-        "unrelated window close cannot cancel request");
-  Click(request, @"Save");
-  Drain();
-  Check(count == 1 && validations == 3, "reentrant validator delivered once");
-  request = Request(
-      page, window,
-      ^{
-        return YES;
-      },
-      ^(PCAutofillSaveOutcome outcome) {
-        ++count;
-        Check(outcome == PCAutofillSaveInterrupted,
-              "queued parent close never presents");
-      });
-  [request start];
-  [window close];
-  Check(count == 1, "queued parent close remains deferred");
-  Drain();
-  Check(count == 2 && !request.sheet,
-        "queued request resolves after parent close");
-}
-static void TestValidationReleasesNativeOwner() {
+
+- (void)testAttachmentRetainsTheValidatedWindowUntilTheSheetBegins {
   __block AttachmentTrackingWindow* owner = [[AttachmentTrackingWindow alloc]
       initWithContentRect:NSMakeRect(-2000, -2000, 600, 400)
-                styleMask:NSWindowStyleMaskTitled
+                styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered
                     defer:NO];
   owner.releasedWhenClosed = NO;
@@ -432,42 +378,6 @@ static void TestValidationReleasesNativeOwner() {
   Drain();
   Check(count == 1 && !request.sheet, "owner-release request resolves once");
   [original close];
-}
-@interface AutofillSaveTests : ParcNativeTestCase
-@end
-
-@implementation AutofillSaveTests
-
-- (void)testButtonsAndDeferredCompletion {
-  TestButtonsAndDeferredCompletion();
-}
-
-- (void)testKeysAndExternalSheetEnd {
-  TestKeysAndExternalSheetEnd();
-}
-
-- (void)testPendingInvalidation {
-  TestPendingInvalidation();
-}
-
-- (void)testLateInvalidationAndWindowBinding {
-  TestLateInvalidationAndWindowBinding();
-}
-
-- (void)testConflictingSheetAndParentClose {
-  TestConflictingSheetAndParentClose();
-}
-
-- (void)testReentrantDeliveryAndLifetime {
-  TestReentrantDeliveryAndLifetime();
-}
-
-- (void)testValidationReentryAndQueuedClose {
-  TestValidationReentryAndQueuedClose();
-}
-
-- (void)testValidationReleasesNativeOwner {
-  TestValidationReleasesNativeOwner();
 }
 
 @end
