@@ -161,7 +161,11 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
         fitHost(to: scroll)
         let size = bar.fittingSize
         let selection = host.convert(content.anchor, from: canvas)
-        let area = host.convert(scroll.bounds, from: scroll).intersection(host.bounds)
+        var open = scroll.bounds
+        let covered = CGFloat(EaselFloatingBar.cover(Double(canvas.toolState.coveredBottom), viewportHeight: Double(open.height)))
+        open.size.height -= covered
+        if !scroll.isFlipped { open.origin.y += covered }
+        let area = host.convert(open, from: scroll).intersection(host.bounds)
         let clipped = host.visibleRect.intersection(area)
         let visible = clipped.isEmpty ? area : clipped
         guard let placement = EaselSelectionToolbarPlacement.place(selection: Self.easelRect(selection), width: size.width,
