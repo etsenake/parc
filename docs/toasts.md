@@ -120,7 +120,7 @@ Share actions hand the selected URLs to the chosen system service.
 replacement, action ordering, keyboard commands, accessible actions and the
 notice queue. The live-chord index check
 covers which shortcuts Settings has assigned. Shortcut cue checks
-retain their own lifecycle tests; BrowserToolbar checks cover share-menu
+retain their own lifecycle tests. `MenuImagesTests` covers share-menu
 construction.
 
 ## Scope

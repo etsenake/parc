@@ -251,3 +251,151 @@ struct MenuImagesTests {
         #expect(!item.isEnabled && item.submenu == nil)
     }
 }
+
+extension MenuImagesTests {
+    @Test @MainActor func thePeekDestinationUsesTheSharedImagePath() {
+        _ = NSApplication.shared
+        let space = BrowserSpace(id: UUID(), name: "Work", symbol: "briefcase", color: "4C6688", profileID: UUID())
+        let item = NSMenuItem()
+        PeekOpenCommand.applyDestination(space, to: item)
+        expectVisibleImage(item)
+        #expect(item.title == "Open in Work")
+        #expect(item.image?.size == CGSize(width: 12, height: 12))
+    }
+
+    @Test @MainActor func aNewSpacesSharingMenuUsesTheSharedImagePath() throws {
+        _ = NSApplication.shared
+        var space = BrowserSpace(id: UUID(), name: "Work", symbol: "briefcase", color: "4C6688", profileID: UUID())
+        space.customIcon = .symbol("briefcase")
+        let view = SpaceCreationView(spaceID: UUID(), spaces: [space])
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let picker = try #require(descendants(view).compactMap { $0 as? NSPopUpButton }.first)
+        let item = try #require(picker.menu?.items.first { $0.title == "Work" })
+        expectVisibleImage(item)
+    }
+
+    @MainActor private func canvas(selecting item: EaselItem) throws -> EaselCanvasView {
+        _ = NSApplication.shared
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let document = EaselDocument(id: UUID(), title: "Menu Colors", createdAt: date, modifiedAt: date, items: [item])
+        let canvas = EaselCanvasView(session: try EaselSession(inMemory: document, assets: [:]))
+        try #require(canvas.selectOnly(item.id))
+        return canvas
+    }
+
+    @Test @MainActor func eachEaselStyleColorUsesTheSharedImagePath() throws {
+        let text = EaselItem(kind: .text, frame: EaselRect(x: 16, y: 16, width: 120, height: 40), text: "Easel")
+        let canvas = try canvas(selecting: text)
+        let colors = try #require(canvas.styleMenuItems().first { $0.title == "Color" }?.submenu?.items)
+        #expect(!colors.isEmpty)
+        #expect(colors.allSatisfy { $0.image != nil })
+        if #available(macOS 27, *) { #expect(colors.allSatisfy { $0.preferredImageVisibility == .visible }) }
+    }
+
+    @Test @MainActor func eachEaselTableFillColorUsesTheSharedImagePath() throws {
+        let table = EaselTable(columnWidths: [120], rowHeights: [40])
+        let item = EaselItem(kind: .table, frame: EaselRect(x: 16, y: 16, width: 120, height: 40), table: table)
+        let canvas = try canvas(selecting: item)
+        let menu = NSMenu()
+        canvas.addTableMenuItems(to: menu)
+        let colors = try #require(menu.items.first { $0.title == "Color" }?.submenu?.items)
+        let swatches = colors.filter { $0.title != "Default" }
+        #expect(!swatches.isEmpty)
+        #expect(swatches.allSatisfy { $0.image != nil })
+        if #available(macOS 27, *) { #expect(swatches.allSatisfy { $0.preferredImageVisibility == .visible }) }
+    }
+}
+
+extension BrowserToolbarTests {
+    @Test(arguments: [(CGFloat(80), false), (420, true)])
+    @MainActor func aNarrowAddressTitleKeepsTheDomainAndDropsItsSuffix(example: (CGFloat, Bool)) throws {
+        _ = NSApplication.shared
+        let url = try #require(URL(string: "https://sub.example.test:8443/a%20b?q=%2F#part"))
+        let address = BrowserToolbarAddress(url: url, full: true)
+        let slot = NSRect(x: 17, y: 3, width: example.0, height: 28)
+        let title = PaneTitleControl(frame: slot)
+        title.update(address)
+        title.place(in: slot)
+        title.layoutSubtreeIfNeeded()
+        let label = try #require(title.subviews.compactMap { $0 as? NSTextField }.first)
+        #expect(label.stringValue == (example.1 ? address.title : address.primary))
+        #expect(label.lineBreakMode == (example.1 ? .byTruncatingTail : .byTruncatingHead))
+        #expect(title.toolTip == url.absoluteString)
+    }
+
+    @Test @MainActor func theReloadButtonRetainsItsIconAndChangesItsAccessibleActionWhileLoading() throws {
+        let toolbar = toolbar(width: 800)
+        let reload = try #require(toolbar.subviews.compactMap { $0 as? NavigationControlButton }
+            .first { $0.parcTooltip?.label == "Reload this page" })
+        reload.setLoading(true, enabled: true)
+        #expect(reload.title.isEmpty)
+        #expect(reload.imagePosition == .imageOnly)
+        #expect(reload.accessibilityLabel() == "Stop Loading")
+        #expect(reload.parcTooltip?.label == "Stop Loading")
+    }
+
+    @Test @MainActor func essentialToolbarControlsKeepTheirFramesWhenAuxiliaryControlsRetire() throws {
+        let toolbar = toolbar(width: 800)
+        let close = try #require(toolbar.subviews.compactMap { $0 as? SplitPaneControl }
+            .first { $0.accessibilityLabel() == "Close Split View Pane" })
+        let menu = try #require(toolbar.subviews.compactMap { $0 as? SplitPaneControl }
+            .first { $0.accessibilityLabel() == "Split View Menu" })
+        let menuFrame = menu.frame
+        toolbar.setControlsRevealed(false)
+        #expect(!menu.isHidden && menu.alphaValue == 0 && menu.frame == menuFrame)
+        #expect(close.alphaValue == 1)
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func onlyTheSameLoadingPageKeepsItsPreviousBarColor(samePage: Bool) throws {
+        let toolbar = toolbar(width: 800)
+        let page = NSObject()
+        toolbar.setPageColor(NSColor(srgbRed: 0.1, green: 0.45, blue: 0.91, alpha: 1), for: page)
+        let shown = try #require(toolbar.pageColor)
+        toolbar.setPageColor(nil, for: samePage ? page : NSObject(), holdingWhileUnknown: true)
+        #expect(toolbar.pageColor == (samePage ? shown : nil))
+    }
+
+    @Test @MainActor func translucentPageColorsLeaveTheBarClear() {
+        let toolbar = toolbar(width: 800)
+        toolbar.setPageColor(NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.5), for: NSObject())
+        #expect(toolbar.pageColor == nil)
+    }
+
+    @Test(arguments: [(false, 0.30), (true, 0.45)])
+    @MainActor func newTabTextUsesItsAppearanceForeground(example: (Bool, Double)) throws {
+        let ink = try #require(SidebarNewTabAppearance.titleColor(dark: example.0).usingColorSpace(.sRGB))
+        #expect(abs(ink.redComponent - (example.0 ? 1 : 0)) < 0.001)
+        #expect(abs(ink.alphaComponent - example.1) < 0.001)
+    }
+
+    @Test(arguments: [CGFloat(220), 300, 420], [false, true])
+    @MainActor func narrowPaneControlsLeaveTheAddressCenteredWithoutOverlap(width: CGFloat, copyAvailable: Bool) throws {
+        let toolbar = toolbar(width: width)
+        toolbar.update(url: URL(string: "https://example-domain-with-a-long-name.test/long/path"), fullURL: true, enabled: true,
+                       canBack: true, canForward: true, loading: false, canReload: true, canCopy: copyAvailable,
+                       canShowSiteInfo: true, canSplit: true, close: true, showSidebar: false, extensionItems: [])
+        toolbar.layoutSubtreeIfNeeded()
+        let title = try #require(toolbar.subviews.compactMap { $0 as? PaneTitleControl }.first)
+        let shown = toolbar.subviews.filter { !$0.isHidden && $0.frame.width > 0 }
+        #expect(title.frame.midX == toolbar.bounds.midX)
+        #expect(shown.enumerated().allSatisfy { index, view in
+            shown.dropFirst(index + 1).allSatisfy { !view.frame.intersects($0.frame) }
+        })
+    }
+
+    @Test @MainActor func aDocumentToolbarKeepsTheAuthoredTitleWithoutWebActions() throws {
+        let toolbar = toolbar(width: 720)
+        toolbar.update(url: nil, documentTitle: "Original Note", fullURL: false, enabled: true,
+                       canBack: false, canForward: false, loading: false, canReload: false, canCopy: false,
+                       canShowSiteInfo: false, canSplit: true, close: true, showSidebar: true,
+                       siteControls: false, extensionItems: [])
+        toolbar.layoutSubtreeIfNeeded()
+        let title = try #require(toolbar.subviews.compactMap { $0 as? PaneTitleControl }.first)
+        let site = try #require(toolbar.subviews.first { $0.parcTooltip?.label == "Site Control Center" })
+        let copy = try #require(toolbar.subviews.first { $0.parcTooltip?.label == "Copy Current URL" })
+        #expect(title.accessibilityLabel() == "Original Note")
+        #expect(site.isHidden && copy.isHidden)
+        #expect(toolbar.extensionToolbar.subviews.isEmpty)
+    }
+}
