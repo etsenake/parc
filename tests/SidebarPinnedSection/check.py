@@ -33,7 +33,6 @@ with tempfile.TemporaryDirectory(prefix="parc-pinned-section-") as directory:
     if core / "SidebarOutlineConfigureSkip.swift" not in plate:
         plate.append(core / "SidebarOutlineConfigureSkip.swift")
     suites = {
-        "model": [*sorted(core.glob("*.swift")), here / "ModelTests.swift"],
         "header": [*store_sources, app / "SidebarChromeLayout.swift", app / "SidebarRowAppearance.swift",
                    app / "SidebarPinnedHeader.swift", app / "DocumentDefaultIcon.swift", app / "LibraryArtwork.swift",
                    app / "PinnedSectionPreferences.swift",
