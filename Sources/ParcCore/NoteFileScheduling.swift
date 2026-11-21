@@ -40,25 +40,57 @@ package final class NoteFileSystemClock: NoteFileClock {
     }
 }
 
+package final class NoteFileDeferredJobs: @unchecked Sendable {
+    private var jobs: [@MainActor () -> Void] = []
+
+    package init() {}
+
+    fileprivate func add(_ job: @escaping @MainActor () -> Void) { jobs.append(job) }
+
+    package var isEmpty: Bool { jobs.isEmpty }
+
+    @MainActor
+    package func runAll() {
+        while !jobs.isEmpty {
+            let next = jobs.removeFirst()
+            next()
+        }
+    }
+}
+
 package final class NoteFileWorker: @unchecked Sendable {
     package static let files = NoteFileWorker(label: "org.parc.notes.files")
     package static let index = NoteFileWorker(label: "org.parc.notes.index", qos: .utility)
     package static let inline = NoteFileWorker()
 
     private let queue: DispatchQueue?
+    private let deferred: NoteFileDeferredJobs?
 
     package init(label: String, qos: DispatchQoS = .userInitiated) {
         queue = DispatchQueue(label: label, qos: qos)
+        deferred = nil
     }
 
-    private init() { queue = nil }
+    package init(deferred jobs: NoteFileDeferredJobs) {
+        queue = nil
+        deferred = jobs
+    }
+
+    private init() {
+        queue = nil
+        deferred = nil
+    }
 
     package var isInline: Bool { queue == nil }
 
     @MainActor
     package func perform<Value>(_ work: @escaping () -> Value, then finish: @escaping @MainActor (Value) -> Void) {
         guard let queue else {
-            finish(work())
+            if let deferred {
+                deferred.add { finish(work()) }
+            } else {
+                finish(work())
+            }
             return
         }
         let job = NoteFileJob(work: work, finish: finish)
