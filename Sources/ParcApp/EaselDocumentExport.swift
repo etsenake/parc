@@ -170,7 +170,7 @@ enum EaselDocumentExport {
             case .stamp:
                 if case .icon(let name)? = EaselStampFace(item: item) {
                     art.images[item.id] = EaselStampArtwork.iconMask(name, size: NSSize(width: item.frame.width, height: item.frame.height), scale: max(4, scale))
-                } else if let name = EaselStampFace(item: item)?.customEmojiName, let image = EaselStampArtwork.customEmojiImage(name),
+                } else if let name = EaselStampFace(item: item)?.customEmojiName, let image = EaselStampArtwork.customEmojiImage(name, library: canvas.stampEmojiLibrary),
                           let data = image.tiffRepresentation.flatMap({ NSBitmapImageRep(data: $0) })?.representation(using: .png, properties: [:]) {
                     art.images[item.id] = EaselVectorImage(data: data, mimeType: "image/png")
                 }

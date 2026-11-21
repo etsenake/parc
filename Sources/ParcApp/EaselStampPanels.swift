@@ -4,6 +4,7 @@ import AppKit
 final class EaselStampPanels: EaselStampPanelsPresenting {
     var onPick: ((EaselStampFace) -> Void)?
     var onPickerClose: (() -> Void)?
+    var emojiLibrary: NoteEmojiLibrary?
     private var wheel: NotePagePopover?
     private var picker: NotePagePopover?
     private weak var wheelView: EaselStampWheel?
@@ -18,7 +19,7 @@ final class EaselStampPanels: EaselStampPanelsPresenting {
 
     func presentWheel(in host: NSView, at point: NSPoint, below control: NSRect?, recents: [EaselStampFace], current: EaselStampFace) {
         close(animated: false)
-        let view = EaselStampWheel(recents: recents, current: current)
+        let view = EaselStampWheel(recents: recents, current: current, library: emojiLibrary)
         wheelView = view
         let popover = NotePagePopover(content: view)
         popover.panel.cornerRadius = EaselStampWheel.diameter / 2
@@ -54,7 +55,7 @@ final class EaselStampPanels: EaselStampPanelsPresenting {
     func presentPicker(in host: NSView, at point: NSPoint) {
         let origin = wheel?.panel.frame
         close(animated: false)
-        let view = EaselStampPicker()
+        let view = EaselStampPicker(library: emojiLibrary)
         let popover = NotePagePopover(content: view)
         popover.onClose = { [weak self, weak popover] in
             guard let self, self.picker === popover else { return }
@@ -100,6 +101,7 @@ final class EaselStampWheel: NSView, NoteFloatingPanelContent {
     var onMore: (() -> Void)?
     let recents: [EaselStampFace]
     let current: EaselStampFace
+    private let library: NoteEmojiLibrary?
     private var highlighted: Slot? { didSet { if highlighted != oldValue { highlightMoved(from: oldValue); needsDisplay = true } } }
     private var pressed: Slot? { didSet { if pressed != oldValue { needsDisplay = true } } }
     private var tracking: NSTrackingArea?
@@ -109,9 +111,10 @@ final class EaselStampWheel: NSView, NoteFloatingPanelContent {
     private var flight: (slot: Slot, target: NSPoint, start: CFTimeInterval, done: () -> Void)?
     private var driver: EaselCanvasFrameDriver?
 
-    init(recents: [EaselStampFace], current: EaselStampFace) {
+    init(recents: [EaselStampFace], current: EaselStampFace, library: NoteEmojiLibrary? = nil) {
         self.recents = recents
         self.current = current
+        self.library = library
         super.init(frame: NSRect(x: 0, y: 0, width: Self.diameter, height: Self.diameter))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -321,7 +324,7 @@ final class EaselStampWheel: NSView, NoteFloatingPanelContent {
                 plate.stroke()
             }
             let inset: CGFloat = slot == .more ? 0 : (box.width > 30 ? 6 : 2)
-            EaselStampArtwork.draw(face, in: box.insetBy(dx: inset, dy: inset), ink: NoteTheme.menuInk)
+            EaselStampArtwork.draw(face, in: box.insetBy(dx: inset, dy: inset), ink: NoteTheme.menuInk, library: library)
         } else {
             EaselStampArtwork.draw(.icon("plus"), in: box.insetBy(dx: box.width * 0.24, dy: box.width * 0.24), ink: NoteTheme.menuSecondaryInk)
         }
@@ -410,11 +413,12 @@ final class EaselStampPicker: NSView, NoteFloatingPanelContent {
     private let emojiTab = NoteToolbarButton(.text("Emoji"), label: "Emoji")
     private let iconsTab = NoteToolbarButton(.text("Icons"), label: "Icons")
     private let separator = NSView()
-    private let emoji = NoteEmojiPicker(showsRandom: true, library: EaselStampArtwork.customEmojiLibrary)
+    private let emoji: NoteEmojiPicker
     private let field = NoteSearchField(placeholder: "Search icons…")
     private let list = NoteMenuList()
 
-    override init(frame frameRect: NSRect) {
+    init(library: NoteEmojiLibrary?) {
+        emoji = NoteEmojiPicker(showsRandom: true, library: library ?? EaselStampArtwork.customEmojiLibrary)
         super.init(frame: NSRect(x: 0, y: 0, width: NoteEmojiPicker.preferredSize.width,
                                  height: NoteEmojiPicker.preferredSize.height + Self.tabHeight))
         wantsLayer = true
@@ -454,8 +458,6 @@ final class EaselStampPicker: NSView, NoteFloatingPanelContent {
         select(.emoji)
         refreshAppearance()
     }
-
-    convenience init() { self.init(frame: .zero) }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
