@@ -1,5 +1,8 @@
 import Foundation
 import ObjectiveC
+import Testing
+
+@Suite(.serialized) enum FileObservationSuites {}
 
 struct FileOperation {
     let name: String
@@ -9,7 +12,7 @@ struct FileOperation {
     var fileName: String { (path as NSString).lastPathComponent }
 }
 
-enum EaselFileOperations {
+enum FileOperations {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var installed = false
     nonisolated(unsafe) private static var watched: [String] = []
@@ -18,25 +21,42 @@ enum EaselFileOperations {
         guard !installed else { return }
         installed = true
         for (original, replacement) in [
-            (#selector(FileManager.fileExists(atPath:)), #selector(FileManager.easelObserved_fileExists(atPath:))),
+            (#selector(FileManager.fileExists(atPath:)), #selector(FileManager.observed_fileExists(atPath:))),
             (#selector(FileManager.createFile(atPath:contents:attributes:)),
-             #selector(FileManager.easelObserved_createFile(atPath:contents:attributes:))),
-            (#selector(FileManager.removeItem(at:)), #selector(FileManager.easelObserved_removeItem(at:))),
+             #selector(FileManager.observed_createFile(atPath:contents:attributes:))),
+            (#selector(FileManager.removeItem(at:)), #selector(FileManager.observed_removeItem(at:))),
         ] {
             guard let originalMethod = class_getInstanceMethod(FileManager.self, original),
                   let replacementMethod = class_getInstanceMethod(FileManager.self, replacement) else {
+                Issue.record("missing \(original) on NSFileManager")
                 return
             }
             method_exchangeImplementations(originalMethod, replacementMethod)
         }
     }
     static func during(_ directory: URL, _ body: () throws -> Void) rethrows -> [FileOperation] {
+        if !installed { Issue.record("FileOperations.install() first") }
         let paths = [directory.standardizedFileURL.path, directory.resolvingSymlinksInPath().path]
         lock.lock(); watched = paths; log = []; lock.unlock()
         defer { lock.lock(); watched = []; lock.unlock() }
         try body()
         lock.lock(); defer { lock.unlock() }
         return log
+    }
+    private static func begin(_ directory: URL) {
+        let paths = [directory.standardizedFileURL.path, directory.resolvingSymlinksInPath().path]
+        lock.lock(); watched = paths; log = []; lock.unlock()
+    }
+    private static func finish() -> [FileOperation] {
+        lock.lock(); defer { lock.unlock() }
+        watched = []
+        return log
+    }
+    static func during(_ directory: URL, _ body: () async throws -> Void) async rethrows -> [FileOperation] {
+        if !installed { Issue.record("FileOperations.install() first") }
+        begin(directory)
+        do { try await body() } catch { _ = finish(); throw error }
+        return finish()
     }
     fileprivate static func note(_ name: String, _ path: String) {
         let operation = FileOperation(name: name, path: path, onMainThread: Thread.isMainThread,
@@ -48,22 +68,22 @@ enum EaselFileOperations {
 }
 
 extension FileManager {
-    @objc dynamic func easelObserved_fileExists(atPath path: String) -> Bool {
-        EaselFileOperations.note("fileExists", path)
-        return easelObserved_fileExists(atPath: path)
+    @objc dynamic func observed_fileExists(atPath path: String) -> Bool {
+        FileOperations.note("fileExists", path)
+        return observed_fileExists(atPath: path)
     }
-    @objc dynamic func easelObserved_createFile(atPath path: String, contents: Data?,
+    @objc dynamic func observed_createFile(atPath path: String, contents: Data?,
                                            attributes: [FileAttributeKey: Any]?) -> Bool {
-        EaselFileOperations.note("createFile", path)
-        return easelObserved_createFile(atPath: path, contents: contents, attributes: attributes)
+        FileOperations.note("createFile", path)
+        return observed_createFile(atPath: path, contents: contents, attributes: attributes)
     }
-    @objc dynamic func easelObserved_removeItem(at url: URL) throws {
-        EaselFileOperations.note("removeItem", url.path)
-        try easelObserved_removeItem(at: url)
+    @objc dynamic func observed_removeItem(at url: URL) throws {
+        FileOperations.note("removeItem", url.path)
+        try observed_removeItem(at: url)
     }
 }
 
-final class EaselObservedString: NSString {
+final class ObservedString: NSString {
     struct Read {
         let name: String
         let onMainThread: Bool
@@ -72,7 +92,7 @@ final class EaselObservedString: NSString {
     nonisolated(unsafe) private static var log: [Read]?
     private var storage: NSString = ""
     static func text(_ value: String) -> String {
-        let string = EaselObservedString()
+        let string = ObservedString()
         string.storage = value as NSString
         return string as String
     }
