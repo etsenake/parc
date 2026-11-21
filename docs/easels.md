@@ -11,7 +11,8 @@ each page as it was, and Forward returns to them, and an address typed over the
 Easel keeps it behind the new page
 ([navigation](navigation.md#links-to-markdown-and-text-files)). Local editing
 and export do not require a collaboration service. Board-wide tools such as
-find and replace are in [board features](easel-board-features.md).
+find and replace are in [board features](easel-board-features.md), and trees of
+ideas in [mind maps](easel-mind-maps.md).
 
 Saves refuse a document with duplicate object IDs. A file that already has
 them opens with the later copies given new IDs, and an unreadable file is left
@@ -331,7 +332,8 @@ moves with) apply to any object. Text, shapes and stickies hold rich text;
 sections keep a plain title. Tables keep their grid, cell text and merges in a
 `table` field described in [Easel tables](easel-tables.md#saved-format), and
 [code blocks](easel-code-blocks.md#saved-format) keep their code in `text` with an
-optional `language`. A text style may carry `alignment`, `customSize` (8 to 400
+optional `language`. Mind-map nodes and branches carry an optional `mindMap`
+link ([mind maps](easel-mind-maps.md#saved-format)). A text style may carry `alignment`, `customSize` (8 to 400
 points, overriding the preset size) and, on text objects only, `autoWidth` for
 point text; absent means the preset size and fixed-width area text.
 Validation refuses each field on objects it doesn't belong
