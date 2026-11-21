@@ -196,3 +196,50 @@ struct BrowserCommandAdmissionTests {
         #expect(!state.matches(nil, revision: 4))
     }
 }
+
+extension BrowserCommandAdmissionTests {
+    @Test(arguments: Command.allCases, [false, true])
+    @MainActor func aNewModalOrFocusChangeDuringPreparationCancelsTheCommand(kind: Command, opensSheet: Bool) {
+        let fixture = Fixture()
+        let command = fixture.request(kind) {
+            if opensSheet { fixture.window.testSheet = Window() }
+            else { fixture.window.key = false }
+        }
+        #expect(!command())
+        #expect(fixture.window.requests == 0)
+    }
+
+    @Test(arguments: BrowserFindAction.allCases)
+    func findKeepsTheNativeEditingActionsInTheResponderChain(action: BrowserFindAction) {
+        let expectsNativeText = action == .jumpToSelection || action == .replace
+        #expect(action.isNativeTextOnly == expectsNativeText)
+    }
+}
+
+extension BrowserCommandAdmissionTests {
+    @Test(arguments: [Command.clearToday, .exit, .closeWindow, .fullscreen, .find])
+    @MainActor func aCommandReceiptDoesNotKeepItsClosedWindowAlive(command: Command) throws {
+        _ = NSApplication.shared
+        weak var owner: Window?
+        let perform: () -> Bool = autoreleasepool {
+            let window = Window()
+            owner = window
+            switch command {
+            case .clearToday:
+                return BrowserClearTodayCommand(window: window, ownerIsAvailable: { true }, clear: {}).perform
+            case .exit:
+                return BrowserExitCommand(window: window, targetIsAvailable: { true }, execute: { true }).perform
+            case .closeWindow:
+                let command = BrowserWindowCloseCommand(window: window, ownerIsAvailable: { true })
+                return { command.perform(nil) }
+            case .fullscreen:
+                let command = BrowserWindowFullscreenCommand(window: window, ownerIsAvailable: { true })
+                return { command.perform(nil) }
+            case .find:
+                return BrowserFindCommand(action: .next, window: window, available: { true }, execute: {}).perform
+            }
+        }
+        #expect(owner == nil)
+        #expect(!perform())
+    }
+}

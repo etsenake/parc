@@ -4,7 +4,7 @@ import Testing
 
 struct CommandShortcutMigrationTests {
     enum Command: CaseIterable {
-        case clearToday, closeWindow, fullscreen, findNext, findPrevious
+        case clearToday, closeWindow, fullscreen, findNext, findPrevious, pasteStyle, exit
 
         var id: String {
             switch self {
@@ -13,6 +13,8 @@ struct CommandShortcutMigrationTests {
             case .fullscreen: "toggleFullScreen:"
             case .findNext: "findNext:"
             case .findPrevious: "findPrevious:"
+            case .pasteStyle: "pasteAsPlainText:"
+            case .exit: "exit:"
             }
         }
 
@@ -23,6 +25,8 @@ struct CommandShortcutMigrationTests {
             case .fullscreen: .init(key: "f", flags: [.command, .control])
             case .findNext: .init(key: "g", flags: .command)
             case .findPrevious: .init(key: "g", flags: [.command, .shift])
+            case .pasteStyle: .init(key: "v", flags: [.command, .shift])
+            case .exit: .init(key: "\u{1b}", flags: [])
             }
         }
 
@@ -32,6 +36,8 @@ struct CommandShortcutMigrationTests {
             case .closeWindow: "closeWindowShortcutDefaults"
             case .fullscreen: "fullscreenShortcutDefaults"
             case .findNext, .findPrevious: "findShortcutDefaults"
+            case .pasteStyle: "pasteStyleShortcutDefaults"
+            case .exit: "exitShortcutDefaults"
             }
         }
     }
@@ -43,6 +49,8 @@ struct CommandShortcutMigrationTests {
         @objc func toggleFullScreen(_ sender: NSMenuItem) {}
         @objc func findNext(_ sender: NSMenuItem) {}
         @objc func findPrevious(_ sender: NSMenuItem) {}
+        @objc func pasteAsPlainText(_ sender: NSMenuItem) {}
+        @objc func exit(_ sender: NSMenuItem) {}
         @objc func custom(_ sender: NSMenuItem) {}
         func validateMenuItem(_ item: NSMenuItem) -> Bool { available }
     }
@@ -62,6 +70,10 @@ struct CommandShortcutMigrationTests {
             registry = KeyboardShortcuts(mainMenu: { root }, observesKeyboardLayout: false)
             item = NSMenuItem(title: command.id, action: NSSelectorFromString(command.id), keyEquivalent: command.chord.key)
             item.keyEquivalentModifierMask = command.chord.flags
+            if command == .exit {
+                item.isHidden = true
+                item.allowsKeyEquivalentWhenHidden = true
+            }
             item.target = target
             let custom = NSMenuItem(title: "Custom", action: #selector(Target.custom(_:)), keyEquivalent: "")
             custom.target = target
@@ -84,7 +96,7 @@ struct CommandShortcutMigrationTests {
         func event(for command: Command, repeating: Bool = false) throws -> NSEvent {
             let chord = command.chord
             let characters = chord.flags.contains(.shift) ? chord.key.uppercased() : chord.key
-            let keyCodes: [String: UInt16] = ["w": 13, "f": 3, "k": 40, "g": 5]
+            let keyCodes: [String: UInt16] = ["w": 13, "f": 3, "k": 40, "g": 5, "v": 9, "\u{1b}": 53]
             let keyCode = try #require(keyCodes[chord.key])
             return try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: chord.flags, timestamp: 0,
                 windowNumber: 0, context: nil, characters: characters, charactersIgnoringModifiers: characters,
@@ -156,21 +168,21 @@ struct CommandShortcutMigrationTests {
         #expect(fixture.registry.shortcut(for: command.id) == command.chord)
     }
 
-    @Test(arguments: Command.allCases)
+    @Test(arguments: Command.allCases.filter { $0 != .pasteStyle && $0 != .exit })
     @MainActor func aNativeChordRetainsItsOriginalMenuItem(command: Command) throws {
         let fixture = try Fixture(command)
         let event = try fixture.event(for: command)
         #expect(fixture.registry.nativeCommand(for: event, editable: true)?.item === fixture.item)
     }
 
-    @Test(arguments: Command.allCases)
+    @Test(arguments: Command.allCases.filter { $0 != .pasteStyle && $0 != .exit })
     @MainActor func repeatingACommandDoesNotIssueAnotherRequest(command: Command) throws {
         let fixture = try Fixture(command)
         let event = try fixture.event(for: command, repeating: true)
         #expect(fixture.registry.nativeCommand(for: event, editable: false) == nil)
     }
 
-    @Test(arguments: Command.allCases)
+    @Test(arguments: Command.allCases.filter { $0 != .pasteStyle && $0 != .exit })
     @MainActor func aNativeChordRefusesAnUnavailableTarget(command: Command) throws {
         let fixture = try Fixture(command)
         fixture.target.available = false
@@ -185,5 +197,57 @@ struct CommandShortcutMigrationTests {
         fixture.registry.configure(directory: fixture.directory)
         #expect(fixture.registry.loadError != nil)
         #expect(try Data(contentsOf: fixture.file) == corrupt)
+    }
+}
+
+extension CommandShortcutMigrationTests {
+    @Test(arguments: Command.allCases)
+    @MainActor func resetAllRestoresTheDefaultChordAndPriority(command: Command) throws {
+        let fixture = try Fixture(command)
+        let priority = fixture.registry.priority(for: command.id)
+        try fixture.registry.setPriority(priority == .preferWebsites ? .preferParc : .preferWebsites, for: command.id)
+        try fixture.registry.set(nil, for: command.id)
+        try fixture.registry.resetAll()
+        #expect(fixture.registry.shortcut(for: command.id) == command.chord)
+        #expect(fixture.registry.priority(for: command.id) == priority)
+    }
+
+    @Test(arguments: Command.allCases.filter { $0 != .pasteStyle })
+    @MainActor func theActualMenuKeepsTheOriginalCommandAndItsLiveKeycap(command: Command) throws {
+        let fixture = try Fixture(command)
+        let window = CommandBarTestSupport.borderlessWindow()
+        let rows = fixture.registry.menuCommands(in: window).filter { $0.id == command.id }
+        let row = try #require(rows.first)
+        #expect(rows.count == 1)
+        #expect(row.shortcut == command.chord)
+    }
+}
+
+extension CommandShortcutMigrationTests {
+    @Test(arguments: [KeyboardShortcuts.Priority.useBoth, .preferWebsites, .preferParc])
+    @MainActor func bareEscapeUsesTheRegistryOnlyWhenParcGetsFirstChoice(priority: KeyboardShortcuts.Priority) throws {
+        let fixture = try Fixture(.exit)
+        try fixture.registry.setPriority(priority, for: Command.exit.id)
+        let event = try fixture.event(for: .exit)
+        let command = fixture.registry.nativeCommand(for: event, editable: true)
+        #expect(fixture.item.keyEquivalent.isEmpty)
+        if priority == .preferParc {
+            let command = try #require(command)
+            #expect(command.item === fixture.item)
+            #expect(fixture.registry.isExitCommand(command))
+        } else {
+            #expect(command == nil)
+        }
+    }
+
+    @Test @MainActor func disablingACustomExitBindingExpiresItsNativeRequest() throws {
+        let fixture = try Fixture(.exit)
+        let chord = KeyboardShortcut(key: "k", flags: [.command, .control])
+        try fixture.registry.set(chord, for: Command.exit.id)
+        let event = CommandBarTestSupport.keyEvent(40, chord.flags, characters: "k")
+        let command = try #require(fixture.registry.nativeCommand(for: event, editable: false))
+        try fixture.registry.set(nil, for: Command.exit.id)
+        #expect(!fixture.registry.perform(command, event: event, editable: false))
+        #expect(fixture.registry.nativeCommand(for: event, editable: false) == nil)
     }
 }
