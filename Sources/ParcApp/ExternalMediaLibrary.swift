@@ -73,43 +73,61 @@ struct ExternalMediaCloud: Sendable {
 }
 
 final class ExternalMediaCloudStatus: ExternalMediaCloudObservation, @unchecked Sendable {
+    struct PresenterRegistry: Sendable {
+        let add: @Sendable (any NSFilePresenter) -> Void
+        let remove: @Sendable (any NSFilePresenter) -> Void
+
+        static let system = Self(add: { NSFileCoordinator.addFilePresenter($0) }, remove: { NSFileCoordinator.removeFilePresenter($0) })
+    }
+
     private final class Presenter: NSObject, NSFilePresenter, @unchecked Sendable {
         let presentedItemURL: URL?
         let presentedItemOperationQueue: OperationQueue
         let observedPresentedItemUbiquityAttributes: Set<URLResourceKey> = [.ubiquitousItemDownloadingStatusKey]
         private let changed: @Sendable (URL) -> Void
         private let evicted: @Sendable (Presenter) -> Void
-        init(folder: URL, queue: OperationQueue, changed: @escaping @Sendable (URL) -> Void, evicted: @escaping @Sendable (Presenter) -> Void) {
+        private let registry: PresenterRegistry
+        init(folder: URL, queue: OperationQueue, registry: PresenterRegistry, changed: @escaping @Sendable (URL) -> Void, evicted: @escaping @Sendable (Presenter) -> Void) {
             presentedItemURL = folder; presentedItemOperationQueue = queue; self.changed = changed; self.evicted = evicted
+            self.registry = registry
         }
         func presentedSubitemDidChange(at url: URL) { changed(url) }
         func accommodatePresentedItemEviction(completionHandler: @escaping @Sendable (Error?) -> Void) {
-            NSFileCoordinator.removeFilePresenter(self); evicted(self); completionHandler(nil)
+            registry.remove(self); evicted(self); completionHandler(nil)
         }
     }
     private let handler: @Sendable (Set<String>) -> Void
-    private let queue = DispatchQueue(label: "org.parc.media-cloud-status")
+    typealias Schedule = @Sendable (TimeInterval, @escaping @Sendable () -> Void) -> Void
+    private let schedule: Schedule
+    private let registry: PresenterRegistry
     private let callbacks = OperationQueue()
     private var presenters: [String: Presenter] = [:]
     private var changed = Set<String>()
-    init(handler: @escaping @Sendable (Set<String>) -> Void) {
+    init(handler: @escaping @Sendable (Set<String>) -> Void, registry: PresenterRegistry = .system,
+         schedule: Schedule? = nil) {
+        let queue = DispatchQueue(label: "org.parc.media-cloud-status")
+        self.schedule = schedule ?? { delay, work in
+            if delay == 0 { queue.async(execute: work) }
+            else { queue.asyncAfter(deadline: .now() + delay, execute: work) }
+        }
+        self.registry = registry
         self.handler = handler; callbacks.maxConcurrentOperationCount = 1; callbacks.qualityOfService = .utility
     }
     deinit {
         let retired = Array(presenters.values)
-        queue.async { retired.forEach { NSFileCoordinator.removeFilePresenter($0) } }
+        schedule(0) { [registry] in retired.forEach { registry.remove($0) } }
     }
     func present(_ folders: Set<String>) {
-        queue.async { [self] in
+        schedule(0) { [self] in
             for (folder, presenter) in presenters where !folders.contains(folder) {
-                NSFileCoordinator.removeFilePresenter(presenter); presenters[folder] = nil
+                registry.remove(presenter); presenters[folder] = nil
             }
             for folder in folders where presenters[folder] == nil {
                 let aliases = Set([folder] + [Self.resolved(folder)].compactMap { $0 })
-                let presenter = Presenter(folder: URL(fileURLWithPath: folder, isDirectory: true), queue: callbacks,
+                let presenter = Presenter(folder: URL(fileURLWithPath: folder, isDirectory: true), queue: callbacks, registry: registry,
                                           changed: { [weak self] url in if let file = Self.mediaFile(url, in: folder, aliases: aliases) { self?.note(file) } },
                                           evicted: { [weak self] presenter in self?.retire(presenter, folder: folder) })
-                NSFileCoordinator.addFilePresenter(presenter); presenters[folder] = presenter
+                registry.add(presenter); presenters[folder] = presenter
             }
         }
     }
@@ -124,12 +142,12 @@ final class ExternalMediaCloudStatus: ExternalMediaCloudObservation, @unchecked 
         return String(cString: real)
     }
     private func retire(_ presenter: Presenter, folder: String) {
-        queue.async { [self] in if presenters[folder] === presenter { presenters[folder] = nil } }
+        schedule(0) { [self] in if presenters[folder] === presenter { presenters[folder] = nil } }
     }
     private func note(_ path: String) {
-        queue.async { [weak self] in
+        schedule(0) { [weak self] in
             guard let self, self.changed.insert(path).inserted, self.changed.count == 1 else { return }
-            self.queue.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self.schedule(0.3) { [weak self] in
                 guard let self, !self.changed.isEmpty else { return }
                 let batch = self.changed; self.changed = []; self.handler(batch)
             }
@@ -154,6 +172,8 @@ private final class ExternalMediaPreferenceObserver: NSObject {
 
 @MainActor
 final class ExternalMediaLibrary: ObservableObject {
+    typealias WatchFactory = ([String: String], FSEventStreamEventId, @escaping @Sendable (ExternalMediaWatcher.Batch) -> Void) -> AnyObject?
+
     private final class Weak { weak var value: ExternalMediaLibrary?; init(_ value: ExternalMediaLibrary) { self.value = value } }
     private static var owners: [String: Weak] = [:]
     static func shared(directory: URL) -> ExternalMediaLibrary {
@@ -173,7 +193,8 @@ final class ExternalMediaLibrary: ObservableObject {
     private let disk: ExternalMediaDisk
     private let systemFolders: (() -> [URL])
     private var clients = Set<UUID>()
-    private var watcher: ExternalMediaWatcher?
+    private var watcher: AnyObject?
+    private let makeWatcher: WatchFactory
     private var watchedRoots: [String]?
     private var watchedAliases: [String: String]?
     private var watchSession: UInt64 = 0
@@ -192,7 +213,9 @@ final class ExternalMediaLibrary: ObservableObject {
     private var screenshotObserver: ExternalMediaPreferenceObserver?
     nonisolated static let screenshotDomain = "com.apple.screencapture"
     init(directory: URL, preferencesAreEphemeral: Bool = false, systemFolders: @escaping () -> [URL] = ExternalMediaLibrary.defaultFolders,
-         cloud: ExternalMediaCloud = .system, screenshotPreferences: UserDefaults? = UserDefaults(suiteName: ExternalMediaLibrary.screenshotDomain)) {
+         cloud: ExternalMediaCloud = .system, screenshotPreferences: UserDefaults? = UserDefaults(suiteName: ExternalMediaLibrary.screenshotDomain),
+         makeWatcher: @escaping WatchFactory = { ExternalMediaWatcher(aliases: $0, since: $1, handler: $2) }) {
+        self.makeWatcher = makeWatcher
         self.systemFolders = systemFolders; self.cloud = cloud; self.screenshotPreferences = screenshotPreferences
         disk = ExternalMediaDisk(directory: directory, preferencesAreEphemeral: preferencesAreEphemeral, cloud: cloud)
     }
@@ -211,8 +234,9 @@ final class ExternalMediaLibrary: ObservableObject {
         return [manager.urls(for: .downloadsDirectory, in: .userDomainMask).first!, desktop,
                 manager.urls(for: .documentDirectory, in: .userDomainMask).first!, screenshots]
     }
-    func activate(_ client: UUID) {
-        guard clients.insert(client).inserted else { return }
+    @discardableResult
+    func activate(_ client: UUID) -> Task<Void, Never>? {
+        guard clients.insert(client).inserted else { return nil }
         if observers.isEmpty {
             let center = NotificationCenter.default, workspace = NSWorkspace.shared.notificationCenter
             observers.append((center, center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -236,7 +260,7 @@ final class ExternalMediaLibrary: ObservableObject {
             timer.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.reconcile() } }
             timer.resume(); safetyTimer = timer
         }
-        startRefresh(announced: clients.count == 1)
+        return startRefresh(announced: clients.count == 1)
     }
     func deactivate(_ client: UUID) {
         clients.remove(client)
@@ -248,9 +272,12 @@ final class ExternalMediaLibrary: ObservableObject {
         if !folders.isEmpty { folders = [] }
         if isLoading { isLoading = false }
     }
-    func refresh() { startRefresh(announced: true) }
-    private func startRefresh(announced: Bool) {
-        guard !clients.isEmpty else { return }
+    @discardableResult
+    func refresh() -> Task<Void, Never>? { startRefresh(announced: true) }
+
+    @discardableResult
+    private func startRefresh(announced: Bool) -> Task<Void, Never>? {
+        guard !clients.isEmpty else { return nil }
         generation &+= 1; let token = generation; let roots = systemFolders(); let mark = FSEventsGetCurrentEventId()
         refreshTask?.cancel(); rescanPending = false
         if announced, !isLoading { isLoading = true }
@@ -271,6 +298,7 @@ final class ExternalMediaLibrary: ObservableObject {
             if self.isLoading { self.isLoading = false }
             if self.rescanPending { self.startRefresh(announced: false) }
         }
+        return refreshTask
     }
     private func requestRescan() {
         if refreshTask == nil { startRefresh(announced: false) } else { rescanPending = true }
@@ -370,7 +398,7 @@ final class ExternalMediaLibrary: ObservableObject {
         watcher = nil; watchedRoots = roots; watchedAliases = aliases; watchSession &+= 1
         guard !roots.isEmpty else { return }
         let session = watchSession
-        watcher = ExternalMediaWatcher(aliases: aliases, since: mark) { [weak self] batch in
+        watcher = makeWatcher(aliases, mark) { [weak self] batch in
             Task { @MainActor [weak self] in self?.receive(batch, session: session) }
         }
     }
@@ -391,7 +419,7 @@ final class ExternalMediaLibrary: ObservableObject {
 
 final class ExternalMediaWatcher {
     enum Batch: Sendable { case rescan, paths(Set<String>) }
-    private final class Sink {
+    final class Sink {
         private let roots: [String: String]
         private let handler: @Sendable (Batch) -> Void
         init(aliases: [String: String], handler: @escaping @Sendable (Batch) -> Void) { roots = aliases; self.handler = handler }
@@ -576,13 +604,13 @@ actor ExternalMediaDisk {
         guard roots == scannedRoots, !remote, readable.allSatisfy({ Self.isReadable($0.key) == $0.value }) else { return try scan(systemFolders: systemFolders) }
         return nil
     }
-    func update(paths: Set<String>) throws -> Change {
-        let now = ContinuousClock.now
+    func update(paths: Set<String>, at time: ContinuousClock.Instant? = nil) throws -> Change {
+        let now = time ?? ContinuousClock.now
         lastEvent = lastEvent.filter { now - $0.value < Self.settleDelay }
         return try change(paths, at: now, coalescing: true)
     }
-    func settle() throws -> Change {
-        let now = ContinuousClock.now
+    func settle(at time: ContinuousClock.Instant? = nil) throws -> Change {
+        let now = time ?? ContinuousClock.now
         return try change(Set(settling.filter { now - $0.value >= Self.settleDelay }.keys), at: now, coalescing: false)
     }
     private func change(_ paths: Set<String>, at now: ContinuousClock.Instant, coalescing: Bool) throws -> Change {

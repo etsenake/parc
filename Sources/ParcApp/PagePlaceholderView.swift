@@ -91,12 +91,13 @@ enum PagePlaceholderSnapshot {
 enum PagePlaceholderDim {
     static let opacity: Float = 0.6
 
-    static func apply(_ dimmed: Bool, to layer: CALayer, animated: Bool) {
+    static func apply(_ dimmed: Bool, to layer: CALayer, animated: Bool,
+                      reduceMotion: @autoclosure () -> Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
         let target: Float = dimmed ? opacity : 1
         guard layer.opacity != target || layer.animation(forKey: "placeholderDim") != nil else { return }
         let from = layer.presentation()?.opacity ?? layer.opacity
         layer.opacity = target
-        guard animated, from != target, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+        guard animated, from != target, !reduceMotion() else {
             layer.removeAnimation(forKey: "placeholderDim"); return
         }
         let response: CGFloat = dimmed ? 0.225 : 0.245, fraction: CGFloat = dimmed ? 0.895 : 0.865

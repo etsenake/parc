@@ -29,10 +29,18 @@ import Quartz
     private weak var originalParent: NSWindow?
     private var observations: [NSObjectProtocol] = []
     private var motionObservation: NSObjectProtocol?
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private let reduceMotion: () -> Bool
+    private let presentWindow: @MainActor (NSWindow, NSWindow) -> Void
     private var finishing: DownloadLibraryPreview?
 
-    init(itemName: String = "download") {
+    init(itemName: String = "download",
+         reduceMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
+         presentWindow: @escaping @MainActor (NSWindow, NSWindow) -> Void = { window, parent in
+             parent.addChildWindow(window, ordered: .above)
+             window.makeKeyAndOrderFront(nil)
+         }) {
+        self.presentWindow = presentWindow
+        self.reduceMotion = reduceMotion
         let panel = DownloadPreviewPanel(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
                                          styleMask: .borderless, backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false; panel.isOpaque = false; panel.backgroundColor = .clear
@@ -85,7 +93,7 @@ import Quartz
         motionObservation = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
             object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    guard let self, self.reduceMotion, !self.closed else { return }
+                    guard let self, self.reduceMotion(), !self.closed else { return }
                     if self.closing { self.close() } else { self.settleContent() }
                 }
             }
@@ -106,8 +114,8 @@ import Quartz
         guard let window, !closing, originalParent == nil, parent.attachedSheet == nil else { return }
         originalParent = parent; window.appearance = parent.effectiveAppearance
         window.setFrame(parent.frame, display: false)
-        parent.addChildWindow(window, ordered: .above)
-        window.makeKeyAndOrderFront(nil); window.makeFirstResponder(dismissButton)
+        presentWindow(window, parent)
+        window.makeFirstResponder(dismissButton)
         root.layoutSubtreeIfNeeded()
         let source = localSourceRect()
         imageView.image = sourceImage
@@ -124,7 +132,7 @@ import Quartz
                 MainActor.assumeIsolated { self?.close() }
             })
         }
-        if !reduceMotion, let source, let layer = modal.layer {
+        if !reduceMotion(), let source, let layer = modal.layer {
             animate(layer, key: "transform", from: NSValue(caTransform3D: DownloadPreviewGeometry.transform(from: modal.frame, to: source)),
                     to: NSValue(caTransform3D: CATransform3DIdentity), ratio: 0.9, response: 0.25)
             animate(layer, key: "shadowOpacity", from: 0, to: 1, ratio: 0.9, response: 0.25)
@@ -199,7 +207,7 @@ import Quartz
     }
     func dismiss() {
         guard !closing else { return }
-        guard window?.isVisible == true, !reduceMotion, let source = localSourceRect(), let layer = modal.layer else { close(); return }
+        guard window?.isVisible == true, !reduceMotion(), let source = localSourceRect(), let layer = modal.layer else { close(); return }
         closing = true; finishing = self; transition &+= 1
         let token = transition
         let target = DownloadPreviewGeometry.transform(from: modal.frame, to: source)

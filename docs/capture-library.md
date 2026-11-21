@@ -47,7 +47,7 @@ actual output results. Shared motion/focus lives in [capture motion](capture-mot
 context payloads and Messages/AirDrop actions live in
 [capture editing](capture-editing.md).
 
-`tests/CaptureLibraryTests.swift` covers real disposable PNG persistence, shared
+The capture Library Swift Testing suites cover real disposable PNG persistence, shared
 ownership, revision replacement, stale/wrong-Profile refusal, exact-byte exports,
 asset deletion and corrupt-data preservation.
 
@@ -173,37 +173,18 @@ from the drawn thumbnail rectangle. Increase Contrast adds the selected focus ed
 
 ### Checks
 
-`tests/ExternalMediaLibraryTests.swift` covers disposable shallow enumeration,
-classification, aliases, same-path replacement, disappearance, hiding, source
-configuration, bookmarks, unreadable/missing folders and corrupt preferences.
-Its disk checks reread only the file an update names, ignore nested and outside
-paths, apply renames and removals, and hold a growing file until it settles while
-arrivals, removals and changes after a quiet spell apply at once. Native client
-checks cover event-driven arrival, in-place writes, a later screenshot marker,
-renames and removals, a slowly copied file landing in at most two updates, shutdown,
-a quiet rescan that publishes nothing, a new file that publishes the list exactly
-once without a loading flip, and a screenshot location change picked up without
-activation. An injected iCloud source checks that download status is watched with
-one presenter per shown iCloud folder, even for a folder of 3,000 files, that
-evictions and downloads reread just that file and publish once, that arrivals add no
-presenters and are still covered, that a rescan finding nothing new still
-re-presents the folder, that reports for files Media doesn't show change nothing,
-and that closing Media or hiding the folder stops watching and ignores late
-reports. The real presenter is checked with coordinated writes: it registers once
-per registered folder path however many files it holds, reports a direct media
-child under the spelling its folder was registered with, ignores nested and
-non-media files, and releases everything when the source is dropped; asked to make
-way for an eviction, it unregisters and comes back with the next present. The
-latest-wins planner checks that a newer or forced rebuild cancels the calculation
-in flight. Library view checks cover thumbnail geometry, hover, scrolling,
-selection, source rectangles, mixed capture/file navigation, a loading flip that
-leaves the grid alone, and arrivals, in-place changes, renames, removals and iCloud
-status changes that make at most two tiles while selection, scroll position and
-hover stay correct. `tests/MediaLibraryGridTests.swift` checks, without a window,
-that the grid keeps two columns sized to its width as it widens, narrows, gains
-items past the page height or switches scroll bar style, and that thumbnails filled
-while hidden load on return while loads answering after the Library closed cannot
-land. `scripts/test.sh` runs these Media checks.
+Swift Testing covers shallow enumeration, classification, revision and source
+ownership, targeted rereads, rename and removal, corrupt preferences, and
+original-byte export. A driven clock checks that a growing file waits for its
+last write to settle. Injected folder events and cloud presenters cover
+publication, coalescing, eviction and observer retirement. The planner tests
+cancel stale work and exercise the latest waiting request.
+
+The grid suites cover two-column layout across pane widths and scrollbar
+styles, incremental row changes, and thumbnail loads that wait while hidden
+or become stale when the Library closes. The Library view harness also covers
+tile presentation, selection, mixed capture/file navigation and preview
+ownership.
 
 ## Private Media ownership
 

@@ -598,7 +598,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
 @MainActor final class DownloadEmptyContentView: NSView {
     enum Mode { case hidden, status, empty }
     private let ownerValid: () -> Bool
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private let reduceMotion: () -> Bool
     private(set) var mode = Mode.hidden
     private var appeared = false
     private var motionObserver: NSObjectProtocol?
@@ -606,8 +606,10 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     private weak var retiredWindow: NSWindow?
     override var isFlipped: Bool { true }
 
-    init(ownerValid: @escaping () -> Bool) {
+    init(ownerValid: @escaping () -> Bool,
+         reduceMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
         self.ownerValid = ownerValid
+        self.reduceMotion = reduceMotion
         super.init(frame: .zero)
         wantsLayer = true; isHidden = true
         motionObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -668,7 +670,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         guard mode == .empty, !appeared, !bounds.isEmpty, !isHiddenOrHasHiddenAncestor,
               let window, window !== retiredWindow, let layer else { return }
         appeared = true; settle()
-        guard !reduceMotion else { return }
+        guard !reduceMotion() else { return }
         let move = DownloadPreviewGeometry.spring(keyPath: "transform.translation.y", ratio: 0.6, response: 0.35)
         move.fromValue = 16; move.toValue = 0
         let fade = CABasicAnimation(keyPath: "opacity")

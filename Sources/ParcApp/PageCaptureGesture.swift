@@ -1,15 +1,22 @@
 import AppKit
 
 @MainActor
+protocol CaptureGestureReceiver: AnyObject {
+    func handleCaptureGesture(_ recognizer: NSPanGestureRecognizer)
+}
+
+extension PageCaptureController: CaptureGestureReceiver {}
+
+@MainActor
 final class PageCaptureGesture: NSObject, NSGestureRecognizerDelegate {
     struct Admission {
         let isCurrent: () -> Bool
-        let begin: () -> PageCaptureController?
+        let begin: () -> (any CaptureGestureReceiver)?
     }
     private let prepare: (NSPoint) -> Admission?
     private let defaults: UserDefaults
     private var admission: Admission?
-    private weak var capture: PageCaptureController?
+    private weak var capture: (any CaptureGestureReceiver)?
     private let pan: NSPanGestureRecognizer
 
     init(view: NSView, defaults: UserDefaults = .standard, pan: NSPanGestureRecognizer? = nil,

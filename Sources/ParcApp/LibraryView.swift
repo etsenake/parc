@@ -153,11 +153,13 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     private var observedProfileRemovals: [ProfileRemovalRecord] = []
     private var observedSettings = BrowserSettings()
     private var observedProfileRemovalPending = false
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private let reduceMotion: @MainActor () -> Bool
     override var isFlipped: Bool { true }
 
     init(store: BrowserStore, kind: Kind, profileID: UUID, downloadStore: BrowserStore? = nil,
-         privateMediaContext: PrivateMediaContext? = nil) {
+         privateMediaContext: PrivateMediaContext? = nil,
+         reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
+        self.reduceMotion = reduceMotion
         self.downloadStore = downloadStore ?? store
         self.privateMediaContext = store.isEphemeral ? privateMediaContext : nil
         self.store = store
@@ -748,7 +750,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         filtersExpanded = expanded
         rebuildFilters()
         let token = filterAnimationGeneration
-        let duration = animated && !reduceMotion ? 0.3 : 0
+        let duration = animated && !reduceMotion() ? 0.3 : 0
         searchBackdrop.isHidden = false; filterTitle.isHidden = false; filterScroll.isHidden = false
         search.isEnabled = !expanded
         search.setAccessibilityHidden(expanded); filterTitle.setAccessibilityHidden(!expanded)

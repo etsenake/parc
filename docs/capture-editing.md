@@ -67,7 +67,6 @@ to retract an already invoked external composer.
 
 ## Checks
 
-`scripts/test-capture-editing.sh` exercises the actual memory session, canvas
-renderer and Library payloads. `scripts/test-portrait-capture.sh` covers edits
-through crop/frame, original-byte retention, recropping, density and wrong-size
-refusal. Shared Easel checks protect persistent sessions and canvas behavior.
+`CaptureEditingTests` exercises the in-memory session, canvas renderer and
+Library payloads. The Portrait suites cover editing, cropping and framing,
+original-byte retention, recropping, density and wrong-size refusal. Shared Easel checks protect persistent sessions and canvas behavior.

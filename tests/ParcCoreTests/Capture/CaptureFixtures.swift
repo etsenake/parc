@@ -1,7 +1,7 @@
 import Foundation
 @testable import ParcCore
 
-enum CaptureFixtures {
+extension CapturePaletteMenuTests {
     struct Destinations {
         let profile = UUID()
         let otherProfile = UUID()

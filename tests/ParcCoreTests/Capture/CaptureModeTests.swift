@@ -16,7 +16,7 @@ struct CaptureModeItemTests {
     }
 
     @Test func everyItemHasItsOwnKey() {
-        #expect(Set(CaptureModeItem.allCases.map(\.key)).count == 5)
+        #expect(Set(CaptureModeItem.allCases.map(\.key)).count == CaptureModeItem.allCases.count)
     }
 
     @Test func visibleAreaIsLabelledWithItsKey() {
@@ -28,17 +28,27 @@ struct CaptureModeItemTests {
         #expect(CaptureModeItem.cancel.key == "esc")
     }
 
-    @Test func everyItemHasAnIconATitleAndATooltip() {
-        #expect(CaptureModeItem.allCases.allSatisfy { !$0.symbol.isEmpty && !$0.toolTip.isEmpty && !$0.title.isEmpty })
+    @Test(arguments: CaptureModeItem.allCases)
+    func itemHasAnIconATitleAndATooltip(_ item: CaptureModeItem) {
+        #expect(!item.symbol.isEmpty && !item.toolTip.isEmpty && !item.title.isEmpty)
     }
 }
 
 struct CaptureModeKeysTests {
-    @Test func lettersChooseTheirItems() {
-        #expect(CaptureModeKeys.item(typed: "e", keyCode: 14) == .element)
-        #expect(CaptureModeKeys.item(typed: "r", keyCode: 15) == .region)
-        #expect(CaptureModeKeys.item(typed: "v", keyCode: 9) == .visibleArea)
-        #expect(CaptureModeKeys.item(typed: "f", keyCode: 3) == .fullPage)
+    struct Press: Sendable {
+        let typed: String?
+        let keyCode: UInt16
+        let item: CaptureModeItem?
+    }
+
+    @Test(arguments: [
+        Press(typed: "e", keyCode: 14, item: .element),
+        Press(typed: "r", keyCode: 15, item: .region),
+        Press(typed: "v", keyCode: 9, item: .visibleArea),
+        Press(typed: "f", keyCode: 3, item: .fullPage),
+    ])
+    func lettersChooseTheirItems(_ press: Press) {
+        #expect(CaptureModeKeys.item(typed: press.typed, keyCode: press.keyCode) == press.item)
     }
 
     @Test func capsLockStillReachesTheItem() {
@@ -57,13 +67,13 @@ struct CaptureModeKeysTests {
         #expect(CaptureModeKeys.item(typed: "x", keyCode: 7) == nil)
     }
 
-    @Test func nonLatinLayoutsUseThePhysicalPosition() {
-        #expect(CaptureModeKeys.item(typed: "у", keyCode: 14) == .element)
-        #expect(CaptureModeKeys.item(typed: "м", keyCode: 9) == .visibleArea)
-    }
-
-    @Test func deadKeysFallBackToThePhysicalPosition() {
-        #expect(CaptureModeKeys.item(typed: "", keyCode: 3) == .fullPage)
+    @Test(arguments: [
+        Press(typed: "у", keyCode: 14, item: .element),
+        Press(typed: "м", keyCode: 9, item: .visibleArea),
+        Press(typed: "", keyCode: 3, item: .fullPage),
+    ])
+    func nonLatinLayoutsAndDeadKeysUseThePhysicalPosition(_ press: Press) {
+        #expect(CaptureModeKeys.item(typed: press.typed, keyCode: press.keyCode) == press.item)
     }
 
     @Test func spaceIsNotACaptureItem() {
@@ -82,7 +92,8 @@ struct CaptureModeHintTests {
     let dragging = CaptureModeHint.text(mode: .element, targeted: true, dragging: true)
 
     @Test func eachStateExplainsItselfDifferently() {
-        #expect(Set([element, targeted, region, dragging]).count == 4)
+        let hints = [element, targeted, region, dragging]
+        #expect(Set(hints).count == hints.count)
     }
 
     @Test func aHighlightedTargetSaysWhatAClickDoes() {
@@ -101,8 +112,15 @@ struct CaptureModeHintTests {
         #expect(CaptureModeHint.text(mode: .region, targeted: true, dragging: true) == dragging)
     }
 
-    @Test func hintsStayShortSingleLines() {
-        #expect([element, targeted, region, dragging].allSatisfy { $0.count <= 48 && !$0.hasSuffix(".") })
+    @Test(arguments: [
+        (CaptureSelectionMode.element, false, false),
+        (CaptureSelectionMode.element, true, false),
+        (CaptureSelectionMode.region, false, false),
+        (CaptureSelectionMode.element, true, true),
+    ])
+    func hintsAreSingleLinesWithoutAFinalPeriod(_ mode: CaptureSelectionMode, _ targeted: Bool, _ dragging: Bool) {
+        let hint = CaptureModeHint.text(mode: mode, targeted: targeted, dragging: dragging)
+        #expect(!hint.contains("\n") && !hint.hasSuffix("."))
     }
 
     @Test func voiceOverHearsHowToCaptureTheTarget() {

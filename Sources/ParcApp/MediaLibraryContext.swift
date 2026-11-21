@@ -65,22 +65,32 @@ final class MediaLibraryThumbnailOperation: @unchecked Sendable {
 @MainActor
 final class MediaLibraryLatestWork<Value: Sendable> {
     typealias Work = @Sendable () throws -> Value
+    typealias StartWorker = (@escaping Work) -> Task<Value, Error>
     typealias Finish = @MainActor (Value) -> Void
     typealias Request = @MainActor () -> (work: Work, finish: Finish)?
     private let replacementsBeforeFinishing = 2
+    private let startWorker: StartWorker
     private var task: Task<Void, Never>?
     private var ticket: UInt64 = 0
     private var replaced = 0
     private var queued: Request?
     var isRunning: Bool { task != nil }
+    init(startWorker: @escaping StartWorker = { work in
+        Task.detached(priority: .userInitiated) { try work() }
+    }) {
+        self.startWorker = startWorker
+    }
+
     deinit { task?.cancel() }
-    func start(_ request: @escaping Request) {
-        if task != nil, replaced >= replacementsBeforeFinishing { queued = request; return }
+
+    @discardableResult
+    func start(_ request: @escaping Request) -> Task<Void, Never>? {
+        if task != nil, replaced >= replacementsBeforeFinishing { queued = request; return nil }
         replaced = task == nil ? 0 : replaced + 1
         task?.cancel(); task = nil; ticket &+= 1; queued = nil
-        guard let next = request() else { return }
+        guard let next = request() else { return nil }
         let current = ticket, work = next.work, finish = next.finish
-        let worker = Task.detached(priority: .userInitiated) { try work() }
+        let worker = startWorker(work)
         task = Task { [weak self] in
             let value = await withTaskCancellationHandler { try? await worker.value } onCancel: { worker.cancel() }
             guard let self, self.ticket == current else { return }
@@ -88,6 +98,7 @@ final class MediaLibraryLatestWork<Value: Sendable> {
             if let value { finish(value) }
             if let waiting = self.queued { self.queued = nil; self.start(waiting) }
         }
+        return task
     }
     func cancel() { ticket &+= 1; task?.cancel(); task = nil; replaced = 0; queued = nil }
 }

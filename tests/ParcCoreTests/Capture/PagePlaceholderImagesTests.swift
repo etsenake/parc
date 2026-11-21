@@ -3,60 +3,77 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct PagePlaceholderCaptureOrderTests {
+    typealias Order = PagePlaceholderCaptureOrder
+
     let first = UUID()
     let second = UUID()
 
-    @Test func aSplitMovedToAnotherWindowGetsAFrozenImageForBothPanes() {
-        let window = UUID()
-        let images = PagePlaceholderImages()
-        images.setShown([first, second], in: window)
-        var pending: Set<UUID> = [first, second]
+    private func copyOrder(pending start: Set<UUID>, focused: UUID?, visiting: [UUID]) -> [UUID] {
+        var pending = start
         var copied: [UUID] = []
-        for _ in 0..<4 {
-            for tab in [second, first] where pending.contains(tab)
-                && PagePlaceholderCaptureOrder.mayCapture(tab, pending: pending, focused: first) {
-                images.store(PagePlaceholderFixtures.frame(10), for: tab)
+        for _ in 0..<visiting.count {
+            for tab in visiting where pending.contains(tab) && Order.mayCapture(tab, pending: pending, focused: focused) {
                 pending.remove(tab)
                 copied.append(tab)
             }
         }
-        #expect(pending.isEmpty)
-        #expect(images.image(for: first, in: window) != nil)
-        #expect(images.image(for: second, in: window) != nil)
-        #expect(copied == [first, second])
+        return copied
     }
 
-    @Test func aPaneWaitsOnlyWhileTheFocusedPanesCopyIsStillToCome() {
-        #expect(PagePlaceholderCaptureOrder.mayCapture(second, pending: [second], focused: first))
-        #expect(PagePlaceholderCaptureOrder.mayCapture(second, pending: [first, second], focused: nil))
-        #expect(PagePlaceholderCaptureOrder.mayCapture(first, pending: [first, second], focused: first))
-        #expect(!PagePlaceholderCaptureOrder.mayCapture(second, pending: [first, second], focused: first))
+    @Test func aSplitCopiesTheFocusedPaneBeforeTheOther() {
+        #expect(copyOrder(pending: [first, second], focused: first, visiting: [second, first]) == [first, second])
     }
 
-    @Test func aPaneWaitsForTheFocusedPanesCopyForThreeTriesAtMostThenCopiesAnyway() {
-        #expect(PagePlaceholderCaptureOrder.waits(second, attempt: 0, pending: [first, second], focused: first))
-        #expect(PagePlaceholderCaptureOrder.waits(second, attempt: 2, pending: [first, second], focused: first))
-        #expect(!PagePlaceholderCaptureOrder.waits(second, attempt: 3, pending: [first, second], focused: first))
-        #expect(!PagePlaceholderCaptureOrder.waits(first, attempt: 0, pending: [first, second], focused: first))
+    @Test func aSplitMovedToAnotherWindowFreezesBothPanes() {
+        #expect(Set(copyOrder(pending: [first, second], focused: first, visiting: [second, first])) == [first, second])
     }
 
-    @Test func aCopyTheEngineKeepsRefusingIsTriedSixTimesOverAboutTwoAndAHalfSecondsThenLeftBlank() {
-        var attempt = 0
-        var tries = 1
-        var waited = PagePlaceholderCaptureOrder.delay(before: 0)
-        while PagePlaceholderCaptureOrder.retries(after: attempt) {
-            attempt += 1
-            tries += 1
-            waited += PagePlaceholderCaptureOrder.delay(before: attempt)
-        }
-        #expect(tries == 6)
-        #expect(abs(waited - 2.55) < 0.001)
+    @Test func aPaneNeverWaitsWhenItIsTheOnlyOneToCopy() {
+        #expect(Order.mayCapture(second, pending: [second], focused: first))
+    }
+
+    @Test func aPaneNeverWaitsWhenNothingIsFocused() {
+        #expect(Order.mayCapture(second, pending: [first, second], focused: nil))
+    }
+
+    @Test func theFocusedPaneNeverWaits() {
+        #expect(Order.mayCapture(first, pending: [first, second], focused: first))
+    }
+
+    @Test func aPaneWaitsWhileTheFocusedPanesCopyIsStillToCome() {
+        #expect(!Order.mayCapture(second, pending: [first, second], focused: first))
+    }
+
+    @Test(arguments: [0, 1, 2])
+    func aPaneWaitsForTheFocusedPanesCopyForTheFirstThreeTries(_ attempt: Int) {
+        #expect(Order.waits(second, attempt: attempt, pending: [first, second], focused: first))
+    }
+
+    @Test(arguments: [3, 4, 5])
+    func aPaneCopiesAnywayAfterThreeTries(_ attempt: Int) {
+        #expect(!Order.waits(second, attempt: attempt, pending: [first, second], focused: first))
+    }
+
+    @Test func theFocusedPaneNeverWaitsOnItself() {
+        #expect(!Order.waits(first, attempt: 0, pending: [first, second], focused: first))
+    }
+
+    @Test(arguments: [0, 1, 2, 3, 4])
+    func aRefusedCopyIsTriedAgain(_ attempt: Int) {
+        #expect(Order.retries(after: attempt))
+    }
+
+    @Test func aCopyTheEngineKeepsRefusingIsLeftBlankAfterTheSixthTry() {
+        #expect(!Order.retries(after: 5))
+    }
+
+    @Test func retriesBackOffWithEachAttempt() {
+        let delays = (0...5).map { Order.delay(before: $0) }
+        #expect(delays == delays.sorted() && Set(delays).count == delays.count)
     }
 }
 
-@MainActor
 struct PagePlaceholderImagesTests {
     let first = UUID()
     let second = UUID()
@@ -65,10 +82,10 @@ struct PagePlaceholderImagesTests {
     let two = UUID()
     let three = UUID()
 
-    @Test func everyWindowShowingATabsPlaceholderReadsTheTabsOneImage() {
+    @MainActor @Test func everyWindowShowingATabsPlaceholderReadsTheTabsOneImage() {
         let images = PagePlaceholderImages()
         images.setShown([first, second], in: one)
-        let shared = PagePlaceholderFixtures.frame(20)
+        let shared = PagePlaceholderFrame.make(20)
         images.store(shared, for: first)
         images.setShown([first], in: two)
         images.setShown([first, third], in: three)
@@ -77,15 +94,15 @@ struct PagePlaceholderImagesTests {
         #expect(images.image(for: first, in: three) === shared)
     }
 
-    @Test func aWindowReadsOnlyTheFramesOfItsOwnPlaceholders() {
+    @MainActor @Test func aWindowReadsOnlyTheFramesOfItsOwnPlaceholders() {
         let images = PagePlaceholderImages()
         images.setShown([first], in: one)
         images.setShown([first], in: two)
-        images.store(PagePlaceholderFixtures.frame(20), for: first)
+        images.store(PagePlaceholderFrame.make(20), for: first)
         #expect(images.image(for: second, in: two) == nil)
     }
 
-    @Test func aNewFrameReachesEveryWindowShowingTheTab() {
+    @MainActor @Test func aNewFrameReachesEveryWindowShowingTheTab() {
         let images = PagePlaceholderImages()
         images.setShown([first], in: one)
         images.setShown([first], in: two)
@@ -94,39 +111,39 @@ struct PagePlaceholderImagesTests {
         images.observe(in: one) { refreshed.append(one) }
         images.observe(in: two) { refreshed.append(two) }
         images.observe(in: three) { refreshed.append(three) }
-        let next = PagePlaceholderFixtures.frame(30)
+        let next = PagePlaceholderFrame.make(30)
         images.store(next, for: first)
         #expect(images.image(for: first, in: three) === next)
         #expect(Set(refreshed) == [one, two, three])
     }
 
-    @Test func onlyWindowsShowingATabAreToldAboutItsFrame() {
+    @MainActor @Test func onlyWindowsShowingATabAreToldAboutItsFrame() {
         let images = PagePlaceholderImages()
         images.setShown([first, second], in: one)
         images.setShown([first], in: two)
         var refreshed: [UUID] = []
         images.observe(in: one) { refreshed.append(one) }
         images.observe(in: two) { refreshed.append(two) }
-        images.store(PagePlaceholderFixtures.frame(40), for: second)
+        images.store(PagePlaceholderFrame.make(40), for: second)
         #expect(refreshed == [one])
     }
 
-    @Test func aWindowNoLongerShowingATabLeavesTheFrameToTheWindowsThatDo() {
+    @MainActor @Test func aWindowNoLongerShowingATabLeavesTheFrameToTheWindowsThatDo() {
         let images = PagePlaceholderImages()
         images.setShown([first], in: one)
         images.setShown([first, third], in: three)
-        let frame = PagePlaceholderFixtures.frame(30)
+        let frame = PagePlaceholderFrame.make(30)
         images.store(frame, for: first)
         images.setShown([second], in: one)
         #expect(images.image(for: first, in: three) === frame)
     }
 
-    @Test func theFrameGoesWhenTheLastWindowShowingThePlaceholderDoes() {
+    @MainActor @Test func theFrameGoesWhenTheLastWindowShowingThePlaceholderDoes() {
         let images = PagePlaceholderImages()
         images.setShown([first], in: one)
         images.setShown([first], in: two)
         images.setShown([first, third], in: three)
-        images.store(PagePlaceholderFixtures.frame(30), for: first)
+        images.store(PagePlaceholderFrame.make(30), for: first)
         images.setShown([second], in: one)
         images.removeWindow(two)
         images.removeWindow(three)
@@ -135,14 +152,28 @@ struct PagePlaceholderImagesTests {
         #expect(!images.isShown(third))
     }
 
-    @Test func noFrameIsKeptForATabNoWindowShows() {
+    @MainActor @Test func noFrameIsKeptForATabNoWindowShows() {
         let images = PagePlaceholderImages()
-        images.store(PagePlaceholderFixtures.frame(50), for: third)
+        images.store(PagePlaceholderFrame.make(50), for: third)
         #expect(!images.isShown(third))
         #expect(images.image(for: third, in: three) == nil)
     }
 
-    @Test func aPrivateWindowsFramesNeverReachARegularWindowNorTheReverse() throws {
+    @MainActor @Test func aPrivateWindowsFramesNeverReachARegularWindowNorTheReverse() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-placeholder-images-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let regular = try BrowserStore(directory: root)
+        let privateOne = BrowserStore(privateParentProfileID: regular.activeSpace.profileID, engineProfilePath: "/disposable",
+                                      directory: root, settings: regular.state.settings)
+        regular.placeholderImages.setShown([first], in: one)
+        regular.placeholderImages.store(PagePlaceholderFrame.make(60), for: first)
+        privateOne.placeholderImages.setShown([first], in: two)
+        #expect(regular.placeholderImages.image(for: first, in: one) != nil)
+        #expect(privateOne.placeholderImages.image(for: first, in: two) == nil)
+    }
+
+    @MainActor @Test func everyPrivateWindowKeepsItsOwnImages() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-placeholder-images-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -151,18 +182,13 @@ struct PagePlaceholderImagesTests {
                                       directory: root, settings: regular.state.settings)
         let privateTwo = BrowserStore(privateParentProfileID: regular.activeSpace.profileID, engineProfilePath: "/disposable",
                                       directory: root, settings: regular.state.settings)
-        regular.placeholderImages.setShown([first], in: one)
-        regular.placeholderImages.store(PagePlaceholderFixtures.frame(60), for: first)
-        privateOne.placeholderImages.setShown([first], in: two)
-        #expect(regular.placeholderImages.image(for: first, in: one) != nil)
-        #expect(privateOne.placeholderImages.image(for: first, in: two) == nil)
         #expect(privateOne.placeholderImages !== regular.placeholderImages)
         #expect(privateTwo.placeholderImages !== privateOne.placeholderImages)
     }
 }
 
-enum PagePlaceholderFixtures {
-    static func frame(_ width: Int) -> CGImage {
+private enum PagePlaceholderFrame {
+    static func make(_ width: Int) -> CGImage {
         let context = CGContext(data: nil, width: width, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
                                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue)!
         return context.makeImage()!

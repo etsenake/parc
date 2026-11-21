@@ -92,7 +92,6 @@ continues to draw badges in the extension’s own colors.
 
 Inert extension-control and Site Control Center components cover action/menu
 leases, invalidation, hide/detach, labels, focus bounds, compression, physical
-picker keys and wrap/empty selection. The windowless popup activity check
-(`tests/ExtensionPopupActivity/check.py`) covers which button lights, its
-handoff and release, the fill's fade and the hop's rhythm, landing and Reduce
-Motion. Swift checks cover integration.
+picker keys and wrap/empty selection. The popup Swift Testing suites cover placement and click ownership, which
+button lights, its handoff and release, and the fill's fade and hop's rhythm,
+landing and Reduce Motion.

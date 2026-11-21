@@ -57,8 +57,8 @@ enum PortraitCaptureRenderer {
             }
         }
     }
-    static func palette(bundle: Bundle = .main) -> [NSColor] {
-        guard let url = bundle.url(forResource: "presets", withExtension: "json", subdirectory: "ThemeEditor"),
+    static func palette(bundle: Bundle = .main, subdirectory: String = "ThemeEditor") -> [NSColor] {
+        guard let url = bundle.url(forResource: "presets", withExtension: "json", subdirectory: subdirectory),
               let data = try? Data(contentsOf: url), let records = try? JSONDecoder().decode([Preset].self, from: data) else { return [] }
         let first = records.filter { $0.page == 0 }.sorted { $0.index < $1.index }
         guard first.map(\.index) == Array(0..<9) else { return [] }
@@ -366,9 +366,10 @@ final class PortraitCaptureView: NSView {
         PortraitCaptureComposition(options: options, palette: palette, pageColor: pageColor, desktop: desktop, backingScale: backingScale)
     }
 
+    @discardableResult
     func loadDesktop(screen: NSScreen?,
-                     provider: @escaping @MainActor (NSScreen?) async throws -> NSImage = PortraitDesktopSnapshot.capture) {
-        guard desktop == nil, desktopTask == nil else { return }
+                     provider: @escaping @MainActor (NSScreen?) async throws -> NSImage = PortraitDesktopSnapshot.capture) -> Task<Void, Never>? {
+        guard desktop == nil, desktopTask == nil else { return nil }
         desktopGeneration += 1
         let generation = desktopGeneration
         wallpaperTile.setToolTip("Loading desktop wallpaper…")
@@ -390,6 +391,7 @@ final class PortraitCaptureView: NSView {
                 }
             }
         }
+        return desktopTask
     }
 
     func showError(_ message: String) {

@@ -63,8 +63,9 @@ all of these against plain scans through random edits.
 
 `tests/ParcCoreTests/Data/Store/` covers coherent metadata publication, history
 storage and deduplication, saved destinations and private-history behavior.
-`tests/DownloadLibrary/ViewTests.swift` covers catalog reload guards and original
-row ownership. These tests assert behavior rather than a speedup threshold.
+The Downloads view Swift Testing suite checks that unrelated store updates keep
+the displayed row and selection, and that progress refreshes the original row.
+The Library view harness also covers shared catalog reload guards.
 
 For an authorized browser performance investigation, use shipping builds with
 matched viewports and visibility, interleaved repeated HTTPS sites, recorded
