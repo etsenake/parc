@@ -4,7 +4,7 @@
   "scenes" : [
     {
       "dissolveIn" : 0,
-      "file" : "scene-collapse\/out\/collapse.mov",
+      "file" : "collapse\/out\/collapse.mov",
       "name" : "collapse",
       "segments" : [
         [
@@ -16,7 +16,7 @@
     },
     {
       "dissolveIn" : 0,
-      "file" : "scene-spaces\/out\/spaces.mov",
+      "file" : "spaces\/out\/spaces.mov",
       "name" : "spaces",
       "segments" : [
         [
@@ -36,7 +36,7 @@
     },
     {
       "dissolveIn" : 0,
-      "file" : "scene-peek\/out\/peek.mov",
+      "file" : "peek\/out\/peek.mov",
       "name" : "peek",
       "segments" : [
         [
@@ -52,7 +52,7 @@
     },
     {
       "dissolveIn" : 0,
-      "file" : "scene-split\/out\/split.mov",
+      "file" : "split\/out\/split.mov",
       "name" : "split",
       "segments" : [
         [
@@ -64,7 +64,7 @@
     },
     {
       "dissolveIn" : 0,
-      "file" : "scene-bar-easel\/out\/commandbar.mov",
+      "file" : "commandbar-easel\/out\/commandbar.mov",
       "name" : "commandbar",
       "segments" : [
         [
@@ -80,7 +80,7 @@
     },
     {
       "dissolveIn" : 0,
-      "file" : "scene-bar-easel\/out\/easel.mov",
+      "file" : "commandbar-easel\/out\/easel.mov",
       "name" : "easel",
       "segments" : [
         [
@@ -92,7 +92,7 @@
     },
     {
       "dissolveIn" : 0,
-      "file" : "scene-mini-card\/out\/mini.mov",
+      "file" : "mini-card\/out\/mini.mov",
       "name" : "mini",
       "segments" : [
         [
