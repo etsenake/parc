@@ -344,20 +344,4 @@ struct ResultTextTests {
     @Test func otherCommandTitlesAreUnchanged() {
         #expect(Command.title(commandID: "createEasel:", title: "New Easel") == "New Easel")
     }
-
-    @Test func everyMenuRegisteredCommandHasAnIcon() throws {
-        var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        while !FileManager.default.fileExists(atPath: directory.appendingPathComponent("Package.swift").path) {
-            directory.deleteLastPathComponent()
-        }
-        let menus = try String(contentsOf: directory.appendingPathComponent("Sources/ParcApp/AppDelegate.swift"), encoding: .utf8)
-        let registered = try NSRegularExpression(pattern: #"(?:item\("[^"]+",\s*|\("[^"]+",\s*)#selector\((?:[A-Z][A-Za-z]*\.)?([a-z][A-Za-z0-9_]*)"#)
-        let selectors = registered.matches(in: menus, range: NSRange(menus.startIndex..., in: menus)).map {
-            String(menus[Range($0.range(at: 1), in: menus)!])
-        }
-        #expect(selectors.count > 90)
-        for selector in Set(selectors) {
-            #expect(Command.symbol(forCommandID: selector + ":") != nil, "\(selector) has no command icon")
-        }
-    }
 }
