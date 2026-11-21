@@ -112,6 +112,12 @@ animated one at a time:
 - Overlays (the format bar, slash menu, block menu, pickers, find bar and link
   cards) are views inside the page, never separate windows, so the text keeps
   focus and input methods keep working.
+- Cursors follow stacking (`NoteCursor.swift`). A focused text view receives every
+  mouse move in the window, so every Notes text view subclasses
+  `NoteCursorTextView` and every input field is a `NoteInputField`; both set a
+  cursor only while they're the topmost view under the pointer. Notes views use
+  cursor updates, never cursor rectangles, which fire through the menus above
+  them, and they check `ownsPointer` before setting a cursor or showing hover.
 
 ## Blocks
 
@@ -286,7 +292,14 @@ default.
 A note can have a cover (twelve built-in covers, an upload, a link or an
 Unsplash photo, with reposition), an emoji or image icon, front-matter properties (text, number,
 checkbox, date and tags), and one of four fonts: Nunito, EB Garamond, Space Mono
-or ParcWide. The menu at the top right of a note offers Small Text, Full Width,
+or ParcWide. Every new note starts with a random built-in cover already in its
+front matter, stored once per style in `Attachments`; it isn't an undo step, and
+a note still starts empty if the cover can't be written. Add icon adds a random
+emoji and opens the icon picker under it. In the icon and cover pickers, each
+choice (an emoji, Random, an upload, a link, a gallery cover or a photo) applies
+at once and the picker stays open, following the icon or cover, until a click
+outside, Escape or Remove; Recents reorder the next time it opens. The menu at the
+top right of a note, on a solid plate that is always visible, offers Small Text, Full Width,
 Lock Note, Copy as Markdown, Copy Link, export (Markdown, HTML and PDF), Show in
 Library, Show in Finder, Note History and Move to Trash, with a word count and
 reading time.
@@ -338,7 +351,11 @@ failed save shows Retry and blocks closing, and quitting flushes every note.
 Notes sit on the Notes paper over the Space theme and take light or dark from the
 Space. Ink is Parc's indigo, and selection, block washes and drop lines can take
 the Space's colour. Menus are Parc's opaque cards with continuous corners; every
-clickable control shows the pointing hand.
+clickable control, from checkboxes and toggles to block handles and table grips,
+shows the pointing hand, and table column edges show the resize cursor. Menus,
+pickers and popovers hold their cursor: the hand on rows and buttons, the typing
+cursor only in their fields, and nothing they cover changes the cursor or lights
+up; block handles come back on their own when a menu closes.
 
 Menus and toolbars pop open (scale 0.95 to 1 with a short fade) and close
 quickly, highlights glide on a short spring, blocks fade and rise when inserted,
