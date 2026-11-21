@@ -198,7 +198,7 @@ import AppKit
                   "Original host resize cancels captured divider without publishing preview ratios")
         constraintPanes.dropFirst().forEach { $0.removeFromSuperview() }
         host.frame.size = NSSize(width: 180, height: 140)
-        constrained.configure(orientation: .horizontal, factors: [1])
+        constrained.configure(orientation: .horizontal, factors: [1]); host.layoutSubtreeIfNeeded()
         try check(constrained.frame == host.bounds && constraintPanes[0].frame == constrained.bounds,
                   "One original pane restores existing single-page/popup sizing without split minima")
         constrained.removeFromSuperview()
@@ -391,9 +391,9 @@ import AppKit
                   && geometricPanes.last?.frame.maxY == geometry.bounds.maxY,
                   "Vertical layout preserves exact divider gaps and original viewport extent")
         geometry.frame.size.height = 400; geometry.adjustSubviews()
-        try check(geometricPanes.allSatisfy { $0.frame.height == 220 && integralEdges($0.frame) }
-                  && geometricPanes.last?.frame.maxY == 680,
-                  "Expanded original panes keep their minimum instead of compressing to an undersized viewport")
+        try check(geometricPanes.map { $0.frame.height } == [126, 126, 126] && geometricPanes.allSatisfy { integralEdges($0.frame) }
+                  && geometricPanes.map { $0.frame.minY } == [0, 136, 272] && geometricPanes.last!.frame.maxY <= geometry.bounds.maxY,
+                  "Panes short of room in an undersized viewport share its height evenly instead of spilling past it")
         geometry.frame.size.height = 901; geometry.adjustSubviews()
         try check(geometricPanes[0].frame.height == 220 && geometryCommits == 0,
                   "Restored viewport recovers source ratios and minimum without rewriting durable layout")
@@ -1130,6 +1130,7 @@ import AppKit
         try check(value(0) == 50 && taken().isEmpty, "A window resize that keeps the shares posts nothing")
         let host = window.contentView!
         let reservation = split.prepareDropReservation(in: host, contents: Array(panes[..<2]))
+        reservation?.hoverIntent = SplitDropIntent(dwell: 0)
         let preview = reservation?.proposal(at: split.convert(NSPoint(x: 10, y: 300), to: host)) { _, _ in true }
         try check(preview != nil && splitters().isEmpty && taken().isEmpty,
                   "A drop preview hides the splitter and posts nothing")
