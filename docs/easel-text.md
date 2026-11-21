@@ -64,6 +64,17 @@ alignment its runs already carried, such as centred lines pasted from another
 app, so older Easels look the same. Changing the alignment is one Undo step; while
 editing it joins the editor's own Undo history like the text fill does.
 
+## Text colour
+
+While editing, a text colour paints the selected range, or the caret's typing
+attributes so the next words follow, as one native Undo step. With objects
+selected instead, it recolours their whole text in one document Undo step and
+skips locked objects: a text object's ink and every run change together, while
+shapes and stickies change only their words and keep their outline and paper
+(plain shape or sticky text gets runs of its own for this). Palette colours are
+stored as their canonical light hex, so they keep switching to their dark variant
+on dark paper.
+
 ## Whole-object links
 
 A selected text object, shape or sticky that isn't being edited can carry one

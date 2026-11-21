@@ -20,6 +20,7 @@ struct EaselTextSizingTests {
         handles()
         scaling()
         sizeControls()
+        textColor()
         print("EaselTextSizingTests passed")
     }
 
@@ -256,5 +257,37 @@ struct EaselTextSizingTests {
         expect(EaselTextSizing.customSized(EaselTextStyle(), points: .nan) == nil, "A broken size is refused")
         expect(EaselTextSizing.preset(custom, size: .h0) == EaselTextStyle(size: .h0), "Picking a preset clears the custom size")
         expect(EaselTextStyle.Size.allCases.map(\.title) == ["Body", "Heading 2", "Heading 1", "Title", "Display"], "Size names match the menu")
+    }
+
+    static func textColor() {
+        let font = EaselRichText.Font(name: ".AppleSystemUIFont", size: 15)
+        func rich(_ ink: String, semantic: EaselRichText.SemanticInk? = nil) -> EaselRichText {
+            EaselRichText(runs: [.init(location: 0, length: 5, attributes: .init(font: font, ink: ink, semanticInk: semantic))])
+        }
+        var plain = text(); plain.richText = rich("#000000FF", semantic: .noteBody)
+        guard let painted = EaselTextColor.recoloured(plain, hex: "#e05656") else { failTest("Text takes a colour") }
+        expect(painted.color == "#E05656" && painted.richText?.runs[0].attributes.ink == "#E05656FF", "Text colours its ink and every run")
+        expect(painted.richText?.runs[0].attributes.semanticInk == nil, "Recoloured runs drop the Notes body ink")
+        var shape = text(kind: .rectangle); shape.color = "#112233"; shape.richText = rich("#252525FF")
+        guard let shaded = EaselTextColor.recoloured(shape, hex: "#E05656") else { failTest("Shape text takes a colour") }
+        expect(shaded.color == "#112233" && shaded.richText?.runs[0].attributes.ink == "#E05656FF", "Shape text changes, its outline doesn't")
+        var locked = text(); locked.locked = true
+        expect(EaselTextColor.recoloured(locked, hex: "#E05656") == nil, "Locked text keeps its colour")
+        expect(EaselTextColor.recoloured(text(kind: .image), hex: "#E05656") == nil, "Images have no text colour")
+        expect(EaselTextColor.recoloured(text(), hex: "red") == nil, "Only hex colours apply")
+        expect(EaselTextColor.recoloured(painted, hex: "#E05656") == nil, "The same colour again changes nothing")
+        let sticky = text(kind: .sticky)
+        expect(EaselTextColor.needsRuns(sticky) && !EaselTextColor.needsRuns(text()), "Plain sticky text needs runs; text objects use their ink")
+        let board = EaselDocument(id: UUID(), title: "Board", createdAt: Date(), modifiedAt: Date(), items: [plain, sticky, locked])
+        var made: [UUID] = []
+        guard let next = EaselTextColor.recolouring(board, ids: Set(board.items.map(\.id)), hex: "#E05656", runs: { item, hex in
+            made.append(item.id)
+            return EaselRichText(runs: [.init(location: 0, length: 5, attributes: .init(font: font, ink: hex + "FF"))])
+        }) else { failTest("A mixed selection recolours its text") }
+        expect(made == [sticky.id], "Only plain shape and sticky text gets fresh runs")
+        expect(next.items[1].richText?.runs[0].attributes.ink == "#E05656FF" && next.items[1].color == sticky.color, "Sticky text recolours, paper stays")
+        expect(next.items[2] == locked, "Locked objects are skipped")
+        expect(EaselTextColor.recolouring(next, ids: Set(next.items.map(\.id)), hex: "#E05656", runs: { _, _ in nil }) == nil,
+               "Recolouring twice is one step, not two")
     }
 }
