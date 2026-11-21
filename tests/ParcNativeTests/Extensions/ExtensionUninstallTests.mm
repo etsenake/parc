@@ -65,10 +65,10 @@ static NSEvent* KeyIn(NSWindow* window, NSString* characters, unsigned short cod
                            keyCode:code];
 }
 
-@interface ExtensionUninstallTests : ParcNativeTestCase
+@interface ParcNativeTests_ExtensionUninstallTests : ParcNativeTestCase
 @end
 
-@implementation ExtensionUninstallTests {
+@implementation ParcNativeTests_ExtensionUninstallTests {
   NSWindow* _a;
   NSWindow* _b;
   int _results;

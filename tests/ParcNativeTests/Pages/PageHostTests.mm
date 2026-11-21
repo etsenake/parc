@@ -188,10 +188,10 @@ struct CompositorFixture : PageFixture {
 };
 }
 
-@interface PageHostTests : ParcNativeTestCase
+@interface ParcNativeTests_PageHostTests : ParcNativeTestCase
 @end
 
-@implementation PageHostTests
+@implementation ParcNativeTests_PageHostTests
 
 - (void)testNewHostsAdoptTheSuppliedPageAndItsFrame {
   NSView* page = Page(nullptr);

@@ -23,10 +23,10 @@ parc::SiteSearchPresence AllKept() {
 }
 }
 
-@interface SearchCatalogTests : ParcNativeTestCase
+@interface ParcNativeTests_SearchCatalogTests : ParcNativeTestCase
 @end
 
-@implementation SearchCatalogTests
+@implementation ParcNativeTests_SearchCatalogTests
 
 - (void)testEveryCatalogSiteIsUniqueAndSearchesOverHTTPS {
   std::set<std::string> guids, keywords;

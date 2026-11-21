@@ -4,10 +4,10 @@
 
 #include <vector>
 
-@interface FairPlayRendererGateTests : ParcNativeTestCase
+@interface ParcNativeTests_FairPlayRendererGateTests : ParcNativeTestCase
 @end
 
-@implementation FairPlayRendererGateTests
+@implementation ParcNativeTests_FairPlayRendererGateTests
 
 - (void)testTheParserKeepsSupportedCodecsAndNormalizesWhitespace {
   const auto codecs = blink::ParcSafariMp2tParserCodecs(" , avc1.42E01E,\tmp4a.40.5, ac-3 ");

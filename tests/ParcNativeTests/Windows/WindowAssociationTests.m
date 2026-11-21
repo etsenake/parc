@@ -61,10 +61,10 @@ static void* RunBlock(void* context) {
   return NULL;
 }
 
-@interface WindowAssociationTests : ParcNativeTestCase
+@interface ParcNativeTests_WindowAssociationTests : ParcNativeTestCase
 @end
 
-@implementation WindowAssociationTests {
+@implementation ParcNativeTests_WindowAssociationTests {
   AssociationObserver* observer;
   PCNativeWindowAssociation* association;
 }

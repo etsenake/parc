@@ -46,10 +46,10 @@ static std::string Many() {
   return many;
 }
 
-@interface PasswordFileTests : ParcNativeTestCase
+@interface ParcNativeTests_PasswordFileTests : ParcNativeTestCase
 @end
 
-@implementation PasswordFileTests {
+@implementation ParcNativeTests_PasswordFileTests {
   fs::path _root;
   fs::path _file;
 }

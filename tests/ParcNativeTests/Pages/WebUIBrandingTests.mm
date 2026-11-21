@@ -101,10 +101,10 @@ static void CheckAppearance(std::string_view text, NSString* box) {
   PARC_CHECK([[logo attributeForName:@"viewBox"].stringValue isEqual:box] && [PathOf(logo) isEqual:Mark()] &&
              [style.stringValue containsString:@"prefers-color-scheme: dark"]);
 }
-@interface WebUIBrandingTests : ParcNativeTestCase
+@interface ParcNativeTests_WebUIBrandingTests : ParcNativeTestCase
 @end
 
-@implementation WebUIBrandingTests
+@implementation ParcNativeTests_WebUIBrandingTests
 
 - (void)testTheTwoContoursOfTheMarkFitInsideItsViewBox {
   const auto commands = ParsePath(kMarkPath);

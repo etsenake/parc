@@ -5,10 +5,10 @@
 #include <thread>
 #include <vector>
 
-@interface PickerLeaseTests : ParcNativeTestCase
+@interface ParcNativeTests_PickerLeaseTests : ParcNativeTestCase
 @end
 
-@implementation PickerLeaseTests {
+@implementation ParcNativeTests_PickerLeaseTests {
   std::vector<intptr_t> _closed;
 }
 

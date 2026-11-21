@@ -14,10 +14,10 @@ namespace {
 
 }
 
-@interface WebKitNeedKeyTests : ParcNativeTestCase
+@interface ParcNativeTests_WebKitNeedKeyTests : ParcNativeTestCase
 @end
 
-@implementation WebKitNeedKeyTests
+@implementation ParcNativeTests_WebKitNeedKeyTests
 
 - (void)testAnAsciiUriIsALengthThenUtf16 {
     const std::vector<uint8_t> data = blink::ParcWebKitSkdInitData(u"skd://k");

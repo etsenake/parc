@@ -19,7 +19,7 @@ using Store = parc::NativeMediaEpisodeStore<Weak<Source>, Weak<Profile>>;
 
 enum class MediaKind { Unknown, AudioOnly, AudioVideo, VideoOnly };
 
-@interface MediaEpisodeStoreTests : ParcNativeTestCase
+@interface ParcNativeTests_MediaEpisodeStoreTests : ParcNativeTestCase
 @end
 
 using K = MediaKind;
@@ -56,7 +56,7 @@ static auto Page(int id) {
   return [id](const Ask& ask) { return ask.page == id; };
 }
 
-@implementation MediaEpisodeStoreTests {
+@implementation ParcNativeTests_MediaEpisodeStoreTests {
   std::vector<std::shared_ptr<Source>> _regular;
 }
 

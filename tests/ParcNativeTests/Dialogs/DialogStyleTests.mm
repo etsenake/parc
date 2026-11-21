@@ -51,10 +51,10 @@ static BOOL Inside(NSView* view) {
 @implementation PromptOutcome
 @end
 
-@interface DialogPromptTests : ParcNativeTestCase
+@interface ParcNativeTests_DialogPromptTests : ParcNativeTestCase
 @end
 
-@implementation DialogPromptTests {
+@implementation ParcNativeTests_DialogPromptTests {
   NSWindow* _window;
   PromptOutcome* _outcome;
 }
@@ -188,10 +188,10 @@ static BOOL Inside(NSView* view) {
 
 @end
 
-@interface DialogFooterWrappingTests : ParcNativeTestCase
+@interface ParcNativeTests_DialogFooterWrappingTests : ParcNativeTestCase
 @end
 
-@implementation DialogFooterWrappingTests {
+@implementation ParcNativeTests_DialogFooterWrappingTests {
   NSWindow* _window;
   PCDialogPrompt* _prompt;
   NSButton* _open;
@@ -256,10 +256,10 @@ static BOOL Inside(NSView* view) {
 @implementation PanelFixture
 @end
 
-@interface DialogPanelCompositionTests : ParcNativeTestCase
+@interface ParcNativeTests_DialogPanelCompositionTests : ParcNativeTestCase
 @end
 
-@implementation DialogPanelCompositionTests {
+@implementation ParcNativeTests_DialogPanelCompositionTests {
   PanelFixture* _fixture;
 }
 
@@ -382,10 +382,10 @@ static BOOL Inside(NSView* view) {
 @implementation CheckboxFixture
 @end
 
-@interface DialogCheckboxTests : ParcNativeTestCase
+@interface ParcNativeTests_DialogCheckboxTests : ParcNativeTestCase
 @end
 
-@implementation DialogCheckboxTests {
+@implementation ParcNativeTests_DialogCheckboxTests {
   CheckboxFixture* _fixture;
   NSSize _size;
 }

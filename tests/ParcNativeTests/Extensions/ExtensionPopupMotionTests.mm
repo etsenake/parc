@@ -106,10 +106,10 @@ static void CheckReducedClosing(double elapsed) {
               PCExtensionPopupClosingMotion(elapsed, 1, 0, NO).alpha));
 }
 
-@interface ExtensionPopupMotionTests : ParcNativeTestCase
+@interface ParcNativeTests_ExtensionPopupMotionTests : ParcNativeTestCase
 @end
 
-@implementation ExtensionPopupMotionTests
+@implementation ParcNativeTests_ExtensionPopupMotionTests
 
 - (void)testOpeningBeginsTransparentAndLifted {
   PCExtensionPopupMotionFrame start = PCExtensionPopupOpeningMotion(0, NO);

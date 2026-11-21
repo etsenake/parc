@@ -87,10 +87,10 @@ static NSEvent* KeypadEnter(NSWindow* window) {
                            keyCode:76];
 }
 
-@interface ExternalProtocolDecisionTests : ParcNativeTestCase
+@interface ParcNativeTests_ExternalProtocolDecisionTests : ParcNativeTestCase
 @end
 
-@implementation ExternalProtocolDecisionTests {
+@implementation ParcNativeTests_ExternalProtocolDecisionTests {
   NSWindow* _window;
   NSView* _page;
   ProtocolState* _state;
@@ -247,10 +247,10 @@ static NSEvent* KeypadEnter(NSWindow* window) {
 
 @end
 
-@interface ExternalProtocolInvalidationTests : ParcNativeTestCase
+@interface ParcNativeTests_ExternalProtocolInvalidationTests : ParcNativeTestCase
 @end
 
-@implementation ExternalProtocolInvalidationTests {
+@implementation ParcNativeTests_ExternalProtocolInvalidationTests {
   NSWindow* _window;
   NSView* _page;
   PCExternalProtocolPresenter* _presenter;
@@ -326,10 +326,10 @@ static NSEvent* KeypadEnter(NSWindow* window) {
 
 @end
 
-@interface ExternalProtocolReentryTests : ParcNativeTestCase
+@interface ParcNativeTests_ExternalProtocolReentryTests : ParcNativeTestCase
 @end
 
-@implementation ExternalProtocolReentryTests {
+@implementation ParcNativeTests_ExternalProtocolReentryTests {
   NSWindow* _window;
   NSView* _page;
   PCExternalProtocolPresenter* _presenter;
@@ -379,7 +379,7 @@ static NSEvent* KeypadEnter(NSWindow* window) {
   ProtocolState* state = _state;
   NSView* page = _page;
   NSWindow* window = _window;
-  __weak ExternalProtocolReentryTests* weakSelf = self;
+  __weak ParcNativeTests_ExternalProtocolReentryTests* weakSelf = self;
   __block PCExternalProtocolPresenter* r;
   r = Make(
       page, window, @"",
@@ -393,7 +393,7 @@ static NSEvent* KeypadEnter(NSWindow* window) {
       ^(BOOL accepted, BOOL) {
         ++state.results;
         Check(!accepted, "input reentry cannot authorize");
-        ExternalProtocolReentryTests* strongSelf = weakSelf;
+        ParcNativeTests_ExternalProtocolReentryTests* strongSelf = weakSelf;
         strongSelf->_replacement = Make(
             page, window, @"",
             ^{

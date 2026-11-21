@@ -36,10 +36,10 @@ static NativePageShellNotifyState Colored() {
   return colored;
 }
 
-@interface PageShellNotifyTests : ParcNativeTestCase
+@interface ParcNativeTests_PageShellNotifyTests : ParcNativeTestCase
 @end
 
-@implementation PageShellNotifyTests {
+@implementation ParcNativeTests_PageShellNotifyTests {
   LoadingHold _hold;
   InFlightRequests _count;
 }

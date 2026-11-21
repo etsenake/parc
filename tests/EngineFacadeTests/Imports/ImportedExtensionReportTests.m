@@ -33,10 +33,10 @@
   return self;
 }
 @end
-@interface ImportedExtensionReportTests : ParcNativeTestCase
+@interface EngineFacadeImportTests_ImportedExtensionReportTests : ParcNativeTestCase
 @end
 
-@implementation ImportedExtensionReportTests
+@implementation EngineFacadeImportTests_ImportedExtensionReportTests
 
 - (void)setUp {
   [super setUp];

@@ -91,10 +91,10 @@ static double DrawnAlpha(NSButton* button) {
   }
   return sum;
 }
-@interface SitePermissionPresenterTests : ParcNativeTestCase
+@interface ParcNativeTests_SitePermissionPresenterTests : ParcNativeTestCase
 @end
 
-@implementation SitePermissionPresenterTests {
+@implementation ParcNativeTests_SitePermissionPresenterTests {
   NSWindow* _window;
   NSView* _page;
   PCSitePermissionPresenter* _request;

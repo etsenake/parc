@@ -36,10 +36,10 @@ static NativeMediaNotifyState Same() {
   return same;
 }
 
-@interface MediaNotifyTests : ParcNativeTestCase
+@interface ParcNativeTests_MediaNotifyTests : ParcNativeTestCase
 @end
 
-@implementation MediaNotifyTests
+@implementation ParcNativeTests_MediaNotifyTests
 
 - (void)testTheFirstPayloadIsAlwaysNotified {
   PARC_CHECK(ShouldNotifyMediaPayloadChange(NativeMediaNotifyState(), Published()));

@@ -73,10 +73,10 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
 }
 @end
 
-@interface AutofillSaveTests : ParcNativeTestCase
+@interface ParcNativeTests_AutofillSaveTests : ParcNativeTestCase
 @end
 
-@implementation AutofillSaveTests {
+@implementation ParcNativeTests_AutofillSaveTests {
   NSWindow* _window;
   NSView* _page;
   PCAutofillSavePresenter* _request;

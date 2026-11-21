@@ -48,10 +48,10 @@ static const Item target{parc::kParcStorageService, parc::kParcLegacyStorageAcco
 static const Item previous_parc{parc::kParcStorageService, parc::kParcStorageAccount};
 static const Bytes original{0, 1, 65, 255, 0, 42};
 
-@interface KeychainNamespaceTests : ParcNativeTestCase
+@interface ParcNativeTests_KeychainNamespaceTests : ParcNativeTestCase
 @end
 
-@implementation KeychainNamespaceTests
+@implementation ParcNativeTests_KeychainNamespaceTests
 
 - (void)testAFreshRootUsesTheParcNamespace {
     Fixture f;

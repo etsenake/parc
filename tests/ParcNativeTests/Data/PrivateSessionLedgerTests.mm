@@ -952,10 +952,10 @@ void Randomized() {
 
 }
 
-@interface PrivateSessionLedgerTests : ParcNativeTestCase
+@interface ParcNativeTests_PrivateSessionLedgerTests : ParcNativeTestCase
 @end
 
-@implementation PrivateSessionLedgerTests
+@implementation ParcNativeTests_PrivateSessionLedgerTests
 
 - (void)testClaimsAreMoveOnlyAndReleaseOnce {
   ClaimsAreMoveOnlyAndReleaseOnce();

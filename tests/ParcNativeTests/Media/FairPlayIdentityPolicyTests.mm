@@ -51,10 +51,10 @@ WidevineRequestFrame Frame(const std::string& site, bool follows, bool safari) {
 
 }
 
-@interface FairPlayIdentityPolicyTests : ParcNativeTestCase
+@interface ParcNativeTests_FairPlayIdentityPolicyTests : ParcNativeTestCase
 @end
 
-@implementation FairPlayIdentityPolicyTests
+@implementation ParcNativeTests_FairPlayIdentityPolicyTests
 
 - (void)testALearnedSitePresentsSafari {
   PARC_CHECK(PresentsSafari(Lists(), "netflix.com"));

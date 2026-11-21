@@ -34,10 +34,10 @@ uint64_t Generated(uint32_t value, int width, uint32_t color, int scheme, float 
 }
 using Votes = tb::BandVotes<int, uint32_t>;
 }
-@interface TopBandColorTests : ParcNativeTestCase
+@interface ParcNativeTests_TopBandColorTests : ParcNativeTestCase
 @end
 
-@implementation TopBandColorTests
+@implementation ParcNativeTests_TopBandColorTests
 
 - (void)testOpaqueBandsKeepTheirColor {
   PARC_CHECK(Bitmap(100, 20, 0xFF1A73E8u).Sample() == 0xFF1A73E8u);

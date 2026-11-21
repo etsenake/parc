@@ -58,7 +58,7 @@ bool KeepsForm(const OpenParams& params) {
 }
 }
 
-@interface ShiftLinkTests : ParcNativeTestCase
+@interface ParcNativeTests_ShiftLinkTests : ParcNativeTestCase
 @end
 
 static constexpr NSEventModifierFlags shift = NSEventModifierFlagShift;
@@ -81,7 +81,7 @@ static NativeShiftLink route(const NativeShiftCreatedPage& page) {
 static const NativeHeldShiftNavigation held_post{.web_url = true, .from_opener = true, .post = true,
                                                  .has_body = true, .peek_takes_link = true};
 
-@implementation ShiftLinkTests
+@implementation ParcNativeTests_ShiftLinkTests
 
 - (void)testShiftInsideAPeekReusesIt {
   Check(ClassifyNativeShiftLink(Click(shift, true)) == NativeShiftLink::kSamePeek,

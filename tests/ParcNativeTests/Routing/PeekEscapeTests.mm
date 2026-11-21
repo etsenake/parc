@@ -1,7 +1,7 @@
 #import "ParcNativeTest.h"
 #include "native_escape_state.h"
 
-@interface PeekEscapeTests : ParcNativeTestCase
+@interface ParcNativeTests_PeekEscapeTests : ParcNativeTestCase
 @end
 
 using State = parc::NativeEscapeState;
@@ -16,7 +16,7 @@ static State AfterQuickRepeat() {
   return state;
 }
 
-@implementation PeekEscapeTests {
+@implementation ParcNativeTests_PeekEscapeTests {
   parc::NativeEscapeEvents _events;
 }
 

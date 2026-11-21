@@ -4,10 +4,10 @@
 using parc::ClassifyNativeSplit;
 using parc::NativeSplitDecision;
 
-@interface SplitLinkPolicyTests : ParcNativeTestCase
+@interface ParcNativeTests_SplitLinkPolicyTests : ParcNativeTestCase
 @end
 
-@implementation SplitLinkPolicyTests
+@implementation ParcNativeTests_SplitLinkPolicyTests
 
 - (void)testManagedLinksWithoutAdmissionStayOrdinary {
   PARC_CHECK(ClassifyNativeSplit(true, false) == NativeSplitDecision::kOrdinary);

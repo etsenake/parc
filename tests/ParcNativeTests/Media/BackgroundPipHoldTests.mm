@@ -156,12 +156,12 @@ bool DecisionPending(bool window_gate_open, const std::vector<HostPage>& pages) 
 
 }
 
-@interface BackgroundPipHoldTests : ParcNativeTestCase
+@interface ParcNativeTests_BackgroundPipHoldTests : ParcNativeTestCase
 @end
 
 static const std::vector<BackgroundPipRect> laptop{Quartz(0, 0, 1440, 900)};
 
-@implementation BackgroundPipHoldTests
+@implementation ParcNativeTests_BackgroundPipHoldTests
 
 - (void)testTopEdgesFlipAtThePrimaryScreenHeight {
   PARC_CHECK(SameRect(parc::BackgroundPipRectFromCocoa(0, 800, 100, 100, 900),

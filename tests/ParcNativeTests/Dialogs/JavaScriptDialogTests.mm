@@ -104,10 +104,10 @@ static NSTextField* Label(NSView* view, NSString* text) {
   return nil;
 }
 
-@interface JavaScriptDialogTests : ParcNativeTestCase
+@interface ParcNativeTests_JavaScriptDialogTests : ParcNativeTestCase
 @end
 
-@implementation JavaScriptDialogTests {
+@implementation ParcNativeTests_JavaScriptDialogTests {
   NSWindow* _window;
   NSView* _page;
   PCJavaScriptDialogPresenter* _presenter;

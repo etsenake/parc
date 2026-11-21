@@ -42,10 +42,10 @@
   }
 }
 @end
-@interface DevToolsPaneTests : ParcNativeTestCase
+@interface ParcNativeTests_DevToolsPaneTests : ParcNativeTestCase
 @end
 
-@implementation DevToolsPaneTests {
+@implementation ParcNativeTests_DevToolsPaneTests {
   KeyWindow* _parent;
   DevToolsFocusView* _inspected;
   DevToolsFocusView* _tools;

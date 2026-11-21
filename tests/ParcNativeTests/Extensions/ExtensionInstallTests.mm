@@ -132,10 +132,10 @@ static PCExtensionInstallPresenter* Make(
         inputAllowed:input
               result:result];
 }
-@interface ExtensionInstallTests : ParcNativeTestCase
+@interface ParcNativeTests_ExtensionInstallTests : ParcNativeTestCase
 @end
 
-@implementation ExtensionInstallTests {
+@implementation ParcNativeTests_ExtensionInstallTests {
   NSWindow* _w;
   int _results;
   PCExtensionInstallChoice _choice;

@@ -29,10 +29,10 @@
 }
 @end
 #define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
-@interface ContentDropRouterTests : ParcNativeTestCase
+@interface ParcNativeTests_ContentDropRouterTests : ParcNativeTestCase
 @end
 
-@implementation ContentDropRouterTests {
+@implementation ParcNativeTests_ContentDropRouterTests {
   NSWindow* _window;
   DropFixture* _owner;
   NSView* _view;

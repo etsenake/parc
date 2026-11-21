@@ -96,10 +96,10 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
                            keyCode:code];
 }
 
-@interface HTTPAuthDecisionTests : ParcNativeTestCase
+@interface ParcNativeTests_HTTPAuthDecisionTests : ParcNativeTestCase
 @end
 
-@implementation HTTPAuthDecisionTests {
+@implementation ParcNativeTests_HTTPAuthDecisionTests {
   NSWindow* _window;
   NSView* _page;
   AuthState* _state;
@@ -281,10 +281,10 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
 
 @end
 
-@interface HTTPAuthKeyboardTests : ParcNativeTestCase
+@interface ParcNativeTests_HTTPAuthKeyboardTests : ParcNativeTestCase
 @end
 
-@implementation HTTPAuthKeyboardTests {
+@implementation ParcNativeTests_HTTPAuthKeyboardTests {
   NSWindow* _window;
   NSView* _page;
   AuthState* _state;
@@ -387,10 +387,10 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
 
 @end
 
-@interface HTTPAuthInvalidationTests : ParcNativeTestCase
+@interface ParcNativeTests_HTTPAuthInvalidationTests : ParcNativeTestCase
 @end
 
-@implementation HTTPAuthInvalidationTests {
+@implementation ParcNativeTests_HTTPAuthInvalidationTests {
   NSWindow* _window;
   NSView* _page;
   PCHTTPAuthPresenter* _presenter;
@@ -465,10 +465,10 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
 
 @end
 
-@interface HTTPAuthReentryTests : ParcNativeTestCase
+@interface ParcNativeTests_HTTPAuthReentryTests : ParcNativeTestCase
 @end
 
-@implementation HTTPAuthReentryTests {
+@implementation ParcNativeTests_HTTPAuthReentryTests {
   NSWindow* _window;
   NSView* _page;
   AuthState* _state;
@@ -515,7 +515,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
   AuthState* state = _state;
   NSView* page = _page;
   NSWindow* window = _window;
-  __weak HTTPAuthReentryTests* weakSelf = self;
+  __weak ParcNativeTests_HTTPAuthReentryTests* weakSelf = self;
   __block PCHTTPAuthPresenter* r;
   r = Make(
       page, window, false,
@@ -525,7 +525,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
       ^(PCHTTPAuthChoice, NSString*, NSString*) {
         ++state.count;
         r = nil;
-        HTTPAuthReentryTests* strongSelf = weakSelf;
+        ParcNativeTests_HTTPAuthReentryTests* strongSelf = weakSelf;
         strongSelf->_replacement = Make(
             page, window, true,
             ^{

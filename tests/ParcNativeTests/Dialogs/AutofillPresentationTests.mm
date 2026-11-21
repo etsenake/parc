@@ -174,10 +174,10 @@ static void TestPresentedReentry() {
   Check(!window.attachedSheet, "reentrant close detaches native sheet");
   [window close];
 }
-@interface AutofillPresentationTests : ParcNativeTestCase
+@interface ParcNativeTests_AutofillPresentationTests : ParcNativeTestCase
 @end
 
-@implementation AutofillPresentationTests
+@implementation ParcNativeTests_AutofillPresentationTests
 
 - (void)testDeclinedDecision {
   TestVisibleDecision(NO);

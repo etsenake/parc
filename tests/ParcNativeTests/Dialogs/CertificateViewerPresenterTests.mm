@@ -44,10 +44,10 @@ static SEL BeginSelector(void) {
   return @selector(beginSheetForWindow:modalDelegate:didEndSelector:contextInfo:certificates:showGroup:);
 }
 
-@interface CertificateViewerPresenterTests : ParcNativeTestCase
+@interface ParcNativeTests_CertificateViewerPresenterTests : ParcNativeTestCase
 @end
 
-@implementation CertificateViewerPresenterTests {
+@implementation ParcNativeTests_CertificateViewerPresenterTests {
   NSArray* _certificates;
   NSWindow* _window;
   NSView* _page;

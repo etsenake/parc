@@ -5,10 +5,10 @@ static BOOL NameOnly(PCImportedExtensionFailure* failure, NSString* name) {
          failure.restriction == PCNativeExtensionRestrictionNone;
 }
 
-@interface OldEngineImportReportTests : ParcNativeTestCase
+@interface EngineFacadeOldEngineTests_OldEngineImportReportTests : ParcNativeTestCase
 @end
 
-@implementation OldEngineImportReportTests
+@implementation EngineFacadeOldEngineTests_OldEngineImportReportTests
 
 - (void)setUp {
   [super setUp];

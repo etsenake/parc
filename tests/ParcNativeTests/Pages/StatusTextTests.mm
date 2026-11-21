@@ -57,10 +57,10 @@ static NSString* LongText() {
       withString:@"a-very-long-path/" startingAtIndex:0];
 }
 
-@interface StatusTextTests : ParcNativeTestCase
+@interface ParcNativeTests_StatusTextTests : ParcNativeTestCase
 @end
 
-@implementation StatusTextTests
+@implementation ParcNativeTests_StatusTextTests
 {
   NSWindow* window;
   NSView* page;

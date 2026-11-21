@@ -18,7 +18,7 @@ static NSEvent* Key(NSWindow* window, unsigned short code,
       context:nil characters:@"\033" charactersIgnoringModifiers:@"\033"
       isARepeat:NO keyCode:code];
 }
-@interface ExtensionSidePanelInputTests : ParcNativeTestCase
+@interface ParcNativeTests_ExtensionSidePanelInputTests : ParcNativeTestCase
 @end
 
 static PanelInputWindow* MakeWindow() {
@@ -30,7 +30,7 @@ static PanelInputWindow* MakeWindow() {
   return window;
 }
 
-@implementation ExtensionSidePanelInputTests {
+@implementation ParcNativeTests_ExtensionSidePanelInputTests {
   PanelInputWindow* _original;
   PanelInputWindow* _other;
   NSView* _scope;

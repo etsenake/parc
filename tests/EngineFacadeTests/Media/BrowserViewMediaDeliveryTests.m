@@ -49,10 +49,10 @@ int parc_engine_shutdown_if_idle(void) { return 0; }
 - (void)browserView:(PCBrowserView*)view didChangeTitle:(NSString*)title { self.titles += 1; }
 @end
 
-@interface BrowserViewMediaDeliveryTests : ParcNativeTestCase
+@interface EngineFacadeMediaTests_BrowserViewMediaDeliveryTests : ParcNativeTestCase
 @end
 
-@implementation BrowserViewMediaDeliveryTests {
+@implementation EngineFacadeMediaTests_BrowserViewMediaDeliveryTests {
   PCNativePage* _page;
   PCBrowserView* _view;
   Delegate* _delegate;

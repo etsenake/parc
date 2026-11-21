@@ -90,10 +90,10 @@ static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
   return token;
 }
 
-@interface FocusManagerTests : ParcNativeTestCase
+@interface ParcNativeTests_FocusManagerTests : ParcNativeTestCase
 @end
 
-@implementation FocusManagerTests
+@implementation ParcNativeTests_FocusManagerTests
 
 - (void)observeFocus:(void (^)(NSWindow*, FocusView*, FocusView*, PCNativeFocusManager*, NSMutableArray*))check {
   NSWindow* window = Window();

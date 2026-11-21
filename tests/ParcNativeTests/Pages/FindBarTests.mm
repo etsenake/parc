@@ -57,10 +57,10 @@ static void Shift(PCNativeFindView *view, BOOL down) {
   NSEvent *event = [NSEvent keyEventWithType:NSEventTypeFlagsChanged location:NSZeroPoint modifierFlags:down ? NSEventModifierFlagShift : 0 timestamp:0 windowNumber:view.window.windowNumber context:nil characters:@"" charactersIgnoringModifiers:@"" isARepeat:NO keyCode:56];
   [view flagsChanged:event];
 }
-@interface FindBarTests : ParcNativeTestCase
+@interface ParcNativeTests_FindBarTests : ParcNativeTestCase
 @end
 
-@implementation FindBarTests {
+@implementation ParcNativeTests_FindBarTests {
   NSWindow* _window;
   PCNativeFocusManager* _manager;
   NSTextField* _page;

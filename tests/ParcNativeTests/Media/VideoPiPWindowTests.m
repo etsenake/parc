@@ -82,10 +82,10 @@ static NSImage* Cue(void) {
                  }];
 }
 
-@interface VideoPiPWindowTests : ParcNativeTestCase
+@interface ParcNativeTests_VideoPiPWindowTests : ParcNativeTestCase
 @end
 
-@implementation VideoPiPWindowTests {
+@implementation ParcNativeTests_VideoPiPWindowTests {
   NSView* _video;
   PCVideoPiPPresenter* _presenter;
   int _actions;
@@ -98,17 +98,17 @@ static NSImage* Cue(void) {
   ParcNativeResetPointer();
   _video = [NSView new];
   _last = PCVideoPiPClose;
-  __weak VideoPiPWindowTests* weak = self;
+  __weak ParcNativeTests_VideoPiPWindowTests* weak = self;
   _presenter = [[PCVideoPiPPresenter alloc] initWithVideoView:_video
       sourceFrame:NSMakeRect(20, 20, 640, 360)
       action:^(PCVideoPiPAction action, double value) {
-        VideoPiPWindowTests* test = weak;
+        ParcNativeTests_VideoPiPWindowTests* test = weak;
         if (!test) return;
         ++test->_actions;
         test->_last = action;
       }
       changed:^{
-        VideoPiPWindowTests* test = weak;
+        ParcNativeTests_VideoPiPWindowTests* test = weak;
         if (test) ++test->_changes;
       }];
 }

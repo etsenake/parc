@@ -69,10 +69,10 @@ std::optional<PaneCompositorChoice> Tools(const std::vector<PaneCompositorSlot>&
 
 }
 
-@interface PaneCompositorPolicyTests : ParcNativeTestCase
+@interface ParcNativeTests_PaneCompositorPolicyTests : ParcNativeTestCase
 @end
 
-@implementation PaneCompositorPolicyTests
+@implementation ParcNativeTests_PaneCompositorPolicyTests
 
 - (void)testParkedPagesLeaveTheirFrameForTheirReplacement {
   const std::vector<PaneCompositorSlot> parked = {Slot(false, true, kWhole, 1)};

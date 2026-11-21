@@ -69,10 +69,10 @@ static BOOL Near(CGFloat a, CGFloat b) {
 static void Pump() {
   ParcNativeAdvance(.02);
 }
-@interface ExtensionPopupTests : ParcNativeTestCase
+@interface ParcNativeTests_ExtensionPopupTests : ParcNativeTestCase
 @end
 
-@implementation ExtensionPopupTests {
+@implementation ParcNativeTests_ExtensionPopupTests {
   NSWindow* _parent;
   NSMutableArray<NSWindow*>* _windows;
   NSMutableArray<PCNativePageHost*>* _pages;
@@ -311,7 +311,7 @@ static void Pump() {
   PCNativePageHost* page = [self page:observer];
   __block PCExtensionPopupPresenter* replacement;
   PCNativePageHost* replacementPage = [self page:nil];
-  __weak ExtensionPopupTests* test = self;
+  __weak ParcNativeTests_ExtensionPopupTests* test = self;
   observer.onDetach = ^{
     replacement = [test windowAnchoredPresenterFor:replacementPage onDismiss:nil];
     EXPECT([replacement show]);
