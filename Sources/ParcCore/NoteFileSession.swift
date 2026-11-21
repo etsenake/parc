@@ -75,6 +75,7 @@ package final class NoteFileSession {
     package static var longestAutosaveWait: TimeInterval = 5
     package static var diskCheckDelay: TimeInterval = 0.12
     package static var retryDelays: [TimeInterval] = [1, 2, 4, 8, 15, 30, 60]
+    nonisolated(unsafe) package static var hopToMain: (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }
 
     package static func open(_ url: URL) throws -> NoteFileSession {
         guard url.isFileURL else { throw NoteFileError.notANote }
@@ -333,7 +334,7 @@ package final class NoteFileSession {
 
     private func startWatching(seen: NoteFileSighting?) {
         let events: @Sendable (NoteFileWatchEvent) -> Void = { [weak self] event in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.handle(event) } }
+            Self.hopToMain { MainActor.assumeIsolated { self?.handle(event) } }
         }
         let disk = disk
         let saveRequest: NoteFileWatcher.SaveRequest = { [weak self] completion in
@@ -342,7 +343,7 @@ package final class NoteFileSession {
                 return
             }
             let delivery = StagedDelivery(written)
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.finishStagedWrite(delivery.write) } }
+            Self.hopToMain { MainActor.assumeIsolated { self?.finishStagedWrite(delivery.write) } }
             completion(written.outcome.error)
         }
         let watcher = NoteFileWatcher(url: url, events: events, saveRequest: saveRequest)

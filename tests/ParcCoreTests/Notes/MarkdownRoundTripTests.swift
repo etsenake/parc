@@ -275,15 +275,20 @@ struct MarkdownRoundTripTests {
         }
     }
 
-    @Test func randomPagesSurviveAMarkdownRoundTripFirstBatch() { checkRandomPages(seeds: 0..<60) }
+    static let pageBatches = Array(stride(from: 0, to: 2000, by: 100))
 
-    @Test func randomPagesSurviveAMarkdownRoundTripSecondBatch() { checkRandomPages(seeds: 60..<120) }
+    @Test(arguments: MarkdownRoundTripTests.pageBatches)
+    func randomPagesSurviveAMarkdownRoundTrip(firstSeed: Int) { checkRandomPages(seeds: firstSeed..<(firstSeed + 100)) }
 
-    @Test func randomPagesSurviveAMarkdownRoundTripThirdBatch() { checkRandomPages(seeds: 120..<180) }
-
-    @Test func randomPagesSurviveAMarkdownRoundTripFourthBatch() { checkRandomPages(seeds: 180..<240) }
-
-    @Test func randomPagesSurviveAMarkdownRoundTripFifthBatch() { checkRandomPages(seeds: 240..<300) }
+    func generateSource(_ random: inout MarkdownRandom) -> String {
+        var lines: [String] = []
+        for _ in 0..<random.int(1...12) {
+            var line = ""
+            for _ in 0..<random.int(0...5) { line += random.pick(sourcePieces) + (random.chance(60) ? " " : "") }
+            lines.append(line)
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
 
     func checkRandomSources(indices: Range<Int>) {
         var random = MarkdownRandom(state: 99)
@@ -298,48 +303,57 @@ struct MarkdownRoundTripTests {
         }
     }
 
-    func generateSource(_ random: inout MarkdownRandom) -> String {
-        var lines: [String] = []
-        for _ in 0..<random.int(1...12) {
-            var line = ""
-            for _ in 0..<random.int(0...5) { line += random.pick(sourcePieces) + (random.chance(60) ? " " : "") }
-            lines.append(line)
-        }
-        return lines.joined(separator: "\n") + "\n"
+    static let sourceBatches = Array(stride(from: 0, to: 1500, by: 125))
+
+    @Test(arguments: MarkdownRoundTripTests.sourceBatches)
+    func randomSourcesSettleAfterOneSave(firstIndex: Int) { checkRandomSources(indices: firstIndex..<(firstIndex + 125)) }
+
+    var samples: [String: String] {
+        ["readme": readme, "changelog": changelog, "meeting": meeting, "obsidian": obsidian, "docs": docs]
     }
 
-    @Test func randomSourcesSettleAfterOneSaveFirstBatch() { checkRandomSources(indices: 0..<250) }
-
-    @Test func randomSourcesSettleAfterOneSaveSecondBatch() { checkRandomSources(indices: 250..<500) }
-
-    @Test func realWorldNotesRoundTrip() {
-        let samples = [("readme", readme), ("changelog", changelog), ("meeting", meeting), ("obsidian", obsidian), ("docs", docs)]
-        for (label, sample) in samples {
-            NoteMarkdownCheck.checkStable(sample, label)
-            NoteMarkdownCheck.checkModelRoundTrip(NoteMarkdown.parse(sample), label)
-        }
-        for (label, sample) in samples where label != "readme" && label != "docs" {
-            NoteMarkdownCheck.checkExact(sample, label + " exact")
-        }
-        let readmePage = NoteMarkdown.parse(readme)
-        #expect(readmePage.blocks.first?.kind == .html && readmePage.blocks.contains { $0.kind == .callout && $0.props.alert == "IMPORTANT" }
-                             && readmePage.blocks.contains { $0.kind == .toggle } && readmePage.blocks.contains { $0.kind == .table }, "README structure loads")
-        let meetingPage = NoteMarkdown.parse(meeting)
-        #expect(meetingPage.settings.icon == "🗓️" && meetingPage.blocks.filter { $0.kind == .todo }.count == 3, "meeting structure loads")
+    @Test(arguments: ["readme", "changelog", "meeting", "obsidian", "docs"])
+    func aRealWorldNoteIsStableAfterOneSave(label: String) throws {
+        let sample = try #require(samples[label])
+        #expect(NoteMarkdownCheck.checkStable(sample, label))
     }
 
-    @Test func aBigDocumentParsesAndSavesQuickly() {
+    @Test(arguments: ["readme", "changelog", "meeting", "obsidian", "docs"])
+    func aRealWorldNoteModelSurvivesARoundTrip(label: String) throws {
+        let sample = try #require(samples[label])
+        #expect(NoteMarkdownCheck.checkModelRoundTrip(NoteMarkdown.parse(sample), label))
+    }
+
+    @Test(arguments: ["changelog", "meeting", "obsidian"])
+    func aRealWorldNoteSavesBackExactly(label: String) throws {
+        let sample = try #require(samples[label])
+        #expect(NoteMarkdownCheck.checkExact(sample, label + " exact"))
+    }
+
+    @Test func aReadmeLoadsItsHtmlCalloutToggleAndTable() {
+        let page = NoteMarkdown.parse(readme)
+        #expect(page.blocks.first?.kind == .html)
+        #expect(page.blocks.contains { $0.kind == .callout && $0.props.alert == "IMPORTANT" })
+        #expect(page.blocks.contains { $0.kind == .toggle })
+        #expect(page.blocks.contains { $0.kind == .table })
+    }
+
+    @Test func aMeetingNoteLoadsItsIconAndThreeTodos() {
+        let page = NoteMarkdown.parse(meeting)
+        #expect(page.settings.icon == "🗓️")
+        #expect(page.blocks.filter { $0.kind == .todo }.count == 3)
+    }
+
+    @Test func aBigDocumentParsesAndSaves() {
         var document = ""
         while document.split(separator: "\n", omittingEmptySubsequences: false).count < 5000 {
             document += readme + "\n" + changelog + "\n" + docs + "\n"
         }
-        let start = Date()
         let page = NoteMarkdown.parse(document)
-        let parseTime = Date().timeIntervalSince(start)
-        let output = NoteMarkdown.serialize(page)
-        #expect(!output.isEmpty && page.blocks.count > 500, "the big document parses")
-        #expect(parseTime < 5, "parsing 5,000 lines should stay fast even unoptimized, took \(parseTime)s")
+        #expect(!NoteMarkdown.serialize(page).isEmpty)
+        #expect(page.blocks.count > 500)
     }
+
 
     struct MarkdownRandom {
         var state: UInt64

@@ -64,6 +64,7 @@ let package = Package(
             ]
         ),
         .testTarget(name: "ParcCoreTests", dependencies: ["ParcCore"], path: "tests/ParcCoreTests",
+                    resources: [.copy("Notes/Fixtures")],
                     swiftSettings: strict),
         .target(name: "ParcNative", path: "Engine/ParcNative",
                 sources: ["autofill_save_presenter.mm", "certificate_viewer_presenter.mm", "content_drop_router.mm",
@@ -98,6 +99,7 @@ let package = Package(
         ),
         .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: "."),
         .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles"], path: "tests/ParcTests",
+                    resources: [.copy("Notes/Fixtures")],
                     swiftSettings: strict + engineImport),
     ],
     swiftLanguageModes: [.v5],

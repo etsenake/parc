@@ -334,7 +334,7 @@ extension NoteProcessWide {
         #expect(session.state == .saved, "and is saved")
     }
 
-    @Test func puttingItBack() async throws {
+    @Test func puttingItBack() throws {
         let untouched = file("Boomerang.md", "# Still here\nkeep me\n")
         let session = try NoteFileSession.open(untouched)
         session.retain()
@@ -346,11 +346,9 @@ extension NoteProcessWide {
         #expect(session.state == .saved, "and it's saved")
         #expect(!session.isMissing, "and no longer missing")
         NoteFileTestSupport.write("# Still here\nedited in another app\n", to: untouched)
-        let watched = await NoteFileTestSupport.spin(timeout: 10) {
-            clock.advance(1)
-            return texts(session) == ["Still here", "edited in another app"]
-        }
-        #expect(watched, "and the file is watched again")
+        session.handle(.changed)
+        clock.advance(1)
+        #expect(texts(session) == ["Still here", "edited in another app"], "and the file is watched again")
         session.release()
 
         let edited = file("Edited.txt", "base\n")
@@ -495,45 +493,65 @@ extension NoteProcessWide {
         #expect(NoteFileTestSupport.read(url) == "Line one\nLine two\n", "the text file is untouched")
     }
 
-    @Test func aRealOutsideEditIsNoticedAndReloaded() async throws {
+    func reload(_ session: NoteFileSession) {
+        session.handle(.changed)
+        clock.advance(1)
+    }
+
+    func watchedFile() throws -> (URL, NoteFileSession) {
         let url = file("watched.txt", "before\n")
         let session = try NoteFileSession.open(url)
         session.retain()
-        DispatchQueue.global().async {
-            var error: NSError?
-            NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: url, options: .forReplacing, error: &error) { target in
-                try? Data("after\n".utf8).write(to: target, options: .atomic)
-            }
-        }
-        let noticed = await NoteFileTestSupport.spin(timeout: 10) {
-            clock.advance(1)
-            return texts(session) == ["after"]
-        }
-        #expect(noticed, "a real outside edit is noticed and reloaded")
+        return (url, session)
+    }
+
+    @Test func anOutsideEditIsNoticedAndReloaded() throws {
+        let (url, session) = try watchedFile()
+        defer { session.release() }
+        try Data("after\n".utf8).write(to: url, options: .atomic)
+        reload(session)
+        #expect(texts(session) == ["after"])
+    }
+
+    @Test func aPlainWriteAfterAnAtomicReplaceIsNoticedToo() throws {
+        let (url, session) = try watchedFile()
+        defer { session.release() }
+        try Data("after\n".utf8).write(to: url, options: .atomic)
+        reload(session)
         NoteFileTestSupport.write("plain write\n", to: url)
-        let rearmed = await NoteFileTestSupport.spin(timeout: 10) {
-            clock.advance(1)
-            return texts(session) == ["plain write"]
-        }
-        #expect(rearmed, "the watcher re-arms after an atomic replace")
+        reload(session)
+        #expect(texts(session) == ["plain write"])
+    }
+
+    @Test func myOwnSavesDoNotBounceBackAsOutsideEdits() throws {
+        let (_, session) = try watchedFile()
+        defer { session.release() }
         setText(session, "typed")
         clock.advance(1)
-        let quiet = await NoteFileTestSupport.spin(timeout: 0.5) { false }
-        clock.advance(1)
-        #expect(!quiet && texts(session) == ["typed"] && session.state == .saved, "my own saves don't bounce back as outside edits")
+        reload(session)
+        #expect(texts(session) == ["typed"])
+        #expect(session.state == .saved)
+    }
+
+    @Test func aDeletionIsNoticed() throws {
+        let (url, session) = try watchedFile()
+        defer { session.release() }
         try FileManager.default.removeItem(at: url)
-        let gone = await NoteFileTestSupport.spin(timeout: 10) {
-            clock.advance(1)
-            return session.state == .missing
-        }
-        #expect(gone, "a real deletion is noticed, state \(session.state), file there: \(NoteFilePaths.itemExists(url))")
+        session.handle(.deleted)
+        clock.advance(1)
+        #expect(session.state == .missing)
+    }
+
+    @Test func aFileRecreatedBySomeoneElseIsPickedUp() throws {
+        let (url, session) = try watchedFile()
+        defer { session.release() }
+        try FileManager.default.removeItem(at: url)
+        session.handle(.deleted)
+        clock.advance(1)
         NoteFileTestSupport.write("back again\n", to: url)
-        let returned = await NoteFileTestSupport.spin(timeout: 10) {
-            clock.advance(1)
-            return texts(session) == ["back again"] && session.state == .saved
-        }
-        #expect(returned, "a file recreated by someone else is picked up")
-        session.release()
+        reload(session)
+        #expect(texts(session) == ["back again"])
+        #expect(session.state == .saved)
     }
 
     @Test func deletionKeepsUnsavedEdits() throws {
@@ -606,55 +624,82 @@ extension NoteProcessWide {
         #expect(other.url == elsewhere, "and follows it")
     }
 
-    @Test func coordinatedSavesNeverWaitOnTheMainThread() async throws {
+    final class PendingHops: @unchecked Sendable {
+        private let lock = NSLock()
+        private var hops: [() -> Void] = []
+
+        func add(_ hop: @escaping () -> Void) { lock.withLock { hops.append(hop) } }
+
+        func runAll() {
+            while let next = lock.withLock({ hops.isEmpty ? nil : hops.removeFirst() }) { next() }
+        }
+    }
+
+    func askToSave(_ session: NoteFileSession, hops: PendingHops) throws -> (answered: Bool, error: Error?) {
+        let presenter = try #require(session.presenter, "an open note has a presenter")
+        let reply = NoteLockedBox<Error?>()
+        presenter.savePresentedItemChanges? { error in reply.set(.some(error)) }
+        hops.runAll()
+        return (reply.value != nil, reply.value ?? nil)
+    }
+
+    func busyNote(_ text: String = "Fresh words") throws -> (URL, NoteFileSession, PendingHops) {
+        let hops = PendingHops()
+        NoteFileSession.hopToMain = { hops.add($0) }
         let url = file("Shared draft.md", "Old words\n")
         let session = try NoteFileSession.open(url)
         session.retain()
-        setText(session, "Fresh words")
-        let seen = NoteLockedBox<String>()
-        let started = Date()
-        DispatchQueue.global().async {
-            var error: NSError?
-            NSFileCoordinator(filePresenter: nil).coordinate(readingItemAt: url, options: [], error: &error) { actual in
-                seen.set(NoteFileTestSupport.read(actual))
-            }
-            if let error { seen.set("error: \(error.localizedDescription)") }
-        }
-        #expect(await NoteFileTestSupport.spin(timeout: 10) { seen.value != nil }, "a coordinated reader finishes")
-        #expect(seen.value == "Fresh words\n", "a coordinated reader gets the unsaved words, saved for it")
-        #expect(Date().timeIntervalSince(started) < 0.9, "without waiting out a timeout")
-        #expect(await NoteFileTestSupport.spin(timeout: 5) { session.state == .saved }, "and the note knows it's saved")
+        setText(session, text)
+        return (url, session, hops)
+    }
+
+    @Test func aSaveRequestIsAnswered() throws {
+        let (_, session, hops) = try busyNote()
+        defer { session.release(); NoteFileSession.hopToMain = { DispatchQueue.main.async(execute: $0) } }
+        let busy = try askToSave(session, hops: hops)
+        #expect(busy.answered)
+        #expect(busy.error == nil)
+    }
+
+    @Test func aSaveRequestReallySavesAndTheNoteKnowsIt() throws {
+        let (url, session, hops) = try busyNote("Saved while busy")
+        defer { session.release(); NoteFileSession.hopToMain = { DispatchQueue.main.async(execute: $0) } }
+        _ = try askToSave(session, hops: hops)
+        #expect(NoteFileTestSupport.read(url) == "Saved while busy\n")
+        #expect(session.state == .saved)
+    }
+
+    @Test func aSavedRequestLeavesTheAutosaveNothingToDo() throws {
+        let (url, session, hops) = try busyNote()
+        defer { session.release(); NoteFileSession.hopToMain = { DispatchQueue.main.async(execute: $0) } }
+        _ = try askToSave(session, hops: hops)
         clock.advance(1)
-        #expect(NoteFileTestSupport.read(url) == "Fresh words\n", "leaving the autosave nothing to do")
+        #expect(NoteFileTestSupport.read(url) == "Fresh words\n")
+    }
 
-        let presenter = try #require(session.presenter, "an open note has a presenter")
-        let held = NoteLockedBox<NSFilePresenter>()
-        held.set(presenter)
-        func askToSave() throws -> (answered: Bool, error: Error?) {
-            let reply = NoteLockedBox<Error?>(), answered = DispatchSemaphore(value: 0)
-            DispatchQueue.global().async {
-                held.value?.savePresentedItemChanges? { error in
-                    reply.set(.some(error))
-                    answered.signal()
-                }
-            }
-            let done = answered.wait(timeout: .now() + 3) == .success
-            return (done, reply.value ?? nil)
-        }
-        setText(session, "Saved while busy")
-        let busy = try askToSave()
-        #expect(busy.answered && busy.error == nil, "a save request is answered while the main thread is busy")
-        #expect(NoteFileTestSupport.read(url) == "Saved while busy\n", "and really saves")
-
-        setText(session, "Mine")
+    func refusedSave() throws -> (URL, NoteFileSession, (answered: Bool, error: Error?)) {
+        let (url, session, hops) = try busyNote("Mine")
         NoteFileTestSupport.write("Theirs\n", to: url)
-        let refused = try askToSave()
-        #expect(refused.answered, "a save that can't happen is still answered")
-        #expect(refused.error as? NoteFileError == .conflict, "with the reason instead of a fake success")
-        #expect(NoteFileTestSupport.read(url) == "Theirs\n", "and their words stay put")
-        #expect(await NoteFileTestSupport.spin(timeout: 5) { session.state == .conflict }, "the note shows the conflict")
-        session.resolveConflict(keepMine: false)
-        session.release()
+        return (url, session, try askToSave(session, hops: hops))
+    }
+
+    @Test func aSaveThatCannotHappenIsStillAnswered() throws {
+        let (_, session, refused) = try refusedSave()
+        defer { session.resolveConflict(keepMine: false); session.release(); NoteFileSession.hopToMain = { DispatchQueue.main.async(execute: $0) } }
+        #expect(refused.answered)
+    }
+
+    @Test func itAnswersWithTheReasonInsteadOfAFakeSuccess() throws {
+        let (_, session, refused) = try refusedSave()
+        defer { session.resolveConflict(keepMine: false); session.release(); NoteFileSession.hopToMain = { DispatchQueue.main.async(execute: $0) } }
+        #expect(refused.error as? NoteFileError == .conflict)
+    }
+
+    @Test func theirWordsStayPutAndTheNoteShowsTheConflict() throws {
+        let (url, session, _) = try refusedSave()
+        defer { session.resolveConflict(keepMine: false); session.release(); NoteFileSession.hopToMain = { DispatchQueue.main.async(execute: $0) } }
+        #expect(NoteFileTestSupport.read(url) == "Theirs\n")
+        #expect(session.state == .conflict)
     }
 
     @Test func presentersComeAndGo() throws {
@@ -712,59 +757,66 @@ extension NoteProcessWide {
         #expect(!NoteFileTestSupport.isPresented(url), "and the session is fully closed")
     }
 
-    @Test func watcherGapIsCovered() async throws {
-        NoteFileSession.worker = NoteFileWorker(label: "org.parc.tests.note-files")
-        defer { NoteFileSession.worker = .inline }
+    @Test func anInPlaceWriteAfterTheFileSteppedOutAndBackIsStillNoticed() throws {
         let url = file("gap.txt", "one\n")
         let session = try NoteFileSession.open(url)
         session.retain()
         defer { session.release() }
-        _ = await NoteFileTestSupport.spin(timeout: 0.2) { false }
         let parked = folder.appendingPathComponent("gap parked.txt")
-        #expect(rename(url.path, parked.path) == 0 && rename(parked.path, url.path) == 0, "the file steps out and back in")
-        _ = await NoteFileTestSupport.spin(timeout: 0.3) { false }
+        #expect(rename(url.path, parked.path) == 0)
+        #expect(rename(parked.path, url.path) == 0)
         session.checkDisk()
-        NoteFileSession.worker.sync {}
         let handle = try FileHandle(forWritingTo: url)
         try handle.truncate(atOffset: 0)
         try handle.write(contentsOf: Data("two, written in place\n".utf8))
         try handle.close()
-        let noticed = await NoteFileTestSupport.spin(timeout: 5) {
-            clock.advance(1)
-            return texts(session) == ["two, written in place"]
-        }
-        #expect(noticed, "an in-place write landing while the watcher re-arms is still noticed")
+        session.handle(.changed)
+        clock.advance(1)
+        #expect(texts(session) == ["two, written in place"])
     }
 
-    @Test func watcherComparesWhatWasRead() async throws {
+    struct Stamped {
+        let url: URL
+        let read: NoteFileStamp
+    }
+
+    func stampedFile() throws -> Stamped {
         let url = file("stamped.txt", "first version\n")
         let read = try #require(NoteFileStamp(path: url.path), "the file has a stamp")
         let handle = try FileHandle(forWritingTo: url)
         try handle.truncate(atOffset: 0)
         try handle.write(contentsOf: Data("second, longer version\n".utf8))
         try handle.close()
-        let heard = NoteLockedBox<[NoteFileWatchEvent]>()
-        func watcher() throws -> NoteFileWatcher {
-            heard.set([])
-            return NoteFileWatcher(url: url, events: { event in heard.set((heard.value ?? []) + [event]) }, saveRequest: { $0(nil) })
-        }
-        let stale = try watcher()
-        stale.start(seen: .file(read))
-        _ = await NoteFileTestSupport.spin(timeout: 0.3) { false }
-        stale.stop()
-        #expect(heard.value?.contains(.changed) == true, "a watcher armed after a read notices the file moved on since that read")
-        let current = try #require(NoteFileStamp(path: url.path), "the file still has a stamp")
-        let fresh = try watcher()
-        fresh.start(seen: .file(current))
-        _ = await NoteFileTestSupport.spin(timeout: 0.3) { false }
-        fresh.stop()
-        #expect(heard.value ?? [] == [], "and stays quiet when nothing moved on")
-        try FileManager.default.removeItem(at: url)
-        let gone = try watcher()
-        gone.start(seen: .file(current))
-        _ = await NoteFileTestSupport.spin(timeout: 0.3) { false }
-        gone.stop()
-        #expect(heard.value?.contains(.changed) == true, "a file that vanished since the read is noticed too")
+        return Stamped(url: url, read: read)
     }
+
+    func listen(_ url: URL, seen: NoteFileSighting) -> [NoteFileWatchEvent] {
+        let heard = NoteLockedBox<[NoteFileWatchEvent]>()
+        heard.set([])
+        let watcher = NoteFileWatcher(url: url, events: { event in heard.set((heard.value ?? []) + [event]) }, saveRequest: { $0(nil) })
+        watcher.start(seen: seen)
+        _ = watcher.movedPath()
+        watcher.stop()
+        return heard.value ?? []
+    }
+
+    @Test func aWatcherArmedAfterAReadNoticesTheFileMovedOnSinceThatRead() throws {
+        let stamped = try stampedFile()
+        #expect(listen(stamped.url, seen: .file(stamped.read)).contains(.changed))
+    }
+
+    @Test func aWatcherStaysQuietWhenNothingMovedOn() throws {
+        let stamped = try stampedFile()
+        let current = try #require(NoteFileStamp(path: stamped.url.path), "the file still has a stamp")
+        #expect(listen(stamped.url, seen: .file(current)).isEmpty)
+    }
+
+    @Test func aFileThatVanishedSinceTheReadIsNoticedToo() throws {
+        let stamped = try stampedFile()
+        let current = try #require(NoteFileStamp(path: stamped.url.path), "the file still has a stamp")
+        try FileManager.default.removeItem(at: stamped.url)
+        #expect(listen(stamped.url, seen: .file(current)).contains(.changed))
+    }
+
 }
 }

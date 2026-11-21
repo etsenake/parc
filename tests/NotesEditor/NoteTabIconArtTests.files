@@ -1,6 +1,0 @@
-Sources/ParcCore/*.swift
-Sources/ParcApp/NoteTabIconArt.swift
-Sources/ParcApp/SidebarIconCatalog.swift
-tests/NotesEditor/NoteFileTestSupport.swift
-Sources/ParcApp/DocumentDefaultIcon.swift
-Sources/ParcApp/LibraryArtwork.swift

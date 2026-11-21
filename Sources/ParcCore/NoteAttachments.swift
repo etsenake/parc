@@ -151,6 +151,7 @@ package final class NoteAttachmentImports {
     package static let shared = NoteAttachmentImports()
 
     package var worker = NoteFileWorker(label: "org.parc.notes.attachments")
+    package var clock: NoteFileClock = NoteFileSystemClock.shared
     package let changes = PassthroughSubject<String, Never>()
     private var ledgers: [ObjectIdentifier: Ledger] = [:]
     private var originals: Set<String> = []
@@ -284,8 +285,8 @@ package final class NoteAttachmentImports {
 
     private func heal(_ ledger: Ledger) {
         guard ledger.healer == nil, let session = ledger.session else { return }
-        ledger.healer = session.changes.filter(\.isUndoRedo).sink { [weak ledger] _ in
-            _ = NoteFileSystemClock.shared.schedule(after: 0) { [weak ledger] in
+        ledger.healer = session.changes.filter(\.isUndoRedo).sink { [weak ledger, clock = self.clock] _ in
+            _ = clock.schedule(after: 0) { [weak ledger] in
                 guard let ledger, let session = ledger.session else { return }
                 Self.settle(ledger.landed, in: session)
             }

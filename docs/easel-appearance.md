@@ -205,7 +205,7 @@ by `EaselMotion`. Embedded live-page crop/mask/loading pixels and beforeunload
 retirement remain owned by the delivered page pool. No engine change is needed.
 
 The windowless `EaselInkTests`, `EaselPaletteTests` and `EaselStyleTests`
-suites in `tests/NotesEditor` check ink and palette resolution, contrast, chosen
+suites in `tests/ParcTests/Notes` and `tests/ParcCoreTests/Notes/Easel` check ink and palette resolution, contrast, chosen
 colours, token round trips, style commands and remembered styles;
 `EaselSelectionToolbarTests` checks which controls each selection gets. Inert
 checks cover all font/fill/history behavior, the toolbar's text state helpers,
