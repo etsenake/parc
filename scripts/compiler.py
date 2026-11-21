@@ -19,9 +19,8 @@ class Warnings(ValueError):
     pass
 
 
-def package_environment(engine_frameworks: Path | None, sparkle_release: Path) -> dict[str, str]:
-    return {**os.environ, "PARC_ENGINE_FRAMEWORKS": "" if engine_frameworks is None else str(engine_frameworks),
-            "PARC_SPARKLE_FRAMEWORKS": str(sparkle_release)}
+def package_environment(sparkle_release: Path) -> dict[str, str]:
+    return {**os.environ, "PARC_SPARKLE_FRAMEWORKS": str(sparkle_release)}
 
 
 def swift_build(repo: Path, configuration: str, *, scratch: Path | None = None, target: str | None = None,

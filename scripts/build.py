@@ -1085,7 +1085,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         progress(f"packaging: building the Swift package ({configuration})")
         scratch = stage / "swiftpm"
         compiler.run(compiler.swift_build(repo, configuration, scratch=scratch), capture=False,
-                     env=compiler.package_environment(frameworks, sparkle_release))
+                     env=compiler.package_environment(sparkle_release))
         try:
             objects = compiler.package_objects(scratch, configuration)
         except ValueError as error:

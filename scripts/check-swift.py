@@ -2,8 +2,8 @@
 """Check Parc's Swift package build without packaging or launching it.
 
 Builds the Parc target through Swift Package Manager, which keeps warnings as errors, the Swift 5 language
-mode and the macOS 13 deployment target, and fails on any warning the build still reports. The engine
-framework is not linked, so no engine build is needed. This tool never selects a built package.
+mode and the macOS 13 deployment target, and fails on any warning the build still reports. The build
+weak-links the committed engine stub, so no engine build is needed. This tool never selects a built package.
 """
 from __future__ import annotations
 
@@ -73,6 +73,7 @@ def snapshot(repo: Path, bridge_headers: Path, sparkle_release: Path) -> tuple[l
     files.update((repo / "Sources/ParcEngine").glob("*.m"))
     files.update(path for path in bridge_headers.rglob("*") if path.is_file())
     files.add(repo / "Package.swift")
+    files.update((repo / "Stubs").rglob("*.tbd"))
     files.update(path for path in (repo / "scripts/sparkle.py",) if path.is_file())
     files.add(repo / "Engine/source-lock.json")
     files.add(Path(__file__).resolve())
@@ -137,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
         sources, before = snapshot(repo, bridge_headers, sparkle_release)
         scratch = None if args.mode == "typecheck" else output / "swiftpm"
         command = compiler_command(repo, args.mode, scratch)
-        environment = compiler.package_environment(None, sparkle_release)
+        environment = compiler.package_environment(sparkle_release)
         record = {
             "schema_version": 1, "mode": args.mode, "repo": str(repo), "git_before": state,
             "bridge_headers": str(bridge_headers), "sparkle_release": str(sparkle_release),

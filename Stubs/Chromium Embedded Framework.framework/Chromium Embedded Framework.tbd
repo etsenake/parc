@@ -1,0 +1,124 @@
+{
+  "main_library" : {
+    "compatibility_versions" : [
+      {
+        "version" : "0"
+      }
+    ],
+    "current_versions" : [
+      {
+        "version" : "0"
+      }
+    ],
+    "exported_symbols" : [
+      {
+        "data" : {
+          "global" : [
+            "_PCNativeSearchPreferencesDidChangeNotification"
+          ],
+          "objc_class" : [
+            "PCNativeAppleScriptExecution",
+            "PCNativeAppleScriptResult",
+            "PCNativeApplication",
+            "PCNativeBrowserApplication",
+            "PCNativeBrowserWindow",
+            "PCNativeCaptureLayout",
+            "PCNativeCaptureScrollContainer",
+            "PCNativeCaptureState",
+            "PCNativeContentDropRouter",
+            "PCNativeContextImage",
+            "PCNativeDebuggerWarning",
+            "PCNativeDownloadArrival",
+            "PCNativeDownloadPreferences",
+            "PCNativeDownloadReview",
+            "PCNativeDownloadReviewButton",
+            "PCNativeEmbeddedPageRequest",
+            "PCNativeEnabledExtension",
+            "PCNativeExtensionAction",
+            "PCNativeExtensionPopupAnchor",
+            "PCNativeFindResult",
+            "PCNativeFullscreenExit",
+            "PCNativeHistoryQuery",
+            "PCNativeHistorySwipeEntry",
+            "PCNativeHistorySwipeHistory",
+            "PCNativeHistorySwipeSource",
+            "PCNativeImportDiscovery",
+            "PCNativeImportEvent",
+            "PCNativeImportExtension",
+            "PCNativeImportExtensionFailure",
+            "PCNativeImportExtensionRequest",
+            "PCNativeImportExtensionResult",
+            "PCNativeImportProfile",
+            "PCNativeImportProfileResult",
+            "PCNativeImportResult",
+            "PCNativeImportSession",
+            "PCNativeImportSource",
+            "PCNativeImportedBookmark",
+            "PCNativeLinkRoute",
+            "PCNativeLiveCapturePosition",
+            "PCNativeMediaState",
+            "PCNativeNavigationEntry",
+            "PCNativeNavigationHistory",
+            "PCNativeOmnibox",
+            "PCNativeOmniboxExtensionAction",
+            "PCNativeOmniboxScope",
+            "PCNativeOmniboxScopeMenu",
+            "PCNativeOmniboxSnapshot",
+            "PCNativeOpenAppAction",
+            "PCNativePage",
+            "PCNativePageCapture",
+            "PCNativePageCaptureResult",
+            "PCNativePageCaptureTarget",
+            "PCNativePageHost",
+            "PCNativePasswordFileImportResult",
+            "PCNativePasswordFileImportSession",
+            "PCNativePaymentAction",
+            "PCNativePrivateDownloadContext",
+            "PCNativeProfileRemoval",
+            "PCNativeRecentPage",
+            "PCNativeRenderFrameObservation",
+            "PCNativeRendererCrash",
+            "PCNativeSearchEngine",
+            "PCNativeSearchNavigation",
+            "PCNativeSearchPreferences",
+            "PCNativeSharedQuoteObservation",
+            "PCNativeSharedQuoteSelection",
+            "PCNativeShortcutCommand",
+            "PCNativeTabPreview",
+            "PCNativeWindowRequest"
+          ]
+        },
+        "text" : {
+          "global" : [
+            "_PCCreateNativeContentDropRouter",
+            "_parc_engine_execute_process",
+            "_parc_engine_initialize",
+            "_parc_engine_quit_message_loop_if_idle",
+            "_parc_engine_request_quit_when_idle",
+            "_parc_engine_run_message_loop",
+            "_parc_engine_shutdown_if_idle"
+          ]
+        }
+      }
+    ],
+    "flags" : [
+      {
+        "attributes" : [
+          "not_app_extension_safe"
+        ]
+      }
+    ],
+    "install_names" : [
+      {
+        "name" : "@executable_path/../Frameworks/Chromium Embedded Framework.framework/Chromium Embedded Framework"
+      }
+    ],
+    "target_info" : [
+      {
+        "min_deployment" : "13.0",
+        "target" : "arm64-macos"
+      }
+    ]
+  },
+  "tapi_tbd_version" : 5
+}
