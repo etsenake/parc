@@ -35,6 +35,10 @@ package struct CommandBarWebDocument: Hashable, Sendable {
 }
 
 package struct CommandBarTypedCommand: Hashable, Sendable {
+    package static let windowTools: [Self] = [
+        .init(kind: .copyAppInfo), .init(kind: .revealAppData), .init(kind: .capturePortrait), .init(kind: .openTaskManager),
+    ]
+
     package enum SplitEdge: Hashable, Sendable { case left, right, top, bottom }
     package enum SettingsPane: CaseIterable, Hashable, Sendable {
         case account, general, profiles, shortcuts, links, appIcon, advanced

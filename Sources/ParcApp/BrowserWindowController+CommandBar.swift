@@ -850,8 +850,7 @@ extension BrowserWindowController {
         }
         commands += CommandBarTypedCommand.SettingsPane.allCases.map { .init(kind: .settingsPane($0)) }
         commands += CommandBarTypedCommand.Appearance.allCases.map { .init(kind: .appearance($0)) }
-        commands += [.init(kind: .copyAppInfo), .init(kind: .revealAppData), .init(kind: .capturePortrait),
-                     .init(kind: .openTaskManager)]
+        commands += CommandBarTypedCommand.windowTools
         return commands
     }
 
