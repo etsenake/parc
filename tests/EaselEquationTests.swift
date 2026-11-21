@@ -45,10 +45,13 @@ struct EaselEquationTests {
         expect(EaselEquation.scale(of: doubled, natural: natural) == 2, "doubled scale reads back")
 
         let wider = EaselEquationSize(width: 400, height: 80)
-        let refit = EaselEquation.refitted(doubled, from: natural, to: wider)
+        let roomy = EaselEquation.frame(natural: natural, scale: 2, centeredOn: EaselPoint(x: 1000, y: 600))
+        let refit = EaselEquation.refitted(roomy, from: natural, to: wider)
         expect(refit.width == wider.width * 2 && refit.height == wider.height * 2, "typing keeps the chosen scale")
-        expect(abs((refit.x + refit.width / 2) - (doubled.x + doubled.width / 2)) < 0.001, "typing keeps the centre across")
-        expect(abs((refit.y + refit.height / 2) - (doubled.y + doubled.height / 2)) < 0.001, "typing keeps the centre down")
+        expect(abs((refit.x + refit.width / 2) - (roomy.x + roomy.width / 2)) < 0.001, "typing keeps the centre across")
+        expect(abs((refit.y + refit.height / 2) - (roomy.y + roomy.height / 2)) < 0.001, "typing keeps the centre down")
+        let nearEdge = EaselEquation.refitted(doubled, from: natural, to: wider)
+        expect(nearEdge.x >= 0 && nearEdge.y >= 0, "growing near the edge stays on the board")
 
         expect(EaselEquation.scale(of: EaselRect(x: 0, y: 0, width: 1, height: 1), natural: natural) == EaselEquation.minimumScale, "tiny frames clamp")
         expect(EaselEquation.scale(of: EaselRect(x: 0, y: 0, width: 1_000_000, height: 1), natural: natural) == EaselEquation.maximumScale, "huge frames clamp")
@@ -70,7 +73,7 @@ struct EaselEquationTests {
 
     @MainActor static func markup() {
         placement()
-        var item = EaselItem(kind: .equation, frame: EaselRect(x: 10, y: 20, width: 228, height: 92), text: "x^2")
+        var item = EaselItem(kind: .equation, frame: EaselRect(x: 10, y: 20, width: 128, height: 68), text: "x^2")
         let art = EaselVectorEquation(width: 100, height: 40,
                                       parts: [EaselVectorEquationPart(path: "M0 0L10 0L10 10Z"),
                                               EaselVectorEquationPart(path: "M20 0L30 0L30 10Z", color: "#FF0000", opacity: 0.5)])
@@ -88,7 +91,7 @@ struct EaselEquationTests {
         expect(EaselVectorExport.equation(item, art).contains("scale(2)"), "resizing scales the vectors")
 
         item.color = "#2C6C91"
-        expect(EaselVectorExport.equation(item, art).contains("fill:#2C6C91"), "a chosen ink is written")
+        expect(EaselVectorExport.equation(item, art).contains("var(--easel-ink-blue,#2C6C91)"), "a chosen ink is written with its theme colour")
 
         item.text = "\\frac{"
         let failure = EaselVectorEquation(width: 0, height: 0, parts: [], error: "Missing }")

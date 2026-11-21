@@ -144,4 +144,3 @@ extension NoteMenuList {
         subviews.compactMap { $0 as? NSScrollView }.first?.contentView.bounds.origin.y ?? 0
     }
 }
-

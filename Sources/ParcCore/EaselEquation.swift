@@ -104,6 +104,8 @@ extension EaselVectorExport {
 
     private static func number6(_ value: Double) -> String {
         guard value.isFinite else { return "1" }
-        return String((value * 10_000).rounded() / 10_000)
+        let rounded = (value * 10_000).rounded() / 10_000
+        if rounded == rounded.rounded(), abs(rounded) < 1e15 { return String(Int(rounded)) }
+        return String(rounded)
     }
 }
