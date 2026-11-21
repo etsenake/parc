@@ -806,6 +806,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if overlayDirty { decoration.needsDisplay = true }
         ordered.append(contentsOf: videoSurfaces)
         ordered.append(decoration)
+        if let burst = burstOverlay { ordered.append(burst) }
         if let preview = toolState.previewView { ordered.append(preview) }
         if let editor { ordered.append(editor) }
         if let field = boardState.titleField { ordered.append(field) }
@@ -1194,11 +1195,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             selection.contains($0.id) && $0.resolvedShape != nil && $0.resolvedShape != shape && !$0.isLocked
         }.map(\.id))
         guard !ids.isEmpty else { return false }
-        return commit("Change shape") { document in
+        return withObjectMotion(.restyle) { commit("Change shape") { document in
             for index in document.items.indices where ids.contains(document.items[index].id) {
                 document.items[index] = EaselShapeGeometry.reshaped(document.items[index], to: shape)
             }
-        }
+        } }
     }
     func selectBrowserObject(_ id: UUID) {
         guard let item = session.document.items.first(where: { $0.id == id && $0.ownsEmbeddedPage }) else { return }
@@ -1405,7 +1406,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if let editor { editor.changeStyle(preservingSize: preservingSize, mutation); refreshTextControls(); return }
         let ids = selection
         guard !ids.isEmpty, items.filter({ ids.contains($0.id) }).allSatisfy({ $0.kind.holdsText }) else { return }
-        commit("Style text") { document in
+        withObjectMotion(.restyle) { commit("Style text") { document in
             for index in document.items.indices where ids.contains(document.items[index].id) {
                 var style = document.items[index].resolvedTextStyle; mutation(&style)
                 document.items[index].textStyle = style
@@ -1420,7 +1421,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 }
                 document.items[index].frame = fittedFrame(document.items[index])
             }
-        }
+        } }
         refreshTextControls()
     }
     func resizeText(by delta: Int) { changeTextStyle { $0 = EaselTextSizing.stepped($0, by: delta) ?? $0 } }
@@ -1625,6 +1626,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return false
     }
     func cancelPointerInteraction() {
+        dropCarriedObjects()
         abandonDuplicateDrag()
         let hadPointerOwner = start != nil || geometryEdit != nil || draft != nil || marqueeRect != nil
         cancelTableInteraction()
@@ -1704,6 +1706,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if beginNavigationGesture(event) { return }
         let point = convert(event.locationInWindow, from: nil); start = point; original = session.document.items
         selectionBeforeGesture = selection; lastDragLocation = event.locationInWindow; lastDragTimestamp = event.timestamp
+        noteLockedPress(at: point)
         if drawing { beginBrushStroke(tool.brush ?? .marker, at: point, flags: event.modifierFlags); return }
         if tool == .eraser { beginErasing(at: point); return }
         if beginToolGesture(at: point, event: event) { return }
@@ -1756,13 +1759,14 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard start != nil else { return }
         let point = convert(event.locationInWindow, from: nil)
         if continueConnectorGesture(to: point, event: event) { return }
-        if marqueeRect != nil { updateMarquee(to: point, flags: event.modifierFlags); autoscroll(with: event); return }
+        if marqueeRect != nil { refuseLockedDrag(to: point); updateMarquee(to: point, flags: event.modifierFlags); autoscroll(with: event); return }
         if drawing { dragBrushStroke(to: point, flags: event.modifierFlags); return }
         if tool == .eraser { continueErasing(to: point); autoscroll(with: event); return }
         if continueToolGesture(at: point, event: event) { return }
         recordDragTravel(event.locationInWindow, timestamp: event.timestamp)
         if arrangeState.duplicateDragArmed, dragDistance > 3, !resizing, beginDuplicateDrag() { beginGeometry() }
         updateGeometry(to: point, flags: event.modifierFlags)
+        carryDraggedObjects(rotating: rotationDrag != nil, velocity: dragVelocity); refuseLockedDrag(to: point)
         autoscroll(with: event)
     }
     private func recordDragTravel(_ point: NSPoint, timestamp: TimeInterval) {
@@ -2035,7 +2039,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let delta: (Double, Double)? = [123: (-step, 0), 124: (step, 0), 125: (0, step), 126: (0, -step)][Int(event.keyCode)]
         if let (dx, dy) = delta, event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
             guard !selection.isEmpty else { panByKeyboard(dx: dx, dy: dy, fast: event.modifierFlags.contains(.shift)); return }
-            guard let edit = EaselGeometryEdit(document: session.document, selection: movableSelection) else { return }
+            guard let edit = EaselGeometryEdit(document: session.document, selection: movableSelection) else { refuseLocked(selection); return }
             let changes = edit.translated(x: dx, y: dy)
             commit("Move objects", moved: edit.ids) { document in
                 if let next = edit.applying(changes, to: document) { document = next }
@@ -2048,7 +2052,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         cancelPointerInteraction(); guard finishEditing(removingEmpty: false) else { return }
         guard let next = session.undoDestination else { return }
         prepareReplacement(next) { [weak self] in
-            guard let self else { return }; do { try self.session.undo() } catch { self.onError?(error) }
+            guard let self else { return }; do { try self.applyHistory { try self.session.undo() } } catch { self.onError?(error) }
         }
     }
     @objc func redo(_ sender: Any?) {
@@ -2056,7 +2060,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         cancelPointerInteraction(); guard finishEditing(removingEmpty: false) else { return }
         guard let next = session.redoDestination else { return }
         prepareReplacement(next) { [weak self] in
-            guard let self else { return }; do { try self.session.redo() } catch { self.onError?(error) }
+            guard let self else { return }; do { try self.applyHistory { try self.session.redo() } } catch { self.onError?(error) }
         }
     }
     override func selectAll(_ sender: Any?) {

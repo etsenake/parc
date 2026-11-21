@@ -697,12 +697,12 @@ extension EaselCanvasView {
         let ids = Set(selectedConnectors().filter { !$0.isLocked }.map(\.id))
         guard !ids.isEmpty else { return false }
         var last: EaselItem?
-        let saved = commit(name) { document in
+        let saved = withObjectMotion(.restyle) { commit(name) { document in
             for index in document.items.indices where ids.contains(document.items[index].id) {
                 change(&document.items[index])
                 last = document.items[index]
             }
-        }
+        } }
         if saved, let id = last?.id, let stored = session.document.items.first(where: { $0.id == id }) { rememberConnectorStyle(stored) }
         return saved
     }

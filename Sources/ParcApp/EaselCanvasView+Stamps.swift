@@ -147,7 +147,7 @@ extension EaselCanvasView {
         stamps.timer?.invalidate()
         stamps.timer = nil
         let side = EaselStamps.side(heldFor: CACurrentMediaTime() - press.began)
-        guard placeStamp(press.face, at: point, side: side, tilt: press.tilt, id: press.id) else { return false }
+        guard placeStamp(press.face, at: point, side: side, tilt: press.tilt, id: press.id, pointer: true) else { return false }
         stopStampPress()
         return true
     }
@@ -195,10 +195,11 @@ extension EaselCanvasView {
     }
 
     @discardableResult
-    private func placeStamp(_ face: EaselStampFace, at point: NSPoint, side: Double, tilt: Double, id: UUID) -> Bool {
+    private func placeStamp(_ face: EaselStampFace, at point: NSPoint, side: Double, tilt: Double, id: UUID, pointer: Bool = false) -> Bool {
         guard !session.isClosed, !session.isDeleted, fixedCanvasSize == nil, finishEditing() else { return false }
         let item = stampItem(face, at: point, side: side, tilt: tilt, id: id)
-        guard commit("Add stamp", { $0.items.append(item) }) else { return false }
+        guard withObjectMotion(.appear, { commit("Add stamp", { $0.items.append(item) }) }) else { return false }
+        if pointer { EaselCanvasHaptics.thud() }
         stamps.recents = EaselStamps.recording(face, in: stamps.recents)
         window?.makeFirstResponder(self)
         announceStamp("Added \(EaselStampArtwork.accessibilityLabel(face).lowercased())")
@@ -227,7 +228,8 @@ extension EaselCanvasView {
             stamp.attachedTo = target
             placed.append(stamp)
         }
-        guard !placed.isEmpty, commit(placed.count == 1 ? "Add stamp" : "Add stamps", { $0.items.append(contentsOf: placed) }) else { return false }
+        guard !placed.isEmpty, withObjectMotion(.appear, { commit(placed.count == 1 ? "Add stamp" : "Add stamps", { $0.items.append(contentsOf: placed) }) })
+        else { return false }
         stamps.recents = EaselStamps.recording(face, in: stamps.recents)
         announceStamp("Added \(EaselStampArtwork.accessibilityLabel(face).lowercased())")
         return true
