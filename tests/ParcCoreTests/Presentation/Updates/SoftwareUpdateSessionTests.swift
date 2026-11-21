@@ -4,21 +4,21 @@ import Testing
 struct SoftwareUpdateSessionTests {
     typealias Choice = SoftwareUpdateSession.Choice
 
-    func run(_ install: SoftwareUpdateSession.Install?) {
+    private func run(_ install: SoftwareUpdateSession.Install?) {
         if case .run(let reply)? = install { reply() }
     }
 
-    func isPresent(_ found: SoftwareUpdateSession.Found) -> Bool {
+    private func isPresent(_ found: SoftwareUpdateSession.Found) -> Bool {
         if case .present = found { return true }
         return false
     }
 
-    func isWait(_ found: SoftwareUpdateSession.Found) -> Bool {
+    private func isWait(_ found: SoftwareUpdateSession.Found) -> Bool {
         if case .wait = found { return true }
         return false
     }
 
-    func dismissedDownload(choices: inout [Choice]) -> SoftwareUpdateSession {
+    private func dismissedDownload(choices: inout [Choice]) -> SoftwareUpdateSession {
         var session = SoftwareUpdateSession()
         var recorded: [Choice] = []
         _ = session.found(version: "1.9.0", downloaded: true, userInitiated: true) { recorded.append($0) }
@@ -41,11 +41,19 @@ struct SoftwareUpdateSessionTests {
         #expect(session.menuTitle == "Check for Updates…")
     }
 
-    @Test func upToDateReturnsToIdleAndCannotBeCancelled() {
+    private func upToDateSession() -> SoftwareUpdateSession {
         var session = SoftwareUpdateSession()
         session.beginCheck {}
         session.upToDate {}
-        #expect(session.phase == .idle)
+        return session
+    }
+
+    @Test func upToDateReturnsToIdle() {
+        #expect(upToDateSession().phase == .idle)
+    }
+
+    @Test func anUpToDateCheckCannotBeCancelled() {
+        var session = upToDateSession()
         #expect(session.cancel() == nil)
     }
 

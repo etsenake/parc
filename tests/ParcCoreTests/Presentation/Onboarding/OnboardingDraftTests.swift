@@ -2,14 +2,11 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct OnboardingDraftTests {
     typealias Stage = OnboardingDraft.Stage
 
-    @Test func freshSetupPreservesTheOriginalTwoInitiallySelectedAppsAndOrder() throws {
-        let fixture = try PresentationOnboardingFixture()
-        defer { fixture.remove() }
-        let draft = try fixture.loadDraft()
+    @Test func freshSetupPreservesTheOriginalTwoInitiallySelectedAppsAndOrder() {
+        let draft = PresentationOnboardingFixture.draft()
         #expect(draft.selectedFavorites.map(\.url) == ["https://youtube.com", "https://calendar.google.com"])
     }
 
@@ -18,7 +15,7 @@ struct OnboardingDraftTests {
             ["twitter", "gmail", "gcal", "spotify", "youtube", "notion", "slack", "figma", "outlook"])
     }
 
-    @Test func theStageAndPendingImportedValuesResumeExactly() throws {
+    @Test @MainActor func theStageAndPendingImportedValuesResumeExactly() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         let draft = try fixture.pendingDraft()
@@ -28,7 +25,7 @@ struct OnboardingDraftTests {
         #expect(resumed.iCloudPasswordsProfileID == fixture.store.activeSpace.profileID)
     }
 
-    @Test func aDraftNeverCommitsSetupOrOpensTabs() throws {
+    @Test @MainActor func aDraftNeverCommitsSetupOrOpensTabs() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         try fixture.pendingDraft().save(directory: fixture.root)
@@ -36,7 +33,7 @@ struct OnboardingDraftTests {
         #expect(fixture.store.state.tabs.isEmpty)
     }
 
-    @Test func oldIntroductionDraftsResumeAtRealImportSetupWithoutChangingSystemDefaults() throws {
+    @Test @MainActor func oldIntroductionDraftsResumeAtRealImportSetupWithoutChangingSystemDefaults() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         try fixture.pendingDraft().save(directory: fixture.root)
@@ -52,7 +49,7 @@ struct OnboardingDraftTests {
         #expect(migrated.selectedFavorites.map(\.url) == [OnboardingDraft.favoriteChoices[0].url])
     }
 
-    @Test func existingThemeDraftsDoNotDecodeAsAnotherScreen() throws {
+    @Test @MainActor func existingThemeDraftsDoNotDecodeAsAnotherScreen() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         try fixture.pendingDraft().save(directory: fixture.root)
@@ -60,7 +57,7 @@ struct OnboardingDraftTests {
         #expect(try fixture.loadDraft().stage == .theme)
     }
 
-    @Test func anExplicitNoToDefaultBrowserSurvivesRestartWithoutBlockingSetup() throws {
+    @Test @MainActor func anExplicitNoToDefaultBrowserSurvivesRestartWithoutBlockingSetup() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         var draft = try fixture.pendingDraft()
@@ -117,7 +114,7 @@ struct OnboardingDraftTests {
         #expect(framed.nextStage() == .adBlockers)
     }
 
-    @Test func aChosenThicknessAndTheFrameStageResumeAfterRestart() throws {
+    @Test @MainActor func aChosenThicknessAndTheFrameStageResumeAfterRestart() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         var framed = try fixture.pendingDraft()
@@ -144,7 +141,7 @@ struct OnboardingDraftTests {
         #expect(framed.windowFrameValue(saved: 7) == 7)
     }
 
-    @Test func anOutOfRangeSavedThicknessIsDroppedRatherThanApplied() throws {
+    @Test @MainActor func anOutOfRangeSavedThicknessIsDroppedRatherThanApplied() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         var framed = try fixture.pendingDraft()
@@ -155,7 +152,7 @@ struct OnboardingDraftTests {
         #expect(try fixture.loadDraft().windowFrameThickness == nil)
     }
 
-    @Test func draftsSavedBeforeTheFrameStepDecodeWithoutAChosenThickness() throws {
+    @Test @MainActor func draftsSavedBeforeTheFrameStepDecodeWithoutAChosenThickness() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         var framed = try fixture.pendingDraft()
@@ -168,7 +165,7 @@ struct OnboardingDraftTests {
         #expect(older.stage == .windowFrame)
     }
 
-    @Test func completingSetupCommitsTheSelectionAndRejectsDuplicateAndInvalidImports() throws {
+    @Test @MainActor func completingSetupCommitsTheSelectionAndRejectsDuplicateAndInvalidImports() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         var draft = try fixture.pendingDraft()
@@ -183,7 +180,7 @@ struct OnboardingDraftTests {
         #expect(committed.profiles == profiles)
     }
 
-    @Test func retryingCompletionDoesNotDuplicateSetup() throws {
+    @Test @MainActor func retryingCompletionDoesNotDuplicateSetup() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         var draft = try fixture.pendingDraft()
@@ -194,7 +191,7 @@ struct OnboardingDraftTests {
         #expect(fixture.store.state == committed)
     }
 
-    @Test func completionAndTheSelectedSetupPersistTogether() throws {
+    @Test @MainActor func completionAndTheSelectedSetupPersistTogether() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         var draft = try fixture.pendingDraft()
@@ -209,7 +206,7 @@ struct OnboardingDraftTests {
         #expect(reopened.state.profiles == profiles)
     }
 
-    @Test func aFailedAtomicWriteRollsBackAllSetup() throws {
+    @Test @MainActor func aFailedAtomicWriteRollsBackAllSetup() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         let failureRoot = fixture.subdirectory("write-failure")

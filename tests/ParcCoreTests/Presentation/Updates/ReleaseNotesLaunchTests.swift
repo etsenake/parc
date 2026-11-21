@@ -6,10 +6,10 @@ struct ReleaseNotesLaunchTests {
     let v182 = AppVersion(version: "1.8.2", build: "41")
     let v190 = AppVersion(version: "1.9.0", build: "42")
 
-    @Test func newerVersionsOrderAfterOlderOnes() {
-        #expect(v190.isNewer(than: v182))
-        #expect(!v182.isNewer(than: v190))
-        #expect(!v182.isNewer(than: v182))
+    @Test(arguments: [("1.9.0", true), ("1.8.2", false), ("1.8.1", false)])
+    func newerVersionsOrderAfterOlderOnes(example: (String, Bool)) {
+        let version = AppVersion(version: example.0, build: "41")
+        #expect(version.isNewer(than: v182) == example.1)
     }
 
     @Test func versionPartsCompareAsNumbers() {

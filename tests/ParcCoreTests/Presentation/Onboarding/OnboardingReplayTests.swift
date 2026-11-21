@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct OnboardingReplayTests {
     let gmail = OnboardingDraft.favoriteChoices[1]
     let youtube = OnboardingDraft.favoriteChoices[4]
@@ -20,7 +19,7 @@ struct OnboardingReplayTests {
         var root: URL { replayRoot }
     }
 
-    func scene() throws -> Scene {
+    @MainActor func scene() throws -> Scene {
         let fixture = try PresentationOnboardingFixture()
         let replayRoot = fixture.subdirectory("replay")
         let store = try BrowserStore(directory: replayRoot)
@@ -35,7 +34,7 @@ struct OnboardingReplayTests {
                      unnamed: unnamed, before: store.state)
     }
 
-    func replayDraft(_ scene: Scene) -> OnboardingDraft {
+    private func replayDraft(_ scene: Scene) -> OnboardingDraft {
         var replay = OnboardingDraft(spaceID: scene.original.id, spaceName: "Home", theme: replayTheme)
         replay.favoriteURLs = Set(scene.before.tabs.filter {
             $0.profileID == scene.original.profileID && $0.kind == .favorite && $0.archivedAt == nil
@@ -46,17 +45,17 @@ struct OnboardingReplayTests {
         return replay
     }
 
-    func theme(in store: BrowserStore, _ id: UUID) -> SpaceTheme? {
+    @MainActor func theme(in store: BrowserStore, _ id: UUID) -> SpaceTheme? {
         store.state.spaces.first { $0.id == id }?.theme
     }
 
-    @Test func theFixtureSpaceUsesItsPlaceholderName() throws {
+    @Test @MainActor func theFixtureSpaceUsesItsPlaceholderName() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         #expect(scene.before.spaces.first { $0.id == scene.unnamed }?.title == nil)
     }
 
-    @Test func replayStartsFromTheProfilesExistingFavorites() throws {
+    @Test @MainActor func replayStartsFromTheProfilesExistingFavorites() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         var replay = OnboardingDraft(spaceID: scene.original.id, spaceName: "Home", theme: replayTheme)
@@ -66,7 +65,7 @@ struct OnboardingReplayTests {
         #expect(replay.isFavoriteSelected(youtube))
     }
 
-    @Test func finishAppliesTheReplaysNameAndTheme() throws {
+    @Test @MainActor func finishAppliesTheReplaysNameAndTheme() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         try scene.store.applyOnboardingReplay(replayDraft(scene))
@@ -75,14 +74,14 @@ struct OnboardingReplayTests {
         #expect(space?.theme == replayTheme)
     }
 
-    @Test func replayNeverRemovesOrReplacesExistingTabs() throws {
+    @Test @MainActor func replayNeverRemovesOrReplacesExistingTabs() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         try scene.store.applyOnboardingReplay(replayDraft(scene))
         #expect(scene.before.tabs.allSatisfy(scene.store.state.tabs.contains))
     }
 
-    @Test func otherSpacesStayAsTheyWere() throws {
+    @Test @MainActor func otherSpacesStayAsTheyWere() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         try scene.store.applyOnboardingReplay(replayDraft(scene))
@@ -91,7 +90,7 @@ struct OnboardingReplayTests {
         #expect(applied.spaces.filter { $0.id != scene.original.id } == scene.before.spaces.filter { $0.id != scene.original.id })
     }
 
-    @Test func replayKeepsTheActiveSpaceSettingsCompletionMarkerAndEducationGate() throws {
+    @Test @MainActor func replayKeepsTheActiveSpaceSettingsCompletionMarkerAndEducationGate() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         try scene.store.applyOnboardingReplay(replayDraft(scene))
@@ -101,7 +100,7 @@ struct OnboardingReplayTests {
         #expect(applied.autoArchiveEducationEligible == scene.before.autoArchiveEducationEligible)
     }
 
-    @Test func onlyNewlyChosenFavoritesAreAddedAndExistingOnesAreNotDuplicated() throws {
+    @Test @MainActor func onlyNewlyChosenFavoritesAreAddedAndExistingOnesAreNotDuplicated() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         try scene.store.applyOnboardingReplay(replayDraft(scene))
@@ -113,7 +112,7 @@ struct OnboardingReplayTests {
         #expect(favorites.filter { $0.savedURL == youtube.url }.count == 1)
     }
 
-    @Test func theBookmarkFileAddsNewPinnedTabsWithoutDuplicatingExistingOnes() throws {
+    @Test @MainActor func theBookmarkFileAddsNewPinnedTabsWithoutDuplicatingExistingOnes() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         try scene.store.applyOnboardingReplay(replayDraft(scene))
@@ -121,7 +120,7 @@ struct OnboardingReplayTests {
         #expect(pinned.map(\.savedURL).sorted() == ["https://example.com/docs", "https://example.com/guide"])
     }
 
-    @Test func retryingFinishDoesNotDuplicateTheReplaysAdditions() throws {
+    @Test @MainActor func retryingFinishDoesNotDuplicateTheReplaysAdditions() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         let replay = replayDraft(scene)
@@ -131,7 +130,7 @@ struct OnboardingReplayTests {
         #expect(scene.store.state == applied)
     }
 
-    @Test func replayChoicesPersistInTheSession() throws {
+    @Test @MainActor func replayChoicesPersistInTheSession() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         try scene.store.applyOnboardingReplay(replayDraft(scene))
@@ -140,7 +139,7 @@ struct OnboardingReplayTests {
         #expect(reopened.state.tabs.filter { $0.kind == .favorite && $0.savedURL == gmail.url }.count == 1)
     }
 
-    @Test func keepingTheSuggestedNameDoesNotFreezeAPlaceholderTitle() throws {
+    @Test @MainActor func keepingTheSuggestedNameDoesNotFreezeAPlaceholderTitle() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         var placeholder = OnboardingDraft(spaceID: scene.unnamed, spaceName: "  ", theme: replayTheme)
@@ -151,7 +150,7 @@ struct OnboardingReplayTests {
         #expect(scene.store.state.spaces.first { $0.id == scene.unnamed }?.title == nil)
     }
 
-    @Test func thePreviewIsTheSpacesLiveTheme() throws {
+    @Test @MainActor func thePreviewIsTheSpacesLiveTheme() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         let live = SpaceTheme.singleColor(ThemeColor(hex: "334455")!)
@@ -161,7 +160,7 @@ struct OnboardingReplayTests {
         #expect(scene.store.previewSpaceTheme(scene.original.id, theme: later))
     }
 
-    @Test func aSessionWriteDuringThePreviewThenACrashKeepsTheSavedThemeAndTheUnrelatedChange() throws {
+    @Test @MainActor func aSessionWriteDuringThePreviewThenACrashKeepsTheSavedThemeAndTheUnrelatedChange() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         let base = theme(in: scene.store, scene.original.id)!
@@ -175,7 +174,7 @@ struct OnboardingReplayTests {
         #expect(scene.store.savedTheme(of: scene.store.state.spaces.first { $0.id == scene.original.id }!) == base)
     }
 
-    @Test func closingThePreviewEarlyShowsTheSavedThemeAgain() throws {
+    @Test @MainActor func closingThePreviewEarlyShowsTheSavedThemeAgain() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         let base = theme(in: scene.store, scene.original.id)!
@@ -187,7 +186,7 @@ struct OnboardingReplayTests {
         #expect(theme(in: closed, scene.original.id) == base)
     }
 
-    @Test func finishSavesTheReplayThemeAndEndsThePreview() throws {
+    @Test @MainActor func finishSavesTheReplayThemeAndEndsThePreview() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         let live = SpaceTheme.singleColor(ThemeColor(hex: "334455")!)
@@ -202,7 +201,7 @@ struct OnboardingReplayTests {
     }
 
     @Test(arguments: [true, false])
-    func anEditorOpenedBeforeOrDuringThePreviewSavesItsTheme(openedDuringPreview: Bool) throws {
+    @MainActor func anEditorOpenedBeforeOrDuringThePreviewSavesItsTheme(openedDuringPreview: Bool) throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         let live = SpaceTheme.singleColor(ThemeColor(hex: "334455")!)
@@ -221,7 +220,7 @@ struct OnboardingReplayTests {
         #expect(theme(in: scene.store, scene.original.id) == external)
     }
 
-    @Test func anEditorSavingThePreviewedValueItselfStillPersistsIt() throws {
+    @Test @MainActor func anEditorSavingThePreviewedValueItselfStillPersistsIt() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         let live = SpaceTheme.singleColor(ThemeColor(hex: "334455")!)
@@ -237,7 +236,7 @@ struct OnboardingReplayTests {
         #expect(theme(in: scene.store, scene.original.id) == later)
     }
 
-    func editedElsewhere(_ scene: Scene) throws -> (draft: OnboardingDraft, later: SpaceTheme, external: SpaceTheme, live: SpaceTheme) {
+    @MainActor func editedElsewhere(_ scene: Scene) throws -> (draft: OnboardingDraft, later: SpaceTheme, external: SpaceTheme, live: SpaceTheme) {
         let live = SpaceTheme.singleColor(ThemeColor(hex: "334455")!)
         let later = SpaceTheme.singleColor(ThemeColor(hex: "445566")!)
         let external = SpaceTheme.singleColor(ThemeColor(hex: "556677")!)
@@ -253,7 +252,7 @@ struct OnboardingReplayTests {
         return (unchanged, later, external, live)
     }
 
-    @Test func anUnchangedReplayNameAndThemeKeepEditsMadeElsewhereDuringReplay() throws {
+    @Test @MainActor func anUnchangedReplayNameAndThemeKeepEditsMadeElsewhereDuringReplay() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         let edited = try editedElsewhere(scene)
@@ -264,7 +263,7 @@ struct OnboardingReplayTests {
         #expect(theme(in: kept, scene.original.id) == edited.external)
     }
 
-    @Test func aChangedReplayNameAndThemeApply() throws {
+    @Test @MainActor func aChangedReplayNameAndThemeApply() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         var edited = try editedElsewhere(scene).draft
@@ -275,7 +274,7 @@ struct OnboardingReplayTests {
         #expect(theme(in: scene.store, scene.original.id) == live)
     }
 
-    func restarting(_ scene: Scene) -> OnboardingDraft {
+    @MainActor private func restarting(_ scene: Scene) -> OnboardingDraft {
         var restarting = replayDraft(scene)
         restarting.replayBaseName = scene.original.name
         restarting.replayBaseTheme = theme(in: scene.store, scene.original.id)
@@ -284,14 +283,14 @@ struct OnboardingReplayTests {
         return restarting
     }
 
-    @Test func theReplayRestartDraftNeverBecomesAFirstLaunchDraft() throws {
+    @Test @MainActor func theReplayRestartDraftNeverBecomesAFirstLaunchDraft() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         try restarting(scene).save(directory: scene.replayRoot, fileName: OnboardingDraft.replayRestartFileName)
         #expect(!FileManager.default.fileExists(atPath: scene.replayRoot.appendingPathComponent("onboarding.json").path))
     }
 
-    @Test func aSavedReplayResumesOnlyForItsOwnSpace() throws {
+    @Test @MainActor func aSavedReplayResumesOnlyForItsOwnSpace() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         try restarting(scene).save(directory: scene.replayRoot, fileName: OnboardingDraft.replayRestartFileName)
@@ -299,7 +298,7 @@ struct OnboardingReplayTests {
         #expect(OnboardingDraft.takeReplayRestart(directory: scene.replayRoot, space: otherSpace) == nil)
     }
 
-    @Test func relaunchResumesReplayAtItsImportWithEveryPendingChoiceAndConsumesItOnce() throws {
+    @Test @MainActor func relaunchResumesReplayAtItsImportWithEveryPendingChoiceAndConsumesItOnce() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         let restarting = restarting(scene)
@@ -312,7 +311,7 @@ struct OnboardingReplayTests {
         #expect(OnboardingDraft.takeReplayRestart(directory: scene.replayRoot, space: originSpace) == nil)
     }
 
-    @Test func replayIntentsAreMarkedAndOrdinaryIntentsAreNot() throws {
+    @Test @MainActor func replayIntentsAreMarkedAndOrdinaryIntentsAreNot() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         let destination = BrowserImportDestination(spaceID: scene.original.id, profileID: scene.original.profileID)
@@ -322,7 +321,7 @@ struct OnboardingReplayTests {
         #expect(try BrowserImportRestartIntent.take(from: scene.replayRoot)?.replay == false)
     }
 
-    @Test func anIntentWrittenBeforeReplayRestartsIsNeverAReplayIntent() throws {
+    @Test @MainActor func anIntentWrittenBeforeReplayRestartsIsNeverAReplayIntent() throws {
         let scene = try scene()
         defer { scene.fixture.remove() }
         try Data(#"{"spaceID":"\#(scene.original.id)","profileID":"\#(scene.original.profileID)","onboarding":false}"#.utf8)
@@ -330,7 +329,7 @@ struct OnboardingReplayTests {
         #expect(try BrowserImportRestartIntent.take(from: scene.replayRoot)?.replay == false)
     }
 
-    @Test func aFailedReplayWriteRollsBackEveryChoice() throws {
+    @Test @MainActor func aFailedReplayWriteRollsBackEveryChoice() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         let failureRoot = fixture.subdirectory("replay-write-failure")
@@ -346,7 +345,7 @@ struct OnboardingReplayTests {
         #expect(store.state == previous)
     }
 
-    @Test func aFavoriteSpelledWithHttpWwwOrATrailingSlashIsNotDuplicated() throws {
+    @Test @MainActor func aFavoriteSpelledWithHttpWwwOrATrailingSlashIsNotDuplicated() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         let dedupeRoot = fixture.subdirectory("replay-dedupe")
@@ -384,7 +383,7 @@ struct OnboardingReplayTests {
         #expect(seeded.isFavoriteSelected(youtube))
     }
 
-    @Test func firstLaunchKeepsLinksDifferingOnlyByFragmentAndDropsOnlyExactDuplicates() throws {
+    @Test @MainActor func firstLaunchKeepsLinksDifferingOnlyByFragmentAndDropsOnlyExactDuplicates() throws {
         let fixture = try PresentationOnboardingFixture()
         defer { fixture.remove() }
         let fragmentRoot = fixture.subdirectory("first-launch-fragments")

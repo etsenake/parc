@@ -1,12 +1,11 @@
 import Foundation
 @testable import ParcCore
 
-@MainActor
 struct PresentationOnboardingFixture {
     let root: URL
     let store: BrowserStore
 
-    init() throws {
+    @MainActor init() throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-onboarding-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         store = try BrowserStore(directory: root, now: { Date(timeIntervalSince1970: 1_700_000_000) })
@@ -17,11 +16,11 @@ struct PresentationOnboardingFixture {
 
     var draftFile: URL { root.appendingPathComponent("onboarding.json") }
 
-    func loadDraft() throws -> OnboardingDraft {
+    @MainActor func loadDraft() throws -> OnboardingDraft {
         try OnboardingDraft.load(directory: root, space: store.activeSpace)
     }
 
-    func pendingDraft() throws -> OnboardingDraft {
+    @MainActor func pendingDraft() throws -> OnboardingDraft {
         var draft = try loadDraft()
         draft.spaceName = "Personal"
         draft.stage = .bookmarks

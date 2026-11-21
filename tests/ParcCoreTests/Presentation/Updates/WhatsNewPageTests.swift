@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct WhatsNewPageTests {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("whats-new-\(UUID().uuidString)")
     let range = "#from=1.7.0&to=1.9.0"
@@ -10,7 +9,7 @@ struct WhatsNewPageTests {
 
     var running: URL { root.appendingPathComponent("Parc Dev.app") }
 
-    func page(in app: String, identifier: String?) throws -> URL {
+    private func page(in app: String, identifier: String?) throws -> URL {
         let contents = root.appendingPathComponent(app).appendingPathComponent("Contents")
         try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
         if let identifier {
@@ -21,15 +20,15 @@ struct WhatsNewPageTests {
         return contents.appendingPathComponent("Resources/WhatsNew.html")
     }
 
-    func runningPage() throws -> String { try page(in: "Parc Dev.app", identifier: "org.parc.Browser.dev").absoluteString }
-    func olderPage() throws -> String { try page(in: "Parc 1.0.app", identifier: "org.parc.Browser").absoluteString }
-    func otherPage() throws -> String { try page(in: "Other.app", identifier: "com.example.Other").absoluteString }
+    private func runningPage() throws -> String { try page(in: "Parc Dev.app", identifier: "org.parc.Browser.dev").absoluteString }
+    private func olderPage() throws -> String { try page(in: "Parc 1.0.app", identifier: "org.parc.Browser").absoluteString }
+    private func otherPage() throws -> String { try page(in: "Other.app", identifier: "com.example.Other").absoluteString }
 
-    func spelledRunningPage() throws -> String {
+    private func spelledRunningPage() throws -> String {
         try URL(string: runningPage())!.deletingLastPathComponent().absoluteString + "./WhatsNew.html"
     }
 
-    func rangeOnPage(_ address: String) -> String? {
+    private func rangeOnPage(_ address: String) -> String? {
         guard let url = URL(string: address), url.host == "whats-new", url.path == "/" else { return nil }
         return url.fragment
     }
@@ -38,29 +37,50 @@ struct WhatsNewPageTests {
         #expect(WhatsNewPage.address == "parc://whats-new/")
     }
 
-    @Test func aParcBundlesPageFileIsRecognised() throws {
-        defer { try? FileManager.default.removeItem(at: root) }
-        let running = running
-        let runningPage = try runningPage(), older = try olderPage(), spelled = try spelledRunningPage()
-        for address in [runningPage, spelled, runningPage + range, older, older + range] {
-            #expect(WhatsNewPage.isBundledFile(address, running: running), "A Parc bundle's page file: \(address)")
-        }
+    enum BundledAddress: CaseIterable, Sendable {
+        case running, alternateSpelling, runningWithRange, previous, previousWithRange
     }
 
-    @Test func otherAddressesAreNotABundlesPageFileAndStayAsSaved() throws {
+    @Test(arguments: BundledAddress.allCases)
+    func aParcBundlesPageFileIsRecognised(example: BundledAddress) throws {
         defer { try? FileManager.default.removeItem(at: root) }
-        let running = running
-        _ = try runningPage()
-        let older = try olderPage(), other = try otherPage()
-        let unidentified = try page(in: "Unidentified.app", identifier: nil).absoluteString
-        let removed = root.appendingPathComponent("Removed.app/Contents/Resources/WhatsNew.html").absoluteString
-        let otherFile = URL(string: older)!.deletingLastPathComponent().appendingPathComponent("Other.html").absoluteString
-        for address in [other, unidentified, removed, otherFile, "https://parc.example/WhatsNew.html",
-                        "file:///Users/me/WhatsNew.html", "parc://note/" + UUID().uuidString, WhatsNewPage.address,
-                        WhatsNewPage.address + range, "", "about:blank"] {
-            #expect(!WhatsNewPage.isBundledFile(address, running: running), "Not a Parc bundle's page file: \(address)")
-            #expect(WhatsNewPage.relocated(address, running: running) == address, "Other addresses stay as saved: \(address)")
+        let address: String
+        switch example {
+        case .running: address = try runningPage()
+        case .alternateSpelling: address = try spelledRunningPage()
+        case .runningWithRange: address = try runningPage() + range
+        case .previous: address = try olderPage()
+        case .previousWithRange: address = try olderPage() + range
         }
+        #expect(WhatsNewPage.isBundledFile(address, running: running))
+    }
+
+    enum OtherBundleAddress: CaseIterable, Sendable {
+        case otherApp, noIdentifier, missingApp, differentFile
+    }
+
+    @Test(arguments: OtherBundleAddress.allCases)
+    func otherBundleFilesStayAsSaved(example: OtherBundleAddress) throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let address: String
+        switch example {
+        case .otherApp: address = try otherPage()
+        case .noIdentifier: address = try page(in: "Unidentified.app", identifier: nil).absoluteString
+        case .missingApp: address = root.appendingPathComponent("Removed.app/Contents/Resources/WhatsNew.html").absoluteString
+        case .differentFile:
+            let older = try #require(URL(string: olderPage()))
+            address = older.deletingLastPathComponent().appendingPathComponent("Other.html").absoluteString
+        }
+        #expect(!WhatsNewPage.isBundledFile(address, running: running))
+        #expect(WhatsNewPage.relocated(address, running: running) == address)
+    }
+
+    @Test(arguments: ["https://parc.example/WhatsNew.html", "file:///Users/me/WhatsNew.html",
+                      "parc://note/8FFEB1BA-5B65-49C3-B581-C23946BF0B43", "parc://whats-new/",
+                      "parc://whats-new/#from=1.7.0&to=1.9.0", "", "about:blank"])
+    func otherAddressesStayAsSaved(address: String) {
+        #expect(!WhatsNewPage.isBundledFile(address, running: running))
+        #expect(WhatsNewPage.relocated(address, running: running) == address)
     }
 
     @Test func thisBuildsPageFileOpensAtTheInternalAddress() throws {
@@ -107,12 +127,12 @@ struct WhatsNewPageTests {
         #expect(BrowserInternalURL.publicString(web) == web)
     }
 
-    func restoredStore() throws -> (store: BrowserStore, restored: [BrowserTab], web: String, other: String) {
+    @MainActor private func restoredStore() throws -> (store: BrowserStore, restored: [BrowserTab], web: String, other: String) {
         let directory = root.appendingPathComponent("Profile")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let older = try olderPage(), other = try otherPage()
         var state = BrowserState.initial()
-        let now = Date(), profile = state.profiles[0].id, space = state.spaces[0].id
+        let now = Date(timeIntervalSince1970: 1_700_000_000), profile = state.profiles[0].id, space = state.spaces[0].id
         func tab(_ url: String, _ title: String, kind: TabKind, saved: String? = nil) -> BrowserTab {
             BrowserTab(id: UUID(), spaceID: space, profileID: profile, url: url, title: title,
                        kind: kind, createdAt: now, lastAccessed: now, savedURL: saved ?? url, savedTitle: title)
@@ -130,14 +150,14 @@ struct WhatsNewPageTests {
         return (store, store.state.tabs, web, other)
     }
 
-    @Test func restoredTabsOpenWhatsNewAtItsInternalAddress() throws {
+    @Test @MainActor func restoredTabsOpenWhatsNewAtItsInternalAddress() throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let fixture = try restoredStore()
         #expect(fixture.restored.map(\.url) == [WhatsNewPage.address + range, WhatsNewPage.address, fixture.web, fixture.other,
                                                 WhatsNewPage.address + range, WhatsNewPage.address + range, "parc://whats-new"])
     }
 
-    @Test func pinnedWhatsNewTabsResetToTheInternalAddress() throws {
+    @Test @MainActor func pinnedWhatsNewTabsResetToTheInternalAddress() throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let fixture = try restoredStore()
         #expect(fixture.restored.map(\.savedURL) == [WhatsNewPage.address + range, WhatsNewPage.address, WhatsNewPage.address,
@@ -145,27 +165,27 @@ struct WhatsNewPageTests {
                                                      "parc://whats-new"])
     }
 
-    @Test func noRestoredWhatsNewTabKeepsABundlePathOrTheEnginesAddress() throws {
+    @Test @MainActor func noRestoredWhatsNewTabKeepsABundlePathOrTheEnginesAddress() throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let fixture = try restoredStore()
         #expect(!fixture.restored.contains { $0.url.contains("WhatsNew.html") && $0.url != fixture.other })
         #expect(fixture.restored.allSatisfy { !$0.url.lowercased().hasPrefix("chrome:") && !$0.savedURL.lowercased().hasPrefix("chrome:") })
     }
 
-    @Test func restoredUpdateRangesStillReachThePage() throws {
+    @Test @MainActor func restoredUpdateRangesStillReachThePage() throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let fixture = try restoredStore()
         #expect(fixture.restored.compactMap { rangeOnPage($0.url) }.count == 3)
     }
 
-    @Test func aNewWhatsNewTabKeepsTheUpdatesRange() throws {
+    @Test @MainActor func aNewWhatsNewTabKeepsTheUpdatesRange() throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try restoredStore().store
         let opened = store.openResolvedURL(URL(string: update)!)
         #expect(store.state.tab(opened)?.url == update)
     }
 
-    @Test func aLoadTheEngineReportsAtChromeShowsAndCopiesAsParcAndStaysOutOfHistory() throws {
+    @Test @MainActor func aLoadTheEngineReportsAtChromeShowsAndCopiesAsParcAndStaysOutOfHistory() throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try restoredStore().store
         let opened = store.openResolvedURL(URL(string: update)!)

@@ -25,25 +25,25 @@ struct OnboardingExperienceTests {
         #expect(OnboardingExperience.readyConfettiDelay == 0.4)
     }
 
-    @Test func setupTransitionDirectionIsBackOrForwardFromStepOrder() {
-        let direction = OnboardingExperience.direction
-        #expect(direction(.defaultBrowser, .ready) == .forward)
-        #expect(direction(.ready, .defaultBrowser) == .back)
-        #expect(direction(.theme, .adBlockers) == .forward)
-        #expect(direction(.adBlockers, .defaultBrowser) == .forward)
-        #expect(direction(.adBlockers, .theme) == .back)
-        #expect(direction(.theme, .theme) == nil)
-        #expect(direction(.theme, .windowFrame) == .forward)
-        #expect(direction(.windowFrame, .theme) == .back)
-        #expect(direction(.windowFrame, .adBlockers) == .forward)
-        #expect(direction(.defaultBrowser, .windowFrame) == .back)
+    @Test(arguments: [(Stage.defaultBrowser, Stage.ready), (.theme, .adBlockers), (.adBlockers, .defaultBrowser),
+                      (.theme, .windowFrame), (.windowFrame, .adBlockers)])
+    func aLaterSetupStageMovesForward(stages: (Stage, Stage)) {
+        #expect(OnboardingExperience.direction(from: stages.0, to: stages.1) == .forward)
     }
 
-    @Test func theFirstSetupCardAppearsInPlaceAfterWelcomeAndReturningToWelcomeStaysBack() {
-        let direction = OnboardingExperience.direction
-        #expect(direction(.sellCompleted, .bookmarks) == nil)
-        #expect(direction(.introAnimation, .bookmarks) == nil)
-        #expect(direction(.bookmarks, .introAnimation) == .back)
+    @Test(arguments: [(Stage.ready, Stage.defaultBrowser), (.adBlockers, .theme), (.windowFrame, .theme),
+                      (.defaultBrowser, .windowFrame), (.bookmarks, .introAnimation)])
+    func anEarlierSetupStageMovesBack(stages: (Stage, Stage)) {
+        #expect(OnboardingExperience.direction(from: stages.0, to: stages.1) == .back)
+    }
+
+    @Test(arguments: [Stage.sellCompleted, .introAnimation])
+    func theFirstSetupCardAppearsInPlaceAfterWelcome(welcome: Stage) {
+        #expect(OnboardingExperience.direction(from: welcome, to: .bookmarks) == nil)
+    }
+
+    @Test func stayingOnTheSameStageDoesNotMoveTheCard() {
+        #expect(OnboardingExperience.direction(from: .theme, to: .theme) == nil)
     }
 
     @Test func forwardTextComesFromPlus400AndLeavesToMinus400AndBackMirrorsIt() {
@@ -123,14 +123,12 @@ struct OnboardingExperienceTests {
         #expect(Stage.sellIntro.next == .sellCompleted)
     }
 
-    @Test func focusReturnsToSpaceNameNextOrWelcomeRatherThanRerenderingTheSameControl() {
-        #expect(OnboardingExperience.focusTarget(entering: .theme, from: .favorites) == .spaceName)
-        #expect(OnboardingExperience.focusTarget(entering: .theme, from: .theme) == .unchanged)
-        #expect(OnboardingExperience.focusTarget(entering: .ready, from: .defaultBrowser) == .next)
-        #expect(OnboardingExperience.focusTarget(entering: .windowFrame, from: .theme) == .next)
-        #expect(OnboardingExperience.focusTarget(entering: .introAnimation, from: nil) == .welcome)
-        #expect(OnboardingExperience.focusTarget(entering: .sellIntro, from: .introAnimation) == .unchanged)
-        #expect(OnboardingExperience.focusTarget(entering: .introAnimation, from: .introAnimation) == .unchanged)
-        #expect(OnboardingExperience.focusTarget(entering: .introAnimation, from: .sellCompleted) == .unchanged)
+    @Test(arguments: [(Stage.theme, Stage?.some(.favorites), OnboardingExperience.FocusTarget.spaceName),
+                      (.theme, .theme, .unchanged), (.ready, .defaultBrowser, .next),
+                      (.windowFrame, .theme, .next), (.introAnimation, nil, .welcome),
+                      (.sellIntro, .introAnimation, .unchanged), (.introAnimation, .introAnimation, .unchanged),
+                      (.introAnimation, .sellCompleted, .unchanged)])
+    func movingThroughSetupSelectsTheNewCardFocus(example: (Stage, Stage?, OnboardingExperience.FocusTarget)) {
+        #expect(OnboardingExperience.focusTarget(entering: example.0, from: example.1) == example.2)
     }
 }

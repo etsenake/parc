@@ -66,23 +66,32 @@ struct ICloudPasswordsHelperTests {
         ICloudPasswordsSupport.connects(helper: helper, signer: signer, on: version)
     }
 
-    @Test func theParentLaunchConstraintIsReadFromTheCodeSignatureInThinAndUniversalFiles() {
-        let allowList = Self.allowList
-        #expect(ICloudPasswordsSupport.parentConstraint(in: Data(Self.program(allowList))) == .restricted(allowList))
-        #expect(ICloudPasswordsSupport.parentConstraint(in: Self.universal(Self.program(allowList))) == .restricted(allowList))
+    @Test(arguments: [false, true])
+    func theParentLaunchConstraintIsReadFromTheCodeSignature(universal: Bool) {
+        let program = Self.program(Self.allowList)
+        let bytes = universal ? Self.universal(program) : Data(program)
+        #expect(ICloudPasswordsSupport.parentConstraint(in: bytes) == .restricted(Self.allowList))
+    }
+
+    @Test func aProgramWithoutAParentConstraintIsUnrestricted() {
         #expect(ICloudPasswordsSupport.parentConstraint(in: Self.universal(Self.program(nil))) == .unrestricted)
     }
 
     @Test func sixtyFourBitUniversalFilesAreReadToo() {
-        let allowList = Self.allowList
-        #expect(ICloudPasswordsSupport.parentConstraint(in: Self.universal64(Self.program(allowList))) == .restricted(allowList))
+        #expect(ICloudPasswordsSupport.parentConstraint(in: Self.universal64(Self.program(Self.allowList))) == .restricted(Self.allowList))
     }
 
-    @Test func aFileThatIsNotAWholeSignedProgramCannotBeInspected() {
-        let allowList = Self.allowList
+    @Test func aShellScriptCannotBeInspectedAsASignedProgram() {
         #expect(ICloudPasswordsSupport.parentConstraint(in: Data("#!/bin/sh".utf8)) == nil)
-        #expect(ICloudPasswordsSupport.parentConstraint(in: Self.universal(Array(Self.program(allowList).prefix(80)))) == nil)
-        #expect(ICloudPasswordsSupport.parentConstraint(in: Self.universal(Self.program(allowList, overrun: 4096))) == nil)
+    }
+
+    @Test func aTruncatedProgramCannotBeInspected() {
+        let truncated = Array(Self.program(Self.allowList).prefix(80))
+        #expect(ICloudPasswordsSupport.parentConstraint(in: Self.universal(truncated)) == nil)
+    }
+
+    @Test func aProgramWithAnOverrunningSignatureCannotBeInspected() {
+        #expect(ICloudPasswordsSupport.parentConstraint(in: Self.universal(Self.program(Self.allowList, overrun: 4096))) == nil)
     }
 
     @Test func theHelperChromiumsManifestNamesComesFirstThenItsUsualPlace() throws {

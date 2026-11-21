@@ -41,13 +41,11 @@ struct SoftwareUpdateDownloadCountTests {
         #expect(download.receivedLength == 202_800_000)
     }
 
-    @Test func receivingTheExpectedBytesFillsTheBarAndAnUnderestimatedSizeNeverOverfillsIt() {
+    @Test(arguments: [UInt64(227_500_000), 228_500_000])
+    func receivingAtLeastTheExpectedBytesFillsTheBar(received: UInt64) {
         var download = SoftwareUpdateDownloadProgress()
         download.expect(227_500_000)
-        download.receive(202_800_000)
-        download.receive(24_700_000)
-        #expect(download.display.fraction == 1)
-        download.receive(1_000_000)
+        download.receive(received)
         #expect(download.display.fraction == 1)
     }
 
