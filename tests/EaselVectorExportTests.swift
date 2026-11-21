@@ -19,7 +19,57 @@ struct EaselVectorExportTests {
         text()
         document()
         palette()
+        media()
         print("EaselVectorExportTests: \(assertions) assertions passed")
+    }
+
+    @MainActor static func media() {
+        var audio = EaselItem(kind: .audio, frame: .init(x: 10, y: 10, width: 480, height: 72))
+        audio.assetID = "a1"; audio.fileName = "Voice <memo>.m4a"
+        let card = EaselVectorExport.element(audio, art: .init())
+        expect(card.contains("Voice &lt;memo&gt;.m4a") && card.contains(">Audio</text>") && card.contains("easel-card"), "audio cards show the name and kind")
+        expect(!card.contains("<a "), "audio uploads carry no link")
+        audio.assetID = nil; audio.url = "https://example.com/sounds/tune.mp3"; audio.fileName = nil
+        let linkedAudio = EaselVectorExport.element(audio, art: .init())
+        expect(linkedAudio.contains("href=\"https://example.com/sounds/tune.mp3\"") && linkedAudio.contains(">tune.mp3</text>"), "linked audio names the file and links")
+        var file = EaselItem(kind: .file, frame: .init(x: 0, y: 0, width: 400, height: 60))
+        file.assetID = "f1"; file.fileName = "Report.docx"
+        var art = EaselVectorArt()
+        art.mediaDetails[file.id] = "2 MB"
+        let row = EaselVectorExport.element(file, art: art)
+        expect(row.contains(">Report.docx</text>") && row.contains(">2 MB</text>"), "file rows show name and size")
+        var pdf = EaselItem(kind: .pdf, frame: .init(x: 0, y: 0, width: 300, height: 400))
+        pdf.assetID = "p1"; pdf.fileName = "Plans.pdf"
+        expect(EaselVectorExport.element(pdf, art: .init()).contains(">Plans.pdf</text>"), "pdfs without a page image fall back to a card")
+        var pdfArt = EaselVectorArt()
+        pdfArt.images[pdf.id] = EaselVectorImage(data: png, mimeType: "image/png")
+        let page = EaselVectorExport.element(pdf, art: pdfArt)
+        expect(page.contains("<image") && page.contains("data:image/png;base64,") && !page.contains("Plans.pdf"), "pdfs draw their first page")
+        var video = EaselItem(kind: .video, frame: .init(x: 0, y: 0, width: 480, height: 270))
+        video.url = "https://cdn.example.com/clips/movie.mp4"
+        let videoCard = EaselVectorExport.element(video, art: .init())
+        expect(videoCard.contains("href=\"https://cdn.example.com/clips/movie.mp4\"") && videoCard.contains(">movie.mp4</text>")
+               && videoCard.contains(">cdn.example.com</text>"), "linked videos without a poster export a labelled link card")
+        var posterVideo = video
+        posterVideo.poster = "p"
+        var posterArt = EaselVectorArt()
+        posterArt.images[posterVideo.id] = EaselVectorImage(data: png, mimeType: "image/png")
+        expect(!EaselVectorExport.element(posterVideo, art: posterArt).contains("easel-card"), "videos with posters keep the poster")
+        var image = EaselItem(kind: .image, frame: .init(x: 0, y: 0, width: 200, height: 100))
+        image.assetID = "i1"
+        image.credit = EaselMediaCredit(name: "Ada Lovelace", profileURL: "https://unsplash.com/@ada", photoURL: nil)
+        var imageArt = EaselVectorArt()
+        imageArt.images[image.id] = EaselVectorImage(data: png, mimeType: "image/png")
+        let credited = EaselVectorExport.element(image, art: imageArt)
+        expect(credited.contains("Photo by") && credited.contains("Ada Lovelace") && credited.contains("https://unsplash.com/@ada?utm_source=parc")
+               && credited.contains(">Unsplash<"), "credits export as a linked caption")
+        let plainFrame = EaselVectorExport.paintedFrame(EaselItem(kind: .image, frame: image.frame))
+        let creditFrame = EaselVectorExport.paintedFrame(image)
+        expect(creditFrame.height > plainFrame.height && creditFrame.y == plainFrame.y, "credit captions stay inside the export bounds")
+        for kind in [EaselItemKind.audio, .file, .pdf, .video, .image] {
+            expect(EaselVectorExport.element(EaselItem(kind: kind, frame: .init(x: 0, y: 0, width: 100, height: 60)), art: .init()).isEmpty,
+                   "empty placeholders export nothing")
+        }
     }
 
     @MainActor static func palette() {

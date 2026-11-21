@@ -851,8 +851,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 drawConnector(item)
             case .freehand:
                 drawDrawing(item)
-            case .image: drawImageObject(item, in: r)
-            case .video: drawVideoObject(item, in: r, controls: showsEditor)
+            case .image:
+                drawImageObject(item, in: r)
+                if !showsEditor { drawMediaCredit(item, in: r) }
+            case .video:
+                if drawsLinkedVideoCard(item) { drawMediaCard(item, in: r) } else { drawVideoObject(item, in: r, controls: showsEditor) }
             case .webCard where item.assetID != nil:
                 if let id = item.assetID { image(id)?.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil) }
             case .link, .webCard, .browser:
@@ -869,7 +872,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 drawTable(item, showsEditor: showsEditor)
             case .stamp:
                 EaselStampArtwork.draw(item, in: r, ink: ink)
-            case .audio, .file, .pdf, .equation:
+            case .audio, .file, .pdf:
+                drawMediaObject(item, in: r)
+            case .equation:
                 break
             }
     }

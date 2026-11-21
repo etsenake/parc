@@ -18,7 +18,9 @@ extension EaselVectorExport {
             let reach = EaselBoardObjects.sectionTitleHeight + EaselBoardObjects.sectionTitleGap
             return EaselRect(x: f.x, y: f.y - reach, width: f.width, height: f.height + reach)
         default:
-            return EaselRotation.bounds(of: item)
+            let bounds = EaselRotation.bounds(of: item)
+            let extra = creditExtent(item)
+            return extra > 0 ? EaselRect(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height + extra) : bounds
         }
     }
 
