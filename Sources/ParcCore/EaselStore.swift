@@ -3,7 +3,7 @@ import Combine
 import Darwin
 
 enum EaselItemKind: String, Codable, CaseIterable {
-    case text, image, rectangle, circle, arrow, freehand, webCard, browser, link, sticky, section, table
+    case text, image, rectangle, circle, arrow, freehand, webCard, browser, link, sticky, section, table, code
 
     var holdsText: Bool { self == .text || self == .sticky || self == .rectangle || self == .circle }
 }
@@ -232,6 +232,7 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var altText: String?
     var quarterTurns: Int?
     var table: EaselTable?
+    var language: String?
     var ownsEmbeddedPage: Bool { kind == .browser || (kind == .webCard && captureLayout != nil && liveCapture == true) }
     var resolvedShape: EaselShape? {
         switch kind {
@@ -248,6 +249,10 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var resolvedBrush: EaselBrush { brush ?? .marker }
     var resolvedLabelPosition: Double { labelPosition ?? 0.5 }
     var resolvedQuarterTurns: Int { quarterTurns ?? 0 }
+    static func isValidLanguage(_ value: String) -> Bool {
+        (1...32).contains(value.utf8.count)
+            && value.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.lowercaseLetters.contains($0) || CharacterSet.decimalDigits.contains($0) || $0 == "-") }
+    }
 }
 
 struct EaselDocument: Codable, Identifiable, Equatable {
@@ -570,6 +575,10 @@ final class EaselStore {
             }
         }
         if item.contentsHidden != nil && item.kind != .section { throw EaselStoreError.invalidDocument("hidden contents on a non-section object") }
+        if let language = item.language {
+            guard item.kind == .code else { throw EaselStoreError.invalidDocument("code language on a non-code object") }
+            guard EaselItem.isValidLanguage(language) else { throw EaselStoreError.invalidDocument("code language") }
+        }
     }
 
     private static func validateMedia(_ item: EaselItem) throws {

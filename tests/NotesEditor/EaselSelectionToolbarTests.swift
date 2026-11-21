@@ -25,6 +25,7 @@ struct EaselSelectionToolbarTests {
         expect(EaselToolbarSubject(.arrow) == .connector, "Arrows use the connector toolbar")
         expect(EaselToolbarSubject(.freehand) == .drawing, "Doodles, highlights and tape use the drawing toolbar")
         expect([EaselItemKind.webCard, .browser, .link].allSatisfy { EaselToolbarSubject($0) == .page }, "Pages, captures and links are page objects")
+        expect(EaselToolbarSubject(.code) == .code && plan([.code]).first == [.codeLanguage], "Code blocks lead with their language")
     }
 
     static func singleSelections() {

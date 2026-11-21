@@ -12,6 +12,7 @@ struct EaselVectorTextRun: Equatable {
     var underline = false
     var strikethrough = false
     var link: String?
+    var syntax: String?
 }
 
 struct EaselVectorText: Equatable {
@@ -35,6 +36,7 @@ struct EaselVectorPalette: Equatable {
     }
     var light: Swatch
     var dark: Swatch
+    var code: EaselCodePalette = .standard
 
     static let standard = EaselVectorPalette(
         light: Swatch(ink: "#1F1B2E", card: "#F6F5F9", cardLine: "rgba(31,27,46,.12)", muted: "rgba(31,27,46,.62)"),
@@ -134,6 +136,7 @@ enum EaselVectorExport {
         case .link: return card(item)
         case .sticky, .section: return board(item, art.texts[item.id])
         case .table: return table(item, art.texts[item.id])
+        case .code: return codeBlock(item, art.texts[item.id])
         }
     }
 
@@ -277,7 +280,7 @@ enum EaselVectorExport {
             + "@media screen and (prefers-color-scheme:dark){:root{" + variables(palette.dark) + "}}\n"
             + ".easel-canvas{margin:0;overflow-x:auto;line-height:0}\n"
             + ".easel-svg{display:block;max-width:100%;height:auto;margin:0 auto}\n"
-            + ".easel-svg a{cursor:pointer}\n"
+            + ".easel-svg a{cursor:pointer}\n" + codeCSS(palette.code)
     }
 
     static func htmlDocument(_ document: EaselDocument, art: EaselVectorArt, palette: EaselVectorPalette = .standard) -> String {

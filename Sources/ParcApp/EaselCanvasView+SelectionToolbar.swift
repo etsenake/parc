@@ -95,6 +95,7 @@ extension EaselCanvasView {
         case .typeface, .textSize, .smaller, .larger, .textFill: return textOnly
         case .bold, .italic, .underline, .strikethrough, .paragraph, .link: return textOnly && editor != nil
         case .more: return true
+        case .codeLanguage: return selected.allSatisfy { $0.kind == .code } && selected.contains { !$0.isLocked }
         default: return false
         }
     }
@@ -133,6 +134,10 @@ extension EaselCanvasView {
             let range = editor?.selectedRange() ?? NSRange(location: 0, length: 0)
             return .init(control: control, face: .symbol("link"), name: editor?.hasLink() == true ? "Edit link" : "Add a link",
                          commandID: TextFormatCommand.link.bindingID, isEnabled: !composing && range.length > 0)
+        case .codeLanguage:
+            let languages = selectedCodeLanguages
+            let title = languages.count == 1 ? languages.first.map { EaselCodeBlock.displayName($0) } ?? "Mixed" : "Mixed"
+            return .init(control: control, face: .text(title), name: "Language", opensMenu: true, showsDisclosure: true)
         default:
             return .init(control: control, face: .symbol("ellipsis"), name: "More", opensMenu: true)
         }
@@ -165,6 +170,9 @@ extension EaselCanvasView {
                 EaselToolbarMenuEntry(id: "delete", title: "Delete", symbol: "trash", shortcut: "⌫", isEnabled: ready,
                                       isDestructive: true, separatorBefore: true),
             ]
+        case .codeLanguage:
+            let current = selectedCodeLanguages
+            return NoteCodeLanguage.all.map { EaselToolbarMenuEntry(id: $0.id, title: $0.name, isChecked: current == [$0.id]) }
         default:
             return []
         }
@@ -214,6 +222,9 @@ extension EaselCanvasView {
             case "delete": deleteObjects(nil)
             default: return false
             }
+        case .codeLanguage:
+            guard let language = NoteCodeLanguage.all.first(where: { $0.id == id }) else { return false }
+            return setCodeLanguage(EaselCodeBlock.stored(language))
         default:
             return false
         }
@@ -227,7 +238,7 @@ extension EaselCanvasView {
     }
 
     func returnFocusFromSelectionToolbar() {
-        if let editor { window?.makeFirstResponder(editor) } else { window?.makeFirstResponder(self) }
+        if let editor { window?.makeFirstResponder(editor) } else { window?.makeFirstResponder(codeBlocks.editor ?? self) }
     }
 
     private static func emphasis(for control: EaselToolbarControl) -> EaselStyledTextView.Emphasis {

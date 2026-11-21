@@ -99,7 +99,7 @@ enum EaselDocumentExport {
             return .init(ink: css(NoteTheme.ink, in: appearance), card: css(EaselAppearance.cardFill, in: appearance),
                          cardLine: css(EaselAppearance.cardStroke, in: appearance), muted: css(EaselAppearance.secondaryText, in: appearance))
         }
-        return EaselVectorPalette(light: swatch(.aqua), dark: swatch(.darkAqua))
+        return EaselVectorPalette(light: swatch(.aqua), dark: swatch(.darkAqua), code: EaselCodeBlockStyle.palette())
     }
 
     static func png(_ image: CGImage) -> Data? {
@@ -119,6 +119,8 @@ enum EaselDocumentExport {
             switch item.kind {
             case .text, .sticky, .section:
                 art.texts[item.id] = vectorText(item)
+            case .code:
+                art.texts[item.id] = EaselCodeLayout.vectorText(item)
             case .image:
                 if let id = item.assetID, let data = try? session.assetData(id) { art.images[item.id] = webImage(data) }
             case .webCard, .browser:

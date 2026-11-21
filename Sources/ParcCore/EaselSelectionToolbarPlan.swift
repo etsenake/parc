@@ -1,7 +1,7 @@
 import Foundation
 
 enum EaselToolbarSubject: String, CaseIterable, Equatable {
-    case text, sticky, shape, connector, section, image, drawing, page, table
+    case text, sticky, shape, connector, section, image, drawing, page, table, code
 
     init(_ kind: EaselItemKind) {
         switch kind {
@@ -14,6 +14,7 @@ enum EaselToolbarSubject: String, CaseIterable, Equatable {
         case .freehand: self = .drawing
         case .webCard, .browser, .link: self = .page
         case .table: self = .table
+        case .code: self = .code
         }
     }
 }
@@ -25,6 +26,7 @@ enum EaselToolbarControl: String, CaseIterable, Hashable {
     case color, textFill, outline, connectorStyle, startHead, endHead, routing
     case stickyShape, brushWidth, pattern
     case crop, replaceImage, altText
+    case codeLanguage
     case alignment, link
     case arrange, tidyUp, group, createSection, lock
     case sectionOptions, more
@@ -74,6 +76,8 @@ enum EaselSelectionToolbarPlan {
             return editingText
                 ? [[.typeface, .textSize], [.bold, .italic, .underline, .strikethrough], [.paragraph], [.color], [.alignment], [.link]]
                 : [[.typeface, .textSize], [.bold, .strikethrough], [.color], [.alignment]]
+        case .code:
+            return [[.codeLanguage]]
         }
     }
 

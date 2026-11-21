@@ -139,6 +139,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var synchronizingEditor = false
     private var finishingEditor = false
     lazy var selectionToolbar: EaselSelectionToolbarPresenting? = Self.selectionToolbarFactory?()
+    let codeBlocks = EaselCodeBlockState()
     private var snapshotHeader: NSView?
     private var snapshotHeaderItem: UUID?
     private weak var headerScrollClip: NSClipView?
@@ -447,6 +448,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if expected.kind == .text { beginEditing(expected); return editingID == expected.id }
         if expected.kind == .image { return beginImageCrop() }
         if expected.kind == .table { return activateTable(expected) }
+        if expected.kind == .code { return beginCodeEditing(expected) }
         if pageObjects?.focusPage(for: expected.id) == true { return true }
         return false
     }
@@ -458,6 +460,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         switch name {
         case "Duplicate": return duplicateObjects(sender)
         case "Bring to front": return bringToFront(sender)
+        case "Copy code": return copyCode(item.id)
+        case "Change language": return showCodeLanguageMenu(item.id)
         case "Delete": deleteObjects(sender)
         case "Open source":
             guard onOpenURL != nil else { return false }
@@ -743,6 +747,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         ordered.append(decoration)
         if let editor { ordered.append(editor) }
         if let field = boardState.titleField { ordered.append(field) }
+        ordered.append(contentsOf: codeBlockOverlayViews)
         ordered.append(contentsOf: items.compactMap { accessibleObjects[$0.id] })
         if let snapshotHeader { ordered.append(snapshotHeader) }
         if subviews.map(ObjectIdentifier.init) != ordered.map(ObjectIdentifier.init) {
@@ -800,6 +805,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 (title as NSString).draw(in: r.insetBy(dx: 16, dy: 16), withAttributes: [.font: NoteTheme.nunitoBold(17), .foregroundColor: ink])
                 ((item.url ?? "") as NSString).draw(in: NSRect(x: r.minX + 16, y: r.maxY - 36, width: r.width - 32, height: 24),
                        withAttributes: [.font: NoteTheme.nunitoRegular(12), .foregroundColor: EaselAppearance.secondaryText])
+            case .code: drawCodeBlock(item, showsEditor: showsEditor)
             case .sticky: drawSticky(item, showsEditor: showsEditor)
             case .section: drawSection(item, showsEditor: showsEditor)
             case .table:
@@ -870,6 +876,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         case .rectangle: path = NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5)
         case .table: path = NSBezierPath(roundedRect: r, xRadius: EaselTableMetrics.cornerRadius, yRadius: EaselTableMetrics.cornerRadius)
         case .section: path = NSBezierPath(roundedRect: r, xRadius: EaselSectionArt.radius, yRadius: EaselSectionArt.radius)
+        case .code: path = NSBezierPath(roundedRect: r, xRadius: EaselCodeBlock.cornerRadius, yRadius: EaselCodeBlock.cornerRadius)
         case .arrow, .freehand:
             path = NSBezierPath()
             guard let first = item.points.first else { return }
@@ -931,7 +938,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var canPresentMotion: Bool { !session.isDeleted && !session.isClosed }
     var hidesPassiveAnnotations: Bool { motion.isInteracting || (geometryEdit != nil && draft != nil) }
     private func showsFrameAnnotation(_ handle: EaselResizeHandle) -> Bool {
-        allowsFrameHandle(handle) && !motion.isInteracting && (!hidesPassiveAnnotations || displayedSelection.count > 1 || resizeHandle == handle)
+        allowsFrameHandle(handle) && showsCodeHandle(handle) && !motion.isInteracting && (!hidesPassiveAnnotations || displayedSelection.count > 1 || resizeHandle == handle)
     }
     private func showsArrowAnnotation(_ endpoint: EaselArrowEndpoint) -> Bool {
         !motion.isInteracting && (!hidesPassiveAnnotations || arrowEndpoint == endpoint)
@@ -1091,6 +1098,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     @discardableResult
     func finishEditing(removingEmpty: Bool = true) -> Bool {
+        guard finishCodeEditing() else { return false }
         guard !finishingEditor else { return false }
         guard let text = editor, let id = editingID else { return true }
         finishingEditor = true
@@ -1233,7 +1241,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if let kind = command.paragraph { applyParagraph(kind) }
         }
     }
-    func refreshTextControls() { refreshSelectionToolbar() }
+    func refreshTextControls() {
+        refreshCodeBlockChrome(hidden: hidesPassiveAnnotations || !canPresentMotion)
+        refreshSelectionToolbar()
+    }
     func textDidChange(_ notification: Notification) {
         if tableCellTextDidChange(notification) { return }
         guard !synchronizingEditor, let id = editingID, let text = editor,
@@ -1323,7 +1334,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let hit = super.hitTest(point)
         guard usesObjectSurfaces, let hit, hit !== self else { return hit }
         if let snapshotHeader, hit === snapshotHeader || hit.isDescendant(of: snapshotHeader) { return hit }
-        if hit === editor || editor.map({ hit.isDescendant(of: $0) }) == true { return hit }
+        if hit === editor || editor.map({ hit.isDescendant(of: $0) }) == true || ownsCodeBlockView(hit) { return hit }
         if let field = boardState.titleField, hit === field || hit.isDescendant(of: field) { return hit }
         let local = convert(point, from: superview)
         guard resizeHandle(at: local) == nil, arrowEndpoint(at: local) == nil,
@@ -1368,6 +1379,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             cancelPointerInteraction()
             if hit.kind == .text { beginEditing(hit, at: point) }
             else if hit.kind == .image { beginImageCrop() }
+            else if hit.kind == .code { beginCodeEditing(hit, at: point) }
             else if !hit.ownsEmbeddedPage, let raw = hit.url, let url = URL(string: raw) { onOpenURL?(url) }
         }
         invalidateIncrementalDisplay(layout: true)
@@ -1439,6 +1451,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                                      aspectGuideRatio: intrinsicGuideRatio, viewport: .init(x: visibleRect.minX, y: visibleRect.minY,
                                                      width: visibleRect.width, height: visibleRect.height), endpoint: arrowEndpoint)
         if let proposal = draft { draft = fittedBoardGeometry(proposal, edit: edit, handle: resizeHandle) }
+        draft = settledCodeBlocks(draft, edit: edit)
         window?.invalidateCursorRects(for: self); invalidateIncrementalDisplay(layout: true)
     }
     private func strokeItem() -> EaselItem {
@@ -1919,6 +1932,7 @@ private final class EaselAccessibleObject: NSView {
         case .freehand: return "Drawing"
         case .sticky: return "Sticky note"
         case .section: return EaselBoardObjects.displayTitle(item)
+        case .code: return "Code block, " + EaselCodeBlock.displayName(item.language)
         default: return item.kind.rawValue.capitalized
         }
     }
@@ -1952,9 +1966,10 @@ private final class EaselAccessibleObject: NSView {
         var names = ["Duplicate", "Bring to front", "Delete"]
         if item.url != nil { names.insert("Open source", at: 0) }
         names += canvas.boardActionNames(item)
-        if item.kind == .text || item.kind == .table || !canvas.accessibleChildren(id).isEmpty || item.ownsEmbeddedPage { names.insert("Activate", at: 0) }
+        if item.kind == .code { names.insert(contentsOf: ["Copy code", "Change language"], at: 0) }
+        if item.kind == .text || item.kind == .table || item.kind == .code || !canvas.accessibleChildren(id).isEmpty || item.ownsEmbeddedPage { names.insert("Activate", at: 0) }
         return names.map { name in
-            NSAccessibilityCustomAction(name: name == "Activate" ? (item.kind == .text ? "Edit text" : item.kind == .table ? "Edit cells" : "Interact with webpage") : name) { [weak canvas, weak owner] in
+            NSAccessibilityCustomAction(name: name == "Activate" ? (item.kind == .text ? "Edit text" : item.kind == .table ? "Edit cells" : item.kind == .code ? "Edit code" : "Interact with webpage") : name) { [weak canvas, weak owner] in
                 canvas?.accessibleAction(name, item: item, owner: owner) == true
             }
         } + canvas.imageAccessibilityActions(for: item, owner: owner)

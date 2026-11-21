@@ -178,6 +178,7 @@ final class EaselFindController: NoteFindBarController {
                 let height = EaselTextLayout.Layout(EaselRichTextCodec.attributed(next), width: next.frame.width).height
                 next.frame.height = max(next.frame.height, Double(height))
             }
+            if next.kind == .code { next.frame.height = EaselCodeLayoutCache.height(for: next) }
             replaced[item.id] = next
         }
         do {
@@ -243,6 +244,7 @@ final class EaselFindController: NoteFindBarController {
     }
 
     private func textRects(for match: EaselFindMatch, in item: EaselItem) -> [NSRect]? {
+        if item.kind == .code, match.part == .text { return EaselCodeLayout.rects(for: match.range, in: item) }
         guard item.kind == .text, match.part == .text else { return nil }
         let layout: EaselTextLayout.Layout
         if let cached = layouts[item.id], cached.item == item {
