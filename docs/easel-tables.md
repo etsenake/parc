@@ -53,6 +53,9 @@ stay hidden.
 
 ## Rows and columns
 
+Inserted and duplicated rows and columns slide open in place and deleted ones
+close up, on the settle spring; Reduce Motion skips the slide.
+
 Hovering a selected table shows its controls, drawn from the Notes table:
 
 - `+` bars along the right and bottom edges add a column or a row at the end.

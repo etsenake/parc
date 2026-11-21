@@ -32,8 +32,11 @@ new ends, and connections made before an object was locked keep working.
 
 While an end is dragged, the object under the pointer (or within 18 points of
 one of its magnets) shows its magnets; the one the end will take fills in, and
-an automatic attachment outlines the whole object. Shift snaps a free end to
-45° steps from the other end. Dragging an attached end onto empty paper frees it.
+an automatic attachment outlines the whole object. The object glows softly as
+the end arrives, the chosen magnet grows, and each new magnet or object the end
+takes gives a light haptic tick. Shift snaps a free end to 45° steps from the
+other end. Dragging an attached end onto empty paper frees it, and dropping it
+on an object pops its arrowhead in place.
 
 A connector with both ends attached doesn't drag on its own: move one of its
 objects, or select it together with them. A connector with a free end drags
@@ -107,7 +110,10 @@ side again stacks the new object below or above the last one instead of
 overlapping anything. Dragging a dot places the new object wherever it's dropped,
 with a connector for stickies and shapes alike. Command-Return does the same as
 clicking the right-hand dot, also while typing in the sticky or shape. The 40-point
-gap is the same everywhere so rows and stacks line up.
+gap is the same everywhere so rows and stacks line up. The new object glides
+out of its source and its connector draws itself from start to end with the
+arrowhead popping at the end; a dragged-out one pops its arrowhead on release
+(see [motion](easel-motion.md#snaps-and-live-feedback)).
 
 ## Keeping things together
 

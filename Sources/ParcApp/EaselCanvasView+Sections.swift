@@ -154,6 +154,67 @@ extension EaselCanvasView {
             ? EaselBoardObjects.contents(of: item, in: session.document.items).count : nil
         EaselSectionArt.draw(item, hiddenCount: hidden, zoom: showsEditor ? canvasScale : 1, adaptive: adaptsInk,
                              renaming: showsEditor && boardState.titleField?.sectionID == item.id)
+        guard showsEditor, paintsLiveFeedback else { return }
+        let tray = sectionTrayLevel(item.id), flash = sectionFlashLevel(item.id)
+        guard tray > 0 || flash > 0 else { return }
+        let frame = NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height)
+        let body = NSBezierPath(roundedRect: frame, xRadius: EaselSectionArt.radius, yRadius: EaselSectionArt.radius)
+        let ink = EaselInk.color(item.color, adaptive: adaptsInk)
+        if tray > 0 {
+            ink.withAlphaComponent(0.07 * tray).setFill(); body.fill()
+            body.lineWidth = 1.5 + 1.5 * tray
+            ink.withAlphaComponent(0.25 + 0.45 * tray).setStroke(); body.stroke()
+        }
+        if flash > 0 {
+            body.lineWidth = 2 + 2.5 * flash
+            EaselAppearance.selection.withAlphaComponent(0.85 * flash).setStroke(); body.stroke()
+        }
+    }
+
+    private func sectionTrayLevel(_ id: UUID) -> CGFloat {
+        if let tray = canvasFeedback.trays[id] {
+            return CGFloat(EaselFeedbackCurve.trayLevel(CACurrentMediaTime() - tray.start, from: tray.from, rising: tray.rising))
+        }
+        return canvasFeedback.trayTarget == id ? 1 : 0
+    }
+
+    private func sectionFlashLevel(_ id: UUID) -> CGFloat {
+        guard let start = canvasFeedback.flashes[id] else { return 0 }
+        return CGFloat(EaselFeedbackCurve.flashLevel(CACurrentMediaTime() - start))
+    }
+
+    func noteSectionCarry(_ moving: [EaselItem]?, originals: [EaselItem]) {
+        let target = moving.flatMap { EaselSectionDrop.target(moving: $0, original: originals, in: session.document.items) }
+        guard target != canvasFeedback.trayTarget else { return }
+        let reduced = feedbackReducesMotion
+        let now = CACurrentMediaTime()
+        if let old = canvasFeedback.trayTarget {
+            let from = Double(sectionTrayLevel(old))
+            canvasFeedback.trays[old] = .init(start: now, from: reduced ? 0 : from, rising: false)
+        }
+        if let target {
+            let from = Double(sectionTrayLevel(target))
+            canvasFeedback.trays[target] = .init(start: now, from: from, rising: true)
+        }
+        canvasFeedback.trayTarget = target
+        if let target, let section = session.document.items.first(where: { $0.id == target }) { redrawSectionTray(section) }
+        startCanvasFeedback()
+    }
+
+    func endSectionCarry() {
+        guard canvasFeedback.trayTarget != nil else { return }
+        noteSectionCarry(nil, originals: [])
+    }
+
+    func flashSectionCarry() {
+        guard let target = canvasFeedback.trayTarget, canAnimateObjects,
+              session.document.items.contains(where: { $0.id == target }) else { return }
+        canvasFeedback.flashes[target] = CACurrentMediaTime()
+        startCanvasFeedback()
+    }
+
+    private func redrawSectionTray(_ section: EaselItem) {
+        if usesObjectSurfaces { artwork[section.id]?.needsDisplay = true } else { setNeedsDisplay(displayBounds(of: section)) }
     }
 
     var selectedSections: [EaselItem] { session.document.items.filter { selection.contains($0.id) && $0.kind == .section } }

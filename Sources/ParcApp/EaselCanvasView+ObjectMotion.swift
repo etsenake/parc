@@ -31,6 +31,7 @@ final class EaselCanvasObjectMotionState {
     var retiring: [UUID: NSView] = [:]
     var burst: EaselCanvasBurst?
     var carriedSurfaces: Set<UUID> = []
+    var shadowedPages: Set<UUID> = []
     var lockedPress: UUID?
     var refusedThisGesture = false
 
@@ -80,7 +81,12 @@ extension EaselCanvasView {
             let ordered = EaselObjectMotion.added(from: before, to: after)
             let added = admitted(ordered)
             var entrances: [UUID: EaselObjectEntrance] = [:]
-            for id in added { if let item = frames[id] { entrances[id] = EaselObjectEntrance.of(item) } }
+            for id in added {
+                guard let item = frames[id] else { continue }
+                let side: Double = item.id.uuid.1 & 1 == 0 ? 1 : -1
+                entrances[id] = objectMotion.timeline.isRaised(id)
+                    ? .slam(tilt: EaselObjectEntrance.pressedSlamTilt * side, raised: true) : EaselObjectEntrance.of(item)
+            }
             let delays = cascade(added)
             objectMotion.timeline.appear(entrances, delays: delays, at: now, reduced: reduced)
             touched.formUnion(added)
@@ -146,11 +152,13 @@ extension EaselCanvasView {
         objectMotionFrame()
     }
 
-    func applyHistory(_ step: () throws -> Void) throws {
+    func applyHistory(_ step: () throws -> Void) throws { try recordingMotion(.history, step) }
+
+    func recordingMotion(_ intent: EaselObjectMotionIntent, _ step: () throws -> Void) throws {
         let before = session.document
         try step()
         guard before != session.document else { return }
-        withObjectMotion(.history) { recordObjectMotion(from: before, to: session.document) }
+        withObjectMotion(intent) { recordObjectMotion(from: before, to: session.document) }
     }
 
     func pulseObjects(_ ids: Set<UUID>) {
@@ -242,7 +250,7 @@ extension EaselCanvasView {
             objectMotion.burst = host
         }
         if host.frame != bounds { host.frame = bounds }
-        if host.superview !== self || subviews.last !== host { addSubview(host, positioned: .above, relativeTo: nil) }
+        if host.superview !== self { addSubview(host, positioned: .above, relativeTo: nil) }
         return host
     }
 
@@ -266,7 +274,7 @@ extension EaselCanvasView {
         objectMotion.driver = nil
         editor?.alphaValue = 1
         for view in artwork.values { if let layer = view.layer { Self.settleSurface(layer) } }
-        objectMotion.carriedSurfaces.removeAll()
+        resetHeldSurfaces()
         for view in objectMotion.retiring.values { view.layer?.removeAllAnimations(); view.removeFromSuperview() }
         objectMotion.retiring.removeAll()
         if let burst = objectMotion.burst { burst.settle(); burst.removeFromSuperview() }
@@ -330,10 +338,11 @@ extension EaselCanvasView {
                         let grow = max(0, max(stretch.x, stretch.y) - 1) * max(box.width, box.height) / 2 + abs(turn) / 90 * max(box.width, box.height) / 2
                         box = box.union(box.offsetBy(dx: from.x, dy: from.y)).insetBy(dx: -reach - grow, dy: -reach - grow)
                     case .appear(.slam):
-                        let grow = (EaselObjectTransition.slamScale - 1) * max(box.width, box.height) / 2 + 8
+                        let grow = (EaselObjectTransition.slamScale - 1 + 0.3) * max(box.width, box.height) / 2 + 8
                         box = box.insetBy(dx: -grow, dy: -grow)
                     default:
                         box = box.union(presentedBounds(of: item, objectMotion.timeline.presentation(for: id, at: now)))
+                        if let previous = objectMotion.timeline.previousLook(for: id) { box = box.union(displayBounds(of: previous)) }
                         let pad = max(box.width, box.height) * 0.06 + 4
                         box = box.insetBy(dx: -pad, dy: -pad)
                     }
@@ -368,6 +377,9 @@ extension EaselCanvasView {
         if case .glide(let from, _, _, _, _) = transition.effect {
             let travel = max(abs(from.x), abs(from.y))
             if travel > 0 { opacity *= max(0, 1 - max(abs(shown.offset.x), abs(shown.offset.y)) / travel) }
+        } else if shown.transforms {
+            let drift = abs(shown.scaleX - 1) + abs(shown.scaleY - 1) + abs(shown.rotation) / 12 + hypot(shown.offset.x, shown.offset.y) / 10
+            opacity *= max(0, 1 - drift * 6)
         }
         if case .restyle = transition.effect { opacity = 1 }
         editor.alphaValue = CGFloat(min(1, max(0, opacity)))
@@ -388,10 +400,18 @@ extension EaselCanvasView {
         for item in ordered {
             let presentation = objectMotion.timeline.presentation(for: item.id, at: now)
             guard presentedBounds(of: item, presentation).intersects(dirtyRect) else { continue }
-            if let previous = objectMotion.timeline.previousLook(for: item.id) {
-                var faded = presentation
-                faded.opacity = 1 - presentation.opacity
-                drawPresented(previous, faded)
+            if let previous = objectMotion.timeline.previousLook(for: item.id), let context = NSGraphicsContext.current?.cgContext {
+                let mix = CGFloat(min(1, max(0, presentation.opacity)))
+                context.saveGState()
+                context.beginTransparencyLayer(auxiliaryInfo: nil)
+                context.setAlpha(1 - mix)
+                drawObject(previous)
+                context.setBlendMode(.plusLighter)
+                context.setAlpha(mix)
+                drawObject(item)
+                context.endTransparencyLayer()
+                context.restoreGState()
+                continue
             }
             drawPresented(item, presentation)
         }
@@ -452,10 +472,17 @@ extension EaselCanvasView {
 
     private static func settleSurface(_ layer: CALayer) {
         for key in layer.animationKeys() ?? [] where key.hasPrefix(surfaceKey) { layer.removeAnimation(forKey: key) }
+    }
+
+    private func resetHeldSurfaces(_ ids: Set<UUID>? = nil) {
+        let carried = ids.map { objectMotion.carriedSurfaces.intersection($0) } ?? objectMotion.carriedSurfaces
+        let pages = ids.map { objectMotion.shadowedPages.intersection($0) } ?? objectMotion.shadowedPages
+        for id in carried { if let layer = artwork[id]?.layer { Self.resetSurfaceModel(layer) } }
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        if !CATransform3DIsIdentity(layer.transform) { layer.transform = CATransform3DIdentity }
-        if layer.shadowOpacity != 0 { layer.shadowOpacity = 0 }
+        for id in pages { if let layer = artwork[id]?.layer, layer.shadowOpacity != 0 { layer.shadowOpacity = 0 } }
         CATransaction.commit()
+        objectMotion.carriedSurfaces.subtract(carried)
+        objectMotion.shadowedPages.subtract(pages)
     }
 
     private struct SurfaceFrame {
@@ -531,6 +558,8 @@ extension EaselCanvasView {
             animation.isRemovedOnCompletion = !keepsEnd
             return animation
         }
+        if item.ownsEmbeddedPage { turns = false; moves = false; fades = false }
+        if layer.masksToBounds { shades = false }
         var result: [String: CAAnimation] = [:]
         if turns { result["transform"] = keyframes("transform", transforms) }
         if moves { result["position"] = keyframes("position", offsets, additive: true) }
@@ -604,6 +633,19 @@ extension EaselCanvasView {
         CATransaction.commit()
     }
 
+    func raiseStampDraft(_ id: UUID) {
+        guard canAnimateObjects else { return }
+        objectMotion.timeline.raise(id, at: CACurrentMediaTime(), reduced: reduceMotion)
+        guard objectMotion.timeline.isRaised(id) else { return }
+        startObjectMotionDriver()
+    }
+
+    func lowerStampDraft(_ id: UUID) {
+        guard objectMotion.timeline.isRaised(id) else { return }
+        objectMotion.timeline.lower(id)
+        resetHeldSurfaces([id])
+    }
+
     func carryDraggedObjects(rotating: Bool, velocity: EaselPoint) {
         let now = CACurrentMediaTime()
         if objectMotion.timeline.carry != nil {
@@ -625,31 +667,44 @@ extension EaselCanvasView {
         objectMotion.lockedPress = nil
         guard objectMotion.timeline.carry != nil else { return }
         let landed = objectMotion.timeline.drop(at: CACurrentMediaTime())
-        for id in objectMotion.carriedSurfaces { if let layer = artwork[id]?.layer { Self.settleSurface(layer) } }
-        objectMotion.carriedSurfaces.removeAll()
+        resetHeldSurfaces()
         objectMotion.pendingSurfaces.formUnion(landed)
         needsLayout = true
         startObjectMotionDriver()
     }
 
+    private static func resetSurfaceModel(_ layer: CALayer) {
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        if !CATransform3DIsIdentity(layer.transform) { layer.transform = CATransform3DIdentity }
+        if layer.shadowOpacity != 0 { layer.shadowOpacity = 0 }
+        if layer.opacity != 1 { layer.opacity = 1 }
+        CATransaction.commit()
+    }
+
     private func presentCarriedSurfaces(at now: TimeInterval) {
-        guard usesObjectSurfaces, let carry = objectMotion.timeline.carry else { return }
+        let held = (objectMotion.timeline.carry?.ids ?? []).union(objectMotion.timeline.raised.keys)
+        let stale = objectMotion.carriedSurfaces.union(objectMotion.shadowedPages).subtracting(held)
+        if !stale.isEmpty { resetHeldSurfaces(stale) }
+        guard usesObjectSurfaces, !held.isEmpty else { return }
         var lookup: [UUID: EaselItem] = [:]
-        for item in items where carry.ids.contains(item.id) { lookup[item.id] = item }
+        for item in items where held.contains(item.id) { lookup[item.id] = item }
         let dark = NoteTheme.isDark(effectiveAppearance)
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        for id in carry.ids {
+        for id in held {
             guard let item = lookup[id], let view = artwork[id] else { continue }
             view.wantsLayer = true
             guard let layer = view.layer, let frame = surfaceFrame(for: item, layer: layer) else { continue }
-            let shown = carry.presentation(for: id, at: now)
-            if !item.ownsEmbeddedPage { layer.transform = Self.surfaceTransform(shown, frame) }
+            let shown = objectMotion.timeline.presentation(for: id, at: now)
+            if item.ownsEmbeddedPage { objectMotion.shadowedPages.insert(id) } else {
+                layer.transform = Self.surfaceTransform(shown, frame)
+                if layer.opacity != Float(shown.opacity) { layer.opacity = Float(shown.opacity) }
+                objectMotion.carriedSurfaces.insert(id)
+            }
             if !layer.masksToBounds {
                 styleSurfaceShadow(layer, frame)
                 layer.shadowOpacity = Float(min(1, shown.shadow) * (dark ? 0.5 : 0.24))
                 layer.shadowRadius = Self.shadowReach(shown.shadow) / 2
             }
-            objectMotion.carriedSurfaces.insert(id)
         }
         CATransaction.commit()
     }

@@ -21,5 +21,7 @@ struct EaselSnapTicker<Key: Hashable> {
         EaselCanvasHaptics.snap()
     }
 
+    mutating func prime(_ current: Set<Key>) { engaged = current }
+
     mutating func reset() { engaged.removeAll() }
 }

@@ -33,7 +33,8 @@ A selection that holds something turnable has a rotate zone just outside each
 corner. Hovering there shows the rotate cursor, a curved double arrow that
 faces away from that corner. Dragging turns the selection around its centre:
 
-- in 15° steps, so a single object lands on 0°, 15°, 30° and so on;
+- in 15° steps, so a single object lands on 0°, 15°, 30° and so on, with a
+  light haptic tick as each new step clicks in;
 - freely while ⌘ is held (⌘ already means "no snapping" for alignment guides);
 - with a small angle badge beside the pointer, the same pill as the text size
   badge, showing the object's new angle (or, for several objects, how far they
