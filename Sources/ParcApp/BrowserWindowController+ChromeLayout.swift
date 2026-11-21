@@ -8,6 +8,18 @@ enum CommandBarAddressSource {
     case sidebar(SidebarView)
     case popup(PopupChromeView)
 
+    static func connect(_ sidebar: SidebarView, focus: @escaping (Self) -> Void) {
+        sidebar.onAddress = { [weak sidebar] in
+            if let sidebar { focus(.sidebar(sidebar)) }
+        }
+    }
+
+    static func connect(_ popup: PopupChromeView, focus: @escaping (Self) -> Void) {
+        popup.onAddress = { [weak popup] in
+            if let popup { focus(.popup(popup)) }
+        }
+    }
+
     var anchor: NSView? {
         switch self {
         case .keyboard: nil
@@ -25,9 +37,9 @@ enum WindowPaneFocus {
     }
 
     @MainActor
-    static func visitHits<Pane: NSView>(at point: NSPoint, panes: [UUID: Pane], rendered: [UUID],
+    static func visitHits<Pane: NSView>(at point: NSPoint, panes: [UUID: Pane], isRendered: (UUID) -> Bool,
                                         focus: (UUID) -> Void) {
-        for (id, pane) in panes where rendered.contains(id) {
+        for (id, pane) in panes where isRendered(id) {
             if pane.bounds.contains(pane.convert(point, from: nil)) { focus(id) }
         }
     }

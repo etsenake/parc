@@ -824,8 +824,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         popupChrome.prepareSiteControls = { [weak self] in self?.preparePopupSiteControls(requireExtensions: false) }
         popupChrome.prepareBlocked = { [weak self] anchor in self?.preparePopupSiteControls(requireExtensions: false, from: anchor) }
         sidebar.onBlockedContent = { [weak self] anchor in self?.showSiteControlCenter(from: anchor) }
-        popupChrome.onAddress = { [weak self] in
-            guard let self else { return }; self.focusAddress(from: .popup(self.popupChrome))
+        CommandBarAddressSource.connect(popupChrome) { [weak self] source in
+            self?.focusAddress(from: source)
         }
         popupChrome.onPageMenu = { [weak self] in
             guard let self else { return }; self.showPageMenu(from: self.popupChrome.addressAnchor)
@@ -1001,7 +1001,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     if self.sidebarPresentation == .floating && !self.sidebarPointerDown { self.setSidebarPresentation(.hidden) }
                     if self.sidebarPresentation == .hidden || !self.sidebarContainer.frame.contains(point) {
                         WindowPaneFocus.visitHits(at: event.locationInWindow, panes: self.panes,
-                                                  rendered: self.renderedPaneIDs) { id in
+                                                  isRendered: { self.renderedPaneIDs.contains($0) }) { id in
                             self.focusedTabID = id; self.updateNavigation(); self.requestNativeSelection()
                         }
                     }
