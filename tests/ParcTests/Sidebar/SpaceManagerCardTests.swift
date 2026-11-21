@@ -53,6 +53,7 @@ struct SpaceManagerCardTests {
         func tab(_ name: String, _ kind: TabKind) -> BrowserTab { Self.tab(name, kind, in: first) }
 
         init() {
+            SidebarApplicationActivity.set(true)
             window = sidebarTestWindow(containing: manager)
             first = state.spaces[0]
             pinned = Self.tab("pinned", .pinned, in: first)
@@ -69,7 +70,10 @@ struct SpaceManagerCardTests {
             manager.addSubview(source)
         }
 
-        deinit { MainActor.assumeIsolated { window.contentView = nil } }
+        deinit {
+            SidebarApplicationActivity.set(nil)
+            MainActor.assumeIsolated { window.contentView = nil }
+        }
 
         var sidebar: SidebarView { manager.sidebar(for: first.id)! }
         var header: SidebarSpaceHeaderView { sidebarDescendants(sidebar).compactMap { $0 as? SidebarSpaceHeaderView }.first! }
