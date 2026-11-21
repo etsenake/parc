@@ -166,8 +166,6 @@ struct PagePlaceholderImagesTests {
         let regular = try BrowserStore(directory: root)
         let privateOne = BrowserStore(privateParentProfileID: regular.activeSpace.profileID, engineProfilePath: "/disposable",
                                       directory: root, settings: regular.state.settings)
-        let privateTwo = BrowserStore(privateParentProfileID: regular.activeSpace.profileID, engineProfilePath: "/disposable",
-                                      directory: root, settings: regular.state.settings)
         regular.placeholderImages.setShown([first], in: one)
         regular.placeholderImages.store(PagePlaceholderFrame.make(60), for: first)
         privateOne.placeholderImages.setShown([first], in: two)

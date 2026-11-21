@@ -1,0 +1,118 @@
+import AppKit
+import Testing
+@testable import Parc
+
+struct CapturePresentationTests {
+    private static let bounds = NSRect(x: 0, y: 0, width: 1000, height: 700)
+    private static let source = NSRect(x: 100, y: 120, width: 300, height: 200)
+    private static let pixels = NSSize(width: 600, height: 400)
+
+    private static func layout(source: NSRect?, in area: NSRect = bounds, pixels: NSSize = pixels, paletteHeight: CGFloat = 350,
+                               editing: Bool = false, fullPalette: Bool = false) -> CapturePresentation.Layout {
+        CapturePresentation.layout(bounds: area, pixels: pixels, source: source, paletteHeight: paletteHeight,
+                                   editing: editing, fullPalette: fullPalette)
+    }
+
+    @Test func backingScalePixelsKeepTheOriginalLogicalRectangle() {
+        #expect(Self.layout(source: Self.source).image == Self.source)
+    }
+
+    @Test func thePaletteSitsToTheRightWhenThereIsRoom() {
+        #expect(Self.layout(source: Self.source).palette == NSRect(x: 414, y: 116, width: 273, height: 350))
+    }
+
+    @Test func aTrailingCaptureKeepsItsRectangle() {
+        let trailing = NSRect(x: 600, y: 450, width: 300, height: 200)
+        #expect(Self.layout(source: trailing).image == trailing)
+    }
+
+    @Test func aTrailingCapturePutsThePaletteOnItsLeft() {
+        let trailing = NSRect(x: 600, y: 450, width: 300, height: 200)
+        #expect(Self.layout(source: trailing).palette == NSRect(x: 313, y: 304, width: 273, height: 350))
+    }
+
+    @Test func aSelectionInsideTheImageMapsToPixels() {
+        let crop = CapturePresentation.pixelCrop(NSRect(x: 175, y: 170, width: 150, height: 100), imageRect: Self.source,
+                                                 pixels: NSSize(width: 1200, height: 800))
+        #expect(crop == NSRect(x: 300, y: 200, width: 600, height: 400))
+    }
+
+    @Test func aSelectionOfTheWholeImageMapsToAllPixels() {
+        let crop = CapturePresentation.pixelCrop(Self.source, imageRect: Self.source, pixels: NSSize(width: 1200, height: 800))
+        #expect(crop == NSRect(x: 0, y: 0, width: 1200, height: 800))
+    }
+
+    @Test func aSelectionOutsideTheImageHasNoCrop() {
+        let crop = CapturePresentation.pixelCrop(NSRect(x: -20, y: -20, width: 40, height: 40), imageRect: Self.source,
+                                                 pixels: NSSize(width: 1200, height: 800))
+        #expect(crop == nil)
+    }
+
+    @Test(arguments: [160.0, 320, 480, 600, 1000], [200.0, 400, 800],
+          [NSSize(width: 400, height: 200), NSSize(width: 300, height: 9000)])
+    func theImageAndPaletteStayInsideThePane(_ width: Double, _ height: Double, _ pixels: NSSize) {
+        let area = NSRect(x: 0, y: 0, width: width, height: height)
+        let result = Self.layout(source: area, in: area, pixels: pixels, paletteHeight: 450)
+        #expect(area.contains(result.image) && area.contains(result.palette))
+    }
+
+    @Test(arguments: [160.0, 320, 480, 600, 1000], [200.0, 400, 800],
+          [NSSize(width: 400, height: 200), NSSize(width: 300, height: 9000)])
+    func theImageKeepsItsAspectRatio(_ width: Double, _ height: Double, _ pixels: NSSize) {
+        let area = NSRect(x: 0, y: 0, width: width, height: height)
+        let image = Self.layout(source: area, in: area, pixels: pixels, paletteHeight: 450).image
+        #expect(image.width > 0 && image.height > 0 && abs(image.width / image.height - pixels.width / pixels.height) < 0.0001)
+    }
+
+    @Test(arguments: [160.0, 320, 480], [200.0, 400, 800],
+          [NSSize(width: 400, height: 200), NSSize(width: 300, height: 9000)])
+    func compactPanesKeepThePreviewClearOfThePalette(_ width: Double, _ height: Double, _ pixels: NSSize) {
+        let area = NSRect(x: 0, y: 0, width: width, height: height)
+        let result = Self.layout(source: area, in: area, pixels: pixels, paletteHeight: 450)
+        #expect(!result.image.intersects(result.palette))
+    }
+
+    @Test(arguments: [160.0, 320, 480, 600, 1000], [200.0, 400, 800],
+          [NSSize(width: 400, height: 200), NSSize(width: 300, height: 9000)])
+    func editingKeepsTheImageInsideThePane(_ width: Double, _ height: Double, _ pixels: NSSize) {
+        let area = NSRect(x: 0, y: 0, width: width, height: height)
+        #expect(area.contains(Self.layout(source: area, in: area, pixels: pixels, paletteHeight: 450, editing: true).image))
+    }
+
+    private static let narrow = NSRect(x: 0, y: 0, width: 400, height: 500)
+
+    @Test func aNarrowPaneCapsThePaletteHeight() {
+        let capped = Self.layout(source: nil, in: Self.narrow, pixels: NSSize(width: 800, height: 600), paletteHeight: 400)
+        #expect(capped.palette.height < 400)
+    }
+
+    @Test func aNarrowPaneCanShowTheWholeFramePage() {
+        let page = Self.layout(source: nil, in: Self.narrow, pixels: NSSize(width: 800, height: 600), paletteHeight: 400, fullPalette: true)
+        #expect(page.palette.height == 400 && Self.narrow.contains(page.palette))
+    }
+
+    @Test func theWholeFramePageKeepsTheImageAboveIt() {
+        let page = Self.layout(source: nil, in: Self.narrow, pixels: NSSize(width: 800, height: 600), paletteHeight: 400, fullPalette: true)
+        #expect(page.image.maxY <= page.palette.minY)
+    }
+
+    @MainActor @Test func theLightImageBackgroundIsWhite() throws {
+        let light = try #require(CaptureAppearance.imageBackground(false).usingColorSpace(.sRGB))
+        #expect(light.redComponent == 1)
+    }
+
+    @MainActor @Test func theDarkImageBackgroundLeansBlue() throws {
+        let dark = try #require(CaptureAppearance.imageBackground(true).usingColorSpace(.sRGB))
+        #expect(dark.blueComponent > dark.redComponent)
+    }
+
+    @MainActor @Test func theCursorArtworkLoadsAtItsNativeHeight() throws {
+        let cursor = try #require(CaptureArtwork.image("camera-cross-cursor", in: Bundle.module.url(forResource: "CaptureArtwork", withExtension: nil)))
+        #expect(cursor.size.height == 50)
+    }
+
+    @MainActor @Test func theCursorArtworkCarriesRetinaRenditions() throws {
+        let cursor = try #require(CaptureArtwork.image("camera-cross-cursor", in: Bundle.module.url(forResource: "CaptureArtwork", withExtension: nil)))
+        #expect(cursor.representations.contains { $0 is NSBitmapImageRep } && !cursor.isTemplate)
+    }
+}
