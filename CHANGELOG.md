@@ -1,5 +1,136 @@
 # Changelog
 
+## 2.15.0 (2026-11-21)
+
+### New
+
+- **easels:** Swap the cramped text rail for a floating toolbar that hovers over whatever you select, keeps its size at any zoom and ducks out of the way while you drag
+- **easels:** ⌘F finds and replaces across a whole Easel, lighting up every match on the canvas and gliding to each one
+- **easels:** Duplicate with ⌘D or an Option-drag, group with ⌘G, lock with ⇧⌘L and shuffle layers with ⌘] and ⌘[, while locked things let your clicks slip right through
+- **easels:** Sticky notes land as soft paper squares with a little lift, go wide, widen with a side drag and scale text and all with a corner
+- **easels:** Pictures on an Easel crop in place with a zoom slider and turns, wear the Notes masks, carry alt text, swap without moving and play GIFs when you pick one
+- **easels:** Paste cells from Numbers, Excel or Sheets onto an Easel and get a real table to type in, Tab through, resize, merge, colour and export as CSV
+- **easels:** Table cells answer to Option keys for adding, moving and resizing rows and columns, and VoiceOver can hop straight into editing them
+- **easels:** Paste Mermaid flowcharts and ER diagrams onto an Easel and get real shapes, arrows and sections to keep editing
+- **easels:** Sections get a title tab you can click, drag and rename, a marquee that works inside them, hidden contents and a VoiceOver landmark
+- **easels:** Text you click to place widens as you type, text you drag wraps at your width, and whole objects align left, centre or right
+- **easels:** Drag a text corner to scale the words with a size badge riding along, and pick any size from 8 to 400 with Custom
+- **easels:** ⌥⌘L, ⌥⌘T and ⌥⌘R line selected or edited text up left, centre or right
+- **easels:** Right-click a table cell and the menu works on that cell, the way spreadsheets do
+- **easels:** Doodles glide out smooth with no lag, Shift lays them dead straight, a tap leaves a dot and fresh ink no longer hides under a selection outline
+- **easels:** Give a text, shape or sticky its own link with ⌘K, then open it from the little link badge that rides its corner
+- **easels:** Type a colon and a couple of letters in Easel text to pick an emoji from the same list Notes uses, or finish the :shortcode: and it swaps itself in
+- **easels:** Typed markdown in Easel text grows #### headings, > quotes that keep going on Return, and `inline code`
+- **easels:** ⇧⌘/ hops into the selection toolbar from the canvas or mid-sentence, just like it does in Notes
+- **easels:** The selection toolbar learns to align, distribute, tidy, group, section, lock and unlock, plus wide stickies and a section's rename, lock and hide options
+- **easels:** Pictures get Crop, Mask, Replace and Alt text right on the selection toolbar, which bows out while you crop
+- **easels:** The selection toolbar lines text up, picks washi patterns, and gives tables their own typeface, size, colours and Merge cells
+- **easels:** Bold, italic, underline, strikethrough and text size work on selected table cells, or the whole table, without opening a cell
+- **easels:** Colour the words in a shape or sticky without touching its outline or paper, in one Undo step
+- **easels:** Right-click text, a shape or a sticky for Text Color and pick from the palette
+- **easels:** The selection toolbar's Link button gives a text, shape or sticky its own link when you're not typing
+- **easels:** Right-click anything on an Easel to paint it in Notes' nine colours, fill it, or make its lines thin, thick, dashed or dotted
+- **easels:** Arrows grow up into connectors that snap to any object, route straight, elbow or curved, wear a dozen heads and a label, and stickies and shapes sprout plus dots for the next step
+- **easels:** Easels answer to tool keys like V, S, R, O, T, L and X, pan with H or a held Space, and zoom with ⌘+, ⌘−, ⇧1, ⇧2 or ⌘-scroll
+- **easels:** The Easel toolbar grows up into grouped tools with shape, connector and draw pickers, drag-to-place buttons, a zoom menu that takes a typed percentage, and a Recenter chip
+- **easels:** Press ⌘/ in an Easel to find any tool, shape, insert or zoom by name, and Escape lets go of the selection before it puts the tool down
+- **easels:** Easel tools now drop real stickies, sections, tables, code blocks and growing text, Mermaid joins the inserts, and right-click offers Zoom to selection
+- **easels:** HTML exports show sticky notes as real paper and sections with their title tab and border, in light and dark, and leave hidden contents out
+- **easels:** Easel objects can now be turned and mirrored, drawing, exporting and taking clicks at their new angle
+- **easels:** Grab just past a corner to spin things in tidy 15° steps (or freely with ⌘), flip with ⇧H and ⇧V, nudge the angle with ⌥ and the arrows, or pick Flip and Rotate from the menu and VoiceOver
+- **easels:** Shapes come in 32 Notes-coloured flavours that hold centred text, swap outlines from the Shape menu and export to HTML as real vectors
+- **easels:** Pick a custom text size for shapes and stickies too, not just text boxes
+- **easels:** Click a selected connector to label it, and VoiceOver can add the next sticky or shape
+- **easels:** Copy, cut and paste any mix of Easel objects with their styles and pictures, between Easels and Profiles, landing right under your pointer
+- **easels:** Right-click anything on an Easel for a Notes-style menu with paste here, order, align, tidy up, group, lock and copy as image
+- **easels:** Copy as Image on a selection says Copied Image, just like the page menu does
+- **easels:** Command-D duplicates the table rows or columns you've selected instead of the whole table
+- **easels:** Press backtick for a code block with Notes' syntax colours in 39 languages, smart Tab and Return, a language menu, one-click Copy and ⌘Return for the next one, previewed at its real size as you place it
+- **easels:** MP4 and MOV videos land as a poster with a play button and play right on the Easel with the native controls, and a picture dropped on a selected image swaps in place
+- **easels:** New doodles pick up the colour and width you last gave a drawing, and long strokes stay quick by repainting only their newest bit
+- **easels:** Copy Link to Object hands out a link that opens the Easel with that object picked and glided into view
+- **easels:** ⌘F reaches table cells too, and replacing in a table rewrites its cells in one go and refits the rows
+- **easels:** Easel History keeps a snapshot every few minutes while you work, previews each one and restores it as a single undo
+- **easels:** Highlighter, washi tape and the eraser are switched on, with an eraser cursor that matches its reach
+- **easels:** The selection toolbar now restyles anything with one colour and style picker, swaps shapes, flips, rotates and copies as image, and table alignment and colour show what the cells really use
+- **easels:** A countdown timer lives in the Easel's corner, up to 99:59, with arrow-key minutes, +1 min mid-run and a gentle shake when time's up
+- **notes:** Easel blocks get a + button and ⌘/ for adding stickies, shapes and friends, keep the selection toolbar inside the block as the note scrolls, and stay hands-off in locked notes
+- **easels:** ⇧⌘E exports just the picked objects as an image, PDF or HTML, and stickies head out as a tidy CSV from a selection or the whole Easel
+- **easels:** Press E for a wheel of stamps at your pointer, with recents, every emoji and a drawer of icons; click to stamp, hold to grow, ⌘Return stamps the selection
+- **easels:** New objects pop in, deleted ones fade away, copies glide out of their source and Align or Tidy up slides everything into place
+- **easels:** Start a board from seven templates, from Kanban to Mind Map, picked from the toolbar, the ••• menu or right on an empty Easel
+- **easels:** An empty Easel now teaches the keys with clickable chips that fade away once the first object lands, plus a one-time tip for making the next sticky or shape
+- **easels:** Icon stamps take any colour from the style button or the right-click colours, palette shades included
+- **easels:** An empty Easel is one tidy welcome now, with the words, key chips and template cards laid out together, and a picked template pops right in
+- **easels:** Mind maps grow on Easels with ⌘Return for a child, ⇧⌘Return for a sibling, Tab to move nodes, + buttons, drag-to-reparent and collapsible branches
+- **easels:** The Mind Map template starts as a real mind map, branches and all, ready for ⌘Return
+- **easels:** Type straight into sticky notes, which grow as you write, keep their padding and stay in proportion when scaled up
+- **easels:** Easels get pages, with a Notes-style page switcher, Page Up and Page Down to flip, Move to Page, page links, per-page find and exports that know their pages
+
+### Fixed
+
+- **notes:** YouTube, Vimeo, Loom and Spotify links given to a video or audio block play as an embed, and a stuck one offers Play here
+- **notes:** Pasted links with no file extension, like Google's Copy Image Address, offer Image, Video, Audio or PDF once the server says what they are
+- **easels:** The Custom text size field sticks around until you've typed your size instead of risking a vanishing act
+- **easels:** The selection toolbar steps aside for selections bigger than the view, keeps − and + while you type and shows up for VoiceOver with the canvas
+- **easels:** Table moves hop over merged cells instead of splitting them, big spreadsheet pastes say what they left out, and mail laid out in tables pastes as text
+- **easels:** Table edits stand down quietly once their Easel is deleted instead of raising an error mid-drag
+- **easels:** Accented first letters start a table cell properly, and table controls never leave smudges behind at low zoom
+- **easels:** Coloured table cells in HTML exports follow the reader's light or dark mode like every other Easel colour
+- **easels:** Aligning text from the selection toolbar works while you're typing in a table cell, not just on selected cells
+- **easels:** Giant or tangled Mermaid pastes get a quick polite no instead of a spinning beach ball, and pasted arrows arrive already bent around their shapes
+- **easels:** A Mermaid diagram too big to paste says so instead of landing as a wall of text, the Add sheet keeps up as you type, and ER entity names come out bold
+- **easels:** Elbows leave rotated shapes and pinned spots cleanly, loops on one object hop a corner, freed curves keep their shape, whole diagrams drag smoothly and connectors share the colour picker's line styles
+- **easels:** Scaled text keeps every run on a whole point from 8 to 400 and stays inside the capture editor's board, where double-clicking a side no longer widens text past it
+- **easels:** A link badge only opens real web addresses, never ones carrying a password or missing a host
+- **easels:** Emoji shortcodes only turn into emoji as you type them, never when pasted, dropped or dictated, and never inside inline code
+- **easels:** The right-click menu's link, alignment, colour and Auto Width rows always act on the objects you right-clicked
+- **easels:** Duplicating a whole Easel keeps its arrows hooked up and its stickers stuck on
+- **easels:** Highlights and washi tape stay stuck on top of their object when it changes layers, and tag along when it's duplicated or copied
+- **easels:** Cancelling an Option-drag puts the selection back on the original, and picking a group never sweeps up its locked members
+- **notes:** ⌘G and friends inside an Easel block now belong to the Easel instead of the note around it
+- **easels:** Doodles drawn before smoothing keep their sharp corners on the board and in exports, and exported highlights keep their glow even outside the page
+- **easels:** Easel Replace only changes the match you can see, steps past locked objects and card titles, and says what Replace All skipped
+- **easels:** Right-click a shape to switch its outline to any of the 32 shapes again in the new Notes-style menu
+- **easels:** Adding a label to a connector is one undo step, even when you clicked a spot along it
+- **easels:** Command-Return quick create plays by the shared shortcut rules and waits while you're still composing text
+- **easels:** The connector tools draw real, snapping connectors as you drag instead of plain lines
+- **easels:** Highlights keep their blend and opacity in a standalone SVG, with tests for taps, Shift lines, tape and curves
+- **easels:** Tight crops zoom the right way, big GIFs play smoothly off the main thread, and crops tidy up after undo or a window hop
+- **easels:** Pasting a hostile Mermaid diagram gets a polite no, the Add sheet reads and parses it once, and Command-Return adds from anywhere in it
+- **easels:** Locked objects show a pointing hand on their lock badge, and the canvas menu says Paste when nothing has a spot to land
+- **easels:** Escape or switching windows cancels a tool dragged off the toolbar, and a click puts stickies, sections and text right where you pressed
+- **easels:** Older QuickTime and AV1 movies import again, and GIFs stay sharp when cropped or zoomed in
+- **easels:** Sidebar previews and note exports frame what you actually see, rotated, with thick arrows and labels, and never peek inside closed sections
+- **easels:** Connector labels open right where you double-clicked, connectors you draw take the colour you picked and end where you let go
+- **easels:** The capture editor keeps its toolbar, menus and paste to things a screenshot can hold, and the colour well follows what you pick
+- **easels:** Stickies exported as CSV can't sneak formulas into a spreadsheet, the timer says time's up just once and blinks while paused
+- **easels:** Easel animations stop cleanly when a board moves windows or hides, fading objects never linger, and huge selections only animate what you can see
+- **easels:** Undo, Redo, shape cells, template cards and the empty Easel's chips show Parc's own tooltips with keycaps for their shortcuts
+- **easels:** Easels with a tangled mind map still open, and pasting part of a map never leaves a loose branch behind
+- **easels:** Stamps you're holding never get lost, the stamp wheel tidies itself away with its window, and ⌘Return stamping plays by the shared shortcut rules
+- **easels:** Easels with scrambled stacking order open safely, so adding a sticky or table on top never crashes
+- **easels:** Easel History stays put if its Easel closes underneath it, instead of crashing on Restore
+- **easels:** Giant boards export and copy as a sensibly sized image instead of gigapixels that stall Parc
+- **easels:** Big stickies keep roomy margins that grow with them
+- **easels:** Timer, web card and in-note Easel controls show Parc's own tooltips
+- **easels:** Pasting a table cell stuffed with blank lines no longer stalls Parc
+- **easels:** Pasting a novel into an image's alt text trims it instantly instead of freezing
+- **easels:** Image exports and Copy as Image hug your board instead of dragging along empty canvas
+- **easels:** The emoji list stays fully visible in Easels inside notes
+- **easels:** Easel menus, tooltips and VoiceOver speak with one voice now, from colors and connectors to ellipses and stamps
+- **easels:** Undo says Add connector and Add ellipse, and Mermaid hints talk about shapes instead of nodes
+- **easels:** VoiceOver calls the timer a timer and reads running, paused or time’s up as its value
+- **easels:** Deleting a page with one thing on it reads right, and says Undo brings it all back
+- **easels:** VoiceOver can't nudge a connector's ends while you're pinching to zoom, since the handles are hidden then
+- **easels:** Colour swatches in Easel style and table colour menus show up reliably on every macOS version
+
+### Faster
+
+- **easels:** Link badges skip re-reading every object's address on each redraw, so busy Easels stay smooth
+- **easels:** Boards full of sticky notes stay smooth because each paper is drawn once and reused, and see-through stickies keep their shadow outside the sheet
+- **easels:** Big mind maps with lots of folded branches stay snappy while you work
+
 ## 2.14.0 (2026-11-21)
 
 ### New

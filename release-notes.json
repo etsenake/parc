@@ -1,6 +1,733 @@
 {
   "releases": [
     {
+      "version": "2.15.0",
+      "build": 51,
+      "date": "2026-11-21",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "YouTube, Vimeo, Loom and Spotify links given to a video or audio block play as an embed, and a stuck one offers Play here",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Pasted links with no file extension, like Google's Copy Image Address, offer Image, Video, Audio or PDF once the server says what they are",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Swap the cramped text rail for a floating toolbar that hovers over whatever you select, keeps its size at any zoom and ducks out of the way while you drag",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "\u2318F finds and replaces across a whole Easel, lighting up every match on the canvas and gliding to each one",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Duplicate with \u2318D or an Option-drag, group with \u2318G, lock with \u21e7\u2318L and shuffle layers with \u2318] and \u2318[, while locked things let your clicks slip right through",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Sticky notes land as soft paper squares with a little lift, go wide, widen with a side drag and scale text and all with a corner",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Pictures on an Easel crop in place with a zoom slider and turns, wear the Notes masks, carry alt text, swap without moving and play GIFs when you pick one",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Paste cells from Numbers, Excel or Sheets onto an Easel and get a real table to type in, Tab through, resize, merge, colour and export as CSV",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Table cells answer to Option keys for adding, moving and resizing rows and columns, and VoiceOver can hop straight into editing them",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Paste Mermaid flowcharts and ER diagrams onto an Easel and get real shapes, arrows and sections to keep editing",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Sections get a title tab you can click, drag and rename, a marquee that works inside them, hidden contents and a VoiceOver landmark",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Text you click to place widens as you type, text you drag wraps at your width, and whole objects align left, centre or right",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Drag a text corner to scale the words with a size badge riding along, and pick any size from 8 to 400 with Custom",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "\u2325\u2318L, \u2325\u2318T and \u2325\u2318R line selected or edited text up left, centre or right",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Right-click a table cell and the menu works on that cell, the way spreadsheets do",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Doodles glide out smooth with no lag, Shift lays them dead straight, a tap leaves a dot and fresh ink no longer hides under a selection outline",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Give a text, shape or sticky its own link with \u2318K, then open it from the little link badge that rides its corner",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Type a colon and a couple of letters in Easel text to pick an emoji from the same list Notes uses, or finish the :shortcode: and it swaps itself in",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Typed markdown in Easel text grows #### headings, > quotes that keep going on Return, and `inline code`",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "The Custom text size field sticks around until you've typed your size instead of risking a vanishing act",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "The selection toolbar steps aside for selections bigger than the view, keeps \u2212 and + while you type and shows up for VoiceOver with the canvas",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "\u21e7\u2318/ hops into the selection toolbar from the canvas or mid-sentence, just like it does in Notes",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "The selection toolbar learns to align, distribute, tidy, group, section, lock and unlock, plus wide stickies and a section's rename, lock and hide options",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Pictures get Crop, Mask, Replace and Alt text right on the selection toolbar, which bows out while you crop",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "The selection toolbar lines text up, picks washi patterns, and gives tables their own typeface, size, colours and Merge cells",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Bold, italic, underline, strikethrough and text size work on selected table cells, or the whole table, without opening a cell",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Table moves hop over merged cells instead of splitting them, big spreadsheet pastes say what they left out, and mail laid out in tables pastes as text",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Table edits stand down quietly once their Easel is deleted instead of raising an error mid-drag",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Colour the words in a shape or sticky without touching its outline or paper, in one Undo step",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Right-click text, a shape or a sticky for Text Color and pick from the palette",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "The selection toolbar's Link button gives a text, shape or sticky its own link when you're not typing",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Right-click anything on an Easel to paint it in Notes' nine colours, fill it, or make its lines thin, thick, dashed or dotted",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Accented first letters start a table cell properly, and table controls never leave smudges behind at low zoom",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Arrows grow up into connectors that snap to any object, route straight, elbow or curved, wear a dozen heads and a label, and stickies and shapes sprout plus dots for the next step",
+          "breaking": false
+        },
+        {
+          "type": "perf",
+          "scope": "easels",
+          "summary": "Link badges skip re-reading every object's address on each redraw, so busy Easels stay smooth",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Coloured table cells in HTML exports follow the reader's light or dark mode like every other Easel colour",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Easels answer to tool keys like V, S, R, O, T, L and X, pan with H or a held Space, and zoom with \u2318+, \u2318\u2212, \u21e71, \u21e72 or \u2318-scroll",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "The Easel toolbar grows up into grouped tools with shape, connector and draw pickers, drag-to-place buttons, a zoom menu that takes a typed percentage, and a Recenter chip",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Press \u2318/ in an Easel to find any tool, shape, insert or zoom by name, and Escape lets go of the selection before it puts the tool down",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Easel tools now drop real stickies, sections, tables, code blocks and growing text, Mermaid joins the inserts, and right-click offers Zoom to selection",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Aligning text from the selection toolbar works while you're typing in a table cell, not just on selected cells",
+          "breaking": false
+        },
+        {
+          "type": "perf",
+          "scope": "easels",
+          "summary": "Boards full of sticky notes stay smooth because each paper is drawn once and reused, and see-through stickies keep their shadow outside the sheet",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "HTML exports show sticky notes as real paper and sections with their title tab and border, in light and dark, and leave hidden contents out",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Giant or tangled Mermaid pastes get a quick polite no instead of a spinning beach ball, and pasted arrows arrive already bent around their shapes",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "A Mermaid diagram too big to paste says so instead of landing as a wall of text, the Add sheet keeps up as you type, and ER entity names come out bold",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Easel objects can now be turned and mirrored, drawing, exporting and taking clicks at their new angle",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Grab just past a corner to spin things in tidy 15\u00b0 steps (or freely with \u2318), flip with \u21e7H and \u21e7V, nudge the angle with \u2325 and the arrows, or pick Flip and Rotate from the menu and VoiceOver",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Shapes come in 32 Notes-coloured flavours that hold centred text, swap outlines from the Shape menu and export to HTML as real vectors",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Pick a custom text size for shapes and stickies too, not just text boxes",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Elbows leave rotated shapes and pinned spots cleanly, loops on one object hop a corner, freed curves keep their shape, whole diagrams drag smoothly and connectors share the colour picker's line styles",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Click a selected connector to label it, and VoiceOver can add the next sticky or shape",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Scaled text keeps every run on a whole point from 8 to 400 and stays inside the capture editor's board, where double-clicking a side no longer widens text past it",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "A link badge only opens real web addresses, never ones carrying a password or missing a host",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Emoji shortcodes only turn into emoji as you type them, never when pasted, dropped or dictated, and never inside inline code",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "The right-click menu's link, alignment, colour and Auto Width rows always act on the objects you right-clicked",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Copy, cut and paste any mix of Easel objects with their styles and pictures, between Easels and Profiles, landing right under your pointer",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Duplicating a whole Easel keeps its arrows hooked up and its stickers stuck on",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Highlights and washi tape stay stuck on top of their object when it changes layers, and tag along when it's duplicated or copied",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Right-click anything on an Easel for a Notes-style menu with paste here, order, align, tidy up, group, lock and copy as image",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Cancelling an Option-drag puts the selection back on the original, and picking a group never sweeps up its locked members",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "\u2318G and friends inside an Easel block now belong to the Easel instead of the note around it",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Copy as Image on a selection says Copied Image, just like the page menu does",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Command-D duplicates the table rows or columns you've selected instead of the whole table",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Press backtick for a code block with Notes' syntax colours in 39 languages, smart Tab and Return, a language menu, one-click Copy and \u2318Return for the next one, previewed at its real size as you place it",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "MP4 and MOV videos land as a poster with a play button and play right on the Easel with the native controls, and a picture dropped on a selected image swaps in place",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Doodles drawn before smoothing keep their sharp corners on the board and in exports, and exported highlights keep their glow even outside the page",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "New doodles pick up the colour and width you last gave a drawing, and long strokes stay quick by repainting only their newest bit",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Easel Replace only changes the match you can see, steps past locked objects and card titles, and says what Replace All skipped",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Copy Link to Object hands out a link that opens the Easel with that object picked and glided into view",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "\u2318F reaches table cells too, and replacing in a table rewrites its cells in one go and refits the rows",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Easel History keeps a snapshot every few minutes while you work, previews each one and restores it as a single undo",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Right-click a shape to switch its outline to any of the 32 shapes again in the new Notes-style menu",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Adding a label to a connector is one undo step, even when you clicked a spot along it",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Command-Return quick create plays by the shared shortcut rules and waits while you're still composing text",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "The connector tools draw real, snapping connectors as you drag instead of plain lines",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Highlighter, washi tape and the eraser are switched on, with an eraser cursor that matches its reach",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Highlights keep their blend and opacity in a standalone SVG, with tests for taps, Shift lines, tape and curves",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Tight crops zoom the right way, big GIFs play smoothly off the main thread, and crops tidy up after undo or a window hop",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Pasting a hostile Mermaid diagram gets a polite no, the Add sheet reads and parses it once, and Command-Return adds from anywhere in it",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Locked objects show a pointing hand on their lock badge, and the canvas menu says Paste when nothing has a spot to land",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Escape or switching windows cancels a tool dragged off the toolbar, and a click puts stickies, sections and text right where you pressed",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "The selection toolbar now restyles anything with one colour and style picker, swaps shapes, flips, rotates and copies as image, and table alignment and colour show what the cells really use",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "A countdown timer lives in the Easel's corner, up to 99:59, with arrow-key minutes, +1 min mid-run and a gentle shake when time's up",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Easel blocks get a + button and \u2318/ for adding stickies, shapes and friends, keep the selection toolbar inside the block as the note scrolls, and stay hands-off in locked notes",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Older QuickTime and AV1 movies import again, and GIFs stay sharp when cropped or zoomed in",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "\u21e7\u2318E exports just the picked objects as an image, PDF or HTML, and stickies head out as a tidy CSV from a selection or the whole Easel",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Press E for a wheel of stamps at your pointer, with recents, every emoji and a drawer of icons; click to stamp, hold to grow, \u2318Return stamps the selection",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Sidebar previews and note exports frame what you actually see, rotated, with thick arrows and labels, and never peek inside closed sections",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Connector labels open right where you double-clicked, connectors you draw take the colour you picked and end where you let go",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "New objects pop in, deleted ones fade away, copies glide out of their source and Align or Tidy up slides everything into place",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Start a board from seven templates, from Kanban to Mind Map, picked from the toolbar, the \u2022\u2022\u2022 menu or right on an empty Easel",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "The capture editor keeps its toolbar, menus and paste to things a screenshot can hold, and the colour well follows what you pick",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "An empty Easel now teaches the keys with clickable chips that fade away once the first object lands, plus a one-time tip for making the next sticky or shape",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Icon stamps take any colour from the style button or the right-click colours, palette shades included",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Stickies exported as CSV can't sneak formulas into a spreadsheet, the timer says time's up just once and blinks while paused",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "An empty Easel is one tidy welcome now, with the words, key chips and template cards laid out together, and a picked template pops right in",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Mind maps grow on Easels with \u2318Return for a child, \u21e7\u2318Return for a sibling, Tab to move nodes, + buttons, drag-to-reparent and collapsible branches",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "The Mind Map template starts as a real mind map, branches and all, ready for \u2318Return",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Easel animations stop cleanly when a board moves windows or hides, fading objects never linger, and huge selections only animate what you can see",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Undo, Redo, shape cells, template cards and the empty Easel's chips show Parc's own tooltips with keycaps for their shortcuts",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Easels with a tangled mind map still open, and pasting part of a map never leaves a loose branch behind",
+          "breaking": false
+        },
+        {
+          "type": "perf",
+          "scope": "easels",
+          "summary": "Big mind maps with lots of folded branches stay snappy while you work",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Stamps you're holding never get lost, the stamp wheel tidies itself away with its window, and \u2318Return stamping plays by the shared shortcut rules",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Type straight into sticky notes, which grow as you write, keep their padding and stay in proportion when scaled up",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Easels with scrambled stacking order open safely, so adding a sticky or table on top never crashes",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Easel History stays put if its Easel closes underneath it, instead of crashing on Restore",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Giant boards export and copy as a sensibly sized image instead of gigapixels that stall Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Big stickies keep roomy margins that grow with them",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Timer, web card and in-note Easel controls show Parc's own tooltips",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Pasting a table cell stuffed with blank lines no longer stalls Parc",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Pasting a novel into an image's alt text trims it instantly instead of freezing",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Image exports and Copy as Image hug your board instead of dragging along empty canvas",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "The emoji list stays fully visible in Easels inside notes",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Easel menus, tooltips and VoiceOver speak with one voice now, from colors and connectors to ellipses and stamps",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Undo says Add connector and Add ellipse, and Mermaid hints talk about shapes instead of nodes",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "VoiceOver calls the timer a timer and reads running, paused or time\u2019s up as its value",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "easels",
+          "summary": "Easels get pages, with a Notes-style page switcher, Page Up and Page Down to flip, Move to Page, page links, per-page find and exports that know their pages",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Deleting a page with one thing on it reads right, and says Undo brings it all back",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "VoiceOver can't nudge a connector's ends while you're pinching to zoom, since the handles are hidden then",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "easels",
+          "summary": "Colour swatches in Easel style and table colour menus show up reliably on every macOS version",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.14.0",
       "build": 50,
       "date": "2026-11-21",
