@@ -242,7 +242,7 @@ and closed windows reject stale completions.
 
 ## Checks
 
-`scripts/test-space-sharing.sh` covers the upgrade, Links conversion, per-Space
+`SpaceSharingTests` (run by `swift test`) covers the upgrade, Links conversion, per-Space
 Auto-Archive, atomic creation, change sharing, which warning each situation gets,
 unused-Profile reporting and the Note and Easel refusal explained before the warning.
 Space-management/store/inter-Profile components cover title migration, exact

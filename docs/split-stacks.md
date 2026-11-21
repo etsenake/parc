@@ -229,10 +229,8 @@ pins every drop band, corner and four-pane fallback on flat and stacked splits,
 and the original, external and cross-window drop suites commit stack drops. `tests/SplitStackCommandsTests.swift` (windowless, in
 `scripts/test.sh`) checks command enabling against the store's moves, Split
 This Pane's targets, previews and commits, its single-page start of a split,
-and reading order after each. `tests/SidebarRows/split_stack_commands_check.py`
-pins the View command, its shortcut, the shared availability gate, the
-single-page route to Add Split View and the pane menu wiring, and
-`SplitPaneMenuTests` asserts the stacked rows and their artwork. The divider,
+and reading order after each. `SplitPaneMenuTests` asserts the stacked rows
+and their artwork. The divider,
 snap and Favorites tile suites listed in
 [split groups](split-groups.md#source-and-validation) also cover stacked
 dividers and pictures, alongside flat splits unchanged.
