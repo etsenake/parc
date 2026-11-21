@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<dictionary title="Parc">
+  <suite name="Standard Suite" code="core" description="Local browser windows, Spaces and tabs.">
+    <command name="make" code="corecrel" description="Create a normal or incognito window, or a tab with an absolute URL inside a window or Space.">
+      <cocoa class="ParcCreateCommand"/>
+      <parameter name="new" code="kocl" type="type"><cocoa key="ObjectClass"/></parameter>
+      <parameter name="with properties" code="prdt" type="record" optional="yes"><cocoa key="KeyDictionary"/></parameter>
+      <result type="specifier"/>
+    </command>
+    <command name="count" code="corecnte" description="Count objects in a container.">
+      <cocoa class="NSCountCommand"/>
+      <direct-parameter type="specifier"/>
+      <parameter name="each" code="kocl" type="type" optional="yes"><cocoa key="ObjectClass"/></parameter>
+      <result type="integer"/>
+    </command>
+    <command name="close" code="coreclos" description="Close the original tab or window, waiting for its page close approval."><direct-parameter type="specifier"/></command>
+    <command name="select" code="CrSelect" description="Select the original tab in its window."><direct-parameter type="specifier"/></command>
+    <command name="go back" code="CrSuBack" description="Go back in the original live tab, when possible."><direct-parameter type="specifier"/></command>
+    <command name="go forward" code="CrSuFwd " description="Go forward in the original live tab, when possible."><direct-parameter type="specifier"/></command>
+    <command name="reload" code="CrSuRlod" description="Reload the original live tab."><direct-parameter type="specifier"/></command>
+    <command name="stop" code="CrSustop" description="Stop loading the original live tab."><direct-parameter type="specifier"/></command>
+    <command name="execute" code="CrSuExJa" description="Execute JavaScript in the original live tab with this Space's Apple Events permission. Return JSON text.">
+      <direct-parameter type="specifier"/>
+      <parameter name="javascript" code="JvSc" type="text"><cocoa key="javascript"/></parameter>
+      <result type="text"/>
+    </command>
+    <command name="focus" code="SpaFocus" description="Focus a Space in its original window."><direct-parameter type="specifier"/></command>
+    <class name="application" code="capp" description="Parc's local scripting interface.">
+      <cocoa class="NSApplication"/>
+      <element type="window" description="Original normal and incognito browser windows in front-to-back order."><cocoa key="appleScriptWindows"/></element>
+      <property name="name" code="pnam" type="text" access="r"/>
+      <property name="frontmost" code="pisf" type="boolean" access="r"><cocoa key="isActive"/></property>
+      <property name="version" code="vers" type="text" access="r"/>
+    </class>
+    <class name="window" code="WiND" plural="windows" description="An original browser window with a stable normal or incognito owner.">
+      <cocoa class="ParcScriptWindow"/>
+      <element type="tab" access="rw"><cocoa key="appleScriptTabs"/></element>
+      <element type="space" access="r"><cocoa key="appleScriptSpaces"/></element>
+      <property name="id" code="ID  " type="text" access="r"><cocoa key="id"/></property>
+      <property name="name" code="pnam" type="text" access="r"><cocoa key="title"/></property>
+      <property name="index" code="pidx" type="integer" access="r"><cocoa key="orderedIndex"/></property>
+      <property name="closeable" code="hclb" type="boolean" access="r"><cocoa key="hasCloseBox"/></property>
+      <property name="minimizable" code="ismn" type="boolean" access="r"><cocoa key="isMiniaturizable"/></property>
+      <property name="minimized" code="pmnd" type="boolean" access="r"><cocoa key="isMiniaturized"/></property>
+      <property name="resizable" code="prsz" type="boolean" access="r"><cocoa key="isResizable"/></property>
+      <property name="visible" code="pvis" type="boolean" access="r"><cocoa key="isVisible"/></property>
+      <property name="zoomable" code="iszm" type="boolean" access="r"><cocoa key="isZoomable"/></property>
+      <property name="zoomed" code="pzum" type="boolean" access="r"><cocoa key="isZoomed"/></property>
+      <property name="active tab" code="acTa" type="tab" access="r"><cocoa key="activeTab"/></property>
+      <property name="active space" code="acSp" type="space" access="r"><cocoa key="activeSpace"/></property>
+      <property name="incognito" code="inco" type="boolean" description="Private context of the original window; accepted during creation only."><cocoa key="isIncognito"/></property>
+      <property name="mode" code="mode" type="text" description="Normal or incognito; accepted only during creation. The original window cannot change context."><cocoa key="mode"/></property>
+      <responds-to command="close"><cocoa method="close:"/></responds-to>
+    </class>
+    <class name="tab" code="tAbB" plural="tabs" description="An original tab with stable model and Space identity.">
+      <cocoa class="ParcScriptTab"/>
+      <property name="id" code="ID  " type="text" access="r"><cocoa key="id"/></property>
+      <property name="title" code="pnam" type="text" access="r"/>
+      <property name="URL" code="URL " type="text" access="rw" description="The live URL. Assign an absolute URL to navigate the same live page."><cocoa key="URL"/></property>
+      <property name="loading" code="ldng" type="boolean" access="r"/>
+      <property name="location" code="loca" type="text" access="r" description="topApp, pinned or unpinned."/>
+      <responds-to command="execute"><cocoa method="executeJavascript:"/></responds-to>
+      <responds-to command="select"><cocoa method="select:"/></responds-to>
+      <responds-to command="go back"><cocoa method="goBack:"/></responds-to>
+      <responds-to command="go forward"><cocoa method="goForward:"/></responds-to>
+      <responds-to command="reload"><cocoa method="reload:"/></responds-to>
+      <responds-to command="stop"><cocoa method="stopLoading:"/></responds-to>
+      <responds-to command="close"><cocoa method="close:"/></responds-to>
+    </class>
+    <class name="space" code="sPaC" plural="spaces" description="A Space accessed through its original window.">
+      <cocoa class="ParcScriptSpace"/>
+      <property name="id" code="ID  " type="text" access="r"><cocoa key="id"/></property>
+      <property name="title" code="pnam" type="text" access="r"/>
+      <element type="tab" access="rw"><cocoa key="appleScriptTabs"/></element>
+      <responds-to command="focus"><cocoa method="focus:"/></responds-to>
+    </class>
+  </suite>
+</dictionary>

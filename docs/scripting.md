@@ -79,6 +79,6 @@ Existing windows cannot switch browsing context; state and sidebar location are
 read-only. Broader commands, richer errors, exact collection order and window or
 sidebar changes aren't planned, because scripts written for Arc, such as listing
 tabs and focusing a Space by name, already work. The bundled
-`sdef`, `BrowserScripting.swift` and [scripting tests](../tests/Scripting/README.md)
-are the implementation contract. Examples document the interface; current app
+`sdef`, `BrowserScripting.swift` and the `BrowserScriptingTests`, `ScriptingDictionaryTests`
+and `ScriptTabListingTests` package suites are the implementation contract. Examples document the interface; current app
 launch restrictions still apply and are not overridden by this guide.

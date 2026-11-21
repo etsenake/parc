@@ -3,7 +3,7 @@ import Testing
 @testable import Parc
 
 struct BrowserScriptingTests {
-    @MainActor private final class Owner: BrowserScriptOwner {
+    @MainActor final class Owner: BrowserScriptOwner {
         let scriptingID = UUID()
         var scriptingAvailable = true
         var scriptingIsIncognito = false
@@ -59,7 +59,7 @@ struct BrowserScriptingTests {
             if let immediateClose { completion(immediateClose) } else { closeCallback = completion }
         }
     }
-    private final class ObservedCommand: NSScriptCommand {
+    final class ObservedCommand: NSScriptCommand {
         var suspensions = 0, resumptions = 0
         var result: Any?
         var parameters: [String: Any]?
