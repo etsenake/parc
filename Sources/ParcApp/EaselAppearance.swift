@@ -69,7 +69,7 @@ enum EaselInk {
             guard isAdaptive(shown) else { return }
             result.addAttribute(.foregroundColor, value: shown, range: range)
         }
-        return result
+        return EaselTextHighlight.adapting(result)
     }
 }
 

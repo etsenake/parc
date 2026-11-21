@@ -414,6 +414,15 @@ final class EaselStyledTextView: LocalContentDropTextView {
     private var editRevision = UUID()
     private var suppressMarkdown = false
     var onAlign: ((EaselTextStyle.Alignment) -> Void)?
+    var onRepeatLastTint: (() -> Bool)?
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.type == .keyDown, isEditable, !hasMarkedText(), selectedRanges.count == 1, window?.firstResponder === self else {
+            return super.performKeyEquivalent(with: event)
+        }
+        if NoteFormatShortcut.lastColor.matches(event) { return onRepeatLastTint?() ?? false }
+        if NoteFormatShortcut.code.matches(event) { toggleInlineCode(); return true }
+        return super.performKeyEquivalent(with: event)
+    }
     override func alignLeft(_ sender: Any?) { if let onAlign { onAlign(.left) } else { super.alignLeft(sender) } }
     override func alignCenter(_ sender: Any?) { if let onAlign { onAlign(.center) } else { super.alignCenter(sender) } }
     override func alignRight(_ sender: Any?) { if let onAlign { onAlign(.right) } else { super.alignRight(sender) } }

@@ -36,13 +36,13 @@ enum EaselToolbarSubject: String, CaseIterable, Equatable {
 enum EaselToolbarControl: String, CaseIterable, Hashable {
     case unlock, sectionTitle, shape, connectorLabel
     case typeface, textSize, smaller, larger
-    case bold, italic, underline, strikethrough, paragraph
-    case color, textFill, startHead, endHead, routing
+    case bold, italic, underline, strikethrough, code, equation, paragraph
+    case color, highlight, textFill, startHead, endHead, routing
     case stickyShape, pattern
     case crop, imageMask, replaceImage, altText
     case mergeCells, cellFill
     case codeLanguage
-    case alignment, link
+    case alignment, link, mention
     case arrange, tidyUp, group, createSection, lock
     case more
 }
@@ -70,20 +70,21 @@ enum EaselSelectionToolbarPlan {
     }
 
     private static let emphasis: [EaselToolbarControl] = [.bold, .italic, .underline, .strikethrough]
+    private static let marks: [EaselToolbarControl] = emphasis + [.code, .equation]
 
     static func controls(for subject: EaselToolbarSubject, editingText: Bool) -> [[EaselToolbarControl]] {
         switch subject {
         case .text:
             return editingText
-                ? [[.typeface, .textSize, .smaller, .larger], emphasis, [.paragraph], [.color, .textFill], [.alignment], [.link]]
+                ? [[.typeface, .textSize, .smaller, .larger], marks, [.paragraph], [.color, .highlight, .textFill], [.alignment], [.link, .mention]]
                 : [[.typeface, .textSize, .smaller, .larger], [.color, .textFill], [.alignment], [.link]]
         case .sticky:
             return editingText
-                ? [[.color], emphasis, [.paragraph], [.alignment], [.link]]
+                ? [[.color, .highlight], marks, [.paragraph], [.alignment], [.link, .mention]]
                 : [[.color], [.alignment], [.link], [.stickyShape]]
         case .shape:
             return editingText
-                ? [[.color], emphasis, [.paragraph], [.alignment], [.link]]
+                ? [[.color, .highlight], marks, [.paragraph], [.alignment], [.link, .mention]]
                 : [[.shape], [.color], [.alignment], [.link]]
         case .connector:
             return editingText ? [[.bold, .strikethrough]] : [[.connectorLabel], [.color], [.startHead, .endHead], [.routing]]

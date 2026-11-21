@@ -118,6 +118,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
+  "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
+  "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
@@ -135,6 +137,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
+  "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
+  "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
@@ -174,6 +178,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
+  "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
+  "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
@@ -216,6 +222,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
+  "$repo_root/Sources/ParcApp/EaselTextHighlight.swift" \
+  "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \

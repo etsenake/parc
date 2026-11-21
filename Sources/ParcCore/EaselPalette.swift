@@ -158,7 +158,24 @@ enum EaselPalette {
                 result += "--easel-" + role.rawValue + "-" + color.id + ":" + resolve(hex, role: role, dark: dark) + ";"
             }
         }
+        for color in NoteColor.allCases { result += "--easel-mark-" + color.rawValue + ":" + mark(color, dark: dark) + ";" }
         return result
+    }
+
+    static let markAlpha: (light: Int, dark: Int) = (41, 66)
+
+    static func mark(_ color: NoteColor, dark: Bool) -> String {
+        let entry = pair(color, role: .highlight)
+        return (dark ? entry.dark : entry.light) + String(format: "%02X", dark ? markAlpha.dark : markAlpha.light)
+    }
+
+    static func markColor(for hex: String) -> NoteColor? {
+        let value = hex.uppercased()
+        return NoteColor.allCases.first { mark($0, dark: false) == value }
+    }
+
+    static func markVariable(for hex: String) -> String? {
+        markColor(for: hex).map { "--easel-mark-" + $0.rawValue }
     }
 }
 

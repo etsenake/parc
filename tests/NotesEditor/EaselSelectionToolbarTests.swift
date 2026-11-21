@@ -59,12 +59,15 @@ struct EaselSelectionToolbarTests {
     static func textEditing() {
         let editing = plan([.text], editing: true).joined()
         expect([.bold, .italic, .underline, .strikethrough, .paragraph, .link, .textFill].allSatisfy(editing.contains), "Editing adds emphasis, paragraph and link controls")
+        expect([.highlight, .code, .equation, .mention].allSatisfy(editing.contains), "Editing text adds the note format bar's highlight, code, equation and mention")
+        expect(!plan([.text]).joined().contains(.highlight) && !plan([.table], editing: true).joined().contains(.highlight),
+               "Highlight and code belong to text being edited, not whole objects or table cells")
         expect(editing.contains(.smaller) && editing.contains(.larger), "Editing keeps the quick size steps beside the size menu")
         expect(!plan([.text, .text], editing: true).joined().contains(.bold), "Several text objects never show range controls")
         for kind in [EaselItemKind.sticky, .rectangle] {
             let words = plan([kind], editing: true)
-            expect(words == [[.color], [.bold, .italic, .underline, .strikethrough], [.paragraph], [.alignment], [.link], [.more]],
-                   "Typing in a sticky or shape swaps object tools for colour, emphasis, lists, alignment and a link")
+            expect(words == [[.color, .highlight], [.bold, .italic, .underline, .strikethrough, .code, .equation], [.paragraph], [.alignment], [.link, .mention], [.more]],
+                   "Typing in a sticky or shape swaps object tools for colour, highlight, marks, turn into, alignment, a link and a mention")
         }
         expect(plan([.arrow], editing: true) == [[.bold, .strikethrough], [.more]], "A connector label only takes bold and strikethrough")
     }

@@ -13,6 +13,15 @@ struct EaselVectorTextRun: Equatable {
     var strikethrough = false
     var link: String?
     var syntax: String?
+    var mark: EaselVectorMark?
+}
+
+struct EaselVectorMark: Equatable {
+    var x: Double
+    var y: Double
+    var width: Double
+    var height: Double
+    var color: String
 }
 
 struct EaselVectorText: Equatable {
@@ -316,9 +325,17 @@ enum EaselVectorExport {
         style += ";fill:" + (run.color.map(paint) ?? "var(--easel-ink)")
         let decorations = [run.underline ? "underline" : nil, run.strikethrough ? "line-through" : nil].compactMap { $0 }
         if !decorations.isEmpty { style += ";text-decoration:" + decorations.joined(separator: " ") }
-        let body = "<text x=\"" + number(run.x) + "\" y=\"" + number(run.y) + "\" xml:space=\"preserve\" style=\"" + escape(style) + "\">"
+        let body = markRect(run.mark) + "<text x=\"" + number(run.x) + "\" y=\"" + number(run.y) + "\" xml:space=\"preserve\" style=\"" + escape(style) + "\">"
             + escape(run.text) + "</text>"
         return linked(body, run.link)
+    }
+
+    static func markRect(_ mark: EaselVectorMark?) -> String {
+        guard let mark, mark.width > 0, mark.height > 0, mark.color.range(of: "^#[0-9A-Fa-f]{8}$", options: .regularExpression) != nil else { return "" }
+        let value = mark.color.uppercased()
+        let fill = EaselPalette.markVariable(for: value).map { "var(" + $0 + "," + value + ")" } ?? value
+        return "<rect x=\"" + number(mark.x) + "\" y=\"" + number(mark.y) + "\" width=\"" + number(mark.width) + "\" height=\""
+            + number(mark.height) + "\" rx=\"3\" ry=\"3\" style=\"fill:" + fill + "\"/>"
     }
 
     static func css(_ palette: EaselVectorPalette) -> String {

@@ -72,7 +72,7 @@ enum EaselRichTextCodec {
                     }
                     a.image = try EaselTextAttachments.source(attachment)
                 }
-                a.background = try (attrs[.backgroundColor] as? NSColor).map(hex)
+                a.background = try (attrs[.backgroundColor] as? NSColor).map { try EaselTextHighlight.stored($0) ?? hex($0) }
                 a.underlineColor = try (attrs[.underlineColor] as? NSColor).map(hex)
                 a.strikeColor = try (attrs[.strikethroughColor] as? NSColor).map(hex)
                 a.underline = (attrs[.underlineStyle] as? NSNumber)?.intValue ?? 0
