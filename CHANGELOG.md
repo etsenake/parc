@@ -1,5 +1,63 @@
 # Changelog
 
+## 2.14.0 (2026-11-21)
+
+### New
+
+- **notes:** Web links in notes open in a Peek, following your Settings → Links choices for other-site links and Shift-click
+- **notes:** Captures can be sent to a new or recent note, landing as an image that remembers its page for Make Live
+- **notes:** Put an Easel in a note with /easel or a pasted Easel link, and edit its live canvas right there at the width and height you drag
+- **notes:** Put an Easel in a note with /easel or a pasted Easel link, and edit its live canvas right there at the width and height you drag
+- **notes:** Captured images in notes show their page with a Snapshot label, and Make live shows the same region from the live page with Back to snapshot
+- **notes:** Tab hops right over an Easel in a note until you click into it, so the keyboard never gets lost on the canvas
+- **sidebar:** Hovering a note or Easel tab shows a preview card with a picture of the page or canvas, Copy Link and Open in Split View
+- **notes:** Drag an Easel from the sidebar onto a note's text and it lands as an Easel block right where the drop line shows
+- **easels:** Turn an Easel into vector SVG and a self-contained HTML page with its fonts, images, links and both light and dark ink
+- **easels:** Give Easels the Notes page menu with Copy Link, Copy as Image, Image, HTML and PDF export, Show in Library, Duplicate and Delete
+- **notes:** Webpages and live captures on an Easel inside a note are real live pages now, with Make live and Back to snapshot right there
+- **capture:** The capture palette tidies up into a Notes-style menu with Easel and Note submenus, one highlight and search that finds every action and document
+- **capture:** Capture mode gets a bar with Element, Region, Visible Area and Full Page a click or a letter away, plus a size readout and an accent outline, so Visible Area stops playing hide-and-seek
+- **capture:** Frame in Portrait Mode opens right inside the capture palette, with picture tiles, a big live preview on the capture itself and an Apply button that only lights up when there's something to apply
+
+### Fixed
+
+- **notes:** Printing a note no longer crashes, and prints the same pages Export to PDF makes
+- **notes:** Adding a PDF to a note no longer crashes Parc
+- **notes:** Note previews show spaces, ampersands and other characters instead of codes like &#32;
+- **notes:** Pasting into a block's link field fills the field, pasted image, video and audio links can become media blocks, and pasting a link onto an empty media block fills it
+- **notes:** YouTube and other player embeds in notes play instead of showing Error 153
+- **notes:** A link copied from any app or web page pastes as a link, not plain text
+- **notes:** Bookmarks stop refetching in a loop, web videos and sounds that fail to load offer Try again, and empty media blocks take dropped links and images
+- **notes:** Deleting a property while its value is being typed no longer beeps or writes that text into another property
+- **notes:** Images dragged from a web page into a note land as images instead of links
+- **notes:** Return in a property's menu now does the row picked with the arrow keys, such as Delete Property or a type
+- **split:** New notes and Easels, and notes or Easels opened from a split pane's address bar, now open in that pane instead of a new tab
+- **notes:** Note previews skip synced-block markers and other hidden comments and show the note's words
+- **notes:** Notes without their own icon show the Library's note mark in the sidebar, tab switcher, command bar and note links
+- **notes:** The @, slash, [[ and emoji menus come back when you edit after the trigger again, such as backspacing to a bare @, while Escape keeps them closed for that trigger
+- **notes:** Reminders play the notification sound when they go off
+- **notes:** Date and reminder suggestions show their weekday and date, times without am or pm offer both readings, and passed reminders say Already passed
+- **notes:** Markdown exports and Copy as Markdown write plain, portable Markdown, with synced blocks as their content and no hidden Parc markup
+- **easels:** Drawing in an Easel no longer crashes Parc when you finish a stroke
+- **easels:** Easels opened in a split pane showing a page sit on top of it like notes, so Back returns to the page as it was and Forward to the Easel
+- **notes:** The date picker's reminder line and reminder notifications name days by weekday and date, and notifications say Today or Tomorrow as of when they ring
+- **easels:** Easels wear the Notes look, with the Space theme behind Notes paper and ink, text, selection and controls that stay readable in dark mode
+- **easels:** Easel web items wear the Notes embed header, with a clear Snapshot or Live label, a Make live button that is always there for captured regions, and Back to snapshot
+- **navigation:** Notes and Easels opened over a page stack like web history, so Back walks through every one to the page and Forward retraces them
+- **capture:** Selecting a capture region at the window's edges no longer moves the window, and the hidden sidebar stays put while capturing
+- **easels:** Live element captures show just the captured element, never the whole page, and go back to the snapshot with a clear note when the page can't line up
+- **easels:** Easels without their own icon show the Library's Easel mark in the sidebar, tab switcher, command bar, history and note blocks
+- **easels:** Easel text with damaged font settings no longer crashes Parc when it is shown
+- **easels:** One damaged Easel file no longer hides every other Easel from the Library, pickers and command bar
+- **easels:** Easels with repeated object IDs open with those objects re-IDed, and the canvas, live pages and drag guides no longer crash on them
+- **easels:** Live captures from sites that scroll inside a panel now scroll that panel back into place too, instead of giving up and staying a snapshot
+- **notes:** Live captures in notes line up regions from sites that scroll inside a panel, just like Easels do
+- **easels:** Show in Library on an Easel or note now opens Easels & Notes with that card selected, scrolled into view and searched clear
+- **capture:** The Portrait Frame page answers Return from its color slider, keeps Cancel and Apply in view in narrow split panes and says Back like every other back button
+- **capture:** The capture palette opens with Save to Library highlighted again, so one Return right after a capture saves it
+- **navigation:** Pages you open after a note or Easel now join the same history, so Back and Forward weave through pages and documents in the order you went
+- **notes:** Closing note Find, media zoom or the PDF viewer only hands focus back to a view that is still visible in that window
+
 ## 2.13.0 (2026-11-20)
 
 ### New
