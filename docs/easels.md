@@ -19,11 +19,24 @@ Saves refuse a document with duplicate object IDs. A file that already has
 them opens with the later copies given new IDs, and an unreadable file is left
 out of Easel lists rather than hiding every other Easel.
 
-An Easel's icon is the Library card's Easel mark, light or dark with the
-appearance, drawn from the same `DocumentDefaultIcon` as the note mark: sidebar
-rows, Favorites, the folded Pinned peek, folders, the tab switcher, command bar
-rows and New Easel, history menus and swipes, and Easel blocks, pickers and
-paste choices in notes.
+An Easel has a page icon like a note: hover its title row for Add icon (a
+random emoji) or click the icon to open the Notes icon picker, with its emoji,
+custom emoji and Upload tabs and Remove. The icon sits before the title; a change
+or removal is one undo step. It is saved on the Easel as an emoji, a custom emoji
+name from the Profile's notes folder, or a small PNG kept as an Easel asset
+(uploads and links are scaled to 280 px, and a linked image is downloaded so the
+Easel stays self-contained). Easels without an icon are unchanged on disk.
+
+The icon replaces the Easel mark everywhere the Easel shows, from the same shared
+source notes use (`EaselTabIcons`, read through `NoteTabIconArt`, with the same
+rounded thumbnail for images): sidebar rows, Favorites, the folded Pinned peek,
+folders, the tab switcher, command bar rows, history menus and swipes, Easel
+blocks, pickers and paste choices in notes, and the capture palette. Library
+cards show an emoji icon, as note cards do. Without an icon the Library card's
+Easel mark stays, light or dark with the appearance, drawn from the same
+`DocumentDefaultIcon` as the note mark; New Easel keeps the mark. Open windows
+update as soon as the icon changes, including through undo, and a custom emoji
+that is renamed away or deleted falls back to the mark.
 
 ## Object-wide text styles
 
@@ -372,6 +385,9 @@ An Easel with more than one page keeps a `pages` list (`id`, `name`) on the
 document and a `page` ID on each object; both stay out of the file until a
 second page exists, and an object without one belongs to the first page
 ([pages](easel-pages.md#saved-format)).
+The page icon is an optional document `icon` with a `kind` (`emoji`, `custom` or `image`)
+and a `value` (the emoji, the custom emoji name, or a PNG asset ID); it stays out of
+the file while there is none, and a damaged icon rejects the file.
 Validation refuses each field on objects it doesn't belong
 to, so a malformed file is rejected whole rather than half drawn.
 
