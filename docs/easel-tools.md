@@ -1,7 +1,7 @@
 # Easel tools and navigation
 
 An Easel works like a whiteboard: pick a tool, then click or drag on the
-canvas. The toolbar under the title, single-letter keys, panning and zooming all
+canvas. The tool bar floating at the bottom, single-letter keys, panning and zooming all
 share one tool model, so a key, a toolbar click and a VoiceOver action always
 reach the same place. The canvas's look lives in [appearance](easel-appearance.md),
 editing and data safety in [Easels](easels.md), and pinch feedback in
@@ -9,8 +9,10 @@ editing and data safety in [Easels](easels.md), and pinch feedback in
 
 ## The toolbar
 
-The toolbar is a Notes format-bar card centred under the title. Its slots come
-in this order, with a hairline between groups:
+The tool bar is a Notes floating card centred at the bottom of the Easel, 16
+points above the bottom edge, with the house floating-panel shadow. The canvas
+runs full height beneath it. Its slots come in this order, with a hairline
+between groups:
 
 | Group | Slots |
 | --- | --- |
@@ -23,16 +25,22 @@ in this order, with a hairline between groups:
 A slot whose tool isn't ready yet stays off the toolbar and its key does
 nothing, so the bar never shows a button that can't do its job. Each tool
 reports that through `EaselTool.isAvailable` (templates appear when a templates owner sets the toolbar's hook). Buttons use the Notes states:
-secondary ink at rest, hover and pressed washes, and the checked fill for the
-current tool or an open picker. Every button shows the pointing hand, and its
-tooltip shows the name and key, such as “Sticky note S”.
+secondary ink at rest and hover and pressed washes. One checked pill marks the
+current tool (a variant button carries it for its variants) and slides to the
+next tool; a button whose menu is open shows its own checked fill. Every button
+shows the pointing hand, and its tooltip sits above the bar with the name and
+key, such as “Sticky note S”. VoiceOver reads the current tool as on.
 
 Variant buttons (shapes, connectors, draw) carry a small chevron. A click picks
 the variant used last; clicking the current tool again, or its chevron, opens
-a Notes menu of variants with their keys. VoiceOver's Show Menu opens it too.
-With Full Keyboard Access on, Tab reaches each button and Space presses it.
-The toolbar scrolls sideways when the window is narrower than it. Undo, Redo
-and Easel Options stay on the title row.
+a Notes menu of variants with their keys, opening upward from the bar, like the
+zoom menu. VoiceOver's Show Menu opens it too. With Full Keyboard Access on,
+Tab reaches each button and Space presses it. The bar stays inside 12-point
+side margins and scrolls sideways when the window is narrower than it; picking
+a tool by key scrolls that tool into view. Wheel and trackpad scrolling over
+the bar still scroll the board (sideways swipes scroll the bar when it
+overflows). The title row keeps the title, save status, page switcher, timer,
+Undo, Redo and Easel Options.
 
 ## Placing objects
 
@@ -44,8 +52,8 @@ centre. With Text, a click starts text that widens as you type and a drag sets
 the width it wraps at; with Table, a drag picks rows and columns over a live
 grid and a click drops a 3 × 3 table; a code block lands where you click,
 ready to type. Stickies aren't drag-sized, so a sticky drag drops it where the
-pointer is released. Dragging a button from the toolbar onto the canvas drops
-that object there.
+pointer is released. Dragging a button from the tool bar onto the canvas drops
+that object there; letting go over the bar itself, or under it, drops nothing.
 
 Connectors need a drag from start to end (a click alone draws nothing); Shift
 snaps the line to 45° steps. Straight connectors save no routing, elbow and
@@ -53,7 +61,8 @@ curved ones save theirs. Ends are free for now: the canvas asks
 `connectorEnd(near:excluding:)` for each end, which is where snapping to
 shapes plugs in.
 
-Return places the armed object at the centre of the view, so tools work from
+Return places the armed object at the centre of the uncovered view (above the
+bar), so tools work from
 the keyboard and VoiceOver as well as the pointer. Each placement is one Undo
 step and selects the new object; new text starts editing straight away.
 
@@ -102,7 +111,7 @@ layouts stays the Help search.
 
 ## Quick actions
 
-⌘/ opens a search card under the toolbar, styled like the Notes slash menu.
+⌘/ opens a search card above the tool bar, styled like the Notes slash menu.
 Type what you want by name, such as sticky, ellipse, connector, pen or zoom,
 and press Return or click it. Objects arm their tool, so the ghost follows the
 pointer and a click (or Return) drops one; tools switch; Add image, link and
@@ -124,7 +133,7 @@ even if ⌘ goes down before it ends. Zoom in and Zoom out step
 through 25, 33, 50, 75, 100, 150, 200, 300 and 400% within the Easel's range
 (33–400%; the capture editor also reaches below 25% by halving). Zoom to fit
 shows every object and Zoom to selection the selected ones, each with a
-48-point margin. The right-click menu offers Zoom to selection on objects and
+48-point margin, centred in the part of the view above the tool bar. The right-click menu offers Zoom to selection on objects and
 Zoom to fit on the empty canvas.
 
 The zoom button shows the current percentage and opens a Notes menu with a
@@ -134,10 +143,13 @@ glides for a quarter second, eases out and is instant under Reduce Motion; a
 pinch or click stops it. Zoom never saves into the document and plays no
 haptics; the pinch's 100% pulse is unchanged.
 
-A Recenter chip appears at the bottom of the canvas once nothing in the Easel
-is anywhere near the view, and zooms back to fit everything (never past 100%).
-An Easel that opens with content beyond the window starts zoomed to fit,
-capped at 100%; smaller Easels open at 100% from the top left as before.
+The band under the bar counts as covered: the canvas gets a matching bottom
+inset (`setCoveredBottom`), so scrolling to the end and revealing an object
+stop above the bar, and the one-time quick-create tip floats just above it. A
+Recenter chip floats just above the bar once nothing in the Easel is anywhere
+near the uncovered view, and zooms back to fit everything (never past 100%).
+An Easel that opens with content beyond the uncovered view starts zoomed to
+fit, capped at 100%; smaller Easels open at 100% from the top left as before.
 
 ## Cursors
 
@@ -150,8 +162,9 @@ endpoint cursors appear only with Select.
 
 `Sources/ParcCore/EaselTool.swift` holds the tools, keys, placement geometry
 and zoom maths; `EaselCanvasView+Tools.swift` the canvas gestures, panning,
-zooming, ghost and cursors; `EaselToolPalette.swift` the toolbar and its menus;
-`EaselQuickActions.swift` the ⌘/ card. Objects with their own insert code
+zooming, ghost and cursors; `EaselToolPalette.swift` the tool bar and its menus;
+`EaselQuickActions.swift` the ⌘/ card; `Sources/ParcCore/EaselFloatingBar.swift`
+the bar frame, covered inset, Recenter spot and tool flourishes. Objects with their own insert code
 (stickies, sections, shapes, text, tables, code blocks) plug into the
 `ownerPlacement` switch, one line per tool, and everything else uses the
 generic placement.
@@ -161,4 +174,6 @@ Space panning and the zoom keys work there too.
 
 `scripts/test-notes-editor.sh EaselToolTests` checks every key, layout
 fallbacks, tool behaviour, placement and connector geometry, zoom steps,
-fitting, the wheel limits and ⌘-scroll glide routing without opening a window.
+fitting, the wheel limits and ⌘-scroll glide routing without opening a window;
+`scripts/test-notes-editor.sh EaselFloatingBarTests` checks the bar layout,
+covered inset, fit centring and flourish curves.

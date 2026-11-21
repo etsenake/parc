@@ -81,14 +81,14 @@ change as one Undo step, and a closed or deleted Easel refuses them. The
 original text storage, glyph layout, fill contour, typing history and document
 transactions remain the only text owners.
 
-The tool palette under the title is the Notes format bar: a 36-point Notes menu
+The floating tool bar is the Notes format bar: a 36-point Notes menu
 card with its hairline and shadow, holding 28-point Notes toolbar buttons
 grouped as navigation, objects, tools, inserts and zoom, with hairline dividers
 between groups ([tools and navigation](easel-tools.md) lists the slots). Buttons
 use the Notes button states: secondary ink at rest, hover and pressed washes,
-and the checked fill and ink for the current tool or an open picker; variant
+a sliding checked pill and checked ink for the current tool, the checked fill for an open picker; variant
 buttons carry the Notes disclosure chevron, and the zoom slot shows its
-percentage in the Notes chrome font. It sits centered under the title, which is
+percentage in the Notes chrome font. It floats centred at the bottom of the Easel. The title is
 Nunito ExtraBold in the Notes title ink over a caption-style status line. Undo
 and redo are 28-point Notes chrome buttons on the title row, with Parc
 tooltips showing ⌘Z and ⇧⌘Z as keycaps; shape picker cells, its pin, template

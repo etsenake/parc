@@ -102,6 +102,23 @@ turning on settles every transition at once, removes fading layers and lets the
 display link rebind to the next window. Under Reduce Motion pops and glides become short
 fades in place, deletes fade without shrinking and layer moves don't animate.
 
+## Tool bar
+
+The floating tool bar rises 12 points and fades in on the Notes open spring the
+first time an Easel view appears. The current-tool pill slides between buttons
+on the pill spring. A hovered button lifts its glyph 1.5 points on the
+highlight spring, and the Notes press squish stays. Arming a tool by click, key
+or quick action plays a short flourish on its glyph: the sticky hops, the
+marker, highlighter and washi tape tilt and swing back, the eraser wiggles, the
+stamp squashes then pops, shapes, connectors, text, sections, tables and code
+blocks pop, and the hand opens; Select has none. Flourishes are kicked-spring
+keyframes from `EaselToolFlourish` (0.36–0.42 seconds, starting and ending at
+rest). While any drag, draw, marquee or resize passes under the bar it fades
+to 35% so the board shows through, and returns when the pointer leaves the bar
+or the button comes up. The Recenter chip pops in from 90% on the pop spring
+and fades out. Under Reduce Motion the bar only fades in, the pill and chip
+fade in place, and lifts and flourishes don't play; turning it on settles them.
+
 ## Checks
 
 `scripts/test-easel-motion.sh` covers both threshold directions, inclusive
@@ -109,7 +126,8 @@ initial-band silence, repeated crossings, invalid samples, native magnification
 notifications, source replacement and immediate visibility reversal. Feedback
 is injected, so the component does not emit physical haptics. The windowless
 `EaselObjectMotionTests` suite covers pop, fade, glide, lift and Reduce Motion
-curves, chained glides, ghost bookkeeping and the document diffs. Shared capture
+curves, chained glides, ghost bookkeeping and the document diffs, and
+`EaselFloatingBarTests` the tool bar flourishes. Shared capture
 checks protect original pixels and independent in-memory history. The Easel
 canvas suite zooms a real canvas in its scroll view 3,000 times while resizing
 from every bounds change and requires each step to settle.
