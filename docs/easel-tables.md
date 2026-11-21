@@ -78,10 +78,10 @@ delete some; a row you made taller by hand keeps its height.
 Right-clicking a cell outside the current selection selects that cell first,
 the way spreadsheets do. The context menu on a selected table offers Insert
 Row Above and Below, Insert Column Left and Right, Duplicate Row or Column
-(with whole rows or columns selected), Merge Cells or Unmerge Cells, Clear
-Contents, Color, Delete Row or Column, Export Table as CSV… and Convert to
-Stickies. New rows and columns copy a colour only when every cell in that
-column or row already shares it, as in Notes.
+(with whole rows or columns selected; Command-D does the same), Merge Cells
+or Unmerge Cells, Clear Contents, Color, Delete Row or Column, Export Table as
+CSV… and Convert to Stickies. New rows and columns copy a colour only when
+every cell in that column or row already shares it, as in Notes.
 
 Tables hold up to 100 columns, 100 rows and 10,000 cells in all; the add
 controls beep once a table is full.

@@ -187,7 +187,9 @@ extension EaselCanvasView {
         let ready = canFinishEditingForTransfer
         let applies = ready && EaselChords.applies(command, selection: selection, in: document)
         switch command {
-        case .duplicate: return claim(applies) { duplicateSelection() }
+        case .duplicate:
+            if ready, duplicateTableRowsOrColumns() { return true }
+            return claim(applies) { duplicateSelection() }
         case .group: return claim(applies) { groupSelection() }
         case .ungroup: return claim(applies) { ungroupSelection() }
         case .unwrap:
