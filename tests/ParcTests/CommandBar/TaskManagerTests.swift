@@ -45,13 +45,12 @@ struct TaskManagerTests {
 
         func bar() throws -> CommandBar {
             let defaults = try #require(UserDefaults(suiteName: defaultsName))
-            let command = CommandBarTypedCommand(kind: .openTaskManager)
             let bar = CommandBar(parent: window, tabs: [], history: [], currentURL: nil, profilePath: "", page: nil,
                                  initialEdit: ("task manager", NSRange(location: 12, length: 0)), shortcuts: registry,
                                  privacyDefaults: defaults, makeOmnibox: { _, _, _ in nil }, loadFavicon: { _, _, _ in })
-            bar.canPerformTypedCommand = { [target] in $0 == command && target.route != nil }
+            bar.canPerformTypedCommand = { [target] in $0.kind == .openTaskManager && target.route != nil }
             bar.onPerformTypedCommand = { [target] _ in target.openTaskManager(nil) }
-            bar.updateTypedCommands([command])
+            bar.updateTypedCommands(CommandBarTypedCommand.windowTools)
             return bar
         }
     }

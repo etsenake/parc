@@ -109,3 +109,55 @@ struct ScopeMenuTests {
         #expect(CommandBarScopeKeyboard.matchesPasswords(query: query) == matches)
     }
 }
+
+extension ScopeMenuTests {
+    @Test(arguments: [
+        (NSEvent.EventType.keyDown, " ", NSEvent.ModifierFlags(), true),
+        (.keyDown, " ", NSEvent.ModifierFlags.shift, true),
+        (.keyDown, "v", NSEvent.ModifierFlags.command, false),
+        (.keyDown, "z", NSEvent.ModifierFlags.command, false),
+        (.keyDown, " ", NSEvent.ModifierFlags.control, false),
+        (.keyDown, "\u{a0}", NSEvent.ModifierFlags.option, false),
+        (.keyUp, " ", NSEvent.ModifierFlags(), false),
+    ])
+    @MainActor func theScopeTriggerRequiresATypedSpace(type: NSEvent.EventType, text: String,
+                                                       flags: NSEvent.ModifierFlags, expected: Bool) {
+        let event = CommandBarTestSupport.keyEvent(49, flags, characters: text, type: type)
+        #expect(CommandBarScopeKeyboard.isTypedSpace(event) == expected)
+    }
+
+    @Test @MainActor func changingTheScopeRestoresItsOwnAccessibilityHelp() {
+        let pill = CommandBarScopePill()
+        pill.showExtension(name: "Extension Finder")
+        #expect(pill.accessibilityHelp()?.contains("this extension") == true)
+        pill.showActions()
+        #expect(pill.accessibilityHelp()?.contains("Search commands") == true)
+    }
+
+    @Test @MainActor func deletingTheQueryInActionsUsesNativeEditing() {
+        let editor = NSTextView(frame: .zero)
+        editor.string = "query"
+        editor.setSelectedRange(NSRange(location: 0, length: 5))
+        editor.deleteBackward(nil)
+        #expect(editor.string.isEmpty)
+        #expect(CommandBarScopeKeyboard.tab(query: editor.string, scope: .actions) == .leaveScope)
+    }
+}
+
+extension ScopeMenuTests {
+    @Test(arguments: [false, true])
+    @MainActor func pointerAndAccessibilityPressesBothOpenTheOriginalSiteMenu(accessibility: Bool) {
+        let pill = CommandBarScopePill()
+        pill.showSite(name: "Wikipedia", unavailable: false)
+        var presses = 0
+        pill.onOpen = { presses += 1 }
+        if accessibility { #expect(pill.accessibilityPerformPress()) }
+        else { pill.performClick(nil) }
+        #expect(presses == 1)
+        #expect(pill.accessibilityHelp()?.contains("site search menu") == true)
+    }
+
+    @Test func aMissingEventIsNotAnExplicitSpaceKeystroke() {
+        #expect(!CommandBarScopeKeyboard.isTypedSpace(nil))
+    }
+}

@@ -138,3 +138,45 @@ struct CompactLayoutTests {
         #expect(input.frame.maxX == noReserve.maxX - scroll.scrollerReserve)
     }
 }
+
+extension CompactLayoutTests {
+    @Test @MainActor func theKeyboardAddressCommandHasNoCompactEditorAnchor() {
+        #expect(CommandBarAddressSource.keyboard.anchor == nil)
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func pressingAddressChromeProvidesThatControlsAnchor(popup: Bool) throws {
+        _ = NSApplication.shared
+        let sidebar = SidebarView(frame: .zero)
+        let popupChrome = PopupChromeView(frame: .zero)
+        var anchors: [NSView] = []
+        let focus: (CommandBarAddressSource) -> Void = { source in
+            if let anchor = source.anchor { anchors.append(anchor) }
+        }
+        CommandBarAddressSource.connect(sidebar, focus: focus)
+        CommandBarAddressSource.connect(popupChrome, focus: focus)
+        let expected = popup ? popupChrome.addressAnchor : sidebar.addressEditorAnchor
+        let button = try #require(expected as? ActionButton)
+        let press = try #require(button.actionBlock)
+        press()
+        #expect(anchors == [expected])
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func aClickSelectsThePaneUsedByAddressEditing(clickTrailing: Bool) throws {
+        let window = CommandBarTestSupport.borderlessWindow(width: 600)
+        let content = try #require(window.contentView)
+        let leading = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 250))
+        let trailing = NSView(frame: NSRect(x: 300, y: 0, width: 280, height: 250))
+        content.addSubview(leading)
+        content.addSubview(trailing)
+        let first = UUID(), second = UUID()
+        let clicked = clickTrailing ? trailing : leading
+        let point = clicked.convert(NSPoint(x: 40, y: 40), to: nil)
+        var focused: UUID? = clickTrailing ? first : second
+        WindowPaneFocus.visitHits(at: point, panes: [first: leading, second: trailing],
+                                  isRendered: { $0 == first || $0 == second }) { focused = $0 }
+        let target = WindowPaneFocus.currentTab(fullscreen: nil, focused: focused, selection: [first, second])
+        #expect(target == (clickTrailing ? second : first))
+    }
+}
