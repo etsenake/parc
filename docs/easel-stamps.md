@@ -56,7 +56,9 @@ commit.
 ## Faces and saving
 
 Designs save as `stamp`, emoji as `text`, and icons as `text` with an `icon:`
-prefix plus a `color`. Emoji go through `EaselStampFace(emoji:)`, which accepts
+prefix plus a `color`. Icons recolour like any other object, from the
+selection toolbar's style button or the right-click colours, palette colours
+included, and export that colour (palette ones follow light and dark). Emoji go through `EaselStampFace(emoji:)`, which accepts
 exactly one emoji, either one that looks like emoji by default or one followed
 by the emoji selector (U+FE0F). It adds the selector to bare text-style forms
 such as ❤ and refuses anything else, so a bad pick never reaches the document

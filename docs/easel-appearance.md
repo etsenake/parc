@@ -50,7 +50,8 @@ range. Shapes lead with the shape picker (all 32 shapes, the current one
 checked), stickies offer wide or square, connectors offer a label, start and
 end heads with Swap Ends, and straight, elbow or curved routing with Reset
 Path. Sections get Rename, images crop, mask, replace and alt text, washi tape
-its pattern, code blocks their language, and tables typeface, size, bold,
+its pattern, icon stamps the style button (emoji and built-in stamps keep
+their own colours), code blocks their language, and tables typeface, size, bold,
 strike, text and cell colour, alignment and merge. The style button shows the
 current colour (a dashed ring when they differ) and opens the Easel style
 picker with colour, custom hex and sampler, then fill and fill opacity,
