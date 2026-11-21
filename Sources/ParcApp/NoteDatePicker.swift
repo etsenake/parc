@@ -1135,6 +1135,7 @@ final class NoteReminderNotifications: NoteReminderScheduling {
         if let path = request.path { info[Self.pathKey] = path }
         content.userInfo = info
         content.threadIdentifier = request.noteID
+        content.sound = .default
         let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: request.fireDate)
         let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
         try? await center.add(UNNotificationRequest(identifier: request.identifier, content: content, trigger: trigger))
@@ -1181,7 +1182,7 @@ final class NoteReminderCenter: NSObject, UNUserNotificationCenterDelegate {
     func requestAuthorizationIfNeeded() {
         guard !requestedAuthorization, book.scheduler != nil else { return }
         requestedAuthorization = true
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
     private func open(noteID: String?, bookmark: Data?, path: String?) {
@@ -1193,7 +1194,7 @@ final class NoteReminderCenter: NSObject, UNUserNotificationCenterDelegate {
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                             withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .list])
+        completionHandler([.banner, .list, .sound])
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,

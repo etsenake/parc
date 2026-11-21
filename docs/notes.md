@@ -176,15 +176,17 @@ dash, except in code and equations. One ⌘Z undoes a shortcut back to the
 characters you typed. `/` opens the block menu,
 `@` or `[[` mentions a note or a date, and `:` plus two letters suggests emoji.
 `@Jan 3 → Jan 5`, `@Jan 3 - 5` or `@3-5pm` makes a range, and a month and day
-without a year mean the nearest one. Clicking a date opens its picker: a
+without a year mean the nearest one. A time without am or pm, like `@8:40`,
+offers both readings with the next one first, and a reminder whose time has
+passed shows as Already passed. Clicking a date opens its picker: a
 calendar that shades ranges, End date and Include time switches, a Format page
 (relative, full, short or numeric dates and a 12 or 24 hour clock), a time zone
 search and a Remind list (at the time, or 5 minutes to 2 days before; for a
 whole day, 9 AM on the day or up to a week before). Dates say Today, Tomorrow
 or Yesterday while they can and switch to the full date as days pass.
 Reminders are blue, turn red on their day or once they've rung, and are local
-notifications that follow the note through renames and moves and disappear
-when it's trashed.
+notifications with the default sound that follow the note through renames and
+moves and disappear when it's trashed.
 
 Custom emoji live with the notes folder. The emoji picker's `+` takes an image
 (chosen, dropped or pasted, scaled to 280 px) and a name, and Save adds it and
