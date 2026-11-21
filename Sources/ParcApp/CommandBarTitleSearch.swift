@@ -365,12 +365,21 @@ final class CommandBarTitleIndex: Sendable {
 
 @MainActor final class CommandBarTitleIndexCache {
     typealias Source = () -> (tabs: [BrowserTab], history: [BrowserHistoryEntry])
+    typealias Scheduler = (@escaping @Sendable () -> Void) -> Void
     private static let queue = DispatchQueue(label: "org.parc.command-bar.title-index", qos: .userInitiated)
     private(set) var index: CommandBarTitleIndex?
     private var builtStamp: CommandBarTitleIndex.Stamp?
     private var waiting: (stamp: CommandBarTitleIndex.Stamp, source: Source)?
     private var building = false
     var onBuilt: ((CommandBarTitleIndex) -> Void)?
+    private let scheduleBuild: Scheduler
+    private let scheduleDelivery: Scheduler
+
+    init(scheduleBuild: Scheduler? = nil, scheduleDelivery: Scheduler? = nil) {
+        let queue = Self.queue
+        self.scheduleBuild = scheduleBuild ?? { queue.async(execute: $0) }
+        self.scheduleDelivery = scheduleDelivery ?? { DispatchQueue.main.async(execute: $0) }
+    }
 
     func index(for stamp: CommandBarTitleIndex.Stamp) -> CommandBarTitleIndex? {
         builtStamp == stamp ? index : nil
@@ -388,16 +397,19 @@ final class CommandBarTitleIndex: Sendable {
         guard builtStamp != next.stamp else { return }
         building = true
         let input = next.source(), previous = index, stamp = next.stamp
-        Self.queue.async { [weak self] in
+        let deliver = scheduleDelivery
+        scheduleBuild { [weak self] in
             let built = CommandBarTitleIndex.build(profileID: stamp.profileID, historyRevision: stamp.history,
                                                    historyRemovals: stamp.removals, tabs: input.tabs,
                                                    history: input.history, reusing: previous)
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.building = false
-                self.index = built; self.builtStamp = stamp
-                self.onBuilt?(built)
-                self.start()
+            deliver { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.building = false
+                    self.index = built; self.builtStamp = stamp
+                    self.onBuilt?(built)
+                    self.start()
+                }
             }
         }
     }
