@@ -37,8 +37,8 @@ controller.
 
 ## Checks
 
-`scripts/test-icon-settings.sh` compiles the picker/controller into an inert
-AppKit harness with disposable preferences and an injected identity recorder.
+`IconSettingsTests` (`tests/ParcTests/Data`) run the picker and controller with
+disposable preferences, an injected identity recorder and an unshown window.
 Coverage includes hit testing, press/release/cancel, focus/repeat, accessibility
 role/value/action, persistence failure, attachment and window interruption.
 See [availability](app-icon-availability.md) for the catalog policy.

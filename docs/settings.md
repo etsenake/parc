@@ -480,7 +480,7 @@ committed removals keep their established operation lifetimes.
 ## Focused checks
 
 Existing checks include `ProfileSettingsTests` (Swift package), `test-quit-warning.sh`,
-`test-default-browser.sh`, shortcut component scripts, `tests/WebsiteTheme`,
+`DefaultBrowserTests`, shortcut component scripts, `tests/WebsiteTheme`,
 `tests/SettingsFocus`, and the file-backed store/controller suites. Follow
 [AGENTS.md](../AGENTS.md) before running them. Background-removal fixtures use native
 boundary doubles and disposable stores. Concrete routing work belongs in the

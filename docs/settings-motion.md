@@ -46,7 +46,7 @@ not success feedback. Quit confirmation belongs to application lifecycle.
 
 ## Checks
 
-`scripts/test-settings-hover.sh` uses inert AppKit components to cover native
+`SettingsHoverTests` use unshown AppKit components to cover native
 hit testing/actions, enabled state, covering views, window identity, sheets,
 hiding and detachment. Only activation/visibility/pointer inputs are substituted;
 no browser or real preferences are used.
