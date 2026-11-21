@@ -58,63 +58,117 @@ static NativeMediaNotifyState Same() {
   PARC_CHECK(MediaNotifyPayloadChanged(Published(), paused));
 }
 
-- (void)testMutingAndSilenceAreNotified {
-  NativeMediaNotifyState muted = Same();
-  muted.muted = true;
-  muted.can_admit = false;
-  muted.mute_revision = 1;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), muted));
-  NativeMediaNotifyState silent = Same();
-  silent.audible = false;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), silent));
-  NativeMediaNotifyState revision = Same();
-  revision.mute_revision = 2;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), revision));
-  PARC_CHECK(MediaNotifyPayloadChanged(Published(), revision));
+
+- (void)testMutingChangesNotifyTheShell {
+  auto state = Same();
+  state.muted = true;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
 }
 
-- (void)testTitleAndArtworkChangesAreNotified {
-  NativeMediaNotifyState retitled = Same();
-  retitled.title = u"Other";
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), retitled));
-  NativeMediaNotifyState art = Same();
-  art.artwork_url = "https://music.example/other.png";
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), art));
-  NativeMediaNotifyState missing = Same();
-  missing.artwork_present = false;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), missing));
+- (void)testSilenceChangesNotifyTheShell {
+  auto state = Same();
+  state.audible = false;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
 }
 
-- (void)testEligibilitySessionAndAdmissionChangesAreNotified {
-  NativeMediaNotifyState ineligible = Same();
-  ineligible.eligible = false;
-  ineligible.active = false;
-  ineligible.can_admit = false;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), ineligible));
-  NativeMediaNotifyState status = Same();
-  status.session_status = 3;
-  status.session_state_active = false;
-  status.can_admit = false;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), status));
-  NativeMediaNotifyState admit = Same();
-  admit.can_admit = false;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), admit));
+- (void)testMuteRevisionChangesNotifyTheShell {
+  auto state = Same();
+  state.mute_revision = 2;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
 }
 
-- (void)testActionsVolumeMicrophoneAndPictureInPictureAreNotified {
-  NativeMediaNotifyState actions = Same();
-  actions.has_next_track = true;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), actions));
-  NativeMediaNotifyState volume = Same();
-  volume.volume_hundredths = 50;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), volume));
-  NativeMediaNotifyState mic = Same();
-  mic.can_toggle_microphone = true;
-  mic.microphone_on = true;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), mic));
-  NativeMediaNotifyState pip = Same();
-  pip.can_enter_picture_in_picture = true;
-  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), pip));
+- (void)testTitleChangesNotifyTheShell {
+  auto state = Same();
+  state.title = u"Other";
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
+}
+
+- (void)testArtworkURLChangesNotifyTheShell {
+  auto state = Same();
+  state.artwork_url = "https://music.example/other.png";
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
+}
+
+- (void)testMissingArtworkChangesNotifyTheShell {
+  auto state = Same();
+  state.artwork_present = false;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
+}
+
+- (void)testEligibilityChangesNotifyTheShell {
+  auto state = Same();
+  state.eligible = false;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
+}
+
+- (void)testActivationChangesNotifyTheShell {
+  auto state = Same();
+  state.active = false;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
+}
+
+- (void)testAdmissionChangesNotifyTheShell {
+  auto state = Same();
+  state.can_admit = false;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
+}
+
+- (void)testSessionStatusChangesNotifyTheShell {
+  auto state = Same();
+  state.session_status = 3;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
+}
+
+- (void)testSessionActivityChangesNotifyTheShell {
+  auto state = Same();
+  state.session_state_active = false;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
+}
+
+- (void)testNextTrackChangesNotifyTheShell {
+  auto state = Same();
+  state.has_next_track = true;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
+}
+
+- (void)testVolumeChangesNotifyTheShell {
+  auto state = Same();
+  state.volume_hundredths = 50;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
+}
+
+- (void)testMicrophoneControlChangesNotifyTheShell {
+  auto state = Same();
+  state.can_toggle_microphone = true;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
+}
+
+- (void)testMicrophoneStateChangesNotifyTheShell {
+  auto state = Same();
+  state.microphone_on = true;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
+}
+
+- (void)testPictureInPictureAvailabilityChangesNotifyTheShell {
+  auto state = Same();
+  state.can_enter_picture_in_picture = true;
+  PARC_CHECK(ShouldNotifyMediaPayloadChange(Published(), state));
+  PARC_CHECK(MediaNotifyPayloadChanged(Published(), state));
 }
 
 - (void)testAnUnchangedPausedPayloadIsNotNotified {

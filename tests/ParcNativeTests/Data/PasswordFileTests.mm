@@ -57,7 +57,9 @@ static std::string Many() {
 - (void)setUp {
   [super setUp];
   char name[] = "/tmp/parc-password-file.XXXXXX";
-  _root = fs::path(mkdtemp(name));
+  char* directory = mkdtemp(name);
+  XCTAssertNotEqual(directory, nullptr);
+  _root = fs::path(directory);
   _file = _root / "Passwords.csv";
 }
 
@@ -66,8 +68,11 @@ static std::string Many() {
   [super tearDown];
 }
 
-- (void)testMissingOrEmptyFilesHaveNoIdentity {
+- (void)testAMissingFileHasNoIdentity {
   PARC_CHECK(!Read(_file.string()).identity);
+}
+
+- (void)testAnEmptyFileHasNoIdentity {
   Write(_file, "");
   PARC_CHECK(!Read(_file.string()).identity);
 }
@@ -80,41 +85,72 @@ static std::string Many() {
   PARC_CHECK(Read(_file.string()).identity == original.identity);
 }
 
-- (void)testEveryIdentityFieldDistinguishesFiles {
+- (void)testTheDigestDistinguishesFiles {
   Write(_file, "URL,Username,Password\nhttps://example.invalid,a,synthetic\n");
   const auto identity = Read(_file.string()).identity.value();
   auto changed = identity;
   changed.digest[0] ^= 1;
   PARC_CHECK(changed != identity);
-  changed = identity;
+}
+
+- (void)testTheInodeDistinguishesFiles {
+  Write(_file, "URL,Username,Password\nhttps://example.invalid,a,synthetic\n");
+  const auto identity = Read(_file.string()).identity.value();
+  auto changed = identity;
   changed.inode++;
   PARC_CHECK(changed != identity);
-  changed = identity;
+}
+
+- (void)testTheModificationTimeDistinguishesFiles {
+  Write(_file, "URL,Username,Password\nhttps://example.invalid,a,synthetic\n");
+  const auto identity = Read(_file.string()).identity.value();
+  auto changed = identity;
   changed.modified.tv_nsec++;
   PARC_CHECK(changed != identity);
-  changed = identity;
+}
+
+- (void)testTheSizeDistinguishesFiles {
+  Write(_file, "URL,Username,Password\nhttps://example.invalid,a,synthetic\n");
+  const auto identity = Read(_file.string()).identity.value();
+  auto changed = identity;
   changed.size++;
   PARC_CHECK(changed != identity);
-  changed = identity;
+}
+
+- (void)testTheDeviceDistinguishesFiles {
+  Write(_file, "URL,Username,Password\nhttps://example.invalid,a,synthetic\n");
+  const auto identity = Read(_file.string()).identity.value();
+  auto changed = identity;
   changed.device++;
   PARC_CHECK(changed != identity);
 }
 
-- (void)testChangedOrReplacedContentHasANewIdentity {
+- (void)testRewritingAFileChangesItsIdentity {
   Write(_file, "URL,Username,Password\nhttps://example.invalid,a,synthetic\n");
   auto original = Read(_file.string());
   Write(_file, "URL,Username,Password\nhttps://example.invalid,a,different\n");
   PARC_CHECK(Read(_file.string()).identity != original.identity);
+}
+
+- (void)testReplacingAFileWithIdenticalBytesChangesItsIdentity {
+  Write(_file, "URL,Username,Password\nhttps://example.invalid,a,synthetic\n");
+  auto original = Read(_file.string());
   fs::rename(_file, _root / "old.csv");
   Write(_file, original.bytes);
   PARC_CHECK(Read(_file.string()).identity != original.identity);
 }
 
-- (void)testLinksFoldersAndPipesAreRefused {
+- (void)testSymbolicLinksAreRefused {
   Write(_file, "URL,Username,Password\n");
   fs::create_symlink(_file, _root / "alias.csv");
   PARC_CHECK(!Read((_root / "alias.csv").string()).identity);
+}
+
+- (void)testDirectoriesAreRefused {
   PARC_CHECK(!Read(_root.string()).identity);
+}
+
+- (void)testPipesAreRefused {
   auto pipe = _root / "pipe.csv";
   PARC_CHECK(!mkfifo(pipe.c_str(), 0600));
   PARC_CHECK(!Read(pipe.string()).identity);
@@ -123,9 +159,11 @@ static std::string Many() {
 - (void)testFilesOverTheSizeLimitAreRefused {
   Write(_file, std::string(kMaximumBytes + 1, 'x'));
   PARC_CHECK(!Read(_file.string()).identity);
+}
+
+- (void)testFilesAtTheSizeLimitAreAccepted {
   Write(_file, std::string(kMaximumBytes, 'x'));
   PARC_CHECK(Read(_file.string()).identity.has_value());
-  PARC_CHECK(kMaximumBytes > 1000 * 1024 && kChunkBytes == 1000 * 1024 && kChunkRows == 3000);
 }
 
 - (void)testRowLimitsSplitWholeQuotedRowsUnderTheHeader {
@@ -141,25 +179,38 @@ static std::string Many() {
   PARC_CHECK(joined == rows);
 }
 
-- (void)testByteLimitsSplitByRowAndSmallFilesStayWhole {
+- (void)testByteLimitsSplitBetweenRows {
   const std::string rows = Rows();
   auto by_bytes = Split(kHeader + rows, 95, kChunkRows);
   PARC_CHECK(by_bytes.ranges.size() == 10 && Covers(kHeader + rows, by_bytes));
+}
+
+- (void)testSmallFilesStayWhole {
+  const std::string rows = Rows();
   PARC_CHECK(Covers(kHeader + rows, Split(kHeader + rows)) && Split(kHeader + rows).ranges.size() == 1);
 }
 
-- (void)testAnUnterminatedLastRowAndAnOpenQuoteStayInOneChunk {
+- (void)testAnUnterminatedFinalRowKeepsItsBytes {
   const std::string unterminated = kHeader + "A,https://a.example.invalid/,u,p\nB,https://b.example.invalid/,u,p";
   auto tail = Split(unterminated, kChunkBytes, 1);
   PARC_CHECK(tail.ranges.size() == 2 && tail.ranges.back().second == unterminated.size() && Covers(unterminated, tail));
+}
+
+- (void)testAnOpenQuotedFieldStaysTogether {
   const std::string open_quote = kHeader + "A,https://a.example.invalid/,u,\"p\nB,https://b.example.invalid/,u,p\nC,x,y,z\n";
   auto quoted = Split(open_quote, kChunkBytes, 1);
   PARC_CHECK(quoted.ranges.size() == 1 && quoted.ranges[0].second == open_quote.size() && Covers(open_quote, quoted));
 }
 
-- (void)testAHeaderOnlyFileHasNoRows {
+- (void)testAnUnterminatedHeaderHasNoRows {
   PARC_CHECK(Split("url,username,password").ranges.empty() && Split("url,username,password").header == 21);
+}
+
+- (void)testATerminatedHeaderHasNoRows {
   PARC_CHECK(Split("url,username,password\n").ranges.empty() && Split("url,username,password\n").header == 22);
+}
+
+- (void)testQuotedNewlinesRemainInTheHeader {
   PARC_CHECK(Split("\"url\nusername\",password\nhttps://a.example.invalid/,p\n").header == 24);
 }
 

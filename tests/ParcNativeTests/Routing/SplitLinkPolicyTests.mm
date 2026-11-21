@@ -9,13 +9,19 @@ using parc::NativeSplitDecision;
 
 @implementation SplitLinkPolicyTests
 
-- (void)testAManagedLinkSplitsOnlyWhenAdmitted {
+- (void)testManagedLinksWithoutAdmissionStayOrdinary {
   PARC_CHECK(ClassifyNativeSplit(true, false) == NativeSplitDecision::kOrdinary);
+}
+
+- (void)testAdmittedManagedLinksSplit {
   PARC_CHECK(ClassifyNativeSplit(true, true) == NativeSplitDecision::kAdmitted);
 }
 
-- (void)testAnUnmanagedLinkIsNeverSplit {
+- (void)testUnmanagedLinksRemainUnmanagedWithoutAdmission {
   PARC_CHECK(ClassifyNativeSplit(false, false) == NativeSplitDecision::kUnmanaged);
+}
+
+- (void)testAdmissionCannotSplitAnUnmanagedLink {
   PARC_CHECK(ClassifyNativeSplit(false, true) == NativeSplitDecision::kUnmanaged);
 }
 

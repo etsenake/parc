@@ -48,125 +48,198 @@ static NativePageShellNotifyState Colored() {
   _hold.NetworkBusy(_count.BusyUntil(now).has_value(), now);
 }
 
-- (void)testFinishedNavigationNotifiesOnlyWhatTheShellHasNotSeen {
-  const NativePageShellNotifyState unpublished, published = Published(), same = Same();
-  PARC_CHECK(ShouldNotifyFinishedNavigation(false, false, true, unpublished, published));
-  PARC_CHECK(ShouldNotifyFinishedNavigation(false, true, true, unpublished, published));
-  PARC_CHECK(!ShouldNotifyFinishedNavigation(false, false, true, published, same));
-  PARC_CHECK(!ShouldNotifyFinishedNavigation(false, true, true, published, same));
-  PARC_CHECK(ShouldNotifyFinishedNavigation(false, true, false, published, same));
-  PARC_CHECK(ShouldNotifyFinishedNavigation(true, false, true, published, same));
-  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, true, unpublished, same));
-  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, false, published, same));
-  PARC_CHECK(!ShouldNotifyFinishedNavigation(true, true, true, published, same));
+- (void)testTheFirstSubframeLoadNotifies {
+  PARC_CHECK(ShouldNotifyFinishedNavigation(false, false, true, {}, Published()));
 }
 
-- (void)testFinishedNavigationNotifiesEveryPayloadChange {
-  const NativePageShellNotifyState published = Published();
+- (void)testTheFirstSubframeHistoryChangeNotifies {
+  PARC_CHECK(ShouldNotifyFinishedNavigation(false, true, true, {}, Published()));
+}
+
+- (void)testRepeatedSubframeLoadsSkipDelivery {
+  PARC_CHECK(!ShouldNotifyFinishedNavigation(false, false, true, Published(), Same()));
+}
+
+- (void)testRepeatedSubframeHistoryChangesSkipDelivery {
+  PARC_CHECK(!ShouldNotifyFinishedNavigation(false, true, true, Published(), Same()));
+}
+
+- (void)testSubframeHistoryNotifiesWhenFaviconObservationIsNeeded {
+  PARC_CHECK(ShouldNotifyFinishedNavigation(false, true, false, Published(), Same()));
+}
+
+- (void)testNewMainDocumentsAlwaysNotify {
+  PARC_CHECK(ShouldNotifyFinishedNavigation(true, false, true, Published(), Same()));
+}
+
+- (void)testFirstMainFrameHistoryChangesNotify {
+  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, true, {}, Same()));
+}
+
+- (void)testMainFrameHistoryNotifiesWhenFaviconObservationIsNeeded {
+  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, false, Published(), Same()));
+}
+
+- (void)testUnchangedMainFrameHistorySkipsNotification {
+  PARC_CHECK(!ShouldNotifyFinishedNavigation(true, true, true, Published(), Same()));
+}
+
+- (void)testChangesToAddressReachTheShell {
   NativePageShellNotifyState changed = Same();
   changed.url = "https://example.com/#hash";
-  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, true, published, changed));
-  changed = Same();
-  changed.title = u"Renamed";
-  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, true, published, changed));
-  changed = Same();
-  changed.loading = true;
-  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, true, published, changed));
-  changed = Same();
-  changed.can_go_back = false;
-  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, true, published, changed));
-  PARC_CHECK(ShouldNotifyFinishedNavigation(false, true, true, published, changed));
-  changed = Same();
-  changed.can_go_forward = true;
-  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, true, published, changed));
-  PARC_CHECK(ShouldNotifyFinishedNavigation(false, false, true, published, changed));
-  PARC_CHECK(!ShellNotifyPayloadChanged(published, Same()));
-  PARC_CHECK(ShellNotifyPayloadChanged(published, changed));
+  PARC_CHECK(ShellNotifyPayloadChanged(Published(), changed));
+  PARC_CHECK(ShouldNotifyShellPayloadChange(Published(), changed));
+  PARC_CHECK(ShouldNotifyLoadingChange(Published(), changed));
+  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, true, Published(), changed));
 }
 
-- (void)testLoadingChangesNotifyOnlyRealChanges {
-  const NativePageShellNotifyState unpublished, published = Published(), same = Same();
-  PARC_CHECK(ShouldNotifyLoadingChange(unpublished, same));
-  PARC_CHECK(ShouldNotifyLoadingChange(unpublished, published));
-  PARC_CHECK(!ShouldNotifyLoadingChange(published, same));
-  NativePageShellNotifyState loading = same;
+- (void)testChangesToTitleReachTheShell {
+  NativePageShellNotifyState changed = Same();
+  changed.title = u"Renamed";
+  PARC_CHECK(ShellNotifyPayloadChanged(Published(), changed));
+  PARC_CHECK(ShouldNotifyShellPayloadChange(Published(), changed));
+  PARC_CHECK(ShouldNotifyLoadingChange(Published(), changed));
+  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, true, Published(), changed));
+}
+
+- (void)testChangesToLoadingReachTheShell {
+  NativePageShellNotifyState changed = Same();
+  changed.loading = true;
+  PARC_CHECK(ShellNotifyPayloadChanged(Published(), changed));
+  PARC_CHECK(ShouldNotifyShellPayloadChange(Published(), changed));
+  PARC_CHECK(ShouldNotifyLoadingChange(Published(), changed));
+  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, true, Published(), changed));
+}
+
+- (void)testChangesToBackHistoryReachTheShell {
+  NativePageShellNotifyState changed = Same();
+  changed.can_go_back = false;
+  PARC_CHECK(ShellNotifyPayloadChanged(Published(), changed));
+  PARC_CHECK(ShouldNotifyShellPayloadChange(Published(), changed));
+  PARC_CHECK(ShouldNotifyLoadingChange(Published(), changed));
+  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, true, Published(), changed));
+}
+
+- (void)testChangesToForwardHistoryReachTheShell {
+  NativePageShellNotifyState changed = Same();
+  changed.can_go_forward = true;
+  PARC_CHECK(ShellNotifyPayloadChanged(Published(), changed));
+  PARC_CHECK(ShouldNotifyShellPayloadChange(Published(), changed));
+  PARC_CHECK(ShouldNotifyLoadingChange(Published(), changed));
+  PARC_CHECK(ShouldNotifyFinishedNavigation(true, true, true, Published(), changed));
+}
+
+- (void)testSubframeUpdatesNotifyBackHistory {
+  NativePageShellNotifyState changed = Same();
+  changed.can_go_back = false;
+  PARC_CHECK(ShouldNotifyFinishedNavigation(false, true, true, Published(), changed));
+}
+
+- (void)testSubframeUpdatesNotifyForwardHistory {
+  NativePageShellNotifyState changed = Same();
+  changed.can_go_forward = true;
+  PARC_CHECK(ShouldNotifyFinishedNavigation(false, false, true, Published(), changed));
+}
+
+- (void)testTheFirstPayloadNotifies {
+  PARC_CHECK(ShouldNotifyShellPayloadChange({}, Same()));
+}
+
+- (void)testAnUnchangedPayloadSkipsDelivery {
+  PARC_CHECK(!ShouldNotifyShellPayloadChange(Published(), Same()));
+  PARC_CHECK(!ShellNotifyPayloadChanged(Published(), Same()));
+}
+
+- (void)testTheFirstLoadingUpdateNotifies {
+  PARC_CHECK(ShouldNotifyLoadingChange({}, Same()));
+  PARC_CHECK(ShouldNotifyLoadingChange({}, Published()));
+}
+
+- (void)testUnchangedLoadingSkipsDelivery {
+  PARC_CHECK(!ShouldNotifyLoadingChange(Published(), Same()));
+}
+
+- (void)testFinishingLoadingNotifies {
+  auto loading = Same();
   loading.loading = true;
-  PARC_CHECK(ShouldNotifyLoadingChange(published, loading));
   NativePageShellNotifyState stopped = loading;
   stopped.loading = false;
   NativePageShellNotifyState published_loading = loading;
   published_loading.published = true;
   PARC_CHECK(ShouldNotifyLoadingChange(published_loading, stopped));
+}
+
+- (void)testContinuingToLoadSkipsDuplicateDelivery {
+  auto loading = Same();
+  loading.loading = true;
+  NativePageShellNotifyState published_loading = loading;
+  published_loading.published = true;
   PARC_CHECK(!ShouldNotifyLoadingChange(published_loading, loading));
 }
 
-- (void)testLoadingNotifiesHistoryAddressAndTitleChanges {
-  const NativePageShellNotifyState published = Published();
-  NativePageShellNotifyState history = Same();
-  history.can_go_back = false;
-  PARC_CHECK(ShouldNotifyLoadingChange(published, history));
-  history = Same();
-  history.can_go_forward = true;
-  PARC_CHECK(ShouldNotifyLoadingChange(published, history));
-  history = Same();
-  history.url = "https://example.com/next";
-  PARC_CHECK(ShouldNotifyLoadingChange(published, history));
-  history = Same();
-  history.title = u"Next";
-  PARC_CHECK(ShouldNotifyLoadingChange(published, history));
-}
-
-- (void)testShellPayloadNotifiesTitleLoadingAndHistoryChanges {
-  const NativePageShellNotifyState unpublished, published = Published(), same = Same();
-  PARC_CHECK(!ShouldNotifyShellPayloadChange(published, same));
-  PARC_CHECK(ShouldNotifyShellPayloadChange(unpublished, same));
-  NativePageShellNotifyState retitled = same;
-  retitled.title = u"SPA title";
-  PARC_CHECK(ShouldNotifyShellPayloadChange(published, retitled));
-  PARC_CHECK(ShellNotifyPayloadChanged(published, retitled));
-  NativePageShellNotifyState changed = same;
-  changed.loading = true;
-  PARC_CHECK(ShouldNotifyShellPayloadChange(published, changed));
-  changed = same;
-  changed.url = "https://example.com/spa";
-  PARC_CHECK(ShouldNotifyShellPayloadChange(published, changed));
-  changed = same;
-  changed.can_go_back = false;
-  PARC_CHECK(ShouldNotifyShellPayloadChange(published, changed));
-  changed = same;
-  changed.can_go_forward = true;
-  PARC_CHECK(ShouldNotifyShellPayloadChange(published, changed));
-  PARC_CHECK(ShouldNotifyLoadingChange(published, retitled) == ShouldNotifyShellPayloadChange(published, retitled));
-  PARC_CHECK(ShouldNotifyLoadingChange(published, same) == ShouldNotifyShellPayloadChange(published, same));
-}
-
-- (void)testReaderModeChangesNotify {
+- (void)testReaderModeChangesReachTheShell {
   const NativePageShellNotifyState published = Published();
   NativePageShellNotifyState reader = Same();
   reader.reader_mode = 1;
   PARC_CHECK(ShouldNotifyShellPayloadChange(published, reader));
   PARC_CHECK(ShellNotifyPayloadChanged(published, reader));
-  reader = Same();
+}
+
+- (void)testReaderRevisionChangesReachTheShell {
+  const NativePageShellNotifyState published = Published();
+  NativePageShellNotifyState reader = Same();
   reader.reader_revision = 7;
   PARC_CHECK(ShouldNotifyShellPayloadChange(published, reader));
   PARC_CHECK(ShellNotifyPayloadChanged(published, reader));
 }
 
-- (void)testEveryCaptureIndicatorChangeNotifies {
-  const NativePageShellNotifyState published = Published();
+- (void)testCameraCaptureChangesReachTheShell {
   NativePageShellNotifyState capture = Same();
   capture.capture_camera = true;
-  PARC_CHECK(ShouldNotifyShellPayloadChange(published, capture));
-  PARC_CHECK(ShellNotifyPayloadChanged(published, capture));
-  bool NativePageShellNotifyState::*flags[] = {
-      &NativePageShellNotifyState::capture_microphone, &NativePageShellNotifyState::capture_tab,
-      &NativePageShellNotifyState::capture_window, &NativePageShellNotifyState::capture_display,
-      &NativePageShellNotifyState::capture_mirrored, &NativePageShellNotifyState::capture_shared};
-  for (auto flag : flags) {
-    capture = Same();
-    capture.*flag = true;
-    PARC_CHECK(ShouldNotifyShellPayloadChange(published, capture));
-  }
+  PARC_CHECK(ShouldNotifyShellPayloadChange(Published(), capture));
+  PARC_CHECK(ShellNotifyPayloadChanged(Published(), capture));
+}
+
+- (void)testMicrophoneCaptureChangesReachTheShell {
+  NativePageShellNotifyState capture = Same();
+  capture.capture_microphone = true;
+  PARC_CHECK(ShouldNotifyShellPayloadChange(Published(), capture));
+  PARC_CHECK(ShellNotifyPayloadChanged(Published(), capture));
+}
+
+- (void)testTabCaptureChangesReachTheShell {
+  NativePageShellNotifyState capture = Same();
+  capture.capture_tab = true;
+  PARC_CHECK(ShouldNotifyShellPayloadChange(Published(), capture));
+  PARC_CHECK(ShellNotifyPayloadChanged(Published(), capture));
+}
+
+- (void)testWindowCaptureChangesReachTheShell {
+  NativePageShellNotifyState capture = Same();
+  capture.capture_window = true;
+  PARC_CHECK(ShouldNotifyShellPayloadChange(Published(), capture));
+  PARC_CHECK(ShellNotifyPayloadChanged(Published(), capture));
+}
+
+- (void)testDisplayCaptureChangesReachTheShell {
+  NativePageShellNotifyState capture = Same();
+  capture.capture_display = true;
+  PARC_CHECK(ShouldNotifyShellPayloadChange(Published(), capture));
+  PARC_CHECK(ShellNotifyPayloadChanged(Published(), capture));
+}
+
+- (void)testMirroredCaptureChangesReachTheShell {
+  NativePageShellNotifyState capture = Same();
+  capture.capture_mirrored = true;
+  PARC_CHECK(ShouldNotifyShellPayloadChange(Published(), capture));
+  PARC_CHECK(ShellNotifyPayloadChanged(Published(), capture));
+}
+
+- (void)testSharedCaptureChangesReachTheShell {
+  NativePageShellNotifyState capture = Same();
+  capture.capture_shared = true;
+  PARC_CHECK(ShouldNotifyShellPayloadChange(Published(), capture));
+  PARC_CHECK(ShellNotifyPayloadChanged(Published(), capture));
 }
 
 - (void)testAnUnchangedCapturePayloadDoesNotNotify {
@@ -177,42 +250,95 @@ static NativePageShellNotifyState Colored() {
   PARC_CHECK(!ShouldNotifyShellPayloadChange(published_capture, same_capture));
 }
 
-- (void)testTheTopBarColorPrefersThePageThenAnOpaqueTheme {
+- (void)testPageColorOverridesThemeColor {
   PARC_CHECK(TopBarPageColor(0x800F0F0Fu, 0xFFFFFFFFu) == 0x800F0F0Fu);
+}
+
+- (void)testOpaqueThemeColorsSupplyTheFallback {
   PARC_CHECK(TopBarPageColor(std::nullopt, 0xFF000000u) == 0xFF000000u);
+}
+
+- (void)testTranslucentThemesSupplyNoFallback {
   PARC_CHECK(!TopBarPageColor(std::nullopt, 0x80FFFFFFu));
+}
+
+- (void)testMissingColorsLeaveTheTopBarUnset {
   PARC_CHECK(!TopBarPageColor(std::nullopt, std::nullopt));
 }
 
-- (void)testTopBarColorNotifiesOnceAndIgnoresThemeAnimation {
+- (void)testAFirstTopBarColorReachesTheShell {
   const NativePageShellNotifyState published = Published();
   NativePageShellNotifyState colored = Colored();
   PARC_CHECK(ShouldNotifyShellPayloadChange(published, colored));
   PARC_CHECK(ShellNotifyPayloadChanged(published, colored));
+}
+
+- (void)testDuplicateTopBarColorsSkipDelivery {
+  NativePageShellNotifyState colored = Colored();
   NativePageShellNotifyState published_colored = colored;
   published_colored.published = true;
   PARC_CHECK(!ShouldNotifyShellPayloadChange(published_colored, colored));
+}
+
+- (void)testThemeAnimationKeepsAnExistingPageColor {
+  NativePageShellNotifyState colored = Colored();
+  NativePageShellNotifyState published_colored = colored;
+  published_colored.published = true;
   NativePageShellNotifyState animating = colored;
   animating.top_bar_color = TopBarPageColor(0xFF0F0F0Fu, 0xFF102030u);
   PARC_CHECK(!ShouldNotifyShellPayloadChange(published_colored, animating));
+}
+
+- (void)testClearingTheTopBarColorReachesTheShell {
+  NativePageShellNotifyState colored = Colored();
+  NativePageShellNotifyState published_colored = colored;
+  published_colored.published = true;
   NativePageShellNotifyState cleared = published_colored;
   cleared.published = false;
   cleared.top_bar_color = TopBarPageColor(std::nullopt, std::nullopt);
   PARC_CHECK(ShouldNotifyShellPayloadChange(published_colored, cleared));
 }
 
-- (void)testSampledTopBandNotifiesNewColorsAndHosts {
+- (void)testAnEmptyBandSampleStillNotifies {
   const NativePageShellNotifyState published = Published();
   NativePageShellNotifyState sampled = Same();
   sampled.top_band_delivered = true;
   PARC_CHECK(ShouldNotifyShellPayloadChange(published, sampled));
+}
+
+- (void)testTheFirstBandColorChangesThePayload {
+  const NativePageShellNotifyState published = Published();
+  NativePageShellNotifyState sampled = Same();
+  sampled.top_band_delivered = true;
   sampled.top_band_color = 0xFF1A73E8u;
   PARC_CHECK(ShellNotifyPayloadChanged(published, sampled));
+}
+
+- (void)testARepeatedBandSampleSkipsDelivery {
+  NativePageShellNotifyState sampled = Same();
+  sampled.top_band_delivered = true;
+  sampled.top_band_color = 0xFF1A73E8u;
   NativePageShellNotifyState published_sampled = sampled;
   published_sampled.published = true;
   PARC_CHECK(!ShouldNotifyShellPayloadChange(published_sampled, sampled));
+}
+
+- (void)testANewBandColorNotifies {
+  NativePageShellNotifyState sampled = Same();
+  sampled.top_band_delivered = true;
+  sampled.top_band_color = 0xFF1A73E8u;
+  NativePageShellNotifyState published_sampled = sampled;
+  published_sampled.published = true;
   sampled.top_band_color = 0xFF000000u;
   PARC_CHECK(ShouldNotifyShellPayloadChange(published_sampled, sampled));
+}
+
+- (void)testANewBandHostNotifies {
+  NativePageShellNotifyState sampled = Same();
+  sampled.top_band_delivered = true;
+  sampled.top_band_color = 0xFF1A73E8u;
+  NativePageShellNotifyState published_sampled = sampled;
+  published_sampled.published = true;
   NativePageShellNotifyState navigated = published_sampled;
   navigated.published = false;
   navigated.top_band_host = "chatgpt.com";
