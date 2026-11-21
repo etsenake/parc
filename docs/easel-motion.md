@@ -63,10 +63,45 @@ still reveal current annotations. These are explicit accessibility
 and lifetime choices.
 Neither adaptation changes the current geometry, selection or focus.
 
+## Object motion
+
+Objects move like Notes blocks. A new object (placed with a click, added from
+the toolbar or a key, pasted or dropped) pops from 95% with a short fade; a
+deleted or cut one fades and shrinks a touch over 0.15 seconds. Duplicates and
+quick-create copies glide out of their source on the Notes settle spring, and
+their text editor fades in as they land. Align, distribute and Tidy up glide
+each object from its old spot, and layer moves give the object a small settle
+(from 103% when brought forward, 97% when sent back). Undo, redo, live drags,
+drawn or dragged-out objects, typing and pinches never animate, and connectors
+attached to a moving object follow their route directly.
+
+`EaselObjectMotion` in ParcCore owns the timeline: one transition per object,
+ghosts for deleted objects until their fade ends, glides that continue from
+where an object is shown, and the document diffs that pick what moves. Commands
+opt in by wrapping their single commit in `withObjectMotion(_:)` (`.appear`,
+`.vanish`, `.copies`, `.arrange`, `.layer`), so anything else that commits, such
+as a template gallery, can join with one line. The canvas paints each moving
+object through a translate, scale and transparency layer around its normal
+drawing, redrawing only the objects' own bounds on the display link until the
+last transition ends. Boards with live pages run the same effects as Core
+Animation on each object's layer, and deleted objects fade before their layer
+leaves. Live page renderers never animate.
+
+Selection outlines and handles fade in over 0.1 seconds when an object becomes
+selected, hover outlines fade in the same way, and a resize handle grows to
+135% on the Notes highlight spring while the pointer is over it. Marquee
+selection, guides and active transforms still follow the input directly.
+
+Any pointer press, pinch, window change or Reduce Motion turning on settles
+every transition at once. Under Reduce Motion pops and glides become short
+fades in place, deletes fade without shrinking and layer moves don't animate.
+
 ## Checks
 
 `scripts/test-easel-motion.sh` covers both threshold directions, inclusive
 initial-band silence, repeated crossings, invalid samples, native magnification
 notifications, source replacement and immediate visibility reversal. Feedback
-is injected, so the component does not emit physical haptics. Shared capture
+is injected, so the component does not emit physical haptics. The windowless
+`EaselObjectMotionTests` suite covers pop, fade, glide, lift and Reduce Motion
+curves, chained glides, ghost bookkeeping and the document diffs. Shared capture
 checks protect original pixels and independent in-memory history.
