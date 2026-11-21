@@ -451,7 +451,9 @@ The main owners are `OnboardingDraft`, `OnboardingExperience`,
 `BrowserStore.completeOnboarding` and `BrowserStore.applyOnboardingReplay`.
 Relevant existing checks include:
 
-- `scripts/test-onboarding.sh`: draft migration, defaults, ordering and commits.
+- `tests/ParcCoreTests/Presentation/Onboarding` (Swift Testing): draft migration,
+  defaults, ordering, commits, replay and the import step counter.
+- `scripts/test-onboarding.sh`: replay lifecycle and the welcome video hand-off.
 - `scripts/test-onboarding-presentation.sh` (including the frame step's
   geometry), `test-onboarding-keyboard.sh`,
   `test-onboarding-theme.sh` and `test-onboarding-video.sh`: component behavior.
