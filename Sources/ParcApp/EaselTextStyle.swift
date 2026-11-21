@@ -411,6 +411,9 @@ final class EaselStyledTextView: LocalContentDropTextView {
     var canRedoDocument: (() -> Bool)?
     override var undoManager: UndoManager? { localUndo }
     var onEditBoundary: (() -> Void)?
+    var showLinkPopover: (NSPopover, NSRect, NSView, NSRectEdge) -> Void = { popover, rect, anchor, edge in
+        popover.show(relativeTo: rect, of: anchor, preferredEdge: edge)
+    }
     private var linkPopover: NSPopover?
     weak var pendingPopover: NSPopover?
     var hasPendingRangeAction: Bool { linkPopover?.isShown == true || pendingPopover?.isShown == true }
@@ -889,7 +892,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
             self.format(link == nil ? "Remove link" : "Edit link", ranges: ranges) { attrs in var next = attrs; next[.link] = link; return next }
             popover?.close(); self.linkPopover = nil
         }
-        popover.show(relativeTo: rect ?? anchor.bounds, of: anchor, preferredEdge: rect != nil && anchor.isFlipped ? .minY : .maxY)
+        showLinkPopover(popover, rect ?? anchor.bounds, anchor, rect != nil && anchor.isFlipped ? .minY : .maxY)
     }
 
     @objc func undo(_ sender: Any?) {
