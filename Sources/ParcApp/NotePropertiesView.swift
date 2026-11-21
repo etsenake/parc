@@ -818,6 +818,9 @@ final class NotePropertyMenu: NSView, NoteFloatingPanelContent {
             switch selector {
             case #selector(NSResponder.moveDown(_:)), #selector(NSResponder.moveUp(_:)):
                 return self.list.handle(command: selector)
+            case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertLineBreak(_:)),
+                 #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
+                return self.list.hasKeyboardHighlight && self.list.activateHighlighted()
             case #selector(NSResponder.cancelOperation(_:)):
                 self.nameField.text = self.committedName
                 self.onDone?()

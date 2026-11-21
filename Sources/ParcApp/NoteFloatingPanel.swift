@@ -445,6 +445,7 @@ final class NoteMenuList: NSView, NoteFloatingPanelContent {
 
     var visibleItems: [Item] { visibleIndices.map { items[$0] } }
     var highlightedItem: Item? { highlighted.flatMap { items.indices.contains($0) ? items[$0] : nil } }
+    var hasKeyboardHighlight: Bool { highlightedItem != nil && !highlightFromPointer }
 
     func prepare(origin: Origin) {
         self.origin = origin
