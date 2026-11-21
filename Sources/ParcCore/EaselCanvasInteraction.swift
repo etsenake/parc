@@ -275,6 +275,9 @@ struct EaselObjectCommand {
 enum EaselContentHitTest {
     static func contains(_ point: EaselPoint, item: EaselItem, selected: Bool, scale: Double = 1) -> Bool {
         guard scale.isFinite, scale > 0, point.x.isFinite, point.y.isFinite else { return false }
+        if item.resolvedShape != nil, !EaselShapeGeometry.usesOriginalLook(item) {
+            return EaselShapeGeometry.hits(point, item: item, selected: selected, scale: scale)
+        }
         let r = item.frame, minimum = 30 / scale
         let target = EaselRect(x: r.x - max(0, minimum - r.width) / 2,
                                y: r.y - max(0, minimum - r.height) / 2,
@@ -295,6 +298,9 @@ enum EaselContentHitTest {
 
     static func intersects(_ rect: EaselRect, item: EaselItem, selected: Bool) -> Bool {
         guard rect.width > 0, rect.height > 0 else { return false }
+        if item.resolvedShape != nil, !EaselShapeGeometry.usesOriginalLook(item) {
+            return EaselShapeGeometry.intersects(rect, item: item, selected: selected)
+        }
         if selected { return intersects(rect, item.frame) }
         let r = item.frame
         switch item.kind {

@@ -1,0 +1,4 @@
+Sources/ParcCore/EaselStore.swift
+Sources/ParcCore/EaselRichText.swift
+Sources/ParcCore/EaselCanvasInteraction.swift
+Sources/ParcCore/EaselShapeGeometry.swift
