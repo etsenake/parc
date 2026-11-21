@@ -6,7 +6,7 @@ struct EaselCanvasArrangeState {
     var duplicateDragArmed = false
     var duplicateDrag: (group: UUID, before: EaselDocument, sources: [UUID], copies: [UUID])?
     var lastPaste: (fingerprint: Int, step: Int, pointer: EaselPoint?)?
-    var menu: EaselCanvasMenuPresenter?
+    var menu: EaselCanvasMenuPresenting?
 }
 
 private func easelChordModifiers(_ flags: NSEvent.ModifierFlags) -> EaselKeyModifiers {
@@ -50,7 +50,8 @@ extension EaselCanvasView {
     func duplicateSelection() -> Bool {
         guard beginArrangeCommand(), !selection.isEmpty else { return false }
         let document = session.document
-        let sources = EaselArrange.paintOrder(document).filter { selection.contains($0.id) }.map(\.id)
+        let expanded = EaselArrange.withFollowers(selection, in: document)
+        let sources = EaselArrange.paintOrder(document).filter { expanded.contains($0.id) }.map(\.id)
         var offset = EaselPoint(x: EaselArrange.duplicateOffset, y: EaselArrange.duplicateOffset)
         if let last = arrangeState.lastDuplicate, Set(last.copies) == selection,
            let repeated = EaselArrange.repeatOffset(sources: last.sources, copies: last.copies, in: document) {
@@ -232,7 +233,8 @@ extension EaselCanvasView {
         guard !ids.isEmpty, let duplication = EaselArrange.duplicating(ids, in: before, offset: EaselPoint(x: 0, y: 0)) else { return false }
         let group = UUID()
         guard commit("Duplicate objects", coalescing: group, { $0 = duplication.document }) else { return false }
-        let sources = EaselArrange.paintOrder(before).filter { ids.contains($0.id) }.map(\.id)
+        let expanded = EaselArrange.withFollowers(ids, in: before)
+        let sources = EaselArrange.paintOrder(before).filter { expanded.contains($0.id) }.map(\.id)
         arrangeState.duplicateDrag = (group, before, sources, duplication.copies)
         selection = Set(duplication.copies)
         return true

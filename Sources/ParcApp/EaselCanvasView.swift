@@ -488,6 +488,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             announceTurn(of: item.id); return true
         case "Flip horizontal", "Flip vertical": return flipSelection(horizontal: name == "Flip horizontal")
         case "Delete": deleteObjects(sender)
+        case "Lock", "Unlock": return toggleLock()
         case "Open source":
             guard onOpenURL != nil else { return false }
             openObjectSource(sender)
@@ -497,8 +498,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     fileprivate func showAccessibleMenu(_ item: EaselItem) -> Bool {
         guard window?.isKeyWindow == true, selectAccessibleObject(item) else { return false }
-        let menu = makeObjectMenu()
-        menu.popUp(positioning: nil, at: NSPoint(x: rect(item).minX, y: rect(item).maxY), in: self)
+        presentContextMenu(at: NSPoint(x: rect(item).minX, y: rect(item).maxY), keyboard: true)
         return true
     }
     private func accessibleManipulationControls() -> [NSAccessibilityElement] {
@@ -1643,6 +1643,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return hit
     }
     override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control) { presentContextMenu(for: event); return }
         if imageMouseDown(event) { return }
         if tableMouseDown(with: event) { return }
         hoveredObjectID = nil
@@ -2102,66 +2103,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if fixedCanvasSize == nil, let result = contentDrop.perform(sender) { return result }
         return readPasteboard(sender.draggingPasteboard)
     }
-    override func menu(for event: NSEvent) -> NSMenu? {
-        if let menu = imageCropMenu() { return menu }
-        cancelPointerInteraction(); guard finishEditing() else { return nil }; window?.makeFirstResponder(self)
-        let point = convert(event.locationInWindow, from: nil)
-        if let item = object(at: point), !selection.contains(item.id) { selection = [item.id]; invalidateIncrementalDisplay(layout: true) }
-        return makeObjectMenu()
-    }
-    private func makeObjectMenu() -> NSMenu {
-        let menu = NSMenu()
-        menuGeneration &+= 1
-        let captured = MenuTarget(window: window, command: EaselObjectCommand(document: session.document, selection: selection), generation: menuGeneration)
-        for (title, action) in [("Duplicate", #selector(duplicateObjects)), ("Bring to Front", #selector(bringToFront)), ("Copy", #selector(copy(_:))), ("Paste", #selector(paste)), ("Paste as Plain Text", #selector(pasteAsPlainText)), ("Delete", #selector(deleteObjects))] {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: ""); item.target = self; item.representedObject = captured; menu.addItem(item)
-        }
-        let styles = styleMenuItems()
-        if !styles.isEmpty { menu.addItem(.separator()); styles.forEach(menu.addItem) }
-        if let object = captured.command?.originals.first, captured.command?.originals.count == 1, object.url != nil {
-            menu.addItem(.separator())
-            if EaselWebItemChrome.canMakeLive(object) {
-                let row = NSMenuItem(title: object.liveCapture == true ? "Back to Snapshot" : "Make Live",
-                    action: #selector(toggleLiveCapture), keyEquivalent: "")
-                row.target = self; row.representedObject = captured; menu.addItem(row)
-            }
-            for (title, action) in [("Open Source", #selector(openObjectSource)), ("Copy Source URL", #selector(copyObjectSource))] {
-                let row = NSMenuItem(title: title, action: action, keyEquivalent: "")
-                row.target = self; row.representedObject = captured; menu.addItem(row)
-            }
-        }
-        addImageMenuItems(to: menu, target: captured)
-        addTableMenuItems(to: menu)
-        if let connector = makeConnectorMenu() { menu.addItem(.separator()); menu.addItem(connector) }
-        if let originals = captured.command?.originals, originals.contains(where: { $0.resolvedShape != nil }) {
-            let current = Set(originals.compactMap(\.resolvedShape))
-            let shapes = NSMenu(title: "Shape")
-            for (index, shape) in EaselShape.allCases.enumerated() {
-                let row = NSMenuItem(title: EaselShapeGeometry.displayName(shape), action: #selector(changeShapeFromMenu(_:)), keyEquivalent: "")
-                row.target = self; row.tag = index; row.representedObject = captured
-                row.image = EaselShapeRendering.icon(shape, size: 16); row.state = current == [shape] ? .on : .off
-                shapes.addItem(row)
-            }
-            menu.addItem(.separator())
-            let parent = NSMenuItem(title: "Shape", action: nil, keyEquivalent: ""); parent.submenu = shapes
-            menu.addItem(parent)
-        }
-        menu.addItem(.separator())
-        if let originals = captured.command?.originals, EaselRotation.canRotate(originals) || EaselRotation.canFlip(originals) {
-            let rows: [(String, Selector, String)] = [("Flip Horizontal", #selector(flipObjectsHorizontally), "h"), ("Flip Vertical", #selector(flipObjectsVertically), "v"),
-                                                      ("Rotate 90° Left", #selector(rotateObjectsLeft), ""), ("Rotate 90° Right", #selector(rotateObjectsRight), "")]
-            for (title, action, key) in rows {
-                let row = NSMenuItem(title: title, action: action, keyEquivalent: key)
-                row.keyEquivalentModifierMask = key.isEmpty ? [] : [.shift]
-                row.target = self; row.representedObject = captured; menu.addItem(row)
-            }
-            menu.addItem(.separator())
-        }
-        let alignment = NSMenuItem(title: "Use Alignment Guides", action: #selector(toggleAlignmentGuides), keyEquivalent: "")
-        alignment.target = self; alignment.representedObject = captured
-        alignment.state = alignmentGuidesEnabled ? .on : .off; menu.addItem(alignment)
-        return menu
-    }
     func setLiveCapture(_ id: UUID, enabled: Bool) {
         guard fixedCanvasSize == nil, pageObjects != nil,
               let item = session.document.items.first(where: { $0.id == id && $0.kind == .webCard && $0.captureLayout != nil }),
@@ -2417,10 +2358,12 @@ private final class EaselAccessibleObject: NSView {
     }
     override func accessibilityValue() -> Any? {
         guard let item = canvas?.accessibleItem(id), item.kind != .stamp else { return nil }
-        if item.kind == .image { return item.altText ?? item.url }
-        if let table = item.table { return table.accessibilitySummary }
-        if item.kind == .section { return canvas?.sectionSummary(item) }
-        return item.text.isEmpty ? item.url : item.text
+        let value: String?
+        if item.kind == .image { value = item.altText ?? item.url }
+        else if let table = item.table { value = table.accessibilitySummary }
+        else if item.kind == .section { value = canvas?.sectionSummary(item) }
+        else { value = item.text.isEmpty ? item.url : item.text }
+        return item.isLocked ? ["Locked", value].compactMap { $0 }.joined(separator: ", ") : value
     }
     override func isAccessibilityEnabled() -> Bool { acceptsFirstResponder }
     override func isAccessibilitySelected() -> Bool { canvas?.accessibleSelected(id) == true }
@@ -2439,9 +2382,9 @@ private final class EaselAccessibleObject: NSView {
     }
     override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
         guard let canvas, let item = canvas.accessibleItem(id), let owner = window, acceptsFirstResponder else { return [] }
-        var names = ["Duplicate", "Bring to front", "Delete"]
-        if EaselRotation.canRotate(item) { names += ["Rotate left", "Rotate right"] }
-        if EaselRotation.canFlip(item) { names += ["Flip horizontal", "Flip vertical"] }
+        var names = item.isLocked ? ["Unlock", "Duplicate"] : ["Duplicate", "Bring to front", "Lock", "Delete"]
+        if !item.isLocked, EaselRotation.canRotate(item) { names += ["Rotate left", "Rotate right"] }
+        if !item.isLocked, EaselRotation.canFlip(item) { names += ["Flip horizontal", "Flip vertical"] }
         if item.url != nil { names.insert("Open source", at: 0) }
         names += canvas.boardActionNames(item)
         if item.kind == .code { names.insert(contentsOf: ["Copy code", "Change language"], at: 0) }
