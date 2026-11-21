@@ -73,43 +73,54 @@ struct ExternalMediaCloud: Sendable {
 }
 
 final class ExternalMediaCloudStatus: ExternalMediaCloudObservation, @unchecked Sendable {
+    struct PresenterRegistry: Sendable {
+        let add: @Sendable (any NSFilePresenter) -> Void
+        let remove: @Sendable (any NSFilePresenter) -> Void
+
+        static let system = Self(add: { NSFileCoordinator.addFilePresenter($0) }, remove: { NSFileCoordinator.removeFilePresenter($0) })
+    }
+
     private final class Presenter: NSObject, NSFilePresenter, @unchecked Sendable {
         let presentedItemURL: URL?
         let presentedItemOperationQueue: OperationQueue
         let observedPresentedItemUbiquityAttributes: Set<URLResourceKey> = [.ubiquitousItemDownloadingStatusKey]
         private let changed: @Sendable (URL) -> Void
         private let evicted: @Sendable (Presenter) -> Void
-        init(folder: URL, queue: OperationQueue, changed: @escaping @Sendable (URL) -> Void, evicted: @escaping @Sendable (Presenter) -> Void) {
+        private let registry: PresenterRegistry
+        init(folder: URL, queue: OperationQueue, registry: PresenterRegistry, changed: @escaping @Sendable (URL) -> Void, evicted: @escaping @Sendable (Presenter) -> Void) {
             presentedItemURL = folder; presentedItemOperationQueue = queue; self.changed = changed; self.evicted = evicted
+            self.registry = registry
         }
         func presentedSubitemDidChange(at url: URL) { changed(url) }
         func accommodatePresentedItemEviction(completionHandler: @escaping @Sendable (Error?) -> Void) {
-            NSFileCoordinator.removeFilePresenter(self); evicted(self); completionHandler(nil)
+            registry.remove(self); evicted(self); completionHandler(nil)
         }
     }
     private let handler: @Sendable (Set<String>) -> Void
     private let queue = DispatchQueue(label: "org.parc.media-cloud-status")
+    private let registry: PresenterRegistry
     private let callbacks = OperationQueue()
     private var presenters: [String: Presenter] = [:]
     private var changed = Set<String>()
-    init(handler: @escaping @Sendable (Set<String>) -> Void) {
+    init(handler: @escaping @Sendable (Set<String>) -> Void, registry: PresenterRegistry = .system) {
+        self.registry = registry
         self.handler = handler; callbacks.maxConcurrentOperationCount = 1; callbacks.qualityOfService = .utility
     }
     deinit {
         let retired = Array(presenters.values)
-        queue.async { retired.forEach { NSFileCoordinator.removeFilePresenter($0) } }
+        queue.async { [registry] in retired.forEach { registry.remove($0) } }
     }
     func present(_ folders: Set<String>) {
         queue.async { [self] in
             for (folder, presenter) in presenters where !folders.contains(folder) {
-                NSFileCoordinator.removeFilePresenter(presenter); presenters[folder] = nil
+                registry.remove(presenter); presenters[folder] = nil
             }
             for folder in folders where presenters[folder] == nil {
                 let aliases = Set([folder] + [Self.resolved(folder)].compactMap { $0 })
-                let presenter = Presenter(folder: URL(fileURLWithPath: folder, isDirectory: true), queue: callbacks,
+                let presenter = Presenter(folder: URL(fileURLWithPath: folder, isDirectory: true), queue: callbacks, registry: registry,
                                           changed: { [weak self] url in if let file = Self.mediaFile(url, in: folder, aliases: aliases) { self?.note(file) } },
                                           evicted: { [weak self] presenter in self?.retire(presenter, folder: folder) })
-                NSFileCoordinator.addFilePresenter(presenter); presenters[folder] = presenter
+                registry.add(presenter); presenters[folder] = presenter
             }
         }
     }
