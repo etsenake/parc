@@ -548,9 +548,15 @@ struct ThemeButtonMotion {
     private var timer: Timer?
     private var frameTime: CFTimeInterval = 0
     private let now: () -> CFTimeInterval
+    private let allowsMotionOverride: (() -> Bool)?
+    private let scheduleFrame: (Timer) -> Void
     private var reduceMotionObserver: NSObjectProtocol?
-    init(view: NSView, now: @escaping () -> CFTimeInterval = { CACurrentMediaTime() }) {
+    init(view: NSView, now: @escaping () -> CFTimeInterval = { CACurrentMediaTime() },
+         allowsMotion: (() -> Bool)? = nil,
+         scheduleFrame: @escaping (Timer) -> Void = { RunLoop.main.add($0, forMode: .common) }) {
         self.view = view; self.now = now
+        allowsMotionOverride = allowsMotion
+        self.scheduleFrame = scheduleFrame
         reduceMotionObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -570,7 +576,8 @@ struct ThemeButtonMotion {
     func update(hovered: Bool? = nil, pressed: Bool? = nil, animatesHover: Bool = true) {
         let hovered = hovered ?? motion.isHovered, pressed = pressed ?? motion.isPressed
         guard hovered != motion.isHovered || pressed != motion.isPressed else { return }
-        let allowsMotion = view?.window != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let allowsMotion = allowsMotionOverride?()
+            ?? (view?.window != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
         motion.setHovered(hovered, animated: allowsMotion && animatesHover)
         motion.setPressed(pressed, animated: allowsMotion)
         view?.needsDisplay = true
@@ -579,7 +586,7 @@ struct ThemeButtonMotion {
         let timer = Timer(timeInterval: 1 / 60, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated { self?.frame(timer) }
         }
-        self.timer = timer; RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer; scheduleFrame(timer)
     }
     func reset() { timer?.invalidate(); timer = nil; motion = ThemeButtonMotion() }
     private func settle() {
@@ -1208,8 +1215,8 @@ struct ThemeAppearanceAnimation {
     let start: Double
     let end: Double
     let size: CGSize
-    init?(name: String) {
-        guard let url = ThemeEditorResources.url(name, extension: "json"),
+    init?(name: String, resources: Bundle = .main) {
+        guard let url = resources.url(forResource: name, withExtension: "json", subdirectory: "ThemeEditor"),
               let data = try? Data(contentsOf: url),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let layers = root["layers"] as? [[String: Any]],
@@ -1354,6 +1361,8 @@ final class ThemeAppearanceButton: NSButton {
         }
     }
     private let animation: ThemeAppearanceAnimation?
+    private let allowsPlaybackOverride: (() -> Bool)?
+    private let scheduleFrame: (Timer) -> Void
     private var timer: Timer?
     var now: () -> CFTimeInterval = { CACurrentMediaTime() }
     private var startedAt = 0.0
@@ -1362,10 +1371,13 @@ final class ThemeAppearanceButton: NSButton {
     private var hovered = false
     private var tracking: NSTrackingArea?
     override var isFlipped: Bool { true }
-    init(appearance: AppAppearance) {
+    init(appearance: AppAppearance, resources: Bundle = .main, allowsPlayback: (() -> Bool)? = nil,
+         scheduleFrame: @escaping (Timer) -> Void = { RunLoop.main.add($0, forMode: .common) }) {
         appearanceChoice = appearance
+        allowsPlaybackOverride = allowsPlayback
+        self.scheduleFrame = scheduleFrame
         let asset = appearance == .automatic ? "automatic" : appearance == .light ? "sun" : "moon"
-        animation = ThemeAppearanceAnimation(name: asset)
+        animation = ThemeAppearanceAnimation(name: asset, resources: resources)
         super.init(frame: .zero)
         title = ""; isBordered = false; focusRingType = .exterior
         target = self; action = #selector(invoke)
@@ -1385,8 +1397,8 @@ final class ThemeAppearanceButton: NSButton {
     override func viewDidHide() { super.viewDidHide(); updatePlayback() }
     override func viewDidUnhide() { super.viewDidUnhide(); updatePlayback() }
     private var shouldPlay: Bool {
-        isSelected && window != nil && !isHiddenOrHasHiddenAncestor
-            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        isSelected && !isHiddenOrHasHiddenAncestor
+            && (allowsPlaybackOverride?() ?? (window != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion))
     }
     private func updatePlayback() {
         if shouldPlay && timer == nil {
@@ -1428,7 +1440,7 @@ final class ThemeAppearanceButton: NSButton {
         let timer = Timer(timeInterval: 1 / 60, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated { self?.tick(timer) }
         }
-        self.timer = timer; RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer; scheduleFrame(timer)
     }
     private func stopFrames() { timer?.invalidate(); timer = nil }
     private func invalidateDisplay() {
