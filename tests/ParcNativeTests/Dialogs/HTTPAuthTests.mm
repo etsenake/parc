@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -7,10 +8,7 @@
 #import "http_auth_presenter.h"
 #define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
 static void Pump() {
-  NSDate* end = [NSDate dateWithTimeIntervalSinceNow:.08];
-  while (end.timeIntervalSinceNow > 0) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, .005, true);
-  }
+  ParcNativeAdvance(.08);
 }
 static NSWindow* Window(bool visible = true) {
   NSWindow* w = [[NSWindow alloc]

@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
 #import <Security/Security.h>
 #import <SecurityInterface/SFCertificatePanel.h>
 #import <objc/runtime.h>
@@ -13,9 +14,7 @@
 @end
 #define EXPECT(condition) PARC_CHECK(condition)
 static void Pump() {
-  for (int i = 0; i < 20; ++i) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, .01, false);
-  }
+  ParcNativeAdvance(.2);
 }
 static NSWindow* Window() {
   NSWindow* w =

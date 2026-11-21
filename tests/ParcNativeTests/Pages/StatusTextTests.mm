@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
 #import "native_appkit_bridge.h"
 #import "status_text.h"
 #include <cstdio>
@@ -21,10 +22,7 @@
 @end
 #define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
 static void Pump(double seconds) {
-  NSDate* end = [NSDate dateWithTimeIntervalSinceNow:seconds];
-  while (end.timeIntervalSinceNow > 0) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, .005, true);
-  }
+  ParcNativeAdvance(seconds);
 }
 static NSView* Find(NSView* view, NSString* name) {
   if ([view.identifier isEqual:name]) { return view; }

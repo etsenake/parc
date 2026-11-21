@@ -1,5 +1,6 @@
 #include <cmath>
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
 #include <cstdio>
 #include <cstdlib>
 
@@ -66,10 +67,7 @@ static BOOL Near(CGFloat a, CGFloat b) {
   return std::abs(a - b) < .01;
 }
 static void Pump() {
-  NSDate* end = [NSDate dateWithTimeIntervalSinceNow:.02];
-  while (end.timeIntervalSinceNow > 0) {
-    [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode beforeDate:end];
-  }
+  ParcNativeAdvance(.02);
 }
 @interface ExtensionPopupTests : ParcNativeTestCase
 @end

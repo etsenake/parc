@@ -1,5 +1,6 @@
 #import "find_bar_view.h"
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -38,8 +39,7 @@ static NSWindow *Window() {
   return window;
 }
 static void Pump() {
-  NSDate *limit = [NSDate dateWithTimeIntervalSinceNow:0.015];
-  while ([limit timeIntervalSinceNow] > 0) [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode beforeDate:limit];
+  ParcNativeAdvance(0.015);
 }
 static void Query(PCNativeFindView *view, NSString *value) {
   view.textField.stringValue = value;

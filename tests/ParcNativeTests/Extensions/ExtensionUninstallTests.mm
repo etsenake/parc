@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -8,18 +9,7 @@
 #import "window_security_reservation.h"
 #define EXPECT(condition) PARC_CHECK(condition)
 static void Pump(double seconds = .12) {
-  NSDate* until = [NSDate dateWithTimeIntervalSinceNow:seconds];
-  while (until.timeIntervalSinceNow > 0) {
-    [NSRunLoop.mainRunLoop runMode:NSDefaultRunLoopMode
-                        beforeDate:[NSDate dateWithTimeIntervalSinceNow:.01]];
-    NSEvent* event;
-    while ((event = [NSApp nextEventMatchingMask:NSEventMaskAny
-                                       untilDate:NSDate.distantPast
-                                          inMode:NSDefaultRunLoopMode
-                                         dequeue:YES])) {
-      [NSApp sendEvent:event];
-    }
-  }
+  ParcNativeAdvance(seconds);
 }
 static NSWindow* Window() {
   NSWindow* window = [[NSWindow alloc]

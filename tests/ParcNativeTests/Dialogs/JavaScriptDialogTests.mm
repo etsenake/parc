@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -8,10 +9,7 @@
 
 #define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
 static void Drain(void) {
-  NSDate* deadline = [NSDate dateWithTimeIntervalSinceNow:0.12];
-  while (deadline.timeIntervalSinceNow > 0) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);
-  }
+  ParcNativeAdvance(0.12);
 }
 static NSWindow* Window(void) {
   NSWindow* window = [[NSWindow alloc]
@@ -54,10 +52,7 @@ static NSTextField* Input(NSView* view) {
   return nil;
 }
 static void WaitEnabled(NSButton* button) {
-  NSDate* deadline = [NSDate dateWithTimeIntervalSinceNow:2];
-  while (!button.enabled && deadline.timeIntervalSinceNow > 0) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);
-  }
+  for (int step = 0; !button.enabled && step < 40; ++step) ParcNativeAdvance(0.05);
 }
 static void Click(PCJavaScriptDialogPresenter* presenter, NSString* title) {
   NSButton* button = Button(presenter.presentedSheet.contentView, title);

@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -8,10 +9,7 @@
 
 #define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
 static void Drain(void) {
-  NSDate* deadline = [NSDate dateWithTimeIntervalSinceNow:0.12];
-  while (deadline.timeIntervalSinceNow > 0) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);
-  }
+  ParcNativeAdvance(0.12);
 }
 static NSWindow* Window(void) {
   NSWindow* window = [[NSWindow alloc]
