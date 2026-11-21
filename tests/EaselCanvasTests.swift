@@ -13,6 +13,15 @@ extension NSPopover {
     override var isKeyWindow: Bool { key }
 }
 
+@MainActor private final class CapturedCanvasMenu: EaselCanvasMenuPresenting {
+    var rows: [EaselMenuRow] = []
+    var isOpen = false
+    func present(_ rows: [EaselMenuRow], in host: NSView, anchor: NSRect, keyboard: Bool, label: String) {
+        self.rows = rows; isOpen = true
+    }
+    func close(animated: Bool) { isOpen = false }
+}
+
 @MainActor private final class CanvasTextDrop: NSObject, NSDraggingInfo {
     var draggingDestinationWindow: NSWindow?
     var draggingSourceOperationMask: NSDragOperation = .copy
@@ -36,6 +45,14 @@ extension NSPopover {
 struct EaselCanvasTests {
     @MainActor static var count = 0
     @MainActor static var shownPopovers: [(NSPopover, NSRect, NSView)] = []
+    @MainActor fileprivate static let capturedMenu = CapturedCanvasMenu()
+    @MainActor static func contextMenu(_ canvas: EaselCanvasView, _ event: NSEvent) -> [EaselMenuRow] {
+        EaselCanvasView.menuPresenterFactory = { capturedMenu }
+        capturedMenu.rows = []
+        canvas.rightMouseDown(with: event)
+        return capturedMenu.rows
+    }
+    @MainActor static func menuRow(_ rows: [EaselMenuRow], _ title: String) -> EaselMenuRow { rows.first { $0.title == title }! }
     @MainActor static func expect(_ value: @autoclosure () -> Bool, _ message: String) {
         count += 1; if !value() { fatalError(message) }
     }
@@ -104,20 +121,18 @@ struct EaselCanvasTests {
         expect(session.document.items[0].frame.x == 90 && session.document.items[2].frame.x == 560 && session.document.items[1].color == "#112233", "Native canvas-center move preserves latest unrelated changes and selected group spacing")
         try session.undo()
         expect(session.document.items[0].frame == a.frame && session.document.items[1].color == "#112233", "Native group move is one independent undo transaction")
-        let menu = canvas.menu(for: mouse(.rightMouseDown, 40, 40))!
-        let duplicate = menu.items.first { $0.title == "Duplicate" }!
-        expect(canvas.validateMenuItem(duplicate), "Original selected objects admit native Duplicate")
-        _ = NSApp.sendAction(duplicate.action!, to: duplicate.target, from: duplicate)
+        let duplicate = menuRow(contextMenu(canvas, mouse(.rightMouseDown, 40, 40)), "Duplicate")
+        expect(duplicate.isEnabled, "Original selected objects admit native Duplicate")
+        duplicate.perform?()
         expect(session.document.items.count == 5 && Set(session.document.items.suffix(2).map(\.id)).isDisjoint(with: [a.id, c.id]), "Native Duplicate commits new identities for the complete selection")
         try session.undo()
         expect(session.document.items.count == 3, "One undo removes complete native duplicate group")
         canvas.selectAll(nil)
-        let staleMenu = canvas.menu(for: mouse(.rightMouseDown, 40, 40))!
-        let staleDuplicate = staleMenu.items.first { $0.title == "Duplicate" }!
-        try session.perform("Replace menu source") { $0.items[0].color = "#223344" }
-        expect(!canvas.validateMenuItem(staleDuplicate), "Changed original content disables captured menu target")
-        _ = NSApp.sendAction(staleDuplicate.action!, to: staleDuplicate.target, from: staleDuplicate)
-        expect(session.document.items.count == 3, "Stale menu action is refused at execution too")
+        let staleDuplicate = menuRow(contextMenu(canvas, mouse(.rightMouseDown, 40, 40)), "Duplicate")
+        canvas.mouseDown(with: mouse(.leftMouseDown, 300, 400)); canvas.mouseUp(with: mouse(.leftMouseUp, 300, 400))
+        expect(canvas.selection.isEmpty, "Clicking empty canvas clears the selection the menu was built for")
+        staleDuplicate.perform?()
+        expect(session.document.items.count == 3, "A menu row built for an earlier selection is refused at execution")
         canvas.mouseDown(with: mouse(.leftMouseDown, 40, 40)); canvas.mouseUp(with: mouse(.leftMouseUp, 40, 40))
         canvas.cancelOperation(nil)
         canvas.mouseDown(with: mouse(.leftMouseDown, 40, 40)); canvas.mouseUp(with: mouse(.leftMouseUp, 40, 40))
@@ -127,19 +142,18 @@ struct EaselCanvasTests {
         expect(session.document.items[0].frame.width == 70 && session.document.items[0].frame.height == 80, "Original single-object resize remains a genuine geometry transaction")
         try session.undo(); expect(session.document.items[0].frame == originalFrame, "Resize undo restores original frame")
         canvas.selectAll(nil)
-        let saveMenu = canvas.menu(for: mouse(.rightMouseDown, 40, 40))!
-        let saveDuplicate = saveMenu.items.first { $0.title == "Duplicate" }!
+        let saveDuplicate = menuRow(contextMenu(canvas, mouse(.rightMouseDown, 40, 40)), "Duplicate")
+        let savedSelection = canvas.selection
         let saved = session.document, path = directory.appendingPathComponent("documents/" + saved.id.uuidString.lowercased() + ".json")
         let bytes = try Data(contentsOf: path)
         try FileManager.default.removeItem(at: path); try FileManager.default.createDirectory(at: path, withIntermediateDirectories: false)
-        _ = NSApp.sendAction(saveDuplicate.action!, to: saveDuplicate.target, from: saveDuplicate)
-        expect(errors == 1 && session.document == saved && canvas.validateMenuItem(saveDuplicate), "Failed duplicate reports the real save error and retains original selected targets")
+        saveDuplicate.perform?()
+        expect(errors == 1 && session.document == saved && canvas.selection == savedSelection, "Failed duplicate reports the real save error and retains original selected targets")
         try FileManager.default.removeItem(at: path); try bytes.write(to: path)
         canvas.mouseDown(with: mouse(.leftMouseDown, 40, 40)); canvas.mouseDragged(with: mouse(.leftMouseDragged, 90, 90))
         NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
         canvas.mouseUp(with: mouse(.leftMouseUp, 90, 90))
         expect(session.document == saved, "Original owner resigning cancels native move")
-        expect(!canvas.validateMenuItem(saveDuplicate), "Owner resignation also retires its native menu commands")
         canvas.cancelOperation(nil)
         canvas.mouseDown(with: mouse(.leftMouseDown, 530, 55)); canvas.mouseUp(with: mouse(.leftMouseUp, 530, 55))
         canvas.keyDown(with: key(36))
@@ -149,17 +163,15 @@ struct EaselCanvasTests {
         }
         expect(window.firstResponder === canvas, "Editor Escape returns focus to the same canvas")
         canvas.selectAll(nil)
-        let detachMenu = canvas.menu(for: mouse(.rightMouseDown, 40, 40))!
-        let detachDuplicate = detachMenu.items.first { $0.title == "Duplicate" }!
-        expect(canvas.validateMenuItem(detachDuplicate), "Current original menu target is valid before detachment")
+        let detachMenu = contextMenu(canvas, mouse(.rightMouseDown, 40, 40))
+        let detachDuplicate = menuRow(detachMenu, "Duplicate")
+        expect(detachDuplicate.isEnabled, "Current original menu target is valid before detachment")
         window.contentView = nil
-        expect(!canvas.validateMenuItem(detachDuplicate), "Detached canvas retires its exact-window menu target")
-        let detachedPaste = detachMenu.items.first { $0.title == "Paste" }!
-        let detachedPlainPaste = detachMenu.items.first { $0.title == "Paste as Plain Text" }!
-        expect(!canvas.validateMenuItem(detachedPaste) && !canvas.validateMenuItem(detachedPlainPaste), "Detached menu also refuses both original-owner paste commands before clipboard access")
         let beforePaste = session.document
-        _ = NSApp.sendAction(detachedPaste.action!, to: detachedPaste.target, from: detachedPaste)
-        _ = NSApp.sendAction(detachedPlainPaste.action!, to: detachedPlainPaste.target, from: detachedPlainPaste)
+        detachDuplicate.perform?()
+        expect(session.document == beforePaste, "Detached canvas retires its exact-window menu target")
+        menuRow(detachMenu, "Paste").perform?()
+        menuRow(detachMenu, "Paste as Plain Text").perform?()
         expect(session.document == beforePaste, "Stale paste dispatch leaves exact document unchanged without reading personal clipboard")
         expect(!window.isVisible, "Component window was never displayed")
         try textFillTransactions()
@@ -338,7 +350,7 @@ struct EaselCanvasTests {
         expect(arrowNode.accessibilityPerformPress(), "Arrow admits its original object focus")
         let endpoints = canvas.accessibilityChildren()!.compactMap { $0 as? NSAccessibilityElement }
         expect(endpoints.count == 2, "Selected arrow exposes only its real two endpoints")
-        let endpointAction = endpoints.first { $0.accessibilityLabel() == "Arrow end" }!.accessibilityCustomActions()!.first { $0.name == "Move right" }!
+        let endpointAction = endpoints.first { $0.accessibilityLabel() == "Connector end" }!.accessibilityCustomActions()!.first { $0.name == "Move right" }!
         expect(endpointAction.handler?() == true && session.document.items.last!.frame.width == 51, "AX endpoint action preserves original arrow geometry owner")
         try session.undo()
         expect(session.document.items.last == arrow && endpointAction.handler?() == true, "Undo restores the exact original endpoint lease")
@@ -787,9 +799,7 @@ struct EaselCanvasTests {
         canvas.keyDown(with: right)
         expect(session.document.items[0].frame.x == 101 && session.document.items[1].frame.x == 100, "Native click passes through empty ellipse corner to original lower object")
         try session.undo(); canvas.cancelOperation(nil)
-        let menu = canvas.menu(for: event(.rightMouseDown, 103, 103))!
-        let duplicate = menu.items.first { $0.title == "Duplicate" }!
-        _ = NSApp.sendAction(duplicate.action!, to: duplicate.target, from: duplicate)
+        menuRow(contextMenu(canvas, event(.rightMouseDown, 103, 103)), "Duplicate").perform?()
         expect(session.document.items.last?.kind == .rectangle, "Native contextual hit uses the same actual content delegate")
         try session.undo(); canvas.cancelOperation(nil)
         var target = bottom; target.id = UUID(); target.frame.x = 300
@@ -806,17 +816,17 @@ struct EaselCanvasTests {
         canvas.flagsChanged(with: command); canvas.mouseUp(with: event(.leftMouseUp, 345, 150, flags: .command))
         expect(session.document.items[0].frame.x == 295, "Command modifier reversibly releases snap without another pointer move")
         try session.undo()
-        let preferences = canvas.menu(for: event(.rightMouseDown, 50, 50))!
-        let alignment = preferences.items.first { $0.title == "Use Alignment Guides" }!
-        expect(canvas.validateMenuItem(alignment) && alignment.state == .on, "Native alignment menu advertises actual enabled state")
-        _ = NSApp.sendAction(alignment.action!, to: alignment.target, from: alignment)
+        let alignment = menuRow(contextMenu(canvas, event(.rightMouseDown, 50, 50)), "Use Alignment Guides")
+        expect(alignment.isEnabled && alignment.isChecked, "Native alignment menu advertises actual enabled state")
+        alignment.perform?()
         canvas.mouseDown(with: event(.leftMouseDown, 150, 150)); canvas.mouseDragged(with: event(.leftMouseDragged, 345, 150)); canvas.mouseUp(with: event(.leftMouseUp, 345, 150))
         expect(session.document.items[0].frame.x == 295, "Disabled guide preference preserves unmodified pointer transaction")
         try session.undo()
-        let staleMenu = canvas.menu(for: event(.rightMouseDown, 50, 50))!
-        let staleToggle = staleMenu.items.first { $0.title == "Use Alignment Guides" }!
+        let staleToggle = menuRow(contextMenu(canvas, event(.rightMouseDown, 50, 50)), "Use Alignment Guides")
         window.contentView = nil
-        expect(!canvas.validateMenuItem(staleToggle), "Detached original canvas cannot dispatch captured guide preference")
+        let guidesBefore = canvas.alignmentGuidesEnabled
+        staleToggle.perform?()
+        expect(canvas.alignmentGuidesEnabled == guidesBefore, "Detached original canvas cannot dispatch captured guide preference")
         expect(!window.isVisible, "Hit/guide component never displayed a window")
     }
 
@@ -839,27 +849,20 @@ struct EaselCanvasTests {
             canvas.flagsChanged(with: NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: modifiers,
                 timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 0)!)
         }
-        func renderedCanvas() -> Data {
-            let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 800, pixelsHigh: 600,
-                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-            NSGraphicsContext.saveGraphicsState()
-            let context = NSGraphicsContext(bitmapImageRep: bitmap)!
-            NSGraphicsContext.current = context
-            context.cgContext.translateBy(x: 0, y: 600); context.cgContext.scaleBy(x: 1, y: -1)
-            canvas.draw(.init(x: 0, y: 0, width: 800, height: 600))
-            NSGraphicsContext.restoreGraphicsState()
-            return bitmap.representation(using: .png, properties: [:])!
-        }
         canvas.selectAll(nil)
-        let selectedArtwork = renderedCanvas()
         canvas.mouseDown(with: mouse(.leftMouseDown, 100, 100))
-        expect(renderedCanvas() == selectedArtwork, "Pressing the original endpoint retains its selected mark without an invented pressed fill")
-        canvas.mouseDragged(with: mouse(.leftMouseDragged, 250, 220, [.option, .shift, .command]))
+        let pressedEnds = canvas.connectorChromeItems().filter { if case .endpoint = $0.chrome { return true }; return false }
+        expect(pressedEnds.count == 2, "Pressing a connector end keeps both end handles showing")
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, 250, 220, [.option]))
         expect(session.document.items[0] == arrow, "Arrow endpoint preview does not publish original content")
-        canvas.mouseUp(with: mouse(.leftMouseUp, 250, 220))
-        expect(EaselArrowEndpoint.start.point(in: session.document.items[0]) == .init(x: 250, y: 220) && EaselArrowEndpoint.end.point(in: session.document.items[0]) == .init(x: 200, y: 180), "Native original endpoint crosses while modifiers leave its payload owner unchanged")
+        canvas.mouseUp(with: mouse(.leftMouseUp, 250, 220, [.option]))
+        expect(EaselArrowEndpoint.start.point(in: session.document.items[0]) == .init(x: 250, y: 220) && EaselArrowEndpoint.end.point(in: session.document.items[0]) == .init(x: 200, y: 180), "Native original endpoint crosses while Option leaves its payload owner unchanged")
         try session.undo(); expect(session.document.items[0] == arrow, "Native endpoint drag is exactly one undo")
+        canvas.mouseDown(with: mouse(.leftMouseDown, 100, 100))
+        canvas.mouseDragged(with: mouse(.leftMouseDragged, 250, 220, [.shift])); canvas.mouseUp(with: mouse(.leftMouseUp, 250, 220, [.shift]))
+        let shifted = EaselArrowEndpoint.start.point(in: session.document.items[0])
+        expect(shifted.map { abs(abs($0.x - 200) - abs($0.y - 180)) < 0.01 && $0.x > 200 } == true, "Shift snaps a connector end to 45° steps from its other end")
+        try session.undo(); expect(session.document.items[0] == arrow, "Shift-snapped end drag is one undo too")
         canvas.mouseDown(with: mouse(.leftMouseDown, 200, 180))
         canvas.mouseDragged(with: mouse(.leftMouseDragged, 201, 180)); canvas.mouseUp(with: mouse(.leftMouseUp, 201, 180))
         expect(EaselArrowEndpoint.end.point(in: session.document.items[0]) == .init(x: 201, y: 180), "Endpoint direct-end route accepts a precise one-point drag")

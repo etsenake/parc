@@ -77,13 +77,14 @@ struct EaselSelectionToolbarCanvasTests {
         expect(canvas.performSelectionToolbarMenu(.alignment, entry: "center"), "Alignment applies from its menu")
         expect(style(session, text.id)?.alignment == .center, "Centre alignment sticks to the text")
         expect(canvas.selectionToolbarMenu(for: .alignment).first { $0.id == "center" }?.isChecked == true, "The menu checks the current alignment")
-        let colors = canvas.selectionToolbarMenu(for: .color)
-        expect(colors.count == EaselPalette.colors(for: .ink).count && colors.allSatisfy { $0.tint != nil }, "Text colour lists the palette with swatches")
+        let colorButton = canvas.selectionToolbarModel?.groups.joined().first { $0.control == .color }
+        expect(colorButton?.opens == .stylePicker && colorButton?.isEnabled == true, "Text colour opens the colour and style picker")
         guard let red = EaselPalette.hex(.note(.red), role: .ink) else { failTest("The palette has red ink") }
-        expect(canvas.performSelectionToolbarMenu(.color, entry: red), "Picking a text colour applies it")
+        expect(canvas.applyColor(.palette(.note(.red))), "Picking a text colour applies it")
         expect(session.document.items.first { $0.id == text.id }.flatMap { EaselPalette.normalized($0.color) } == EaselPalette.normalized(red),
                "The text takes the chosen ink")
-        expect(canvas.selectionToolbarMenu(for: .color).first { $0.id == red }?.isChecked == true, "The colour menu checks the current ink")
+        expect(canvas.styleSummary.color.map { EaselPalette.normalized($0.hex(role: .ink)) } == EaselPalette.normalized(red),
+               "The picker shows the current ink")
 
         canvas.selection = [text.id, shape.id]
         let pair = controls(canvas)
@@ -93,6 +94,10 @@ struct EaselSelectionToolbarCanvasTests {
         let arrangeMenu = canvas.selectionToolbarMenu(for: .arrange)
         expect(arrangeMenu.count == 8 && arrangeMenu.prefix(6).allSatisfy(\.isEnabled) && arrangeMenu.suffix(2).allSatisfy { !$0.isEnabled },
                "Two objects can align but need a third to distribute")
+        try session.perform("Stagger") { document in
+            guard let index = document.items.firstIndex(where: { $0.id == shape.id }) else { return }
+            document.items[index].frame.y = 90
+        }
         expect(canvas.performSelectionToolbarMenu(.arrange, entry: "align.top"), "Align top runs from the menu")
         expect(Set(session.document.items.filter { [text.id, shape.id].contains($0.id) }.map(\.frame.y)).count == 1, "Align top lines the tops up")
         expect(!canvas.performSelectionToolbarMenu(.arrange, entry: "align.sideways"), "Unknown alignments are refused")
