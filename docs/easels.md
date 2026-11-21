@@ -157,9 +157,11 @@ resize rather than applying it to a different coordinate space.
 
 ## Arrow endpoints and image aspect controls
 
-Endpoint targets are 20 points, with eight-point marks and 2.5-point borders.
-Dragging fixes the opposite endpoint and uses white/black with blue `#6CBAD9`
-feedback. Endpoints highlight exact guides without adding snap corrections.
+Arrows are connectors: their ends snap to side magnets, pinned points or an
+automatic side on other objects, route straight, elbow or curved, and carry
+heads, labels and bends. Endpoint targets are 20 points; dragging an end fixes
+the other one. Attaching, routing, labels and quick create are in
+[connectors](easel-connectors.md).
 
 Images, webpage cards and links preserve aspect by default. Shift applies
 aspect to a group; Command overrides it. Resize changes geometry without
