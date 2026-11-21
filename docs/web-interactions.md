@@ -485,7 +485,7 @@ press feedback. Status-capsule style/side changes do not animate.
 
 ## Checks
 
-Focused suites are `tests/SiteControlCenter`, `tests/NativeSitePermissions`,
+Focused suites are the `SiteControlCenter*Tests` package suites, `tests/NativeSitePermissions`,
 `tests/NativeJavaScriptDialogs`, `tests/NativeHTTPAuth`,
 `tests/NativeExternalProtocol`, `tests/NativeStatusText`, `tests/NativeShiftLink`,
 `tests/RendererCrashPresentation`, `BlockedPopupsTests` (blocked-content
