@@ -19,7 +19,7 @@ extension EaselCanvasView {
     static func captureBoardAccepts(_ kind: EaselItemKind) -> Bool {
         switch kind {
         case .text, .image, .rectangle, .circle, .arrow, .freehand, .sticky, .stamp: return true
-        case .webCard, .browser, .link, .section, .table, .code, .video: return false
+        case .webCard, .browser, .link, .section, .table, .code, .video, .audio, .file, .pdf, .equation: return false
         }
     }
 }

@@ -128,7 +128,8 @@ enum EaselVectorExport {
     }
 
     static func element(_ item: EaselItem, art: EaselVectorArt) -> String {
-        transformed(item, kindElement(item, art: art))
+        guard !item.isEmptyPlaceholder else { return "" }
+        return transformed(item, kindElement(item, art: art))
     }
 
     static func transformed(_ item: EaselItem, _ body: String) -> String {
@@ -164,6 +165,7 @@ enum EaselVectorExport {
         case .code: return codeBlock(item, art.texts[item.id])
         case .stamp: return stamp(item, art.images[item.id])
         case .video: return art.images[item.id].map { poster(item, $0) } ?? ""
+        case .audio, .file, .pdf, .equation: return ""
         }
     }
 

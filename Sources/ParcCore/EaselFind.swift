@@ -37,7 +37,7 @@ enum EaselFinder {
                 guard let text = table.cell(coordinate)?.text, !text.isEmpty else { return nil }
                 return (.cell(row: coordinate.row, column: coordinate.column), text)
             }
-        case .image, .freehand, .browser, .stamp, .video:
+        case .image, .freehand, .browser, .stamp, .video, .audio, .file, .pdf, .equation:
             return []
         }
     }
@@ -45,7 +45,7 @@ enum EaselFinder {
     static func replaceability(of item: EaselItem) -> EaselReplaceability {
         switch item.kind {
         case .text, .sticky, .rectangle, .circle, .arrow, .section, .code, .table: return item.isLocked ? .locked : .replaceable
-        case .image, .freehand, .link, .webCard, .browser, .stamp, .video: return .readOnly
+        case .image, .freehand, .link, .webCard, .browser, .stamp, .video, .audio, .file, .pdf, .equation: return .readOnly
         }
     }
 

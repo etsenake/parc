@@ -71,7 +71,146 @@ struct EaselStoreTests {
         webInputDestinations()
         try boardObjectFields()
         try damagedStackOrder()
-        print("EaselStore: \(assertions) assertions passed (24 test groups)")
+        try mediaPlaceholdersAndFields()
+        try mediaAssetTypes()
+        mediaPlacement()
+        print("EaselStore: \(assertions) assertions passed (27 test groups)")
+    }
+
+    @MainActor static func mediaPlaceholdersAndFields() throws {
+        try withDirectory { directory in
+            let store = try EaselStore(directory: directory)
+            let session = try store.create()
+            let legacy = session.document
+            let legacyBytes = try Data(contentsOf: file(directory, legacy.id))
+            let placeholders = [EaselItemKind.image, .video, .audio, .file, .pdf, .link, .browser, .equation].enumerated().map { index, kind in
+                EaselItem(kind: kind, frame: frame, zIndex: index)
+            }
+            expect(placeholders.filter(\.isEmptyPlaceholder).count == 7, "Media, bookmark and embed placeholders read as empty; an equation is not a placeholder")
+            expect(!placeholders.contains(where: \.ownsEmbeddedPage), "An embed without an address owns no page")
+            try session.perform("Add placeholders") { $0.items = placeholders }
+            let reopened = try EaselStore(directory: directory).load(session.document.id)
+            expect(reopened.document.items == placeholders, "Empty placeholders round-trip")
+            let json = String(decoding: try Data(contentsOf: file(directory, legacy.id)), as: UTF8.self)
+            expect(!json.contains("fileName") && !json.contains("preview") && !json.contains("credit"), "Unused media fields stay out of the file")
+            expect(!String(decoding: legacyBytes, as: UTF8.self).contains("fileName"), "An Easel from before the media fields writes none of them")
+
+            let png = try session.importPNG(Self.png)
+            var image = EaselItem(kind: .image, frame: frame, zIndex: 20, assetID: png)
+            image.credit = EaselMediaCredit(name: "Ada Lovelace", profileURL: "https://unsplash.com/@ada", photoURL: "https://unsplash.com/photos/abc")
+            var video = EaselItem(kind: .video, frame: frame, zIndex: 21, url: "https://example.com/clip.mp4")
+            video.fileName = "clip.mp4"
+            var audio = EaselItem(kind: .audio, frame: frame, zIndex: 22, url: "https://example.com/song.mp3")
+            audio.fileName = "song.mp3"
+            var link = EaselItem(kind: .link, frame: frame, zIndex: 23, url: "https://example.org/")
+            link.preview = EaselLinkPreviewData(title: "Example", summary: "Line one\nLine two", siteName: "Example", image: png, icon: "https://example.org/icon.png")
+            let equation = EaselItem(kind: .equation, frame: frame, zIndex: 24, text: "e^{i\\pi} + 1 = 0")
+            try session.perform("Add media") { $0.items = [image, video, audio, link, equation] }
+            let again = try EaselStore(directory: directory).load(session.document.id)
+            expect(again.document.items == [image, video, audio, link, equation], "Credit, file names, media links, previews and TeX round-trip")
+            expect(link.assetReferences == [png], "A saved preview picture counts as an asset reference")
+
+            @MainActor func refuses(_ message: String, _ change: (inout EaselItem) -> Void, kind: EaselItemKind = .text) {
+                var item = EaselItem(kind: kind, frame: frame, zIndex: 40)
+                change(&item)
+                expectThrows(message) { try session.perform("Bad") { $0.items.append(item) } }
+            }
+            refuses("file name on text") { $0.fileName = "a.txt" }
+            refuses("file name on an image", { $0.fileName = "a.png" }, kind: .image)
+            refuses("blank file name", { $0.fileName = "  " }, kind: .file)
+            refuses("file name with a line break", { $0.fileName = "a\nb.txt" }, kind: .file)
+            refuses("preview on an embed", { $0.preview = EaselLinkPreviewData(title: "T") }, kind: .browser)
+            refuses("empty preview", { $0.preview = EaselLinkPreviewData() }, kind: .link)
+            refuses("preview with a script address", { $0.preview = EaselLinkPreviewData(image: "javascript:alert(1)") }, kind: .link)
+            refuses("oversized preview title", { $0.preview = EaselLinkPreviewData(title: String(repeating: "a", count: 3000)) }, kind: .link)
+            refuses("credit on a video", { $0.credit = EaselMediaCredit(name: "Ada") }, kind: .video)
+            refuses("blank credit", { $0.credit = EaselMediaCredit(name: " ") }, kind: .image)
+            refuses("credit with a script profile", { $0.credit = EaselMediaCredit(name: "Ada", profileURL: "javascript:x") }, kind: .image)
+            refuses("link on a file", { $0.url = "https://example.com/a.zip" }, kind: .file)
+            refuses("link on a PDF", { $0.url = "https://example.com/a.pdf" }, kind: .pdf)
+            refuses("link on an equation", { $0.url = "https://example.com/" }, kind: .equation)
+            refuses("asset on an equation", { $0.assetID = png }, kind: .equation)
+            refuses("picture on audio", { $0.assetID = png }, kind: .audio)
+            refuses("picture on a PDF", { $0.assetID = png }, kind: .pdf)
+            refuses("picture on a file", { $0.assetID = png }, kind: .file)
+            refuses("non-web video link", { $0.url = "file:///tmp/clip.mp4" }, kind: .video)
+            expect(again.document.items.count == 5, "Refused fields leave the document alone")
+        }
+    }
+
+    @MainActor static func mediaAssetTypes() throws {
+        let wav = Data("RIFF".utf8) + Data([36, 0, 0, 0]) + Data("WAVEfmt ".utf8) + Data(repeating: 0, count: 24)
+        let aiff = Data("FORM".utf8) + Data([0, 0, 0, 30]) + Data("AIFFCOMM".utf8) + Data(repeating: 0, count: 20)
+        let mp3 = Data("ID3".utf8) + Data([4, 0, 0, 0, 0, 0, 0]) + Data(repeating: 0, count: 16)
+        let frameMP3 = Data([0xFF, 0xFB, 0x90, 0x64]) + Data(repeating: 0, count: 16)
+        let aac = Data([0xFF, 0xF1, 0x50, 0x80]) + Data(repeating: 0, count: 16)
+        let m4a = Data([0, 0, 0, 24]) + Data("ftypM4A ".utf8) + Data([0, 0, 2, 0]) + Data("M4A isom".utf8) + Data(repeating: 0, count: 8)
+        let mp4 = Data([0, 0, 0, 24]) + Data("ftypisom".utf8) + Data([0, 0, 2, 0]) + Data("isomiso2".utf8) + Data(repeating: 0, count: 8)
+        let pdf = Data("%PDF-1.7\n".utf8) + Data(repeating: 32, count: 16)
+        expect(EaselAssetType.sniff(wav) == .wav && EaselAssetType.sniff(aiff) == .aiff, "WAV and AIFF are recognised")
+        expect(EaselAssetType.sniff(mp3) == .mp3 && EaselAssetType.sniff(frameMP3) == .mp3, "MP3 with or without ID3 is recognised")
+        expect(EaselAssetType.sniff(aac) == .aac && EaselAssetType.sniff(m4a) == .m4a, "AAC and M4A are recognised")
+        expect(EaselAssetType.sniff(mp4) == .mp4 && EaselAssetType.sniff(pdf) == .pdf, "Videos stay videos and PDFs are recognised")
+        expect(EaselAssetType.sniff(Self.png) == .png, "Pictures keep their type")
+        expect(EaselAssetType.audioType(forExtension: "AIF") == .aiff && EaselAssetType.audioType(forExtension: "txt") == nil, "Audio extensions map to types")
+        let uuid = UUID()
+        let fileID = EaselAssetType.assetID(uuid, type: .file, fileExtension: "PNG")
+        expect(fileID == uuid.uuidString.lowercased() + ".file.png", "Other files keep their extension behind a file marker")
+        expect(EaselAssetType.of(assetID: fileID) == .file && EaselAssetType.fileExtension(of: fileID) == "png", "A file asset keeps its own type and extension")
+        expect(EaselAssetType.assetID(uuid, type: .file, fileExtension: "../x") == uuid.uuidString.lowercased() + ".file", "Unsafe extensions are dropped")
+        expect(EaselAssetType.of(assetID: uuid.uuidString.lowercased() + ".png.file") == nil, "Only file assets carry a second extension")
+        expect(EaselAssetType.of(assetID: uuid.uuidString.lowercased() + ".file.a/b") == nil, "Path characters never reach an asset name")
+        expect(EaselAssetType.of(assetID: uuid.uuidString.uppercased() + ".png") == nil, "Asset names are lowercase")
+        try withDirectory { directory in
+            let store = try EaselStore(directory: directory)
+            let session = try store.create()
+            let audioID = try session.importAsset(wav, type: .wav)
+            let pdfID = try session.importAsset(pdf, type: .pdf)
+            let zipID = try session.importAsset(Data("PK\u{3}\u{4}zip".utf8), type: .file, fileExtension: "zip")
+            let pngFileID = try session.importAsset(Self.png, type: .file, fileExtension: "png")
+            expectThrows("PDF bytes as audio") { _ = try session.importAsset(pdf, type: .mp3) }
+            expectThrows("audio bytes as PDF") { _ = try session.importAsset(wav, type: .pdf) }
+            expectThrows("empty file") { _ = try session.importAsset(Data(), type: .file) }
+            expectThrows("oversized file") { _ = try session.importAsset(Data(count: EaselStore.maximumAssetBytes + 1), type: .file, fileExtension: "bin") }
+            var audio = EaselItem(kind: .audio, frame: frame, assetID: audioID); audio.fileName = "Take one.wav"
+            var paper = EaselItem(kind: .pdf, frame: frame, zIndex: 1, assetID: pdfID); paper.fileName = "Paper.pdf"
+            var archive = EaselItem(kind: .file, frame: frame, zIndex: 2, assetID: zipID); archive.fileName = "Backup.zip"
+            let picture = EaselItem(kind: .file, frame: frame, zIndex: 3, assetID: pngFileID)
+            try session.perform("Add files") { $0.items = [audio, paper, archive, picture] }
+            let zipURL = try session.assetURL(zipID)
+            expect(zipURL.pathExtension == "zip", "Stored files keep their extension for Quick Look")
+            expectThrows("audio asset on a video") { try session.perform("Bad") { $0.items.append(EaselItem(kind: .video, frame: frame, zIndex: 9, assetID: audioID)) } }
+            expectThrows("PDF asset on a file") { try session.perform("Bad") { $0.items.append(EaselItem(kind: .file, frame: frame, zIndex: 9, assetID: pdfID)) } }
+            expectThrows("file asset on an image") { try session.perform("Bad") { $0.items.append(EaselItem(kind: .image, frame: frame, zIndex: 9, assetID: zipID)) } }
+            let destination = try EaselStore(directory: directory.appendingPathComponent("other"))
+            try store.retireSessionForRelocation(session.document.id)
+            let copied = try store.relocate(session.document.id, to: destination)
+            expect(Set(copied) == [audioID, pdfID, zipID, pngFileID], "Moving an Easel copies audio, PDF and file assets")
+            let moved = try destination.load(session.document.id)
+            expect(moved.document.items == [audio, paper, archive, picture], "Moved media objects reopen the same")
+        }
+    }
+
+    @MainActor static func mediaPlacement() {
+        let visible = EaselRect(x: 100, y: 200, width: 1000, height: 600)
+        let first = EaselMediaPlacement.placeholderFrame(for: .image, visible: visible, occupied: [])
+        expect(first == EaselRect(x: 360, y: 474, width: 480, height: 52), "A placeholder lands at the centre of the visible area")
+        let second = EaselMediaPlacement.placeholderFrame(for: .pdf, visible: visible, occupied: [first ?? frame])
+        expect(second?.x == 384 && second?.y == 498, "A second placeholder steps aside from the first")
+        let filled = EaselMediaPlacement.resized(EaselRect(x: 360, y: 474, width: 480, height: 52), width: 480, height: 270)
+        expect(filled == EaselRect(x: 360, y: 365, width: 480, height: 270), "Filling resizes around the same centre")
+        let video = EaselMediaPlacement.filledSize(for: .video, natural: (1920, 1080))
+        expect(video.width == 480 && video.height == 270, "Video fills at 480 wide in its own aspect")
+        let tall = EaselMediaPlacement.filledSize(for: .image, natural: (100, 200))
+        expect(tall.width == 100 && tall.height == 200, "Small pictures keep their natural size")
+        expect(EaselMediaPlacement.filledSize(for: .browser) == (640, 420), "Embeds fill at 640 by 420")
+        let row = EaselMediaPlacement.row(of: [(100, 50), (200, 100)], centredAt: EaselPoint(x: 500, y: 500))
+        expect(row.count == 2 && row[0].x == 338 && row[1].x == 462 && row[0].y == 475 && row[1].y == 450, "Imports sit in a tidy row")
+        expect(EaselMediaPlacement.placesEmpty(.equation) && !EaselMediaPlacement.placesEmpty(.sticky), "Only media, web and equation kinds place empty")
+        var empty = EaselItem(kind: .pdf, frame: frame)
+        expect(EaselMediaPlacement.accessibilityLabel(empty) == "Empty PDF", "VoiceOver names an empty PDF")
+        empty.kind = .audio
+        expect(EaselMediaPlacement.accessibilityLabel(empty) == "Empty audio", "VoiceOver names empty audio")
     }
 
     @MainActor static func damagedStackOrder() throws {
@@ -414,8 +553,7 @@ struct EaselStoreTests {
             expectThrows("non-finite geometry") { try session.perform("Bad") { $0.items = [EaselItem(kind: .text, frame: .init(x: .nan, y: 0, width: 1, height: 1))] } }
             expectThrows("negative size") { try session.perform("Bad") { $0.items = [EaselItem(kind: .text, frame: .init(x: 0, y: 0, width: -2, height: 1))] } }
             expectThrows("duplicate ID") { try session.perform("Bad") { let item = EaselItem(kind: .text, frame: frame); $0.items = [item, item] } }
-            expectThrows("image requires asset") { try session.perform("Bad") { $0.items = [EaselItem(kind: .image, frame: frame)] } }
-            expectThrows("link requires URL") { try session.perform("Bad") { $0.items = [EaselItem(kind: .link, frame: frame)] } }
+            expectThrows("captured card requires URL") { try session.perform("Bad") { $0.items = [EaselItem(kind: .webCard, frame: frame)] } }
             expectThrows("javascript URL") { try session.perform("Bad") { $0.items = [EaselItem(kind: .link, frame: frame, url: "javascript:alert(1)")] } }
             expectThrows("file URL") { try session.perform("Bad") { $0.items = [EaselItem(kind: .link, frame: frame, url: "file:///tmp/example")] } }
             expectThrows("arrow requires endpoints") { try session.perform("Bad") { $0.items = [EaselItem(kind: .arrow, frame: frame)] } }

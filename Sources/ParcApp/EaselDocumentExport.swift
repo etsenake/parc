@@ -155,7 +155,7 @@ enum EaselDocumentExport {
                 connectorArt(item, lookup: lookup, into: &art)
             case .rectangle, .circle:
                 if !item.text.isEmpty { art.texts[item.id] = vectorText(item) }
-            case .freehand, .link:
+            case .freehand, .link, .audio, .file, .pdf, .equation:
                 break
             }
         }
