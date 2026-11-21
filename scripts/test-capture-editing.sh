@@ -41,6 +41,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvas"*.swift \
+  "$repo_root/Sources/ParcApp/NoteCustomEmojiImages.swift" \
   "$repo_root/Sources/ParcApp/EaselStampArtwork.swift" "$check_root/EaselShapePickerStub.swift" "$check_root/EaselTooltipStub.swift" \
   "$repo_root/Sources/ParcApp/ParcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/EaselMotion.swift" \
