@@ -213,6 +213,7 @@ extension EaselCanvasView {
             return claim(ready && EaselArrange.canUngroup(selection, in: document)) { ungroupSelection() }
         case .toggleLock: return claim(ready && !selection.isEmpty) { toggleLock() }
         case .layer(let move): return claim(ready && EaselArrange.canMoveLayer(selection, in: document)) { moveLayer(move) }
+        case .alignText(let alignment): return alignText(alignment, editing: editing)
         }
     }
 

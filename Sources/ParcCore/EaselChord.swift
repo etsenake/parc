@@ -55,6 +55,7 @@ enum EaselChordCommand: Hashable {
     case unwrap
     case toggleLock
     case layer(EaselLayerMove)
+    case alignText(EaselTextStyle.Alignment)
 }
 
 enum EaselChords {
@@ -66,6 +67,9 @@ enum EaselChords {
         EaselChord("l", [.command, .shift]): .toggleLock,
         EaselChord("]", .command): .layer(.forward),
         EaselChord("[", .command): .layer(.backward),
+        EaselChord("l", [.command, .option]): .alignText(.left),
+        EaselChord("t", [.command, .option]): .alignText(.center),
+        EaselChord("r", [.command, .option]): .alignText(.right),
     ]
 
     static let reserved: [EaselChord] = [

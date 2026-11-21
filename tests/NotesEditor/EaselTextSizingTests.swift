@@ -146,6 +146,14 @@ struct EaselTextSizingTests {
         expect(EaselTextSizing.sharedAlignment(document.items) == nil, "A mixed selection reports no single alignment")
         expect(EaselTextSizing.canAlign([plain]) && !EaselTextSizing.canAlign([locked, image]), "Alignment needs unlocked text")
         expect(EaselTextStyle.Alignment.allCases.map(\.shortcut) == ["⌥⌘L", "⌥⌘T", "⌥⌘R"], "Alignment shortcuts read left, centre, right")
+        let chords: [(String, UInt16, EaselTextStyle.Alignment)] = [("l", 37, .left), ("t", 17, .center), ("r", 15, .right)]
+        for (letter, code, alignment) in chords {
+            expect(EaselChords.command(characters: letter, keyCode: code, modifiers: [.command, .option]) == .alignText(alignment),
+                   "⌥⌘\(letter.uppercased()) aligns text")
+            expect(EaselChords.command(characters: letter, keyCode: code, modifiers: [.command]) != .alignText(alignment),
+                   "⌘\(letter.uppercased()) alone never aligns text")
+        }
+        expect(EaselChords.reserved.allSatisfy { EaselChords.table[$0] == nil }, "Alignment chords stay clear of Parc's reserved chords")
     }
 
     static func handles() {
