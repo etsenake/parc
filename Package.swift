@@ -19,6 +19,7 @@ let sparkleFrameworks = Context.environment["PARC_SPARKLE_FRAMEWORKS"] ?? sparkl
 
 let strict: [SwiftSetting] = [.treatAllWarnings(as: .error)]
 let nativeFlags: [CSetting] = [.unsafeFlags(["-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-Werror"])]
+let presentationFlags: [CSetting] = [.unsafeFlags(["-include", root + "/tests/ParcNativeTests/Support/ParcNativePresentation.h"])]
 let facadeFlags: [CSetting] = nativeFlags + [
     .unsafeFlags(["-Wno-unused-parameter", "-Wno-incomplete-implementation", "-Wno-objc-property-implementation",
                   "-Wno-objc-protocol-property-synthesis", "-Wno-protocol", "-Wno-objc-root-class", "-Wno-nullability-completeness"]),
@@ -69,12 +70,14 @@ let package = Package(
         .testTarget(name: "ParcCoreTests", dependencies: ["ParcCore"], path: "tests/ParcCoreTests",
                     swiftSettings: strict),
         .target(name: "ParcNative", path: "tests/ParcNativeLibrary",
-                cSettings: nativeFlags + [.unsafeFlags(["-Wno-unused-parameter"]),
+                cSettings: presentationFlags + nativeFlags + [.unsafeFlags(["-Wno-unused-parameter"]),
                                           .headerSearchPath("../../Engine/ParcNative")],
                 linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("QuartzCore"),
                                  .linkedFramework("Security"), .linkedFramework("SecurityInterface")]),
         .testTarget(name: "ParcNativeTests", dependencies: ["ParcNative"], path: "tests/ParcNativeTests",
-                    cSettings: nativeFlags + [.unsafeFlags(["-Wno-unused-parameter"]), .headerSearchPath("Support"), .headerSearchPath("../../Engine/ParcNative"),
+                    exclude: ["Artwork/Borderless.png", "Artwork/Monochrome.png"],
+                    resources: [.copy("Dialogs/certificate-fixture.pem"), .copy("Artwork/Monochrome.svg")],
+                    cSettings: presentationFlags + nativeFlags + [.unsafeFlags(["-Wno-unused-parameter"]), .headerSearchPath("Support"), .headerSearchPath("../../Engine/ParcNative"),
                                               .headerSearchPath("../../Engine/ParcHost/native"), .headerSearchPath("../../Engine/ParcRenderer"), .headerSearchPath("../../Engine/ParcChromium"),
                                               .headerSearchPath("Media/FairPlayIdentityDoubles/include"),
                                               .headerSearchPath("../../Sources/ParcEngine")]),

@@ -28,9 +28,9 @@ static NSWindow* Window() {
   return w;
 }
 static NSData* FixtureCertificate() {
-  NSString* path = [@(__FILE__).stringByDeletingLastPathComponent
-      stringByAppendingPathComponent:@"certificate-fixture.pem"];
+  NSString* path = [SWIFTPM_MODULE_BUNDLE pathForResource:@"certificate-fixture" ofType:@"pem"];
   NSString* pem = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+  if (!pem) return nil;
   NSRange begin = [pem rangeOfString:@"-----BEGIN CERTIFICATE-----"];
   NSRange end = [pem rangeOfString:@"-----END CERTIFICATE-----"];
   if (begin.location == NSNotFound || end.location == NSNotFound) return nil;

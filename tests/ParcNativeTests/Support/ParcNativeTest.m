@@ -1,5 +1,6 @@
 #import "ParcNativeTest.h"
 #import "ParcNativeWindows.h"
+#import "ParcNativeClock.h"
 
 #import <objc/runtime.h>
 
@@ -27,21 +28,22 @@ void ParcNativeCheckMessage(const char* file, int line, bool passed, const char*
 
 @implementation ParcNativeTestCase
 
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyProhibited;
-}
-
 - (void)setUp {
   [super setUp];
   self.continueAfterFailure = NO;
   currentTest = self;
+#ifdef PARC_NATIVE_OFFSCREEN
+  ParcNativeResetClock();
+#endif
   [NSApplication sharedApplication];
-  [NSApp setActivationPolicy:[self.class activationPolicy]];
+  [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
 }
 
 - (void)tearDown {
   BOOL onScreen = NO;
+#ifdef PARC_NATIVE_OFFSCREEN
   for (NSWindow* window in NSApp.windows) onScreen |= ParcNativeWindowOrderedForReal(window);
+#endif
   for (Class cls = self.class; cls != ParcNativeTestCase.class; cls = class_getSuperclass(cls)) {
     unsigned count = 0;
     Ivar* ivars = class_copyIvarList(cls, &count);
@@ -51,6 +53,9 @@ void ParcNativeCheckMessage(const char* file, int line, bool passed, const char*
     }
     free(ivars);
   }
+#ifdef PARC_NATIVE_OFFSCREEN
+  ParcNativeResetClock();
+#endif
   XCTestCase* test = currentTest;
   currentTest = nil;
   [super tearDown];

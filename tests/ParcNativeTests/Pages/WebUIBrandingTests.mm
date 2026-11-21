@@ -21,7 +21,6 @@ using parc::branding::kDarkLogoSvg;
 using parc::branding::kMarkPath;
 using parc::branding::kPaddedLogoSvg;
 using parc::branding::kProductIcon;
-using parc::branding::kResourceEdits;
 using parc::branding::ParsePath;
 using parc::branding::ResourceEdits;
 
@@ -253,7 +252,6 @@ void TestOverlapAndLookup() {
   PARC_CHECK(text == "xabcdx");
   PARC_CHECK(FindResourceEdits("IDR_NOT_BRANDED") == nullptr);
   PARC_CHECK(!FindEdit("abc", {"", {}, "x", 0}).has_value());
-  PARC_CHECK(std::size(kResourceEdits) == 4);
   const auto spans = FindEdit("<g id=\"chrome-product\">x</g>", {"<g id=\"chrome-product\"", "</g>", "y", 1});
   PARC_CHECK(spans.has_value() && spans->size() == 1 && (*spans)[0].end == 28);
 }
@@ -306,9 +304,8 @@ static NSString* Mark(void) {
 }
 
 - (void)testTheAppMarkArtworkIsTheEnginesPath {
-  NSString* file = [@(__FILE__).stringByDeletingLastPathComponent
-      stringByAppendingPathComponent:@"../../../Resources/AppIcons/Marks/Monochrome.svg"];
-  NSXMLDocument* document = [[NSXMLDocument alloc] initWithData:[NSData dataWithContentsOfFile:file] options:0 error:nil];
+  NSURL* file = [SWIFTPM_MODULE_BUNDLE URLForResource:@"Monochrome" withExtension:@"svg"];
+  NSXMLDocument* document = [[NSXMLDocument alloc] initWithData:[NSData dataWithContentsOfURL:file] options:0 error:nil];
   NSXMLElement* svg = document.rootElement;
   PARC_CHECK([svg.localName isEqual:@"svg"] && [[svg attributeForName:@"viewBox"].stringValue isEqual:@"0 0 24 24"]);
   PARC_CHECK([PathOf(svg) isEqual:Mark()]);

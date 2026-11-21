@@ -59,10 +59,6 @@ static BOOL Inside(NSView* view) {
   PromptOutcome* _outcome;
 }
 
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
-}
-
 - (void)setUp {
   [super setUp];
   _window = Window();
@@ -203,10 +199,6 @@ static BOOL Inside(NSView* view) {
   NSButton* _always;
 }
 
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
-}
-
 - (void)setUp {
   [super setUp];
   _window = Window();
@@ -269,10 +261,6 @@ static BOOL Inside(NSView* view) {
 
 @implementation DialogPanelCompositionTests {
   PanelFixture* _fixture;
-}
-
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
 }
 
 - (void)setUp {
@@ -400,10 +388,6 @@ static BOOL Inside(NSView* view) {
 @implementation DialogCheckboxTests {
   CheckboxFixture* _fixture;
   NSSize _size;
-}
-
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
 }
 
 - (void)setUp {

@@ -1,106 +1,170 @@
 #import "ParcNativeWindows.h"
+#import "ParcNativePresentation.h"
 
 #import <dlfcn.h>
+#import <objc/message.h>
 #import <objc/runtime.h>
 
-static const void* bundleBase;
-static const void* kVirtualVisible = &kVirtualVisible;
+#undef NSPopover
 
-static BOOL CalledFromTestBundle(void* address) {
-  Dl_info info;
-  return dladdr(address, &info) && info.dli_fbase == bundleBase;
+@interface ParcNativeWindowState : NSObject
+@property BOOL visible;
+@property(weak) NSWindow* sheetOwner;
+@property(weak) NSWindow* parent;
+@property(strong) NSWindow* sheet;
+@property(copy) void (^completion)(NSModalResponse);
+@property(strong) NSMutableArray<NSWindow*>* children;
+@end
+@implementation ParcNativeWindowState
+@end
+
+static ParcNativeWindowState* State(NSWindow* window) {
+  ParcNativeWindowState* state = objc_getAssociatedObject(window, @selector(parcAttachedSheet));
+  if (!state && window) {
+    state = [ParcNativeWindowState new];
+    objc_setAssociatedObject(window, @selector(parcAttachedSheet), state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+  }
+  return state;
 }
 
-typedef BOOL (*VisibleIMP)(id, SEL);
-typedef void (*OrderIMP)(id, SEL, id);
-typedef void (*OrderRelativeIMP)(id, SEL, NSWindowOrderingMode, NSInteger);
-static VisibleIMP realIsVisible;
-static OrderIMP realOrderOut;
-
-static void SetVirtualVisible(NSWindow* window, BOOL visible) {
-  objc_setAssociatedObject(window, kVirtualVisible, visible ? @YES : nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-}
-
-static BOOL VirtualVisible(NSWindow* window) {
-  if ([objc_getAssociatedObject(window, kVirtualVisible) boolValue]) return YES;
-  NSWindow* parent = window.sheetParent;
-  return parent && VirtualVisible(parent);
-}
+static BOOL (*realIsVisible)(id, SEL);
 
 BOOL ParcNativeWindowOrderedForReal(NSWindow* window) {
   return realIsVisible(window, @selector(isVisible));
 }
 
 void ParcNativeMarkVisible(NSWindow* window) {
-  SetVirtualVisible(window, YES);
+  State(window).visible = YES;
 }
 
 NSWindow* ParcNativeOffscreenWindow(NSRect frame, NSWindowStyleMask style) {
-  NSWindow* window = [[NSWindow alloc] initWithContentRect:frame
-                                                 styleMask:style
-                                                   backing:NSBackingStoreBuffered
-                                                     defer:NO];
+  NSWindow* window = [[NSWindow alloc] initWithContentRect:frame styleMask:style
+                                                   backing:NSBackingStoreBuffered defer:YES];
   window.releasedWhenClosed = NO;
   return window;
 }
 
-static void ReplaceOrdering(SEL selector) {
-  Method method = class_getInstanceMethod(NSWindow.class, selector);
-  IMP original = method_getImplementation(method);
-  method_setImplementation(method, imp_implementationWithBlock(^(NSWindow* window, id sender) {
-    if (CalledFromTestBundle(__builtin_return_address(0))) {
-      SetVirtualVisible(window, YES);
-      return;
-    }
-    ((OrderIMP)original)(window, selector, sender);
-  }));
+@implementation NSWindow (ParcNativePresentation)
+- (NSWindow*)parcAttachedSheet { return State(self).sheet; }
+- (NSWindow*)parcSheetParent { return State(self).sheetOwner; }
+- (NSWindow*)parcParentWindow { return State(self).parent; }
+- (NSArray<NSWindow*>*)parcChildWindows { return [State(self).children copy]; }
+
+- (void)parcBeginSheet:(NSWindow*)sheet completionHandler:(void (^)(NSModalResponse))completion {
+  ParcNativeWindowState* state = State(self);
+  NSAssert(!state.sheet, @"A sheet is already attached");
+  state.sheet = sheet;
+  state.completion = completion;
+  State(sheet).sheetOwner = self;
+  State(sheet).visible = state.visible;
+  [NSNotificationCenter.defaultCenter postNotificationName:NSWindowWillBeginSheetNotification object:self];
+  [sheet.contentView layoutSubtreeIfNeeded];
+  if (sheet.initialFirstResponder) [sheet makeFirstResponder:sheet.initialFirstResponder];
 }
+- (void)parcEndSheet:(NSWindow*)sheet {
+  [self parcEndSheet:sheet returnCode:NSModalResponseStop];
+}
+- (void)parcEndSheet:(NSWindow*)sheet returnCode:(NSModalResponse)code {
+  ParcNativeWindowState* state = State(self);
+  if (!sheet || state.sheet != sheet) return;
+  void (^completion)(NSModalResponse) = state.completion;
+  state.completion = nil;
+  state.sheet = nil;
+  State(sheet).sheetOwner = nil;
+  State(sheet).visible = NO;
+  [NSNotificationCenter.defaultCenter postNotificationName:NSWindowDidEndSheetNotification object:self];
+  if (completion) completion(code);
+}
+- (void)parcAddChildWindow:(NSWindow*)child ordered:(NSWindowOrderingMode)place {
+  ParcNativeWindowState* state = State(self);
+  if (!state.children) state.children = [NSMutableArray array];
+  [state.children addObject:child];
+  State(child).parent = self;
+}
+- (void)parcRemoveChildWindow:(NSWindow*)child {
+  [State(self).children removeObject:child];
+  State(child).parent = nil;
+}
+- (void)parcOrderFront:(id)sender { ParcNativeMarkVisible(self); }
+- (void)parcMakeKeyAndOrderFront:(id)sender {
+  ParcNativeMarkVisible(self);
+  [self parcMakeKeyWindow];
+}
+- (void)parcMakeKeyWindow {
+  if (self.canBecomeKeyWindow) {
+    [NSNotificationCenter.defaultCenter postNotificationName:NSWindowDidBecomeKeyNotification object:self];
+  }
+}
+- (void)parcOrderOut:(id)sender { State(self).visible = NO; }
+@end
 
-__attribute__((constructor)) static void InstallParcNativeWindows(void) {
-  Dl_info info;
-  if (dladdr((const void*)&InstallParcNativeWindows, &info)) bundleBase = info.dli_fbase;
+@implementation NSApplication (ParcNativePresentation)
+- (void)parcEndSheet:(NSWindow*)sheet {
+  [sheet.parcSheetParent parcEndSheet:sheet];
+}
+@end
 
+@implementation SFCertificatePanel (ParcNativePresentation)
+- (void)parcBeginSheetForWindow:(NSWindow*)window modalDelegate:(id)delegate didEndSelector:(SEL)end
+                    contextInfo:(void*)context certificates:(NSArray*)certificates showGroup:(BOOL)group {
+  SFCertificatePanel* sheet = [SFCertificatePanel new];
+  __weak id target = delegate;
+  [window parcBeginSheet:sheet completionHandler:^(NSModalResponse code) {
+    ((void (*)(id, SEL, NSWindow*, NSInteger, void*))objc_msgSend)(target, end, sheet, code, context);
+  }];
+}
+@end
+
+@implementation ParcNativePopoverWindow
+- (void)cancelOperation:(id)sender { [self.popover close]; }
+@end
+
+@implementation ParcNativePopover {
+  ParcNativePopoverWindow* _host;
+}
+- (void)showRelativeToRect:(NSRect)rect ofView:(NSView*)view preferredEdge:(NSRectEdge)edge {
+  _host = [[ParcNativePopoverWindow alloc] initWithContentRect:(NSRect){NSZeroPoint, self.contentSize}
+                                                     styleMask:NSWindowStyleMaskBorderless
+                                                       backing:NSBackingStoreBuffered defer:YES];
+  _host.releasedWhenClosed = NO;
+  _host.popover = self;
+  _host.anchorView = view;
+  _host.anchorRect = rect;
+  _host.anchorEdge = edge;
+  _host.contentView = self.contentViewController.view;
+  [_host.contentView layoutSubtreeIfNeeded];
+  ParcNativeMarkVisible(_host);
+}
+- (BOOL)isShown { return _host != nil; }
+- (void)close {
+  if (!_host) return;
+  [_host close];
+  _host = nil;
+  if ([self.delegate respondsToSelector:@selector(popoverDidClose:)]) {
+    [self.delegate popoverDidClose:[NSNotification notificationWithName:NSPopoverDidCloseNotification object:self]];
+  }
+}
+@end
+
+__attribute__((constructor)) static void InstallParcNativeVisibility(void) {
+  Dl_info bundle;
+  dladdr((void*)&InstallParcNativeVisibility, &bundle);
   Method visible = class_getInstanceMethod(NSWindow.class, @selector(isVisible));
-  realIsVisible = (VisibleIMP)method_getImplementation(visible);
+  realIsVisible = (BOOL (*)(id, SEL))method_getImplementation(visible);
   method_setImplementation(visible, imp_implementationWithBlock(^BOOL(NSWindow* window) {
-    BOOL real = realIsVisible(window, @selector(isVisible));
-    return real || (CalledFromTestBundle(__builtin_return_address(0)) && VirtualVisible(window));
-  }));
-
-  ReplaceOrdering(@selector(orderFront:));
-  ReplaceOrdering(@selector(makeKeyAndOrderFront:));
-  Method regardless = class_getInstanceMethod(NSWindow.class, @selector(orderFrontRegardless));
-  IMP realRegardless = method_getImplementation(regardless);
-  method_setImplementation(regardless, imp_implementationWithBlock(^(NSWindow* window) {
-    if (CalledFromTestBundle(__builtin_return_address(0))) {
-      SetVirtualVisible(window, YES);
-      return;
+    ParcNativeWindowState* state = objc_getAssociatedObject(window, @selector(parcAttachedSheet));
+    Dl_info caller;
+    if (state && dladdr(__builtin_return_address(0), &caller) && caller.dli_fbase == bundle.dli_fbase) {
+      return state.visible;
     }
-    ((void (*)(id, SEL))realRegardless)(window, @selector(orderFrontRegardless));
+    return realIsVisible(window, @selector(isVisible));
   }));
-
-  Method relative = class_getInstanceMethod(NSWindow.class, @selector(orderWindow:relativeTo:));
-  IMP realRelative = method_getImplementation(relative);
-  method_setImplementation(relative, imp_implementationWithBlock(^(NSWindow* window, NSWindowOrderingMode mode,
-                                                                   NSInteger other) {
-    if (CalledFromTestBundle(__builtin_return_address(0))) {
-      SetVirtualVisible(window, mode != NSWindowOut);
-      if (mode != NSWindowOut) return;
-    }
-    ((OrderRelativeIMP)realRelative)(window, @selector(orderWindow:relativeTo:), mode, other);
-  }));
-
-  Method out = class_getInstanceMethod(NSWindow.class, @selector(orderOut:));
-  realOrderOut = (OrderIMP)method_getImplementation(out);
-  method_setImplementation(out, imp_implementationWithBlock(^(NSWindow* window, id sender) {
-    SetVirtualVisible(window, NO);
-    realOrderOut(window, @selector(orderOut:), sender);
-  }));
-
   Method close = class_getInstanceMethod(NSWindow.class, @selector(close));
-  IMP realCloseImp = method_getImplementation(close);
+  IMP original = method_getImplementation(close);
   method_setImplementation(close, imp_implementationWithBlock(^(NSWindow* window) {
-    SetVirtualVisible(window, NO);
-    ((void (*)(id, SEL))realCloseImp)(window, @selector(close));
+    ParcNativeWindowState* state = objc_getAssociatedObject(window, @selector(parcAttachedSheet));
+    state.visible = NO;
+    ((void (*)(id, SEL))original)(window, @selector(close));
+    if (state.sheet) [window parcEndSheet:state.sheet returnCode:NSModalResponseAbort];
   }));
 }

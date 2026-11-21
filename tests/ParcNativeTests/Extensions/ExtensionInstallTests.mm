@@ -143,10 +143,6 @@ static PCExtensionInstallPresenter* Make(
   BOOL _input;
 }
 
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
-}
-
 - (void)setUp {
   [super setUp];
   _w = Window();

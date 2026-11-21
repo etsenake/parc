@@ -52,13 +52,14 @@ static NSTextField* Input(NSView* view) {
   }
   return nil;
 }
-static void WaitEnabled(NSButton* button) {
-  for (int step = 0; !button.enabled && step < 40; ++step) ParcNativeAdvance(0.05);
+static void EnableAfterDelay(NSButton* button) {
+  ParcNativeAdvance(0.5);
+  PARC_CHECK(button.enabled);
 }
 static void Click(PCJavaScriptDialogPresenter* presenter, NSString* title) {
   NSButton* button = Button(presenter.presentedSheet.contentView, title);
   Check(button != nil, "actual native sheet contains requested button");
-  WaitEnabled(button);
+  EnableAfterDelay(button);
   [button performClick:nil];
   Drain();
 }
@@ -464,7 +465,7 @@ static void TestParcPresentation(void) {
   Check(![sheet performKeyEquivalent:Key(sheet, @"\r", 36, Now())] || count == 1,
         "early Return is consumed without accepting");
   Check(count == 1 && presenter.isPresenting, "early Return never accepts");
-  WaitEnabled(ok);
+  EnableAfterDelay(ok);
   Check(ok.enabled, "OK becomes active after the delay");
   [sheet performKeyEquivalent:Key(sheet, @"\r", 36, Now(), YES)];
   Check(count == 1, "held Return never accepts");
@@ -476,7 +477,7 @@ static void TestParcPresentation(void) {
 
   Present(presenter, PCJavaScriptDialogConfirm, completion);
   sheet = presenter.presentedSheet;
-  WaitEnabled(Button(sheet.contentView, @"OK"));
+  EnableAfterDelay(Button(sheet.contentView, @"OK"));
   Check([sheet performKeyEquivalent:Key(sheet, @"\003", 76, Now())],
         "keypad Enter is handled");
   Drain();
@@ -504,7 +505,7 @@ static void TestParcPresentation(void) {
         "Cancel answers Escape");
   NSTextView* editor = (NSTextView*)field.currentEditor;
   Check([editor isKindOfClass:NSTextView.class], "field is being edited when the sheet opens");
-  WaitEnabled(Button(content, @"OK"));
+  EnableAfterDelay(Button(content, @"OK"));
   [editor setMarkedText:@"か" selectedRange:NSMakeRange(1, 0)
        replacementRange:NSMakeRange(NSNotFound, 0)];
   Check(editor.hasMarkedText, "input method composition is in progress");
@@ -545,10 +546,6 @@ static void TestParcPresentation(void) {
 @end
 
 @implementation JavaScriptDialogTests
-
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
-}
 
 - (void)testButtonsAndPrompt {
   TestButtonsAndPrompt();

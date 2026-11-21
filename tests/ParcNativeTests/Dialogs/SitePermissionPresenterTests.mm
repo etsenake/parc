@@ -426,12 +426,10 @@ static void Anchor() {
                    });
   [r start];
   Drain();
-  NSRect frame = r.sheet.frame;
-  NSRect corner = [page convertRect:NSMakeRect(0, NSMaxY(page.bounds) - 1, 1, 1)
-                             toView:nil];
-  corner = [w convertRectToScreen:corner];
-  Check(r.sheet.visible && NSMaxY(frame) <= NSMinY(corner) + 20,
-        "without an anchor the popover hangs below the page's top corner");
+  ParcNativePopoverWindow* host = (ParcNativePopoverWindow*)r.sheet;
+  Check(host.anchorView == page && host.anchorEdge == NSRectEdgeMinY &&
+            NSEqualRects(host.anchorRect, NSMakeRect(0, NSMaxY(page.bounds) - 1, 1, 1)),
+        "the permission prompt uses the top corner of its page");
   [r invalidate];
   Drain();
   [w close];
@@ -486,10 +484,6 @@ static void PressFeedback() {
 @end
 
 @implementation SitePermissionPresenterTests
-
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
-}
 
 - (void)testDecisions {
   Decisions();

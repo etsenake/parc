@@ -15,5 +15,4 @@ void ParcNativeCheckMessage(const char* file, int line, bool passed, const char*
 #define PARC_CHECK(condition) ParcNativeCheck((condition) ? YES : NO, #condition, __FILE__, __LINE__)
 
 @interface ParcNativeTestCase : XCTestCase
-@property(class, readonly) NSApplicationActivationPolicy activationPolicy;
 @end

@@ -78,10 +78,6 @@ static void Pump() {
   NSMutableArray<PCNativePageHost*>* _pages;
 }
 
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
-}
-
 - (void)setUp {
   [super setUp];
   _windows = [NSMutableArray array];

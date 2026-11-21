@@ -76,10 +76,6 @@ static NSEvent* KeyIn(NSWindow* window, NSString* characters, unsigned short cod
   NSMutableArray<id>* _observers;
 }
 
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
-}
-
 - (void)setUp {
   [super setUp];
   _a = Window();

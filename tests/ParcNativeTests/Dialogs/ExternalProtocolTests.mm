@@ -96,10 +96,6 @@ static NSEvent* KeypadEnter(NSWindow* window) {
   ProtocolState* _state;
 }
 
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
-}
-
 - (void)setUp {
   [super setUp];
   _window = Window();
@@ -261,10 +257,6 @@ static NSEvent* KeypadEnter(NSWindow* window) {
   ProtocolState* _state;
 }
 
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
-}
-
 - (void)tearDown {
   [_window close];
   [super tearDown];
@@ -343,10 +335,6 @@ static NSEvent* KeypadEnter(NSWindow* window) {
   PCExternalProtocolPresenter* _presenter;
   PCExternalProtocolPresenter* _replacement;
   ProtocolState* _state;
-}
-
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
 }
 
 - (void)setUp {

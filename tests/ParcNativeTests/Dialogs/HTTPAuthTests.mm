@@ -105,10 +105,6 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
   AuthState* _state;
 }
 
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
-}
-
 - (void)setUp {
   [super setUp];
   _window = Window();
@@ -295,10 +291,6 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
   PCHTTPAuthPresenter* _presenter;
 }
 
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
-}
-
 - (void)setUp {
   [super setUp];
   _window = Window();
@@ -405,10 +397,6 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
   AuthState* _state;
 }
 
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
-}
-
 - (void)tearDown {
   [_window close];
   [super tearDown];
@@ -486,10 +474,6 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
   AuthState* _state;
   PCHTTPAuthPresenter* _presenter;
   PCHTTPAuthPresenter* _replacement;
-}
-
-+ (NSApplicationActivationPolicy)activationPolicy {
-  return NSApplicationActivationPolicyAccessory;
 }
 
 - (void)setUp {
