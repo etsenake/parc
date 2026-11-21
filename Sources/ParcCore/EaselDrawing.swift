@@ -256,7 +256,12 @@ enum EaselAttachments {
     static func attaches(_ item: EaselItem) -> Bool { item.kind == .freehand && item.resolvedBrush.sticksToObjects }
 
     static func carry(_ next: EaselDocument, previous: EaselDocument, moved: Set<UUID> = []) -> EaselDocument {
-        guard next.id == previous.id else { return next }
+        carrying(next, previous: previous, moved: moved).document
+    }
+
+    static func carrying(_ next: EaselDocument, previous: EaselDocument,
+                         moved: Set<UUID> = []) -> (document: EaselDocument, moved: Set<UUID>) {
+        guard next.id == previous.id else { return (next, moved) }
         var before: [UUID: EaselItem] = [:]
         for item in previous.items where before[item.id] == nil { before[item.id] = item }
         var result = next
@@ -289,7 +294,7 @@ enum EaselAttachments {
             }
             frontier = reached
         }
-        return result
+        return (result, moved.union(carried))
     }
 
     static func dependents(of ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {

@@ -208,6 +208,8 @@ struct EaselDrawingTests {
         let followed = EaselAttachments.carry(shifted, previous: chain, moved: [note.id])
         expect(followed.items[1].frame.x == stamp.frame.x + 10 && followed.items[2].frame.x == chained.frame.x + 10, "Stuck objects carry what's stuck to them")
         expect(EaselAttachments.carry(before, previous: before, moved: [note.id]) == before, "Nothing moves when nothing changed")
+        expect(EaselAttachments.carrying(moved, previous: before, moved: [note.id]).moved == [note.id, highlight.id],
+               "Carried followers join the moved set so connectors can reroute to them")
         var recoloured = before
         recoloured.items[0].fill = "#F5E0AC"
         expect(EaselAttachments.carry(recoloured, previous: before, moved: []).items[1] == highlight, "Restyling a target leaves its highlights alone")

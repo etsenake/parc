@@ -4,7 +4,7 @@ enum EaselDependents {
     static func settle(_ next: EaselDocument, previous: EaselDocument, moved: Set<UUID>) -> EaselDocument {
         let sections = carrySectionContents(next, previous: previous, moved: moved)
         let attached = followAttachments(sections.document, previous: previous, moved: sections.moved)
-        return rerouteConnectors(attached, previous: previous, moved: sections.moved)
+        return rerouteConnectors(attached.document, previous: previous, moved: attached.moved)
     }
 
     static func removing(_ ids: Set<UUID>, from document: EaselDocument) -> EaselDocument {
@@ -19,8 +19,9 @@ enum EaselDependents {
         EaselBoardObjects.carryingSectionContents(next, previous: previous, moved: moved)
     }
 
-    private static func followAttachments(_ next: EaselDocument, previous: EaselDocument, moved: Set<UUID>) -> EaselDocument {
-        EaselAttachments.carry(next, previous: previous, moved: moved)
+    private static func followAttachments(_ next: EaselDocument, previous: EaselDocument,
+                                          moved: Set<UUID>) -> (document: EaselDocument, moved: Set<UUID>) {
+        EaselAttachments.carrying(next, previous: previous, moved: moved)
     }
 
     private static func attachedDependents(of ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
