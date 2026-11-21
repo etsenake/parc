@@ -164,7 +164,7 @@ place of the grey fill, and clearing it brings the grey back), and ⌘E on them
 removes the code and keeps the highlight.
 ⇧⌘H repeats the last colour or highlight, shared with Notes for highlights.
 **Turn Into** is the toolbar's paragraph menu, showing the Notes rows and icons
-for Text, Headings, lists (including To-do list) and Quote. The @ button starts a mention in place of the
+for Text, Headings, lists (including To-do List) and Quote. The @ button starts a mention in place of the
 selection and the equation button (⇧⌘E) turns it into an inline equation, both
 the same ones typing `@` or `$` makes.
 

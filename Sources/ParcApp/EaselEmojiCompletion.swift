@@ -140,7 +140,7 @@ final class EaselEmojiCompletion: EaselTextCompletion {
             previous = view.string
             return
         }
-        view.insertCompletion(character, replacing: range, name: "Emoji")
+        view.insertCompletion(character, replacing: range, name: "Add emoji")
     }
 
     private func complete(_ done: (range: Range<Int>, shortcode: String), expected: String) {
@@ -154,6 +154,6 @@ final class EaselEmojiCompletion: EaselTextCompletion {
         guard let emoji = catalog.emoji(forShortcode: done.shortcode) else { return }
         let character = catalog.character(for: emoji)
         catalog.recordUse(character)
-        view.insertCompletion(character, replacing: NSRange(location: done.range.lowerBound, length: done.range.count), name: "Emoji")
+        view.insertCompletion(character, replacing: NSRange(location: done.range.lowerBound, length: done.range.count), name: "Add emoji")
     }
 }
