@@ -566,6 +566,52 @@ struct EaselItem: Codable, Identifiable, Equatable {
     }
 }
 
+struct EaselPageIcon: Codable, Hashable, Sendable {
+    enum Kind: String, Codable, Sendable { case emoji, custom, image }
+
+    static let maximumEmojiBytes = 64
+    static let maximumNameLength = 48
+
+    var kind: Kind
+    var value: String
+
+    static func emoji(_ value: String) -> EaselPageIcon? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return isEmoji(trimmed) ? EaselPageIcon(kind: .emoji, value: trimmed) : nil
+    }
+
+    static func custom(named name: String) -> EaselPageIcon? {
+        isCustomName(name) ? EaselPageIcon(kind: .custom, value: name) : nil
+    }
+
+    static func image(assetID: String) -> EaselPageIcon? {
+        EaselAssetType.of(assetID: assetID) == .png ? EaselPageIcon(kind: .image, value: assetID) : nil
+    }
+
+    static func isEmoji(_ value: String) -> Bool {
+        guard value.utf8.count <= maximumEmojiBytes, value.count == 1, let first = value.unicodeScalars.first,
+              first.properties.isEmoji else { return false }
+        return first.properties.isEmojiPresentation || value.unicodeScalars.count > 1
+    }
+
+    static func isCustomName(_ name: String) -> Bool {
+        let bytes = Array(name.utf8)
+        guard !bytes.isEmpty, bytes.count <= maximumNameLength else { return false }
+        let letterOrDigit: (UInt8) -> Bool = { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) }
+        return bytes.allSatisfy { letterOrDigit($0) || $0 == 95 || $0 == 45 || $0 == 43 } && bytes.contains(where: letterOrDigit)
+    }
+
+    var assetID: String? { kind == .image ? value : nil }
+
+    var isValid: Bool {
+        switch kind {
+        case .emoji: return Self.isEmoji(value)
+        case .custom: return Self.isCustomName(value)
+        case .image: return EaselAssetType.of(assetID: value) == .png
+        }
+    }
+}
+
 struct EaselDocument: Codable, Identifiable, Equatable {
     static let currentVersion = 1
     var version: Int = currentVersion
@@ -575,6 +621,7 @@ struct EaselDocument: Codable, Identifiable, Equatable {
     var modifiedAt: Date
     var items: [EaselItem] = []
     var pages: [EaselPage]?
+    var icon: EaselPageIcon?
 }
 
 struct EaselSummary: Identifiable, Equatable {
@@ -582,6 +629,7 @@ struct EaselSummary: Identifiable, Equatable {
     var title: String
     var modifiedAt: Date
     var itemCount: Int
+    var icon: EaselPageIcon? = nil
 }
 
 enum EaselStoreError: Error, LocalizedError {
@@ -619,7 +667,7 @@ extension Notification.Name {
 @MainActor
 final class EaselStore {
     static let maximumAssetBytes = 30 * 1024 * 1024
-    static let maximumDocumentBytes = 8 * 1024 * 1024
+    nonisolated static let maximumDocumentBytes = 8 * 1024 * 1024
     let directory: URL
     private let now: () -> Date
     private var sessions: [UUID: WeakSession] = [:]
@@ -652,7 +700,7 @@ final class EaselStore {
                 guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent),
                       let document = try? read(id) else { return nil }
                 return EaselSummary(id: id, title: document.title,
-                                    modifiedAt: document.modifiedAt, itemCount: document.items.count)
+                                    modifiedAt: document.modifiedAt, itemCount: document.items.count, icon: document.icon)
             }
             .sorted { $0.modifiedAt == $1.modifiedAt ? $0.id.uuidString < $1.id.uuidString : $0.modifiedAt > $1.modifiedAt }
     }
@@ -667,6 +715,22 @@ final class EaselStore {
     func load(_ id: UUID) throws -> EaselSession {
         if let session = sessions[id]?.value { return session }
         return session(try read(id))
+    }
+
+    func existingSession(_ id: UUID) -> EaselSession? { sessions[id]?.value }
+
+    func assetFileURL(_ assetID: String) -> URL? { try? assetURL(assetID) }
+
+    nonisolated static func readIcon(directory: URL, id: UUID) -> EaselPageIcon? {
+        struct Head: Decodable { var icon: EaselPageIcon? }
+        let url = directory.appendingPathComponent("documents", isDirectory: true)
+            .appendingPathComponent(id.uuidString.lowercased() + ".json")
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
+              values.isRegularFile == true, values.isSymbolicLink != true,
+              (values.fileSize ?? Int.max) <= maximumDocumentBytes,
+              let data = try? Data(contentsOf: url),
+              let icon = (try? JSONDecoder().decode(Head.self, from: data))?.icon, icon.isValid else { return nil }
+        return icon
     }
 
     func validateReference(_ id: UUID) throws {
@@ -749,7 +813,7 @@ final class EaselStore {
         }
         var copied: [String] = []
         do {
-            for asset in Set(document.items.flatMap(\.assetReferences)).sorted() {
+            for asset in Set(document.items.flatMap(\.assetReferences) + [document.icon?.assetID].compactMap { $0 }).sorted() {
                 let url = destination.assetsDirectory.appendingPathComponent(asset)
                 let original = try Data(contentsOf: assetURL(asset))
                 if FileManager.default.fileExists(atPath: url.path) {
@@ -850,6 +914,10 @@ final class EaselStore {
               document.items.count <= 10_000 else { throw EaselStoreError.invalidDocument("document metadata") }
         guard Set(document.items.map(\.id)).count == document.items.count else { throw EaselStoreError.invalidDocument("duplicate object ID") }
         if let problem = EaselPages.validationProblem(document) { throw EaselStoreError.invalidDocument(problem) }
+        if let icon = document.icon {
+            guard icon.isValid else { throw EaselStoreError.invalidDocument("page icon") }
+            if let id = icon.assetID { try asset(id) }
+        }
         for item in document.items {
             let r = item.frame
             guard [r.x, r.y, r.width, r.height].allSatisfy({ $0.isFinite && abs($0) <= EaselRect.maximumCoordinate }),
@@ -1134,6 +1202,7 @@ final class EaselSession: ObservableObject {
     }
 
     var inMemoryAssets: [String: Data] { memoryAssets }
+    var storeDirectory: URL? { store?.directory }
     private func persist(_ document: EaselDocument) throws {
         try requireWritable()
         if let store { try store.persist(document); return }
@@ -1251,7 +1320,9 @@ final class EaselSession: ObservableObject {
     }
 
     func discardUnusedAssets(_ ids: [String]) {
-        let used = Set(([document] + undoStack + redoStack).flatMap { $0.items.flatMap(\.assetReferences) })
+        let used = Set(([document] + undoStack + redoStack).flatMap { snapshot in
+            snapshot.items.flatMap(\.assetReferences) + [snapshot.icon?.assetID].compactMap { $0 }
+        })
         let unused = ids.filter { !used.contains($0) }
         guard !unused.isEmpty else { return }
         if let store { store.removeAssets(unused) } else { for id in unused { memoryAssets.removeValue(forKey: id) } }
