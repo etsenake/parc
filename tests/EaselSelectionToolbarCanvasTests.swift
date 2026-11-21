@@ -44,8 +44,8 @@ struct EaselSelectionToolbarCanvasTests {
         canvas.selection = [text.id]
         expect(fake.refreshes == 0, "A canvas outside a window never asks its toolbar to show")
         expect(canvas.selectionToolbarContent == nil, "Only a canvas in a window presents the toolbar")
-        expect(controls(canvas) == [.typeface, .textSize, .smaller, .larger, .textFill, .alignment, .link, .more],
-               "Text gets typeface, size, quick steps, fill, alignment, a link and the ••• menu")
+        expect(controls(canvas) == [.typeface, .textSize, .smaller, .larger, .color, .textFill, .alignment, .link, .more],
+               "Text gets typeface, size, quick steps, colour, fill, alignment, a link and the ••• menu")
         guard let model = canvas.selectionToolbarModel else { failTest("Text selections build a toolbar") }
         expect(model.anchor == NSRect(x: 40, y: 40, width: 280, height: 28), "The toolbar anchors on the selected frames")
         let buttons = model.groups.joined()
@@ -77,6 +77,13 @@ struct EaselSelectionToolbarCanvasTests {
         expect(canvas.performSelectionToolbarMenu(.alignment, entry: "center"), "Alignment applies from its menu")
         expect(style(session, text.id)?.alignment == .center, "Centre alignment sticks to the text")
         expect(canvas.selectionToolbarMenu(for: .alignment).first { $0.id == "center" }?.isChecked == true, "The menu checks the current alignment")
+        let colors = canvas.selectionToolbarMenu(for: .color)
+        expect(colors.count == EaselPalette.colors(for: .ink).count && colors.allSatisfy { $0.tint != nil }, "Text colour lists the palette with swatches")
+        guard let red = EaselPalette.hex(.note(.red), role: .ink) else { failTest("The palette has red ink") }
+        expect(canvas.performSelectionToolbarMenu(.color, entry: red), "Picking a text colour applies it")
+        expect(session.document.items.first { $0.id == text.id }.flatMap { EaselPalette.normalized($0.color) } == EaselPalette.normalized(red),
+               "The text takes the chosen ink")
+        expect(canvas.selectionToolbarMenu(for: .color).first { $0.id == red }?.isChecked == true, "The colour menu checks the current ink")
 
         canvas.selection = [text.id, shape.id]
         let pair = controls(canvas)

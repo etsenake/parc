@@ -54,7 +54,8 @@ add align and distribute, tidy up, group, create section and lock tools.
 Stickies get a wide toggle, sections a Rename button and pictures Crop, Mask,
 Replace and Alt text (Mask and Alt text only in the Easel editor, which hosts
 their pickers); the toolbar steps away while a picture is cropped. Text, shapes
-and stickies get an alignment menu and, one at a time, a Link button that edits
+and stickies get an alignment menu, text a palette colour menu, and, one at a
+time, a Link button that edits
 the object's own link (or the selected words' link while typing), washi tape a pattern menu, and a table its
 typeface, size, bold, strike, text and cell colour, alignment and Merge or
 Unmerge cells, switching to range formatting while a cell is edited. A fully locked
