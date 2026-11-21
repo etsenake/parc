@@ -478,10 +478,11 @@ Presentation owners include `ParcSplitView`, `SplitDropView`, `SplitDragView`,
 
 Relevant existing checks are `test-split-context.sh`, `test-split-dividers.sh`,
 `test-split-divider-snap.sh`, `test-split-pane-controls.sh`,
-`test-split-appearance.sh`, `test-external-split-drop.sh`,
-`test-inter-profile-move.sh`, the model/store suites and `tests/NativeContentDrop`.
-The windowless `tests/SplitStackLayoutTests.swift` also covers the snap rule on
-each divider's axis and flat and stacked layouts in tight page areas,
-`tests/SplitDropIntentTests.swift` covers hover intent with a fake clock, and
-`tests/SplitLayoutFlushSkip/check.py` pins the divider pan to that axis.
+`test-split-appearance.sh`, the model/store suites under
+`tests/ParcCoreTests/Windows` (`swift test --filter ExternalSplitDropTests`,
+`InterProfileMoveTests`, `OriginalSplitDropTests`) and `tests/NativeContentDrop`.
+`SplitStackLayoutTests` also covers the snap rule on each divider's axis and flat
+and stacked layouts in tight page areas, `SplitDropIntentTests` covers hover
+intent with a fake clock, and `SplitLayoutFlushSkipTests` covers the divider
+pan's axis.
 Inspect their entry points and obey [AGENTS.md](../AGENTS.md) before running them.
