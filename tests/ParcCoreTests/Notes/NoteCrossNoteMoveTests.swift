@@ -3,6 +3,23 @@ import Testing
 @testable import ParcCore
 
 @MainActor struct NoteCrossNoteMoveTests {
+    final class PendingJobs: @unchecked Sendable {
+        private var jobs: [@Sendable () -> Void] = []
+
+        func schedule(_ job: @escaping @Sendable () -> Void) { jobs.append(job) }
+
+        func runAll() {
+            while !jobs.isEmpty { jobs.removeFirst()() }
+        }
+    }
+
+    let jobs = PendingJobs()
+
+    func schedule() -> @Sendable (@escaping @Sendable () -> Void) -> Void {
+        let jobs = jobs
+        return { jobs.schedule($0) }
+    }
+
     func access(_ session: NotePageSession) -> NoteCrossNoteMove.Access {
         { body in body(session); return true }
     }
@@ -15,17 +32,11 @@ import Testing
         let source = NotePageSession(page: NotePage(blocks: [.paragraph("a"), .paragraph("b"), .paragraph("c")]))
         let target = NotePageSession(page: NotePage(blocks: [.paragraph("x"), .paragraph("b")]))
         let id = source.page.blocks[1].id
-        let move = NoteCrossNoteMove.perform([id], from: source, name: "Move to “T”", target: access(target), source: access(source))!
+        let move = NoteCrossNoteMove.perform([id], from: source, name: "Move to “T”", target: access(target), source: access(source), schedule: schedule())!
         return (source, target, move)
     }
 
-    func settle() async {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.main.async { continuation.resume() }
-        }
-    }
-
-    @Test func theBlockLeavesTheSource() async {
+    @Test func theBlockLeavesTheSource() {
         let (source, target, move) = pair()
         #expect(texts(source) == ["a", "c"], "the block leaves the source")
         #expect(texts(target) == ["x", "b", "b"], "the copy lands at the end of the target")
@@ -33,7 +44,7 @@ import Testing
         #expect(move.isApplied, "the move starts applied")
     }
 
-    @Test func unrelatedUndoLeavesTargetAlone() async {
+    @Test func unrelatedUndoLeavesTargetAlone() {
         let (source, target, _) = pair()
         source.edit("Type") { page in page.blocks[0].text = NoteText("a!") }
         source.undo()
@@ -45,7 +56,7 @@ import Testing
         #expect(texts(source) == ["a!", "c"], "an unrelated undo in the target never touches the source")
     }
 
-    @Test func undoInSourceRestoresBoth() async {
+    @Test func undoInSourceRestoresBoth() {
         let (source, target, move) = pair()
         source.undo()
         #expect(texts(source) == ["a", "b", "c"], "undo puts the block back where it was")
@@ -59,7 +70,7 @@ import Testing
         #expect(texts(target) == ["x", "b"], "older undos never touch a reversed move again")
     }
 
-    @Test func undoInTargetRestoresSource() async {
+    @Test func undoInTargetRestoresSource() {
         let (source, target, move) = pair()
         target.undo()
         #expect(texts(target) == ["x", "b"], "undo in the target removes the copy")
@@ -76,7 +87,7 @@ import Testing
         #expect(texts(source) == ["a", "b", "c"] && texts(target) == ["x", "b"], "undo in the source reverses it again")
     }
 
-    @Test func undoInSourceThenRedoInTarget() async {
+    @Test func undoInSourceThenRedoInTarget() {
         let (source, target, move) = pair()
         source.undo()
         #expect(texts(target) == ["x", "b"] && !target.canUndo && target.redoActionName == "Move Here", "the target's half is undone as a real undo step")
@@ -89,7 +100,7 @@ import Testing
         #expect(texts(source) == ["a", "c"] && texts(target) == ["x", "b", "b"] && move.isApplied, "and redo in the source brings it back")
     }
 
-    @Test func undoInTargetThenRedoInSource() async {
+    @Test func undoInTargetThenRedoInSource() {
         let (source, target, move) = pair()
         target.undo()
         #expect(texts(source) == ["a", "b", "c"] && !source.canUndo && source.redoActionName == "Move to “T”", "the source's half is undone as a real undo step")
@@ -102,7 +113,7 @@ import Testing
         #expect(texts(source) == ["a", "c"] && texts(target) == ["x", "b", "b"] && move.isApplied, "and redo in the target brings it back")
     }
 
-    @Test func targetEditOnTopKeepsItsHistory() async {
+    @Test func targetEditOnTopKeepsItsHistory() {
         let (source, target, move) = pair()
         target.edit("Type") { page in page.blocks[0].text = NoteText("y") }
         source.undo()
@@ -116,7 +127,7 @@ import Testing
         #expect(texts(target) == ["x", "b"] && texts(source) == ["a", "b", "c"], "and the move itself comes after it")
     }
 
-    @Test func editedCopiesSurviveRoundTrip() async {
+    @Test func editedCopiesSurviveRoundTrip() {
         let (source, target, move) = pair()
         let copy = move.copyIDs[0]
         target.edit("Type") { page in page.update(copy) { $0.text = NoteText("b edited") } }
@@ -134,7 +145,7 @@ import Testing
         #expect(texts(target) == ["b edited", "x", "b"], "unrelated undos never re-add copies")
     }
 
-    @Test func unreachableSourceKeepsCopies() async {
+    @Test func unreachableSourceKeepsCopies() {
         let source = NotePageSession(page: NotePage(blocks: [.paragraph("a"), .paragraph("b")]))
         let target = NotePageSession(page: NotePage(blocks: [.paragraph("x")]))
         var reachable = true
@@ -144,27 +155,27 @@ import Testing
             return true
         }
         let id = source.page.blocks[1].id
-        let move = NoteCrossNoteMove.perform([id], from: source, name: "Move", target: access(target), source: gate)!
+        let move = NoteCrossNoteMove.perform([id], from: source, name: "Move", target: access(target), source: gate, schedule: schedule())!
         reachable = false
         target.undo()
-        await settle()
+        jobs.runAll()
         #expect(texts(target) == ["x", "b"], "when the source can't take the blocks back, the target keeps them")
         #expect(move.isApplied, "the move stays applied so nothing is lost")
         target.redo()
-        await settle()
+        jobs.runAll()
         #expect(texts(target) == ["x", "b"] && texts(source) == ["a"], "a redo after the bounce keeps one copy")
     }
 
-    @Test func unreachableTargetKeepsOriginals() async {
+    @Test func unreachableTargetKeepsOriginals() {
         let source = NotePageSession(page: NotePage(blocks: [.paragraph("a"), .paragraph("b")]))
         let target = NotePageSession(page: NotePage(blocks: [.paragraph("x")]))
         let id = source.page.blocks[1].id
-        let move = NoteCrossNoteMove.perform([id], from: source, name: "Move", target: access(target), source: access(source))!
+        let move = NoteCrossNoteMove.perform([id], from: source, name: "Move", target: access(target), source: access(source), schedule: schedule())!
         source.undo()
         #expect(texts(source) == ["a", "b"] && texts(target) == ["x"], "undo restores the source first")
         target.isReadOnly = true
         source.redo()
-        await settle()
+        jobs.runAll()
         #expect(texts(source) == ["a", "b"], "when the target can't take the blocks, a redo leaves them in the source")
         #expect(texts(target) == ["x"] && !move.isApplied, "the move stays reversed so nothing is lost")
         target.isReadOnly = false
@@ -172,12 +183,12 @@ import Testing
         #expect(texts(source) == ["a"] && texts(target) == ["x", "b"], "once the target is writable, undoing the bounce moves them for real")
     }
 
-    @Test func reopenedTargetStillFindsCopies() async {
+    @Test func reopenedTargetStillFindsCopies() {
         let source = NotePageSession(page: NotePage(blocks: [.paragraph("a"), .paragraph("b")]))
         var target = NotePageSession(page: NotePage(blocks: [.paragraph("b"), .paragraph("x")]))
         let reach: NoteCrossNoteMove.Access = { body in body(target); return true }
         let id = source.page.blocks[1].id
-        let move = NoteCrossNoteMove.perform([id], from: source, name: "Move", target: reach, source: access(source))!
+        let move = NoteCrossNoteMove.perform([id], from: source, name: "Move", target: reach, source: access(source), schedule: schedule())!
         let stale = move.copyIDs
         target = NotePageSession(page: NotePage(blocks: target.page.blocks.map { $0.withFreshIDs() }))
         target.edit("Type") { page in page.insert([.paragraph("new")], .top(0)) }

@@ -64,6 +64,7 @@ let package = Package(
             ]
         ),
         .testTarget(name: "ParcCoreTests", dependencies: ["ParcCore"], path: "tests/ParcCoreTests",
+                    resources: [.copy("Notes/Fixtures")],
                     swiftSettings: strict),
         .target(name: "ParcNative", path: "Engine/ParcNative",
                 sources: ["autofill_save_presenter.mm", "certificate_viewer_presenter.mm", "content_drop_router.mm",

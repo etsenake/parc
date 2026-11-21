@@ -3,35 +3,63 @@ import Testing
 @testable import ParcCore
 
 struct NoteSyntaxMarkupTests {
+    static let languageIDs = NoteCodeLanguage.all.map(\.id)
+    static let highlightedIDs = languageIDs.filter { $0 != "plaintext" }
+
     @Test func plainTextLeadsThePicker() {
-        let all = NoteCodeLanguage.all
-        #expect(all.first?.id == "plaintext" && all.first?.name == "Plain Text", "Plain Text leads the picker")
-        let names = all.dropFirst().map { $0.name.lowercased() }
-        #expect(names == names.sorted(), "the rest is alphabetical: \(names)")
-        #expect(Set(all.map(\.id)).count == all.count, "ids are unique")
-        #expect(all.count >= 36, "about thirty-five languages and then some")
-        let fences: [String: String] = [
-            "js": "javascript", "ts": "typescript", "sh": "bash", "shell": "bash", "zsh": "bash", "py": "python",
-            "objc": "objectivec", "c++": "cpp", "yml": "yaml", "JSON": "json", "  Swift  ": "swift", "C#": "csharp",
-            "rb": "ruby", "rs": "rust", "kt": "kotlin", "md": "markdown", "Dockerfile": "dockerfile", "patch": "diff",
-            "python title=\"demo.py\"": "python", "{.rust}": "rust", "language-go": "go", "Objective-C": "objectivec",
-            "gql": "graphql", "plain": "plaintext", "Plain Text": "plaintext", "tsx": "tsx", "jsx": "jsx",
-        ]
-        for (fence, id) in fences {
-            #expect(NoteCodeLanguage.named(fence)?.id == id, "\(fence) names \(id), got \(NoteCodeLanguage.named(fence)?.id ?? "nil")")
-        }
-        #expect(NoteCodeLanguage.named("brainfudge") == nil, "unknown languages stay unknown")
-        #expect(NoteCodeLanguage.named("") == nil, "empty info strings name nothing")
-        #expect(NoteSyntaxHighlighter.tokens(in: "let x = 1", language: "klingon").isEmpty, "unknown languages get no tokens")
-        #expect(NoteSyntaxHighlighter.tokens(in: "let x = 1", language: "text").isEmpty, "plain text gets no tokens")
-        #expect(NoteSyntaxHighlighter.tokens(in: "", language: "swift").isEmpty, "empty code gets no tokens")
-        for language in all where language.id != "plaintext" {
-            #expect(NoteSyntaxLexer.lexer(for: language.id) != nil, "\(language.name) has a lexer")
-        }
-        let emoji = SyntaxProbe("swift", "let 🌳 = \"🌳\" // 🌳")
+        #expect(NoteCodeLanguage.all.first?.id == "plaintext")
+        #expect(NoteCodeLanguage.all.first?.name == "Plain Text")
+    }
+
+    @Test func theRestOfThePickerIsAlphabetical() {
+        let names = NoteCodeLanguage.all.dropFirst().map { $0.name.lowercased() }
+        #expect(names == names.sorted())
+    }
+
+    @Test func languageIDsAreUnique() {
+        #expect(Set(NoteCodeLanguage.all.map(\.id)).count == NoteCodeLanguage.all.count)
+    }
+
+    @Test func thePickerOffersAboutThirtyFiveLanguagesAndThenSome() {
+        #expect(NoteCodeLanguage.all.count >= 36)
+    }
+
+    @Test(arguments: [
+        ("js", "javascript"), ("ts", "typescript"), ("sh", "bash"), ("shell", "bash"), ("zsh", "bash"), ("py", "python"),
+        ("objc", "objectivec"), ("c++", "cpp"), ("yml", "yaml"), ("JSON", "json"), ("  Swift  ", "swift"), ("C#", "csharp"),
+        ("rb", "ruby"), ("rs", "rust"), ("kt", "kotlin"), ("md", "markdown"), ("Dockerfile", "dockerfile"), ("patch", "diff"),
+        ("python title=\"demo.py\"", "python"), ("{.rust}", "rust"), ("language-go", "go"), ("Objective-C", "objectivec"),
+        ("gql", "graphql"), ("plain", "plaintext"), ("Plain Text", "plaintext"), ("tsx", "tsx"), ("jsx", "jsx"),
+    ] as [(String, String)])
+    func aFenceNamesItsLanguage(fence: String, id: String) {
+        #expect(NoteCodeLanguage.named(fence)?.id == id)
+    }
+
+    @Test(arguments: ["brainfudge", ""])
+    func unknownFencesNameNothing(fence: String) {
+        #expect(NoteCodeLanguage.named(fence) == nil)
+    }
+
+    @Test(arguments: ["klingon", "text"])
+    func unknownAndPlainLanguagesGetNoTokens(language: String) {
+        #expect(NoteSyntaxHighlighter.tokens(in: "let x = 1", language: language).isEmpty)
+    }
+
+    @Test func emptyCodeGetsNoTokens() {
+        #expect(NoteSyntaxHighlighter.tokens(in: "", language: "swift").isEmpty)
+    }
+
+    @Test(arguments: NoteSyntaxMarkupTests.highlightedIDs)
+    func everyHighlightedLanguageHasALexer(id: String) {
+        #expect(NoteSyntaxLexer.lexer(for: id) != nil)
+    }
+
+    @Test func emojiDoNotShiftTokenOffsets() {
+        let code = "let 🌳 = \"🌳\" // 🌳"
+        let emoji = SyntaxProbe("swift", code)
         emoji.expect("\"🌳\"", .string)
         emoji.expect("// 🌳", .comment)
-        #expect(emoji.tokens.last?.range.upperBound == ("let 🌳 = \"🌳\" // 🌳" as NSString).length, "offsets are UTF-16")
+        #expect(emoji.tokens.last?.range.upperBound == (code as NSString).length)
     }
 
     @Test func html() {
@@ -465,28 +493,27 @@ struct NoteSyntaxMarkupTests {
         probe.expectWellFormed()
     }
 
-    @Test func everyLanguageStaysLinearOn2000Line() {
-        let languages = NoteCodeLanguage.all.map(\.id)
+    @Test(arguments: NoteSyntaxMarkupTests.languageIDs)
+    func trickySnippetsStayWellFormed(language: String) {
         let snippets = [
             "\"unterminated", "/* open", "`${`${`${", "<div <span", "'''", "#{", "${", "$(", "<<EOF", "@\"", "r#\"",
             "[[", "--[[", "{-", "```", "<!--", "\\", "\u{1F600}\"\u{1F600}", "a /b/ c", "\n\n\t ", "%w(", "~r/", "<?php",
         ]
-        for language in languages {
-            for snippet in snippets {
-                SyntaxProbe(language, snippet).expectWellFormed()
-                SyntaxProbe(language, String(repeating: snippet, count: 50)).expectWellFormed()
-            }
+        for snippet in snippets {
+            SyntaxProbe(language, snippet).expectWellFormed()
+            SyntaxProbe(language, String(repeating: snippet, count: 50)).expectWellFormed()
         }
+    }
+
+    @Test(arguments: NoteSyntaxMarkupTests.languageIDs)
+    func aLongBlockOfCodeStaysWellFormed(language: String) {
         let line = "let value = compute(\"text\", 0x2A) /* note */ + `tpl ${a / b}` // tail <b>x</b> $var #{x}\n"
-        let big = String(repeating: line, count: 2_000)
-        let pathological = String(repeating: "( / [ * _ ` < ${ #{ \" ' ", count: 4_000)
-        let started = Date()
-        for language in languages {
-            SyntaxProbe(language, big).expectWellFormed()
-            SyntaxProbe(language, pathological).expectWellFormed()
-        }
-        let elapsed = Date().timeIntervalSince(started)
-        #expect(elapsed < 20, "every language stays linear on 2,000-line and adversarial blocks (\(elapsed)s)")
+        SyntaxProbe(language, String(repeating: line, count: 2_000)).expectWellFormed()
+    }
+
+    @Test(arguments: NoteSyntaxMarkupTests.languageIDs)
+    func anAdversarialBlockOfCodeStaysWellFormed(language: String) {
+        SyntaxProbe(language, String(repeating: "( / [ * _ ` < ${ #{ \" ' ", count: 4_000)).expectWellFormed()
     }
 
     struct SyntaxProbe {

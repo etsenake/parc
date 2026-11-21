@@ -3,8 +3,7 @@ import Testing
 @testable import ParcCore
 
 @MainActor final class NoteEmojiTests {
-    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent().appendingPathComponent("Resources/NoteEmoji/emoji.json")
+    let url = Bundle.module.url(forResource: "emoji", withExtension: "json", subdirectory: "Fixtures")!
     let suite = "Parc.Notes.EmojiTests." + UUID().uuidString
     let defaults: UserDefaults
     let catalog: NoteEmojiCatalog
