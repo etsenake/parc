@@ -42,11 +42,21 @@ final class TooltipAnchorView: NSView {
     static func set(_ view: NSView, _ title: String, commandID: String? = nil, requiresBinding: Bool = false,
                     anchor: TooltipConfiguration.Anchor = .bottomTrailing,
                     behavior: TooltipConfiguration.Behavior = .onMouseIdle(delay: 0.45)) {
+        set(view, title, commandID: commandID, requiresBinding: requiresBinding, anchor: anchor, behavior: behavior, binder: binder)
+    }
+    static func set(_ view: NSView, _ title: String, commandID: String? = nil, requiresBinding: Bool = false,
+                    anchor: TooltipConfiguration.Anchor = .bottomTrailing,
+                    behavior: TooltipConfiguration.Behavior = .onMouseIdle(delay: 0.45),
+                    binder: ((NSView, String, String?, Bool) -> Void)?) {
         view.parcTooltip = TooltipConfiguration(title, shortcut: commandID.map { .command($0) }, anchor: anchor,
                                                 behavior: behavior, requiresShortcut: requiresBinding)
-        help(view, title, commandID: commandID, requiresBinding: requiresBinding)
+        help(view, title, commandID: commandID, requiresBinding: requiresBinding, binder: binder)
     }
     static func help(_ view: NSView, _ title: String, commandID: String?, requiresBinding: Bool = false) {
+        help(view, title, commandID: commandID, requiresBinding: requiresBinding, binder: binder)
+    }
+    static func help(_ view: NSView, _ title: String, commandID: String?, requiresBinding: Bool = false,
+                     binder: ((NSView, String, String?, Bool) -> Void)?) {
         if let binder { binder(view, title, commandID, requiresBinding); return }
         let text = requiresBinding ? nil : title
         view.setAccessibilityHelp(text); (view as? NSControl)?.cell?.setAccessibilityHelp(text)
@@ -66,6 +76,12 @@ final class TooltipAnchorView: NSView {
     }
 
     static func keyPress(for event: NSEvent, showing shortcut: KeyboardShortcut?) -> TooltipKeyPress {
+        keyPress(for: event, showing: shortcut, eventChord: eventChord, symbolicChord: symbolicChord)
+    }
+
+    static func keyPress(for event: NSEvent, showing shortcut: KeyboardShortcut?,
+                         eventChord: ((NSEvent) -> KeyboardShortcut?)?,
+                         symbolicChord: ((NSEvent) -> KeyboardShortcut?)?) -> TooltipKeyPress {
         let modifiers = event.modifierFlags.intersection(KeyboardShortcut.modifierMask)
         if let symbolic = symbolicChord?(event), symbolic.key == shortcut?.key {
             return TooltipKeyPress(modifiers: symbolic.flags, key: symbolic.key)
@@ -109,6 +125,12 @@ final class TooltipAnchorView: NSView {
     private static func existingController(for window: NSWindow) -> TooltipController? {
         objc_getAssociatedObject(window, controllerKey) as? TooltipController
     }
+
+    var currentDate: @MainActor () -> Date = { TooltipController.now() }
+    var makeTimer: @MainActor (TimeInterval, Bool, @escaping @MainActor () -> Void) -> Timer = { TooltipController.timer($0, $1, $2) }
+    var whenFadeEnds: @MainActor (CFTimeInterval, @escaping @MainActor () -> Void) -> Void = { TooltipController.fadeEnded($0, $1) }
+    var pointerInput: @MainActor () -> (buttons: Int, modifiers: NSEvent.ModifierFlags) = { (NSEvent.pressedMouseButtons, NSEvent.modifierFlags) }
+    var shortcutForCommand: @MainActor (String) -> KeyboardShortcut? = { TooltipController.commandShortcut?($0) }
 
     var palette: TooltipColorPalette? {
         didSet { if palette != oldValue, presentedOwnPalette == nil { presenter?.setPalette(palette ?? .neutral) } }
@@ -191,9 +213,9 @@ final class TooltipAnchorView: NSView {
         lastMoveTimestamp = event.timestamp
         if state.pointerMoved() { syncTimers() }
         if let stopTimer, stopTimer.isValid {
-            stopTimer.fireDate = Self.now().addingTimeInterval(TooltipTiming.pointerStopDelay)
+            stopTimer.fireDate = currentDate().addingTimeInterval(TooltipTiming.pointerStopDelay)
         } else {
-            stopTimer = Self.timer(TooltipTiming.pointerStopDelay, false) { [weak self] in self?.pointerStopped() }
+            stopTimer = makeTimer(TooltipTiming.pointerStopDelay, false) { [weak self] in self?.pointerStopped() }
         }
     }
 
@@ -220,14 +242,14 @@ final class TooltipAnchorView: NSView {
                           enclosingAnchor: next?.parcTooltip?.anchor, anchor: current?.parcTooltip?.anchor ?? .bottomTrailing) {
         case .keep: break
         case .handOff: if let next { schedule(next) }
-        case .hide(let fade): apply(state.hide(fade, now: Self.now()))
+        case .hide(let fade): apply(state.hide(fade, now: currentDate()))
         }
     }
 
     private func shortcut(for configuration: TooltipConfiguration) -> KeyboardShortcut? {
         switch configuration.shortcut {
         case .fixed(let fixed)?: return fixed
-        case .command(let id)?: return Self.commandShortcut?(id)
+        case .command(let id)?: return shortcutForCommand(id)
         case nil: return nil
         }
     }
@@ -245,7 +267,8 @@ final class TooltipAnchorView: NSView {
     private func isEligible(_ configuration: TooltipConfiguration, for view: NSView) -> Bool {
         if isSuppressed && !isExempt(view) { return false }
         if configuration.requiresShortcut && shortcut(for: configuration) == nil { return false }
-        return TooltipEligibility.permits(pressedMouseButtons: NSEvent.pressedMouseButtons, modifierFlags: NSEvent.modifierFlags,
+        let input = pointerInput()
+        return TooltipEligibility.permits(pressedMouseButtons: input.buttons, modifierFlags: input.modifiers,
                                    allowed: configuration.allowedModifierKeys) { [window] in
             var candidate = window
             while let current = candidate {
@@ -258,12 +281,12 @@ final class TooltipAnchorView: NSView {
 
     private func schedule(_ view: NSView) {
         guard let configuration = view.parcTooltip, isEligible(configuration, for: view) else { return }
-        switch state.schedule(ObjectIdentifier(view), anchor: configuration.anchor, behavior: configuration.behavior, now: Self.now()) {
+        switch state.schedule(ObjectIdentifier(view), anchor: configuration.anchor, behavior: configuration.behavior, now: currentDate()) {
         case .present?: present(view)
         case .presentAfter(let delay)?:
             targetView = view
             presentationTimer?.invalidate()
-            presentationTimer = Self.timer(delay, false) { [weak self, weak view] in if let view { self?.present(view) } }
+            presentationTimer = makeTimer(delay, false) { [weak self, weak view] in if let view { self?.present(view) } }
             updateMonitor()
         case nil: break
         }
@@ -281,13 +304,13 @@ final class TooltipAnchorView: NSView {
                                           palette: configuration.palette ?? palette ?? .neutral,
                                           maxWidth: configuration.maxWidth ?? TooltipConfiguration.defaultMaxWidth,
                                           style: configuration.style)
-        let presenter = self.presenter ?? TooltipPresenter(parent: window)
+        let presenter = self.presenter ?? TooltipPresenter(parent: window, fadeEnded: whenFadeEnds)
         guard presenter.present(content, anchor: configuration.anchor, from: view, rect: configuration.anchorRect ?? view.bounds) else {
             presenter.close(); self.presenter = nil; presentedShortcut = nil
             state.didFailToPresent(); syncTimers(); updateMonitor()
             return
         }
-        if self.presenter == nil { pressedModifiers = NSEvent.modifierFlags.intersection(KeyboardShortcut.modifierMask); pressedCharacters = nil }
+        if self.presenter == nil { pressedModifiers = pointerInput().modifiers.intersection(KeyboardShortcut.modifierMask); pressedCharacters = nil }
         self.presenter = presenter
         presentedShortcut = shortcut
         presentedOwnPalette = configuration.palette
@@ -295,7 +318,7 @@ final class TooltipAnchorView: NSView {
         state.didPresent(ObjectIdentifier(view))
         presenter.setPressed(modifiers: pressedModifiers, characters: pressedCharacters)
         hitTestTimer?.invalidate()
-        hitTestTimer = Self.timer(TooltipTiming.hitTestInterval, true) { [weak self] in self?.verifyPointer() }
+        hitTestTimer = makeTimer(TooltipTiming.hitTestInterval, true) { [weak self] in self?.verifyPointer() }
         updateMonitor()
     }
 
@@ -313,7 +336,7 @@ final class TooltipAnchorView: NSView {
     }
 
     private func hide(_ duration: TimeInterval) {
-        apply(state.hide(State.Fade(duration: duration), now: Self.now()))
+        apply(state.hide(State.Fade(duration: duration), now: currentDate()))
     }
 
     private func apply(_ fade: State.Fade?) {
@@ -366,7 +389,7 @@ final class TooltipAnchorView: NSView {
     }
 
     private func handle(_ event: NSEvent) {
-        let now = Self.now()
+        let now = currentDate()
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
             apply(state.hide(State.Fade(duration: TooltipTiming.interruptionDuration), now: now))
@@ -441,9 +464,12 @@ final class TooltipAnchorView: NSView {
     private let view = TooltipView(content: TooltipView.Content(label: "", keycaps: [], corners: TooltipCorners(anchor: .bottomTrailing),
                                                                 palette: .neutral, maxWidth: TooltipConfiguration.defaultMaxWidth))
     private var animation: UUID?
+    private let fadeEnded: @MainActor (CFTimeInterval, @escaping @MainActor () -> Void) -> Void
 
-    init(parent: NSWindow) {
+    init(parent: NSWindow,
+         fadeEnded: @escaping @MainActor (CFTimeInterval, @escaping @MainActor () -> Void) -> Void = { TooltipController.fadeEnded($0, $1) }) {
         self.parent = parent
+        self.fadeEnded = fadeEnded
         window = TooltipWindow(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false)
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -517,7 +543,7 @@ final class TooltipAnchorView: NSView {
         fade.fillMode = .both
         CATransaction.begin()
         if let completion {
-            TooltipController.fadeEnded(delay + duration) { [weak self] in
+            fadeEnded(delay + duration) { [weak self] in
                 guard let self, self.animation == token else { return }
                 completion()
             }

@@ -262,6 +262,30 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
     private var tipPresenter: (presenter: TooltipPresenter, level: Int)?
     private var refreshed: (level: Int, row: Int)?
     var willPerform: ((NSMenuItem) -> Void)?
+    @MainActor struct Host {
+        var isShowing: @MainActor (NSWindow) -> Bool = { $0.isVisible }
+        var nextEvent: @MainActor () -> NSEvent? = {
+            NSApp.nextEvent(matching: .any, until: .distantFuture, inMode: .eventTracking, dequeue: true)
+        }
+        var postEvent: @MainActor (NSEvent) -> Void = { NSApp.postEvent($0, atStart: true) }
+        var showCard: @MainActor (NSWindow, NSWindow) -> Void = { card, owner in
+            owner.addChildWindow(card, ordered: .above)
+            card.orderFront(nil)
+        }
+        var removeCard: @MainActor (NSWindow) -> Void = { card in
+            card.parent?.removeChildWindow(card)
+            card.orderOut(nil)
+        }
+        var animateClose: @MainActor (NSView, NSPoint, @escaping () -> Void) -> Bool = {
+            SidebarPlusMenuMotion.animateClose($0, about: $1, completion: $2)
+        }
+        var schedule: @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> Timer = { interval, body in
+            let timer = Timer(timeInterval: interval, repeats: false) { _ in MainActor.assumeIsolated { body() } }
+            RunLoop.main.add(timer, forMode: .common)
+            return timer
+        }
+    }
+    var host = Host()
 
     init(anchor: NSRect, regions: [NSRect], parent: NSWindow, colors: ParcMenuColors) {
         self.anchor = anchor
@@ -272,7 +296,7 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
 
     @objc(presentMenu:)
     func present(_ menu: NSMenu) -> Bool {
-        guard !running, let parent, parent.isVisible else { return false }
+        guard !running, let parent, host.isShowing(parent) else { return false }
         running = true
         done = false
         open(menu, beside: anchor, right: true)
@@ -280,9 +304,8 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
                                                             object: NSApp, queue: nil) { [weak self] _ in
             MainActor.assumeIsolated { self?.done = true }
         }
-        while !done, parent.isVisible {
-            guard let event = NSApp.nextEvent(matching: .any, until: .distantFuture, inMode: .eventTracking,
-                                              dequeue: true) else { continue }
+        while !done, host.isShowing(parent) {
+            guard let event = host.nextEvent() else { continue }
             handle(event)
         }
         NotificationCenter.default.removeObserver(resign)
@@ -307,7 +330,7 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
     private func wake() {
         if let event = NSEvent.otherEvent(with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0,
                                           windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0) {
-            NSApp.postEvent(event, atStart: true)
+            host.postEvent(event)
         }
     }
 
@@ -360,11 +383,7 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
         let item = levels[level].view.items[row]
         let opened = level + 1 < levels.count && levels[level + 1].view.source === item.submenu
         if !opened, level + 1 < levels.count, let previous, heading(from: previous, to: point, into: level + 1) {
-            let timer = Timer(timeInterval: ParcContextMenuMetrics.submenuAimDelay, repeats: false) { [weak self] _ in
-                MainActor.assumeIsolated { self?.highlight(row, in: level) }
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            pendingRow = timer
+            pendingRow = host.schedule(ParcContextMenuMetrics.submenuAimDelay) { [weak self] in self?.highlight(row, in: level) }
             return
         }
         highlight(row, in: level)
@@ -390,13 +409,10 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
         }
         var delay = TooltipTiming.pointerStopDelay
         if case .onMouseIdle(let idle) = configuration.behavior { delay += idle }
-        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.tip?.timer = nil
-                self?.showTip(configuration, level: level, row: row)
-            }
+        let timer = host.schedule(delay) { [weak self] in
+            self?.tip?.timer = nil
+            self?.showTip(configuration, level: level, row: row)
         }
-        RunLoop.main.add(timer, forMode: .common)
         tip = (level, row, timer, delay)
     }
 
@@ -542,8 +558,7 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
             guard let self, self.choose(level: level, row: row) else { return }
             self.wake()
         }
-        owner.addChildWindow(window, ordered: .above)
-        window.orderFront(nil)
+        host.showCard(window, owner)
         levels.append((view, window, placed.right))
         SidebarPlusMenuMotion.animateOpen(view, about: Self.pivot(view, right: placed.right))
     }
@@ -564,8 +579,7 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
         if let current = refreshed, current.level > level { refreshed = nil }
         while levels.count > level + 1, let (view, window, _) = levels.popLast() {
             view.onPress = nil
-            window.parent?.removeChildWindow(window)
-            window.orderOut(nil)
+            host.removeCard(window)
             view.source.delegate?.menuDidClose?(view.source)
         }
     }
@@ -577,11 +591,9 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
         hideTip()
         while let (view, window, right) = levels.popLast() {
             view.onPress = nil
-            let remove = {
-                window.parent?.removeChildWindow(window)
-                window.orderOut(nil)
-            }
-            if !SidebarPlusMenuMotion.animateClose(view, about: Self.pivot(view, right: right), completion: remove) {
+            let removeCard = host.removeCard
+            let remove = { removeCard(window) }
+            if !host.animateClose(view, Self.pivot(view, right: right), remove) {
                 remove()
             }
             view.source.delegate?.menuDidClose?(view.source)
