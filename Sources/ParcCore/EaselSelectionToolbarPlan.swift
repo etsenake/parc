@@ -25,7 +25,7 @@ enum EaselToolbarControl: String, CaseIterable, Hashable {
     case bold, italic, underline, strikethrough, paragraph
     case color, textFill, outline, connectorStyle, startHead, endHead, routing
     case stickyShape, brushWidth, pattern
-    case crop, replaceImage, altText
+    case crop, imageMask, replaceImage, altText
     case codeLanguage
     case alignment, link
     case arrange, tidyUp, group, createSection, lock
@@ -67,7 +67,7 @@ enum EaselSelectionToolbarPlan {
         case .section:
             return [[.sectionTitle], [.color]]
         case .image:
-            return [[.crop, .replaceImage, .altText]]
+            return [[.crop, .imageMask, .replaceImage, .altText]]
         case .drawing:
             return [[.color, .brushWidth, .pattern]]
         case .page:

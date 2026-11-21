@@ -60,7 +60,7 @@ extension EaselCanvasView {
 
     var selectionToolbarSuppressed: Bool {
         let pressed = start != nil
-        return motion.isInteracting || hidesPassiveAnnotations
+        return motion.isInteracting || hidesPassiveAnnotations || isCroppingImage
             || (pressed && (drawing || dragDistance > 3 || resizing || marqueeRect != nil || selection != selectionBeforeGesture))
     }
 
@@ -198,7 +198,7 @@ extension EaselCanvasView {
             guard let editor, editor.selectedRange().length > 0, !editor.hasMarkedText() else { return false }
             editLink(relativeTo: anchor ?? editor, rect: anchor == nil ? editor.revealedSelectionRect() : nil)
         default:
-            guard performSelectionToolbarBoard(control) == true else { return false }
+            guard performSelectionToolbarBoard(control, anchor: anchor) == true else { return false }
         }
         refreshTextControls()
         return true

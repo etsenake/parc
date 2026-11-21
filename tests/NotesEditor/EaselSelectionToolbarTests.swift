@@ -43,7 +43,7 @@ struct EaselSelectionToolbarTests {
         expect([.connectorLabel, .color, .connectorStyle, .startHead, .endHead, .routing].allSatisfy(connector.contains), "Connectors offer label, colour, style, both heads and routing")
         let section = plan([.section])
         expect(section == [[.sectionTitle], [.color], [.more]], "Sections offer a title edit, colour and the ••• menu with their lock and hide options")
-        expect(plan([.image]).first == [.crop, .replaceImage, .altText], "Images group crop, replace and alt text")
+        expect(plan([.image]).first == [.crop, .imageMask, .replaceImage, .altText], "Images group crop, mask, replace and alt text")
         expect(plan([.freehand]).first == [.color, .brushWidth, .pattern], "Drawings offer colour, width and tape pattern")
         let text = plan([.text]).joined()
         expect([.typeface, .textSize, .smaller, .larger, .color, .textFill, .alignment, .link].allSatisfy(text.contains), "Text keeps the rail's family, size, fill and link plus colour and alignment")

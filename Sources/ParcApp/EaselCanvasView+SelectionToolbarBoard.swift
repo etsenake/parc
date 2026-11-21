@@ -9,6 +9,10 @@ extension EaselCanvasView {
         case .unlock: return selected.allSatisfy(\.isLocked)
         case .stickyShape: return selected.allSatisfy { $0.kind == .sticky }
         case .sectionTitle: return selected.count == 1 && selected.first?.kind == .section
+        case .crop, .replaceImage: return selectedImage != nil
+        case .imageMask: return selectedImage != nil && hasImageChrome
+        case .altText:
+            return hasImageChrome && selected.count == 1 && selected.first.map { EaselToolbarSubject($0.kind) == .image } == true
         default: return nil
         }
     }
@@ -41,6 +45,18 @@ extension EaselCanvasView {
             return .init(control: control, face: .symbol("rectangle"), name: "Wide sticky", isChecked: isStickyWide, isEnabled: ready)
         case .sectionTitle:
             return .init(control: control, face: .symbolAndText("pencil", "Rename"), name: "Rename section", isEnabled: ready)
+        case .crop:
+            return .init(control: control, face: .symbol("crop"), name: "Crop", isEnabled: ready && canEditSelectedImage)
+        case .imageMask:
+            return .init(control: control, face: .symbol("circle.square"), name: "Mask", isEnabled: ready && canEditSelectedImage,
+                         showsDisclosure: true)
+        case .replaceImage:
+            return .init(control: control, face: .symbol("photo.on.rectangle"), name: "Replace picture",
+                         isEnabled: ready && canEditSelectedImage)
+        case .altText:
+            let item = selected.first
+            return .init(control: control, face: .symbolAndText("text.below.photo", "Alt text"), name: "Alt text",
+                         isEnabled: ready && item?.isLocked == false)
         default:
             return nil
         }
@@ -116,8 +132,23 @@ extension EaselCanvasView {
             guard let section = selectedSections.first, selection.count == 1 else { return false }
             beginSectionRename(section.id)
             return true
+        case .crop: return beginImageCrop()
+        case .replaceImage:
+            guard canEditSelectedImage else { return false }
+            chooseReplacementImage()
+            return true
+        case .altText:
+            editImageAltText()
+            return true
         default: return nil
         }
+    }
+
+    func performSelectionToolbarBoard(_ control: EaselToolbarControl, anchor: NSView?) -> Bool? {
+        guard control == .imageMask else { return performSelectionToolbarBoard(control) }
+        guard selectionToolbarReady, canEditSelectedImage, hasImageChrome else { return false }
+        showImageMaskPicker(anchor: anchor.map { convert($0.bounds, from: $0) })
+        return true
     }
 
     func performSelectionToolbarBoardMenu(_ control: EaselToolbarControl, entry id: String) -> Bool? {
