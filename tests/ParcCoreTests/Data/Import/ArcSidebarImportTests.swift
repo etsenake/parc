@@ -17,7 +17,9 @@ struct ArcSidebarImportTests {
     func close(_ a: Double, _ b: Double, _ tolerance: Double = 1e-9) -> Bool { abs(a - b) <= tolerance }
 
     func fixtureData() throws -> Data {
-        try Data(contentsOf: DataFixtures.fixture("ArcSidebar/StorableSidebar.json"))
+        let file = try #require(Bundle.module.url(forResource: "StorableSidebar",
+                                                  withExtension: "json", subdirectory: "ArcSidebar"))
+        return try Data(contentsOf: file)
     }
 
     func loadArc() throws -> ArcSidebarImport {

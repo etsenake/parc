@@ -465,21 +465,24 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func archiveNoOpDoesNotWriteOrReset() async throws {
-        try await withDirectory { directory in
+    @Test(arguments: ["archive", "refresh", "policy"])
+    static func anUnchangedArchiveOperationKeepsTheSessionFile(operation: String) throws {
+        try withDirectory { directory in
             let now = Date(timeIntervalSince1970: 1_800_000_000)
             let store = try BrowserStore(directory: directory, now: { now })
-            store.archiveExpiredTabs()
+            let scheduler = DataFixtures.DeferredSave(store)
             let selected = store.open("https://selected.example")
             try store.save()
             let file = directory.appendingPathComponent("session.json")
             let original = try Data(contentsOf: file)
             let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
             try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: file.path)
-            #expect(store.archiveExpiredTabs().isEmpty, "No eligible tabs must produce no archived IDs")
-            store.refreshVisibleTabs([selected])
-            store.setAutoArchiveInterval(.twelveHours, for: store.activeSpace.profileID)
-            try await Task.sleep(nanoseconds: 400_000_000)
+            switch operation {
+            case "archive": #expect(store.archiveExpiredTabs().isEmpty)
+            case "refresh": store.refreshVisibleTabs([selected])
+            default: store.setAutoArchiveInterval(.twelveHours, for: store.activeSpace.profileID)
+            }
+            scheduler.run(on: store)
             let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
             #expect(try attributes[.modificationDate] as? Date == oldDate && (try Data(contentsOf: file)) == original, "No-op checks, identical activity timestamps and unchanged policies must not rewrite the session")
         }

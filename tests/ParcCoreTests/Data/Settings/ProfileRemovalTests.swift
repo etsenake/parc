@@ -91,24 +91,24 @@ struct ProfileRemovalTests {
         #expect(summary.savedTabCount == 2 && summary.historyEntryCount == 1)
     }
 
-    @Test func aPendingWriteBlocksStagingAndACompletedWriteReleasesItsReservation() async throws {
+    @Test func aPendingWriteBlocksRemovalStaging() async throws {
         let fixture = try Fixture()
         let store = fixture.store
-        let reserved = try #require(store.reserveProfileWrite(fixture.deleting))
-        var originalOwner: ProfileWriteReservation? = reserved
-        var pendingWrite: CheckedContinuation<Void, Never>?
-        let write = Task { [reservation = originalOwner!] in
-            await reservation.perform {
-                await withCheckedContinuation { pendingWrite = $0 }
-                return 1
-            }
+        let reservation = try #require(store.reserveProfileWrite(fixture.deleting))
+
+        await reservation.perform {
+            #expect(throws: (any Error).self) { try store.stageProfileRemoval(fixture.deleting, expectedName: "Work") }
         }
-        originalOwner = nil
-        while pendingWrite == nil { await Task.yield() }
-        #expect(throws: (any Error).self) { try store.stageProfileRemoval(fixture.deleting, expectedName: "Work") }
-        pendingWrite?.resume()
-        let written = await write.value
-        #expect(written == 1)
+    }
+
+    @Test func aCompletedWriteReleasesItsReservation() async throws {
+        let fixture = try Fixture()
+        let store = fixture.store
+        let reservation = try #require(store.reserveProfileWrite(fixture.deleting))
+
+        await reservation.perform {}
+        let staged = try store.stageProfileRemoval(fixture.deleting, expectedName: "Work")
+        #expect(staged.profileID == fixture.deleting)
     }
 
     @Test func aWriteFailureIsPropagatedAfterReleasingItsReservation() async throws {
