@@ -1,0 +1,109 @@
+import Foundation
+
+struct EaselEquationSize: Equatable {
+    var width: Double
+    var height: Double
+
+    var isUsable: Bool { width.isFinite && height.isFinite && width > 0 && height > 0 }
+}
+
+enum EaselEquation {
+    static let fontSize = 30.0
+    static let padding = 14.0
+    static let emptySize = EaselEquationSize(width: 248, height: 72)
+    static let minimumScale = 0.2
+    static let maximumScale = 16.0
+    static let maximumLength = 20_000
+
+    static func isBlank(_ tex: String) -> Bool {
+        tex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    static func clamped(_ tex: String) -> String {
+        tex.count <= maximumLength ? tex : String(tex.prefix(maximumLength))
+    }
+
+    static func natural(typeset: EaselEquationSize?) -> EaselEquationSize {
+        guard let typeset, typeset.isUsable else { return emptySize }
+        return EaselEquationSize(width: typeset.width + 2 * padding, height: typeset.height + 2 * padding)
+    }
+
+    static func scale(of frame: EaselRect, natural: EaselEquationSize) -> Double {
+        guard natural.isUsable, frame.width.isFinite, frame.width > 0 else { return 1 }
+        return min(max(frame.width / natural.width, minimumScale), maximumScale)
+    }
+
+    static func frame(natural: EaselEquationSize, scale: Double, centeredOn centre: EaselPoint) -> EaselRect {
+        let factor = min(max(scale.isFinite ? scale : 1, minimumScale), maximumScale)
+        let width = natural.width * factor, height = natural.height * factor
+        return EaselRect(x: max(0, centre.x - width / 2), y: max(0, centre.y - height / 2), width: width, height: height)
+    }
+
+    static func refitted(_ frame: EaselRect, from old: EaselEquationSize, to new: EaselEquationSize) -> EaselRect {
+        let centre = EaselPoint(x: frame.x + frame.width / 2, y: frame.y + frame.height / 2)
+        return Self.frame(natural: new, scale: scale(of: frame, natural: old), centeredOn: centre)
+    }
+
+    static func inner(_ frame: EaselRect, natural: EaselEquationSize) -> EaselRect {
+        let factor = scale(of: frame, natural: natural)
+        let inset = padding * factor
+        return EaselRect(x: frame.x + inset, y: frame.y + inset,
+                         width: max(0, frame.width - 2 * inset), height: max(0, frame.height - 2 * inset))
+    }
+
+    static func placed(natural: EaselEquationSize, visible: EaselRect, occupied: [EaselRect]) -> EaselRect {
+        let centre = EaselPoint(x: visible.x + visible.width / 2, y: visible.y + visible.height / 2)
+        var frame = Self.frame(natural: natural, scale: 1, centeredOn: centre)
+        let step = 24.0
+        var attempts = 0
+        while attempts < 12, occupied.contains(where: { $0.x == frame.x && $0.y == frame.y }) {
+            frame.x += step
+            frame.y += step
+            attempts += 1
+        }
+        return frame
+    }
+}
+
+struct EaselVectorEquationPart: Equatable {
+    var path: String
+    var color: String? = nil
+    var opacity: Double? = nil
+}
+
+struct EaselVectorEquation: Equatable {
+    var width: Double
+    var height: Double
+    var parts: [EaselVectorEquationPart]
+    var error: String? = nil
+}
+
+extension EaselVectorExport {
+    static func equation(_ item: EaselItem, _ art: EaselVectorEquation?) -> String {
+        guard !EaselEquation.isBlank(item.text) else { return "" }
+        let f = item.frame
+        let label = " role=\"img\" aria-label=\"" + escape(NoteEquationSpeech.label(source: item.text, error: art?.error)) + "\""
+        guard let art, art.error == nil, art.width > 0, art.height > 0, !art.parts.isEmpty else {
+            let size = max(8, min(f.height * 0.4, 18))
+            return "<g" + label + "><text x=\"" + number(f.x + f.width / 2) + "\" y=\"" + number(f.y + f.height / 2 + size * 0.35)
+                + "\" text-anchor=\"middle\" xml:space=\"preserve\" style=\"font-family:ui-monospace,Menlo,monospace;font-size:" + number(size)
+                + "px;fill:var(--easel-muted)\">" + escape(item.text.split(whereSeparator: \.isNewline).joined(separator: " ")) + "</text></g>"
+        }
+        let natural = EaselEquation.natural(typeset: EaselEquationSize(width: art.width, height: art.height))
+        let inner = EaselEquation.inner(f, natural: natural)
+        let factor = art.width > 0 ? inner.width / art.width : 1
+        var result = "<g" + label + " transform=\"translate(" + number(inner.x) + " " + number(inner.y) + ") scale(" + number6(factor) + ")\">"
+        let ink = paint(item.color)
+        for part in art.parts where !part.path.isEmpty {
+            var style = "fill:" + (part.color.flatMap(color) ?? ink)
+            if let opacity = part.opacity, opacity < 1 { style += ";fill-opacity:" + number6(opacity) }
+            result += "<path d=\"" + escape(part.path) + "\" style=\"" + style + "\"/>"
+        }
+        return result + "</g>"
+    }
+
+    private static func number6(_ value: Double) -> String {
+        guard value.isFinite else { return "1" }
+        return String((value * 10_000).rounded() / 10_000)
+    }
+}

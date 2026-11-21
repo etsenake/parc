@@ -286,6 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             EaselCanvasView.highlightRecall = { NoteColorRecents.load().first(where: \.isBackground)?.color }
             EaselCanvasView.mermaidSheetFactory = { EaselMermaidSheet(canvas: $0, text: $1) }
             EaselCanvasView.menuPresenterFactory = { EaselObjectMenuPresenter() }
+            EaselCanvasView.equationEditorFactory = { host, source, inside in NoteEquationEditSession(source: source, host: host, isInsideOwner: inside) }
             EaselCanvasView.stampPanelsFactory = { EaselStampPanels() }
             KeyboardShortcuts.shared.onDiscoveryChange = {
                 NotificationCenter.default.post(name: LiveShortcutToolTip.didChange, object: nil)
