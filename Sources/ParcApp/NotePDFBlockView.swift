@@ -1124,7 +1124,8 @@ final class NotePDFFullScreenOverlay: NSView {
         guard !closing else { return }
         closing = true
         if let window, let responder = window.firstResponder as? NSView, responder === self || responder.isDescendant(of: self) {
-            window.makeFirstResponder(previousResponder)
+            let returns = (previousResponder as? NSView).map({ SavedFocus.mayReturn(to: $0, in: window) }) ?? true
+            window.makeFirstResponder(returns ? previousResponder : nil)
         }
         let page = viewer.pageIndex
         onClose?(page)

@@ -181,7 +181,10 @@ final class NoteMediaZoomOverlay: NSView {
     func close() {
         guard !closing else { return }
         closing = true
-        if window?.firstResponder === self { window?.makeFirstResponder(previousResponder) }
+        if let window, window.firstResponder === self {
+            let returns = (previousResponder as? NSView).map({ SavedFocus.mayReturn(to: $0, in: window) }) ?? true
+            window.makeFirstResponder(returns ? previousResponder : nil)
+        }
         fadeBackdrop(visible: false)
         animate(to: originRect, spring: .reorder) { [weak self] in
             self?.removeFromSuperview()

@@ -108,7 +108,8 @@ final class NoteFindController {
                 host.textView.selectedOffsets = match.range
                 editor.textSelectionDidChange(in: host)
             }
-        } else if let responder = returnResponder, let window = editor.canvas.window {
+        } else if let responder = returnResponder, let window = editor.canvas.window,
+                  (responder as? NSView).map({ SavedFocus.mayReturn(to: $0, in: window) }) ?? true {
             window.makeFirstResponder(responder)
         }
     }
