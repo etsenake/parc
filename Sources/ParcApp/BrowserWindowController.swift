@@ -207,7 +207,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var coveredPages: [UUID: CoveredPage] = [:]
     var easelImageDestination: EaselImageDestinationController?
     var privateMediaSource: (catalog: BrowserStore, profileID: UUID, media: ExternalMediaLibrary)?
-    var pageCapture: PageCaptureController?
+    var pageCapture: PageCaptureController? {
+        didSet {
+            guard (pageCapture == nil) != (oldValue == nil) else { return }
+            sidebarHover.isEnabled = sidebarHoverAllowed
+            applySidebarHover()
+        }
+    }
+    var sidebarHoverAllowed: Bool { !isSidebarResizing && frameCrank == nil && pageCapture == nil }
     private var pageCaptureGesture: PageCaptureGesture?
     struct EaselPane {
         let documentID: UUID
@@ -312,7 +319,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         didSet {
             sidebarResizeRegion.isResizing = isSidebarResizing
             refreshPreviewHover()
-            sidebarHover.isEnabled = !isSidebarResizing && frameCrank == nil
+            sidebarHover.isEnabled = sidebarHoverAllowed
             setContentResizeReason(.sidebarResize, active: isSidebarResizing)
         }
     }

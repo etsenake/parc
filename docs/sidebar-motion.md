@@ -171,7 +171,8 @@ two sides differ; the commit leaves both blurs unchanged.
 
 The hover tracker owns mouse events and timers only while the application is
 active and the window is key. Losing either reports all regions inactive.
-Resizing suspends the tracker silently until the drag ends.
+Resizing suspends the tracker silently until the drag ends. Page capture
+suspends it for the whole session and dismisses a hover-revealed sidebar.
 
 | Region | Relevant behavior |
 |---|---|

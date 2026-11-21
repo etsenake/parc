@@ -273,7 +273,7 @@ extension BrowserWindowController {
             }
             if self.frameCrank === crank { self.frameCrank = nil }
             if Self.frameCrankOwner === self { Self.frameCrankOwner = nil }
-            self.sidebarHover.isEnabled = !self.isSidebarResizing
+            self.sidebarHover.isEnabled = self.sidebarHoverAllowed
             self.onFrameCrankFinished?()
             self.onFrameCrankFinished = nil
         }

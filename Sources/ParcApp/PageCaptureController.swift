@@ -26,6 +26,7 @@ final class PageCaptureController: NSObject {
     private let addToEasel: (EaselImageInput, UUID?) throws -> Void
     private var messageSharing: CaptureMessageSharing?
     private let overlay = PageCaptureOverlay()
+    private lazy var edgeGuard = PageCaptureEdgeGuard(overlay: overlay)
     private var state = State.selecting
     private var image: CapturedImage?
     private var captureLayout: EaselCaptureLayout?
@@ -84,6 +85,7 @@ final class PageCaptureController: NSObject {
         previousMouseMovedEvents = parent.acceptsMouseMovedEvents
         parent.acceptsMouseMovedEvents = true
         host.addSubview(overlay, positioned: .above, relativeTo: nil)
+        edgeGuard.install(in: host, below: overlay)
         parent.makeFirstResponder(overlay)
         for name in [NSWindow.willCloseNotification, NSWindow.didMiniaturizeNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: parent, queue: .main) { [weak self] _ in
@@ -142,7 +144,7 @@ final class PageCaptureController: NSObject {
         imageEditor?.close(); imageEditor = nil; acceptedEdits = nil
         observers.forEach { NotificationCenter.default.removeObserver($0) }; observers.removeAll()
         portrait?.removeFromSuperview(); portrait = nil
-        overlay.removeFromSuperview(); image = nil; capturedPageColor = nil
+        edgeGuard.removeFromSuperview(); overlay.removeFromSuperview(); image = nil; capturedPageColor = nil
         finished(restoreFocus)
     }
 
@@ -755,6 +757,7 @@ final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
         })] : [])
         NSAccessibility.post(element: self, notification: .valueChanged)
     }
+    override var mouseDownCanMoveWindow: Bool { false }
     override func updateTrackingAreas() {
         if let tracking { removeTrackingArea(tracking) }
         let area = NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)

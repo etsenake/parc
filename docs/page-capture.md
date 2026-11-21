@@ -36,7 +36,10 @@ missing pixels never become a placeholder.
 ## Ownership and output
 
 `PageCaptureController` adds a sibling over the real viewport without reparenting
-the renderer. Split and Peek capture retain their exact native page. Admission
+the renderer. `PageCaptureEdgeGuard` extends it across any window-frame band
+within 24 points of a window edge, so presses there select (clamped to the page)
+instead of moving the window; neither view lets a press move the window. Split
+and Peek capture retain their exact native page. Admission
 records the original tab, Profile, Space, window, page host and viewport geometry.
 Selection, transfer, close, layout or owner changes retire the session.
 
