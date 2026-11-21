@@ -144,14 +144,30 @@ enum EaselStampFace: Hashable {
         item.text = text
     }
 
-    static func isEmoji(_ text: String) -> Bool {
-        guard !text.isEmpty, text.utf8.count <= maximumEmojiBytes, text.count == 1, let character = text.first else { return false }
-        let scalars = character.unicodeScalars
-        guard !scalars.contains(where: { $0.properties.generalCategory == .control || $0.properties.isWhitespace }) else { return false }
-        return scalars.contains { scalar in
-            scalar.properties.isEmojiPresentation || scalar.value == 0xFE0F || scalar.value == 0x20E3
-                || (0x1F1E6...0x1F1FF).contains(scalar.value)
+    init?(emoji text: String) {
+        var scalars = Array(text.unicodeScalars)
+        if let first = scalars.first, !first.isASCII, first.properties.isEmoji, !first.properties.isEmojiPresentation,
+           scalars.count == 1 || !Self.qualifies(scalars[1]) {
+            scalars.insert("\u{FE0F}", at: 1)
         }
+        var normalized = ""
+        normalized.unicodeScalars.append(contentsOf: scalars)
+        guard Self.isEmoji(normalized) else { return nil }
+        self = .emoji(normalized)
+    }
+
+    private static func qualifies(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.value == 0xFE0F || (0x1F3FB...0x1F3FF).contains(scalar.value)
+    }
+
+    static func isEmoji(_ text: String) -> Bool {
+        guard !text.isEmpty, text.utf8.count <= maximumEmojiBytes, text.count == 1 else { return false }
+        let scalars = Array(text.unicodeScalars)
+        guard let first = scalars.first,
+              !scalars.contains(where: { $0.properties.generalCategory == .control || $0.properties.isWhitespace }) else { return false }
+        if first.isASCII { return scalars.count == 3 && scalars[1].value == 0xFE0F && scalars[2].value == 0x20E3 && first.properties.isEmoji }
+        if first.properties.isEmojiPresentation { return true }
+        return first.properties.isEmoji && scalars.count > 1 && qualifies(scalars[1])
     }
 
     static func isSymbolName(_ name: String) -> Bool {

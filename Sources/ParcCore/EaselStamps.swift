@@ -58,7 +58,11 @@ enum EaselStamps {
         return (magnitude * sign * 10).rounded() / 10
     }
 
-    static func carriesStamps(_ kind: EaselItemKind) -> Bool { kind != .arrow && kind != .stamp }
+    static func carriesStamps(_ item: EaselItem) -> Bool { item.kind != .stamp && EaselDrawing.canHold(item) }
+
+    static func centre(of item: EaselItem) -> EaselPoint {
+        EaselPoint(x: item.frame.x + item.frame.width / 2, y: item.frame.y + item.frame.height / 2)
+    }
 
     static func attachmentTarget(at point: EaselPoint, in items: [EaselItem], excluding: Set<UUID> = []) -> UUID? {
         let byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -66,12 +70,12 @@ enum EaselStamps {
             $0.element.zIndex == $1.element.zIndex ? $0.offset < $1.offset : $0.element.zIndex < $1.element.zIndex
         }
         for (_, item) in ordered.reversed() where !excluding.contains(item.id) {
-            guard EaselContentHitTest.contains(point, item: item, selected: false) else { continue }
+            guard EaselDrawing.covers(item, point) else { continue }
             if item.kind == .stamp {
                 guard let target = item.attachedTo.flatMap({ root(of: $0, in: byID) }), !excluding.contains(target) else { continue }
                 return target
             }
-            guard carriesStamps(item.kind), let target = root(of: item.id, in: byID), !excluding.contains(target) else { continue }
+            guard carriesStamps(item), let target = root(of: item.id, in: byID), !excluding.contains(target) else { continue }
             return target
         }
         return nil
@@ -82,20 +86,10 @@ enum EaselStamps {
         var visited: Set<UUID> = []
         while let item = items[current] {
             guard visited.insert(current).inserted else { return nil }
-            guard let next = item.attachedTo, items[next] != nil else { return carriesStamps(item.kind) ? current : nil }
+            guard let next = item.attachedTo, items[next] != nil else { return carriesStamps(item) ? current : nil }
             current = next
         }
         return nil
-    }
-
-    static func reattaching(_ document: EaselDocument, moved: Set<UUID>) -> EaselDocument {
-        var next = document
-        for index in next.items.indices where next.items[index].kind == .stamp && moved.contains(next.items[index].id) {
-            let frame = next.items[index].frame
-            let centre = EaselPoint(x: frame.x + frame.width / 2, y: frame.y + frame.height / 2)
-            next.items[index].attachedTo = attachmentTarget(at: centre, in: next.items, excluding: [next.items[index].id])
-        }
-        return next
     }
 
     static func stamped(_ face: EaselStampFace, at point: EaselPoint, side: Double = sizes[0], tilt: Double,

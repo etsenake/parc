@@ -83,12 +83,21 @@ struct EaselStampTests {
     }
 
     static func emojiAndSymbols() {
-        for good in ["🎉", "👍🏽", "❤️", "1️⃣", "🇨🇦", "👩‍👩‍👧‍👦", "🏳️‍🌈", "😀"] {
+        for good in ["🎉", "👍🏽", "❤️", "1️⃣", "#️⃣", "🇨🇦", "👩‍👩‍👧‍👦", "🏳️‍🌈", "😀", "☝🏽", "©️", "☺️"] {
             expect(EaselStampFace.isEmoji(good), "\(good) is an emoji")
         }
-        for bad in ["", "a", "1", "ab", "🎉🎉", " ", "\n", "🎉 ", "™", String(repeating: "👩‍👩‍👧‍👦", count: 1) + "x"] {
+        for bad in ["", "a", "1", "ab", "🎉🎉", " ", "\n", "🎉 ", "™", "❤", "☺", "A\u{FE0F}", "1\u{FE0F}", "x\u{FE0F}\u{20E3}",
+                    "\u{20E3}", "👩‍👩‍👧‍👦x"] {
             expect(!EaselStampFace.isEmoji(bad), "\(bad.debugDescription) is not a single emoji")
         }
+        expect(EaselStampFace(emoji: "❤") == .emoji("❤️") && EaselStampFace(emoji: "☺") == .emoji("☺️"),
+               "Bare text-style emoji get their emoji look when picked")
+        expect(EaselStampFace(emoji: "🎉") == .emoji("🎉") && EaselStampFace(emoji: "☝🏽") == .emoji("☝🏽")
+               && EaselStampFace(emoji: "❤️") == .emoji("❤️"), "Emoji that already look right stay as they are")
+        for bad in ["", "A", "1", "hi", "🎉🎉", "\u{FE0F}"] {
+            expect(EaselStampFace(emoji: bad) == nil, "\(bad.debugDescription) never becomes an emoji stamp")
+        }
+        expect(EaselStampFace(text: "❤") == nil && EaselStampFace(token: "emoji:❤") == nil, "Saved stamps must already be tidy")
         for good in ["cloud", "server.rack", "chevron.left.forwardslash.chevron.right", "cylinder.split.1x2"] {
             expect(EaselStampFace.isSymbolName(good), "\(good) is a symbol name")
         }
@@ -169,7 +178,7 @@ struct EaselStampTests {
 
     static func attachment() {
         let sticky = item(.sticky, 0, 0, 200, 200, z: 1)
-        var note = item(.rectangle, 50, 50, 100, 100, z: 2)
+        let note = item(.rectangle, 50, 50, 100, 100, z: 2)
         let arrow = item(.arrow, 0, 0, 300, 300, z: 5)
         var placed = stamp(.design(.heart), at: EaselPoint(x: 100, y: 100)); placed.zIndex = 9; placed.attachedTo = note.id
         let items = [sticky, note, arrow, placed]
@@ -182,24 +191,55 @@ struct EaselStampTests {
         expect(EaselStamps.attachmentTarget(at: EaselPoint(x: 60, y: 60), in: [sticky, note], excluding: [note.id]) == sticky.id,
                "Excluded objects are skipped")
         var highlight = item(.freehand, 40, 40, 40, 40, z: 3); highlight.attachedTo = sticky.id
-        expect(EaselStamps.attachmentTarget(at: EaselPoint(x: 40, y: 40), in: [sticky, highlight]) == sticky.id,
-               "A stamp on an attached highlight sticks to what the highlight sticks to")
-        note.attachedTo = highlight.id; highlight.attachedTo = note.id
-        expect(EaselStamps.attachmentTarget(at: EaselPoint(x: 60, y: 60), in: [note, highlight]) == nil, "Attachment loops never hang")
+        expect(EaselStamps.attachmentTarget(at: EaselPoint(x: 45, y: 45), in: [sticky, highlight]) == sticky.id,
+               "Doodles never hold stamps, so a stamp on one sticks to the object below")
+        var locked = item(.rectangle, 0, 0, 100, 100, z: 4); locked.locked = true
+        expect(EaselStamps.attachmentTarget(at: EaselPoint(x: 20, y: 20), in: [sticky, locked]) == sticky.id,
+               "Locked backdrops never hold stamps")
+        let section = item(.section, 0, 0, 600, 600, z: 0)
+        expect(EaselStamps.attachmentTarget(at: EaselPoint(x: 400, y: 400), in: [section]) == nil, "Sections carry stamps by holding them, not by sticking")
+        var turned = item(.rectangle, 300, 0, 200, 40, z: 1); turned.rotation = 90
+        expect(EaselStamps.attachmentTarget(at: EaselPoint(x: 400, y: 90), in: [turned]) == turned.id
+               && EaselStamps.attachmentTarget(at: EaselPoint(x: 310, y: 20), in: [turned]) == nil, "Rotated objects hold stamps where they really are")
+        var loopA = item(.rectangle, 0, 0, 100, 100, z: 1), loopB = item(.rectangle, 0, 0, 100, 100, z: 2)
+        loopA.attachedTo = loopB.id; loopB.attachedTo = loopA.id
+        expect(EaselStamps.attachmentTarget(at: EaselPoint(x: 10, y: 10), in: [loopA, loopB]) == nil, "Attachment loops never hang")
         let same = item(.rectangle, 0, 0, 100, 100, z: 0), later = item(.rectangle, 0, 0, 100, 100, z: 0)
         expect(EaselStamps.attachmentTarget(at: EaselPoint(x: 10, y: 10), in: [same, later]) == later.id, "Ties go to the later object")
+        expect(EaselStamps.centre(of: placed) == EaselPoint(x: 100, y: 100), "Stamps aim from their centre")
 
         let base = item(.sticky, 0, 0, 200, 200, z: 1), other = item(.sticky, 400, 0, 200, 200, z: 1)
-        var moving = stamp(.design(.star), at: EaselPoint(x: 100, y: 100)); moving.attachedTo = base.id; moving.zIndex = 4
-        var doc = document([base, other, moving])
-        doc.items[2].frame = EaselStamps.frame(centeredAt: EaselPoint(x: 500, y: 100), side: 64)
-        expect(EaselStamps.reattaching(doc, moved: [moving.id]).items[2].attachedTo == other.id, "Dropping a stamp on another object moves it there")
-        doc.items[2].frame = EaselStamps.frame(centeredAt: EaselPoint(x: 900, y: 900), side: 64)
-        expect(EaselStamps.reattaching(doc, moved: [moving.id]).items[2].attachedTo == nil, "Dropping it on the board lets go")
-        doc.items[2].frame = EaselStamps.frame(centeredAt: EaselPoint(x: 100, y: 100), side: 64)
-        doc.items[2].attachedTo = base.id
-        expect(EaselStamps.reattaching(doc, moved: [base.id]).items[2].attachedTo == base.id, "Moving only the object leaves stamps alone")
-        expect(EaselStamps.reattaching(doc, moved: [base.id, moving.id]).items[2].attachedTo == base.id, "Moving both keeps them together")
+        var riding = stamp(.design(.star), at: EaselPoint(x: 100, y: 100)); riding.attachedTo = base.id; riding.zIndex = 4
+        let before = document([base, other, riding])
+        func moving(_ ids: Set<UUID>, by dx: Double) -> EaselDocument {
+            var next = before
+            for index in next.items.indices where ids.contains(next.items[index].id) { next.items[index].frame.x += dx }
+            return EaselDependents.settle(next, previous: before, moved: ids)
+        }
+        let dropped = moving([riding.id], by: 400)
+        expect(dropped.items[2].attachedTo == other.id, "Dropping a stamp on another object moves it there")
+        expect(moving([riding.id], by: 1200).items[2].attachedTo == nil, "Dropping it on the board lets go")
+        let carried = moving([base.id], by: 30)
+        expect(carried.items[2].attachedTo == base.id && carried.items[2].frame.x == riding.frame.x + 30, "Stamps ride along when their object moves")
+        let together = moving([base.id, riding.id], by: 900)
+        expect(together.items[2].attachedTo == base.id && together.items[2].frame.x == riding.frame.x + 900, "Moving both keeps them together")
+        var turnedBase = before
+        turnedBase.items[0].rotation = 90
+        let spun = EaselDependents.settle(turnedBase, previous: before, moved: [base.id])
+        expect(spun.items[2].rotation == 90 && spun.items[2].attachedTo == base.id, "Stamps turn with the object they ride")
+        var arriving = stamp(.design(.heart), at: EaselPoint(x: 500, y: 100)); arriving.zIndex = 6
+        var pasting = before
+        pasting.items.append(arriving)
+        expect(EaselDependents.settle(pasting, previous: before, moved: []).items[3].attachedTo == other.id,
+               "Pasted and duplicated stamps stick to whatever they land on")
+        pasting.items[3].frame = EaselStamps.frame(centeredAt: EaselPoint(x: 900, y: 900), side: 64)
+        expect(EaselDependents.settle(pasting, previous: before, moved: []).items[3].attachedTo == nil, "Stamps pasted on bare board stay free")
+        var unstuck = before
+        unstuck.items[2].attachedTo = nil
+        expect(EaselDependents.settle(unstuck, previous: before, moved: []).items[2].attachedTo == nil, "Existing free stamps are left alone")
+        let cleared = EaselDependents.removing([base.id], from: before)
+        expect(!cleared.items.contains { $0.id == riding.id } && cleared.items.contains { $0.id == other.id },
+               "Deleting an object takes its stamps with it")
     }
 
     static func stamping() {

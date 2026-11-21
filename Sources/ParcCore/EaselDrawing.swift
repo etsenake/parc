@@ -317,7 +317,7 @@ enum EaselDrawing {
 }
 
 enum EaselAttachments {
-    static func attaches(_ item: EaselItem) -> Bool { item.kind == .freehand && item.resolvedBrush.sticksToObjects }
+    static func attaches(_ item: EaselItem) -> Bool { (item.kind == .freehand && item.resolvedBrush.sticksToObjects) || item.kind == .stamp }
 
     static func carry(_ next: EaselDocument, previous: EaselDocument, moved: Set<UUID> = []) -> EaselDocument {
         carrying(next, previous: previous, moved: moved).document
@@ -358,8 +358,14 @@ enum EaselAttachments {
             guard let index = positions[id], let old = before[id] else { continue }
             let item = result.items[index]
             guard attaches(item), placementChanged(old, item), !(item.attachedTo.map(travelled.contains) ?? false) else { continue }
-            result.items[index].attachedTo = EaselDrawing.attachmentTarget(for: EaselDrawing.visualPoints(item),
-                                                                           in: result.items, excluding: [id])
+            result.items[index].attachedTo = item.kind == .stamp
+                ? EaselStamps.attachmentTarget(at: EaselStamps.centre(of: item), in: result.items, excluding: [id])
+                : EaselDrawing.attachmentTarget(for: EaselDrawing.visualPoints(item), in: result.items, excluding: [id])
+        }
+        for index in result.items.indices where result.items[index].kind == .stamp && result.items[index].attachedTo == nil
+            && before[result.items[index].id] == nil {
+            let item = result.items[index]
+            result.items[index].attachedTo = EaselStamps.attachmentTarget(at: EaselStamps.centre(of: item), in: result.items, excluding: [item.id])
         }
         return (result, travelled)
     }
