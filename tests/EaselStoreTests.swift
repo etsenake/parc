@@ -1315,6 +1315,15 @@ struct EaselStoreTests {
         expect(maps.queryItems?.first(where: { $0.name == "iaxm" })?.value == "maps", "Maps uses the current official provider route")
         expect(maps.queryItems?.contains(where: { $0.name == "ia" }) == false, "Maps does not inherit the historical News vertical")
         expect(EaselWebNavigation.destination(.init(mode: .search, text: "  ")) == nil, "Empty query does not fabricate a destination")
+        expect(EaselWebNavigation.entry("  ") == .empty, "Blank entry is neither an address nor a search")
+        for (input, address) in [("example.com", "https://example.com"), ("https://example.com/a b", nil), ("http://localhost:8000/a", "http://localhost:8000/a"),
+                                 ("localhost:3000", "https://localhost:3000"), ("192.168.1.4/admin", "https://192.168.1.4/admin"), ("news.ycombinator.com/item?id=1", "https://news.ycombinator.com/item?id=1")] {
+            if let address { expect(EaselWebNavigation.entry(input) == .address(URL(string: address)!), "Address-looking entry opens as a page: " + input) }
+            else { expect(EaselWebNavigation.entry(input) == .search(input), "Unopenable scheme text falls back to search") }
+        }
+        for input in ["cats", "how tall is a giraffe", "swift.", "e.g", "v1.2", "https://user:pw@example.com"] {
+            expect(EaselWebNavigation.entry(input) == .search(input), "Words and near-addresses offer search instead: " + input)
+        }
     }
 
 }

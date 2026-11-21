@@ -2,16 +2,28 @@ import AppKit
 
 @MainActor
 final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
+    enum Host: Equatable { case note, easel }
+
     static let headerHeight: CGFloat = 38
     let browser: PCBrowserView
     let address: URL
     let liveAddress: URL
-    var positioningAllowed = true
+    let host: Host
+    let captureLayout: EaselCaptureLayout?
+    var positioningAllowed = true {
+        didSet {
+            guard positioningAllowed != oldValue, captureLayout != nil else { return }
+            if !positioningAllowed, positioning != nil { stopPositioning() }
+            if positioningAllowed { needsLayout = true }
+        }
+    }
     var onLayout: (() -> Void)?
     var onRetry: (() -> Void)?
     var onNavigate: ((URL) -> Bool)?
     var onDone: (() -> Void)?
     var onOpen: ((URL) -> Void)?
+    var onSnapshot: (() -> Void)?
+    var onFramingFailed: (() -> Void)?
     var onCaption: (() -> Void)? {
         didSet {
             guard captionButton.isHidden != (onCaption == nil) else { return }
@@ -22,6 +34,13 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     var interactive = false {
         didSet {
             guard interactive != oldValue else { return }
+            if host == .easel {
+                if !interactive { closePopovers() }
+                if !interactive && framing.revealsPage { positionCapture(force: true) }
+                refresh()
+                needsLayout = true
+                return
+            }
             refresh()
             refreshRing(animated: true)
             superview?.refreshCursorIfPointerOwned()
@@ -29,24 +48,39 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     }
     var selected = false { didSet { if selected != oldValue { refreshRing(animated: true) } } }
     var scrollLatched = false
+    var sendsAppReferrer: Bool { captureLayout == nil }
     private let content = NoteEmbedPageClip()
     private let ring = CALayer()
     private let header = EmbeddedPageHeader()
     private let clip = NoteEmbedPageClip()
+    private let cover = NSView()
     private let backButton = NoteToolbarButton(icon: .symbol("chevron.left"), label: "Back")
     private let reloadButton = NoteToolbarButton(icon: .symbol("arrow.clockwise"), label: "Reload")
     private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in a tab")
-    private let doneButton = NoteToolbarButton(icon: .symbol("checkmark"), label: "Back to the note")
+    private let moreButton = NoteToolbarButton(icon: .symbol("ellipsis"), label: "More")
+    private let doneButton: NoteToolbarButton
     private let captionButton = NoteToolbarButton(icon: .symbol("text.below.photo"), label: "Caption")
+    private let snapshotChip = NoteChip(EaselWebItemChrome.backToSnapshotTitle, icon: .symbol("photo"))
     private let fallback: NoteEmbedFallbackView
     private var status: String?
     private var retryTitle = "Retry"
+    private var framing = EaselLiveFraming()
+    private var positioning: PCNativeLiveCapturePosition?
+    private var positionGeneration: UInt64 = 0
+    private var positionedWidth: CGFloat = 0
+    private var positionedZoom: Double = 0
+    private var moreMenu: NotePagePopover?
+    private var addressPopover: NotePagePopover?
+    private var lastSearch: (query: String, category: EaselWebNavigation.Category)?
 
-    init(address: URL, profilePath: String) {
+    init(address: URL, profilePath: String, host: Host = .note, captureLayout: EaselCaptureLayout? = nil) {
         self.address = address
-        liveAddress = NoteEmbedAddress.liveURL(for: address)
+        self.host = host
+        self.captureLayout = captureLayout
+        liveAddress = captureLayout == nil ? NoteEmbedAddress.liveURL(for: address) : address
         browser = PCBrowserView(frame: .zero, profilePath: profilePath)
         fallback = NoteEmbedFallbackView(address: address)
+        doneButton = NoteToolbarButton(icon: .symbol("checkmark"), label: host == .note ? "Back to the note" : "Back to the Easel")
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = false
@@ -65,9 +99,12 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         clip.exposesChildren = { [weak self] in self?.inputAvailable == true }
         content.addSubview(clip)
         clip.addSubview(browser)
+        cover.wantsLayer = true
+        cover.isHidden = true
+        content.addSubview(cover)
         fallback.onOpen = { [weak self] in
             guard let self else { return }
-            self.onOpen?(self.address)
+            if self.host == .note { self.onOpen?(self.address) } else { self.openInTab() }
         }
         fallback.onRetry = { [weak self] in self?.onRetry?() }
         content.addSubview(fallback)
@@ -75,15 +112,33 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         backButton.onPress = { [weak self] in self?.navigate(.back) }
         reloadButton.onPress = { [weak self] in self?.reloadOrStop() }
         openButton.onPress = { [weak self] in self?.openInTab() }
+        moreButton.onPress = { [weak self] in self?.showMore() }
         doneButton.onPress = { [weak self] in self?.onDone?() }
         doneButton.isHidden = true
         captionButton.onPress = { [weak self] in self?.onCaption?() }
         captionButton.isHidden = true
-        header.buttons = [captionButton, backButton, reloadButton, openButton, doneButton]
-        layer?.addSublayer(ring)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.group)
-        setAccessibilityLabel("Live page: " + NoteMediaFormat.displayHost(address))
+        snapshotChip.onPress = { [weak self] in self?.onSnapshot?() }
+        snapshotChip.setToolTip(EaselWebItemChrome.backToSnapshotHelp)
+        switch host {
+        case .note:
+            header.buttons = [captionButton, backButton, reloadButton, openButton, doneButton]
+            layer?.addSublayer(ring)
+            setAccessibilityElement(true)
+            setAccessibilityRole(.group)
+            setAccessibilityLabel("Live page: " + NoteMediaFormat.displayHost(address))
+        case .easel:
+            fallback.isHidden = true
+            fallback.retryChip.acceptsKeyboardFocus = true
+            doneButton.acceptsKeyboardFocus = true
+            if captureLayout != nil {
+                header.buttons = [reloadButton, openButton, moreButton, doneButton]
+                header.action = snapshotChip
+                header.setBadge("Live", help: EaselWebItemChrome.liveHelp, live: true)
+            } else {
+                header.buttons = [backButton, reloadButton, openButton, moreButton, doneButton]
+            }
+            setAccessibilityElement(false)
+        }
         NoteAnimation.observeReduceMotion(self) { [weak self] in
             guard let self else { return }
             NoteAnimation.settle(self.ring)
@@ -93,7 +148,7 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
             if let preview { self?.fallback.configure(preview: preview) }
             self?.refresh()
         }
-        setStatus("Loading webpage…", retry: false)
+        if host == .note { setStatus("Loading webpage…", retry: false) } else { refresh() }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -109,13 +164,27 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     var pageArea: (page: NSRect, visible: NSRect) { (convert(browser.bounds, from: browser), clip.frame) }
 
     var pageRect: NSRect {
-        NSRect(x: 1, y: Self.headerHeight, width: max(1, bounds.width - 2), height: max(1, bounds.height - Self.headerHeight - 1))
+        if host == .easel {
+            return NSRect(x: 0, y: Self.headerHeight, width: bounds.width, height: max(1, bounds.height - Self.headerHeight))
+        }
+        return NSRect(x: 1, y: Self.headerHeight, width: max(1, bounds.width - 2), height: max(1, bounds.height - Self.headerHeight - 1))
     }
 
+    private var documentName: String { host == .note ? "note" : "Easel" }
+
     func setStatus(_ text: String?, retry: Bool) {
+        if host == .easel {
+            if text == nil, captureLayout != nil, !framing.revealsPage { showLiningUp(); return }
+            status = text
+            fallback.configure(status: text.map(friendly), retryTitle: retry ? retryTitle : nil)
+            fallback.isHidden = text == nil
+            cover.isHidden = text == nil
+            needsLayout = true
+            return
+        }
         let wasLive = status == nil
         status = text
-        fallback.configure(status: text.map(Self.friendly), retryTitle: retry ? retryTitle : nil)
+        fallback.configure(status: text.map(friendly), retryTitle: retry ? retryTitle : nil)
         if text == nil {
             if !wasLive || !fallback.isHidden { hideFallback() }
         } else {
@@ -128,11 +197,13 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         needsLayout = true
     }
 
-    private static func friendly(_ text: String) -> String { EmbeddedPageStatusText.friendly(text, document: "note") }
+    private func friendly(_ text: String) -> String { EmbeddedPageStatusText.friendly(text, document: documentName) }
 
     func setRetryTitle(_ title: String) {
         retryTitle = title
-        if let status { fallback.configure(status: Self.friendly(status), retryTitle: title) }
+        guard let status else { return }
+        let visible = host == .note || !fallback.retryChip.isHidden
+        fallback.configure(status: friendly(status), retryTitle: visible ? title : nil)
     }
 
     private func hideFallback() {
@@ -144,6 +215,7 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     }
 
     func refresh() {
+        if host == .easel { refreshEasel(); return }
         let page = browser.nativePage
         let live = page?.isClosed == false && page?.embeddedOwnerValid == true
         let title = browser.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -151,51 +223,110 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         header.setPage(title: live && !title.isEmpty ? title : (preview?.title ?? NoteMediaFormat.displayHost(address)),
                        host: NoteMediaFormat.displayHost(live ? (page?.url ?? address) : address))
         backButton.isEnabled = live && page?.canPerformNavigation(.back) == true
-        let loading = browser.isLoading
-        reloadButton.content = .icon(.symbol(loading ? "xmark" : "arrow.clockwise"))
-        reloadButton.setAccessibilityLabel(loading ? "Stop" : "Reload")
-        reloadButton.setToolTip(loading ? "Stop" : "Reload")
-        reloadButton.isEnabled = live && page?.canPerformNavigation(loading ? .stop : .reload) == true
+        refreshReload(enabled: live)
         doneButton.isHidden = !interactive
         setAccessibilityValue(page?.url?.absoluteString ?? address.absoluteString)
         header.needsLayout = true
         needsLayout = true
     }
 
-    func validateInput() {}
+    private func refreshEasel() {
+        let page = browser.nativePage
+        let interactive = inputAvailable
+        let live = page?.isClosed == false && page?.embeddedOwnerValid == true
+        let preview = NoteLinkMetadata.shared.cached(address)
+        let current = live ? (page?.url ?? address) : address
+        let pageTitle = browser.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        header.setPage(title: live && !pageTitle.isEmpty ? pageTitle : (preview?.title ?? EaselWebItemChrome.displayHost(address)),
+                       host: EaselWebItemChrome.displayHost(current))
+        if captureLayout == nil { header.setEaselTooltip("Edit webpage address or search") } else { header.parcTooltip = nil }
+        header.onTitle = captureLayout == nil && interactive ? { [weak self] in self?.editAddress() } : nil
+        backButton.isEnabled = interactive && page?.canPerformNavigation(.back) == true
+        refreshReload(enabled: interactive)
+        openButton.isEnabled = true
+        moreButton.isEnabled = interactive
+        snapshotChip.isEnabled = interactive
+        doneButton.isHidden = !interactive
+        fallback.retryChip.isEnabled = interactive
+        setAccessibilityHidden(!interactive)
+        header.needsLayout = true
+        window?.invalidateCursorRects(for: header)
+    }
 
-    func cancelPositioning() {}
+    private func refreshReload(enabled: Bool) {
+        let page = browser.nativePage
+        let loading = browser.isLoading
+        reloadButton.content = .icon(.symbol(loading ? "xmark" : "arrow.clockwise"))
+        reloadButton.setAccessibilityLabel(loading ? "Stop" : "Reload")
+        reloadButton.setToolTip(loading ? "Stop" : "Reload")
+        reloadButton.isEnabled = enabled && page?.canPerformNavigation(loading ? .stop : .reload) == true
+    }
 
-    func positionCapture(force: Bool) {}
+    func validateInput() {
+        guard host == .easel, !inputAvailable || window == nil else { return }
+        closePopovers()
+    }
 
-    func focusRecovery() -> Bool { false }
+    func focusRecovery() -> Bool {
+        guard host == .easel, interactive, let window else { return false }
+        let retryVisible = !fallback.isHidden && !fallback.retryChip.isHidden
+        return window.makeFirstResponder(retryVisible ? fallback.retryChip : doneButton)
+    }
 
-    func focusRetry() {}
+    func focusRetry() {
+        guard host == .easel, interactive, !fallback.isHidden, !fallback.retryChip.isHidden else { return }
+        window?.makeFirstResponder(fallback.retryChip)
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        guard host == .easel else { super.cancelOperation(sender); return }
+        if addressPopover?.isOpen == true || moreMenu?.isOpen == true { closePopovers(); return }
+        if interactive { onDone?() }
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        host == .easel && !inputAvailable ? [] : super.accessibilityChildren()
+    }
 
     override func layout() {
         super.layout()
-        let width = bounds.width
         content.frame = bounds
-        NoteMediaMotion.instant {
-            ring.frame = bounds.insetBy(dx: -3, dy: -3)
-        }
-        header.frame = NSRect(x: 0, y: 0, width: width, height: Self.headerHeight)
+        NoteMediaMotion.instant { ring.frame = bounds.insetBy(dx: -3, dy: -3) }
+        header.frame = NSRect(x: 0, y: 0, width: bounds.width, height: Self.headerHeight)
         clip.frame = pageRect
-        browser.frame = clip.bounds
+        if let captureLayout {
+            let zoom = browser.nativePage?.liveCaptureZoomFactor ?? 1
+            let size = EaselCaptureGeometry.displaySize(captureLayout, availableWidth: bounds.width,
+                                                        availableHeight: pageRect.height, pageZoom: zoom)
+            clip.frame = NSRect(x: (bounds.width - size.width) / 2, y: Self.headerHeight + (pageRect.height - size.height) / 2,
+                                width: size.width, height: size.height)
+            browser.frame = NSRect(x: 0, y: 0, width: captureLayout.viewport.x * zoom, height: captureLayout.viewport.y * zoom)
+            positionCapture()
+        } else {
+            browser.frame = clip.bounds
+        }
+        cover.frame = pageRect
         fallback.frame = pageRect
         refreshColors()
+        if let addressPopover, addressPopover.isOpen, let anchor = popoverAnchor(addressPopover.panel.superview) {
+            addressPopover.reposition(anchor: anchor)
+        }
         onLayout?()
     }
 
     private func refreshColors() {
+        let fill = host == .note ? NoteMediaStyle.cardFill : NoteTheme.panelFill
+        let stroke = host == .note ? NoteMediaStyle.cardStroke : NoteTheme.panelStroke
         NoteMediaMotion.instant {
-            content.layer?.backgroundColor = NoteMediaStyle.cg(NoteMediaStyle.cardFill, in: self)
-            content.layer?.borderColor = NoteMediaStyle.cg(NoteMediaStyle.cardStroke, in: self)
+            content.layer?.backgroundColor = NoteMediaStyle.cg(fill, in: self)
+            content.layer?.borderColor = NoteMediaStyle.cg(stroke, in: self)
+            cover.layer?.backgroundColor = NoteMediaStyle.cg(host == .note ? NoteMediaStyle.cardFill : NoteTheme.menuFill, in: self)
             ring.borderColor = NoteMediaStyle.cg(NoteTheme.accent, in: self)
         }
     }
 
     private func refreshRing(animated: Bool) {
+        guard host == .note else { return }
         let target: Float = interactive || selected ? 1 : 0
         if animated { NoteAnimation.fade(ring, to: target, duration: 0.12) }
         else { NoteMediaMotion.instant { ring.opacity = target } }
@@ -208,6 +339,12 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
+        if host == .easel {
+            guard interactive else { return nil }
+            if NSApp.currentEvent?.type == .scrollWheel,
+               !EaselLiveFraming.admitsPageScrolling(framesCapture: captureLayout != nil), pageRect.contains(local) { return nil }
+            return super.hitTest(point)
+        }
         if status == nil, pageRect.contains(local) {
             let admits = NSApp.currentEvent?.type == .scrollWheel ? scrollLatched : interactive
             if !admits { return nil }
@@ -216,7 +353,7 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     }
 
     func takesPageInput(at windowPoint: NSPoint) -> Bool {
-        guard !showsRecovery, !isHiddenOrHasHiddenAncestor, let page = browser.nativePage,
+        guard host == .note, !showsRecovery, !isHiddenOrHasHiddenAncestor, let page = browser.nativePage,
               !page.isClosed, page.embeddedOwnerValid else { return false }
         return pageRect.contains(convert(windowPoint, from: nil))
     }
@@ -233,6 +370,153 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         let unchanged = current.absoluteString == liveAddress.absoluteString || current.absoluteString == address.absoluteString
         onOpen?(unchanged ? address : current)
     }
+
+    private func popoverHost() -> NSView? { enclosingScrollView?.superview ?? superview }
+
+    private func popoverAnchor(_ host: NSView?) -> NSRect? {
+        guard let host else { return nil }
+        return host.convert(NSRect(x: 8, y: Self.headerHeight - 4, width: 1, height: 1), from: self)
+    }
+
+    private func closePopovers() {
+        moreMenu?.close(animated: false)
+        addressPopover?.close(animated: false)
+    }
+
+    private func editAddress() {
+        guard host == .easel, captureLayout == nil, inputAvailable, let page = browser.nativePage, page.embeddedOwnerValid,
+              let host = popoverHost(), let anchor = popoverAnchor(host) else { return }
+        closePopovers()
+        let editor = EmbeddedPageAddressEditor(text: lastSearch?.query ?? page.url?.absoluteString ?? address.absoluteString,
+                                               category: lastSearch?.category ?? .images)
+        let popover = NotePagePopover(content: editor)
+        popover.exempt(header)
+        editor.onSubmit = { [weak self, weak popover, weak page] url, search in
+            guard let self, let page, self.inputAvailable, self.browser.nativePage === page,
+                  self.onNavigate?(url) == true else { return false }
+            self.lastSearch = search
+            popover?.close()
+            return true
+        }
+        editor.onCancel = { [weak popover] in popover?.close() }
+        popover.onClose = { [weak self, weak popover] in
+            guard let self, self.addressPopover === popover else { return }
+            self.addressPopover = nil
+            if self.inputAvailable, let page = self.browser.nativePage, let window = self.window, window.attachedSheet == nil {
+                window.makeFirstResponder(page.nativeView)
+            }
+        }
+        addressPopover = popover
+        popover.present(in: host, anchor: anchor, edge: .below, alignment: .leading)
+        editor.focus()
+    }
+
+    private func showMore() {
+        guard host == .easel, inputAvailable, let host = popoverHost() else { return }
+        if moreMenu?.isOpen == true { moreMenu?.close(); return }
+        closePopovers()
+        let page = browser.nativePage
+        var items: [NoteMenuList.Item] = []
+        if captureLayout == nil {
+            items.append(.init(id: "forward", title: "Forward", icon: .symbol("chevron.right"),
+                               isEnabled: page?.canPerformNavigation(.forward) == true))
+            items.append(.init(id: "address", title: "Edit Address or Search…", icon: .symbol("magnifyingglass"),
+                               isEnabled: page?.canPerformNavigation(.reload) == true))
+        } else {
+            items.append(.init(id: "snapshot", title: "Back to Snapshot", icon: .symbol("photo")))
+        }
+        items.append(.init(id: "open", title: "Open in a Tab", icon: .symbol("arrow.up.right.square")))
+        items.append(.init(id: "site", title: "Site Information", icon: .symbol("info.circle"),
+                           isEnabled: browser.canShowSiteInfo, separatorBefore: true))
+        let list = NoteMenuList(items: items)
+        list.minimumWidth = 220
+        list.setAccessibilityLabel("Webpage")
+        let popover = NotePagePopover(content: list)
+        popover.exempt(moreButton)
+        popover.onKeyDown = { [weak list] event in list?.handleKeyDown(event) ?? false }
+        list.onCancel = { [weak popover] in popover?.close() }
+        list.onActivate = { [weak self, weak popover] item in
+            popover?.close(animated: true)
+            guard let self else { return }
+            switch item.id {
+            case "forward": self.navigate(.forward)
+            case "address": self.editAddress()
+            case "snapshot": self.onSnapshot?()
+            case "open": self.openInTab()
+            case "site": _ = self.browser.showSiteInfo(from: self.moreButton)
+            default: break
+            }
+        }
+        popover.onClose = { [weak self, weak popover] in
+            guard let self, self.moreMenu === popover else { return }
+            self.moreMenu = nil
+        }
+        moreMenu = popover
+        let keyboard = NSApp.currentEvent?.type == .keyDown
+        list.prepare(origin: keyboard ? .keyboard : .pointer)
+        popover.present(in: host, anchor: host.convert(moreButton.bounds, from: moreButton), edge: .below, alignment: .trailing)
+        if keyboard { list.moveHighlight(by: 1) }
+    }
+
+    func cancelPositioning() {
+        guard captureLayout != nil else { return }
+        stopPositioning()
+        guard host == .easel else { return }
+        framing.pageChanged()
+        if status == nil || status == "Positioning live capture…" { showLiningUp() }
+    }
+
+    private func stopPositioning() {
+        positionGeneration &+= 1
+        positioning?.cancel()
+        positioning = nil
+        positionedWidth = 0
+        positionedZoom = 0
+    }
+
+    private func showLiningUp() {
+        status = "Positioning live capture…"
+        fallback.configure(status: friendly("Positioning live capture…"), retryTitle: nil)
+        fallback.isHidden = false
+        cover.isHidden = false
+        needsLayout = true
+    }
+
+    private func framed(_ success: Bool) {
+        switch framing.positioned(success: success, pageStillLoading: browser.isLoading) {
+        case .reveal: setStatus(nil, retry: false)
+        case .keepWaiting: showLiningUp()
+        case .backToSnapshot:
+            setStatus("This page could not align with the captured region.", retry: false)
+            onFramingFailed?()
+        }
+    }
+
+    func positionCapture(force: Bool = false) {
+        guard positioningAllowed, let layout = captureLayout, let page = browser.nativePage, !page.isClosed,
+              page.embeddedOwnerValid, window != nil else { return }
+        let zoom = page.liveCaptureZoomFactor
+        let width = min(clip.bounds.width, clip.bounds.height * layout.region.width / layout.region.height)
+        guard width > 0, zoom.isFinite, zoom > 0, force || positionedWidth != width || positionedZoom != zoom else { return }
+        stopPositioning()
+        positionedWidth = width
+        positionedZoom = zoom
+        let generation = positionGeneration
+        browser.frame = NSRect(x: 0, y: 0, width: layout.viewport.x * zoom, height: layout.viewport.y * zoom)
+        if !framing.revealsPage { showLiningUp() }
+        positioning = page.positionLiveCapture(NSRect(x: layout.region.x, y: layout.region.y,
+            width: layout.region.width, height: layout.region.height),
+            scrollOffset: NSPoint(x: layout.scroll.x, y: layout.scroll.y),
+            scrollContainers: layout.nativeScrollContainers, displayWidth: width) { [weak self, weak page] success in
+                MainActor.assumeIsolated {
+                    guard let self, let page, self.positionGeneration == generation,
+                          self.browser.nativePage === page, page.embeddedOwnerValid else { return }
+                    self.positioning = nil
+                    self.framed(success)
+                }
+            }
+        if positioning == nil { framed(false) }
+    }
 }
 
 @MainActor
@@ -240,78 +524,6 @@ private final class NoteEmbedPageClip: NSView {
     var exposesChildren: () -> Bool = { true }
     override var isFlipped: Bool { true }
     override func accessibilityChildren() -> [Any]? { exposesChildren() ? super.accessibilityChildren() : [] }
-}
-
-@MainActor
-final class NoteEmbedFallbackView: NSView {
-    var onOpen: (() -> Void)?
-    var onRetry: (() -> Void)?
-    private let address: URL
-    private let card = NoteLinkCardView(style: .bookmark)
-    private let statusLabel: NSTextField
-    let retryChip = NoteChip("Retry", icon: .symbol("arrow.clockwise"))
-    private var tracking: NSTrackingArea?
-
-    init(address: URL) {
-        self.address = address
-        statusLabel = NoteMediaStyle.label("", font: NoteMediaStyle.smallFont, color: NoteTheme.secondaryInk, lines: 2)
-        super.init(frame: .zero)
-        wantsLayer = true
-        statusLabel.alignment = .center
-        card.onOpen = { [weak self] in self?.onOpen?() }
-        retryChip.onPress = { [weak self] in self?.onRetry?() }
-        retryChip.isHidden = true
-        for view in [card, statusLabel, retryChip] as [NSView] { addSubview(view) }
-        configure(preview: NoteLinkMetadata.shared.cached(address))
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-    override var isFlipped: Bool { true }
-
-    func configure(preview: NoteLinkPreview?) {
-        let failed = preview == nil && NoteLinkMetadata.shared.failure(for: address) != nil
-        card.configure(url: address, preview: preview, loading: preview == nil && !failed)
-        needsLayout = true
-    }
-
-    func configure(status: String?, retryTitle: String?) {
-        statusLabel.stringValue = status ?? ""
-        retryChip.chipTitle = retryTitle ?? "Retry"
-        retryChip.isHidden = retryTitle == nil
-        setAccessibilityLabel(status)
-        needsLayout = true
-    }
-
-    override func layout() {
-        super.layout()
-        let width = min(560, max(0, bounds.width - 32))
-        let cardHeight = card.height(for: width)
-        let chipSize = retryChip.isHidden ? .zero : retryChip.intrinsicContentSize
-        let statusHeight: CGFloat = statusLabel.stringValue.isEmpty ? 0 : 34
-        let total = cardHeight + (statusHeight > 0 ? 10 + statusHeight : 0) + (chipSize.height > 0 ? 8 + chipSize.height : 0)
-        var y = max(12, ((bounds.height - total) / 2).rounded())
-        card.frame = NSRect(x: ((bounds.width - width) / 2).rounded(), y: y, width: width, height: cardHeight)
-        y = card.frame.maxY + 10
-        statusLabel.frame = NSRect(x: card.frame.minX, y: y, width: width, height: statusHeight)
-        y += statusHeight + 8
-        retryChip.frame = NSRect(x: ((bounds.width - chipSize.width) / 2).rounded(), y: y, width: chipSize.width, height: chipSize.height)
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
-        addTrackingArea(area)
-        tracking = area
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        card.setHovered(card.frame.contains(convert(event.locationInWindow, from: nil))
-                        && NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
-    }
-
-    override func mouseExited(with event: NSEvent) { card.setHovered(false) }
 }
 
 @MainActor

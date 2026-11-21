@@ -30,6 +30,19 @@ enum EaselWebNavigation {
               let host = url.host, !host.isEmpty, url.user == nil, url.password == nil else { return nil }
         return url
     }
+    enum Entry: Equatable { case empty, address(URL), search(String) }
+    static func entry(_ raw: String) -> Entry {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return .empty }
+        if text.contains("://") || text.lowercased().hasPrefix("localhost") {
+            return address(text).map(Entry.address) ?? .search(text)
+        }
+        guard let url = address(text), let host = url.host, !host.hasPrefix("."), !host.hasSuffix(".") else { return .search(text) }
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        let named = parts.count >= 2 && parts.allSatisfy { !$0.isEmpty } && parts.last.map { $0.count >= 2 && $0.allSatisfy(\.isLetter) } == true
+        let numeric = parts.count == 4 && parts.allSatisfy { !$0.isEmpty && $0.count <= 3 && $0.allSatisfy(\.isNumber) }
+        return named || numeric ? .address(url) : .search(text)
+    }
     static func destination(_ draft: Draft) -> URL? {
         if draft.mode == .address { return address(draft.text) }
         let query = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
