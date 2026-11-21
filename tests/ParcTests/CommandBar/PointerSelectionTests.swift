@@ -125,3 +125,76 @@ struct PointerSelectionTests {
         #expect(fixture.pressed.isEmpty)
     }
 }
+
+extension PointerSelectionTests {
+    @Test @MainActor func aSelectedRowCanAlsoBeHoveredWithoutLosingAccessibilitySelection() throws {
+        let fixture = Fixture()
+        fixture.row.isSelected = true
+        fixture.row.mouseMoved(with: try fixture.event(.mouseMoved))
+        #expect(fixture.row.isHovered)
+        #expect(fixture.cell.isAccessibilitySelected())
+    }
+
+    @Test @MainActor func reusingARowRetiresItsAccessibilityActions() throws {
+        let fixture = Fixture()
+        fixture.cell.onPress = { true }
+        fixture.row.mouseMoved(with: try fixture.event(.mouseMoved))
+        fixture.row.prepareForReuse()
+        #expect(!fixture.cell.accessibilityPerformPress())
+        #expect(fixture.cell.onDelete == nil)
+    }
+
+    @Test @MainActor func anUnrelatedTrackingExitDoesNotClearTheCurrentHover() throws {
+        let fixture = Fixture()
+        fixture.row.mouseMoved(with: try fixture.event(.mouseMoved))
+        let staleExit = try #require(NSEvent.enterExitEvent(with: .mouseExited, location: fixture.point,
+            modifierFlags: [], timestamp: 0, windowNumber: fixture.window.windowNumber, context: nil,
+            eventNumber: 2, trackingNumber: 99, userData: nil))
+        fixture.row.mouseExited(with: staleExit)
+        #expect(fixture.row.isHovered)
+    }
+}
+
+extension PointerSelectionTests {
+    @MainActor private final class TableRows: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+        var opened: [Int] = []
+
+        func numberOfRows(in tableView: NSTableView) -> Int { 2 }
+
+        func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+            let view = CommandResultRowView()
+            view.onPress = { [weak self] _ in self?.opened.append(row); return true }
+            return view
+        }
+
+        func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+            CommandResultCell(title: "Row \(row)", detail: "", accessory: "", isTab: false, icon: nil, enabled: true)
+        }
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func hoveringOrPressingAnotherRowKeepsTheKeyboardSelection(press: Bool) throws {
+        let window = Window()
+        let table = CommandResultsTable()
+        table.frame = NSRect(x: 0, y: 0, width: 500, height: 150)
+        table.rowHeight = 50
+        table.headerView = nil
+        table.addTableColumn(NSTableColumn(identifier: .init("result")))
+        let rows = TableRows()
+        table.dataSource = rows
+        table.delegate = rows
+        window.contentView?.addSubview(table)
+        table.reloadData()
+        table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        table.layoutSubtreeIfNeeded()
+        let row = try #require(table.rowView(atRow: 1, makeIfNecessary: true) as? CommandResultRowView)
+        let point = row.convert(NSPoint(x: 80, y: 25), to: nil)
+        let event = try #require(NSEvent.mouseEvent(with: press ? .leftMouseDown : .mouseMoved,
+            location: point, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+        if press { row.mouseDown(with: event) }
+        else { row.mouseMoved(with: event) }
+        #expect(table.selectedRow == 0)
+        #expect(rows.opened == (press ? [1] : []))
+    }
+}

@@ -126,3 +126,43 @@ struct SiteSearchOfferTests {
         #expect(fixture.offeredSite() == nil)
     }
 }
+
+extension SiteSearchOfferTests {
+    @Test(arguments: [false, true])
+    @MainActor func aPublishedWebsiteCanOfferItsMatchingSearch(learned: Bool) throws {
+        let fixture = try Fixture(query: "gitlab.com")
+        defer { fixture.bar.dismiss(restoreFocus: false) }
+        fixture.publish(query: "gitlab.com", scopes: [["host": "gitlab.com", "learned": learned]],
+                        results: [["url": "https://gitlab.com/explore", "title": "GitLab"]])
+        #expect(fixture.offeredSite() == "Search gitlab.com")
+    }
+
+    @Test @MainActor func aRecentPageCanOfferItsMatchingSearch() throws {
+        let fixture = try Fixture(query: "")
+        defer { fixture.bar.dismiss(restoreFocus: false) }
+        fixture.bar.updateRecentPages([("https://www.youtube.com/watch?v=123", "Video")])
+        fixture.publish(scopes: [["host": "www.youtube.com", "name": "YouTube"]])
+        #expect(fixture.offeredSite() == "Search YouTube")
+    }
+
+    @Test @MainActor func withdrawingTheOnlyActiveTemplateRemovesTheOffer() throws {
+        let fixture = try Fixture(query: "", address: "https://www.youtube.com/")
+        defer { fixture.bar.dismiss(restoreFocus: false) }
+        fixture.publish(scopes: [["host": "www.youtube.com", "name": "YouTube"]])
+        try #require(fixture.offeredSite() == "Search YouTube")
+        fixture.publish(scopes: [])
+        #expect(fixture.offeredSite() == nil)
+    }
+
+    @Test @MainActor func aPreviousPublicationCannotOfferItsSiteAfterASearch() throws {
+        let fixture = try Fixture(query: "youtube")
+        defer { fixture.bar.dismiss(restoreFocus: false) }
+        fixture.publish(query: "youtube", scopes: [["host": "www.youtube.com", "name": "YouTube"]],
+                        results: [["url": "https://www.youtube.com/", "title": "YouTube"]])
+        try #require(fixture.offeredSite() == "Search YouTube")
+        fixture.publish(query: "youtube", scopes: [["host": "www.youtube.com", "name": "YouTube"]],
+                        results: [["url": "https://www.youtube.com/results?search_query=youtube",
+                                   "search": true, "title": "youtube"]])
+        #expect(fixture.offeredSite() == nil)
+    }
+}

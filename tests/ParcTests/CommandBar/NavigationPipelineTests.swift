@@ -246,3 +246,41 @@ struct NavigationPipelineTests {
         #expect(actual == root.absoluteString)
     }
 }
+
+extension NavigationPipelineTests {
+    @Test(arguments: [(true, "space waves"), (false, "space")])
+    @MainActor func wrappingBetweenResultsKeepsTheFieldAndItsProviderQuery(up: Bool, visible: String) throws {
+        let fixture = try Fixture(query: "space")
+        defer { fixture.bar.dismiss(restoreFocus: false) }
+        fixture.publish("space", results: [
+            ["url": "https://search.example.test/?q=space", "search": true, "title": "space"],
+            ["url": "https://example.test/waves", "title": "Waves", "editText": "space waves", "inlineCompletion": "space waves"],
+        ])
+        let surface = try fixture.surface()
+        let field = try #require(surface.subviews.compactMap { $0 as? CommandBarInputField }.first)
+        let editor = try #require(field.currentEditor() as? NSTextView)
+        let table = try #require(surface.subviews.compactMap { $0 as? CommandResultsScrollView }.first?.documentView as? CommandResultsTable)
+        if !up {
+            #expect(fixture.bar.control(field, textView: editor, doCommandBy: NSSelectorFromString("moveUp:")))
+        }
+        let command = NSSelectorFromString(up ? "moveUp:" : "moveDown:")
+        #expect(fixture.bar.control(field, textView: editor, doCommandBy: command))
+        #expect(table.selectedRow == (up ? 1 : 0))
+        #expect(editor.string == visible)
+        #expect(editor.selectedRange() == NSRange(location: 5, length: visible.utf16.count - 5))
+        #expect(fixture.window.firstResponder === editor)
+    }
+
+    @Test @MainActor func markedTextDoesNotNavigateTheResultTable() throws {
+        let fixture = try Fixture(query: "space")
+        defer { fixture.bar.dismiss(restoreFocus: false) }
+        fixture.publish("space", results: [search("space")])
+        let surface = try fixture.surface()
+        let field = try #require(surface.subviews.compactMap { $0 as? CommandBarInputField }.first)
+        let editor = try #require(field.currentEditor() as? NSTextView)
+        editor.setMarkedText("あ", selectedRange: NSRange(location: 1, length: 0),
+                             replacementRange: NSRange(location: NSNotFound, length: 0))
+        #expect(!fixture.bar.control(field, textView: editor, doCommandBy: NSSelectorFromString("moveDown:")))
+        #expect(editor.hasMarkedText())
+    }
+}
