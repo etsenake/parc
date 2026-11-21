@@ -110,12 +110,17 @@ extension EaselCanvasView {
     func reparentMindMapNode(_ id: UUID, outdent: Bool) -> Bool {
         guard mindMapsWritable, isMindMapNode(id), editor?.hasMarkedText() != true else { return false }
         let editing = editingID == id
+        let caret = editing ? editor?.selectedRange() : nil
         guard (outdent ? EaselMindMap.outdenting(id, in: session.document) : EaselMindMap.indenting(id, in: session.document)) != nil else { return false }
         cancelPointerInteraction(); guard finishEditing(removingEmpty: false) else { return false }
         let document = session.document
         guard let next = outdent ? EaselMindMap.outdenting(id, in: document) : EaselMindMap.indenting(id, in: document),
               commit(outdent ? "Move topic out" : "Move topic in", { $0 = next }) else { return false }
         focusMindMapNode(id, editing: editing)
+        if let caret, let text = editor, editingID == id {
+            let length = (text.string as NSString).length, start = min(caret.location, length)
+            text.setSelectedRange(NSRange(location: start, length: min(caret.length, length - start)))
+        }
         return true
     }
 
