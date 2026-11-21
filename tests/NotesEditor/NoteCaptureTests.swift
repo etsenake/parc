@@ -203,5 +203,11 @@ struct NoteCaptureTests {
         expectThrows(NoteFileError.missing, "missing notes fail without a substitute") {
             _ = try NoteCaptureDelivery.deliver(input, to: .note(folder.appendingPathComponent("Gone.md")), notesFolder: folder)
         }
+        NoteLibrary.newNoteCover = { NoteNewCover(data: Data([0xFF, 0xD8, 9, 0xFF, 0xD9]), fileExtension: "jpg", suggestedName: "Cover Confetti") }
+        defer { NoteLibrary.newNoteCover = nil }
+        let covered = try NoteCaptureDelivery.deliver(input, to: .newNote, notesFolder: folder)
+        let coveredPage = NoteMarkdown.parse(NoteFileTestSupport.read(covered.note))
+        expectEqual(coveredPage.settings.cover?.source, "Attachments/Cover%20Confetti.jpg", "a capture's new note keeps its starting cover")
+        expect(coveredPage.blocks.contains { $0.props.capture?.sourceURL == "https://example.com/story" }, "the capture lands in the covered note")
     }
 }

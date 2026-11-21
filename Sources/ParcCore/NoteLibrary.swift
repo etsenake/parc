@@ -1,6 +1,12 @@
 import Combine
 import Foundation
 
+struct NoteNewCover: Sendable {
+    var data: Data
+    var fileExtension: String
+    var suggestedName: String
+}
+
 @MainActor
 final class NoteLibrary {
     struct Entry: Hashable, Sendable {
@@ -29,6 +35,7 @@ final class NoteLibrary {
     static var worker: NoteFileWorker = .index
     static var clock: NoteFileClock = NoteFileSystemClock.shared
     static var refreshDelay: TimeInterval = 0.2
+    static var newNoteCover: (@MainActor () -> NoteNewCover?)?
     nonisolated static let maximumDepth = 12
     nonisolated static let maximumNotes = 20_000
     nonisolated static let quickListBudget = 1_000
@@ -168,10 +175,20 @@ final class NoteLibrary {
             } catch CocoaError.fileWriteFileExists {
                 continue
             }
+            writeNewCover(into: candidate)
             invalidateLibraries(containing: [candidate])
             return candidate
         }
         throw NoteFileError.nameTaken(base)
+    }
+
+    private static func writeNewCover(into note: URL) {
+        guard NoteFileKind(url: note) == .markdown, let cover = newNoteCover?() else { return }
+        guard let placement = try? NoteAttachments.placeData(cover.data, fileExtension: cover.fileExtension,
+                                                             suggestedName: cover.suggestedName, into: note, date: clock.now) else { return }
+        var page = NotePage()
+        page.settings.cover = NoteCover(source: placement.path)
+        try? Data(NoteMarkdown.serialize(page).utf8).write(to: note, options: .atomic)
     }
 
     func notes() throws -> [NoteReference] {

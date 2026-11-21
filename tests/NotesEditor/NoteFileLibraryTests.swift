@@ -17,6 +17,7 @@ struct NoteFileLibraryTests {
             expectEqual(NoteLibrary.defaultFolder.lastPathComponent, "Parc Notes", "the default folder is Parc Notes")
             expectEqual(NoteLibrary.defaultFolder.deletingLastPathComponent().lastPathComponent, "Documents", "inside Documents")
             try creating()
+            try creatingWithCover()
             try listing()
             try searching()
             try containment()
@@ -46,6 +47,33 @@ struct NoteFileLibraryTests {
         expect(heard >= 5, "creating notes announces changes")
         expectEqual(try library.notes().count, 5, "new notes are listed right away")
         watch.cancel()
+    }
+
+    static func creatingWithCover() throws {
+        let root = folder.appendingPathComponent("Covered", isDirectory: true)
+        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 0xFF, 0xD9])
+        var asked = 0
+        NoteLibrary.newNoteCover = {
+            asked += 1
+            return NoteNewCover(data: jpeg, fileExtension: "jpg", suggestedName: "Cover Lagoon")
+        }
+        defer { NoteLibrary.newNoteCover = nil }
+        let library = NoteLibrary.shared(folder: root)
+        let first = try library.createNote()
+        let page = NoteMarkdown.parse(NoteFileTestSupport.read(first))
+        expectEqual(page.settings.cover?.source, "Attachments/Cover%20Lagoon.jpg", "new notes start with the cover in their front matter")
+        expectEqual(page.settings.cover?.position, 0.5, "the cover sits centred")
+        expect(page.blocks.allSatisfy { $0.text.string.isEmpty }, "the covered note has no text")
+        let image = NoteAttachments.folder(for: first).appendingPathComponent("Cover Lagoon.jpg")
+        expectEqual(try Data(contentsOf: image), jpeg, "the cover image is stored in the Attachments folder")
+        let second = try library.createNote(title: "Second")
+        expectEqual(NoteMarkdown.parse(NoteFileTestSupport.read(second)).settings.cover?.source, page.settings.cover?.source,
+                    "the same style reuses the stored image")
+        expectEqual(try FileManager.default.contentsOfDirectory(atPath: NoteAttachments.folder(for: first).path).count, 1,
+                    "identical covers are stored once per folder")
+        expectEqual(asked, 2, "each new note asks for a cover once")
+        NoteLibrary.newNoteCover = { nil }
+        expectEqual(NoteFileTestSupport.bytes(try library.createNote(title: "Bare")), [], "without a cover the note stays empty")
     }
 
     static func listing() throws {

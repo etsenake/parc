@@ -393,6 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         guard Bundle.main.bundleIdentifier != nil, Bundle.main.bundlePath.hasSuffix(".app") else { return }
+        NoteCoverSupply.install()
         UNUserNotificationCenter.current().delegate = NoteReminderCenter.shared
         NoteReminderCenter.shared.onOpenNote = { [weak self] url in
             guard let self, !self.terminationInProgress else { return }
