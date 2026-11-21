@@ -157,9 +157,10 @@ extension EaselCanvasView {
             _ = self.applyPages(EaselPages.isDivider(target, in: full) ? "Delete divider" : "Delete page", change.document, show: shown)
         }
         guard count > 0, let window else { perform(); return }
-        let things = count == 1 ? "1 object" : "\(count) objects"
+        let message = count == 1 ? "The object on it goes too. Undo brings it back."
+            : "All \(count) objects on it go too. Undo brings them back."
         _ = ParcDialog.confirm(in: window, title: "Delete “\(target.name)”?",
-                               message: "Its \(things) go with it. Undo brings everything back.",
+                               message: message,
                                confirm: "Delete Page", destructive: true) { confirmed in
             MainActor.assumeIsolated { if confirmed { perform() } }
         }
