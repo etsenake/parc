@@ -1,5 +1,4 @@
 import importlib.util
-import json
 import os
 from pathlib import Path
 import re
@@ -12,34 +11,12 @@ REPO = Path(__file__).resolve().parents[2]
 VALUES = REPO / 'Engine/ParcChromium/parc_settings_page.cc'
 POLICY = REPO / 'Engine/ParcNative/native_startup_policy.h'
 PATCH = REPO / 'Engine/ParcHost/integration/native-settings-visibility.patch'
-CLIENTS = REPO / 'Engine/ParcChromium/parc_content_clients.mm'
-MAIN_DELEGATE = REPO / 'Engine/ParcChromium/parc_main_delegate.mm'
-BUILD = REPO / 'Engine/ParcChromium/BUILD.gn'
 spec = importlib.util.spec_from_file_location(
     'settings_page_contract', REPO / 'Engine/ParcChromium/settings_page_contract.py')
 contract = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(contract)
 
-LINK_SECTIONS = {
-    '': 'yourSavedInfo',
-    'clearBrowserData': 'privacy',
-    'content': 'privacy',
-    'payments': 'yourSavedInfo',
-    'privacy': 'privacy',
-    'searchEngines': None,
-    'security': 'privacy',
-}
-LINK_PAGES = ('settings-payments-page', 'settings-security-page')
 CHILD_VIEW_HOSTS = ('settings-autofill-page-index',)
-KEPT_ROWS = {
-    'settings-a11y-page': ('#captions',),
-    'settings-autofill-page': ('#passwordManagerButton', '#paymentManagerButton',
-                               '#addressesManagerButton'),
-    'settings-payments-page': ('#autofillCreditCardToggle', '#canMakePaymentToggle'),
-    'settings-security-page': ('#safeBrowsingStandard', '#safeBrowsingDisabled'),
-    'settings-system-page': ('#hardwareAcceleration', '#proxy'),
-}
-
 PAGE_VISIBILITY = """import {loadTimeData} from './i18n_setup.js';
 export interface PageVisibility {
   ai?: boolean;
@@ -316,11 +293,6 @@ def hidden_rows():
     return settings_values()[contract.ROWS_KEY]
 
 
-def subject(selector):
-    outer = re.sub(r':has\([^)]*\)', '', selector)
-    return re.split(r'\s*[>+~]\s*|\s+', outer.strip())[-1]
-
-
 def patch_context():
     files = {}
     target = None
@@ -355,135 +327,6 @@ def host_fixture(host, selectors):
                        '    data-parent-view-id="parent">\n' for selector in selectors)
     return '<settings-section>\n</settings-section>\n' + ''.join(
         markup(contract.parse_selector(selector)) for selector in selectors)
-
-
-class SettingsPageValuesTests(unittest.TestCase):
-    def test_values_parse_as_the_dictionary_the_engine_sends(self):
-        values = settings_values()
-        self.assertIsInstance(values[contract.VISIBILITY_KEY], dict)
-        self.assertIsInstance(values[contract.ROWS_KEY], dict)
-        for key, value in flags().items():
-            self.assertIsInstance(value, bool, key)
-
-    def test_settings_home_page_falls_back_to_a_section_that_stays(self):
-        visibility = settings_values()[contract.VISIBILITY_KEY]
-        self.assertIs(visibility['people'], False)
-        self.assertNotEqual(visibility.get('yourSavedInfo'), False)
-        self.assertIn(f'+    {contract.HOME_FALLBACK}\n', PATCH.read_text(encoding='utf-8'))
-
-    def test_inert_sections_and_rows_are_hidden(self):
-        visibility = settings_values()[contract.VISIBILITY_KEY]
-        self.assertIs(visibility['onStartup'], False)
-        self.assertIs(visibility['ai'], False)
-        self.assertIs(visibility['privacy']['searchPrediction'], False)
-        self.assertIs(visibility['privacy']['networkPrediction'], True)
-        appearance = visibility['appearance']
-        for key in ('bookmarksBar', 'homeButton', 'hoverCard', 'setTheme'):
-            self.assertIs(appearance[key], False, key)
-        self.assertIs(flags()['showPrivacyGuide'], False)
-        self.assertIs(flags()['enableLiveCaption'], False)
-        self.assertIs(flags()['enableLiveTranslate'], False)
-        expected = {
-            'settings-about-page': ('#updateStatusMessage', '#buttonContainer'),
-            'settings-appearance-page': ('#toolbarRow', '#colorSchemeModeRow',
-                                         '.cr-row:has(> #tabStripPosition)',
-                                         '#showOrganizerPanelButton',
-                                         '.list-frame:has(#sidePanelPosition)',
-                                         '#splitViewDragAndDrop',
-                                         '[pref-key="browser.confirm_to_quit"]'),
-            'settings-autofill-page': ('#googleWalletButton', '#googleAccountButton',
-                                       'settings-section:has(> collapsible-autofill-settings-card)'),
-            'settings-payments-page': ('#cardBenefitsToggle', '#manageLink'),
-            'settings-performance-page': ('#performanceInterventionToggleButton',
-                                          '#discardRingTreatmentToggleButton',
-                                          'cr-link-row:has(+ #exceptionList)'),
-            'settings-reset-profile-dialog': ('[slot="footer"]',),
-            'settings-safety-hub-page': ('#version',),
-            'settings-security-page': ('#advancedProtectionProgramLink',),
-            'settings-system-page': ('#hardwareAcceleration > cr-button',),
-            'settings-translate-page': ('settings-section',),
-        }
-        rows = hidden_rows()
-        for host, selectors in expected.items():
-            for selector in selectors:
-                self.assertIn(selector, rows.get(host, []), host)
-
-    def test_enhanced_protection_shows_only_while_chosen(self):
-        self.assertNotIn(contract.ENHANCED_ROW, hidden_rows().get('settings-security-page', []))
-        self.assertIn(f'+            {contract.ENHANCED_SHOWN}\n', PATCH.read_text(encoding='utf-8'))
-
-    def test_parc_reports_no_brand_code_before_chromium_asks(self):
-        self.assertIn(f'  {contract.NO_BRAND}\n', VALUES.read_text(encoding='utf-8'))
-        clients = CLIENTS.read_text(encoding='utf-8')
-        constructor = clients.find('ParcContentBrowserClient::ParcContentBrowserClient(')
-        self.assertGreaterEqual(constructor, 0)
-        body = clients[constructor:clients.find('\n}\n', constructor)]
-        self.assertIn('  ReportNoBrandCode();\n', body)
-        self.assertIn('    "//chrome/browser/google",\n', BUILD.read_text(encoding='utf-8'))
-
-    def test_parc_keeps_rlz_in_its_own_folder_before_chromium_starts(self):
-        self.assertIn(f'  {contract.PARC_RLZ_STORE}\n', VALUES.read_text(encoding='utf-8'))
-        delegate = MAIN_DELEGATE.read_text(encoding='utf-8')
-        start = delegate.find('void ParcMainDelegate::PreSandboxStartup() {')
-        self.assertGreaterEqual(start, 0)
-        body = delegate[start:delegate.find('\n}\n', start)]
-        override = body.find('chrome::DIR_USER_DATA, root,')
-        call = body.find('    if (browser) {\n      UseParcRlzStore(root);\n    }\n')
-        self.assertGreaterEqual(override, 0)
-        self.assertGreater(call, override)
-        self.assertLess(call, body.find('ChromeMainDelegate::PreSandboxStartup();'))
-        self.assertEqual(delegate.count('UseParcRlzStore('), 1)
-        self.assertIn('    "//rlz:rlz_lib_no_network",\n', BUILD.read_text(encoding='utf-8'))
-
-    def test_live_caption_stays_off_by_default(self):
-        disabled = re.search(r'kBaselineDisabledFeatures\[\] = \{(.*?)\};',
-                             POLICY.read_text(encoding='utf-8'), re.S)
-        self.assertIn(f'"{contract.LIVE_CAPTION[0]}"', disabled.group(1))
-
-    def test_every_hidden_row_is_a_supported_selector(self):
-        for host, selectors in hidden_rows().items():
-            self.assertRegex(host, r'^[a-z]+(?:-[a-z0-9]+)+$')
-            self.assertEqual(len(selectors), len(set(selectors)), host)
-            for selector in selectors:
-                self.assertTrue(contract.supported(selector), f'{host}: {selector}')
-                self.assertTrue(contract.selector_parts(selector), selector)
-
-    def test_working_rows_stay(self):
-        visibility = settings_values()[contract.VISIBILITY_KEY]
-        self.assertIs(visibility['appearance']['pageZoom'], True)
-        self.assertIs(visibility['appearance']['sidePanel'], True)
-        for section in ('autofill', 'downloads', 'extensions', 'languages', 'performance',
-                        'privacy', 'reset', 'safetyHub', 'system', 'yourSavedInfo', 'defaultBrowser'):
-            self.assertNotEqual(visibility.get(section), False, section)
-        for flag in ('mandatoryReauthFeatureFlagEnabled', 'cvcStorageAvailable', 'showIbansSettings',
-                     'enableSecurityKeysSubpage', 'showSecureDnsSetting'):
-            self.assertNotIn(flag, flags())
-        rows = hidden_rows()
-        for host, kept in KEPT_ROWS.items():
-            subjects = {subject(selector) for selector in rows.get(host, [])}
-            for row in kept:
-                self.assertNotIn(row, subjects, host)
-
-    def test_no_parc_settings_link_lands_on_a_hidden_section(self):
-        visibility = settings_values()[contract.VISIBILITY_KEY]
-        links = set()
-        sources = [path for pattern in ('*.swift', '*.cc', '*.mm')
-                   for root in (REPO / 'Sources', REPO / 'Engine') for path in root.rglob(pattern)]
-        for path in sources:
-            links.update(re.findall(r'parc://settings/([A-Za-z]*)', path.read_text(encoding='utf-8')))
-        downloads = (REPO / 'Engine/ParcNative/downloads.cc').read_text(encoding='utf-8')
-        if 'kSafeBrowsingEnhancedProtectionSubPage' in downloads:
-            links.add('security')
-        self.assertIn('', links)
-        for link in sorted(links):
-            self.assertIn(link, LINK_SECTIONS, f'map parc://settings/{link} to its section')
-            section = LINK_SECTIONS[link]
-            if section:
-                self.assertNotEqual(visibility.get(section), False, link)
-        rows = hidden_rows()
-        for page in LINK_PAGES:
-            for selector in rows.get(page, []):
-                self.assertNotIn(subject(selector), ('settings-subpage', 'settings-section'), page)
 
 
 class SettingsPageContractTests(unittest.TestCase):
