@@ -30,6 +30,8 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private var palette: EaselToolPalette?
     private let recenter = NoteChip("Recenter", icon: .symbol("scope"), style: .filled)
     private var recenterShown = false
+    private var barEntered = false
+    private static let canvasTop: CGFloat = 64
     private let quickActions = EaselQuickActions()
     let pageSwitcher = EaselPageSwitcher()
     let pageButton = EaselPageSwitcherButton()
@@ -142,6 +144,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         palette.canZoomToSelection = { [weak self] in self?.canvas.canZoomToSelection == true }
         palette.onPreferredSizeChange = { [weak root] in root?.needsLayout = true }
         palette.keepOpenViews = { [weak self] in self.map { [$0.scroll] } ?? [] }
+        palette.scrollPassthrough = { [weak self] in self?.canvas }
         canvas.toolState.onQuickActions = { [weak self] in self?.showQuickActions() }
         canvas.onToolChange = { [weak self, weak palette] tool in
             guard let self else { return }
@@ -180,17 +183,21 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         redoButton = chromeButton("Redo Easel change", "arrow.uturn.forward", #selector(redoChange), shortcut: "⇧⌘Z")
         let options = chromeButton("Easel Options", "ellipsis", #selector(showPageMenu(_:)))
         options.setAccessibilityRole(.menuButton)
-        root.addSubview(palette)
         root.addSubview(chrome)
         root.addSubview(recenter)
+        root.addSubview(palette)
         installEmptyTemplates(in: root)
         var lastChromeSize = NSSize(width: -1, height: -1)
         timer.onResize = { [weak root] in lastChromeSize = NSSize(width: -1, height: -1); root?.needsLayout = true }
         root.onLayout = { [weak self, weak root, weak palette, weak chrome, weak timer] in
             guard let self, let root, let palette, let chrome else { return }
-            let width = root.bounds.width, height = root.bounds.height
-            let strip = min(width - 24, palette.preferredWidth)
-            palette.frame = NSRect(x: ((width - strip) / 2).rounded(), y: 62, width: strip, height: EaselAppearance.toolbarHeight)
+            let width = root.bounds.width, height = root.bounds.height, canvasTop = Self.canvasTop
+            let bar = EaselFloatingBar.frame(containerWidth: Double(width), containerHeight: Double(height),
+                                             preferredWidth: Double(palette.preferredWidth), height: Double(EaselAppearance.toolbarHeight),
+                                             top: Double(canvasTop + 8))
+            palette.frame = NSRect(x: bar.x, y: bar.y, width: bar.width, height: bar.height)
+            self.canvas.setCoveredBottom(CGFloat(EaselFloatingBar.coveredBottom(containerHeight: Double(height), bar: bar)))
+            self.playBarEntranceIfNeeded()
             let size = root.bounds.size
             let pageWidth = self.pageButton.intrinsicContentSize.width
             guard size != lastChromeSize || pageWidth != self.pageButtonWidth else { return }
@@ -200,13 +207,13 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             self.titleField.frame = NSRect(x: 24, y: 10, width: max(80, width - chromeWidth - 52), height: 32)
             chrome.frame = NSRect(x: max(24, width - chromeWidth - 14), y: 12, width: chromeWidth, height: chromeSize)
             self.status.frame = NSRect(x: 26, y: 40, width: max(100, width - 52), height: 18)
-            let canvasTop = palette.frame.maxY + 8
             self.scroll.frame = NSRect(x: 0, y: canvasTop, width: width, height: max(80, height - canvasTop))
             self.canvas.resizeCanvas(viewport: self.scroll.contentSize)
             self.canvas.fitOnOpenIfNeeded()
             let chip = self.recenter.intrinsicContentSize
-            self.recenter.frame = NSRect(x: ((width - chip.width) / 2).rounded(), y: max(canvasTop, height - chip.height - 20),
-                                         width: chip.width, height: chip.height)
+            let spot = EaselFloatingBar.chipFrame(width: Double(chip.width), height: Double(chip.height), containerWidth: Double(width),
+                                                  bar: bar, top: Double(canvasTop))
+            self.recenter.frame = NSRect(x: spot.x, y: spot.y, width: spot.width, height: spot.height)
             self.viewportChanged()
         }
         canvas.onKeyboardStructureChange = { [weak self] in self?.onKeyboardStructureChange?() }
@@ -234,23 +241,32 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         let away = canvas.contentIsOutOfView
         guard away != recenterShown else { return }
         recenterShown = away
-        if away { recenter.isHidden = false }
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.18
-            recenter.animator().alphaValue = away ? 1 : 0
-        }, completionHandler: { [weak self] in
-            MainActor.assumeIsolated {
+        guard away else {
+            NoteAnimation.fade(recenter, visible: false, duration: 0.18) { [weak self] in
                 guard let self, !self.recenterShown else { return }
                 self.recenter.isHidden = true
             }
-        })
+            return
+        }
+        recenter.isHidden = false
+        NoteAnimation.fade(recenter, visible: true, duration: NoteAnimation.insertDuration)
+        NoteAnimation.pop(recenter, from: 0.9, spring: .pop)
+    }
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        playBarEntranceIfNeeded()
+    }
+    private func playBarEntranceIfNeeded() {
+        guard !barEntered, let palette, palette.window != nil, palette.bounds.width > 0, !view.isHiddenOrHasHiddenAncestor else { return }
+        barEntered = true
+        palette.playEntrance()
     }
     private func focusCanvas() { canvas.window?.makeFirstResponder(canvas) }
     private func showQuickActions() {
         guard let palette, !session.isClosed, view.window?.attachedSheet == nil else { return }
         palette.closeMenu(animated: false)
         let strip = view.convert(palette.bounds, from: palette)
-        quickActions.toggle(in: view, anchor: NSRect(x: strip.midX - 1, y: strip.minY, width: 2, height: strip.height),
+        quickActions.toggle(in: view, anchor: NSRect(x: strip.midX - 1, y: strip.minY, width: 2, height: strip.height), edge: .above,
                             actions: quickActionList()) { [weak self] in
             guard let window = self?.view.window, window.firstResponder == nil || window.firstResponder === window else { return }
             self?.focusCanvas()
@@ -283,7 +299,8 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private func dragTool(_ tool: EaselTool, to point: NSPoint?, ended: Bool) {
         guard ended else { canvas.previewPlacement(tool, atWindowPoint: point); return }
         canvas.previewPlacement(nil, atWindowPoint: nil)
-        guard let point, scroll.bounds.contains(scroll.convert(point, from: nil)) else { return }
+        guard let point, scroll.bounds.contains(scroll.convert(point, from: nil)),
+              palette.map({ !$0.bounds.contains($0.convert(point, from: nil)) }) ?? true else { return }
         if canvas.placeTool(tool, atWindowPoint: point) { focusCanvas() }
     }
     func controlTextDidBeginEditing(_ notification: Notification) { titleUndoGroup = UUID() }

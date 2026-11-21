@@ -56,7 +56,7 @@ final class EaselQuickActions {
     private var popover: NotePagePopover?
     var isOpen: Bool { popover?.isOpen == true }
 
-    func toggle(in host: NSView, anchor: NSRect, actions: [Action], onClose: @escaping () -> Void) {
+    func toggle(in host: NSView, anchor: NSRect, edge: NoteFloatingPanel.Edge = .below, actions: [Action], onClose: @escaping () -> Void) {
         if isOpen { popover?.close(); return }
         let view = EaselQuickActionsView(frame: .zero)
         let recents = Self.recentIDs.compactMap { id in actions.first { $0.id == id && $0.isEnabled } }
@@ -89,7 +89,7 @@ final class EaselQuickActions {
             onClose()
         }
         popover = next
-        next.present(in: host, anchor: anchor, edge: .below, alignment: .center)
+        next.present(in: host, anchor: anchor, edge: edge, alignment: .center)
         view.list.prepare(origin: .keyboard)
         view.field.focus()
     }

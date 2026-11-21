@@ -24,6 +24,7 @@ final class EaselCanvasToolState {
     var zoomTarget: (magnification: Double, centre: NSPoint)?
     var wheel = EaselWheelGesture()
     var openFitDone = false
+    var coveredBottom: CGFloat = 0
     var onQuickActions: (() -> Void)?
 }
 
@@ -421,8 +422,21 @@ extension EaselCanvasView {
     }
 
     func placeAtVisibleCentre() {
-        let visible = visibleRect.isEmpty ? bounds : visibleRect
+        let visible = uncoveredVisibleRect
         place(tool, at: NSPoint(x: visible.midX, y: visible.midY))
+    }
+
+    var uncoveredVisibleRect: NSRect {
+        let visible = visibleRect.isEmpty ? bounds : visibleRect
+        let shown = EaselFloatingBar.uncovered(EaselRect(x: Double(visible.minX), y: Double(visible.minY), width: Double(visible.width),
+                                                         height: Double(visible.height)),
+                                               coveredBottom: Double(toolState.coveredBottom), magnification: magnification)
+        return NSRect(x: shown.x, y: shown.y, width: shown.width, height: shown.height)
+    }
+
+    func setCoveredBottom(_ value: CGFloat) {
+        guard fixedCanvasSize == nil, value != toolState.coveredBottom else { return }
+        toolState.coveredBottom = value
     }
 
     func previewPlacement(_ dragged: EaselTool?, atWindowPoint point: NSPoint?) {
@@ -435,7 +449,7 @@ extension EaselCanvasView {
     func placeTool(_ placing: EaselTool, atWindowPoint point: NSPoint) -> Bool {
         toolState.previewTool = nil
         let local = convert(point, from: nil)
-        guard visibleRect.contains(local) else { refreshPlacementPreview(); return false }
+        guard uncoveredVisibleRect.contains(local) else { refreshPlacementPreview(); return false }
         return place(placing, at: local)
     }
 
@@ -548,18 +562,27 @@ extension EaselCanvasView {
     func zoomToContent(selectedOnly: Bool, maximum: Double?, animated: Bool) -> Bool {
         guard let scroll = enclosingScrollView else { return false }
         let frames = session.document.items.filter { !selectedOnly || selection.contains($0.id) }.map(\.frame)
+        let covered = Double(toolState.coveredBottom), height = Double(scroll.contentSize.height)
         guard let bounds = EaselZoom.bounds(of: frames),
-              let value = EaselZoom.fitting(bounds, viewport: (Double(scroll.contentSize.width), Double(scroll.contentSize.height)),
+              let value = EaselZoom.fitting(bounds, viewport: EaselFloatingBar.viewport(width: Double(scroll.contentSize.width),
+                                                                                       height: height, coveredBottom: covered),
                                             minimum: Double(scroll.minMagnification),
                                             maximum: min(Double(scroll.maxMagnification), maximum ?? .greatestFiniteMagnitude))
         else { return false }
-        animateZoom(to: value, centre: NSPoint(x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2), animated: animated)
+        let target = EaselZoom.clamped(value, minimum: Double(scroll.minMagnification), maximum: Double(scroll.maxMagnification))
+        let centre = EaselFloatingBar.clipCentre(showing: EaselPoint(x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2),
+                                                 coveredBottom: covered, viewportHeight: height, magnification: target)
+        animateZoom(to: value, centre: NSPoint(x: centre.x, y: centre.y), animated: animated)
         return true
     }
 
     var contentIsOutOfView: Bool {
         guard let scroll = enclosingScrollView, let bounds = EaselZoom.bounds(of: session.document.items.map(\.frame)) else { return false }
-        let visible = scroll.contentView.bounds
+        let clip = scroll.contentView.bounds
+        let shown = EaselFloatingBar.uncovered(EaselRect(x: Double(clip.minX), y: Double(clip.minY), width: Double(clip.width),
+                                                         height: Double(clip.height)),
+                                               coveredBottom: Double(toolState.coveredBottom), magnification: Double(scroll.magnification))
+        let visible = NSRect(x: shown.x, y: shown.y, width: shown.width, height: shown.height)
         let margin = 0.5 * min(visible.width, visible.height)
         return !visible.insetBy(dx: -margin, dy: -margin).intersects(NSRect(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height))
     }
@@ -569,8 +592,10 @@ extension EaselCanvasView {
         let viewport = scroll.contentSize
         guard viewport.width > 80, viewport.height > 80 else { return }
         toolState.openFitDone = true
+        let room = EaselFloatingBar.viewport(width: Double(viewport.width), height: Double(viewport.height),
+                                             coveredBottom: Double(toolState.coveredBottom))
         guard let bounds = EaselZoom.bounds(of: session.document.items.map(\.frame)),
-              bounds.x + bounds.width > Double(viewport.width) || bounds.y + bounds.height > Double(viewport.height) else { return }
+              bounds.x + bounds.width > room.width || bounds.y + bounds.height > room.height else { return }
         zoomToContent(selectedOnly: false, maximum: 1, animated: false)
     }
 
