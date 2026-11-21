@@ -9,10 +9,11 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
         if let madePanel { return madePanel }
         let made = NoteFloatingPanel(content: bar)
         made.alignment = .center
-        made.gap = NoteFormatBarPlacement.gap
-        made.margin = NoteFormatBarPlacement.margin
+        made.gap = EaselSelectionToolbarPlacement.gap
+        made.margin = EaselSelectionToolbarPlacement.margin
         made.setAccessibilityElement(false)
         madePanel = made
+        host.accessibilityExcluded = made
         return made
     }
     private var isPresented: Bool { madePanel?.isPresented == true }
@@ -35,7 +36,7 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
         guard !refreshing else { return }
         refreshing = true
         defer { refreshing = false }
-        if self.canvas !== canvas { detach(); self.canvas = canvas }
+        if self.canvas !== canvas { detach(); self.canvas = canvas; bar.accessibilityOwner = canvas }
         guard let next = canvas.selectionToolbarContent, attach(to: canvas) else {
             if canvas.window == nil { detach() } else { hide(animated: true) }
             return
@@ -66,6 +67,8 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
         guard let view = responder as? NSView else { return false }
         return view === host || view.isDescendant(of: host)
     }
+
+    var accessibilityToolbar: Any? { isPresented ? bar : nil }
 
     func focusFromKeyboard() -> Bool {
         guard let canvas, content != nil else { return false }
@@ -139,33 +142,41 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
         guard let canvas, let content, host.superview != nil else { return }
         let size = bar.fittingSize
         let selection = host.convert(content.anchor, from: canvas)
-        guard let placement = NoteFormatBarPlacement.compute(lineRects: [selection], size: size, visible: host.bounds) else {
+        let clipped = host.visibleRect.intersection(host.bounds)
+        let visible = clipped.isEmpty ? host.bounds : clipped
+        guard let placement = EaselSelectionToolbarPlacement.place(selection: Self.easelRect(selection), width: size.width,
+                                                                   height: size.height, visible: Self.easelRect(visible)) else {
             closeMenu(animated: false)
             if isPresented { panel.dismiss(animated: false); canvas.selectionToolbarStructureChanged() }
             return
         }
-        let centre = placement.frame.midX
+        let frame = NSRect(x: placement.frame.x, y: placement.frame.y, width: placement.frame.width, height: placement.frame.height)
+        let gap = EaselSelectionToolbarPlacement.gap
         let anchor: NSRect
         let edge: NoteFloatingPanel.Edge
         switch placement.edge {
         case .above:
-            anchor = NSRect(x: centre, y: selection.minY, width: 0, height: selection.height)
+            anchor = NSRect(x: frame.midX, y: frame.maxY + gap, width: 0, height: 0)
             edge = .above
-        case .below:
-            anchor = NSRect(x: centre, y: selection.minY, width: 0, height: selection.height)
-            edge = .below
-        case .pinned:
-            anchor = NSRect(x: centre, y: placement.frame.minY - NoteFormatBarPlacement.gap, width: 0, height: 0)
+        case .below, .inside:
+            anchor = NSRect(x: frame.midX, y: frame.minY - gap, width: 0, height: 0)
             edge = .below
         }
         bar.tooltipAnchor = edge == .above ? .top : .bottom
         if isPresented, panel.superview === host {
             panel.reposition(anchor: anchor, edge: edge, animated: animated && !reselected)
-            if reselected { NoteAnimation.presentHUD(panel, about: panel.scaleOrigin) }
+            if reselected {
+                NoteAnimation.cancelHUD(panel)
+                NoteAnimation.presentHUD(panel, about: panel.scaleOrigin)
+            }
         } else {
             panel.present(in: host, anchor: anchor, edge: edge, animated: true)
             canvas.selectionToolbarStructureChanged()
         }
+    }
+
+    private static func easelRect(_ rect: NSRect) -> EaselRect {
+        EaselRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)
     }
 
     private func hide(animated: Bool) {
@@ -186,8 +197,10 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
             closeMenu(animated: true)
             if same { return }
         }
-        if model.opensMenu { openMenu(model.control, from: button, origin: origin); return }
-        canvas.performSelectionToolbar(model.control, anchor: button)
+        switch model.opens {
+        case .menu: openMenu(model.control, from: button, origin: origin)
+        case .nothing: canvas.performSelectionToolbar(model.control, anchor: button)
+        }
     }
 
     private func openMenu(_ control: EaselToolbarControl, from button: NoteToolbarButton, origin: NoteMenuList.Origin) {
@@ -245,9 +258,15 @@ final class EaselSelectionToolbar: EaselSelectionToolbarPresenting {
 
 @MainActor
 final class EaselSelectionToolbarHost: NSView {
+    weak var accessibilityExcluded: NSView?
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setAccessibilityElement(false)
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        NSAccessibility.unignoredChildren(from: subviews.filter { $0 !== accessibilityExcluded })
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -263,6 +282,7 @@ final class EaselSelectionToolbarHost: NSView {
 @MainActor
 final class EaselSelectionToolbarView: NSView, NoteFloatingPanelContent {
     var preferredSizeDidChange: (() -> Void)?
+    weak var accessibilityOwner: NSView?
     var onPress: ((EaselToolbarButtonModel, NoteToolbarButton, NoteMenuList.Origin) -> Void)?
     var onExitKeyboard: (() -> Void)?
     var keyInterceptor: ((NSEvent) -> Bool)?
@@ -307,6 +327,9 @@ final class EaselSelectionToolbarView: NSView, NoteFloatingPanelContent {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { models.contains(where: \.isEnabled) }
+    override func accessibilityParent() -> Any? {
+        accessibilityOwner.flatMap { NSAccessibility.unignoredAncestor(of: $0) } ?? super.accessibilityParent()
+    }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -339,6 +362,11 @@ final class EaselSelectionToolbarView: NSView, NoteFloatingPanelContent {
             guard let button = buttons[model.control] else { continue }
             let old = previous.first { $0.control == model.control }
             if case .text(let title) = model.face, button.content != .text(title) { button.content = .text(title) }
+            if case .symbolAndText(let symbol, let title) = model.face, button.content != .iconAndText(.symbol(symbol), title) {
+                button.content = .iconAndText(.symbol(symbol), title)
+            }
+            if case .symbol(let symbol) = model.face, button.content != .icon(.symbol(symbol)) { button.content = .icon(.symbol(symbol)) }
+            if button.iconTint != model.tint { button.iconTint = model.tint }
             button.isEnabled = model.isEnabled
             guard old?.name != model.name || old?.shortcut != model.shortcut || old?.commandID != model.commandID || old?.face != model.face else { continue }
             button.setAccessibilityLabel(Self.accessibilityLabel(model))
@@ -394,6 +422,7 @@ final class EaselSelectionToolbarView: NSView, NoteFloatingPanelContent {
             button = NoteToolbarButton(icon: .glyph(glyph), label: model.name)
             button.iconPointSize = 15
         case .text(let title): button = NoteToolbarButton(.text(title), label: model.name)
+        case .symbolAndText(let symbol, let title): button = NoteToolbarButton(.iconAndText(.symbol(symbol), title), label: model.name)
         }
         switch model.mark {
         case .none: break
@@ -402,7 +431,8 @@ final class EaselSelectionToolbarView: NSView, NoteFloatingPanelContent {
         case .strikethrough: button.decoration = [.strikethrough, .regularWeight]
         }
         button.showsDisclosure = model.showsDisclosure
-        if model.opensMenu { button.setAccessibilityRole(.menuButton) }
+        if model.opens != .nothing { button.setAccessibilityRole(.menuButton) }
+        button.iconTint = model.tint
         button.setFrameSize(button.intrinsicContentSize)
         return button
     }

@@ -55,13 +55,13 @@ enum EaselSelectionToolbarPlan {
         switch subject {
         case .text:
             return editingText
-                ? [[.typeface, .textSize], [.bold, .italic, .underline, .strikethrough], [.paragraph],
+                ? [[.typeface, .textSize, .smaller, .larger], [.bold, .italic, .underline, .strikethrough], [.paragraph],
                    [.color, .textFill], [.alignment], [.link]]
                 : [[.typeface, .textSize, .smaller, .larger], [.color, .textFill], [.alignment], [.link]]
         case .sticky:
             return [[.color], [.textSize, .bold, .paragraph], [.link], [.stickyShape]]
         case .shape:
-            return [[.shape], [.color, .outline], [.textSize, .bold, .paragraph], [.alignment], [.link]]
+            return [[.shape], [.color, .outline], [.typeface, .textSize, .bold, .paragraph], [.alignment], [.link]]
         case .connector:
             return [[.connectorLabel], [.color, .connectorStyle], [.startHead, .endHead], [.routing]]
         case .section:
@@ -83,5 +83,54 @@ enum EaselSelectionToolbarPlan {
 
     static func available(_ groups: [[EaselToolbarControl]], where supported: (EaselToolbarControl) -> Bool) -> [[EaselToolbarControl]] {
         groups.map { $0.filter(supported) }.filter { !$0.isEmpty }
+    }
+}
+
+struct EaselSelectionToolbarPlacement: Equatable {
+    enum Edge: Equatable { case above, below, inside }
+
+    static let gap = 8.0
+    static let margin = 8.0
+
+    var frame: EaselRect
+    var edge: Edge
+
+    static func place(selection: EaselRect, width: Double, height: Double, visible: EaselRect,
+                      gap: Double = gap, margin: Double = margin) -> EaselSelectionToolbarPlacement? {
+        guard width > 0, height > 0, let shown = intersection(selection, visible) else { return nil }
+        let minX = visible.x + margin, maxX = max(minX, visible.x + visible.width - margin - width)
+        let minY = visible.y + margin, maxY = max(minY, visible.y + visible.height - margin - height)
+        func clampedX(_ x: Double) -> Double { min(max(x, minX), maxX).rounded() }
+        func placed(_ x: Double, _ y: Double) -> EaselRect { EaselRect(x: clampedX(x), y: y.rounded(), width: width, height: height) }
+        let centre = shown.x + shown.width / 2 - width / 2
+        let top = selection.y - gap - height
+        if top >= minY { return .init(frame: placed(centre, top), edge: .above) }
+        let bottom = selection.y + selection.height + gap
+        if bottom <= maxY { return .init(frame: placed(centre, bottom), edge: .below) }
+        var candidates: [EaselRect] = []
+        for y in [minY, maxY] {
+            candidates.append(placed(centre, y))
+            let left = selection.x - gap - width
+            if left >= minX { candidates.append(placed(left, y)) }
+            let right = selection.x + selection.width + gap
+            if right <= maxX { candidates.append(placed(right, y)) }
+        }
+        let best = candidates.enumerated().min { first, second in
+            let a = overlap(first.element, selection), b = overlap(second.element, selection)
+            return a != b ? a < b : first.offset < second.offset
+        }
+        guard let frame = best?.element else { return nil }
+        return .init(frame: frame, edge: .inside)
+    }
+
+    private static func intersection(_ a: EaselRect, _ b: EaselRect) -> EaselRect? {
+        let x = max(a.x, b.x), y = max(a.y, b.y)
+        let right = min(a.x + a.width, b.x + b.width), bottom = min(a.y + a.height, b.y + b.height)
+        guard right > x, bottom > y else { return nil }
+        return EaselRect(x: x, y: y, width: right - x, height: bottom - y)
+    }
+
+    private static func overlap(_ a: EaselRect, _ b: EaselRect) -> Double {
+        intersection(a, b).map { $0.width * $0.height } ?? 0
     }
 }

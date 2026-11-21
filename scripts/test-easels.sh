@@ -90,6 +90,27 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   -o "$style_bundle/MacOS/EaselCanvas"
 "$style_bundle/MacOS/EaselCanvas"
 
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
+  "$repo_root/Sources/ParcCore/"*.swift \
+  "$repo_root/Sources/ParcApp/NoteTheme.swift" \
+  "$repo_root/Sources/ParcApp/LocalContentDrop.swift" \
+  "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
+  "$repo_root/Sources/ParcApp/PointingHand.swift" \
+  "$repo_root/Sources/ParcApp/PointerCover.swift" \
+  "$repo_root/Sources/ParcApp/EaselTextStyle.swift" \
+  "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
+  "$repo_root/Sources/ParcApp/EaselRichTextCodec.swift" \
+  "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
+  "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
+  "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
+  "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
+  "$repo_root/Sources/ParcApp/EaselCanvas"*.swift \
+  "$repo_root/Sources/ParcApp/ParcDialog.swift" "$spinner" \
+  "$repo_root/Sources/ParcApp/EaselMotion.swift" \
+  "$repo_root/tests/EaselSelectionToolbarCanvasTests.swift" \
+  -o "$style_bundle/MacOS/EaselSelectionToolbarCanvas"
+"$style_bundle/MacOS/EaselSelectionToolbarCanvas"
+
 mkdir -p "$style_bundle/Resources/CustomInfoPicker" "$style_bundle/Resources/AppIcons/Marks"
 cp "$repo_root/Resources/CustomInfoPicker/feather.ttf" "$style_bundle/Resources/CustomInfoPicker/"
 cp "$repo_root/Resources/AppIcons/Marks/Borderless.png" "$style_bundle/Resources/AppIcons/Marks/"

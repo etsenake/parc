@@ -12,16 +12,18 @@ targets retain their native pointer and accessibility actions.
 
 The selection toolbar is the Notes format bar's card: a 36-point menu card with
 28-point Notes toolbar buttons, one-point spacing and hairline dividers between
-groups. It floats eight points above the selection's bounds, centred on them,
-drops below when there is no room above and pins to the top of the view only
-when the selection is taller than the view, so it never covers what it edits
-otherwise. It lives in a pass-through layer above the canvas's scroll view
+groups. It floats eight points above the selection's bounds, centred on the
+visible part of them, and drops eight points below when there is no room
+above. A selection too tall for either moves it to the top or bottom edge of
+the view, beside the selection or in a free strip, whichever covers the least;
+only a selection filling the whole view gets it over the top, pinned top centre.
+`EaselSelectionToolbarPlacement` in ParcCore owns that choice. It lives in a pass-through layer above the canvas's scroll view
 instead of inside the magnified canvas, so it keeps its screen size at every
 zoom, follows scrolling and zooming, and stays inside the canvas viewport. For
 text it offers the typeface and size menus, smaller and bigger steps and the
-text-fill toggle; while text is being edited the steppers give way to bold,
-italic, underline, strikethrough, the paragraph menu and Link, all acting on
-the selected range. A ••• button ends every toolbar with Bring to Front,
+text-fill toggle; while text is being edited it adds bold, italic, underline,
+strikethrough, the paragraph menu and Link, and its size controls act on the
+selected range. A ••• button ends every toolbar with Bring to Front,
 Duplicate and Delete. Its buttons never take keyboard focus from a click, so
 formatting never ends text editing. Menus are Notes menus opened under their
 button that close on a pick, Escape or an outside click. Every button calls a

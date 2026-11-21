@@ -7,6 +7,7 @@ protocol EaselSelectionToolbarPresenting: AnyObject {
     func settle()
     func owns(_ responder: NSResponder?) -> Bool
     func focusFromKeyboard() -> Bool
+    var accessibilityToolbar: Any? { get }
 }
 
 struct EaselToolbarButtonModel: Equatable {
@@ -14,8 +15,10 @@ struct EaselToolbarButtonModel: Equatable {
         case symbol(String)
         case glyph(String)
         case text(String)
+        case symbolAndText(String, String)
     }
     enum Mark: Equatable { case none, italic, underline, strikethrough }
+    enum Opens: Equatable { case nothing, menu }
 
     var control: EaselToolbarControl
     var face: Face
@@ -24,9 +27,10 @@ struct EaselToolbarButtonModel: Equatable {
     var commandID: String?
     var isChecked = false
     var isEnabled = true
-    var opensMenu = false
+    var opens: Opens = .nothing
     var showsDisclosure = false
     var mark: Mark = .none
+    var tint: NSColor?
 }
 
 struct EaselToolbarMenuEntry: Equatable {
@@ -70,6 +74,11 @@ extension EaselCanvasView {
     var selectionToolbarContent: EaselSelectionToolbarContent? {
         guard canPresentMotion, window != nil, !isHiddenOrHasHiddenAncestor, !selectionToolbarSuppressed,
               selectionToolbarAcceptsFocus(of: window?.firstResponder) else { return nil }
+        return selectionToolbarModel
+    }
+
+    var selectionToolbarModel: EaselSelectionToolbarContent? {
+        guard canPresentMotion else { return nil }
         let selected = session.document.items.filter { selection.contains($0.id) }.sorted { $0.zIndex < $1.zIndex }
         guard let first = selected.first else { return nil }
         let plan = EaselSelectionToolbarPlan.groups(for: selected.map { EaselToolbarSubject($0.kind) },
@@ -107,10 +116,10 @@ extension EaselCanvasView {
         case .typeface:
             let family = EaselTextStyleState.family(of: styles, editor: editor)
             return .init(control: control, face: .text(family.map(Self.familyTitle) ?? "Mixed"), name: "Typeface",
-                         isEnabled: !composing, opensMenu: true, showsDisclosure: true)
+                         isEnabled: !composing, opens: .menu, showsDisclosure: true)
         case .textSize:
             return .init(control: control, face: .text(EaselTextStyleState.sizeTitle(of: styles, editor: editor)), name: "Text size",
-                         isEnabled: !composing, opensMenu: true, showsDisclosure: true)
+                         isEnabled: !composing, opens: .menu, showsDisclosure: true)
         case .smaller, .larger:
             let delta = control == .larger ? 1 : -1
             let command: TextFormatCommand = control == .larger ? .bigger : .smaller
@@ -125,7 +134,7 @@ extension EaselCanvasView {
         case .paragraph:
             let kind = editor?.paragraphKind()
             return .init(control: control, face: .text(kind?.rawValue ?? "Mixed"), name: "Paragraph style",
-                         isEnabled: !composing && editor?.selectedRanges.count == 1, opensMenu: true, showsDisclosure: true)
+                         isEnabled: !composing && editor?.selectedRanges.count == 1, opens: .menu, showsDisclosure: true)
         case .textFill:
             return .init(control: control, face: .symbol("highlighter"), name: "Text fill",
                          isChecked: EaselTextStyleState.fill(of: styles) == .on, isEnabled: !composing)
@@ -138,7 +147,7 @@ extension EaselCanvasView {
             let title = languages.count == 1 ? languages.first.map { EaselCodeBlock.displayName($0) } ?? "Mixed" : "Mixed"
             return .init(control: control, face: .text(title), name: "Language", opensMenu: true, showsDisclosure: true)
         default:
-            return .init(control: control, face: .symbol("ellipsis"), name: "More", opensMenu: true)
+            return .init(control: control, face: .symbol("ellipsis"), name: "More", opens: .menu)
         }
     }
 
