@@ -66,10 +66,6 @@ struct CaptureModeTests {
         expect(CaptureSizeReadout.text(CGSize(width: 320, height: 180)) == "320 × 180", "Sizes read width × height")
         expect(CaptureSizeReadout.text(CGSize(width: 319.6, height: -4)) == "320 × 0", "Readouts round and never go negative")
         let viewport = CGSize(width: 1000, height: 800)
-        expect(CaptureSizeReadout.elementRect(CGRect(x: 100, y: 100, width: 200, height: 50), viewport: viewport)
-               == CGRect(x: 98, y: 98, width: 204, height: 54), "Element readouts include the two-point capture margin")
-        expect(CaptureSizeReadout.elementRect(CGRect(x: -10, y: 790, width: 100, height: 40), viewport: viewport)
-               == CGRect(x: 0, y: 788, width: 92, height: 12), "Element readouts clip to the visible page like the capture does")
         let scaled = CaptureSizeReadout.viewportRect(CGRect(x: 50, y: 40, width: 250, height: 200),
                                                      overlay: CGSize(width: 500, height: 400), viewport: viewport)
         expect(scaled == CGRect(x: 100, y: 80, width: 500, height: 400), "Overlay drags convert to page points")

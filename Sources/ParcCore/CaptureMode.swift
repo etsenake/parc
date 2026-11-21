@@ -57,8 +57,8 @@ enum CaptureModeItem: String, CaseIterable, Equatable {
     var toolTip: String {
         switch self {
         case .element: return "Capture the part of the page under the pointer"
-        case .region: return "Drag out any rectangle"
-        case .visibleArea: return "Capture everything you can see"
+        case .region: return "Drag out any rectangle, no outlines in the way"
+        case .visibleArea: return "Capture the part of the page you can see"
         case .fullPage: return "Capture the whole page, top to bottom"
         case .cancel: return "Stop capturing"
         }
@@ -78,7 +78,7 @@ enum CaptureModeKeys {
 
 enum CaptureModeHint {
     static let capturing = "Capturing…"
-    static let noElement = "Nothing to grab there. Drag out a region instead"
+    static let noElement = "Nothing to grab there. Drag out a region"
 
     static func text(mode: CaptureSelectionMode, targeted: Bool, dragging: Bool) -> String {
         if dragging { return "Let go to capture this region" }
@@ -90,8 +90,8 @@ enum CaptureModeHint {
 
     static func accessibilityValue(mode: CaptureSelectionMode, targeted: Bool) -> String {
         switch mode {
-        case .element where targeted: return "Element mode. Area selected. Press Return to capture it."
-        case .element: return "Element mode. Point at part of the page or drag to select a region. V captures the visible area."
+        case .element where targeted: return "Element mode. Part of the page outlined. Return captures it."
+        case .element: return "Element mode. Point at part of the page or drag to select a region. Return captures the visible area."
         case .region: return "Region mode. Drag to select a region. Return captures the visible area."
         }
     }
@@ -100,10 +100,6 @@ enum CaptureModeHint {
 enum CaptureSizeReadout {
     static func text(_ size: CGSize) -> String {
         "\(Int(max(0, size.width.rounded()))) × \(Int(max(0, size.height.rounded())))"
-    }
-
-    static func elementRect(_ rect: CGRect, viewport: CGSize) -> CGRect {
-        rect.insetBy(dx: -2, dy: -2).intersection(CGRect(origin: .zero, size: viewport))
     }
 
     static func viewportRect(_ rect: CGRect, overlay: CGSize, viewport: CGSize) -> CGRect? {
