@@ -35,13 +35,41 @@ final class NoteTabIconArt {
         var checked: Date
     }
 
+    enum Subject: Hashable {
+        case note(URL)
+        case easel(directory: URL, id: UUID)
+
+        @MainActor
+        init?(tab: BrowserTab) {
+            self.init(address: tab.url, profile: tab.profileID)
+        }
+
+        var mark: DocumentDefaultIcon {
+            switch self {
+            case .note: return .note
+            case .easel: return .easel
+            }
+        }
+
+        @MainActor
+        init?(address: String, profile: UUID) {
+            switch InternalPage(urlString: address) {
+            case .note(let file)?: self = .note(InternalPage.noteFile(file) ?? file)
+            case .easel(let id)?:
+                guard let directory = EaselTabIcons.shared.directory(profile) else { return nil }
+                self = .easel(directory: directory, id: id)
+            case nil: return nil
+            }
+        }
+    }
+
     private struct Waiter {
-        var note: URL
+        var subject: Subject
         var size: CGFloat
         var completion: (NSImage?) -> Void
     }
 
-    static let shared = NoteTabIconArt(icons: .shared)
+    static let shared = NoteTabIconArt(icons: .shared, easels: .shared)
     nonisolated static let side: CGFloat = 16
     nonisolated static let thumbnailPixels = 96
     nonisolated static let thumbnailBytes = 40 * 1024 * 1024
@@ -50,6 +78,7 @@ final class NoteTabIconArt {
 
     let changes: AnyPublisher<Set<String>?, Never>
     private let icons: NoteTabIcons
+    private let easels: EaselTabIcons
     private let thumbnailsChanged = PassthroughSubject<Set<String>?, Never>()
     private let thumbnails = NSCache<NSString, CGImage>()
     private var sightings: [String: Sighting] = [:]
@@ -60,19 +89,47 @@ final class NoteTabIconArt {
     private var waiterCounter = 0
     private var waiterSubscription: AnyCancellable?
 
-    init(icons: NoteTabIcons) {
+    init(icons: NoteTabIcons, easels: EaselTabIcons = .shared) {
         self.icons = icons
-        changes = icons.changes.merge(with: thumbnailsChanged).eraseToAnyPublisher()
+        self.easels = easels
+        changes = icons.changes.merge(with: easels.changes, thumbnailsChanged).eraseToAnyPublisher()
         waiterSubscription = changes.sink { [weak self] change in self?.settleWaiters(change) }
     }
 
     func art(forNote note: URL, size: CGFloat = side) -> Art {
-        switch icons.lookup(note) {
+        art(for: .note(note), size: size)
+    }
+
+    func touches(_ change: Set<String>?, _ subject: Subject) -> Bool {
+        switch subject {
+        case .note(let note): return NoteTabIcons.touches(change, note: note)
+        case .easel(let directory, let id): return EaselTabIcons.touches(change, key: EaselTabIcons.key(directory: directory, id: id))
+        }
+    }
+
+    private func key(of subject: Subject) -> String {
+        switch subject {
+        case .note(let note): return NoteTabIcons.key(note)
+        case .easel(let directory, let id): return EaselTabIcons.key(directory: directory, id: id)
+        }
+    }
+
+    func art(for subject: Subject, size: CGFloat = side) -> Art {
+        let lookup: NoteTabIcons.Lookup
+        switch subject {
+        case .note(let note): lookup = icons.lookup(note)
+        case .easel(let directory, let id): lookup = easels.lookup(directory: directory, id: id)
+        }
+        switch lookup {
         case .pending: return .pending
         case .known(nil): return .standard
         case .known(.emoji(let value)?): return emojiImage(value, size: size).map(Art.image) ?? .standard
-        case .known(.image(let file)?): return thumbnailArt(file, note: note, size: size)
+        case .known(.image(let file)?): return thumbnailArt(file, key: key(of: subject), size: size)
         }
+    }
+
+    private func standardImage(_ subject: Subject, size: CGFloat) -> NSImage {
+        subject.mark.image(size: size)
     }
 
     func image(emoji value: String) -> NSImage? {
@@ -80,33 +137,41 @@ final class NoteTabIconArt {
     }
 
     func image(forNote note: URL, size: CGFloat = side) -> NSImage? {
-        switch art(forNote: note, size: size) {
+        image(for: .note(note), size: size)
+    }
+
+    func requestImage(forNote note: URL, size: CGFloat = side, completion: @escaping (NSImage?) -> Void) {
+        requestImage(for: .note(note), size: size, completion: completion)
+    }
+
+    func image(for subject: Subject, size: CGFloat = side) -> NSImage? {
+        switch art(for: subject, size: size) {
         case .image(let image): return image
-        case .standard: return DocumentDefaultIcon.note.image(size: size)
+        case .standard: return standardImage(subject, size: size)
         case .pending: return nil
         }
     }
 
-    func requestImage(forNote note: URL, size: CGFloat = side, completion: @escaping (NSImage?) -> Void) {
-        switch art(forNote: note, size: size) {
+    func requestImage(for subject: Subject, size: CGFloat = side, completion: @escaping (NSImage?) -> Void) {
+        switch art(for: subject, size: size) {
         case .image(let image): completion(image)
-        case .standard: completion(DocumentDefaultIcon.note.image(size: size))
+        case .standard: completion(standardImage(subject, size: size))
         case .pending:
             waiterCounter += 1
-            waiters[waiterCounter] = Waiter(note: note, size: size, completion: completion)
+            waiters[waiterCounter] = Waiter(subject: subject, size: size, completion: completion)
         }
     }
 
     private func settleWaiters(_ change: Set<String>?) {
-        for (id, waiter) in waiters.sorted(by: { $0.key < $1.key }) where NoteTabIcons.touches(change, note: waiter.note) {
-            switch art(forNote: waiter.note, size: waiter.size) {
+        for (id, waiter) in waiters.sorted(by: { $0.key < $1.key }) where EaselTabIcons.touches(change, key: key(of: waiter.subject)) {
+            switch art(for: waiter.subject, size: waiter.size) {
             case .pending: continue
             case .image(let image):
                 waiters[id] = nil
                 waiter.completion(image)
             case .standard:
                 waiters[id] = nil
-                waiter.completion(DocumentDefaultIcon.note.image(size: waiter.size))
+                waiter.completion(standardImage(waiter.subject, size: waiter.size))
             }
         }
     }
@@ -120,7 +185,7 @@ final class NoteTabIconArt {
         return image
     }
 
-    private func thumbnailArt(_ file: URL, note: URL, size: CGFloat) -> Art {
+    private func thumbnailArt(_ file: URL, key owner: String, size: CGFloat) -> Art {
         let stamp = currentStamp(of: file)
         if let thumbnail = thumbnails.object(forKey: stamp.id as NSString) {
             let key = "image|\(size)|\(stamp.id)"
@@ -133,7 +198,7 @@ final class NoteTabIconArt {
             if NoteTabIcons.clock.now.timeIntervalSince(failed) < Self.unreadableRetryDelay { return .standard }
             unreadableThumbnails[stamp] = nil
         }
-        let key = NoteTabIcons.key(note)
+        let key = owner
         if loadingThumbnails[stamp] != nil {
             loadingThumbnails[stamp]?.insert(key)
             return .pending
@@ -150,7 +215,7 @@ final class NoteTabIconArt {
             }
             self.thumbnailsChanged.send(notes)
         }
-        return loadingThumbnails[stamp] == nil ? thumbnailArt(file, note: note, size: size) : .pending
+        return loadingThumbnails[stamp] == nil ? thumbnailArt(file, key: owner, size: size) : .pending
     }
 
     private func currentStamp(of file: URL) -> ThumbnailStamp {

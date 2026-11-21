@@ -65,7 +65,7 @@ extension BrowserWindowController {
             all = cache.documents
         } else {
             let easelList = try? easels.list()
-            all = (easelList ?? []).map { CommandBarDocument(kind: .easel, id: $0.id, title: $0.title) }
+            all = (easelList ?? []).map { CommandBarDocument(kind: .easel, id: $0.id, title: $0.title, profileID: profileID) }
             commandBarDocumentCache = easelList != nil ? (profileID, stamp, all) : nil
         }
         let open = store.state.openTabs(where: { $0.profileID == profileID }).compactMap { InternalPage(urlString: $0.url) }

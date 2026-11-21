@@ -700,6 +700,7 @@ final class EaselStore {
     private var assetsDirectory: URL { directory.appendingPathComponent("assets", isDirectory: true) }
     private let documentWriter = EaselDocumentWriter()
     var onSessionCreated: ((EaselSession) -> Void)?
+    var onListed: (([EaselSummary]) -> Void)?
     var onDocumentRemoved: ((UUID) -> Void)?
 
     init(directory: URL, now: @escaping () -> Date = Date.init) throws {
@@ -717,6 +718,12 @@ final class EaselStore {
     }
 
     func list() throws -> [EaselSummary] {
+        let summaries = try listFromDisk()
+        onListed?(summaries)
+        return summaries
+    }
+
+    private func listFromDisk() throws -> [EaselSummary] {
         try checkDirectories()
         return try FileManager.default.contentsOfDirectory(at: documentsDirectory,
                     includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])

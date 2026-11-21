@@ -98,6 +98,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     private var sessionDirectory: URL?
     private var pages: NoteEaselPages?
     private var watch: AnyCancellable?
+    private var iconWatch: AnyCancellable?
     private var heightStart: Double?
     private var liveHeight: Double?
     private var widthStart: (width: CGFloat, column: CGFloat)?
@@ -198,6 +199,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
             let view = picker ?? NoteEaselPickerView()
             if picker == nil {
                 view.candidates = { [weak self] in self?.host?.candidates() ?? [] }
+                view.directory = { [weak self] in self?.host?.directory }
                 view.onChoose = { [weak self] choice in self?.choose(choice) }
                 view.overlay = { [weak self] in self?.editor?.canvas.overlayView }
                 addSubview(view)
@@ -245,6 +247,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.sessionDidChange() } }
             }
             refreshTitle()
+            bindIcon(next.document.id, directory: host.directory)
             bindPages()
         case .failure(let absence):
             surface.showAbsence(absence, title: NoteEaselAddress.title(of: block), removable: canEdit)
@@ -255,6 +258,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
         finish(restoreFocus: false)
         pages = nil
         watch = nil
+        iconWatch = nil
         session = nil
         sessionDirectory = nil
         surface.clear()
@@ -272,6 +276,21 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
     private func refreshTitle() {
         guard let session else { return }
         surface.title = session.document.title
+        showIcon()
+    }
+
+    private func bindIcon(_ id: UUID, directory: URL) {
+        let subject = NoteTabIconArt.Subject.easel(directory: directory, id: id)
+        iconWatch = NoteTabIconArt.shared.changes
+            .filter { NoteTabIconArt.shared.touches($0, subject) }
+            .sink { [weak self] _ in self?.showIcon() }
+        showIcon()
+    }
+
+    private func showIcon() {
+        guard let session, let directory = sessionDirectory else { return }
+        EaselTabIcons.shared.follow(session)
+        surface.setIcon(NoteTabIconArt.shared.image(for: .easel(directory: directory, id: session.document.id)))
     }
 
     private func choose(_ choice: NoteEaselChoice) {
@@ -554,6 +573,10 @@ final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary {
         }
     }
     var isLive: Bool { canvas != nil }
+
+    func setIcon(_ image: NSImage?) {
+        icon.image = image ?? DocumentDefaultIcon.easel.image(size: 16)
+    }
     private let content = NSView()
     private let ring = CALayer()
     private let headerRule = CALayer()
@@ -820,6 +843,7 @@ private final class NoteEaselAbsenceView: NSView {
 final class NoteEaselPickerView: NoteMediaContentHostlessCard, NSTextFieldDelegate {
     static let height: CGFloat = 52
     var candidates: () -> [NoteEaselPicker.Candidate] = { [] }
+    var directory: () -> URL? = { nil }
     var onChoose: ((NoteEaselChoice) -> Void)?
     var overlay: () -> NSView? = { nil }
     var editable = true { didSet { applyMode() } }
@@ -872,9 +896,16 @@ final class NoteEaselPickerView: NoteMediaContentHostlessCard, NSTextFieldDelega
         choices = NoteEaselPicker.choices(known, query: field.stringValue)
         let items = choices.enumerated().map { index, choice -> NoteMenuList.Item in
             let isNew: Bool
-            if case .create = choice.action { isNew = true } else { isNew = false }
+            var rowIcon = NoteIcon.easelMark
+            switch choice.action {
+            case .create:
+                isNew = true
+            case .existing(let id):
+                isNew = false
+                if let folder = directory() { rowIcon = NoteIcon.easel(id, directory: folder) }
+            }
             return NoteMenuList.Item(id: String(index), title: choice.title, subtitle: choice.subtitle,
-                                     icon: isNew ? .symbol("plus") : .easelMark,
+                                     icon: isNew ? .symbol("plus") : rowIcon,
                                      section: isNew ? nil : "Easels in this Profile", separatorBefore: isNew && index > 0)
         }
         if let list, panel != nil {

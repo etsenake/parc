@@ -249,6 +249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 return .exit(failureExitCode)
             }
             store = opened
+            EaselTabIcons.shared.configure(store: opened)
             store.tabHistory?.prune(keeping: store.state.settings.restoreSession
                 ? Set(store.state.tabs.lazy.filter { $0.archivedAt == nil }.map(\.id)) : [])
             historyDeletionObserver = NotificationCenter.default.addObserver(

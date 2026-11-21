@@ -161,7 +161,7 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
         let rows = { (forward: Bool) in
             controller.noteVisitRows(visit, forward: forward, page: page).map { HistorySwipeOverlayRow(title: $0.title, favicon: $0.icon) }
         }
-        let shown = visit.current.map { HistorySwipeOverlayRow(title: $0.title, favicon: BrowserWindowController.noteVisitIcon($0)) }
+        let shown = visit.current.map { HistorySwipeOverlayRow(title: $0.title, favicon: BrowserWindowController.noteVisitIcon($0, profile: controller.activeProfileID)) }
             ?? HistorySwipeOverlayRow(title: visit.page.title, favicon: page?.favicon)
         view.setRows(current: shown, back: rows(false), forward: rows(true))
         container.addSubview(view, positioned: .above, relativeTo: noteView(controller, tabID))

@@ -474,12 +474,12 @@ extension BrowserWindowController {
                 }
                 if let page = InternalPage(urlString: tab.url) {
                     component.favicon = DocumentDefaultIcon.fallback(named: page.sidebarFallbackSymbol)
-                    if let note = page.noteURL {
-                        switch NoteTabIconArt.shared.art(forNote: note) {
+                    if let subject = NoteTabIconArt.Subject(tab: tab) {
+                        switch NoteTabIconArt.shared.art(for: subject) {
                         case .image(let image): component.favicon = image
                         case .pending:
                             component.faviconRequest = { completion in
-                                NoteTabIconArt.shared.requestImage(forNote: note, completion: completion)
+                                NoteTabIconArt.shared.requestImage(for: subject, completion: completion)
                             }
                         case .standard: break
                         }
