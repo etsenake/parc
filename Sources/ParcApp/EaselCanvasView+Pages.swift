@@ -70,11 +70,13 @@ extension EaselCanvasView {
             guard finishEditing() else { return false }
         }
         if rememberingViewport { rememberViewport() }
+        let flip = beginPageFlip(to: target)
         session.show(target)
         selection = []
         arrangeState.enteredGroup = nil
         documentDidChange()
         restoreViewport()
+        if let flip { playPageFlip(flip) }
         pageState.onPageChange?()
         let name = currentPageName
         NSAccessibility.post(element: self, notification: .announcementRequested,
@@ -259,5 +261,88 @@ extension EaselCanvasView {
         session.show(page)
         defer { session.show(previous) }
         return body()
+    }
+}
+
+struct EaselPageFlip {
+    let direction: CGFloat
+    let snapshot: NSImage?
+    let reduced: Bool
+}
+
+@MainActor
+extension EaselCanvasView {
+    private static let pageFlipKey = "easel-page-flip"
+
+    func beginPageFlip(to target: UUID?) -> EaselPageFlip? {
+        settlePageFlip()
+        guard canAnimateObjects, fixedCanvasSize == nil, let scroll = enclosingScrollView, scroll.contentView.layer != nil else { return nil }
+        let pages = visitablePages
+        let from = pages.firstIndex { $0.id == session.currentPage }, to = pages.firstIndex { $0.id == target }
+        let direction: CGFloat = (from ?? 0) <= (to ?? 0) ? 1 : -1
+        let reduced = feedbackReducesMotion
+        var snapshot: NSImage?
+        let visible = visibleRect
+        if !reduced, !usesObjectSurfaces, !visible.isEmpty, visible.width * visible.height < 16_000_000,
+           let rep = bitmapImageRepForCachingDisplay(in: visible) {
+            cacheDisplay(in: visible, to: rep)
+            let image = NSImage(size: visible.size)
+            image.addRepresentation(rep)
+            snapshot = image
+        }
+        return EaselPageFlip(direction: direction, snapshot: snapshot, reduced: reduced)
+    }
+
+    func playPageFlip(_ flip: EaselPageFlip) {
+        guard let scroll = enclosingScrollView, let layer = scroll.contentView.layer, canAnimateObjects else { return }
+        let clip = scroll.contentView
+        let duration = flip.reduced ? EaselFeedbackCurve.reducedFade : EaselFeedbackCurve.page
+        let timing = CAMediaTimingFunction(controlPoints: 0.215, 0.61, 0.355, 1)
+        let slides = !flip.reduced && !usesObjectSurfaces
+        let travel = CGFloat(EaselFeedbackCurve.pageSlide) * flip.direction
+        let down: CGFloat = scroll.isFlipped ? 1 : -1
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0; fade.toValue = 1; fade.duration = duration; fade.timingFunction = timing
+        layer.add(fade, forKey: Self.pageFlipKey + "-fade")
+        if slides {
+            let slide = CABasicAnimation(keyPath: "transform.translation.y")
+            slide.fromValue = travel * down; slide.toValue = 0; slide.duration = duration; slide.timingFunction = timing
+            layer.add(slide, forKey: Self.pageFlipKey + "-slide")
+        }
+        if let snapshot = flip.snapshot {
+            let overlay = EaselCanvasPageFlipOverlay(frame: clip.frame)
+            overlay.wantsLayer = true
+            overlay.layer?.contents = snapshot
+            overlay.layer?.contentsGravity = .resize
+            overlay.layer?.opacity = 0
+            scroll.addSubview(overlay, positioned: .above, relativeTo: clip)
+            canvasFeedback.pageOverlay = overlay
+            let out = CABasicAnimation(keyPath: "opacity")
+            out.fromValue = 1; out.toValue = 0; out.duration = duration; out.timingFunction = timing
+            overlay.layer?.add(out, forKey: Self.pageFlipKey + "-fade")
+            if slides {
+                let away = CABasicAnimation(keyPath: "transform.translation.y")
+                away.fromValue = 0; away.toValue = -travel * down; away.duration = duration; away.timingFunction = timing
+                overlay.layer?.add(away, forKey: Self.pageFlipKey + "-slide")
+            }
+        }
+        CATransaction.commit()
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.05) { [weak self, weak overlay = canvasFeedback.pageOverlay] in
+            guard let self, let overlay, self.canvasFeedback.pageOverlay === overlay else { return }
+            self.settlePageFlip()
+        }
+    }
+
+    func settlePageFlip() {
+        if let overlay = canvasFeedback.pageOverlay {
+            overlay.layer?.removeAllAnimations()
+            overlay.removeFromSuperview()
+            canvasFeedback.pageOverlay = nil
+        }
+        guard let layer = enclosingScrollView?.contentView.layer else { return }
+        layer.removeAnimation(forKey: Self.pageFlipKey + "-fade")
+        layer.removeAnimation(forKey: Self.pageFlipKey + "-slide")
     }
 }
