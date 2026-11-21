@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
 #import <QuartzCore/QuartzCore.h>
 #import "page_host.h"
 #import "pane_compositor_view.h"
@@ -119,13 +120,7 @@ static RendererView *SetSentinel(NSWindow *window) {
 }
 
 static void DrainMainQueue(void) {
-  __block BOOL drained = NO;
-  dispatch_async(dispatch_get_main_queue(), ^{ drained = YES; });
-  NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:2];
-  while (!drained && deadline.timeIntervalSinceNow > 0) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);
-  }
-  Check(drained, "main queue drains through the real run loop");
+  ParcNativeSettle();
 }
 
 static void TestContainmentAndReuse(void) {

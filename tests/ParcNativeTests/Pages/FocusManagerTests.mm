@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
+#import "ParcNativeClock.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -76,15 +77,7 @@ static FocusView* View(NSWindow* window) {
   return view;
 }
 static void Drain(void) {
-  __block BOOL done = NO;
-  dispatch_async(dispatch_get_main_queue(), ^{
-    done = YES;
-  });
-  NSDate* limit = [NSDate dateWithTimeIntervalSinceNow:2];
-  while (!done && limit.timeIntervalSinceNow > 0) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);
-  }
-  Check(done, "real main run loop delivers queued focus");
+  ParcNativeSettle();
 }
 static PCNativeFocusRegistration* Register(PCNativeFocusManager* manager,
                                            NSResponder* responder,
