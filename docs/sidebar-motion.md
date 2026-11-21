@@ -316,7 +316,7 @@ require the budget to fail.
 | `SidebarHoverModelTests`, `SidebarHoverTrackerTests` | Region geometry, timers, hysteresis and dismissal guards |
 | `tests/FloatingSidebarSurface/check.py` | Surface properties, material transitions and theme mixing |
 | `SidebarWindowButtonsTests` | Native button layout and pointer-state reconciliation |
-| `tests/SidebarPlusMenu/check.py` | HUD geometry, palette and dismissal behavior |
+| `SidebarPlusMenuModelTests`, `SidebarPlusMenuArtworkTests`, `SidebarPlusMenuLayoutTests`, `SidebarPlusMenuControllerTests`, `SidebarPlusMenuPaletteTests`, `SidebarPlusMenuRenderingTests` | HUD geometry, palette and dismissal behavior |
 | `tests/SidebarPacing/check.py` | Bounded AppKit layout work and continuity |
 | `tests/SidebarSpacePaging/check.py` | Phased, discrete and legacy paging, edge resistance, swipes that catch a click's slide and the trailing create-Space gesture and its haptics |
 | `tests/SidebarSpaceSwipe/check.py` | Space-switch lifecycle and frame-budget regressions |
