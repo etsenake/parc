@@ -456,7 +456,7 @@ Relevant existing checks include:
 - `scripts/test-onboarding.sh`: replay lifecycle and the welcome video hand-off.
 - `scripts/test-onboarding-presentation.sh` (including the frame step's
   geometry), `test-onboarding-keyboard.sh`,
-  `test-onboarding-theme.sh` and `test-onboarding-video.sh`: component behavior.
+  `test-onboarding-theme.sh` and `OnboardingVideoHandoffTests`: component behavior.
 - Browser-import coordinator/access/password checks and replay lifecycle checks.
 - The whole-module Swift check for material application changes.
 
