@@ -2,12 +2,12 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor
 struct SplitStackCommandsTests {
-    static func close(_ left: [Double], _ right: [Double]) -> Bool {
+    private static func close(_ left: [Double], _ right: [Double]) -> Bool {
         left.count == right.count && zip(left, right).allSatisfy { abs($0 - $1) < 1e-9 }
     }
-    static func layout(_ sizes: [Int], orientation: SplitOrientation = .horizontal) -> BrowserSplitLayout {
+
+    private static func layout(_ sizes: [Int], orientation: SplitOrientation = .horizontal) -> BrowserSplitLayout {
         let ids = (0..<sizes.reduce(0, +)).map { _ in UUID() }
         let even = sizes.map { Array(repeating: 1 / Double($0), count: $0) }
         let shape = BrowserSplitLayout.shape(orientation: orientation, sizes: sizes,
@@ -16,207 +16,431 @@ struct SplitStackCommandsTests {
                                   widthFactors: shape.widthFactors, stacks: shape.stacks)
     }
 
-    @Test static func flatEnablingIsUnchanged() throws {
-        for count in 0...5 {
-            for index in -1...5 {
-                let inside = (0..<count).contains(index)
-                let flat = count > 0 ? layout(Array(repeating: 1, count: count)) : nil
-                for candidate in [nil, flat] {
-                    #expect(SplitPaneOperation.movePrevious.isEnabled(index: index, count: count, layout: candidate)
-                               == (inside && count > 1 && index > 0), "Flat Move Left/Up keeps today's rule at \(index) of \(count)")
-                    #expect(SplitPaneOperation.moveNext.isEnabled(index: index, count: count, layout: candidate)
-                               == (inside && count > 1 && index < count - 1), "Flat Move Right/Down keeps today's rule at \(index) of \(count)")
-                    #expect(SplitPaneOperation.addAfter.isEnabled(index: index, count: count, layout: candidate) == (inside && count < 4),
-                               "Flat Add keeps today's four-pane limit")
-                    #expect(SplitPaneOperation.separate.isEnabled(index: index, count: count, layout: candidate) == (inside && count > 1),
-                               "Flat Separate keeps today's rule")
-                    #expect(SplitPaneOperation.stackAfter.isEnabled(index: index, count: count, layout: candidate)
-                               == (inside && (2...3).contains(count)), "Split This Pane needs a split with room for one more pane")
-                    #expect(!SplitPaneOperation.stackPrevious.isEnabled(index: index, count: count, layout: candidate)
-                               && !SplitPaneOperation.stackNext.isEnabled(index: index, count: count, layout: candidate),
-                               "A flat pane has no stack to move in")
-                }
-            }
+    private struct Position: Sendable, CustomTestStringConvertible {
+        let count: Int
+        let index: Int
+        var testDescription: String { "pane \(index) of \(count)" }
+        var inside: Bool { (0..<count).contains(index) }
+        var candidates: [BrowserSplitLayout?] { [nil, count > 0 ? SplitStackCommandsTests.layout(Array(repeating: 1, count: count)) : nil] }
+        static let all = (0...5).flatMap { count in (-1...5).map { Position(count: count, index: $0) } }
+    }
+
+    @Test(arguments: Position.all)
+    fileprivate func flatMovePreviousKeepsTodaysRule(_ p: Position) {
+        #expect(p.candidates.allSatisfy { SplitPaneOperation.movePrevious.isEnabled(index: p.index, count: p.count, layout: $0) == (p.inside && p.count > 1 && p.index > 0) })
+    }
+
+    @Test(arguments: Position.all)
+    fileprivate func flatMoveNextKeepsTodaysRule(_ p: Position) {
+        #expect(p.candidates.allSatisfy { SplitPaneOperation.moveNext.isEnabled(index: p.index, count: p.count, layout: $0) == (p.inside && p.count > 1 && p.index < p.count - 1) })
+    }
+
+    @Test(arguments: Position.all)
+    fileprivate func flatAddKeepsTheFourPaneLimit(_ p: Position) {
+        #expect(p.candidates.allSatisfy { SplitPaneOperation.addAfter.isEnabled(index: p.index, count: p.count, layout: $0) == (p.inside && p.count < 4) })
+    }
+
+    @Test(arguments: Position.all)
+    fileprivate func flatSeparateKeepsTodaysRule(_ p: Position) {
+        #expect(p.candidates.allSatisfy { SplitPaneOperation.separate.isEnabled(index: p.index, count: p.count, layout: $0) == (p.inside && p.count > 1) })
+    }
+
+    @Test(arguments: Position.all)
+    fileprivate func splitThisPaneNeedsRoomForOneMorePane(_ p: Position) {
+        #expect(p.candidates.allSatisfy { SplitPaneOperation.stackAfter.isEnabled(index: p.index, count: p.count, layout: $0) == (p.inside && (2...3).contains(p.count)) })
+    }
+
+    @Test(arguments: Position.all)
+    fileprivate func aFlatPaneHasNoStackToMoveIn(_ p: Position) {
+        #expect(p.candidates.allSatisfy {
+            !SplitPaneOperation.stackPrevious.isEnabled(index: p.index, count: p.count, layout: $0)
+                && !SplitPaneOperation.stackNext.isEnabled(index: p.index, count: p.count, layout: $0)
+        })
+    }
+
+    private struct StackedPane: Sendable, CustomTestStringConvertible {
+        let sizes: [Int]
+        let index: Int
+        var testDescription: String { "pane \(index) of \(sizes)" }
+        var split: BrowserSplitLayout { SplitStackCommandsTests.layout(sizes) }
+        static let all = [[1, 2], [2, 1], [2, 2], [3, 1], [1, 3], [2, 1, 1], [1, 2, 1], [1, 1, 2], [1, 1], [1, 1, 1, 1]].flatMap { sizes in
+            (0..<sizes.reduce(0, +)).map { StackedPane(sizes: sizes, index: $0) }
         }
     }
 
-    @Test static func stackedEnablingMatchesTheStore() throws {
-        for sizes in [[1, 2], [2, 1], [2, 2], [3, 1], [1, 3], [2, 1, 1], [1, 2, 1], [1, 1, 2], [1, 1], [1, 1, 1, 1]] {
-            let split = layout(sizes)
-            for (index, id) in split.tabIDs.enumerated() {
-                let count = split.tabIDs.count
-                #expect(SplitPaneOperation.movePrevious.isEnabled(index: index, count: count, layout: split)
-                           == (split.movingSlot(of: id, by: -1) != nil), "Move Left matches the store's slot move in \(sizes)")
-                #expect(SplitPaneOperation.moveNext.isEnabled(index: index, count: count, layout: split)
-                           == (split.movingSlot(of: id, by: 1) != nil), "Move Right matches the store's slot move in \(sizes)")
-                #expect(SplitPaneOperation.stackPrevious.isEnabled(index: index, count: count, layout: split)
-                           == (split.movingWithinStack(id, by: -1) != nil), "Move Up matches the store's stack move in \(sizes)")
-                #expect(SplitPaneOperation.stackNext.isEnabled(index: index, count: count, layout: split)
-                           == (split.movingWithinStack(id, by: 1) != nil), "Move Down matches the store's stack move in \(sizes)")
-                #expect(SplitPaneOperation.stackBefore.isEnabled(index: index, count: count, layout: split) == (count < 4),
-                           "Split This Pane is offered on every pane until the split holds four")
-            }
-        }
-        let trio = layout([1, 2])
-        #expect(SplitPaneOperation.moveNext.isEnabled(index: 0, count: 3, layout: trio)
-                   && !SplitPaneOperation.moveNext.isEnabled(index: 1, count: 3, layout: trio)
-                   && SplitPaneOperation.movePrevious.isEnabled(index: 2, count: 3, layout: trio),
-                   "Main-row Move follows slots: the stack's top pane can't move right past the end")
-        #expect(SplitPaneOperation.stackNext.isEnabled(index: 1, count: 3, layout: trio)
-                   && !SplitPaneOperation.stackPrevious.isEnabled(index: 1, count: 3, layout: trio)
-                   && SplitPaneOperation.stackPrevious.isEnabled(index: 2, count: 3, layout: trio)
-                   && !SplitPaneOperation.stackNext.isEnabled(index: 2, count: 3, layout: trio),
-                   "A stack move needs a neighbour in that direction")
-        #expect(!SplitPaneOperation.stackNext.isEnabled(index: 1, count: 4, layout: trio)
-                   && SplitPaneOperation.moveNext.isEnabled(index: 1, count: 4, layout: trio),
-                   "A layout that doesn't match the panes falls back to today's flat rules")
+    @Test(arguments: StackedPane.all)
+    fileprivate func moveLeftMatchesTheStoresSlotMove(_ p: StackedPane) {
+        let split = p.split
+        #expect(SplitPaneOperation.movePrevious.isEnabled(index: p.index, count: split.tabIDs.count, layout: split)
+                == (split.movingSlot(of: split.tabIDs[p.index], by: -1) != nil))
     }
 
-    static func store(_ name: String) throws -> (BrowserStore, URL) {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-split-stack-commands-\(name)-" + UUID().uuidString)
-        return (try BrowserStore(directory: root, now: { Date(timeIntervalSince1970: 1_800_000_000) }), root)
+    @Test(arguments: StackedPane.all)
+    fileprivate func moveRightMatchesTheStoresSlotMove(_ p: StackedPane) {
+        let split = p.split
+        #expect(SplitPaneOperation.moveNext.isEnabled(index: p.index, count: split.tabIDs.count, layout: split)
+                == (split.movingSlot(of: split.tabIDs[p.index], by: 1) != nil))
     }
 
-    @Test static func splitThisPaneTargets() throws {
-        let (store, root) = try store("targets")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let a = store.open("https://a.test")
-        #expect(SplitPaneInsertion(paneID: a, operation: .stackAfter, state: store.state) == nil
-                   && SplitPaneInsertion(paneID: a, operation: .stackBefore, state: store.state) == nil,
-                   "A single unsplit page has no stack to add to")
-        #expect(SplitPaneInsertion(paneID: a, operation: .addBelow, state: store.state) != nil,
-                   "A single page keeps today's Add items to start a split")
-        let b = store.open("https://b.test")
-        store.setSplit([a, b])
-        let flat = store.activeSplitLayout!
-        let below = SplitPaneInsertion(paneID: a, operation: .stackAfter, state: store.state)
-        #expect(below != nil && below == SplitPaneInsertion(paneID: a, stackingAfter: true, state: store.state),
-                   "Add Below This Pane is the store's stacked insertion")
-        #expect(below?.target == .stack(0, after: true) && below?.index == 1 && below?.orientation == .horizontal
-                   && below?.layout == flat && below?.paneID == a, "Add Below targets the pane's own slot, after it")
-        let above = SplitPaneInsertion(paneID: b, operation: .stackBefore, state: store.state)
-        #expect(above?.target == .stack(1, after: false) && above?.index == 1, "Add Above targets the pane's own slot, before it")
-        #expect(below?.previewLayout?.stacks?.slotSizes == [2, 1] && above?.previewLayout?.stacks?.slotSizes == [1, 2]
-                   && below?.previewLayout?.orientation == .horizontal, "The pending pane previews inside the pane's slot")
-        let mainRow = SplitPaneInsertion(paneID: a, operation: .addAfter, state: store.state)
-        #expect(mainRow?.target == .insert(1) && mainRow?.previewLayout == nil
-                   && close(mainRow!.previewFactors, [1.0 / 3, 1.0 / 3, 1.0 / 3]),
-                   "Add Right keeps adding a full-length pane with today's flat preview")
-        for request in [below!, above!] {
-            let preview = request.previewLayout!
-            #expect(close(request.previewFactors, preview.widthFactors) && request.previewFactors.count == 3
-                       && abs(request.previewFactors.reduce(0, +) - 1) < 1e-9, "Stacked preview factors are the preview's valid flat row")
+    @Test(arguments: StackedPane.all)
+    fileprivate func moveUpMatchesTheStoresStackMove(_ p: StackedPane) {
+        let split = p.split
+        #expect(SplitPaneOperation.stackPrevious.isEnabled(index: p.index, count: split.tabIDs.count, layout: split)
+                == (split.movingWithinStack(split.tabIDs[p.index], by: -1) != nil))
+    }
+
+    @Test(arguments: StackedPane.all)
+    fileprivate func moveDownMatchesTheStoresStackMove(_ p: StackedPane) {
+        let split = p.split
+        #expect(SplitPaneOperation.stackNext.isEnabled(index: p.index, count: split.tabIDs.count, layout: split)
+                == (split.movingWithinStack(split.tabIDs[p.index], by: 1) != nil))
+    }
+
+    @Test(arguments: StackedPane.all)
+    fileprivate func splitThisPaneIsOfferedOnEveryPaneUntilTheSplitHoldsFour(_ p: StackedPane) {
+        let split = p.split
+        #expect(SplitPaneOperation.stackBefore.isEnabled(index: p.index, count: split.tabIDs.count, layout: split) == (split.tabIDs.count < 4))
+    }
+
+    @Test func theMainRowMoveFollowsSlots() {
+        let trio = Self.layout([1, 2])
+        #expect(SplitPaneOperation.moveNext.isEnabled(index: 0, count: 3, layout: trio))
+        #expect(!SplitPaneOperation.moveNext.isEnabled(index: 1, count: 3, layout: trio))
+        #expect(SplitPaneOperation.movePrevious.isEnabled(index: 2, count: 3, layout: trio))
+    }
+
+    @Test func aStackMoveNeedsANeighbourInThatDirection() {
+        let trio = Self.layout([1, 2])
+        #expect(SplitPaneOperation.stackNext.isEnabled(index: 1, count: 3, layout: trio))
+        #expect(!SplitPaneOperation.stackPrevious.isEnabled(index: 1, count: 3, layout: trio))
+        #expect(SplitPaneOperation.stackPrevious.isEnabled(index: 2, count: 3, layout: trio))
+        #expect(!SplitPaneOperation.stackNext.isEnabled(index: 2, count: 3, layout: trio))
+    }
+
+    @Test func aLayoutThatDoesNotMatchThePanesFallsBackToFlatRules() {
+        let trio = Self.layout([1, 2])
+        #expect(!SplitPaneOperation.stackNext.isEnabled(index: 1, count: 4, layout: trio))
+        #expect(SplitPaneOperation.moveNext.isEnabled(index: 1, count: 4, layout: trio))
+    }
+
+    @MainActor private final class Fixture {
+        let root: URL
+        let store: BrowserStore
+
+        init(_ name: String) throws {
+            root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-split-stack-commands-\(name)-" + UUID().uuidString)
+            store = try BrowserStore(directory: root, now: { Date(timeIntervalSince1970: 1_800_000_000) })
         }
+
+        deinit { try? FileManager.default.removeItem(at: root) }
+
+        func pair() -> (a: UUID, b: UUID, flat: BrowserSplitLayout) {
+            let a = store.open("https://a.test"), b = store.open("https://b.test")
+            store.setSplit([a, b])
+            return (a, b, store.activeSplitLayout!)
+        }
+
+        func stackedBelow() -> (a: UUID, b: UUID, id: UUID, flat: BrowserSplitLayout, below: SplitPaneInsertion) {
+            let (a, b, flat) = pair()
+            let below = SplitPaneInsertion(paneID: a, operation: .stackAfter, state: store.state)!
+            let id = UUID()
+            _ = store.insertSplitPane(below, tabID: id, navigationURL: URL(string: "https://new.test/"), creation: nil, savedHomeIDs: [:], documents: [:])
+            return (a, b, id, flat, below)
+        }
+
+        func fourPanes() {
+            let (_, b, _) = stackedBelow()
+            _ = store.insertSplitPane(SplitPaneInsertion(paneID: b, operation: .stackBefore, state: store.state)!, tabID: UUID(),
+                                      navigationURL: URL(string: "https://fourth.test/"), creation: nil, savedHomeIDs: [:], documents: [:])
+        }
+    }
+
+    @MainActor @Test func aSingleUnsplitPageHasNoStackToAddTo() throws {
+        let f = try Fixture("single")
+        let a = f.store.open("https://a.test")
+        #expect(SplitPaneInsertion(paneID: a, operation: .stackAfter, state: f.store.state) == nil)
+        #expect(SplitPaneInsertion(paneID: a, operation: .stackBefore, state: f.store.state) == nil)
+    }
+
+    @MainActor @Test func aSinglePageKeepsTodaysAddItemsToStartASplit() throws {
+        let f = try Fixture("single")
+        let a = f.store.open("https://a.test")
+        #expect(SplitPaneInsertion(paneID: a, operation: .addBelow, state: f.store.state) != nil)
+    }
+
+    @MainActor @Test func addBelowThisPaneIsTheStoresStackedInsertion() throws {
+        let f = try Fixture("targets")
+        let (a, _, _) = f.pair()
+        let below = SplitPaneInsertion(paneID: a, operation: .stackAfter, state: f.store.state)
+        #expect(below != nil)
+        #expect(below == SplitPaneInsertion(paneID: a, stackingAfter: true, state: f.store.state))
+    }
+
+    @MainActor @Test func addBelowTargetsThePanesOwnSlotAfterIt() throws {
+        let f = try Fixture("targets")
+        let (a, _, flat) = f.pair()
+        let below = SplitPaneInsertion(paneID: a, operation: .stackAfter, state: f.store.state)
+        #expect(below?.target == .stack(0, after: true))
+        #expect(below?.index == 1)
+        #expect(below?.orientation == .horizontal)
+        #expect(below?.layout == flat)
+        #expect(below?.paneID == a)
+    }
+
+    @MainActor @Test func addAboveTargetsThePanesOwnSlotBeforeIt() throws {
+        let f = try Fixture("targets")
+        let (_, b, _) = f.pair()
+        let above = SplitPaneInsertion(paneID: b, operation: .stackBefore, state: f.store.state)
+        #expect(above?.target == .stack(1, after: false))
+        #expect(above?.index == 1)
+    }
+
+    @MainActor @Test func thePendingPanePreviewsInsideThePanesSlot() throws {
+        let f = try Fixture("targets")
+        let (a, b, _) = f.pair()
+        let below = SplitPaneInsertion(paneID: a, operation: .stackAfter, state: f.store.state)
+        let above = SplitPaneInsertion(paneID: b, operation: .stackBefore, state: f.store.state)
+        #expect(below?.previewLayout?.stacks?.slotSizes == [2, 1])
+        #expect(above?.previewLayout?.stacks?.slotSizes == [1, 2])
+        #expect(below?.previewLayout?.orientation == .horizontal)
+    }
+
+    @MainActor @Test func addRightStillAddsAFullLengthPaneWithAFlatPreview() throws {
+        let f = try Fixture("targets")
+        let (a, _, _) = f.pair()
+        let mainRow = try #require(SplitPaneInsertion(paneID: a, operation: .addAfter, state: f.store.state))
+        #expect(mainRow.target == .insert(1))
+        #expect(mainRow.previewLayout == nil)
+        #expect(Self.close(mainRow.previewFactors, [1.0 / 3, 1.0 / 3, 1.0 / 3]))
+    }
+
+    @MainActor @Test(arguments: [true, false])
+    func stackedPreviewFactorsAreThePreviewsValidFlatRow(_ below: Bool) throws {
+        let f = try Fixture("targets")
+        let (a, b, _) = f.pair()
+        let request = try #require(below ? SplitPaneInsertion(paneID: a, operation: .stackAfter, state: f.store.state)
+                                         : SplitPaneInsertion(paneID: b, operation: .stackBefore, state: f.store.state))
+        let preview = try #require(request.previewLayout)
+        #expect(Self.close(request.previewFactors, preview.widthFactors))
+        #expect(request.previewFactors.count == 3)
+        #expect(abs(request.previewFactors.reduce(0, +) - 1) < 1e-9)
+    }
+
+    @MainActor @Test func addBelowThisPaneCommits() throws {
+        let f = try Fixture("targets")
+        let (a, _, _) = f.pair()
+        let below = try #require(SplitPaneInsertion(paneID: a, operation: .stackAfter, state: f.store.state))
+        #expect(f.store.insertSplitPane(below, tabID: UUID(), navigationURL: URL(string: "https://new.test/"), creation: nil, savedHomeIDs: [:], documents: [:]))
+    }
+
+    @MainActor @Test func theNewPaneLandsBelowThePaneInsideItsColumn() throws {
+        let f = try Fixture("targets")
+        let s = f.stackedBelow()
+        let committed = try #require(f.store.activeSplitLayout)
+        #expect(committed.id == s.flat.id)
+        #expect(committed.tabIDs == [s.a, s.id, s.b])
+        #expect(committed.stacks?.slotSizes == [2, 1])
+    }
+
+    @MainActor @Test func thePendingPanePreviewedExactlyTheCommittedShape() throws {
+        let f = try Fixture("targets")
+        let s = f.stackedBelow()
+        let committed = try #require(f.store.activeSplitLayout)
+        #expect(Self.close(s.below.previewFactors, committed.widthFactors))
+        #expect(s.below.previewLayout?.stacks == committed.stacks)
+    }
+
+    @MainActor @Test func onAPaneAlreadyInAStackTheSameItemsAddToThatStack() throws {
+        let f = try Fixture("targets")
+        let s = f.stackedBelow()
+        let again = SplitPaneInsertion(paneID: s.id, operation: .stackAfter, state: f.store.state)
+        #expect(again?.target == .stack(1, after: true))
+        #expect(again?.previewLayout?.stacks?.slotSizes == [3, 1])
+    }
+
+    @MainActor @Test func aCrossDirectionAddStaysRefusedOnAStackedSplit() throws {
+        let f = try Fixture("targets")
+        let s = f.stackedBelow()
+        #expect(SplitPaneInsertion(paneID: s.a, operation: .addBelow, state: f.store.state) == nil)
+    }
+
+    @MainActor @Test func addAboveOnTheLoneColumnCommits() throws {
+        let f = try Fixture("targets")
+        let s = f.stackedBelow()
+        let above = try #require(SplitPaneInsertion(paneID: s.b, operation: .stackBefore, state: f.store.state))
+        #expect(f.store.insertSplitPane(above, tabID: UUID(), navigationURL: URL(string: "https://fourth.test/"), creation: nil, savedHomeIDs: [:], documents: [:]))
+        #expect(f.store.activeSplitLayout?.stacks?.slotSizes == [2, 2])
+    }
+
+    @MainActor @Test(arguments: 0..<4)
+    func splitThisPaneRefusesAtFourPanes(_ index: Int) throws {
+        let f = try Fixture("targets")
+        f.fourPanes()
+        let pane = f.store.state.selectedTabIDs[index]
+        #expect(SplitPaneInsertion(paneID: pane, operation: .stackAfter, state: f.store.state) == nil)
+        #expect(SplitPaneInsertion(paneID: pane, operation: .stackBefore, state: f.store.state) == nil)
+    }
+
+    private struct StartCase: Sendable, CustomTestStringConvertible {
+        let count: Int
+        let isSplit: Bool
+        var testDescription: String { "\(count) panes, split \(isSplit)" }
+        static let all = (0...5).flatMap { count in [false, true].map { StartCase(count: count, isSplit: $0) } }
+    }
+
+    @Test(arguments: StartCase.all)
+    fileprivate func splitThisPaneStartsASplitOnlyOnASingleUnsplitPage(_ c: StartCase) {
+        #expect(SplitPaneOperation.stackAfter.startsSplitView(paneCount: c.count, isSplit: c.isSplit) == (c.count == 1 && !c.isSplit))
+    }
+
+    @Test(arguments: StartCase.all, 0..<SplitPaneOperation.allCases.count)
+    fileprivate func onlySplitThisPaneIsRedirected(_ c: StartCase, _ operationIndex: Int) {
+        let operation = SplitPaneOperation.allCases[operationIndex]
+        guard operation != .stackAfter else { return }
+        #expect(!operation.startsSplitView(paneCount: c.count, isSplit: c.isSplit))
+    }
+
+    @MainActor @Test func onASinglePageSplitThisPaneRunsAsAddSplitView() throws {
+        let f = try Fixture("single-page")
+        let a = f.store.open("https://a.test")
+        #expect(f.store.state.selectedTabIDs == [a])
+        #expect(f.store.activeSplitLayout == nil)
+        #expect(SplitPaneOperation.stackAfter.startsSplitView(paneCount: f.store.state.selectedTabIDs.count, isSplit: f.store.activeSplitLayout != nil))
+    }
+
+    @MainActor @Test func itOpensAddSplitViewsPendingPaneRightOfThePage() throws {
+        let f = try Fixture("single-page")
+        let a = f.store.open("https://a.test")
+        let started = try #require(SplitPaneInsertion(paneID: a, operation: .addAfter, state: f.store.state))
+        #expect(started.target == .insert(1))
+        #expect(started.orientation == .horizontal)
+        #expect(started.layout == nil)
+        #expect(started.previewLayout == nil)
+        #expect(Self.close(started.previewFactors, [0.5, 0.5]))
+    }
+
+    @MainActor private func startedSplit(_ f: Fixture) throws -> (a: UUID, id: UUID) {
+        let a = f.store.open("https://a.test")
+        let started = try #require(SplitPaneInsertion(paneID: a, operation: .addAfter, state: f.store.state))
         let id = UUID()
-        #expect(store.insertSplitPane(below!, tabID: id, navigationURL: URL(string: "https://new.test/"), creation: nil,
-                                         savedHomeIDs: [:], documents: [:]), "Add Below This Pane commits")
-        let committed = store.activeSplitLayout!
-        #expect(committed.id == flat.id && committed.tabIDs == [a, id, b] && committed.stacks?.slotSizes == [2, 1],
-                   "The new pane lands below the pane, inside its column")
-        #expect(close(below!.previewFactors, committed.widthFactors) && below!.previewLayout?.stacks == committed.stacks,
-                   "The pending pane previewed exactly the shape that was committed")
-        let again = SplitPaneInsertion(paneID: id, operation: .stackAfter, state: store.state)
-        #expect(again?.target == .stack(1, after: true) && again?.previewLayout?.stacks?.slotSizes == [3, 1],
-                   "On a pane already in a stack, the same items add to that stack")
-        #expect(SplitPaneInsertion(paneID: a, operation: .addBelow, state: store.state) == nil,
-                   "A cross-direction Add stays refused on a stacked split")
-        #expect(store.insertSplitPane(SplitPaneInsertion(paneID: b, operation: .stackBefore, state: store.state)!, tabID: UUID(),
-                                         navigationURL: URL(string: "https://fourth.test/"), creation: nil, savedHomeIDs: [:], documents: [:]),
-                   "Add Above This Pane on the lone column commits")
-        #expect(store.activeSplitLayout?.stacks?.slotSizes == [2, 2], "Both columns are stacks now")
-        for pane in store.state.selectedTabIDs {
-            #expect(SplitPaneInsertion(paneID: pane, operation: .stackAfter, state: store.state) == nil
-                       && SplitPaneInsertion(paneID: pane, operation: .stackBefore, state: store.state) == nil,
-                       "Split This Pane refuses at four panes")
-        }
+        _ = f.store.insertSplitPane(started, tabID: id, navigationURL: URL(string: "https://new.test/"), creation: nil, savedHomeIDs: [:], documents: [:])
+        return (a, id)
     }
 
-    @Test static func splitThisPaneStartsASplitOnASinglePage() throws {
-        for count in 0...5 {
-            for isSplit in [false, true] {
-                #expect(SplitPaneOperation.stackAfter.startsSplitView(paneCount: count, isSplit: isSplit) == (count == 1 && !isSplit),
-                           "Split This Pane starts a Split View only on a single unsplit page, not with \(count) panes, split \(isSplit)")
-                for operation in SplitPaneOperation.allCases where operation != .stackAfter {
-                    #expect(!operation.startsSplitView(paneCount: count, isSplit: isSplit),
-                               "Only Split This Pane is redirected, never \(operation) with \(count) panes")
-                }
-            }
-        }
-        let (store, root) = try store("single-page")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let a = store.open("https://a.test")
-        #expect(store.state.selectedTabIDs == [a] && store.activeSplitLayout == nil
-                   && SplitPaneOperation.stackAfter.startsSplitView(paneCount: store.state.selectedTabIDs.count,
-                                                                    isSplit: store.activeSplitLayout != nil),
-                   "On a single page Split This Pane runs as Add Split View")
-        let started = SplitPaneInsertion(paneID: a, operation: .addAfter, state: store.state)
-        #expect(started?.target == .insert(1) && started?.orientation == .horizontal && started?.layout == nil
-                   && started?.previewLayout == nil && close(started!.previewFactors, [0.5, 0.5]),
-                   "It opens Add Split View's pending pane to the right of the page")
-        let id = UUID()
-        #expect(store.insertSplitPane(started!, tabID: id, navigationURL: URL(string: "https://new.test/"), creation: nil,
-                                         savedHomeIDs: [:], documents: [:]), "The new Split View commits like Add Split View's")
-        let split = store.activeSplitLayout
-        #expect(split?.tabIDs == [a, id] && split?.orientation == .horizontal && split?.stacks == nil,
-                   "The page and the new pane sit side by side with no stack")
-        for (index, pane) in [a, id].enumerated() {
-            #expect(!SplitPaneOperation.stackAfter.startsSplitView(paneCount: store.state.selectedTabIDs.count,
-                                                                     isSplit: store.activeSplitLayout != nil),
-                       "Once there is a split, Split This Pane stacks again")
-            let below = SplitPaneInsertion(paneID: pane, operation: .stackAfter, state: store.state)
-            #expect(below?.target == .stack(index, after: true) && below?.previewLayout?.stacks?.slotSizes == (index == 0 ? [2, 1] : [1, 2]),
-                       "In the new split Split This Pane adds below the pane in focus")
-        }
+    @MainActor @Test func theNewSplitViewCommitsLikeAddSplitViews() throws {
+        let f = try Fixture("single-page")
+        let (a, id) = try startedSplit(f)
+        #expect(f.store.activeSplitLayout?.tabIDs == [a, id])
     }
 
-    @Test static func committedPanesFollowReadingOrder() throws {
-        let (store, root) = try store("reading")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let a = store.open("https://a.test"), b = store.open("https://b.test"), c = store.open("https://c.test")
-        store.setSplit([a, b, c])
-        let id = UUID()
-        #expect(store.insertSplitPane(SplitPaneInsertion(paneID: c, operation: .stackBefore, state: store.state)!, tabID: id,
-                                         navigationURL: URL(string: "https://new.test/"), creation: nil, savedHomeIDs: [:], documents: [:]),
-                   "Add Above This Pane commits on the last column")
-        func readingOrderHolds(_ sizes: [Int]) -> Bool {
-            guard let split = store.activeSplitLayout else { return false }
-            return store.state.selectedTabIDs == split.tabIDs && split.stacks?.slotSizes == sizes
-        }
-        #expect(store.state.selectedTabIDs == [a, b, id, c] && readingOrderHolds([1, 1, 2]),
-                   "Numbered focus reads slot by slot, top to bottom: pane 3 is the new pane above the last one")
-        var split = store.activeSplitLayout!
-        #expect(SplitPaneOperation.stackNext.isEnabled(index: 2, count: 4, layout: split)
-                   && store.moveSplitPaneWithinStack(id, offset: 1, expected: split), "Move Down within the stack commits")
-        #expect(store.state.selectedTabIDs == [a, b, c, id] && readingOrderHolds([1, 1, 2]),
-                   "Moving within a stack keeps reading order and the stack")
-        split = store.activeSplitLayout!
-        #expect(!SplitPaneOperation.moveNext.isEnabled(index: 3, count: 4, layout: split)
-                   && !store.moveSplitPane(id, offset: 1, expected: split), "The last column can't move further right")
-        #expect(SplitPaneOperation.movePrevious.isEnabled(index: 3, count: 4, layout: split)
-                   && store.moveSplitPane(id, offset: -1, expected: split), "Move Left moves the whole column")
-        #expect(store.state.selectedTabIDs == [a, c, id, b] && readingOrderHolds([1, 2, 1]),
-                   "The whole stack moved together and pane 1 is still the top-left pane")
+    @MainActor @Test func thePageAndNewPaneSitSideBySideWithNoStack() throws {
+        let f = try Fixture("single-page")
+        _ = try startedSplit(f)
+        #expect(f.store.activeSplitLayout?.orientation == .horizontal)
+        #expect(f.store.activeSplitLayout?.stacks == nil)
     }
 
-    @Test static func topAndBottomSplitsStackSideways() throws {
-        let (store, root) = try store("vertical")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let a = store.open("https://a.test"), b = store.open("https://b.test")
-        store.setSplit([a, b]); store.setSplitLayout(orientation: .vertical, widthFactors: [0.5, 0.5])
-        let right = SplitPaneInsertion(paneID: b, operation: .stackAfter, state: store.state)!
-        #expect(right.orientation == .vertical && right.target == .stack(1, after: true)
-                   && right.previewLayout?.orientation == .vertical && right.previewLayout?.stacks?.slotSizes == [1, 2],
-                   "In a top-and-bottom split, Add Right of This Pane divides the pane's row")
+    @MainActor @Test func onceThereIsASplitSplitThisPaneStacksAgain() throws {
+        let f = try Fixture("single-page")
+        _ = try startedSplit(f)
+        #expect(!SplitPaneOperation.stackAfter.startsSplitView(paneCount: f.store.state.selectedTabIDs.count, isSplit: f.store.activeSplitLayout != nil))
+    }
+
+    @MainActor @Test(arguments: [0, 1])
+    func inTheNewSplitSplitThisPaneAddsBelowThePaneInFocus(_ index: Int) throws {
+        let f = try Fixture("single-page")
+        let (a, id) = try startedSplit(f)
+        let below = SplitPaneInsertion(paneID: [a, id][index], operation: .stackAfter, state: f.store.state)
+        #expect(below?.target == .stack(index, after: true))
+        #expect(below?.previewLayout?.stacks?.slotSizes == (index == 0 ? [2, 1] : [1, 2]))
+    }
+
+    @MainActor private func reading(_ f: Fixture) -> (a: UUID, b: UUID, c: UUID, id: UUID) {
+        let a = f.store.open("https://a.test"), b = f.store.open("https://b.test"), c = f.store.open("https://c.test")
+        f.store.setSplit([a, b, c])
         let id = UUID()
-        #expect(store.insertSplitPane(right, tabID: id, navigationURL: URL(string: "https://new.test/"), creation: nil,
-                                         savedHomeIDs: [:], documents: [:]), "Add Right of This Pane commits")
-        let split = store.activeSplitLayout!
-        #expect(split.orientation == .vertical && split.tabIDs == [a, b, id] && split.stacks?.slotSizes == [1, 2],
-                   "The new pane sits right of the pane, inside its row")
-        #expect(SplitPaneOperation.stackPrevious.isEnabled(index: 2, count: 3, layout: split)
-                   && !SplitPaneOperation.stackNext.isEnabled(index: 2, count: 3, layout: split)
-                   && SplitPaneOperation.movePrevious.isEnabled(index: 2, count: 3, layout: split)
-                   && !SplitPaneOperation.moveNext.isEnabled(index: 2, count: 3, layout: split),
-                   "Move Left within the row and Move Up for the whole row are offered; their opposites have no neighbour")
+        _ = f.store.insertSplitPane(SplitPaneInsertion(paneID: c, operation: .stackBefore, state: f.store.state)!, tabID: id,
+                                    navigationURL: URL(string: "https://new.test/"), creation: nil, savedHomeIDs: [:], documents: [:])
+        return (a, b, c, id)
+    }
+
+    @MainActor @Test func addAboveThisPaneCommitsOnTheLastColumn() throws {
+        let f = try Fixture("reading")
+        let p = reading(f)
+        #expect(f.store.state.selectedTabIDs == [p.a, p.b, p.id, p.c])
+        #expect(f.store.activeSplitLayout?.stacks?.slotSizes == [1, 1, 2])
+        #expect(f.store.state.selectedTabIDs == f.store.activeSplitLayout?.tabIDs)
+    }
+
+    @MainActor @Test func moveDownWithinTheStackCommitsAndKeepsReadingOrder() throws {
+        let f = try Fixture("reading")
+        let p = reading(f)
+        let split = try #require(f.store.activeSplitLayout)
+        #expect(SplitPaneOperation.stackNext.isEnabled(index: 2, count: 4, layout: split))
+        #expect(f.store.moveSplitPaneWithinStack(p.id, offset: 1, expected: split))
+        #expect(f.store.state.selectedTabIDs == [p.a, p.b, p.c, p.id])
+        #expect(f.store.activeSplitLayout?.stacks?.slotSizes == [1, 1, 2])
+        #expect(f.store.state.selectedTabIDs == f.store.activeSplitLayout?.tabIDs)
+    }
+
+    @MainActor private func afterMovingDown(_ f: Fixture) throws -> (p: (a: UUID, b: UUID, c: UUID, id: UUID), split: BrowserSplitLayout) {
+        let p = reading(f)
+        _ = f.store.moveSplitPaneWithinStack(p.id, offset: 1, expected: f.store.activeSplitLayout!)
+        return (p, try #require(f.store.activeSplitLayout))
+    }
+
+    @MainActor @Test func theLastColumnCannotMoveFurtherRight() throws {
+        let f = try Fixture("reading")
+        let (p, split) = try afterMovingDown(f)
+        #expect(!SplitPaneOperation.moveNext.isEnabled(index: 3, count: 4, layout: split))
+        #expect(!f.store.moveSplitPane(p.id, offset: 1, expected: split))
+    }
+
+    @MainActor @Test func moveLeftMovesTheWholeColumnAndKeepsReadingOrder() throws {
+        let f = try Fixture("reading")
+        let (p, split) = try afterMovingDown(f)
+        #expect(SplitPaneOperation.movePrevious.isEnabled(index: 3, count: 4, layout: split))
+        #expect(f.store.moveSplitPane(p.id, offset: -1, expected: split))
+        #expect(f.store.state.selectedTabIDs == [p.a, p.c, p.id, p.b])
+        #expect(f.store.activeSplitLayout?.stacks?.slotSizes == [1, 2, 1])
+        #expect(f.store.state.selectedTabIDs == f.store.activeSplitLayout?.tabIDs)
+    }
+
+    @MainActor private func sideways(_ f: Fixture) throws -> (a: UUID, b: UUID, id: UUID, right: SplitPaneInsertion) {
+        let a = f.store.open("https://a.test"), b = f.store.open("https://b.test")
+        f.store.setSplit([a, b])
+        f.store.setSplitLayout(orientation: .vertical, widthFactors: [0.5, 0.5])
+        let right = try #require(SplitPaneInsertion(paneID: b, operation: .stackAfter, state: f.store.state))
+        return (a, b, UUID(), right)
+    }
+
+    @MainActor @Test func inATopAndBottomSplitAddRightDividesThePanesRow() throws {
+        let f = try Fixture("vertical")
+        let s = try sideways(f)
+        #expect(s.right.orientation == .vertical)
+        #expect(s.right.target == .stack(1, after: true))
+        #expect(s.right.previewLayout?.orientation == .vertical)
+        #expect(s.right.previewLayout?.stacks?.slotSizes == [1, 2])
+    }
+
+    @MainActor @Test func theNewPaneSitsRightOfThePaneInsideItsRow() throws {
+        let f = try Fixture("vertical")
+        let s = try sideways(f)
+        #expect(f.store.insertSplitPane(s.right, tabID: s.id, navigationURL: URL(string: "https://new.test/"), creation: nil, savedHomeIDs: [:], documents: [:]))
+        let split = try #require(f.store.activeSplitLayout)
+        #expect(split.orientation == .vertical)
+        #expect(split.tabIDs == [s.a, s.b, s.id])
+        #expect(split.stacks?.slotSizes == [1, 2])
+    }
+
+    @MainActor @Test func sidewaysMovesAreOfferedOnlyWhereANeighbourExists() throws {
+        let f = try Fixture("vertical")
+        let s = try sideways(f)
+        _ = f.store.insertSplitPane(s.right, tabID: s.id, navigationURL: URL(string: "https://new.test/"), creation: nil, savedHomeIDs: [:], documents: [:])
+        let split = try #require(f.store.activeSplitLayout)
+        #expect(SplitPaneOperation.stackPrevious.isEnabled(index: 2, count: 3, layout: split))
+        #expect(!SplitPaneOperation.stackNext.isEnabled(index: 2, count: 3, layout: split))
+        #expect(SplitPaneOperation.movePrevious.isEnabled(index: 2, count: 3, layout: split))
+        #expect(!SplitPaneOperation.moveNext.isEnabled(index: 2, count: 3, layout: split))
     }
 }
