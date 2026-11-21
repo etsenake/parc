@@ -20,22 +20,14 @@ terminal callback, and defer owner deletion until all callbacks finish.
 From the repository root:
 
 ```sh
-bash tests/EngineConformance/native-window/run.sh
+swift test --filter WindowAssociationTests
 ```
 
 This compiles the actual Objective-C portion of `browser_window.mm` as Objective-C using Apple clang, ARC and warnings as errors. It creates ordinary, unshown test windows and tests native close delivery, attachment identity, weak observer/window ownership, notification filtering, idempotent and terminal teardown, reentrant reassociation/invalidation, independent associations on one window and rejection of off-main-thread calls. It does not launch Parc or another browser, load a profile, show a fullscreen window or synthesize keyboard focus. Key/fullscreen notification routing is tested by posting named notifications.
 
-The AppKit suite covers 60 assertions across five groups. The modal companion removes each observer before its terminal callback, preserving active outer iterators and allowing a callback to release its observer.
+The AppKit suite has one test per group. The modal companion removes each observer before its terminal callback, preserving active outer iterators and allowing a callback to release its observer.
 
-## Actual Chromium syntax checks
-
-After the pinned engine checkout has completed its normal project generation and prerequisite generated headers exist:
-
-```sh
-python3 tests/EngineConformance/native-window/check-chromium.py /absolute/path/to/chromium/src
-```
-
-The check reads the generated `ui/gfx` ObjC++ flags for the implementation and `components/web_modal` unit-test flags for the test source. It uses that checkout's real compiler, Chromium headers, generated headers and C++ library headers. It invokes neither GN nor Ninja, uses no substitute headers, and writes reports only under the repository's ignored `build/tests/native-window/`. Syntax checking does not link or execute the C++ companion.
+## Chromium modal host tests
 
 `ModalHostTests.mm` contains seven real GoogleTest cases for active-view identity changes, odd and oversized dimensions, maximum-size changes, observer addition/removal boundaries, nested invalidation, observer release during destruction, destruction notification and invalidation before delegate destruction. The included `BUILD.gn` defines a runnable `parc_native_window_tests` target with the normal Chromium test entry point (`//base/test:run_all_unittests`), actual `web_modal`/`base`/`gfx` libraries, GoogleTest and AppKit. It requires no Browser, renderer, browser profile or full-browser test suite.
 

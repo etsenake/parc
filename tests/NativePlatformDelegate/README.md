@@ -40,19 +40,7 @@ it closes the JavaScript-dialog gate. Other services observe their captured
 leases. Auxiliary attachment changes preserve newer leases established during
 an older callback.
 
-## Checks
+## Shell obligations
 
-```sh
-python3 -B tests/NativePlatformDelegate/check-chromium.py /absolute/path/to/chromium/src \
-```
-
-The selected schema 2 lock determines the source and generated compiler flags.
-The checker validates `native_page_binding.mm` against `//parc:browser`'s
-`obj/parc/browser.ninja`; other lock schemas are refused. The output name
-defaults to the selected lock's build configuration. The checker reads the
-canonical lock.
-
-The checker reads the pinned compiler's generated Objective-C++ flags and runs
-syntax checks without generating, linking or launching anything. Logs remain
-in ignored `build/tests/native-platform-delegate/`. The shell supplies balanced
+The shell supplies balanced
 page-will-detach/page-did-attach calls around actual view and window changes.

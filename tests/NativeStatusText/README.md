@@ -1,6 +1,6 @@
 # Native page status preview
 
-`bash tests/NativeStatusText/run.sh` exercises the production AppKit controller
+`swift test --filter StatusTextTests` exercises the production AppKit controller
 using offscreen windows and the main run loop. Inspect the runner and follow
 [the working contract](../../AGENTS.md) before running window-based checks.
 

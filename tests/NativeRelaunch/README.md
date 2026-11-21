@@ -9,7 +9,7 @@ Chromium's `base::CommandLine::AppendSwitchNative` inserts switches before posit
 The engine configures Parc Safe Storage with the Parc account before startup.
 The direct Chromium startup preserves existing profile encryption and Keychain identity.
 
-Run `bash tests/NativeRelaunch/run.sh`. It compiles and executes the actual Foundation request parser with 22 assertions: argv0 exclusion, profile-operand isolation, malformed/empty switches, both valued forms, copied URLs/query/fragment, relative file origin, switch terminator, destination order and unsupported positional executable schemes. It does not launch an app or Chromium.
+Run `swift test --filter NativeRelaunchTests`. It exercises the actual Foundation request parser: argv0 exclusion, profile-operand isolation, malformed/empty switches, both valued forms, copied URLs/query/fragment, relative file origin, switch terminator, destination order and unsupported positional executable schemes. It does not launch an app or Chromium.
 
 The production application entry normalizes and retains arguments through
 engine shutdown. AppDelegate receives relaunch requests, queues them during

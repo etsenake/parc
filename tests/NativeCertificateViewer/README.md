@@ -9,26 +9,18 @@ The request holds the shared native security reservation, rejects competing prom
 Run the standalone native suite from the repository:
 
 ```sh
-bash tests/NativeCertificateViewer/run.sh
+swift test --filter CertificateViewerPresenterTests
 ```
 
-It compiles and opens genuine OS certificate sheets over synthetic AppKit pages, using only the public certificate in `fixture.pem`. The current suite executes **34 assertions**, including exact parent/visibility, BasicX509 policy, deferred cancellation, invalid page/hidden parent, once-only completion, parent close, delegate lifetime, a replacement sheet shown before the old begin call returns, and cancellation that releases the external owner during begin before sheet capture. The nested test temporarily intercepts the real `SFCertificatePanel` begin method in its own test process; it still presents and ends real OS panels, and restores the original method afterward. The in-flight cancellation case also checks retained callback ownership before the real OS completion. No trust/settings controls are exercised.
+It compiles and opens genuine OS certificate sheets over synthetic AppKit pages, using only the public certificate in `certificate-fixture.pem`. The current suite executes **34 assertions**, including exact parent/visibility, BasicX509 policy, deferred cancellation, invalid page/hidden parent, once-only completion, parent close, delegate lifetime, a replacement sheet shown before the old begin call returns, and cancellation that releases the external owner during begin before sheet capture. The nested test temporarily intercepts the real `SFCertificatePanel` begin method in its own test process; it still presents and ends real OS panels, and restores the original method afterward. The in-flight cancellation case also checks retained callback ownership before the real OS completion. No trust/settings controls are exercised.
 
-[`fixture.pem`](fixture.pem) is the public synthetic
+[`certificate-fixture.pem`](../ParcNativeTests/Dialogs/certificate-fixture.pem) is the public synthetic
 `net/data/ssl/certificates/root_ca_cert.pem` from the Chromium revision in
 [the source lock](../../Engine/source-lock.json), under Chromium's BSD-style
-license. It contains no private key or user identity. The runner converts it
-into an ignored build-directory DER file; it does not install it.
+license. The test decodes only its certificate block in memory and installs
+nothing.
 
 The thirteen `viewer_unittest.mm` cases use genuine Browser/Profile/TabInterface/WebContents, the generic viewer entry and `SSLErrorControllerClient`, the real native security lease and OS sheet. They cover exact owner/certificate checks, duplicate calls, detach/reattach, navigation/destruction, competing/reentrant reservations, parent close and preservation of stock dispatch. The test window only supplies the native NSWindow. The suite uses the Chrome test runner; a valid Chromium process/context is a prerequisite for execution.
-
-After the complete overlay is applied and its actual targets generated, run:
-
-```sh
-python3 tests/NativeCertificateViewer/check-chromium.py /absolute/path/to/chromium/src
-```
-
-The checker verifies the entire overlay cohort, source lock, generated object membership and exact compiler rules before checking the two production ObjC++ units, platform integration, generic Chromium viewer and controller test source. It has no compatibility fallback and does not generate, build, link, execute tests or write into the checkout.
 
 Chromium's `ShowCertificateViewer` reaches Parc through a one-call hook; pages without the native route keep the WebUI viewer. Integration maps the native sources into `parc/native`, and the controller test into `parc/tests/parc_native_certificate_viewer`. The shared `native_certificate_viewer` target owns both production implementations and SecurityInterface linking; `//parc:browser` and the test source set depend on it. Only `chrome/test:unit_tests` under macOS imports the test source set. The test target does not depend on `//parc:browser`.
 

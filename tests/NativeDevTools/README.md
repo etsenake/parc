@@ -18,15 +18,12 @@ This source keeps Chromium's real `DevToolsWindow`, main tools/toolbox WebConten
 From the repository:
 
 ```sh
-bash tests/NativeDevTools/run.sh
-python3 tests/NativeDevTools/check-chromium.py /absolute/path/to/chromium/src
+swift test --filter DevToolsPaneTests
 ```
 
 The standalone AppKit suite covers **46 assertions across seven groups**: actual view identity, geometry/Find anchor, hit testing/scrim, hide/restore, tools first-responder focus, later-owner preservation, terminal invalidation and reentrant replacement, callback-driven adoption during invalidation, and no stale frame/hidden writes after layout-time transfer. It executes no Chromium or installed browser.
 
 The six `NativeDevToolsBrowserTest.*` cases cover actual tools/resize strategy, exact contents/delegate through dock/undock/redock, real close restoring the inspected page, active modal transfer between ordinary Browsers, transfer into a native popup Browser, and stale modal-lease protection. The modal cases use the actual Chromium manager/delegates with a platform-dialog test double. The test Browser supplies real Profile/tab/DevTools policy and the typed native presenter. Execution requires a valid Chromium process/context. The separate NativeRuntime harness covers its own controller suites.
-
-The reusable checker above has no compatibility fallback: it requires the complete reviewed overlay applied, exact object membership, generated final target flags, ARC/warnings-as-errors, source/toolchain/compiler hashes and unchanged inputs. It performs syntax checking only, without GN, Ninja or runtime execution.
 
 The pane view belongs to `native_components`; `NativeDevToolsPane` belongs to shared `native_devtools`, consumed by `//parc:browser` and `//parc/tests/parc_native_devtools:browser_tests`. Native host/application/page route remains in `//parc:browser`. The genuine test target defines `HAS_OUT_OF_PROC_TEST_RUNNER`. Root owns final GN/overlay composition and dependency checks.
 

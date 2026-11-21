@@ -110,7 +110,7 @@ may destroy their owner synchronously; do not use raw pointers afterward.
 ## Checks
 
 Pure state-machine and native component checks validate cancellation, retry and
-episode ownership; `tests/NativeBackgroundPipHold/run.sh` covers the
+episode ownership; `BackgroundPipHoldTests` cover the
 still-visible hold's focus-away gate, display clipping, window coverage and
 half-second re-measuring. The historical full-state observation proposal is
 not a current implementation requirement.

@@ -6,10 +6,10 @@ a profile or an NSWindow. The engine adapter must retain the returned stable
 host, supply the actual WebContents native container and coordinate engine
 ownership/close consent separately.
 
-Run the focused native suite on macOS with Xcode command-line tools:
+Run the focused native suite:
 
 ```sh
-bash tests/NativePageHost/run.sh
+swift test --filter PageHostTests
 ```
 
 The script compiles the production component and tests with ARC and warnings

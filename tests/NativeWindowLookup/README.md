@@ -33,14 +33,5 @@ The fixture's intentional non-Views window exposes the original defect. The
 overlay registers these cases in the existing macOS `chrome/test:unit_tests`
 target, rather than introducing a second fake browser model.
 
-```sh
-PYTHONDONTWRITEBYTECODE=1 python3 tests/NativeWindowLookup/check-chromium.py /absolute/chromium/src
-```
-
-The script validates the applied implementation hash and uses the actual
-generated target compiler flags. It never runs GN/Ninja or writes
-to the external source tree. `--tests-only` permits checking the four test
-cases before the overlay is applied. Logs stay in ignored `build/tests/`.
-
 After building the existing upstream `unit_tests` target, execute
 `unit_tests --gtest_filter=NativeWindowLookupTest.*` on this macOS build.

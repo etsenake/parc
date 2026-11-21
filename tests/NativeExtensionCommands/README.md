@@ -67,20 +67,5 @@ The seven real Chromium browser-test cases in
 7. Native action delivery preserves modifiers, repeat, phase and timestamp,
    with both IME skip and shortcut suspension preventing callbacks.
 
-The test source uses the real Browser and EventRouter. It is exercised by the
-read-only syntax checker and is not mapped into the overlay's browser-test
-target; the production registry is mapped and connected to native dispatch.
-
-Run the read-only syntax check once generated prerequisites exist:
-
-```sh
-python3 -B tests/NativeExtensionCommands/check-chromium.py /absolute/path/to/chromium/src
-```
-
-It reads actual `obj/parc/browser.ninja` and
-`obj/chrome/test/browser_tests.ninja` compiler flags,
-uses the pinned Clang with `-fsyntax-only`, and writes logs only under ignored
-`build/tests/native-extension-commands/`. It neither generates nor builds the
-external tree. The production registry and browser-test source use the pinned
-compiler with warnings as errors. The checker verifies source/API compatibility without
-executing the browser-test source.
+The test source uses the real Browser and EventRouter. It is not mapped into
+the overlay's browser-test target; the production registry is mapped and connected to native dispatch.

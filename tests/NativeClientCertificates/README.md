@@ -10,14 +10,6 @@ The current Mac Views parent resolver only understands Views-owned NSWindows. A 
 
 `selector_unittest.mm` has 14 genuine-controller cases: real native-parent/table/identity selection, explicit no-certificate cancellation, empty list, detached/hidden owners, exact-page detach, delayed key completion, invalid late-key same-challenge broadcast, competing reservation, release-time replacement, navigation, parent close, concurrent request refusal and delegate reentry destroying the page. The fixtures use synthetic certificate/key inputs, not the user's identities.
 
-After applying the complete reviewed overlay and generating its targets, run:
-
-```
-python3 tests/NativeClientCertificates/check-chromium.py /path/to/chromium/src
-```
-
-The reusable checker requires every source/header/patch hash in the applied overlay and each unit's actual registered object and generated target flags. It refuses stale/partial checkouts; it has no VFS compatibility mode. A pass is syntax only. Integration registers `//parc/native:native_client_certificates` in the Parc browser target and `//parc/tests/parc_native_client_certificates:unit_tests` in Chrome unit tests. Executing the controller tests requires a valid Chromium process/context.
-
 The integrated platform retains a weak-self check after HTTP cancellation and
 another after certificate cancellation: either callback can destroy the owning
 platform before the next service is accessed. This preserves the previous status,

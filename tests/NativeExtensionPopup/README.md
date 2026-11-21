@@ -42,22 +42,10 @@ The `NativeExtensionActionHost` interface is a mandatory connection to real nati
 Run the windowless motion check and the AppKit suite (no installed browser or Chromium required):
 
 ```sh
-bash tests/NativeExtensionPopup/run.sh
+swift test --filter 'ExtensionPopup(Motion)?Tests'
 ```
 
 The motion check covers the fade and glide curves, Reduce Motion, the reveal timing and the resize glide (fixed edges, whole-point steps, retargeting from the current size, and instant Reduce Motion resizes) without creating a window. The AppKit suite covers **80 assertions in eight groups**. The executable uses real NSWindows, supplied NSViews, native close/notification delivery and the main run loop. It covers exact child/page identity and geometry, moved-window resize, stacked panes in a flipped window, the controller's placement answer and its refused answers, parent-specific dismissal with a policy hold, callback reentry/final owner release, replacement during native detachment, invalid attachment, anchor callback invalidation, and a visible parent that must not expose an opening popup.
-
-Syntax-check the three production translation units and six genuine-host browser-test cases using their actual reviewed shared target flags, without generating or building upstream:
-
-```sh
-python3 tests/NativeExtensionPopup/check-chromium.py /absolute/path/to/chromium/src
-```
-
-The checker requires
-`obj/parc/native/native_extensions.ninja` and
-`obj/parc/tests/parc_native_extensions/popup_browser_tests.ninja` from the
-reviewed integration. It checks all four translation units with ARC and
-warnings-as-errors and records source, flag, toolchain and compiler hashes.
 
 The browser tests use actual loaded extensions, actual `ExtensionViewHostFactory`, actual WebContents and visibility observers. They cover supplied identity, close-once results, close during hide/show notification without deleting the notifying WebContents on its stack, security appearing during opening, close completion after actual WebContents destruction, and repeated close observers delivered once each. `Close(completion)` reports actual terminal host destruction after existing result callbacks, not merely a requested dismissal. Execution requires a valid Chromium process/context.
 

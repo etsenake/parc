@@ -8,11 +8,9 @@ Current Chromium adaptations use the real `InputEventActivationProtector` utilit
 
 ## Verification
 
-`bash tests/NativeExternalProtocol/run.sh` executes 38 AppKit assertions using actual offscreen NSWindows, sheets, controls and the run loop. It covers deferred visible attachment, the default Open, keypad Enter under input protection and button order, the Always open choice and its availability, input refusal, once-only decisions, hidden/detached ownership, invalidation and callback replacement. It does not launch external applications or touch a browser profile.
+`swift test --filter ExternalProtocolTests` runs AppKit checks using actual offscreen NSWindows, sheets, controls and the run loop. It covers deferred visible attachment, the default Open, keypad Enter under input protection and button order, the Always open choice and its availability, input refusal, once-only decisions, hidden/detached ownership, invalidation and callback replacement. It does not launch external applications or touch a browser profile.
 
 `dialog_unittest.mm` contains 17 Chromium-connected cases: 14 use real Browser/Profile/Tab/WebContents, modal manager, preferences and the upstream launch test delegate; three cover the genuine floating-widget occlusion tracker and activation protector. They cover cancellation, remembered policy, stale documents, navigation/detach and queued acceptance across reattachment, replacement, competing release-time reservations, preference-observer navigation and callback-driven page destruction. Only the OS effect is intercepted in controller tests. The tests begin at the checked platform-dialog boundary; they do not establish the earlier default-application lookup/network path. The protection utility cases run without the test bypass; lifecycle tests use Chromium's explicit testing switch.
-
-The reusable `check-chromium.py SOURCE_TREE` requires the full reviewed overlay applied with exact hashes and each unit's actual generated object membership. It refuses stale/unregistered cohorts; it does not borrow another target's flags or create headers. Executing the controller tests requires a valid Chromium process/context.
 
 ## Ownership boundary
 

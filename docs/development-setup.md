@@ -264,6 +264,19 @@ Sparkle from `PARC_SPARKLE_FRAMEWORKS` (default: the `build/sparkle` cache). The
 engine is loaded, never started. Put a test in the lowest target that can reach
 the code under test, in a folder named for its feature area.
 
+Engine components that build without Chromium are in the `ParcNative` library:
+an explicit list of `Engine/ParcNative` sources compiled as Objective-C++ with
+ARC and warnings as errors. `ParcNativeTests` (in `tests/ParcNativeTests`) tests
+them with Objective-C XCTest cases built on `ParcNativeTestCase`; check with
+`PARC_CHECK` or the suite's `Check(condition, message)`, which stop the test at
+the first failure. Name these tests with the `Tests` class suffix and filter by
+class, for example `swift test --filter PageHostTests`. To test another
+Chromium-free source, add it to the `ParcNative` source list. Never edit an
+engine input for a test. The `EngineFacade*Tests` targets compile the app's
+engine facade against test doubles of the native classes. Each set of doubles
+gets its own target, so the old-engine target fails to link if the facade names
+a class older engines lack.
+
 Write one behaviour per `@Test`, named as a plain sentence in camelCase, and
 build only the fixture that behaviour needs. Check with `#expect`, and use
 `try #require` when later lines depend on a value. Loops that make thousands of

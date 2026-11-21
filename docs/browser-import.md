@@ -201,9 +201,9 @@ fixtures or inert components. Restart fixtures replace final app launch with a
 recording seam. `scripts/test-safari-browsing-export.sh` runs the export ZIP
 and bookmark-file readers against made-up archives, including ZIP64, data
 descriptors, damaged and hostile entries, and localized file names.
-`tests/ImportedExtensionReports/run.sh` feeds the extension-report adapter both
-engines' report shapes and checks that the app never links the newer one's
-failure class. Native reader/writer fixtures use disposable databases; see the
+`EngineFacadeImportTests` feed the extension-report adapter the current
+engine's report shapes; `EngineFacadeOldEngineTests` feed the older shapes
+without the newer failure class, so the facade fails to link if it names it. Native reader/writer fixtures use disposable databases; see the
 [native import checks](../Engine/ParcImport/README.md#focused-checks).
 
 Parc’s utility content client registers the isolated import reader. Its protocol

@@ -28,23 +28,6 @@ The [overlay manifest](../../Engine/ParcHost/overlay.json) owns its input and
 output checksums and maintains one contextual patch for this target.
 
 ## Checks and integration
-
-```sh
-python3 tests/NativeExtensionContextMenu/check-chromium.py /absolute/path/to/chromium/src
-```
-
-The checker compiles the production unit and twenty-case browser-test source
-with their generated target settings. The patched upstream menu model uses its
-own generated target flags. `--output-name` selects another built output; use
-it when the default output has not been rebuilt since a Chromium upgrade,
-because its generated headers then fail inside `base`. It requires
-`obj/parc/native/native_extensions.ninja` and
-`obj/parc/tests/parc_native_extensions/context_menu_browser_tests.ninja`.
-ARC, warnings-as-errors, and the browser test's
-`HAS_OUT_OF_PROC_TEST_RUNNER` definition are required. Source, compiler, flag,
-toolchain hashes and commands are recorded under ignored
-`build/tests/native-extension-context-menu/`.
-
 The twenty browser cases use actual loaded extensions, real action models and actual `NSMenu` dispatch/tracking. The first twelve cover pin mutation, cancellation, rejected nested Show, cancellation and presenter replacement inside a real synchronous pin observer, stale rebuilt model, presenter destruction during tracking, active-page changes, security changes unavailable uninstall, terminal drain after actual pin dispatch destroys the presenter, and repeated idle drains that permanently refuse new tracking. One case loads an extension that adds its own items to its button's menu: a plain item, a checked checkbox and a parent with a child appear, its page-only item stays out, and choosing the plain item reaches the extension's click listener. Seven side-panel cases use a non-Views test Browser with Parc's own action container and native side panel: Open Side Panel shows the panel, Close Side Panel hides it, a panel opened just before the menu is built is still loading yet offers only Close Side Panel, which closes it and destroys the loading page, a shown panel whose area the app hides offers only Open Side Panel, which replaces the hidden page with a fresh one that shows, an Open Side Panel row whose panel starts loading while the menu is open turns into Close Side Panel on the next validation and closes it, a Close Side Panel row whose panel closes while the menu is open turns into Open Side Panel and opens it again, and a pop-up window disables the row with its reason and refuses a programmatic dispatch. Callback state belongs to the fixture, including failure paths. Execution requires a valid Chromium process/context.
 
 The overlay includes both implementation files in `native_extensions`, exposes the real extension-model header dependency and links the Cocoa menu adapter. It registers `//parc/tests/parc_native_extensions:context_menu_browser_tests` with Chromium browser tests, including `HAS_OUT_OF_PROC_TEST_RUNNER` and its direct resource/header dependencies. This is source/target integration; production native shell routing uses the same service.
