@@ -10,7 +10,7 @@ private final class ActivityWindow: NSWindow {
     override var isMainWindow: Bool { main }
 }
 
-@Suite(.serialized) @MainActor
+@MainActor
 struct FavoriteTileSelectionTests {
     private func close(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.0001 }
     private func alpha(_ color: CGColor?) -> CGFloat? { color.map(\.alpha) }
@@ -25,9 +25,9 @@ struct FavoriteTileSelectionTests {
         let maxContrast = NSColor(srgbRed: 0.1, green: 0.2, blue: 0.3, alpha: 1)
         var overlays: FavoriteTileOverlays { tile.overlays }
 
-        init(attached: Bool = true, reduceMotion: Bool? = nil) {
-            SystemOverrides.install()
-            SystemOverrides.reduceMotion = reduceMotion
+        init(attached: Bool = true, reduceMotion: Bool = false) {
+            tile.reducesMotion = { reduceMotion }
+            tile.overlays.reducesMotion = { reduceMotion }
             browser.isReleasedWhenClosed = false
             other.isReleasedWhenClosed = false
             tile.frame = NSRect(x: 20, y: 20, width: 60, height: 47)
@@ -40,7 +40,6 @@ struct FavoriteTileSelectionTests {
         }
 
         deinit {
-            SystemOverrides.reduceMotion = nil
             MainActor.assumeIsolated {
                 browser.close()
                 other.close()
@@ -405,12 +404,10 @@ struct FavoriteTileSelectionTests {
     }
 
     private func layoutWrites(_ view: NSView) -> Int {
-        GeometryWrites.install()
-        return GeometryWrites.layerWrites(by: view) { view.layout() }.count
+        SidebarLayerWrites.count(byLayersOf: view) { view.layout() }
     }
 
     @Test func theFirstRecordingDotLayoutWritesItsLayers() {
-        SystemOverrides.install()
         let dot = FavoriteRecordingDotView(frame: CGRect(x: 0, y: 0, width: 8, height: 8))
         #expect(layoutWrites(dot) > 0)
     }
@@ -462,13 +459,11 @@ struct FavoriteTileSelectionTests {
         let dot = FavoriteRecordingDotView(frame: CGRect(x: 0, y: 0, width: 8, height: 8))
 
         init(reduceMotion: Bool) {
-            SystemOverrides.install()
-            SystemOverrides.reduceMotion = reduceMotion
+            dot.reducesMotion = { reduceMotion }
             window.isReleasedWhenClosed = false
         }
 
         deinit {
-            SystemOverrides.reduceMotion = nil
             MainActor.assumeIsolated { window.close() }
         }
     }
