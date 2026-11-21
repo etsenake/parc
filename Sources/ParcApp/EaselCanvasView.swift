@@ -1618,7 +1618,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: window)
         }
         if newWindow !== window {
-            hoveredObjectID = nil; menuGeneration &+= 1; motion.cancel(); cancelPointerInteraction(); releaseTemporaryHand(); stopZoomAnimation()
+            hoveredObjectID = nil; menuGeneration &+= 1; motion.cancel(); settleObjectMotion(); cancelPointerInteraction(); releaseTemporaryHand(); stopZoomAnimation()
             stopVideoPlayback(); finishImageCrop(save: true); stopImagePlayback()
             if newWindow != nil { DispatchQueue.main.async { [weak self] in self?.refreshImagePlayback() } }
         }

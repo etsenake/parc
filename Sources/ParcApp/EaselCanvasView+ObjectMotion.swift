@@ -13,6 +13,7 @@ enum EaselObjectMotionIntent {
 final class EaselCanvasObjectMotionState {
     static let chromeDuration: TimeInterval = 0.1
     static let handleGrowth: CGFloat = 1.35
+    static let crowd = 40
     var timeline = EaselObjectMotion()
     var intent: EaselObjectMotionIntent?
     var pendingSurfaces: Set<UUID> = []
@@ -25,6 +26,7 @@ final class EaselCanvasObjectMotionState {
     var handleGrowth: [EaselResizeHandle: (from: CGFloat, to: CGFloat, start: TimeInterval)] = [:]
     var driver: EaselCanvasFrameDriver?
     var envelope = NSRect.null
+    var retiring: [UUID: NSView] = [:]
 
     var animatesChrome: Bool { chromeStart != nil || hoverStart != nil || !handleGrowth.isEmpty }
 }
@@ -49,30 +51,44 @@ extension EaselCanvasView {
         objectMotion.intent = nil
         guard canAnimateObjects else { return }
         let now = CACurrentMediaTime(), reduced = reduceMotion
-        let live = Set(after.items.filter(\.ownsEmbeddedPage).map(\.id))
+        var frames: [UUID: EaselItem] = [:]
+        for item in before.items { frames[item.id] = item }
+        for item in after.items { frames[item.id] = item }
+        let visible = visibleRect.isEmpty ? bounds : visibleRect
+        func admitted(_ ids: [UUID]) -> Set<UUID> {
+            let candidates = ids.filter { frames[$0]?.ownsEmbeddedPage == false }
+            guard candidates.count > EaselCanvasObjectMotionState.crowd else { return Set(candidates) }
+            guard !reduced else { return [] }
+            return Set(candidates.filter { id in frames[id].map { displayBounds(of: $0).intersects(visible) } ?? false })
+        }
         var touched = Set<UUID>()
         switch intent {
         case .appear:
-            let added = EaselObjectMotion.added(from: before, to: after).filter { !live.contains($0) }
+            let added = admitted(EaselObjectMotion.added(from: before, to: after))
             objectMotion.timeline.appear(added, at: now, reduced: reduced)
             touched.formUnion(added)
         case .vanish:
-            let leaving = EaselObjectMotion.removed(from: before, to: after).filter { !$0.ownsEmbeddedPage }
-            objectMotion.timeline.vanish(leaving, at: now, reduced: reduced)
-            touched.formUnion(leaving.map(\.id))
+            let removed = EaselObjectMotion.removed(from: before, to: after)
+            let leaving = admitted(removed.map(\.id))
+            objectMotion.timeline.vanish(removed.filter { leaving.contains($0.id) }, at: now, reduced: reduced)
+            touched.formUnion(leaving)
         case .copies(let sources, let copies):
-            let offsets = EaselObjectMotion.copyOffsets(sources: sources, copies: copies, before: before, after: after)
-                .filter { !live.contains($0.key) }
+            let all = EaselObjectMotion.copyOffsets(sources: sources, copies: copies, before: before, after: after)
+            let added = EaselObjectMotion.added(from: before, to: after)
+            let chosen = admitted(added)
+            let offsets = all.filter { chosen.contains($0.key) }
             objectMotion.timeline.glide(offsets, fades: true, at: now, reduced: reduced)
-            let rest = EaselObjectMotion.added(from: before, to: after).filter { offsets[$0] == nil && !live.contains($0) }
+            let rest = added.filter { offsets[$0] == nil && chosen.contains($0) }
             objectMotion.timeline.appear(rest, at: now, reduced: reduced)
             touched.formUnion(offsets.keys); touched.formUnion(rest)
         case .arrange:
-            let offsets = EaselObjectMotion.moves(from: before, to: after).filter { !live.contains($0.key) }
+            let all = EaselObjectMotion.moves(from: before, to: after)
+            let chosen = admitted(Array(all.keys))
+            let offsets = all.filter { chosen.contains($0.key) }
             objectMotion.timeline.glide(offsets, fades: false, at: now, reduced: reduced)
             touched.formUnion(offsets.keys)
         case .layer(let forward, let ids):
-            let moved = ids.subtracting(live)
+            let moved = admitted(Array(ids))
             objectMotion.timeline.lift(moved, from: forward ? 1.03 : 0.97, at: now, reduced: reduced)
             touched.formUnion(moved)
         }
@@ -93,8 +109,11 @@ extension EaselCanvasView {
         objectMotion.handleGrowth.removeAll()
         objectMotion.envelope = .null
         objectMotion.driver?.stop()
+        objectMotion.driver = nil
         editor?.alphaValue = 1
         for view in artwork.values { if let layer = view.layer { Self.settleSurface(layer) } }
+        for view in objectMotion.retiring.values { view.layer?.removeAllAnimations(); view.removeFromSuperview() }
+        objectMotion.retiring.removeAll()
         guard wasActive else { return }
         presentObjectMotionDirty(envelope)
     }
@@ -138,10 +157,12 @@ extension EaselCanvasView {
 
     private func objectMotionEnvelope() -> NSRect {
         var dirty = NSRect.null
-        if !usesObjectSurfaces {
-            let shown = items
+        if !usesObjectSurfaces, !objectMotion.timeline.isEmpty {
+            var lookup: [UUID: EaselItem] = [:]
+            for ghost in objectMotion.timeline.ghosts { lookup[ghost.id] = ghost }
+            for item in items { lookup[item.id] = item }
             for (id, transition) in objectMotion.timeline.transitions {
-                guard let item = shown.first(where: { $0.id == id }) ?? objectMotion.timeline.ghosts.first(where: { $0.id == id }) else { continue }
+                guard let item = lookup[id] else { continue }
                 var box = displayBounds(of: item)
                 if case .lift(let from) = transition.effect, from > 1 {
                     box = box.insetBy(dx: -box.width * (from - 1), dy: -box.height * (from - 1))
@@ -249,6 +270,10 @@ extension EaselCanvasView {
     }
 
     func applySurfaceObjectMotion() {
+        for (id, view) in objectMotion.retiring where artwork[id] != nil && artwork[id] !== view {
+            view.layer?.removeAllAnimations(); view.removeFromSuperview()
+            objectMotion.retiring.removeValue(forKey: id)
+        }
         guard usesObjectSurfaces, !objectMotion.pendingSurfaces.isEmpty else { return }
         let now = CACurrentMediaTime(), reduced = reduceMotion, key = Self.surfaceKey
         let identity = NSValue(caTransform3D: CATransform3DIdentity)
@@ -294,8 +319,16 @@ extension EaselCanvasView {
         guard objectMotion.timeline.ghosts.contains(where: { $0.id == id }), canAnimateObjects else { view.removeFromSuperview(); return }
         view.wantsLayer = true
         guard let layer = view.layer else { view.removeFromSuperview(); return }
+        objectMotion.retiring[id]?.removeFromSuperview()
+        objectMotion.retiring[id] = view
         CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak view] in MainActor.assumeIsolated { view?.removeFromSuperview() } }
+        CATransaction.setCompletionBlock { [weak self, weak view] in
+            MainActor.assumeIsolated {
+                guard let view else { return }
+                view.removeFromSuperview()
+                if let self, self.objectMotion.retiring[id] === view { self.objectMotion.retiring.removeValue(forKey: id) }
+            }
+        }
         let fade = Self.basic("opacity", from: layer.presentation()?.opacity ?? 1, to: 0, duration: EaselObjectTransition.vanishDuration)
         fade.fillMode = .forwards; fade.isRemovedOnCompletion = false
         layer.add(fade, forKey: Self.surfaceKey + "vanish")

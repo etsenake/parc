@@ -92,8 +92,11 @@ selected, hover outlines fade in the same way, and a resize handle grows to
 135% on the Notes highlight spring while the pointer is over it. Marquee
 selection, guides and active transforms still follow the input directly.
 
-Any pointer press, pinch, window change or Reduce Motion turning on settles
-every transition at once. Under Reduce Motion pops and glides become short
+When one command touches more than 40 objects, only the ones in view animate
+and the rest land instantly; under Reduce Motion such a big change doesn't
+animate at all. Any pointer press, pinch, window change, hiding or Reduce Motion
+turning on settles every transition at once, removes fading layers and lets the
+display link rebind to the next window. Under Reduce Motion pops and glides become short
 fades in place, deletes fade without shrinking and layer moves don't animate.
 
 ## Checks
