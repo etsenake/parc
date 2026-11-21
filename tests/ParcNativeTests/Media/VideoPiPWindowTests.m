@@ -1,6 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import "ParcNativeTest.h"
 #import "ParcNativeClock.h"
+#import "ParcNativePointer.h"
 #include <objc/runtime.h>
 #include <stdio.h>
 
@@ -42,10 +43,6 @@ static BOOL gLiveResize;
 static BOOL LiveResize(id self, SEL _cmd) {
   return gLiveResize;
 }
-static BOOL Shows(NSCursor* cursor) {
-  ParcNativeAdvance(0.1);
-  return NSEqualPoints(NSCursor.currentSystemCursor.hotSpot, cursor.hotSpot);
-}
 static NSView* Host(NSButton* button) {
   if (@available(macOS 26.0, *)) {
     for (NSView* host = button; host; host = host.superview) {
@@ -57,7 +54,7 @@ static NSView* Host(NSButton* button) {
   return button;
 }
 static void PlaceUnderCursor(NSPanel* panel) {
-  NSPoint mouse = [NSEvent mouseLocation];
+  NSPoint mouse = ParcNativePointerLocation();
   NSRect frame = panel.frame;
   frame.origin = NSMakePoint(mouse.x - frame.size.width * 0.5,
                              mouse.y - frame.size.height * 0.5);
@@ -98,6 +95,7 @@ static NSImage* Cue(void) {
 
 - (void)setUp {
   [super setUp];
+  ParcNativeResetPointer();
   _video = [NSView new];
   _last = PCVideoPiPClose;
   __weak VideoPiPWindowTests* weak = self;
@@ -105,12 +103,13 @@ static NSImage* Cue(void) {
       sourceFrame:NSMakeRect(20, 20, 640, 360)
       action:^(PCVideoPiPAction action, double value) {
         VideoPiPWindowTests* test = weak;
+        if (!test) return;
         ++test->_actions;
         test->_last = action;
       }
       changed:^{
         VideoPiPWindowTests* test = weak;
-        ++test->_changes;
+        if (test) ++test->_changes;
       }];
 }
 
@@ -313,23 +312,23 @@ static NSImage* Cue(void) {
 - (void)testHoveredControlsShowThePointingHandWithoutActivatingParc {
   NSButton* play = [self hoveredPlayButton];
   EXPECT(Host(play).layer.transform.m11 > 1.09);
-  EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
+  EXPECT(ParcNativeCursor() == NSCursor.pointingHandCursor);
   EXPECT(!NSApp.active);
-  EXPECT(Shows(NSCursor.pointingHandCursor));
+  EXPECT(ParcNativeBackgroundCursorEnabled());
   EXPECT(!_presenter.panel.keyWindow);
 }
 
 - (void)testHidingTheControlsRestoresTheArrow {
   NSButton* play = [self hoveredPlayButton];
   [_presenter setControlsVisible:NO];
-  EXPECT([NSCursor currentCursor] == NSCursor.arrowCursor);
-  EXPECT(Shows(NSCursor.arrowCursor));
+  EXPECT(ParcNativeCursor() == NSCursor.arrowCursor);
+  EXPECT(!ParcNativeBackgroundCursorEnabled());
   EXPECT(play.alphaValue < 1);
   EXPECT(Host(play).layer.transform.m11 == 1);
   [_presenter setControlsVisible:YES];
-  EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
+  EXPECT(ParcNativeCursor() == NSCursor.pointingHandCursor);
   EXPECT(play.alphaValue == 1);
-  EXPECT(Shows(NSCursor.pointingHandCursor));
+  EXPECT(ParcNativeBackgroundCursorEnabled());
 }
 
 - (void)testMovingThePanelFromUnderThePointerRestoresTheArrow {
@@ -338,21 +337,21 @@ static NSImage* Cue(void) {
   off.origin.x += 60;
   [_presenter.panel setFrame:off display:YES];
   [self.content mouseMoved:[NSEvent new]];
-  EXPECT([NSCursor currentCursor] == NSCursor.arrowCursor);
+  EXPECT(ParcNativeCursor() == NSCursor.arrowCursor);
   EXPECT(play.alphaValue < 1);
   Hover(_presenter);
-  EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
+  EXPECT(ParcNativeCursor() == NSCursor.pointingHandCursor);
 }
 
 - (void)testPointingAtAControlKeepsTheHandWhileControlsAreHidden {
   [self hoveredPlayButton];
   PCPictureInPicturePointAtControl(YES);
   [_presenter setControlsVisible:NO];
-  EXPECT(Shows(NSCursor.pointingHandCursor));
+  EXPECT(ParcNativeBackgroundCursorEnabled());
   PCPictureInPicturePointAtControl(NO);
-  EXPECT(Shows(NSCursor.arrowCursor));
+  EXPECT(!ParcNativeBackgroundCursorEnabled());
   [_presenter setControlsVisible:YES];
-  EXPECT(Shows(NSCursor.pointingHandCursor));
+  EXPECT(ParcNativeBackgroundCursorEnabled());
 }
 
 - (void)testWindowChipsAreRoundAndActionsTakeTheirTitles {
