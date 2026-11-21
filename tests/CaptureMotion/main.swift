@@ -77,19 +77,22 @@ import AppKit
         let context = CGContext(data: nil, width: 200, height: 100, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
         let pixels = context.makeImage()!
-        overlay.showPreview(pixels); overlay.layoutSubtreeIfNeeded(); overlay.focusPreferredControl()
+        overlay.showPreview(pixels, sourceRect: NSRect(x: 100, y: 100, width: 200, height: 100))
+        overlay.layoutSubtreeIfNeeded(); overlay.focusPreferredControl()
         let palette = overlay.palette, search = palette.view.search
         check(search.textField.currentEditor() === window.firstResponder, "Preview starts in the palette's native search editor")
         check(palette.isPresented && palette.card.superview === overlay && overlay.bounds.contains(palette.card.frame),
               "The palette is a Notes card inside the capture overlay")
         check(palette.card.frame.minX >= overlay.imageRect.maxX || palette.card.frame.maxX <= overlay.imageRect.minX
               || palette.card.frame.minY >= overlay.imageRect.maxY, "The palette sits beside the captured image")
-        check(palette.view.list.highlightedItem == nil, "No row is filled before the pointer or keyboard picks one")
+        check(palette.highlightedRow?.id == "library", "Save to Library is highlighted on open so one Return saves the capture")
         check(overlay.nextKeyView == nil, "Preview keeps focus in the palette instead of a row key loop")
         check(palette.perform(#selector(NSResponder.insertTab(_:)), in: .main, editor: nil), "Tab stays in the palette like Notes menus")
         overlay.setEaselDestinations([CaptureEaselDestination(id: UUID(), title: "Moodboard", lastActive: nil)])
-        check(palette.perform(#selector(NSResponder.moveDown(_:)), in: .main, editor: nil)
-              && palette.highlightedRow?.id == "library", "The first arrow press highlights the first row")
+        check(palette.highlightedRow?.id == "library", "New Easel destinations keep Save to Library highlighted")
+        check(palette.perform(#selector(NSResponder.moveDown(_:)), in: .main, editor: nil) && palette.highlightedRow?.id != "library"
+              && palette.perform(#selector(NSResponder.moveUp(_:)), in: .main, editor: nil) && palette.highlightedRow?.id == "library",
+              "Arrow keys move the highlight off Save to Library and back")
         var outputs: [CapturePaletteAction] = []; overlay.onAction = { outputs.append($0) }
         let marked = MarkedEditor()
         let handled = palette.perform(#selector(NSResponder.insertNewline(_:)), in: .main, editor: marked)
