@@ -655,7 +655,7 @@ final class EaselToolPalette: NSView {
         if EaselTool.stamp.isAvailable { result.append((.tool(.stamp), 2)) }
         result.append((.menu(.media), 3))
         result.append((.menu(.web), 3))
-        result.append((.menu(.code), 3))
+        if !offeredKinds(.code).isEmpty { result.append((.menu(.code), 3)) }
         if showsMermaid { result.append((.insert(.mermaid), 3)) }
         if showsTemplates { result.append((.insert(.templates), 3)) }
         result.append((.zoom, 4))
@@ -698,7 +698,7 @@ final class EaselToolPalette: NSView {
                 self.toggle(.menu(menu), from: button)
             }
             if menu == .shapes { attachDrag(to: button) { [weak self] in self?.shape == .ellipse ? .ellipse : .rectangle } }
-            if menu == .code { attachDrag(to: button) { [weak self] in self?.lastKind[.code] == .codeBlock ? .codeBlock : nil } }
+            if menu == .code { attachDrag(to: button) { [weak self] in self?.primaryKind(.code) == .codeBlock ? .codeBlock : nil } }
         case .insert:
             break
         case .zoom:
@@ -749,7 +749,7 @@ final class EaselToolPalette: NSView {
             case .connectors: onTool?(connector, button)
             case .draw: onTool?(brush.isAvailable ? brush : .marker, button)
             case .media, .web, .code:
-                if let group = menu.group, let kind = lastKind[group] { perform(kind, from: button) }
+                if let group = menu.group, let kind = primaryKind(group) { perform(kind, from: button) }
             }
         case .insert(let insert):
             closeMenu()
@@ -757,6 +757,16 @@ final class EaselToolPalette: NSView {
         case .zoom:
             toggle(entry, from: button)
         }
+    }
+
+    private func offeredKinds(_ group: EaselInsertKind.Group) -> [EaselInsertKind] {
+        group.kinds.filter { $0 != .codeBlock || EaselTool.codeBlock.isAvailable }
+    }
+
+    private func primaryKind(_ group: EaselInsertKind.Group) -> EaselInsertKind? {
+        let offered = offeredKinds(group)
+        if let last = lastKind[group], offered.contains(last), canInsert(last) { return last }
+        return offered.first(where: canInsert)
     }
 
     private func perform(_ kind: EaselInsertKind, from button: NSButton?) {
@@ -785,7 +795,7 @@ final class EaselToolPalette: NSView {
                 button.isCurrent = self.tool == tool
             case .menu(let menu) where menu.group != nil:
                 guard let group = menu.group else { continue }
-                let last = lastKind[group] ?? group.firstKind
+                let last = primaryKind(group) ?? lastKind[group] ?? group.firstKind
                 button.content = .icon(group.icon)
                 button.setAccessibilityLabel(group.title)
                 button.setToolTip("Add " + last.title, shortcut: last == .codeBlock ? EaselTool.codeBlock.key?.label : nil, anchor: .top)
@@ -952,10 +962,10 @@ final class EaselToolPalette: NSView {
             return shapes + [NoteMenuList.Item(id: "mind-map", title: "Mind map", icon: .symbol(Self.mindMapSymbol), separatorBefore: true)]
         case .media, .web, .code:
             guard let group = menu.group else { return [] }
-            return group.kinds.map { kind in
+            return offeredKinds(group).map { kind in
                 NoteMenuList.Item(id: kind.rawValue, title: kind.title, subtitle: kind.summary, icon: kind.icon,
                                   shortcut: kind == .codeBlock ? EaselTool.codeBlock.key?.label : nil,
-                                  isChecked: lastKind[group] == kind, isEnabled: canInsert(kind))
+                                  isChecked: primaryKind(group) == kind, isEnabled: canInsert(kind))
             }
         case .connectors:
             return Self.connectorTools.map { tool in

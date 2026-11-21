@@ -48,11 +48,13 @@ Three variant buttons put Notes blocks on the board. **Media** (photo glyph) off
 Image, Video, Audio, File and PDF; **Web** (globe glyph) offers Embed and
 Bookmark; **Code** offers Code block and Block equation. A click inserts the
 kind chosen last from that button's menu (Image, Embed and Code block to begin
-with); the chevron, or a second click while the code tool is armed, opens a
+with), or the first kind that is available when the last one isn't (Web falls
+back to Bookmark where an Easel can't host a page); the chevron, or a second click while the code tool is armed, opens a
 detailed Notes menu opening upward, with the last kind checked. Titles, glyphs
 and one-line subtitles come from the Notes block catalog, so a row reads the
-same in a note's slash menu and here. Embed stays dimmed where the Easel can't
-host a page. Choosing a media kind, Embed, Bookmark or Block equation places an
+same in a note's slash menu and here. Embed stays dimmed, in this menu and in the
+⌘/ list alike, where the Easel can't host a page; Code block leaves the Code menu
+(and the button itself if nothing else is left) where the code tool isn't offered. Choosing a media kind, Embed, Bookmark or Block equation places an
 empty object at the middle of the uncovered view with `placeEmptyObject`, one
 Undo step, selected and ready for its upload or link card; Code block arms the
 code tool exactly as before, and dragging the Code button while Code block is the
