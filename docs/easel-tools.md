@@ -142,8 +142,10 @@ pinch or click stops it. Zoom never saves into the document and plays no
 haptics; the pinch's 100% pulse is unchanged.
 
 The band under the bar counts as covered: the canvas gets a matching bottom
-inset (`setCoveredBottom`), so scrolling to the end and revealing an object
-stop above the bar, and the one-time quick-create tip floats just above it. A
+inset (`setCoveredBottom`), so scrolling to the end, revealing an object and
+the caret of any text, sticky, shape, label, table cell or code block being
+typed in all stop above the bar, and the one-time quick-create tip floats just
+above it. A
 Recenter chip floats just above the bar once nothing in the Easel is anywhere
 near the uncovered view, and zooms back to fit everything (never past 100%).
 An Easel that opens with content beyond the uncovered view starts zoomed to
