@@ -104,12 +104,10 @@ fades in place, deletes fade without shrinking and layer moves don't animate.
 
 ## Checks
 
-`scripts/test-easel-motion.sh` covers both threshold directions, inclusive
-initial-band silence, repeated crossings, invalid samples, native magnification
-notifications, source replacement and immediate visibility reversal. Feedback
-is injected, so the component does not emit physical haptics. The windowless
-`EaselObjectMotionTests` suite covers pop, fade, glide, lift and Reduce Motion
-curves, chained glides, ghost bookkeeping and the document diffs. Shared capture
-checks protect original pixels and independent in-memory history. The Easel
-canvas suite zooms a real canvas in its scroll view 3,000 times while resizing
-from every bounds change and requires each step to settle.
+`EaselMotionTests` covers crossings of actual size, initial-band silence, invalid
+samples, native magnification notifications, source replacement and immediate
+visibility changes. Feedback goes to a test callback. `EaselMotionCanvasTests`
+covers handle visibility and action admission during and after a pinch.
+`EaselCanvasTests` checks that the canvas settles to cover the scroll viewport
+after magnification changes. `EaselObjectMotionTests` covers pop, fade, glide,
+lift and Reduce Motion curves, chained glides, ghost bookkeeping and document diffs.
