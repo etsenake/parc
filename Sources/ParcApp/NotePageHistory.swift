@@ -359,7 +359,7 @@ final class NotePageHistoryView: NSView, NoteFloatingPanelContent {
     private let divider = NSView()
     private let headerRule = NSView()
     private let scroll = NSScrollView()
-    private let preview = NSTextView(usingTextLayoutManager: false)
+    private let preview = NoteCursorTextView(usingTextLayoutManager: false)
     private let emptyLabel = NSTextField(wrappingLabelWithString: "No snapshots yet. Keep writing and Parc will tuck one away every few minutes.")
     private let restore = NoteChip("Restore", icon: .symbol("clock.arrow.circlepath"), style: .filled)
     private let cancel = NoteChip("Close", style: .ghost)

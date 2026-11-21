@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-final class NoteEquationTextView: NSTextView {
+final class NoteEquationTextView: NoteCursorTextView {
     var onCommit: (() -> Void)?
     var onCancel: (() -> Void)?
 

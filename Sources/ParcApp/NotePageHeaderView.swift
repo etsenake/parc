@@ -667,7 +667,7 @@ final class NotePageTitleErrorView: NSView {
 }
 
 @MainActor
-final class NotePageTitleView: NSTextView, NoteFindPaintable {
+final class NotePageTitleView: NoteCursorTextView, NoteFindPaintable {
     var onEdit: ((String) -> Void)?
     var onEndEditing: (() -> Void)?
     var onReturn: (() -> Void)?

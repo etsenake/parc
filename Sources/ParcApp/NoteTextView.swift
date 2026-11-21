@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-class NoteTextView: NSTextView {
+class NoteTextView: NoteCursorTextView {
     enum ClickTarget: Equatable {
         case link(String)
         case atom(NoteAtom)
@@ -42,7 +42,6 @@ class NoteTextView: NSTextView {
     private var renderingDeferred = false
     private var lastContentHeight: CGFloat = 0
     private var hoveredRange: NSRange?
-    private var hoverArea: NSTrackingArea?
     private var equationPanel: NoteFloatingPanel?
     private var equationEdit: (offset: Int, original: NoteText)?
     private var equationMonitor: Any?
@@ -391,7 +390,7 @@ class NoteTextView: NSTextView {
         guard focused != isFocused else { return }
         isFocused = focused
         needsDisplay = true
-        updateHoverCursor()
+        refreshPointerCursor()
         onFocusChange?(focused)
     }
 
@@ -471,7 +470,7 @@ class NoteTextView: NSTextView {
 
     override func flagsChanged(with event: NSEvent) {
         super.flagsChanged(with: event)
-        updateHoverCursor(modifiers: event.modifierFlags)
+        refreshPointerCursor(modifiers: event.modifierFlags)
     }
 
     override func updateDragTypeRegistration() {}
@@ -632,54 +631,36 @@ class NoteTextView: NSTextView {
         }
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                                  owner: self, userInfo: nil)
-        addTrackingArea(area)
-        hoverArea = area
+    override func pointerCursor(at point: NSPoint, modifiers: NSEvent.ModifierFlags) -> NSCursor {
+        if let link = equationLink(at: point), link.resolved { return .pointingHand }
+        if let hit = clickTarget(at: point), opensOnClick(modifiers, target: hit.target) { return .pointingHand }
+        return super.pointerCursor(at: point, modifiers: modifiers)
     }
 
-    override func mouseMoved(with event: NSEvent) {
-        super.mouseMoved(with: event)
+    override func pointerMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        updateHover(at: point, modifiers: event.modifierFlags)
-        if let link = equationLink(at: point) {
-            if link.resolved {
-                NSCursor.pointingHand.set()
-                if parcTooltip != nil { parcTooltip = nil }
-            } else {
-                parcTooltip = TooltipConfiguration(NotePageMath.missingReferenceTooltip(link.key), anchor: .bottom, anchorRect: link.rect)
-            }
+        updateHover(at: point)
+        if let link = equationLink(at: point), !link.resolved {
+            parcTooltip = TooltipConfiguration(NotePageMath.missingReferenceTooltip(link.key), anchor: .bottom, anchorRect: link.rect)
         } else if parcTooltip != nil {
             parcTooltip = nil
         }
     }
 
-    override func mouseExited(with event: NSEvent) {
-        super.mouseExited(with: event)
+    override func pointerExited(with event: NSEvent) {
         resetHover()
+        if parcTooltip != nil { parcTooltip = nil }
     }
 
-    private func updateHover(at point: NSPoint, modifiers: NSEvent.ModifierFlags) {
+    private func updateHover(at point: NSPoint) {
         let hit = clickTarget(at: point)
         let range = hit.map { NSRange(location: $0.range.lowerBound, length: $0.range.count) }
-        if range != hoveredRange {
-            resetHover()
-            if let range, case .link = hit?.target {
-                layoutManager?.addTemporaryAttribute(.underlineColor, value: NoteTheme.link, forCharacterRange: range)
-            }
-            hoveredRange = range
+        guard range != hoveredRange else { return }
+        resetHover()
+        if let range, case .link = hit?.target {
+            layoutManager?.addTemporaryAttribute(.underlineColor, value: NoteTheme.link, forCharacterRange: range)
         }
-        if let hit, opensOnClick(modifiers, target: hit.target) { NSCursor.pointingHand.set() }
-    }
-
-    private func updateHoverCursor(modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags) {
-        guard let window, hoveredRange != nil else { return }
-        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        guard bounds.contains(point) else { return }
-        if let hit = clickTarget(at: point), opensOnClick(modifiers, target: hit.target) { NSCursor.pointingHand.set() } else { NSCursor.iBeam.set() }
+        hoveredRange = range
     }
 
     private func resetHover() {
