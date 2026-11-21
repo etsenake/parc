@@ -87,6 +87,8 @@ enum NoteClipboard {
         return archive
     }
 
+    static let draggedImageHTMLType = NSPasteboard.PasteboardType("org.chromium.image-html")
+
     static func read(_ pasteboard: NSPasteboard) -> Reading {
         var reading = Reading()
         let types = Set(pasteboard.types ?? [])
@@ -103,6 +105,7 @@ enum NoteClipboard {
             }
         }
         if types.contains(.html) { reading.html = pasteboard.string(forType: .html) }
+        if reading.html == nil, types.contains(draggedImageHTMLType) { reading.html = pasteboard.string(forType: draggedImageHTMLType) }
         if types.contains(.string) { reading.string = pasteboard.string(forType: .string) }
         if reading.string == nil, types.contains(markdownType) { reading.string = pasteboard.string(forType: markdownType) }
         if types.contains(.URL), let link = NSURL(from: pasteboard) as URL?, !link.isFileURL { reading.url = link }

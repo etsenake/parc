@@ -603,6 +603,13 @@ struct NoteClipboardTests {
         board.setString("fallback", forType: .string)
         let broken = NoteClipboard.read(board)
         expect(broken.archive == nil && NoteClipboard.choose(broken, plainOnly: false, canReadHTML: true) == .plainText, "broken archives fall back to text")
+        board.clearContents()
+        board.declareTypes([.URL, NoteClipboard.draggedImageHTMLType], owner: nil)
+        board.setString("https://example.com/cat.jpg", forType: .URL)
+        board.setString("<img src=\"https://example.com/cat.jpg\">", forType: NoteClipboard.draggedImageHTMLType)
+        let dragged = NoteClipboard.read(board)
+        expect(dragged.html?.contains("cat.jpg") == true, "images dragged from a page carry their markup")
+        expect(NoteClipboard.choose(dragged, plainOnly: false, canReadHTML: true) == .html, "images dragged from a page become image blocks")
     }
 
     static func plainLines() {
