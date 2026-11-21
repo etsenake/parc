@@ -934,8 +934,9 @@ struct NoteDateParser {
             if !found.contains(mention) { found.append(mention) }
         }
         if let parts = Self.rangeParts(text) {
-            if let whole = parts.end.isEmpty ? nil : range(parts.start, parts.end) {
-                add(whole)
+            let wholes = parts.end.isEmpty ? [] : readings(of: text)
+            if !wholes.isEmpty {
+                wholes.forEach(add)
             } else {
                 var endings = Self.completions.filter { $0.hasPrefix(parts.end) && parts.end.count >= 2 }
                 if let month = completingMonth(parts.end) { endings.append(month) }
@@ -944,7 +945,7 @@ struct NoteDateParser {
                           let last = candidate.endDate(in: calendar), last.timeIntervalSince(first) <= 366 * 86_400 else { continue }
                     add(candidate)
                 }
-                add(single(parts.start))
+                readings(of: parts.start).forEach(add)
             }
         } else if text.isEmpty {
             if remind {
@@ -955,7 +956,7 @@ struct NoteDateParser {
             }
         } else {
             for word in ["today", "tomorrow", "yesterday"] where word.hasPrefix(text) { add(parse(word)) }
-            add(parse(text))
+            readings(of: text).forEach(add)
             var extra = 0
             for phrase in Self.completions where phrase.hasPrefix(text) && phrase != text && text.count >= 2 && extra < 3 {
                 let before = found.count
@@ -964,7 +965,59 @@ struct NoteDateParser {
             }
             if found.isEmpty, let completed = completingMonth(text) { add(parse(completed)) }
         }
-        return found.prefix(limit).map { NoteDateSuggestion(mention: $0, title: NoteDateFormatting.label($0, now: now, calendar: calendar, locale: locale)) }
+        return found.prefix(limit).map(suggestion)
+    }
+
+    func passedReminder(for query: String) -> NoteDateSuggestion? {
+        let options = readings(of: query).map(reminderVersion)
+        guard let latest = options.first, options.allSatisfy({ fireDate(for: $0).map { $0 <= now } ?? true }) else { return nil }
+        return suggestion(latest)
+    }
+
+    func readings(of query: String) -> [NoteDateMention] {
+        let text = Self.clean(query)
+        let variants = Self.meridiemVariants(text)
+        guard !variants.isEmpty else { return parse(text).map { [$0] } ?? [] }
+        var found: [NoteDateMention] = []
+        for variant in variants {
+            guard let mention = parse(variant.text), plausible(mention, mixed: variant.mixed), !found.contains(mention) else { continue }
+            found.append(mention)
+        }
+        return found.sorted { first, second in
+            let a = date(of: first) ?? now, b = date(of: second) ?? now
+            if (a > now) != (b > now) { return a > now }
+            return a > now ? a < b : a > b
+        }
+    }
+
+    private func plausible(_ mention: NoteDateMention, mixed: Bool) -> Bool {
+        guard let end = mention.end, end.hour != nil, let first = date(of: mention), let last = mention.endDate(in: calendar) else { return true }
+        let sameDay = end.year == mention.year && end.month == mention.month && end.day == mention.day
+        guard sameDay else { return !mixed }
+        let span = last.timeIntervalSince(first)
+        return span > 0 && span < 12 * 3600
+    }
+
+    private static func meridiemVariants(_ text: String) -> [(text: String, mixed: Bool)] {
+        let pattern = #"(?<![\d:])(?:\d{1,2}:\d{2}|(?<=\bat\s)\d{1,2})(?!\d|\s*(?:am|pm|a\.m\.|p\.m\.|a|p)(?=\s|$))"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let source = text as NSString
+        let spots = expression.matches(in: text, range: NSRange(location: 0, length: source.length)).filter { found in
+            let hour = Int(source.substring(with: found.range).prefix { $0 != ":" }) ?? 0
+            return (1...12).contains(hour)
+        }.prefix(2).map(\.range)
+        guard !spots.isEmpty else { return [] }
+        var combos: [[String]] = [[]]
+        for _ in spots { combos = combos.flatMap { [$0 + ["am"], $0 + ["pm"]] } }
+        return combos.map { combo in
+            let value = NSMutableString(string: text)
+            for (spot, meridiem) in zip(spots, combo).reversed() { value.insert(meridiem, at: spot.location + spot.length) }
+            return (value as String, Set(combo).count > 1)
+        }
+    }
+
+    private func suggestion(_ mention: NoteDateMention) -> NoteDateSuggestion {
+        NoteDateSuggestion(mention: mention, title: NoteDateFormatting.label(mention, now: now, calendar: calendar, locale: locale, nearbyWeekdays: false))
     }
 
     func isPlausiblePrefix(_ query: String) -> Bool {
@@ -1295,20 +1348,20 @@ struct NoteDateParser {
 
 enum NoteDateFormatting {
     static func label(_ mention: NoteDateMention, now: Date = Date(), calendar: Calendar = .autoupdatingCurrent,
-                      locale: Locale = .autoupdatingCurrent) -> String {
+                      locale: Locale = .autoupdatingCurrent, nearbyWeekdays: Bool = true) -> String {
         var start = mention
         start.end = nil
-        let first = dayLabel(start, now: now, calendar: calendar, locale: locale)
+        let first = dayLabel(start, now: now, calendar: calendar, locale: locale, nearbyWeekdays: nearbyWeekdays)
         guard let end = mention.end else { return first }
         let finish = NoteDateMention(year: end.year, month: end.month, day: end.day, hour: end.hour, minute: end.minute)
         if end.year == mention.year, end.month == mention.month, end.day == mention.day, mention.includesTime, end.hour != nil,
            let date = calendar.date(from: finish.components) {
             return first + NoteDateText.arrow + format(date, template: "jmm", calendar: calendar, locale: locale)
         }
-        return first + NoteDateText.arrow + dayLabel(finish, now: now, calendar: calendar, locale: locale)
+        return first + NoteDateText.arrow + dayLabel(finish, now: now, calendar: calendar, locale: locale, nearbyWeekdays: nearbyWeekdays)
     }
 
-    private static func dayLabel(_ mention: NoteDateMention, now: Date, calendar: Calendar, locale: Locale) -> String {
+    private static func dayLabel(_ mention: NoteDateMention, now: Date, calendar: Calendar, locale: Locale, nearbyWeekdays: Bool) -> String {
         guard let date = calendar.date(from: DateComponents(year: mention.year, month: mention.month, day: mention.day,
                                                             hour: mention.hour ?? 12, minute: mention.minute ?? 0)) else {
             return NoteAtom.date(mention).fallbackText
@@ -1322,7 +1375,8 @@ enum NoteDateFormatting {
         case -1: day = "Yesterday"
         default:
             let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
-            day = format(date, template: sameYear ? (days > 1 && days < 7 ? "EEEE" : "EEEMMMd") : "MMMdy", calendar: calendar, locale: locale)
+            let template = sameYear ? (nearbyWeekdays && days > 1 && days < 7 ? "EEEE" : "EEEMMMd") : (nearbyWeekdays ? "MMMdy" : "EEEMMMdy")
+            day = format(date, template: template, calendar: calendar, locale: locale)
         }
         if mention.includesTime { day += " " + format(date, template: "jmm", calendar: calendar, locale: locale) }
         return day

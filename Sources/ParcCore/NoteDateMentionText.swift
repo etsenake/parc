@@ -186,6 +186,20 @@ enum NoteDateText {
         }
         return moments.min()
     }
+
+    static func suggestionDateHint(_ mention: NoteDateMention, now: Date, calendar: Calendar, locale: Locale) -> String? {
+        let ends = [mention.startDay] + (mention.endDay.map { $0 == mention.startDay ? [] : [$0] } ?? [])
+        let named = ends.filter { day in dayDistance(day, from: now, calendar: calendar).flatMap(relativeWord) != nil }
+        let dates = named.compactMap { calendar.date(from: DateComponents(year: $0.year, month: $0.month, day: $0.day, hour: 12)) }
+        guard let first = dates.first, let last = dates.last else { return nil }
+        let thisYear = calendar.component(.year, from: now)
+        let formatter = DateIntervalFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = locale
+        formatter.dateTemplate = dates.allSatisfy { calendar.component(.year, from: $0) == thisYear } ? "MMMd" : "yMMMd"
+        return formatter.string(from: first, to: last)
+    }
 }
 
 enum NoteReminderLead {

@@ -26,7 +26,7 @@ struct NoteDateMentionTests {
     }
 
     static func plain(_ value: String) -> String {
-        String(value.unicodeScalars.map { $0 == "\u{202F}" || $0 == "\u{00A0}" ? " " : Character($0) })
+        String(value.unicodeScalars.map { $0 == "\u{202F}" || $0 == "\u{00A0}" || $0 == "\u{2009}" ? " " : Character($0) })
     }
 
     static func label(_ mention: NoteDateMention, now: Date? = now) -> String {
@@ -52,6 +52,7 @@ struct NoteDateMentionTests {
         reminders()
         leads()
         parser()
+        hints()
         print("NoteDateMentionTests passed")
     }
 
@@ -99,7 +100,7 @@ struct NoteDateMentionTests {
         expect(parser.suggestions(for: "jan 3 \u{2192} ja").contains { describe($0.mention) == "2027-01-03" }, "and keeps offering it")
         let whole = parser.suggestions(for: "jan 3 \u{2192} jan 5")
         expectEqual(describe(whole.first?.mention), "2027-01-03 > 2027-01-05", "a typed range is the first suggestion")
-        expectEqual(plain(whole.first?.title ?? ""), "Jan 3, 2027 \u{2192} Jan 5, 2027", "and reads as a range")
+        expectEqual(plain(whole.first?.title ?? ""), "Sun, Jan 3, 2027 \u{2192} Tue, Jan 5, 2027", "and reads as a range")
         expect(!parser.suggestions(for: "jan 3 \u{2192} jan").contains { ($0.mention.end?.year ?? 0) > 2027 }, "completions stay near the start")
         expect(parser.isPlausiblePrefix("jan 3 \u{2192} ja"), "an arrow keeps the menu open")
         expect(parser.isPlausiblePrefix("jan 3 to"), "so does to")
@@ -122,6 +123,88 @@ struct NoteDateMentionTests {
                                                                                                               hour: 15, minute: 30, remind: true))))]),
                                                parser: parser)
         expectEqual(ordinary.first?.key, "2026-11-21T15:30", "plain reminders keep their old key")
+    }
+
+    static func hints() {
+        let parser = NoteDateParser(now: now, calendar: calendar, dayFirst: false, locale: locale)
+        func hint(_ mention: NoteDateMention, at moment: Date = now) -> String? {
+            NoteDateText.suggestionDateHint(mention, now: moment, calendar: calendar, locale: locale).map(plain)
+        }
+        func row(_ query: String, remind: Bool = false) -> (String, String?)? {
+            guard let first = parser.suggestions(for: query, remind: remind).first else { return nil }
+            return (plain(first.title), hint(first.mention))
+        }
+        func check(_ query: String, remind: Bool = false, _ title: String, _ wanted: String?) {
+            let found = row(query, remind: remind)
+            expectEqual(found?.0, title, "\"\(query)\" title")
+            expectEqual(found?.1, wanted, "\"\(query)\" date beside the title")
+        }
+        check("today", "Today", "Nov 20")
+        check("tomorrow", "Tomorrow", "Nov 21")
+        check("yesterday", "Yesterday", "Nov 19")
+        check("nov 24", "Tue, Nov 24", nil)
+        check("next friday", "Fri, Nov 27", nil)
+        check("dec 3", "Thu, Dec 3", nil)
+        check("in 2 weeks", "Fri, Dec 4", nil)
+        check("jan 3", "Sun, Jan 3, 2027", nil)
+        check("nov 24", remind: true, "Tue, Nov 24 9:00 AM", nil)
+        check("nov 29", remind: true, "Sun, Nov 29 9:00 AM", nil)
+        check("tomorrow", remind: true, "Tomorrow 9:00 AM", "Nov 21")
+        check("nov 24 - 26", "Tue, Nov 24 \u{2192} Thu, Nov 26", nil)
+        check("today until monday", "Today \u{2192} Mon, Nov 23", "Nov 20")
+        check("tomorrow 3pm - 5pm", "Tomorrow 3:00 PM \u{2192} 5:00 PM", "Nov 21")
+        check("jan 3 - 5", "Sun, Jan 3, 2027 \u{2192} Tue, Jan 5, 2027", nil)
+
+        var both = NoteDateMention(year: 2026, month: 11, day: 20)
+        both.end = NoteDateEnd(year: 2026, month: 11, day: 21)
+        expectEqual(hint(both), "Nov 20 – 21", "a range of two named days dates both ends")
+        let newYear = at(2026, 12, 31, 10)
+        expectEqual(hint(NoteDateMention(year: 2027, month: 1, day: 1), at: newYear), "Jan 1, 2027", "tomorrow in another year shows the year")
+
+        let evening = NoteDateParser(now: at(2026, 11, 20, 20, 31), calendar: calendar, dayFirst: false, locale: locale)
+        expect(evening.suggestions(for: "today 8:31pm", remind: true).isEmpty, "a reminder for this minute can't be set")
+        let passed = evening.passedReminder(for: "today 8:31pm")
+        expectEqual(describe(passed?.mention), "2026-11-20 20:31", "but it is still recognised")
+        expectEqual(passed.map { plain($0.title) }, "Today 8:31 PM", "and named")
+        expectEqual(describe(evening.passedReminder(for: "nov 19 3pm")?.mention), "2026-11-19 15:00", "earlier days have passed too")
+        expect(evening.passedReminder(for: "today 9pm") == nil, "later today has not passed")
+        expect(evening.passedReminder(for: "banana") == nil, "nonsense has not passed")
+        meridiems()
+    }
+
+    static func meridiems() {
+        let morning = NoteDateParser(now: now, calendar: calendar, dayFirst: false, locale: locale)
+        let evening = NoteDateParser(now: at(2026, 11, 20, 20, 33), calendar: calendar, dayFirst: false, locale: locale)
+        func offers(_ parser: NoteDateParser, _ query: String, remind: Bool = false) -> [String?] {
+            parser.suggestions(for: query, remind: remind).map { describe($0.mention) }
+        }
+        func check(_ parser: NoteDateParser, _ query: String, remind: Bool = false, _ wanted: [String], _ message: String) {
+            expectEqual(offers(parser, query, remind: remind), wanted, "\"\(query)\" " + message)
+        }
+        check(evening, "nov 20th 8:40", remind: true, ["2026-11-20 20:40"], "only offers the reading still ahead")
+        check(evening, "8:40", remind: true, ["2026-11-20 20:40"], "a bare time does the same")
+        check(evening, "at 8:40", remind: true, ["2026-11-20 20:40"], "with at too")
+        check(morning, "nov 21 8:40", remind: true, ["2026-11-21 08:40", "2026-11-21 20:40"], "offers both readings, nearest first")
+        check(morning, "11:15", remind: true, ["2026-11-20 11:15", "2026-11-20 23:15"], "a bare time offers both readings")
+        check(morning, "tomorrow at 7", remind: true, ["2026-11-21 07:00", "2026-11-21 19:00"], "an hour after at is ambiguous too")
+        check(evening, "8:40", ["2026-11-20 20:40", "2026-11-20 08:40"], "as a date puts the upcoming reading first")
+        check(morning, "12:30", ["2026-11-20 12:30", "2026-11-20 00:30"], "twelve reads as noon or just after midnight")
+        check(morning, "13:00", ["2026-11-20 13:00"], "a 24-hour time has one reading")
+        check(morning, "0:30", ["2026-11-20 00:30"], "and so does midnight hour")
+        check(morning, "8:40pm", ["2026-11-20 20:40"], "pm settles it")
+        check(morning, "8:40 am", ["2026-11-20 08:40"], "and so does am")
+        check(morning, "tomorrow at noon", ["2026-11-21 12:00"], "noon is never ambiguous")
+        check(morning, "nov 21 8:00 - 9:30", ["2026-11-21 08:00 > 2026-11-21 09:30", "2026-11-21 20:00 > 2026-11-21 21:30"],
+              "a range keeps both ends in the same half of the day")
+        check(morning, "11:00 - 1:00", ["2026-11-20 11:00 > 2026-11-20 13:00"], "a range over noon reads as one")
+        check(evening, "8:00 - 9:30", remind: true, [], "a range already over has nothing to remind")
+        check(morning, "3:00-5:00pm", ["2026-11-20 15:00 > 2026-11-20 17:00"], "an end with pm settles its start")
+        check(morning, "nov 21 8:40 - 23", ["2026-11-21 08:40 > 2026-11-23 08:40", "2026-11-21 20:40 > 2026-11-23 20:40"],
+              "a day range shares the time")
+
+        let passed = evening.passedReminder(for: "today 8:31")
+        expectEqual(describe(passed?.mention), "2026-11-20 20:31", "every reading passed names the latest")
+        expect(evening.passedReminder(for: "nov 20 8:40") == nil, "one reading ahead means nothing has passed")
     }
 
     static func codec() {

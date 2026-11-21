@@ -69,10 +69,16 @@ enum NoteMentionMenu {
             let reminders = parser.suggestions(for: reminder.remind ? reminder.query : query, remind: true, limit: reminder.remind ? 4 : (query.isEmpty ? 1 : 2))
             for (index, suggestion) in reminders.enumerated() {
                 let id = "remind.\(index)"
-                var item = NoteMenuList.Item(id: id, title: suggestion.title, subtitle: nil, icon: .symbol("bell"), section: remindSection)
+                var item = NoteMenuList.Item(id: id, title: suggestion.title, subtitle: subtitle(for: suggestion.mention, parser: parser), icon: .symbol("bell"), section: remindSection)
                 item.accessibilityLabel = "Remind me " + NoteDateFormatting.longLabel(suggestion.mention, calendar: parser.calendar, locale: parser.locale)
                 result.items.append(item)
                 result.choices[id] = .date(suggestion.mention)
+            }
+            if reminders.isEmpty, reminder.remind, let passed = parser.passedReminder(for: reminder.query) {
+                var item = NoteMenuList.Item(id: "remind.passed", title: passed.title, subtitle: "Already passed", icon: .symbol("bell"), section: remindSection)
+                item.isEnabled = false
+                item.accessibilityLabel = NoteDateFormatting.longLabel(passed.mention, calendar: parser.calendar, locale: parser.locale) + " has already passed"
+                result.items.append(item)
             }
         }
         if let creating { result.items.append(creating) }
@@ -101,10 +107,6 @@ enum NoteMentionMenu {
     }
 
     static func subtitle(for mention: NoteDateMention, parser: NoteDateParser) -> String? {
-        guard let date = parser.date(of: mention) else { return nil }
-        let days = parser.calendar.dateComponents([.day], from: parser.calendar.startOfDay(for: parser.now),
-                                                  to: parser.calendar.startOfDay(for: date)).day ?? 0
-        guard abs(days) <= 1 else { return nil }
-        return NoteDateFormatting.format(date, template: "MMMd", calendar: parser.calendar, locale: parser.locale)
+        NoteDateText.suggestionDateHint(mention, now: parser.now, calendar: parser.calendar, locale: parser.locale)
     }
 }

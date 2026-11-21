@@ -105,7 +105,7 @@ struct NoteSlashDatesTests {
         expect(dec.first.map { $0.mention.month == 12 && $0.mention.day == 1 } == true, "a bare month offers its first day")
         let parsed = parser.suggestions(for: "dec 3 5pm")
         expect(plain(parsed.first?.title) == "Thu, Dec 3 5:00 PM", "parsed dates read naturally: \(parsed.first?.title ?? "")")
-        expect(parser.suggestions(for: "monday").first?.title == "Monday", "dates this week read as weekdays")
+        expect(parser.suggestions(for: "monday").first?.title == "Mon, Nov 23", "dates this week show their date")
         expect(parser.suggestions(for: "zzz").isEmpty, "nonsense suggests nothing")
 
         let remind = parser.suggestions(for: "tomorrow", remind: true)
