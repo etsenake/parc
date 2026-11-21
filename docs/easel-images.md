@@ -31,8 +31,12 @@ around the drop point as one Undo step. Each kind is checked by its first bytes,
 audio must be playable by macOS, and every file is copied into the Easel (up to
 30 MB each), keeping its original name for display and Download. Video and
 audio links (http or https) are kept as links rather than copied; a web picture
-given to Embed link is downloaded into the Easel, so Easels stay
-self-contained.
+given to Embed link (or chosen from Paste as) is downloaded into the Easel, so
+Easels stay self-contained. Those downloads share one bounded fetch: a declared
+size over 30 MB is refused before any bytes arrive and a stream that passes the
+limit is aborted, with the same too-big message a dropped file gets. A file's
+extension and type decide what it is; its first bytes are only used when the
+extension is unknown.
 
 ### Pictures
 
