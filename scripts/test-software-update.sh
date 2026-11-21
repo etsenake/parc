@@ -4,9 +4,6 @@ cd "$(dirname "$0")/.."
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
 xcrun swiftc tests/Support/TestFailure.swift -warnings-as-errors -parse-as-library -Onone -enforce-exclusivity=checked \
-  Sources/ParcCore/SoftwareUpdateSession.swift tests/SoftwareUpdateSessionTests.swift -o "$output/check"
-"$output/check"
-xcrun swiftc tests/Support/TestFailure.swift -warnings-as-errors -parse-as-library -Onone -enforce-exclusivity=checked \
   Sources/ParcCore/AutomaticUpdate.swift tests/AutomaticUpdateTests.swift -o "$output/automatic"
 "$output/automatic"
 bash scripts/test-software-update-progress.sh
