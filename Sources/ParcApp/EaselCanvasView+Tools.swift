@@ -338,8 +338,15 @@ extension EaselCanvasView {
         }
         guard let kind = tool.kind, tool.placesObjects else { return nil }
         let highest = session.document.items.map(\.zIndex).max() ?? 0
-        var item = EaselItem(id: id, kind: kind, frame: constrainedToCanvas(proposed), zIndex: highest < Int.max ? highest + 1 : highest,
-                             color: insertionColor)
+        let zIndex = highest < Int.max ? highest + 1 : highest
+        if adaptsInk, tool == .rectangle || tool == .ellipse {
+            var item = EaselShapeStyle.newItem(tool == .ellipse ? .ellipse : toolState.shape, frame: constrainedToCanvas(proposed),
+                                               ink: insertionColor, zIndex: zIndex)
+            item.id = id
+            stampRememberedStyle(on: &item)
+            return item
+        }
+        var item = EaselItem(id: id, kind: kind, frame: constrainedToCanvas(proposed), zIndex: zIndex, color: insertionColor)
         if tool == .text { item.text = EaselTextEditing.defaultText }
         if tool == .rectangle, toolState.shape != .rectangle { item.shape = toolState.shape }
         return item

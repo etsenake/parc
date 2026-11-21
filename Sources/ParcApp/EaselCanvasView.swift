@@ -1221,6 +1221,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                              width: max(EaselTextSizing.minimumWidth, width), height: 28),
                              zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1,
                              text: EaselTextEditing.defaultText, color: insertionColor)
+        stampRememberedStyle(on: &item)
         if let size = fixedCanvasSize {
             item.frame.width = min(item.frame.width, size.width)
             item.frame.x = max(0, min(item.frame.x, size.width - item.frame.width))

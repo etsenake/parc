@@ -100,8 +100,9 @@ Esc work as in the Notes colour menu, and VoiceOver reads each shape by name.
 `insertShape(_:in:editing:)` adds one shape as a single Undo step, selected
 afterwards, at the given frame or the default size in the middle of the view,
 and can open its text right away. `selectedShapes` reports the shapes in the
-selection for pickers and toolbars. These are the entry points for the
-toolbar's shape tool, drag-to-size creation and quick create.
+selection for pickers and toolbars. The shape and ellipse tools, by click or
+drag, build the same new-shape style and then apply the remembered shape style,
+so a shape drawn after restyling another matches it.
 
 ## Hit rules
 
