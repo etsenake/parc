@@ -119,7 +119,13 @@ surrogate splits, unsafe links, nonfinite fonts, excessive runs and unsupported
 attributes before mutation. A run link is an `http`, `https`, `mailto` or `tel`
 address, or a `file:` address of a Markdown or text note (a link to a note).
 Supported data includes fonts/axes, colors,
-emphasis, links, kerning, baseline offsets, paragraph tabs/lists and images.
+emphasis, links, kerning, baseline offsets, paragraph tabs/lists, images and
+inline runs. An inline run (`EaselRichText.Inline`) sits on one U+FFFC and is a
+note mention (a `file:` note or `parc://easel/` address and a title), a date
+(start, end, time, reminder, lead, time zone and format, mirroring the Notes
+`NoteDateMention`), an inline equation (TeX up to 4 KB) or a custom emoji (name
+plus at most 1 MB of PNG); each kind refuses the others' fields and unused
+fields stay out of the file. `EaselRichTextNotes.swift` maps them to `NoteAtom`.
 Missing fonts use a local fallback; opening a document does not download fonts.
 
 Paragraph commands apply to all intersecting paragraphs, excluding the next
@@ -132,7 +138,9 @@ multiple selections refuse without partial edits.
 ## Clipboard boundary
 
 Copy publishes the private version-3 rich carrier plus RTF/RTFD, plain text,
-HTML and Markdown; versions 1 and 2 remain readable. Pasting HTML, Markdown or
+HTML and Markdown; versions 1 and 2 remain readable. Inline runs travel in the
+carrier and become their words (the note's title, `@Today`, the TeX or
+`:name:`) in RTF and plain text. Pasting HTML, Markdown or
 a Notes copy into text keeps headings, lists, links, bold, italic, strike and
 code, using the Notes readers mapped onto the Easel's paragraph and font
 attributes; the private carrier still wins when it is present. Cut mutates only after publication succeeds.
@@ -158,7 +166,12 @@ Return continues it, an empty line or Backspace at its start ends it and Tab
 nests it. Single asterisks, underscores and hyphens around eligible words apply
 bold, italic and strike-through; backticks around any run of characters on one
 line make inline code, monospaced on a soft grey fill that reads on light and
-dark paper. Unsupported punctuation and doubled delimiters stay literal.
+dark paper. The Notes shortcuts come from the same table as notes
+(`NoteInputRules.inlineMatch` and `symbolMatch`): `**bold**`, `__bold__`,
+`~strike~`, `~~strike~~`, `==highlight==` (yellow), `$math$` (an inline
+equation), and `->`, `<-`, `<->`, `=>`, `>=`, `<=` and `--` for arrows,
+comparisons and an em dash, never in code. `$$` as the whole text places a
+Block equation beside it. Unsupported punctuation stays literal.
 
 Paste, composition, Undo and programmatic insertion never trigger conversion.
 A conversion is one native transaction with exact selection/attribute Undo.
