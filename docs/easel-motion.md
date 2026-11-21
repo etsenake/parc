@@ -257,19 +257,19 @@ them.
 
 ## Checks
 
-`scripts/test-easel-motion.sh` covers both threshold directions, inclusive
-initial-band silence, repeated crossings, invalid samples, native magnification
-notifications, source replacement and immediate visibility reversal. Feedback
-is injected, so the component does not emit physical haptics. The windowless
-`EaselObjectMotionTests` suite covers every entrance, poof, glide, squash,
-pulse, shake, cross-fade, carry tilt and Reduce Motion curve, cascade delays,
-stamp growth and wheel timing, speck plans, ghost bookkeeping and the document
-and undo diffs,
-`EaselFloatingBarTests` the tool bar flourishes, `EaselControlMotionTests` the
-hover and press scales, hover shadow, digit roll columns and directions and the
-pulse keyframes, and `EaselSnapFeedbackTests` the guide, reveal, highlight,
-tray, flash, fold, growth and table curves, connector trimming, rotation steps,
-section drop targets and equal-size snapping. Shared capture checks protect
-original pixels and independent in-memory history. The Easel canvas suite zooms
-a real canvas in its scroll view 3,000 times while resizing from every bounds
-change and requires each step to settle.
+`EaselMotionTests` covers crossings of actual size, initial-band silence, invalid
+samples, native magnification notifications, source replacement and immediate
+visibility changes. Feedback goes to a test callback. `EaselMotionCanvasTests`
+covers handle visibility and action admission during and after a pinch.
+`EaselCanvasTests` checks that the canvas settles to cover the scroll viewport
+after a magnification change and across a 3,000-step zoom sequence.
+`EaselObjectMotionTests` covers every entrance, poof, glide, squash, pulse,
+shake, cross-fade, carry tilt and Reduce Motion curve, cascade delays, stamp
+growth and wheel timing, speck plans, ghost bookkeeping and the document and
+undo diffs. `EaselFloatingBarTests` covers the tool bar flourishes,
+`EaselControlMotionTests` the hover and press scales, hover shadow, digit roll
+columns and directions and the pulse keyframes, and `EaselSnapFeedbackTests`
+the guide, reveal, highlight, tray, flash, fold, growth and table curves,
+connector trimming, rotation steps, section drop targets and equal-size
+snapping. Shared capture checks protect original pixels and independent
+in-memory history.

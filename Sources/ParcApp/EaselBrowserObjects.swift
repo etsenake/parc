@@ -9,6 +9,10 @@ final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHosting {
     private var canvas: EaselCanvasView? { hostView as? EaselCanvasView }
     private var replacementObserver: UUID?
     private var documentObserver: AnyCancellable?
+    var loadsLinkPreviews = true
+    var scheduleSnapshotDeadline: (TimeInterval, @escaping () -> Void) -> Void = { delay, work in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { work() }
+    }
 
     init(session: EaselSession, canvas: EaselCanvasView, binding: PCNativeBrowserWindow,
          profilePath: String, validOwner: @escaping () -> Bool,
@@ -69,7 +73,7 @@ final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHosting {
             if !started { collection.receive(id, nil) }
         }
         collection.requested()
-        DispatchQueue.main.asyncAfter(deadline: .now() + deadline) { MainActor.assumeIsolated { collection.expire() } }
+        scheduleSnapshotDeadline(deadline) { MainActor.assumeIsolated { collection.expire() } }
     }
     @MainActor private final class SnapshotCollection {
         private var snapshots: [UUID: EaselPageSnapshot] = [:]
@@ -95,7 +99,8 @@ final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHosting {
         let profilePath = self.profilePath, layout = item.captureLayout
         let address = URL(string: url) ?? URL(string: "about:blank")!
         guard let entry = surface(id: item.id, url: url, variant: Self.variant(item), make: {
-            NoteEmbedSurface(address: address, profilePath: profilePath, host: .easel, captureLayout: layout)
+            NoteEmbedSurface(address: address, profilePath: profilePath, host: .easel, captureLayout: layout,
+                             loadsLinkPreview: loadsLinkPreviews)
         }) else { return nil }
         guard entry.surface.onDone == nil, let view = entry.surface as? NoteEmbedSurface else { return entry.surface }
         view.onDone = { [weak self, weak entry] in

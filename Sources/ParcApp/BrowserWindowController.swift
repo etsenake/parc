@@ -585,7 +585,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     static let discardAfter: TimeInterval = 14_400
     private func discardIdleBackgroundPages() {
         guard !isClosing, !wholeWindowClose, presentation.isReady else { return }
-        let cutoff = Date().addingTimeInterval(-Self.discardAfter)
+        let now = Date()
+        let cutoff = now.addingTimeInterval(-Self.discardAfter)
         var shown = Set(renderedPaneIDs).union(selectedTabIDs)
         if let pending = pendingNativeSelection?.tabID { shown.insert(pending) }
         if let held = tabPeeks.current?.tabID { shown.insert(held) }
@@ -597,9 +598,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   page.responds(to: #selector(PCNativePage.discardIfIdle)) else { continue }
             _ = page.discardIfIdle()
         }
-        for (id, pane) in easelEditors where !shown.contains(id) && !closingTabIDs.contains(id) && !transferringTabIDs.contains(id) {
-            guard let tab = store.state.tab(id, where: { $0.archivedAt == nil }), tab.lastAccessed < cutoff,
-                  easelPagesCanSleep(pane) else { continue }
+        for (id, pane) in easelEditors {
+            guard EaselIdleSleep.isEligible(lastAccessed: store.state.tab(id, where: { $0.archivedAt == nil })?.lastAccessed,
+                                           shown: shown.contains(id), closing: closingTabIDs.contains(id),
+                                           transferring: transferringTabIDs.contains(id), idleFor: Self.discardAfter,
+                                           now: { now }, settled: easelPagesCanSleep(pane)) else { continue }
             releaseIdleEaselPages(id, cached: pane)
         }
         for (id, note) in noteEditors where !shown.contains(id) && !closingTabIDs.contains(id) && !transferringTabIDs.contains(id) {

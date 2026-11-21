@@ -75,7 +75,8 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     private var addressPopover: NotePagePopover?
     private var lastSearch: (query: String, category: EaselWebNavigation.Category)?
 
-    init(address: URL, profilePath: String, host: Host = .note, captureLayout: EaselCaptureLayout? = nil) {
+    init(address: URL, profilePath: String, host: Host = .note, captureLayout: EaselCaptureLayout? = nil,
+         loadsLinkPreview: Bool = true) {
         self.address = address
         self.host = host
         self.captureLayout = captureLayout
@@ -146,9 +147,11 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
             NoteAnimation.settle(self.ring)
             if let layer = self.fallback.layer { NoteAnimation.settle(layer) }
         }
-        header.loadPreview(for: address) { [weak self] preview in
-            if let preview { self?.fallback.configure(preview: preview) }
-            self?.refresh()
+        if loadsLinkPreview {
+            header.loadPreview(for: address) { [weak self] preview in
+                if let preview { self?.fallback.configure(preview: preview) }
+                self?.refresh()
+            }
         }
         if host == .note { setStatus("Loading webpage…", retry: false) } else { refresh() }
     }

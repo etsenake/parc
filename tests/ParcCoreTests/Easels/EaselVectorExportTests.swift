@@ -109,38 +109,64 @@ struct EaselVectorExportTests {
         #expect(EaselVectorExport.exportFileName("", fileExtension: "pdf") == "Untitled Easel.pdf", "untitled Easels get a name")
     }
 
-    @Test func everyObjectKindExportsItsOwnElement() {
+    @Test func circleExportUsesAnEllipseAndTheSavedStroke() {
         var circle = EaselItem(kind: .circle, frame: .init(x: 0, y: 0, width: 40, height: 20))
         circle.color = "#FF0000"
         let svgCircle = EaselVectorExport.element(circle, art: .init())
         #expect(svgCircle.contains("<ellipse cx=\"20\" cy=\"10\" rx=\"20\" ry=\"10\""), "circles become ellipses")
         #expect(svgCircle.contains("stroke:#FF0000"), "chosen colours stay exact")
+    }
+
+    @Test func defaultRectangleInkAdaptsToAppearance() {
         let square = EaselVectorExport.element(EaselItem(kind: .rectangle, frame: .init(x: 1, y: 2, width: 3, height: 4)), art: .init())
         #expect(square.contains("var(--easel-ink)"), "automatic ink adapts to light and dark")
+    }
+
+    @Test func arrowExportUsesItsSavedPointsAndHead() {
         var arrow = EaselItem(kind: .arrow, frame: .init(x: 10, y: 10, width: 100, height: 0))
         arrow.points = [.init(x: 0, y: 0), .init(x: 100, y: 0)]
         let svgArrow = EaselVectorExport.element(arrow, art: .init())
         #expect(svgArrow.components(separatedBy: "<path").count == 3, "arrows draw a shaft and a head")
         #expect(svgArrow.contains("M10 10L110 10"), "the shaft follows the saved points")
+    }
+
+    @Test func freehandExportDrawsOnlyItsStroke() {
         var scribble = EaselItem(kind: .freehand, frame: .init(x: 0, y: 0, width: 10, height: 10))
         scribble.points = [.init(x: 0, y: 0), .init(x: 5, y: 5), .init(x: 10, y: 0)]
         #expect(EaselVectorExport.element(scribble, art: .init()).components(separatedBy: "<path").count == 2, "freehand strokes have no head")
+    }
+
+    @Test func imageExportEmbedsItsAssetWhenPresent() {
         let picture = EaselItem(kind: .image, frame: .init(x: 0, y: 0, width: 10, height: 10), assetID: "a")
         var art = EaselVectorArt()
         art.images[picture.id] = EaselVectorImage(data: png, mimeType: "image/png")
         #expect(EaselVectorExport.element(picture, art: art).contains("href=\"data:image/png;base64,"), "images are embedded")
         #expect(EaselVectorExport.element(picture, art: .init()).isEmpty, "missing images draw nothing")
+    }
+
+    @Test func webSnapshotExportLinksToTheOriginalAddress() {
+        var art = EaselVectorArt()
         let web = EaselItem(kind: .webCard, frame: .init(x: 0, y: 0, width: 10, height: 10), url: "https://example.com", assetID: "w")
         art.images[web.id] = EaselVectorImage(data: png, mimeType: "image/png")
         let svgWeb = EaselVectorExport.element(web, art: art)
         #expect(svgWeb.hasPrefix("<a href=\"https://example.com\""), "web snapshots link to their source")
         #expect(svgWeb.contains("<image"), "web cards show their snapshot")
+    }
+
+    @Test func linkCardExportEscapesItsTitle() {
         let link = EaselItem(kind: .link, frame: .init(x: 0, y: 0, width: 220, height: 160), text: "A <b>", url: "https://example.com")
         let svgLink = EaselVectorExport.element(link, art: .init())
         #expect(svgLink.contains("A &lt;b&gt;") && svgLink.contains("var(--easel-card)"), "link cards show an escaped title on the card fill")
-        #expect(EaselVectorExport.imageMimeType(png) == "image/png", "PNG bytes are recognised")
-        #expect(EaselVectorExport.imageMimeType(Data([0xFF, 0xD8, 0xFF, 0xE0])) == "image/jpeg", "JPEG bytes are recognised")
-        #expect(EaselVectorExport.imageMimeType(Data([1, 2, 3])) == nil, "unknown bytes need converting")
+    }
+
+    @Test(arguments: [(Data([0xFF, 0xD8, 0xFF, 0xE0]), Optional("image/jpeg")),
+                      (Data([1, 2, 3]), nil)])
+    func vectorExportRecognizesSupportedImageBytes(_ bytes: Data, _ mimeType: String?) {
+        #expect(EaselVectorExport.imageMimeType(bytes) == mimeType)
+    }
+
+    @Test func vectorExportRecognizesPngBytes() {
+        #expect(EaselVectorExport.imageMimeType(png) == "image/png")
     }
 
     @Test func textExportsAtItsObjectsOriginEscapedInTheEaselFont() {

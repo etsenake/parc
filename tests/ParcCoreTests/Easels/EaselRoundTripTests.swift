@@ -3,9 +3,8 @@ import Testing
 @testable import ParcCore
 private let easelRoundTripCorpus = ["words", "shapes", "web", "empty"]
 
-@MainActor struct EaselRoundTripTests {
+struct EaselRoundTripTests {
     let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3uoAAAAASUVORK5CYII=")!
-    var corpus: [String] { easelRoundTripCorpus }
     let itemFields: Set<String> = ["id", "kind", "frame", "zIndex", "movedToFrontAt", "text", "textStyle", "richText", "url",
                                           "assetID", "color", "points", "capturedAt", "captureLayout", "liveCapture"]
     let styleFields: Set<String> = ["fill", "family", "size"]
@@ -13,8 +12,8 @@ private let easelRoundTripCorpus = ["words", "shapes", "web", "empty"]
     let layoutFields: Set<String> = ["viewport", "scroll", "region", "scrollContainers"]
 
     func fixture(_ name: String) throws -> Data {
-        let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Fixtures/EaselRoundTrip")
-        return try Data(contentsOf: directory.appendingPathComponent(name + ".json"))
+        let file = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "EaselRoundTrip"))
+        return try Data(contentsOf: file)
     }
 
     func isEmpty(_ value: Any) -> Bool {
@@ -76,7 +75,7 @@ private let easelRoundTripCorpus = ["words", "shapes", "web", "empty"]
         try reencoding(name)
     }
 
-    @Test(arguments: easelRoundTripCorpus) func theStoreOpensAndResavesTheSameBytes(_ name: String) throws {
+    @MainActor @Test(arguments: easelRoundTripCorpus) func theStoreOpensAndResavesTheSameBytes(_ name: String) throws {
         try storeRoundTrip(name)
     }
 
@@ -158,25 +157,24 @@ private let easelRoundTripCorpus = ["words", "shapes", "web", "empty"]
         #expect(items[4].url == "https://example.com/docs" && items[4].ownsEmbeddedPage, "web: browser survives")
     }
 
-    @Test func savedEaselsKeepTheirOldLooksOnOpen() throws {
-        for name in corpus {
-            for item in try decode(name).items {
-                let label = "\(name) \(item.kind)"
-                switch item.kind {
-                case .rectangle: #expect(item.resolvedShape == .rectangle, "\(label): plain rectangles stay rectangles")
-                case .circle: #expect(item.resolvedShape == .ellipse, "\(label): circles stay ellipses")
-                default: #expect(item.resolvedShape == nil, "\(label): other objects have no outline shape")
-                }
-                #expect(!item.isLocked && item.resolvedRotation == 0 && item.resolvedQuarterTurns == 0, "\(label): unlocked and unrotated")
-                #expect(item.resolvedStartHead == .none && item.resolvedEndHead == .arrow, "\(label): arrows keep an open head at the end only")
-                #expect(item.resolvedRouting == .straight && item.resolvedBrush == .marker && item.resolvedLabelPosition == 0.5, "\(label): straight, marker, label in the middle")
-                #expect(item.resolvedTextStyle.resolvedFill == (item.textStyle?.fill ?? .none), "\(label): text style fill resolves as before")
-                #expect(item.textStyle != nil || item.resolvedTextStyle == EaselTextStyle(), "\(label): no style means the default style")
-                if item.textStyle == nil { #expect(item.resolvedTextStyle.pointSize == 15, "\(label): default text stays 15 points") }
-                #expect(!item.ownsEmbeddedPage || item.kind == .browser || item.liveCapture == true, "\(label): page ownership unchanged")
+    @Test(arguments: easelRoundTripCorpus) func savedEaselsKeepTheirOldLooksOnOpen(_ name: String) throws {
+        for item in try decode(name).items {
+            let label = "\(name) \(item.kind)"
+            switch item.kind {
+            case .rectangle: #expect(item.resolvedShape == .rectangle, "\(label): plain rectangles stay rectangles")
+            case .circle: #expect(item.resolvedShape == .ellipse, "\(label): circles stay ellipses")
+            default: #expect(item.resolvedShape == nil, "\(label): other objects have no outline shape")
             }
+            #expect(!item.isLocked && item.resolvedRotation == 0 && item.resolvedQuarterTurns == 0, "\(label): unlocked and unrotated")
+            #expect(item.resolvedStartHead == .none && item.resolvedEndHead == .arrow, "\(label): arrows keep an open head at the end only")
+            #expect(item.resolvedRouting == .straight && item.resolvedBrush == .marker && item.resolvedLabelPosition == 0.5, "\(label): straight, marker, label in the middle")
+            #expect(item.resolvedTextStyle.resolvedFill == (item.textStyle?.fill ?? .none), "\(label): text style fill resolves as before")
+            #expect(item.textStyle != nil || item.resolvedTextStyle == EaselTextStyle(), "\(label): no style means the default style")
+            if item.textStyle == nil { #expect(item.resolvedTextStyle.pointSize == 15, "\(label): default text stays 15 points") }
+            #expect(!item.ownsEmbeddedPage || item.kind == .browser || item.liveCapture == true, "\(label): page ownership unchanged")
         }
     }
+
 
     func reencoding(_ name: String) throws {
         let original = try fixture(name)
@@ -203,7 +201,7 @@ private let easelRoundTripCorpus = ["words", "shapes", "web", "empty"]
         }
     }
 
-    func install(_ name: String, in directory: URL) throws -> (EaselStore, UUID, URL) {
+    @MainActor func install(_ name: String, in directory: URL) throws -> (EaselStore, UUID, URL) {
         let document = try decode(name)
         let store = try EaselStore(directory: directory, now: { document.modifiedAt })
         let file = directory.appendingPathComponent("documents/" + document.id.uuidString.lowercased() + ".json")
@@ -214,7 +212,7 @@ private let easelRoundTripCorpus = ["words", "shapes", "web", "empty"]
         return (store, document.id, file)
     }
 
-    func storeRoundTrip(_ name: String) throws {
+    @MainActor func storeRoundTrip(_ name: String) throws {
         try withDirectory { directory in
             let (store, id, file) = try install(name, in: directory)
             let session = try store.load(id)
@@ -230,7 +228,7 @@ private let easelRoundTripCorpus = ["words", "shapes", "web", "empty"]
         }
     }
 
-    @Test func editingAMainFormatEaselWritesNoNewKeysAndUndoRestoresItsBytes() throws {
+    @MainActor @Test func editingAMainFormatEaselWritesNoNewKeysAndUndoRestoresItsBytes() throws {
         try withDirectory { directory in
             let (store, id, file) = try install("shapes", in: directory)
             let session = try store.load(id)
@@ -250,19 +248,15 @@ private let easelRoundTripCorpus = ["words", "shapes", "web", "empty"]
         }
     }
 
-    @Test func everyMainFormatFileShowsUpInTheEaselList() throws {
+    @MainActor @Test(arguments: easelRoundTripCorpus)
+    func aSavedEaselAppearsInTheList(_ name: String) throws {
         try withDirectory { directory in
-            var expected: [UUID: Int] = [:]
-            var store: EaselStore?
-            for name in corpus {
-                let (installed, id, _) = try install(name, in: directory)
-                store = installed
-                expected[id] = try decode(name).items.count
-            }
-            let summaries = try (store ?? EaselStore(directory: directory)).list()
-            #expect(summaries.count == corpus.count, "every main-format file shows up in the Easel list")
-            #expect(summaries.allSatisfy { expected[$0.id] == $0.itemCount }, "listed object counts match the files")
-            #expect(summaries.first(where: { $0.title == "Web" })?.modifiedAt == Date(timeIntervalSinceReferenceDate: 700_300_900), "listed dates match the files")
+            let (store, id, _) = try install(name, in: directory)
+            let document = try decode(name)
+            let summary = try #require(try store.list().first)
+            #expect(summary.id == id)
+            #expect(summary.itemCount == document.items.count)
+            #expect(summary.modifiedAt == document.modifiedAt)
         }
     }
 }

@@ -451,18 +451,15 @@ to, so a malformed file is rejected whole rather than half drawn.
 
 ## Checks and limits
 
-`swift test`, `bash scripts/test-easels.sh` and the focused editor/pool/capture
-components exercise atomic saves, rich-text validation, native Undo, ownership, geometry,
-clipboard conversion, export bytes and the SVG/HTML serialiser.
+`swift test --disable-xctest --filter 'Easel|CaptureDestinationTests'` covers atomic saves, rich
+text, native Undo, ownership, geometry, clipboard conversion, exports and
+capture placement. The page-pool tests drive the real canvas and page wrapper
+with test replies and a manually advanced snapshot deadline.
 
-The canvas bundles (`test-easels.sh` window suites, `test-easel-motion.sh`,
-`tests/EaselPagePool/run.py`, the site-film command bar build) compile every
-`EaselCanvas*.swift` by glob plus a fixed list of app files. Canvas files may
-only depend on that list: Note panel and controls, `EaselDocumentExport`,
-`EaselTableExport`, `EaselSelectionExporter`, `EaselShapePicker`, stamp and
-image export, and `NoteDesignSystemStubs`. Keep window-controller and
-view-controller extensions in their own `*Actions.swift` files; when a canvas
-file needs another app file, add it to all those lists in the same change.
+The site-film command bar harness still compiles the `EaselCanvas*.swift`
+files alongside a fixed list of app sources. Keep window-controller and
+view-controller extensions in their own `*Actions.swift` files and update
+that harness's file list if the canvas takes a new dependency.
 
 Private windows deliberately offer no Easels or Notes and send no captures to
 Easels; the reason is in [capture Library](capture-library.md#private-media-ownership).

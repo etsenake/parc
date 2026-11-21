@@ -74,6 +74,9 @@ class EmbeddedPagePool: NSObject, PCBrowserViewDelegate {
     private var selectionChanged: () -> Void
     private var metadataChanged: () -> Void
     private var metadataRefreshPending = false
+    var scheduleMetadataDelivery: (@escaping () -> Void) -> Void = { work in
+        DispatchQueue.main.async { work() }
+    }
     var entries: [UUID: EmbeddedPageEntry] = [:]
     private(set) var selectedID: UUID?
     private(set) var interacting = false
@@ -437,7 +440,7 @@ class EmbeddedPagePool: NSObject, PCBrowserViewDelegate {
     private func scheduleMetadataRefresh() {
         guard !gate.isDisposed, !metadataRefreshPending else { return }
         metadataRefreshPending = true
-        DispatchQueue.main.async { [weak self] in
+        scheduleMetadataDelivery { [weak self] in
             guard let self else { return }
             self.metadataRefreshPending = false
             if !self.gate.isDisposed { self.metadataChanged() }

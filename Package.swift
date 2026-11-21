@@ -64,7 +64,7 @@ let package = Package(
             ]
         ),
         .testTarget(name: "ParcCoreTests", dependencies: ["ParcCore"], path: "tests/ParcCoreTests",
-                    resources: [.copy("Notes/Fixtures")],
+                    resources: [.copy("Notes/Fixtures"), .copy("Easels/Fixtures/EaselRoundTrip")],
                     swiftSettings: strict),
         .target(name: "ParcNative", path: "Engine/ParcNative",
                 sources: ["autofill_save_presenter.mm", "certificate_viewer_presenter.mm", "content_drop_router.mm",
@@ -97,10 +97,12 @@ let package = Package(
                 permissions: [.writeToPackageDirectory(reason: "Writes Stubs/Chromium Embedded Framework.framework")]
             )
         ),
-        .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: "."),
+        .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: ".",
+                cSettings: [.headerSearchPath("../../Engine/ParcNative"), .headerSearchPath("../../Sources/ParcEngine")]),
         .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles"], path: "tests/ParcTests",
                     resources: [.copy("Notes/Fixtures"), .copy("Presentation/Fixtures/AppIcons"), .copy("Presentation/Fixtures/NativeIcon.icns"),
-                                .copy("Presentation/Fixtures/MembershipCard"), .copy("Presentation/Fixtures/ThemeEditor")],
+                                .copy("Presentation/Fixtures/MembershipCard"), .copy("Presentation/Fixtures/ThemeEditor"),
+                                .copy("Easels/Fixtures/EaselFonts")],
                     swiftSettings: strict + engineImport),
     ],
     swiftLanguageModes: [.v5],

@@ -1,13 +1,13 @@
 import Foundation
 import Testing
 @testable import ParcCore
-@MainActor struct EaselMindMapTests {
+struct EaselMindMapTests {
     func document(_ items: [EaselItem]) -> EaselDocument {
         EaselDocument(id: UUID(), title: "Map", createdAt: Date(timeIntervalSinceReferenceDate: 0),
                       modifiedAt: Date(timeIntervalSinceReferenceDate: 0), items: items)
     }
 
-    func accepts(_ items: [EaselItem]) -> Bool {
+    @MainActor func accepts(_ items: [EaselItem]) -> Bool {
         (try? EaselSession(inMemory: document(items), assets: [:])) != nil
     }
 
@@ -38,7 +38,7 @@ import Testing
         return (made, root.id, kids.map(\.id))
     }
 
-    @Test func mindMapNodesSaveTheirParent() throws {
+    @MainActor @Test func mindMapNodesSaveTheirParent() throws {
         let plain = node("Plain")
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -77,7 +77,7 @@ import Testing
         #expect(!EaselMindMap.canStart(from: shape), "only text becomes a root")
     }
 
-    @Test func aNewMapIsARootWithTwoChildrenJoinedByBranches() {
+    @MainActor @Test func aNewMapIsARootWithTwoChildrenJoinedByBranches() {
         let (map, root, kids) = starter()
         #expect(nodes(map).count == 3 && branches(map).count == 2, "a new map is a root with two children joined by branches")
         #expect(accepts(map.items), "a new map is a valid Easel")
@@ -278,7 +278,7 @@ import Testing
         #expect(swapped.map { EaselMindMap.tree(of: $0.items).nodes[root]?.children } == [kids[1], kids[0]], "reordering swaps siblings")
     }
 
-    @Test func aDuplicatedMapIsItsOwnValidMap() throws {
+    @MainActor @Test func aDuplicatedMapIsItsOwnValidMap() throws {
         let (map, _, kids) = starter()
         let whole = Set(map.items.map(\.id))
         let copy = try #require(EaselArrange.duplicating(whole, in: map), "a map duplicates")

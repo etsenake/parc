@@ -10,18 +10,21 @@ protocol EaselImageExporting: AnyObject {
 
 @MainActor
 enum EaselImageExport {
-    static func run(canvas: EaselCanvasView, title: String?, in window: NSWindow, valid: @escaping () -> Bool) {
+    static func run(canvas: EaselCanvasView, title: String?, in window: NSWindow,
+                    schedule: @escaping (@escaping () -> Void) -> Void = { work in DispatchQueue.main.async { work() } },
+                    onFailure: @escaping @MainActor (NSWindow) -> Void = { showFailure(in: $0) },
+                    valid: @escaping () -> Bool) {
         _ = canvas.collectExportPages { [weak canvas, weak window] pages in
-            DispatchQueue.main.async {
+            schedule {
                 MainActor.assumeIsolated {
                     guard let window, let canvas, canvas.window === window else { return }
-                    guard valid() else { return showFailure(in: window) }
+                    guard valid() else { return onFailure(window) }
                     let scale = pixelDensity()
-                    guard let image = canvas.exportImage(backingScale: scale, pages: pages, hugsContent: true) else { return showFailure(in: window) }
+                    guard let image = canvas.exportImage(backingScale: scale, pages: pages, hugsContent: true) else { return onFailure(window) }
                     let panel = savePanel(title: title)
                     guard panel.runModal() == .OK else { return }
-                    guard let url = panel.url else { return showFailure(in: window) }
-                    do { try write(image, scale: scale, to: url) } catch { showFailure(in: window) }
+                    guard let url = panel.url else { return onFailure(window) }
+                    do { try write(image, scale: scale, to: url) } catch { onFailure(window) }
                 }
             }
         }

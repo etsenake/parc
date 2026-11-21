@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@MainActor struct EaselStoreTests {
+struct EaselStoreTests {
     func withDirectory(_ body: (URL) throws -> Void) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-easel-tests-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -23,7 +23,7 @@ import Testing
         directory.appendingPathComponent("documents/" + id.uuidString.lowercased() + ".json")
     }
 
-    @Test func damagedStackNumbersAreRepairedInPaintOrder() throws {
+    @MainActor @Test func damagedStackNumbersAreRepairedInPaintOrder() throws {
         try withDirectory { directory in
             let session = try EaselStore(directory: directory).create()
             try session.perform("Stack") {
@@ -44,7 +44,7 @@ import Testing
         }
     }
 
-    @Test func boardObjectFieldsSurviveASaveAndReopen() throws {
+    @MainActor @Test func boardObjectFieldsSurviveASaveAndReopen() throws {
         try withDirectory { directory in
             let store = try EaselStore(directory: directory)
             let session = try store.create()
@@ -91,103 +91,201 @@ import Testing
             }
             let style = String(decoding: try encoder.encode(EaselTextStyle()), as: UTF8.self)
             #expect(!style.contains("alignment"), "Unused text alignment stays out of saved bytes")
-            @MainActor func refuses(_ message: String, _ change: (inout EaselItem) -> Void) {
-                var item = EaselItem(kind: .rectangle, frame: frame, zIndex: 9)
-                change(&item)
-                let before = session.document
-                expectThrows(message) { try session.perform("Invalid board object") { $0.items.append(item) } }
-                #expect(session.document == before, "Refused board object leaves the Easel unchanged: \(message)")
-            }
-            refuses("Fill must be a hex colour") { $0.fill = "blue" }
-            refuses("Fill opacity stays between 0 and 1") { $0.fillOpacity = 1.5 }
-            refuses("Stroke width cannot be negative") { $0.strokeWidth = -1 }
-            refuses("Stroke width has a ceiling") { $0.strokeWidth = 100 }
-            refuses("Rotation must be finite") { $0.rotation = .nan }
-            refuses("Rotation stays within a turn") { $0.rotation = 720 }
-            refuses("Outlines belong to rectangle-kind shapes") { $0.kind = .circle; $0.shape = .star }
-            refuses("Arrowheads belong to arrows") { $0.endHead = .triangle }
-            refuses("Routing belongs to arrows") { $0.routing = .curved }
-            refuses("Connections belong to arrows") { $0.startConnection = EaselConnection(itemID: diamond.id) }
-            refuses("Labels belong to arrows") { $0.labelPosition = 0.5 }
-            refuses("Bends belong to arrows") { $0.waypoints = [EaselPoint(x: 1, y: 1)] }
-            refuses("Brushes belong to drawings") { $0.brush = .highlighter }
-            refuses("Tape patterns are simple names") { item in
-                item.kind = .freehand; item.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]; item.pattern = "../escape"
-            }
-            refuses("Pinned connection points stay on the object") { item in
-                item.kind = .arrow; item.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
-                item.endConnection = EaselConnection(itemID: diamond.id, anchor: EaselPoint(x: 1.5, y: 0))
-            }
-            refuses("Label positions stay along the line") { item in
-                item.kind = .arrow; item.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]; item.labelPosition = 2
-            }
-            refuses("An object cannot stick to itself") { $0.attachedTo = $0.id }
-            refuses("An arrow cannot connect to itself") { item in
-                item.kind = .arrow; item.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
-                item.endConnection = EaselConnection(itemID: item.id)
-            }
-            let decoded = try JSONDecoder().decode(EaselItem.self, from: Data(##"{"id":"6F9619FF-8B86-D011-B42D-00CF4FC964FF","kind":"rectangle","frame":{"x":1,"y":2,"width":3,"height":4},"zIndex":0,"text":"","color":"#252525","points":[]}"##.utf8))
-            #expect(decoded.shape == nil && decoded.fill == nil && decoded.rotation == nil && decoded.resolvedShape == .rectangle, "Easels saved before board objects decode unchanged")
         }
     }
 
-    @Test func anEaselRelocatesToAnotherProfileWithItsExactBytes() throws {
+    enum InvalidBoardItem: CaseIterable {
+        case fillColor, fillOpacity, negativeStrokeWidth, overwideStroke, nonfiniteRotation, rotationPastATurn
+        case circleOutline, shapeArrowhead, shapeRouting, shapeConnection, shapeLabel, shapeBends, shapeBrush
+        case tapePath, outsideAnchor, outsideLabel, selfAttachment, selfConnection
+    }
+
+    @MainActor @Test(arguments: InvalidBoardItem.allCases)
+    func anInvalidBoardObjectDoesNotChangeTheDocument(_ invalid: InvalidBoardItem) throws {
+        let target = EaselItem(kind: .rectangle, frame: frame)
+        var object = EaselItem(kind: .rectangle, frame: frame, zIndex: 1)
+        switch invalid {
+        case .fillColor:
+            object.fill = "blue"
+        case .fillOpacity:
+            object.fillOpacity = 1.5
+        case .negativeStrokeWidth:
+            object.strokeWidth = -1
+        case .overwideStroke:
+            object.strokeWidth = 100
+        case .nonfiniteRotation:
+            object.rotation = .nan
+        case .rotationPastATurn:
+            object.rotation = 720
+        case .circleOutline:
+            object.kind = .circle
+            object.shape = .star
+        case .shapeArrowhead:
+            object.endHead = .triangle
+        case .shapeRouting:
+            object.routing = .curved
+        case .shapeConnection:
+            object.startConnection = EaselConnection(itemID: target.id)
+        case .shapeLabel:
+            object.labelPosition = 0.5
+        case .shapeBends:
+            object.waypoints = [EaselPoint(x: 1, y: 1)]
+        case .shapeBrush:
+            object.brush = .highlighter
+        case .tapePath:
+            object.kind = .freehand
+            object.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
+            object.pattern = "../escape"
+        case .outsideAnchor:
+            object.kind = .arrow
+            object.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
+            object.endConnection = EaselConnection(itemID: target.id, anchor: EaselPoint(x: 1.5, y: 0))
+        case .outsideLabel:
+            object.kind = .arrow
+            object.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
+            object.labelPosition = 2
+        case .selfAttachment:
+            object.attachedTo = object.id
+        case .selfConnection:
+            object.kind = .arrow
+            object.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
+            object.endConnection = EaselConnection(itemID: object.id)
+        }
+        let date = Date(timeIntervalSince1970: 0)
+        let before = EaselDocument(id: UUID(), title: "Board", createdAt: date, modifiedAt: date, items: [target])
+        let session = try EaselSession(inMemory: before, assets: [:])
+        #expect(throws: EaselStoreError.self) {
+            try session.perform("Add invalid object") { $0.items.append(object) }
+        }
+        #expect(session.document == before && !session.canUndo)
+    }
+
+    @Test func rectanglesSavedBeforeBoardStylesKeepTheirOriginalOutline() throws {
+        let decoded = try JSONDecoder().decode(EaselItem.self, from: Data(##"{"id":"6F9619FF-8B86-D011-B42D-00CF4FC964FF","kind":"rectangle","frame":{"x":1,"y":2,"width":3,"height":4},"zIndex":0,"text":"","color":"#252525","points":[]}"##.utf8))
+        #expect(decoded.shape == nil && decoded.fill == nil && decoded.rotation == nil && decoded.resolvedShape == .rectangle, "Easels saved before board objects decode unchanged")
+    }
+
+    @MainActor
+    private func makeRelocation(in directory: URL) throws -> (
+        source: EaselStore, destination: EaselStore, original: EaselSession, asset: String, browser: EaselItem
+    ) {
+        let source = try EaselStore(directory: directory.appendingPathComponent("source"))
+        let destination = try EaselStore(directory: directory.appendingPathComponent("destination"))
+        let original = try source.create(title: "Profile transfer")
+        let asset = try original.importPNG(png)
+        let browser = EaselItem(kind: .browser, frame: frame, url: "https://example.com/original")
+        let card = EaselItem(kind: .webCard, frame: frame, text: "Original capture", url: "https://example.com/source", assetID: asset, capturedAt: Date(timeIntervalSince1970: 42))
+        try original.perform("Seed") { $0.items = [browser, card] }
+        _ = try original.recordBrowserNavigation(URL(string: "https://example.com/current")!, itemID: browser.id, expectedURL: browser.url!)
+        return (source, destination, original, asset, browser)
+    }
+
+    @MainActor @Test
+    func aLiveChildPreventsSessionRetirement() throws {
         try withDirectory { directory in
-            let source = try EaselStore(directory: directory.appendingPathComponent("source"))
-            let destination = try EaselStore(directory: directory.appendingPathComponent("destination"))
-            let original = try source.create(title: "Profile transfer")
-            let id = original.document.id, asset = try original.importPNG(png)
-            let browser = EaselItem(kind: .browser, frame: frame, url: "https://example.com/original")
-            let card = EaselItem(kind: .webCard, frame: frame, text: "Original capture", url: "https://example.com/source", assetID: asset, capturedAt: Date(timeIntervalSince1970: 42))
-            try original.perform("Seed") { $0.items = [browser, card] }
-            _ = try original.recordBrowserNavigation(URL(string: "https://example.com/current")!, itemID: browser.id, expectedURL: browser.url!)
-            let saved = original.document
-            let originalBytes = try Data(contentsOf: file(source.directory, id))
+            let (source, _, original, _, _) = try makeRelocation(in: directory)
+            let id = original.document.id
             let liveChild = original.observeReplacement { $0 != nil }
             expectThrows("a live original child prevents session retirement") { try source.retireSessionForRelocation(id) }
             #expect(!original.isClosed && (try! source.load(id)) === original, "refused retirement preserves source session")
             original.removeReplacementObserver(liveChild)
+        }
+    }
+
+    @MainActor @Test
+    func aBoardWithAnOpenSessionCannotMoveProfiles() throws {
+        try withDirectory { directory in
+            let (source, destination, original, _, _) = try makeRelocation(in: directory)
+            let id = original.document.id
             expectThrows("a still-open editor cannot move by deallocation timing") { _ = try source.relocate(id, to: destination) }
+        }
+    }
+
+    @MainActor @Test
+    func anEaselRelocatesToAnotherProfileWithItsExactBytes() throws {
+        try withDirectory { directory in
+            let (source, destination, original, asset, _) = try makeRelocation(in: directory)
+            let id = original.document.id
+            let saved = original.document
+            let originalBytes = try Data(contentsOf: file(source.directory, id))
             try source.retireSessionForRelocation(id)
             #expect(original.isClosed && !original.canUndo && !original.canRedo, "explicit session retirement revokes history despite a retained old owner")
             let copied = try source.relocate(id, to: destination)
             #expect(copied == [asset] && (try? source.load(id)) == nil, "actual document moves after explicit retirement")
             #expect(try! Data(contentsOf: file(destination.directory, id)) == originalBytes, "Profile relocation preserves the exact document bytes")
-            expectThrows("retained editor cannot recreate the source file") { try original.perform("Late callback") { $0.title = "Wrong profile" } }
-            expectThrows("retired navigation cannot rewrite source metadata") { _ = try original.recordBrowserNavigation(URL(string: "https://example.com/stale")!, itemID: browser.id, expectedURL: "https://example.com/current") }
-            expectThrows("retired save is refused") { try original.save() }
-            expectThrows("retired asset import is refused") { _ = try original.importPNG(png) }
-            expectThrows("retired undo is refused") { try original.undo() }
-            expectThrows("retired redo is refused") { try original.redo() }
-            #expect(!FileManager.default.fileExists(atPath: file(source.directory, id).path), "late callbacks leave no source document behind")
             let arrived = try destination.load(id)
             #expect(arrived !== original && arrived.document == saved, "destination uses a fresh session with exact identity/current URL/capture provenance")
             #expect(try! arrived.assetData(asset) == png, "destination capture resolves the original bytes")
-            try destination.retireSessionForRelocation(id)
+        }
+    }
+
+    enum LateRelocationAction: CaseIterable {
+        case edit, navigate, save, importImage, undo, redo
+    }
+
+    @MainActor @Test(arguments: LateRelocationAction.allCases)
+    func aRetiredSessionCannotRecreateTheSource(_ action: LateRelocationAction) throws {
+        try withDirectory { directory in
+            let (source, destination, original, _, browser) = try makeRelocation(in: directory)
+            let id = original.document.id
+            try source.retireSessionForRelocation(id)
+            _ = try source.relocate(id, to: destination)
+            #expect(throws: EaselStoreError.self) {
+                switch action {
+                case .edit: try original.perform("Late edit") { $0.title = "Wrong profile" }
+                case .navigate:
+                    let url = try #require(URL(string: "https://example.com/stale"))
+                    _ = try original.recordBrowserNavigation(url, itemID: browser.id, expectedURL: "https://example.com/current")
+                case .save: try original.save()
+                case .importImage: _ = try original.importPNG(png)
+                case .undo: try original.undo()
+                case .redo: try original.redo()
+                }
+            }
+            #expect(!FileManager.default.fileExists(atPath: file(source.directory, id).path))
+        }
+    }
+
+    @MainActor @Test
+    func rollingBackRelocationReopensASeparateWritableSession() throws {
+        try withDirectory { directory in
+            let (source, destination, original, _, _) = try makeRelocation(in: directory)
+            let id = original.document.id
+            let saved = original.document
+            try source.retireSessionForRelocation(id)
+            let copied = try source.relocate(id, to: destination)
+            let arrived = try destination.load(id)
+            try destination.retireSessionForRelocation(arrived.document.id)
             _ = try destination.relocate(id, to: source); destination.removeAssets(copied)
             let restored = try source.load(id)
             #expect(restored !== original && restored.document == saved, "rollback reopens exact original data through a fresh source session")
             try restored.perform("After rollback") { $0.title = "Writable source" }
             #expect(restored.document.title == "Writable source" && original.document == saved, "old retained session stays revoked after rollback")
+        }
+    }
+
+    @MainActor @Test
+    func aDestinationAssetCollisionPreservesBothProfiles() throws {
+        try withDirectory { directory in
+            let (source, destination, original, asset, _) = try makeRelocation(in: directory)
+            let id = original.document.id
+            let saved = original.document
             try source.retireSessionForRelocation(id)
             let collision = destination.directory.appendingPathComponent("assets/" + asset)
             var other = png; other.append(0)
             try other.write(to: collision)
             expectThrows("destination asset collision cannot silently replace a capture") { _ = try source.relocate(id, to: destination) }
-            #expect((try! source.load(id)).document.title == "Writable source" && (try? destination.load(id)) == nil,
+            #expect((try! source.load(id)).document == saved && (try? destination.load(id)) == nil,
                    "asset collision preserves source ownership and leaves no destination document")
             #expect(try! Data(contentsOf: collision) == other, "collision preserves the preexisting destination asset")
         }
     }
 
-    @Test func documentsRoundTripAndKeepOneLiveSessionEach() throws {
+    @MainActor @Test func documentsRoundTripThroughAFreshStore() throws {
         try withDirectory { directory in
             let now = Date(timeIntervalSince1970: 1234)
             let store = try EaselStore(directory: directory, now: { now })
             let session = try store.create(title: "Reading board")
-            #expect(try! store.list().count == 1, "Created document listed")
-            #expect(try! store.load(session.document.id) === session, "One live session per document")
-            #expect(!session.canUndo && !session.canRedo, "New document has no history")
             let asset = try session.importPNG(png)
             let objects = [
                 EaselItem(kind: .text, frame: frame, text: "A title"),
@@ -216,14 +314,12 @@ import Testing
         }
     }
 
-    @Test func transactionsPublishAndUndoAsOneStep() throws {
+    @MainActor @Test func transactionsPublishAndUndoAsOneStep() throws {
         try withDirectory { directory in
             var tick = Date(timeIntervalSince1970: 100)
             let store = try EaselStore(directory: directory, now: { tick })
             let session = try store.create()
             let original = session.document
-            try session.perform("No change") { _ in }
-            #expect(!session.canUndo, "No-op transaction adds no history")
             tick.addTimeInterval(10)
             try session.perform("Add and rename") {
                 $0.title = "Renamed"
@@ -243,61 +339,104 @@ import Testing
             try session.undo()
             try session.perform("Different branch") { $0.title = "Branch" }
             #expect(!session.canRedo, "Editing after undo discards redo branch")
-            for n in 0..<55 { try session.perform("Rename") { $0.title = "Title \(n)" } }
-            var count = 0
-            while session.canUndo { try session.undo(); count += 1 }
-            #expect(count == 50, "Undo history has a bounded count")
         }
     }
 
-    @Test func failedTransactionsNeverPublishOrChangeTheFile() throws {
+    enum InvalidEdit: CaseIterable {
+        case nonfiniteGeometry, negativeSize, duplicateID, scriptURL, fileURL
+        case missingEndpoints, invalidColor, blankTitle, changedID, changedCreationDate, changedVersion, thrownMutation
+    }
+
+    @MainActor @Test(arguments: InvalidEdit.allCases)
+    func aFailedTransactionDoesNotPublishOrChangeTheFile(_ invalid: InvalidEdit) throws {
         try withDirectory { directory in
             let session = try EaselStore(directory: directory).create()
             let original = session.document
-            let bytes = try Data(contentsOf: file(directory, original.id))
-            expectThrows("non-finite geometry") { try session.perform("Bad") { $0.items = [EaselItem(kind: .text, frame: .init(x: .nan, y: 0, width: 1, height: 1))] } }
-            expectThrows("negative size") { try session.perform("Bad") { $0.items = [EaselItem(kind: .text, frame: .init(x: 0, y: 0, width: -2, height: 1))] } }
-            expectThrows("duplicate ID") { try session.perform("Bad") { let item = EaselItem(kind: .text, frame: frame); $0.items = [item, item] } }
-            expectThrows("javascript URL") { try session.perform("Bad") { $0.items = [EaselItem(kind: .link, frame: frame, url: "javascript:alert(1)")] } }
-            expectThrows("file URL") { try session.perform("Bad") { $0.items = [EaselItem(kind: .link, frame: frame, url: "file:///tmp/example")] } }
-            expectThrows("arrow requires endpoints") { try session.perform("Bad") { $0.items = [EaselItem(kind: .arrow, frame: frame)] } }
-            expectThrows("invalid color") { try session.perform("Bad") { $0.items = [EaselItem(kind: .text, frame: frame, color: "not-a-color")] } }
-            expectThrows("blank title") { try session.perform("Bad") { $0.title = " \n " } }
-            expectThrows("immutable ID") { try session.perform("Bad") { $0.id = UUID() } }
-            expectThrows("immutable creation time") { try session.perform("Bad") { $0.createdAt = .distantPast } }
-            expectThrows("version mutation") { try session.perform("Bad") { $0.version = 20 } }
-            expectThrows("mutation throwing") { try session.perform("Bad") { $0.title = "Uncommitted"; throw EaselStoreError.documentTooLarge } }
-            #expect(session.document == original, "Failed transactions never publish")
-            #expect(!session.canUndo && !session.canRedo, "Failed transactions add no history")
-            #expect(try! Data(contentsOf: file(directory, original.id)) == bytes, "Failed validation preserves original file exactly")
+            let path = file(directory, original.id)
+            let bytes = try Data(contentsOf: path)
+            #expect(throws: EaselStoreError.self) {
+                try session.perform("Invalid edit") { document in
+                    switch invalid {
+                    case .nonfiniteGeometry:
+                        document.items = [EaselItem(kind: .text, frame: .init(x: .nan, y: 0, width: 1, height: 1))]
+                    case .negativeSize:
+                        document.items = [EaselItem(kind: .text, frame: .init(x: 0, y: 0, width: -2, height: 1))]
+                    case .duplicateID:
+                        let item = EaselItem(kind: .text, frame: frame); document.items = [item, item]
+                    case .scriptURL:
+                        document.items = [EaselItem(kind: .link, frame: frame, url: "javascript:alert(1)")]
+                    case .fileURL:
+                        document.items = [EaselItem(kind: .link, frame: frame, url: "file:///tmp/example")]
+                    case .missingEndpoints:
+                        document.items = [EaselItem(kind: .arrow, frame: frame)]
+                    case .invalidColor:
+                        document.items = [EaselItem(kind: .text, frame: frame, color: "not-a-color")]
+                    case .blankTitle:
+                        document.title = " \n "
+                    case .changedID:
+                        document.id = UUID()
+                    case .changedCreationDate:
+                        document.createdAt = .distantPast
+                    case .changedVersion:
+                        document.version = 20
+                    case .thrownMutation:
+                        document.title = "Uncommitted"; throw EaselStoreError.documentTooLarge
+                    }
+                }
+            }
+            #expect(session.document == original)
+            #expect(!session.canUndo && !session.canRedo)
+            #expect(try Data(contentsOf: path) == bytes)
         }
     }
 
-    @Test func corruptAndFutureFilesAreNeverReplaced() throws {
+    enum UnreadableFile: CaseIterable {
+        case malformedJson, futureVersion, differentID, oversized
+    }
+
+    @MainActor @Test(arguments: UnreadableFile.allCases)
+    func anUnreadableEaselFileIsLeftExactlyAsItWas(_ unreadable: UnreadableFile) throws {
         try withDirectory { directory in
-            let session = try EaselStore(directory: directory).create()
-            let url = file(directory, session.document.id)
-            let valid = try Data(contentsOf: url)
-            let corrupt = Data("{not valid json".utf8)
-            try corrupt.write(to: url)
-            expectThrows("corrupt JSON") { _ = try EaselStore(directory: directory).load(session.document.id) }
-            #expect(try! Data(contentsOf: url) == corrupt, "Corrupt session is not replaced")
-            var object = try JSONSerialization.jsonObject(with: valid) as! [String: Any]
-            object["version"] = 999
-            let future = try JSONSerialization.data(withJSONObject: object)
-            try future.write(to: url)
-            expectThrows("future version") { _ = try EaselStore(directory: directory).load(session.document.id) }
-            #expect(try! Data(contentsOf: url) == future, "Future version remains untouched")
-            object["version"] = 1
-            object["id"] = UUID().uuidString
-            try JSONSerialization.data(withJSONObject: object).write(to: url)
-            expectThrows("filename/document ID mismatch") { _ = try EaselStore(directory: directory).load(session.document.id) }
-            try Data(repeating: 32, count: EaselStore.maximumDocumentBytes + 1).write(to: url)
-            expectThrows("oversized document") { _ = try EaselStore(directory: directory).load(session.document.id) }
+            let store = try EaselStore(directory: directory)
+            let session = try store.create()
+            let id = session.document.id
+            let path = file(directory, id)
+            var invalid = session.document
+            let bytes: Data
+            switch unreadable {
+            case .malformedJson:
+                bytes = Data("{not json".utf8)
+            case .futureVersion:
+                invalid.version = 999
+                bytes = try JSONEncoder().encode(invalid)
+            case .differentID:
+                invalid.id = UUID()
+                bytes = try JSONEncoder().encode(invalid)
+            case .oversized:
+                bytes = Data(repeating: 32, count: EaselStore.maximumDocumentBytes + 1)
+            }
+            try bytes.write(to: path)
+            #expect(throws: (any Error).self) { _ = try EaselStore(directory: directory).load(id) }
+            #expect(try Data(contentsOf: path) == bytes)
+        }
+    }
+
+    @MainActor @Test
+    func anUnreadableFileDoesNotHideOtherBoards() throws {
+        try withDirectory { directory in
+            let store = try EaselStore(directory: directory)
+            let unreadable = try store.create()
+            try Data("invalid".utf8).write(to: file(directory, unreadable.document.id))
+            let healthy = try store.create(title: "Healthy")
+            #expect(try! store.list().map(\.id) == [healthy.document.id], "One unreadable or stray Easel file does not hide the other Easels")
+        }
+    }
+
+    @MainActor @Test
+    func reopeningDuplicateObjectIDsKeepsIdentityAndContent() throws {
+        try withDirectory { directory in
             let store = try EaselStore(directory: directory)
             let healthy = try store.create(title: "Healthy")
-            try Data("{}".utf8).write(to: directory.appendingPathComponent("documents/stray.json"))
-            #expect(try! store.list().map(\.id) == [healthy.document.id], "One unreadable or stray Easel file does not hide the other Easels")
             try healthy.perform("Shapes") {
                 $0.items = [EaselItem(kind: .rectangle, frame: frame), EaselItem(kind: .circle, frame: frame), EaselItem(kind: .text, frame: frame, text: "Kept")]
             }
@@ -312,30 +451,89 @@ import Testing
             #expect(repaired.items[0].id == shapes[0].id && repaired.items.map(\.kind) == shapes.map(\.kind) && repaired.items[2].text == "Kept",
                    "Repair keeps the first object's ID and every object's content")
             #expect(try! EaselStore(directory: directory).load(healthy.document.id).document == repaired, "Duplicate repair is stable across reads")
-            var aliased = repaired; aliased.items[1].id = aliased.items[0].id
-            let edit = EaselGeometryEdit(document: repaired, selection: [repaired.items[0].id])!
-            #expect(!edit.isCurrent(in: aliased) || edit.applying(edit.translated(x: 5, y: 5), to: aliased) != nil, "Geometry edits tolerate an aliased document without trapping")
         }
     }
 
-    @Test func importedAssetsAreRecognisedAndNamedSafely() throws {
+    @Test
+    func geometryEditsTolerateAnAliasedDocumentWithoutTrapping() {
+        let first = EaselItem(kind: .rectangle, frame: frame)
+        let second = EaselItem(kind: .circle, frame: frame)
+        let date = Date(timeIntervalSince1970: 0)
+        let repaired = EaselDocument(id: UUID(), title: "Shapes", createdAt: date, modifiedAt: date, items: [first, second])
+        var aliased = repaired; aliased.items[1].id = aliased.items[0].id
+        let edit = EaselGeometryEdit(document: repaired, selection: [repaired.items[0].id])!
+        #expect(!edit.isCurrent(in: aliased) || edit.applying(edit.translated(x: 5, y: 5), to: aliased) != nil, "Geometry edits tolerate an aliased document without trapping")
+    }
+
+    @MainActor @Test(arguments: [false, true])
+    func aMalformedOrOversizedImageCannotBeImported(_ oversized: Bool) throws {
         try withDirectory { directory in
             let session = try EaselStore(directory: directory).create()
-            expectThrows("invalid image carrier") { _ = try session.importPNG(Data("not PNG".utf8)) }
-            expectThrows("oversized image") { _ = try session.importPNG(Data(repeating: 0, count: EaselStore.maximumAssetBytes + 1)) }
-            var legacy = Data([0, 0, 0, 0x08]); legacy.append(contentsOf: Array("wide".utf8))
-            legacy.append(contentsOf: [0, 0, 0, 0x10]); legacy.append(contentsOf: Array("mdat".utf8)); legacy.append(Data(count: 8))
-            #expect((try? session.importAsset(legacy, type: .mov))?.hasSuffix(".mov") == true, "a wide and mdat led QuickTime movie still imports")
-            var av1 = Data([0, 0, 0, 0x18]); av1.append(contentsOf: Array("ftypav01".utf8)); av1.append(Data(count: 4))
-            av1.append(contentsOf: Array("iso8".utf8)); av1.append(Data(count: 4))
-            #expect((try? session.importAsset(av1, type: .mp4))?.hasSuffix(".mp4") == true, "an AV1 MP4 imports")
+            let input = oversized ? Data(repeating: 0, count: EaselStore.maximumAssetBytes + 1) : Data("not PNG".utf8)
+            #expect(throws: EaselStoreError.self) { _ = try session.importPNG(input) }
+        }
+    }
+
+    @MainActor @Test(arguments: [false, true])
+    func legacyQuickTimeAndAv1UseTheirOwnAssetTypes(_ legacyMovie: Bool) throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
+            let bytes: Data
+            let type: EaselAssetType
+            if legacyMovie {
+                var legacy = Data([0, 0, 0, 0x08])
+                legacy.append(contentsOf: "wide".utf8)
+                legacy.append(contentsOf: [0, 0, 0, 0x10])
+                legacy.append(contentsOf: "mdat".utf8)
+                legacy.append(Data(count: 8))
+                bytes = legacy
+                type = .mov
+            } else {
+                var av1 = Data([0, 0, 0, 0x18])
+                av1.append(contentsOf: "ftypav01".utf8)
+                av1.append(Data(count: 4))
+                av1.append(contentsOf: "iso8".utf8)
+                av1.append(Data(count: 4))
+                bytes = av1
+                type = .mp4
+            }
+            let asset = try session.importAsset(bytes, type: type)
+            #expect(asset.hasSuffix("." + type.rawValue))
+        }
+    }
+
+    @MainActor @Test
+    func aHeicImageCannotBeImportedAsVideo() throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
             var heic = Data([0, 0, 0, 0x18]); heic.append(contentsOf: Array("ftypheic".utf8)); heic.append(Data(count: 4))
             heic.append(contentsOf: Array("mif1".utf8)); heic.append(Data(count: 4))
             expectThrows("HEIC still image as a video") { _ = try session.importAsset(heic, type: .mp4) }
+        }
+    }
+
+    @MainActor @Test
+    func pngImportGeneratesAnAssetID() throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
             let id = try session.importPNG(png)
             #expect(id.count == 40 && id.hasSuffix(".png"), "Asset name is generated, not user-supplied")
-            expectThrows("path traversal") { _ = try session.assetURL("../outside.png") }
-            expectThrows("absolute asset path") { _ = try session.assetURL("/tmp/outside.png") }
+        }
+    }
+
+    @MainActor @Test(arguments: ["../outside.png", "/tmp/outside.png"])
+    func assetLookupsRefuseAbsoluteAndParentPaths(_ path: String) throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
+            #expect(throws: EaselStoreError.self) { _ = try session.assetURL(path) }
+        }
+    }
+
+    @MainActor @Test
+    func aSymlinkCannotActAsAnAsset() throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
+            let id = try session.importPNG(png)
             let asset = try session.assetURL(id)
             try FileManager.default.removeItem(at: asset)
             let outside = directory.appendingPathComponent("outside.png")
@@ -344,6 +542,13 @@ import Testing
             expectThrows("asset symlink") { _ = try session.assetURL(id) }
             expectThrows("document referencing symlink") { try session.perform("Image") { $0.items = [EaselItem(kind: .image, frame: frame, assetID: id)] } }
             #expect(try! Data(contentsOf: outside) == png, "External target was not touched")
+        }
+    }
+
+    @MainActor @Test
+    func aBoardCannotSaveThroughADocumentsDirectorySymlink() throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
             let docs = directory.appendingPathComponent("documents")
             try FileManager.default.moveItem(at: docs, to: directory.appendingPathComponent("original-documents"))
             try FileManager.default.createSymbolicLink(at: docs, withDestinationURL: directory.appendingPathComponent("original-documents"))
@@ -351,7 +556,7 @@ import Testing
         }
     }
 
-    @Test func aFailedSaveLeavesTheDocumentAndHistoryUnchanged() throws {
+    @MainActor @Test func aFailedSaveLeavesTheDocumentAndHistoryUnchanged() throws {
         try withDirectory { directory in
             let session = try EaselStore(directory: directory).create()
             try session.perform("Rename") { $0.title = "First" }
@@ -368,7 +573,7 @@ import Testing
         }
     }
 
-    @Test func documentsAndHistoriesAreIsolatedAndDeleteOnlyRemovesOne() throws {
+    @MainActor @Test func documentsAndHistoriesAreIsolatedAndDeleteOnlyRemovesOne() throws {
         try withDirectory { directory in
             let store = try EaselStore(directory: directory)
             let first = try store.create(title: "First")
@@ -384,7 +589,7 @@ import Testing
             #expect(!first.canUndo && !first.canRedo, "Deletion clears history")
         }
     }
-    @Test func textStylesSurviveADurableReload() throws {
+    @MainActor @Test func textStylesSurviveADurableReload() throws {
         try withDirectory { directory in
             let session = try EaselStore(directory: directory).create()
             let styles = EaselTextStyle.Family.allCases.flatMap { family in
@@ -411,7 +616,7 @@ import Testing
         }
     }
 
-    @Test func coalescedTypingUndoesAsOneRun() throws {
+    @MainActor @Test func coalescedTypingUndoesAsOneRun() throws {
         try withDirectory { directory in
             let session = try EaselStore(directory: directory).create()
             try session.perform("Add") { $0.items = [EaselItem(kind: .text, frame: frame, text: "")] }
@@ -449,7 +654,7 @@ import Testing
         }
     }
 
-    @Test func inlineImagesPersistAndUndoAsOneStep() throws {
+    @MainActor @Test func inlineImagesPersistAndUndoAsOneStep() throws {
         try withDirectory { directory in
             let store = try EaselStore(directory: directory), session = try store.create()
             let font = EaselRichText.Font(name: "Helvetica", size: 15)
@@ -474,7 +679,7 @@ import Testing
             #expect(session.document.items[0] == item, "Rejected attachment edits preserve existing original document")
         }
     }
-    @Test func richTextRangesPersistAndUndoExactly() throws {
+    @MainActor @Test func richTextRangesPersistAndUndoExactly() throws {
         try withDirectory { directory in
             let session = try EaselStore(directory: directory).create()
             let ink = EaselRichText.Attributes(font: .init(name: "Helvetica", size: 18), ink: "#194B93FF", underline: 1, link: "https://example.com")
@@ -505,7 +710,7 @@ import Testing
         }
     }
 
-    @Test func canvasMovesAndClampsKeepGroupSpacing() throws {
+    @MainActor @Test func canvasMovesAndClampsKeepGroupSpacing() throws {
         try withDirectory { directory in
             let store = try EaselStore(directory: directory)
             let session = try store.create()
@@ -562,7 +767,7 @@ import Testing
         }
     }
 
-    @Test func groupResizeKeepsProportionalGapsAndIdentity() throws {
+    @MainActor @Test func groupResizeKeepsProportionalGapsAndIdentity() throws {
         try withDirectory { directory in
             let store = try EaselStore(directory: directory), session = try store.create()
             let asset = try session.importPNG(png)
@@ -574,15 +779,6 @@ import Testing
             func close(_ a: EaselRect?, _ b: EaselRect) -> Bool {
                 guard let a else { return false }
                 return zip([a.x, a.y, a.width, a.height], [b.x, b.y, b.width, b.height]).allSatisfy { abs($0 - $1) < 0.000001 }
-            }
-            let expected: [EaselRect] = [
-                .init(x: 120, y: 130, width: 280, height: 120), .init(x: 100, y: 130, width: 320, height: 120),
-                .init(x: 120, y: 100, width: 280, height: 180), .init(x: 100, y: 100, width: 320, height: 180),
-                .init(x: 100, y: 130, width: 300, height: 120), .init(x: 120, y: 100, width: 280, height: 150),
-                .init(x: 100, y: 100, width: 300, height: 180), .init(x: 100, y: 100, width: 320, height: 150)]
-            for handle in EaselResizeHandle.allCases {
-                let proposal = edit.resized(using: handle, x: 20, y: 30, centered: false)!
-                #expect(close(EaselGeometryEdit.bounds(of: proposal), expected[handle.rawValue]), "Each control point changes only its original edges: \(handle)")
             }
             let enlarged = edit.resized(using: .bottomRight, x: 150, y: 150, centered: false)!
             #expect(enlarged[0].frame == .init(x: 100, y: 100, width: 150, height: 100) && enlarged[1].frame == .init(x: 400, y: 300, width: 150, height: 100), "Original group transform preserves proportional gaps and individual frames")
@@ -692,7 +888,7 @@ import Testing
         #expect(resized[0].id == a.id && resized[1].id == b.id && resized[0].frame.y == 100, "Resize guides preserve exact members and inactive axis")
     }
 
-    @Test func directControlsRebaseArrowEndpointsWithoutNewIdentity() throws {
+    @MainActor @Test func directControlsRebaseArrowEndpointsWithoutNewIdentity() throws {
         func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 0.000001 }
         let arrow = EaselItem(kind: .arrow, frame: .init(x: 100, y: 100, width: 100, height: 80),
                               points: [.init(x: 0, y: 0), .init(x: 100, y: 80)])
@@ -860,7 +1056,7 @@ import Testing
         #expect(group.allSatisfy { $0.frame.x == 425 && $0.frame.width == 150 } && group.map(\.id) == doc.items.map(\.id), "Captured canvas center transforms exact original group members together")
     }
 
-    @Test func browserObjectsKeepIdentityAndRefusedRetirementChangesNothing() throws {
+    @MainActor @Test func browserObjectsKeepIdentityAndRefusedRetirementChangesNothing() throws {
         try withDirectory { directory in
             let store = try EaselStore(directory: directory), session = try store.create()
             let browser = EaselItem(kind: .browser, frame: frame, url: "https://example.com/authored")
@@ -893,7 +1089,7 @@ import Testing
         }
     }
 
-    @Test func navigationUpdatesABrowserObjectsURLOnly() throws {
+    @MainActor @Test func navigationUpdatesABrowserObjectsURLOnly() throws {
         try withDirectory { directory in
             let store = try EaselStore(directory: directory), session = try store.create()
             let item = EaselItem(kind: .browser, frame: frame, url: "https://example.com/start")
@@ -928,22 +1124,91 @@ import Testing
             session.removeReplacementObserver(token)
         }
     }
-    @Test func addressesAndSearchesResolveToTheRightDestination() {
-        #expect(EaselWebNavigation.address(" example.com/a?x=1#part ")?.absoluteString == "https://example.com/a?x=1#part", "Address authoring supplies recovered HTTPS prefix")
-        #expect(EaselWebNavigation.address("http://localhost:8000/a")?.absoluteString == "http://localhost:8000/a", "Explicit ordinary URL preserves original scheme, port and path")
-        for input in ["", "a b", "javascript:alert(1)", "file:///tmp/a", "https://user:password@example.com", "https://", "https://example.com\nsecret"] {
-            #expect(EaselWebNavigation.address(input) == nil, "Invalid or credential-bearing address stays unsubmitted")
+    @MainActor @Test
+    func anOpenDocumentReturnsItsExistingSession() throws {
+        try withDirectory { directory in
+            let store = try EaselStore(directory: directory)
+            let session = try store.create()
+            #expect(try store.load(session.document.id) === session)
         }
-        for category in EaselWebNavigation.Category.allCases {
-            let draft = EaselWebNavigation.Draft(mode: .search, text: "ice + snow & café?", category: category)
-            let url = EaselWebNavigation.destination(draft)!
-            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-            #expect(components.host == "duckduckgo.com" && components.queryItems?.first(where: { $0.name == "q" })?.value == draft.text, "Search preserves exact query once for every recovered category")
-            #expect(!url.absoluteString.contains("t=hc") && url.absoluteString.contains("%2B"), "No copied tracking token; literal plus remains data")
+    }
+
+    @MainActor @Test
+    func aNewDocumentHasNoHistory() throws {
+        try withDirectory { directory in
+            let session = try EaselStore(directory: directory).create()
+            #expect(!session.canUndo && !session.canRedo)
         }
+    }
+
+    @MainActor @Test
+    func aNoOpTransactionDoesNotAddHistory() throws {
+        let date = Date(timeIntervalSince1970: 0)
+        let document = EaselDocument(id: UUID(), title: "Board", createdAt: date, modifiedAt: date)
+        let session = try EaselSession(inMemory: document, assets: [:])
+        try session.perform("No change") { _ in }
+        #expect(!session.canUndo, "No-op transaction adds no history")
+    }
+
+    @MainActor @Test
+    func undoHistoryKeepsOnlyItsMostRecentFiftyEdits() throws {
+        let date = Date(timeIntervalSince1970: 0)
+        let document = EaselDocument(id: UUID(), title: "Board", createdAt: date, modifiedAt: date)
+        let session = try EaselSession(inMemory: document, assets: [:])
+        for n in 0..<55 { try session.perform("Rename") { $0.title = "Title \(n)" } }
+        var count = 0
+        while session.canUndo { try session.undo(); count += 1 }
+        #expect(count == 50, "Undo history has a bounded count")
+    }
+
+    @Test(arguments: EaselResizeHandle.allCases)
+    func resizeHandlesMoveOnlyTheirOwnEdges(_ handle: EaselResizeHandle) throws {
+        let text = EaselItem(kind: .text, frame: .init(x: 100, y: 100, width: 100, height: 50), zIndex: 8, text: "Unscaled text", textStyle: .init(family: .fancy, size: .h1))
+        let image = EaselItem(kind: .image, frame: .init(x: 300, y: 200, width: 100, height: 50), zIndex: 9, assetID: "example.png")
+        let date = Date(timeIntervalSince1970: 0)
+        let document = EaselDocument(id: UUID(), title: "Board", createdAt: date, modifiedAt: date, items: [text, image])
+        let edit = try #require(EaselGeometryEdit(document: document, selection: [text.id, image.id]))
+        func close(_ a: EaselRect?, _ b: EaselRect) -> Bool {
+            guard let a else { return false }
+            return zip([a.x, a.y, a.width, a.height], [b.x, b.y, b.width, b.height]).allSatisfy { abs($0 - $1) < 0.000001 }
+        }
+        let expected: [EaselRect] = [
+            .init(x: 120, y: 130, width: 280, height: 120), .init(x: 100, y: 130, width: 320, height: 120),
+            .init(x: 120, y: 100, width: 280, height: 180), .init(x: 100, y: 100, width: 320, height: 180),
+            .init(x: 100, y: 130, width: 300, height: 120), .init(x: 120, y: 100, width: 280, height: 150),
+            .init(x: 100, y: 100, width: 300, height: 180), .init(x: 100, y: 100, width: 320, height: 150)]
+        let proposal = edit.resized(using: handle, x: 20, y: 30, centered: false)!
+        #expect(close(EaselGeometryEdit.bounds(of: proposal), expected[handle.rawValue]), "Each control point changes only its original edges: \(handle)")
+    }
+
+    @Test(arguments: [(" example.com/a?x=1#part ", "https://example.com/a?x=1#part"), ("http://localhost:8000/a", "http://localhost:8000/a")])
+    func anAddressKeepsItsExplicitSchemeOrDefaultsToHTTPS(_ input: String, _ expected: String) {
+        #expect(EaselWebNavigation.address(input)?.absoluteString == expected)
+    }
+
+    @Test(arguments: ["", "a b", "javascript:alert(1)", "file:///tmp/a", "https://user:password@example.com", "https://", "https://example.com\nsecret"])
+    func invalidAddressesAreRefused(_ input: String) {
+        #expect(EaselWebNavigation.address(input) == nil, "Invalid or credential-bearing address stays unsubmitted")
+    }
+
+    @Test(arguments: EaselWebNavigation.Category.allCases)
+    func searchPreservesTheExactQuery(_ category: EaselWebNavigation.Category) {
+        let draft = EaselWebNavigation.Draft(mode: .search, text: "ice + snow & café?", category: category)
+        let url = EaselWebNavigation.destination(draft)!
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        #expect(components.host == "duckduckgo.com" && components.queryItems?.first(where: { $0.name == "q" })?.value == draft.text, "Search preserves exact query once for every recovered category")
+        #expect(!url.absoluteString.contains("t=hc") && url.absoluteString.contains("%2B"), "No copied tracking token; literal plus remains data")
+    }
+
+    @Test
+    func mapsSearchUsesTheMapsVertical() {
         let maps = URLComponents(url: EaselWebNavigation.destination(.init(mode: .search, text: "Edmonton", category: .maps))!, resolvingAgainstBaseURL: false)!
         #expect(maps.queryItems?.first(where: { $0.name == "iaxm" })?.value == "maps", "Maps uses the current official provider route")
         #expect(maps.queryItems?.contains(where: { $0.name == "ia" }) == false, "Maps does not inherit the historical News vertical")
+    }
+
+    @Test
+    func aBlankSearchHasNoDestination() {
         #expect(EaselWebNavigation.destination(.init(mode: .search, text: "  ")) == nil, "Empty query does not fabricate a destination")
     }
 }

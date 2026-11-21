@@ -857,12 +857,17 @@ package final class EaselStore {
     private var sessions: [UUID: WeakSession] = [:]
     package var documentsDirectory: URL { directory.appendingPathComponent("documents", isDirectory: true) }
     private var assetsDirectory: URL { directory.appendingPathComponent("assets", isDirectory: true) }
-    private let documentWriter = EaselDocumentWriter()
+    private let documentWriter: EaselDocumentWriter
     package var onSessionCreated: ((EaselSession) -> Void)?
     package var onListed: (([EaselSummary]) -> Void)?
     package var onDocumentRemoved: ((UUID) -> Void)?
 
-    package init(directory: URL, now: @escaping () -> Date = Date.init) throws {
+    package convenience init(directory: URL, now: @escaping () -> Date = Date.init) throws {
+        try self.init(directory: directory, now: now, replaceDocument: EaselAtomicFile.write)
+    }
+
+    init(directory: URL, now: @escaping () -> Date, replaceDocument: @escaping (Data, URL) throws -> Void) throws {
+        self.documentWriter = EaselDocumentWriter(replace: replaceDocument)
         self.directory = directory.standardizedFileURL
         self.now = now
         guard self.directory.isFileURL else { throw EaselStoreError.unsafePath }
@@ -1308,7 +1313,12 @@ private enum EaselAtomicFile {
 
 private final class EaselDocumentWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "org.parc.easel-save", qos: .utility)
+    private let replace: (Data, URL) throws -> Void
     private var lastWrittenBytes: [String: Data] = [:]
+
+    init(replace: @escaping (Data, URL) throws -> Void) {
+        self.replace = replace
+    }
 
     func write(_ document: EaselDocument, to url: URL, maximumBytes: Int, wait: Bool,
                completion: @escaping (Error?) -> Void) {
@@ -1352,7 +1362,7 @@ private final class EaselDocumentWriter: @unchecked Sendable {
         if lastWrittenBytes[key] == data {
             return
         }
-        try EaselAtomicFile.write(data, to: url)
+        try replace(data, url)
         lastWrittenBytes[key] = data
     }
 }
