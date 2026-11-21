@@ -214,6 +214,7 @@ enum EaselLinkTarget {
         switch url.scheme?.lowercased() {
         case "http", "https": return .web(url)
         case "file": return NoteFileKind(url: url) == nil ? nil : .note(url)
+        case "parc": return .web(url)
         default: return .other(url)
         }
     }

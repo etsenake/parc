@@ -82,8 +82,18 @@ extension EaselCanvasView {
     }
 
     func stampRememberedStyle(on item: inout EaselItem) {
+        stampDefaultFamily(on: &item)
         guard adaptsInk else { return }
         EaselStyleDefaults.memory.stamp(&item, document: session.document.id)
+    }
+
+    func stampDefaultFamily(on item: inout EaselItem) {
+        let family = session.document.resolvedDefaultFamily
+        guard family != .clean, item.kind.holdsText else { return }
+        var style = item.textStyle ?? EaselTextStyle()
+        guard style.family == .clean else { return }
+        style.family = family
+        item.textStyle = style
     }
 
     private func editingColorChoice(_ editor: EaselStyledTextView, item: EaselItem) -> EaselColorChoice? {

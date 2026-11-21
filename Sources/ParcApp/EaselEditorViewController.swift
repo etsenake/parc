@@ -16,7 +16,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     }
 
     let session: EaselSession
-    private let titleField = NSTextField()
+    let titleField = NSTextField()
     private let status = NSTextField(labelWithString: "Saved on this Mac")
     private let scroll = NSScrollView()
     let canvas: EaselCanvasView
@@ -25,7 +25,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private var subscription: AnyCancellable?
     private var undoButton: NSButton!
     private var redoButton: NSButton!
-    private var palette: EaselToolPalette?
+    var palette: EaselToolPalette?
     private let recenter = NoteChip("Recenter", icon: .symbol("scope"), style: .filled)
     private var recenterShown = false
     private var barEntered = false
@@ -237,7 +237,8 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             self.onTitleChange?(doc.title)
             self.undoButton.isEnabled = self.canvas.canUndo; self.redoButton.isEnabled = self.canvas.canRedo
             self.refreshPages()
-            self.status.stringValue = "Saved on this Mac · \(doc.items.count) object\(doc.items.count == 1 ? "" : "s")"
+            self.status.stringValue = "Saved on this Mac · \(doc.items.count) object\(doc.items.count == 1 ? "" : "s")" + (doc.isLocked ? " · Locked" : "")
+            self.applyLock(doc.isLocked)
             self.refreshEmptyTemplates()
             self.viewportChanged()
         }
@@ -332,7 +333,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         catch { titleField.stringValue = session.document.title; titleField.currentEditor()?.string = session.document.title; show(error) }
     }
     func controlTextDidEndEditing(_ notification: Notification) { titleField.stringValue = session.document.title }
-    private func show(_ error: Error) { status.stringValue = error.localizedDescription; NSSound.beep() }
+    func show(_ error: Error) { status.stringValue = error.localizedDescription; NSSound.beep() }
     @objc private func undoChange() { canvas.undo(nil) }
     @objc private func redoChange() { canvas.redo(nil) }
     @objc private func showPageMenu(_ sender: NSButton) {

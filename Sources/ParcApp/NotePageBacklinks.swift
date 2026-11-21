@@ -202,7 +202,9 @@ final class NoteBacklinksListView: NSView, NoteFloatingPanelContent {
         let ink = menu ? NoteTheme.menuInk : NoteTheme.ink
         let secondary = menu ? NoteTheme.menuSecondaryInk : NoteTheme.secondaryInk
         let box = NSRect(x: frame.minX + 10, y: (frame.midY - Self.iconSide / 2).rounded(), width: Self.iconSide, height: Self.iconSide)
-        if let emoji = item.icon.flatMap(NoteTabIcon.emoji) {
+        if item.isEasel {
+            NoteIconRenderer.draw(.easelMark, in: box, tint: secondary, pointSize: 15)
+        } else if let emoji = item.icon.flatMap(NoteTabIcon.emoji) {
             NoteIconRenderer.draw(.emoji(emoji), in: box, tint: ink, pointSize: 16)
         } else if let image = iconImage(item) {
             NSGraphicsContext.saveGraphicsState()

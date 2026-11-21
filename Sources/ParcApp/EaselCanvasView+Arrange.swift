@@ -176,6 +176,7 @@ extension EaselCanvasView {
         if onKeyEquivalent?(event) == true { return true }
         guard event.type == .keyDown, window?.isKeyWindow == true else { return super.performKeyEquivalent(with: event) }
         if canvasOwnsKeyFocus, performZoomKeyEquivalent(event) { return true }
+        if isDocumentLocked { return super.performKeyEquivalent(with: event) }
         guard EaselChords.consults(canvasFocus: canvasOwnsKeyFocus, editorFocus: textEditorOwnsKeyFocus),
               let command = EaselChords.command(characters: event.charactersIgnoringModifiers, keyCode: event.keyCode,
                                                 modifiers: easelChordModifiers(event.modifierFlags),
