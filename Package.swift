@@ -100,6 +100,7 @@ let package = Package(
         .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: ".",
                 cSettings: [.headerSearchPath("../../Engine/ParcNative"), .headerSearchPath("../../Sources/ParcEngine")]),
         .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles"], path: "tests/ParcTests",
+                    resources: [.copy("Easels/Fixtures/EaselFonts")],
                     swiftSettings: strict + engineImport),
     ],
     swiftLanguageModes: [.v5],
