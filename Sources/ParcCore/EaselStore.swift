@@ -668,6 +668,7 @@ enum EaselStoreError: Error, LocalizedError {
     case invalidDocument(String), unsupportedVersion(Int), unsafePath, invalidImage, tooLarge, invalidVideo, videoTooLarge
     case invalidAudio, audioTooLarge, invalidPDF, pdfTooLarge, invalidFile, fileTooLarge
     case missingDocument, deletedDocument, closedDocument, browserInUse, lockedDocument
+    case invalidWebLink, imageDownloadFailed, pdfDownloadFailed, staleObject
 
     var errorDescription: String? {
         switch self {
@@ -689,6 +690,10 @@ enum EaselStoreError: Error, LocalizedError {
         case .closedDocument: return "This Easel editor is closed. Reopen the Easel to edit it."
         case .browserInUse: return "Finish closing the embedded webpage before changing this Easel."
         case .lockedDocument: return "This Easel is locked. Unlock it to make changes."
+        case .staleObject: return nil
+        case .invalidWebLink: return "Enter a full web link, like example.com."
+        case .imageDownloadFailed: return "That image couldn’t be downloaded."
+        case .pdfDownloadFailed: return "That PDF couldn’t be downloaded."
         }
     }
 }

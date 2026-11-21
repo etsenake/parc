@@ -13,7 +13,7 @@ final class EaselWebObjects: EaselHostedObjects, EaselCanvasPasteChoices {
     private var pasteMenu: NotePasteLinkMenu?
     private var pasteTarget: UUID?
     private var pasteMonitor: Any?
-    private var downloads: [UUID: URLSessionDataTask] = [:]
+    private var downloads: [UUID: Task<Void, Never>] = [:]
 
     private init(canvas: EaselCanvasView) { self.canvas = canvas }
 
@@ -237,33 +237,19 @@ final class EaselWebObjects: EaselHostedObjects, EaselCanvasPasteChoices {
 
     private func download(_ url: URL, for id: UUID, kind: EaselItemKind) {
         downloads[id]?.cancel()
-        let limit = 30 * 1_048_576
-        let task = Self.downloadSession.dataTask(with: url) { [weak self] data, response, _ in
-            let ok = (response as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
-            let tooBig = (data?.count ?? 0) > limit
-            let body = ok && !tooBig ? data.flatMap { $0.isEmpty ? nil : $0 } : nil
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.downloads.removeValue(forKey: id)
-                    guard let canvas = self.canvas else { return }
-                    if let body { canvas.replaceBookmark(id, withMedia: kind, url: url, data: body) }
-                    else if tooBig { canvas.onError?(kind == .pdf ? EaselStoreError.pdfTooLarge : EaselStoreError.tooLarge) }
-                    else { canvas.onError?(kind == .pdf ? EaselStoreError.invalidPDF : EaselStoreError.invalidImage) }
-                }
+        downloads[id] = Task { [weak self] in
+            do {
+                let body = try await EaselCanvasView.download(url, kind: kind)
+                guard let self, !Task.isCancelled else { return }
+                self.downloads.removeValue(forKey: id)
+                self.canvas?.replaceBookmark(id, withMedia: kind, url: url, data: body)
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                self.downloads.removeValue(forKey: id)
+                self.canvas?.onError?(error)
             }
         }
-        downloads[id] = task
-        task.resume()
     }
-
-    private static let downloadSession: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 20
-        configuration.httpCookieStorage = nil
-        configuration.httpShouldSetCookies = false
-        return URLSession(configuration: configuration)
-    }()
 }
 
 @MainActor

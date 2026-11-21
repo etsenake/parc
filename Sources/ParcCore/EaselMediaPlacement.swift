@@ -31,6 +31,16 @@ enum EaselMediaPlacement {
         }
     }
 
+    static func replaceName(for kind: EaselItemKind) -> String { "Replace " + sentenceName(for: kind) }
+
+    static func embedName(for kind: EaselItemKind) -> String { "Embed " + sentenceName(for: kind) }
+
+    private static func sentenceName(for kind: EaselItemKind) -> String {
+        let name = displayName(for: kind)
+        guard name.count > 1, name.dropFirst().first?.isUppercase != true else { return name }
+        return name.prefix(1).lowercased() + name.dropFirst()
+    }
+
     static func displayName(for kind: EaselItemKind) -> String {
         switch kind {
         case .image: return "Image"

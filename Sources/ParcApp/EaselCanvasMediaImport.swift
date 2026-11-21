@@ -58,7 +58,7 @@ extension EaselCanvasView {
     @discardableResult
     func insertMediaLink(_ url: URL, kind: EaselItemKind, at point: NSPoint? = nil) -> UUID? {
         guard fixedCanvasSize == nil, EaselMediaImportPlan.isLinkable(url, kind: kind) else {
-            onError?(EaselStoreError.invalidDocument("enter a complete http or https link"))
+            onError?(EaselStoreError.invalidWebLink)
             return nil
         }
         cancelPointerInteraction()

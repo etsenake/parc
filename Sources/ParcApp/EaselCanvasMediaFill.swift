@@ -70,7 +70,7 @@ extension EaselCanvasView {
     }
 
     func fillImage(_ id: UUID, data: Data, credit: EaselMediaCredit? = nil, altText: String? = nil) throws {
-        guard let current = fillTarget(id), current.kind == .image else { throw EaselStoreError.invalidImage }
+        guard let current = fillTarget(id), current.kind == .image else { return }
         let asset = try preparedImageAsset(data)
         var entry = EaselPreparedMedia(url: URL(fileURLWithPath: "/"), name: nil, source: .image, data: asset.data, type: asset.type,
                                        fileExtension: nil)
@@ -91,21 +91,21 @@ extension EaselCanvasView {
                 next.frame = EaselMediaPlacement.resized(current.frame, width: size.width, height: size.height)
             }
             replaceMediaItem(current, with: next, name: current.isEmptyPlaceholder ? EaselMediaPlacement.addName(for: current.kind)
-                                                                                     : "Embed " + EaselMediaPlacement.displayName(for: current.kind).lowercased())
+                                                                                     : EaselMediaPlacement.embedName(for: current.kind))
             return
         }
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
-            onError?(EaselStoreError.invalidDocument("enter a complete http or https link"))
+            onError?(EaselStoreError.invalidWebLink)
             return
         }
         noteHostedFill(id, pending: true)
-        let owner = window
+        let owner = window, document = session.document.id
         Task { @MainActor [weak self] in
             do {
-                let data = try await Self.download(url)
+                let data = try await Self.download(url, kind: current.kind)
                 guard let self else { return }
                 self.noteHostedFill(id, pending: false)
-                guard self.window === owner else { return }
+                guard self.window === owner, self.session.document.id == document else { return }
                 if current.kind == .image {
                     try self.fillImage(id, data: data)
                 } else {
@@ -139,7 +139,7 @@ extension EaselCanvasView {
         var next = current
         next.altText = limited.isEmpty ? nil : limited
         guard next != current else { return }
-        replaceMediaItem(current, with: next, name: "Alt Text")
+        replaceMediaItem(current, with: next, name: "Alt text")
     }
 
     private func replaceMediaItem(_ current: EaselItem, with next: EaselItem, name: String) {
@@ -147,7 +147,7 @@ extension EaselCanvasView {
         guard finishEditing() else { return }
         let changed = commit(name) { document in
             guard let index = document.items.firstIndex(where: { $0.id == current.id }), document.items[index] == current else {
-                throw EaselStoreError.invalidDocument("the object changed while it was being filled")
+                throw EaselStoreError.staleObject
             }
             document.items[index] = next
         }
@@ -157,9 +157,9 @@ extension EaselCanvasView {
     }
 
     private func commitFill(_ id: UUID, _ entry: EaselPreparedMedia, credit: EaselMediaCredit? = nil, altText: String? = nil) throws {
-        guard let current = fillTarget(id), current.kind == entry.source.itemKind else { throw Self.mismatch(entry.source.itemKind) }
+        guard let current = fillTarget(id), current.kind == entry.source.itemKind else { return }
         cancelPointerInteraction()
-        guard finishEditing() else { throw EaselStoreError.invalidDocument("finish the current text edit") }
+        guard finishEditing() else { return }
         var imported: [String] = []
         do {
             let assetID = try session.importAsset(entry.data, type: entry.type, fileExtension: entry.fileExtension)
@@ -190,13 +190,16 @@ extension EaselCanvasView {
                                                          height: current.frame.width * natural.height / natural.width)
             }
             let name = current.isEmptyPlaceholder ? EaselMediaPlacement.addName(for: current.kind)
-                : "Replace " + EaselMediaPlacement.displayName(for: current.kind).lowercased()
+                : EaselMediaPlacement.replaceName(for: current.kind)
             try session.perform(name) { document in
                 guard let index = document.items.firstIndex(where: { $0.id == id }), document.items[index] == current else {
-                    throw EaselStoreError.invalidDocument("the object changed while it was being filled")
+                    throw EaselStoreError.staleObject
                 }
                 document.items[index] = next
             }
+        } catch EaselStoreError.staleObject {
+            session.discardUnusedAssets(imported)
+            return
         } catch {
             session.discardUnusedAssets(imported)
             throw error
@@ -220,13 +223,15 @@ extension EaselCanvasView {
         return url
     }
 
-    static func download(_ url: URL) async throws -> Data {
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 30
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { throw EaselStoreError.invalidFile }
-        guard !data.isEmpty else { throw EaselStoreError.invalidFile }
-        guard data.count <= EaselStore.maximumAssetBytes else { throw EaselStoreError.tooLarge }
-        return data
+    static func download(_ url: URL, kind: EaselItemKind) async throws -> Data {
+        do {
+            return try await EaselBoundedDownload.fetch(url, limit: EaselStore.maximumAssetBytes)
+        } catch EaselBoundedDownload.Failure.tooLarge {
+            throw EaselMediaImportPlan.tooLargeError(for: EaselMediaImportPlan.Source.forKind(kind))
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw kind == .pdf ? EaselStoreError.pdfDownloadFailed : kind == .image ? EaselStoreError.imageDownloadFailed : EaselStoreError.invalidFile
+        }
     }
 }
