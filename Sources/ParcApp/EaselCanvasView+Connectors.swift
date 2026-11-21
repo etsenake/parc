@@ -222,24 +222,51 @@ extension EaselCanvasView {
 
     func drawConnector(_ item: EaselItem) {
         guard let drawing = connectorDrawing(for: item) else { return }
+        let reveal = paintsLiveFeedback ? presentedReveal(item.id) : nil
+        guard let reveal, let context = NSGraphicsContext.current?.cgContext else { drawConnector(item, drawing: drawing); return }
+        context.saveGState()
+        if reveal.opacity < 1 { context.setAlpha(reveal.opacity); context.beginTransparencyLayer(auxiliaryInfo: nil) }
+        drawConnector(item, drawing: drawing, reveal: reveal)
+        if reveal.opacity < 1 { context.endTransparencyLayer() }
+        context.restoreGState()
+    }
+
+    private func drawConnector(_ item: EaselItem, drawing: EaselConnectorDrawing, reveal: EaselConnectorRevealFrame? = nil) {
         let paint = EaselPaint(item, adaptive: adaptsInk)
-        if !drawing.pieces.isEmpty {
+        let pieces = reveal.map { EaselConnectorReveal.trimmed(drawing.pieces, fraction: $0.fraction) } ?? drawing.pieces
+        if !pieces.isEmpty {
             let line = NSBezierPath()
-            appendConnectorPath(drawing.pieces, to: line)
+            appendConnectorPath(pieces, to: line)
             line.lineCapStyle = .round; line.lineJoinStyle = .round
             paint.stroke(line)
         }
-        drawConnectorHead(drawing.startHead, paint: paint)
-        drawConnectorHead(drawing.endHead, paint: paint)
+        withHeadPop(reveal?.startHead, tip: drawing.route.start) { drawConnectorHead(drawing.startHead, paint: paint) }
+        withHeadPop(reveal?.endHead, tip: drawing.route.end) { drawConnectorHead(drawing.endHead, paint: paint) }
         if let label = drawing.label {
             let box = NSRect(x: label.x, y: label.y, width: label.width, height: label.height)
-            if item.labelBackground == true {
-                paint.inkColor.setFill()
-                let radius = min(8, box.height / 2)
-                NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius).fill()
+            withHeadPop(reveal?.label, tip: NSPoint(x: box.midX, y: box.midY).easelPoint) {
+                if item.labelBackground == true {
+                    paint.inkColor.setFill()
+                    let radius = min(8, box.height / 2)
+                    NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius).fill()
+                }
+                if editingID != item.id { connectorLabelLayout(item).draw(in: box) }
             }
-            if editingID != item.id { connectorLabelLayout(item).draw(in: box) }
         }
+    }
+
+    private func withHeadPop(_ pop: (scale: CGFloat, opacity: CGFloat)?, tip: EaselPoint, _ body: () -> Void) {
+        guard let pop, pop.scale != 1 || pop.opacity != 1 else { body(); return }
+        guard pop.scale > 0.001, pop.opacity > 0.001, let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        context.setAlpha(pop.opacity)
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        context.translateBy(x: tip.x, y: tip.y)
+        context.scaleBy(x: pop.scale, y: pop.scale)
+        context.translateBy(x: -tip.x, y: -tip.y)
+        body()
+        context.endTransparencyLayer()
+        context.restoreGState()
     }
 
     private func drawConnectorHead(_ head: EaselArrowHeadGeometry, paint: EaselPaint) {
@@ -380,15 +407,22 @@ extension EaselCanvasView {
     }
 
     private func drawMagnets(on target: EaselItem, magnet: EaselConnectorCanvasState.Magnet?, scale: CGFloat) {
+        let outline = EaselShapeGeometry.outline(for: target).map(NSBezierPath.init(connectorOutline:))
+            ?? NSBezierPath(roundedRect: rect(target).insetBy(dx: -3 / scale, dy: -3 / scale), xRadius: 6 / scale, yRadius: 6 / scale)
+        if magnet != nil, let glow = connectorGlowLevel(target.id), glow > 0 {
+            outline.lineJoinStyle = .round
+            for (width, alpha) in [(CGFloat(12), CGFloat(0.1)), (7, 0.16), (3.5, 0.22)] {
+                outline.lineWidth = width / scale
+                EaselAppearance.selection.withAlphaComponent(alpha * glow).setStroke(); outline.stroke()
+            }
+        }
         if let magnet, magnet.side == nil, magnet.pinned == nil {
-            let outline = EaselShapeGeometry.outline(for: target).map(NSBezierPath.init(connectorOutline:))
-                ?? NSBezierPath(roundedRect: rect(target).insetBy(dx: -3 / scale, dy: -3 / scale), xRadius: 6 / scale, yRadius: 6 / scale)
             outline.lineWidth = 2 / scale
             EaselAppearance.selection.setStroke(); outline.stroke()
         }
         for (side, point) in EaselConnectorAttachment.magnets(on: target) {
             let active = magnet?.side == side && magnet?.pinned == nil
-            let radius = (active ? 5.5 : 4) / scale
+            let radius = connectorDotRadius(target: target.id, side: side, active: active) / scale
             let dot = NSBezierPath(ovalIn: NSRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2))
             dot.lineWidth = 1.5 / scale
             (active ? EaselAppearance.selection : EaselAppearance.surface).setFill(); dot.fill()
@@ -461,6 +495,8 @@ extension EaselCanvasView {
                              also others: Set<UUID> = []) -> (connection: EaselConnection?, point: EaselPoint) {
         var location = EaselPoint(x: point.x, y: point.y)
         let target = connectorTarget(at: point, excluding: id, also: others)
+        let previous = connectors.magnet
+        defer { noteConnectorMagnet(from: previous) }
         if let target {
             let snap = EaselConnectorAttachment.snap(location, to: target, pin: flags.contains(.command), scale: canvasScale)
             connectors.magnet = snap.connection.map { EaselConnectorCanvasState.Magnet(target: $0.itemID, side: $0.side, pinned: $0.anchor == nil ? nil : snap.point) }
@@ -578,7 +614,11 @@ extension EaselCanvasView {
             guard travelled, let next = preview.first else { return true }
             let name: String
             if case .endpoint = gesture { name = "Move connector end" } else { name = "Bend connector" }
-            replaceConnector(original, with: next, name: name)
+            if case .endpoint(_, let end, _) = gesture, (end == .start ? next.startConnection : next.endConnection) != nil {
+                poppingConnectorHead(.end(end)) { replaceConnector(original, with: next, name: name) }
+            } else {
+                replaceConnector(original, with: next, name: name)
+            }
         case .label(_, let original, _):
             if travelled, let next = preview.first { replaceConnector(original, with: next, name: "Move label") }
             else { cancelPointerInteraction(); beginConnectorLabelEditing(original, at: nil) }
@@ -588,10 +628,10 @@ extension EaselCanvasView {
             beginConnectorLabelEditing(item, at: point)
         case .create:
             guard travelled, let item = preview.first else { return true }
-            if commit("Add connector", { $0.items.append(item) }) { selection = [item.id]; rememberConnectorStyle(item) }
+            if poppingConnectorHead(.created, { commit("Add connector", { $0.items.append(item) }) }) { selection = [item.id]; rememberConnectorStyle(item) }
         case .quickCreate(let source, let side, _):
             connectors.quickCreateHover = nil; connectors.quickHover = nil
-            if travelled { finishQuickCreateDrag(from: source, side: side, preview: preview) }
+            if travelled { poppingConnectorHead(.created) { finishQuickCreateDrag(from: source, side: side, preview: preview) } }
             else { quickCreate(from: source, side: side) }
         }
         return true
@@ -648,6 +688,8 @@ extension EaselCanvasView {
 
     func beginConnectorCreation(_ routing: EaselConnectorRouting?, at point: NSPoint, flags: NSEvent.ModifierFlags) {
         let snap = snappedConnectorEnd(point, flags: flags.subtracting(.shift), other: nil, excluding: nil)
+        canvasFeedback.magnetTicker.prime(Set([connectors.magnet.map(magnetKey)].compactMap { $0 }))
+        canvasFeedback.glow = nil; canvasFeedback.dot = nil
         connectors.travelled = false
         connectors.gesture = .create(routing: routing, origin: point, start: snap.connection, startPoint: snap.point)
         invalidateIncrementalDisplay(layout: true)
@@ -1028,6 +1070,7 @@ extension EaselCanvasView {
 
 extension EaselCanvasView {
     func noteConnectorStyleChanges(from before: EaselDocument, to after: EaselDocument) {
+        noteCanvasFeedback(from: before, to: after)
         guard before.id == after.id, after.items.contains(where: { $0.kind == .arrow }) else { return }
         let previous = Dictionary(before.items.filter { $0.kind == .arrow }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var latest: EaselConnectorStyle?
@@ -1037,5 +1080,141 @@ extension EaselCanvasView {
             if EaselConnectorStyle(old) != style { latest = style }
         }
         if let latest { EaselConnectorCanvasState.styles[after.id] = latest }
+    }
+}
+
+struct EaselConnectorRevealFrame {
+    var fraction: Double
+    var opacity: CGFloat
+    var startHead: (scale: CGFloat, opacity: CGFloat)?
+    var endHead: (scale: CGFloat, opacity: CGFloat)?
+    var label: (scale: CGFloat, opacity: CGFloat)?
+}
+
+private extension NSPoint {
+    var easelPoint: EaselPoint { EaselPoint(x: x, y: y) }
+}
+
+extension EaselCanvasView {
+    static let revealCrowd = 40
+
+    @discardableResult
+    func poppingConnectorHead<T>(_ pop: EaselConnectorPop, _ body: () -> T) -> T {
+        let previous = canvasFeedback.handDrawn
+        canvasFeedback.handDrawn = pop
+        defer { canvasFeedback.handDrawn = previous }
+        return body()
+    }
+
+    @discardableResult
+    func revealingConnectors<T>(_ body: () -> T) -> T {
+        let previous = canvasFeedback.revealsNew
+        canvasFeedback.revealsNew = true
+        defer { canvasFeedback.revealsNew = previous }
+        return body()
+    }
+
+    func revealConnectors(_ ids: some Sequence<UUID>) {
+        let wanted = Set(ids)
+        let fresh = session.document.items.filter { wanted.contains($0.id) && $0.kind == .arrow }
+        startConnectorReveal(fresh, drawsLine: true, startHead: true, endHead: true)
+    }
+
+    func noteNewConnectors(from before: EaselDocument, to after: EaselDocument) {
+        let old = Set(before.items.lazy.filter { $0.kind == .arrow }.map(\.id))
+        let fresh = after.items.filter { $0.kind == .arrow && !old.contains($0.id) }
+        switch canvasFeedback.handDrawn {
+        case .created?:
+            startConnectorReveal(fresh, drawsLine: false, startHead: false, endHead: true)
+        case .end(let end)?:
+            let previous = Dictionary(before.items.filter { $0.kind == .arrow }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let moved = after.items.filter { item in
+                guard item.kind == .arrow, let was = previous[item.id] else { return false }
+                return end == .start ? was.startConnection != item.startConnection : was.endConnection != item.endConnection
+            }
+            startConnectorReveal(moved, drawsLine: false, startHead: end == .start, endHead: end == .end)
+        case nil:
+            guard !fresh.isEmpty else { return }
+            var copies = Set<UUID>()
+            switch objectMotion.intent {
+            case .appear?: break
+            case .copies(_, let made)?: copies = Set(made)
+            default: guard canvasFeedback.revealsNew else { return }
+            }
+            startConnectorReveal(fresh.filter { !copies.contains($0.id) }, drawsLine: true, startHead: true, endHead: true)
+        }
+    }
+
+    private func startConnectorReveal(_ connectors: [EaselItem], drawsLine: Bool, startHead: Bool, endHead: Bool) {
+        guard !connectors.isEmpty, canAnimateObjects else { return }
+        let reduced = feedbackReducesMotion
+        let visible = visibleRect.isEmpty ? bounds : visibleRect
+        var chosen = connectors
+        if chosen.count > Self.revealCrowd {
+            guard !reduced else { return }
+            chosen = chosen.filter { displayBounds(of: $0).intersects(visible) }
+        }
+        if reduced, !drawsLine { return }
+        let now = CACurrentMediaTime()
+        for item in chosen {
+            canvasFeedback.reveals[item.id] = .init(start: now, drawsLine: drawsLine, startHead: startHead, endHead: endHead, reduced: reduced)
+        }
+        startCanvasFeedback()
+    }
+
+    func presentedReveal(_ id: UUID) -> EaselConnectorRevealFrame? {
+        guard let reveal = canvasFeedback.reveals[id] else { return nil }
+        let elapsed = CACurrentMediaTime() - reveal.start
+        if reveal.reduced {
+            return EaselConnectorRevealFrame(fraction: 1, opacity: CGFloat(EaselFeedbackCurve.revealOpacity(elapsed, reduced: true)))
+        }
+        let line = reveal.drawsLine ? EaselFeedbackCurve.reveal : 0
+        let head = elapsed - line
+        let pop = (scale: CGFloat(EaselFeedbackCurve.headScale(head, reduced: false)),
+                   opacity: CGFloat(head > 0 ? EaselFeedbackCurve.headOpacity(head, reduced: false) : 0))
+        let lead = (scale: CGFloat(EaselFeedbackCurve.headScale(elapsed + 0.08, reduced: false)),
+                    opacity: CGFloat(EaselFeedbackCurve.headOpacity(elapsed + 0.04, reduced: false)))
+        return EaselConnectorRevealFrame(
+            fraction: reveal.drawsLine ? EaselFeedbackCurve.revealFraction(elapsed, reduced: false) : 1,
+            opacity: reveal.drawsLine ? CGFloat(EaselFeedbackCurve.revealOpacity(elapsed, reduced: false)) : 1,
+            startHead: reveal.startHead ? (reveal.drawsLine ? lead : pop) : nil,
+            endHead: reveal.endHead ? pop : nil,
+            label: reveal.drawsLine ? pop : nil)
+    }
+
+    func magnetKey(_ magnet: EaselConnectorCanvasState.Magnet) -> EaselMagnetSnapKey {
+        EaselMagnetSnapKey(target: magnet.target, place: magnet.pinned != nil ? "pin" : magnet.side?.rawValue ?? "outline")
+    }
+
+    func noteConnectorMagnet(from previous: EaselConnectorCanvasState.Magnet?) {
+        let magnet = connectors.magnet
+        canvasFeedback.magnetTicker.update(Set([magnet.map(magnetKey)].compactMap { $0 }))
+        let now = CACurrentMediaTime()
+        var animate = false
+        if magnet?.target != previous?.target {
+            canvasFeedback.glow = magnet.map { ($0.target, now) }
+            animate = magnet != nil
+        }
+        let side = magnet?.pinned == nil ? magnet?.side : nil
+        let oldSide = previous?.pinned == nil ? previous?.side : nil
+        if let magnet, let side, side != oldSide || magnet.target != previous?.target {
+            canvasFeedback.dot = (magnet.target, side, now, 4)
+            animate = true
+        } else if side == nil {
+            canvasFeedback.dot = nil
+        }
+        if animate, !feedbackReducesMotion { startCanvasFeedback() }
+    }
+
+    func connectorGlowLevel(_ target: UUID) -> CGFloat? {
+        guard let glow = canvasFeedback.glow, glow.target == target else { return nil }
+        if feedbackReducesMotion { return 1 }
+        return CGFloat(EaselFeedbackCurve.highlighted(CACurrentMediaTime() - glow.start, from: 0, to: 1))
+    }
+
+    func connectorDotRadius(target: UUID, side: EaselConnection.Side, active: Bool) -> CGFloat {
+        guard active else { return 4 }
+        guard let dot = canvasFeedback.dot, dot.target == target, dot.side == side, !feedbackReducesMotion else { return 6 }
+        return CGFloat(EaselFeedbackCurve.highlighted(CACurrentMediaTime() - dot.start, from: dot.from, to: 6))
     }
 }
