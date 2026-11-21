@@ -356,7 +356,7 @@ extension EaselCanvasView {
         brushes.erasing = []
         brushes.lastEraserPoint = nil
         guard !ids.isEmpty else { repaintDrawings(ids); return }
-        if !commit("Erase", { $0 = EaselDependents.removing(ids, from: $0) }) { repaintDrawings(ids) }
+        if !withObjectMotion(.vanish, { commit("Erase", { $0 = EaselDependents.removing(ids, from: $0) }) }) { repaintDrawings(ids) }
     }
 
     func setWashiPattern(_ pattern: EaselWashiPattern) {
