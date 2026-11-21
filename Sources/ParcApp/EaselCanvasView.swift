@@ -795,6 +795,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             let previous = trackedItems[item.id]
             let nextFrame = item.ownsEmbeddedPage || !(objectView is EaselCanvasArtwork) ? rect(item)
                 : displayBounds(of: item).union(EaselCanvasRotation.bounds(item).insetBy(dx: -boardOverhang(item), dy: -boardOverhang(item)))
+                    .union(feedbackSurfaceExtent(item))
             if objectView.frame != nextFrame { objectView.frame = nextFrame }
             if previous == nil || contentRedrawRequired(previous!, item) {
                 objectView.needsDisplay = true

@@ -62,6 +62,7 @@ final class EaselCanvasFeedbackState {
     var driver: EaselCanvasFrameDriver?
     var envelope = NSRect.null
     var pageOverlay: EaselCanvasPageFlipOverlay?
+    var extendedSurfaces: Set<UUID> = []
 
     var animating: Bool {
         let now = CACurrentMediaTime()
@@ -101,6 +102,7 @@ extension EaselCanvasView {
     func canvasFeedbackFrame() -> Bool {
         let now = CACurrentMediaTime()
         pruneCanvasFeedback(at: now)
+        refreshFeedbackSurfaces()
         let current = canvasFeedbackEnvelope()
         presentCanvasFeedbackDirty(canvasFeedback.envelope.union(current))
         canvasFeedback.envelope = current
@@ -120,6 +122,7 @@ extension EaselCanvasView {
         canvasFeedback.folds.removeAll()
         canvasFeedback.growths.removeAll()
         canvasFeedback.tables.removeAll()
+        refreshFeedbackSurfaces()
         canvasFeedback.driver?.stop()
         canvasFeedback.driver = nil
         canvasFeedback.envelope = .null
@@ -153,6 +156,28 @@ extension EaselCanvasView {
         state.tables = state.tables.filter { now - $0.value.start < EaselFeedbackCurve.tableSlide }
     }
 
+    func feedbackSurfaceExtent(_ item: EaselItem) -> NSRect {
+        var extent = NSRect.null
+        if let slide = canvasFeedback.tables[item.id] { extent = extent.union(slide.previousBounds) }
+        if let growth = canvasFeedback.growths[item.id] {
+            var box = displayBounds(of: item)
+            let tallest = max(growth.from, growth.to) * 1.02 + 2
+            box.size.height += CGFloat(max(0, tallest - item.frame.height))
+            extent = extent.union(box)
+        }
+        return extent
+    }
+
+    private func refreshFeedbackSurfaces() {
+        let ids = Set(canvasFeedback.growths.keys).union(canvasFeedback.tables.keys)
+        guard ids != canvasFeedback.extendedSurfaces else { return }
+        let changed = ids.symmetricDifference(canvasFeedback.extendedSurfaces)
+        canvasFeedback.extendedSurfaces = ids
+        guard usesObjectSurfaces else { return }
+        needsLayout = true
+        for id in changed { artwork[id]?.needsDisplay = true }
+    }
+
     private var feedbackObjectIDs: Set<UUID> {
         let state = canvasFeedback
         var ids = Set(state.reveals.keys).union(state.flashes.keys).union(state.growths.keys).union(state.tables.keys)
@@ -165,10 +190,7 @@ extension EaselCanvasView {
         let ids = feedbackObjectIDs
         if !ids.isEmpty {
             for item in session.document.items where ids.contains(item.id) {
-                var box = displayBounds(of: item)
-                if let slide = canvasFeedback.tables[item.id] { box = box.union(slide.previousBounds) }
-                if let growth = canvasFeedback.growths[item.id], growth.from > growth.to { box.size.height += CGFloat(growth.from - growth.to) }
-                dirty = dirty.union(box)
+                dirty = dirty.union(displayBounds(of: item)).union(feedbackSurfaceExtent(item))
             }
         }
         for fold in canvasFeedback.folds {
