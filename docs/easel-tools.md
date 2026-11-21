@@ -89,9 +89,10 @@ the layout types; on non-Latin layouts they fall back to the key's position.
 | ⇧0 or ⌘0 | Zoom to 100% | ⌘= / ⌘− | Zoom in / out |
 | = or ⇧+ | Zoom in | − or ⇧− | Zoom out |
 
-The map also holds ⇧M highlighter, W washi tape, ⇧⌫ eraser, E stamp, and ⇧H
-and ⇧V flip; each starts working when its feature lands, and until then the
-key does nothing (⇧⌫ deletes the selection, as plain Delete does).
+The map also holds ⇧M highlighter, W washi tape, ⇧⌫ eraser and E stamp; each
+starts working when its feature lands, and until then the key does nothing
+(⇧⌫ deletes the selection, as plain Delete does). ⇧H and ⇧V flip the
+selection, and ⌥← / ⌥→ turn it ([rotate and flip](easel-rotation.md)).
 
 The key map is one table in `EaselKeyCommands.bindings`; other features add
 their command with a single line there. Command chords go through the canvas's
