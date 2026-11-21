@@ -5,6 +5,7 @@ final class NoteLinkCardView: NSView {
     enum Layout { case bookmark }
 
     var onOpen: (() -> Void)?
+    var showsPointer = true { didSet { refreshCursorIfPointerOwned() } }
     var onHeightChange: (() -> Void)?
     private let card = CALayer()
     private let preview = CALayer()
@@ -203,7 +204,7 @@ final class NoteLinkCardView: NSView {
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        if applyNoteCursor(.pointingHand, for: event) { return }
+        if showsPointer, applyNoteCursor(.pointingHand, for: event) { return }
         super.cursorUpdate(with: event)
     }
 

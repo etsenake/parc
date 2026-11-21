@@ -65,6 +65,7 @@ struct EaselStoreTests {
         try directControls()
         try browserObjectOwnership()
         try browserNavigationMetadata()
+        try linkPreviewMetadata()
         try profileRelocation()
         try persistEncodeOffCallingThread()
         try identicalBytePersistSkip()
@@ -1260,6 +1261,23 @@ struct EaselStoreTests {
             live = true
             try store.delete(original.id)
             expect(try! store.list().isEmpty, "Retired observer no longer blocks document deletion")
+        }
+    }
+
+    @MainActor static func linkPreviewMetadata() throws {
+        try withDirectory { directory in
+            let store = try EaselStore(directory: directory), session = try store.create()
+            let link = EaselItem(kind: .link, frame: frame, url: "https://example.com/post")
+            try session.perform("Add bookmark") { $0.items.append(link) }
+            try session.perform("Move bookmark") { $0.items[0].frame.x += 40 }
+            let preview = EaselLinkPreviewData(title: "A post", summary: "Words", siteName: "Example", image: "https://example.com/a.png", icon: nil)
+            expect(try! session.recordLinkPreview(preview, itemID: link.id, url: link.url!), "A fetched preview lands on its bookmark")
+            expect(!session.canRedo && session.document.items[0].preview == preview, "Saving a preview adds no Undo step")
+            expect(try! EaselStore(directory: directory).load(session.document.id).document.items[0].preview == preview, "The saved preview survives reopening")
+            try session.undo()
+            expect(session.document.items[0].frame == frame && session.document.items[0].preview == preview, "Undo keeps the saved preview")
+            expect(!(try! session.recordLinkPreview(preview, itemID: link.id, url: "https://example.com/other")), "A preview for another address is refused")
+            expect(!(try! session.recordLinkPreview(EaselLinkPreviewData(), itemID: link.id, url: link.url!)), "An empty preview is refused")
         }
     }
 

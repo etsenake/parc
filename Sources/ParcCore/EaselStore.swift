@@ -1308,6 +1308,24 @@ final class EaselSession: ObservableObject {
         return true
     }
 
+    func recordLinkPreview(_ preview: EaselLinkPreviewData, itemID: UUID, url: String) throws -> Bool {
+        try requireWritable()
+        guard preview.isValid, let index = document.items.firstIndex(where: { $0.id == itemID && $0.kind == .link && $0.url == url }),
+              document.items[index].preview == nil else { return false }
+        var next = document; next.items[index].preview = preview; next.modifiedAt = (store?.timestamp() ?? Date())
+        try validateReplacement(next)
+        try persist(next)
+        func refresh(_ snapshot: inout EaselDocument) {
+            if let i = snapshot.items.firstIndex(where: { $0.id == itemID && $0.kind == .link && $0.url == url && $0.preview == nil }) {
+                snapshot.items[i].preview = preview
+            }
+        }
+        for i in undoStack.indices { refresh(&undoStack[i]) }
+        for i in redoStack.indices { refresh(&redoStack[i]) }
+        document = next
+        return true
+    }
+
     func undo() throws {
         lastUndoGroup = nil
         try requireWritable()

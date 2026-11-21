@@ -953,6 +953,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 if drawsLinkedVideoCard(item) { drawMediaCard(item, in: r) } else { drawVideoObject(item, in: r, controls: showsEditor) }
             case .webCard where item.assetID != nil:
                 if let id = item.assetID { image(id)?.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil) }
+            case .link where item.url != nil:
+                drawBookmarkCard(item, in: r)
             case .link, .webCard, .browser:
                 EaselAppearance.cardFill.setFill(); NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
                 EaselAppearance.cardStroke.setStroke(); let border = NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10); border.stroke()
