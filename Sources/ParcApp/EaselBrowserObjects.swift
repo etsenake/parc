@@ -10,6 +10,9 @@ final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHosting {
     private var replacementObserver: UUID?
     private var documentObserver: AnyCancellable?
     var loadsLinkPreviews = true
+    var scheduleSnapshotDeadline: (TimeInterval, @escaping () -> Void) -> Void = { delay, work in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { work() }
+    }
 
     init(session: EaselSession, canvas: EaselCanvasView, binding: PCNativeBrowserWindow,
          profilePath: String, validOwner: @escaping () -> Bool,
@@ -70,7 +73,7 @@ final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHosting {
             if !started { collection.receive(id, nil) }
         }
         collection.requested()
-        DispatchQueue.main.asyncAfter(deadline: .now() + deadline) { MainActor.assumeIsolated { collection.expire() } }
+        scheduleSnapshotDeadline(deadline) { MainActor.assumeIsolated { collection.expire() } }
     }
     @MainActor private final class SnapshotCollection {
         private var snapshots: [UUID: EaselPageSnapshot] = [:]
