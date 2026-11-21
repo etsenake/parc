@@ -991,6 +991,8 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
     var onRemove: (() -> Void)?
     var onCancel: (() -> Void)?
     var currentEmoji: String? { didSet { grid.currentCharacter = currentEmoji } }
+    var freezesRecents = false
+    private var frozenRecents: [String]?
 
     let catalog: NoteEmojiCatalog
     let showsRemove: Bool
@@ -1119,7 +1121,7 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
         let custom = library?.emoji ?? []
         if custom.isEmpty { grid.isEditingCustom = false }
         if query.isEmpty {
-            let recents = catalog.recents.compactMap(recentItem)
+            let recents = recentCharacters().compactMap(recentItem)
             if !recents.isEmpty {
                 sections.append(NoteEmojiGridView.Section(category: .recents, title: NoteEmojiCategory.recents.displayName, items: recents))
             }
@@ -1149,6 +1151,14 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
         if !query.isEmpty, !grid.isEmpty { grid.setHighlight(0, fromKeyboard: true, animated: false) }
         scrollTo(y: 0)
         categoryBar.select(query.isEmpty ? grid.firstCategory : nil, animated: false)
+    }
+
+    private func recentCharacters() -> [String] {
+        guard freezesRecents else { return catalog.recents }
+        if let frozenRecents { return frozenRecents }
+        let snapshot = catalog.recents
+        frozenRecents = snapshot
+        return snapshot
     }
 
     override func layout() {
@@ -1289,6 +1299,7 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
+        frozenRecents = nil
         library?.refreshIfNeeded()
         toneStrip.selected = catalog.skinTone
         toneButton.face = .emoji(NoteEmojiDrawing.toneHand(catalog.skinTone))

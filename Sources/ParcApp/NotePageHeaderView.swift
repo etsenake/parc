@@ -35,6 +35,11 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
     private var reservesErrorSpace = false
     private var iconPopover: NotePagePopover?
     private var coverPopover: NotePagePopover?
+    private weak var iconPicker: NotePageIconPicker?
+    private weak var coverPicker: NoteCoverPicker?
+    private weak var coverAnchorView: NSView?
+    private var iconAnchor: NSRect?
+    private var coverAnchor: NSRect?
 
     init(editor: NotePageEditor, file: NoteFileSession?, title: String? = nil) {
         self.editor = editor
@@ -191,6 +196,29 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             if let frame = layout.backlinks { backlinks.frame = frame }
         }
         lastHeight = layout.height
+        keepIconPickerAnchored()
+        keepCoverPickerAnchored()
+    }
+
+    private func pickerAnchor(for view: NSView) -> NSRect {
+        let overlay = editor.canvas.overlayView
+        return overlay.convert(view.bounds, from: view)
+    }
+
+    private func keepIconPickerAnchored() {
+        guard let iconPopover, iconPopover.isOpen, !iconView.isHidden else { return }
+        let anchor = pickerAnchor(for: iconView)
+        guard anchor != iconAnchor else { return }
+        iconAnchor = anchor
+        iconPopover.reposition(anchor: anchor)
+    }
+
+    private func keepCoverPickerAnchored() {
+        guard let coverPopover, coverPopover.isOpen, let view = coverAnchorView, !view.isHiddenOrHasHiddenAncestor else { return }
+        let anchor = pickerAnchor(for: view)
+        guard anchor != coverAnchor else { return }
+        coverAnchor = anchor
+        coverPopover.reposition(anchor: anchor)
     }
 
     private func chipVisible(_ chip: NoteChip) -> Bool {
@@ -364,6 +392,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             }
         }
         coverView.onOpen = { [weak self] url in self?.editor.open(url) }
+        coverView.onLayout = { [weak self] in self?.keepCoverPickerAnchored() }
         properties.onHeightChange = { [weak self] in self?.relayoutIfHeightChanged() }
     }
 
@@ -387,9 +416,13 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             coverView.setPosition(cover.position)
         }
         coverView.credit = next.cover?.credit
+        coverPicker?.hasCover = next.cover != nil
+        if next.cover == nil { coverPopover?.close() }
         if previous?.icon != next.icon {
             iconView.icon = isPlainText ? nil : next.icon
             if animated, next.icon != nil { NoteAnimation.pop(iconView, from: NoteAnimation.checkPopScale, spring: .pop) }
+            iconPicker?.current = next.icon
+            if (next.icon ?? "").isEmpty { iconPopover?.close() }
         }
         properties.isEditable = editable
         properties.reload(next.properties)
@@ -532,6 +565,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         let character = NoteEmojiCatalog.shared.character(for: emoji)
         NoteEmojiCatalog.shared.recordUse(character)
         editor.session.updateSettings(name: "Add Icon") { $0.icon = character }
+        presentIconPicker()
     }
 
     func addRandomCover() {
@@ -562,14 +596,12 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         let picker = NotePageIconPicker(environment: editor.environment, current: settings.icon)
         let popover = NotePagePopover(content: picker)
         popover.exempt(iconView)
-        picker.onPick = { [weak self, weak popover] icon in
+        picker.onPick = { [weak self] icon in
             NoteEmojiCatalog.shared.recordUse(icon)
             self?.editor.session.updateSettings(name: "Change Icon") { $0.icon = icon }
-            popover?.close()
         }
-        picker.onImage = { [weak self, weak popover] source in
+        picker.onImage = { [weak self] source in
             self?.editor.session.updateSettings(name: "Change Icon") { $0.icon = source }
-            popover?.close()
         }
         picker.onRemove = { [weak self, weak popover] in
             self?.editor.session.updateSettings(name: "Remove Icon") { $0.icon = nil }
@@ -577,10 +609,17 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         }
         picker.onCancel = { [weak popover] in popover?.close() }
         picker.onError = { [weak self] error in self?.editor.onError?(error) }
-        popover.onClose = { [weak self] in self?.iconPopover = nil }
+        popover.onClose = { [weak self, weak popover] in
+            guard let self, self.iconPopover === popover else { return }
+            self.iconPopover = nil
+            self.iconAnchor = nil
+        }
         iconPopover = popover
-        let overlay = editor.canvas.overlayView
-        popover.present(in: overlay, anchor: overlay.convert(iconView.bounds, from: iconView), edge: .below)
+        iconPicker = picker
+        layoutSubtreeIfNeeded()
+        let anchor = pickerAnchor(for: iconView)
+        iconAnchor = anchor
+        popover.present(in: editor.canvas.overlayView, anchor: anchor, edge: .below)
         picker.focus()
     }
 
@@ -590,9 +629,8 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         let picker = NoteCoverPicker(environment: editor.environment, hasCover: settings.cover != nil)
         let popover = NotePagePopover(content: picker)
         popover.exempt(anchorView)
-        picker.onChoose = { [weak self, weak popover] cover in
+        picker.onChoose = { [weak self] cover in
             self?.editor.session.updateSettings(name: "Change Cover") { $0.cover = cover }
-            popover?.close()
         }
         picker.onOpen = { [weak self] url in self?.editor.open(url) }
         picker.onRemove = { [weak self, weak popover] in
@@ -600,14 +638,20 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             popover?.close()
         }
         picker.onError = { [weak self] error in self?.editor.onError?(error) }
-        popover.onClose = { [weak self] in
-            self?.coverPopover = nil
-            self?.coverView.controlsPinned = false
+        popover.onClose = { [weak self, weak popover] in
+            guard let self, self.coverPopover === popover else { return }
+            self.coverPopover = nil
+            self.coverAnchor = nil
+            self.coverView.controlsPinned = false
         }
         coverPopover = popover
+        coverPicker = picker
+        coverAnchorView = anchorView
         coverView.controlsPinned = true
-        let overlay = editor.canvas.overlayView
-        popover.present(in: overlay, anchor: overlay.convert(anchorView.bounds, from: anchorView), edge: .below, alignment: .trailing)
+        layoutSubtreeIfNeeded()
+        let anchor = pickerAnchor(for: anchorView)
+        coverAnchor = anchor
+        popover.present(in: editor.canvas.overlayView, anchor: anchor, edge: .below, alignment: .trailing)
     }
 }
 
@@ -1031,6 +1075,7 @@ final class NotePageCoverView: NSView {
     var onRemove: (() -> Void)?
     var onSavePosition: ((Double) -> Void)?
     var onOpen: ((URL) -> Void)?
+    var onLayout: (() -> Void)?
     var isEditable = true { didSet { refreshControls(animated: false) } }
     var controlsInset: CGFloat = 16 { didSet { needsLayout = true } }
     var controlsPinned = false { didSet { refreshControls(animated: true) } }
@@ -1206,6 +1251,7 @@ final class NotePageCoverView: NSView {
         hintLabel.frame = NSRect(x: 12, y: (30 - hintSize.height) / 2, width: hintSize.width, height: hintSize.height)
         let failure = failureLabel.intrinsicContentSize
         failureLabel.frame = NSRect(x: (bounds.width - failure.width) / 2, y: (bounds.height - failure.height) / 2, width: failure.width, height: failure.height)
+        onLayout?()
     }
 
     override func viewDidChangeEffectiveAppearance() {
