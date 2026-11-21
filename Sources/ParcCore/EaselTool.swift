@@ -59,9 +59,7 @@ enum EaselTool: String, CaseIterable, Equatable {
         case .highlighter: return false
         case .washi: return false
         case .eraser: return false
-        case .table: return false
         case .stamp: return false
-        case .codeBlock: return false
         default: return true
         }
     }
@@ -104,7 +102,9 @@ enum EaselTool: String, CaseIterable, Equatable {
 
     var kind: EaselItemKind? {
         switch self {
-        case .select, .hand, .eraser, .table, .stamp, .codeBlock: return nil
+        case .select, .hand, .eraser, .stamp: return nil
+        case .table: return .table
+        case .codeBlock: return .code
         case .marker, .highlighter, .washi: return .freehand
         case .sticky: return .sticky
         case .rectangle: return .rectangle
@@ -144,11 +144,11 @@ enum EaselZoomCommand: String, CaseIterable, Equatable {
 
     var title: String {
         switch self {
-        case .zoomIn: return "Zoom In"
-        case .zoomOut: return "Zoom Out"
+        case .zoomIn: return "Zoom in"
+        case .zoomOut: return "Zoom out"
         case .actualSize: return "Zoom to 100%"
-        case .fit: return "Zoom to Fit"
-        case .selection: return "Zoom to Selection"
+        case .fit: return "Zoom to fit"
+        case .selection: return "Zoom to selection"
         }
     }
 

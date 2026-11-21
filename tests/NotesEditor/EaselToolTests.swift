@@ -104,8 +104,8 @@ struct EaselToolTests {
         expect(command("¿", 24, [.command, .shift]) == nil, "⇧⌘¿ on Spanish layouts is not a zoom")
         expect(command("ß", 27, [.command]) == .zoom(.zoomOut), "German ⌘ß zooms out by position")
         expect(command("1", 18) == nil && command("2", 19) == nil, "Plain digits are not zoom keys")
-        expect(EaselZoomCommand.allCases.map(\.title) == ["Zoom In", "Zoom Out", "Zoom to 100%", "Zoom to Fit", "Zoom to Selection"],
-               "Zoom commands read like the menu")
+        expect(EaselZoomCommand.allCases.map(\.title) == ["Zoom in", "Zoom out", "Zoom to 100%", "Zoom to fit", "Zoom to selection"],
+               "Zoom commands read in the Notes menus' sentence case")
         expect(EaselZoomCommand.allCases.allSatisfy { !$0.shortcut.isEmpty && !$0.shortcut.contains("+") },
                "Zoom shortcut labels avoid the plus sign the keycap renderer uses as a separator")
     }

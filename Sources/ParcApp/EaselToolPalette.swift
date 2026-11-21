@@ -188,7 +188,7 @@ final class EaselZoomMenuView: NSView, NoteFloatingPanelContent {
 
 @MainActor
 final class EaselToolPalette: NSView {
-    enum Insert: String { case image, link, webpage, templates }
+    enum Insert: String { case image, link, webpage, mermaid, templates }
     enum Menu { case shapes, connectors, draw }
 
     private enum Entry: Hashable {
@@ -221,6 +221,7 @@ final class EaselToolPalette: NSView {
     var shapePickerKeepsOpen = false { didSet { if shapePickerKeepsOpen { exemptPinnedViews() } } }
     var keepOpenViews: () -> [NSView] = { [] }
     var showsTemplates = false { didSet { if showsTemplates != oldValue { rebuild() } } }
+    var showsMermaid = false { didSet { if showsMermaid != oldValue { rebuild() } } }
 
     private(set) var tool: EaselTool = .select
     private var shape: EaselShape = .rectangle
@@ -301,6 +302,7 @@ final class EaselToolPalette: NSView {
         result.append((.insert(.link), 3))
         result.append((.insert(.webpage), 3))
         if EaselTool.codeBlock.isAvailable { result.append((.tool(.codeBlock), 3)) }
+        if showsMermaid { result.append((.insert(.mermaid), 3)) }
         if showsTemplates { result.append((.insert(.templates), 3)) }
         result.append((.zoom, 4))
         return result
@@ -436,6 +438,7 @@ final class EaselToolPalette: NSView {
                 button.isChecked = false
             case .zoom:
                 button.isChecked = openEntry == .zoom
+                button.setAccessibilityValue("\(zoomPercent)%")
             }
         }
     }
@@ -445,7 +448,7 @@ final class EaselToolPalette: NSView {
         button.content = .text("\(zoomPercent)%")
         button.setAccessibilityLabel("Zoom")
         button.setAccessibilityValue("\(zoomPercent)%")
-        button.setToolTip("Zoom, \(zoomPercent)%")
+        button.setToolTip("Zoom")
     }
 
     private func relayout() {
@@ -501,6 +504,7 @@ final class EaselToolPalette: NSView {
         case .zoom:
             let zoom = EaselZoomMenuView(frame: .zero)
             zoom.field.placeholder = "\(zoomPercent)%"
+            zoom.field.textField.setAccessibilityLabel("Zoom percentage")
             zoom.list.items = zoomItems()
             zoom.list.onActivate = { [weak self] item in self?.activateZoom(item) }
             zoom.list.onCancel = { [weak self] in self?.closeMenu() }
@@ -527,7 +531,14 @@ final class EaselToolPalette: NSView {
         }
         let next = NotePagePopover(content: content)
         next.exempt(button)
-        if let list { next.onKeyDown = { [weak list] event in list?.handleKeyDown(event) ?? false } }
+        if let list {
+            let typed = field
+            next.onKeyDown = { event in
+                if let typed, [UInt16(36), UInt16(76)].contains(event.keyCode),
+                   !typed.text.trimmingCharacters(in: .whitespaces).isEmpty { return false }
+                return list.handleKeyDown(event)
+            }
+        }
         next.onClose = { [weak self, weak next] in
             guard let self, self.popover === next else { return }
             self.popover = nil
@@ -659,6 +670,7 @@ final class EaselToolPalette: NSView {
         case .image: return .symbol("photo")
         case .link: return .symbol("link")
         case .webpage: return .symbol("globe")
+        case .mermaid: return .symbol("flowchart")
         case .templates: return .symbol("square.grid.2x2")
         }
     }
@@ -668,6 +680,7 @@ final class EaselToolPalette: NSView {
         case .image: return "Add image"
         case .link: return "Add link"
         case .webpage: return "Add webpage"
+        case .mermaid: return "Add Mermaid diagram"
         case .templates: return "Templates"
         }
     }

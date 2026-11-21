@@ -3,7 +3,7 @@ import AppKit
 @MainActor
 final class EaselQuickActionsView: NSView, NoteFloatingPanelContent {
     var preferredSizeDidChange: (() -> Void)?
-    let field = NoteSearchField(placeholder: "Add or do anything…")
+    let field = NoteSearchField(placeholder: "Add, draw or zoom…")
     let list = NoteMenuList()
 
     override init(frame frameRect: NSRect) {

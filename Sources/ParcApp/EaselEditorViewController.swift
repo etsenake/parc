@@ -140,9 +140,10 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             palette?.update(tool: tool, shape: self.canvas.toolState.shape)
         }
         palette.update(tool: canvas.tool, shape: canvas.toolState.shape)
+        palette.showsMermaid = canvas.acceptsMermaid
         self.palette = palette
         recenter.onPress = { [weak self] in self?.canvas.zoomToFit(maximum: 1) }
-        recenter.setToolTip("Recenter on everything in this Easel")
+        recenter.setToolTip("Bring everything back into view")
         recenter.alphaValue = 0; recenter.isHidden = true
         scroll.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(self, selector: #selector(viewportChanged),
@@ -263,8 +264,9 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         tool(.stamp, ["emoji", "sticker", "vote", "react"], section: "Tools")
         tool(.select, ["move", "pointer", "cursor", "arrow"], section: "Tools")
         tool(.hand, ["pan", "scroll", "move", "grab"], section: "Tools")
-        let inserts: [(EaselToolPalette.Insert, [String])] = [(.image, ["picture", "photo", "file"]), (.link, ["url", "bookmark", "address"]),
+        var inserts: [(EaselToolPalette.Insert, [String])] = [(.image, ["picture", "photo", "file"]), (.link, ["url", "bookmark", "address"]),
                                                               (.webpage, ["site", "browser", "page", "web"])]
+        if canvas.acceptsMermaid { inserts.append((.mermaid, ["flowchart", "diagram", "chart", "er"])) }
         for (insert, keywords) in inserts {
             actions.append(.init(id: "insert-" + insert.rawValue, title: EaselToolPalette.title(for: insert),
                                  icon: EaselToolPalette.icon(for: insert), shortcut: nil, keywords: keywords, section: "Inserts",
@@ -290,6 +292,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         case .image: addImage()
         case .link: addLink(control)
         case .webpage: addWebpage()
+        case .mermaid: _ = canvas.showMermaidSheet()
         case .templates: break
         }
     }

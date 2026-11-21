@@ -37,7 +37,7 @@ extension EaselKeyModifiers {
     }
 }
 
-extension EaselPoint {
+private extension EaselPoint {
     init(_ point: NSPoint) { self.init(x: Double(point.x), y: Double(point.y)) }
 }
 
@@ -85,14 +85,16 @@ extension EaselCanvasView {
     }
 
     func cancelToolGesture() {
+        if toolState.creation?.tool == .table { cancelTablePlacement() }
         toolState.creation = nil
+        guard toolState.pan != nil else { return }
+        toolState.pan = nil
+        refreshToolCursor()
     }
 
     func refreshToolCursor() {
         window?.invalidateCursorRects(for: self)
-        guard let window, window.isKeyWindow, let superview else { return }
-        let location = superview.convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        guard hitTest(location) === self else { return }
+        guard let window, window.isKeyWindow, isTopmost(atWindowPoint: window.mouseLocationOutsideOfEventStream) else { return }
         toolCursor.set()
     }
 
@@ -118,6 +120,7 @@ extension EaselCanvasView {
         switch command {
         case .tool(let next):
             guard next.isAvailable, fixedCanvasSize == nil else { return false }
+            if next == .rectangle { toolState.shape = .rectangle }
             activateTool(next)
             NSAccessibility.post(element: self, notification: .announcementRequested,
                                  userInfo: [.announcement: next.title, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
@@ -127,8 +130,7 @@ extension EaselCanvasView {
             self.zoom(zoom)
             return true
         case .flip: return false
-        case .bringToFront: return false
-        case .sendToBack: return false
+        case .layer: return false
         }
     }
 
@@ -218,9 +220,10 @@ extension EaselCanvasView {
     }
 
     func continueToolGesture(at point: NSPoint, event: NSEvent) -> Bool {
-        guard toolState.creation != nil else { return false }
+        guard let creation = toolState.creation else { return false }
         toolState.creation?.end = point
         toolState.creation?.flags = event.modifierFlags
+        if creation.tool == .table { tablePlacementMoved(from: creation.start, to: point); return true }
         refreshCreationDraft()
         autoscroll(with: event)
         return true
@@ -251,13 +254,14 @@ extension EaselCanvasView {
 
     func ownerPlacement(_ placing: EaselTool, from start: NSPoint, to end: NSPoint, frame: EaselRect, dragged: Bool) -> Bool? {
         switch placing {
-        case .sticky: return nil
-        case .section: return nil
+        case .sticky: return insertSticky(at: end)
+        case .section:
+            return dragged ? insertSection(frame: NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)) : insertSection(at: end)
         case .rectangle: return nil
         case .ellipse: return nil
-        case .text: return nil
-        case .table: return nil
-        case .codeBlock: return nil
+        case .text: return dragged ? insertText(at: NSPoint(x: frame.x, y: frame.y), width: frame.width) : insertText(at: end)
+        case .table: return placeTable(from: start, to: dragged ? end : nil)
+        case .codeBlock: return placeCodeBlock(in: frame)
         case .stamp: return nil
         default: return nil
         }
@@ -282,7 +286,7 @@ extension EaselCanvasView {
         }
         guard let current = toolState.creation else { return }
         draft = createdItem(for: current).map { [$0] }
-        invalidateIncrementalDisplay()
+        invalidateIncrementalDisplay(layout: true)
     }
 
     func createdItem(for creation: EaselCanvasToolState.Creation) -> EaselItem? {
@@ -311,16 +315,9 @@ extension EaselCanvasView {
         default: break
         }
         guard let kind = tool.kind, tool.placesObjects else { return nil }
-        let items = session.document.items
-        var item = EaselItem(id: id, kind: kind, frame: constrainedToCanvas(proposed), color: insertionColor)
-        if tool == .section {
-            let lowest = items.map(\.zIndex).min() ?? 0
-            item.zIndex = lowest > Int.min ? lowest - 1 : lowest
-            item.text = EaselBoardObjects.sectionName
-        } else {
-            let highest = items.map(\.zIndex).max() ?? 0
-            item.zIndex = highest < Int.max ? highest + 1 : highest
-        }
+        let highest = session.document.items.map(\.zIndex).max() ?? 0
+        var item = EaselItem(id: id, kind: kind, frame: constrainedToCanvas(proposed), zIndex: highest < Int.max ? highest + 1 : highest,
+                             color: insertionColor)
         if tool == .text { item.text = EaselTextEditing.defaultText }
         if tool == .rectangle, toolState.shape != .rectangle { item.shape = toolState.shape }
         return item
@@ -358,15 +355,21 @@ extension EaselCanvasView {
         return NSPoint(x: max(0, point.x), y: max(0, point.y))
     }
 
+    private func placementName(_ placing: EaselTool, item: EaselItem) -> String {
+        if placing == .rectangle, let shape = item.shape { return EaselShapeGeometry.displayName(shape).lowercased() }
+        return placing.title.lowercased()
+    }
+
     @discardableResult
     func placeCreatedItem(_ item: EaselItem, tool placing: EaselTool) -> Bool {
-        guard commit("Add \(placing.title.lowercased())", { $0.items.append(item) }) else { return false }
+        let name = placementName(placing, item: item)
+        guard commit("Add \(name)", { $0.items.append(item) }) else { return false }
         if placing.returnsToSelect, tool == placing { tool = .select }
         selection = [item.id]
         window?.makeFirstResponder(self)
         if item.kind == .text, let saved = session.document.items.first(where: { $0.id == item.id }) { beginEditing(saved) }
         NSAccessibility.post(element: self, notification: .announcementRequested,
-                             userInfo: [.announcement: "Added \(placing.title.lowercased())", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+                             userInfo: [.announcement: "Added \(name)", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
         return true
     }
 
@@ -459,6 +462,19 @@ extension EaselCanvasView {
     }
 
     var magnification: Double { Double(enclosingScrollView?.magnification ?? 1) }
+
+    func zoomMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] {
+        guard enclosingScrollView?.allowsMagnification == true else { return [] }
+        switch context.target {
+        case .canvas:
+            return [EaselMenuRow(id: "zoom-fit", title: EaselZoomCommand.fit.title, symbol: "viewfinder",
+                                 shortcut: EaselZoomCommand.fit.shortcut, isEnabled: !session.document.items.isEmpty,
+                                 perform: guardedMenuAction { $0.zoom(.fit) })]
+        case .object, .objects:
+            return [EaselMenuRow(id: "zoom-selection", title: EaselZoomCommand.selection.title, symbol: "scope",
+                                 shortcut: EaselZoomCommand.selection.shortcut, perform: guardedMenuAction { $0.zoom(.selection) })]
+        }
+    }
 
     var canZoomToSelection: Bool { !selection.isEmpty }
 

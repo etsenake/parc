@@ -16,15 +16,15 @@ in this order, with a hairline between groups:
 | --- | --- |
 | Navigation | Select, Hand |
 | Objects | Sticky note, Shapes ▾, Connector ▾ (elbow, curved, straight), Text, Section, Table |
-| Tools | Draw ▾ (marker, highlighter, washi tape, eraser), Stamps |
-| Inserts | Add image, Add link, Add webpage, Code block, Templates |
+| Tools | Draw ▾ (marker, highlighter, washi tape, eraser), Stamp |
+| Inserts | Add image, Add link, Add webpage, Code block, Add Mermaid diagram, Templates |
 | View | Zoom percentage ▾ |
 
 A slot whose tool isn't ready yet stays off the toolbar and its key does
 nothing, so the bar never shows a button that can't do its job. Each tool
-reports that through `EaselTool.isAvailable` (today table, stamps, code block,
-highlighter, washi tape and eraser wait for their objects; templates appear
-when a templates owner sets the toolbar's hook). Buttons use the Notes states:
+reports that through `EaselTool.isAvailable` (today the stamp, highlighter,
+washi tape and eraser wait for their objects; templates appear when a
+templates owner sets the toolbar's hook). Buttons use the Notes states:
 secondary ink at rest, hover and pressed washes, and the checked fill for the
 current tool or an open picker. Every button shows the pointing hand, and its
 tooltip shows the name and key, such as “Sticky note S”.
@@ -39,11 +39,15 @@ and Easel Options stay on the title row.
 ## Placing objects
 
 While a sticky, shape or section tool is armed, a dashed ghost of the object
-follows the pointer. A click drops the default size centred on the click; text
-gets the same box a double-click makes. A drag sizes the object instead: Shift
-keeps it square or circular and Option draws from the centre. Stickies aren't
-drag-sized, so a sticky drag drops it where the pointer is released. Dragging a
-button from the toolbar onto the canvas drops that object there.
+follows the pointer. A click drops the object at its default size centred on
+the click, and a new sticky is ready for typing straight away. A drag sizes the
+object instead: Shift keeps it square or circular and Option draws from the
+centre. With Text, a click starts text that widens as you type and a drag sets
+the width it wraps at; with Table, a drag picks rows and columns over a live
+grid and a click drops a 3 × 3 table; a code block lands where you click,
+ready to type. Stickies aren't drag-sized, so a sticky drag drops it where the
+pointer is released. Dragging a button from the toolbar onto the canvas drops
+that object there.
 
 Connectors need a drag from start to end (a click alone draws nothing); Shift
 snaps the line to 45° steps. Straight connectors save no routing, elbow and
@@ -77,16 +81,17 @@ the layout types; on non-Latin layouts they fall back to the key's position.
 | R | Rectangle | O | Ellipse |
 | X or ⇧L | Elbow connector | L | Straight connector |
 | T | Text | ⇧S | Section |
-| M | Marker | Return | Place the armed object |
+| ⇧T | Table | ` | Code block |
+| ] / [ | Bring to front / send to back | M | Marker |
+| Return | Place the armed object | | |
 | Arrows | Nudge, or pan with nothing selected | Escape | Leave the armed tool |
 | ⇧1 | Zoom to fit | ⇧2 | Zoom to selection |
 | ⇧0 or ⌘0 | Zoom to 100% | ⌘= / ⌘− | Zoom in / out |
 | = or ⇧+ | Zoom in | − or ⇧− | Zoom out |
 
-The map also holds ⇧T table, ⇧M highlighter, W washi tape, ⇧⌫ eraser, E
-stamps, ` code block, ⇧H and ⇧V flip, and ] and [ for bring to front and send
-to back; each starts working when its feature lands, and until then the key
-does nothing (⇧⌫ deletes the selection, as plain Delete does).
+The map also holds ⇧M highlighter, W washi tape, ⇧⌫ eraser, E stamp, and ⇧H
+and ⇧V flip; each starts working when its feature lands, and until then the
+key does nothing (⇧⌫ deletes the selection, as plain Delete does).
 
 The key map is one table in `EaselKeyCommands.bindings`; other features add
 their command with a single line there. Command chords go through the canvas's
@@ -115,14 +120,15 @@ the wheel pans sideways, and the arrow keys pan by 48 points (240 with Shift)
 when nothing is selected, whichever tool is armed.
 
 Pinch zooms as before. ⌘ with the wheel zooms around the pointer; one wheel
-event never more than doubles or halves the zoom. Zoom In and Zoom Out step
+event never more than doubles or halves the zoom. Zoom in and Zoom out step
 through 25, 33, 50, 75, 100, 150, 200, 300 and 400% within the Easel's range
-(33–400%; the capture editor also reaches below 25% by halving). Zoom to Fit
-shows every object and Zoom to Selection the selected ones, each with a
-48-point margin.
+(33–400%; the capture editor also reaches below 25% by halving). Zoom to fit
+shows every object and Zoom to selection the selected ones, each with a
+48-point margin. The right-click menu offers Zoom to selection on objects and
+Zoom to fit on the empty canvas.
 
 The zoom button shows the current percentage and opens a Notes menu with a
-field for a typed percentage, Zoom In, Zoom Out, Zoom to Fit, Zoom to Selection
+field for a typed percentage, Zoom in, Zoom out, Zoom to fit, Zoom to selection
 (dimmed with nothing selected) and 50%, 100% and 200%. Programmatic zoom
 glides for a quarter second, eases out and is instant under Reduce Motion; a
 pinch or click stops it. Zoom never saves into the document and plays no

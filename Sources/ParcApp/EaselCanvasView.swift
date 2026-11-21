@@ -1723,7 +1723,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if cancelImageCrop() { return }
         if editor != nil {
             if finishEditing() { selection.removeAll(); window?.makeFirstResponder(self) }
-        } else if start != nil { cancelPointerInteraction() }
+        } else if start != nil || toolState.pan != nil { cancelPointerInteraction() }
         else if !selection.isEmpty { selection.removeAll(); invalidateIncrementalDisplay(layout: true) }
         else if tool != .select { tool = .select }
         else if let onImageEditingCancel { onImageEditingCancel() }
@@ -2145,6 +2145,16 @@ private final class EaselAccessibleObject: NSView {
         let result = super.becomeFirstResponder()
         if result { NSAccessibility.post(element: self, notification: .focusedUIElementChanged) }
         return result
+    }
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned {
+            DispatchQueue.main.async { [weak canvas = self.canvas] in
+                guard let canvas, !canvas.canvasOwnsKeyFocus else { return }
+                canvas.releaseTemporaryHand()
+            }
+        }
+        return resigned
     }
     override func keyDown(with event: NSEvent) { canvas?.keyDown(with: event) }
     override func accessibilityLabel() -> String? {
