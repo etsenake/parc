@@ -79,8 +79,9 @@ on dark paper.
 ## Whole-object links
 
 A selected text object, shape or sticky that isn't being edited can carry one
-link to a web page: ⌘K (Format → Add Link… or Edit Link…) or the context menu's
-Add Link… opens the link field. It takes an `http` or `https`
+link to a web page: ⌘K (Format → Add Link… or Edit Link…), the selection
+toolbar's Link button or the context menu's Add Link… opens the link field. It
+takes an `http` or `https`
 address, adds `https://` to a bare domain like `example.com`, and refuses
 anything else; Remove Link clears it. Range links inside the text keep working
 as before while editing. A linked object shows a small round link badge just
