@@ -34,19 +34,19 @@ struct SpaceManagerSelectionTests {
             two = make("two")
             state.tabs = [one, two]
             state.selectedTabIDs = []
-            manager.ownerValid = { [unowned self] in available }
-            manager.onClose = { [unowned self] in cancelled += 1 }
-            manager.configureSidebar = { [unowned self] id, sidebar in
-                sidebar.prepareTabActivation = { [unowned self] expected in
-                    guard available, expected.spaceID == id else { return nil }
-                    return { [unowned self] in
-                        guard available else { return false }
+            manager.ownerValid = { [weak self] in self?.available ?? false }
+            manager.onClose = { [weak self] in self?.cancelled += 1 }
+            manager.configureSidebar = { [weak self] id, sidebar in
+                sidebar.prepareTabActivation = { [weak self] expected in
+                    guard self?.available == true, expected.spaceID == id else { return nil }
+                    return { [weak self] in
+                        guard let self, available else { return false }
                         selected.append(expected.id)
                         return true
                     }
                 }
-                sidebar.configureManagementInteraction(ownerValid: { [unowned self] in available },
-                                                       onCancel: { [unowned self] in if available { manager.onClose?() } })
+                sidebar.configureManagementInteraction(ownerValid: { [weak self] in self?.available ?? false },
+                                                       onCancel: { [weak self] in if self?.available == true { self?.manager.onClose?() } })
             }
             manager.reload(state)
             manager.layoutSubtreeIfNeeded()
