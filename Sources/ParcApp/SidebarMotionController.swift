@@ -20,6 +20,12 @@ final class SidebarMotionController {
     private var generation: UInt64 = 0
     private var owned: [OwnedAnimation] = []
     private(set) var isAnimating = false
+    typealias AnimationGroup = (_ changes: (NSAnimationContext) -> Void, _ completion: @escaping @Sendable () -> Void) -> Void
+    private let runGroup: AnimationGroup
+
+    init(runGroup: @escaping AnimationGroup = { NSAnimationContext.runAnimationGroup($0, completionHandler: $1) }) {
+        self.runGroup = runGroup
+    }
 
     func animate(layoutRoot: NSView, views: [NSView], style: Style, flushesPreviousLayout: Bool = true,
                  changes: () -> Void, completion: @escaping () -> Void) {
@@ -52,7 +58,7 @@ final class SidebarMotionController {
         }
         defer { if style == .floating { for (view, animations) in saved { view.animations = animations } } }
 
-        NSAnimationContext.runAnimationGroup { context in
+        runGroup({ context in
             switch style {
             case .anchored: context.duration = 0.08
             case .libraryWidth: context.duration = 0.2
@@ -72,13 +78,13 @@ final class SidebarMotionController {
                     owned.append(item)
                 }
             }
-        } completionHandler: { [weak self] in
+        }, { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.generation == token else { return }
                 self.cancel()
                 completion()
             }
-        }
+        })
     }
 
     func cancel() {

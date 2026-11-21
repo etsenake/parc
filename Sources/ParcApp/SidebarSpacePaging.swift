@@ -230,6 +230,7 @@ enum SidebarSpacePagingPresentationSkip {
     var setOffset: (CGFloat) -> Void = { _ in }
     var trackingEnded: () -> Void = {}
     var now: () -> CFTimeInterval = { CACurrentMediaTime() }
+    var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     private var model = SidebarSpacePagingModel()
     private struct Tracking {
@@ -269,7 +270,7 @@ enum SidebarSpacePagingPresentationSkip {
     func slideIn(from previous: Int, to current: Int) -> Bool {
         let all = pages(), width = pageWidth()
         guard previous != current, all.indices.contains(previous), all.indices.contains(current), width > 0,
-              tracking == nil, !selecting, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return false }
+              tracking == nil, !selecting, !reducesMotion() else { return false }
         let base = spring != nil ? offset : 0
         reach = nil
         standInSide = abs(current - previous) > 1 ? (current > previous ? -1 : 1) : nil
@@ -405,7 +406,7 @@ enum SidebarSpacePagingPresentationSkip {
 
     private func animate(velocity: CGFloat, guarding guarded: (before: Bool, after: Bool) = (false, false)) {
         guard offset != 0 else { return }
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { place(0); return }
+        if reducesMotion() { place(0); return }
         spring = (now(), offset, velocity, guarded)
         let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }

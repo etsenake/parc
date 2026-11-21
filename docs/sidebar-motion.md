@@ -295,28 +295,30 @@ changes to them must be checked in their own layout context.
 
 ## Frame pacing
 
-`tests/SidebarPacing/check.py` exercises production transition and frame models
-in an offscreen AppKit harness. It checks bounded preparation/settle work,
-geometry continuity and reversals, renderer sizing, animation lifetime, and
-that hidden drawing views and the pinned canvas do not acquire per-frame
-layout work. Shown material views are measured separately from that budget.
-A dock during a swipe blend fades the shadow, both blurs and both dock materials
-once each and keeps the same budget, continuity and reversal behavior. A dock
-while the swipe keeps settling adds no layout or geometry work: only the theme
-canvases redraw and the two crossfades, the window's and the dock's, follow each
-swipe frame, and the dock materials match the window's blend they hand over to.
-Negative controls remove the optimizations or introduce extra layout and
-require the budget to fail.
+`SidebarPacingTests` drive production transition and frame models in a window
+that is never shown, with the motion controller's completions and the layer
+clock under the test's control. For every transition and reversal, the
+preparation and the group lay each view and label out at most once and size the
+renderer at most once; every geometry change in the group rides a Core
+Animation animation, so AppKit has nothing left to resize or redraw frame by
+frame, and nothing awaits layout; each request starts where the presentation
+is; the settled frames are the chrome frames and no geometry animation outlives
+the transition. Shown material views are exempt from that check. A dock during
+a swipe blend fades the shadow, both blurs and both dock materials once each on
+the group's timing. A swipe that keeps settling during a dock adds no layout or
+geometry work, the window's crossfade follows it, and the dock materials match
+the window's blend they hand over to. Negative controls remove the
+optimizations or add a second geometry pass and require the checks to fail.
 
 ## Checks
 
 | Check | Scope |
 |---|---|
-| `tests/SidebarMotion/check.py` | Transition frames, generation ownership, animation definitions and redraw policies |
+| `SidebarPresentationFrameTests`, `SidebarChromeFramesTests`, `SidebarMotionControllerTests`, `SidebarMotionSurfaceTests` | Transition frames, generation ownership, animation definitions and redraw policies |
 | `SidebarHoverModelTests`, `SidebarHoverTrackerTests` | Region geometry, timers, hysteresis and dismissal guards |
 | `tests/FloatingSidebarSurface/check.py` | Surface properties, material transitions and theme mixing |
 | `SidebarWindowButtonsTests` | Native button layout and pointer-state reconciliation |
 | `tests/SidebarPlusMenu/check.py` | HUD geometry, palette and dismissal behavior |
-| `tests/SidebarPacing/check.py` | Bounded AppKit layout work and continuity |
-| `tests/SidebarSpacePaging/check.py` | Phased, discrete and legacy paging, edge resistance, swipes that catch a click's slide and the trailing create-Space gesture and its haptics |
-| `tests/SidebarSpaceSwipe/check.py` | Space-switch lifecycle and frame-budget regressions |
+| `SidebarPacingTests` | Bounded AppKit layout work and continuity |
+| `SidebarSpacePagingModelTests`, `SidebarSpacePagerTests`, `SidebarSpaceStandInTests`, `SidebarSpaceCreationPullTests` | Phased, discrete and legacy paging, edge resistance, swipes that catch a click's slide and the trailing create-Space gesture and its haptics |
+| `SidebarSpaceSwipeTests` | Space swipes and jumps that build no rows and come to rest, and spring-loaded folders |

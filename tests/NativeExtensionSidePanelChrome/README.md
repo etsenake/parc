@@ -12,7 +12,7 @@ The panel is an explicit current-Chromium adaptation, explained in
 [`native boundary`](../../docs/extensions-side-panel-adaptation.md). The shell
 supplies native geometry and header controls around the real engine page.
 
-`python3 tests/SidebarMotion/check.py` additionally exercises the production
+`SidebarChromeFramesTests` additionally exercise the production
 outer panel frames, including ordinary, popup, Library, narrow and initial
 zero-sized layout. The final application receives the standard whole-module
 Swift SIL check. The native close/ownership/renderer lifetime checks belong to
