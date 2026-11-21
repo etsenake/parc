@@ -6,7 +6,7 @@ extension EaselCanvasView {
         let holders = context.items.filter { $0.kind.holdsText }
         guard !holders.isEmpty else { return [] }
         let targets = Set(context.items.map(\.id))
-        weak var owner = self
+        weak let owner = self
         let act: (@escaping (EaselCanvasView) -> Void) -> () -> Void = { action in
             {
                 guard let canvas = owner else { return }
