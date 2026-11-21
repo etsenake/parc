@@ -85,106 +85,291 @@ struct SidebarHoverModelTests {
         #expect(Z.trafficLightHeight(windowMaxY: 976, screenHeight: 1000, menuBarHeight: 24) == 0, "a window at the menu bar has none")
     }
 
-    @Test func theTrackerPromotesEdgesThroughLingerAndStopAndWidensTheOuterEdge() {
+    private func tracker(visiting points: [CGPoint], _ presentation: SidebarHoverZones.Presentation = .hidden) -> Tracker {
         let t = Tracker()
-        #expect(move(t, to: CGPoint(x: 600, y: 400)).isEmpty && t.info[.window] == .inside, "the window region needs no linger")
-        #expect(!t.needsStopPromotion, "in-page window hover cannot stop-promote")
-        #expect(t.info[.innerLeftEdge] == .none, "the page is outside the edge")
-        #expect(move(t, to: CGPoint(x: 8, y: 400)).isEmpty && t.info[.innerLeftEdge] == .none, "8 pt in is outside the 6 pt edge")
-        #expect(move(t, to: CGPoint(x: 3, y: 400)) == [.innerLeftEdge] && t.info[.innerLeftEdge] == .inside, "entering starts a linger")
-        #expect(t.needsStopPromotion, "an inside edge can stop-promote")
-        #expect(move(t, to: CGPoint(x: 12, y: 400)).isEmpty && t.info[.innerLeftEdge] == .inside, "the held edge reaches 15 pt")
-        #expect(t.linger(.innerLeftEdge) && t.info[.innerLeftEdge] == .hasLingered, "linger promotes a region still inside")
-        #expect(t.needsStopPromotion, "a lingered edge can still stop-promote")
-        #expect(!t.linger(.innerLeftEdge) && !t.linger(.window), "no second promotion; the window never lingers")
-        #expect(t.stop() && t.info[.innerLeftEdge] == .hasStopped && t.info[.window] == .inside, "a stop promotes the edge only")
-        #expect(!t.needsStopPromotion, "hasStopped ends stop promotion")
-        #expect(move(t, to: CGPoint(x: 13, y: 300)).isEmpty && t.info[.innerLeftEdge] == .hasStopped, "moving inside keeps the state")
-        #expect(move(t, to: CGPoint(x: 16, y: 300)).isEmpty && t.info[.innerLeftEdge] == .none, "leaving is immediate")
-        #expect(!t.linger(.innerLeftEdge), "a late linger cannot promote an exited region")
-        _ = move(t, to: CGPoint(x: 2, y: 300))
-        #expect(t.stop() && t.info[.innerLeftEdge] == .hasStopped, "a stop needs no linger first")
-        _ = move(t, to: CGPoint(x: -30, y: 300))
-        #expect(t.info[.window] == .none && t.info[.innerLeftEdge] == .none && t.info[.outerLeftEdge] == .inside,
-              "leaving left lands in the widened outer edge")
-        _ = move(t, to: CGPoint(x: -200, y: 300))
-        #expect(t.info[.outerLeftEdge] == .inside, "the held outer edge stays 250 pt wide")
-        _ = move(t, to: CGPoint(x: -260, y: 300))
-        #expect(t.info[.outerLeftEdge] == .none, "beyond it the outer edge is left")
-        let far = Tracker()
-        _ = move(far, to: CGPoint(x: -200, y: 300))
-        #expect(far.info[.outerLeftEdge] == .none, "approaching from outside meets the 50 pt strip")
-        _ = move(far, to: CGPoint(x: -40, y: 300))
-        #expect(far.info[.outerLeftEdge] == .inside && far.info[.innerLeftEdge] == .none, "then the outer edge")
-        _ = move(far, to: CGPoint(x: -15, y: 300))
-        #expect(far.info[.outerLeftEdge] == .inside && far.info[.innerLeftEdge] == .inside, "the inner edge reaches 20 pt outside")
+        for point in points { _ = move(t, to: point, presentation) }
+        return t
     }
 
-    @Test func theSidebarRegionLingersButNeverStops() {
-        let f = Tracker()
-        _ = move(f, to: CGPoint(x: 100, y: 400), .floating)
-        #expect(f.linger(.sidebar) && f.info[.sidebar] == .hasLingered, "the sidebar lingers")
-        #expect(!f.stop() && f.info[.sidebar] == .hasLingered, "the sidebar never reaches hasStopped")
+    private func lingeredEdgeTracker() -> Tracker {
+        let t = tracker(visiting: [CGPoint(x: 600, y: 400), CGPoint(x: 3, y: 400)])
+        _ = t.linger(.innerLeftEdge)
+        return t
+    }
+
+    @Test func theWindowRegionNeedsNoLinger() {
+        let t = Tracker()
+        #expect(move(t, to: CGPoint(x: 600, y: 400)).isEmpty)
+        #expect(t.info[.window] == .inside)
+    }
+
+    @Test func inPageWindowHoverCannotStopPromote() {
+        #expect(!tracker(visiting: [CGPoint(x: 600, y: 400)]).needsStopPromotion)
+    }
+
+    @Test func thePageIsOutsideTheEdge() {
+        #expect(tracker(visiting: [CGPoint(x: 600, y: 400)]).info[.innerLeftEdge] == SidebarHoverState.none)
+    }
+
+    @Test func eightPointsInIsOutsideTheSixPointEdge() {
+        let t = tracker(visiting: [CGPoint(x: 600, y: 400)])
+        #expect(move(t, to: CGPoint(x: 8, y: 400)).isEmpty)
+        #expect(t.info[.innerLeftEdge] == SidebarHoverState.none)
+    }
+
+    @Test func enteringTheEdgeStartsALinger() {
+        let t = tracker(visiting: [CGPoint(x: 600, y: 400)])
+        #expect(move(t, to: CGPoint(x: 3, y: 400)) == [.innerLeftEdge])
+        #expect(t.info[.innerLeftEdge] == .inside)
+    }
+
+    @Test func anInsideEdgeCanStopPromote() {
+        #expect(tracker(visiting: [CGPoint(x: 600, y: 400), CGPoint(x: 3, y: 400)]).needsStopPromotion)
+    }
+
+    @Test func aHeldEdgeReachesFifteenPoints() {
+        let t = tracker(visiting: [CGPoint(x: 600, y: 400), CGPoint(x: 3, y: 400)])
+        #expect(move(t, to: CGPoint(x: 12, y: 400)).isEmpty)
+        #expect(t.info[.innerLeftEdge] == .inside)
+    }
+
+    @Test func lingerPromotesARegionStillInside() {
+        let t = tracker(visiting: [CGPoint(x: 600, y: 400), CGPoint(x: 3, y: 400)])
+        #expect(t.linger(.innerLeftEdge))
+        #expect(t.info[.innerLeftEdge] == .hasLingered)
+    }
+
+    @Test func aLingeredEdgeCanStillStopPromote() {
+        #expect(lingeredEdgeTracker().needsStopPromotion)
+    }
+
+    @Test func thereIsNoSecondPromotionAndTheWindowNeverLingers() {
+        let t = lingeredEdgeTracker()
+        #expect(!t.linger(.innerLeftEdge))
+        #expect(!t.linger(.window))
+    }
+
+    @Test func aStopPromotesTheEdgeOnly() {
+        let t = lingeredEdgeTracker()
+        #expect(t.stop())
+        #expect(t.info[.innerLeftEdge] == .hasStopped)
+        #expect(t.info[.window] == .inside)
+    }
+
+    @Test func hasStoppedEndsStopPromotion() {
+        let t = lingeredEdgeTracker()
+        _ = t.stop()
+        #expect(!t.needsStopPromotion)
+    }
+
+    @Test func movingInsideKeepsTheStoppedState() {
+        let t = lingeredEdgeTracker()
+        _ = t.stop()
+        #expect(move(t, to: CGPoint(x: 13, y: 300)).isEmpty)
+        #expect(t.info[.innerLeftEdge] == .hasStopped)
+    }
+
+    @Test func leavingTheEdgeIsImmediate() {
+        let t = lingeredEdgeTracker()
+        _ = t.stop()
+        #expect(move(t, to: CGPoint(x: 16, y: 300)).isEmpty)
+        #expect(t.info[.innerLeftEdge] == SidebarHoverState.none)
+    }
+
+    @Test func aLateLingerCannotPromoteAnExitedRegion() {
+        let t = tracker(visiting: [CGPoint(x: 600, y: 400), CGPoint(x: 3, y: 400), CGPoint(x: 16, y: 300)])
+        #expect(!t.linger(.innerLeftEdge))
+    }
+
+    @Test func aStopNeedsNoLingerFirst() {
+        let t = tracker(visiting: [CGPoint(x: 600, y: 400), CGPoint(x: 2, y: 300)])
+        #expect(t.stop())
+        #expect(t.info[.innerLeftEdge] == .hasStopped)
+    }
+
+    @Test func leavingLeftLandsInTheWidenedOuterEdge() {
+        let t = tracker(visiting: [CGPoint(x: 600, y: 400), CGPoint(x: 2, y: 300), CGPoint(x: -30, y: 300)])
+        #expect(t.info[.window] == SidebarHoverState.none)
+        #expect(t.info[.innerLeftEdge] == SidebarHoverState.none)
+        #expect(t.info[.outerLeftEdge] == .inside)
+    }
+
+    @Test func theHeldOuterEdgeStaysTwoHundredFiftyPointsWide() {
+        let t = tracker(visiting: [CGPoint(x: 600, y: 400), CGPoint(x: 2, y: 300), CGPoint(x: -30, y: 300), CGPoint(x: -200, y: 300)])
+        #expect(t.info[.outerLeftEdge] == .inside)
+    }
+
+    @Test func beyondTheHeldOuterEdgeItIsLeft() {
+        let t = tracker(visiting: [CGPoint(x: 600, y: 400), CGPoint(x: 2, y: 300), CGPoint(x: -30, y: 300), CGPoint(x: -260, y: 300)])
+        #expect(t.info[.outerLeftEdge] == SidebarHoverState.none)
+    }
+
+    @Test func approachingFromOutsideMeetsTheFiftyPointStrip() {
+        #expect(tracker(visiting: [CGPoint(x: -200, y: 300)]).info[.outerLeftEdge] == SidebarHoverState.none)
+    }
+
+    @Test func approachingFromOutsideThenEntersTheOuterEdge() {
+        let t = tracker(visiting: [CGPoint(x: -200, y: 300), CGPoint(x: -40, y: 300)])
+        #expect(t.info[.outerLeftEdge] == .inside)
+        #expect(t.info[.innerLeftEdge] == SidebarHoverState.none)
+    }
+
+    @Test func theInnerEdgeReachesTwentyPointsOutside() {
+        let t = tracker(visiting: [CGPoint(x: -200, y: 300), CGPoint(x: -40, y: 300), CGPoint(x: -15, y: 300)])
+        #expect(t.info[.outerLeftEdge] == .inside)
+        #expect(t.info[.innerLeftEdge] == .inside)
+    }
+
+    private func floatingTracker(_ points: CGPoint...) -> Tracker {
+        tracker(visiting: points, .floating)
+    }
+
+    @Test func theSidebarRegionLingers() {
+        let f = floatingTracker(CGPoint(x: 100, y: 400))
+        #expect(f.linger(.sidebar))
+        #expect(f.info[.sidebar] == .hasLingered)
+    }
+
+    @Test func theSidebarNeverReachesHasStopped() {
+        let f = floatingTracker(CGPoint(x: 100, y: 400))
+        _ = f.linger(.sidebar)
+        #expect(!f.stop())
+        #expect(f.info[.sidebar] == .hasLingered)
+    }
+
+    @Test func theFloatingZoneExtendsSeventyFivePointsPastTheSidebar() {
+        let f = floatingTracker(CGPoint(x: 100, y: 400))
+        _ = f.linger(.sidebar)
         _ = move(f, to: CGPoint(x: 300, y: 400), .floating)
-        #expect(f.info[.sidebar] == .hasLingered, "the floating zone extends 75 pt past the sidebar")
+        #expect(f.info[.sidebar] == .hasLingered)
+    }
+
+    @Test func beyondTheFloatingZoneTheSidebarZoneIsLeft() {
+        let f = floatingTracker(CGPoint(x: 100, y: 400))
         _ = move(f, to: CGPoint(x: 309, y: 400), .floating)
-        #expect(f.info[.sidebar] == .none, "beyond it the sidebar zone is left")
+        #expect(f.info[.sidebar] == SidebarHoverState.none)
+    }
+
+    @Test func aResetTrackerStartsEmpty() {
+        let f = floatingTracker(CGPoint(x: 100, y: 400))
         f.reset()
-        #expect(f.info == SidebarHoverInfo(), "a reset tracker starts empty")
+        #expect(f.info == SidebarHoverInfo())
     }
 
-    @Test func activationNeedsTheRightFidelityPerRegion() {
+    private func info(_ states: [(R, SidebarHoverState)]) -> SidebarHoverInfo {
         var info = SidebarHoverInfo()
-        info[.window] = .inside; info[.innerLeftEdge] = .inside
-        #expect(!A.isActive(wasActive: false, info: info, fullscreen: false, includesTopLeft: true), "inside alone does not reveal")
-        #expect(A.isActive(wasActive: true, info: info, fullscreen: false, includesTopLeft: true), "inside keeps an active region")
-        info[.innerLeftEdge] = .hasLingered
-        #expect(A.isActive(wasActive: false, info: info, fullscreen: false, includesTopLeft: true), "lingering reveals")
-        #expect(!A.isActive(wasActive: false, info: info, fullscreen: true, includesTopLeft: true), "fullscreen needs a stop")
-        info[.innerLeftEdge] = .hasStopped
-        #expect(A.isActive(wasActive: false, info: info, fullscreen: true, includesTopLeft: true), "a stop reveals in fullscreen")
-        var page = SidebarHoverInfo(); page[.window] = .inside
-        #expect(!A.isActive(wasActive: true, info: page, fullscreen: false, includesTopLeft: true), "the window region never keeps it")
-        var top = SidebarHoverInfo(); top[.trafficLight] = .hasLingered
-        #expect(A.isActive(wasActive: false, info: top, fullscreen: false, includesTopLeft: true), "the traffic-light zone reveals")
-        #expect(!A.isActive(wasActive: false, info: top, fullscreen: false, includesTopLeft: false), "not while the toolbar shows")
-        top = SidebarHoverInfo(); top[.innerTopLeftEdge] = .inside
-        #expect(A.isActive(wasActive: true, info: top, fullscreen: false, includesTopLeft: true)
-              && !A.isActive(wasActive: true, info: top, fullscreen: false, includesTopLeft: false), "top-left keeps only without the toolbar")
-        var kept = SidebarHoverInfo(); kept[.sidebar] = .inside; kept[.outerLeftEdge] = .none
-        #expect(A.isActive(wasActive: true, info: kept, fullscreen: true, includesTopLeft: false), "the sidebar zone keeps it")
-        kept[.sidebar] = .none; kept[.outerLeftEdge] = .inside
-        #expect(A.isActive(wasActive: true, info: kept, fullscreen: false, includesTopLeft: false), "off the left edge keeps it")
+        for (region, state) in states { info[region] = state }
+        return info
     }
 
-    @Test func thePresentationRuleRevealsKeepsAndDismissesBySidebarState() {
-        var edge = SidebarHoverInfo(); edge[.window] = .inside; edge[.innerLeftEdge] = .inside
-        #expect(decide(true, .locked, edge) == P.Decision(isActive: false, action: .keep), "a locked sidebar ignores hover")
-        #expect(decide(true, .hidden, edge) == P.Decision(isActive: false, action: .keep),
-              "a stale stored value cannot reveal at the inside level")
-        edge[.innerLeftEdge] = .hasLingered
-        #expect(decide(false, .hidden, edge) == P.Decision(isActive: true, action: .reveal), "a lingered edge reveals")
-        #expect(decide(false, .hidden, edge, key: false) == P.Decision(isActive: false, action: .keep), "only the key window reveals")
-        var over = SidebarHoverInfo(); over[.window] = .inside; over[.sidebar] = .inside
-        #expect(decide(true, .floating, over) == P.Decision(isActive: true, action: .keep), "the floating zone keeps it")
-        #expect(decide(false, .floating, over) == P.Decision(isActive: false, action: .dismiss),
-              "without the stored input a floating sidebar needs a lingered zone")
-        over[.sidebar] = .hasLingered
-        #expect(decide(false, .floating, over) == P.Decision(isActive: true, action: .keep), "a lingered sidebar zone holds it")
-        #expect(decide(true, .floating, page) == P.Decision(isActive: false, action: .dismiss),
-              "a pointer outside every keep zone dismisses, however the sidebar was revealed")
-        #expect(decide(true, .floating, page, owner: true) == P.Decision(isActive: true, action: .keep), "an owner guard defers and holds")
-        #expect(decide(true, .floating, page, interaction: true) == P.Decision(isActive: true, action: .keep),
-              "an interaction guard defers in the key window")
-        #expect(decide(true, .floating, page) == P.Decision(isActive: false, action: .dismiss),
-              "the guard's end recomputes from the current states")
-        let reset = SidebarHoverInfo()
-        #expect(decide(true, .floating, reset, key: false) == P.Decision(isActive: false, action: .dismiss),
-              "resigning key reports none and dismisses")
-        #expect(decide(true, .floating, reset, key: false, interaction: true) == P.Decision(isActive: false, action: .dismiss),
-              "interaction guards do not hold outside the key window")
-        #expect(decide(true, .floating, reset, key: false, owner: true) == P.Decision(isActive: true, action: .keep),
-              "an owner guard holds across the resignation")
+    private func active(was: Bool = false, _ info: SidebarHoverInfo, fullscreen: Bool = false, topLeft: Bool = true) -> Bool {
+        A.isActive(wasActive: was, info: info, fullscreen: fullscreen, includesTopLeft: topLeft)
+    }
 
+    @Test func anInsideEdgeAloneDoesNotReveal() {
+        #expect(!active(info([(.window, .inside), (.innerLeftEdge, .inside)])))
+    }
+
+    @Test func anInsideEdgeKeepsAnActiveRegion() {
+        #expect(active(was: true, info([(.window, .inside), (.innerLeftEdge, .inside)])))
+    }
+
+    @Test func aLingeredEdgeReveals() {
+        #expect(active(info([(.window, .inside), (.innerLeftEdge, .hasLingered)])))
+    }
+
+    @Test func fullscreenNeedsAStopNotALinger() {
+        #expect(!active(info([(.window, .inside), (.innerLeftEdge, .hasLingered)]), fullscreen: true))
+    }
+
+    @Test func aStopRevealsInFullscreen() {
+        #expect(active(info([(.window, .inside), (.innerLeftEdge, .hasStopped)]), fullscreen: true))
+    }
+
+    @Test func theWindowRegionNeverKeepsTheSidebarActive() {
+        #expect(!active(was: true, info([(.window, .inside)])))
+    }
+
+    @Test func theTrafficLightZoneReveals() {
+        #expect(active(info([(.trafficLight, .hasLingered)])))
+    }
+
+    @Test func theTrafficLightZoneDoesNotRevealWhileTheToolbarShows() {
+        #expect(!active(info([(.trafficLight, .hasLingered)]), topLeft: false))
+    }
+
+    @Test func theTopLeftEdgeKeepsTheSidebarWithoutTheToolbar() {
+        #expect(active(was: true, info([(.innerTopLeftEdge, .inside)])))
+    }
+
+    @Test func theTopLeftEdgeDoesNotKeepTheSidebarWhileTheToolbarShows() {
+        #expect(!active(was: true, info([(.innerTopLeftEdge, .inside)]), topLeft: false))
+    }
+
+    @Test func theSidebarZoneKeepsTheSidebar() {
+        #expect(active(was: true, info([(.sidebar, .inside), (.outerLeftEdge, .none)]), fullscreen: true, topLeft: false))
+    }
+
+    @Test func theOuterLeftEdgeKeepsTheSidebar() {
+        #expect(active(was: true, info([(.sidebar, .none), (.outerLeftEdge, .inside)]), topLeft: false))
+    }
+
+    private var edgeInside: SidebarHoverInfo { info([(.window, .inside), (.innerLeftEdge, .inside)]) }
+    private var edgeLingered: SidebarHoverInfo { info([(.window, .inside), (.innerLeftEdge, .hasLingered)]) }
+    private var overSidebar: SidebarHoverInfo { info([(.window, .inside), (.sidebar, .inside)]) }
+    private let keep = P.Decision(isActive: true, action: .keep)
+    private let hold = P.Decision(isActive: false, action: .keep)
+    private let dismiss = P.Decision(isActive: false, action: .dismiss)
+
+    @Test func aLockedSidebarIgnoresHover() {
+        #expect(decide(true, .locked, edgeInside) == hold)
+    }
+
+    @Test func aStaleStoredValueCannotRevealAtTheInsideLevel() {
+        #expect(decide(true, .hidden, edgeInside) == hold)
+    }
+
+    @Test func aLingeredEdgeRevealsAHiddenSidebar() {
+        #expect(decide(false, .hidden, edgeLingered) == P.Decision(isActive: true, action: .reveal))
+    }
+
+    @Test func onlyTheKeyWindowReveals() {
+        #expect(decide(false, .hidden, edgeLingered, key: false) == hold)
+    }
+
+    @Test func theFloatingZoneKeepsAFloatingSidebar() {
+        #expect(decide(true, .floating, overSidebar) == keep)
+    }
+
+    @Test func withoutTheStoredInputAFloatingSidebarNeedsALingeredZone() {
+        #expect(decide(false, .floating, overSidebar) == dismiss)
+    }
+
+    @Test func aLingeredSidebarZoneHoldsAFloatingSidebar() {
+        #expect(decide(false, .floating, info([(.window, .inside), (.sidebar, .hasLingered)])) == keep)
+    }
+
+    @Test func aPointerOutsideEveryKeepZoneDismisses() {
+        #expect(decide(true, .floating, page) == dismiss)
+    }
+
+    @Test func anOwnerGuardDefersAndHolds() {
+        #expect(decide(true, .floating, page, owner: true) == keep)
+    }
+
+    @Test func anInteractionGuardDefersInTheKeyWindow() {
+        #expect(decide(true, .floating, page, interaction: true) == keep)
+    }
+
+    @Test func resigningKeyReportsNoneAndDismisses() {
+        #expect(decide(true, .floating, SidebarHoverInfo(), key: false) == dismiss)
+    }
+
+    @Test func interactionGuardsDoNotHoldOutsideTheKeyWindow() {
+        #expect(decide(true, .floating, SidebarHoverInfo(), key: false, interaction: true) == dismiss)
+    }
+
+    @Test func anOwnerGuardHoldsAcrossTheResignation() {
+        #expect(decide(true, .floating, SidebarHoverInfo(), key: false, owner: true) == keep)
     }
 }

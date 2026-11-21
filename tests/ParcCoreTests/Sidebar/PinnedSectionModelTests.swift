@@ -74,56 +74,144 @@ struct PinnedSectionModelTests {
         #expect(!garbled.pinnedCollapsed && garbled.id == space.id && garbled.profileID == profile, "an unreadable fold leaves the Space intact")
     }
 
-    @Test func theStoreFoldsAndUnfoldsDurablyAndTidiesFoldsLeftOnEmptiedSpaces() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-pinned-section-" + UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+    private final class Directory {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("parc-pinned-section-" + UUID().uuidString)
+        init() throws { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
+        deinit { try? FileManager.default.removeItem(at: url) }
+    }
+
+    private func write(_ state: BrowserState, to directory: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(state).write(to: directory.appendingPathComponent("session.json"))
-        let store = try BrowserStore(directory: directory)
-        let before = store.state
-        let committed = try store.setPinnedSectionCollapsed(true, spaceID: space.id)
-        #expect(committed && PinnedSectionCollapse.isFolded(state: store.state, spaceID: space.id), "folding commits to the Space")
-        #expect(store.state.tabs == before.tabs && store.state.folders == before.folders && store.state.selectedTabIDs == before.selectedTabIDs,
-              "folding touches nothing but the fold")
-        let relaunched = try BrowserStore(directory: directory)
-        #expect(PinnedSectionCollapse.isFolded(state: relaunched.state, spaceID: space.id), "the fold survives relaunch")
-        let unchanged = store.state
-        let again = try store.setPinnedSectionCollapsed(true, spaceID: space.id)
-        #expect(again && store.state == unchanged, "folding twice is harmless")
-        let empty = try store.setPinnedSectionCollapsed(true, spaceID: other.id)
-        #expect(!empty && !store.state.spaces[1].pinnedCollapsed, "an empty Pinned can't be folded")
-        let unknown = try store.setPinnedSectionCollapsed(true, spaceID: UUID())
-        #expect(!unknown, "an unknown Space is refused")
-        #expect(!PinnedSectionCollapse.isEmpty(state: state, spaceID: space.id) && !PinnedSectionCollapse.isEmpty(state: state, spaceID: other.id)
-              && PinnedSectionCollapse.isEmpty(state: { var bare = state; bare.tabs = []; bare.folders = []; bare.splitLayouts = []; return bare }(), spaceID: other.id),
-              "a Space is empty only with nothing pinned and nothing in Today")
-        var emptied = store.state
-        emptied.tabs.removeAll { $0.spaceID == space.id && $0.kind == .pinned }
-        emptied.folders.removeAll { $0.spaceID == space.id }
-        emptied.splitLayouts = []
-        #expect(!PinnedSectionCollapse.isFolded(state: emptied, spaceID: space.id) && emptied.spaces[0].pinnedCollapsed,
-              "a folded Space that empties shows no fold even before its flag is tidied away")
-        let opened = try store.setPinnedSectionCollapsed(false, spaceID: space.id)
+    }
+
+    private func store(for state: BrowserState, in directory: Directory) throws -> BrowserStore {
+        try write(state, to: directory.url)
+        return try BrowserStore(directory: directory.url)
+    }
+
+    private var emptiedFoldedState: BrowserState {
         var stale = state
         stale.spaces[0].pinnedCollapsed = true
         stale.tabs.removeAll { $0.spaceID == space.id && $0.kind == .pinned }
-        stale.folders = []; stale.splitLayouts = []
-        let staleDirectory = directory.appendingPathComponent("stale")
-        try FileManager.default.createDirectory(at: staleDirectory, withIntermediateDirectories: true)
-        try encoder.encode(stale).write(to: staleDirectory.appendingPathComponent("session.json"))
-        let staleStore = try BrowserStore(directory: staleDirectory)
-        #expect(staleStore.state.spaces[0].pinnedCollapsed, "a fold left on an emptied Space loads as saved")
+        stale.folders = []
+        stale.splitLayouts = []
+        return stale
+    }
+
+    @Test func foldingCommitsToTheSpace() throws {
+        let directory = try Directory()
+        let store = try store(for: state, in: directory)
+        let committed = try store.setPinnedSectionCollapsed(true, spaceID: space.id)
+        #expect(committed)
+        #expect(PinnedSectionCollapse.isFolded(state: store.state, spaceID: space.id))
+    }
+
+    @Test func foldingTouchesNothingButTheFold() throws {
+        let directory = try Directory()
+        let store = try store(for: state, in: directory)
+        let before = store.state
+        _ = try store.setPinnedSectionCollapsed(true, spaceID: space.id)
+        #expect(store.state.tabs == before.tabs)
+        #expect(store.state.folders == before.folders)
+        #expect(store.state.selectedTabIDs == before.selectedTabIDs)
+    }
+
+    @Test func theFoldSurvivesARelaunch() throws {
+        let directory = try Directory()
+        let store = try store(for: state, in: directory)
+        _ = try store.setPinnedSectionCollapsed(true, spaceID: space.id)
+        let relaunched = try BrowserStore(directory: directory.url)
+        #expect(PinnedSectionCollapse.isFolded(state: relaunched.state, spaceID: space.id))
+    }
+
+    @Test func foldingTwiceIsHarmless() throws {
+        let directory = try Directory()
+        let store = try store(for: state, in: directory)
+        _ = try store.setPinnedSectionCollapsed(true, spaceID: space.id)
+        let unchanged = store.state
+        let again = try store.setPinnedSectionCollapsed(true, spaceID: space.id)
+        #expect(again)
+        #expect(store.state == unchanged)
+    }
+
+    @Test func anEmptyPinnedSectionCannotBeFolded() throws {
+        let directory = try Directory()
+        let store = try store(for: state, in: directory)
+        let folded = try store.setPinnedSectionCollapsed(true, spaceID: other.id)
+        #expect(!folded)
+        #expect(!store.state.spaces[1].pinnedCollapsed)
+    }
+
+    @Test func anUnknownSpaceIsRefused() throws {
+        let directory = try Directory()
+        let store = try store(for: state, in: directory)
+        #expect(try !store.setPinnedSectionCollapsed(true, spaceID: UUID()))
+    }
+
+    @Test func aSpaceWithPinnedItemsIsNotEmpty() {
+        #expect(!PinnedSectionCollapse.isEmpty(state: state, spaceID: space.id))
+    }
+
+    @Test func aSpaceWithOnlyTodayItemsIsNotEmpty() {
+        #expect(!PinnedSectionCollapse.isEmpty(state: state, spaceID: other.id))
+    }
+
+    @Test func aSpaceIsEmptyWithNothingPinnedAndNothingInToday() {
+        var bare = state
+        bare.tabs = []
+        bare.folders = []
+        bare.splitLayouts = []
+        #expect(PinnedSectionCollapse.isEmpty(state: bare, spaceID: other.id))
+    }
+
+    @Test func aFoldedSpaceThatEmptiesShowsNoFoldBeforeItsFlagIsTidied() {
+        let emptied = emptiedFoldedState
+        #expect(!PinnedSectionCollapse.isFolded(state: emptied, spaceID: space.id))
+        #expect(emptied.spaces[0].pinnedCollapsed)
+    }
+
+    @Test func aFoldLeftOnAnEmptiedSpaceLoadsAsSaved() throws {
+        let directory = try Directory()
+        let staleStore = try store(for: emptiedFoldedState, in: directory)
+        #expect(staleStore.state.spaces[0].pinnedCollapsed)
+    }
+
+    @Test func tidyingClearsTheFoldOfASpaceWithNothingPinned() throws {
+        let directory = try Directory()
+        let staleStore = try store(for: emptiedFoldedState, in: directory)
         staleStore.clearEmptyPinnedFolds()
-        #expect(!staleStore.state.spaces[0].pinnedCollapsed, "tidying clears the fold of a Space with nothing pinned")
-        let staleReloaded = try BrowserStore(directory: staleDirectory)
-        #expect(!staleReloaded.state.spaces[0].pinnedCollapsed, "the tidied fold stays cleared after relaunch")
-        let foldedStore = try BrowserStore(directory: directory)
-        let foldedBefore = foldedStore.state
-        foldedStore.clearEmptyPinnedFolds()
-        #expect(foldedStore.state == foldedBefore, "tidying leaves Spaces that still have pinned items alone")
-        let reopened = try BrowserStore(directory: directory)
-        #expect(opened && !PinnedSectionCollapse.isFolded(state: reopened.state, spaceID: space.id), "unfolding is saved too")
+        #expect(!staleStore.state.spaces[0].pinnedCollapsed)
+    }
+
+    @Test func theTidiedFoldStaysClearedAfterARelaunch() throws {
+        let directory = try Directory()
+        let staleStore = try store(for: emptiedFoldedState, in: directory)
+        staleStore.clearEmptyPinnedFolds()
+        try staleStore.save()
+        #expect(try !BrowserStore(directory: directory.url).state.spaces[0].pinnedCollapsed)
+    }
+
+    @Test func tidyingLeavesSpacesThatStillHavePinnedItemsAlone() throws {
+        var folded = state
+        folded.spaces[0].pinnedCollapsed = true
+        let directory = try Directory()
+        let store = try store(for: folded, in: directory)
+        let before = store.state
+        store.clearEmptyPinnedFolds()
+        #expect(store.state == before)
+    }
+
+    @Test func unfoldingIsSavedToo() throws {
+        var folded = state
+        folded.spaces[0].pinnedCollapsed = true
+        let directory = try Directory()
+        let store = try store(for: folded, in: directory)
+        let opened = try store.setPinnedSectionCollapsed(false, spaceID: space.id)
+        let reopened = try BrowserStore(directory: directory.url)
+        #expect(opened)
+        #expect(!PinnedSectionCollapse.isFolded(state: reopened.state, spaceID: space.id))
     }
 
     @Test func onlyThePinnedItemHoldingTheActiveTabPeeksOutOfAFoldedSection() throws {

@@ -3,76 +3,152 @@ import Testing
 @testable import ParcCore
 
 struct SidebarWindowWidthTests {
-    func drag(_ window: inout SidebarWindowWidth, by translation: Double, locked: Bool = true,
-              _ completion: SidebarResizeGesture.Completion, lastUsed: inout Double) -> Double? {
-        var gesture = SidebarResizeGesture(width: window.width, locked: locked)
-        _ = gesture.change(translationX: translation, velocityX: 0, now: 0)
-        let written = window.end(gesture.end(completion, translationX: translation), completion)
-        if let written { lastUsed = written }
-        return written
+    private struct Drag {
+        var window: SidebarWindowWidth
+        var lastUsed: Double
+        var written: Double?
+
+        init(window: SidebarWindowWidth, lastUsed: Double) {
+            self.window = window
+            self.lastUsed = lastUsed
+        }
+
+        mutating func apply(by translation: Double, locked: Bool = true, _ completion: SidebarResizeGesture.Completion) {
+            var gesture = SidebarResizeGesture(width: window.width, locked: locked)
+            _ = gesture.change(translationX: translation, velocityX: 0, now: 0)
+            written = window.end(gesture.end(completion, translationX: translation), completion)
+            if let written { lastUsed = written }
+        }
     }
 
-    @Test func windowsKeepTheirOwnWidthsAcrossDragsResetsAndSettingsEdits() {
-        var lastUsed = SidebarResizeGesture.defaultWidth
-        var first = SidebarWindowWidth(lastUsed: lastUsed), second = SidebarWindowWidth(lastUsed: lastUsed)
-        #expect(first.width == 228 && second.width == 228, "new windows take the last-used width")
-
-        let r1 = drag(&first, by: 72, .ended, lastUsed: &lastUsed)
-        #expect(r1 == 300, "a completed drag writes the last-used width")
-        #expect(first.width == 300 && lastUsed == 300, "the dragging window and the last-used width follow the drag")
-        #expect(second.width == 228, "another open window keeps its own width")
-        #expect(SidebarWindowWidth(lastUsed: lastUsed).width == 300, "a later window takes the last-used width")
-        #expect(SidebarResizeGesture(width: second.width, locked: true).widthOnBegin == 228, "a drag starts from its own window's width")
-
-        let r2 = drag(&second, by: 100, .cancelled, lastUsed: &lastUsed)
-        #expect(r2 == nil, "cancel writes nothing")
-        #expect(second.width == 228 && lastUsed == 300, "cancel restores the start width")
-        let r3 = drag(&second, by: -30, .failed, lastUsed: &lastUsed)
-        #expect(r3 == nil, "failure writes nothing")
-        #expect(second.width == 228 && lastUsed == 300, "failure restores the start width")
-
-        let r4 = drag(&second, by: -150, .ended, lastUsed: &lastUsed)
-        #expect(r4 == nil, "a collapse writes nothing")
-        #expect(second.width == 228 && lastUsed == 300, "a collapse keeps this window's width and the last-used width")
-        let r5 = drag(&second, by: -150, locked: false, .ended, lastUsed: &lastUsed)
-        #expect(r5 == 164, "a floating release clamps and writes")
-        #expect(second.width == 164 && lastUsed == 164, "the floating release sets both")
-
-        lastUsed = first.reset()
-        #expect(first.width == 228 && lastUsed == 228 && second.width == 164, "reset to 228 in one window")
-
-        lastUsed = 400
-        first.applySetting(lastUsed); second.applySetting(lastUsed)
-        #expect(first.width == 400 && second.width == 400, "a Settings edit applies to open windows")
+    private func drag(from width: Double = 228, lastUsed: Double = 228, restored: Double? = nil) -> Drag {
+        Drag(window: SidebarWindowWidth(lastUsed: width, restored: restored), lastUsed: lastUsed)
     }
 
-    @Test func aSettingsEditApplies() {
-        #expect(SidebarWindowWidth(lastUsed: 50).width == 164 && SidebarWindowWidth(lastUsed: 900).width == 500, "seeding clamps")
+    @Test func aNewWindowTakesTheLastUsedWidth() {
+        #expect(SidebarWindowWidth(lastUsed: 228).width == 228)
+    }
+
+    @Test func aCompletedDragWritesTheLastUsedWidth() {
+        var d = drag()
+        d.apply(by: 72, .ended)
+        #expect(d.written == 300)
+        #expect(d.lastUsed == 300)
+    }
+
+    @Test func aCompletedDragMovesOnlyTheDraggingWindow() {
+        var d = drag()
+        let other = SidebarWindowWidth(lastUsed: 228)
+        d.apply(by: 72, .ended)
+        #expect(d.window.width == 300)
+        #expect(other.width == 228)
+    }
+
+    @Test func aLaterWindowTakesTheWidthOfTheLastCompletedDrag() {
+        var d = drag()
+        d.apply(by: 72, .ended)
+        #expect(SidebarWindowWidth(lastUsed: d.lastUsed).width == 300)
+    }
+
+    @Test func aDragStartsFromItsOwnWindowsWidth() {
+        #expect(SidebarResizeGesture(width: SidebarWindowWidth(lastUsed: 228).width, locked: true).widthOnBegin == 228)
+    }
+
+    @Test(arguments: [(SidebarResizeGesture.Completion.cancelled, 100.0), (.failed, -30.0)])
+    func aCancelledOrFailedDragWritesNothingAndRestoresTheStartWidth(completion: SidebarResizeGesture.Completion, translation: Double) {
+        var d = drag(lastUsed: 300)
+        d.apply(by: translation, completion)
+        #expect(d.written == nil)
+        #expect(d.window.width == 228)
+        #expect(d.lastUsed == 300)
+    }
+
+    @Test func aCollapseWritesNothingAndKeepsBothWidths() {
+        var d = drag(lastUsed: 300)
+        d.apply(by: -150, .ended)
+        #expect(d.written == nil)
+        #expect(d.window.width == 228)
+        #expect(d.lastUsed == 300)
+    }
+
+    @Test func aFloatingReleaseClampsAndWritesBothWidths() {
+        var d = drag(lastUsed: 300)
+        d.apply(by: -150, locked: false, .ended)
+        #expect(d.written == 164)
+        #expect(d.window.width == 164)
+        #expect(d.lastUsed == 164)
+    }
+
+    @Test func resettingOneWindowReturnsItToTheDefaultAndLeavesOthers() {
+        var first = SidebarWindowWidth(lastUsed: 300)
+        let second = SidebarWindowWidth(lastUsed: 164)
+        #expect(first.reset() == 228)
+        #expect(first.width == 228)
+        #expect(second.width == 164)
+    }
+
+    @Test func aSettingsEditAppliesToAnOpenWindow() {
+        var window = SidebarWindowWidth(lastUsed: 228)
+        window.applySetting(400)
+        #expect(window.width == 400)
+    }
+
+    @Test(arguments: [(50.0, 164.0), (900.0, 500.0)])
+    func seedingClampsTheLastUsedWidth(lastUsed: Double, expected: Double) {
+        #expect(SidebarWindowWidth(lastUsed: lastUsed).width == expected)
+    }
+
+    @Test func aSettingsEditClampsToTheMinimum() {
+        var window = SidebarWindowWidth(lastUsed: 228)
+        window.applySetting(10)
+        #expect(window.width == 164)
     }
 
     @Test func aReopenedWindowTakesItsSavedWidth() {
-        var lastUsed = 228.0
-        var first = SidebarWindowWidth(lastUsed: lastUsed)
-        var reopened = SidebarWindowWidth(lastUsed: 228, restored: 312)
-        #expect(reopened.width == 312, "a reopened window takes its saved width")
-        #expect(SidebarWindowWidth(lastUsed: 260, restored: nil).width == 260, "a window without a record takes the last-used width")
-        #expect(SidebarWindowWidth(lastUsed: 260, restored: 40).width == 164
-              && SidebarWindowWidth(lastUsed: 260, restored: 720).width == 500, "a saved width clamps")
-        lastUsed = 260
-        let r6 = drag(&reopened, by: 40, .cancelled, lastUsed: &lastUsed)
-        #expect(r6 == nil && reopened.width == 312 && lastUsed == 260,
-              "cancel keeps the restored width")
-        let r7 = drag(&reopened, by: -260, .ended, lastUsed: &lastUsed)
-        #expect(r7 == nil && reopened.width == 312 && lastUsed == 260,
-              "a collapse keeps the restored width")
-        let r8 = drag(&reopened, by: -12, .ended, lastUsed: &lastUsed)
-        #expect(r8 == 300 && reopened.width == 300 && lastUsed == 300,
-              "a completed drag from a restored width writes both")
-        let r9 = drag(&first, by: 600, .ended, lastUsed: &lastUsed)
-        #expect(r9 == 500 && first.width == 500, "drag ends clamp")
-        first.applySetting(10)
-        #expect(first.width == 164, "settings clamp")
-        #expect(SidebarWindowWidth.settingDidChange.rawValue == "ParcSidebarWidthSettingDidChange", "Settings notification name")
+        #expect(SidebarWindowWidth(lastUsed: 228, restored: 312).width == 312)
+    }
 
+    @Test func aWindowWithoutARecordTakesTheLastUsedWidth() {
+        #expect(SidebarWindowWidth(lastUsed: 260, restored: nil).width == 260)
+    }
+
+    @Test(arguments: [(40.0, 164.0), (720.0, 500.0)])
+    func aSavedWidthClamps(restored: Double, expected: Double) {
+        #expect(SidebarWindowWidth(lastUsed: 260, restored: restored).width == expected)
+    }
+
+    @Test func cancellingADragFromARestoredWidthKeepsIt() {
+        var d = drag(from: 260, lastUsed: 260, restored: 312)
+        d.apply(by: 40, .cancelled)
+        #expect(d.written == nil)
+        #expect(d.window.width == 312)
+        #expect(d.lastUsed == 260)
+    }
+
+    @Test func aCollapseFromARestoredWidthKeepsIt() {
+        var d = drag(from: 260, lastUsed: 260, restored: 312)
+        d.apply(by: -260, .ended)
+        #expect(d.written == nil)
+        #expect(d.window.width == 312)
+        #expect(d.lastUsed == 260)
+    }
+
+    @Test func aCompletedDragFromARestoredWidthWritesBothWidths() {
+        var d = drag(from: 260, lastUsed: 260, restored: 312)
+        d.apply(by: -12, .ended)
+        #expect(d.written == 300)
+        #expect(d.window.width == 300)
+        #expect(d.lastUsed == 300)
+    }
+
+    @Test func aDragPastTheMaximumEndsAtTheMaximum() {
+        var d = drag()
+        d.apply(by: 600, .ended)
+        #expect(d.written == 500)
+        #expect(d.window.width == 500)
+    }
+
+    @Test func theSettingsNotificationNameIsFixed() {
+        #expect(SidebarWindowWidth.settingDidChange.rawValue == "ParcSidebarWidthSettingDidChange")
     }
 }

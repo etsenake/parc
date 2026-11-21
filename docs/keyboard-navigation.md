@@ -365,7 +365,7 @@ retirement, sheet, fullscreen, scrolling or replacement retires the toast.
 ## Checks and remaining work
 
 Focused suites include `tests/KeyboardNavigation`, `ContentFocusRequestTests`,
-`tests/SidebarWindowKeyLoop`, the shortcut/command scripts and the Find/Peek
+`SidebarWindowKeyLoopTests`, the shortcut/command scripts and the Find/Peek
 components. Full Swift typechecking is the iteration check; finished material
 Swift work also needs whole-module SIL under [the working contract](../AGENTS.md).
 
