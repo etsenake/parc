@@ -318,28 +318,36 @@ struct LibraryWidthTests {
         let root = NSView(frame: LibraryWidthTests.windowBounds)
 
         init() {
-            SystemOverrides.install()
             window.isReleasedWhenClosed = false
             window.contentView = root
         }
 
         deinit {
-            SystemOverrides.reduceMotion = nil
             MainActor.assumeIsolated { window.close() }
         }
 
-        func animates() -> Bool { SidebarMotionController.animatesLibraryWidth(in: window, layoutRoot: root) }
+        func animates(onScreen: Bool? = nil, reduceMotion: Bool) -> Bool {
+            guard let onScreen else {
+                return SidebarMotionController.animatesLibraryWidth(in: window, layoutRoot: root, reducesMotion: { reduceMotion })
+            }
+            return SidebarMotionController.animatesLibraryWidth(in: window, layoutRoot: root, isOnScreen: { _ in onScreen },
+                                                                reducesMotion: { reduceMotion })
+        }
     }
 
     @Test func aWindowThatIsNotOnScreenAppliesANewLibraryWidthAtOnce() {
-        let host = Host()
-        SystemOverrides.reduceMotion = false
-        #expect(!host.animates())
+        #expect(!Host().animates(reduceMotion: false))
+    }
+
+    @Test func withReduceMotionOffAnOnScreenWindowSlidesToANewLibraryWidth() {
+        #expect(Host().animates(onScreen: true, reduceMotion: false))
     }
 
     @Test func withReduceMotionOnEveryLibraryWidthChangeAppliesAtOnce() {
-        let host = Host()
-        SystemOverrides.reduceMotion = true
-        #expect(!host.animates())
+        #expect(!Host().animates(onScreen: true, reduceMotion: true))
+    }
+
+    @Test func withoutAWindowNoLibraryWidthChangeAnimates() {
+        #expect(!SidebarMotionController.animatesLibraryWidth(in: nil, layoutRoot: NSView(), isOnScreen: { _ in true }, reducesMotion: { false }))
     }
 }
