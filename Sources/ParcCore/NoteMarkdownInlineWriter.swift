@@ -23,6 +23,7 @@ struct NoteMDInlineStyle {
 struct NoteMDInlineWriter {
     let reader: NoteMDReader
     let referenceLabels: [String: String]
+    var portable = false
 
     private enum Mark: Equatable {
         case link(String), color(NoteColorStyle), underline, strike, bold, italic, code
@@ -333,7 +334,7 @@ struct NoteMDInlineWriter {
     private func openString(_ mark: Mark, safe: Bool) -> String {
         switch mark {
         case .link: return "["
-        case .color(let style): return Self.colorOpen(style, safe: safe)
+        case .color(let style): return Self.colorOpen(style, safe: safe || portable)
         case .underline: return "<u>"
         case .strike: return safe ? "<s>" : "~~"
         case .bold: return safe ? "<b>" : "**"
@@ -345,7 +346,7 @@ struct NoteMDInlineWriter {
     private func closeString(_ mark: Mark, safe: Bool) -> String {
         switch mark {
         case .link: return "]"
-        case .color(let style): return Self.colorClose(style, safe: safe)
+        case .color(let style): return Self.colorClose(style, safe: safe || portable)
         case .underline: return "</u>"
         case .strike: return safe ? "</s>" : "~~"
         case .bold: return safe ? "</b>" : "**"

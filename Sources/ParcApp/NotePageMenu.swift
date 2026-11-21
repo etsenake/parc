@@ -208,7 +208,7 @@ final class NotePageMenu {
 
     static func markdownForCopy(_ page: NotePage, title: String, plainText: Bool) -> String {
         if plainText { return NotePlainText.serialize(page) }
-        return NotePageExport.markdownForCopy(body: NoteMarkdown.serialize(NotePage(blocks: page.blocks)), title: title)
+        return NotePageExport.markdownForCopy(body: NoteMarkdown.serialize(NotePage(blocks: page.blocks), purpose: .export), title: title)
     }
 
     func copyMarkdown() {
@@ -332,7 +332,7 @@ final class NotePageMenu {
             switch format {
             case .markdown:
                 let text = isPlainText ? NotePlainText.serialize(editor.session.page)
-                    : NoteMarkdown.serialize(editor.session.page, customEmoji: editor.environment.customEmojiNames)
+                    : NoteMarkdown.serialize(editor.session.page, customEmoji: editor.environment.customEmojiNames, purpose: .export)
                 try Data(text.utf8).write(to: destination, options: .atomic)
                 try copyAssets(to: destination.deletingLastPathComponent())
             case .html, .pdf:

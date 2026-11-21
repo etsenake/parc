@@ -20,8 +20,16 @@ enum NoteMarkdown {
         return NotePage(settings: settings, blocks: blocks)
     }
 
-    static func serialize(_ page: NotePage, customEmoji: Set<String> = []) -> String {
-        NoteMDWriter(page: page, customEmoji: customEmoji).write(page)
+    enum Purpose { case file, export }
+
+    static func serialize(_ page: NotePage, customEmoji: Set<String> = [], purpose: Purpose = .file) -> String {
+        switch purpose {
+        case .file:
+            return NoteMDWriter(page: page, customEmoji: customEmoji).write(page)
+        case .export:
+            let portable = NoteMDExport.portable(page)
+            return NoteMDWriter(page: portable, customEmoji: customEmoji, portable: true).write(portable)
+        }
     }
 }
 

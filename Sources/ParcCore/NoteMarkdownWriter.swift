@@ -3,8 +3,10 @@ import Foundation
 struct NoteMDWriter {
     let reader: NoteMDReader
     let inline: NoteMDInlineWriter
+    let portable: Bool
 
-    init(page: NotePage, customEmoji: Set<String> = []) {
+    init(page: NotePage, customEmoji: Set<String> = [], portable: Bool = false) {
+        self.portable = portable
         var references: [String: NoteMDLinkReference] = [:]
         var labels: [String: String] = [:]
         var footnotes: Set<String> = []
@@ -34,7 +36,7 @@ struct NoteMDWriter {
         }
         reader = NoteMDReader(references: references, footnotes: footnotes,
                               customEmoji: customEmoji.union(NoteCustomEmojiName.names(in: page)))
-        inline = NoteMDInlineWriter(reader: reader, referenceLabels: labels)
+        inline = NoteMDInlineWriter(reader: reader, referenceLabels: labels, portable: portable)
     }
 
     func write(_ page: NotePage) -> String {
@@ -119,7 +121,7 @@ struct NoteMDWriter {
                 if empties > 0, lastListGroup == group {
                     for _ in 0..<empties {
                         lines.append(contentsOf: Array(repeating: "", count: placedAny ? 1 : 0))
-                        lines.append(attributes([("paragraph", nil)]))
+                        lines.append(portable ? comment([]) : attributes([("paragraph", nil)]))
                         placedAny = true
                     }
                     empties = 0
@@ -176,7 +178,7 @@ struct NoteMDWriter {
     }
 
     func attributes(_ items: [(String, String?)]) -> String {
-        guard !items.isEmpty else { return "" }
+        guard !items.isEmpty, !portable else { return "" }
         var result = "<!-- parc"
         for (name, value) in items {
             result += " " + name
@@ -187,25 +189,28 @@ struct NoteMDWriter {
 
     func blockAttributes(_ block: NoteBlock) -> [(String, String?)] {
         var items: [(String, String?)] = []
+        guard !portable else { return items }
         if let color = block.color { items.append(("color", NoteMDColor.name(color))) }
         if let anchor = block.props.anchor, NoteAnchor.isValid(anchor) { items.append(("id", anchor)) }
         return items
     }
 
     func suffix(_ items: [(String, String?)]) -> String {
-        items.isEmpty ? "" : " " + attributes(items)
+        let text = attributes(items)
+        return text.isEmpty ? "" : " " + text
     }
 
     private func comment(_ items: [(String, String?)]) -> String {
-        items.isEmpty ? "<!-- parc -->" : attributes(items)
+        if portable { return "<!-- -->" }
+        return items.isEmpty ? "<!-- parc -->" : attributes(items)
     }
 
     private func textLines(_ text: NoteText, style: NoteMDInlineStyle, attributes items: [(String, String?)],
                            marked: Bool = false, carrying carried: [(String, String?)] = [], standalone: Bool = true) -> [String] {
         var commented = style
-        commented.trailingComment = marked || !items.isEmpty || Self.endsWithAttributeComment(text)
+        commented.trailingComment = !portable && (marked || !items.isEmpty || Self.endsWithAttributeComment(text))
         var lines = inline.write(text, style: commented).components(separatedBy: "\n")
-        if !commented.trailingComment, Self.startsHTMLBlock(lines[0]) {
+        if !commented.trailingComment, !portable, Self.startsHTMLBlock(lines[0]) {
             commented.trailingComment = true
             lines = inline.write(text, style: commented).components(separatedBy: "\n")
         }
@@ -221,6 +226,7 @@ struct NoteMDWriter {
     }
 
     private func guardedSuffix(_ text: NoteText, _ items: [(String, String?)]) -> (commented: Bool, suffix: String) {
+        if portable { return (false, "") }
         if !items.isEmpty { return (true, suffix(items)) }
         return Self.endsWithAttributeComment(text) ? (true, " " + comment([])) : (false, "")
     }
@@ -311,7 +317,8 @@ struct NoteMDWriter {
     }
 
     private func trailingAttributes(_ items: [(String, String?)]) -> [String] {
-        items.isEmpty ? [] : [attributes(items)]
+        let text = attributes(items)
+        return text.isEmpty ? [] : [text]
     }
 
     static func isThematicBreak(_ value: String) -> Bool {
@@ -326,7 +333,7 @@ struct NoteMDWriter {
         var style = NoteMDInlineStyle.paragraph
         style.trailingComment = !items.isEmpty
         var markdown = inline.write(block.text, style: style)
-        if standaloneHazard(markdown) || Self.startsHTMLBlock(markdown.components(separatedBy: "\n")[0]) {
+        if !portable, standaloneHazard(markdown) || Self.startsHTMLBlock(markdown.components(separatedBy: "\n")[0]) {
             items.insert(("paragraph", nil), at: 0)
             if !style.trailingComment {
                 style.trailingComment = true
@@ -412,14 +419,14 @@ struct NoteMDWriter {
 
     private func quote(_ block: NoteBlock) -> [String] {
         var inner: [String] = []
-        let items = (block.kind == .callout ? (block.props.icon.map { [("icon", $0)] } ?? []) : []) + blockAttributes(block)
+        let items = portable ? [] : (block.kind == .callout ? (block.props.icon.map { [("icon", $0)] } ?? []) : []) + blockAttributes(block)
         let firstChildIsParagraph = Self.writesAsParagraph(block.children.first)
         var leading = 1
         var children = block.children
         if block.kind == .callout {
             let noteAlert = NoteMDReader.noteAlert
-            let marked = block.props.alert == nil
-            let carried: [(String, String?)] = block.props.alert == noteAlert ? [(NoteMDReader.keepsAlertFlag, nil)] : []
+            let marked = !portable && block.props.alert == nil
+            let carried: [(String, String?)] = !portable && block.props.alert == noteAlert ? [(NoteMDReader.keepsAlertFlag, nil)] : []
             let alert = block.props.alert ?? noteAlert
             let fold = block.props.toggleable ? (block.props.expanded ? "+" : "-") : ""
             let marker = "[!\(alert)]\(fold)"
