@@ -33,8 +33,37 @@ struct EaselArrangeTests {
         pastePlacement()
         clipboard()
         selectionRules()
+        historySelection()
         chords()
         print("EaselArrangeTests passed")
+    }
+
+    static func historySelection() {
+        let a = box(0, 0), b = box(300, 0)
+        var arrow = box(100, 50, 200, 1, kind: .arrow)
+        arrow.startConnection = EaselConnection(itemID: a.id, side: nil, anchor: nil)
+        arrow.endConnection = EaselConnection(itemID: b.id, side: nil, anchor: nil)
+        let board = document([a, b, arrow])
+        var moved = board
+        moved.items[0].frame.x = 40
+        moved.items[2].frame.x = 140
+        expect(EaselArrange.historySelection(from: moved, to: board) == [a.id], "Undoing a move selects the moved object, not the connector that followed it")
+        var removed = board
+        removed.items.remove(at: 1)
+        removed.items[2 - 1].endConnection = nil
+        expect(EaselArrange.historySelection(from: removed, to: board) == [b.id], "Undoing a delete selects what came back")
+        expect(EaselArrange.historySelection(from: board, to: removed) == nil, "Redoing a delete leaves the selection alone")
+        var restacked = board
+        for index in restacked.items.indices { restacked.items[index].zIndex = 10 - index }
+        expect(EaselArrange.historySelection(from: restacked, to: board) == nil, "Undoing a layer move keeps the current selection")
+        var section = box(0, 0, 600, 400, kind: .section)
+        section.zIndex = -1
+        let inside = box(20, 20, 50, 50)
+        let framed = document([section, inside])
+        var dragged = framed
+        dragged.items[0].frame.x = 100
+        dragged.items[1].frame.x = 120
+        expect(EaselArrange.historySelection(from: dragged, to: framed) == [section.id], "Undoing a section move selects the section without its contents")
     }
 
     static func alignment() {

@@ -2119,7 +2119,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             guard !selection.isEmpty else { panByKeyboard(dx: dx, dy: dy, fast: event.modifierFlags.contains(.shift)); return }
             guard let edit = EaselGeometryEdit(document: session.document, selection: movableSelection) else { return }
             let changes = edit.translated(x: dx, y: dy)
-            commit("Move objects", moved: edit.ids) { document in
+            commit("Move objects", coalescing: nudgeUndoGroup(for: edit.ids), moved: edit.ids) { document in
                 if let next = edit.applying(changes, to: document) { document = next }
             }; return
         }
@@ -2130,7 +2130,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         cancelPointerInteraction(); guard finishEditing(removingEmpty: false) else { return }
         guard let next = session.undoDestination else { return }
         prepareReplacement(next) { [weak self] in
-            guard let self else { return }; do { try self.session.undo() } catch { self.onError?(error) }
+            guard let self else { return }
+            let before = self.session.fullDocument
+            do { try self.session.undo() } catch { self.onError?(error); return }
+            self.selectAfterHistoryStep(from: before)
         }
     }
     @objc func redo(_ sender: Any?) {
@@ -2138,7 +2141,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         cancelPointerInteraction(); guard finishEditing(removingEmpty: false) else { return }
         guard let next = session.redoDestination else { return }
         prepareReplacement(next) { [weak self] in
-            guard let self else { return }; do { try self.session.redo() } catch { self.onError?(error) }
+            guard let self else { return }
+            let before = self.session.fullDocument
+            do { try self.session.redo() } catch { self.onError?(error); return }
+            self.selectAfterHistoryStep(from: before)
         }
     }
     override func selectAll(_ sender: Any?) {
@@ -2332,7 +2338,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             return command.originals.count == 1 && command.originals.first?.url != nil
         }
         if menuItem.action == #selector(copy(_:)) { return command(for: menuItem) != nil }
-        if menuItem.action == #selector(cut(_:)) { return command(for: menuItem) != nil && canCutSelection }
+        if menuItem.action == #selector(cut(_:)) || menuItem.action == #selector(deleteObjects) { return command(for: menuItem) != nil && canCutSelection }
         if menuItem.action == #selector(pasteAsPlainText) {
             if embeddedPageOwnsTextCommand(menuItem) { return WebpageEditCommands.canPasteMatchingStyle(menuItem, in: window) }
             return NSPasteboard.general.availableType(from: [.string, .URL, .rtfd, .rtf]) != nil

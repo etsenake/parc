@@ -6,6 +6,7 @@ struct EaselCanvasArrangeState {
     var duplicateDragArmed = false
     var duplicateDrag: (group: UUID, before: EaselDocument, selected: Set<UUID>, sources: [UUID], copies: [UUID])?
     var lastPaste: (fingerprint: Int, step: Int, pointer: EaselPoint?)?
+    var nudge: (ids: Set<UUID>, group: UUID)?
     var menu: EaselCanvasMenuPresenting?
 }
 
@@ -123,6 +124,23 @@ extension EaselCanvasView {
     func tidyUpSelection() -> Bool {
         let ids = selection
         return commitArrangement("Tidy up", moved: ids) { EaselArrange.tidied($0, ids: ids) }
+    }
+
+    func nudgeUndoGroup(for ids: Set<UUID>) -> UUID {
+        if let nudge = arrangeState.nudge, nudge.ids == ids { return nudge.group }
+        let group = UUID()
+        arrangeState.nudge = (ids, group)
+        return group
+    }
+
+    func selectAfterHistoryStep(from before: EaselDocument) {
+        guard let picked = EaselArrange.historySelection(from: session.view(of: before), to: session.document) else { return }
+        let document = session.document, shown = Set(items.map(\.id)), next = picked.intersection(shown)
+        if let group = EaselArrange.sharedGroup(next, in: document) {
+            let members = EaselArrange.members(of: group, in: document)
+            if !members.isSubset(of: next), EaselArrange.unlocked(members, in: document) != next { arrangeState.enteredGroup = group }
+        }
+        selection = next
     }
 
     func isInside(group: UUID) -> Bool {

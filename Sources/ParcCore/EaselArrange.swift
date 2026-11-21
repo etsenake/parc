@@ -239,6 +239,30 @@ enum EaselArrange {
         }
     }
 
+    static func historySelection(from before: EaselDocument, to after: EaselDocument) -> Set<UUID>? {
+        let old = Dictionary(before.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var added = Set<UUID>(), changed = Set<UUID>()
+        for item in after.items {
+            guard var previous = old[item.id] else { added.insert(item.id); continue }
+            previous.zIndex = item.zIndex
+            if previous != item { changed.insert(item.id) }
+        }
+        let touched = added.union(changed)
+        guard !touched.isEmpty else { return nil }
+        let removed = Set(old.keys).subtracting(after.items.map(\.id))
+        let causes = touched.union(removed)
+        var picked = added.union(after.items.filter { item in
+            changed.contains(item.id) && !follows(item, present: causes) && old[item.id].map { follows($0, present: causes) } != true
+        }.map(\.id))
+        if picked.isEmpty {
+            guard removed.isEmpty else { return nil }
+            picked = touched
+        }
+        let sections = Set(after.items.filter { picked.contains($0.id) && $0.kind == .section }.map(\.id))
+        picked.subtract(EaselBoardObjects.deletion(sections, in: after).subtracting(sections))
+        return picked
+    }
+
     static func follows(_ item: EaselItem, present: Set<UUID>) -> Bool {
         if let target = item.attachedTo, present.contains(target) { return true }
         guard item.kind == .arrow else { return false }

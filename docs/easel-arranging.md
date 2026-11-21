@@ -24,6 +24,12 @@ A marquee catches anything it touches, skips locked objects, and widens to
 whole groups (minus any locked members) unless the group is open. Select All
 (⌘A) skips locked objects too, and leaves out contents a section is hiding.
 
+Undo and Redo select what the step brings back or changes, such as a moved
+object or a restored deletion, leaving out connectors and stuck-on objects
+that only followed along; a single member of a group comes back with its
+group open. A step that only removes objects or restacks them leaves the
+selection as it is.
+
 ## Locking
 
 ⇧⌘L locks the selection; on a selection that is all locked it unlocks. A
@@ -92,6 +98,10 @@ leaves the original where it was and drags a copy, which also becomes the step
 Holding Shift while dragging keeps the move on its stronger direction,
 horizontal or vertical.
 
+Arrow keys nudge the selection by one point, or ten with Shift. A run of
+nudges on the same selection is one Undo step, so holding an arrow key and
+pressing ⌘Z puts everything back where the run started.
+
 Duplicating or copying an object brings along whatever is stuck to it. Copies
 get fresh IDs. Group membership, connector ends, sticky-on targets and
 manual bends are remapped inside the copied set; links to objects that weren't
@@ -114,8 +124,9 @@ pointer, a paste into the same Easel sits 24 points from the originals
 (stepping further each time), lands exactly in place after a cut, and
 otherwise goes to the middle of the view. Paste Here on empty canvas puts
 copied Easel objects at the click point, and Paste as Plain Text there makes a
-text object from the words alone at the click; images, links, rich text and
-diagrams from other apps keep their usual landing spot.
+text object from the words alone at the click; Paste and Paste as Plain Text
+in an object's menu land at the click the same way. Images, links, rich text
+and diagrams from other apps keep their usual landing spot.
 
 ## Keyboard chords
 
