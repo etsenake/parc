@@ -102,7 +102,9 @@ choose **Expand Branch**, to show them again. Adding a child to a collapsed
 node expands it. Hidden nodes and their branches are left out of the canvas,
 hit testing, find, the marquee and every export, through the same hidden set
 that collapsed sections use (`EaselBoardObjects.hiddenIDs`). The root can't
-collapse.
+collapse. Collapsing folds the branch into its node, and expanding glides the
+topics back out while their branches draw themselves outward, deeper levels a
+beat later (see [motion](easel-motion.md#snaps-and-live-feedback)).
 
 ## Copies, deletes and export
 

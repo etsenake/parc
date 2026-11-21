@@ -105,7 +105,7 @@ included.
 The eraser lifts whole strokes: marker doodles, highlights and tape, never
 other objects or locked drawings. It reaches nine points around the pointer at
 any zoom and shows a soft round cursor. Strokes it touches fade while you drag
-and disappear together on release as one Undo step; Esc puts them back. Tape is
+and poof away together on release as one Undo step; Esc puts them back. Tape is
 caught across its full rectangle, flat torn ends included. A short tapering
 trail follows the pointer and fades within a third of a second; with Reduce
 Motion there is no trail.
