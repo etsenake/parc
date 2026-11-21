@@ -27,7 +27,7 @@ struct NoteEmojiGridFitTests {
                 "every cell stays inside the \(width) pt clip")
     }
 
-    static let spans = Array(120...520)
+    nonisolated static let spans = Array(120...520)
 
     @Test(arguments: NoteEmojiGridFitTests.spans)
     func theGridFitsEveryWidth(span: Int) {
@@ -55,7 +55,7 @@ struct NoteEmojiGridFitTests {
         #expect(grid.cellFrame(of: 10).maxX <= 408 - 17 - NoteEmojiGridView.inset)
     }
 
-    struct PickerFixture {
+    @MainActor struct PickerFixture {
         let picker: NoteEmojiPicker
         let scrollView: NSScrollView
         let grid: NoteEmojiGridView

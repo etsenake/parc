@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import Parc
 @testable import ParcCore
 
 @Suite(.serialized)
@@ -51,5 +52,40 @@ final class NoteEditorTemporaryFolder {
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(text.utf8).write(to: file)
         return file
+    }
+}
+
+@MainActor
+enum NoteEditorFixtures {
+    static func useMathFont() {
+        let url = Bundle.module.url(forResource: "STIXTwoMath-Regular", withExtension: "otf", subdirectory: "Fixtures")!
+        NoteMathRenderer.useFont(at: url)
+    }
+}
+
+enum NoteEditorBlocks {
+    static func marks(_ configure: (inout NoteMarks) -> Void) -> NoteMarks {
+        var value = NoteMarks.plain
+        configure(&value)
+        return value
+    }
+
+    static var bold: NoteMarks { marks { $0.bold = true } }
+    static var italic: NoteMarks { marks { $0.italic = true } }
+
+    static func block(_ kind: NoteBlockKind, _ text: String = "", _ children: [NoteBlock] = [],
+                      _ configure: (inout NoteBlockProps) -> Void = { _ in }) -> NoteBlock {
+        var props = NoteBlockProps()
+        configure(&props)
+        return NoteBlock(kind, text: NoteText(text), props: props, children: children)
+    }
+
+    static func para(_ text: String = "") -> NoteBlock { block(.paragraph, text) }
+    static func bullet(_ text: String = "", _ children: [NoteBlock] = []) -> NoteBlock { block(.bulletedItem, text, children) }
+    static func numbered(_ text: String = "", start: Int? = nil, _ children: [NoteBlock] = []) -> NoteBlock {
+        block(.numberedItem, text, children) { $0.listStart = start }
+    }
+    static func todo(_ text: String = "", checked: Bool = false, _ children: [NoteBlock] = []) -> NoteBlock {
+        block(.todo, text, children) { $0.checked = checked }
     }
 }

@@ -5,7 +5,7 @@ import Testing
 
 @MainActor
 struct SidebarNoteDropTests {
-    final class Fixture {
+    @MainActor final class Fixture {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-sidebar-note-drop-" + UUID().uuidString)
         let plans: URL
         let ideas: URL
@@ -61,7 +61,7 @@ struct SidebarNoteDropTests {
         #expect(fixture.opensNewTab([fixture.plans], profileID: UUID()))
     }
 
-    struct Drop {
+    @MainActor struct Drop {
         let fixture: Fixture
         let first: UUID
         let second: UUID

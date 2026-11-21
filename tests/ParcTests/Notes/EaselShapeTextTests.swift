@@ -63,7 +63,7 @@ struct EaselShapeTextTests {
         #expect((typing[.paragraphStyle] as? NSParagraphStyle)?.alignment == .right)
     }
 
-    struct Pasted {
+    @MainActor struct Pasted {
         let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
         let bubble: EaselItem
 

@@ -2,11 +2,11 @@ import AppKit
 import Testing
 @testable import Parc
 
-private final class EmbeddedSurface: NSView, NoteKeyEquivalentBoundary {}
-
 @MainActor
 struct NoteKeyEquivalentBoundaryTests {
-    struct Hierarchy {
+    final class EmbeddedSurface: NSView, NoteKeyEquivalentBoundary {}
+
+    @MainActor struct Hierarchy {
         let note = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
         let paragraph = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 40))
         let surface = EmbeddedSurface(frame: NSRect(x: 0, y: 60, width: 400, height: 300))
