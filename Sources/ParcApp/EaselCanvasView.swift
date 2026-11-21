@@ -66,12 +66,15 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     weak var pageObjects: EaselBrowserObjectHosting? { didSet { needsLayout = true } }
     var artwork: [UUID: NSView] = [:]
     private var accessibleObjects: [UUID: EaselAccessibleObject] = [:]
+    var scheduleAfterInteraction: (@escaping () -> Void) -> Void = { work in
+        DispatchQueue.main.async { work() }
+    }
     var onKeyboardStructureChange: (() -> Void)?
     private var keyboardStructurePending = false
     func keyboardStructureChanged() {
         guard !keyboardStructurePending else { return }
         keyboardStructurePending = true
-        DispatchQueue.main.async { [weak self] in
+        scheduleAfterInteraction { [weak self] in
             guard let self else { return }; self.keyboardStructurePending = false
             self.onKeyboardStructureChange?()
         }
@@ -1431,7 +1434,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     func textDidEndEditing(_ notification: Notification) {
         guard let text = notification.object as? EaselStyledTextView, text === editor, !finishingEditor else { return }
-        DispatchQueue.main.async { [weak self, weak text] in
+        scheduleAfterInteraction { [weak self, weak text] in
             guard let self, let text, self.editor === text, !text.hasPendingRangeAction,
                   let responder = self.window?.firstResponder, responder !== text else { return }
             if self.selectionToolbar?.owns(responder) == true { return }
