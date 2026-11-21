@@ -1541,7 +1541,13 @@ private final class LiveCloud: ExternalMediaCloudObservation, @unchecked Sendabl
   func isFolderMenu(_ titles:[String]?)->Bool { titles?.contains("Add Media Folder…")==true && titles?.contains("Refresh")==true }
   let emptyMediaGrid=capturesFingerprintCollection()
   expect(isFolderMenu(emptyMediaGrid.menu(for:mediaRightClick(emptyMediaGrid))?.items.map(\.title)),"Right-clicking empty grid space opens the folder menu")
-  let mediaEmptyMessage=all(capturesFingerprintView).compactMap{$0 as? NSTextField}.first{!$0.isHidden && $0.stringValue.hasPrefix("Saved captures")}!
+  func visibleMediaMessage()->NSTextField? {
+   all(capturesFingerprintView).compactMap{$0 as? NSTextField}.first{!$0.isHidden && $0.stringValue.hasPrefix("Saved captures")}
+  }
+  for _ in 0..<250 where visibleMediaMessage()==nil {
+   RunLoop.main.run(mode:.default,before:Date(timeIntervalSinceNow:0.02))
+  }
+  let mediaEmptyMessage=visibleMediaMessage()!
   expect(isFolderMenu(mediaEmptyMessage.menu(for:mediaRightClick(mediaEmptyMessage))?.items.map(\.title)),
          "Right-clicking the empty-state message opens the same folder menu")
   var keyboardMenuRequest:Bool?
