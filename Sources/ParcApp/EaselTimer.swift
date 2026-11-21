@@ -11,7 +11,42 @@ final class EaselTimers {
     static let shared = EaselTimers()
     private var timers: [UUID: EaselCountdown] = [:]
     private var ticker: Timer?
+    private var announced: Set<UUID> = []
+    private var buttons: [UUID: [WeakButton]] = [:]
     var now: () -> Date = Date.init
+
+    private struct WeakButton { weak var button: EaselTimerButton? }
+
+    private init() {
+        NotificationCenter.default.addObserver(forName: .easelDocumentRemoved, object: nil, queue: .main) { notification in
+            guard let id = notification.object as? UUID else { return }
+            MainActor.assumeIsolated { EaselTimers.shared.forget(id) }
+        }
+    }
+
+    func attach(_ button: EaselTimerButton) {
+        let id = button.documentID
+        var list = (buttons[id] ?? []).filter { $0.button != nil }
+        if !list.contains(where: { $0.button === button }) { list.append(WeakButton(button: button)) }
+        buttons[id] = list
+    }
+
+    func detach(_ button: EaselTimerButton) { prune(button.documentID, removing: button) }
+
+    func detachDocument(_ id: UUID) { prune(id, removing: nil) }
+
+    private func prune(_ id: UUID, removing button: EaselTimerButton?) {
+        let list = (buttons[id] ?? []).filter { $0.button != nil && $0.button !== button }
+        buttons[id] = list.isEmpty ? nil : list
+        if list.isEmpty, announced.contains(id), countdown(for: id).phase == .finished { forget(id) }
+    }
+
+    private func announce(_ id: UUID) {
+        let candidates = (buttons[id] ?? []).compactMap(\.button).filter(\.canAnnounce)
+        guard let chosen = candidates.first(where: { $0.window?.isKeyWindow == true }) ?? candidates.first else { return }
+        announced.insert(id)
+        chosen.onFinished?()
+    }
 
     func countdown(for id: UUID) -> EaselCountdown { timers[id] ?? EaselCountdown() }
 
@@ -21,11 +56,13 @@ final class EaselTimers {
         change(&countdown, now())
         guard countdown != before else { return }
         timers[id] = countdown
+        announced.remove(id)
         NotificationCenter.default.post(name: .easelTimerChanged, object: id)
         refreshTicker()
     }
 
     func forget(_ id: UUID) {
+        announced.remove(id)
         guard timers.removeValue(forKey: id) != nil else { return }
         NotificationCenter.default.post(name: .easelTimerChanged, object: id)
         refreshTicker()
@@ -48,18 +85,51 @@ final class EaselTimers {
 
     private func tick() {
         let date = now()
-        for (id, countdown) in timers where countdown.phase == .running {
+        for (id, countdown) in Array(timers) where countdown.phase == .running {
             if countdown.isDue(at: date) {
                 var finished = countdown
                 finished.finish()
                 timers[id] = finished
+                announced.remove(id)
                 NotificationCenter.default.post(name: .easelTimerChanged, object: id)
                 NotificationCenter.default.post(name: .easelTimerFinished, object: id)
+                announce(id)
             } else {
                 NotificationCenter.default.post(name: .easelTimerChanged, object: id)
             }
         }
         refreshTicker()
+    }
+}
+
+@MainActor
+final class EaselTimerReadout: NSView {
+    private var text = ""
+    private var font = NSFont.systemFont(ofSize: 13)
+    private var color = NSColor.labelColor
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
+
+    func update(text: String, font: NSFont, color: NSColor) {
+        self.text = text
+        self.font = font
+        self.color = color
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let string = text as NSString
+        let height = string.size(withAttributes: attributes).height
+        string.draw(at: NSPoint(x: 0, y: ((bounds.height - height) / 2).rounded()), withAttributes: attributes)
     }
 }
 
@@ -70,6 +140,7 @@ final class EaselTimerButton: PointingHandButton {
     private var shown = ""
     private var phase: EaselCountdown.Phase = .idle
     private var pointerInside = false
+    private let readout = EaselTimerReadout()
     private var hoverTracking: NSTrackingArea?
     private let glyph = NSImage(systemSymbolName: "timer", accessibilityDescription: "Timer")?
         .withSymbolConfiguration(.init(pointSize: 14, weight: .medium)) ?? NSImage()
@@ -82,13 +153,23 @@ final class EaselTimerButton: PointingHandButton {
         title = ""
         wantsLayer = true
         setAccessibilityRole(.button)
+        addSubview(readout)
         let center = NotificationCenter.default
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(motionPreferenceChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
         center.addObserver(self, selector: #selector(timerChanged(_:)), name: .easelTimerChanged, object: nil)
         center.addObserver(self, selector: #selector(timerFinished(_:)), name: .easelTimerFinished, object: nil)
         refresh()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    deinit {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        let id = documentID
+        MainActor.assumeIsolated { EaselTimers.shared.detachDocument(id) }
+    }
+
+    @objc private func motionPreferenceChanged() { updatePulse() }
 
     @objc private func timerChanged(_ notification: Notification) {
         guard notification.object as? UUID == documentID else { return }
@@ -101,6 +182,11 @@ final class EaselTimerButton: PointingHandButton {
     }
 
     var showsTime: Bool { phase != .idle }
+
+    var canAnnounce: Bool {
+        guard let window, window.isVisible else { return false }
+        return !isHiddenOrHasHiddenAncestor
+    }
 
     private var timeFont: NSFont { Self.monospacedDigits(NoteTheme.chromeFont(13)) }
 
@@ -124,8 +210,12 @@ final class EaselTimerButton: PointingHandButton {
         let remaining = countdown.remaining(at: EaselTimers.shared.now())
         let label = EaselCountdown.label(remaining)
         let resized = (countdown.phase == .idle) != (phase == .idle)
+        let previousPhase = phase
         phase = countdown.phase
         shown = label
+        readout.update(text: label, font: timeFont, color: phase == .paused ? NoteTheme.menuSecondaryInk : activeInk)
+        readout.isHidden = !showsTime
+        if previousPhase != phase || resized { updatePulse() }
         if resized { invalidateIntrinsicContentSize(); superview?.needsLayout = true; onResize?() }
         switch phase {
         case .idle:
@@ -152,7 +242,6 @@ final class EaselTimerButton: PointingHandButton {
 
     private func finished() {
         refresh()
-        onFinished?()
         guard window != nil, !isHiddenOrHasHiddenAncestor, let layer else { return }
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             let fade = CABasicAnimation(keyPath: "opacity")
@@ -178,12 +267,46 @@ final class EaselTimerButton: PointingHandButton {
         super.updateTrackingAreas()
     }
 
-    override func mouseEntered(with event: NSEvent) { pointerInside = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { pointerInside = false; needsDisplay = true }
-    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); pointerInside = false; refresh() }
+    override func mouseEntered(with event: NSEvent) { pointerInside = true; needsDisplay = true; refreshReadoutColor() }
+    override func mouseExited(with event: NSEvent) { pointerInside = false; needsDisplay = true; refreshReadoutColor() }
+
+    private func refreshReadoutColor() {
+        readout.update(text: shown, font: timeFont, color: phase == .paused ? NoteTheme.menuSecondaryInk : activeInk)
+    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        pointerInside = false
+        if window == nil { EaselTimers.shared.detach(self) } else { EaselTimers.shared.attach(self) }
+        refresh()
+    }
+
+    override func layout() {
+        super.layout()
+        let side = NoteTheme.toolbarButtonSize.width
+        readout.frame = NSRect(x: side - 4, y: 0, width: max(0, bounds.width - side + 4), height: bounds.height)
+    }
+
+    private func updatePulse() {
+        guard let layer = readout.layer else { return }
+        layer.removeAnimation(forKey: "easel-timer-paused")
+        layer.opacity = 1
+        guard phase == .paused else { return }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            layer.opacity = 0.55
+            return
+        }
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 1
+        pulse.toValue = 0.3
+        pulse.duration = 0.9
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(pulse, forKey: "easel-timer-paused")
+    }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
-    override var state: NSControl.StateValue { didSet { needsDisplay = true } }
-    override func highlight(_ flag: Bool) { super.highlight(flag); needsDisplay = true }
+    override var state: NSControl.StateValue { didSet { needsDisplay = true; refreshReadoutColor() } }
+    override func highlight(_ flag: Bool) { super.highlight(flag); needsDisplay = true; refreshReadoutColor() }
 
     override func draw(_ dirtyRect: NSRect) {
         let radius = NoteTheme.controlRadius
@@ -193,8 +316,7 @@ final class EaselTimerButton: PointingHandButton {
             fill.setFill()
             NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
         }
-        let active = phase == .running || phase == .finished
-        let ink = state != .off || active ? NoteTheme.accent : isHighlighted || pointerInside ? NoteTheme.menuInk : NoteTheme.menuSecondaryInk
+        let ink = activeInk
         let side = NoteTheme.toolbarButtonSize.width
         let size = glyph.size
         let factor = min(1, 20 / max(1, size.width), 20 / max(1, size.height))
@@ -207,11 +329,11 @@ final class EaselTimerButton: PointingHandButton {
             return true
         }
         tinted.draw(in: box)
-        guard showsTime else { return }
-        let attributes: [NSAttributedString.Key: Any] = [.font: timeFont, .foregroundColor: phase == .paused ? NoteTheme.menuSecondaryInk : ink]
-        let text = shown as NSString
-        let height = text.size(withAttributes: attributes).height
-        text.draw(at: NSPoint(x: side - 4, y: ((bounds.height - height) / 2).rounded()), withAttributes: attributes)
+    }
+
+    private var activeInk: NSColor {
+        let active = phase == .running || phase == .finished
+        return state != .off || active ? NoteTheme.accent : isHighlighted || pointerInside ? NoteTheme.menuInk : NoteTheme.menuSecondaryInk
     }
 
     override func drawFocusRingMask() {

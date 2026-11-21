@@ -460,6 +460,12 @@ struct EaselBoardFeaturesTests {
         let csv = EaselSelectionExport.stickyCSV(stickies)
         expect(csv == "Content\r\n\"Says \"\"hi\"\", twice\nand more\"\r\nPlain\r\nBelow\r\n", "the CSV has a Content column with quoted fields")
         expect(EaselSelectionExport.stickyCSV([]) == "Content\r\n", "no stickies still makes a valid CSV")
+        let risky = ["=1+1", "+5", "-2", "@SUM(A1)", "\tgo", "\rgo"].map { item(.sticky, $0, x: 0, y: 0) }
+        let safe = EaselSelectionExport.stickyCSV(risky)
+        expect(safe == "Content\r\n\"'=1+1\"\r\n\"'+5\"\r\n\"'-2\"\r\n\"'@SUM(A1)\"\r\n\"'\tgo\"\r\n\"'\rgo\"\r\n", "formula starters are defused with a quoted apostrophe")
+        expect(EaselSelectionExport.stickyCSV([item(.sticky, "", x: 0, y: 0)]) == "Content\r\n\"\"\r\n", "an empty sticky stays a row")
+        expect(EaselSelectionExport.stickyCSV([item(.sticky, "a=b", x: 0, y: 0)]) == "Content\r\na=b\r\n", "an equals sign inside text is left alone")
+        expect(EaselTableData.field("=1", separator: ",") == "=1", "table copy keeps its own field rules")
     }
 
     @MainActor static func templates() {

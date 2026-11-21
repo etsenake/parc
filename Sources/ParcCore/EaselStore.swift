@@ -459,6 +459,10 @@ enum EaselStoreError: Error, LocalizedError {
     }
 }
 
+extension Notification.Name {
+    static let easelDocumentRemoved = Notification.Name("ParcEaselDocumentRemoved")
+}
+
 @MainActor
 final class EaselStore {
     static let maximumAssetBytes = 30 * 1024 * 1024
@@ -528,6 +532,7 @@ final class EaselStore {
         syncDirectory(documentsDirectory)
         sessions.removeValue(forKey: id)?.value?.markDeleted()
         onDocumentRemoved?(id)
+        NotificationCenter.default.post(name: .easelDocumentRemoved, object: id)
     }
 
     fileprivate func timestamp() -> Date { now() }
