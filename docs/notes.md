@@ -15,7 +15,7 @@ file's name. A note's front-matter emoji icon is its tab icon in the sidebar,
 Favorites, the folded Pinned peek, the tab switcher and the command bar; a local
 image icon shows as a small rounded thumbnail. A note without an icon of its own,
 plain text included, shows the Library card's coral note mark there and in note
-links, mentions and backlinks, from one shared source. An open note's icon
+links, mentions and backlinks, from one shared source that Easel icons use too. An open note's icon
 updates as it's edited, and other notes reread their front matter off the main
 thread when their folder changes. Any regular Profile can open any
 note file, so moving a tab to another Profile leaves the file where it is.
