@@ -54,7 +54,10 @@ final class EaselWebObjects: EaselHostedObjects, EaselCanvasPasteChoices {
         for id in Array(cards.keys) where !linked.contains(id) { cards.removeValue(forKey: id)?.removeFromSuperview() }
         let empty = items.filter { hosts($0) && $0.isEmptyPlaceholder }
         let emptyIDs = Set(empty.map(\.id))
-        for id in Array(entries.keys) where !emptyIDs.contains(id) { entries.removeValue(forKey: id)?.removeFromSuperview() }
+        for id in Array(entries.keys) where !emptyIDs.contains(id) {
+            if searchTarget == id { closeSearch() }
+            entries.removeValue(forKey: id)?.removeFromSuperview()
+        }
         let editable = canvas?.viewOnly == false
         for item in empty {
             guard let host = entries[item.id] else { continue }
@@ -188,7 +191,8 @@ final class EaselWebObjects: EaselHostedObjects, EaselCanvasPasteChoices {
     }
 
     private func handlePasteEvent(_ event: NSEvent) -> Bool {
-        guard let menu = pasteMenu, menu.isPresented, event.window === canvas?.window else { return false }
+        guard let menu = pasteMenu, menu.isPresented, let window = canvas?.window else { dismissPasteMenu(); return false }
+        guard event.window === window else { return false }
         switch event.type {
         case .keyDown:
             let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
@@ -236,14 +240,16 @@ final class EaselWebObjects: EaselHostedObjects, EaselCanvasPasteChoices {
         let limit = 30 * 1_048_576
         let task = Self.downloadSession.dataTask(with: url) { [weak self] data, response, _ in
             let ok = (response as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
-            let body = ok ? data.flatMap { $0.count <= limit && !$0.isEmpty ? $0 : nil } : nil
+            let tooBig = (data?.count ?? 0) > limit
+            let body = ok && !tooBig ? data.flatMap { $0.isEmpty ? nil : $0 } : nil
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.downloads.removeValue(forKey: id)
                     guard let canvas = self.canvas else { return }
                     if let body { canvas.replaceBookmark(id, withMedia: kind, url: url, data: body) }
-                    else { canvas.onError?(EaselStoreError.invalidDocument(kind == .pdf ? "that PDF couldn’t be downloaded" : "that picture couldn’t be downloaded")) }
+                    else if tooBig { canvas.onError?(kind == .pdf ? EaselStoreError.pdfTooLarge : EaselStoreError.tooLarge) }
+                    else { canvas.onError?(kind == .pdf ? EaselStoreError.invalidPDF : EaselStoreError.invalidImage) }
                 }
             }
         }

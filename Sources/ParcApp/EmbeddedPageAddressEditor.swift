@@ -119,7 +119,7 @@ final class EmbeddedPageAddressEditor: NSView, NoteFloatingPanelContent {
 
     private func submit(_ url: URL, search: EmbeddedPageSearchRows.Search?) {
         guard onSubmit?(url, search) == true else {
-            entry.refuse("This page can’t go there right now.")
+            entry.refuse("Can’t go there just now. Try again?")
             return
         }
     }
