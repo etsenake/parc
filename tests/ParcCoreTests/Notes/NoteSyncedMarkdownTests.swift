@@ -1,21 +1,11 @@
 import Foundation
+import Testing
+@testable import ParcCore
 
-@main
 struct NoteSyncedMarkdownTests {
-    typealias Check = MarkdownCheck
+    typealias Check = NoteMarkdownCheck
 
-    static func main() {
-        originalReads()
-        copyReads()
-        exactRoundTrips()
-        modelRoundTrips()
-        nestedPlacesRoundTrip()
-        unmatchedMarkersStayVerbatim()
-        openerAfterTextStaysSynced()
-        Check.finish("NoteSyncedMarkdownTests")
-    }
-
-    static func originalReads() {
+    @Test func originalReads() {
         let page = NoteMarkdown.parse("""
         <!-- parc synced id="k3x9qa" -->
 
@@ -27,15 +17,15 @@ struct NoteSyncedMarkdownTests {
 
         After
         """)
-        Check.expect(page.blocks.count == 2, "the synced block and the paragraph after it")
+        #expect(page.blocks.count == 2, "the synced block and the paragraph after it")
         let synced = page.blocks[0]
-        Check.expect(synced.kind == .synced && synced.isSyncedOriginal, "the opener makes an original")
-        Check.expect(synced.props.anchor == "k3x9qa", "the id is the anchor")
-        Check.expect(synced.children.map(\.kind) == [.paragraph, .bulletedItem], "everything between the markers is inside")
-        Check.expect(page.blocks[1].text.string == "After", "the closer ends the block")
+        #expect(synced.kind == .synced && synced.isSyncedOriginal, "the opener makes an original")
+        #expect(synced.props.anchor == "k3x9qa", "the id is the anchor")
+        #expect(synced.children.map(\.kind) == [.paragraph, .bulletedItem], "everything between the markers is inside")
+        #expect(page.blocks[1].text.string == "After", "the closer ends the block")
     }
 
-    static func copyReads() {
+    @Test func copyReads() {
         let page = NoteMarkdown.parse("""
         <!-- parc synced from="Project%20plan.md#k3x9qa" -->
 
@@ -44,12 +34,12 @@ struct NoteSyncedMarkdownTests {
         <!-- parc /synced -->
         """)
         let synced = page.blocks[0]
-        Check.expect(synced.isSyncedCopy, "a from attribute makes a copy")
-        Check.expect(synced.props.target == "Project%20plan.md#k3x9qa", "the reference is kept as written")
-        Check.expect(synced.children.map(\.text.string) == ["Weekly goals"], "the snapshot reads as ordinary blocks")
+        #expect(synced.isSyncedCopy, "a from attribute makes a copy")
+        #expect(synced.props.target == "Project%20plan.md#k3x9qa", "the reference is kept as written")
+        #expect(synced.children.map(\.text.string) == ["Weekly goals"], "the snapshot reads as ordinary blocks")
     }
 
-    static func exactRoundTrips() {
+    @Test func exactRoundTrips() {
         Check.checkExact("""
         Before
 
@@ -88,7 +78,7 @@ struct NoteSyncedMarkdownTests {
         """, "a block with nothing inside")
     }
 
-    static func modelRoundTrips() {
+    @Test func modelRoundTrips() {
         var original = NoteBlock(.synced, children: [.paragraph("One"), NoteBlock(.todo, text: "Two"), .paragraph()])
         original.props.anchor = "k3x9qa"
         var copy = NoteBlock(.synced, children: [.heading(2, "Copied"), .paragraph(), .paragraph()])
@@ -99,7 +89,7 @@ struct NoteSyncedMarkdownTests {
         Check.checkModelRoundTrip(NotePage(blocks: [original, original.withFreshIDs()]), "two blocks back to back")
     }
 
-    static func nestedPlacesRoundTrip() {
+    @Test func nestedPlacesRoundTrip() {
         var synced = NoteBlock(.synced, children: [.paragraph("Inside"), NoteBlock(.bulletedItem, text: "Item")])
         synced.props.anchor = "k3x9qa"
         let inList = NoteBlock(.bulletedItem, text: "Parent", children: [synced])
@@ -113,7 +103,7 @@ struct NoteSyncedMarkdownTests {
         }
     }
 
-    static func unmatchedMarkersStayVerbatim() {
+    @Test func unmatchedMarkersStayVerbatim() {
         Check.checkExact("""
         Text
 
@@ -123,15 +113,15 @@ struct NoteSyncedMarkdownTests {
 
         """, "an opener without a closer stays as written")
         let page = NoteMarkdown.parse("Text\n\n<!-- parc /synced -->\n")
-        Check.expect(page.blocks.map(\.kind) == [.paragraph, .html], "a lone closer stays as HTML")
+        #expect(page.blocks.map(\.kind) == [.paragraph, .html], "a lone closer stays as HTML")
         let lone = NoteMarkdown.parse("Text\n<!-- parc synced id=\"k3x9qa\" -->\n")
-        Check.expect(lone.blocks[0].props.anchor == nil, "a lone opener never lends its id to the text above")
+        #expect(lone.blocks[0].props.anchor == nil, "a lone opener never lends its id to the text above")
     }
 
-    static func openerAfterTextStaysSynced() {
+    @Test func openerAfterTextStaysSynced() {
         let page = NoteMarkdown.parse("Text\n<!-- parc synced id=\"k3x9qa\" -->\nInside\n<!-- parc /synced -->\n")
-        Check.expect(page.blocks.map(\.kind) == [.paragraph, .synced], "an opener hugging the text above still opens a block")
-        Check.expect(page.blocks[0].props.anchor == nil, "and the text keeps no id")
-        Check.expect(page.blocks.last?.children.map(\.text.string) == ["Inside"], "the hugging content lands inside")
+        #expect(page.blocks.map(\.kind) == [.paragraph, .synced], "an opener hugging the text above still opens a block")
+        #expect(page.blocks[0].props.anchor == nil, "and the text keeps no id")
+        #expect(page.blocks.last?.children.map(\.text.string) == ["Inside"], "the hugging content lands inside")
     }
 }

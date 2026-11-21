@@ -125,12 +125,13 @@ enum NoteMarkdownCheck {
         checkModelRoundTrip(page, label, sourceLocation: sourceLocation)
     }
 
-    static func checkStable(_ source: String, _ label: String, sourceLocation: SourceLocation = #_sourceLocation) {
+    static func stableProblems(_ source: String, _ label: String) -> [String] {
+        var problems: [String] = []
         let page = NoteMarkdown.parse(source)
         let first = NoteMarkdown.serialize(page)
         let reparsed = NoteMarkdown.parse(first)
         if !same(page, reparsed) {
-            report("""
+            problems.append("""
             \(label): meaning changed after one save
             --- source
             \(source)--- saved
@@ -138,11 +139,16 @@ enum NoteMarkdownCheck {
             \(describe(page.blocks))
             --- reparsed
             \(describe(reparsed.blocks))
-            """, sourceLocation: sourceLocation)
+            """)
         }
         let second = NoteMarkdown.serialize(reparsed)
         if second != first {
-            report("\(label): a second save changed the text again\n--- first\n\(first)--- second\n\(second)", sourceLocation: sourceLocation)
+            problems.append("\(label): a second save changed the text again\n--- first\n\(first)--- second\n\(second)")
         }
+        return problems
+    }
+
+    static func checkStable(_ source: String, _ label: String, sourceLocation: SourceLocation = #_sourceLocation) {
+        for problem in stableProblems(source, label) { report(problem, sourceLocation: sourceLocation) }
     }
 }
