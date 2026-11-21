@@ -174,8 +174,13 @@ enum EaselMarkdown {
         while true {
             let newline = source.range(of: "\n", range: NSRange(location: location, length: source.length - location))
             let length = newline.location == NSNotFound ? source.length - location : newline.location - location
-            let text = noteText(of: item, range: location..<(location + length))
             let attributes = paragraphAttributes(of: item, at: location, length: length)
+            var start = location
+            if attributes?.lists.isEmpty == false,
+               let prefix = source.substring(with: NSRange(location: location, length: length)).range(of: "^\t[^\t]+\t", options: .regularExpression) {
+                start += (String(source.substring(with: NSRange(location: location, length: length))[prefix]) as NSString).length
+            }
+            let text = noteText(of: item, range: start..<(location + length))
             if !text.isEmpty || !result.isEmpty { result.append(block(for: text, attributes: attributes)) }
             if newline.location == NSNotFound { break }
             location = newline.location + 1
@@ -194,6 +199,14 @@ enum EaselMarkdown {
         if let level = attributes?.heading, level > 0 { return (.heading(min(level + 1, 6), text), 0) }
         guard let lists = attributes?.lists, let last = lists.last else { return (.paragraph(text), 0) }
         if last.marker == quoteMarker { return (NoteBlock(.quote, text: text), 0) }
+        switch EaselChecklist.marker(last.marker) {
+        case .divider?: return (NoteBlock(.divider), 0)
+        case let marker?:
+            var props = NoteBlockProps()
+            props.checked = marker == .done
+            return (NoteBlock(.todo, text: text, props: props), max(0, lists.count - 1))
+        case nil: break
+        }
         let depth = max(0, lists.count - 1)
         let numbered = last.marker.contains("decimal") || last.marker.contains("alpha") || last.marker.contains("roman")
         return (NoteBlock(numbered ? .numberedItem : .bulletedItem, text: text), depth)
@@ -211,6 +224,13 @@ enum EaselMarkdown {
         for run in runs {
             let start = max(lower, run.location), end = min(upper, run.location + run.length)
             guard end > start else { continue }
+            if let inline = run.attributes.inline {
+                var marks = marks(for: run.attributes)
+                marks.link = nil
+                marks.atom = inline.atom
+                pieces.append((NoteAtom.character, marks))
+                continue
+            }
             let text = source.substring(with: NSRange(location: start, length: end - start)).replacingOccurrences(of: "\u{FFFC}", with: "")
             guard !text.isEmpty else { continue }
             pieces.append((text, marks(for: run.attributes)))

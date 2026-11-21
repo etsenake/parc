@@ -271,6 +271,15 @@ struct EaselBoardTests {
         expect(text.contains("| Name | Age |") && text.contains("| Ada  | 36  |"), "tables become Markdown tables: \(text)")
         let order = ["## Plans", "Buy milk", "```python", "| Name"].compactMap { text.range(of: $0)?.lowerBound }
         expect(order == order.sorted(), "objects read top to bottom")
+        let listText = "\t\u{2610}\tmilk\n\t\u{2611}\teggs\n\t\u{2015}\t\nSee \u{FFFC}"
+        var mention = styled(24, 1)
+        mention.attributes.inline = .note(note, title: "Roadmap")
+        let checklist = item(listText, runs: [styled(0, 8, list: EaselChecklist.openMarker), styled(8, 8, list: EaselChecklist.doneMarker),
+                                              styled(16, 4, list: EaselChecklist.dividerMarker), styled(20, 4), mention])
+        let listed = EaselMarkdown.markdown(document([checklist]))
+        expect(listed.contains("- [ ] milk") && listed.contains("- [x] eggs"), "to-dos become task items: \(listed)")
+        expect(listed.contains("---"), "dividers become rules: \(listed)")
+        expect(listed.contains("Roadmap") && !listed.contains("\u{FFFC}"), "mentions keep the note's name: \(listed)")
         let words = EaselBoardText.stats(of: doc)
         expect(words.words >= 10, "words count text, stickies and tables")
     }
