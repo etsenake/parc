@@ -265,11 +265,8 @@ extension BrowserWindowController {
             let original = try easels.load(documentID).document
             let copy = try easels.create(title: original.title + " copy")
             try copy.perform("Duplicate Easel") { document in
-                document.items = original.items.map { item in
-                    var next = item
-                    next.id = UUID()
-                    return next
-                }
+                document.items = EaselArrange.copies(of: EaselArrange.paintOrder(original), offset: EaselPoint(x: 0, y: 0),
+                                                     firstZIndex: 0, keepingGroups: Set(original.items.compactMap(\.groupID)))
             }
             openEasel(id: copy.document.id, title: copy.document.title)
         } catch { showEaselError(error) }
