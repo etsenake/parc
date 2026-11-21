@@ -49,8 +49,19 @@ struct EaselMindMapTree {
 
     var hidden: Set<UUID> {
         var result = Set<UUID>()
-        for node in nodes.values where node.collapsed && !result.contains(node.id) {
-            result.formUnion(descendants(of: node.id))
+        var visited = Set<UUID>()
+        var stack = roots
+        while let id = stack.popLast() {
+            guard visited.insert(id).inserted, let node = nodes[id] else { continue }
+            guard node.collapsed else {
+                stack.append(contentsOf: node.children)
+                continue
+            }
+            var inner = node.children
+            while let next = inner.popLast() {
+                guard next != id, result.insert(next).inserted else { continue }
+                inner.append(contentsOf: nodes[next]?.children ?? [])
+            }
         }
         return result
     }
