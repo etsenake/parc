@@ -2,7 +2,7 @@ import AppKit
 
 extension EaselCanvasView {
     var slashContext: EaselSlashContext {
-        EaselSlashContext(mention: true, date: true, inlineEquation: true,
+        EaselSlashContext(checklist: true, divider: true, mention: true, date: true, inlineEquation: true,
                           objects: fixedCanvasSize == nil && !editingLabel && !isEditingTableCell && !viewOnly)
     }
 

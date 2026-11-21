@@ -90,7 +90,7 @@ enum EaselTextLayout {
 
     @MainActor final class Layout {
         let storage: NSTextStorage
-        let manager = NSLayoutManager()
+        let manager: NSLayoutManager = EaselChecklistLayoutManager()
         let container: NSTextContainer
         let inset: NSSize
         init(_ value: NSAttributedString, width: CGFloat, height: CGFloat = 1_000_000, scale: Double = 1) {
@@ -434,10 +434,27 @@ final class EaselStyledTextView: LocalContentDropTextView {
     var onAlign: ((EaselTextStyle.Alignment) -> Void)?
     var onBlockEquation: (() -> Bool)?
     var onRepeatLastTint: (() -> Bool)?
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        installChecklistLayout()
+    }
+    override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
+        super.init(frame: frameRect, textContainer: container)
+        installChecklistLayout()
+    }
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        installChecklistLayout()
+    }
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addChecklistCursorRects()
+    }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown, isEditable, !hasMarkedText(), selectedRanges.count == 1, window?.firstResponder === self else {
             return super.performKeyEquivalent(with: event)
         }
+        if handleChecklistKey(event) { return true }
         if NoteFormatShortcut.lastColor.matches(event) { return onRepeatLastTint?() ?? false }
         if NoteFormatShortcut.code.matches(event) { toggleInlineCode(); return true }
         if NoteFormatShortcut.equation.matches(event), completion?.perform(.inlineEquation, in: self) == true { return true }
@@ -465,6 +482,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         EaselTextAttachments.bind(attributedString(), container: textContainer)
         typingAttributes.removeValue(forKey: .attachment)
         refreshObjectFill()
+        window?.invalidateCursorRects(for: self)
         super.didChangeText()
         if !suppressMarkdown, !localUndo.isUndoing, !localUndo.isRedoing { completion?.textDidChange(in: self) }
     }
@@ -531,6 +549,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         return EaselInlineText.inline(at: index, in: attributedString()) == nil ? nil : index
     }
     override func mouseDown(with event: NSEvent) {
+        if checklistPress(atWindowPoint: event.locationInWindow) { return }
         if event.clickCount == 1, event.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty,
            let index = inlineIndex(at: convert(event.locationInWindow, from: nil)),
            completion?.perform(.activate(index), in: self) == true { return }
@@ -646,6 +665,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         return attributedString().isEqual(to: edit.text)
     }
     override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        if replacementRange.location == NSNotFound { _ = leaveDivider() }
         let range = replacementRange.location == NSNotFound ? selectedRange() : replacementRange
         let markdown = markdownAdmission(insertString, replacement: range)
         defer { if let markdown { applyMarkdown(markdown) } }
@@ -857,7 +877,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         if let edit = authoredEdit({ EaselParagraphEditing.indent($0, selection: selectedRange(), typing: $1, outdent: outdent, base: objectStyle) }) {
             commitParagraph(edit, name: outdent ? "Decrease list indent" : "Increase list indent"); return true
         }
-        return [.bullets, .numbers, .quote].contains(paragraphKind())
+        return [.bullets, .numbers, .checklist, .quote].contains(paragraphKind())
     }
     override func insertTab(_ sender: Any?) {
         let markdown = markdownAdmission("\t", replacement: selectedRange())
@@ -868,6 +888,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         if !changeListIndent(outdent: true) { super.insertBacktab(sender) }
     }
     override func insertNewline(_ sender: Any?) {
+        if leaveDivider() { return }
         let markdown = markdownAdmission("\n", replacement: selectedRange())
         defer { if let markdown { applyMarkdown(markdown) } }
         guard isEditable, !hasMarkedText(), selectedRanges.count == 1,
@@ -882,6 +903,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         if selection.length > 0 {
             insertText("", replacementRange: selection); return
         }
+        if deleteAdjacentDivider(forward: false) { return }
         guard let range = EaselParagraphEditing.ranges(string, selection: selection).first else { super.deleteBackward(sender); return }
         let prefix = EaselParagraphEditing.markerRange(value, paragraph: range)
         let attrs = range.location < value.length ? value.attributes(at: range.location, effectiveRange: nil) : typingAttributes
@@ -897,6 +919,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
         super.deleteBackward(sender)
     }
     override func deleteForward(_ sender: Any?) {
+        if deleteAdjacentDivider(forward: true) { return }
         let selection = selectedRange(), length = (string as NSString).length
         if isEditable, !hasMarkedText(), selectedRanges.count == 1,
            selection.length > 0 || (selection.location < length && (string as NSString).substring(with: NSRange(location: selection.location, length: 1)).rangeOfCharacter(from: .newlines) != nil) {

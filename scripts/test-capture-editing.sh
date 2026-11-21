@@ -56,6 +56,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/Sources/ParcApp/NoteFormatShortcut.swift" \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
+  "$repo_root/Sources/ParcApp/EaselChecklistText.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvas"*.swift \

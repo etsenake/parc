@@ -212,7 +212,7 @@ final class EaselSlashCompletion: EaselTextCompletion {
             view.insertCompletion("", replacing: range, name: "Slash")
             view.insertInlineEquation()
         case .divider:
-            NSSound.beep()
+            view.applySlashDivider(removing: range)
         }
     }
 
@@ -224,6 +224,7 @@ final class EaselSlashCompletion: EaselTextCompletion {
         case "heading3": return .heading3
         case "bulleted": return .bullets
         case "numbered": return .numbers
+        case "todo": return .checklist
         case "quote": return .quote
         default: return nil
         }

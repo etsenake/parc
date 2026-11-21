@@ -125,6 +125,10 @@ enum EaselInlineText {
     }
 
     static func spoken(_ text: String, rich: EaselRichText?) -> String {
+        EaselChecklistText.spoken(inlineSpoken(text, rich: rich))
+    }
+
+    private static func inlineSpoken(_ text: String, rich: EaselRichText?) -> String {
         guard let rich, rich.runs.contains(where: { $0.attributes.isAtomic }) else { return text }
         let source = text as NSString
         var result = "", location = 0

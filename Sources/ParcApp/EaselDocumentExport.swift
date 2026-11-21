@@ -22,9 +22,11 @@ enum EaselDocumentExport {
             if let moved = path.copy(using: &shift) { result.fillPath = svgPath(moved) }
         }
         let text = storage.string as NSString
+        let parts = EaselChecklistText.exportParts(manager: manager, storage: storage, offset: inset)
         manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { rect, _, _, glyphs, _ in
             let characters = manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
-            storage.enumerateAttributes(in: characters) { attributes, range, _ in
+            storage.enumerateAttributes(in: characters) { attributes, whole, _ in
+                guard let range = EaselChecklistText.trimmed(whole, excluding: parts.exclusions) else { return }
                 var value = EaselInlineText.exportText(attributes, text.substring(with: range), images: true)
                 while let last = value.last, last.isNewline { value.removeLast() }
                 guard !value.isEmpty else { return }
@@ -39,6 +41,7 @@ enum EaselDocumentExport {
                 run.color = hugging ? "#FFFFFF" : (attributes[.foregroundColor] as? NSColor).flatMap(hex)
                 run.underline = (attributes[.underlineStyle] as? Int ?? 0) != 0
                 run.strikethrough = (attributes[.strikethroughStyle] as? Int ?? 0) != 0
+                run.dimmed = parts.dimmed.contains { NSIntersectionRange($0, range).length > 0 }
                 if let fill = attributes[.backgroundColor] as? NSColor, let stored = try? EaselRichTextCodec.hex(fill) {
                     let box = manager.boundingRect(forGlyphRange: glyphRange, in: container)
                     run.mark = EaselVectorMark(x: Double(inset.width + box.minX), y: Double(inset.height + rect.minY),
@@ -48,6 +51,8 @@ enum EaselDocumentExport {
                 result.runs.append(run)
             }
         }
+        result.rules = parts.rules
+        result.checkboxes = parts.boxes
         result.images = EaselInlineText.exportImages(layout, offset: CGPoint(x: placed.x - item.frame.x, y: placed.y - item.frame.y))
         return result
     }
