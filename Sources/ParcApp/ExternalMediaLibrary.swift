@@ -211,8 +211,9 @@ final class ExternalMediaLibrary: ObservableObject {
         return [manager.urls(for: .downloadsDirectory, in: .userDomainMask).first!, desktop,
                 manager.urls(for: .documentDirectory, in: .userDomainMask).first!, screenshots]
     }
-    func activate(_ client: UUID) {
-        guard clients.insert(client).inserted else { return }
+    @discardableResult
+    func activate(_ client: UUID) -> Task<Void, Never>? {
+        guard clients.insert(client).inserted else { return nil }
         if observers.isEmpty {
             let center = NotificationCenter.default, workspace = NSWorkspace.shared.notificationCenter
             observers.append((center, center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -236,7 +237,7 @@ final class ExternalMediaLibrary: ObservableObject {
             timer.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.reconcile() } }
             timer.resume(); safetyTimer = timer
         }
-        startRefresh(announced: clients.count == 1)
+        return startRefresh(announced: clients.count == 1)
     }
     func deactivate(_ client: UUID) {
         clients.remove(client)
@@ -248,9 +249,12 @@ final class ExternalMediaLibrary: ObservableObject {
         if !folders.isEmpty { folders = [] }
         if isLoading { isLoading = false }
     }
-    func refresh() { startRefresh(announced: true) }
-    private func startRefresh(announced: Bool) {
-        guard !clients.isEmpty else { return }
+    @discardableResult
+    func refresh() -> Task<Void, Never>? { startRefresh(announced: true) }
+
+    @discardableResult
+    private func startRefresh(announced: Bool) -> Task<Void, Never>? {
+        guard !clients.isEmpty else { return nil }
         generation &+= 1; let token = generation; let roots = systemFolders(); let mark = FSEventsGetCurrentEventId()
         refreshTask?.cancel(); rescanPending = false
         if announced, !isLoading { isLoading = true }
@@ -271,6 +275,7 @@ final class ExternalMediaLibrary: ObservableObject {
             if self.isLoading { self.isLoading = false }
             if self.rescanPending { self.startRefresh(announced: false) }
         }
+        return refreshTask
     }
     private func requestRescan() {
         if refreshTask == nil { startRefresh(announced: false) } else { rescanPending = true }
