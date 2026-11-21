@@ -16,6 +16,7 @@ struct EaselBoardTests {
             rewriting()
             try indexing()
             try locking()
+            markdown()
             print("EaselBoardTests passed")
         }
     }
@@ -125,5 +126,50 @@ struct EaselBoardTests {
         expect(!session.document.isLocked, "unlocking is allowed on a locked Easel")
         let encoded = String(decoding: try JSONEncoder().encode(session.document), as: UTF8.self)
         expect(!encoded.contains("locked"), "an unlocked Easel leaves the field out of the file")
+    }
+
+    static func styled(_ location: Int, _ length: Int, bold: Bool = false, link: String? = nil, heading: Int? = nil,
+                       list: String? = nil) -> EaselRichText.Run {
+        var font = EaselRichText.Font(name: "Helvetica", size: 15)
+        if bold { font.traits = EaselMarkdown.boldTrait }
+        var attributes = EaselRichText.Attributes(font: font, ink: "#000000FF", link: link)
+        if heading != nil || list != nil {
+            attributes.paragraph = EaselRichText.Paragraph(alignment: 0, direction: 0, lineBreak: 0, firstIndent: 0, headIndent: 0,
+                tailIndent: 0, lineSpacing: 0, before: 0, after: 0, minimumHeight: 0, maximumHeight: 0, heightMultiple: 0,
+                hyphenation: 0, tightening: 0, allowsTightening: false, defaultHyphenation: false, defaultTab: 0, tabs: [],
+                lists: list.map { [EaselRichText.Paragraph.List(marker: $0, options: 0, start: 1)] } ?? [], heading: heading)
+        }
+        return EaselRichText.Run(location: location, length: length, attributes: attributes)
+    }
+
+    static func markdown() {
+        let note = URL(fileURLWithPath: "/Users/me/Notes/Roadmap.md")
+        var title = item("Plans\nBold move see Roadmap\nfirst\nsecond", runs: [
+            styled(0, 6, heading: 1), styled(6, 5, bold: true), styled(11, 10), styled(21, 7, link: note.absoluteString),
+            styled(28, 1), styled(29, 5, list: "{disc}"), styled(34, 1, list: "{disc}"), styled(35, 6, list: "{disc}")])
+        title.frame = EaselRect(x: 0, y: 0, width: 300, height: 100)
+        var sticky = EaselItem(kind: .sticky, frame: EaselRect(x: 0, y: 200, width: 100, height: 100))
+        sticky.text = "Buy milk"
+        var code = EaselItem(kind: .code, frame: EaselRect(x: 0, y: 400, width: 100, height: 100))
+        code.text = "print(1)"
+        code.language = "python"
+        var table = EaselItem(kind: .table, frame: EaselRect(x: 0, y: 600, width: 100, height: 100))
+        table.table = EaselTable(columnWidths: [100, 100], rowHeights: [30, 30], cells: [
+            [EaselTableCell(text: "Name"), EaselTableCell(text: "Age")], [EaselTableCell(text: "Ada"), EaselTableCell(text: "36")]])
+        var doc = document([title, sticky, code, table])
+        doc.title = "Plans"
+        let text = EaselMarkdown.markdown(doc)
+        expect(text.hasPrefix("# Plans\n"), "the title leads")
+        expect(text.contains("## Plans"), "Easel headings become Markdown headings: \(text)")
+        expect(text.contains("**Bold**"), "bold text keeps its emphasis: \(text)")
+        expect(text.contains("[Roadmap](") && text.contains("Roadmap.md"), "links keep their targets: \(text)")
+        expect(text.contains("- first") && text.contains("- second"), "bullets become list items: \(text)")
+        expect(text.contains("- Buy milk"), "stickies become list items: \(text)")
+        expect(text.contains("```python"), "code keeps its fence and language: \(text)")
+        expect(text.contains("| Name | Age |") && text.contains("| Ada | 36 |"), "tables become Markdown tables: \(text)")
+        let order = ["## Plans", "Buy milk", "```python", "| Name"].compactMap { text.range(of: $0)?.lowerBound }
+        expect(order == order.sorted(), "objects read top to bottom")
+        let words = EaselBoardText.stats(of: doc)
+        expect(words.words >= 10, "words count text, stickies and tables")
     }
 }

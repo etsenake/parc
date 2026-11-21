@@ -4,13 +4,14 @@ import UniformTypeIdentifiers
 @MainActor
 final class EaselPageMenu {
     enum ExportFormat: String, CaseIterable {
-        case image, html, pdf, stickies
+        case image, html, pdf, markdown, stickies
 
         var title: String {
             switch self {
             case .image: return "Image…"
             case .html: return "HTML File…"
             case .pdf: return "PDF…"
+            case .markdown: return "Markdown File…"
             case .stickies: return "Stickies as CSV…"
             }
         }
@@ -20,6 +21,7 @@ final class EaselPageMenu {
             case .image: return "photo"
             case .html: return "doc.text"
             case .pdf: return "doc.richtext"
+            case .markdown: return "doc.plaintext"
             case .stickies: return "list.bullet.rectangle"
             }
         }

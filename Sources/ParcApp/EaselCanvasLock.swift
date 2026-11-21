@@ -27,6 +27,6 @@ extension EaselCanvasView {
 
     func lockedAllows(_ action: Selector?) -> Bool {
         guard let action else { return false }
-        return [Selector(("copy:")), #selector(undo(_:)), #selector(redo(_:))].contains(action)
+        return [#selector(copy(_:)), #selector(undo(_:)), #selector(redo(_:))].contains(action)
     }
 }

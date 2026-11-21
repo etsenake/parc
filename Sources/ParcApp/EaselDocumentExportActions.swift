@@ -38,6 +38,7 @@ extension EaselEditorViewController {
         guard canExportImage, let window = view.window, canvas.finishEditing() else { return }
         if format == .image { exportImage(); return }
         if format == .stickies { exportStickies(EaselSelectionExport.stickies(in: session.document)); return }
+        if format == .markdown { exportMarkdown(in: window); return }
         let panel = NSSavePanel()
         panel.title = "Export Easel"
         panel.allowedContentTypes = [format == .pdf ? .pdf : .html]
@@ -112,6 +113,7 @@ extension BrowserWindowController {
             let copy = try easels.create(title: original.title + " copy")
             try copy.perform("Duplicate Easel") { document in
                 document.pages = original.pages
+                document.defaultFamily = original.defaultFamily
                 document.items = EaselArrange.copies(of: EaselArrange.paintOrder(original), offset: EaselPoint(x: 0, y: 0),
                                                      firstZIndex: 0, keepingGroups: Set(original.items.compactMap(\.groupID)))
             }
