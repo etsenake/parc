@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 extension EaselEditorViewController {
     func toggleLock() {
@@ -24,5 +25,54 @@ extension EaselEditorViewController {
         palette?.isViewOnly = locked
         titleField.isEditable = !locked
         canvas.documentLockDidChange()
+    }
+
+    func copyMarkdown() {
+        let text = EaselMarkdown.markdown(session.document)
+        let board = NSPasteboard.general
+        board.clearContents()
+        board.setString(text, forType: .string)
+        showExportToast(.standard("Copied Markdown"))
+    }
+
+    func exportMarkdown(in window: NSWindow) {
+        let panel = NSSavePanel()
+        panel.title = "Export Easel"
+        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = EaselVectorExport.exportFileName(session.document.title, fileExtension: "md")
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let destination = panel.url else { return }
+            MainActor.assumeIsolated { self?.writeMarkdown(to: destination, in: window) }
+        }
+    }
+
+    private func writeMarkdown(to destination: URL, in window: NSWindow) {
+        let document = session.document
+        let folderName = destination.deletingPathExtension().lastPathComponent + " Files"
+        var assets: [UUID: String] = [:]
+        for item in document.items where [.image, .video].contains(item.kind) {
+            if let id = item.assetID { assets[item.id] = id }
+        }
+        var options = EaselMarkdown.Options()
+        options.assetPath = { item in
+            guard assets[item.id] != nil else { return nil }
+            return (folderName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? folderName) + "/" + (assets[item.id] ?? "")
+        }
+        let text = EaselMarkdown.markdown(document, options: options)
+        do {
+            if !assets.isEmpty {
+                let folder = destination.deletingLastPathComponent().appendingPathComponent(folderName, isDirectory: true)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                for id in Set(assets.values) {
+                    try session.assetData(id).write(to: folder.appendingPathComponent(id), options: .atomic)
+                }
+            }
+            try Data(text.utf8).write(to: destination, options: .atomic)
+            showExportToast(.standard("Exported \(destination.lastPathComponent)"))
+        } catch {
+            EaselImageExport.showFailure(in: window)
+        }
     }
 }
