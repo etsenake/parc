@@ -59,6 +59,7 @@ struct EaselVectorArt {
     var connectorLabels: [UUID: EaselConnectorLabelArt] = [:]
     var sectionTitles: [UUID: EaselVectorSectionTitle] = [:]
     var mediaDetails: [UUID: String] = [:]
+    var equations: [UUID: EaselVectorEquation] = [:]
 }
 
 enum EaselVectorExport {
@@ -177,7 +178,7 @@ enum EaselVectorExport {
         case .stamp: return stamp(item, art.images[item.id])
         case .video: return art.images[item.id].map { poster(item, $0) } ?? linkedVideoElement(item)
         case .audio, .file, .pdf: return mediaElement(item, art: art)
-        case .equation: return ""
+        case .equation: return equation(item, art.equations[item.id])
         }
     }
 

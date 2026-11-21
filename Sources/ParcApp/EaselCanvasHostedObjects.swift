@@ -28,6 +28,7 @@ extension EaselCanvasView {
 
     @discardableResult
     func placeEmptyObject(_ kind: EaselItemKind, beside target: EaselRect? = nil) -> UUID? {
+        if kind == .equation { return placeEmptyEquation() }
         guard fixedCanvasSize == nil, !session.isClosed, EaselMediaPlacement.placesEmpty(kind) else { return nil }
         cancelPointerInteraction()
         guard finishEditing() else { return nil }

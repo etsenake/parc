@@ -98,6 +98,7 @@ extension EaselCanvasView {
     }
 
     private func clipboardWords(_ item: EaselItem) -> String? {
+        if item.kind == .equation { return EaselEquationArtwork.plainText(item) }
         let words = EaselTextAttachments.plainString(item.text).trimmingCharacters(in: .whitespacesAndNewlines)
         if [.link, .webCard, .browser].contains(item.kind), let url = item.url {
             return words.isEmpty || words == url ? url : words + "\n" + url

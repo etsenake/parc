@@ -10,7 +10,7 @@ struct EaselEquationSize: Equatable {
 enum EaselEquation {
     static let fontSize = 30.0
     static let padding = 14.0
-    static let emptySize = EaselEquationSize(width: 248, height: 72)
+    static let emptySize = EaselEquationSize(width: 360, height: 72)
     static let minimumScale = 0.2
     static let maximumScale = 16.0
     static let maximumLength = 20_000

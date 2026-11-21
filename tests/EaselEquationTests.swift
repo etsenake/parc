@@ -14,6 +14,7 @@ struct EaselEquationTests {
         sizing()
         markup()
         speech()
+        toolbar()
         print("EaselEquationTests: \(assertions) assertions passed")
     }
 
@@ -69,11 +70,13 @@ struct EaselEquationTests {
 
     @MainActor static func markup() {
         placement()
-        var item = EaselItem(kind: .text, frame: EaselRect(x: 10, y: 20, width: 228, height: 92), text: "x^2")
+        var item = EaselItem(kind: .equation, frame: EaselRect(x: 10, y: 20, width: 228, height: 92), text: "x^2")
         let art = EaselVectorEquation(width: 100, height: 40,
                                       parts: [EaselVectorEquationPart(path: "M0 0L10 0L10 10Z"),
                                               EaselVectorEquationPart(path: "M20 0L30 0L30 10Z", color: "#FF0000", opacity: 0.5)])
         let svg = EaselVectorExport.equation(item, art)
+        let routed = EaselVectorExport.element(item, art: EaselVectorArt(equations: [item.id: art]))
+        expect(routed == svg, "the object export routes through the equation art")
         expect(svg.contains("<path d=\"M0 0L10 0L10 10Z\""), "the outline is drawn as a path")
         expect(svg.contains("fill:var(--easel-ink)"), "automatic ink follows the page ink")
         expect(svg.contains("fill:#FF0000;fill-opacity:0.5"), "custom colours and opacity are kept")
@@ -105,5 +108,15 @@ struct EaselEquationTests {
         expect(NoteEquationSpeech.label(source: "", error: nil) == "Empty equation", "blank is spoken as empty")
         expect(NoteEquationSpeech.label(source: "x", error: nil) == "Equation: x", "TeX is spoken")
         expect(NoteEquationSpeech.label(source: "x", error: "Oops").hasPrefix("Equation that won\u{2019}t typeset: x."), "typos are spoken")
+    }
+
+    @MainActor static func toolbar() {
+        let item = EaselItem(kind: .equation, frame: EaselRect(x: 0, y: 0, width: 100, height: 50), text: "x")
+        expect(EaselToolbarSubject(item) == .equation, "an equation has its own toolbar")
+        expect(EaselSelectionToolbarPlan.controls(for: .equation, editingText: false) == [[.color]], "an equation offers ink")
+        expect(EaselStyleFamily.of(item) == .equations, "an equation takes ink only")
+        expect(EaselStyleFamily.equations.weights.isEmpty && !EaselStyleFamily.equations.takesFill, "an equation has no stroke or fill")
+        expect(EaselRotation.isRotatable(.equation) && !EaselRotation.isFlippable(.equation), "an equation turns but never mirrors")
+        expect(EaselEquation.emptySize.width == EaselMediaPlacement.placeholderSize(for: .equation).width, "a blank equation matches its placeholder")
     }
 }

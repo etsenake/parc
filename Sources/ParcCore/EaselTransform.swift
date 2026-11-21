@@ -63,7 +63,7 @@ enum EaselRotation {
 
     static func isRotatable(_ kind: EaselItemKind) -> Bool {
         switch kind {
-        case .text, .image, .rectangle, .circle, .freehand, .stamp: return true
+        case .text, .image, .rectangle, .circle, .freehand, .stamp, .equation: return true
         default: return false
         }
     }

@@ -34,7 +34,7 @@ sources += [app / name for name in ["CommandResultRowView.swift", "CommandResult
     "PopoverBackgroundView.swift", "LocalContentDrop.swift", "NoteTheme.swift", "EaselAppearance.swift", "EaselTextStyle.swift", "TextFormatMenu.swift",
     "EaselRichTextCodec.swift", "EaselTextHighlight.swift", "NoteFormatShortcut.swift", "EaselTextAttachment.swift", "EaselParagraphEditing.swift", "EaselMarkdownEditing.swift",
     "WebpageEditCommands.swift", "EaselMotion.swift", "EaselDocumentExport.swift", "EaselTableExport.swift", "EaselDocumentExport+Connectors.swift", "EaselStickyText.swift", "EaselTooltip.swift", 
-    "EaselShapePicker.swift", "NoteAnimation.swift", "NoteFloatingPanel.swift", "NoteControls.swift", "NoteCustomEmojiImages.swift", "DocumentDefaultIcon.swift", "LibraryArtwork.swift", "EaselStampArtwork.swift", "SidebarIconCatalog.swift", "MenuItemImage.swift", "ParcBrandMark.swift", "EaselImageExport.swift"] if name not in names]
+    "EaselShapePicker.swift", "NoteAnimation.swift", "NoteFloatingPanel.swift", "NoteControls.swift", "NoteMathFont.swift", "NoteMathLayout.swift", "NoteMathRenderer.swift", "NoteEquationArtwork.swift", "NoteCodeFont.swift", "NoteCustomEmojiImages.swift", "DocumentDefaultIcon.swift", "LibraryArtwork.swift", "EaselStampArtwork.swift", "SidebarIconCatalog.swift", "MenuItemImage.swift", "ParcBrandMark.swift", "EaselImageExport.swift"] if name not in names]
 sources += [path for path in sorted(app.glob("EaselCanvas*.swift")) if path.name not in names]
 sources += sorted(here.glob("Harness/*.swift"))
 command = ["xcrun", "swiftc", "-parse-as-library", "-Onone",
