@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 enum EaselMediaImportPlan {
     enum Source: Equatable {
@@ -28,16 +29,26 @@ enum EaselMediaImportPlan {
 
     static func classify(sniffed: EaselAssetType?, fileExtension: String?, isImage: Bool, isMovie: Bool, byteCount: Int) -> Source? {
         guard byteCount > 0 else { return nil }
+        if isMovie { return .video(sniffed.flatMap { $0.isVideo ? $0 : nil } ?? .mp4) }
+        if isImage { return .image }
+        if let audio = EaselAssetType.audioType(forExtension: fileExtension) {
+            guard let sniffed, sniffed.isAudio, sniffed != .mp3, sniffed != .aac else { return .audio(audio) }
+            return .audio(sniffed)
+        }
+        if fileExtension?.lowercased() == "pdf" { return .pdf }
+        if isKnownExtension(fileExtension) { return .file }
         if let sniffed {
             if sniffed.isVideo { return .video(sniffed) }
             if sniffed.isAudio { return .audio(sniffed) }
             if sniffed == .pdf { return .pdf }
             if sniffed.isPicture { return .image }
         }
-        if isMovie { return .video(.mp4) }
-        if isImage { return .image }
-        if let audio = EaselAssetType.audioType(forExtension: fileExtension) { return .audio(audio) }
         return .file
+    }
+
+    private static func isKnownExtension(_ raw: String?) -> Bool {
+        guard let raw, !raw.isEmpty, let type = UTType(filenameExtension: raw.lowercased()) else { return false }
+        return !type.isDynamic
     }
 
     static func tooLargeError(for source: Source) -> EaselStoreError {
