@@ -22,6 +22,14 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   -o "$scratch/easel-web-item-chrome"
 "$scratch/easel-web-item-chrome"
 
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
+  "$repo_root/Sources/ParcCore/EaselStore.swift" \
+  "$repo_root/Sources/ParcCore/EaselRichText.swift" \
+  "$repo_root/Sources/ParcCore/EaselLiveCaptureFraming.swift" \
+  "$repo_root/tests/EaselLiveCaptureFramingTests.swift" \
+  -o "$scratch/easel-live-capture-framing"
+"$scratch/easel-live-capture-framing"
+
 style_bundle="$scratch/EaselTextStyle.app/Contents"
 mkdir -p "$style_bundle/MacOS" "$style_bundle/Resources/EaselFonts"
 cp "$repo_root/Resources/EaselFonts/"*.ttf "$style_bundle/Resources/EaselFonts/"

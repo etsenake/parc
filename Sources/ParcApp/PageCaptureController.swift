@@ -199,8 +199,11 @@ final class PageCaptureController: NSObject {
         guard state != .finished, valid(), lease.isValid else { dismiss(restoreFocus: false); return }
         acquisitionMode = mode
         let viewport = NSRect(origin: .zero, size: lease.viewportSize)
-        let nativeRect = element.map { $0.viewportRect.insetBy(dx: -2, dy: -2).intersection(viewport) }
-            ?? (mode == .region ? rect : viewport)
+        let nativeRect = element.flatMap { target -> NSRect? in
+            let r = target.viewportRect
+            return EaselCaptureGeometry.elementCaptureArea(elementRect: EaselRect(x: r.minX, y: r.minY, width: r.width, height: r.height),
+                viewport: EaselPoint(x: viewport.width, y: viewport.height)).map { NSRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height) }
+        } ?? (mode == .region ? rect : viewport)
         capturePreviewRect = NSRect(x: nativeRect.minX / viewport.width * overlay.bounds.width,
             y: nativeRect.minY / viewport.height * overlay.bounds.height,
             width: nativeRect.width / viewport.width * overlay.bounds.width,

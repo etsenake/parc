@@ -105,18 +105,26 @@ final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHosting {
         }
         view.onSnapshot = { [weak self] in self?.canvas?.setLiveCapture(item.id, enabled: false) }
         view.onOpen = { [weak self] url in self?.canvas?.onOpenURL?(url) }
+        view.onFramingFailed = { [weak self] in
+            self?.framingFailures.insert(item.id)
+            DispatchQueue.main.async { [weak self] in self?.canvas?.setLiveCapture(item.id, enabled: false) }
+        }
         return view
     }
 
     private var snapshotChrome: EaselSnapshotHeader?
+    private var framingFailures: Set<UUID> = []
     func snapshotHeader(for item: EaselItem) -> NSView? {
         guard EaselWebItemChrome.isSnapshot(item), let raw = item.url, let address = URL(string: raw) else { return nil }
         let header = snapshotChrome ?? EaselSnapshotHeader()
         snapshotChrome = header
         let id = item.id
-        header.onMakeLive = { [weak self] in self?.canvas?.setLiveCapture(id, enabled: true) }
+        header.onMakeLive = { [weak self] in
+            self?.framingFailures.remove(id)
+            self?.canvas?.setLiveCapture(id, enabled: true)
+        }
         header.onOpen = { [weak self] in self?.canvas?.onOpenURL?(address) }
-        header.configure(item, address: address)
+        header.configure(item, address: address, framingFailed: framingFailures.contains(id))
         return header
     }
 
@@ -172,13 +180,22 @@ private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
     var positioningAllowed = true {
         didSet {
             guard positioningAllowed != oldValue else { return }
-            if !positioningAllowed, positioning != nil { cancelPositioning() }
+            if !positioningAllowed, positioning != nil { stopPositioning() }
             if positioningAllowed { needsLayout = true }
         }
     }
     var onSnapshot: (() -> Void)?
     var onOpen: ((URL) -> Void)?
-    var interactive = false { didSet { if oldValue != interactive { if !interactive { input?.cancel(restoreFocus: false) }; refresh(); needsLayout = true } } }
+    var onFramingFailed: (() -> Void)?
+    private var framing = EaselLiveFraming()
+    var interactive = false {
+        didSet {
+            guard oldValue != interactive else { return }
+            if !interactive { input?.cancel(restoreFocus: false) }
+            if !interactive && framing.revealsPage { positionCapture(force: true) }
+            refresh(); needsLayout = true
+        }
+    }
     var onLayout: (() -> Void)?
     var onRetry: (() -> Void)?
     var onDone: (() -> Void)?
@@ -256,9 +273,9 @@ private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
         clip.frame = pageRect
         if let captureLayout {
             let zoom = browser.nativePage?.liveCaptureZoomFactor ?? 1
-            let width = min(bounds.width, pageRect.height * captureLayout.region.width / captureLayout.region.height,
-                            captureLayout.viewport.x * zoom, captureLayout.viewport.y * zoom * captureLayout.region.width / captureLayout.region.height)
-            let height = width * captureLayout.region.height / captureLayout.region.width
+            let size = EaselCaptureGeometry.displaySize(captureLayout, availableWidth: bounds.width,
+                                                        availableHeight: pageRect.height, pageZoom: zoom)
+            let width = size.width, height = size.height
             clip.frame = NSRect(x: (bounds.width - width) / 2, y: headerHeight + (pageRect.height - height) / 2, width: width, height: height)
             browser.frame = NSRect(x: 0, y: 0, width: captureLayout.viewport.x * zoom, height: captureLayout.viewport.y * zoom)
             clip.isHidden = false
@@ -270,6 +287,9 @@ private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard interactive else { return nil }
+        if NSApp.currentEvent?.type == .scrollWheel,
+           !EaselLiveFraming.admitsPageScrolling(framesCapture: captureLayout != nil),
+           pageRect.contains(convert(point, from: superview)) { return nil }
         return super.hitTest(point)
     }
     var pageArea: (page: NSRect, visible: NSRect) { (convert(browser.bounds, from: browser), clip.frame) }
@@ -291,6 +311,7 @@ private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
     override func accessibilityChildren() -> [Any]? { inputAvailable ? super.accessibilityChildren() : [] }
     private static func friendly(_ text: String) -> String { EmbeddedPageStatusText.friendly(text, document: "Easel") }
     func setStatus(_ text: String?, retry retryVisible: Bool = false) {
+        if text == nil, captureLayout != nil, !framing.revealsPage { showLiningUp(); return }
         status = text
         fallback.configure(status: text.map(Self.friendly), retryTitle: retryVisible ? retryTitle : nil)
         fallback.isHidden = text == nil; cover.isHidden = text == nil
@@ -370,20 +391,41 @@ private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
         onOpen?(page?.isClosed == false ? (page?.url ?? address) : address)
     }
     func cancelPositioning() {
+        stopPositioning()
+        guard captureLayout != nil else { return }
+        framing.pageChanged()
+        if status == nil || status == "Positioning live capture…" { showLiningUp() }
+    }
+    private func stopPositioning() {
         positionGeneration &+= 1; positioning?.cancel(); positioning = nil
         positionedWidth = 0; positionedZoom = 0
     }
+    private func showLiningUp() {
+        status = "Positioning live capture…"
+        fallback.configure(status: Self.friendly("Positioning live capture…"), retryTitle: nil)
+        fallback.isHidden = false; cover.isHidden = false
+        needsLayout = true
+    }
+    private func framed(_ success: Bool) {
+        switch framing.positioned(success: success, pageStillLoading: browser.isLoading) {
+        case .reveal: setStatus(nil, retry: false)
+        case .keepWaiting: showLiningUp()
+        case .backToSnapshot:
+            setStatus("This page could not align with the captured region.", retry: false)
+            onFramingFailed?()
+        }
+    }
     func positionCapture(force: Bool = false) {
         guard positioningAllowed, let layout = captureLayout, let page = browser.nativePage, !page.isClosed,
-              page.embeddedOwnerValid, !browser.isLoading, window != nil else { return }
+              page.embeddedOwnerValid, window != nil else { return }
         let zoom = page.liveCaptureZoomFactor
         let width = min(clip.bounds.width, clip.bounds.height * layout.region.width / layout.region.height)
         guard width > 0, zoom.isFinite, zoom > 0,
               force || positionedWidth != width || positionedZoom != zoom else { return }
-        cancelPositioning(); positionedWidth = width; positionedZoom = zoom
+        stopPositioning(); positionedWidth = width; positionedZoom = zoom
         let generation = positionGeneration
         browser.frame = NSRect(x: 0, y: 0, width: layout.viewport.x * zoom, height: layout.viewport.y * zoom)
-        setStatus("Positioning live capture…")
+        if !framing.revealsPage { showLiningUp() }
         positioning = page.positionLiveCapture(NSRect(x: layout.region.x, y: layout.region.y,
             width: layout.region.width, height: layout.region.height),
             scrollOffset: NSPoint(x: layout.scroll.x, y: layout.scroll.y), displayWidth: width) { [weak self, weak page] success in
@@ -391,10 +433,10 @@ private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
                     guard let self, let page, self.positionGeneration == generation,
                           self.browser.nativePage === page, page.embeddedOwnerValid else { return }
                     self.positioning = nil
-                    self.setStatus(success ? nil : "This page could not align with the captured region.", retry: !success)
+                    self.framed(success)
                 }
             }
-        if positioning == nil { setStatus("Live capture is unavailable for this page.", retry: true) }
+        if positioning == nil { framed(false) }
     }
     @objc private func showSnapshot() { onSnapshot?() }
     @objc private func goForward() { navigate(.forward) }
@@ -435,10 +477,14 @@ private final class EaselSnapshotHeader: NSView {
 
     override var isFlipped: Bool { true }
 
-    func configure(_ item: EaselItem, address: URL) {
+    func configure(_ item: EaselItem, address: URL, framingFailed: Bool) {
         let canGoLive = EaselWebItemChrome.canMakeLive(item)
         header.setPage(title: EaselWebItemChrome.title(for: item), host: EaselWebItemChrome.displayHost(address))
-        header.setBadge(EaselWebItemChrome.badge(for: item), help: EaselWebItemChrome.badgeHelp(for: item), live: false)
+        if framingFailed && canGoLive {
+            header.setBadge(EaselLiveFraming.failureBadge, help: EaselLiveFraming.failureHelp, live: false)
+        } else {
+            header.setBadge(EaselWebItemChrome.badge(for: item), help: EaselWebItemChrome.badgeHelp(for: item), live: false)
+        }
         header.action = canGoLive ? makeLive : nil
         setAccessibilityLabel("Captured page: " + EaselWebItemChrome.title(for: item))
         if self.address != address {

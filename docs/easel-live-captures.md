@@ -17,6 +17,9 @@ its original document, native page, Profile, window, screenshot policy and
 security ownership. Changed geometry leaves the ordinary genuine PNG intact
 but offers no live-region capability. Full-page captures have no region layout.
 
+Element captures from capture mode's element selector take the same path: the
+element's viewport rectangle, outset by two points and clipped to the viewport,
+is captured as a region and gets the same geometry (`EaselCaptureGeometry`).
 The app carries that optional geometry through the existing exact-destination
 import transaction. Old cards never acquire guessed coordinates. Cropped,
 annotated or Portrait-framed captures retain their saved image without Make Live:
@@ -38,6 +41,17 @@ page, native window and embedded owner. Navigation, destruction, retirement or
 transfer invalidates pending work. A five-second deadline bounds a nonresponsive
 renderer; there are at most twenty attempts, spaced 100 ms apart. Stale callbacks cannot replace a newer
 position or report it as successful.
+
+The live page stays covered by the status card (“Lining up the region you
+captured…”) from admission until positioning succeeds, so an unframed page is
+never shown, even while a slow page keeps loading. Positioning starts as soon as
+the document is ready; an attempt that fails while the page is still loading
+waits for the load to finish and tries again. If a loaded page still can't be
+framed, the card returns to its snapshot and the header says “Snapshot · couldn't
+go live”, with Make live available to try again. The framed region takes
+clicks and typing, but wheel scrolling over it scrolls the Easel rather than the
+page, and deselecting the card re-frames it, so the page never drifts into an
+unframed document (`EaselLiveFraming`).
 
 The page retains normal renderer updates and original permission, dialog,
 security, capture-stop and crash owners. Selected-object input uses the existing
