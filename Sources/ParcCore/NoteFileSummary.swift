@@ -36,9 +36,14 @@ struct NoteFileSummary: Hashable, Sendable {
         let (icon, bodyStart) = frontMatter(lines)
         var pieces: [String] = []
         var inFence: String?
+        var inComment = false
         var length = 0
         for line in lines[bodyStart...] {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            var trimmed = line.trimmingCharacters(in: .whitespaces)
+            if inFence == nil {
+                trimmed = withoutComments(trimmed, inComment: &inComment).trimmingCharacters(in: .whitespaces)
+                if trimmed.isEmpty { continue }
+            }
             if let fence = inFence {
                 if trimmed.hasPrefix(fence) { inFence = nil; continue }
                 let text = collapsed(trimmed)
@@ -54,6 +59,26 @@ struct NoteFileSummary: Hashable, Sendable {
             if length > snippetLength { break }
         }
         return NoteFileSummary(icon: icon, snippet: clipped(pieces))
+    }
+
+    private static func withoutComments(_ line: String, inComment: inout Bool) -> String {
+        var rest = Substring(line)
+        var kept = ""
+        while !rest.isEmpty {
+            if inComment {
+                guard let close = rest.range(of: "-->") else { return kept }
+                rest = rest[close.upperBound...]
+                inComment = false
+            } else if let open = rest.range(of: "<!--") {
+                kept += rest[..<open.lowerBound]
+                rest = rest[open.upperBound...]
+                inComment = true
+            } else {
+                kept += rest
+                break
+            }
+        }
+        return kept
     }
 
     static func frontMatter(_ lines: [String]) -> (icon: String?, bodyStart: Int) {

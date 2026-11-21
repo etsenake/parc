@@ -221,6 +221,10 @@ struct NoteFileCodecTests {
                     "character references show as the characters they stand for")
         expectEqual(NoteFileSummary.make(fromHead: "\\&amp; and &lt;b&gt;", kind: .markdown).snippet, "&amp; and <b>",
                     "an escaped ampersand stays literal")
+        expectEqual(NoteFileSummary.make(fromHead: "<!-- parc synced from=\"Josh%E2%80%99s.md#a\" -->\nShared words\n<!-- /parc synced -->\nAfter",
+                                         kind: .markdown).snippet, "Shared words After", "synced block markers stay out of previews")
+        expectEqual(NoteFileSummary.make(fromHead: "Before <!-- a\nhidden\nlines --> after", kind: .markdown).snippet,
+                    "Before after", "comments spanning lines stay out of previews")
         let long = NoteFileSummary.make(fromHead: String(repeating: "word ", count: 100), kind: .markdown).snippet
         expect(long.count <= NoteFileSummary.snippetLength + 1 && long.hasSuffix("…"), "long snippets are clipped")
         expectEqual(NoteFileSummary.make(fromHead: "```swift\nlet x = 1\n```\n| a | b |\n|---|---|", kind: .markdown).snippet,
