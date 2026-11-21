@@ -141,6 +141,7 @@ struct UpdateReadyCardTests {
 
     @Test(arguments: [true, false]) @MainActor func automaticUpdateStateReachesVoiceOver(enabled: Bool) throws {
         let card = UpdateReadyCard(frame: .zero)
+        card.setInteractionEnabled(true)
         let title = try #require(card.keyViewControls.first as? UpdateBannerKeyStop)
         title.press()
         card.setAutomaticUpdates(enabled)

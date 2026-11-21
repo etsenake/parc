@@ -10,12 +10,12 @@ struct ParcToastTests {
         var delayed: [@MainActor () -> Void] = []
 
         var toastClock: ParcToastClock {
-            ParcToastClock(repeating: { [weak self] interval, work in
-                self?.interval = interval
-                self?.tick = work
+            ParcToastClock(repeating: { [self] interval, work in
+                self.interval = interval
+                self.tick = work
                 return { [weak self] in self?.tick = nil }
-            }, after: { [weak self] _, work in
-                self?.delayed.append(work)
+            }, after: { [self] _, work in
+                self.delayed.append(work)
                 return { [weak self] in self?.delayed.removeAll() }
             })
         }

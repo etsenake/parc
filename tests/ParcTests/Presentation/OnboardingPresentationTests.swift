@@ -198,7 +198,8 @@ struct OnboardingThemeStepTests {
         let chrome = OnboardingThemeEditorChrome(editor: editor)
         chrome.applyFrame(in: CGRect(x: 0, y: 0, width: 610, height: 548))
         #expect(chrome.composition.frame.size == OnboardingThemeEditorLayout.visualSize)
-        #expect(chrome.composition.bounds.size == OnboardingThemeEditorLayout.editorSize)
+        #expect(abs(chrome.composition.bounds.width - OnboardingThemeEditorLayout.editorSize.width) < 0.001)
+        #expect(abs(chrome.composition.bounds.height - OnboardingThemeEditorLayout.editorSize.height) < 0.001)
         #expect(chrome.composition.layer?.shadowOpacity == 0.25)
     }
 

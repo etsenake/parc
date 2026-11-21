@@ -6,7 +6,7 @@ import ParcCore
 
 @MainActor
 private final class DetachedSheetHost: NSWindow {
-    private var sheets: [(NSWindow, ((NSApplication.ModalResponse) -> Void)?)] = []
+    private var queuedSheets: [(NSWindow, ((NSApplication.ModalResponse) -> Void)?)] = []
 
     init() {
         _ = NSApplication.shared
@@ -15,10 +15,10 @@ private final class DetachedSheetHost: NSWindow {
         isReleasedWhenClosed = false
     }
 
-    override var attachedSheet: NSWindow? { sheets.first?.0 }
+    override var attachedSheet: NSWindow? { queuedSheets.first?.0 }
 
     override func beginSheet(_ sheetWindow: NSWindow, completionHandler handler: ((NSApplication.ModalResponse) -> Void)? = nil) {
-        sheets.append((sheetWindow, handler))
+        queuedSheets.append((sheetWindow, handler))
     }
 
     override func endSheet(_ sheetWindow: NSWindow) {
@@ -26,8 +26,8 @@ private final class DetachedSheetHost: NSWindow {
     }
 
     override func endSheet(_ sheetWindow: NSWindow, returnCode: NSApplication.ModalResponse) {
-        guard let offset = sheets.firstIndex(where: { $0.0 === sheetWindow }) else { return }
-        let (_, completion) = sheets.remove(at: offset)
+        guard let offset = queuedSheets.firstIndex(where: { $0.0 === sheetWindow }) else { return }
+        let (_, completion) = queuedSheets.remove(at: offset)
         completion?(returnCode)
         NotificationCenter.default.post(name: NSWindow.didEndSheetNotification, object: self)
     }
