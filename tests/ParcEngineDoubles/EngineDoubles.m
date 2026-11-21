@@ -397,9 +397,11 @@
 @end
 
 @interface PCNativeShortcutCommand : NSObject
++ (void)bindingsDidChange;
 @end
 
 @implementation PCNativeShortcutCommand
++ (void)bindingsDidChange {}
 @end
 
 @interface PCNativeTabPreview : NSObject
