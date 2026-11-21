@@ -16,14 +16,17 @@ func sparkleCache() -> String {
 
 let engineFrameworks = Context.environment["PARC_ENGINE_FRAMEWORKS"]
     ?? "/Volumes/Parc/chromium/src/out/ParcDistribution_GN_arm64"
+let engineLink: [LinkerSetting] = engineFrameworks.isEmpty
+    ? [.unsafeFlags(["-Xlinker", "-no_fixup_chains", "-Xlinker", "-undefined", "-Xlinker", "dynamic_lookup"])]
+    : [.unsafeFlags(["-F", engineFrameworks]), .linkedFramework("Chromium Embedded Framework")]
 let sparkleFrameworks = Context.environment["PARC_SPARKLE_FRAMEWORKS"] ?? sparkleCache()
 
 let strict: [SwiftSetting] = [.treatAllWarnings(as: .error)]
 let engineImport: [SwiftSetting] = [
     .unsafeFlags(["-Xcc", "-I", "-Xcc", nativeHeaders, "-Xcc", "-DOS_MAC=1", "-F", sparkleFrameworks]),
 ]
-let frameworkRuntime = ["-Xlinker", "-rpath", "-Xlinker", engineFrameworks,
-                        "-Xlinker", "-rpath", "-Xlinker", sparkleFrameworks]
+let frameworkRuntime = [engineFrameworks, sparkleFrameworks].filter { !$0.isEmpty }
+    .flatMap { ["-Xlinker", "-rpath", "-Xlinker", $0] }
 
 let package = Package(
     name: "Parc",
@@ -40,10 +43,7 @@ let package = Package(
                 .unsafeFlags(["-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter"]),
                 .unsafeFlags(["-O2"], .when(configuration: .release)),
             ],
-            linkerSettings: [
-                .unsafeFlags(["-F", engineFrameworks]),
-                .linkedFramework("Chromium Embedded Framework"),
-            ]
+            linkerSettings: engineLink
         ),
         .executableTarget(
             name: "Parc",

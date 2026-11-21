@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Check Parc's complete Swift module without linking, packaging or launching it.
+"""Check Parc's Swift package build without packaging or launching it.
 
-Uses the release compile's warnings-as-errors, ARM64 macOS 13 compiler contract and fails on any
-warning the compiler still reports. Bridge declarations are self-contained in Engine/ParcNative.
-This tool never selects a built package.
+Builds the Parc target through Swift Package Manager, which keeps warnings as errors, the Swift 5 language
+mode and the macOS 13 deployment target, and fails on any warning the build still reports. The engine
+framework is not linked, so no engine build is needed. This tool never selects a built package.
 """
 from __future__ import annotations
 
 import argparse
-import contextlib
 from datetime import datetime, timezone
 import hashlib
 import importlib.util
@@ -16,9 +15,9 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
-import tempfile
 import time
 
 REPO = Path(__file__).resolve().parents[1]
@@ -28,11 +27,7 @@ sparkle_spec.loader.exec_module(sparkle)
 compiler_spec = importlib.util.spec_from_file_location("parc_compiler", Path(__file__).with_name("compiler.py"))
 compiler = importlib.util.module_from_spec(compiler_spec)
 compiler_spec.loader.exec_module(compiler)
-MODE_FLAGS = {
-    "typecheck": lambda: ["-whole-module-optimization", "-typecheck"],
-    "sil": lambda: ["-whole-module-optimization", "-emit-sil", "-Onone", "-o", "/dev/null"],
-    "release": lambda: [*compiler.release_swift_optimization(), "-c"],
-}
+MODES = ("typecheck", "sil", "release")
 
 
 class Refusal(Exception):
@@ -75,16 +70,23 @@ def snapshot(repo: Path, bridge_headers: Path, sparkle_release: Path) -> tuple[l
                       sparkle_code / "PrivateHeaders", sparkle_code / "Modules"):
         files.update(directory.rglob("*.h"))
         files.update(directory.rglob("*.modulemap"))
+    files.update((repo / "Sources/ParcEngine").glob("*.m"))
     files.update(path for path in bridge_headers.rglob("*") if path.is_file())
+    files.add(repo / "Package.swift")
+    files.update(path for path in (repo / "scripts/sparkle.py",) if path.is_file())
     files.add(repo / "Engine/source-lock.json")
     files.add(Path(__file__).resolve())
     files.add(Path(compiler.__file__).resolve())
     return sources, {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(files)}
 
 
-def compiler_command(repo: Path, sparkle_release: Path, mode: str, sources: list[Path]) -> list[str]:
-    return ["xcrun", "--sdk", "macosx", "swiftc", *compiler.app_swift_flags(repo, sparkle_release),
-            *MODE_FLAGS[mode](), *map(str, sources)]
+def compiler_command(repo: Path, mode: str, scratch: Path | None) -> list[str]:
+    if mode == "typecheck":
+        return compiler.swift_build(repo, "debug", target=compiler.APP_PRODUCT)
+    if mode == "sil":
+        return compiler.swift_build(repo, "debug", scratch=scratch, target=compiler.APP_PRODUCT,
+                                    extra=("-Xswiftc", "-whole-module-optimization"))
+    return compiler.swift_build(repo, "release", scratch=scratch, target=compiler.APP_PRODUCT)
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -97,9 +99,9 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--repo", type=Path, default=REPO,
                         help="Parc checkout root (default: this script's checkout)")
-    result.add_argument("--mode", choices=tuple(MODE_FLAGS), default="typecheck",
-                        help="Fast iteration check, whole-module SIL, or the release's optimized compile "
-                             "without linking (for publishing Swift changes)")
+    result.add_argument("--mode", choices=MODES, default="typecheck",
+                        help="Incremental debug build, whole-module debug build, or the release's optimized "
+                             "build without the engine (for publishing Swift changes)")
     result.add_argument("--output-dir", type=Path,
                         help="Receipt parent (default: <repo>/build/swift-checks)")
     result.add_argument("--label", help="Fresh receipt subdirectory name (default: unique timestamp and PID)")
@@ -118,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         state = None if args.source_archive else git_state(repo)
         bridge_headers = repo / "Engine/ParcNative"
         protocol_header = bridge_headers / "native_application_protocols.h"
-        for required in (repo / "Sources/ParcEngine/ParcEngine.h",
+        for required in (repo / "Package.swift", repo / "Sources/ParcEngine/ParcEngine.h",
                          repo / "Engine/ParcNative/native_appkit_bridge.h",
                          protocol_header):
             if not required.is_file():
@@ -133,13 +135,15 @@ def main(argv: list[str] | None = None) -> int:
         cache = repo / "build/sparkle"
         sparkle_release = sparkle.directory(cache) if args.plan else sparkle.fetch(cache)
         sources, before = snapshot(repo, bridge_headers, sparkle_release)
-        command = compiler_command(repo, sparkle_release, args.mode, sources)
+        scratch = None if args.mode == "typecheck" else output / "swiftpm"
+        command = compiler_command(repo, args.mode, scratch)
+        environment = compiler.package_environment(None, sparkle_release)
         record = {
             "schema_version": 1, "mode": args.mode, "repo": str(repo), "git_before": state,
             "bridge_headers": str(bridge_headers), "sparkle_release": str(sparkle_release),
             "sparkle_cached": sparkle_release.is_dir(), "command": command, "inputs": before,
             "source_count": len(sources), "output": str(output),
-            "scope": "Swift compiler check only; no engine ABI, linked app, package or runtime verification",
+            "scope": "Swift package build only; no engine ABI, packaged app or runtime verification",
         }
         if args.plan:
             print(json.dumps({**record, "executed": False}, indent=2))
@@ -160,14 +164,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.mode}: {record['source_count']} Swift sources; log: {output / 'compiler.log'}", flush=True)
         error = None
         compiler_exit = None
-        objects = (tempfile.TemporaryDirectory(prefix="objects-", dir=output) if args.mode == "release"
-                   else contextlib.nullcontext(repo))
-        with (output / "compiler.log").open("x") as log, objects as directory:
+        with (output / "compiler.log").open("x") as log:
             try:
-                compiler_exit = subprocess.run(command, cwd=directory, stdout=log,
+                compiler_exit = subprocess.run(command, cwd=repo, env=environment, stdout=log,
                                                stderr=subprocess.STDOUT).returncode
             except OSError as exc:
                 error = str(exc)
+            finally:
+                if scratch is not None:
+                    shutil.rmtree(scratch, ignore_errors=True)
         warnings = compiler.warnings((output / "compiler.log").read_text(errors="replace"))
         unchanged = False
         head_unchanged = False
