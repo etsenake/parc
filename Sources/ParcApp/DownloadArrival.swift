@@ -11,6 +11,7 @@ import SwiftUI
 @MainActor class DownloadArrivalSchedule {
     static let main = DownloadArrivalSchedule()
     var drivesFrames: Bool { true }
+    var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     func present(_ window: NSWindow, above parent: NSWindow, frame: NSRect) {
         parent.addChildWindow(window, ordered: .above)
@@ -321,7 +322,7 @@ import SwiftUI
          schedule: DownloadArrivalSchedule? = nil, onRetire: @escaping (DownloadArrivalController) -> Void) {
         self.parent = parent; self.showsBin = showsBin; self.palette = palette
         self.schedule = schedule ?? .main; self.onRetire = onRetire
-        still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        still = self.schedule.reduceMotion
         stillPosition = Self.stillPosition(showsBin: showsBin, library: library)
         let frame = parent.frame
         windowSize = frame.size
@@ -434,7 +435,7 @@ import SwiftUI
     }
 
     private func reduceMotionChanged() {
-        guard !retired, !still, NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        guard !retired, !still, schedule.reduceMotion else { return }
         still = true
         driver.stop()
         for download in downloads {
