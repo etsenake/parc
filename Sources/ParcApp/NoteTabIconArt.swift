@@ -89,7 +89,8 @@ final class NoteTabIconArt {
     private var waiterCounter = 0
     private var waiterSubscription: AnyCancellable?
 
-    init(icons: NoteTabIcons, easels: EaselTabIcons = .shared) {
+    init(icons: NoteTabIcons, easels: EaselTabIcons? = nil) {
+        let easels = easels ?? EaselTabIcons.shared
         self.icons = icons
         self.easels = easels
         changes = icons.changes.merge(with: easels.changes, thumbnailsChanged).eraseToAnyPublisher()
