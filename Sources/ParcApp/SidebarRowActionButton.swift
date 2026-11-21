@@ -248,6 +248,7 @@ final class SidebarRowResetRegion: SidebarRowRegionView {
     var prepareSeparate: (() -> (() -> Bool)?)?
     var makeMenu: (() -> NSMenu?)?
     var onHoverChange: (() -> Void)?
+    var modifierFlags: () -> NSEvent.ModifierFlags = { NSEvent.modifierFlags }
     private(set) var hoverSubtitle: SidebarRowHoverSubtitle?
     private var pendingAction: (() -> Bool)?
     private var downEvent: NSEvent?
@@ -285,7 +286,7 @@ final class SidebarRowResetRegion: SidebarRowRegionView {
         flags.contains(.command) ? prepareSeparate?() : prepareAction?()
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let hit = super.hitTest(point), window != nil, lease(NSEvent.modifierFlags) != nil else { return nil }
+        guard let hit = super.hitTest(point), window != nil, lease(modifierFlags()) != nil else { return nil }
         return hit
     }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { false }
@@ -376,7 +377,7 @@ final class SidebarRowResetRegion: SidebarRowRegionView {
         } else if !hovered, let flagsMonitor {
             NSEvent.removeMonitor(flagsMonitor); self.flagsMonitor = nil
         }
-        if !updateHoverSubtitle(NSEvent.modifierFlags), wasHovered != hovered { onHoverChange?() }
+        if !updateHoverSubtitle(modifierFlags()), wasHovered != hovered { onHoverChange?() }
     }
     @discardableResult func updateHoverSubtitle(_ flags: NSEvent.ModifierFlags) -> Bool {
         let next: SidebarRowHoverSubtitle? = hovered ? (flags.contains(.command) ? .resetAndSeparate : .reset) : nil
