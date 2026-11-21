@@ -2,6 +2,7 @@
 #pragma once
 #import <AppKit/AppKit.h>
 NS_ASSUME_NONNULL_BEGIN
+@protocol PCNativePresentation, PCNativeScheduling;
 // The external-protocol prompt as Parc's dialog sheet (dialog_style.h): the
 // destination application's icon, the title and message, then an unbadged
 // remember button ("Always open"), Cancel (Escape) and accept (default,
@@ -20,6 +21,8 @@ NS_ASSUME_NONNULL_BEGIN
                 stateChanged:(void (^)(void))stateChanged
                       result:(void (^)(BOOL accepted, BOOL remember))result;
 @property(nonatomic, readonly) NSWindow* sheet;
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
+@property(nonatomic, strong) id<PCNativeScheduling> scheduler;
 - (void)show;
 - (void)focus;
 - (void)invalidate;

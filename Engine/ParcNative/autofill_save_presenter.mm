@@ -54,15 +54,11 @@ using namespace parc_dialog;
 }
 @end
 
-static void Later(void (^block)(void)) {
-  [NSRunLoop.mainRunLoop
-      performInModes:@[ NSRunLoopCommonModes, NSModalPanelRunLoopMode ]
-               block:block];
-}
-
 @implementation PCAutofillSavePresenter
 @synthesize onPresented = _onPresented;
 @synthesize neverLabel = _neverLabel;
+@synthesize presentation = _presentation;
+@synthesize scheduler = _scheduler;
 - (instancetype)initWithPageView:(NSView*)page
                           window:(NSWindow*)window
                            title:(NSString*)title
@@ -82,6 +78,8 @@ static void Later(void (^block)(void)) {
     _declineLabel = [declineLabel copy];
     _validateContext = [validateContext copy];
     _completion = [completion copy];
+    _presentation = PCNativeSystemPresentation.sharedPresentation;
+    _scheduler = PCNativeSystemScheduling.sharedScheduling;
     __weak PCAutofillSavePresenter* weakSelf = self;
     _closeObserver = [NSNotificationCenter.defaultCenter
         addObserverForName:NSWindowWillCloseNotification
@@ -108,13 +106,17 @@ static void Later(void (^block)(void)) {
   return valid && !_invalidated && _window == window && _page == page &&
          page.window == window;
 }
+- (void)later:(void (^)(void))block {
+  [_scheduler performInModes:@[ NSRunLoopCommonModes, NSModalPanelRunLoopMode ]
+                       block:block];
+}
 - (void)start {
   NSCAssert(NSThread.isMainThread, @"Autofill requires the UI thread");
   if (_started || _finished) {
     return;
   }
   _started = YES;
-  Later(^{
+  [self later:^{
     if (self->_finished) {
       return;
     }
@@ -123,8 +125,9 @@ static void Later(void (^block)(void)) {
     // after arbitrary caller code has run.
     __attribute__((objc_precise_lifetime)) NSWindow* window = self->_window;
     __attribute__((objc_precise_lifetime)) NSView* page = self->_page;
-    if (!window || !page || !window.visible || window.miniaturized ||
-        ![self contextIsValid] || window.attachedSheet) {
+    id<PCNativePresentation> presentation = self->_presentation;
+    if (!window || !page || ![presentation isWindowVisible:window] || window.miniaturized ||
+        ![self contextIsValid] || [presentation attachedSheetOfWindow:window]) {
       [self finish:PCAutofillSaveInterrupted];
       return;
     }
@@ -174,18 +177,22 @@ static void Later(void (^block)(void)) {
     [sheet setContentSize:NSMakeSize(kWidth, y)];
     [sheet setAccessibilityDefaultButton:save];
     if (self->_finished || self->_invalidated || self->_window != window ||
-        self->_page != page || page.window != window || window.attachedSheet) {
+        self->_page != page || page.window != window ||
+        [presentation attachedSheetOfWindow:window]) {
       [self finish:PCAutofillSaveInterrupted];
       return;
     }
     self->_sheet = sheet;
-    [window beginSheet:sheet
+    [presentation window:window
+               beginSheet:sheet
         completionHandler:^(NSModalResponse) {
           [self finish:PCAutofillSaveInterrupted];
         }];
     if (self->_finished || self->_invalidated || self->_sheet != sheet ||
-        sheet.sheetParent != window || window.attachedSheet != sheet ||
-        !sheet.visible || !window.visible || window.miniaturized ||
+        [presentation sheetParentOfWindow:sheet] != window ||
+        [presentation attachedSheetOfWindow:window] != sheet ||
+        ![presentation isWindowVisible:sheet] || ![presentation isWindowVisible:window] ||
+        window.miniaturized ||
         self->_window != window || self->_page != page ||
         page.window != window || ![self contextIsValid]) {
       [self finish:PCAutofillSaveInterrupted];
@@ -194,8 +201,10 @@ static void Later(void (^block)(void)) {
     // Validation may reenter. Recheck exact association immediately before the
     // once-only event, and make no request access after caller delivery.
     if (self->_finished || self->_invalidated || self->_sheet != sheet ||
-        sheet.sheetParent != window || window.attachedSheet != sheet ||
-        !sheet.visible || !window.visible || window.miniaturized ||
+        [presentation sheetParentOfWindow:sheet] != window ||
+        [presentation attachedSheetOfWindow:window] != sheet ||
+        ![presentation isWindowVisible:sheet] || ![presentation isWindowVisible:window] ||
+        window.miniaturized ||
         page.window != window) {
       [self finish:PCAutofillSaveInterrupted];
       return;
@@ -205,7 +214,7 @@ static void Later(void (^block)(void)) {
     if (presented) {
       presented();
     }
-  });
+  }];
 }
 - (void)save:(id)sender {
   (void)sender;
@@ -236,11 +245,11 @@ static void Later(void (^block)(void)) {
   _never.target = nil;
   NSWindow* sheet = _sheet;
   _sheet = nil;
-  if (sheet.sheetParent) {
-    [sheet.sheetParent endSheet:sheet];
+  if ([_presentation sheetParentOfWindow:sheet]) {
+    [_presentation window:[_presentation sheetParentOfWindow:sheet] endSheet:sheet];
   }
-  [sheet orderOut:nil];
-  Later(^{
+  [_presentation orderOutWindow:sheet];
+  [self later:^{
     if (!self->_completion) {
       return;
     }
@@ -253,7 +262,7 @@ static void Later(void (^block)(void)) {
       self->_closeObserver = nil;
     }
     completion(valid ? outcome : PCAutofillSaveInterrupted);
-  });
+  }];
 }
 - (void)invalidate {
   NSCAssert(NSThread.isMainThread, @"Autofill requires the UI thread");
@@ -267,7 +276,7 @@ static void Later(void (^block)(void)) {
   return _sheet != nil;
 }
 - (BOOL)isMouseHovered {
-  if (!_sheet || !_sheet.visible) {
+  if (!_sheet || ![_presentation isWindowVisible:_sheet]) {
     return NO;
   }
   NSPoint point =

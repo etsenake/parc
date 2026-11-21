@@ -4,6 +4,33 @@
 #import <Security/Security.h>
 #import <SecurityInterface/SFCertificatePanel.h>
 
+@interface PCNativeSystemCertificatePresentation
+    : PCNativeSystemPresentation <PCCertificatePresentation>
+@property(class, nonatomic, readonly)
+    PCNativeSystemCertificatePresentation* sharedCertificatePresentation;
+@end
+@implementation PCNativeSystemCertificatePresentation
++ (PCNativeSystemCertificatePresentation*)sharedCertificatePresentation {
+  static PCNativeSystemCertificatePresentation* shared =
+      [[PCNativeSystemCertificatePresentation alloc] init];
+  return shared;
+}
+- (void)beginSheetForPanel:(SFCertificatePanel*)panel
+                    window:(NSWindow*)window
+             modalDelegate:(id)delegate
+            didEndSelector:(SEL)didEndSelector
+               contextInfo:(void*)contextInfo
+              certificates:(NSArray*)certificates
+                 showGroup:(BOOL)showGroup {
+  [panel beginSheetForWindow:window
+               modalDelegate:delegate
+              didEndSelector:didEndSelector
+                 contextInfo:contextInfo
+                certificates:certificates
+                   showGroup:showGroup];
+}
+@end
+
 @interface PCServerCertificatePresenter () {
   __weak NSView* _page;
   __weak NSWindow* _window;
@@ -20,6 +47,8 @@
 }
 @end
 @implementation PCServerCertificatePresenter
+@synthesize presentation = _presentation;
+@synthesize scheduler = _scheduler;
 - (instancetype)initWithPage:(NSView*)page
                       window:(NSWindow*)window
                 certificates:(NSArray*)certificates
@@ -32,6 +61,8 @@
     _certificates = [certificates copy];
     _validate = [validate copy];
     _finished = [finished copy];
+    _presentation = PCNativeSystemCertificatePresentation.sharedCertificatePresentation;
+    _scheduler = PCNativeSystemScheduling.sharedScheduling;
     _panel = [[SFCertificatePanel alloc] init];
     SecPolicyRef policy = SecPolicyCreateBasicX509();
     if (policy) {
@@ -53,7 +84,8 @@
 }
 - (BOOL)valid {
   if (_terminal || !_page || !_window || !_validate ||
-      _page.window != _window || !_window.visible || _window.miniaturized ||
+      _page.window != _window || ![_presentation isWindowVisible:_window] ||
+      _window.miniaturized ||
       _page.hiddenOrHasHiddenAncestor || _certificates.count == 0) {
     return NO;
   }
@@ -67,17 +99,19 @@
   }
   _scheduled = YES;
   __weak PCServerCertificatePresenter* weak = self;
-  dispatch_async(dispatch_get_main_queue(), ^{
+  [_scheduler dispatchToMainQueue:^{
     [weak start];
-  });
+  }];
 }
 - (void)start {
   __attribute__((objc_precise_lifetime)) PCServerCertificatePresenter* keep =
       self;
   __attribute__((objc_precise_lifetime)) NSWindow* window = _window;
   __attribute__((objc_precise_lifetime)) NSView* page = _page;
-  if (![keep valid] || _terminal || page.window != window || !window.visible ||
-      window.miniaturized || window.attachedSheet) {
+  id<PCCertificatePresentation> presentation = _presentation;
+  if (![keep valid] || _terminal || page.window != window ||
+      ![presentation isWindowVisible:window] || window.miniaturized ||
+      [presentation attachedSheetOfWindow:window]) {
     [keep invalidate];
     return;
   }
@@ -95,13 +129,14 @@
   _began = YES;
   __attribute__((objc_precise_lifetime)) SFCertificatePanel* panel = _panel;
   __attribute__((objc_precise_lifetime)) NSArray* certificates = _certificates;
-  [panel beginSheetForWindow:window
-               modalDelegate:keep
-              didEndSelector:@selector(certificateSheetDidEnd:
-                                                   returnCode:contextInfo:)
-                 contextInfo:nullptr
-                certificates:certificates
-                   showGroup:YES];
+  [presentation beginSheetForPanel:panel
+                            window:window
+                     modalDelegate:keep
+                    didEndSelector:@selector(certificateSheetDidEnd:
+                                                         returnCode:contextInfo:)
+                       contextInfo:nullptr
+                      certificates:certificates
+                         showGroup:YES];
   // The OS delegate may finish this operation in a nested event loop. Its
   // completion may already have shown another sheet on this same window.
   if (!_began) {
@@ -109,13 +144,14 @@
   }
   // SecurityInterface creates a separate SFCertificatePanel for the sheet.
   // Capture that exact result of this synchronous begin call, not the factory.
-  NSWindow* sheet = window.attachedSheet;
+  NSWindow* sheet = [presentation attachedSheetOfWindow:window];
   if ([sheet isKindOfClass:SFCertificatePanel.class]) {
     _sheet = sheet;
   }
   if (_terminal || ![keep valid] || _terminal || page.window != window ||
-      !_sheet || _sheet.sheetParent != window ||
-      window.attachedSheet != _sheet || !_sheet.visible || !window.visible ||
+      !_sheet || [presentation sheetParentOfWindow:_sheet] != window ||
+      [presentation attachedSheetOfWindow:window] != _sheet ||
+      ![presentation isWindowVisible:_sheet] || ![presentation isWindowVisible:window] ||
       window.miniaturized) {
     [keep invalidate];
   }
@@ -141,13 +177,11 @@
   __attribute__((objc_precise_lifetime)) PCServerCertificatePresenter* keep =
       self;
   [keep finish];
-  NSWindow* parent = _sheet.sheetParent;
+  NSWindow* parent = [_presentation sheetParentOfWindow:_sheet];
   if (_began && parent) {
-    [NSApp endSheet:_sheet];
+    [_presentation endApplicationSheet:_sheet];
   }
-  [_sheet orderOut:nil];
-  // During beginSheet the actual sheet may not be captured yet. Its OS
-  // callback still owns this delegate contract until genuine didEnd.
+  [_presentation orderOutWindow:_sheet];
   if (!_began) {
     _sheetLifetime = nil;
   }
@@ -158,10 +192,9 @@
   __attribute__((objc_precise_lifetime)) PCServerCertificatePresenter* keep =
       self;
   _began = NO;
-  // Return codes are dismissal only. No SSL/network decision is attached.
   NSWindow* actualSheet = _sheet;
-  [sheet orderOut:nil];
-  [actualSheet orderOut:nil];
+  [_presentation orderOutWindow:sheet];
+  [_presentation orderOutWindow:actualSheet];
   [keep finish];
   _panel = nil;
   _sheet = nil;

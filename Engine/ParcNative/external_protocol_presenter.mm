@@ -46,6 +46,8 @@ using namespace parc_dialog;
 }
 @end
 @implementation PCExternalProtocolPresenter
+@synthesize presentation = _presentation;
+@synthesize scheduler = _scheduler;
 - (instancetype)initWithPage:(NSView*)page
                       window:(NSWindow*)window
                        title:(NSString*)title
@@ -68,6 +70,8 @@ using namespace parc_dialog;
     _inputAllowed = [inputAllowed copy];
     _stateChanged = [stateChanged copy];
     _result = [result copy];
+    _presentation = PCNativeSystemPresentation.sharedPresentation;
+    _scheduler = PCNativeSystemScheduling.sharedScheduling;
     PCExternalProtocolSheet* sheet = [[PCExternalProtocolSheet alloc]
         initWithContentRect:NSMakeRect(0, 0, kWidth, 200)
                   styleMask:NSWindowStyleMaskTitled
@@ -166,13 +170,13 @@ using namespace parc_dialog;
   NSView* page = _page;
   NSWindow* window = _window;
   if (_invalidated || !page || !window || page.window != window ||
-      !window.visible || window.miniaturized ||
+      ![_presentation isWindowVisible:window] || window.miniaturized ||
       page.hiddenOrHasHiddenAncestor) {
     return NO;
   }
   BOOL valid = _validate && _validate();
   return valid && !_invalidated && _page == page && _window == window &&
-         page.window == window && window.visible && !window.miniaturized &&
+         page.window == window && [_presentation isWindowVisible:window] && !window.miniaturized &&
          !page.hiddenOrHasHiddenAncestor;
 }
 - (void)show {
@@ -180,7 +184,7 @@ using namespace parc_dialog;
     return;
   }
   _started = YES;
-  [NSRunLoop.mainRunLoop
+  [_scheduler
       performInModes:@[ NSRunLoopCommonModes, NSModalPanelRunLoopMode ]
                block:^{
                  __attribute__((objc_precise_lifetime)) NSWindow* parent =
@@ -191,7 +195,7 @@ using namespace parc_dialog;
                  if (self->_terminal) {
                    return;
                  }
-                 if (![self valid] || !parent || parent.attachedSheet) {
+                 if (![self valid] || !parent || [self->_presentation attachedSheetOfWindow:parent]) {
                    [self finish:NO remember:NO];
                    return;
                  }
@@ -200,15 +204,14 @@ using namespace parc_dialog;
                    [self finish:NO remember:NO];
                    return;
                  }
-                 // A sheet on the page's window.
-                 [parent beginSheet:self->_sheet
+                 [self->_presentation window:parent beginSheet:self->_sheet
                      completionHandler:^(NSModalResponse) {
                        [self finish:NO remember:NO];
                      }];
                  if (self->_terminal || ![self valid] ||
-                     parent.attachedSheet != self->_sheet ||
-                     self->_sheet.sheetParent != parent ||
-                     !self->_sheet.visible) {
+                     [self->_presentation attachedSheetOfWindow:parent] != self->_sheet ||
+                     [self->_presentation sheetParentOfWindow:self->_sheet] != parent ||
+                     ![self->_presentation isWindowVisible:self->_sheet]) {
                    [self finish:NO remember:NO];
                    return;
                  }
@@ -216,9 +219,9 @@ using namespace parc_dialog;
                }];
 }
 - (void)focus {
-  if (!_terminal && _sheet.visible && _sheet.sheetParent == _window &&
+  if (!_terminal && [_presentation isWindowVisible:_sheet] && [_presentation sheetParentOfWindow:_sheet] == _window &&
       [self valid]) {
-    [_sheet makeKeyWindow];
+    [_presentation makeKeyWindow:_sheet];
   }
 }
 - (void)decide:(NSButton*)sender remember:(BOOL)remember {
@@ -226,7 +229,7 @@ using namespace parc_dialog;
       self;
   (void)keep;
   if (_terminal || sender.window != _sheet || !sender.enabled ||
-      !_sheet.visible || _sheet.sheetParent != _window || ![self valid]) {
+      ![_presentation isWindowVisible:_sheet] || [_presentation sheetParentOfWindow:_sheet] != _window || ![self valid]) {
     return;
   }
   // Chromium's input protection still gates the accepting buttons, including
@@ -256,10 +259,10 @@ using namespace parc_dialog;
     return;
   }
   _terminal = YES;
-  if (_sheet.sheetParent) {
-    [_sheet.sheetParent endSheet:_sheet];
+  if ([_presentation sheetParentOfWindow:_sheet]) {
+    [_presentation window:[_presentation sheetParentOfWindow:_sheet] endSheet:_sheet];
   }
-  [_sheet orderOut:nil];
+  [_presentation orderOutWindow:_sheet];
   auto result = _result;
   _result = nil;
   if (result) {

@@ -4,6 +4,7 @@
 #import <AppKit/AppKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
+@protocol PCNativePresentation, PCNativeScheduling;
 
 typedef NS_ENUM(NSInteger, PCJavaScriptDialogKind) {
   PCJavaScriptDialogAlert,
@@ -33,6 +34,8 @@ typedef void (^PCJavaScriptDialogCompletion)(BOOL accepted,
 
 @property(nonatomic, readonly, getter=isPresenting) BOOL presenting;
 @property(nonatomic, readonly, nullable) NSWindow* presentedSheet;
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
+@property(nonatomic, strong) id<PCNativeScheduling> scheduler;
 
 // No window, a closing window, an unrelated existing sheet, or a concurrent
 // request completes with NO. No app-modal fallback or automatic consent.

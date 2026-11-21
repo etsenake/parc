@@ -2,6 +2,7 @@
 #pragma once
 #import <AppKit/AppKit.h>
 NS_ASSUME_NONNULL_BEGIN
+@protocol PCNativePresentation, PCNativeScheduling;
 typedef NS_ENUM(NSInteger, PCSitePermissionChoice) {
   PCSitePermissionAllow,
   PCSitePermissionAllowOnce,
@@ -55,5 +56,7 @@ typedef NS_ENUM(NSInteger, PCSiteLocationMode) {
 @property(nonatomic, readonly, nullable) NSWindow* sheet;
 // YES while the popover is shown from this request's window.
 @property(nonatomic, readonly, getter=isShown) BOOL shown;
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
+@property(nonatomic, strong) id<PCNativeScheduling> scheduler;
 @end
 NS_ASSUME_NONNULL_END
