@@ -105,8 +105,9 @@ same drawing as the whole-Easel exports. Picking a section brings its
 contents, and stuck-on highlights and stamps come along with their object;
 objects tucked in a hidden section stay out, as on the canvas. A connector
 whose other end is left out keeps its last route. Copy as Image in the same
-menu follows the same rules and puts a PNG on the clipboard. While text is
-being edited, ⇧⌘E stays with the text.
+menu follows the same rules and puts a PNG on the clipboard. An Easel inside
+a note offers the same exports and toasts. While text is being edited, ⇧⌘E
+stays with the text.
 
 Stickies as CSV (in Export Selection when the pick has stickies, and in the •••
 menu's Export list for the whole Easel) saves one Content column, a row per

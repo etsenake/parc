@@ -236,6 +236,13 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
             canvas.toolState.onQuickActions = { [weak self] in self?.toggleQuickActions() }
             canvas.onError = { [weak self] error in self?.editor?.onError?(error) }
             canvas.onCopiedImage = { [weak self] in self?.editor?.formatBar.showToast(.copiedImage) }
+            canvas.onExportSelection = { [weak self, weak canvas, weak next] ids, format in
+                guard let self, let canvas, let next, self.surface.active, let window = self.window, window.attachedSheet == nil,
+                      !next.isClosed, !next.isDeleted else { return }
+                EaselSelectionExporter.export(ids, as: format, canvas: canvas, session: next, in: window) { [weak self] in
+                    self?.editor?.formatBar.showToast($0)
+                }
+            }
             surface.show(canvas, viewOnly: !canEdit)
             watch = next.objectWillChange.sink { [weak self] (_: Void) in
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.sessionDidChange() } }
