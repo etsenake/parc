@@ -78,8 +78,8 @@ enum EaselTableMetrics {
     static let gripLength: CGFloat = 20
     static let gripThickness: CGFloat = 12
     static let band: CGFloat = 14
-    static let barThickness: CGFloat = 16
-    static let barGap: CGFloat = 6
+    static let barThickness: CGFloat = 12
+    static let barGap: CGFloat = 3
     static let markerRadius: CGFloat = 8
     static let borderTolerance: CGFloat = 4
     static let cornerClearance: CGFloat = 12
@@ -126,11 +126,13 @@ extension EaselCanvasView {
         if let id = tableState.tableID, selection != [id] {
             tableState.clearCells()
             tableState.tableID = nil
+            invalidateTableChrome(id)
         }
-        if tableState.hoverTable != nil, tableState.hoverTable.map({ selection == [$0] }) != true {
+        if let id = tableState.hoverTable, selection != [id] {
             tableState.hoverTable = nil
             tableState.hover = nil
             tableState.hoverCell = nil
+            invalidateTableChrome(id)
         }
     }
 
@@ -1094,8 +1096,11 @@ extension EaselCanvasView {
         default:
             break
         }
-        guard flags.isDisjoint(with: [.command, .control]), let characters = event.characters, !characters.isEmpty, characters != " ",
-              characters.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) && !(0xF700...0xF8FF).contains($0.value) }) else { return false }
+        let printable: (String) -> Bool = { text in
+            !text.isEmpty && text != " " && text.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) && !(0xF700...0xF8FF).contains($0.value) }
+        }
+        let typed = event.characters ?? ""
+        guard flags.isDisjoint(with: [.command, .control]), printable(typed) || (typed.isEmpty && printable(event.charactersIgnoringModifiers ?? "")) else { return false }
         beginEditingTableCell(selected.item, cell: table.anchor(of: tableState.anchor ?? head), selectingAll: true)
         guard let text = editor, editingID == id else { return true }
         text.keyDown(with: event)
