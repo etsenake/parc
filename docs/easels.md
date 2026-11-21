@@ -54,10 +54,12 @@ add arrange, tidy up, group, section and lock tools. A fully locked selection
 shows only Unlock. A single webpage, captured card or link keeps its own page
 header instead. A control appears only once its canvas command exists, and the
 ••• menu always ends the bar. Each button shows the pointing hand and a tooltip
-with its name and live shortcut, VoiceOver reads it inside a "Selection tools"
-toolbar, and the toolbar is a Tab stop where the arrow keys move between
-buttons, Return or Space presses one and Escape returns to the canvas or the
-text being edited.
+with its name and live shortcut, and VoiceOver finds it among the canvas's
+objects as a "Selection tools" toolbar. ⇧⌘/, the Notes format bar's shortcut,
+moves keyboard focus into it, even while text is being edited; it is also a
+Tab stop after the canvas's objects. The arrow keys move between buttons,
+Return or Space presses one and Escape returns to the canvas or the text being
+edited.
 
 ## Content-hugging text fill and native metrics
 

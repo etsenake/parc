@@ -145,7 +145,7 @@ extension EaselCanvasView {
         case .codeLanguage:
             let languages = selectedCodeLanguages
             let title = languages.count == 1 ? languages.first.map { EaselCodeBlock.displayName($0) } ?? "Mixed" : "Mixed"
-            return .init(control: control, face: .text(title), name: "Language", opensMenu: true, showsDisclosure: true)
+            return .init(control: control, face: .text(title), name: "Language", opens: .menu, showsDisclosure: true)
         default:
             return .init(control: control, face: .symbol("ellipsis"), name: "More", opens: .menu)
         }

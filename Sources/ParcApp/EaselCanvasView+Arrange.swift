@@ -214,6 +214,7 @@ extension EaselCanvasView {
         case .toggleLock: return claim(ready && !selection.isEmpty) { toggleLock() }
         case .layer(let move): return claim(ready && EaselArrange.canMoveLayer(selection, in: document)) { moveLayer(move) }
         case .alignText(let alignment): return alignText(alignment, editing: editing)
+        case .focusSelectionToolbar: return selectionToolbar?.focusFromKeyboard() == true
         }
     }
 

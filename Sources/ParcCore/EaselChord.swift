@@ -38,6 +38,7 @@ struct EaselChord: Hashable {
         if let letter = EaselKeyCommands.letter(characters: characters, keyCode: keyCode) { return letter }
         let typed = (characters ?? "").lowercased()
         if typed.count == 1, let first = typed.first, first.isASCII {
+            if first == "?" { return "/" }
             return symbolKeyCodes.values.contains(first) ? first : nil
         }
         return symbolKeyCodes[keyCode]
@@ -56,6 +57,7 @@ enum EaselChordCommand: Hashable {
     case toggleLock
     case layer(EaselLayerMove)
     case alignText(EaselTextStyle.Alignment)
+    case focusSelectionToolbar
 }
 
 enum EaselChords {
@@ -70,6 +72,7 @@ enum EaselChords {
         EaselChord("l", [.command, .option]): .alignText(.left),
         EaselChord("t", [.command, .option]): .alignText(.center),
         EaselChord("r", [.command, .option]): .alignText(.right),
+        EaselChord("/", [.command, .shift]): .focusSelectionToolbar,
     ]
 
     static let reserved: [EaselChord] = [

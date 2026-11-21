@@ -18,6 +18,7 @@ struct EaselSelectionToolbarTests {
         lockedSelections()
         availability()
         placement()
+        chord()
         print("EaselSelectionToolbarTests passed")
     }
 
@@ -112,6 +113,16 @@ struct EaselSelectionToolbarTests {
         expect(place(EaselRect(x: 900, y: 900, width: 50, height: 50)) == nil, "A selection scrolled out of view parks the toolbar")
         expect(EaselSelectionToolbarPlacement.place(selection: middle, width: 0, height: 36,
                                                      visible: EaselRect(x: 0, y: 0, width: 800, height: 600)) == nil, "An empty toolbar never places")
+    }
+
+    static func chord() {
+        expect(EaselChords.command(characters: "?", keyCode: 44, modifiers: [.command, .shift]) == .focusSelectionToolbar,
+               "⇧⌘/ focuses the selection toolbar, typed as a question mark")
+        expect(EaselChords.command(characters: "/", keyCode: 44, modifiers: [.command, .shift]) == .focusSelectionToolbar,
+               "⇧⌘/ also matches when the layout reports the unshifted slash")
+        expect(EaselChords.command(characters: "/", keyCode: 44, modifiers: [.command]) == nil
+               && EaselChords.command(characters: "?", keyCode: 44, modifiers: [.shift]) == nil, "Other slash chords stay Parc's")
+        expect(EaselChords.reserved.allSatisfy { EaselChords.table[$0] == nil }, "The toolbar chord never takes a reserved Parc chord")
     }
 }
 
