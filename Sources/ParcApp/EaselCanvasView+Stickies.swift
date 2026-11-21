@@ -152,7 +152,8 @@ extension EaselCanvasView {
     }
 
     func drawSticky(_ item: EaselItem, showsEditor: Bool) {
-        let frame = rect(item)
+        var frame = rect(item)
+        if showsEditor, paintsLiveFeedback, canvasFeedback.growths[item.id] != nil { frame.size.height = CGFloat(presentedStickyHeight(item)) }
         let dark = adaptsInk && NoteTheme.isDark(NSAppearance.currentDrawing())
         EaselStickyArt.drawPaper(EaselPaint(item, adaptive: adaptsInk).fillColor, in: frame,
                                  scale: EaselBoardObjects.textScale(item), dark: dark, cacheable: showsEditor)
@@ -244,5 +245,22 @@ extension EaselCanvasView {
                 document.items[index] = EaselBoardObjects.widened(item, wide: wide, textHeight: EaselStickyText.height)
             }
         }
+    }
+}
+
+extension EaselCanvasView {
+    func presentedStickyHeight(_ item: EaselItem) -> Double {
+        guard let growth = canvasFeedback.growths[item.id] else { return item.frame.height }
+        return EaselFeedbackCurve.grownValue(CACurrentMediaTime() - growth.start, from: growth.from, to: growth.to)
+    }
+
+    func noteStickyGrowth(from before: EaselDocument, to after: EaselDocument) {
+        guard let id = editingID, editor != nil, canAnimateObjects, !feedbackReducesMotion,
+              let old = before.items.first(where: { $0.id == id }), old.kind == .sticky,
+              let new = after.items.first(where: { $0.id == id }), new.kind == .sticky,
+              old.frame.width == new.frame.width, old.frame.y == new.frame.y,
+              abs(old.frame.height - new.frame.height) > 0.5 else { return }
+        canvasFeedback.growths[id] = .init(from: presentedStickyHeight(old), to: new.frame.height, start: CACurrentMediaTime())
+        startCanvasFeedback()
     }
 }
