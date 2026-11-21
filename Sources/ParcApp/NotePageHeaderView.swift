@@ -890,6 +890,8 @@ final class NotePageIconView: NSView {
     var onPress: (() -> Void)?
     var isEditable = true { didSet { window?.invalidateCursorRects(for: self); needsDisplay = true } }
     var icon: String? { didSet { if icon != oldValue { reloadImage(); needsDisplay = true; updateAccessibility() } } }
+    var isCompact = false { didSet { if isCompact != oldValue { needsDisplay = true } } }
+    var noun = "Note" { didSet { if noun != oldValue { updateAccessibility() } } }
     private var image: NSImage?
     private var isHovered = false
     private var isPressed = false
@@ -917,7 +919,7 @@ final class NotePageIconView: NSView {
 
     private func updateAccessibility() {
         let name = icon.flatMap { NoteCustomEmojiName.name(inReference: $0) ?? NoteEmojiCatalog.shared.entry(for: $0)?.displayName }
-        setAccessibilityLabel(name.map { "Note icon, \($0)" } ?? (icon == nil ? "Note icon" : "Note icon, image"))
+        setAccessibilityLabel(name.map { "\(noun) icon, \($0)" } ?? (icon == nil ? "\(noun) icon" : "\(noun) icon, image"))
         setAccessibilityHelp("Change icon")
     }
 
@@ -938,13 +940,15 @@ final class NotePageIconView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         drawInOwnAppearance {
+            let inset: CGFloat = isCompact ? (bounds.height * 0.1).rounded() : 8
             if isEditable && (isHovered || isPressed) {
                 (isPressed ? NoteTheme.pressedFill : NoteTheme.hoverFill).setFill()
-                NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8).fill()
+                let radius: CGFloat = isCompact ? 6 : 8
+                NSBezierPath(roundedRect: bounds.insetBy(dx: isCompact ? 0 : 2, dy: isCompact ? 0 : 2), xRadius: radius, yRadius: radius).fill()
             }
             guard let icon else { return }
             if NoteCustomEmojiName.isReference(icon) {
-                let box = bounds.insetBy(dx: 8, dy: 8)
+                let box = bounds.insetBy(dx: inset, dy: inset)
                 if let image {
                     NoteCustomEmojiImages.draw(image, fittingIn: box)
                 } else {
@@ -954,7 +958,7 @@ final class NotePageIconView: NSView {
                 return
             }
             if NotePageImageLoader.isImageSource(icon) {
-                let box = bounds.insetBy(dx: 8, dy: 8)
+                let box = bounds.insetBy(dx: inset, dy: inset)
                 guard let image, image.size.width > 0, image.size.height > 0 else {
                     NoteTheme.mediaPlaceholderFill.setFill()
                     NSBezierPath(roundedRect: box, xRadius: 8, yRadius: 8).fill()
@@ -969,7 +973,8 @@ final class NotePageIconView: NSView {
                 NSGraphicsContext.restoreGraphicsState()
                 return
             }
-            let font = NSFont(name: "AppleColorEmoji", size: 62) ?? .systemFont(ofSize: 62)
+            let emojiSize: CGFloat = isCompact ? (bounds.height * 0.75).rounded() : 62
+            let font = NSFont(name: "AppleColorEmoji", size: emojiSize) ?? .systemFont(ofSize: emojiSize)
             let text = NSAttributedString(string: icon, attributes: [.font: font])
             let size = text.size()
             text.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2))

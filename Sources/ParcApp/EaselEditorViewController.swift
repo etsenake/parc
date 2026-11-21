@@ -22,6 +22,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     let session: EaselSession
     let easelStore: EaselStore
     let titleField = NSTextField()
+    private lazy var titleIcon = EaselTitleIcon(session: session)
     private let status = NSTextField(labelWithString: "Saved on this Mac")
     private let scroll = NSScrollView()
     let canvas: EaselCanvasView
@@ -123,6 +124,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         titleField.isBezeled = false; titleField.drawsBackground = false
         titleField.delegate = self; titleField.setAccessibilityLabel("Easel title")
         root.addSubview(titleField)
+        installTitleIcon(in: root)
         status.font = NoteTheme.captionFont(); status.textColor = NoteTheme.secondaryInk
         root.addSubview(status)
         scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true
@@ -202,6 +204,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         root.addSubview(palette)
         installEmptyTemplates(in: root)
         var lastChromeSize = NSSize(width: -1, height: -1)
+        var lastIconWidth: CGFloat = -1
         timer.onResize = { [weak root] in lastChromeSize = NSSize(width: -1, height: -1); root?.needsLayout = true }
         root.onLayout = { [weak self, weak root, weak palette, weak chrome, weak timer] in
             guard let self, let root, let palette, let chrome else { return }
@@ -214,13 +217,16 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             self.playBarEntranceIfNeeded()
             let size = root.bounds.size
             let pageWidth = self.pageButton.intrinsicContentSize.width
-            guard size != lastChromeSize || pageWidth != self.pageButtonWidth else { return }
+            let iconWidth = self.titleIcon.occupiedWidth
+            guard size != lastChromeSize || pageWidth != self.pageButtonWidth || iconWidth != lastIconWidth else { return }
             self.pageButtonWidth = pageWidth
             lastChromeSize = size
+            lastIconWidth = iconWidth
             let chromeWidth: CGFloat = 3 * chromeSize + 4 * 2 + (timer?.intrinsicContentSize.width ?? chromeSize) + pageWidth
-            self.titleField.frame = NSRect(x: 24, y: 10, width: max(80, width - chromeWidth - 52), height: 32)
+            let titleBase = NSRect(x: 24, y: 10, width: max(80, width - chromeWidth - 52), height: 32)
+            self.titleField.frame = self.titleIcon.place(title: titleBase, in: NSRect(x: 0, y: 0, width: width, height: canvasTop))
             chrome.frame = NSRect(x: max(24, width - chromeWidth - 14), y: 12, width: chromeWidth, height: chromeSize)
-            self.status.frame = NSRect(x: 26, y: 40, width: max(100, width - 52), height: 18)
+            self.status.frame = NSRect(x: 26 + iconWidth, y: 40, width: max(100, width - 52 - iconWidth), height: 18)
             self.scroll.frame = NSRect(x: 0, y: canvasTop, width: width, height: max(80, height - canvasTop))
             self.canvas.resizeCanvas(viewport: self.scroll.contentSize)
             self.canvas.fitOnOpenIfNeeded()
@@ -242,6 +248,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             guard let self else { return }
             if self.titleField.currentEditor() == nil { self.titleField.stringValue = doc.title }
             self.onTitleChange?(doc.title)
+            self.titleIcon.refresh()
             self.undoButton.isEnabled = self.canvas.canUndo; self.redoButton.isEnabled = self.canvas.canRedo
             self.refreshPages()
             self.status.stringValue = "Saved on this Mac · \(doc.items.count) object\(doc.items.count == 1 ? "" : "s")" + (doc.isLocked ? " · Locked" : "")
@@ -339,7 +346,16 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         do { try session.perform("Rename Easel") { $0.title = value } }
         catch { titleField.stringValue = session.document.title; titleField.currentEditor()?.string = session.document.title; show(error) }
     }
-    func controlTextDidEndEditing(_ notification: Notification) { titleField.stringValue = session.document.title }
+    func controlTextDidBeginEditing(_ notification: Notification) { titleIcon.updateHover() }
+    func controlTextDidEndEditing(_ notification: Notification) { titleField.stringValue = session.document.title; titleIcon.updateHover() }
+    private func installTitleIcon(in root: NSView) {
+        titleIcon.host = { [weak self] in self?.view }
+        titleIcon.onGeometryChange = { [weak root] in root?.needsLayout = true }
+        titleIcon.onError = { [weak self] in self?.show($0) }
+        titleIcon.isTitleEditing = { [weak self] in self?.titleField.currentEditor() != nil }
+        titleIcon.titleTextWidth = { [weak self] in self?.titleField.attributedStringValue.size().width ?? 0 }
+        root.addSubview(titleIcon)
+    }
     func show(_ error: Error) { status.stringValue = error.localizedDescription; NSSound.beep() }
     @objc private func undoChange() { canvas.undo(nil) }
     @objc private func redoChange() { canvas.redo(nil) }
