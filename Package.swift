@@ -17,10 +17,10 @@ let facadeFlags: [CSetting] = nativeFlags + [
     .headerSearchPath("../../../Engine/ParcNative"), .headerSearchPath("../../../Sources/ParcEngine"),
 ]
 let engineImport: [SwiftSetting] = [.unsafeFlags(["-Xcc", "-I", "-Xcc", nativeHeaders])]
-let siteFilmScenes = [
+let siteFilmScenes = Context.environment["PARC_SITE_FILM"] == "1" ? [
     "base", "spaces", "collapse", "crank", "peek", "preview", "split",
     "commandbar-easel", "notes", "capture-archive", "mini-card", "startpage",
-]
+] : []
 
 let package = Package(
     name: "Parc",
@@ -110,13 +110,14 @@ let package = Package(
                                 .copy("Presentation/Fixtures/MembershipCard"), .copy("Presentation/Fixtures/ThemeEditor"),
                                 .copy("Easels/Fixtures/EaselFonts")],
                     swiftSettings: strict + engineImport),
+    ] + (siteFilmScenes.isEmpty ? [] : [
         .target(
             name: "SiteFilmMedia",
             dependencies: ["ParcEngine"],
             path: "scripts/site-film/mini-card/Media",
             cSettings: nativeFlags + [.headerSearchPath("../../../../Engine/ParcNative")]
         ),
-    ] + siteFilmScenes.map { scene in
+    ]) + siteFilmScenes.map { scene in
         let dependencies: [Target.Dependency] = ["Parc", "ParcCore", "ParcEngineDoubles"]
         return .executableTarget(
             name: "parc-film-\(scene)",

@@ -8,7 +8,7 @@ editor, Mini Player, capture tools, Library and window crank. Nothing launches
 the app, opens a window or records the screen. The web pages inside the window
 are the demo pages in `pages/`, because Chromium can't run here.
 
-The package can compile the renderers during development checks. Rendering is
+The renderers build only when `PARC_SITE_FILM=1` is set. Rendering is
 manual. See the [website guide](../../docs/website.md) for how the videos sit on
 the site.
 
@@ -16,8 +16,9 @@ the site.
 
 - `base/`: the starting render harness that every scene folder copied.
 - Each scene's `Harness/` builds as a `parc-film-<folder>` SwiftPM executable,
-  including `parc-film-base`. It links the Parc, ParcCore and ParcEngineDoubles
-  targets. The engine doubles live in
+  including `parc-film-base`. The package declares these targets only when
+  `PARC_SITE_FILM=1` is set, so ordinary builds and test runs skip them. Each
+  links the Parc, ParcCore and ParcEngineDoubles targets. The engine doubles live in
   [tests/ParcEngineDoubles](../../tests/ParcEngineDoubles)
   and supply the class names needed to load Parc without Chromium.
 - `canon/Model.swift`: the shared Spaces, tabs and themes every scene uses. Each
@@ -36,6 +37,7 @@ artwork next to the executable, where Parc normally looks for its resources.
 ```sh
 (
 set -e
+export PARC_SITE_FILM=1
 scene=spaces
 timeout 900 swift build -j 4 --disable-keychain --product "parc-film-$scene"
 bin=$(timeout 60 swift build -j 4 --disable-keychain --show-bin-path)
