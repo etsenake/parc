@@ -238,13 +238,17 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
     override func mouseEntered(with event: NSEvent) {
-        setHovered(true)
+        setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -932,7 +936,13 @@ final class NotePageImageLoader {
 final class NotePageIconView: NSView {
     let environment: NoteEnvironment
     var onPress: (() -> Void)?
-    var isEditable = true { didSet { window?.invalidateCursorRects(for: self); needsDisplay = true } }
+    var isEditable = true {
+        didSet {
+            needsDisplay = true
+            guard isEditable != oldValue, let window, ownsPointer(atWindowPoint: window.mouseLocationOutsideOfEventStream) else { return }
+            window.refreshCursorUnderPointer()
+        }
+    }
     var icon: String? { didSet { if icon != oldValue { reloadImage(); needsDisplay = true; updateAccessibility() } } }
     private var image: NSImage?
     private var isHovered = false
@@ -1023,20 +1033,24 @@ final class NotePageIconView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect, .cursorUpdate], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect, .cursorUpdate], owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { isHovered = false; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+    override func mouseMoved(with event: NSEvent) { setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)) }
+    override func mouseExited(with event: NSEvent) { setHovered(false) }
 
-    override func cursorUpdate(with event: NSEvent) {
-        if isEditable { NSCursor.pointingHand.set() } else { super.cursorUpdate(with: event) }
+    private func setHovered(_ value: Bool) {
+        guard value != isHovered else { return }
+        isHovered = value
+        needsDisplay = true
     }
 
-    override func resetCursorRects() {
-        if isEditable { addCursorRect(bounds, cursor: .pointingHand) }
+    override func cursorUpdate(with event: NSEvent) {
+        if isEditable, applyNoteCursor(.pointingHand, for: event) { return }
+        super.cursorUpdate(with: event)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -1279,19 +1293,43 @@ final class NotePageCoverView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect, .cursorUpdate], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect, .cursorUpdate], owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
     override func mouseEntered(with event: NSEvent) {
-        isHovered = true
-        refreshControls(animated: true)
+        setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        setHovered(NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+        guard isRepositioning, dragStart == nil, isOwnSurface(atWindowPoint: event.locationInWindow) else { return }
+        applyNoteCursor(.openHand, for: event)
     }
 
     override func mouseExited(with event: NSEvent) {
-        isHovered = false
+        setHovered(false)
+    }
+
+    private func setHovered(_ value: Bool) {
+        guard value != isHovered else { return }
+        isHovered = value
         refreshControls(animated: true)
+    }
+
+    private func isOwnSurface(atWindowPoint point: NSPoint) -> Bool {
+        guard let superview else { return false }
+        return hitTest(superview.convert(point, from: nil)) === self
+    }
+
+    private var surfaceCursor: NSCursor {
+        isRepositioning ? (dragStart == nil ? .openHand : .closedHand) : .arrow
+    }
+
+    private func refreshCursor() {
+        guard let window, ownsPointer(atWindowPoint: window.mouseLocationOutsideOfEventStream) else { return }
+        window.refreshCursorUnderPointer()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -1303,11 +1341,8 @@ final class NotePageCoverView: NSView {
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        if isRepositioning { (dragStart == nil ? NSCursor.openHand : NSCursor.closedHand).set() } else { super.cursorUpdate(with: event) }
-    }
-
-    override func resetCursorRects() {
-        if isRepositioning { addCursorRect(bounds, cursor: dragStart == nil ? .openHand : .closedHand) }
+        if applyNoteCursor(surfaceCursor, for: event) { return }
+        super.cursorUpdate(with: event)
     }
 
     func beginRepositioning() {
@@ -1318,7 +1353,7 @@ final class NotePageCoverView: NSView {
         needsLayout = true
         refreshControls(animated: true)
         window?.makeFirstResponder(self)
-        window?.invalidateCursorRects(for: self)
+        refreshCursor()
     }
 
     func endRepositioning(save: Bool) {
@@ -1332,13 +1367,13 @@ final class NotePageCoverView: NSView {
         }
         needsLayout = true
         refreshControls(animated: true)
-        window?.invalidateCursorRects(for: self)
+        refreshCursor()
     }
 
     override func mouseDown(with event: NSEvent) {
         guard isRepositioning else { super.mouseDown(with: event); return }
         dragStart = (convert(event.locationInWindow, from: nil), position)
-        NSCursor.closedHand.set()
+        applyNoteCursor(.closedHand, for: event)
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -1354,7 +1389,7 @@ final class NotePageCoverView: NSView {
     override func mouseUp(with event: NSEvent) {
         guard isRepositioning else { return }
         dragStart = nil
-        NSCursor.openHand.set()
+        applyNoteCursor(isOwnSurface(atWindowPoint: event.locationInWindow) ? .openHand : nil, for: event)
     }
 
     override func keyDown(with event: NSEvent) {
