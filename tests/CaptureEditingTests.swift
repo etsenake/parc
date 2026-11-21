@@ -47,7 +47,7 @@ struct CaptureEditingTests {
         expect(draft.document.items[1].frame.x == shape.frame.x, "Cancelling a later editor cannot mutate accepted snapshot")
         do { try resumed.perform("Invalid") { $0.items[1].frame.width = .nan }; preconditionFailure("Invalid geometry accepted") } catch {}
         expect(resumed.document.items[1].frame.width == shape.frame.width, "Failed edit preserves committed draft")
-        expect(!canvas.insertLink("https://example.com", browser: true), "Fixed capture editor cannot create a browser provider")
+        expect(!canvas.pasteWebLink(URL(string: "https://example.com")!) && canvas.placeEmptyObject(.browser) == nil, "Fixed capture editor cannot create a browser provider")
         canvas.insert(kind: .arrow)
         expect(draft.document.items.last!.points.last!.x <= 20 && draft.document.items.last!.points.first!.y <= 10, "Arrow endpoints track clipped fixed-canvas dimensions")
         let freshArrow = draft.document.items.last!

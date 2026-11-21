@@ -1,4 +1,5 @@
 import AppKit
+import PDFKit
 
 @MainActor
 protocol EaselCanvasPasteChoices: AnyObject {
@@ -83,6 +84,51 @@ extension EaselCanvasView {
         default:
             return false
         }
+    }
+
+    @discardableResult
+    func replaceBookmark(_ id: UUID, withMedia kind: EaselItemKind, url: URL, data: Data?) -> Bool {
+        guard !viewOnly, !session.isClosed, let link = session.document.items.first(where: { $0.id == id && $0.kind == .link }),
+              !link.isLocked, link.url == url.absoluteString else { return false }
+        var item = EaselItem(kind: kind, frame: link.frame, zIndex: link.zIndex, color: link.color)
+        item.id = id
+        item.groupID = link.groupID
+        item.page = link.page
+        item.fileName = EaselMediaImportPlan.linkFileName(url)
+        var natural: (width: Double, height: Double)?
+        do {
+            switch kind {
+            case .video, .audio:
+                guard EaselMediaImportPlan.isLinkable(url, kind: kind) else { return false }
+                item.url = url.absoluteString
+            case .image:
+                guard let data else { return false }
+                let asset = try preparedImageAsset(data)
+                item.assetID = try session.importAsset(asset.data, type: asset.type)
+                item.fileName = nil
+                natural = (Double(asset.pixelSize.width), Double(asset.pixelSize.height))
+            case .pdf:
+                guard let data, let page = PDFDocument(data: data)?.page(at: 0) else { throw EaselStoreError.invalidFile }
+                item.assetID = try session.importAsset(data, type: .pdf)
+                let bounds = page.bounds(for: .mediaBox)
+                natural = (Double(bounds.width), Double(bounds.height))
+            default:
+                return false
+            }
+        } catch {
+            onError?(error)
+            return false
+        }
+        let size = EaselMediaPlacement.filledSize(for: kind, natural: natural)
+        item.frame = EaselMediaPlacement.resized(link.frame, width: size.width, height: size.height)
+        let replaced = commit(EaselMediaPlacement.addName(for: kind)) { document in
+            guard let index = document.items.firstIndex(where: { $0.id == id }), document.items[index] == link else {
+                throw EaselStoreError.invalidDocument("the bookmark changed")
+            }
+            document.items[index] = item
+        }
+        if replaced { selection = [id]; needsLayout = true }
+        return replaced
     }
 
     func recordLinkPreview(_ preview: EaselLinkPreviewData, for id: UUID, url: String) {

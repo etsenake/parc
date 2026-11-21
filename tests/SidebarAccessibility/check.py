@@ -78,7 +78,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-ax-") as directory:
     app = root / "Sources/ParcApp"
     owners = sorted(p.name for p in app.glob("*.swift")
                     if re.search(r"weak var \w*[rR]esponder: NSResponder\?", p.read_text()))
-    assert owners == ["BrowserWindowController.swift", "CaptureMotion.swift", "CommandBar.swift", "EaselFindController.swift", "EaselWebInput.swift",
+    assert owners == ["BrowserWindowController.swift", "CaptureMotion.swift", "CommandBar.swift", "EaselFindController.swift",
                       "NavigationControls.swift", "NoteFindController.swift", "NoteMediaZoom.swift", "NotePDFBlockView.swift",
                       "OnboardingPasswordHelp.swift", "PeekFocusReturn.swift",
                       "SidebarPreviewController.swift", "WindowFrameCrankView.swift"], \
@@ -87,7 +87,6 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-ax-") as directory:
                       ("BrowserWindowController.swift", "SavedFocus.mayReturn(to: responder, in: window) { window?.makeFirstResponder(responder) }"),
                       ("BrowserWindowController.swift", "(responder as? NSView).map({ SavedFocus.mayReturn(to: $0, in: sourceWindow) }) ?? true {\n                    sourceWindow.makeFirstResponder(responder)"),
                       ("NavigationControls.swift", "(oldResponder as? NSView).map({ SavedFocus.mayReturn(to: $0, in: parent) }) ?? true {\n                        parent.makeFirstResponder(oldResponder)"),
-                      ("EaselWebInput.swift", "if SavedFocus.mayReturn(to: previousView, in: parentWindow) { parentWindow.makeFirstResponder(previousView) }"),
                       ("EaselFindController.swift", "let responder = returnResponder as? NSView, SavedFocus.mayReturn(to: responder, in: window) {\n            window.makeFirstResponder(responder)"),
                       ("NoteFindController.swift", "(responder as? NSView).map({ SavedFocus.mayReturn(to: $0, in: window) }) ?? true {\n            window.makeFirstResponder(responder)"),
                       ("NoteMediaZoom.swift", "(previousResponder as? NSView).map({ SavedFocus.mayReturn(to: $0, in: window) }) ?? true\n            window.makeFirstResponder(returns ? previousResponder : nil)"),

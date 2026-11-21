@@ -1310,19 +1310,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         cancelPointerInteraction(); guard finishEditing() else { return }; drawing = false; selection = [id]
         scrollToVisible(rect(item)); needsLayout = true; layoutSubtreeIfNeeded()
     }
-    @discardableResult
-    func insertLink(_ raw: String, browser: Bool = false) -> Bool {
-        guard fixedCanvasSize == nil else { return false }
-        let input = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: input), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else {
-            onError?(EaselStoreError.invalidDocument("enter a complete http or https link")); return false
-        }
-        cancelPointerInteraction(); guard finishEditing() else { return false }; drawing = false
-        let item = EaselItem(kind: browser ? .browser : .link, frame: EaselRect(x: max(30, visibleRect.midX - 170), y: visibleRect.minY + 90, width: browser ? 640 : 340, height: browser ? 420 : 120),
-                             zIndex: (items.map(\.zIndex).max() ?? 0) + 1, text: url.host ?? input, url: url.absoluteString)
-        if commit(browser ? "Add webpage" : "Add link", { $0.items.append(item) }) { selection = [item.id]; return true }
-        return false
-    }
     func importImage(_ data: Data) throws { try insertImageData(data) }
     func importImageFile(_ url: URL) throws { try importMediaFiles([url]) }
     func beginEditing(_ item: EaselItem, at point: NSPoint? = nil) {
@@ -1807,7 +1794,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if hostedObjectHit(hit), resizeHandle(at: convert(point, from: superview)) == nil { return hit }
         let local = convert(point, from: superview)
         guard tool == .select, !toolState.spaceHeld, resizeHandle(at: local) == nil, connectorChrome(at: local) == nil,
-              let item = object(at: local, includingLocked: true), item.ownsEmbeddedPage, selection == [item.id],
+              let item = object(at: local, includingLocked: true), item.ownsEmbeddedPage || hostedObjects.contains(where: { $0.hosts(item) }),
+              selection == [item.id],
               let surface = artwork[item.id], hit === surface || hit.isDescendant(of: surface) else { return self }
         return hit
     }
@@ -2270,7 +2258,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if readTablePasteboard(pasteboard) { return true }
         do {
             if let url = try EaselClipboardURL.read(from: pasteboard) {
-                if fixedCanvasSize == nil { return insertLink(url.absoluteString) }
+                if fixedCanvasSize == nil { return pasteWebLink(url) }
                 return insert(kind: .text, text: url.absoluteString)
             }
             if pasteMermaid(from: pasteboard) { return true }
