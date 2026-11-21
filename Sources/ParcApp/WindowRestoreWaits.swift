@@ -11,7 +11,11 @@ final class WindowRestoreWaits {
     var count: Int { waits.count }
 
     init(timeout: TimeInterval, schedule: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, work in
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        if delay == 0 {
+            DispatchQueue.main.async(execute: work)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        }
     }) {
         self.timeout = timeout
         self.schedule = schedule
