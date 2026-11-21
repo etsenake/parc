@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
     controls.write_text(sidebar[:sidebar.index("final class FlippedStackView:")])
     easel = (root / "Sources/ParcApp/EaselEditorViewController.swift").read_text()
     store_owner = temporary / "EaselStoreOwner.swift"
-    store_owner.write_text(easel[:easel.index("    private let session:")] + "}\n")
+    store_owner.write_text(easel[:re.search(r"^    (?:private )?let session:", easel, re.M).start()] + "}\n")
     sidebar_stub = temporary / "SpaceCardSidebar.swift"
     sidebar_stub.write_text("""import AppKit
 @MainActor final class SidebarView: NSView {
@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
     func render(state: BrowserState, focusedTabID: UUID?, loading: Set<UUID>, canBack: Bool, canForward: Bool) {}
 }
 """)
-    app = ["LibraryView", "CaptureLibraryStore", "CaptureLibraryView", "DocumentsLibraryView", "DocumentDefaultIcon", "DocumentsLibraryCatalog", "DownloadLibrarySelection", "DownloadLibraryTable", "DownloadLibraryView",
+    app = ["LibraryView", "CaptureLibraryStore", "CaptureLibraryView", "DocumentsLibraryView", "DocumentDefaultIcon", "DocumentsLibraryCatalog", "NoteAnimation", "DownloadLibrarySelection", "DownloadLibraryTable", "DownloadLibraryView",
            "DownloadLibraryPreview", "DownloadActivityBadge", "DownloadThumbnailProvider", "DownloadFileDrag", "ThemeRenderer", "LibraryArtwork",
            "ExternalMediaLibrary", "CaptureLibrarySharing", "MediaLibraryContext", "SpaceManagerView", "SidebarIconCatalog", "SidebarRowAppearance",
            "CaptureMotion", "DownloadArrivalMotion", "LibraryRailTile", "LibraryRailIcon", "WindowStandardButtons", "TranslucentButtonFace", "ReloadControl",
