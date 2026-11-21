@@ -312,6 +312,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var onExportImage: (() -> Void)?
     var onError: ((Error) -> Void)?
     var onOpenURL: ((URL) -> Void)?
+    static var textCompletionFactory: (@MainActor () -> EaselTextCompletion)?
     var onKeyEquivalent: ((NSEvent) -> Bool)?
     var onDrawOverlay: ((NSRect, CGFloat) -> Void)?
     override var isFlipped: Bool { true }
@@ -1105,6 +1106,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         text.canUndoDocument = { [weak self] in self?.session.canUndo == true }
         text.canRedoDocument = { [weak self] in self?.session.canRedo == true }
         text.onAlign = { [weak self] alignment in _ = self?.alignText(alignment, editing: true) }
+        text.completion = Self.textCompletionFactory?()
         updateEditor(item)
         if window?.makeFirstResponder(text) == true {
             if let point, item.text != EaselTextEditing.defaultText {

@@ -281,6 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             TooltipController.eventChord = { KeyboardShortcuts.shared.chord(for: $0) }
             TooltipController.symbolicChord = { KeyboardShortcuts.shared.symbolicChord(for: $0) }
             EaselCanvasView.selectionToolbarFactory = { EaselSelectionToolbar() }
+            EaselCanvasView.textCompletionFactory = { EaselEmojiCompletion() }
             KeyboardShortcuts.shared.onDiscoveryChange = {
                 NotificationCenter.default.post(name: LiveShortcutToolTip.didChange, object: nil)
             }

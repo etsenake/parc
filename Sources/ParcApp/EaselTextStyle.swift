@@ -342,7 +342,19 @@ struct EaselStyledText: Codable, Equatable {
     }
 }
 
+@MainActor
+protocol EaselTextCompletion: AnyObject {
+    func attach(_ view: EaselStyledTextView)
+    func textDidChange(in view: EaselStyledTextView)
+    func handle(_ selector: Selector, in view: EaselStyledTextView) -> Bool
+    func dismiss()
+    func detach()
+}
+
 final class EaselStyledTextView: LocalContentDropTextView {
+    var completion: EaselTextCompletion? {
+        didSet { if completion !== oldValue { oldValue?.detach(); completion?.attach(self) } }
+    }
     let localUndo = UndoManager()
     var hasLoadedDocument = false
     var usesEaselObjectLayout = false
@@ -399,15 +411,30 @@ final class EaselStyledTextView: LocalContentDropTextView {
         typingAttributes.removeValue(forKey: .attachment)
         refreshObjectFill()
         super.didChangeText()
+        if !suppressMarkdown, !localUndo.isUndoing, !localUndo.isRedoing { completion?.textDidChange(in: self) }
+    }
+    override func doCommand(by selector: Selector) {
+        if completion?.handle(selector, in: self) == true { return }
+        super.doCommand(by: selector)
+    }
+    func insertCompletion(_ value: String, replacing range: NSRange, name: String) {
+        guard isEditable, !hasMarkedText(), selectedRanges.count == 1,
+              Self.validFormattingRanges([range], length: attributedString().length) else { return }
+        let suppressed = suppressMarkdown; suppressMarkdown = true
+        defer { suppressMarkdown = suppressed }
+        breakUndoCoalescing()
+        insertText(value, replacementRange: range)
+        localUndo.setActionName(name)
+        breakUndoCoalescing()
     }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow == nil { retire() }; super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil { retire(); completion = nil }; super.viewWillMove(toWindow: newWindow)
     }
     func finishComposition() {
         guard hasMarkedText() else { return }
         unmarkText(); didChangeText()
     }
-    func retire() { linkPopover?.close(); linkPopover = nil; editRevision = UUID() }
+    func retire() { linkPopover?.close(); linkPopover = nil; completion?.dismiss(); editRevision = UUID() }
     func resetEditingHistory() {
         let level = localUndo.groupingLevel, automatic = localUndo.groupsByEvent
         localUndo.groupsByEvent = false

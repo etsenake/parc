@@ -78,3 +78,12 @@ offers Open link. Locked objects keep their link but refuse a new one. HTML
 exports wrap linked objects in a link so they stay clickable. The link is saved
 in the object's existing `url` field, which link cards and captured pages also
 use for their source; those keep their own Open Source rows instead.
+
+## Emoji
+
+Typing `:` and two or more letters of a shortcode in any Easel text opens the
+Notes emoji suggestions (the same search, ranking, recents and skin tone) under
+the caret; ↑ and ↓ move, Return or Tab picks and Esc closes the list without
+leaving the text. Typing a complete `:shortcode:` swaps it for the emoji right
+away. Each emoji insertion is its own Undo step. Custom emoji from the Notes
+library aren't offered, because Easel text stores only characters.
