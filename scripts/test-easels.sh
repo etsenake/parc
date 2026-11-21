@@ -82,6 +82,12 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
+  "$repo_root/tests/EaselCrashHardeningTests.swift" \
+  -o "$scratch/easel-crash-hardening"
+"$scratch/easel-crash-hardening"
+
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
+  "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/Sources/ParcApp/NoteTheme.swift" \
   "$repo_root/Sources/ParcApp/PointingHand.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvasCodeBlockViews.swift" \

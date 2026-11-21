@@ -262,15 +262,16 @@ final class SidebarDocumentThumbnails {
         let region = NSRect(x: area.x, y: area.y, width: area.width, height: area.height), width = region.width
         let scale = min(2, pixelWidth / width)
         guard let full = canvas.exportImage(backingScale: scale) else { return nil }
-        let crop = CGRect(x: (region.minX * scale).rounded(), y: (region.minY * scale).rounded(),
-                          width: (region.width * scale).rounded(), height: (region.height * scale).rounded())
+        let used = canvas.bounds.width > 0 ? CGFloat(full.width) / canvas.bounds.width : scale
+        let crop = CGRect(x: (region.minX * used).rounded(), y: (region.minY * used).rounded(),
+                          width: (region.width * used).rounded(), height: (region.height * used).rounded())
             .intersection(CGRect(x: 0, y: 0, width: full.width, height: full.height))
         guard !crop.isEmpty, let cropped = full.cropping(to: crop) else { return nil }
         let image = NSImage(size: NSSize(width: pixelWidth, height: (pixelWidth * aspect).rounded()))
         image.lockFocus()
         (NoteTheme.isDark(appearance) ? NSColor.black : NSColor.white).setFill()
         NSRect(origin: .zero, size: image.size).fill()
-        let fitted = NSSize(width: crop.width / scale * (pixelWidth / width), height: crop.height / scale * (pixelWidth / width))
+        let fitted = NSSize(width: crop.width / used * (pixelWidth / width), height: crop.height / used * (pixelWidth / width))
         NSGraphicsContext.current?.imageInterpolation = .high
         NSImage(cgImage: cropped, size: .zero).draw(in: NSRect(x: 0, y: image.size.height - fitted.height,
                                                                width: fitted.width, height: fitted.height))

@@ -53,3 +53,15 @@ enum EaselPreviewRegion {
         return EaselRect(x: x, y: y, width: max(1, content.x + content.width - x), height: max(1, content.y + content.height - y))
     }
 }
+
+enum EaselExportScale {
+    static let maximumPixels = 64_000_000.0
+    static let maximumSide = 32_000.0
+
+    static func capped(_ scale: Double, width: Double, height: Double) -> Double {
+        guard scale.isFinite, scale > 0, width.isFinite, height.isFinite, width > 0, height > 0 else { return scale }
+        let pixels = width * height * scale * scale
+        let budget = pixels > maximumPixels ? scale * (maximumPixels / pixels).squareRoot() : scale
+        return min(budget, maximumSide / width, maximumSide / height)
+    }
+}

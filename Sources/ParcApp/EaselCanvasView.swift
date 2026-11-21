@@ -243,10 +243,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard let output = context.makeImage() else { throw EaselStoreError.invalidImage }
         return output
     }
-    func exportImage(backingScale: CGFloat, pages: [UUID: EaselPageSnapshot] = [:]) -> CGImage? {
+    func exportImage(backingScale requested: CGFloat, pages: [UUID: EaselPageSnapshot] = [:]) -> CGImage? {
         let content = EaselBoardObjects.displayed(session.document.items)
         let width = bounds.width
         let size = fixedCanvasSize ?? NSSize(width: width, height: max(width, content.map { EaselCanvasRotation.bounds($0).maxY }.max() ?? 0) + 60)
+        let backingScale = CGFloat(EaselExportScale.capped(Double(requested), width: Double(size.width), height: Double(size.height)))
         let pixels = NSSize(width: (size.width * backingScale).rounded(), height: (size.height * backingScale).rounded())
         guard backingScale > 0, pixels.width >= 1, pixels.height >= 1, pixels.width < 1e9, pixels.height < 1e9 else { return nil }
         for id in content.compactMap(\.assetID) { _ = image(id) }
