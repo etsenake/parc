@@ -422,7 +422,8 @@ final class EaselStyledTextView: LocalContentDropTextView {
     func selectedPayload() throws -> EaselStyledText? {
         let range = selectedRange()
         guard range.length > 0 else { return nil }
-        return try EaselStyledText.capture(attributedString().attributedSubstring(from: range), style: objectStyle, color: objectColor)
+        let selected = EaselStickyText.unscaled(attributedString().attributedSubstring(from: range), by: fontScale)
+        return try EaselStyledText.capture(selected, style: objectStyle, color: objectColor)
     }
     private func copySelection() -> Bool {
         do {
@@ -484,7 +485,8 @@ final class EaselStyledTextView: LocalContentDropTextView {
                 return try pasteLink(url)
             }
             if !plain, let payload = try EaselStyledText.read(from: board) {
-                insertText(adaptsInk ? EaselInk.adapting(payload.attributed) : payload.attributed, replacementRange: selectedRange()); return true
+                let pasted = EaselStickyText.scaled(payload.attributed, by: fontScale)
+                insertText(adaptsInk ? EaselInk.adapting(pasted) : pasted, replacementRange: selectedRange()); return true
             }
             if !plain, let data = try EaselTextAttachments.pastedImageData(from: board) {
                 return try insertImage(data)
