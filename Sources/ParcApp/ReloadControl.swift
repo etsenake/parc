@@ -3,8 +3,12 @@ import QuartzCore
 import SwiftUI
 
 @MainActor enum NavigationControlArtwork {
-    static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("NavigationControls", isDirectory: true)
-    private static var cachedForceReload: NSImage?
+    static let directory: URL? = resourcesDirectory(in: .main)
+    private static var forceReloadImages: [URL: NSImage] = [:]
+
+    static func resourcesDirectory(in bundle: Bundle) -> URL? {
+        bundle.resourceURL?.appendingPathComponent("NavigationControls", isDirectory: true)
+    }
     private static var symbols: [String: NSImage] = [:]
 
     static func symbol(_ name: String, pointSize: CGFloat) -> NSImage? {
@@ -29,10 +33,13 @@ import SwiftUI
         return image
     }
 
-    static var forceReload: NSImage? {
-        if let cachedForceReload { return cachedForceReload }
+    static var forceReload: NSImage? { forceReload(in: directory) }
+
+    static func forceReload(in directory: URL?) -> NSImage? {
+        guard let directory else { return nil }
+        if let cached = forceReloadImages[directory] { return cached }
         let name = "icon-browser-navigation-force-reload"
-        guard let directory, let data = try? Data(contentsOf: directory.appendingPathComponent(name + ".png")),
+        guard let data = try? Data(contentsOf: directory.appendingPathComponent(name + ".png")),
               let base = NSBitmapImageRep(data: data) else { return nil }
         base.size = NSSize(width: base.pixelsWide, height: base.pixelsHigh)
         let image = NSImage(size: base.size)
@@ -46,7 +53,7 @@ import SwiftUI
             for representation in vector.representations { image.addRepresentation(representation) }
         }
         image.isTemplate = true
-        cachedForceReload = image
+        forceReloadImages[directory] = image
         return image
     }
 }
@@ -56,12 +63,24 @@ enum DeveloperReloadState: String { case reload, forceReload }
 @MainActor enum DeveloperReloadPreference {
     static let key = "parc.developerMode.reloadState"
     static var state: DeveloperReloadState {
-        get { UserDefaults.standard.string(forKey: key).flatMap(DeveloperReloadState.init(rawValue:)) ?? .reload }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
+        get { storedState(in: .standard) }
+        set { store(newValue, in: .standard) }
+    }
+    static func storedState(in defaults: UserDefaults) -> DeveloperReloadState {
+        defaults.string(forKey: key).flatMap(DeveloperReloadState.init(rawValue:)) ?? .reload
+    }
+    static func store(_ state: DeveloperReloadState, in defaults: UserDefaults) {
+        defaults.set(state.rawValue, forKey: key)
     }
 }
 
-@MainActor final class ViewDisplayFrameDriver: NSObject {
+@MainActor protocol DisplayFrameDriving: AnyObject {
+    var isRunning: Bool { get }
+    func start(in view: NSView, onFrame: @escaping () -> Bool)
+    func stop()
+}
+
+@MainActor final class ViewDisplayFrameDriver: NSObject, DisplayFrameDriving {
     private var onFrame: (() -> Bool)?
     private var link: AnyObject?
     private var timer: Timer?
@@ -133,7 +152,9 @@ enum DeveloperReloadState: String { case reload, forceReload }
     private var spinFrom: CGFloat = 0, spinTarget: CGFloat = 0
     private var spinStart: CFTimeInterval = 0
     private var spinning = false
-    private let frames = ViewDisplayFrameDriver()
+    var frames: any DisplayFrameDriving = ViewDisplayFrameDriver()
+    var reduceMotion: @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    var artworkDirectory: URL? = NavigationControlArtwork.directory
     private var tinted: (color: NSColor, images: [ObjectIdentifier: NSImage])?
     var now: () -> CFTimeInterval = { CACurrentMediaTime() }
 
@@ -151,7 +172,7 @@ enum DeveloperReloadState: String { case reload, forceReload }
         guard loading != self.loading else { return }
         self.loading = loading
         let next: CGFloat = loading ? 1 : 0
-        guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+        guard animated, !reduceMotion() else {
             progress = next; from = next; target = next
             if !spinning { stopFrames() }
             view?.needsDisplay = true
@@ -164,7 +185,7 @@ enum DeveloperReloadState: String { case reload, forceReload }
 
     func playActionSpin(animated: Bool) {
         let next = rotation + Self.actionRotation
-        guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+        guard animated, !reduceMotion() else {
             rotation = next.truncatingRemainder(dividingBy: Self.actionRotation)
             spinFrom = rotation; spinTarget = rotation; spinning = false
             if progress == target { stopFrames() }
@@ -232,7 +253,7 @@ enum DeveloperReloadState: String { case reload, forceReload }
     static let settlingTime: CFTimeInterval = settlingDuration(response: response, damping: dampingFraction)
     static let actionSettlingTime: CFTimeInterval = settlingDuration(response: actionResponse, damping: actionDamping)
 
-    var idleImage: NSImage? { forceReload ? NavigationControlArtwork.forceReload ?? arrowImage : arrowImage }
+    var idleImage: NSImage? { forceReload ? NavigationControlArtwork.forceReload(in: artworkDirectory) ?? arrowImage : arrowImage }
 
     func draw(in bounds: NSRect, tint: NSColor, press: CGFloat = 0, in view: NSView) {
         NSGraphicsContext.saveGraphicsState()
