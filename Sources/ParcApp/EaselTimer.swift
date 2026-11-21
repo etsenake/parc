@@ -219,19 +219,12 @@ final class EaselTimerButton: PointingHandButton {
         if previousPhase != phase || resized { updatePulse() }
         if resized { invalidateIntrinsicContentSize(); superview?.needsLayout = true; onResize?() }
         switch phase {
-        case .idle:
-            setAccessibilityLabel("Timer")
-            setAccessibilityValue(nil)
-        case .running:
-            setAccessibilityLabel("Timer, running")
-            setAccessibilityValue(EaselCountdown.spoken(remaining) + " left")
-        case .paused:
-            setAccessibilityLabel("Timer, paused")
-            setAccessibilityValue(EaselCountdown.spoken(remaining) + " left")
-        case .finished:
-            setAccessibilityLabel("Timer, time’s up")
-            setAccessibilityValue(nil)
+        case .idle: setAccessibilityValue(nil)
+        case .running: setAccessibilityValue("Running, " + EaselCountdown.spoken(remaining) + " left")
+        case .paused: setAccessibilityValue("Paused, " + EaselCountdown.spoken(remaining) + " left")
+        case .finished: setAccessibilityValue("Time’s up")
         }
+        setAccessibilityLabel("Timer")
         needsDisplay = true
     }
 
