@@ -105,7 +105,7 @@ extension EaselCanvasView {
         case .bold, .italic, .underline, .strikethrough, .paragraph, .link: return textOnly && editor != nil
         case .more: return true
         case .codeLanguage: return selected.allSatisfy { $0.kind == .code } && selected.contains { !$0.isLocked }
-        default: return false
+        default: return selectionToolbarBoardSupports(control, selected: selected) ?? false
         }
     }
 
@@ -147,7 +147,8 @@ extension EaselCanvasView {
             let title = languages.count == 1 ? languages.first.map { EaselCodeBlock.displayName($0) } ?? "Mixed" : "Mixed"
             return .init(control: control, face: .text(title), name: "Language", opens: .menu, showsDisclosure: true)
         default:
-            return .init(control: control, face: .symbol("ellipsis"), name: "More", opens: .menu)
+            return selectionToolbarBoardButton(control, selected: selected)
+                ?? .init(control: control, face: .symbol("ellipsis"), name: "More", opens: .menu)
         }
     }
 
@@ -171,19 +172,11 @@ extension EaselCanvasView {
                 EaselToolbarMenuEntry(id: kind.rawValue, title: kind.rawValue, isChecked: kind == current,
                                       separatorBefore: kind == .bullets)
             }
-        case .more:
-            let ready = editor == nil || editor?.hasMarkedText() == false
-            return [
-                EaselToolbarMenuEntry(id: "front", title: "Bring to Front", symbol: "square.3.layers.3d.top.filled", isEnabled: ready),
-                EaselToolbarMenuEntry(id: "duplicate", title: "Duplicate", symbol: "plus.square.on.square", isEnabled: ready),
-                EaselToolbarMenuEntry(id: "delete", title: "Delete", symbol: "trash", shortcut: "⌫", isEnabled: ready,
-                                      isDestructive: true, separatorBefore: true),
-            ]
         case .codeLanguage:
             let current = selectedCodeLanguages
             return NoteCodeLanguage.all.map { EaselToolbarMenuEntry(id: $0.id, title: $0.name, isChecked: current == [$0.id]) }
         default:
-            return []
+            return selectionToolbarBoardMenu(control) ?? []
         }
     }
 
@@ -205,7 +198,7 @@ extension EaselCanvasView {
             guard let editor, editor.selectedRange().length > 0, !editor.hasMarkedText() else { return false }
             editLink(relativeTo: anchor ?? editor, rect: anchor == nil ? editor.revealedSelectionRect() : nil)
         default:
-            return false
+            guard performSelectionToolbarBoard(control) == true else { return false }
         }
         refreshTextControls()
         return true
@@ -225,18 +218,11 @@ extension EaselCanvasView {
         case .paragraph:
             guard let kind = EaselParagraphEditing.Kind(rawValue: id), editor?.hasMarkedText() == false else { return false }
             applyParagraph(kind)
-        case .more:
-            switch id {
-            case "front": return bringToFront(nil)
-            case "duplicate": return duplicateObjects(nil)
-            case "delete": deleteObjects(nil)
-            default: return false
-            }
         case .codeLanguage:
             guard let language = NoteCodeLanguage.all.first(where: { $0.id == id }) else { return false }
             return setCodeLanguage(EaselCodeBlock.stored(language))
         default:
-            return false
+            guard performSelectionToolbarBoardMenu(control, entry: id) == true else { return false }
         }
         refreshTextControls()
         return true

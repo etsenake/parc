@@ -29,7 +29,7 @@ enum EaselToolbarControl: String, CaseIterable, Hashable {
     case codeLanguage
     case alignment, link
     case arrange, tidyUp, group, createSection, lock
-    case sectionOptions, more
+    case more
 }
 
 enum EaselSelectionToolbarPlan {
@@ -65,7 +65,7 @@ enum EaselSelectionToolbarPlan {
         case .connector:
             return [[.connectorLabel], [.color, .connectorStyle], [.startHead, .endHead], [.routing]]
         case .section:
-            return [[.sectionTitle], [.color], [.sectionOptions]]
+            return [[.sectionTitle], [.color]]
         case .image:
             return [[.crop, .replaceImage, .altText]]
         case .drawing:

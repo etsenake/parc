@@ -76,10 +76,51 @@ struct EaselSelectionToolbarCanvasTests {
         expect(!canvas.performSelectionToolbar(.bold), "Range emphasis waits for text editing")
 
         canvas.selection = [text.id, shape.id]
-        expect(controls(canvas).last == .more && !controls(canvas).contains(.typeface), "Mixed selections drop text-only controls")
+        let pair = controls(canvas)
+        expect(pair.last == .more && !pair.contains(.typeface), "Mixed selections drop text-only controls")
+        expect([.arrange, .tidyUp, .group, .createSection, .lock].allSatisfy(pair.contains), "Two objects get arrange, group, section and lock tools")
+        let arrangeMenu = canvas.selectionToolbarMenu(for: .arrange)
+        expect(arrangeMenu.count == 8 && arrangeMenu.prefix(6).allSatisfy(\.isEnabled) && arrangeMenu.suffix(2).allSatisfy { !$0.isEnabled },
+               "Two objects can align but need a third to distribute")
+        expect(canvas.performSelectionToolbarMenu(.arrange, entry: "align.top"), "Align top runs from the menu")
+        expect(Set(session.document.items.filter { [text.id, shape.id].contains($0.id) }.map(\.frame.y)).count == 1, "Align top lines the tops up")
+        expect(!canvas.performSelectionToolbarMenu(.arrange, entry: "align.sideways"), "Unknown alignments are refused")
+        expect(canvas.performSelectionToolbar(.group), "Group runs")
+        let grouped = session.document.items.filter { [text.id, shape.id].contains($0.id) }
+        expect(grouped.allSatisfy { $0.groupID != nil } && Set(grouped.compactMap(\.groupID)).count == 1, "Group joins the pair")
+        expect(canvas.selectionToolbarModel?.groups.joined().first { $0.control == .group }?.name == "Ungroup", "A group offers Ungroup next")
+        expect(canvas.performSelectionToolbar(.group), "Ungroup runs")
+        expect(session.document.items.filter { [text.id, shape.id].contains($0.id) }.allSatisfy { $0.groupID == nil }, "Ungroup splits the pair")
+        canvas.selection = [text.id, shape.id]
+        expect(canvas.performSelectionToolbar(.lock), "Lock runs")
+        expect(canvas.selectionToolbarModel?.groups.map { $0.map(\.control) } == [[.unlock], [.more]], "A locked selection shows only Unlock and •••")
+        expect(canvas.selectionToolbarMenu(for: .more).first { $0.id == "delete" }?.isEnabled == false, "Locked objects can't be deleted from •••")
+        expect(canvas.performSelectionToolbarMenu(.unlock, entry: "unlock"), "Unlock confirms from its menu")
+        expect(session.document.items.filter { [text.id, shape.id].contains($0.id) }.allSatisfy { !$0.isLocked }, "Unlock frees the pair")
         let count = session.document.items.count
+        canvas.selection = [text.id, shape.id]
         expect(canvas.performSelectionToolbarMenu(.more, entry: "duplicate"), "••• Duplicate runs")
         expect(session.document.items.count == count + 2, "Duplicate copies the whole selection in one step")
+        canvas.selection = [shape.id]
+        let layers = canvas.selectionToolbarMenu(for: .more).filter { $0.id.hasPrefix("layer.") }
+        expect(layers.map(\.title) == ["Bring to Front", "Bring Forward", "Send Backward", "Send to Back"], "••• carries all four layer moves")
+        expect(canvas.selectionToolbarMenu(for: .more).contains { $0.id == "lock" }, "A single object locks from •••")
+
+        let sticky = EaselItem(kind: .sticky, frame: .init(x: 40, y: 400, width: 220, height: 220), zIndex: 10)
+        let section = EaselItem(kind: .section, frame: .init(x: 600, y: 400, width: 400, height: 400), zIndex: 0, text: "Ideas")
+        try session.perform("Add board objects") { $0.items += [sticky, section] }
+        canvas.selection = [sticky.id]
+        expect(controls(canvas).contains(.stickyShape), "Stickies offer square or wide")
+        expect(canvas.performSelectionToolbar(.stickyShape) && canvas.isStickyWide, "The toggle makes the sticky wide")
+        expect(canvas.selectionToolbarModel?.groups.joined().first { $0.control == .stickyShape }?.isChecked == true, "The toggle shows it's wide")
+        canvas.selection = [section.id]
+        expect(controls(canvas).first == .sectionTitle, "Sections lead with Rename")
+        let sectionMenu = canvas.selectionToolbarMenu(for: .more).map(\.id)
+        expect(["section.lockAll", "section.lockBackground", "section.hide", "section.deleteKeepingContents"].allSatisfy(sectionMenu.contains),
+               "A section's ••• menu holds Lock all, Lock background only, Hide contents and Delete, keep contents")
+        expect(canvas.performSelectionToolbarMenu(.more, entry: "section.hide"), "Hide contents runs")
+        expect(session.document.items.first { $0.id == section.id }?.contentsHidden == true, "Hide contents hides them")
+        expect(canvas.selectionToolbarMenu(for: .more).first { $0.id == "section.hide" }?.title == "Show contents", "The row flips to Show contents")
 
         canvas.selection = [shape.id]
         canvas.selectionBeforeGesture = [shape.id]

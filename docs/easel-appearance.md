@@ -23,8 +23,9 @@ zoom, follows scrolling and zooming, and stays inside the canvas viewport. For
 text it offers the typeface and size menus, smaller and bigger steps and the
 text-fill toggle; while text is being edited it adds bold, italic, underline,
 strikethrough, the paragraph menu and Link, and its size controls act on the
-selected range. A ••• button ends every toolbar with Bring to Front,
-Duplicate and Delete. Its buttons never take keyboard focus from a click, so
+selected range. A ••• button ends every toolbar with the four layer moves,
+Duplicate, Lock and Delete, plus a section's Lock all, Lock background only,
+Hide contents and Delete, keep contents. Its buttons never take keyboard focus from a click, so
 formatting never ends text editing. Menus are Notes menus opened under their
 button that close on a pick, Escape or an outside click. Every button calls a
 canvas command, so the toolbar, the Format menu and shortcuts make the same

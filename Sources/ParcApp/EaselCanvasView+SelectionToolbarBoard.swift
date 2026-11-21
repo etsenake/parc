@@ -1,0 +1,165 @@
+import AppKit
+
+extension EaselCanvasView {
+    private var selectionToolbarReady: Bool { editor?.hasMarkedText() != true && !session.isClosed && !session.isDeleted }
+
+    func selectionToolbarBoardSupports(_ control: EaselToolbarControl, selected: [EaselItem]) -> Bool? {
+        switch control {
+        case .arrange, .tidyUp, .group, .createSection, .lock: return selected.count > 1
+        case .unlock: return selected.allSatisfy(\.isLocked)
+        case .stickyShape: return selected.allSatisfy { $0.kind == .sticky }
+        case .sectionTitle: return selected.count == 1 && selected.first?.kind == .section
+        default: return nil
+        }
+    }
+
+    func selectionToolbarBoardButton(_ control: EaselToolbarControl, selected: [EaselItem]) -> EaselToolbarButtonModel? {
+        let document = session.document, ids = selection, ready = selectionToolbarReady
+        switch control {
+        case .arrange:
+            let enabled = EaselArrange.canAlign(ids, in: document) || EaselArrange.canDistribute(ids, in: document)
+            return .init(control: control, face: .symbol(EaselAlignment.left.symbol), name: "Align and distribute",
+                         isEnabled: ready && enabled, opens: .menu, showsDisclosure: true)
+        case .tidyUp:
+            return .init(control: control, face: .symbol("square.grid.2x2"), name: "Tidy up",
+                         isEnabled: ready && EaselArrange.canTidy(ids, in: document))
+        case .group:
+            let ungroups = selectionToolbarUngroups
+            return .init(control: control, face: .symbol(ungroups ? "rectangle.3.group.fill" : "rectangle.3.group"),
+                         name: ungroups ? "Ungroup" : "Group", shortcut: ungroups ? "⇧⌘G" : "⌘G",
+                         isEnabled: ready && (ungroups || EaselArrange.canGroup(ids, in: document)))
+        case .createSection:
+            return .init(control: control, face: .symbol("rectangle.dashed"), name: "Create section", isEnabled: ready)
+        case .lock:
+            let locks = EaselArrange.shouldLock(ids, in: document)
+            return .init(control: control, face: .symbol(locks ? "lock" : "lock.open"), name: locks ? "Lock" : "Unlock",
+                         shortcut: "⇧⌘L", isEnabled: ready)
+        case .unlock:
+            return .init(control: control, face: .symbolAndText("lock.fill", "Locked"), name: "Unlock", shortcut: "⇧⌘L",
+                         isEnabled: ready, opens: .menu, showsDisclosure: true)
+        case .stickyShape:
+            return .init(control: control, face: .symbol("rectangle"), name: "Wide sticky", isChecked: isStickyWide, isEnabled: ready)
+        case .sectionTitle:
+            return .init(control: control, face: .symbolAndText("pencil", "Rename"), name: "Rename section", isEnabled: ready)
+        default:
+            return nil
+        }
+    }
+
+    func selectionToolbarBoardMenu(_ control: EaselToolbarControl) -> [EaselToolbarMenuEntry]? {
+        let document = session.document, ids = selection, ready = selectionToolbarReady
+        switch control {
+        case .arrange:
+            let aligns = ready && EaselArrange.canAlign(ids, in: document)
+            let distributes = ready && EaselArrange.canDistribute(ids, in: document)
+            let alignments = EaselAlignment.allCases.map {
+                EaselToolbarMenuEntry(id: "align." + $0.rawValue, title: $0.title, symbol: $0.symbol, isEnabled: aligns)
+            }
+            let spacings = EaselAxis.allCases.enumerated().map { index, axis in
+                EaselToolbarMenuEntry(id: "distribute." + axis.rawValue, title: axis.distributeTitle, symbol: axis.symbol,
+                                      isEnabled: distributes, separatorBefore: index == 0)
+            }
+            return alignments + spacings
+        case .unlock:
+            let group = Set(session.document.items.filter { ids.contains($0.id) }.compactMap(\.groupID)).count == 1 && ids.count > 1
+            return [EaselToolbarMenuEntry(id: "unlock", title: group ? "Unlock Group" : "Unlock", symbol: "lock.open", shortcut: "⇧⌘L",
+                                          isEnabled: ready)]
+        case .more:
+            return selectionToolbarMoreMenu()
+        default:
+            return nil
+        }
+    }
+
+    private func selectionToolbarMoreMenu() -> [EaselToolbarMenuEntry] {
+        let document = session.document, ids = selection, ready = selectionToolbarReady
+        let selected = document.items.filter { ids.contains($0.id) }
+        let allLocked = !selected.isEmpty && selected.allSatisfy(\.isLocked)
+        let sections = selectedSections
+        var entries: [EaselToolbarMenuEntry] = []
+        if !sections.isEmpty, !allLocked {
+            let hidden = sections.allSatisfy { $0.contentsHidden == true }
+            entries.append(EaselToolbarMenuEntry(id: "section.lockAll", title: "Lock all", symbol: "lock", isEnabled: ready))
+            entries.append(EaselToolbarMenuEntry(id: "section.lockBackground", title: "Lock background only", symbol: "lock.rectangle",
+                                                 isEnabled: ready))
+            entries.append(EaselToolbarMenuEntry(id: "section.hide", title: hidden ? "Show contents" : "Hide contents",
+                                                 symbol: hidden ? "eye" : "eye.slash", isEnabled: ready))
+        }
+        let layers = ready && EaselArrange.canMoveLayer(ids, in: document)
+        for (index, move) in EaselLayerMove.allCases.enumerated() {
+            entries.append(EaselToolbarMenuEntry(id: "layer." + move.rawValue, title: move.title, symbol: move.symbol, shortcut: move.shortcut,
+                                                 isEnabled: layers, separatorBefore: index == 0 && !entries.isEmpty))
+        }
+        entries.append(EaselToolbarMenuEntry(id: "duplicate", title: "Duplicate", symbol: "plus.square.on.square", shortcut: "⌘D",
+                                             isEnabled: ready && !allLocked, separatorBefore: true))
+        if selected.count == 1, !allLocked {
+            entries.append(EaselToolbarMenuEntry(id: "lock", title: "Lock", symbol: "lock", shortcut: "⇧⌘L", isEnabled: ready))
+        }
+        if !sections.isEmpty, !allLocked {
+            entries.append(EaselToolbarMenuEntry(id: "section.deleteKeepingContents", title: "Delete, keep contents",
+                                                 symbol: "rectangle.dashed", isEnabled: ready, separatorBefore: true))
+        }
+        entries.append(EaselToolbarMenuEntry(id: "delete", title: "Delete", symbol: "trash", shortcut: "⌫", isEnabled: ready && !allLocked,
+                                             isDestructive: true, separatorBefore: sections.isEmpty || allLocked))
+        return entries
+    }
+
+    func performSelectionToolbarBoard(_ control: EaselToolbarControl) -> Bool? {
+        guard selectionToolbarReady else { return false }
+        switch control {
+        case .tidyUp: return tidyUpSelection()
+        case .group: return selectionToolbarUngroups ? ungroupSelection() : groupSelection()
+        case .createSection: return createSection(from: selection)
+        case .lock: return toggleLock()
+        case .stickyShape: return setStickyWide(!isStickyWide)
+        case .sectionTitle:
+            guard let section = selectedSections.first, selection.count == 1 else { return false }
+            beginSectionRename(section.id)
+            return true
+        default: return nil
+        }
+    }
+
+    func performSelectionToolbarBoardMenu(_ control: EaselToolbarControl, entry id: String) -> Bool? {
+        guard selectionToolbarReady else { return false }
+        switch control {
+        case .arrange:
+            if id.hasPrefix("align."), let alignment = EaselAlignment(rawValue: String(id.dropFirst("align.".count))) {
+                return alignSelection(alignment)
+            }
+            if id.hasPrefix("distribute."), let axis = EaselAxis(rawValue: String(id.dropFirst("distribute.".count))) {
+                return distributeSelection(axis)
+            }
+            return false
+        case .unlock:
+            guard id == "unlock" else { return false }
+            let ids = selection.union(EaselBoardObjects.lockTargets(selection, all: true, in: session.document))
+            return setLock(false, ids: ids)
+        case .more:
+            return performSelectionToolbarMore(id)
+        default:
+            return nil
+        }
+    }
+
+    private func performSelectionToolbarMore(_ id: String) -> Bool {
+        if id.hasPrefix("layer."), let move = EaselLayerMove(rawValue: String(id.dropFirst("layer.".count))) { return moveLayer(move) }
+        switch id {
+        case "duplicate": return duplicateSelection()
+        case "lock": return toggleLock()
+        case "delete":
+            deleteObjects(nil)
+            return true
+        case "section.lockAll": return lockSections(all: true)
+        case "section.lockBackground": return lockSections(all: false)
+        case "section.hide": return setSectionContentsHidden(!selectedSections.allSatisfy { $0.contentsHidden == true })
+        case "section.deleteKeepingContents": return deleteSectionsKeepingContents()
+        default: return false
+        }
+    }
+
+    private var selectionToolbarUngroups: Bool {
+        let document = session.document
+        return EaselArrange.canUngroup(selection, in: document) && !EaselArrange.canGroup(selection, in: document)
+    }
+}

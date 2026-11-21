@@ -50,8 +50,10 @@ Notes format bar ([look](easel-appearance.md), [motion](easel-motion.md)).
 selected: text, stickies, shapes, connectors, sections, images and drawings
 each get their own set, several objects of one kind keep that kind's set,
 mixed selections keep only the controls every kind shares, and several objects
-add arrange, tidy up, group, section and lock tools. A fully locked selection
-shows only Unlock. A single webpage, captured card or link keeps its own page
+add align and distribute, tidy up, group, create section and lock tools.
+Stickies get a wide toggle and sections a Rename button. A fully locked
+selection shows only a Locked button whose menu unlocks it, a section with its
+contents. A single webpage, captured card or link keeps its own page
 header instead. A control appears only once its canvas command exists, and the
 ••• menu always ends the bar. Each button shows the pointing hand and a tooltip
 with its name and live shortcut, and VoiceOver finds it among the canvas's
