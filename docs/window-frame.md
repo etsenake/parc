@@ -147,4 +147,4 @@ position, bounds and corner radius, so the transform does not collide with it.
   for every sidebar presentation, side panel, Library, popup and full screen;
   preference persistence and preserved records.
 - `LayoutChromeGeometrySkipTests` proves a thickness change relayouts
-  open windows; `tests/SidebarResize` covers the `frameAdjust` throttle reason.
+  open windows; `PageContentResizeTests` covers the `frameAdjust` throttle reason.

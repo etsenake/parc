@@ -299,7 +299,7 @@ components; inspect a check before running it under the current work contract:
 |---|---|
 | `SidebarResizeGestureTests`, `SidebarWindowWidthTests`, `SidebarWindowSessionTests`, `SavedWindowFrameTests`, `PageContentResizeTests` | Gesture thresholds, snapping, cancellation, per-window persistence and frames, screen fitting and the renderer hold model |
 | `SidebarResizeRegionTests`, `PageContentResizerTests` | Resize region and page resizer |
-| `tests/SidebarResize/check.py` | Renderer frame reports |
+| `PageRenderFrameHoldTests` | Renderer frame reports |
 | `tests/SidebarResize/engine_report.py` | Required reporting symbols in a sealed framework, without launching it |
 | `tests/SidebarChrome/check.py` | Header/list/dock geometry, Space header and settings wiring |
 | `FavoritesEmptyStateViewTests` | Card layout, persistence, drag state and keyboard dismissal |
