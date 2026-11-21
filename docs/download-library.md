@@ -291,11 +291,11 @@ being reset again.
 
 ## Checks and remaining work
 
-Focused components are under `tests/DownloadLibrary`, with separate view,
-selection, pointer, preview/entry, arrival and download-location checks. Native
-manager tests cover history initialization, private lifetimes, capability
-validation and creation-only arrival. Consult [the working contract](../AGENTS.md)
-before running a suite; older helpers may create windows.
+The Swift Testing suites in `tests/ParcTests/Capture` cover selection, pointer
+tracking, previews, entry badges, arrival and Download Location. The Library
+view harness also checks the shared Library rail, Archive, documents and Media
+presentation. Native manager tests cover history initialization, private
+lifetimes, capability validation and creation-only arrival.
 
 Documents, Desktop and Screenshots are filesystem sources in the entry flyout;
 they have no dedicated Library pages. Library's Easels & Notes category opens
