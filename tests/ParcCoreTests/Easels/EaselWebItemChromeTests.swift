@@ -69,24 +69,12 @@ struct EaselWebItemChromeTests {
         #expect(EaselWebItemChrome.badge(for: browser) == nil)
     }
 
-    @Test func aSameDayCaptureSaysToday() {
-        #expect(Self.badge(Self.card(captured: Self.now)) == "Snapshot · captured today")
-    }
-
-    @Test func thePreviousDaySaysYesterday() {
-        #expect(Self.badge(Self.card(captured: Self.now.addingTimeInterval(-86_400))) == "Snapshot · captured yesterday")
-    }
-
-    @Test func theSameYearShowsMonthAndDay() {
-        #expect(Self.badge(Self.card(captured: Self.now.addingTimeInterval(-86_400 * 10))) == "Snapshot · captured Nov 10")
-    }
-
-    @Test func olderCapturesShowTheYear() {
-        #expect(Self.badge(Self.card(captured: Self.now.addingTimeInterval(-86_400 * 400))) == "Snapshot · captured Oct 16, 2024")
-    }
-
-    @Test func noCaptureDateJustSaysSnapshot() {
-        #expect(Self.badge(Self.card()) == "Snapshot")
+    @Test(arguments: [(Optional(0), "Snapshot · captured today"),
+                      (1, "Snapshot · captured yesterday"), (10, "Snapshot · captured Nov 10"),
+                      (400, "Snapshot · captured Oct 16, 2024"), (nil, "Snapshot")])
+    func theSnapshotBadgeDescribesWhenItWasCaptured(_ daysAgo: Int?, _ expected: String) {
+        let captured = daysAgo.map { Self.now.addingTimeInterval(-86_400 * Double($0)) }
+        #expect(Self.badge(Self.card(captured: captured)) == expected)
     }
 
     @Test func cardsWithoutGeometrySaySnapshotOnlyAndExplainWhy() {

@@ -120,16 +120,19 @@ struct EaselDrawingTests {
         #expect(EaselVectorExport.drawingPath(item) == nil)
     }
 
-    @Test func theEraserTakesOnlyTheStrokeItTouchesAndSparesLockedOnes() {
-        var items = (0..<3).map { index -> EaselItem in
-            var item = Self.template(.marker)
-            item.points = [EaselPoint(x: 0, y: 0), EaselPoint(x: 60, y: 0)]
-            item.frame = .init(x: 0, y: Double(index) * 500, width: 60, height: 1)
-            return item
-        }
-        items[2].locked = true
-        let hits = EaselDrawing.erased(items, from: EaselPoint(x: 10, y: 0), to: EaselPoint(x: 20, y: 0), scale: 1)
-        #expect(hits == [items[0].id])
+    @Test(arguments: [false, true])
+    func theEraserOnlyTakesAnUnlockedStrokeItTouches(_ locked: Bool) {
+        var touched = Self.template(.marker)
+        touched.points = [EaselPoint(x: 0, y: 0), EaselPoint(x: 60, y: 0)]
+        touched.frame = .init(x: 0, y: 0, width: 60, height: 1)
+        touched.locked = locked
+        var distant = touched
+        distant.id = UUID()
+        distant.frame.y = 500
+        distant.locked = false
+        let hits = EaselDrawing.erased([touched, distant], from: EaselPoint(x: 10, y: 0),
+                                       to: EaselPoint(x: 20, y: 0), scale: 1)
+        #expect(hits == (locked ? [] : [touched.id]))
     }
 
     @Test func strokesAlreadyErasedAreSkipped() {

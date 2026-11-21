@@ -114,16 +114,16 @@ struct EaselLiveCaptureFramingTests {
         #expect(Self.panel.isValid)
     }
 
-    @Test func readableIdsAnchorALocatorButGeneratedOrOddOnesNever() {
-        #expect(EaselScrollContainer.isValidAnchor("sidebar-nav") && EaselScrollContainer.isValidAnchor("feed_2"))
-        #expect(!EaselScrollContainer.isValidAnchor("ember1234") && !EaselScrollContainer.isValidAnchor(":r1:")
-            && !EaselScrollContainer.isValidAnchor("1main") && !EaselScrollContainer.isValidAnchor("main panel"))
+    @Test(arguments: [("sidebar-nav", true), ("feed_2", true), ("ember1234", false),
+                      (":r1:", false), ("1main", false), ("main panel", false)])
+    func onlyReadableIdsAnchorAnInnerPanel(_ id: String, _ valid: Bool) {
+        #expect(EaselScrollContainer.isValidAnchor(id) == valid)
     }
 
-    @Test func tagAndIndexStepsAreValidAndMalformedStepsAreRefused() {
-        #expect(EaselScrollContainer.isValidPath("") && EaselScrollContainer.isValidPath("main:0>div:12"))
-        #expect(!EaselScrollContainer.isValidPath("div") && !EaselScrollContainer.isValidPath("div:x") && !EaselScrollContainer.isValidPath("div:1>")
-            && !EaselScrollContainer.isValidPath("di v:1") && !EaselScrollContainer.isValidPath("div:123456"))
+    @Test(arguments: [("", true), ("main:0>div:12", true), ("div", false), ("div:x", false),
+                      ("div:1>", false), ("di v:1", false), ("div:123456", false)])
+    func onlyTagAndIndexStepsFormAnInnerPanelPath(_ path: String, _ valid: Bool) {
+        #expect(EaselScrollContainer.isValidPath(path) == valid)
     }
 
     @Test func aNegativePanelSizeIsRefused() {

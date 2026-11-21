@@ -18,8 +18,9 @@ struct EaselCrashHardeningTests {
         #expect(wide > 0)
     }
 
-    @Test func emptySizesLeaveTheScaleForTheCallersOwnGuard() {
-        #expect(EaselExportScale.capped(2, width: 0, height: 900) == 2)
+    @Test(arguments: [(0.0, 900.0), (1200.0, 0.0)])
+    func anEmptySideLeavesTheScaleForTheCallersOwnGuard(_ width: Double, _ height: Double) {
+        #expect(EaselExportScale.capped(2, width: width, height: height) == 2)
     }
 
     @Test func invalidScalesPassThroughForTheCallersOwnGuard() {

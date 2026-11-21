@@ -39,54 +39,78 @@ struct EaselPagesTests {
         #expect(EaselPages.collapsed(board) == board, "collapsing a board without pages changes nothing")
     }
 
-    @Test func pagesRoundTripAndUnusedFieldsStayOutOfTheFile() throws {
+    @Test func anUnpagedBoardOmitsUnusedFields() throws {
         let board = document([item(.sticky, x: 0, y: 0)])
         let plain = String(decoding: try JSONEncoder().encode(board), as: UTF8.self)
-        #expect(!plain.contains("\"pages\"") && !plain.contains("\"page\""), "unused page fields stay out of the file")
-        let (paged, first, _) = paged(board.items)
-        let data = try JSONEncoder().encode(paged)
-        let decoded = try JSONDecoder().decode(EaselDocument.self, from: data)
-        #expect(decoded == paged, "pages round-trip")
-        #expect(decoded.items.allSatisfy { $0.page == first }, "objects remember their page")
-        var legacy = paged
-        legacy.items[0].page = nil
-        #expect(EaselPages.items(on: first, in: legacy).count == 1, "a missing page means the first page")
-        #expect(EaselPages.validationProblem(legacy) == nil, "hand-edited files without page IDs stay valid")
+        #expect(!plain.contains("\"pages\"") && !plain.contains("\"page\""))
     }
 
-    @Test func pageFieldsAreValidatedWhenADocumentOpens() {
+    @Test func pagesRoundTripWithTheirObjects() throws {
         let (board, first, _) = paged([item(.sticky, x: 0, y: 0)])
-        var duplicate = board
-        duplicate.pages?.append(EaselPage(id: first, name: "Again"))
-        #expect(EaselPages.validationProblem(duplicate) == "duplicate page ID", "page IDs are unique")
-        var missing = board
-        missing.items[0].page = UUID()
-        #expect(EaselPages.validationProblem(missing) == "object on a missing page", "objects need a real page")
-        var orphan = document([item(.sticky, x: 0, y: 0)])
-        orphan.items[0].page = UUID()
-        #expect(EaselPages.validationProblem(orphan) == "object on a missing page", "a board without pages refuses page IDs")
-        var empty = board
-        empty.pages = []
-        #expect(EaselPages.validationProblem(empty) == "page count", "an empty page list is refused")
-        var long = board
-        long.pages?[0].name = String(repeating: "a", count: EaselPage.maximumNameLength + 1)
-        #expect(EaselPages.validationProblem(long) == "page name", "page names have a length limit")
-        var blank = board
-        blank.pages?[0].name = "   "
-        #expect(EaselPages.validationProblem(blank) == "page name", "blank page names are refused")
-        var lines = board
-        lines.pages?[0].name = "one\ntwo"
-        #expect(EaselPages.validationProblem(lines) == "page name", "page names stay on one line")
-        var many = document([])
-        many.pages = (0...EaselPage.maximumCount).map { EaselPage(id: UUID(), name: "P\($0)") }
-        #expect(EaselPages.validationProblem(many) == "page count", "page count has a limit")
-        var dividers = document([])
-        dividers.pages = [EaselPage(id: UUID(), name: "-"), EaselPage(id: UUID(), name: "-")]
-        #expect(EaselPages.validationProblem(dividers) == "every page is a divider", "a board keeps one real page")
-        #expect(EaselPages.cleanName("  Ideas\nand plans  ") == "Ideas and plans", "names flatten to one line")
-        #expect(EaselPages.cleanName(" \n ") == nil, "blank names are refused")
-        #expect(EaselPages.cleanName(String(repeating: "b", count: 300))?.count == EaselPage.maximumNameLength, "long names are trimmed")
-        #expect(EaselPages.cleanName("👨‍👩‍👧 Team") == "👨‍👩‍👧 Team", "emoji sequences survive cleaning")
+        let decoded = try JSONDecoder().decode(EaselDocument.self, from: JSONEncoder().encode(board))
+        #expect(decoded == board)
+        #expect(decoded.items.first?.page == first)
+    }
+
+    @Test func aMissingObjectPageDefaultsToPageOne() {
+        let (original, first, _) = paged([item(.sticky, x: 0, y: 0)])
+        var board = original
+        board.items[0].page = nil
+        #expect(EaselPages.items(on: first, in: board) == board.items)
+        #expect(EaselPages.validationProblem(board) == nil)
+    }
+
+    enum InvalidPages: CaseIterable {
+        case duplicateID, missingPage, noPages, emptyPages, longName, blankName, multilineName, tooManyPages, onlyDividers
+    }
+
+    @Test(arguments: InvalidPages.allCases)
+    func pageValidationRefusesInvalidRecords(_ invalid: InvalidPages) {
+        let (original, first, _) = paged([item(.sticky, x: 0, y: 0)])
+        var board = original
+        let reason: String
+        switch invalid {
+        case .duplicateID:
+            board.pages?.append(EaselPage(id: first, name: "Again"))
+            reason = "duplicate page ID"
+        case .missingPage:
+            board.items[0].page = UUID()
+            reason = "object on a missing page"
+        case .noPages:
+            board.pages = nil
+            reason = "object on a missing page"
+        case .emptyPages:
+            board.pages = []
+            reason = "page count"
+        case .longName:
+            board.pages?[0].name = String(repeating: "a", count: EaselPage.maximumNameLength + 1)
+            reason = "page name"
+        case .blankName:
+            board.pages?[0].name = "   "
+            reason = "page name"
+        case .multilineName:
+            board.pages?[0].name = "one\ntwo"
+            reason = "page name"
+        case .tooManyPages:
+            board.items = []
+            board.pages = (0...EaselPage.maximumCount).map { EaselPage(id: UUID(), name: "P\($0)") }
+            reason = "page count"
+        case .onlyDividers:
+            board.items = []
+            board.pages = [EaselPage(id: UUID(), name: "-"), EaselPage(id: UUID(), name: "-")]
+            reason = "every page is a divider"
+        }
+        #expect(EaselPages.validationProblem(board) == reason)
+    }
+
+    @Test(arguments: [("  Ideas\nand plans  ", Optional("Ideas and plans")),
+                      (" \n ", nil), ("👨‍👩‍👧 Team", "👨‍👩‍👧 Team")])
+    func pageNamesTrimAndFlattenWithoutChangingEmoji(_ name: String, _ expected: String?) {
+        #expect(EaselPages.cleanName(name) == expected)
+    }
+
+    @Test func pageNamesTrimToTheirLengthLimit() {
+        #expect(EaselPages.cleanName(String(repeating: "b", count: 300))?.count == EaselPage.maximumNameLength)
     }
 
     @Test func addingAPagePinsExistingObjectsToPageOne() throws {

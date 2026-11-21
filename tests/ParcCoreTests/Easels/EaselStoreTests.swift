@@ -91,44 +91,78 @@ struct EaselStoreTests {
             }
             let style = String(decoding: try encoder.encode(EaselTextStyle()), as: UTF8.self)
             #expect(!style.contains("alignment"), "Unused text alignment stays out of saved bytes")
-            @MainActor func refuses(_ message: String, _ change: (inout EaselItem) -> Void) {
-                var item = EaselItem(kind: .rectangle, frame: frame, zIndex: 9)
-                change(&item)
-                let before = session.document
-                expectThrows(message) { try session.perform("Invalid board object") { $0.items.append(item) } }
-                #expect(session.document == before, "Refused board object leaves the Easel unchanged: \(message)")
-            }
-            refuses("Fill must be a hex colour") { $0.fill = "blue" }
-            refuses("Fill opacity stays between 0 and 1") { $0.fillOpacity = 1.5 }
-            refuses("Stroke width cannot be negative") { $0.strokeWidth = -1 }
-            refuses("Stroke width has a ceiling") { $0.strokeWidth = 100 }
-            refuses("Rotation must be finite") { $0.rotation = .nan }
-            refuses("Rotation stays within a turn") { $0.rotation = 720 }
-            refuses("Outlines belong to rectangle-kind shapes") { $0.kind = .circle; $0.shape = .star }
-            refuses("Arrowheads belong to arrows") { $0.endHead = .triangle }
-            refuses("Routing belongs to arrows") { $0.routing = .curved }
-            refuses("Connections belong to arrows") { $0.startConnection = EaselConnection(itemID: diamond.id) }
-            refuses("Labels belong to arrows") { $0.labelPosition = 0.5 }
-            refuses("Bends belong to arrows") { $0.waypoints = [EaselPoint(x: 1, y: 1)] }
-            refuses("Brushes belong to drawings") { $0.brush = .highlighter }
-            refuses("Tape patterns are simple names") { item in
-                item.kind = .freehand; item.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]; item.pattern = "../escape"
-            }
-            refuses("Pinned connection points stay on the object") { item in
-                item.kind = .arrow; item.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
-                item.endConnection = EaselConnection(itemID: diamond.id, anchor: EaselPoint(x: 1.5, y: 0))
-            }
-            refuses("Label positions stay along the line") { item in
-                item.kind = .arrow; item.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]; item.labelPosition = 2
-            }
-            refuses("An object cannot stick to itself") { $0.attachedTo = $0.id }
-            refuses("An arrow cannot connect to itself") { item in
-                item.kind = .arrow; item.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
-                item.endConnection = EaselConnection(itemID: item.id)
-            }
-            let decoded = try JSONDecoder().decode(EaselItem.self, from: Data(##"{"id":"6F9619FF-8B86-D011-B42D-00CF4FC964FF","kind":"rectangle","frame":{"x":1,"y":2,"width":3,"height":4},"zIndex":0,"text":"","color":"#252525","points":[]}"##.utf8))
-            #expect(decoded.shape == nil && decoded.fill == nil && decoded.rotation == nil && decoded.resolvedShape == .rectangle, "Easels saved before board objects decode unchanged")
         }
+    }
+
+    enum InvalidBoardItem: CaseIterable {
+        case fillColor, fillOpacity, negativeStrokeWidth, overwideStroke, nonfiniteRotation, rotationPastATurn
+        case circleOutline, shapeArrowhead, shapeRouting, shapeConnection, shapeLabel, shapeBends, shapeBrush
+        case tapePath, outsideAnchor, outsideLabel, selfAttachment, selfConnection
+    }
+
+    @MainActor @Test(arguments: InvalidBoardItem.allCases)
+    func anInvalidBoardObjectDoesNotChangeTheDocument(_ invalid: InvalidBoardItem) throws {
+        let target = EaselItem(kind: .rectangle, frame: frame)
+        var object = EaselItem(kind: .rectangle, frame: frame, zIndex: 1)
+        switch invalid {
+        case .fillColor:
+            object.fill = "blue"
+        case .fillOpacity:
+            object.fillOpacity = 1.5
+        case .negativeStrokeWidth:
+            object.strokeWidth = -1
+        case .overwideStroke:
+            object.strokeWidth = 100
+        case .nonfiniteRotation:
+            object.rotation = .nan
+        case .rotationPastATurn:
+            object.rotation = 720
+        case .circleOutline:
+            object.kind = .circle
+            object.shape = .star
+        case .shapeArrowhead:
+            object.endHead = .triangle
+        case .shapeRouting:
+            object.routing = .curved
+        case .shapeConnection:
+            object.startConnection = EaselConnection(itemID: target.id)
+        case .shapeLabel:
+            object.labelPosition = 0.5
+        case .shapeBends:
+            object.waypoints = [EaselPoint(x: 1, y: 1)]
+        case .shapeBrush:
+            object.brush = .highlighter
+        case .tapePath:
+            object.kind = .freehand
+            object.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
+            object.pattern = "../escape"
+        case .outsideAnchor:
+            object.kind = .arrow
+            object.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
+            object.endConnection = EaselConnection(itemID: target.id, anchor: EaselPoint(x: 1.5, y: 0))
+        case .outsideLabel:
+            object.kind = .arrow
+            object.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
+            object.labelPosition = 2
+        case .selfAttachment:
+            object.attachedTo = object.id
+        case .selfConnection:
+            object.kind = .arrow
+            object.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
+            object.endConnection = EaselConnection(itemID: object.id)
+        }
+        let date = Date(timeIntervalSince1970: 0)
+        let before = EaselDocument(id: UUID(), title: "Board", createdAt: date, modifiedAt: date, items: [target])
+        let session = try EaselSession(inMemory: before, assets: [:])
+        #expect(throws: EaselStoreError.self) {
+            try session.perform("Add invalid object") { $0.items.append(object) }
+        }
+        #expect(session.document == before && !session.canUndo)
+    }
+
+    @Test func rectanglesSavedBeforeBoardStylesKeepTheirOriginalOutline() throws {
+        let decoded = try JSONDecoder().decode(EaselItem.self, from: Data(##"{"id":"6F9619FF-8B86-D011-B42D-00CF4FC964FF","kind":"rectangle","frame":{"x":1,"y":2,"width":3,"height":4},"zIndex":0,"text":"","color":"#252525","points":[]}"##.utf8))
+        #expect(decoded.shape == nil && decoded.fill == nil && decoded.rotation == nil && decoded.resolvedShape == .rectangle, "Easels saved before board objects decode unchanged")
     }
 
     @MainActor @Test func anEaselRelocatesToAnotherProfileWithItsExactBytes() throws {
@@ -241,28 +275,55 @@ struct EaselStoreTests {
         }
     }
 
-    @MainActor @Test func failedTransactionsNeverPublishOrChangeTheFile() throws {
+    enum InvalidEdit: CaseIterable {
+        case nonfiniteGeometry, negativeSize, duplicateID, missingAsset, missingURL, scriptURL, fileURL
+        case missingEndpoints, invalidColor, blankTitle, changedID, changedCreationDate, changedVersion, thrownMutation
+    }
+
+    @MainActor @Test(arguments: InvalidEdit.allCases)
+    func aFailedTransactionDoesNotPublishOrChangeTheFile(_ invalid: InvalidEdit) throws {
         try withDirectory { directory in
             let session = try EaselStore(directory: directory).create()
             let original = session.document
-            let bytes = try Data(contentsOf: file(directory, original.id))
-            expectThrows("non-finite geometry") { try session.perform("Bad") { $0.items = [EaselItem(kind: .text, frame: .init(x: .nan, y: 0, width: 1, height: 1))] } }
-            expectThrows("negative size") { try session.perform("Bad") { $0.items = [EaselItem(kind: .text, frame: .init(x: 0, y: 0, width: -2, height: 1))] } }
-            expectThrows("duplicate ID") { try session.perform("Bad") { let item = EaselItem(kind: .text, frame: frame); $0.items = [item, item] } }
-            expectThrows("image requires asset") { try session.perform("Bad") { $0.items = [EaselItem(kind: .image, frame: frame)] } }
-            expectThrows("link requires URL") { try session.perform("Bad") { $0.items = [EaselItem(kind: .link, frame: frame)] } }
-            expectThrows("javascript URL") { try session.perform("Bad") { $0.items = [EaselItem(kind: .link, frame: frame, url: "javascript:alert(1)")] } }
-            expectThrows("file URL") { try session.perform("Bad") { $0.items = [EaselItem(kind: .link, frame: frame, url: "file:///tmp/example")] } }
-            expectThrows("arrow requires endpoints") { try session.perform("Bad") { $0.items = [EaselItem(kind: .arrow, frame: frame)] } }
-            expectThrows("invalid color") { try session.perform("Bad") { $0.items = [EaselItem(kind: .text, frame: frame, color: "not-a-color")] } }
-            expectThrows("blank title") { try session.perform("Bad") { $0.title = " \n " } }
-            expectThrows("immutable ID") { try session.perform("Bad") { $0.id = UUID() } }
-            expectThrows("immutable creation time") { try session.perform("Bad") { $0.createdAt = .distantPast } }
-            expectThrows("version mutation") { try session.perform("Bad") { $0.version = 20 } }
-            expectThrows("mutation throwing") { try session.perform("Bad") { $0.title = "Uncommitted"; throw EaselStoreError.tooLarge } }
-            #expect(session.document == original, "Failed transactions never publish")
-            #expect(!session.canUndo && !session.canRedo, "Failed transactions add no history")
-            #expect(try! Data(contentsOf: file(directory, original.id)) == bytes, "Failed validation preserves original file exactly")
+            let path = file(directory, original.id)
+            let bytes = try Data(contentsOf: path)
+            #expect(throws: EaselStoreError.self) {
+                try session.perform("Invalid edit") { document in
+                    switch invalid {
+                    case .nonfiniteGeometry:
+                        document.items = [EaselItem(kind: .text, frame: .init(x: .nan, y: 0, width: 1, height: 1))]
+                    case .negativeSize:
+                        document.items = [EaselItem(kind: .text, frame: .init(x: 0, y: 0, width: -2, height: 1))]
+                    case .duplicateID:
+                        let item = EaselItem(kind: .text, frame: frame); document.items = [item, item]
+                    case .missingAsset:
+                        document.items = [EaselItem(kind: .image, frame: frame)]
+                    case .missingURL:
+                        document.items = [EaselItem(kind: .link, frame: frame)]
+                    case .scriptURL:
+                        document.items = [EaselItem(kind: .link, frame: frame, url: "javascript:alert(1)")]
+                    case .fileURL:
+                        document.items = [EaselItem(kind: .link, frame: frame, url: "file:///tmp/example")]
+                    case .missingEndpoints:
+                        document.items = [EaselItem(kind: .arrow, frame: frame)]
+                    case .invalidColor:
+                        document.items = [EaselItem(kind: .text, frame: frame, color: "not-a-color")]
+                    case .blankTitle:
+                        document.title = " \n "
+                    case .changedID:
+                        document.id = UUID()
+                    case .changedCreationDate:
+                        document.createdAt = .distantPast
+                    case .changedVersion:
+                        document.version = 20
+                    case .thrownMutation:
+                        document.title = "Uncommitted"; throw EaselStoreError.tooLarge
+                    }
+                }
+            }
+            #expect(session.document == original)
+            #expect(!session.canUndo && !session.canRedo)
+            #expect(try Data(contentsOf: path) == bytes)
         }
     }
 
