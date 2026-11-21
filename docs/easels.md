@@ -84,11 +84,24 @@ Changing fill breaks typing coalescing and preserves selection, attributed runs
 and exact Undo history. Text geometry comes from the native editor, including
 paragraphs and attachments, instead of estimating line height independently.
 
+## Link and size panels
+
+Every box an Easel opens from its own controls is a Notes floating panel: the
+object and range link editors, the custom text size panel and the picker that
+appears when you choose Add Image to Easel on a web image (a card with the
+picture and its site, a field to name a new Easel or find an existing one, and
+rows for “New Easel” and each Easel). Panels reach the canvas through
+`EaselPanelPresenting`, so canvas bundles and tests don't link the Note panels;
+the editor and Easel blocks in notes each supply `EaselPanels` over their own
+host view. [Text](easel-text.md#range-links) describes link behaviour.
+
 ## Range formatting and persistence
 
 Rich text stores contiguous UTF-16 runs. Reject gaps, overlaps, overflow,
 surrogate splits, unsafe links, nonfinite fonts, excessive runs and unsupported
-attributes before mutation. Supported data includes fonts/axes, colors,
+attributes before mutation. A run link is an `http`, `https`, `mailto` or `tel`
+address, or a `file:` address of a Markdown or text note (a link to a note).
+Supported data includes fonts/axes, colors,
 emphasis, links, kerning, baseline offsets, paragraph tabs/lists and images.
 Missing fonts use a local fallback; opening a document does not download fonts.
 
