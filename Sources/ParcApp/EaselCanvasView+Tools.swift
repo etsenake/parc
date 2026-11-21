@@ -227,8 +227,8 @@ extension EaselCanvasView {
     func continueToolGesture(at point: NSPoint, event: NSEvent) -> Bool {
         if moveStampPress(to: point) { return true }
         guard let creation = toolState.creation else { return false }
-        if creation.tool.drawsConnector { updateConnectorCreation(to: point, event: event); return true }
         toolState.creation?.end = point
+        if creation.tool.drawsConnector { updateConnectorCreation(to: point, event: event); return true }
         toolState.creation?.flags = event.modifierFlags
         if creation.tool == .table { tablePlacementMoved(from: creation.start, to: point); return true }
         refreshCreationDraft()
@@ -237,8 +237,17 @@ extension EaselCanvasView {
     }
 
     func refreshToolGesture(flags: NSEvent.ModifierFlags) {
-        guard toolState.creation != nil, start != nil, toolState.creation?.tool.drawsConnector != true else { return }
+        guard let creation = toolState.creation else { return }
         toolState.creation?.flags = flags
+        if creation.tool.drawsConnector {
+            guard connectors.travelled, case .create? = connectors.gesture else { return }
+            let previousChrome = connectorChromeBounds()
+            updateConnectorCreationPreview(to: creation.end, flags: flags)
+            refreshConnectorChrome(from: previousChrome)
+            invalidateIncrementalDisplay(layout: true)
+            return
+        }
+        guard start != nil else { return }
         refreshCreationDraft()
     }
 
@@ -342,7 +351,7 @@ extension EaselCanvasView {
                                              startConnection: first.connection, endConnection: last.connection,
                                              zIndex: highest < Int.max ? highest + 1 : highest) { lookup[$0] }
         item.id = id
-        stampRememberedStyle(on: &item)
+        stampNewConnectorStyle(on: &item)
         return item
     }
 

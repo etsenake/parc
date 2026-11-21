@@ -48,7 +48,7 @@ struct EaselConnectorCanvasState {
     var magnet: Magnet?
     var quickHover: (id: UUID, side: EaselConnection.Side)?
     var toolHover: UUID?
-    var pendingLabel: (id: UUID, position: Double)?
+    var pendingLabel: (id: UUID, position: Double, original: Double?)?
     var routes: [UUID: (key: RouteKey, drawing: EaselConnectorDrawing)] = [:]
     var labels: [UUID: (key: LabelKey, layout: EaselConnectorLabelLayout)] = [:]
     var draftGeneration = 0
@@ -117,8 +117,9 @@ extension EaselCanvasView {
         return table
     }
 
-    func connectorDrawing(for item: EaselItem, lookup: [UUID: EaselItem]? = nil) -> EaselConnectorDrawing? {
-        guard item.kind == .arrow else { return nil }
+    func connectorDrawing(for source: EaselItem, lookup: [UUID: EaselItem]? = nil) -> EaselConnectorDrawing? {
+        guard source.kind == .arrow else { return nil }
+        let item = positioningPendingLabel(source)
         let table = lookup ?? connectorTargets(item)
         let labelSize = connectorLabelSize(item)
         let key = EaselConnectorCanvasState.RouteKey(item: item, start: item.startConnection.flatMap { table[$0.itemID] },
@@ -167,6 +168,13 @@ extension EaselCanvasView {
         return NSSize(width: max(editing ? 12 : 1, size.width), height: max(1, size.height))
     }
 
+    func positioningPendingLabel(_ item: EaselItem) -> EaselItem {
+        guard let pending = connectors.pendingLabel, pending.id == item.id, editingID == item.id else { return item }
+        var moved = item
+        moved.labelPosition = pending.position
+        return moved
+    }
+
     func connectorLabelRect(_ item: EaselItem) -> NSRect? {
         guard let rect = connectorDrawing(for: item)?.label else { return nil }
         return NSRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height)
@@ -176,7 +184,8 @@ extension EaselCanvasView {
         let size = connectorLabelSize(item) ?? NSSize(width: 12, height: 18)
         guard let route = connectorDrawing(for: item)?.route else { return rect(item) }
         let measured = (width: Double(size.width), height: Double(size.height))
-        let anchor = route.location(atFraction: EaselConnectorLabel.clampedPosition(item.resolvedLabelPosition, on: route, size: measured)).point
+        let position = positioningPendingLabel(item).resolvedLabelPosition
+        let anchor = route.location(atFraction: EaselConnectorLabel.clampedPosition(position, on: route, size: measured)).point
         let width = CGFloat(EaselConnectorLabel.maximumWidth + 2 * EaselConnectorLabel.paddingX)
         let height = size.height + CGFloat(2 * EaselConnectorLabel.paddingY)
         return NSRect(x: CGFloat(anchor.x) - width / 2, y: CGFloat(anchor.y) - height / 2, width: width, height: height)
@@ -530,16 +539,10 @@ extension EaselCanvasView {
             connectors.preview = [next]
         case .inert(_, _, let origin):
             if hypot(point.x - origin.x, point.y - origin.y) * canvasScale > EaselToolGeometry.dragThreshold { connectors.travelled = true }
-        case .create(let routing, let origin, let start, let startPoint):
+        case .create(_, let origin, _, _):
             guard connectors.travelled || hypot(point.x - origin.x, point.y - origin.y) * canvasScale > EaselToolGeometry.dragThreshold else { return true }
             connectors.travelled = true
-            let snap = snappedConnectorEnd(point, flags: event.modifierFlags, other: startPoint, excluding: start?.itemID)
-            var created = EaselConnectorRouter.make(from: startPoint, to: snap.point, style: Self.connectorStyle(for: session.document.id),
-                                                    routing: routing, startConnection: start, endConnection: snap.connection,
-                                                    zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1) { lookup[$0] }
-            if let previous = connectors.preview.first { created.id = previous.id }
-            stampRememberedStyle(on: &created)
-            connectors.preview = [created]
+            updateConnectorCreationPreview(to: point, flags: event.modifierFlags)
         case .quickCreate(let source, let side, let origin):
             guard connectors.travelled || hypot(point.x - origin.x, point.y - origin.y) * canvasScale > EaselToolGeometry.dragThreshold else { return true }
             connectors.travelled = true
@@ -632,6 +635,18 @@ extension EaselCanvasView {
         invalidateIncrementalDisplay(layout: true)
     }
 
+    func updateConnectorCreationPreview(to point: NSPoint, flags: NSEvent.ModifierFlags) {
+        guard case .create(let routing, _, let start, let startPoint)? = connectors.gesture else { return }
+        let lookup = Dictionary(session.document.items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        let snap = snappedConnectorEnd(point, flags: flags, other: startPoint, excluding: start?.itemID)
+        var created = EaselConnectorRouter.make(from: startPoint, to: snap.point, style: Self.connectorStyle(for: session.document.id),
+                                                routing: routing, startConnection: start, endConnection: snap.connection,
+                                                zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1) { lookup[$0] }
+        if let previous = connectors.preview.first { created.id = previous.id }
+        stampNewConnectorStyle(on: &created)
+        connectors.preview = [created]
+    }
+
     func updateConnectorCreation(to point: NSPoint, event: NSEvent) {
         _ = continueConnectorGesture(to: point, event: event)
     }
@@ -639,6 +654,7 @@ extension EaselCanvasView {
     @discardableResult
     func finishConnectorCreation(at point: NSPoint, event: NSEvent) -> Bool {
         guard case .create? = connectors.gesture else { return false }
+        _ = continueConnectorGesture(to: point, event: event)
         return endConnectorGesture(at: point, event: event)
     }
 
@@ -654,14 +670,16 @@ extension EaselCanvasView {
         guard item.kind == .arrow, !item.isLocked, fixedCanvasSize == nil,
               let current = session.document.items.first(where: { $0.id == item.id }) else { return }
         selection = [current.id]
-        var pending: (id: UUID, position: Double)?
+        var pending: (id: UUID, position: Double, original: Double?)?
         if let point, current.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            let route = connectorDrawing(for: current)?.route, route.length > 0 {
             let position = route.nearest(to: EaselPoint(x: point.x, y: point.y)).arc / route.length
-            if abs(position - current.resolvedLabelPosition) > 0.01 { pending = (current.id, min(1, max(0, position))) }
+            if abs(position - current.resolvedLabelPosition) > 0.01 { pending = (current.id, min(1, max(0, position)), current.labelPosition) }
         }
         beginEditing(current, at: nil)
-        if editingID == current.id { connectors.pendingLabel = pending }
+        guard editingID == current.id else { return }
+        connectors.pendingLabel = pending
+        if pending != nil, let text = editor { placeEditor(text, for: current); invalidateIncrementalDisplay(layout: true) }
     }
 
     func editConnectorLabel() {

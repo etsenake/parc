@@ -76,6 +76,11 @@ extension EaselCanvasView {
         return true
     }
 
+    func stampNewConnectorStyle(on item: inout EaselItem) {
+        item.color = insertionColor
+        stampRememberedStyle(on: &item)
+    }
+
     func stampRememberedStyle(on item: inout EaselItem) {
         guard adaptsInk else { return }
         EaselStyleDefaults.memory.stamp(&item, document: session.document.id)

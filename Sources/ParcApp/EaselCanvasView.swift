@@ -1270,7 +1270,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             return NSValue(range: NSRange(location: start, length: min(range.length, length - start)))
         }
     }
-    private func placeEditor(_ text: EaselStyledTextView, for item: EaselItem) {
+    func placeEditor(_ text: EaselStyledTextView, for item: EaselItem) {
         if item.kind == .arrow {
             let frame = editingFrame(for: item)
             if text.frame != frame { text.frame = frame }
@@ -1467,9 +1467,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             guard let i = document.items.firstIndex(where: { $0.id == id }) else { return }
             document.items[i].text = payload.text; document.items[i].richText = payload.richText
             document.items[i].frame = fittedFrame(document.items[i])
-            if let pending = self.connectors.pendingLabel, pending.id == id, document.items[i].kind == .arrow,
-               !payload.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                document.items[i].labelPosition = pending.position
+            if let pending = self.connectors.pendingLabel, pending.id == id, document.items[i].kind == .arrow {
+                let filled = !payload.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                document.items[i].labelPosition = filled ? pending.position : pending.original
             }
         }
         if saved {
