@@ -1,6 +1,7 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
 #import "ParcNativeClock.h"
+#import "ParcNativeWindows.h"
 #import "native_appkit_bridge.h"
 #import "status_text.h"
 #include <cstdio>
@@ -37,7 +38,7 @@ static NSWindow* Window() {
                 styleMask:NSWindowStyleMaskTitled
                   backing:NSBackingStoreBuffered defer:NO];
   window.releasedWhenClosed = NO;
-  [window orderFront:nil];
+  ParcNativeMarkVisible(window);
   return window;
 }
 static NSView* Page(NSWindow* window) {

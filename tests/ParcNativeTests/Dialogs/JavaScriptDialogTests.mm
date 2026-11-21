@@ -1,6 +1,7 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
 #import "ParcNativeClock.h"
+#import "ParcNativeWindows.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -18,7 +19,7 @@ static NSWindow* Window(void) {
                   backing:NSBackingStoreBuffered
                     defer:NO];
   window.releasedWhenClosed = NO;
-  [window orderFront:nil];
+  ParcNativeMarkVisible(window);
   return window;
 }
 static NSView* Page(NSWindow* window) {

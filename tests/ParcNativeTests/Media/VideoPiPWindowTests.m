@@ -222,7 +222,7 @@ static NSImage* Cue(void) {
 
 - (void)testThePanelRefusesKeyStatusAndResizesTheVideo {
   [_presenter showInactive];
-  [_presenter.panel makeKeyAndOrderFront:nil];
+  [_presenter.panel makeKeyWindow];
   EXPECT(!_presenter.panel.canBecomeKeyWindow);
   EXPECT(!_presenter.panel.keyWindow);
   EXPECT(_presenter.panel.styleMask & NSWindowStyleMaskNonactivatingPanel);

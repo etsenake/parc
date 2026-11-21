@@ -1,6 +1,7 @@
 #import <AppKit/AppKit.h>
 #import "ParcNativeTest.h"
 #import "ParcNativeClock.h"
+#import "ParcNativeWindows.h"
 #import <Security/Security.h>
 #import <SecurityInterface/SFCertificatePanel.h>
 #import <objc/runtime.h>
@@ -23,7 +24,7 @@ static NSWindow* Window() {
                                     backing:NSBackingStoreBuffered
                                       defer:NO];
   w.releasedWhenClosed = NO;
-  [w orderFront:nil];
+  ParcNativeMarkVisible(w);
   return w;
 }
 static NSData* FixtureCertificate() {

@@ -1,5 +1,6 @@
 #import "ParcNativeTest.h"
 #import "ParcNativeClock.h"
+#import "ParcNativeWindows.h"
 #import <AppKit/AppKit.h>
 
 #include <cstdio>
@@ -18,7 +19,7 @@ static NSWindow* Window() {
                   backing:NSBackingStoreBuffered
                     defer:NO];
   window.releasedWhenClosed = NO;
-  [window orderFront:nil];
+  ParcNativeMarkVisible(window);
   return window;
 }
 static NSView* Page(NSWindow* window) {
@@ -400,7 +401,7 @@ static void TestValidationReleasesNativeOwner() {
                   backing:NSBackingStoreBuffered
                     defer:NO];
   owner.releasedWhenClosed = NO;
-  [owner orderFront:nil];
+  ParcNativeMarkVisible(owner);
   NSView* page = Page(owner);
   __weak NSWindow* original = owner;
   __block int attached = 0;

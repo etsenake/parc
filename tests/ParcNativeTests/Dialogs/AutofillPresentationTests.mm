@@ -1,5 +1,6 @@
 #import "ParcNativeTest.h"
 #import "ParcNativeClock.h"
+#import "ParcNativeWindows.h"
 #import <AppKit/AppKit.h>
 
 #include <cstdio>
@@ -31,7 +32,7 @@ static PresentationWindow* Window() {
                   backing:NSBackingStoreBuffered
                     defer:NO];
   window.releasedWhenClosed = NO;
-  [window orderFront:nil];
+  ParcNativeMarkVisible(window);
   return window;
 }
 static NSButton* FindButton(NSView* view, NSString* title) {
