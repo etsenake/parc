@@ -50,14 +50,15 @@ enum EaselImagePlacement {
             guard image.isValid else { throw CocoaError(.userCancelled) }
             let assetID = try session.importPNG(image.pngData)
             let width = min(480, Double(size.width))
-            let bottom = session.document.items.map { $0.frame.y + $0.frame.height }.max() ?? 0
+            let pageOne = EaselPages.view(session.document, page: nil).items
+            let bottom = pageOne.map { $0.frame.y + $0.frame.height }.max() ?? 0
             let card = image.capturedPage && image.sourceURL != nil
             let item = EaselItem(kind: card ? .webCard : .image,
                 frame: EaselRect(x: 40, y: max(40, bottom + 32), width: width,
                                  height: max(1, width * Double(size.height) / Double(size.width))),
-                zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1,
+                zIndex: (pageOne.map(\.zIndex).max() ?? 0) + 1,
                 text: card ? image.pageTitle : "", url: image.sourceURL?.absoluteString, assetID: assetID, capturedAt: image.capturedAt ?? Date(),
-                captureLayout: card ? image.captureLayout : nil)
+                captureLayout: card ? image.captureLayout : nil, page: EaselPages.resolvedPage(nil, in: session.document))
             try session.perform(card ? "Add captured webpage" : "Add webpage image") { $0.items.append(item) }
             return Result(session: session)
         } catch {

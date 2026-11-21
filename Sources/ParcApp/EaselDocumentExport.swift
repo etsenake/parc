@@ -122,13 +122,16 @@ enum EaselDocumentExport {
         var art = EaselVectorArt()
         let scale = EaselImageExport.pixelDensity()
         let lookup = Dictionary(session.document.items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
-        let hidden = EaselBoardObjects.hiddenIDs(in: session.document.items)
+        let pageItems = EaselPages.pageDocuments(session.document).map(\.items)
+        let hidden = Set(pageItems.flatMap { EaselBoardObjects.hiddenIDs(in: $0) })
+        var neighbours: [UUID: [EaselItem]] = [:]
+        for items in pageItems { for item in items where item.kind == .section { neighbours[item.id] = items } }
         for item in session.document.items where !hidden.contains(item.id) {
             switch item.kind {
             case .text, .sticky:
                 art.texts[item.id] = vectorText(item)
             case .section:
-                art.sectionTitles[item.id] = EaselSectionArt.vectorTitle(item, in: session.document.items)
+                art.sectionTitles[item.id] = EaselSectionArt.vectorTitle(item, in: neighbours[item.id] ?? session.document.items)
             case .code:
                 art.texts[item.id] = EaselCodeLayout.vectorText(item)
             case .image:

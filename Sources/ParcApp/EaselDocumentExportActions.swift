@@ -55,7 +55,7 @@ extension EaselEditorViewController {
             guard let self else { return }
             let data: Data?
             if format == .pdf {
-                data = self.canvas.exportPDF(title: self.session.document.title, pages: pages)
+                data = self.canvas.exportPagesPDF(title: self.session.document.title, pages: pages)
             } else {
                 let art = EaselDocumentExport.art(session: self.session, canvas: self.canvas, pages: pages)
                 data = Data(EaselVectorExport.htmlDocument(self.session.document, art: art, palette: EaselDocumentExport.palette).utf8)
@@ -111,6 +111,7 @@ extension BrowserWindowController {
             let original = try easels.load(documentID).document
             let copy = try easels.create(title: original.title + " copy")
             try copy.perform("Duplicate Easel") { document in
+                document.pages = original.pages
                 document.items = EaselArrange.copies(of: EaselArrange.paintOrder(original), offset: EaselPoint(x: 0, y: 0),
                                                      firstZIndex: 0, keepingGroups: Set(original.items.compactMap(\.groupID)))
             }

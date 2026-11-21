@@ -38,7 +38,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             self.window = window; self.command = command; self.generation = generation
         }
     }
-    let session: EaselSession
+    let session: EaselPageSession
+    let pageState = EaselCanvasPageState()
     let boardState = EaselBoardState()
     private var motionInteractionActive = false
     lazy var motion: EaselCanvasMotion = EaselCanvasMotion(owner: self,
@@ -368,27 +369,27 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
 
 
     init(session: EaselSession) {
-        self.session = session
+        self.session = EaselPageSession(session)
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 1800))
         setAccessibilityElement(true); setAccessibilityRole(.group); setAccessibilityLabel("Easel canvas")
         registerForDraggedTypes([.URL, EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType, .rtfd, .rtf, .fileURL, Self.gifPasteboardType, .png, .tiff, .string])
-        subscription = session.$document.receive(on: DispatchQueue.main).sink { [weak self] _ in
-            guard let self else { return }
-            let document = self.session.document
-            self.hoveredObjectID = nil
-            self.selection.formIntersection(document.items.map(\.id))
-            if let edit = self.geometryEdit, !edit.isCurrent(in: document) { self.cancelPointerInteraction() }
-            self.imageDocumentChanged()
-            if let end = self.marqueeEnd { self.updateMarquee(to: end, flags: NSEvent.modifierFlags) }
-            if let id = self.editingID, let item = document.items.first(where: { $0.id == id }) {
-                self.updateEditor(item)
-            } else if self.editingID != nil { self.finishEditing() }
-            self.resizeCanvas(viewport: self.enclosingScrollView?.contentSize ?? .zero)
-            self.updateAccessibilitySummary()
-            self.refreshTextControls()
-            self.window?.invalidateCursorRects(for: self)
-            self.invalidateIncrementalDisplay(layout: true)
-        }
+        subscription = session.$document.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.documentDidChange() }
+    }
+    func documentDidChange() {
+        let document = self.session.document
+        self.hoveredObjectID = nil
+        self.selection.formIntersection(document.items.map(\.id))
+        if let edit = self.geometryEdit, !edit.isCurrent(in: document) { self.cancelPointerInteraction() }
+        self.imageDocumentChanged()
+        if let end = self.marqueeEnd { self.updateMarquee(to: end, flags: NSEvent.modifierFlags) }
+        if let id = self.editingID, let item = document.items.first(where: { $0.id == id }) {
+            self.updateEditor(item)
+        } else if self.editingID != nil { self.finishEditing() }
+        self.resizeCanvas(viewport: self.enclosingScrollView?.contentSize ?? .zero)
+        self.updateAccessibilitySummary()
+        self.refreshTextControls()
+        self.window?.invalidateCursorRects(for: self)
+        self.invalidateIncrementalDisplay(layout: true)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func setFrameSize(_ newSize: NSSize) {
@@ -1997,6 +1998,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             return
         }
         if event.keyCode == 53 { cancelOperation(nil); return }
+        if handlePageKey(event) { return }
         if handleToolKey(event) { return }
         guard start == nil else { return }
         if handleArrangeKey(event) { return }

@@ -335,9 +335,17 @@ enum EaselVectorExport {
         html += "<meta name=\"generator\" content=\"Parc\">\n"
         html += "<title>" + escape(name) + "</title>\n<style>\n" + NotePageHTMLStyle.css + css(palette) + "</style>\n</head>\n"
         html += "<body class=\"page-font-standard full-width easel-export\">\n<article class=\"page\">\n<header class=\"page-header\">\n"
-        html += "<h1 class=\"page-title\">" + escape(name) + "</h1>\n</header>\n<main class=\"page-body\">\n<figure class=\"easel-canvas\">"
-        html += svg(document.items, art: art, title: name)
-        html += "</figure>\n</main>\n</article>\n</body>\n</html>\n"
+        html += "<h1 class=\"page-title\">" + escape(name) + "</h1>\n</header>\n<main class=\"page-body\">\n"
+        let pages = EaselPages.exportedPages(document)
+        if pages.isEmpty {
+            html += "<figure class=\"easel-canvas\">" + svg(document.items, art: art, title: name) + "</figure>\n"
+        } else {
+            for page in pages {
+                html += "<section class=\"easel-page\">\n<h2>" + escape(page.name) + "</h2>\n<figure class=\"easel-canvas\">"
+                html += svg(page.items, art: art, title: page.name) + "</figure>\n</section>\n"
+            }
+        }
+        html += "</main>\n</article>\n</body>\n</html>\n"
         return html
     }
 

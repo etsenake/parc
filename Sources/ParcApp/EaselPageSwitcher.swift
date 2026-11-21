@@ -170,7 +170,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
     static let maximumListHeight: CGFloat = 420
 
     var preferredSizeDidChange: (() -> Void)?
-    private unowned let switcher: EaselPageSwitcher
+    private weak var switcher: EaselPageSwitcher?
     private(set) var rows: [EaselPageSwitcher.Row]
     private var entries: [Entry] = []
     private var frames: [NSRect] = []
@@ -180,7 +180,6 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
     private var pressPoint: NSPoint?
     private var dragging: Int?
     private var dropIndex: Int?
-    private var dragPoint: NSPoint = .zero
     private var renaming: Int?
     private let field = NSTextField()
     private let plate = NSView()
@@ -367,9 +366,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
     }
 
     private func refreshPlate() {
-        let destructive = false
-        let color = pressed != nil && pressed == highlighted ? NoteTheme.menuPressed
-            : destructive ? NoteTheme.destructiveHighlight : NoteTheme.menuHighlight
+        let color = pressed != nil && pressed == highlighted ? NoteTheme.menuPressed : NoteTheme.menuHighlight
         NoteAnimation.withoutAnimation { plate.layer?.backgroundColor = NoteTheme.resolved(color, in: self) }
     }
 
@@ -404,17 +401,17 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
 
     @discardableResult
     fileprivate func activate(_ index: Int) -> Bool {
-        guard isEnabled(index) else { return false }
+        guard switcher != nil, isEnabled(index) else { return false }
         switch entries[index] {
         case .page(let row):
             guard !row.isDivider else { return presentRowMenu(for: index) }
-            switcher.actions.select(row.id)
-            switcher.close()
+            switcher?.actions.select(row.id)
+            switcher?.close()
         case .add:
-            switcher.actions.add()
+            switcher?.actions.add()
             focusOnCurrent(rename: true)
         case .addDivider:
-            switcher.actions.addDivider()
+            switcher?.actions.addDivider()
         }
         return true
     }
@@ -427,24 +424,27 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
     }
 
     private func move(_ index: Int, by delta: Int) -> Bool {
+        guard switcher != nil else { return false }
         guard canReorder, let position = pageIndex(of: index), let row = entries[index].row else { return false }
         let target = position + delta
         guard rows.indices.contains(target) else { return true }
-        switcher.actions.move(row.id, target)
+        switcher?.actions.move(row.id, target)
         if let moved = entries.firstIndex(where: { $0.row?.id == row.id }) { setHighlight(moved, animated: true) }
         return true
     }
 
     private func duplicate(_ index: Int) -> Bool {
+        guard switcher != nil else { return false }
         guard let row = entries[index].row, !row.isDivider, rows.count < EaselPage.maximumCount else { return false }
-        switcher.actions.duplicate(row.id)
+        switcher?.actions.duplicate(row.id)
         focusOnCurrent(rename: false)
         return true
     }
 
     private func delete(_ index: Int) -> Bool {
+        guard switcher != nil else { return false }
         guard let row = entries[index].row, canDelete(row) else { return false }
-        switcher.actions.delete(row.id)
+        switcher?.actions.delete(row.id)
         return true
     }
 
@@ -477,7 +477,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         case (2, [.command]): return entry.map(duplicate) ?? false
         case (51, []), (117, []): return entry.map(delete) ?? false
         case (53, _):
-            switcher.close()
+            switcher?.close()
             return true
         default: return false
         }
@@ -489,6 +489,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
     }
 
     fileprivate func beginRename(_ index: Int) {
+        guard switcher != nil else { return }
         guard entries.indices.contains(index), let row = entries[index].row, !row.isDivider else { return }
         rowMenu?.close(animated: false)
         renaming = index
@@ -507,7 +508,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         field.isHidden = true
         if window?.firstResponder === field.currentEditor() || window?.firstResponder === field { window?.makeFirstResponder(self) }
         if commit, entries.indices.contains(index), let row = entries[index].row, value != row.name {
-            if !switcher.actions.rename(row.id, value) { NSSound.beep() }
+            if switcher?.actions.rename(row.id, value) != true { NSSound.beep() }
         }
         document.needsDisplay = true
     }
@@ -559,7 +560,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
 
     @discardableResult
     fileprivate func presentRowMenu(for index: Int) -> Bool {
-        guard frames.indices.contains(index), let row = entries[index].row, let parent = switcher.popoverForChildren, parent.isOpen else {
+        guard frames.indices.contains(index), let row = entries[index].row, let parent = switcher?.popoverForChildren, parent.isOpen else {
             return false
         }
         rowMenu?.close(animated: false)
@@ -573,7 +574,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
             switch item.id {
             case "rename": self.beginRename(current)
             case "duplicate": _ = self.duplicate(current)
-            case "link": self.switcher.actions.copyLink(row.id); self.switcher.close()
+            case "link": self.switcher?.actions.copyLink(row.id); self.switcher?.close()
             case "up": _ = self.move(current, by: -1)
             case "down": _ = self.move(current, by: 1)
             case "delete": _ = self.delete(current)
@@ -630,7 +631,6 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
             dragging = pressed
             NSCursor.closedHand.set()
         }
-        dragPoint = point
         let pageFrames = entries.indices.filter { entries[$0].row != nil }.map { frames[$0] }
         dropIndex = pageFrames.firstIndex { point.y < $0.midY } ?? pageFrames.count
         document.autoscroll(with: NSApp.currentEvent ?? NSEvent())
@@ -649,7 +649,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         }
         if let source = dragging, let dropIndex, let from = pageIndex(of: source), let row = entries[source].row {
             let target = dropIndex > from ? dropIndex - 1 : dropIndex
-            if target != from { switcher.actions.move(row.id, target) }
+            if target != from { switcher?.actions.move(row.id, target) }
             return
         }
         guard let pressed, entryIndex(at: point) == pressed else { return }
@@ -704,7 +704,7 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
                     switch item.id {
                     case "rename": self.beginRename(current); return true
                     case "duplicate": return self.duplicate(current)
-                    case "link": self.switcher.actions.copyLink(row.id); return true
+                    case "link": self.switcher?.actions.copyLink(row.id); return true
                     case "up": return self.move(current, by: -1)
                     case "down": return self.move(current, by: 1)
                     case "delete": return self.delete(current)
@@ -727,10 +727,8 @@ final class EaselPageListView: NSView, NoteFloatingPanelContent, NSTextFieldDele
         return window.convertToScreen(document.convert(frames[index], to: nil))
     }
 
-    fileprivate func entry(at index: Int) -> Entry? { entries.indices.contains(index) ? entries[index] : nil }
     fileprivate func enabled(_ index: Int) -> Bool { isEnabled(index) }
     fileprivate var draggedIndex: Int? { dragging }
-    fileprivate var draggedPoint: NSPoint { dragPoint }
 }
 
 @MainActor
@@ -859,5 +857,81 @@ private final class EaselPageListDocumentView: NSView {
         (title as NSString).draw(with: NSRect(x: box.maxX + 8, y: (frame.midY - height / 2).rounded(), width: frame.width - box.maxX - 18,
                                               height: height),
                                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: titleAttributes(NoteTheme.menuInk))
+    }
+}
+
+@MainActor
+extension EaselEditorViewController {
+    func configurePageSwitcher(in chrome: NSStackView, height: CGFloat) {
+        pageButton.target = self
+        pageButton.action = #selector(showPageSwitcher(_:))
+        pageButton.toolTip = "Pages · Page Up and Page Down switch pages"
+        pageButton.heightAnchor.constraint(equalToConstant: height).isActive = true
+        chrome.addArrangedSubview(pageButton)
+        canvas.installPageFollowing()
+        canvas.pageState.onPageChange = { [weak self] in self?.refreshPages() }
+        var actions = EaselPageSwitcher.Actions()
+        actions.select = { [weak self] page in self?.canvas.showPage(page) }
+        actions.add = { [weak self] in self?.canvas.addPage() }
+        actions.addDivider = { [weak self] in self?.canvas.addPageDivider() }
+        actions.rename = { [weak self] page, name in self?.canvas.renamePage(page, to: name) ?? false }
+        actions.move = { [weak self] page, index in self?.canvas.movePage(page, to: index) }
+        actions.duplicate = { [weak self] page in self?.canvas.duplicatePage(page) }
+        actions.delete = { [weak self] page in self?.canvas.deletePage(page) }
+        actions.copyLink = { [weak self] page in self?.canvas.copyLink(toPage: page) }
+        canvas.pageState.onCopyPageLink = { [weak self] page in self?.copyPageLink(page) }
+        pageSwitcher.actions = actions
+        pageSwitcher.onClose = { [weak self] in
+            guard let self, let window = self.view.window, window.firstResponder == nil || window.firstResponder === window else { return }
+            window.makeFirstResponder(self.canvas)
+        }
+        refreshPages()
+    }
+
+    func refreshPages() {
+        guard isViewLoaded else { return }
+        pageButton.pageName = canvas.currentPageName
+        if pageButton.intrinsicContentSize.width != pageButton.frame.width { view.needsLayout = true }
+        pageSwitcher.update(rows: canvas.pageRows)
+        find.pageChanged()
+    }
+
+    @objc func showPageSwitcher(_ sender: NSButton) {
+        guard !session.isClosed, view.window?.attachedSheet == nil else { return }
+        pageSwitcher.toggle(from: sender, in: view, rows: canvas.pageRows)
+    }
+
+    func copyPageLink(_ page: UUID?) {
+        let id = session.document.id
+        let string = page.map { EaselPageAddress.urlString(easel: id, page: $0) } ?? InternalPage.easel(id).urlString
+        guard !session.isClosed, let url = URL(string: string) else { NSSound.beep(); return }
+        let board = NSPasteboard.general
+        board.clearContents()
+        board.writeObjects([url as NSURL])
+        board.setString(url.absoluteString, forType: .string)
+        (view.window?.windowController as? BrowserWindowController)?.showToast(.copiedLinks([url]))
+    }
+}
+
+@MainActor
+extension EaselCanvasView {
+    var pageRows: [EaselPageSwitcher.Row] { EaselPageSwitcher.rows(for: session.fullDocument, current: session.page) }
+}
+
+@MainActor
+extension BrowserWindowController {
+    func revealEaselPage(_ page: UUID, in easel: UUID, attempt: Int = 0) {
+        if let editor = currentEaselEditor, editor.session.document.id == easel, editor.isViewLoaded, editor.view.window != nil {
+            if editor.session.document.pages?.contains(where: { $0.id == page }) == true {
+                editor.canvas.showPage(page)
+            } else {
+                editor.showExportToast(.standard("That page isn’t on this Easel anymore"))
+            }
+            return
+        }
+        guard attempt < 12 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            MainActor.assumeIsolated { self?.revealEaselPage(page, in: easel, attempt: attempt + 1) }
+        }
     }
 }

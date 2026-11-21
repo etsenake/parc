@@ -70,7 +70,7 @@ final class NoteEaselHost {
 
     func snapshot(_ block: NoteBlock) -> Data? {
         guard let id = NoteEaselAddress.id(of: block), case .success(let session) = session(id), !session.isDeleted else { return nil }
-        guard let content = EaselPreviewRegion.content(session.document.items) else { return nil }
+        guard let content = EaselPreviewRegion.content(EaselPages.view(session.document, page: nil).items) else { return nil }
         let canvas = EaselCanvasView(session: session)
         canvas.appearance = NSAppearance(named: .aqua)
         canvas.resizeCanvas(viewport: NSSize(width: 800, height: 600))

@@ -303,3 +303,56 @@ extension EaselPages {
         return next
     }
 }
+
+extension EaselPages {
+    static func followedPage(from original: EaselDocument, to after: EaselDocument, showing current: UUID?) -> UUID? {
+        guard after.pages != nil else { return nil }
+        var before = original
+        var shown = current
+        if before.pages == nil, let first = after.pages?.first {
+            before.pages = [first]
+            for index in before.items.indices { before.items[index].page = first.id }
+            shown = first.id
+        }
+        let pageIDs = Set(after.pages?.map(\.id) ?? [])
+        if let shown, pageIDs.contains(shown), view(before, page: shown).items == view(after, page: shown).items {
+            var old: [UUID: EaselItem] = [:]
+            for item in before.items where old[item.id] == nil { old[item.id] = item }
+            var seen = Set<UUID>()
+            for item in after.items {
+                seen.insert(item.id)
+                guard old[item.id] != item, let page = pageID(of: item, in: after), page != shown else { continue }
+                return page
+            }
+            for item in before.items where !seen.contains(item.id) {
+                guard let page = pageID(of: item, in: before), pageIDs.contains(page), page != shown else { continue }
+                return page
+            }
+            if before.pages != after.pages, let added = after.pages?.first(where: { page in
+                !(before.pages ?? []).contains { $0.id == page.id } && !isDivider(page, in: after)
+            }) { return added.id }
+            return shown
+        }
+        return resolvedPage(shown, in: after)
+    }
+}
+
+extension EaselPages {
+    static func pageDocuments(_ document: EaselDocument) -> [EaselDocument] {
+        guard let pages = document.pages else { return [document] }
+        return pages.map { page in
+            var view = document
+            view.items = items(on: page.id, in: document)
+            return view
+        }
+    }
+}
+
+extension EaselPages {
+    static func exportedPages(_ document: EaselDocument) -> [(id: UUID, name: String, items: [EaselItem])] {
+        guard let pages = document.pages else { return [] }
+        let content = pages.filter { !isDivider($0, in: document) }
+        let filled = content.filter { itemCount(on: $0.id, in: document) > 0 }
+        return (filled.isEmpty ? Array(content.prefix(1)) : filled).map { ($0.id, $0.name, items(on: $0.id, in: document)) }
+    }
+}

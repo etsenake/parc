@@ -85,6 +85,7 @@ protocol EaselCanvasMenuSlots {
     func stampMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
     func zoomMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
     func boardMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
+    func pageMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
 }
 
 extension EaselCanvasMenuSlots {
@@ -103,6 +104,7 @@ extension EaselCanvasMenuSlots {
     func stampMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
     func zoomMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
     func boardMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
+    func pageMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
 }
 
 extension EaselCanvasView: EaselCanvasMenuSlots {}
@@ -197,7 +199,7 @@ extension EaselCanvasView {
             return [
                 [row("paste-here", pastesHere ? "Paste Here" : "Paste", "doc.on.clipboard", "⌘V", enabled: pasteable) { $0.pasteHere(point) },
                  row("paste-plain", "Paste as Plain Text", "doc.plaintext", enabled: plain) { $0.pastePlainText(at: point) }],
-                [selectAll] + zoomMenuRows(context) + boardMenuRows(context) + mindMapMenuRows(context),
+                [selectAll] + zoomMenuRows(context) + boardMenuRows(context) + mindMapMenuRows(context) + pageMenuRows(context),
                 [guides],
             ]
         }
@@ -241,7 +243,7 @@ extension EaselCanvasView {
         }
         let locking = EaselArrange.shouldLock(ids, in: document)
         arrange.append(row("lock", locking ? "Lock" : "Unlock", locking ? "lock" : "lock.open", "⇧⌘L") { $0.toggleLock() })
-        arrange += sectionMenuRows(context) + shapeMenuRows(context) + transformMenuRows(context)
+        arrange += sectionMenuRows(context) + shapeMenuRows(context) + transformMenuRows(context) + pageMenuRows(context)
         var object: [EaselMenuRow] = []
         if context.target == .object, let item = context.items.first, let raw = item.url, !item.kind.holdsText {
             if pageObjects != nil, fixedCanvasSize == nil, EaselWebItemChrome.canMakeLive(item) {

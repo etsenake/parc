@@ -254,7 +254,7 @@ final class SidebarDocumentThumbnails {
     }
 
     private static func renderEasel(_ session: EaselSession, appearance: NSAppearance) -> NSImage? {
-        guard let content = EaselPreviewRegion.content(session.document.items) else { return nil }
+        guard let content = EaselPreviewRegion.content(EaselPages.view(session.document, page: nil).items) else { return nil }
         let canvas = EaselCanvasView(session: session)
         canvas.appearance = appearance
         canvas.resizeCanvas(viewport: NSSize(width: 800, height: 600))

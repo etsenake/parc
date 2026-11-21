@@ -78,7 +78,7 @@ enum EaselFinder {
     static func matches(of query: String, in document: EaselDocument, options: NoteFindOptions = NoteFindOptions()) -> [EaselFindMatch] {
         guard !query.isEmpty else { return [] }
         var result: [EaselFindMatch] = []
-        for item in readingOrder(visibleItems(in: document)) {
+        for item in EaselPages.pageDocuments(document).flatMap({ readingOrder(visibleItems(in: $0)) }) {
             for (part, text) in searchableParts(of: item) {
                 for range in NotePageFinder.ranges(of: query, in: text, options: options) {
                     result.append(EaselFindMatch(itemID: item.id, part: part, range: range))

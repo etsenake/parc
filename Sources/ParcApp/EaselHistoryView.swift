@@ -28,6 +28,7 @@ enum EaselHistoryPanel {
         var next = current
         next.title = snapshot.title
         next.items = snapshot.items
+        next.pages = snapshot.pages
         guard next != current else { return }
         editor.canvas.prepareReplacement(next) { [weak editor] in
             guard let editor, !editor.session.isClosed, editor.session.document.id == id else { return }
@@ -35,6 +36,7 @@ enum EaselHistoryPanel {
                 try editor.session.perform("Restore Version") { document in
                     document.title = snapshot.title
                     document.items = snapshot.items
+                    document.pages = snapshot.pages
                 }
             } catch {
                 editor.canvas.onError?(error)

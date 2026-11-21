@@ -23,6 +23,8 @@ struct EaselPagesTests {
         moveGroupsAndZOrder()
         mindMaps()
         viewAndMerge()
+        historyFollows()
+        findAndExport()
         print("EaselPagesTests: \(assertions) assertions passed")
     }
 
@@ -360,5 +362,52 @@ struct EaselPagesTests {
         pasted.items[0].page = UUID()
         expect(EaselPages.merging(pasted, page: nil, into: document([])).items[0].page == nil, "a plain board drops page IDs")
         expect(EaselPages.view(board, page: UUID()).items.map(\.id) == [a.id], "an unknown page shows page one")
+    }
+
+    static func historyFollows() {
+        let a = item(.sticky, x: 0, y: 0)
+        var (board, first, second) = paged([a])
+        var b = item(.sticky, x: 0, y: 0)
+        b.page = second
+        board.items.append(b)
+        var edited = board
+        edited.items[0].frame.x = 90
+        expect(EaselPages.followedPage(from: edited, to: board, showing: second) == first, "undoing an edit on another page shows that page")
+        expect(EaselPages.followedPage(from: edited, to: board, showing: first) == first, "an edit on the shown page keeps the page")
+        guard let deleted = EaselPages.deleting(second, in: board)?.document else { return expect(false, "delete") }
+        expect(EaselPages.followedPage(from: deleted, to: board, showing: first) == second, "undoing a delete shows the page again")
+        expect(EaselPages.followedPage(from: board, to: deleted, showing: second) == nil, "a board folded back to one page has no page ID")
+        guard let named = EaselPages.renaming(first, to: "Ideas", in: board), let kept = EaselPages.deleting(second, in: named)?.document else {
+            return expect(false, "renamed delete")
+        }
+        expect(EaselPages.followedPage(from: named, to: kept, showing: second) == first, "a removed page falls back to a real one")
+        guard let renamed = EaselPages.renaming(second, to: "Ideas", in: board) else { return expect(false, "rename") }
+        expect(EaselPages.followedPage(from: renamed, to: board, showing: first) == first, "a rename keeps the page")
+    }
+
+    static func findAndExport() {
+        var section = item(.section, x: 0, y: 0, width: 500, height: 500)
+        section.contentsHidden = true
+        var note = item(.sticky, x: 50, y: 50)
+        note.text = "needle"
+        var (board, _, second) = paged([section])
+        note.page = second
+        board.items.append(note)
+        expect(EaselFinder.matches(of: "needle", in: board).map(\.itemID) == [note.id], "a closed section on one page hides nothing on another")
+        var later = item(.sticky, x: 900, y: 900)
+        later.text = "needle"
+        board.items.insert(later, at: 0)
+        expect(EaselFinder.matches(of: "needle", in: board).map(\.itemID) == [later.id, note.id], "matches come page by page")
+        let pages = EaselPages.exportedPages(board)
+        expect(pages.map(\.name) == ["Page 1", "Page 2"] && pages[1].items.map(\.id) == [note.id], "exports walk the filled pages")
+        let html = EaselVectorExport.htmlDocument(board, art: EaselVectorArt())
+        expect(html.components(separatedBy: "<section class=\"easel-page\">").count == 3 && html.contains("<h2>Page 2</h2>"),
+               "HTML gets a section per page")
+        let plain = EaselVectorExport.htmlDocument(document([item(.sticky, x: 0, y: 0)]), art: EaselVectorArt())
+        expect(!plain.contains("easel-page"), "a board without pages exports as before")
+        guard let divided = EaselPages.addingDivider(to: board, after: second) else { return expect(false, "divider") }
+        expect(EaselPages.exportedPages(divided.document).count == 2, "dividers stay out of exports")
+        let empty = paged([]).document
+        expect(EaselPages.exportedPages(empty).count == 1, "an empty board still exports one page")
     }
 }

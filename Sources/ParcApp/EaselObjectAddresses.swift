@@ -34,6 +34,7 @@ extension EaselEditorViewController {
             return .notReady
         }
         guard let item = session.document.items.first(where: { $0.id == id }) else { return .missing }
+        canvas.showPage(containing: id)
         guard canvas.selectOnly(id) else { return .notReady }
         if window.isKeyWindow { window.makeFirstResponder(canvas) }
         let frame = NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height)

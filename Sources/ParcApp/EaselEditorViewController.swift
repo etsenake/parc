@@ -30,6 +30,9 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private let recenter = NoteChip("Recenter", icon: .symbol("scope"), style: .filled)
     private var recenterShown = false
     private let quickActions = EaselQuickActions()
+    let pageSwitcher = EaselPageSwitcher()
+    let pageButton = EaselPageSwitcherButton()
+    private var pageButtonWidth: CGFloat = 0
     var emptyTemplates: EaselTemplateGallery?
     private(set) var pageObjects: EaselBrowserObjects?
     private var webpageInput: EaselWebInput?
@@ -168,6 +171,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         }
         webpageButton = palette.button(for: .webpage)
         webpageButton?.isEnabled = pageObjects != nil
+        configurePageSwitcher(in: chrome, height: chromeSize)
         let timer = makeTimerButton()
         chrome.addArrangedSubview(timer)
         undoButton = chromeButton("Undo Easel change", "arrow.uturn.backward", #selector(undoChange), shortcut: "⌘Z")
@@ -186,9 +190,11 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             let strip = min(width - 24, palette.preferredWidth)
             palette.frame = NSRect(x: ((width - strip) / 2).rounded(), y: 62, width: strip, height: EaselAppearance.toolbarHeight)
             let size = root.bounds.size
-            guard size != lastChromeSize else { return }
+            let pageWidth = self.pageButton.intrinsicContentSize.width
+            guard size != lastChromeSize || pageWidth != self.pageButtonWidth else { return }
+            self.pageButtonWidth = pageWidth
             lastChromeSize = size
-            let chromeWidth: CGFloat = 3 * chromeSize + 3 * 2 + (timer?.intrinsicContentSize.width ?? chromeSize)
+            let chromeWidth: CGFloat = 3 * chromeSize + 4 * 2 + (timer?.intrinsicContentSize.width ?? chromeSize) + pageWidth
             self.titleField.frame = NSRect(x: 24, y: 10, width: max(80, width - chromeWidth - 52), height: 32)
             chrome.frame = NSRect(x: max(24, width - chromeWidth - 14), y: 12, width: chromeWidth, height: chromeSize)
             self.status.frame = NSRect(x: 26, y: 40, width: max(100, width - 52), height: 18)
@@ -213,6 +219,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             if self.titleField.currentEditor() == nil { self.titleField.stringValue = doc.title }
             self.onTitleChange?(doc.title)
             self.undoButton.isEnabled = self.canvas.canUndo; self.redoButton.isEnabled = self.canvas.canRedo
+            self.refreshPages()
             self.status.stringValue = "Saved on this Mac · \(doc.items.count) object\(doc.items.count == 1 ? "" : "s")"
             self.refreshEmptyTemplates()
             self.viewportChanged()

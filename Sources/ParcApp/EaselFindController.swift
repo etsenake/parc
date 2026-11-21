@@ -228,7 +228,7 @@ final class EaselFindController: NoteFindBarController {
     private func recompute(keeping match: EaselFindMatch?, reveal shouldReveal: Bool) {
         notice = nil
         let visible = canvas.visibleRect
-        let frames = Dictionary(editor.session.document.items.map { ($0.id, Self.frame($0)) }, uniquingKeysWith: { first, _ in first })
+        let frames = Dictionary(canvas.session.document.items.map { ($0.id, Self.frame($0)) }, uniquingKeysWith: { first, _ in first })
         state.refresh(in: editor.session.document, keeping: match) { matches in
             matches.firstIndex { frames[$0.itemID]?.intersects(visible) == true }
         }
@@ -245,7 +245,13 @@ final class EaselFindController: NoteFindBarController {
         }
     }
 
+    func pageChanged() {
+        guard isVisible else { return }
+        repaint()
+    }
+
     private func revealCurrent() {
+        if let match = state.currentMatch { canvas.showPage(containing: match.itemID) }
         guard let match = state.currentMatch,
               let item = editor.session.document.items.first(where: { $0.id == match.itemID }),
               let scroll = canvas.enclosingScrollView else { return }
@@ -322,7 +328,7 @@ final class EaselFindController: NoteFindBarController {
         zoomDependent = false
         guard isVisible, hasMatches else { return [] }
         var items: [UUID: EaselItem] = [:]
-        for item in editor.session.document.items where items[item.id] == nil { items[item.id] = item }
+        for item in canvas.session.document.items where items[item.id] == nil { items[item.id] = item }
         var result: [Highlight] = []
         var ringed = Set<EaselFindMatch>()
         for (index, match) in state.matches.enumerated() {
