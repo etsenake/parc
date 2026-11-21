@@ -2803,8 +2803,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return
         }
         guard menu === spacesMenu, !spacesMenuIsTracking else { return }
-        let owner = spaceCommandWindow
-        let spaces = stateSpaces
+        populateSpacesMenu(menu, spaces: stateSpaces, owner: spaceCommandWindow, shortcuts: .shared)
+    }
+
+    private func populateSpacesMenu(_ menu: NSMenu, spaces: [BrowserSpace], owner: BrowserWindowController?,
+                                    shortcuts: KeyboardShortcuts) {
         let source = SpacesMenuSource(owner: owner, activeSpaceID: owner?.activeSpaceID, spaceIDs: spaces.map(\.id),
                                       names: spaces.map(\.name), profileIDs: spaces.map(\.profileID))
         if source == spacesMenuSource, !menu.items.isEmpty { return }
@@ -2814,7 +2817,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                   ("Rename Space", #selector(renameFocusedSpace))] {
             let entry = NSMenuItem(title: title, action: selector, keyEquivalent: "")
             entry.target = self; menu.addItem(entry)
-            KeyboardShortcuts.shared.register(entry, group: "Spaces")
+            shortcuts.register(entry, group: "Spaces")
         }
         menu.addItem(.separator())
         var numberedIDs = Set<String>()
@@ -2828,20 +2831,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 entry.keyEquivalent = String(number); entry.keyEquivalentModifierMask = .control
             }
             numberedIDs.insert(bindingID)
-            KeyboardShortcuts.shared.register(entry, group: "Spaces", bindingID: bindingID, title: space.name)
+            shortcuts.register(entry, group: "Spaces", bindingID: bindingID, title: space.name)
         }
-        KeyboardShortcuts.shared.retireCommands(Array(registeredSpaceCommandIDs.subtracting(numberedIDs)))
+        shortcuts.retireCommands(Array(registeredSpaceCommandIDs.subtracting(numberedIDs)))
         registeredSpaceCommandIDs = numberedIDs
         menu.addItem(.separator())
         for (name, selector, key) in [("Next Space", #selector(nextSpace), "\u{F703}"), ("Previous Space", #selector(previousSpace), "\u{F702}")] {
             let entry = NSMenuItem(title: name, action: selector, keyEquivalent: key)
             entry.keyEquivalentModifierMask = [.command, .option]; entry.target = self; menu.addItem(entry)
-            KeyboardShortcuts.shared.register(entry, group: "Spaces")
+            shortcuts.register(entry, group: "Spaces")
         }
     }
 
     @discardableResult
-    func buildMenus(shortcuts: KeyboardShortcuts? = nil, install: Bool = true) -> NSMenu {
+    func buildMenus(shortcuts: KeyboardShortcuts? = nil, install: Bool = true, initialSpaces: [BrowserSpace]? = nil) -> NSMenu {
         let shortcuts = shortcuts ?? .shared
         let main = ShortcutMainMenu()
         func menu(_ title: String) -> NSMenu {
@@ -3057,7 +3060,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         view.items.last?.isHidden = true
         view.items.last?.allowsKeyEquivalentWhenHidden = true
         let spaces = menu("Spaces")
-        spacesMenu = spaces; spaces.delegate = self; menuNeedsUpdate(spaces)
+        spacesMenu = spaces; spaces.delegate = self
+        if let initialSpaces { populateSpacesMenu(spaces, spaces: initialSpaces, owner: nil, shortcuts: shortcuts) }
+        else { menuNeedsUpdate(spaces) }
         let tabs = menu("Tabs")
         clearTodayCommandsMenu = tabs; tabs.delegate = self
         item("New Folder…", #selector(createFolder), in: tabs)
