@@ -220,7 +220,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return output
     }
     func exportImage(backingScale: CGFloat, pages: [UUID: EaselPageSnapshot] = [:]) -> CGImage? {
-        let content = session.document.items.sorted { $0.zIndex < $1.zIndex }
+        let content = EaselBoardObjects.displayed(session.document.items)
         let width = bounds.width
         let size = fixedCanvasSize ?? NSSize(width: width, height: max(width, content.map { $0.frame.y + $0.frame.height }.max() ?? 0) + 60)
         let pixels = NSSize(width: (size.width * backingScale).rounded(), height: (size.height * backingScale).rounded())
@@ -244,7 +244,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     func exportPDF(title: String, pages: [UUID: EaselPageSnapshot] = [:]) -> Data? {
-        let content = session.document.items.sorted { $0.zIndex < $1.zIndex }
+        let content = EaselBoardObjects.displayed(session.document.items)
         let area = EaselVectorExport.contentBounds(content)
         let scale = min(1, 14_400 / max(area.width, area.height))
         var box = CGRect(x: 0, y: 0, width: (area.width * scale).rounded(.up), height: (area.height * scale).rounded(.up))
@@ -443,6 +443,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     fileprivate func activateAccessibleObject(_ expected: EaselItem) -> Bool {
         guard selectAccessibleObject(expected) else { return false }
+        if expected.kind == .section { beginSectionRename(expected.id); return boardState.titleField != nil }
         if expected.kind == .text { beginEditing(expected); return editingID == expected.id }
         if expected.kind == .image { return beginImageCrop() }
         if expected.kind == .table { return activateTable(expected) }
@@ -461,7 +462,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         case "Open source":
             guard onOpenURL != nil else { return false }
             openObjectSource(sender)
-        default: return false
+        default: return performBoardAction(name, item: item)
         }
         return true
     }
@@ -708,6 +709,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     override func layout() {
         super.layout(); motion.bind(enclosingScrollView); refreshTextControls(); synchronizeAccessibleObjects()
         refreshSnapshotHeader()
+        positionSectionTitleField()
         synchronizePageSelection()
         guard usesObjectSurfaces else {
             artwork.values.forEach { $0.removeFromSuperview() }; artwork.removeAll()
@@ -740,6 +742,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if overlayDirty { decoration.needsDisplay = true }
         ordered.append(decoration)
         if let editor { ordered.append(editor) }
+        if let field = boardState.titleField { ordered.append(field) }
         ordered.append(contentsOf: items.compactMap { accessibleObjects[$0.id] })
         if let snapshotHeader { ordered.append(snapshotHeader) }
         if subviews.map(ObjectIdentifier.init) != ordered.map(ObjectIdentifier.init) {
@@ -866,6 +869,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         case .circle: path = NSBezierPath(ovalIn: r)
         case .rectangle: path = NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5)
         case .table: path = NSBezierPath(roundedRect: r, xRadius: EaselTableMetrics.cornerRadius, yRadius: EaselTableMetrics.cornerRadius)
+        case .section: path = NSBezierPath(roundedRect: r, xRadius: EaselSectionArt.radius, yRadius: EaselSectionArt.radius)
         case .arrow, .freehand:
             path = NSBezierPath()
             guard let first = item.points.first else { return }
@@ -910,7 +914,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let next = !drawing && start == nil && editor == nil && !session.isClosed
-            && isTopmost(atWindowPoint: event.locationInWindow) ? (object(at: point) ?? object(at: point, includingLocked: true))?.id : nil
+            && isTopmost(atWindowPoint: event.locationInWindow)
+            ? hoverTarget(at: point, hit: object(at: point) ?? object(at: point, includingLocked: true)) : nil
         if hoveredObjectID != next { hoveredObjectID = next; invalidateIncrementalDisplay() }
         updateTableHover(at: point)
         super.mouseMoved(with: event)
@@ -1275,6 +1280,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         draft = nil; start = nil; original = []; stroke = []; geometryEdit = nil
         marqueeRect = nil; marqueeEnd = nil; tentativeSelection = nil
         selectionBeforeGesture = []; resizeHandle = nil; arrowEndpoint = nil; guides = nil
+        resetSectionGesture()
         lastDragTimestamp = nil; dragVelocity = .init(x: 0, y: 0)
         lastGeometryPoint = nil; lastDragLocation = nil; dragDistance = 0
         if hadPointerOwner { synchronizePageSelection(); keyboardStructureChanged() }
@@ -1305,7 +1311,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let rect = EaselCanvasSelection.marquee(from: .init(x: start.x, y: start.y), to: .init(x: point.x, y: point.y))
         marqueeRect = NSRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height); marqueeEnd = point
         let operation: EaselCanvasSelection.Operation = flags.contains(.shift) ? .add : flags.contains(.command) ? .subtract : .replace
-        tentativeSelection = marqueeSelection(in: rect, items: session.document.items, original: selectionBeforeGesture, operation: operation)
+        tentativeSelection = marqueeSelection(in: rect, items: marqueeItems(in: rect), original: selectionBeforeGesture, operation: operation)
         invalidateIncrementalDisplay()
     }
     override func flagsChanged(with event: NSEvent) {
@@ -1318,6 +1324,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard usesObjectSurfaces, let hit, hit !== self else { return hit }
         if let snapshotHeader, hit === snapshotHeader || hit.isDescendant(of: snapshotHeader) { return hit }
         if hit === editor || editor.map({ hit.isDescendant(of: $0) }) == true { return hit }
+        if let field = boardState.titleField, hit === field || hit.isDescendant(of: field) { return hit }
         let local = convert(point, from: superview)
         guard resizeHandle(at: local) == nil, arrowEndpoint(at: local) == nil,
               let item = object(at: local), item.ownsEmbeddedPage, selection == [item.id],
@@ -1342,7 +1349,13 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             beginGeometry()
             lastGeometryPoint = point; invalidateIncrementalDisplay(layout: true); return
         }
-        let hit = object(at: point, includingLocked: event.modifierFlags.contains(.shift))
+        var hit = object(at: point, includingLocked: event.modifierFlags.contains(.shift))
+        switch sectionPress(at: point, hit: hit, event: event) {
+        case .handled: return
+        case .object(let section): hit = section
+        case .marquee: hit = nil
+        case .none: break
+        }
         guard let hit else {
             if event.clickCount == 2 { insert(kind: .text, edit: true, at: point); return }
             marqueeRect = NSRect(origin: point, size: .zero); updateMarquee(to: point, flags: event.modifierFlags); return
@@ -1441,6 +1454,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         defer { cancelPointerInteraction() }
         if marqueeRect != nil {
             updateMarquee(to: convert(event.locationInWindow, from: nil), flags: event.modifierFlags)
+            if finishSectionClick(marqueeRect, shift: event.modifierFlags.contains(.shift)) { return }
             selection = tentativeSelection ?? selection; return
         }
         guard let draft else { return }
@@ -1462,6 +1476,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         addCursorRect(bounds, cursor: drawing ? .crosshair : .arrow)
         addImageBadgeCursorRects()
         addTableCursorRects()
+        addSectionCursorRects()
         if let arrow = selectedArrow {
             for endpoint in EaselArrowEndpoint.allCases where showsArrowAnnotation(endpoint) {
                 guard let r = endpoint.hitRect(in: arrow, scale: canvasScale) else { continue }
@@ -1907,10 +1922,14 @@ private final class EaselAccessibleObject: NSView {
         default: return item.kind.rawValue.capitalized
         }
     }
+    override func accessibilitySubrole() -> NSAccessibility.Subrole? {
+        canvas?.accessibleItem(id)?.kind == .section ? NSAccessibility.Subrole(rawValue: "AXLandmarkRegion") : nil
+    }
     override func accessibilityValue() -> Any? {
         guard let item = canvas?.accessibleItem(id) else { return nil }
         if item.kind == .image { return item.altText ?? item.url }
         if let table = item.table { return table.accessibilitySummary }
+        if item.kind == .section { return canvas?.sectionSummary(item) }
         return item.text.isEmpty ? item.url : item.text
     }
     override func isAccessibilityEnabled() -> Bool { acceptsFirstResponder }
@@ -1932,6 +1951,7 @@ private final class EaselAccessibleObject: NSView {
         guard let canvas, let item = canvas.accessibleItem(id), let owner = window, acceptsFirstResponder else { return [] }
         var names = ["Duplicate", "Bring to front", "Delete"]
         if item.url != nil { names.insert("Open source", at: 0) }
+        names += canvas.boardActionNames(item)
         if item.kind == .text || item.kind == .table || !canvas.accessibleChildren(id).isEmpty || item.ownsEmbeddedPage { names.insert("Activate", at: 0) }
         return names.map { name in
             NSAccessibilityCustomAction(name: name == "Activate" ? (item.kind == .text ? "Edit text" : item.kind == .table ? "Edit cells" : "Interact with webpage") : name) { [weak canvas, weak owner] in

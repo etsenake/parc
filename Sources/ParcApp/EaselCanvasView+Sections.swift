@@ -93,7 +93,8 @@ final class EaselSectionTitleField: NSTextField, NSTextFieldDelegate {
         self.sectionID = sectionID
         super.init(frame: .zero)
         stringValue = title
-        isBordered = false; isBezeled = false; drawsBackground = false; focusRingType = .none
+        isBordered = false; isBezeled = false; focusRingType = .none
+        drawsBackground = true; backgroundColor = NoteTheme.menuFill
         usesSingleLineMode = true; lineBreakMode = .byClipping
         cell?.isScrollable = true; cell?.wraps = false
         delegate = self
@@ -239,7 +240,15 @@ extension EaselCanvasView {
         addSubview(field, positioned: .above, relativeTo: nil)
         positionSectionTitleField()
         if window?.makeFirstResponder(field) == true { field.currentEditor()?.selectAll(nil) }
+        redrawBoardObject(id)
         invalidateIncrementalDisplay(layout: true)
+    }
+
+    func redrawBoardObject(_ id: UUID) {
+        guard let item = items.first(where: { $0.id == id }) else { return }
+        let reach = boardOverhang(item) + 4
+        setNeedsDisplay(rect(item).insetBy(dx: -reach, dy: -reach))
+        artwork[id]?.needsDisplay = true
     }
 
     func positionSectionTitleField() {
@@ -266,6 +275,7 @@ extension EaselCanvasView {
         field.onCommit = nil; field.onCancel = nil
         field.removeFromSuperview()
         if focused { window?.makeFirstResponder(self) }
+        redrawBoardObject(field.sectionID)
         invalidateIncrementalDisplay(layout: true)
     }
 
@@ -293,24 +303,60 @@ extension EaselCanvasView {
 
     @discardableResult
     func lockSections(all: Bool) -> Bool {
-        guard !session.isClosed else { return false }
         let targets = EaselBoardObjects.lockTargets(selection, all: all, in: session.document)
-        guard !targets.isEmpty else { return false }
-        cancelPointerInteraction(); guard finishEditing() else { return false }
-        return commit(all ? "Lock section and contents" : "Lock section background") { document in
-            for index in document.items.indices where targets.contains(document.items[index].id) { document.items[index].locked = true }
-        }
+        return !targets.isEmpty && setLock(true, ids: targets)
     }
 
     @discardableResult
     func unlockSections() -> Bool {
-        guard !session.isClosed else { return false }
         let targets = EaselBoardObjects.lockTargets(selection, all: true, in: session.document)
-        guard session.document.items.contains(where: { targets.contains($0.id) && $0.isLocked }) else { return false }
-        cancelPointerInteraction(); guard finishEditing() else { return false }
-        return commit("Unlock section") { document in
-            for index in document.items.indices where targets.contains(document.items[index].id) { document.items[index].locked = nil }
+        return session.document.items.contains(where: { targets.contains($0.id) && $0.isLocked }) && setLock(false, ids: targets)
+    }
+
+    func sectionMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] {
+        let chosen = context.items, sections = chosen.filter { $0.kind == .section }
+        guard !chosen.isEmpty else {
+            let point = NSPoint(x: context.point.x, y: context.point.y)
+            return fixedCanvasSize == nil ? [EaselMenuRow(id: "section.add", title: "Add Section", symbol: "rectangle.dashed") { [weak self] in
+                self?.insertSection(at: point)
+            }] : []
         }
+        var rows: [EaselMenuRow] = []
+        if sections.count < chosen.count || chosen.count > 1, fixedCanvasSize == nil {
+            let ids = Set(chosen.map(\.id))
+            rows.append(EaselMenuRow(id: "section.create", title: "Create Section", symbol: "rectangle.dashed") { [weak self] in
+                self?.createSection(from: ids)
+            })
+        }
+        guard !sections.isEmpty else { return rows }
+        let locked = sections.contains { $0.isLocked }
+        if sections.count == 1, let section = sections.first, !section.isLocked {
+            rows.append(EaselMenuRow(id: "section.rename", title: "Rename Section", symbol: "pencil", shortcut: "↩") { [weak self] in
+                self?.beginSectionRename(section.id)
+            })
+        }
+        let hidden = sections.allSatisfy { $0.contentsHidden == true }
+        rows.append(EaselMenuRow(id: "section.contents", title: hidden ? "Show Contents" : "Hide Contents",
+                                 symbol: hidden ? "eye" : "eye.slash") { [weak self] in
+            self?.setSectionContentsHidden(!hidden)
+        })
+        if locked {
+            rows.append(EaselMenuRow(id: "section.unlock", title: "Unlock Section", symbol: "lock.open") { [weak self] in
+                self?.unlockSections()
+            })
+            return rows
+        }
+        rows.append(EaselMenuRow(id: "section.lock.all", title: "Lock All", symbol: "lock") { [weak self] in
+            self?.lockSections(all: true)
+        })
+        rows.append(EaselMenuRow(id: "section.lock.background", title: "Lock Background Only", symbol: "square.dashed") { [weak self] in
+            self?.lockSections(all: false)
+        })
+        rows.append(EaselMenuRow(id: "section.deleteOnly", title: "Delete Section Only", symbol: "trash", shortcut: "⌘⌫",
+                                 isDestructive: true) { [weak self] in
+            self?.deleteSectionsKeepingContents()
+        })
+        return rows
     }
 
     @discardableResult

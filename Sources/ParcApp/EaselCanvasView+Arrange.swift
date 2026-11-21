@@ -208,7 +208,9 @@ extension EaselCanvasView {
         case .duplicate: return claim(ready && !selection.isEmpty) { duplicateSelection() }
         case .group: return claim(ready && EaselArrange.canGroup(selection, in: document)) { groupSelection() }
         case .ungroup: return claim(ready && EaselArrange.canUngroup(selection, in: document)) { ungroupSelection() }
-        case .unwrap: return claim(ready && EaselArrange.canUngroup(selection, in: document)) { ungroupSelection() }
+        case .unwrap:
+            if selectionContainsSection { return claim(ready && selectedSections.contains { !$0.isLocked }) { deleteSectionsKeepingContents() } }
+            return claim(ready && EaselArrange.canUngroup(selection, in: document)) { ungroupSelection() }
         case .toggleLock: return claim(ready && !selection.isEmpty) { toggleLock() }
         case .layer(let move): return claim(ready && EaselArrange.canMoveLayer(selection, in: document)) { moveLayer(move) }
         }
