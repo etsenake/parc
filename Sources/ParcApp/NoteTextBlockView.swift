@@ -492,14 +492,9 @@ final class NoteTodoCheckbox: NSView {
 
     func refreshAppearance() {
         let scale = window?.backingScaleFactor ?? 2
-        let name = isChecked ? "checkmark.circle.fill" : "circle"
-        let colors: [NSColor] = isChecked ? [.white, NoteTheme.todoCheckFill] : [NoteTheme.todoBox]
         var image: CGImage?
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let resolved = colors.map { NSColor(cgColor: $0.cgColor) ?? $0 }
-            let configuration = NSImage.SymbolConfiguration(pointSize: NoteTheme.todoBoxSize, weight: .regular)
-                .applying(NSImage.SymbolConfiguration(paletteColors: resolved))
-            guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration) else { return }
+            guard let symbol = NoteTheme.todoGlyph(checked: isChecked) else { return }
             var rect = NSRect(origin: .zero, size: NSSize(width: symbol.size.width * scale, height: symbol.size.height * scale))
             image = symbol.cgImage(forProposedRect: &rect, context: nil, hints: [.ctm: AffineTransform(scale: scale)])
         }
