@@ -4,6 +4,11 @@ import ParcCore
 import QuartzCore
 import SwiftUI
 
+struct ThemeEditorCursor {
+    var set: @MainActor (NSCursor) -> Void = { $0.set() }
+    var current: @MainActor () -> NSCursor = { NSCursor.current }
+}
+
 final class SpaceThemeEditorView: NSView {
     var onPreview: ((SpaceTheme) -> Void)?
     var onCommit: ((SpaceTheme) -> Void)?
@@ -52,11 +57,12 @@ final class SpaceThemeEditorView: NSView {
     init(theme: SpaceTheme, presetPage: Int = 0,
          scrollPublisher: ((AnyPublisher<Double, Never>) -> AnyPublisher<Double, Never>)? = nil,
          scrollTime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
-         performHapticFeedback: @escaping @MainActor () -> Void = ThemeHapticFeedback.perform) {
+         performHapticFeedback: @escaping @MainActor () -> Void = ThemeHapticFeedback.perform,
+         cursor: ThemeEditorCursor = ThemeEditorCursor(), resources: Bundle = .main) {
         editor = SpaceThemeEditorState(theme: theme)
         committedTheme = theme
         page = presetPage
-        noise = ThemeNoiseControl(scrollPublisher: scrollPublisher, now: scrollTime)
+        noise = ThemeNoiseControl(scrollPublisher: scrollPublisher, now: scrollTime, resources: resources)
         self.performHapticFeedback = performHapticFeedback
         super.init(frame: NSRect(x: 0, y: 0, width: 356, height: 508))
         page = min(families.count - 1, max(0, page))
@@ -65,6 +71,8 @@ final class SpaceThemeEditorView: NSView {
         background.material = .popover; background.blendingMode = .withinWindow; background.state = .active
         addSubview(background)
         addSubview(pad)
+        pad.cursor = cursor; intensity.cursor = cursor; noise.cursor = cursor
+        for button in [previous, next, add, remove] { button.cursor = cursor }
         pad.editor = editor
         pad.onBegin = { [weak self] in self?.beginEditing(.pad) }
         pad.onDiscreteBegin = { [weak self] in self?.beginDiscreteEditing(.pad) }
@@ -74,7 +82,8 @@ final class SpaceThemeEditorView: NSView {
         }
         pad.onEnd = { [weak self] in self?.completeGesture() }
         for (index, appearance) in AppAppearance.allCases.enumerated() {
-            let button = ThemeAppearanceButton(appearance: appearance)
+            let button = ThemeAppearanceButton(appearance: appearance, resources: resources)
+            button.cursor = cursor
             button.onAction = { [weak self] in
                 guard let self else { return }
                 self.finishEditing()
@@ -349,6 +358,10 @@ private enum ThemeEditorResources {
         return result
     }()
     static func image(_ name: String) -> NSImage? { images[name] }
+    static func image(_ name: String, in bundle: Bundle) -> NSImage? {
+        guard bundle != .main else { return images[name] }
+        return bundle.url(forResource: name, withExtension: "png", subdirectory: "ThemeEditor").flatMap(NSImage.init(contentsOf:))
+    }
     static func preset(page: Int, index: Int) -> Preset? {
         presets.first { $0.page == page && $0.index == index }
     }
@@ -394,6 +407,7 @@ private enum ThemeEditorColors {
 
 private class ThemeIconButton: NSButton {
     var onAction: (() -> Void)?
+    var cursor = ThemeEditorCursor()
     private var hovered = false
     private var tracking: NSTrackingArea?
     init(symbol: String, label: String, configuration: NSImage.SymbolConfiguration? = nil,
@@ -421,7 +435,7 @@ private class ThemeIconButton: NSButton {
         tracking = NSTrackingArea(rect: bounds, options: [.activeInKeyWindow, .mouseEnteredAndExited, .cursorUpdate], owner: self)
         addTrackingArea(tracking!)
     }
-    override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
+    override func cursorUpdate(with event: NSEvent) { cursor.set(.pointingHand) }
     var hoverStyleEnabled = true { didSet { if hoverStyleEnabled != oldValue { updateHover(animated: false) } } }
     override var isEnabled: Bool {
         didSet { if isEnabled != oldValue { updateHover(animated: false); needsDisplay = true } }
@@ -634,6 +648,7 @@ struct ThemeButtonMotion {
 
 private final class ThemeColorPad: NSView {
     weak var editor: SpaceThemeEditorState?
+    var cursor = ThemeEditorCursor()
     var onBegin: (() -> Void)?
     var onDiscreteBegin: (() -> Void)?
     var onChange: ((Double, Double) -> Void)?
@@ -690,7 +705,7 @@ private final class ThemeColorPad: NSView {
         }
     }
     func cancelGesture() {
-        if dragOrigin != nil { NSCursor.arrow.set(); setHoveredHandle(nil) }
+        if dragOrigin != nil { cursor.set(.arrow); setHoveredHandle(nil) }
         dragOrigin = nil; dragHandleOrigin = nil
         updateButtonHoverStyle(at: window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) })
     }
@@ -746,7 +761,7 @@ private final class ThemeColorPad: NSView {
         for case let button as ThemeAppearanceButton in subviews { button.hoverStyleEnabled = enabled }
     }
     override func cursorUpdate(with event: NSEvent) {
-        if dragOrigin == nil { hoverCursor(at: convert(event.locationInWindow, from: nil)).set() }
+        if dragOrigin == nil { cursor.set(hoverCursor(at: convert(event.locationInWindow, from: nil))) }
     }
     private func setHoveredHandle(_ index: Int?) {
         if index != hovered { hovered = index; refresh(animated: editor?.isGestureInProgress == false) }
@@ -760,16 +775,16 @@ private final class ThemeColorPad: NSView {
         guard bounds.contains(point) else { setHoveredHandle(nil); return }
         updateHoveredHandle(at: point)
         updateButtonHoverStyle(at: point)
-        hoverCursor(at: point).set()
+        cursor.set(hoverCursor(at: point))
     }
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         updateHoveredHandle(at: point)
         updateButtonHoverStyle(at: point)
-        hoverCursor(at: point).set()
+        cursor.set(hoverCursor(at: point))
     }
     override func mouseExited(with event: NSEvent) {
-        if dragHandleOrigin == nil { setHoveredHandle(nil); NSCursor.arrow.set() }
+        if dragHandleOrigin == nil { setHoveredHandle(nil); cursor.set(.arrow) }
         updateButtonHoverStyle(at: nil)
     }
     override func mouseDown(with event: NSEvent) {
@@ -780,7 +795,7 @@ private final class ThemeColorPad: NSView {
         refresh(animated: false)
         dragOrigin = point
         dragHandleOrigin = handle(at: point).map { handles[$0].position }
-        if dragHandleOrigin != nil { NSCursor.closedHand.set() }
+        if dragHandleOrigin != nil { cursor.set(.closedHand) }
         updateButtonHoverStyle(at: point)
         updateColor(dragHandleOrigin ?? point)
         if dragHandleOrigin != nil { updateHoveredHandle(at: point) }
@@ -789,13 +804,13 @@ private final class ThemeColorPad: NSView {
         guard let origin = dragOrigin else { return }
         let point = convert(event.locationInWindow, from: nil)
         if let handleOrigin = dragHandleOrigin {
-            if NSCursor.current != .closedHand { NSCursor.closedHand.set() }
+            if cursor.current() != .closedHand { cursor.set(.closedHand) }
             updateColor(NSPoint(x: handleOrigin.x + point.x - origin.x, y: handleOrigin.y + point.y - origin.y))
         } else {
             updateColor(point)
             let inside = bounds.contains(point)
             if inside { updateHoveredHandle(at: point) } else { setHoveredHandle(nil) }
-            (inside ? hoverCursor(at: point) : NSCursor.arrow).set()
+            cursor.set(inside ? hoverCursor(at: point) : .arrow)
             updateButtonHoverStyle(at: point)
         }
     }
@@ -806,7 +821,7 @@ private final class ThemeColorPad: NSView {
         let point = convert(event.locationInWindow, from: nil), inside = bounds.contains(point)
         if draggedKnob {
             if inside { updateHoveredHandle(at: point) } else { setHoveredHandle(nil) }
-            (inside ? hoverCursor(at: point) : NSCursor.arrow).set()
+            cursor.set(inside ? hoverCursor(at: point) : .arrow)
         }
         updateButtonHoverStyle(at: inside ? point : nil)
     }
@@ -847,6 +862,7 @@ private final class ThemeIntensityControl: NSControl {
     var onChange: ((Double) -> Void)?
     var onEnd: (() -> Void)?
     static let drawingOutset = NSSize(width: 4, height: 10)
+    var cursor = ThemeEditorCursor()
     private var pointerActive = false
     private var pointerInside = false
     private var tracking: NSTrackingArea?
@@ -913,7 +929,7 @@ private final class ThemeIntensityControl: NSControl {
     private func updateHover() { thumbMotion.update(hovered: pointerInside || pointerActive) }
     private func pointerIsInside(_ point: NSPoint?) -> Bool { point.map(track.contains) ?? false }
     func cancelGesture() {
-        if pointerActive { NSCursor.arrow.set() }
+        if pointerActive { cursor.set(.arrow) }
         pointerActive = false
         pointerInside = pointerIsInside(window.flatMap { $0.isKeyWindow ? convert($0.mouseLocationOutsideOfEventStream, from: nil) : nil })
         updateHover()
@@ -921,13 +937,13 @@ private final class ThemeIntensityControl: NSControl {
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self); onBegin?(); pointerActive = true
         updateHover()
-        NSCursor.closedHand.set(); update(event)
+        cursor.set(.closedHand); update(event)
     }
     override func mouseDragged(with event: NSEvent) { if pointerActive { update(event) } }
     override func mouseUp(with event: NSEvent) {
         pointerInside = pointerIsInside(convert(event.locationInWindow, from: nil))
         guard pointerActive else { updateHover(); return }
-        pointerActive = false; onEnd?(); NSCursor.openHand.set()
+        pointerActive = false; onEnd?(); cursor.set(.openHand)
         updateHover()
     }
     private func update(_ event: NSEvent) {
@@ -981,6 +997,8 @@ private final class ThemeNoiseControl: NSControl {
     var onChange: ((Double, SpaceThemeNoiseGesture) -> Void)?
     var onEnd: (() -> Void)?
     var onClick: (() -> Void)?
+    var cursor = ThemeEditorCursor()
+    private let resources: Bundle
     private var startPoint: NSPoint?
     private var didDrag = false
     private var pressedKnob = false
@@ -1004,7 +1022,8 @@ private final class ThemeNoiseControl: NSControl {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     init(scrollPublisher: ((AnyPublisher<Double, Never>) -> AnyPublisher<Double, Never>)?,
-         now: @escaping () -> TimeInterval) {
+         now: @escaping () -> TimeInterval, resources: Bundle) {
+        self.resources = resources
         self.scrollPublisher = scrollPublisher ?? {
             $0.throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true).eraseToAnyPublisher()
         }
@@ -1054,7 +1073,7 @@ private final class ThemeNoiseControl: NSControl {
         let knob = knobRect, side = knob.width * 1.2 * knobMotion.motion.scale
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(ovalIn: knob).addClip()
-        ThemeEditorResources.image(name)?.draw(in: NSRect(x: knob.midX - side / 2, y: knob.midY - side / 2, width: side, height: side),
+        ThemeEditorResources.image(name, in: resources)?.draw(in: NSRect(x: knob.midX - side / 2, y: knob.midY - side / 2, width: side, height: side),
                                                from: .zero, operation: .sourceOver,
                                                fraction: 0.6, respectFlipped: true, hints: nil)
         NSGraphicsContext.restoreGraphicsState()
@@ -1078,14 +1097,14 @@ private final class ThemeNoiseControl: NSControl {
         pointerOnRing = ringContains(point)
         knobMotion.update(hovered: pointerInsideCenter)
         updateMarkerHover()
-        if !didDrag && !rotationActive { (pointerInsideCenter ? NSCursor.pointingHand : NSCursor.openHand).set() }
+        if !didDrag && !rotationActive { cursor.set(pointerInsideCenter ? .pointingHand : .openHand) }
     }
     override func mouseEntered(with event: NSEvent) { mouseMoved(with: event) }
     override func mouseExited(with event: NSEvent) {
         pointerInsideCenter = false; pointerOnRing = false
         knobMotion.update(hovered: false)
         updateMarkerHover()
-        if !didDrag && !rotationActive { NSCursor.arrow.set() }
+        if !didDrag && !rotationActive { cursor.set(.arrow) }
     }
     private func ringContains(_ point: NSPoint?) -> Bool {
         point.map { bounds.contains($0) && !knobRect.contains($0) } ?? false
@@ -1116,7 +1135,7 @@ private final class ThemeNoiseControl: NSControl {
     func cancelGesture() {
         if rotationSequenceActive { cancelledRotation = true }
         cancelScrollInput()
-        if didDrag || rotationActive { NSCursor.arrow.set() }
+        if didDrag || rotationActive { cursor.set(.arrow) }
         startPoint = nil; didDrag = false; pressedKnob = false; rotationActive = false; pendingRotation = 0
         knobMotion.update(pressed: false)
         pointerOnRing = ringContains(window.flatMap { $0.isKeyWindow ? convert($0.mouseLocationOutsideOfEventStream, from: nil) : nil })
@@ -1139,7 +1158,7 @@ private final class ThemeNoiseControl: NSControl {
         if !didDrag {
             guard hypot(p.x - startPoint.x, p.y - startPoint.y) >= 10 else { return }
             onBegin?()
-            self.startPoint = startPoint; didDrag = true; NSCursor.closedHand.set()
+            self.startPoint = startPoint; didDrag = true; cursor.set(.closedHand)
             updateMarkerHover()
         }
         onChange?(angleValue(p), .drag)
@@ -1152,7 +1171,7 @@ private final class ThemeNoiseControl: NSControl {
         if didDrag { onEnd?() }
         else if pressedKnob { if knobContains(p) { onClick?() } }
         else if bounds.contains(p) { onBegin?(); onChange?(angleValue(p), .dialClick); onEnd?() }
-        startPoint = nil; didDrag = false; pressedKnob = false; NSCursor.arrow.set()
+        startPoint = nil; didDrag = false; pressedKnob = false; cursor.set(.arrow)
         updateMarkerHover()
     }
     override func rotate(with event: NSEvent) {
@@ -1169,7 +1188,7 @@ private final class ThemeNoiseControl: NSControl {
         }
         if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
             pendingRotation = 0; rotationSequenceActive = false
-            if rotationActive { rotationActive = false; onEnd?(); NSCursor.arrow.set(); updateMarkerHover() }
+            if rotationActive { rotationActive = false; onEnd?(); cursor.set(.arrow); updateMarkerHover() }
             return
         }
         let delta = Double(event.rotation)
@@ -1185,7 +1204,7 @@ private final class ThemeNoiseControl: NSControl {
             rotationSequenceActive = true; cancelledRotation = false
             knobMotion.update(pressed: false)
             updateMarkerHover()
-            NSCursor.closedHand.set()
+            cursor.set(.closedHand)
         }
         pendingRotation = 0
         onChange?(value + admittedRotation / 720, .rotation)
@@ -1380,6 +1399,7 @@ final class ThemeAppearanceButton: NSButton {
     private var lastDisplayFingerprint: Int?
     private var hovered = false
     private var tracking: NSTrackingArea?
+    var cursor = ThemeEditorCursor()
     override var isFlipped: Bool { true }
     init(appearance: AppAppearance, resources: Bundle = .main, allowsPlayback: (() -> Bool)? = nil,
          scheduleFrame: @escaping (Timer) -> Void = { RunLoop.main.add($0, forMode: .common) }) {
@@ -1463,7 +1483,7 @@ final class ThemeAppearanceButton: NSButton {
         tracking = NSTrackingArea(rect: bounds, options: [.activeInKeyWindow, .mouseEnteredAndExited, .cursorUpdate], owner: self)
         addTrackingArea(tracking!)
     }
-    override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
+    override func cursorUpdate(with event: NSEvent) { cursor.set(.pointingHand) }
     var hoverStyleEnabled = true { didSet { if hoverStyleEnabled != oldValue { updateHover(animated: false) } } }
     override var isEnabled: Bool {
         didSet { if isEnabled != oldValue { updateHover(animated: false); invalidateDisplay() } }
