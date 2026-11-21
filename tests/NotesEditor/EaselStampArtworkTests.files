@@ -25,6 +25,7 @@ Sources/ParcApp/NoteMathRenderer.swift
 Sources/ParcApp/NoteMathLayout.swift
 Sources/ParcApp/NoteMathFont.swift
 Sources/ParcApp/NoteFloatingPanel.swift
+Sources/ParcApp/NoteCursor.swift
 Sources/ParcApp/NoteAnimation.swift
 Sources/ParcApp/NoteControls.swift
 Sources/ParcApp/DocumentDefaultIcon.swift
