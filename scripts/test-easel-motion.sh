@@ -33,6 +33,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/Sources/ParcApp/EaselShapePicker.swift" \
   "$repo_root/Sources/ParcApp/NoteAnimation.swift" \
   "$repo_root/Sources/ParcApp/NoteFloatingPanel.swift" \
+  "$repo_root/Sources/ParcApp/NoteCursor.swift" \
   "$repo_root/Sources/ParcApp/NoteControls.swift" \
   "$repo_root/Sources/ParcApp/NoteCustomEmojiImages.swift" \
   "$repo_root/Sources/ParcApp/DocumentDefaultIcon.swift" \
