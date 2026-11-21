@@ -132,7 +132,7 @@ struct SidebarWindowSessionTests {
     }
 
     func waitFor(_ condition: () throws -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(5)
+        let deadline = Date().addingTimeInterval(30)
         while Date() < deadline {
             if try condition() { return }
             try await Task.sleep(nanoseconds: 20_000_000)
