@@ -3,7 +3,27 @@ import Combine
 import Darwin
 
 enum EaselItemKind: String, Codable, CaseIterable {
-    case text, image, rectangle, circle, arrow, freehand, webCard, browser, link
+    case text, image, rectangle, circle, arrow, freehand, webCard, browser, link, sticky, section
+
+    var holdsText: Bool { self == .text || self == .sticky || self == .rectangle || self == .circle }
+}
+
+enum EaselShape: String, Codable, CaseIterable {
+    case rectangle, roundedRectangle, ellipse, diamond, triangle, triangleDown, parallelogram, trapezoid,
+         pentagon, hexagon, octagon, star, plus, speechBubble, arrowLeft, arrowRight, arrowUp, arrowDown,
+         chevron, cylinder
+}
+
+enum EaselStrokeDash: String, Codable, CaseIterable { case solid, dashed, dotted }
+
+enum EaselArrowHead: String, Codable, CaseIterable { case none, arrow, triangle, circle, diamond, bar }
+
+enum EaselConnectorRouting: String, Codable, CaseIterable { case straight, elbow, curved }
+
+struct EaselConnection: Codable, Equatable {
+    enum Side: String, Codable, CaseIterable { case top, right, bottom, left }
+    var itemID: UUID
+    var side: Side?
 }
 
 struct EaselPoint: Codable, Equatable {
@@ -119,8 +139,10 @@ struct EaselTextStyle: Codable, Equatable {
         func shifted(by delta: Int) -> Size { Self.allCases[min(4, max(0, index + delta))] }
     }
     enum Fill: String, Codable { case none, contentHugging }
+    enum Alignment: String, Codable, CaseIterable { case left, center, right }
     var fill: Fill?
     var resolvedFill: Fill { fill ?? .none }
+    var alignment: Alignment?
     var family: Family = .clean
     var size: Size = .body
     var pointSize: Double {
@@ -149,7 +171,32 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var capturedAt: Date?
     var captureLayout: EaselCaptureLayout?
     var liveCapture: Bool?
+    var shape: EaselShape?
+    var fill: String?
+    var fillOpacity: Double?
+    var strokeWidth: Double?
+    var strokeDash: EaselStrokeDash?
+    var startHead: EaselArrowHead?
+    var endHead: EaselArrowHead?
+    var routing: EaselConnectorRouting?
+    var startConnection: EaselConnection?
+    var endConnection: EaselConnection?
+    var groupID: UUID?
+    var locked: Bool?
+    var rotation: Double?
     var ownsEmbeddedPage: Bool { kind == .browser || (kind == .webCard && captureLayout != nil && liveCapture == true) }
+    var resolvedShape: EaselShape? {
+        switch kind {
+        case .rectangle: return shape ?? .rectangle
+        case .circle: return .ellipse
+        default: return nil
+        }
+    }
+    var isLocked: Bool { locked == true }
+    var resolvedRotation: Double { rotation ?? 0 }
+    var resolvedStartHead: EaselArrowHead { startHead ?? .none }
+    var resolvedEndHead: EaselArrowHead { endHead ?? .arrow }
+    var resolvedRouting: EaselConnectorRouting { routing ?? .straight }
 }
 
 struct EaselDocument: Codable, Identifiable, Equatable {
@@ -405,9 +452,10 @@ final class EaselStore {
                 throw EaselStoreError.invalidDocument("object geometry or appearance")
             }
             if let richText = item.richText {
-                guard item.kind == .text else { throw EaselStoreError.invalidDocument("rich text on a non-text object") }
+                guard item.kind.holdsText else { throw EaselStoreError.invalidDocument("rich text on an object without text") }
                 try richText.validate(text: item.text)
             }
+            try validateStyle(item)
             if let id = item.assetID { try asset(id) }
             if let layout = item.captureLayout {
                 guard item.kind == .webCard, item.assetID != nil, layout.isValid else {
@@ -425,6 +473,23 @@ final class EaselStore {
             if item.kind == .image && item.assetID == nil { throw EaselStoreError.invalidDocument("image has no asset") }
             if [.link, .webCard, .browser].contains(item.kind) && item.url == nil { throw EaselStoreError.invalidDocument("card has no URL") }
             if [.arrow, .freehand].contains(item.kind) && item.points.count < 2 { throw EaselStoreError.invalidDocument("drawing has fewer than two points") }
+        }
+    }
+
+    private static func validateStyle(_ item: EaselItem) throws {
+        let hex = "^#[0-9A-Fa-f]{6}$"
+        guard item.fill.map({ $0.range(of: hex, options: .regularExpression) != nil }) != false,
+              item.fillOpacity.map({ $0.isFinite && $0 >= 0 && $0 <= 1 }) != false,
+              item.strokeWidth.map({ $0.isFinite && $0 >= 0 && $0 <= 64 }) != false,
+              item.rotation.map({ $0.isFinite && abs($0) <= 360 }) != false else {
+            throw EaselStoreError.invalidDocument("object style")
+        }
+        if item.shape != nil && item.kind != .rectangle { throw EaselStoreError.invalidDocument("shape outline on a non-shape object") }
+        let connector = item.startHead != nil || item.endHead != nil || item.routing != nil
+            || item.startConnection != nil || item.endConnection != nil
+        if connector && item.kind != .arrow { throw EaselStoreError.invalidDocument("connector style on a non-arrow object") }
+        if item.startConnection?.itemID == item.id || item.endConnection?.itemID == item.id {
+            throw EaselStoreError.invalidDocument("an arrow connected to itself")
         }
     }
 

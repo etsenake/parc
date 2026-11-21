@@ -69,7 +69,69 @@ struct EaselStoreTests {
         try persistEncodeOffCallingThread()
         try identicalBytePersistSkip()
         webInputDestinations()
-        print("EaselStore: \(assertions) assertions passed (22 test groups)")
+        try boardObjectFields()
+        print("EaselStore: \(assertions) assertions passed (23 test groups)")
+    }
+
+    @MainActor static func boardObjectFields() throws {
+        try withDirectory { directory in
+            let store = try EaselStore(directory: directory)
+            let session = try store.create()
+            var diamond = EaselItem(kind: .rectangle, frame: frame, text: "Plan")
+            diamond.shape = .diamond; diamond.fill = "#3D8FC4"; diamond.fillOpacity = 0.4
+            diamond.strokeWidth = 4; diamond.strokeDash = .dashed; diamond.groupID = UUID()
+            diamond.locked = true; diamond.rotation = 15
+            diamond.textStyle = EaselTextStyle(alignment: .center)
+            var sticky = EaselItem(kind: .sticky, frame: frame, zIndex: 1, text: "Idea")
+            sticky.fill = "#E8B53A"
+            var section = EaselItem(kind: .section, frame: EaselRect(x: 0, y: 0, width: 600, height: 400), zIndex: 2, text: "Research")
+            section.fill = "#4F9A6E"; section.fillOpacity = 0.16
+            var arrow = EaselItem(kind: .arrow, frame: frame, zIndex: 3, points: [.init(x: 0, y: 0), .init(x: 120, y: 80)])
+            arrow.startHead = .circle; arrow.endHead = .triangle; arrow.routing = .elbow
+            arrow.startConnection = EaselConnection(itemID: diamond.id, side: .right)
+            arrow.endConnection = EaselConnection(itemID: sticky.id, side: nil)
+            try session.perform("Add board objects") { $0.items += [diamond, sticky, section, arrow] }
+            let reopened = try EaselStore(directory: directory).load(session.document.id)
+            expect(reopened.document.items == [diamond, sticky, section, arrow], "Board object fields survive a save and reopen")
+            expect(diamond.resolvedShape == .diamond && diamond.isLocked && diamond.resolvedRotation == 15, "Shape helpers read the stored outline, lock and rotation")
+            let circle = EaselItem(kind: .circle, frame: frame)
+            let plain = EaselItem(kind: .rectangle, frame: frame)
+            expect(circle.resolvedShape == .ellipse && plain.resolvedShape == .rectangle && sticky.resolvedShape == nil, "Legacy rectangles and circles keep their outlines")
+            let legacyArrow = EaselItem(kind: .arrow, frame: frame, points: [.init(x: 0, y: 0), .init(x: 4, y: 4)])
+            expect(legacyArrow.resolvedStartHead == .none && legacyArrow.resolvedEndHead == .arrow && legacyArrow.resolvedRouting == .straight, "Legacy arrows keep one arrowhead at the end and a straight line")
+            expect(EaselItemKind.allCases.filter(\.holdsText) == [.text, .rectangle, .circle, .sticky], "Text lives in text, shapes and stickies")
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            let legacy = String(decoding: try encoder.encode(plain), as: UTF8.self)
+            for key in ["shape", "fill", "fillOpacity", "strokeWidth", "strokeDash", "startHead", "endHead", "routing",
+                        "startConnection", "endConnection", "groupID", "locked", "rotation"] {
+                expect(!legacy.contains("\"" + key + "\""), "Unused board fields stay out of saved bytes: " + key)
+            }
+            let style = String(decoding: try encoder.encode(EaselTextStyle()), as: UTF8.self)
+            expect(!style.contains("alignment"), "Unused text alignment stays out of saved bytes")
+            @MainActor func refuses(_ message: String, _ change: (inout EaselItem) -> Void) {
+                var item = EaselItem(kind: .rectangle, frame: frame, zIndex: 9)
+                change(&item)
+                let before = session.document
+                expectThrows(message) { try session.perform("Invalid board object") { $0.items.append(item) } }
+                expect(session.document == before, "Refused board object leaves the Easel unchanged: " + message)
+            }
+            refuses("Fill must be a hex colour") { $0.fill = "blue" }
+            refuses("Fill opacity stays between 0 and 1") { $0.fillOpacity = 1.5 }
+            refuses("Stroke width cannot be negative") { $0.strokeWidth = -1 }
+            refuses("Stroke width has a ceiling") { $0.strokeWidth = 100 }
+            refuses("Rotation must be finite") { $0.rotation = .nan }
+            refuses("Rotation stays within a turn") { $0.rotation = 720 }
+            refuses("Outlines belong to rectangle-kind shapes") { $0.kind = .circle; $0.shape = .star }
+            refuses("Arrowheads belong to arrows") { $0.endHead = .triangle }
+            refuses("Routing belongs to arrows") { $0.routing = .curved }
+            refuses("Connections belong to arrows") { $0.startConnection = EaselConnection(itemID: diamond.id) }
+            refuses("An arrow cannot connect to itself") { item in
+                item.kind = .arrow; item.points = [.init(x: 0, y: 0), .init(x: 1, y: 1)]
+                item.endConnection = EaselConnection(itemID: item.id)
+            }
+            let decoded = try JSONDecoder().decode(EaselItem.self, from: Data(##"{"id":"6F9619FF-8B86-D011-B42D-00CF4FC964FF","kind":"rectangle","frame":{"x":1,"y":2,"width":3,"height":4},"zIndex":0,"text":"","color":"#252525","points":[]}"##.utf8))
+            expect(decoded.shape == nil && decoded.fill == nil && decoded.rotation == nil && decoded.resolvedShape == .rectangle, "Easels saved before board objects decode unchanged")
+        }
     }
 
     @MainActor static func persistEncodeOffCallingThread() throws {
@@ -529,7 +591,7 @@ struct EaselStoreTests {
             expectThrows("unsafe rich link") { try session.perform("Invalid") { $0.items[0].richText!.runs[0].attributes.link = "file:///private/example" } }
             expectThrows("aliased font axis tags") { try session.perform("Invalid") { $0.items[0].richText!.runs[0].attributes.font.variations = ["1": 1, "01": 2] } }
             expectThrows("signed font axis tag") { try session.perform("Invalid") { $0.items[0].richText!.runs[0].attributes.font.variations = ["+2003265652": 400] } }
-            expectThrows("rich ranges on image") { try session.perform("Invalid") { $0.items[0].kind = .rectangle } }
+            expectThrows("rich ranges on a section") { try session.perform("Invalid") { $0.items[0].kind = .section } }
             expect(session.document == before && (try! Data(contentsOf: file(directory, before.id))) == bytes, "Rejected rich mutations preserve published model and original bytes")
             var legacy = try JSONSerialization.jsonObject(with: bytes) as! [String: Any]
             var items = legacy["items"] as! [[String: Any]]; items[0].removeValue(forKey: "richText"); legacy["items"] = items

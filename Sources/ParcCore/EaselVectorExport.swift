@@ -132,7 +132,18 @@ enum EaselVectorExport {
             if let picture = art.images[item.id] { return linked(image(item, picture, corner: 8), item.url) }
             return card(item)
         case .link: return card(item)
+        case .sticky, .section: return board(item, art.texts[item.id])
         }
+    }
+
+    static func board(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
+        let f = item.frame, radius = item.kind == .sticky ? 4.0 : 12.0
+        let fill = item.fill.map(paint) ?? paint(automaticInk)
+        let opacity = item.fill == nil ? 0.09 : (item.fillOpacity ?? 1)
+        let paper = "<rect x=\"" + number(f.x) + "\" y=\"" + number(f.y) + "\" width=\"" + number(f.width) + "\" height=\""
+            + number(f.height) + "\" rx=\"" + number(radius) + "\" ry=\"" + number(radius) + "\" style=\"fill:" + fill
+            + ";fill-opacity:" + number(opacity) + "\"/>"
+        return "<g>" + paper + text(item, layout) + "</g>"
     }
 
     static func linked(_ body: String, _ raw: String?) -> String {

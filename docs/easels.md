@@ -254,6 +254,21 @@ that restriction. The native save panel and file extension agree on format.
 Callbacks revalidate the exact window/focus; errors appear once per window and
 queue behind an existing sheet.
 
+## Saved format for board objects
+
+Every object field added for shapes, stickies, sections and connectors is
+optional and left out of the file when unused, so an Easel saved before them
+opens and draws exactly as it did. Rectangle-kind objects are the shape family:
+`shape` names their outline (absent means a plain rectangle) and circle-kind
+objects are ellipses. `fill`, `fillOpacity`, `strokeWidth` and `strokeDash`
+style shapes, stickies and sections; absent values keep the original look. Only
+arrows carry arrowheads (`startHead`, `endHead`; absent means none at the start
+and an arrow at the end), `routing` (absent means straight) and connections to
+other objects. `groupID`, `locked` and `rotation` (degrees around the frame's
+centre) apply to any object. Text, shapes and stickies hold rich text; sections
+keep a plain title. Validation refuses each field on objects it doesn't belong
+to, so a malformed file is rejected whole rather than half drawn.
+
 ## Checks and limits
 
 `bash scripts/test-easels.sh` and the focused editor/pool/capture components

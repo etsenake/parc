@@ -70,7 +70,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
-  "$repo_root/Sources/ParcApp/EaselCanvasView.swift" \
+  "$repo_root/Sources/ParcApp/EaselCanvas"*.swift \
   "$repo_root/Sources/ParcApp/ParcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/EaselMotion.swift" \
   "$repo_root/tests/EaselCanvasTests.swift" \
@@ -94,7 +94,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
-  "$repo_root/Sources/ParcApp/EaselCanvasView.swift" \
+  "$repo_root/Sources/ParcApp/EaselCanvas"*.swift \
   "$repo_root/Sources/ParcApp/ParcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/EaselMotion.swift" \
   "$repo_root/Sources/ParcApp/SidebarIconCatalog.swift" \

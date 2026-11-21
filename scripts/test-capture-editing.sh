@@ -18,7 +18,7 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
-  "$repo_root/Sources/ParcApp/EaselCanvasView.swift" \
+  "$repo_root/Sources/ParcApp/EaselCanvas"*.swift \
   "$repo_root/Sources/ParcApp/ParcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/EaselMotion.swift" \
   "$repo_root/Sources/ParcApp/CaptureLibrarySharing.swift" \

@@ -808,6 +808,12 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 (title as NSString).draw(in: r.insetBy(dx: 16, dy: 16), withAttributes: [.font: NoteTheme.nunitoBold(17), .foregroundColor: ink])
                 ((item.url ?? "") as NSString).draw(in: NSRect(x: r.minX + 16, y: r.maxY - 36, width: r.width - 32, height: 24),
                        withAttributes: [.font: NoteTheme.nunitoRegular(12), .foregroundColor: EaselAppearance.secondaryText])
+            case .sticky, .section:
+                let radius: CGFloat = item.kind == .sticky ? 4 : 12
+                let paper = NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius)
+                color(item.fill ?? EaselInk.automatic).withAlphaComponent(item.fill == nil ? 0.09 : CGFloat(item.fillOpacity ?? 1)).setFill()
+                paper.fill()
+                cachedTextLayout(for: item).draw(at: r.origin, style: item.resolvedTextStyle)
             }
     }
     fileprivate func drawDecorations(in dirtyRect: NSRect) {

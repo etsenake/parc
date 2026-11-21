@@ -117,7 +117,7 @@ enum EaselDocumentExport {
         let scale = EaselImageExport.pixelDensity()
         for item in session.document.items {
             switch item.kind {
-            case .text:
+            case .text, .sticky, .section:
                 art.texts[item.id] = vectorText(item)
             case .image:
                 if let id = item.assetID, let data = try? session.assetData(id) { art.images[item.id] = webImage(data) }
