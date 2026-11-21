@@ -8,7 +8,7 @@ final class EaselStampPanels: EaselStampPanelsPresenting {
     private var picker: NotePagePopover?
     private weak var wheelView: EaselStampWheel?
 
-    var isWheelOpen: Bool { wheel?.isOpen == true }
+    var isWheelOpen: Bool { wheel?.isOpen == true && wheelView?.isTucking != true }
     var isPickerOpen: Bool { picker?.isOpen == true }
 
     func close(animated: Bool) {
@@ -239,6 +239,8 @@ final class EaselStampWheel: NSView, NoteFloatingPanelContent {
         }
         return slot == highlighted && !reduceMotion ? CGFloat(EaselStampWheelMotion.hoverScale) : 1
     }
+
+    var isTucking: Bool { flight != nil }
 
     func tuckAway(picking face: EaselStampFace, done: @escaping () -> Void) -> Bool {
         guard window != nil, !reduceMotion, flight == nil, let slot = slots.first(where: { self.face(for: $0) == face }) else { return false }

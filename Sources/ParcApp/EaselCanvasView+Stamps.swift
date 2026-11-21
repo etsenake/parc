@@ -151,6 +151,7 @@ extension EaselCanvasView {
         stamps.timer?.invalidate()
         stamps.timer = nil
         let side = EaselStamps.side(heldFor: CACurrentMediaTime() - press.began)
+        seedStampSlam(press.id, drawnSide: press.side, placedSide: side)
         guard placeStamp(press.face, at: point, side: side, tilt: press.tilt, id: press.id, pointer: true) else { return false }
         stopStampPress()
         return true

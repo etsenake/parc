@@ -18,7 +18,7 @@ struct EaselObjectPresentation: Equatable {
 enum EaselObjectEntrance: Equatable {
     case pop
     case drop(tilt: Double)
-    case slam(tilt: Double, raised: Bool)
+    case slam(tilt: Double, raised: Bool, from: Double)
     case quick
     case fade
 
@@ -30,7 +30,7 @@ enum EaselObjectEntrance: Equatable {
         let side: Double = item.id.uuid.0 & 1 == 0 ? 1 : -1
         switch item.kind {
         case .sticky: return .drop(tilt: dropTilt * side)
-        case .stamp: return .slam(tilt: slamTilt * side, raised: false)
+        case .stamp: return .slam(tilt: slamTilt * side, raised: false, from: EaselObjectTransition.slamScale)
         case .arrow, .freehand, .section: return .fade
         default: return .pop
         }
@@ -198,9 +198,8 @@ struct EaselObjectTransition: Equatable {
                 result.rotation = tilt * (1 - settled)
                 result.shadow = max(0, 1 - settled)
                 result.stretch = Self.squashed(result.stretch, by: Self.squash(at: elapsed, from: 0.12, length: 0.22, amount: Self.landingSquash))
-            case .slam(let tilt, let raised):
+            case .slam(let tilt, let raised, let from):
                 let settled = EaselObjectSpring.toggle.progress(at: elapsed)
-                let from = raised ? Self.raisedScale : Self.slamScale
                 let lifted = raised ? Self.raisedOpacity : 0
                 result.opacity = lifted + (1 - lifted) * Self.easeOut(elapsed / Self.slamFade)
                 result.scale = from + (1 - from) * settled
@@ -333,6 +332,9 @@ struct EaselObjectMotion {
     static let fadingLookLimit = 3
     var carry: EaselObjectCarry?
     private(set) var raised: [UUID: TimeInterval] = [:]
+    private(set) var raisedRatio: [UUID: Double] = [:]
+    private var queued: [UUID: EaselObjectTransition] = [:]
+    private var promoted: Set<UUID> = []
 
     var isEmpty: Bool { transitions.isEmpty && carry == nil && raised.isEmpty }
     var ids: Set<UUID> { Set(transitions.keys).union(carry?.ids ?? []).union(raised.keys) }
@@ -342,7 +344,17 @@ struct EaselObjectMotion {
         raised[id] = raised[id] ?? time
     }
 
-    mutating func lower(_ id: UUID) { raised.removeValue(forKey: id) }
+    mutating func lower(_ id: UUID) { raised.removeValue(forKey: id); raisedRatio.removeValue(forKey: id) }
+
+    mutating func settleRaised(_ id: UUID, ratio: Double) {
+        guard raised[id] != nil, ratio.isFinite, ratio > 0 else { return }
+        raisedRatio[id] = ratio
+    }
+
+    func slamStart(for id: UUID, at time: TimeInterval) -> Double {
+        guard let since = raised[id] else { return EaselObjectTransition.raisedScale }
+        return Self.raisedPresentation(since: time - since).scale * (raisedRatio[id] ?? 1)
+    }
 
     func isRaised(_ id: UUID) -> Bool { raised[id] != nil }
 
@@ -363,6 +375,7 @@ struct EaselObjectMotion {
     mutating func appear(_ entrances: [UUID: EaselObjectEntrance], delays: [UUID: TimeInterval] = [:], at time: TimeInterval, reduced: Bool) {
         for (id, entrance) in entrances {
             raised.removeValue(forKey: id)
+            raisedRatio.removeValue(forKey: id)
             let delay = reduced ? 0 : max(0, delays[id] ?? 0)
             transitions[id] = EaselObjectTransition(effect: .appear(entrance), start: time + delay, reduced: reduced)
         }
@@ -374,6 +387,7 @@ struct EaselObjectMotion {
         for item in items {
             ghosts.append(item)
             previousLooks.removeValue(forKey: item.id)
+            queued.removeValue(forKey: item.id)
             transitions[item.id] = EaselObjectTransition(effect: .vanish, start: time, reduced: reduced)
         }
     }
@@ -401,17 +415,36 @@ struct EaselObjectMotion {
 
     mutating func lift(_ ids: some Sequence<UUID>, from scale: Double, at time: TimeInterval, reduced: Bool) {
         guard !reduced, scale.isFinite, scale > 0 else { return }
-        for id in ids { transitions[id] = EaselObjectTransition(effect: .lift(from: scale), start: time, reduced: reduced) }
+        for id in ids where transitions[id].map({ $0.finished(at: time) }) ?? true {
+            transitions[id] = EaselObjectTransition(effect: .lift(from: scale), start: time, reduced: reduced)
+        }
     }
 
     mutating func pulse(_ ids: some Sequence<UUID>, at time: TimeInterval, reduced: Bool) {
         guard !reduced else { return }
-        for id in ids { transitions[id] = EaselObjectTransition(effect: .pulse, start: time, reduced: false) }
+        for id in ids { follow(id, with: .pulse, at: time) }
     }
 
     mutating func shake(_ ids: some Sequence<UUID>, at time: TimeInterval, reduced: Bool) {
         guard !reduced else { return }
-        for id in ids { transitions[id] = EaselObjectTransition(effect: .shake, start: time, reduced: false) }
+        for id in ids { follow(id, with: .shake, at: time) }
+    }
+
+    private mutating func follow(_ id: UUID, with effect: EaselObjectEffect, at time: TimeInterval) {
+        if let current = transitions[id], !current.finished(at: time), current.effect != effect {
+            if case .vanish = current.effect { return }
+            queued[id] = EaselObjectTransition(effect: effect, start: current.start + current.duration, reduced: false)
+            return
+        }
+        queued.removeValue(forKey: id)
+        transitions[id] = EaselObjectTransition(effect: effect, start: time, reduced: false)
+    }
+
+    func queuedTransition(for id: UUID) -> EaselObjectTransition? { queued[id] }
+
+    mutating func takePromoted() -> Set<UUID> {
+        defer { promoted.removeAll() }
+        return promoted
     }
 
     mutating func restyle(_ previous: [EaselItem], at time: TimeInterval, reduced: Bool) {
@@ -466,6 +499,7 @@ struct EaselObjectMotion {
     func presentation(for id: UUID, at time: TimeInterval) -> EaselObjectPresentation {
         if let carry, carry.ids.contains(id) { return carry.presentation(for: id, at: time) }
         if let since = raised[id] { return Self.raisedPresentation(since: time - since) }
+        if let next = queued[id], transitions[id].map({ $0.finished(at: time) }) ?? true { return next.presentation(at: time) }
         return transitions[id]?.presentation(at: time) ?? .identity
     }
 
@@ -484,7 +518,14 @@ struct EaselObjectMotion {
 
     @discardableResult
     mutating func prune(at time: TimeInterval) -> Set<UUID> {
-        let done = Set(transitions.filter { $0.value.finished(at: time) }.map(\.key))
+        var done = Set(transitions.filter { $0.value.finished(at: time) }.map(\.key))
+        for id in done {
+            guard let next = queued.removeValue(forKey: id) else { continue }
+            transitions[id] = next
+            previousLooks.removeValue(forKey: id)
+            promoted.insert(id)
+            done.remove(id)
+        }
         guard !done.isEmpty else { return [] }
         for id in done { transitions.removeValue(forKey: id); previousLooks.removeValue(forKey: id) }
         ghosts.removeAll { done.contains($0.id) }
@@ -496,6 +537,7 @@ struct EaselObjectMotion {
         for id in Array(transitions.keys) where !present.contains(id) && !ghostIDs.contains(id) {
             transitions.removeValue(forKey: id)
             previousLooks.removeValue(forKey: id)
+            queued.removeValue(forKey: id)
         }
         let reborn = ghostIDs.intersection(present)
         guard !reborn.isEmpty else { return }
@@ -509,6 +551,9 @@ struct EaselObjectMotion {
         previousLooks.removeAll()
         carry = nil
         raised.removeAll()
+        raisedRatio.removeAll()
+        queued.removeAll()
+        promoted.removeAll()
     }
 
     static func glides(_ item: EaselItem) -> Bool {

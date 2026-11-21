@@ -85,7 +85,8 @@ extension EaselCanvasView {
                 guard let item = frames[id] else { continue }
                 let side: Double = item.id.uuid.1 & 1 == 0 ? 1 : -1
                 entrances[id] = objectMotion.timeline.isRaised(id)
-                    ? .slam(tilt: EaselObjectEntrance.pressedSlamTilt * side, raised: true) : EaselObjectEntrance.of(item)
+                    ? .slam(tilt: EaselObjectEntrance.pressedSlamTilt * side, raised: true, from: objectMotion.timeline.slamStart(for: id, at: now))
+                    : EaselObjectEntrance.of(item)
             }
             let delays = cascade(added.filter { frames[$0].map(EaselObjectEntrance.cascades) ?? false })
             objectMotion.timeline.appear(entrances, delays: delays, at: now, reduced: reduced)
@@ -302,6 +303,8 @@ extension EaselCanvasView {
         updateEditorPresentation(at: now)
         presentCarriedSurfaces(at: now)
         objectMotion.timeline.prune(at: now)
+        let promoted = objectMotion.timeline.takePromoted()
+        if !promoted.isEmpty, usesObjectSurfaces { objectMotion.pendingSurfaces.formUnion(promoted); needsLayout = true }
         if let start = objectMotion.chromeStart, now - start >= EaselCanvasObjectMotionState.chromeDuration {
             objectMotion.chromeStart = nil; objectMotion.chromeFading.removeAll()
         }
@@ -653,6 +656,11 @@ extension EaselCanvasView {
         objectMotion.timeline.raise(id, at: CACurrentMediaTime(), reduced: reduceMotion)
         guard objectMotion.timeline.isRaised(id) else { return }
         startObjectMotionDriver()
+    }
+
+    func seedStampSlam(_ id: UUID, drawnSide: Double, placedSide: Double) {
+        guard placedSide > 0 else { return }
+        objectMotion.timeline.settleRaised(id, ratio: drawnSide / placedSide)
     }
 
     func lowerStampDraft(_ id: UUID) {
