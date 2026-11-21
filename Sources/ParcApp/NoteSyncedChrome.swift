@@ -16,7 +16,7 @@ final class NoteSyncedController {
     enum Phase: Equatable { case hidden, hover, editing, missing }
 
     private weak var editor: NotePageEditor?
-    private let engine = NoteSyncedBlocks.shared
+    private let engine: NoteSyncedBlocks
     private var chromes: [NoteBlockID: NoteSyncedChromeView] = [:]
     private var infos: [NoteBlockID: NoteSyncedInfo] = [:]
     private var hovered: NoteBlockID?
@@ -29,6 +29,7 @@ final class NoteSyncedController {
 
     init(editor: NotePageEditor) {
         self.editor = editor
+        engine = ((editor.environment as? NoteFileEnvironment)?.files ?? .shared).syncedBlocks
         engine.changes.sink { [weak self] in self?.engineDidChange() }.store(in: &subscriptions)
     }
 

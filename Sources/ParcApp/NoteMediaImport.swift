@@ -9,12 +9,17 @@ enum NoteMediaImport {
         var note: URL
         var date: Date
         var session: NotePageSession
+        var imports: NoteAttachmentImports
+    }
+
+    static func imports(for environment: NoteEnvironment) -> NoteAttachmentImports {
+        ((environment as? NoteFileEnvironment)?.files ?? .shared).attachmentImports
     }
 
     static func target(for environment: NoteEnvironment) -> Target? {
         guard let file = environment as? NoteFileEnvironment, let note = file.documentURL,
-              let session = NoteFileSession.openSessions.first(where: { $0.environment === environment })?.page else { return nil }
-        return Target(note: note, date: file.now(), session: session)
+              let session = file.files.openSessions.first(where: { $0.environment === environment })?.page else { return nil }
+        return Target(note: note, date: file.now(), session: session, imports: file.files.attachmentImports)
     }
 
     static func source(importing url: URL, environment: NoteEnvironment, scoped: Bool = false) throws -> String {
@@ -42,7 +47,7 @@ enum NoteMediaImport {
     }
 
     static func carriedSource(_ source: String, environment: NoteEnvironment) -> String? {
-        guard let url = URL(string: source), url.isFileURL, NoteAttachmentImports.shared.mayImport(url) else { return nil }
+        guard let url = URL(string: source), url.isFileURL, imports(for: environment).mayImport(url) else { return nil }
         return try? self.source(importing: url, environment: environment)
     }
 
@@ -57,7 +62,7 @@ enum NoteMediaImport {
 
     static func resume(_ source: String?, environment: NoteEnvironment) {
         guard let source, let url = URL(string: source), url.isFileURL, let target = target(for: environment) else { return }
-        let imports = NoteAttachmentImports.shared
+        let imports = target.imports
         imports.adoptOrphans(of: target.note, in: target.session)
         guard NoteAttachments.isStaged(url), !imports.hasTried(source, in: target.session), NoteFilePaths.itemExists(url),
               target.session.page.documentOrder(includingCollapsed: true).contains(where: { target.session.page.block($0)?.props.source == source })
@@ -66,7 +71,7 @@ enum NoteMediaImport {
     }
 
     private static func begin(_ source: String, file: URL, target: Target, access: URL?) -> String {
-        let imports = NoteAttachmentImports.shared
+        let imports = target.imports
         guard !imports.isPending(source, in: target.session) else { return source }
         let note = target.note, date = target.date
         imports.begin(source, from: file, in: target.session, note: note) {
