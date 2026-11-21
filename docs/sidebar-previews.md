@@ -250,6 +250,6 @@ Focused preview components exercise original-identity query/thumbnail leases,
 modifier routes, title rules, geometry, invalidation and focus return.
 `tests/SidebarPreview/check.py` also plays the entrance and exit with Reduce
 Motion simulated off and on. `SidebarDocumentPreviewTests` (run by `swift test`) cover document
-kinds, card text, buttons and the thumbnail cache. `tests/SidebarPreviewHeader/check.py` builds tab
+kinds, card text, buttons and the thumbnail cache. `SidebarPreviewHeaderTests` build tab
 picture cards without a window and checks the Open in Peek button against the
 Peek offer, its action, the header widths and the artwork.

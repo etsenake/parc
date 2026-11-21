@@ -248,6 +248,6 @@ unused-Profile reporting and the Note and Easel refusal explained before the war
 Space-management/store/inter-Profile components cover title migration, exact
 leases, failed saves, deletion/Undo, document relocation and owner preservation.
 `SpaceManagerSelectionTests` and `SpaceManagerCardTests` (run by `swift test`) exercise
-real inert cards/sidebar controls and accessibility wiring. `tests/LibraryWidth/check.py` and sidebar motion/layout
+real inert cards/sidebar controls and accessibility wiring. `LibraryWidthTests` and sidebar motion/layout
 checks cover page-change and Space-count reporting, clamps, cancellation, Reduce
 Motion and geometry.

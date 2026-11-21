@@ -258,13 +258,13 @@ neither focus nor selection, and only a running screen reader speaks them.
 
 | Check | Coverage |
 |---|---|
-| `tests/SidebarAccessibility/check.py` | Exposed labels, chain ordering, focus guards and saved responder rules |
+| `SidebarAccessibilityTests` (run by `swift test`) | Exposed labels, chain ordering, focus guards and saved responder rules |
 | `scripts/test-keyboard-navigation.sh` | Control-Space announcement text, one per arrow press, list ends and folder state |
-| `tests/SidebarOutline/check.py` | Row/cell hierarchy, geometry, stable identities, disclosure, selection and accessibility selection |
-| `tests/SidebarWindowKeyLoop/check.py` | Bidirectional traversal, renderer replacement, hidden sidebar, Peek and closed-loop exclusions |
+| `SidebarOutlineTests`, `SidebarOutlineSelectionTests` | Row/cell hierarchy, geometry, stable identities, disclosure, selection and accessibility selection |
+| `SidebarWindowKeyLoopTests` | Bidirectional traversal, renderer replacement, hidden sidebar, Peek and closed-loop exclusions |
 | `tests/SidebarMiniPlayerFocus/check.py` | Mini-player keyboard actions and visible rings |
 | `tests/SidebarChrome/check.py` | Dock order, Space identifiers and header controls |
-| `tests/SidebarWindowButtons/check.py` | Window controls and presentation-state pointer handling |
+| `SidebarWindowButtonsTests` | Window controls and presentation-state pointer handling |
 | `tests/SidebarHeaderGlyphs/check.py` | URL row button reveal rule, popup and panel holds, and VoiceOver |
 
 These are model and inert AppKit component checks. Inspect their entry points

@@ -298,9 +298,10 @@ components; inspect a check before running it under the current work contract:
 | Check | Coverage |
 |---|---|
 | `SidebarResizeGestureTests`, `SidebarWindowWidthTests`, `SidebarWindowSessionTests`, `SavedWindowFrameTests`, `PageContentResizeTests` | Gesture thresholds, snapping, cancellation, per-window persistence and frames, screen fitting and the renderer hold model |
-| `tests/SidebarResize/check.py` | Resize region, page resizer and renderer frame reports |
+| `SidebarResizeRegionTests`, `PageContentResizerTests` | Resize region and page resizer |
+| `tests/SidebarResize/check.py` | Renderer frame reports |
 | `tests/SidebarResize/engine_report.py` | Required reporting symbols in a sealed framework, without launching it |
 | `tests/SidebarChrome/check.py` | Header/list/dock geometry, Space header and settings wiring |
-| `tests/SidebarFavoritesEmptyState/check.py` | Card layout, persistence, drag state and keyboard dismissal |
-| `tests/SidebarOutline/check.py` | Row geometry, disclosure and accessibility wrappers |
-| `tests/SidebarPinnedSection/check.py` | Fold state, peeks, the folded summary and its drawing, the header plate measured against New Tab's, header drops, keyboard order, commands and the icon setting |
+| `FavoritesEmptyStateViewTests` | Card layout, persistence, drag state and keyboard dismissal |
+| `SidebarOutlineTests` | Row geometry, disclosure and accessibility wrappers |
+| `PinnedHeaderTests`, `PinnedOutlineHeaderTests`, `PinnedPlateGeometryTests` | Fold state, peeks, the folded summary and its drawing, the header plate measured against New Tab's, header drops, keyboard order, commands and the icon setting |
