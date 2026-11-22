@@ -171,6 +171,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     let equations = EaselEquationState()
     let objectMotion = EaselCanvasObjectMotionState()
     let onboarding = EaselCanvasOnboardingState()
+    let preferences: EaselCanvasPreferences
     private var snapshotHeader: NSView?
     private var snapshotHeaderItem: UUID?
     private var snapshotHeaderDriven = false
@@ -401,8 +402,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var displayedSelection: Set<UUID> { tentativeSelection ?? selection }
 
 
-    init(session: EaselSession) {
+    init(session: EaselSession, preferences: EaselCanvasPreferences? = nil) {
         self.session = EaselPageSession(session)
+        self.preferences = preferences ?? .shared
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 1800))
         setAccessibilityElement(true); setAccessibilityRole(.group); setAccessibilityLabel("Easel canvas")
         registerForDraggedTypes([Self.documentDragType, .URL, EaselStyledText.pasteboardType, EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType, .rtfd, .rtf, .fileURL, Self.gifPasteboardType, .png, .tiff, .string])

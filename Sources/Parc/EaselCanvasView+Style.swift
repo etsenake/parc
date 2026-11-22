@@ -2,11 +2,17 @@ import AppKit
 import ParcCore
 
 @MainActor
-enum EaselStyleDefaults {
-    static var defaults = UserDefaults.standard
-    private static var current: EaselStyleMemory?
+final class EaselCanvasPreferences {
+    static let shared = EaselCanvasPreferences(defaults: .standard)
 
-    static var memory: EaselStyleMemory {
+    let defaults: UserDefaults
+    private var current: EaselStyleMemory?
+
+    init(defaults: UserDefaults) {
+        self.defaults = defaults
+    }
+
+    var memory: EaselStyleMemory {
         if let current { return current }
         var generator = SystemRandomNumberGenerator()
         let made = EaselStyleMemory(families: EaselStyleMemory.persistentFamilies(from: defaults.data(forKey: EaselStyleMemory.defaultsKey)),
@@ -15,7 +21,7 @@ enum EaselStyleDefaults {
         return made
     }
 
-    static func record(_ change: EaselStyleChange, for families: Set<EaselStyleFamily>, document: UUID) {
+    func record(_ change: EaselStyleChange, for families: Set<EaselStyleFamily>, document: UUID) {
         guard !families.isEmpty else { return }
         var next = memory
         for family in families { next.record(change, for: family, document: document) }
@@ -76,7 +82,7 @@ extension EaselCanvasView {
         }
         let saved = group == nil ? withObjectMotion(.restyle) { save() } : save()
         guard saved else { return false }
-        EaselStyleDefaults.record(change, for: families, document: session.document.id)
+        preferences.record(change, for: families, document: session.document.id)
         return true
     }
 
@@ -88,7 +94,7 @@ extension EaselCanvasView {
     func stampRememberedStyle(on item: inout EaselItem) {
         stampDefaultFamily(on: &item)
         guard adaptsInk else { return }
-        EaselStyleDefaults.memory.stamp(&item, document: session.document.id)
+        preferences.memory.stamp(&item, document: session.document.id)
     }
 
     func stampDefaultFamily(on item: inout EaselItem) {
@@ -119,7 +125,7 @@ extension EaselCanvasView {
     private func colorEditedText(_ choice: EaselColorChoice, in editor: EaselStyledTextView) {
         editor.applyTextColor(EaselInk.color(choice.hex(role: .ink), adaptive: adaptsInk))
         lastTextTint = .ink(choice)
-        EaselStyleDefaults.record(.color(choice), for: [.text], document: session.document.id)
+        preferences.record(.color(choice), for: [.text], document: session.document.id)
     }
 }
 

@@ -13,7 +13,6 @@ final class EaselCanvasOnboardingState {
     var templateRow: EaselEmptyStateRow? {
         didSet { emptyState?.row = templateRow }
     }
-    var defaults: UserDefaults = .standard
     var hintSeen = false
 }
 
@@ -123,11 +122,11 @@ extension EaselCanvasView {
             return
         }
         guard !onboarding.hintSeen, fixedCanvasSize == nil else { return }
-        if onboarding.defaults.bool(forKey: EaselCanvasOnboardingState.quickCreateHintKey) { onboarding.hintSeen = true; return }
+        if preferences.defaults.bool(forKey: EaselCanvasOnboardingState.quickCreateHintKey) { onboarding.hintSeen = true; return }
         guard let source = quickCreateSource, start == nil, canAnimateObjects, window?.isKeyWindow == true,
               let scroll = enclosingScrollView, let container = scroll.superview else { return }
         onboarding.hintSeen = true
-        onboarding.defaults.set(true, forKey: EaselCanvasOnboardingState.quickCreateHintKey)
+        preferences.defaults.set(true, forKey: EaselCanvasOnboardingState.quickCreateHintKey)
         let hint = EaselQuickCreateHintView(frame: .zero)
         let size = hint.preferredSize
         let area = scroll.frame
