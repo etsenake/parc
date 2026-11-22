@@ -99,6 +99,8 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         private var retiredTarget: SplitDropTarget?
         var hoverIntent = SplitDropIntent()
         var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+        var intentFireDate: (TimeInterval) -> Date = Date.init(timeIntervalSinceNow:)
+        var scheduleIntentTimer: (Timer) -> Void = { RunLoop.main.add($0, forMode: .common) }
         var onIntentDue: (() -> Void)?
         private var intentTimer: Timer?
         var shownTarget: SplitDropTarget? { hoverIntent.shown?.target }
@@ -261,7 +263,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                 intentTimer?.invalidate(); intentTimer = nil
                 return
             }
-            let date = Date(timeIntervalSinceNow: max(0, deadline - clock()))
+            let date = intentFireDate(max(0, deadline - clock()))
             if let intentTimer, intentTimer.isValid { intentTimer.fireDate = date; return }
             let timer = Timer(fire: date, interval: 0, repeats: false) { [weak self] _ in
                 MainActor.assumeIsolated {
@@ -270,7 +272,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                     if !self.ended { self.onIntentDue?() }
                 }
             }
-            RunLoop.main.add(timer, forMode: .common)
+            scheduleIntentTimer(timer)
             intentTimer = timer
         }
         private func collapsedFrame(for target: SplitDropTarget, orientation: SplitOrientation) -> NSRect? {
