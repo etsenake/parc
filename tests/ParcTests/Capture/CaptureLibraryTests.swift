@@ -3,7 +3,6 @@ import CoreGraphics
 import ImageIO
 import Testing
 import UniformTypeIdentifiers
-@testable import Parc
 @testable import ParcCore
 @testable import ParcLibrary
 

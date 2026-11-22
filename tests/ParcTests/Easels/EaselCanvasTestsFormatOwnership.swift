@@ -1,8 +1,6 @@
 import AppKit
 import Testing
-@testable import Parc
 @testable import ParcCore
-@testable import ParcKit
 @testable import ParcEasels
 
 struct EaselCanvasTestsFormatOwnership {

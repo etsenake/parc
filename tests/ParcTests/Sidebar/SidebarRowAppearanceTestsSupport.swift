@@ -1,5 +1,4 @@
 import AppKit
-@testable import Parc
 @testable import ParcKit
 
 enum SidebarRowAppearanceTestsSupport {

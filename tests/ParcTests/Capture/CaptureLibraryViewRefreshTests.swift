@@ -4,10 +4,10 @@ import os
 import ImageIO
 import Testing
 import UniformTypeIdentifiers
-@testable import Parc
 @testable import ParcCore
 @testable import ParcKit
 @testable import ParcLibrary
+@testable import Parc
 
 extension CaptureLibraryViewTestsSupport {
     struct CaptureLibraryViewRefreshTests {

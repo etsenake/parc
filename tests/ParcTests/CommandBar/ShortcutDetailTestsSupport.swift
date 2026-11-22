@@ -2,7 +2,6 @@ import AppKit
 import Carbon.HIToolbox
 import ParcTestSupport
 import Testing
-@testable import Parc
 @testable import ParcCore
 @testable import ParcKit
 @testable import ParcCommandBar

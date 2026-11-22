@@ -1,7 +1,6 @@
 import AppKit
 @testable import ParcCore
 import Testing
-@testable import Parc
 
 struct HistorySwipeDriverTestsHold {
     private typealias Hand = HistorySwipeDriverTestsSupport.Hand

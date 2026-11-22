@@ -3,7 +3,6 @@ import ParcCore
 import ParcEngine
 import ParcEngineDoubles
 import Testing
-@testable import Parc
 @testable import ParcOnboarding
 
 @Suite(.serialized)

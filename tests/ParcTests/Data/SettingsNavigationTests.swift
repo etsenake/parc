@@ -1,5 +1,4 @@
 import Testing
-@testable import Parc
 @testable import ParcSettings
 
 struct SettingsNavigationTests {

@@ -1,5 +1,4 @@
 import ParcTestSupport
-@testable import Parc
 @testable import ParcCore
 @testable import ParcEasels
 

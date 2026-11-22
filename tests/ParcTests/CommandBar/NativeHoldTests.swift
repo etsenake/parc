@@ -1,5 +1,4 @@
 import Testing
-@testable import Parc
 @testable import ParcCommandBar
 
 struct NativeHoldTests {

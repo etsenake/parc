@@ -1,9 +1,8 @@
 import AppKit
 import Testing
-@testable import Parc
 @testable import ParcCore
-@testable import ParcKit
 @testable import ParcSidebar
+@testable import ParcKit
 
 @MainActor
 struct SidebarTooltipWiringTests {

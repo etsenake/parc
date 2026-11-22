@@ -1,8 +1,8 @@
 import AppKit
 import Testing
 @testable import ParcCore
-@testable import Parc
 @testable import ParcSidebar
+@testable import Parc
 
 extension SpaceThemeColorPadTestsSupport {
     @MainActor

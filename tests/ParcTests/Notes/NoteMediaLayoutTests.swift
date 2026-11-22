@@ -2,7 +2,6 @@ import CoreGraphics
 import Foundation
 import Testing
 import UniformTypeIdentifiers
-@testable import Parc
 @testable import ParcCore
 @testable import ParcNotes
 

@@ -2,7 +2,6 @@ import AppKit
 import Combine
 import QuartzCore
 import Testing
-@testable import Parc
 @testable import ParcCore
 @testable import ParcSidebar
 

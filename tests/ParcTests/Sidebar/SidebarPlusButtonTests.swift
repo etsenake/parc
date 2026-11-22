@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 import Testing
-@testable import Parc
 @testable import ParcKit
 @testable import ParcSidebar
 

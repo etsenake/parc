@@ -1,7 +1,6 @@
 import AppKit
 import Testing
 import ParcCore
-@testable import Parc
 
 @MainActor
 enum SpaceThemeColorPadTestsSupport {

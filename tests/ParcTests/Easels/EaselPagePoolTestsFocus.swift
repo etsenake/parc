@@ -2,10 +2,8 @@ import AppKit
 import ParcEngine
 import ParcEngineDoubles
 import Testing
-@testable import Parc
 @testable import ParcCore
 @testable import ParcNotes
-@testable import ParcEasels
 
 struct EaselPagePoolTestsFocus {
     private typealias Board = EaselPagePoolTestsSupport.Board

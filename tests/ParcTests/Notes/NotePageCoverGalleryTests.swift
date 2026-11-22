@@ -2,7 +2,6 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import Testing
-@testable import Parc
 @testable import ParcNotes
 
 struct NotePageCoverGalleryTests {

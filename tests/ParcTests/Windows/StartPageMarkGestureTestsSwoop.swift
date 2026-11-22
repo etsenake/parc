@@ -1,8 +1,8 @@
 import CoreGraphics
 import Foundation
 import Testing
-@testable import Parc
 @testable import ParcCore
+@testable import Parc
 
 struct StartPageMarkGestureTestsSwoop {
     private typealias Pointer = StartPageMarkGestureTestsSupport.Pointer

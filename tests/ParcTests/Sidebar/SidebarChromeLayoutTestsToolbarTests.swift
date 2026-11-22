@@ -1,6 +1,5 @@
 import CoreGraphics
 import Testing
-@testable import Parc
 @testable import ParcSidebar
 
 struct SidebarChromeLayoutTestsToolbarTests {

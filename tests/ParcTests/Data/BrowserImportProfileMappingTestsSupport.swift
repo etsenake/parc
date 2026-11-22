@@ -2,7 +2,6 @@ import AppKit
 import ParcCore
 import ParcEngine
 import Testing
-@testable import Parc
 
 @Suite(.serialized)
 enum BrowserImportProfileMappingTestsSupport {

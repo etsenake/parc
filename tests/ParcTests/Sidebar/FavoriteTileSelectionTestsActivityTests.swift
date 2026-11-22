@@ -1,8 +1,8 @@
 import AppKit
 import QuartzCore
 import Testing
-@testable import Parc
 @testable import ParcSidebar
+@testable import Parc
 
 @MainActor
 struct FavoriteTileSelectionTestsActivityTests {

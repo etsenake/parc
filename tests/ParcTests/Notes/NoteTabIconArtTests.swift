@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import Testing
-@testable import Parc
 @testable import ParcCore
 @testable import ParcKit
 @testable import ParcNotes

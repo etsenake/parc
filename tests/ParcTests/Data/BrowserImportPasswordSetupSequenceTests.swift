@@ -3,7 +3,6 @@ import AppKit
 import ParcEngine
 import ParcEngineDoubles
 import Testing
-@testable import Parc
 @testable import ParcOnboarding
 
 extension BrowserImportPasswordTestsSupport {

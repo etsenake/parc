@@ -1,6 +1,5 @@
 import AppKit
 import Testing
-@testable import Parc
 @testable import ParcLibrary
 @testable import ParcSidebar
 

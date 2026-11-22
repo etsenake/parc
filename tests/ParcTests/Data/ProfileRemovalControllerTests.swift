@@ -1,6 +1,5 @@
 import Foundation
 import Testing
-@testable import Parc
 @testable import ParcCore
 import ParcEngine
 @testable import ParcSidebar

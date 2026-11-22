@@ -2,7 +2,6 @@ import AppKit
 import MetalKit
 import Testing
 import ParcCore
-@testable import Parc
 @testable import ParcKit
 
 extension ThemeRendererViewTestsSupport {

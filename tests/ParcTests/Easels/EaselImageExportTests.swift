@@ -2,10 +2,9 @@ import AppKit
 import ImageIO
 import UniformTypeIdentifiers
 import Testing
-@testable import Parc
 @testable import ParcCore
-@testable import ParcKit
 @testable import ParcEasels
+@testable import ParcKit
 
 struct EaselImageExportTests {
     @MainActor

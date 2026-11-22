@@ -2,9 +2,9 @@ import AppKit
 import Metal
 import SceneKit
 import Testing
-@testable import Parc
 @testable import ParcCore
 @testable import ParcSettings
+@testable import Parc
 
 struct WindowFrameViewTestsImmediateFinish {
     private typealias Support = WindowFrameViewTestsSupport

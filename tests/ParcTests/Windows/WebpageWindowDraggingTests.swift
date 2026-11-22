@@ -1,7 +1,6 @@
 import AppKit
 import ParcTestSupport
 import Testing
-@testable import Parc
 @testable import ParcSettings
 
 private let preferenceKey = "parc.webpageWindowDragging.v1"

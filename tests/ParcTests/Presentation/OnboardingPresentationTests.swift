@@ -1,7 +1,6 @@
 import AppKit
 import Testing
 @testable import ParcCore
-@testable import Parc
 @testable import ParcSidebar
 @testable import ParcSettings
 @testable import ParcOnboarding
