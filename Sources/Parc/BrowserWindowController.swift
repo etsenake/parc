@@ -186,6 +186,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var archivePreviewRequest: (parent: String?, lease: ArchivePreviewLease, token: UUID)?
     var noteLinkPeekRequest: UUID?
     var archivePreviews: [UUID: ArchivePreviewLease] = [:]
+    lazy var restoreFocusBehindPeek: (PeekFocusReturn, NSWindow, () -> Bool) -> Void = { [weak self] focus, window, available in
+        focus.perform(in: window, ownerIsAvailable: available) { _ in
+            guard let self else { return }
+            if self.currentTabID != nil { self.focusSelectedLocalContent() }
+            else if self.libraryView == nil, self.showsStartPage { self.residentCommandBar?.focusResident() }
+        }
+    }
     var queuedArchivePreview: (id: UUID, profileID: UUID)?
     var archivePreviewRemnants = Set<UUID>()
     var peekRetirementParents = Set<UUID>() { didSet { noteRetiringPeekParents(from: oldValue) } }

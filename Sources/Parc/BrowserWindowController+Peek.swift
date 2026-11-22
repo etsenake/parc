@@ -221,11 +221,6 @@ extension BrowserWindowController {
         return selectSpaceFromUser(peek.parentTabID) && peekHostID == peek.parentTabID
     }
 
-    private func focusPeekBackdrop() {
-        if currentTabID != nil { focusSelectedLocalContent() }
-        else if libraryView == nil, showsStartPage { residentCommandBar?.focusResident() }
-    }
-
     func adoptPeek(_ page: PCNativePage, binding: PCNativeBrowserWindow) -> NSView? {
         guard let parent = page.peekParent else { return nil }
         var undo = peekUndoOpen.flatMap { $0.parent == parent.identifier ? $0.operation : nil }
@@ -571,10 +566,15 @@ extension BrowserWindowController {
         peek.finish()
         if !isClosing && !wholeWindowClose {
             layoutPeeks(); updateNavigation(); requestNativeSelection()
-            if let window, let binding {
-                focusReturn?.perform(in: window, ownerIsAvailable: {
+            if let window, let binding, let focusReturn {
+                let available = {
                     self.activePeek == nil && self.parentCanTakeFocus(from: peek, binding: binding, window: window)
-                }) { _ in if let parent = peek.parentPage { _ = binding.requestFocus(for: parent) } else { self.focusPeekBackdrop() } }
+                }
+                if let parent = peek.parentPage {
+                    focusReturn.perform(in: window, ownerIsAvailable: available) { _ in _ = binding.requestFocus(for: parent) }
+                } else {
+                    restoreFocusBehindPeek(focusReturn, window, available)
+                }
             }
             if archive != nil, let next = queuedArchivePreview {
                 queuedArchivePreview = nil
