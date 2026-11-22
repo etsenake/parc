@@ -71,7 +71,7 @@ final class NoteSlashMenuController {
         list.onHighlight = { [weak self] item in self?.highlightDidChange(item) }
         subscription = editor.session.changes.sink { [weak self] change in self?.sessionDidChange(change) }
         reminderDocument = editor.environment.documentURL
-        fileSubscription = NoteFileSession.openSessions.first { $0.page === editor.session }?.urlChanges
+        fileSubscription = editor.environment.files.openSessions.first { $0.page === editor.session }?.urlChanges
             .sink { [weak self] url in self?.documentDidMove(to: url) }
         scheduleReminderSync(after: 1)
         dateRefresher = NoteDateRefresher(editor: editor)
