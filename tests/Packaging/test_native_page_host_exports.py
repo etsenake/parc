@@ -36,6 +36,7 @@ class NativePageHostExportTests(unittest.TestCase):
                 "-Wall", "-Wextra", "-Werror",
                 REPO / "Engine/ParcNative/page_host.mm",
                 REPO / "Engine/ParcNative/pane_compositor_view.mm",
+                REPO / "Engine/ParcNative/dialog_style.mm",
                 "-framework", "AppKit", "-framework", "QuartzCore", "-o", library,
             )
             compile_source(
