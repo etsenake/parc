@@ -4,13 +4,16 @@ import ParcCore
 @MainActor
 final class EaselIconEnvironment: NoteEnvironment {
     private let session: EaselSession
+    let files: NoteFiles
     let emojiLibrary: NoteEmojiLibrary?
 
-    init(session: EaselSession) {
+    init(session: EaselSession, easelIcons: EaselTabIcons? = nil) {
         self.session = session
+        let easelIcons = easelIcons ?? .shared
+        files = easelIcons.files
         emojiLibrary = session.storeDirectory
-            .flatMap { EaselTabIcons.shared.notesFolder($0) }
-            .map { NoteEmojiLibrary.library(root: $0) }
+            .flatMap(easelIcons.notesFolder)
+            .map(easelIcons.files.emojiLibrary(root:))
     }
 
     var documentURL: URL? { nil }

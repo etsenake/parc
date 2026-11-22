@@ -23,9 +23,9 @@ final class EaselTitleIcon: NSView {
     var isTitleEditing: () -> Bool = { false }
     var titleTextWidth: () -> CGFloat = { 0 }
 
-    init(session: EaselSession) {
+    init(session: EaselSession, easelIcons: EaselTabIcons? = nil) {
         self.session = session
-        environment = EaselIconEnvironment(session: session)
+        environment = EaselIconEnvironment(session: session, easelIcons: easelIcons)
         iconView = NotePageIconView(environment: environment)
         super.init(frame: .zero)
         iconView.isCompact = true

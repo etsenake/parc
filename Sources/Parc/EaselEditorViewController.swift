@@ -25,7 +25,8 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     let session: EaselSession
     let easelStore: EaselStore
     let titleField = NSTextField()
-    private lazy var titleIcon = EaselTitleIcon(session: session)
+    private let easelIcons: EaselTabIcons?
+    private lazy var titleIcon = EaselTitleIcon(session: session, easelIcons: easelIcons)
     private let status = NSTextField(labelWithString: "Saved on this Mac")
     private let scroll = NSScrollView()
     let canvas: EaselCanvasView
@@ -102,7 +103,8 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     var notesFolder: (() -> URL?)?
     private var panels: EaselPanels?
 
-    init(directory: URL, documentID: UUID) throws {
+    init(directory: URL, documentID: UUID, easelIcons: EaselTabIcons? = nil) throws {
+        self.easelIcons = easelIcons
         easelStore = try Self.sharedStore(directory: directory)
         session = try easelStore.load(documentID)
         canvas = EaselCanvasView(session: session)

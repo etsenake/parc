@@ -30,7 +30,7 @@ package final class EaselTabIcons {
     private var reading: Set<String> = []
     private var followed: [ObjectIdentifier: Followed] = [:]
     private var subscriptions: [AnyCancellable] = []
-    private let files: NoteFiles
+    package let files: NoteFiles
 
     package init(files: NoteFiles? = nil) {
         let files = files ?? .shared
