@@ -9,7 +9,7 @@ enum EaselTextStyleTestsSupport {
         let names = ["SpaceMono-Regular", "SpaceMono-Bold", "EBGaramond-VariableFont_wght",
                      "ParcWide-Regular", "ParcWide-SemiBold", "ParcWide-Black"]
         for name in names {
-            guard let url = Bundle.module.url(forResource: name, withExtension: "ttf", subdirectory: "EaselFonts") else { continue }
+            guard let url = Bundle.module.url(forResource: name, withExtension: "ttf") else { continue }
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
     }()

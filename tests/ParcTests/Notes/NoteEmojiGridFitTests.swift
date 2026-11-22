@@ -9,7 +9,7 @@ struct NoteEmojiGridFitTests {
         let suite = "Parc.Notes.EmojiGridFitTests." + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        let url = Bundle.module.url(forResource: "emoji", withExtension: "json", subdirectory: "Fixtures")!
+        let url = Bundle.module.url(forResource: "emoji", withExtension: "json")!
         let catalog = NoteEmojiCatalog(url: url, defaults: defaults)
         return catalog.all.prefix(60).map { NoteEmojiGridView.Item(emoji: $0, character: $0.character) }
     }()
@@ -63,7 +63,7 @@ struct NoteEmojiGridFitTests {
         init(style: NSScroller.Style) throws {
             let suite = "Parc.Notes.EmojiGridFitTests." + UUID().uuidString
             let defaults = UserDefaults(suiteName: suite)!
-            let url = try #require(Bundle.module.url(forResource: "emoji", withExtension: "json", subdirectory: "Fixtures"))
+            let url = try #require(Bundle.module.url(forResource: "emoji", withExtension: "json"))
             picker = NoteEmojiPicker(catalog: NoteEmojiCatalog(url: url, defaults: defaults), showsRemove: true, showsRandom: true)
             scrollView = try #require(picker.subviews.compactMap { $0 as? NSScrollView }.first)
             grid = try #require(scrollView.documentView as? NoteEmojiGridView)

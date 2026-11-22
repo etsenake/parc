@@ -6,7 +6,7 @@ import Testing
 
 @MainActor
 struct SplitAppearanceEmojiCatalogTests {
-    private static let emoji = SidebarEmojiModel.load(from: SplitAppearanceSupport.iconFixtures)
+    private static let emoji = SidebarEmojiModel.load(from: Bundle.module.resourceURL)
 
     @Test func theBundledEmojiListLoadsInCategoryOrder() {
         #expect(Self.emoji.emojis.count > 1800)

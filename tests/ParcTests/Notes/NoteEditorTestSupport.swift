@@ -70,7 +70,8 @@ enum NoteEditorFixtures {
 
     static func registerFonts() {
         for name in fontNames {
-            if let url = Bundle.module.url(forResource: name, withExtension: "ttf", subdirectory: "Fixtures") {
+            let subdirectory = name == "EBGaramond-VariableFont_wght" ? nil : "Fixtures"
+            if let url = Bundle.module.url(forResource: name, withExtension: "ttf", subdirectory: subdirectory) {
                 CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
             }
         }
