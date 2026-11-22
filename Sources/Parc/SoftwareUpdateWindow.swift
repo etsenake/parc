@@ -137,7 +137,8 @@ private final class UpdaterButton: PointingHandButton {
     @objc private func primaryClicked() { onPrimary?() }
     @objc private func secondaryClicked() { onSecondary?() }
 
-    static func content(style: Style, info: [String: Any], icon image: NSImage) -> (NSView, NSButton, NSButton?) {
+    static func content(style: Style, info: [String: Any], icon image: NSImage,
+                        websiteDataStore: WKWebsiteDataStore? = nil) -> (NSView, NSButton, NSButton?) {
         let content = NSView()
         let column = NSView()
         column.translatesAutoresizingMaskIntoConstraints = false
@@ -191,7 +192,7 @@ private final class UpdaterButton: PointingHandButton {
         case .update(_, _, let notesTitle, let notes):
             let later = UpdaterButton(title: "Remind me Later", filled: false)
             column.addSubview(later)
-            let release = ReleaseNotesView(title: notesTitle, html: notes, appName: name)
+            let release = ReleaseNotesView(title: notesTitle, html: notes, appName: name, websiteDataStore: websiteDataStore)
             content.addSubview(release)
             constraints += [
                 later.topAnchor.constraint(equalTo: primary.bottomAnchor, constant: 20),
@@ -328,8 +329,9 @@ private final class ReleaseNotesView: NSView, WKNavigationDelegate {
     private let fade = CAGradientLayer()
     private let notes: NSView
 
-    init(title: String?, html: String?, appName: String) {
+    init(title: String?, html: String?, appName: String, websiteDataStore: WKWebsiteDataStore?) {
         let configuration = WKWebViewConfiguration()
+        if let websiteDataStore { configuration.websiteDataStore = websiteDataStore }
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
         let web = WKWebView(frame: .zero, configuration: configuration)
         notes = NSView()

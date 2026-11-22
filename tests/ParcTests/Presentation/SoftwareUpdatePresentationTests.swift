@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
+import WebKit
 @testable import ParcCore
 @testable import Parc
 
@@ -104,7 +105,7 @@ struct SoftwareUpdateWindowTests {
     @Test @MainActor func anAvailableUpdateOffersDownloadAndADeferredReminder() {
         let (_, primary, secondary) = SoftwareUpdateWindow.content(
             style: .update(prompt: "Would you like to download v1.9.0?", action: "Download", title: nil, notes: nil),
-            info: info, icon: NSImage())
+            info: info, icon: NSImage(), websiteDataStore: .nonPersistent())
         #expect(primary.title == "Download")
         #expect(secondary?.title == "Remind me Later")
     }
