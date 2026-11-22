@@ -115,6 +115,7 @@ let package = Package(
                                 .copy("Easels/Fixtures/EaselFonts"),
                                 .copy("Capture/CaptureFixtures"),
                                 .copy("Windows/Fixtures/NavigationControls"),
+                                .copy("Windows/Fixtures/IconFonts"),
                                 .copy("CommandBar/CommandBarFixtures"),
                                 .copy("Sidebar/Fixtures/SidebarPreview"),
                                 .copy("Sidebar/ChromeFixtures"),

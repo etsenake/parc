@@ -278,6 +278,32 @@ struct SplitDropCardTests {
         #expect(stack.frame.maxX <= card.bounds.maxX - 7)
     }
 
+    private static func featherLink() throws -> NSImage {
+        let fonts = try #require(Bundle.module.url(forResource: "IconFonts", withExtension: nil))
+        let font = SidebarIconCatalog.font(.feather, size: 22, in: fonts)
+        try #require(font.fontName != NSFont.systemFont(ofSize: 22).fontName)
+        return SidebarIconCatalog.emojiImage(String(Character(Unicode.Scalar(0xE98A)!)), font: font)
+    }
+
+    @Test func theFeatherLinkIconFillsATwentyFivePointSquare() throws {
+        #expect(try Self.featherLink().size == NSSize(width: 25, height: 25))
+    }
+
+    @Test func theFeatherLinkGlyphDrawsOnlyBlackInk() throws {
+        let link = try Self.featherLink()
+        let rep = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 50, pixelsHigh: 50, bitsPerSample: 8,
+                                                samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                                bytesPerRow: 0, bitsPerPixel: 0))
+        rep.size = link.size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        link.draw(in: NSRect(origin: .zero, size: link.size))
+        NSGraphicsContext.restoreGraphicsState()
+        let inked = (0..<50).flatMap { y in (0..<50).map { x in Self.pixel(rep, x, y) } }.filter { $0.a > 200 }
+        #expect(!inked.isEmpty)
+        #expect(inked.allSatisfy { $0.r <= 40 })
+    }
+
     @Test func theLinkIconIsNotATemplate() {
         #expect(!SidebarIconCatalog.emojiImage(String(Character(Unicode.Scalar(0xE98A)!)), size: 22).isTemplate)
     }

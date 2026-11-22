@@ -11,13 +11,22 @@ enum SidebarIconCatalog {
     private static let cache = NSCache<NSString, NSImage>()
 
     static func font(_ font: Font, size: CGFloat) -> NSFont {
-        if descriptors[font] == nil,
-           let url = resourceDirectory?.appendingPathComponent(font.rawValue + ".ttf"),
-           let found = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor], let first = found.first {
+        if descriptors[font] == nil, let first = descriptor(font, in: resourceDirectory) {
             descriptors[font] = first
         }
         guard let descriptor = descriptors[font] else { return .systemFont(ofSize: size) }
         return CTFontCreateWithFontDescriptor(descriptor, size, nil) as NSFont
+    }
+
+    static func font(_ font: Font, size: CGFloat, in directory: URL) -> NSFont {
+        guard let descriptor = descriptor(font, in: directory) else { return .systemFont(ofSize: size) }
+        return CTFontCreateWithFontDescriptor(descriptor, size, nil) as NSFont
+    }
+
+    private static func descriptor(_ font: Font, in directory: URL?) -> CTFontDescriptor? {
+        guard let url = directory?.appendingPathComponent(font.rawValue + ".ttf"),
+              let found = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor] else { return nil }
+        return found.first
     }
 
     static func glyph(_ type: SidebarIconType) -> UInt32? { glyphs[type] }
@@ -76,15 +85,19 @@ enum SidebarIconCatalog {
     static func emojiImage(_ emoji: String, size: CGFloat) -> NSImage {
         let key = "emoji|\(size)|\(emoji)" as NSString
         if let cached = cache.object(forKey: key) { return cached }
-        let text = NSAttributedString(string: emoji, attributes: [.font: font(.feather, size: size)])
+        let image = emojiImage(emoji, font: font(.feather, size: size))
+        cache.setObject(image, forKey: key)
+        return image
+    }
+
+    static func emojiImage(_ emoji: String, font: NSFont) -> NSImage {
+        let text = NSAttributedString(string: emoji, attributes: [.font: font])
         let measured = text.size()
         let side = ceil(max(measured.width, measured.height) * 1.1)
-        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+        return NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
             text.draw(at: NSPoint(x: (rect.width - measured.width) / 2, y: (rect.height - measured.height) / 2))
             return true
         }
-        cache.setObject(image, forKey: key)
-        return image
     }
 
     private static func asset(_ name: String) -> NSImage? {
