@@ -310,17 +310,23 @@ private func stop(_ layer: CALayer, _ key: String, sourceLocation: SourceLocatio
 
     @Test func theShimmerChangesColourInPlaceWithoutMovingTheMarkOrLeavingAColourBehind() {
         let layer = CALayer()
+        CATransaction.begin()
         StartPageMarkShimmer.play(on: layer, colors: StartPageMarkShimmer.sequence([red, blue])) {}
         let animation = layer.animation(forKey: StartPageMarkShimmer.key) as? CAKeyframeAnimation
+        CATransaction.commit()
         #expect(animation?.keyPath == "backgroundColor" && animation?.values?.count == 4)
         #expect(layer.backgroundColor == nil)
     }
 
     @Test func resetStopsTheShimmer() {
         let layer = CALayer()
+        CATransaction.begin()
         StartPageMarkShimmer.play(on: layer, colors: StartPageMarkShimmer.sequence([red, blue])) {}
+        let running = layer.animation(forKey: StartPageMarkShimmer.key) != nil
         StartPageMarkShimmer.reset(layer)
-        #expect(layer.animation(forKey: StartPageMarkShimmer.key) == nil)
+        let stopped = layer.animation(forKey: StartPageMarkShimmer.key) == nil
+        CATransaction.commit()
+        #expect(running && stopped)
     }
 }
 

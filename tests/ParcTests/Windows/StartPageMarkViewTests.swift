@@ -44,7 +44,7 @@ private func same(_ a: CGColor?, _ b: CGColor?) -> Bool {
 }
 
 @MainActor private func tint(_ theme: SpaceTheme) -> CGColor {
-    let palette = ThemeChromePalette(theme: theme, isDark: false)
+    let palette = ThemeChromePalette(theme: theme, appearance: NSAppearance(named: .aqua)!)
     let content = palette.contentAppearance
     guard theme.isValid, theme.colorCount > 0 else { return palette.foregroundSecondary.cgColor(in: content) }
     let color = palette.maxContrastColor.cgColor(in: content)
