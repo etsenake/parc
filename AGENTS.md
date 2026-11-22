@@ -248,7 +248,9 @@ Never claim monitoring unless actively following the work through completion.
 
 Use checks appropriate to the changed inputs; inspect scripts before execution.
 Swift iteration uses `swift build` and `swift test`, or `scripts/check-swift.py`
-(an incremental package build with a receipt). A completed feature with material
+(an incremental package build with a receipt). Code follows the
+[app architecture](docs/app-architecture.md) and tests follow the
+[testing guide](docs/testing.md), including its banned kinds of test. A completed feature with material
 Swift changes also needs the release compile check (`--mode release`: the
 release's optimized whole-module package build, which covers whole-module SIL
 too). Keep warnings as errors: the checker,

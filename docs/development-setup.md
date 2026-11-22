@@ -247,44 +247,13 @@ scripts first. The current user instructions and working contract determine
 which checks are authorized; a setup guide is not permission to run a browser
 fixture or change a real profile.
 
-## Run and write tests
+## The Swift package
 
-Parc's tests are Swift Testing suites in the Swift package at the repository
-root. `swift test` builds what changed and runs every suite in parallel in one
-process; `swift test --filter EaselStoreTests` runs one suite and
-`swift build --build-tests` only compiles. Builds are incremental and cached
-in `.build`, so a run after a small edit recompiles only that file and what
-depends on it.
-
-`ParcCoreTests` (in `tests/ParcCoreTests`) tests the `ParcCore` library, which has
-no AppKit or engine dependency. The app itself is nine libraries, layered from
-the bottom up: `ParcKit` (shared controls, dialogs, tooltips, toasts, theme
-colours, animation and the keyboard shortcut model), `ParcNotes` (the Notes
-editor and embedded web pages), `ParcEasels` (boards, built on Notes),
-`ParcLibrary` (downloads, captures, media and archive pages), `ParcCommandBar`,
-`ParcSidebar` (the sidebar and the toolbar controls it hosts), `ParcSettings`
-(the settings window and app preference stores), `ParcOnboarding` (setup,
-import and membership) and `Parc` (the app delegate, the browser window and its
-splits, Peek, the start page and popups). A library imports only the libraries
-below it. When a lower library needs something from a higher one, it declares
-a protocol or an injected closure and the higher library supplies it: the
-Notes board provider that `Parc` registers at launch so Easel blocks render in
-notes, the window actions Notes and Easels call, the Library's Spaces page, the
-sidebar's drag owner and the Settings app actions. The `ParcMain` executable
-only calls the launch function, so tests load the app's code without starting
-the app. `ParcTests` (in `tests/ParcTests`) tests the app libraries, with a
-`@testable import` of each library a test uses. Put a test in the lowest target
-that can reach the code under test, in a folder named for its feature area.
-
-Declarations are `internal` unless another library uses them; mark one
-`package` only then. Swift requires `open` for a class that another library
-subclasses, and `public` for the members it overrides, its designated
-initializers and the types they name, so use `open` and `public` only there.
-A public view or window class also declares `Sendable`: Swift infers that for
-main-actor classes only inside their own library, and subclasses elsewhere
-capture `self` in timer and notification closures.
-Tests reach internal declarations through `@testable import`, so a test never
-needs `package`.
+The app is a Swift package at the repository root. How its libraries are
+layered and connected is in the [app architecture guide](app-architecture.md);
+how to run and write tests is in the [testing guide](testing.md). `swift build`
+builds the app, `swift test` builds and runs every suite, and both are
+incremental.
 
 Sparkle is a package dependency on the official `sparkle-project/Sparkle`
 package, pinned to the exact version in `Package.resolved`, so a fresh clone
@@ -314,86 +283,6 @@ which compiles the `Engine/ParcNative` sources named in the manifest's
 `nativeLibrarySources`, so adding a Chromium-free source means adding its name
 there. Its public headers folder, `tests/ParcNativeShims`, holds the shims for
 Chromium include paths.
-`ParcNativeTests` (in `tests/ParcNativeTests`) tests the library with
-Objective-C XCTest cases built on `ParcNativeTestCase`. Check with `PARC_CHECK`
-or the suite's `Check(condition, message)`; both stop the test at the first
-failure. Name the classes with a `Tests` suffix and filter by class, for example
-`swift test --filter PageHostTests`. Never edit an engine input for a test.
-
-Parc's native presenters reach windows and time through two protocols in
-`page_host.h`. `PCNativePresentation` covers sheets, child windows, ordering,
-visibility and popovers; `PCNativeScheduling` covers uptime, dates, timers,
-run-loop and main-queue hops and animation groups. Each presenter starts with
-the system implementation, which makes exactly the AppKit, Foundation and GCD
-calls. A test hands it the test case's offscreen doubles, `ParcNativePresentation()`
-and `ParcNativeScheduler()`, which keep sheets, children and visibility as state
-and never order a window on screen. Check that state with the `ParcNative…`
-helpers in `ParcNativeWindows.h`, such as `ParcNativeAttachedSheet`.
-
-Native tests never wait in real time. `ParcNativeAdvance(seconds)` moves the test
-clock, fires the timers that fall due and then settles pending work.
-`ParcNativeSettle()` handles only the work that is already pending. Animation
-groups run at zero duration.
-
-The `EngineFacade*Tests` targets compile the app's engine facade against test
-doubles of the native classes. Each set of doubles gets its own target, so the
-old-engine target fails to link if the facade names a class older engines lack.
-
-Every test here is a unit test: a small, isolated check of one behaviour that
-runs in milliseconds. Keep logic in models, stores and pure functions so it can
-be tested without any view. Write one behaviour per `@Test`, named as a plain
-sentence in camelCase, and build only the fixture that behaviour needs. Check
-with `#expect`, and use `try #require` when later lines depend on a value. Give
-inputs to a parameterized `@Test(arguments:)` instead of looping inside a test,
-so each case runs and reports on its own. Randomized tests keep a fixed seed.
-
-Unit tests never put a window on screen, never wait for drawing or animation,
-and never wait on real time. Construct and lay out a view directly. When
-responder or key handling needs a window, host the view in a borderless window
-that is never ordered front. Inject time through Swift's `Clock` protocol, or a
-scheduler, and advance it in the test instead of sleeping or polling. End-to-end
-checks of the running app are UI tests, which this suite doesn't contain.
-
-Tests run in parallel by default, so they share no mutable state: give each test
-its own temporary directory and a `TestDefaults` instance from `ParcTestSupport`.
-The instance keeps preference values in memory and clears its domain on release.
-Give tested WebKit views a nonpersistent website data store. Never let a test
-fall back to the app's production singletons, which read your real data: anything
-built without a `files:` argument uses `NoteFiles.shared` and the real Parc Notes
-folder in Documents, so pass `IsolatedNoteFiles.make()` from
-`tests/ParcTests/Support` instead. Mark a suite
-`.serialized` only when the code under test touches process-wide state that
-can't be injected, and mark a test `@MainActor` only when the code needs the
-main actor. Test fixtures are resources on the test target (`resources:` in the
-manifest), loaded through `Bundle.module`, never paths built from `#filePath`.
-Nest helpers in the suite or make them `private`, because each target is one
-module.
-
-Keep test files small: one suite per file, named after the suite, usually 150
-to 300 lines and never more than 500. When a suite grows past that, split it by
-behaviour group into sibling suites that share the original name as a prefix,
-and move helpers they share into a `<Name>Support.swift` file beside them.
-
-Never drive AppKit's simulated clicks. `performClick(_:)` on a control and
-`performClose(_:)` on a window spin a nested event-tracking run loop; with tests
-running in parallel that loop can stop the main run loop, which ends the test
-process silently with no summary. Call `sendClick()` from
-`tests/ParcTests/Support/ControlClick.swift`, call a menu item's action on its
-target, and give a window double a `performClose` that asks its delegate.
-
-Test behaviour, not wording: never assert that source files contain particular
-code. Warnings are errors in every target (`treatAllWarnings`), matching the
-release compile.
-
-Python `unittest` suites exist only for the Python tooling they exercise:
-`tests/BuildTools` (build and release scripts), `tests/Site` (the website, also
-run by GitHub CI), `tests/Documentation` (the docs checker) and the release
-tooling suites beside them.
-
-Checks that need a completed engine build stay outside `swift test`, each in its
-own `tests/` folder with a README and runner: FairPlay (`scripts/test-fairplay-*.sh`),
-error pages, the browser import readers, helper routing, platform codecs and the
-native runtime harness.
 
 ## What to carry over from the old Mac
 

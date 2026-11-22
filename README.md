@@ -42,7 +42,7 @@ non-component releases carry the engine inside `Parc.app` and install on their o
 
 ## Repository
 
-- `Sources/Parc`: the app delegate, browser window, splits, Peek and start page, on top of the feature libraries `Sources/ParcKit` (shared controls), `ParcNotes`, `ParcEasels`, `ParcLibrary`, `ParcCommandBar`, `ParcSidebar`, `ParcSettings` and `ParcOnboarding`.
+- `Sources/Parc`: the app delegate, browser window, splits, Peek and start page, on top of the feature libraries `Sources/ParcKit` (shared controls), `ParcNotes`, `ParcEasels`, `ParcLibrary`, `ParcCommandBar`, `ParcSidebar`, `ParcSettings` and `ParcOnboarding`. See the [app architecture](docs/app-architecture.md); each folder has its own README.
 - `Sources/ParcCore`: browser state, persistence and application behavior.
 - `Sources/ParcEngine`, `Engine/ParcNative`: app bridge and Chromium integration.
 - `Engine/ParcHost`: source overlays for the pinned engine.
