@@ -41,27 +41,42 @@ struct ShortcutHintPresentationTests {
 
     @MainActor private final class Clock {
         private final class Entry {
-            let delay: TimeInterval
+            let deadline: TimeInterval
             let work: @MainActor () -> Void
             var cancelled = false
-            init(_ delay: TimeInterval, _ work: @escaping @MainActor () -> Void) {
-                self.delay = delay; self.work = work
+            init(_ deadline: TimeInterval, _ work: @escaping @MainActor () -> Void) {
+                self.deadline = deadline; self.work = work
             }
         }
 
+        private var now: TimeInterval = 0
         private var entries: [Entry] = []
         var clock: ParcToastClock {
             ParcToastClock(repeating: { _, _ in {} }, after: { [weak self] delay, work in
-                let entry = Entry(delay, work)
-                self?.entries.append(entry)
+                guard let self else { return {} }
+                let entry = Entry(now + delay, work)
+                entries.append(entry)
                 return { entry.cancelled = true }
             })
         }
 
-        func fire(_ delay: TimeInterval) {
-            let ready = entries.filter { $0.delay == delay }
-            entries.removeAll { $0.delay == delay }
-            ready.filter { !$0.cancelled }.forEach { $0.work() }
+        func advance(to time: TimeInterval) {
+            while let next = entries.min(by: { $0.deadline < $1.deadline }), next.deadline <= time {
+                entries.removeAll { $0 === next }
+                now = next.deadline
+                if !next.cancelled { next.work() }
+            }
+            now = time
+        }
+    }
+
+    @MainActor private final class ShowQueue {
+        var work: (@MainActor () -> Void)?
+
+        func run() throws {
+            let show = try #require(work)
+            work = nil
+            show()
         }
     }
 
@@ -69,6 +84,7 @@ struct ShortcutHintPresentationTests {
         let parent: Window
         let hint: ShortcutPriorityHintView
         let clock = Clock()
+        let show = ShowQueue()
 
         init(editable: Bool = true, reduceMotion: Bool = false) {
             _ = NSApplication.shared
@@ -80,7 +96,7 @@ struct ShortcutHintPresentationTests {
                     let child = Window(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
                     child.key = false
                     return child
-                }, reduceMotion: { reduceMotion })
+                }, reduceMotion: { reduceMotion }, scheduleShow: { [show] in show.work = $0 })
         }
     }
 
@@ -129,7 +145,9 @@ struct ShortcutHintPresentationTests {
         try #require(fixture.hint.present(in: fixture.parent))
         defer { fixture.hint.dismiss(animated: false) }
         #expect(!fixture.hint.state.showAccessory)
-        fixture.clock.fire(ParcToastTiming.accessoryDelay)
+        fixture.clock.advance(to: 0.499)
+        #expect(!fixture.hint.state.showAccessory)
+        fixture.clock.advance(to: 0.5)
         #expect(fixture.hint.state.showAccessory)
     }
 
@@ -137,7 +155,7 @@ struct ShortcutHintPresentationTests {
         let fixture = Fixture()
         try #require(fixture.hint.present(in: fixture.parent))
         fixture.hint.dismiss(animated: false)
-        fixture.clock.fire(ParcToastTiming.accessoryDelay)
+        fixture.clock.advance(to: 0.5)
         #expect(!fixture.hint.state.showAccessory)
         #expect(fixture.hint.originalWindow == nil)
     }
@@ -151,7 +169,7 @@ struct ShortcutHintPresentationTests {
         #expect(original.ignoresMouseEvents)
         #expect(fixture.hint.isRetiring)
         #expect((original.parent == nil) == reduceMotion)
-        fixture.clock.fire(ParcToastTiming.retirement)
+        fixture.clock.advance(to: 1)
         #expect(original.parent == nil)
         #expect(!fixture.hint.present(in: fixture.parent))
     }
@@ -250,12 +268,51 @@ extension ShortcutHintPresentationTests {
         #expect(!child.canBecomeKey && !child.canBecomeMain)
     }
 
+    @Test @MainActor func resizingTheParentKeepsTheHintsOriginalPlacement() throws {
+        let fixture = Fixture()
+        try #require(fixture.hint.present(in: fixture.parent))
+        defer { fixture.hint.dismiss(animated: false) }
+        let child = try #require(fixture.parent.childWindows?.first)
+        let original = child.frame
+        let size = fixture.parent.frame.size
+        fixture.parent.setContentSize(NSSize(width: size.width + 100, height: size.height + 50))
+        try #require(fixture.parent.frame.size != size)
+        #expect(child.frame == original)
+    }
+
     @Test @MainActor func anEmptyHostHasNoInputTarget() throws {
         let fixture = Fixture()
         try #require(fixture.hint.present(in: fixture.parent))
         defer { fixture.hint.dismiss(animated: false) }
         #expect(fixture.hint.accessoryRect.isEmpty)
         #expect(fixture.hint.hitTest(NSPoint(x: 20, y: 400)) == nil)
+    }
+
+    @Test @MainActor func theShownHintLaysOutItsSwiftUIBody() throws {
+        let fixture = Fixture(reduceMotion: true)
+        try #require(fixture.hint.present(in: fixture.parent))
+        defer { fixture.hint.dismiss(animated: false) }
+        try fixture.show.run()
+        fixture.hint.layoutSubtreeIfNeeded()
+        #expect(fixture.hint.bodyRect.width > 0)
+        #expect(fixture.hint.bodyRect.height >= 42)
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func onlyAnEditableHintLaysOutAnAccessoryBelowItsBody(editable: Bool) throws {
+        let fixture = Fixture(editable: editable, reduceMotion: true)
+        try #require(fixture.hint.present(in: fixture.parent))
+        defer { fixture.hint.dismiss(animated: false) }
+        try fixture.show.run()
+        fixture.clock.advance(to: 0.499)
+        fixture.hint.layoutSubtreeIfNeeded()
+        #expect(fixture.hint.accessoryRect.isEmpty)
+        fixture.clock.advance(to: 0.5)
+        fixture.hint.layoutSubtreeIfNeeded()
+        try #require(!fixture.hint.bodyRect.isEmpty)
+        let accessory = fixture.hint.accessoryRect
+        #expect(accessory.isEmpty == !editable)
+        if editable { #expect(accessory.minY >= fixture.hint.bodyRect.maxY - 1) }
     }
 
     @Test @MainActor func aRetiringChildRefusesInput() throws {
@@ -269,17 +326,27 @@ extension ShortcutHintPresentationTests {
         let fixture = Fixture()
         try #require(fixture.hint.present(in: fixture.parent))
         let first = try #require(fixture.parent.childWindows?.first)
+        defer { fixture.hint.dismiss(animated: false) }
+        try fixture.show.run()
+        try #require(fixture.hint.state.showing)
         fixture.hint.dismiss(animated: true)
+        #expect(!fixture.hint.state.showing)
+        let showReplacement = ShowQueue()
         let replacement = ShortcutPriorityHintView(title: "Close Tab", shortcut: "⌘W", canEdit: true, theme: SpaceTheme(),
             basicBackground: nil, clock: fixture.clock.clock, makeWindow: { frame in
                 let child = Window(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
                 child.key = false
                 return child
-            }, reduceMotion: { false })
+            }, reduceMotion: { false }, scheduleShow: { showReplacement.work = $0 })
         try #require(replacement.present(in: fixture.parent))
-        fixture.clock.fire(ParcToastTiming.retirement)
-        #expect(first.parent == nil && first.contentView == nil)
+        defer { replacement.dismiss(animated: false) }
+        try showReplacement.run()
+        fixture.clock.advance(to: 0.999)
+        #expect(first.parent === fixture.parent && first.contentView === fixture.hint)
+        fixture.clock.advance(to: 1)
+        #expect(first.parent == nil && first.contentView == nil && !first.isVisible)
         #expect(replacement.originalWindow === fixture.parent && replacement.window?.parent === fixture.parent)
+        #expect(replacement.state.showing)
         replacement.dismiss(animated: false)
         #expect(fixture.parent.childWindows?.isEmpty == true)
         #expect(!replacement.present(in: fixture.parent))
