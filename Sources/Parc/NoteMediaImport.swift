@@ -13,7 +13,7 @@ enum NoteMediaImport {
     }
 
     static func imports(for environment: NoteEnvironment) -> NoteAttachmentImports {
-        ((environment as? NoteFileEnvironment)?.files ?? .shared).attachmentImports
+        environment.files.attachmentImports
     }
 
     static func target(for environment: NoteEnvironment) -> Target? {
