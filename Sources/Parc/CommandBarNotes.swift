@@ -26,13 +26,13 @@ enum CommandBarNotes {
 
     static func contentMatches(_ query: String, in library: NoteLibrary?, openNotes: [URL] = [], files: NoteFiles? = nil,
                                limit: Int = contentLimit) -> [CommandBarDocument] {
-        let files = files ?? library?.files ?? .shared
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= minimumContentQuery else { return [] }
         var found = library.map { $0.search(trimmed, limit: limit).map(CommandBarDocument.init(note:)) } ?? []
         var keys = Set(found.map(\.key))
         let words = trimmed.split(whereSeparator: \.isWhitespace).map(String.init)
         for url in openNotes where found.count < limit && library?.contains(url) != true {
+            let files = files ?? library?.files ?? .shared
             guard let session = files.session(for: url), keys.insert(CommandBarDocument.noteKey(session.url)).inserted else { continue }
             let text = session.title + "\n" + session.page.page.plainText
             guard words.allSatisfy({ text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) != nil }) else { continue }
