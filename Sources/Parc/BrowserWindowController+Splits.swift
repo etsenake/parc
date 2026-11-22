@@ -526,7 +526,7 @@ extension BrowserWindowController {
         }
         menu.appearance = anchor.effectiveAppearance
         pane.trackSplitMenu {
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.bounds.maxY), in: anchor)
+            presentSplitPaneMenu(menu, anchor)
         }
     }
 

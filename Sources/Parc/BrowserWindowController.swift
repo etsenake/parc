@@ -354,6 +354,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var nativeBinding: PCNativeBrowserWindow?
     var isSpaceCommandApplicationActive: () -> Bool = { NSApp.isActive }
     var canPresentSplitInteraction: (NSWindow) -> Bool = { PCNativeBrowserApplication.canPresentTabSwitcher(in: $0) }
+    var presentSplitPaneMenu: (NSMenu, NSView) -> Void = { menu, anchor in
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.bounds.maxY), in: anchor)
+    }
     var closingTabIDs = Set<UUID>()
     var modelRetirementIDs = Set<UUID>()
     var transferringTabIDs = Set<UUID>() {
