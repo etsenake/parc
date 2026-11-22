@@ -24,7 +24,7 @@ struct EssentialsTests {
         let registry: KeyboardShortcuts
         let controller: ShortcutEssentialsWindow
 
-        init() throws {
+        init(fontDirectory: URL? = nil) throws {
             _ = NSApplication.shared
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let root = menu
@@ -40,7 +40,7 @@ struct EssentialsTests {
                 registry.register(item, group: menu.title)
             }
             registry.configure(directory: directory)
-            controller = ShortcutEssentialsWindow(shortcuts: registry)
+            controller = ShortcutEssentialsWindow(shortcuts: registry, fontDirectory: fontDirectory)
         }
 
         deinit { try? FileManager.default.removeItem(at: directory) }
@@ -187,6 +187,13 @@ struct EssentialsTests {
         #expect(fields(surface).filter { $0.font?.pointSize == 15 }.count == 4)
         #expect(surface.subviews.compactMap { $0 as? NSBox }.count == 3)
         #expect(try #require(surface.subviews.compactMap { $0 as? EssentialsViewAllControl }.first).superview === surface)
+    }
+
+    @Test @MainActor func theHeadlineUsesBundledNunitoExtraBold() throws {
+        let font = try #require(Bundle.module.url(forResource: "Nunito-ExtraBold", withExtension: "ttf", subdirectory: "Fixtures"))
+        let fixture = try Fixture(fontDirectory: font.deletingLastPathComponent())
+        let headline = try #require(fields(fixture.surface()).first { $0.stringValue == "Essential Keyboard Shortcuts" })
+        #expect(headline.font?.fontName == "Nunito-ExtraBold")
     }
 
     @Test @MainActor func eachIncludedCommandHasANamedAccessibleBinding() throws {
