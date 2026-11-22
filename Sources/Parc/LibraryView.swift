@@ -159,7 +159,8 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
 
     init(store: BrowserStore, kind: Kind, profileID: UUID, downloadStore: BrowserStore? = nil,
          privateMediaContext: PrivateMediaContext? = nil, files: NoteFiles? = nil,
-         reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
+         reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
+         scheduleReload: (@MainActor (@escaping @MainActor () -> Void) -> Void)? = nil) {
         self.reduceMotion = reduceMotion
         self.files = files ?? .shared
         self.downloadStore = downloadStore ?? store
@@ -232,7 +233,13 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         NotificationCenter.default.addObserver(self, selector: #selector(listDidScroll), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         empty.font = .systemFont(ofSize: 13)
         empty.alignment = .center
-        subscription = store.statePublisher.receive(on: RunLoop.main).sink { [weak self] _ in self?.reload() }
+        if let scheduleReload {
+            subscription = store.statePublisher.sink { [weak self] _ in
+                scheduleReload { [weak self] in self?.reload() }
+            }
+        } else {
+            subscription = store.statePublisher.receive(on: RunLoop.main).sink { [weak self] _ in self?.reload() }
+        }
         if let privateMediaContext = self.privateMediaContext {
             privateMediaSubscription = privateMediaContext.store.statePublisher.receive(on: RunLoop.main).sink { [weak self] _ in
                 guard let self, self.window != nil else { return }
