@@ -201,7 +201,7 @@ extension BrowserWindowController {
     var spaceCommandsAvailable: Bool {
         guard spaceStateAvailable, ownsSpaceCommandFocus,
               let window, window.attachedSheet == nil else { return false }
-        return PCNativeBrowserApplication.canPresentTabSwitcher(in: window)
+        return canPresentSplitInteraction(window)
     }
 
     func canSelectSpace(_ id: UUID, profileID: UUID? = nil) -> Bool {

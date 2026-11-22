@@ -790,7 +790,7 @@ extension BrowserWindowController {
         guard splitInsertion == nil, renderedPaneIDs == selectedTabIDs,
               let window, window.isKeyWindow, let layout = activeSplitLayout, (layout.stacks != nil) == stacked,
               let target = splitCommandTarget(.orientation(layout.orientation)), target.isAvailable,
-              PCNativeBrowserApplication.canPresentTabSwitcher(in: window) else { return nil }
+              canPresentSplitInteraction(window) else { return nil }
         let originalBounds = pageHost.bounds
         var used = false
         return { [weak self, weak window] save in
@@ -799,7 +799,7 @@ extension BrowserWindowController {
                   target.isAvailable,
                   self.renderedPaneIDs == layout.tabIDs, self.activeSplitLayout == layout,
                   self.pageHost.bounds == originalBounds,
-                  PCNativeBrowserApplication.canPresentTabSwitcher(in: window) else { return false }
+                  self.canPresentSplitInteraction(window) else { return false }
             var committed = false
             self.performWindowCommand(selectNativePage: false) {
                 committed = save(self.store, layout)

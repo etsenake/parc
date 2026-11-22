@@ -353,6 +353,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var isClosing = false
     var nativeBinding: PCNativeBrowserWindow?
     var isSpaceCommandApplicationActive: () -> Bool = { NSApp.isActive }
+    var canPresentSplitInteraction: (NSWindow) -> Bool = { PCNativeBrowserApplication.canPresentTabSwitcher(in: $0) }
     var closingTabIDs = Set<UUID>()
     var modelRetirementIDs = Set<UUID>()
     var transferringTabIDs = Set<UUID>() {
@@ -2040,10 +2041,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard isAvailable, let owner else { return }
             owner.commandBar?.dismiss(restoreFocus: false)
             guard isAvailable, let window,
-                  PCNativeBrowserApplication.canPresentTabSwitcher(in: window) else { return }
+                  owner.canPresentSplitInteraction(window) else { return }
             owner.navigationHistory?.dismiss()
             owner.sidebarPreviews?.dismiss()
-            guard isAvailable, PCNativeBrowserApplication.canPresentTabSwitcher(in: window) else { return }
+            guard isAvailable, owner.canPresentSplitInteraction(window) else { return }
             consumed = true
             owner.executeSplitCommand(command, targetID: targetID)
         }
