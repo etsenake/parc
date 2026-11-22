@@ -1906,7 +1906,6 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        noteIconWatch = NoteTabIconArt.shared.changes.sink { [weak self] change in self?.noteIconsChanged(change) }
         registerForDraggedTypes([SidebarMoveSession.pasteboardType, .fileURL])
         addSubview(spaceCreationFeedback)
         addSubview(contentSurface)
@@ -3590,10 +3589,16 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
 
     private func requestPageIcon(_ tab: BrowserTab, completion: @escaping (NSImage?) -> Void) {
         if let subject = NoteTabIconArt.Subject(tab: tab) {
+            watchNoteIcons()
             NoteTabIconArt.shared.requestImage(for: subject, completion: completion)
         } else {
             requestTabFavicon?(tab, completion)
         }
+    }
+
+    private func watchNoteIcons() {
+        guard noteIconWatch == nil else { return }
+        noteIconWatch = NoteTabIconArt.shared.changes.sink { [weak self] change in self?.noteIconsChanged(change) }
     }
 
     private func noteIconsChanged(_ change: Set<String>?) {
@@ -3621,6 +3626,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
 
     private func requestPinnedFavicon(_ tab: BrowserTab, header: SidebarPinnedHeaderView) {
         if let subject = NoteTabIconArt.Subject(tab: tab) {
+            watchNoteIcons()
             header.setFavicon(NoteTabIconArt.shared.image(for: subject), for: tab.id, url: tab.url)
             return
         }
