@@ -39,6 +39,7 @@ import Testing
         let window = hosted(control)
         control.layoutSubtreeIfNeeded()
         control.updateTrackingAreas()
+        control.reducesMotion = { false }
         return (control, window, control.layer!.sublayers!.first!, center)
     }
 
@@ -48,7 +49,6 @@ import Testing
         return event
     }
 
-    private var motion: Bool { !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     @Test func theLabelIsDrawnOnceAndHeldCentered() {
         let (_, label) = title()
@@ -229,17 +229,26 @@ import Testing
         window.close()
     }
 
+    @Test func reduceMotionShowsTheHoverSurfaceWithoutAFade() {
+        let (control, window, surface, _) = hoverControl()
+        control.reducesMotion = { true }
+        control.mouseEntered(with: trackingEvent(control))
+        #expect(control.isHovered && surface.opacity > 0)
+        #expect(surface.animation(forKey: "pane-title-opacity") == nil)
+        window.close()
+    }
+
     @Test func hoverAndPressShowTheLightSurfaceWithTheirOwnDurations() throws {
         let (control, window, surface, _) = hoverControl()
         control.appearance = NSAppearance(named: .aqua)
         control.viewDidChangeEffectiveAppearance()
         control.mouseEntered(with: trackingEvent(control))
         #expect(control.isHovered && abs(surface.opacity - 0.07) < 0.00001)
-        if motion { #expect(abs((surface.animation(forKey: "pane-title-opacity")?.duration ?? 0) - 0.18) < 0.00001) }
+        #expect(abs((surface.animation(forKey: "pane-title-opacity")?.duration ?? 0) - 0.18) < 0.00001)
         let cell = try #require(control.cell)
         cell.highlight(true, withFrame: control.bounds, in: control)
         #expect(control.isPressed && abs(surface.opacity - 0.11) < 0.00001)
-        if motion { #expect(abs((surface.animation(forKey: "pane-title-opacity")?.duration ?? 0) - 0.16) < 0.00001) }
+        #expect(abs((surface.animation(forKey: "pane-title-opacity")?.duration ?? 0) - 0.16) < 0.00001)
         window.close()
     }
 
