@@ -452,11 +452,9 @@ private func temporaryRoot() throws -> URL {
     private struct Partial {
         let f: ClearFixture
         let record: ClosedTabsUndo
-        let step: ClosedItemStep
         let reopened: Set<UUID>
         let deleted: UUID
-        let window = FolderUndoManager()
-        let operation: ClosedTabsUndoOperation?
+        let window: FolderUndoManager
     }
 
     private func partial() throws -> Partial {
@@ -477,7 +475,7 @@ private func temporaryRoot() throws -> URL {
         let window = FolderUndoManager()
         #expect(f.register(record, in: window) && window.canUndo)
         f.consent.lastOperation?.didReopen(step)
-        return Partial(f: f, record: record, step: step, reopened: reopened, deleted: deleted, operation: f.consent.lastOperation)
+        return Partial(f: f, record: record, reopened: reopened, deleted: deleted, window: window)
     }
 
     private struct CloseUndoFailure: Error { let message: String; init(_ message: String) { self.message = message } }
@@ -508,9 +506,7 @@ private func temporaryRoot() throws -> URL {
     @Test func redoIsNamedByTheGroupsRemainingItems() throws {
         let p = try partial()
         p.window.undo()
-        let remaining = p.f.hereIDs.subtracting(p.reopened).subtracting([p.deleted])
         #expect(p.window.redoMenuItemTitle == "Redo " + ClosedTabsUndo.Prompt.clear.name(count: p.record.itemCount(of: p.f.hereIDs.subtracting(p.reopened))))
-        _ = remaining
     }
 
     @Test func redoArchivesOnlyWhatUndoRestoredAndTheRedoneCloseIsNamedByItsOwnItems() throws {
@@ -687,5 +683,743 @@ private func temporaryRoot() throws -> URL {
         #expect(busy.isBusy && busy.isRedoing)
         f.consent.approve()
         #expect(!busy.isBusy && busy.canUndo)
+    }
+}
+
+@MainActor private final class SideFixture {
+    let consent = Consent()
+    let root: URL
+    let profile = BrowserProfile(id: UUID(), name: "Original")
+    let side: BrowserSpace
+    let sidePinned: BrowserTab, a: BrowserTab, b: BrowserTab, c: BrowserTab, d: BrowserTab, e: BrowserTab
+    let trio: BrowserSplitLayout
+    let sideToday: SidebarContainerLocation
+    let store: BrowserStore
+    let initial: BrowserState
+    let order: [SidebarItemReference]
+
+    init() throws {
+        root = try temporaryRoot()
+        side = BrowserSpace(id: UUID(), name: "Side", symbol: "circle", color: "FEDCBA", profileID: profile.id)
+        let profile = profile, side = side
+        sidePinned = makeTab("Side pinned", side, profile: profile, kind: .pinned)
+        a = makeTab("A", side, profile: profile)
+        b = makeTab("B", side, profile: profile)
+        c = makeTab("C", side, profile: profile)
+        d = makeTab("D", side, profile: profile)
+        e = makeTab("E", side, profile: profile)
+        trio = BrowserSplitLayout(sidebarAnchorID: a.id, customTitle: "Trio", spaceID: side.id,
+                                  tabIDs: [a.id, b.id, c.id], orientation: .horizontal, widthFactors: [0.2, 0.3, 0.5])
+        var seed = BrowserState(profiles: [profile], spaces: [side], activeSpaceID: side.id)
+        seed.tabs = [sidePinned, a, b, c, d, e]
+        seed.splitLayouts = [trio]
+        sideToday = SidebarContainerLocation(spaceID: side.id, folderID: nil, section: .today)
+        seed.sidebarItemOrder[sideToday.key] = [.tab(e.id), .tab(a.id), .tab(d.id)]
+        seed.selectedTabIDs = trio.tabIDs
+        seed.selectionBySpace[side.id.uuidString] = trio.tabIDs
+        _ = try writeSeed(seed, to: root)
+        store = try BrowserStore(directory: root, now: storeClock)
+        consent.attach(store)
+        initial = store.state
+        order = SidebarHierarchy.children(in: sideToday, state: initial)
+    }
+
+    deinit { try? FileManager.default.removeItem(at: root) }
+
+    func clear(_ ids: Set<UUID>) -> ClosedTabsUndo? {
+        var made: ClosedTabsUndo?
+        let selection = FolderRemovalSelection.resolve(removing: ids, spaceID: store.state.activeSpaceID,
+            profileID: profile.id, state: store.state, selected: store.state.selectedTabIDs,
+            focused: store.state.selectedTabIDs.last, available: { _ in true })
+        store.closeTabs(ids, reason: .clearButton, selection: selection, didCommit: { [unowned self] before in
+            made = ClosedTabsUndo(prompt: .clear, ids: ids, spaceID: side.id, profileID: profile.id, focusedTabID: nil,
+                                  before: before, after: store.state)
+        }, shouldCommit: { true })
+        return made
+    }
+
+    func register(_ record: ClosedTabsUndo) -> FolderUndoManager {
+        let manager = FolderUndoManager()
+        #expect(consent.register(record, in: manager, on: store))
+        return manager
+    }
+}
+
+@MainActor struct ClosedTabsSplitUndoTests {
+    @Test func theTrioIsTheSelectedSplit() throws {
+        let f = try SideFixture()
+        #expect(f.order == [.tab(f.e.id), .split(f.trio.id), .tab(f.d.id)] && f.initial.selectedTabIDs == f.trio.tabIDs)
+    }
+
+    @Test func clearingTheSelectedSplitSelectsThePinnedTab() throws {
+        let f = try SideFixture()
+        f.consent.autoApprove = true
+        _ = try #require(f.clear([f.a.id, f.b.id, f.c.id, f.d.id, f.e.id]))
+        #expect(f.store.state.selectedTabIDs == [f.sidePinned.id] && f.store.state.splitLayouts.isEmpty)
+    }
+
+    @Test func undoWithTheClearedSpaceActiveKeepsTheReplacementSelectedAndTheSplitReturnsWhole() throws {
+        let f = try SideFixture()
+        f.consent.autoApprove = true
+        let whole = try #require(f.clear([f.a.id, f.b.id, f.c.id, f.d.id, f.e.id]))
+        let replacement = f.store.state.selectedTabIDs
+        f.register(whole).undo()
+        #expect(f.store.state.activeSpaceID == f.side.id && f.store.state.selectedTabIDs == replacement)
+        #expect(f.store.state.splitLayouts == f.initial.splitLayouts)
+        #expect(SidebarHierarchy.children(in: f.sideToday, state: f.store.state) == f.order)
+    }
+
+    @Test func clearingOnePaneLeavesTheSplitsOtherTwoAndIsOneItem() throws {
+        let f = try SideFixture()
+        f.consent.autoApprove = true
+        let one = try #require(f.clear([f.a.id]))
+        #expect(one.actionName == "Clear Tab")
+        #expect(f.store.state.splitLayouts.first { $0.id == f.trio.id }?.tabIDs == [f.b.id, f.c.id] && one.memberships[f.a.id]?.dissolved == false)
+    }
+
+    @Test func undoPutsAPaneBackIntoItsSplitAtItsPlaceShareAndSidebarSlot() throws {
+        let f = try SideFixture()
+        f.consent.autoApprove = true
+        let one = try #require(f.clear([f.a.id]))
+        f.register(one).undo()
+        let rejoined = f.store.state.splitLayouts.first { $0.id == f.trio.id }
+        #expect(rejoined?.tabIDs == f.trio.tabIDs && rejoined?.sidebarAnchorID == f.trio.sidebarAnchorID)
+        #expect(zip(rejoined?.widthFactors ?? [], f.trio.widthFactors).allSatisfy { abs($0 - $1) < 1e-9 })
+        #expect(SidebarHierarchy.children(in: f.sideToday, state: f.store.state) == f.order)
+    }
+
+    @Test func clearingTwoPanesDissolvesTheSplitAndNamesClearTabs() throws {
+        let f = try SideFixture()
+        f.consent.autoApprove = true
+        let pair = try #require(f.clear([f.a.id, f.b.id]))
+        #expect(!f.store.state.splitLayouts.contains { $0.id == f.trio.id } && pair.memberships[f.a.id]?.dissolved == true)
+        #expect(pair.actionName == "Clear Tabs")
+    }
+
+    @Test func undoRegroupsTheSplitTheClearDissolved() throws {
+        let f = try SideFixture()
+        f.consent.autoApprove = true
+        let beforePair = f.store.state.splitLayouts.first { $0.id == f.trio.id }
+        let pair = try #require(f.clear([f.a.id, f.b.id]))
+        f.register(pair).undo()
+        let regrouped = f.store.state.splitLayouts.first { $0.id == f.trio.id }
+        #expect(regrouped != nil && regrouped == beforePair)
+        #expect(SidebarHierarchy.children(in: f.sideToday, state: f.store.state) == f.order)
+    }
+
+    @Test func aRefusedRedoKeepsItsTabsAndCheckAndTheCheckFailsOnceATabIsPinned() throws {
+        let f = try SideFixture()
+        f.consent.autoApprove = true
+        let loose = try #require(f.clear([f.d.id, f.e.id]))
+        let window = f.register(loose)
+        window.undo()
+        f.consent.autoApprove = false
+        window.redo()
+        f.consent.finish?(false)
+        #expect(window.canRedo && f.consent.redoCurrent?() == true)
+        f.store.setKind(f.d.id, .pinned)
+        #expect(f.consent.redoCurrent?() == false)
+    }
+
+    @Test func redoThenArchivesOnlyTheTabStillInToday() throws {
+        let f = try SideFixture()
+        f.consent.autoApprove = true
+        let loose = try #require(f.clear([f.d.id, f.e.id]))
+        let window = f.register(loose)
+        window.undo()
+        f.store.setKind(f.d.id, .pinned)
+        window.redo()
+        #expect(f.store.state.tabs.first { $0.id == f.d.id }.map { $0.kind == .pinned && $0.archivedAt == nil } == true)
+        #expect(f.store.state.tabs.first { $0.id == f.e.id }?.archivedAt != nil)
+    }
+
+    @Test func withTheOtherPanesBusyElsewhereThePaneComesBackAloneBesideTheSplit() throws {
+        let f = try SideFixture()
+        f.consent.autoApprove = true
+        f.consent.refused = [f.b.id, f.c.id]
+        let foreign = try #require(f.clear([f.a.id]))
+        f.register(foreign).undo()
+        #expect(f.store.state.splitLayouts.first { $0.id == f.trio.id }?.tabIDs == [f.b.id, f.c.id])
+        #expect(SidebarHierarchy.children(in: f.sideToday, state: f.store.state) == [.split(f.trio.id), .tab(f.a.id)])
+    }
+
+    @Test func aPaneThatDissolvesItsSplitNamesTheSplitToo() throws {
+        let f = try SideFixture()
+        f.consent.autoApprove = true
+        _ = try #require(f.clear([f.a.id]))
+        let lastPair = try #require(f.clear([f.b.id]))
+        #expect(lastPair.actionName == "Clear Tabs")
+    }
+
+    @Test func undoDoesNotRegroupASplitWhoseLastOtherPaneIsBusyElsewhere() throws {
+        let f = try SideFixture()
+        f.consent.autoApprove = true
+        _ = try #require(f.clear([f.a.id]))
+        f.consent.refused = [f.c.id]
+        let lastPair = try #require(f.clear([f.b.id]))
+        f.register(lastPair).undo()
+        #expect(!f.store.state.splitLayouts.contains { $0.id == f.trio.id })
+        #expect([f.b.id, f.c.id].allSatisfy { id in f.store.state.tabs.contains { $0.id == id && $0.archivedAt == nil } })
+    }
+}
+
+@MainActor private final class ArchiveFixture {
+    let consent = Consent()
+    let root: URL
+    let profile = BrowserProfile(id: UUID(), name: "Original")
+    let work: BrowserSpace
+    let shelf: BrowserFolder
+    let note: BrowserTab, shelved: BrowserTab, keep: BrowserTab
+    let t1: BrowserTab, t2: BrowserTab, t3: BrowserTab, s1: BrowserTab, s2: BrowserTab
+    let duo: BrowserSplitLayout
+    let workToday: SidebarContainerLocation, shelfBox: SidebarContainerLocation
+    let store: BrowserStore
+    let original: [SidebarItemReference]
+
+    init() throws {
+        root = try temporaryRoot()
+        work = BrowserSpace(id: UUID(), name: "Work", symbol: "circle", color: "FFEEDD", profileID: profile.id)
+        shelf = BrowserFolder(id: UUID(), spaceID: work.id, name: "Shelf")
+        let profile = profile, work = work, shelf = shelf
+        var noteTab = makeTab("Note", work, profile: profile, kind: .pinned, folder: shelf.id)
+        noteTab.url = "parc://note/" + UUID().uuidString.lowercased()
+        noteTab.savedURL = noteTab.url
+        note = noteTab
+        shelved = makeTab("Shelved", work, profile: profile, kind: .pinned, folder: shelf.id)
+        keep = makeTab("Keep", work, profile: profile, kind: .pinned)
+        t1 = makeTab("T1", work, profile: profile)
+        t2 = makeTab("T2", work, profile: profile)
+        t3 = makeTab("T3", work, profile: profile)
+        s1 = makeTab("S1", work, profile: profile)
+        s2 = makeTab("S2", work, profile: profile)
+        duo = BrowserSplitLayout(sidebarAnchorID: s1.id, customTitle: "Duo", spaceID: work.id,
+                                 tabIDs: [s1.id, s2.id], orientation: .horizontal, widthFactors: [0.4, 0.6])
+        var seed = BrowserState(profiles: [profile], spaces: [work], activeSpaceID: work.id)
+        seed.folders = [shelf]
+        seed.tabs = [note, shelved, keep, t1, t2, t3, s1, s2]
+        seed.splitLayouts = [duo]
+        workToday = SidebarContainerLocation(spaceID: work.id, folderID: nil, section: .today)
+        let workPinned = SidebarContainerLocation(spaceID: work.id, folderID: nil, section: .pinned)
+        shelfBox = SidebarContainerLocation(spaceID: work.id, folderID: shelf.id, section: .pinned)
+        seed.sidebarItemOrder[workToday.key] = [.tab(t1.id), .tab(s1.id), .tab(t2.id), .tab(t3.id)]
+        seed.sidebarItemOrder[workPinned.key] = [.folder(shelf.id), .tab(keep.id)]
+        seed.sidebarItemOrder[shelfBox.key] = [.tab(note.id), .tab(shelved.id)]
+        seed.selectedTabIDs = [t2.id]
+        seed.selectionBySpace[work.id.uuidString] = [t2.id]
+        _ = try writeSeed(seed, to: root)
+        store = try BrowserStore(directory: root, now: storeClock)
+        consent.attach(store)
+        consent.autoApprove = true
+        original = SidebarHierarchy.children(in: workToday, state: store.state)
+    }
+
+    deinit { try? FileManager.default.removeItem(at: root) }
+
+    var order: [SidebarItemReference] { SidebarHierarchy.children(in: workToday, state: store.state) }
+
+    func close(_ ids: Set<UUID>, focused: UUID?, prompt: ClosedTabsUndo.Prompt = .archive) -> ClosedTabsUndo? {
+        var made: ClosedTabsUndo?
+        let selection = FolderRemovalSelection.resolve(removing: ids, spaceID: store.state.activeSpaceID,
+            profileID: profile.id, state: store.state, selected: store.state.selectedTabIDs,
+            focused: store.state.selectedTabIDs.last, available: { _ in true })
+        store.closeTabs(ids, reason: prompt == .clear ? .clearButton : .manual, selection: selection, didCommit: { [unowned self] before in
+            made = ClosedTabsUndo(prompt: prompt, ids: ids, spaceID: work.id, profileID: profile.id,
+                                  focusedTabID: focused, before: before, after: store.state)
+        }, shouldCommit: { true })
+        return made
+    }
+
+    func register(_ record: ClosedTabsUndo, in manager: FolderUndoManager = FolderUndoManager()) -> FolderUndoManager {
+        #expect(consent.register(record, in: manager, on: store) || consent.lastOperation == nil)
+        return manager
+    }
+
+    func select(_ ids: [UUID]) {
+        _ = store.setWindowPresentation(spaceID: work.id, selectedTabIDs: ids)
+    }
+}
+
+@MainActor struct ClosedTabsArchiveUndoTests {
+    @Test func theFixtureHasASplitBetweenTodayTabs() throws {
+        let f = try ArchiveFixture()
+        #expect(f.original == [.tab(f.t1.id), .split(f.duo.id), .tab(f.t2.id), .tab(f.t3.id)])
+    }
+
+    @Test func commandWOnTheFocusedTabIsOneArchiveTabGroupThatRemembersItsFocus() throws {
+        let f = try ArchiveFixture()
+        let focusedClose = try #require(f.close([f.t2.id], focused: f.t2.id))
+        #expect(focusedClose.prompt == .archive && focusedClose.actionName == "Archive Tab" && focusedClose.focusedTabID == f.t2.id)
+        #expect(f.store.state.tabs.first { $0.id == f.t2.id }?.archiveProvenance?.reason == .manual)
+        #expect(f.register(focusedClose).undoMenuItemTitle == "Undo Archive Tab")
+    }
+
+    @Test func undoReturnsTheTabToItsPlaceAndTheStoreLeavesSelectionToTheWindow() throws {
+        let f = try ArchiveFixture()
+        let focusedClose = try #require(f.close([f.t2.id], focused: f.t2.id))
+        let window = f.register(focusedClose)
+        let selectedAfterClose = f.store.state.selectedTabIDs
+        window.undo()
+        #expect(f.order == f.original && f.store.state.tabs.contains(f.t2))
+        #expect(f.store.state.selectedTabIDs == selectedAfterClose)
+    }
+
+    @Test func theWindowSelectsTheTabThatWasFocusedWhenItClosed() throws {
+        let f = try ArchiveFixture()
+        let focusedClose = try #require(f.close([f.t2.id], focused: f.t2.id))
+        var presented = WindowPresentation(state: f.store.state, ready: true)
+        f.register(focusedClose).undo()
+        #expect(presented.finishClosedTabsUndo(focusedClose, state: f.store.state, available: { _ in true }) && presented.selectedTabIDs == [f.t2.id])
+    }
+
+    @Test func redoArchivesItAgainAndReturnsTheGroupToUndo() throws {
+        let f = try ArchiveFixture()
+        let focusedClose = try #require(f.close([f.t2.id], focused: f.t2.id))
+        let window = f.register(focusedClose)
+        window.undo()
+        #expect(window.redoMenuItemTitle == "Redo Archive Tab")
+        window.redo()
+        #expect(f.store.state.tabs.first { $0.id == f.t2.id }?.archivedAt != nil && window.undoMenuItemTitle == "Undo Archive Tab")
+    }
+
+    @Test func aTabThatWasntFocusedRecordsNoFocusAndItsUndoSelectsNothing() throws {
+        let f = try ArchiveFixture()
+        f.select([f.t1.id])
+        let background = try #require(f.close([f.t3.id], focused: f.t1.id))
+        var unfocused = WindowPresentation(state: f.store.state, ready: true)
+        #expect(background.focusedTabID == nil)
+        f.register(background).undo()
+        #expect(f.order == f.original && !unfocused.finishClosedTabsUndo(background, state: f.store.state, available: { _ in true })
+                && unfocused.selectedTabIDs == [f.t1.id])
+    }
+
+    @Test func closingAPinnedTabOnlyUnloadsItSoItRegistersNoUndo() throws {
+        let f = try ArchiveFixture()
+        #expect(f.close([f.keep.id], focused: f.keep.id) == nil && f.store.state.tabs.contains { $0.id == f.keep.id && $0.archivedAt == nil })
+    }
+
+    @Test func aPaneWhoseCloseDissolvesItsSplitNamesTheSplitTooAndTheOtherPaneKeepsTheSlot() throws {
+        let f = try ArchiveFixture()
+        let paneClose = try #require(f.close([f.s1.id], focused: nil))
+        #expect(paneClose.actionName == "Archive Tabs" && !f.store.state.splitLayouts.contains { $0.id == f.duo.id })
+        #expect(f.order == [.tab(f.t1.id), .tab(f.s2.id), .tab(f.t2.id), .tab(f.t3.id)])
+    }
+
+    @Test func undoRegroupsTheSplitInItsSlot() throws {
+        let f = try ArchiveFixture()
+        let paneClose = try #require(f.close([f.s1.id], focused: nil))
+        f.register(paneClose).undo()
+        #expect(f.store.state.splitLayouts == [f.duo] && f.order == f.original)
+    }
+
+    @Test func aPinnedNoteOnlyUnloadsInItsFolderSoItRegistersNoUndoEither() throws {
+        let f = try ArchiveFixture()
+        #expect(f.close([f.note.id], focused: f.note.id) == nil)
+        #expect(f.store.state.tabs.contains { $0.id == f.note.id && $0.archivedAt == nil && $0.kind == .pinned })
+        #expect(SidebarHierarchy.children(in: f.shelfBox, state: f.store.state) == [.tab(f.note.id), .tab(f.shelved.id)])
+    }
+
+    @Test func theLaterCloseIsOnTopAndUndoRestoresItThenOffersTheClear() throws {
+        let f = try ArchiveFixture()
+        f.select([f.t2.id])
+        let clearedAgain = try #require(f.close([f.t1.id, f.t3.id, f.s1.id, f.s2.id], focused: nil, prompt: .clear))
+        let lastClose = try #require(f.close([f.t2.id], focused: f.t2.id))
+        let ordered = f.register(clearedAgain)
+        _ = f.register(lastClose, in: ordered)
+        #expect(ordered.undoMenuItemTitle == "Undo Archive Tab")
+        ordered.undo()
+        #expect(f.store.state.tabs.contains { $0.id == f.t2.id && $0.archivedAt == nil }
+                && f.store.state.tabs.first { $0.id == f.t1.id }?.archivedAt != nil && ordered.undoMenuItemTitle == "Undo Clear Tabs")
+        ordered.undo()
+        #expect(f.order == f.original)
+    }
+
+    @Test func aMixedCloseArchivesOnlyTheTodayTabAndThePinnedOneUnloadsInPlace() throws {
+        let f = try ArchiveFixture()
+        let mixedClose = try #require(f.close([f.keep.id, f.t3.id], focused: nil))
+        #expect(mixedClose.tabs.map(\.id) == [f.t3.id] && mixedClose.actionName == "Archive Tab")
+        #expect(f.store.state.tabs.contains { $0.id == f.keep.id && $0.archivedAt == nil && $0.kind == .pinned })
+        f.register(mixedClose).undo()
+        #expect(f.store.state.tabs.contains { $0.id == f.t3.id && $0.archivedAt == nil }
+                && f.store.state.tabs.contains { $0.id == f.keep.id && $0.archivedAt == nil && $0.kind == .pinned })
+    }
+
+    @Test func aClearThatTakesTheFocusedTodayTabRemembersItAndUndoSelectsIt() throws {
+        let f = try ArchiveFixture()
+        f.select([f.t2.id])
+        let todayLive = Set(f.store.state.tabs.filter { $0.archivedAt == nil && $0.kind == .today && $0.spaceID == f.work.id }.map(\.id))
+        let focusedClear = try #require(f.close(todayLive, focused: f.t2.id, prompt: .clear))
+        #expect(todayLive.contains(f.t2.id) && focusedClear.prompt == .clear && focusedClear.focusedTabID == f.t2.id)
+        var afterClear = WindowPresentation(state: f.store.state, ready: true)
+        f.register(focusedClear).undo()
+        #expect(afterClear.finishClosedTabsUndo(focusedClear, state: f.store.state, available: { _ in true }) && afterClear.selectedTabIDs == [f.t2.id])
+    }
+
+    @Test func aClearRegistersAndUndoRestoresIt() throws {
+        let f = try ArchiveFixture()
+        let cleanAll = try #require(f.close([f.t1.id, f.t3.id, f.s1.id, f.s2.id, f.t2.id], focused: nil, prompt: .clear))
+        f.register(cleanAll).undo()
+        #expect(f.order == f.original)
+    }
+
+    @Test func aNewGroupWaitsForARedoWithNoToastYetThenJoinsOnceItFinishes() throws {
+        let f = try ArchiveFixture()
+        let deferred = FolderUndoManager()
+        let first = try #require(f.close([f.t1.id], focused: nil))
+        _ = f.register(first, in: deferred)
+        deferred.undo()
+        f.consent.autoApprove = false
+        deferred.redo()
+        #expect(deferred.isRedoing)
+        f.consent.autoApprove = true
+        let meanwhile = try #require(f.close([f.t3.id], focused: nil))
+        #expect(!f.consent.register(meanwhile, in: deferred, on: f.store) && f.consent.lastOperation == nil)
+        f.consent.approve()
+        #expect(f.consent.lastOperation != nil && !deferred.isBusy)
+    }
+
+    @Test func theRedoneCloseCompletedLastSoItIsOnTopAndThenTheCloseThatCommittedDuringTheRedo() throws {
+        let f = try ArchiveFixture()
+        let deferred = FolderUndoManager()
+        let first = try #require(f.close([f.t1.id], focused: nil))
+        _ = f.register(first, in: deferred)
+        deferred.undo()
+        f.consent.autoApprove = false
+        deferred.redo()
+        f.consent.autoApprove = true
+        let meanwhile = try #require(f.close([f.t3.id], focused: nil))
+        _ = f.consent.register(meanwhile, in: deferred, on: f.store)
+        f.consent.approve()
+        deferred.undo()
+        #expect(f.store.state.tabs.contains { $0.id == f.t1.id && $0.archivedAt == nil } && f.store.state.tabs.first { $0.id == f.t3.id }?.archivedAt != nil)
+        deferred.undo()
+        #expect(f.order == f.original)
+    }
+
+    @Test func aRefusedRedoLetsTheWaitingGroupInWhichClearsTheRedo() throws {
+        let f = try ArchiveFixture()
+        let window = FolderUndoManager()
+        let second = try #require(f.close([f.t1.id], focused: nil))
+        _ = f.register(second, in: window)
+        window.undo()
+        f.consent.autoApprove = false
+        window.redo()
+        f.consent.autoApprove = true
+        let meanwhile = try #require(f.close([f.t3.id], focused: nil))
+        _ = f.consent.register(meanwhile, in: window, on: f.store)
+        f.consent.finish?(false)
+        #expect(!window.isBusy && !window.canRedo && window.canUndo)
+        window.undo()
+        #expect(f.order == f.original)
+    }
+
+    @Test func aClearThatDissolvesNothingElseIsNamedByItsItems() throws {
+        let f = try ArchiveFixture()
+        let workClear = try #require(f.close([f.t3.id], focused: nil, prompt: .clear))
+        #expect(workClear.actionName == "Clear Tab")
+    }
+}
+
+@MainActor struct ClosedTabsPrivateUndoTests {
+    private struct Rig {
+        let root: URL
+        let consent = Consent()
+        let store: BrowserStore
+        let p1: UUID, p2: UUID, p3: UUID
+        let space: UUID, profile: UUID
+        let location: SidebarContainerLocation
+        let order: [SidebarItemReference]
+        let records: [BrowserTab]
+
+        @MainActor init() throws {
+            root = try temporaryRoot()
+            let parent = BrowserProfile(id: UUID(), name: "Original")
+            store = BrowserStore(privateParentProfileID: parent.id, engineProfilePath: root.appendingPathComponent("otr").path,
+                                 directory: root, settings: BrowserState.initial().settings)
+            consent.attach(store)
+            p3 = store.openResolvedURL(URL(string: "https://three.invalid/")!)
+            p2 = store.openResolvedURL(URL(string: "https://two.invalid/")!)
+            p1 = store.openResolvedURL(URL(string: "https://one.invalid/")!)
+            space = store.activeSpaceID
+            profile = store.activeSpace.profileID
+            location = SidebarContainerLocation(spaceID: space, folderID: nil, section: .today)
+            order = SidebarHierarchy.children(in: location, state: store.state)
+            records = store.state.tabs
+        }
+
+        @MainActor func closeOne() -> ClosedTabsUndo? {
+            var record: ClosedTabsUndo?
+            store.closeTabs([p2], didCommit: { before in
+                record = ClosedTabsUndo(prompt: .archive, ids: [p2], spaceID: space, profileID: profile,
+                                        focusedTabID: nil, before: before, after: store.state)
+            }, shouldCommit: { true })
+            return record
+        }
+    }
+
+    @Test func theFixtureHasThreePrivateTabs() throws {
+        let rig = try Rig()
+        defer { try? FileManager.default.removeItem(at: rig.root) }
+        #expect(rig.order == [.tab(rig.p1), .tab(rig.p2), .tab(rig.p3)])
+    }
+
+    @Test func aPrivateCloseRemovesTheTabAndRecordsIt() throws {
+        let rig = try Rig()
+        defer { try? FileManager.default.removeItem(at: rig.root) }
+        let record = rig.closeOne()
+        #expect(!rig.store.state.tabs.contains { $0.id == rig.p2 } && record?.actionName == "Archive Tab" && record?.archivedTabs.isEmpty == true)
+    }
+
+    @Test func aPrivateWindowsCloseJoinsItsUndoAndUndoPutsTheTabBackInPlace() throws {
+        let rig = try Rig()
+        defer { try? FileManager.default.removeItem(at: rig.root) }
+        let record = try #require(rig.closeOne())
+        let window = FolderUndoManager()
+        #expect(rig.consent.register(record, in: window, on: rig.store) && window.undoMenuItemTitle == "Undo Archive Tab")
+        window.undo()
+        #expect(rig.store.state.tabs.first { $0.id == rig.p2 } == rig.records.first { $0.id == rig.p2 })
+        #expect(SidebarHierarchy.children(in: rig.location, state: rig.store.state) == rig.order)
+    }
+
+    @Test func redoRemovesItAgain() throws {
+        let rig = try Rig()
+        defer { try? FileManager.default.removeItem(at: rig.root) }
+        let record = try #require(rig.closeOne())
+        let window = FolderUndoManager()
+        _ = rig.consent.register(record, in: window, on: rig.store)
+        window.undo()
+        window.redo()
+        #expect(!rig.store.state.tabs.contains { $0.id == rig.p2 } && window.canUndo)
+    }
+
+    @Test func aPrivateClearRemovesEveryTabRegistersAndUndoReturnsThemAll() throws {
+        let rig = try Rig()
+        defer { try? FileManager.default.removeItem(at: rig.root) }
+        var privateClear: ClosedTabsUndo?
+        rig.store.closeTabs([rig.p1, rig.p2, rig.p3], reason: .clearButton, didCommit: { before in
+            privateClear = ClosedTabsUndo(prompt: .clear, ids: [rig.p1, rig.p2, rig.p3], spaceID: rig.space, profileID: rig.profile,
+                                          focusedTabID: nil, before: before, after: rig.store.state)
+        }, shouldCommit: { true })
+        #expect(rig.store.state.tabs.isEmpty && privateClear?.actionName == "Clear Tabs")
+        let window = FolderUndoManager()
+        #expect(rig.consent.register(try #require(privateClear), in: window, on: rig.store))
+        window.undo()
+        #expect(SidebarHierarchy.children(in: rig.location, state: rig.store.state) == rig.order)
+    }
+}
+
+@MainActor private final class PeekRig {
+    let f: ArchiveFixture
+    let record: ClosedPeekRecord
+    var opened: [ClosedPeekRecord] = []
+    var openWorks = false
+    var closeRequests: [UUID] = []
+    var closeWorks = true
+    var livePeeks = Set<UUID>()
+    var parentElsewhere = false
+    var parentMoves: [() -> Void] = []
+
+    init() throws {
+        f = try ArchiveFixture()
+        record = ClosedPeekRecord(id: UUID(), url: URL(string: "https://peek.invalid/a")!, parentTabID: f.t1.id, profileID: f.profile.id)
+    }
+
+    func append(to manager: FolderUndoManager, appended: @escaping (ClosedPeekUndoOperation) -> Void) {
+        manager.appendClosedPeek(record, state: { [unowned self] in f.store.state }, canOpen: { _ in true }, open: { [unowned self] operation, done in
+            let openHere = { [unowned self] in
+                opened.append(operation.record)
+                guard openWorks else { done(false); return }
+                let adopted = UUID()
+                livePeeks.insert(adopted)
+                operation.openedPeek = adopted
+                done(true)
+            }
+            guard parentElsewhere else { openHere(); return }
+            parentMoves.append(openHere)
+        }, isOpen: { [unowned self] operation in operation.openedPeek.map(livePeeks.contains) == true },
+           canClose: { [unowned self] operation in operation.openedPeek.map(livePeeks.contains) == true }, close: { [unowned self] operation, done in
+            closeRequests.append(operation.openedPeek!)
+            guard closeWorks else { done(nil); return }
+            livePeeks.remove(operation.openedPeek!)
+            done(ClosedPeekRecord(id: UUID(), url: operation.record.url, parentTabID: operation.record.parentTabID,
+                                  profileID: operation.record.profileID))
+        }, appended: appended)
+    }
+}
+
+@MainActor struct ClosedPeekUndoTests {
+    @Test func aClosedPeekReadsUndoClosePeek() throws {
+        let rig = try PeekRig()
+        var operation: ClosedPeekUndoOperation?
+        let window = FolderUndoManager()
+        rig.append(to: window) { operation = $0 }
+        #expect(operation != nil && window.undoMenuItemTitle == "Undo Close Peek")
+    }
+
+    @Test func aPeekThatCantOpenKeepsItsUndo() throws {
+        let rig = try PeekRig()
+        let window = FolderUndoManager()
+        rig.append(to: window) { _ in }
+        window.undo()
+        #expect(rig.opened == [rig.record] && window.canUndo && !window.canRedo)
+    }
+
+    @Test func undoOpensItAgainAndRemembersThatPeekAndRedoClosePeekFollows() throws {
+        let rig = try PeekRig()
+        var operation: ClosedPeekUndoOperation?
+        let window = FolderUndoManager()
+        rig.append(to: window) { operation = $0 }
+        rig.openWorks = true
+        window.undo()
+        #expect(rig.opened.count == 1 && operation?.openedPeek != nil && window.redoMenuItemTitle == "Redo Close Peek")
+    }
+
+    @Test func aRefusedCloseKeepsTheRedo() throws {
+        let rig = try PeekRig()
+        var operation: ClosedPeekUndoOperation?
+        let window = FolderUndoManager()
+        rig.append(to: window) { operation = $0 }
+        rig.openWorks = true
+        window.undo()
+        let reopenedPeek = try #require(operation?.openedPeek)
+        rig.closeWorks = false
+        window.redo()
+        #expect(rig.closeRequests == [reopenedPeek] && window.canRedo)
+    }
+
+    @Test func redoClosesThePeekUndoOpenedNotAnotherOverTheSameParentAndTakesThatClosesRecord() throws {
+        let rig = try PeekRig()
+        var operation: ClosedPeekUndoOperation?
+        let window = FolderUndoManager()
+        rig.append(to: window) { operation = $0 }
+        rig.openWorks = true
+        window.undo()
+        let reopenedPeek = try #require(operation?.openedPeek)
+        let otherPeek = UUID()
+        rig.livePeeks.insert(otherPeek)
+        rig.closeWorks = false
+        window.redo()
+        rig.closeWorks = true
+        window.redo()
+        #expect(rig.closeRequests == [reopenedPeek, reopenedPeek] && rig.livePeeks == [otherPeek] && window.canUndo)
+        #expect(operation?.record.id != rig.record.id && operation?.openedPeek == nil)
+    }
+
+    @Test func onceReopenClosedTabTookThePeeksStepUndoHasNothingLeft() throws {
+        let rig = try PeekRig()
+        var operation: ClosedPeekUndoOperation?
+        let window = FolderUndoManager()
+        rig.append(to: window) { operation = $0 }
+        rig.openWorks = true
+        window.undo()
+        window.redo()
+        let taken = try #require(operation)
+        taken.didReopen(taken.record)
+        #expect(!window.canUndo)
+    }
+
+    @Test func undoForAPeekWhosePageLivesInAnotherWindowWaitsWhileThatPageMovesHere() throws {
+        let rig = try PeekRig()
+        var operation: ClosedPeekUndoOperation?
+        let window = FolderUndoManager()
+        rig.append(to: window) { operation = $0 }
+        rig.parentElsewhere = true
+        rig.openWorks = true
+        window.undo()
+        #expect(window.isBusy && !window.canUndo && !window.canRedo && rig.parentMoves.count == 1 && rig.opened.isEmpty)
+        rig.parentMoves.removeFirst()()
+        #expect(!window.isBusy && operation?.openedPeek != nil && window.redoMenuItemTitle == "Redo Close Peek")
+    }
+
+    @Test func aMoveOrPeekThatDoesntWorkOutLeavesUndoClosePeekOfferedUntouched() throws {
+        let rig = try PeekRig()
+        let window = FolderUndoManager()
+        rig.append(to: window) { _ in }
+        rig.parentElsewhere = true
+        window.undo()
+        #expect(window.isBusy && rig.parentMoves.count == 1)
+        rig.parentMoves.removeFirst()()
+        #expect(!window.isBusy && window.canUndo && !window.canRedo && window.undoMenuItemTitle == "Undo Close Peek")
+    }
+
+    @Test func aReopenedPeekThatLeftSomeOtherWayLeavesNothingToRedo() throws {
+        let rig = try PeekRig()
+        var operation: ClosedPeekUndoOperation?
+        let window = FolderUndoManager()
+        rig.append(to: window) { operation = $0 }
+        rig.openWorks = true
+        window.undo()
+        rig.livePeeks.remove(try #require(operation?.openedPeek))
+        #expect(!window.canRedo)
+    }
+
+    @Test func aPeekWhoseParentLeftTheSidebarCantComeBack() throws {
+        let rig = try PeekRig()
+        let window = FolderUndoManager()
+        rig.append(to: window) { _ in }
+        _ = rig.f.close([rig.f.t1.id], focused: nil)
+        #expect(!window.canUndo)
+    }
+}
+
+struct ClosedPageHistoryTests {
+    private let pageA = UUID(), pageB = UUID(), pageC = UUID()
+    private let entriesA = NSObject(), entriesB = NSObject(), entriesC = NSObject()
+
+    @Test func aClosedTabsEntriesWaitForUndoOrReopen() {
+        var history = ClosedPageHistory<NSObject>(limit: 2)
+        history.closed(pageA, state: entriesA)
+        #expect(history.takeRestored(pageA) == nil)
+    }
+
+    @Test func aRestoredTabsFirstPageTakesThemOnce() {
+        var history = ClosedPageHistory<NSObject>(limit: 2)
+        history.closed(pageA, state: entriesA)
+        history.restore([pageA])
+        #expect(history.takeRestored(pageA) === entriesA && history.takeRestored(pageA) == nil)
+    }
+
+    @Test func theOldestGoPastTheLimit() {
+        var history = ClosedPageHistory<NSObject>(limit: 2)
+        history.closed(pageA, state: entriesA)
+        history.closed(pageB, state: entriesB)
+        history.closed(pageC, state: entriesC)
+        history.restore([pageA, pageB, pageC])
+        #expect(history.takeRestored(pageA) == nil && history.takeRestored(pageB) === entriesB)
+    }
+
+    @Test func closingAgainWaitsForANewRestoreAndAClosedPeeksAreTakenByItsRecord() {
+        var history = ClosedPageHistory<NSObject>(limit: 2)
+        history.closed(pageC, state: entriesA)
+        #expect(history.takeRestored(pageC) == nil && history.take(pageC) === entriesA)
+    }
+
+    @Test func aReopenThatFailedGivesNoEntries() {
+        var history = ClosedPageHistory<NSObject>(limit: 2)
+        history.closed(pageB, state: entriesB)
+        history.restore([pageB])
+        history.unrestore([pageB])
+        #expect(history.takeRestored(pageB) == nil)
+    }
+
+    @Test func aPageCreatedForTheTabAnyOtherWayDropsItsRestoredEntries() {
+        var history = ClosedPageHistory<NSObject>(limit: 2)
+        history.closed(pageC, state: entriesC)
+        history.restore([pageC])
+        history.pageCreated(pageC)
+        #expect(history.takeRestored(pageC) == nil && history.take(pageC) == nil)
+    }
+
+    @MainActor @Test func theStoreKeepsClosedPagesEntriesForEveryWindowOutsideItsSavedState() throws {
+        let f = try ArchiveFixture()
+        f.store.closedPageHistory.closed(pageA, state: entriesA)
+        #expect(!(try JSONEncoder().encode(f.store.state)).isEmpty && f.store.closedPageHistory.take(pageA) === entriesA)
+    }
+
+    @Test func aPeekRefusedWhileAnotherUndosPeekWasAdoptedRetriesWhenThatEndsIfItsParentIsSelectedOnce() {
+        var waiters = PeekUndoSlotWaiters()
+        let shownParent = UUID(), hiddenParent = UUID()
+        waiters.refused(shownParent)
+        waiters.refused(hiddenParent)
+        #expect(waiters.release(selected: [UUID(), shownParent]) == [shownParent] && waiters.release(selected: [hiddenParent]).isEmpty)
     }
 }
