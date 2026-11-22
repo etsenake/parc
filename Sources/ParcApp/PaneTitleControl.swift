@@ -13,13 +13,18 @@ import QuartzCore
     private var area: NSTrackingArea?
     private var observers: [NSObjectProtocol] = []
     private var appearanceObserver: NSObjectProtocol?
+    private let displayOptionsCenter: NotificationCenter
     private(set) var isHovered = false
     private(set) var isPressed = false
     var standingHighlight = false { didSet { refresh(animated: false) } }
     override var isFlipped: Bool { true }
     override var isEnabled: Bool { didSet { if !isEnabled { clearInteraction() } } }
 
-    override init(frame: NSRect) {
+    override convenience init(frame: NSRect) {
+        self.init(frame: frame, displayOptionsCenter: NSWorkspace.shared.notificationCenter)
+    }
+    init(frame: NSRect, displayOptionsCenter: NotificationCenter) {
+        self.displayOptionsCenter = displayOptionsCenter
         super.init(frame: frame)
         let nativeCell = PaneTitleCell(); cell = nativeCell
         setButtonType(.momentaryPushIn)
@@ -33,7 +38,7 @@ import QuartzCore
         label.setAccessibilityElement(false); addSubview(label)
         SidebarMotionController.pinDrawnContent(label, to: .center)
         setAccessibilityElement(true); setAccessibilityRole(.button); setAccessibilityChildren([])
-        appearanceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        appearanceObserver = displayOptionsCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.refresh(animated: false) } }
     }
@@ -188,7 +193,7 @@ import QuartzCore
     deinit {
         MainActor.assumeIsolated {
             observers.forEach(NotificationCenter.default.removeObserver)
-            if let appearanceObserver { NSWorkspace.shared.notificationCenter.removeObserver(appearanceObserver) }
+            if let appearanceObserver { displayOptionsCenter.removeObserver(appearanceObserver) }
         }
     }
 }
