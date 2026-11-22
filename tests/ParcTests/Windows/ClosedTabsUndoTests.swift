@@ -929,7 +929,8 @@ private func temporaryRoot() throws -> URL {
         return made
     }
 
-    func register(_ record: ClosedTabsUndo, in manager: FolderUndoManager = FolderUndoManager()) -> FolderUndoManager {
+    func register(_ record: ClosedTabsUndo, in existing: FolderUndoManager? = nil) -> FolderUndoManager {
+        let manager = existing ?? FolderUndoManager()
         #expect(consent.register(record, in: manager, on: store) || consent.lastOperation == nil)
         return manager
     }
@@ -1116,7 +1117,7 @@ private func temporaryRoot() throws -> URL {
 }
 
 @MainActor struct ClosedTabsPrivateUndoTests {
-    private struct Rig {
+    @MainActor private struct Rig {
         let root: URL
         let consent = Consent()
         let store: BrowserStore
