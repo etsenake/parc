@@ -387,7 +387,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         }
     }
     var primaryMouseButtonIsDown: () -> Bool = { NSEvent.pressedMouseButtons & 1 != 0 }
-    private var interactivePaneEdit: InteractivePaneEdit?
+    private(set) var interactivePaneEdit: InteractivePaneEdit?
     var isInteractivePaneEditing: Bool { interactivePaneEdit != nil }
     var onInteractivePaneEditing: ((Bool) -> Void)?
     fileprivate func beginInteractivePaneEdit() -> InteractivePaneEdit? {
