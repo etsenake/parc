@@ -1,4 +1,3 @@
-// Copyright 2026 Parc contributors.
 #import "VideoPiPWindow.h"
 
 #import "page_host.h"
@@ -112,6 +111,8 @@
 @property(nonatomic, copy) void (^scrubbingChanged)(BOOL);
 @end
 @implementation PCVideoPiPSlider
+@synthesize scrubbingChanged = _scrubbingChanged;
+
 - (void)mouseDown:(NSEvent*)event {
   void (^changed)(BOOL) = self.scrubbingChanged;
   if (changed) changed(YES);
