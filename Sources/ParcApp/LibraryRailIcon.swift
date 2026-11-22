@@ -3,15 +3,19 @@ import QuartzCore
 
 final class LibraryRailAnimation {
     enum Name: String { case media = "screenshots", downloads, easels, spaces, archive }
-    @MainActor static let directory = Bundle.main.resourceURL?.appendingPathComponent("Library", isDirectory: true)
+    @MainActor static let directory = LibraryArtwork.directory
     @MainActor private static var cache: [Name: LibraryRailAnimation] = [:]
     @MainActor static func named(_ name: Name) -> LibraryRailAnimation? {
         if let cached = cache[name] { return cached }
-        guard let directory,
-              let data = try? Data(contentsOf: directory.appendingPathComponent(name.rawValue + ".json")),
-              let animation = LibraryRailAnimation(data: data) else { return nil }
+        guard let animation = named(name, in: directory) else { return nil }
         cache[name] = animation
         return animation
+    }
+
+    @MainActor static func named(_ name: Name, in directory: URL?) -> LibraryRailAnimation? {
+        guard let directory,
+              let data = try? Data(contentsOf: directory.appendingPathComponent(name.rawValue + ".json")) else { return nil }
+        return LibraryRailAnimation(data: data)
     }
 
     let size: CGSize

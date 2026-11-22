@@ -1,7 +1,10 @@
 import AppKit
 
 @MainActor enum LibraryArtwork {
-    static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("Library", isDirectory: true)
+    static let directory = directory(in: .main)
+    static func directory(in bundle: Bundle) -> URL? {
+        bundle.resourceURL?.appendingPathComponent("Library", isDirectory: true)
+    }
     private static var cache: [String: NSImage] = [:]
 
     static func boxOfThings(_ name: String) -> NSImage? { image(name, vector: "pdf") }
@@ -21,6 +24,12 @@ import AppKit
 
     static func image(_ name: String, vector: String) -> NSImage? {
         if let image = cache[name] { return image }
+        guard let image = image(name, vector: vector, in: directory) else { return nil }
+        cache[name] = image
+        return image
+    }
+
+    static func image(_ name: String, vector: String, in directory: URL?) -> NSImage? {
         guard let directory,
               let data = try? Data(contentsOf: directory.appendingPathComponent(name + ".png")),
               let base = NSBitmapImageRep(data: data) else { return nil }
@@ -37,7 +46,6 @@ import AppKit
             for representation in vectorImage.representations { image.addRepresentation(representation) }
         }
         image.isTemplate = true
-        cache[name] = image
         return image
     }
 }
