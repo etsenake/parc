@@ -99,7 +99,10 @@ import Testing
     }
 
     @Test func aSpacesLibraryIsTheSharedLibraryForItsFolder() {
-        let files = NoteFileTestSupport.files(clock: NoteManualClock())
+        let defaultFolder = standard
+        var settings = NoteFileSettings(clock: NoteManualClock(), worker: .inline, hopToMain: { _ in }, defaults: defaults)
+        settings.defaultFolder = { defaultFolder }
+        let files = NoteFiles(settings: settings)
         files.folders.setFolder(URL(fileURLWithPath: "/Users/parc-sample/Writing", isDirectory: true), for: second)
         #expect(files.library(forProfile: second) === files.library(folder: URL(fileURLWithPath: "/Users/parc-sample/Writing")))
     }
