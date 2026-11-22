@@ -119,6 +119,7 @@ struct EaselCanvasTestsAccessibility {
         defer { board.close() }
         let window = board.window
         let first = try board.node(for: board.text)
+        try board.session.perform("Other owner") { $0.items[0].text = "New original words" }
         let edit = first.accessibilityCustomActions()!.first { $0.name == "Edit text" }!
         #expect(edit.handler?() == true, "Text activation reaches existing native editor")
         let editor = first.accessibilityChildren()!.first as! EaselStyledTextView
