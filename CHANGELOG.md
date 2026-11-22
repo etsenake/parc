@@ -1,5 +1,136 @@
 # Changelog
 
+## 2.16.0 (2026-11-22)
+
+### New
+
+- **notes:** New notes start with a random gallery cover already in place
+- **easels:** The tool bar floats at the bottom now, rises in with a sliding pill, and tools hop, tilt and wiggle awake when you pick them
+- **easels:** Swatches, shapes, templates, the timer and the page list get lift, squish, rolling digits and a sliding page marker
+- **easels:** Code Copy morphs into a check, the crop zoom knob grows under your finger and the web link box shakes at a bad address
+- **easels:** Stamps slam down with an ink splash, stickies drop like paper and deleted objects puff away
+- **easels:** Jumping to a find result gives the object a little pop and glow so your eyes land on it
+- **easels:** Held stamps hover and breathe, pop through each size with a tick, and the stamp wheel fans out and flies your pick to the pointer
+- **easels:** Guides fade in with a little pop and snapping to guides, 15° turns or a matching size clicks under your fingertip
+- **easels:** Connectors made for you draw themselves, arrowheads pop and shapes glow as an end clicks onto them
+- **easels:** Sections light up like a tray while you carry things over and flash when you drop them in
+- **easels:** Mind-map branches fold away, unfold outward and new topics grow out of their parent
+- **easels:** Flipping pages slides the board with a soft cross-fade
+- **easels:** Stickies ease to their new height as you type
+- **easels:** Table rows and columns slide open and close up
+- **easels:** Erased strokes poof away
+- **easels:** Mermaid imports cascade in, restyles cross-fade cleanly and the motion guide covers the whole desk
+- **easels:** New connectors just draw themselves on, and expanding a mind-map branch unfolds its topics level by level
+- **peek:** Notes and Easels float up in a Peek from their hover card, still fully editable, and the card's buttons wear Parc's own tooltips
+- **easels:** Easels learn audio, files, PDFs and block equations, and new media objects can start empty like a note's block
+- **easels:** Links and text sizes in Easels use the Notes link box and size menu, links to notes open the note, and hovering a link shows its open, copy, edit and remove card
+- **easels:** Adding a web image to an Easel picks the Easel from a Notes-style card instead of a pop-up window
+- **easels:** Audio, files, PDFs, linked videos and Unsplash credits now show up in your exported Easels instead of vanishing
+- **easels:** Drop a stack of PDFs, songs and files on an Easel and they line up neatly in one row
+- **easels:** Media, Web and Code buttons put empty images, videos, audio, files, PDFs, embeds, bookmarks and equations on the board, with every one in the ⌘/ menu
+- **easels:** Highlight words in Notion's nine colours and mark them as code from the text toolbar, with ⇧⌘H to repeat the last colour and Turn Into wearing the Notes rows
+- **easels:** Type / in Easel text to open the Notes block menu, turn the line into a heading, list or quote, or add a sticky, shape, image or table beside it
+- **easels:** Custom emoji from your Notes library work as stamps, saved by name and drawn from the library
+- **easels:** Block equations typeset with the Notes math renderer, edit in the Notes equation editor and export as vectors
+- **easels:** Notes and Easels link to each other both ways, and an Easel can be locked, take a default font and count its words
+- **easels:** Copy an Easel as Markdown or export it as a Markdown file, headings, lists, tables and code all in reading order
+- **easels:** Send objects to another Easel, drop a note or Easel from the sidebar onto the canvas, paste and copy HTML and Markdown, and print an Easel
+- **easels:** Give an Easel a page icon from its title row, with the same picker notes use, and see it everywhere the Easel shows
+- **easels:** Duplicating an Easel keeps its icon, and open Easel tabs show it in the command bar
+- **easels:** Type @ or [[ in Easel text to mention a note or a date, set reminders that ring like a note's, and use your custom emoji
+- **easels:** Links on an Easel become proper bookmark cards with the page's title, blurb and site, saved for offline and exports
+- **easels:** Mentioning a note in an Easel counts in its backlinks, and the mention follows the note when it's renamed or moved
+- **easels:** Dropping a note from the sidebar onto an Easel makes a note mention, and hovering a mention offers Open like a note link
+- **easels:** Notes typing shortcuts work in Easel text: ==highlight==, ~strike~, **bold**, $math$, arrows like -> and =>, and $$ for a block equation
+- **easels:** Videos, audio, files and PDFs on an Easel wear the Notes players and cards, and empty media fill straight from Upload, a link or a drop
+- **easels:** The slash menu's Mention, Date and Inline equation rows work in Easel text
+- **easels:** Mention and equation buttons join the text toolbar, with ⇧⌘E for an inline equation
+- **easels:** Empty Embed and Bookmark objects take a link like a note's block, Embed searches DuckDuckGo too, and a pasted link offers Paste as
+- **easels:** Add to-do lists and dividers to Easel text, with Notes-style boxes you can tick, fading ticked items and a pop
+- **easels:** Typing --- on its own line in Easel text draws a divider, like in a note
+- **easels:** Click a date or inline equation in a selected Easel object to change it right on the canvas
+
+### Fixed
+
+- **easels:** Sticky notes show their text again as soon as you click away instead of staying blank until something else redraws them
+- **easels:** Hidden section counts update as objects move in, connector labels stay readable after switching light or dark, and group outlines and badges no longer linger half drawn
+- **easels:** Code blocks and web captures show their buttons when you hover them, just like in Notes
+- **easels:** Tables show their add and move controls as soon as you hover them, no click first
+- **easels:** Pinching an Easel below 100% no longer crashes Parc, and a ⌘-scroll zoom stops when your fingers lift instead of gliding on or taking over a scroll's glide
+- **easels:** Stickies, shapes and mind-map nodes show their + dots the moment you hover them, and clicking a mind map's + or a collapsed branch finally does something
+- **easels:** Mind-map and quick-create + dots no longer leave stray pieces behind when you zoom out and start typing, select something else or click away
+- **easels:** Dragging the fill opacity slider updates shapes as you drag instead of only when you let go
+- **easels:** Copying and pasting text in a scaled-up sticky keeps its size instead of shrinking or ballooning when it lands
+- **easels:** Escape out of a sticky or text box leaves it selected, like tables and code blocks, so a second Escape deselects
+- **easels:** Drag a sticky's or shape's + dot onto another object to join them with a connector, no tool switching and no surprise copy
+- **easels:** Table cells keep their text when you Tab or click to another cell instead of going blank
+- **easels:** Tab and Shift-Tab while typing in a mind-map node keep your caret instead of selecting the text so the next key replaces it
+- **easels:** Headings, lists and markdown shortcuts in a resized sticky come out at the sticky's size instead of tiny or huge
+- **easels:** Shapes and text boxes you draw with the tools pick up the colour, fill and lines you last gave one instead of the old grey look
+- **easels:** The right-click Shape menu stays available when a selection mixes locked and unlocked shapes, like the toolbar's shape picker
+- **easels:** Undoing or deleting table columns under a resting pointer, pasting Easel text with a broken size, and saving a version of an Easel with a damaged date no longer crash Parc
+- **easels:** Undo goes straight to your previous change after you undo all your typing, instead of needing an extra press that does nothing
+- **easels:** A section title you're renaming is kept when you switch page, export, restore a version or close the Easel instead of snapping back
+- **easels:** Typing a new Easel title undoes in one step instead of one letter at a time
+- **easels:** Leaving an Easel inside a note finishes the edit and clears its selection, and its errors and Copied Image toast show like in the full editor
+- **easels:** A page name you're typing in the page list is kept when the list closes instead of going back to the old name
+- **easels:** Paste in an object's right-click menu lands where you clicked, like Paste Here on empty canvas
+- **easels:** Duplicate in the selection toolbar's More menu works on locked objects, matching ⌘D and the right-click menu
+- **easels:** Undo and Redo select what they bring back or change, holding an arrow key undoes as one step, and Delete is greyed out for locked objects
+- **easels:** A crop you're adjusting is kept when you switch page or close the Easel instead of being thrown away
+- **easels:** Command-click adds an object to the selection instead of replacing it
+- **easels:** Export Selection works in an Easel inside a note instead of always being greyed out
+- **notes:** Uploading an image for a note's icon or cover works instead of the picker closing and dropping the file you chose
+- **notes:** The typing cursor no longer takes over buttons, checkboxes and menus in a note, so they show the pointing hand or arrow without flickering as you move
+- **notes:** The note's ••• menu button at the top right sits on a solid plate with a bolder icon and stays visible instead of hiding until you hover
+- **notes:** Note pickers close when you click a toast or another Parc panel, and a covered text field never shows the typing cursor
+- **notes:** Menus, pickers and popovers in a note hold their cursor, with the hand on rows and buttons and the typing cursor only in their text fields, instead of flickering with whatever sits underneath
+- **notes:** Image, video, link, embed and capture blocks show the pointing hand on their buttons and covered blocks no longer change the cursor under a menu
+- **notes:** Views underneath a note menu can never claim the cursor, even the page itself
+- **notes:** Add icon opens the icon picker under the new icon, and choosing an emoji, Random, an image or a cover keeps the picker open until you click away
+- **notes:** The note icon, cover, emoji picker and emoji suggestions show the pointing hand on what you can click and the typing cursor in their search box, and no longer change the cursor or light up under a menu
+- **notes:** Checkboxes, toggles, handles and table grips show the pointing hand, and block hover chrome and cursors no longer react through an open menu
+- **notes:** Cursors settle correctly when a note menu opens, closes or scrolls under a still pointer, and covered calendar days and embed resize handles drop their hover
+- **notes:** Table column edges show the resize cursor again instead of the typing cursor, and block handles come back on their own when a menu closes
+- **easels:** Dragging a tool over the floating bar hides its ghost and drops nothing, and the current-tool pill never stalls mid-slide
+- **easels:** The selection toolbar stays clear of the floating tool bar near the bottom of the board
+- **easels:** An empty Easel only shows the template rows that fit above the floating tool bar, so no card ever hides half-tucked beneath it
+- **easels:** Live page cards only cast a shadow when they land, and slamming stamps never leave a smudge at their edges
+- **easels:** Rolling timer digits no longer hop on fast changes, the 00:00 glow stops when you reset and template cards drop back when the pointer leaves
+- **easels:** Tables closing up and stickies shrinking as you type never get cut off at the bottom on boards with live pages
+- **easels:** Typing near the bottom keeps your caret above the floating bar, and the bar stops staying faded after you switch away mid-drag
+- **easels:** Drawing a connector ticks once when its end lands instead of every frame, and grabbing an attached end stays quiet
+- **easels:** Table slides settle the moment you undo, redo or edit again, and section glows never clip on live-page boards
+- **easels:** New lines in a growing sticky stay tucked inside the paper while it eases taller
+- **easels:** Collapsing or expanding two mind-map branches at once folds every topic into its own branch
+- **easels:** Clicking through colours quickly blends smoothly from what's on screen instead of popping
+- **easels:** Held stamps land at the size you let go, the stamp wheel steps aside the moment you pick, and find pulses wait for a pop to finish
+- **easels:** The opacity slider stays crisp while you drag it instead of cross-fading on every nudge
+- **easels:** Closing find in an Easel no longer hands the keyboard back to a control that's hidden or tucked away
+- **easels:** Arrow-key nudges made after a pause undo on their own instead of merging with ones from minutes earlier
+- **easels:** Markdown copies and exports include audio, files, PDFs, block equations and bookmark titles
+- **easels:** Restoring an older version of an Easel brings back the icon it had then too
+- **easels:** Escape in the equation editor puts back the TeX you started with, and a blank equation is always removed when editing ends
+- **easels:** Failed picture or PDF downloads say so plainly, and the search list closes when its empty Embed goes away
+- **easels:** A file named .zip or .txt that happens to start like an MP3 stays a file, and only files with no known extension are sniffed
+- **easels:** The Web button always adds something, the Code menu hides what isn't offered, and the toolbar and ⌘/ agree on what's available
+- **easels:** A locked Easel only undoes or redoes its lock, still follows renamed notes, and Send to Easel and History restore no longer leave stray pictures or fail on a missing icon
+- **easels:** An open Easel's icon edits reach the sidebar and command bar, and image icons drop back to the Easel mark when their picture goes missing
+- **easels:** Highlighting inline code keeps it code, and highlighted words keep their light-theme colour in HTML and SVG exports
+- **easels:** Picking a slash block is one Undo, /equation lands beside the text, and the menu's words match Notes
+- **easels:** Custom emoji stamps draw from your profile's Notes folder instead of whichever folder has emoji first
+- **easels:** The mention and equation buttons and the DuckDuckGo search rows use the words Notes uses
+- **easels:** Markdown copies of Easel text keep to-dos, dividers and note mentions
+- **easels:** Copies, CSV and find never show stray object characters, equations that can't typeset still export as TeX, and inline payloads have a size cap
+- **easels:** Reminders in an Easel move with it to another Profile and come back when a deleted Easel is restored
+- **easels:** Undo names for mentions, dates, reminders, equations and emoji read in sentence case, and Turn Into says To-do List
+- **easels:** Dropping, undoing or locking while a picture or video loads no longer shows a bogus error, and link and download messages read plainly
+- **easels:** Undo names for icons, dates, equations, sending and default text read in sentence case
+- **easels:** Pictures and Easels that are too big now say so plainly, with the size that fits
+- **easels:** Exported equations write tidy scale numbers, and the equation checks finally get a seat in the Easel test run
+- **accessibility:** Label a button's own copy of its artwork so buttons sharing an image or AppKit's placeholder keep their own names
+- **engine:** Keep the picture-in-picture slider building
+
 ## 2.15.0 (2026-11-21)
 
 ### New
