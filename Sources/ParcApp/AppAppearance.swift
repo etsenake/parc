@@ -1,6 +1,18 @@
 import AppKit
 
 @MainActor
+protocol AppearanceHost: AnyObject {
+    var appearance: NSAppearance? { get set }
+    func observeAppearance(_ change: @escaping @MainActor () -> Void) -> NSKeyValueObservation
+}
+
+extension NSApplication: AppearanceHost {
+    func observeAppearance(_ change: @escaping @MainActor () -> Void) -> NSKeyValueObservation {
+        observe(\.appearance, options: [.new]) { _, _ in MainActor.assumeIsolated { change() } }
+    }
+}
+
+@MainActor
 enum AppAppearance: String, CaseIterable {
     case automatic, light, dark
 
@@ -26,31 +38,37 @@ enum AppAppearance: String, CaseIterable {
         case .dark: return NSAppearance(named: .darkAqua)
         }
     }
-    static var current: AppAppearance {
-        switch NSApp.appearance?.name {
+    static var current: AppAppearance { current(in: NSApp) }
+    static func current(in host: AppearanceHost) -> AppAppearance {
+        switch host.appearance?.name {
         case NSAppearance.Name.aqua?: return .light
         case NSAppearance.Name.darkAqua?: return .dark
         default: return .automatic
         }
     }
 
-    static func restore(defaults: UserDefaults = .standard) {
+    static func restore(defaults: UserDefaults = .standard, host: AppearanceHost? = nil) {
+        let host = host ?? NSApp!
         guard let raw = defaults.string(forKey: defaultsKey), let saved = AppAppearance(rawValue: raw) else { return }
-        NSApp.appearance = saved.appearance
+        host.appearance = saved.appearance
     }
 
-    static func preview(_ value: AppAppearance) { NSApp.appearance = value.appearance }
+    static func preview(_ value: AppAppearance, host: AppearanceHost? = nil) { (host ?? NSApp!).appearance = value.appearance }
 
-    @discardableResult static func endPreview(_ applied: AppAppearance, defaults: UserDefaults = .standard) -> Bool {
-        guard current == applied else { return false }
+    @discardableResult static func endPreview(_ applied: AppAppearance, defaults: UserDefaults = .standard,
+                                              host: AppearanceHost? = nil) -> Bool {
+        let host = host ?? NSApp!
+        guard current(in: host) == applied else { return false }
         let saved = defaults.string(forKey: defaultsKey).flatMap(AppAppearance.init(rawValue:)) ?? .automatic
-        NSApp.appearance = saved.appearance
+        host.appearance = saved.appearance
         return true
     }
 
-    @discardableResult static func apply(_ value: AppAppearance, defaults: UserDefaults = .standard) -> Bool {
-        let changed = value != current
-        if changed { NSApp.appearance = value.appearance }
+    @discardableResult static func apply(_ value: AppAppearance, defaults: UserDefaults = .standard,
+                                         host: AppearanceHost? = nil) -> Bool {
+        let host = host ?? NSApp!
+        let changed = value != current(in: host)
+        if changed { host.appearance = value.appearance }
         if value == .automatic { defaults.removeObject(forKey: defaultsKey) }
         else { defaults.set(value.rawValue, forKey: defaultsKey) }
         return changed

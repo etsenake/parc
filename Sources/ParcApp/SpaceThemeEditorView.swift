@@ -44,6 +44,7 @@ final class SpaceThemeEditorView: NSView {
     private let noise: ThemeNoiseControl
     private var appearanceButtons: [ThemeAppearanceButton] = []
     private var appearanceObservation: NSKeyValueObservation?
+    private let appearanceHost: AppearanceHost
     private var presets: [ThemePresetButton] = []
     private let previous = ThemeIconButton.chevron("chevron.left", label: "Previous color presets")
     private let next = ThemeIconButton.chevron("chevron.right", label: "Next color presets")
@@ -59,7 +60,9 @@ final class SpaceThemeEditorView: NSView {
          scrollPublisher: ((AnyPublisher<Double, Never>) -> AnyPublisher<Double, Never>)? = nil,
          scrollTime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
          performHapticFeedback: @escaping @MainActor () -> Void = ThemeHapticFeedback.perform,
-         cursor: ThemeEditorCursor = ThemeEditorCursor(), resources: ThemeEditorResources? = nil) {
+         cursor: ThemeEditorCursor = ThemeEditorCursor(), resources: ThemeEditorResources? = nil,
+         appearanceHost: AppearanceHost? = nil) {
+        self.appearanceHost = appearanceHost ?? NSApplication.shared
         let resources = resources ?? .main
         self.resources = resources
         pad = ThemeColorPad(grid: resources.image("DotGrid"))
@@ -137,9 +140,7 @@ final class SpaceThemeEditorView: NSView {
         addSubview(noise)
         addSubview(noise.marker)
         setAccessibilityLabel("Space theme editor")
-        appearanceObservation = NSApplication.shared.observe(\.appearance, options: [.new]) { [weak self] _, _ in
-            MainActor.assumeIsolated { self?.refreshAppearance() }
-        }
+        appearanceObservation = self.appearanceHost.observeAppearance { [weak self] in self?.refreshAppearance() }
         refresh(); loadPresetPage(); applyPresentation()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -259,7 +260,7 @@ final class SpaceThemeEditorView: NSView {
         reportTooltipTheme()
     }
     private func refreshAppearance() {
-        let choice = AppAppearance.current
+        let choice = AppAppearance.current(in: appearanceHost)
         for button in appearanceButtons {
             button.isSelected = button.appearanceChoice == choice
         }
