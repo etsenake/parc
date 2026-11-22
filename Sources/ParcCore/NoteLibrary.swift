@@ -327,7 +327,7 @@ package final class NoteLibrary {
         let hop = files.settings.hopToMain
         watcher = NoteFileFolderWatcher(folder: folder) { [weak self] events, broad in
             let library = self
-            hop {
+            hop { [weak library] in
                 MainActor.assumeIsolated { library?.folderChanged(events: events, broad: broad) }
             }
         }

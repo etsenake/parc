@@ -334,7 +334,7 @@ package final class NoteFileSession {
         let hop = settings.hopToMain
         let events: @Sendable (NoteFileWatchEvent) -> Void = { [weak self] event in
             let session = self
-            hop { MainActor.assumeIsolated { session?.handle(event) } }
+            hop { [weak session] in MainActor.assumeIsolated { session?.handle(event) } }
         }
         let disk = disk
         let saveRequest: NoteFileWatcher.SaveRequest = { [weak self] completion in
@@ -343,7 +343,7 @@ package final class NoteFileSession {
                 return
             }
             let delivery = StagedDelivery(written), session = self
-            hop { MainActor.assumeIsolated { session?.finishStagedWrite(delivery.write) } }
+            hop { [weak session] in MainActor.assumeIsolated { session?.finishStagedWrite(delivery.write) } }
             completion(written.outcome.error)
         }
         let watcher = NoteFileWatcher(url: url, events: events, saveRequest: saveRequest)
