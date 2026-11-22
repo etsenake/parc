@@ -3,7 +3,11 @@ import Combine
 import ParcCore
 import ParcEngine
 
-extension BrowserWindowController {
+private extension SidebarMoveSession {
+    var sourceController: BrowserWindowController? { owner as? BrowserWindowController }
+}
+
+extension BrowserWindowController: SidebarMoveOwner {
     func moveFavoriteToPinned(_ id: UUID) -> Bool {
         let group = SidebarSplitItems.groups(in: store.state, spaceID: activeSpaceID).first { $0.tabIDs.contains(id) }
         let item = group.map { SidebarItemReference.split($0.id) } ?? .tab(id)
@@ -312,10 +316,10 @@ extension BrowserWindowController {
 
     func prepareSidebarWindowDrop(_ session: SidebarMoveSession, to location: SidebarContainerLocation,
                                           before: SidebarItemReference?) -> (() -> Bool)? {
-        if let source = session.owner, source !== self, source.activeProfileID != activeProfileID {
+        if let source = session.sourceController, source !== self, source.activeProfileID != activeProfileID {
             return prepareInterProfileWindowDrop(session, from: source, to: location, before: before)
         }
-        guard session.isValidForWindowTransfer, let source = session.owner, source !== self,
+        guard session.isValidForWindowTransfer, let source = session.sourceController, source !== self,
               source.store === store, source.ownership === ownership,
               source.window === session.window, source.sidebarWindowMoveAvailable, sidebarWindowMoveAvailable,
               source.activeProfileID == activeProfileID, location.spaceID == activeSpaceID,
@@ -386,7 +390,7 @@ extension BrowserWindowController {
     private func makeSidebarCopyDrop(_ session: SidebarMoveSession, items: [SidebarItemReference],
                                      to location: SidebarContainerLocation, before: SidebarItemReference?) -> (() -> Bool)? {
         guard session.allowsCopy, session.isValidForWindowTransfer, let window,
-              let source = session.owner, source.store === store, source.window === session.window,
+              let source = session.sourceController, source.store === store, source.window === session.window,
               folderDuplicateContextAvailable, source.folderDuplicateContextAvailable,
               sidebarWindowMoveEnvironment, source.sidebarWindowMoveEnvironment,
               let destinationProfile = store.state.spaces.first(where: { $0.id == location.spaceID })?.profileID,
@@ -482,7 +486,7 @@ extension BrowserWindowController {
     func prepareSidebarDockDrop(_ session: SidebarMoveSession, items: [SidebarItemReference],
                                         to location: SidebarContainerLocation, before: SidebarItemReference?) -> (() -> Bool)? {
         guard !items.isEmpty, session.isValidForWindowTransfer, let window,
-              let source = session.owner, source.store === store, source.window === session.window,
+              let source = session.sourceController, source.store === store, source.window === session.window,
               let space = store.state.spaces.first(where: { $0.id == location.spaceID }),
               location.profileID == nil else { return nil }
         let crosses = space.profileID != source.activeProfileID

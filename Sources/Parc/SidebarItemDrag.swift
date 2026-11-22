@@ -25,13 +25,16 @@ extension SidebarDeferredAccessibilityActions {
 }
 
 @MainActor
+protocol SidebarMoveOwner: AnyObject {}
+
+@MainActor
 final class SidebarMoveSession {
     static let pasteboardType = NSPasteboard.PasteboardType("org.parc.sidebar-item-move")
     let identifier = UUID()
     let items: [SidebarItemReference]
     var item: SidebarItemReference { items[0] }
     weak var window: NSWindow?
-    weak var owner: BrowserWindowController?
+    weak var owner: (any SidebarMoveOwner)?
     private let validate: () -> Bool
     private let validateTransfer: () -> Bool
     private let propose: (SidebarContainerLocation, SidebarItemReference?) -> Bool
