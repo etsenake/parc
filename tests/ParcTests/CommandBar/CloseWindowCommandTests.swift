@@ -8,7 +8,10 @@ struct CloseWindowCommandTests {
         var closed = 0
         override var isVisible: Bool { true }
         override var isKeyWindow: Bool { true }
-        override func performClose(_ sender: Any?) { requests += 1; super.performClose(sender) }
+        override func performClose(_ sender: Any?) {
+            requests += 1
+            if delegate?.windowShouldClose?(self) ?? true { close() }
+        }
         override func close() { closed += 1; super.close() }
         init() {
             super.init(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
