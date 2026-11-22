@@ -17,14 +17,15 @@ struct RecentSwitcherPresentationTests {
         let queue = Publication()
         let items: [RecentTabSwitcherView.Item]
 
-        init() {
+        init(count: Int = 3, viewportWidth: CGFloat = 562, cold: Bool = false) {
             _ = NSApplication.shared
-            let frame = CGRect(x: 0, y: 0, width: 850, height: 478)
-            window = Window(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+            let frame = CGRect(x: 0, y: 0, width: viewportWidth + 288, height: 478)
+            window = Window(contentRect: cold ? .zero : frame, styleMask: .borderless, backing: .buffered, defer: cold)
             window.isReleasedWhenClosed = false
-            content = RecentTabSwitcherView(frame: frame, schedulePublication: { [queue] in queue.job = $0 })
+            content = RecentTabSwitcherView(frame: cold ? .zero : frame,
+                                            schedulePublication: { [queue] in queue.job = $0 }, reduceMotion: { true })
             window.contentView = content
-            items = ["one", "two", "three"].map { title in
+            items = ["one", "two", "three", "four", "five", "reserve"].prefix(count).map { title in
                 RecentTabSwitcherView.Item(id: title, title: title, spaceName: "Space", vertical: false,
                                           components: [.init(id: UUID(), title: title)])
             }
@@ -36,6 +37,12 @@ struct RecentSwitcherPresentationTests {
             ["one": CGRect(x: 16, y: 16, width: 170, height: 158),
              "two": CGRect(x: 200, y: 16, width: 170, height: 158),
              "three": CGRect(x: 600, y: 16, width: 170, height: 158)]
+        }
+
+        func layout() {
+            content.layoutSubtreeIfNeeded()
+            queue.job?.perform()
+            queue.job = nil
         }
     }
 
@@ -122,6 +129,132 @@ struct RecentSwitcherPresentationTests {
         fixture.window.contentView = nil
         old.perform()
         #expect(fixture.content.itemFrames.isEmpty)
+    }
+}
+
+extension RecentSwitcherPresentationTests {
+    @MainActor private func descendants(of view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap { descendants(of: $0) }
+    }
+
+    @Test @MainActor func theHostLaysOutFiveCardsAtTheOriginalSizeAndPadding() throws {
+        let fixture = Fixture(count: 5, viewportWidth: 940.5)
+        fixture.layout()
+        let view = fixture.content
+        #expect(view.contentRect == CGRect(x: 144, y: 120, width: view.bounds.width - 288, height: 190))
+        #expect(!view.acceptsFirstResponder)
+        #expect(view.itemFrames.count == 5)
+        let card = try #require(view.itemFrames[fixture.items[0].id])
+        #expect(abs(card.width - 181.7) < 0.01)
+        #expect(card.height == 158)
+        #expect(card.origin == CGPoint(x: 16, y: 16))
+    }
+
+    @Test @MainActor func theHostPublishesVisibilityFromItsLaidOutViewport() {
+        let fixture = Fixture(count: 5, viewportWidth: 940.5)
+        var publications = [Set<Int>]()
+        fixture.content.onVisibleItemsChanged = { [weak content = fixture.content] in
+            if let content { publications.append(content.visibleItemIndexes) }
+        }
+        fixture.layout()
+        #expect(publications == [Set(0..<5)])
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func keepingTheSameHostedCardsDoesNotRepublishVisibility(changesFocus: Bool) throws {
+        let fixture = Fixture(count: 5, viewportWidth: 940.5)
+        let view = fixture.content
+        view.configure(isDark: false, focus: .systemPurple, hover: .systemGray, maxContrast: .black, cutout: .white)
+        fixture.layout()
+        try #require(view.visibleItemIndexes == Set(0..<5))
+        let frames = view.itemFrames
+        view.onVisibleItemsChanged = { Issue.record("The same visible cards were published again") }
+        view.configure(isDark: false, focus: .systemPurple, hover: .systemGray, maxContrast: .black, cutout: .white)
+        view.setItems(fixture.items, focused: 1)
+        let index = changesFocus ? 3 : 1
+        view.focus(index)
+        fixture.layout()
+        #expect(view.focusedID == fixture.items[index].id)
+        #expect(view.itemFrames == frames)
+        #expect(view.visibleItemIndexes == Set(0..<5))
+    }
+
+    @Test @MainActor func theHostBuildsTheNativePopoverMaterial() throws {
+        let fixture = Fixture()
+        fixture.layout()
+        let material = try #require(descendants(of: fixture.content).compactMap { $0 as? NSVisualEffectView }.first)
+        #expect(material.material == .popover)
+        #expect(material.state == .followsWindowActiveState)
+        #expect(material.blendingMode == .withinWindow)
+        #expect(!material.isEmphasized)
+    }
+
+    @Test @MainActor func theNarrowHostedRowDoesNotShowAHorizontalScroller() throws {
+        let fixture = Fixture(count: 5, viewportWidth: 520)
+        fixture.layout()
+        let scroll = try #require(descendants(of: fixture.content).compactMap { $0 as? NSScrollView }.first)
+        #expect(!scroll.hasHorizontalScroller)
+    }
+
+    @Test @MainActor func theColdHostPublishesCardsAfterItGetsItsPanelSize() {
+        let fixture = Fixture(count: 5, viewportWidth: 0, cold: true)
+        fixture.window.setContentSize(NSSize(width: 1228.5, height: 478))
+        fixture.layout()
+        #expect(fixture.content.bounds.size == fixture.window.frame.size)
+        #expect(abs(fixture.content.contentRect.width - 940.5) <= 1)
+        #expect(fixture.content.contentRect.height == 190)
+        #expect(fixture.content.itemFrames.count == 5)
+        #expect(fixture.content.visibleItemIndexes == Set(0..<5))
+    }
+
+    @Test @MainActor func aHostedReserveJoinsVisibilityOnlyWhenPromoted() {
+        let fixture = Fixture(count: 6, viewportWidth: 940.5)
+        var items = fixture.items
+        items[5].isHidden = true
+        fixture.content.setItems(items, focused: 1)
+        fixture.layout()
+        #expect(fixture.content.itemFrames.count == 6)
+        #expect(fixture.content.visibleItemIndexes == Set(0..<5))
+        items[5].isHidden = false
+        fixture.content.setItems(Array(items.dropFirst()), focused: 4)
+        fixture.layout()
+        #expect(fixture.content.itemFrames.count == 5)
+        #expect(fixture.content.visibleItemIndexes == Set(0..<5))
+        #expect(fixture.content.focusedID == items[5].id)
+    }
+
+    @Test @MainActor func theDocumentAndPrivatePreviewPDFsDecodeAsTemplates() throws {
+        let resources = try #require(Bundle.module.resourceURL)
+        let artwork = RecentSwitcherArtwork(resources: resources)
+        #expect(artwork.directory?.path == Bundle.module.url(forResource: "RecentSwitcher", withExtension: nil)?.path)
+        #expect(artwork.note?.isTemplate == true)
+        #expect(artwork.easel?.isTemplate == true)
+        #expect(artwork.incognito?.isTemplate == true)
+    }
+
+    @Test @MainActor func theHostedPreviewVariantsKeepTheSameCardSize() throws {
+        let fixture = Fixture(count: 5, viewportWidth: 940.5)
+        let artwork = RecentSwitcherArtwork(resources: Bundle.module.resourceURL)
+        let picture = NSImage(size: NSSize(width: 240, height: 180), flipped: false) { rect in
+            NSColor.systemBlue.setFill()
+            rect.fill()
+            return true
+        }
+        var items = fixture.items
+        items[0].components[0].template = .init(image: try #require(artwork.note), title: "A two-line note title")
+        items[1].components[0].image = picture
+        items[1].components.append(.init(id: UUID(), title: "Second pane", image: picture))
+        items[1].customInfo = .init(icon: NSImage(systemSymbolName: "star.fill", accessibilityDescription: nil), title: "Named split")
+        items[2].components.append(.init(id: UUID(), title: "Empty pane"))
+        items[2].customInfo = .init(icon: nil, title: "Counted split")
+        items[3].components[0].image = picture
+        items[3].overlay = .init(id: UUID(), title: "Peek", image: picture)
+        items[4].components[0].template = .init(image: try #require(artwork.incognito), title: nil)
+        items[4].components[0].isRecordingMedia = true
+        fixture.content.setItems(items, focused: 1)
+        fixture.layout()
+        try #require(fixture.content.itemFrames.count == 5)
+        #expect(fixture.content.itemFrames.values.allSatisfy { abs($0.width - 181.7) < 0.01 && $0.height == 158 })
     }
 }
 

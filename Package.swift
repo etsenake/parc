@@ -117,6 +117,7 @@ let package = Package(
                                 .copy("Windows/Fixtures/NavigationControls"),
                                 .copy("Windows/Fixtures/SplitViews"),
                                 .copy("CommandBar/CommandBarFixtures"),
+                                .copy("CommandBar/RecentSwitcher"),
                                 .copy("Sidebar/Fixtures/SidebarPreview"),
                                 .copy("Sidebar/ChromeFixtures"),
                                 .copy("Sidebar/Fixtures/SidebarPlusMenu"),
