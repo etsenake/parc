@@ -38,7 +38,14 @@ final class StartPageMarkView: NSView {
         return NSSize(width: Self.width, height: (Self.width * CGFloat(monochrome.height) / CGFloat(monochrome.width)).rounded())
     }
 
-    override init(frame frameRect: NSRect) {
+    private let performHapticFeedback: @MainActor () -> Void
+
+    override convenience init(frame frameRect: NSRect) {
+        self.init(frame: frameRect, performHapticFeedback: ThemeHapticFeedback.perform)
+    }
+
+    init(frame frameRect: NSRect, performHapticFeedback: @escaping @MainActor () -> Void) {
+        self.performHapticFeedback = performHapticFeedback
         monochrome = ParcBrandMark.image(.monochrome)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
         super.init(frame: frameRect)
         wantsLayer = true
@@ -224,7 +231,7 @@ final class StartPageMarkView: NSView {
             case .shimmer:
                 if let motion { motion.playShimmer(completion: finish) } else { finish() }
             case .haptic:
-                ThemeHapticFeedback.perform()
+                performHapticFeedback()
             case .reset:
                 motion?.reset()
                 recognizer.reset()
