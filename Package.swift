@@ -9,6 +9,8 @@ let engineStubs = root + "/Stubs"
 
 let strict: [SwiftSetting] = [.treatAllWarnings(as: .error)]
 let nativeFlags: [CSetting] = [.enableWarning("all"), .enableWarning("extra"), .treatAllWarnings(as: .error)]
+let nativeLibraryExcludes = ((try? FileManager.default.contentsOfDirectory(atPath: root)) ?? [])
+    .filter { !$0.hasPrefix(".") && $0 != "Engine" && $0 != "tests" }
 let nativeLibrarySources = [
     "autofill_save_presenter.mm", "certificate_viewer_presenter.mm", "content_drop_router.mm", "devtools_pane_view.mm",
     "dialog_style.mm", "extension_install_presenter.mm", "extension_popup_presenter.mm", "extension_uninstall_presenter.mm",
@@ -79,7 +81,8 @@ let package = Package(
         .testTarget(name: "ParcCoreTests", dependencies: ["ParcCore"], path: "tests/ParcCoreTests",
                     resources: [.copy("Notes/Fixtures"), .copy("Easels/Fixtures/EaselRoundTrip"), .copy("Resources/ArcSidebar")],
                     swiftSettings: strict),
-        .target(name: "ParcNative", path: ".", sources: nativeLibrarySources.map { "Engine/ParcNative/" + $0 },
+        .target(name: "ParcNative", path: ".", exclude: nativeLibraryExcludes,
+                sources: nativeLibrarySources.map { "Engine/ParcNative/" + $0 },
                 publicHeadersPath: "tests/ParcNativeShims",
                 cSettings: nativeFlags + [.disableWarning("unused-parameter"), .headerSearchPath("Engine/ParcNative")],
                 linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("QuartzCore"),
