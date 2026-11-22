@@ -67,7 +67,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         }
     }
     override var isFlipped: Bool { true }
-    init(store: BrowserStore, profileID: UUID, files: NoteFiles? = nil) {
+    init(store: BrowserStore, profileID: UUID, files: NoteFiles? = nil, easelIcons: EaselTabIcons? = nil) {
         self.store = store; self.profileID = profileID; self.files = files ?? .shared
         super.init(frame: .zero)
         search.placeholderString = "Search Easels & Notes…"; search.delegate = self
@@ -104,7 +104,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
                 self?.bindLibrary(); self?.reload(force: true)
             }
             bindLibrary()
-            easelIconSubscription = EaselTabIcons.shared.changes.sink { [weak self] _ in self?.reload() }
+            easelIconSubscription = (easelIcons ?? .shared).changes.sink { [weak self] _ in self?.reload() }
         }
         reload(force: true)
     }
