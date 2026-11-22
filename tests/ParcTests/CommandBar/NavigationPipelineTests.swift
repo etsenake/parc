@@ -5,11 +5,11 @@ import Testing
 @testable import ParcCore
 
 struct NavigationPipelineTests {
-    @MainActor private final class Window: NSWindow {
+    @MainActor final class Window: NSWindow {
         override var isKeyWindow: Bool { true }
     }
 
-    @MainActor private final class Fixture {
+    @MainActor final class Fixture {
         let window: Window
         let native: PCNativeOmnibox
         let bar: CommandBar
@@ -31,8 +31,9 @@ struct NavigationPipelineTests {
             bar.present()
         }
 
-        func publish(_ query: String, results: [[String: Any]] = [], error: String? = nil) {
-            var message: [String: Any] = ["input": query, "results": results]
+        func publish(_ query: String, results: [[String: Any]] = [], extensions: [[String: Any]] = [],
+                     scopes: [[String: Any]] = [], error: String? = nil) {
+            var message: [String: Any] = ["input": query, "results": results, "extensions": extensions, "scopes": scopes]
             if let error { message["error"] = error }
             _ = native.perform(NSSelectorFromString("parcTestPublish:"), with: message)
         }
@@ -65,19 +66,19 @@ struct NavigationPipelineTests {
             #expect(view.onPress?(event) == true)
         }
 
-        func pressReturn() throws {
+        func pressReturn(_ flags: NSEvent.ModifierFlags = []) throws {
             let table = try #require(try surface().subviews.compactMap { $0 as? CommandResultsScrollView }.first?.documentView as? CommandResultsTable)
-            let event = CommandBarTestSupport.keyEvent(36)
+            let event = CommandBarTestSupport.keyEvent(36, flags)
             #expect(table.onKey?(event) == true)
         }
     }
 
-    private func tab(_ url: String, title: String = "Website") -> BrowserTab {
+    func tab(_ url: String, title: String = "Website") -> BrowserTab {
         BrowserTab(id: UUID(), spaceID: UUID(), profileID: UUID(), url: url, title: title, kind: .today,
                    createdAt: .distantPast, lastAccessed: .distantPast, savedURL: url, savedTitle: title)
     }
 
-    private func search(_ query: String) -> [String: Any] {
+    func search(_ query: String) -> [String: Any] {
         let escaped = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
         return ["url": "https://search.example.test/?q=" + escaped, "search": true, "title": query]
     }
