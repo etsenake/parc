@@ -100,10 +100,11 @@ final class EaselCanvasMotion: NSObject {
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { settleAnnotations() }
     }
 
-    static func setAnnotationHidden(_ hidden: Bool, view: NSView, animated: Bool) {
+    static func setAnnotationHidden(_ hidden: Bool, view: NSView, animated: Bool,
+                                    reduceMotion: @autoclosure () -> Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
         guard view.isHidden != hidden else { return }
         NSAnimationContext.runAnimationGroup { context in
-            let animate = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            let animate = animated && !reduceMotion()
             context.duration = animate ? annotationDuration : 0
             context.allowsImplicitAnimation = animate
             view.isHidden = hidden
