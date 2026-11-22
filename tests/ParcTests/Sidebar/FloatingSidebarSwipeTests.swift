@@ -53,6 +53,21 @@ struct FloatingSidebarSwipeTests {
         }
     }
 
+    @Test func removingTextureFromBothSpacesRemovesTheOverlayThroughoutTheSwipe() throws {
+        let canvas = try #require(FloatingSidebarSwipeCommitTests.Canvas(floating: true))
+        var from = SpaceTheme.singleColor(try #require(ThemeColor(red: 0.8, green: 0.2, blue: 0.3)))
+        var to = SpaceTheme.singleColor(try #require(ThemeColor(red: 0.2, green: 0.3, blue: 0.8)))
+        from.noise = 1
+        to.noise = 1
+        to.texture = .tweed
+        let textured = canvas.render(from, ThemePagingTransition(from: from, theme: to, progress: 0.5))
+        from.noise = 0
+        to.noise = 0
+        let plain = canvas.render(from, ThemePagingTransition(from: from, theme: to, progress: 0.5))
+        try #require(!plain.isEmpty && plain.count == textured.count)
+        #expect(plain != textured)
+    }
+
     private static func blur(_ alpha: CGFloat, _ side: NSAppearance.Name) -> Material {
         Material(kind: .popover, withinWindow: true, alpha: alpha, hidden: false, side: side)
     }

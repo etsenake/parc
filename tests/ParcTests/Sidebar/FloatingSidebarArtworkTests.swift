@@ -13,6 +13,13 @@ struct FloatingSidebarArtworkTests {
         return try #require(FloatingSidebarSurface.shadowImage(in: directory))
     }
 
+    @Test func theShadowIsBuiltOnce() throws {
+        let directory = try #require(Bundle.module.url(forResource: "FloatingSidebar", withExtension: nil, subdirectory: "ChromeFixtures"))
+        let artwork = FloatingSidebarSurface.ShadowArtwork(in: directory)
+        let first = try #require(artwork.image)
+        #expect(artwork.image === first)
+    }
+
     @Test func theSurfaceRoundsItsCornersAtEightPoints() {
         #expect(FloatingSidebarSurface.cornerRadius == 8)
     }
