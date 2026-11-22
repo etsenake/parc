@@ -486,7 +486,7 @@ private struct ParcToastMaterial: NSViewRepresentable {
 }
 
 @MainActor
-private final class ParcToastWindow: NSWindow {
+class ParcToastWindow: NSWindow {
     var acceptsKeyboard = false
     var onCommandKey: (() -> Void)?
     override var canBecomeKey: Bool { acceptsKeyboard }
@@ -605,11 +605,14 @@ final class ParcToastPresentation: NSView {
     }
 
     @discardableResult
-    func present(in parent: NSWindow, over anchor: NSView?) -> Bool {
+    func present(in parent: NSWindow, over anchor: NSView?,
+                 makeWindow: @MainActor (NSRect) -> ParcToastWindow = {
+                     ParcToastWindow(contentRect: $0, styleMask: .borderless, backing: .buffered, defer: false)
+                 }) -> Bool {
         guard !isRetiring, originalWindow == nil, parent.isVisible, !parent.isMiniaturized,
               parent.attachedSheet == nil else { return false }
         let frame = Self.frame(in: parent, over: anchor)
-        let panel = ParcToastWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        let panel = makeWindow(frame)
         panel.isReleasedWhenClosed = false; panel.isOpaque = false
         panel.backgroundColor = .clear; panel.hasShadow = false
         panel.contentView = self; panel.acceptsMouseMovedEvents = true
