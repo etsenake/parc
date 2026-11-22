@@ -17,6 +17,7 @@ import QuartzCore
     private(set) var isHovered = false
     private(set) var isPressed = false
     var standingHighlight = false { didSet { refresh(animated: false) } }
+    var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     override var isFlipped: Bool { true }
     override var isEnabled: Bool { didSet { if !isEnabled { clearInteraction() } } }
 
@@ -150,7 +151,7 @@ import QuartzCore
         surface.removeAnimation(forKey: "pane-title-opacity"); surface.opacity = opacity
         CATransaction.commit()
         guard animated, old != opacity, window?.isKeyWindow == true, !isHiddenOrHasHiddenAncestor,
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+              !reducesMotion() else { return }
         let animation = CABasicAnimation(keyPath: "opacity")
         animation.fromValue = old; animation.toValue = opacity; animation.duration = pressed ? 0.16 : 0.18
         animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)

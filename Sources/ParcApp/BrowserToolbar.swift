@@ -8,6 +8,7 @@ final class BrowserToolbarView: NSView {
     var onAction: ((Action, NSView) -> Void)?
     var onNavigation: ((NavigationControlKind) -> NavigationControlInteraction?)?
     var onEscape: (() -> Void)?
+    var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     private(set) var pageColor: NSColor?
     var themeBackground: NSColor? { didSet { if themeBackground != oldValue { applyColors(animated: false) } } }
     let extensionToolbar = ExtensionToolbarView(style: .toolbar)
@@ -251,7 +252,7 @@ final class BrowserToolbarView: NSView {
             CATransaction.begin(); CATransaction.setDisableActions(true)
             layer.removeAnimation(forKey: "page-color"); layer.backgroundColor = fill
             CATransaction.commit()
-            if animated, window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            if animated, window != nil, !reducesMotion() {
                 let fade = CABasicAnimation(keyPath: "backgroundColor")
                 fade.fromValue = from; fade.toValue = fill; fade.duration = PaneTopBarColor.crossfadeDuration
                 fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -273,6 +274,7 @@ enum BrowserToolbarActionSurfaceLayoutSkip {
 
 @MainActor final class BrowserToolbarActionButton: PointingHandButton {
     var actionBlock: (() -> Void)?
+    var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     private let surface = CALayer()
     private var area: NSTrackingArea?
     private var observers: [NSObjectProtocol] = []
@@ -382,7 +384,7 @@ enum BrowserToolbarActionSurfaceLayoutSkip {
         surface.removeAnimation(forKey: "toolbar-action-opacity"); surface.opacity = opacity
         CATransaction.commit()
         guard animated, old != opacity, window?.isKeyWindow == true, !isHiddenOrHasHiddenAncestor,
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+              !reducesMotion() else { return }
         let animation = CABasicAnimation(keyPath: "opacity")
         animation.fromValue = old; animation.toValue = opacity; animation.duration = pressed ? 0.16 : 0.18
         animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
