@@ -960,7 +960,7 @@ final class NotePageIconView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         updateAccessibility()
-        emojiSubscription = NoteEmojiLibrary.anyChange.sink { [weak self] library in
+        emojiSubscription = environment.emojiChanges.sink { [weak self] library in
             guard let self, library === self.environment.emojiLibrary, let icon = self.icon, NoteCustomEmojiName.isReference(icon) else { return }
             self.reloadImage()
             self.updateAccessibility()

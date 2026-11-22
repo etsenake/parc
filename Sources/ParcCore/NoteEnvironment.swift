@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 package struct NoteReference: Hashable, Identifiable {
@@ -34,6 +35,8 @@ package protocol NoteEnvironment: AnyObject {
 
 extension NoteEnvironment {
     package var files: NoteFiles { .shared }
+
+    package var emojiChanges: AnyPublisher<NoteEmojiLibrary, Never> { files.emojiChanges.eraseToAnyPublisher() }
 
     package var emojiLibrary: NoteEmojiLibrary? { nil }
 

@@ -57,7 +57,7 @@ final class NotePageEditor {
         synced = NoteSyncedController(editor: self)
         subscription = session.changes.sink { [weak self] change in self?.sessionDidChange(change) }
         layoutSubscription = canvas.layoutDidChange.sink { [weak self] in self?.canvasDidLayout() }
-        emojiSubscription = NoteEmojiLibrary.anyChange.sink { [weak self] library in
+        emojiSubscription = environment.emojiChanges.sink { [weak self] library in
             guard let self, library === self.environment.emojiLibrary else { return }
             self.customEmojiDidChange()
         }
