@@ -363,6 +363,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         fileprivate weak var owner: ParcSplitView?
         private(set) var ended = false
         private var fallback: Timer?
+        var scheduleFallbackTimer: (Timer) -> Void = { RunLoop.main.add($0, forMode: .common) }
         fileprivate init(owner: ParcSplitView) { self.owner = owner }
         var isDragInside = true { didSet { updateFallback() } }
         private func updateFallback() {
@@ -374,7 +375,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                     self.endIfDragReleased()
                 }
             }
-            RunLoop.main.add(timer, forMode: .common)
+            scheduleFallbackTimer(timer)
             fallback = timer
         }
         func endIfDragReleased() {
