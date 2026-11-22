@@ -585,13 +585,19 @@ private struct RecentSwitcherRecordingDot: View {
     }
 }
 
-@MainActor enum RecentSwitcherArtwork {
-    static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("RecentSwitcher", isDirectory: true)
-    private static var cache: [String: NSImage] = [:]
-    static var note: NSImage? { template("NotePreviewThumbnail") }
-    static var easel: NSImage? { template("EaselPreviewThumbnail") }
-    static var incognito: NSImage? { template("IncognitoTabPreviewThumbnail") }
-    private static func template(_ name: String) -> NSImage? {
+@MainActor final class RecentSwitcherArtwork {
+    static let shared = RecentSwitcherArtwork()
+    let directory: URL?
+    private var cache: [String: NSImage] = [:]
+
+    init(resources: URL? = Bundle.main.resourceURL) {
+        directory = resources?.appendingPathComponent("RecentSwitcher", isDirectory: true)
+    }
+
+    var note: NSImage? { template("NotePreviewThumbnail") }
+    var easel: NSImage? { template("EaselPreviewThumbnail") }
+    var incognito: NSImage? { template("IncognitoTabPreviewThumbnail") }
+    private func template(_ name: String) -> NSImage? {
         if let image = cache[name] { return image }
         guard let url = directory?.appendingPathComponent(name + ".pdf"),
               let image = NSImage(contentsOf: url) else { return nil }
