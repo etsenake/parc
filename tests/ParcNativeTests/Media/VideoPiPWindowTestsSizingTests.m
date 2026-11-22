@@ -13,7 +13,8 @@ __attribute__((objc_runtime_name("ParcNativeTests_VideoPiPWindowTestsSizingTests
       }
       changed:^{
         if (resized) ++*resized;
-      }]);
+      }
+      environment:_pointer]);
 }
 
 - (void)testThePanelTakesEachVideoAspectAndKeepsItsCorner {
@@ -78,12 +79,12 @@ __attribute__((objc_runtime_name("ParcNativeTests_VideoPiPWindowTestsSizingTests
   [fitting showInactive];
   [fitPanel setContentSize:NSMakeSize(640, 266.4)];
   const NSRect dragged = fitPanel.frame;
-  VideoPiPWindowTestsSetLiveResize(fitPanel, YES);
+  _pointer.liveResize = YES;
   [fitting setNaturalSize:NSMakeSize(1920, 1080)];
   EXPECT(VideoPiPWindowTestsNear(fitPanel.frame, dragged));
   EXPECT(VideoPiPWindowTestsAspect(fitted.frame, 2.4));
   [[NSNotificationCenter defaultCenter] postNotificationName:NSWindowDidEndLiveResizeNotification object:fitPanel];
-  VideoPiPWindowTestsSetLiveResize(fitPanel, NO);
+  _pointer.liveResize = NO;
   EXPECT(VideoPiPWindowTestsAspect(fitPanel.frame, 16.0 / 9.0));
   EXPECT(NSWidth(fitPanel.frame) == NSWidth(dragged));
   EXPECT(VideoPiPWindowTestsNear(fitted.frame, fitPanel.contentView.bounds));
@@ -111,7 +112,8 @@ __attribute__((objc_runtime_name("ParcNativeTests_VideoPiPWindowTestsSizingTests
           [releasing invalidate];
           releasing = nil;
         }
-      }]);
+      }
+      environment:_pointer]);
   [releasing setNaturalSize:NSMakeSize(1920, 1080)];
   [releasing setNaturalSize:NSMakeSize(1920, 804)];
   EXPECT(releasing == nil);
@@ -168,7 +170,7 @@ __attribute__((objc_runtime_name("ParcNativeTests_VideoPiPWindowTestsSizingTests
   NSView* captions = [self captionsShownAt640];
   [_presenter.panel setContentSize:NSMakeSize(320, 180)];
   [_presenter setControlsVisible:YES];
-  VideoPiPWindowTestsHover(_presenter);
+  VideoPiPWindowTestsHover(_presenter, _pointer);
   NSSlider* slider = VideoPiPWindowTestsSlider(self.content);
   EXPECT(slider.hidden);
   EXPECT(VideoPiPWindowTestsNear(captions.frame, NSMakeRect(32, 18, 256, 18)));

@@ -14,8 +14,6 @@ static inline void VideoPiPWindowTestsSendClick(NSControl* control) {
   [control sendAction:control.action to:control.target];
 }
 
-void VideoPiPWindowTestsSetLiveResize(NSWindow* window, BOOL liveResize);
-
 static inline PCVideoPiPPresenter* VideoPiPWindowTestsOffscreen(PCVideoPiPPresenter* presenter) NS_RETURNS_RETAINED {
   presenter.presentation = ParcNativePresentation();
   presenter.scheduler = ParcNativeScheduler();
@@ -63,15 +61,14 @@ static inline NSView* VideoPiPWindowTestsHost(NSButton* button) {
   }
   return button;
 }
-static inline void VideoPiPWindowTestsPlaceUnderCursor(NSPanel* panel) {
-  NSPoint mouse = ParcNativePointerLocation();
+static inline void VideoPiPWindowTestsPlaceUnderCursor(NSPanel* panel, NSPoint mouse) {
   NSRect frame = panel.frame;
   frame.origin = NSMakePoint(mouse.x - frame.size.width * 0.5,
                              mouse.y - frame.size.height * 0.5);
   [panel setFrame:frame display:YES];
 }
-static inline void VideoPiPWindowTestsHover(PCVideoPiPPresenter* presenter) {
-  VideoPiPWindowTestsPlaceUnderCursor(presenter.panel);
+static inline void VideoPiPWindowTestsHover(PCVideoPiPPresenter* presenter, ParcNativePointerEnvironment* pointer) {
+  VideoPiPWindowTestsPlaceUnderCursor(presenter.panel, pointer.location);
   [presenter.panel.contentView mouseEntered:[NSEvent new]];
   ParcNativeAdvance(0.05);
   [presenter.panel.contentView mouseMoved:[NSEvent new]];
@@ -97,6 +94,7 @@ static inline NSImage* VideoPiPWindowTestsCue(void) {
 @protected
   NSView* _video;
   PCVideoPiPPresenter* _presenter;
+  ParcNativePointerEnvironment* _pointer;
   int _actions;
   int _changes;
   PCVideoPiPAction _last;

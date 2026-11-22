@@ -35,7 +35,7 @@ __attribute__((objc_runtime_name("ParcNativeTests_VideoPiPWindowTestsControlsTes
   VideoPiPWindowTestsSendClick(VideoPiPWindowTestsButton(self.content, PCVideoPiPPlayPause));
   EXPECT(_actions == 1);
   [_presenter setControlsVisible:YES];
-  VideoPiPWindowTestsHover(_presenter);
+  VideoPiPWindowTestsHover(_presenter, _pointer);
   [_presenter setAction:PCVideoPiPPlayPause visible:NO];
   VideoPiPWindowTestsSendClick(VideoPiPWindowTestsButton(self.content, PCVideoPiPPlayPause));
   EXPECT(_actions == 1);
@@ -48,23 +48,23 @@ __attribute__((objc_runtime_name("ParcNativeTests_VideoPiPWindowTestsControlsTes
 - (void)testHoveredControlsShowThePointingHandWithoutActivatingParc {
   NSButton* play = [self hoveredPlayButton];
   EXPECT(VideoPiPWindowTestsHost(play).layer.transform.m11 > 1.09);
-  EXPECT(ParcNativeCursor() == NSCursor.pointingHandCursor);
+  EXPECT(_pointer.cursor == NSCursor.pointingHandCursor);
   EXPECT(!NSApp.active);
-  EXPECT(ParcNativeBackgroundCursorEnabled());
+  EXPECT(_pointer.backgroundCursorEnabled);
   EXPECT(!_presenter.panel.keyWindow);
 }
 
 - (void)testHidingTheControlsRestoresTheArrow {
   NSButton* play = [self hoveredPlayButton];
   [_presenter setControlsVisible:NO];
-  EXPECT(ParcNativeCursor() == NSCursor.arrowCursor);
-  EXPECT(!ParcNativeBackgroundCursorEnabled());
+  EXPECT(_pointer.cursor == NSCursor.arrowCursor);
+  EXPECT(!_pointer.backgroundCursorEnabled);
   EXPECT(play.alphaValue < 1);
   EXPECT(VideoPiPWindowTestsHost(play).layer.transform.m11 == 1);
   [_presenter setControlsVisible:YES];
-  EXPECT(ParcNativeCursor() == NSCursor.pointingHandCursor);
+  EXPECT(_pointer.cursor == NSCursor.pointingHandCursor);
   EXPECT(play.alphaValue == 1);
-  EXPECT(ParcNativeBackgroundCursorEnabled());
+  EXPECT(_pointer.backgroundCursorEnabled);
 }
 
 - (void)testMovingThePanelFromUnderThePointerRestoresTheArrow {
@@ -73,21 +73,21 @@ __attribute__((objc_runtime_name("ParcNativeTests_VideoPiPWindowTestsControlsTes
   off.origin.x += 60;
   [_presenter.panel setFrame:off display:YES];
   [self.content mouseMoved:[NSEvent new]];
-  EXPECT(ParcNativeCursor() == NSCursor.arrowCursor);
+  EXPECT(_pointer.cursor == NSCursor.arrowCursor);
   EXPECT(play.alphaValue < 1);
-  VideoPiPWindowTestsHover(_presenter);
-  EXPECT(ParcNativeCursor() == NSCursor.pointingHandCursor);
+  VideoPiPWindowTestsHover(_presenter, _pointer);
+  EXPECT(_pointer.cursor == NSCursor.pointingHandCursor);
 }
 
 - (void)testPointingAtAControlKeepsTheHandWhileControlsAreHidden {
   [self hoveredPlayButton];
-  PCPictureInPicturePointAtControl(YES);
+  PCPictureInPicturePointAtControlInEnvironment(YES, _pointer);
   [_presenter setControlsVisible:NO];
-  EXPECT(ParcNativeBackgroundCursorEnabled());
-  PCPictureInPicturePointAtControl(NO);
-  EXPECT(!ParcNativeBackgroundCursorEnabled());
+  EXPECT(_pointer.backgroundCursorEnabled);
+  PCPictureInPicturePointAtControlInEnvironment(NO, _pointer);
+  EXPECT(!_pointer.backgroundCursorEnabled);
   [_presenter setControlsVisible:YES];
-  EXPECT(ParcNativeBackgroundCursorEnabled());
+  EXPECT(_pointer.backgroundCursorEnabled);
 }
 
 - (void)testTheWindowChipsAreRound {

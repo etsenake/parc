@@ -4,7 +4,7 @@
 
 - (void)setUp {
   [super setUp];
-  ParcNativeResetPointer();
+  _pointer = [ParcNativePointerEnvironment new];
   _video = [NSView new];
   _last = PCVideoPiPClose;
   __weak VideoPiPWindowTestsSupport* weak = self;
@@ -19,12 +19,13 @@
       changed:^{
         VideoPiPWindowTestsSupport* test = weak;
         if (test) ++test->_changes;
-      }]);
+      }
+      environment:_pointer]);
 }
 
 - (void)tearDown {
   [_presenter invalidate];
-  PCPictureInPicturePointAtControl(NO);
+  PCPictureInPicturePointAtControlInEnvironment(NO, _pointer);
   [super tearDown];
 }
 
@@ -37,7 +38,7 @@
   [_presenter showInactive];
   [_presenter.panel setContentSize:NSMakeSize(640, 360)];
   ParcNativeSettle();
-  VideoPiPWindowTestsHover(_presenter);
+  VideoPiPWindowTestsHover(_presenter, _pointer);
 }
 
 - (NSButton*)hoveredPlayButton {

@@ -66,7 +66,7 @@ __attribute__((objc_runtime_name("ParcNativeTests_VideoPiPWindowTestsPanelTests"
   [_presenter setPosition:5 duration:20];
   EXPECT(slider.hidden);
   [_presenter showInactive];
-  VideoPiPWindowTestsHover(_presenter);
+  VideoPiPWindowTestsHover(_presenter, _pointer);
   EXPECT(!slider.hidden);
   EXPECT(slider.doubleValue == 5);
   [_presenter setPosition:0 duration:0];
@@ -151,7 +151,8 @@ __attribute__((objc_runtime_name("ParcNativeTests_VideoPiPWindowTestsPanelTests"
         closing = nil;
       }
       changed:^{
-      }]);
+      }
+      environment:_pointer]);
   NSPanel* panel = closing.panel;
   [closing showInactive];
   ParcNativeClose(panel);
@@ -170,7 +171,8 @@ __attribute__((objc_runtime_name("ParcNativeTests_VideoPiPWindowTestsPanelTests"
       changed:^{
         [reentrant invalidate];
         reentrant = nil;
-      }]);
+      }
+      environment:_pointer]);
   [reentrant showInactive];
   EXPECT(reentrant == nil);
 }

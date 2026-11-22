@@ -1,8 +1,11 @@
 #pragma once
 
 #import <AppKit/AppKit.h>
+#import "VideoPiPWindow.h"
 
-NSCursor* ParcNativeCursor(void);
-BOOL ParcNativeBackgroundCursorEnabled(void);
-NSPoint ParcNativePointerLocation(void);
-void ParcNativeResetPointer(void);
+@interface ParcNativePointerEnvironment : PCVideoPiPEnvironment
+@property(nonatomic, readonly) NSCursor* cursor;
+@property(nonatomic, readonly) BOOL backgroundCursorEnabled;
+@property(nonatomic) NSPoint location;
+@property(nonatomic) BOOL liveResize;
+@end
