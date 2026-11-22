@@ -25,6 +25,7 @@ enum SplitPaneControlLayoutSkip {
     var actionBlock: (() -> Void)?
     private let glyph = SplitControlGlyph()
     private let surface = CALayer()
+    var writeSurfaceFrame: (CALayer, CGRect) -> Void = { $0.frame = $1 }
     private var hoverArea: NSTrackingArea?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private(set) var isHovered = false
@@ -69,7 +70,7 @@ enum SplitPaneControlLayoutSkip {
         let nextSurface = SplitPaneControlLayoutSkip.surfaceFrame(bounds: bounds, surfaceSize: surfaceSize)
         if surface.frame != nextSurface {
             CATransaction.begin(); CATransaction.setDisableActions(true)
-            surface.frame = nextSurface
+            writeSurfaceFrame(surface, nextSurface)
             CATransaction.commit()
         }
         if glyph.frame != bounds {
