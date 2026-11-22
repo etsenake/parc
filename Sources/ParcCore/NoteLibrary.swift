@@ -50,12 +50,6 @@ package final class NoteLibrary {
         }
     }
 
-    private static var libraries: [String: NoteLibrary] = [:]
-    private static var shallowLibraries: [String: NoteLibrary] = [:]
-    package static var worker: NoteFileWorker = .index
-    package static var clock: NoteFileClock = NoteFileSystemClock.shared
-    package static var refreshDelay: TimeInterval = 0.2
-    package static var newNoteCover: (@MainActor () -> NoteNewCover?)?
     package nonisolated static let maximumDepth = 12
     package nonisolated static let maximumNotes = 20_000
     package nonisolated static let quickListBudget = 1_000
@@ -64,89 +58,34 @@ package final class NoteLibrary {
     nonisolated private static let bundleExtensions: Set<String> = [
         "textbundle", "textpack", "app", "bundle", "framework", "plugin", "photoslibrary", "xcodeproj", "xcworkspace", "playground"]
 
-    package static let opened = PassthroughSubject<NoteLibrary, Never>()
+    package static var opened: PassthroughSubject<NoteLibrary, Never> { NoteFiles.shared.libraryOpened }
 
-    package static var known: [NoteLibrary] { Array(libraries.values) + Array(shallowLibraries.values) }
+    package static var known: [NoteLibrary] { NoteFiles.shared.knownLibraries }
 
-    package static var defaultFolder: URL {
+    package nonisolated static var defaultFolder: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Parc Notes", isDirectory: true)
     }
 
-    package static func shared(folder: URL) -> NoteLibrary {
-        let canonical = NoteFilePaths.canonical(folder)
-        let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
-        if let existing = libraries[key] { return existing }
-        let library = NoteLibrary(folder: canonical, recursive: true)
-        libraries[key] = library
-        opened.send(library)
-        return library
-    }
+    package static func shared(folder: URL) -> NoteLibrary { NoteFiles.shared.library(folder: folder) }
 
-    package static func browsing(_ folder: URL) -> NoteLibrary {
-        let canonical = NoteFilePaths.canonical(folder)
-        let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
-        if let existing = libraries[key] ?? shallowLibraries[key] { return existing }
-        let library = NoteLibrary(folder: canonical, recursive: false)
-        shallowLibraries[key] = library
-        return library
-    }
+    package static func browsing(_ folder: URL) -> NoteLibrary { NoteFiles.shared.browsing(folder) }
 
-    package static func library(for note: URL) -> NoteLibrary {
-        let containing = libraries.values.filter { $0.contains(note) }
-        if let deepest = containing.max(by: { $0.folder.path.count < $1.folder.path.count }) { return deepest }
-        let parent = NoteFilePaths.canonical(note.deletingLastPathComponent())
-        let key = NoteFilePaths.identityKey(ofCanonicalPath: parent.path)
-        if let existing = libraries[key] ?? shallowLibraries[key] { return existing }
-        let library = NoteLibrary(folder: parent, recursive: false)
-        shallowLibraries[key] = library
-        opened.send(library)
-        return library
-    }
+    package static func library(for note: URL) -> NoteLibrary { NoteFiles.shared.library(for: note) }
 
-    package static func trash(_ url: URL) throws {
-        let session = NoteFileSession.session(for: url)
-        try? session?.flush()
-        let file = NoteFilePaths.canonical(url)
-        try NoteFileIO.trash(file, presenter: session?.presenter)
-        session?.noteWasTrashed()
-        invalidateLibraries(containing: [file])
-    }
+    package static func trash(_ url: URL) throws { try NoteFiles.shared.trash(url) }
 
-    package static func rename(_ url: URL, to title: String) throws -> URL {
-        if let session = NoteFileSession.session(for: url) {
-            let original = session.url
-            let renamed = try session.rename(to: title)
-            invalidateLibraries(containing: [original, renamed])
-            return renamed
-        }
-        let source = NoteFilePaths.canonical(url)
-        guard NoteFilePaths.itemExists(source) else { throw NoteFileError.missing }
-        guard let target = try NoteFileNaming.renameTarget(for: source, to: title) else { return source }
-        try NoteFileIO.move(source, to: target, presenter: nil)
-        let renamed = NoteFilePaths.canonical(target.deletingLastPathComponent()).appendingPathComponent(target.lastPathComponent)
-        invalidateLibraries(containing: [source, renamed])
-        noteDidMove(from: source, to: renamed)
-        return renamed
-    }
+    package static func rename(_ url: URL, to title: String) throws -> URL { try NoteFiles.shared.rename(url, to: title) }
 
-    package static func noteDidMove(from source: URL, to destination: URL) {
-        NoteBacklinkIndex.shared.noteMoved(from: source, to: destination)
-    }
+    package static func noteDidMove(from source: URL, to destination: URL) { NoteFiles.shared.noteDidMove(from: source, to: destination) }
 
-    package static func filesRewritten(_ urls: [URL]) {
-        invalidateLibraries(containing: urls.map(NoteFilePaths.canonical))
-    }
+    package static func filesRewritten(_ urls: [URL]) { NoteFiles.shared.filesRewritten(urls) }
 
-    private static func invalidateLibraries(containing urls: [URL]) {
-        for library in Array(libraries.values) + Array(shallowLibraries.values) {
-            let inside = urls.filter(library.contains)
-            if !inside.isEmpty { library.filesChanged(inside) }
-        }
-    }
+    package static func createNote(in folder: URL, title: String?) throws -> URL { try NoteFiles.shared.createNote(in: folder, title: title) }
 
     package let folder: URL
     package let isRecursive: Bool
+    package unowned let files: NoteFiles
     package let changes = PassthroughSubject<Void, Never>()
     package let listingChanges = PassthroughSubject<Void, Never>()
 
@@ -165,7 +104,8 @@ package final class NoteLibrary {
     private var watcher: NoteFileFolderWatcher?
     private var refreshTimer: NoteFileTimer?
 
-    private init(folder: URL, recursive: Bool) {
+    fileprivate init(folder: URL, recursive: Bool, files: NoteFiles) {
+        self.files = files
         self.folder = folder
         isRecursive = recursive
         startWatchingIfNeeded()
@@ -180,35 +120,7 @@ package final class NoteLibrary {
     }
 
     package func createNote(title: String? = nil) throws -> URL {
-        try Self.createNote(in: folder, title: title)
-    }
-
-    package static func createNote(in folder: URL, title: String?) throws -> URL {
-        let directory = NoteFilePaths.canonical(folder)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        var base = NoteFileNaming.sanitizedTitle(title ?? "")
-        if base.isEmpty { base = NoteFileNaming.untitled }
-        for candidate in NoteFileNaming.candidates(in: directory, base: base, pathExtension: "md").prefix(10_000) {
-            if NoteFilePaths.itemExists(candidate) { continue }
-            do {
-                try Data().write(to: candidate, options: .withoutOverwriting)
-            } catch CocoaError.fileWriteFileExists {
-                continue
-            }
-            writeNewCover(into: candidate)
-            invalidateLibraries(containing: [candidate])
-            return candidate
-        }
-        throw NoteFileError.nameTaken(base)
-    }
-
-    private static func writeNewCover(into note: URL) {
-        guard NoteFileKind(url: note) == .markdown, let cover = newNoteCover?() else { return }
-        guard let placement = try? NoteAttachments.placeData(cover.data, fileExtension: cover.fileExtension,
-                                                             suggestedName: cover.suggestedName, into: note, date: clock.now) else { return }
-        var page = NotePage()
-        page.settings.cover = NoteCover(source: placement.path)
-        try? Data(NoteMarkdown.serialize(page).utf8).write(to: note, options: .atomic)
+        try files.createNote(in: folder, title: title)
     }
 
     package func notes() throws -> [NoteReference] {
@@ -296,7 +208,7 @@ package final class NoteLibrary {
         scanAgain = false
         touchedWhileScanning = []
         let folder = folder, recursive = isRecursive, previous = entries, generation = listingGeneration
-        Self.worker.perform({ Self.scan(folder: folder, recursive: recursive, previous: previous) }) { [weak self] scanned in
+        files.settings.indexWorker.perform({ Self.scan(folder: folder, recursive: recursive, previous: previous) }) { [weak self] scanned in
             self?.finishScan(scanned, generation: generation)
         }
     }
@@ -322,7 +234,7 @@ package final class NoteLibrary {
         if changed && wasListed { changes.send() }
     }
 
-    private func filesChanged(_ urls: [URL]) {
+    fileprivate func filesChanged(_ urls: [URL]) {
         let files = urls.map(NoteFilePaths.canonical).filter { isRelevant(NoteFolderEvent(path: $0.path)) }
         var announce = !hasListing
         if hasListing {
@@ -359,7 +271,7 @@ package final class NoteLibrary {
         }
         isIndexing = true
         let snapshot = Array(entries.values), previous = contents
-        Self.worker.perform({ Self.index(snapshot, previous: previous) }) { [weak self] indexed in
+        files.settings.indexWorker.perform({ Self.index(snapshot, previous: previous) }) { [weak self] indexed in
             self?.finishIndexing(indexed)
         }
     }
@@ -385,7 +297,7 @@ package final class NoteLibrary {
         if isIndexing { indexAgain = true }
         startWatchingIfNeeded()
         refreshTimer?.cancel()
-        refreshTimer = Self.clock.schedule(after: Self.refreshDelay) { [weak self] in
+        refreshTimer = files.clock.schedule(after: files.settings.libraryRefreshDelay) { [weak self] in
             guard let self else { return }
             self.refreshTimer = nil
             let hadEntries = !self.entries.isEmpty
@@ -412,9 +324,11 @@ package final class NoteLibrary {
 
     private func startWatchingIfNeeded() {
         guard watcher == nil, NoteFilePaths.isDirectory(folder) else { return }
+        let hop = files.settings.hopToMain
         watcher = NoteFileFolderWatcher(folder: folder) { [weak self] events, broad in
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { self?.folderChanged(events: events, broad: broad) }
+            let library = self
+            hop {
+                MainActor.assumeIsolated { library?.folderChanged(events: events, broad: broad) }
             }
         }
     }
@@ -556,5 +470,109 @@ package final class NoteLibrary {
             searchStart = title.index(after: range.lowerBound)
         }
         return false
+    }
+}
+
+extension NoteFiles {
+    package var knownLibraries: [NoteLibrary] { Array(libraries.values) + Array(shallowLibraries.values) }
+
+    package func library(folder: URL) -> NoteLibrary {
+        let canonical = NoteFilePaths.canonical(folder)
+        let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
+        if let existing = libraries[key] { return existing }
+        let library = NoteLibrary(folder: canonical, recursive: true, files: self)
+        libraries[key] = library
+        libraryOpened.send(library)
+        return library
+    }
+
+    package func browsing(_ folder: URL) -> NoteLibrary {
+        let canonical = NoteFilePaths.canonical(folder)
+        let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
+        if let existing = libraries[key] ?? shallowLibraries[key] { return existing }
+        let library = NoteLibrary(folder: canonical, recursive: false, files: self)
+        shallowLibraries[key] = library
+        return library
+    }
+
+    package func library(for note: URL) -> NoteLibrary {
+        let containing = libraries.values.filter { $0.contains(note) }
+        if let deepest = containing.max(by: { $0.folder.path.count < $1.folder.path.count }) { return deepest }
+        let parent = NoteFilePaths.canonical(note.deletingLastPathComponent())
+        let key = NoteFilePaths.identityKey(ofCanonicalPath: parent.path)
+        if let existing = libraries[key] ?? shallowLibraries[key] { return existing }
+        let library = NoteLibrary(folder: parent, recursive: false, files: self)
+        shallowLibraries[key] = library
+        libraryOpened.send(library)
+        return library
+    }
+
+    package func trash(_ url: URL) throws {
+        let open = session(for: url)
+        try? open?.flush()
+        let file = NoteFilePaths.canonical(url)
+        try NoteFileIO.trash(file, presenter: open?.presenter, mover: settings.trashMover)
+        open?.noteWasTrashed()
+        invalidateLibraries(containing: [file])
+    }
+
+    package func rename(_ url: URL, to title: String) throws -> URL {
+        if let open = session(for: url) {
+            let original = open.url
+            let renamed = try open.rename(to: title)
+            invalidateLibraries(containing: [original, renamed])
+            return renamed
+        }
+        let source = NoteFilePaths.canonical(url)
+        guard NoteFilePaths.itemExists(source) else { throw NoteFileError.missing }
+        guard let target = try NoteFileNaming.renameTarget(for: source, to: title) else { return source }
+        try NoteFileIO.move(source, to: target, presenter: nil)
+        let renamed = NoteFilePaths.canonical(target.deletingLastPathComponent()).appendingPathComponent(target.lastPathComponent)
+        invalidateLibraries(containing: [source, renamed])
+        noteDidMove(from: source, to: renamed)
+        return renamed
+    }
+
+    package func noteDidMove(from source: URL, to destination: URL) {
+        backlinks.noteMoved(from: source, to: destination)
+    }
+
+    package func filesRewritten(_ urls: [URL]) {
+        invalidateLibraries(containing: urls.map(NoteFilePaths.canonical))
+    }
+
+    package func createNote(in folder: URL, title: String?) throws -> URL {
+        let directory = NoteFilePaths.canonical(folder)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var base = NoteFileNaming.sanitizedTitle(title ?? "")
+        if base.isEmpty { base = NoteFileNaming.untitled }
+        for candidate in NoteFileNaming.candidates(in: directory, base: base, pathExtension: "md").prefix(10_000) {
+            if NoteFilePaths.itemExists(candidate) { continue }
+            do {
+                try Data().write(to: candidate, options: .withoutOverwriting)
+            } catch CocoaError.fileWriteFileExists {
+                continue
+            }
+            writeNewCover(into: candidate)
+            invalidateLibraries(containing: [candidate])
+            return candidate
+        }
+        throw NoteFileError.nameTaken(base)
+    }
+
+    private func writeNewCover(into note: URL) {
+        guard NoteFileKind(url: note) == .markdown, let cover = newNoteCover?() else { return }
+        guard let placement = try? NoteAttachments.placeData(cover.data, fileExtension: cover.fileExtension,
+                                                             suggestedName: cover.suggestedName, into: note, date: clock.now) else { return }
+        var page = NotePage()
+        page.settings.cover = NoteCover(source: placement.path)
+        try? Data(NoteMarkdown.serialize(page).utf8).write(to: note, options: .atomic)
+    }
+
+    private func invalidateLibraries(containing urls: [URL]) {
+        for library in knownLibraries {
+            let inside = urls.filter(library.contains)
+            if !inside.isEmpty { library.filesChanged(inside) }
+        }
     }
 }

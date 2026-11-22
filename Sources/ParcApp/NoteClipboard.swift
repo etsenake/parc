@@ -202,7 +202,8 @@ extension NoteClipboard {
             let folder = URL(fileURLWithPath: written.standardizedFileURL.path, isDirectory: true).standardizedFileURL
             return folder == destination ? nil : folder
         }
-        let carries = archive.blocks.contains { carriesImport($0) }
+        let imports = NoteMediaImport.imports(for: environment)
+        let carries = archive.blocks.contains { carriesImport($0, imports: imports) }
         guard base != nil || carries else { return archive.blocks }
         let mediaFolder = base.flatMap(trustedMediaFolder)
         func absolute(_ source: String) -> URL? {
@@ -257,10 +258,10 @@ extension NoteClipboard {
     }
 
     @MainActor
-    private static func carriesImport(_ block: NoteBlock) -> Bool {
+    private static func carriesImport(_ block: NoteBlock, imports: NoteAttachmentImports) -> Bool {
         if block.kind.isMedia, let source = block.props.source, let url = URL(string: source), url.isFileURL,
-           NoteAttachmentImports.shared.mayImport(url) { return true }
-        return block.children.contains { carriesImport($0) }
+           imports.mayImport(url) { return true }
+        return block.children.contains { carriesImport($0, imports: imports) }
     }
 
     private static func trimmedTrailingNewlines(_ value: String) -> String {

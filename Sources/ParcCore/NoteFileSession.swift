@@ -67,42 +67,36 @@ package final class NoteFileSession {
         init(_ write: NoteFileDisk.StagedWrite) { self.write = write }
     }
 
-    private static var sessions: [String: NoteFileSession] = [:]
-    private static var live: [ObjectIdentifier: NoteFileSession] = [:]
-    package static var clock: NoteFileClock = NoteFileSystemClock.shared
-    package static var worker: NoteFileWorker = .files
-    package static var autosaveDelay: TimeInterval = 0.6
-    package static var longestAutosaveWait: TimeInterval = 5
-    package static var diskCheckDelay: TimeInterval = 0.12
-    package static var retryDelays: [TimeInterval] = [1, 2, 4, 8, 15, 30, 60]
-    nonisolated(unsafe) package static var hopToMain: (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }
+    package static func open(_ url: URL) throws -> NoteFileSession { try NoteFiles.shared.open(url) }
 
-    package static func open(_ url: URL) throws -> NoteFileSession {
+    package static func session(for url: URL) -> NoteFileSession? { NoteFiles.shared.session(for: url) }
+
+    package static var openSessions: [NoteFileSession] { NoteFiles.shared.openSessions }
+
+    package static func flushAll() throws { try NoteFiles.shared.flushAll() }
+
+    fileprivate static func make(_ url: URL, in files: NoteFiles) throws -> NoteFileSession {
         guard url.isFileURL else { throw NoteFileError.notANote }
         let canonical = NoteFilePaths.canonical(url)
         let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
-        if let existing = sessions[key] { return existing }
+        if let existing = files.sessions[key] { return existing }
         guard let kind = NoteFileKind(url: canonical) ?? NoteFileKind(url: url) else { throw NoteFileError.notANote }
         guard NoteFilePaths.isOpenableFile(canonical) else {
             throw NoteFilePaths.itemExists(canonical) ? NoteFileError.notANote : NoteFileError.missing
         }
         let read = try NoteFileIO.readStamped(canonical, kind: kind)
-        let session = NoteFileSession(url: canonical, kind: kind, contents: read.contents)
+        let session = NoteFileSession(url: canonical, kind: kind, contents: read.contents, files: files)
         session.registryKey = key
-        sessions[key] = session
-        live[ObjectIdentifier(session)] = session
+        files.sessions[key] = session
+        files.liveSessions[ObjectIdentifier(session)] = session
         session.startWatching(seen: read.stamp.map(NoteFileSighting.file))
         session.joinSyncedBlocks()
         return session
     }
 
-    package static func session(for url: URL) -> NoteFileSession? { sessions[NoteFilePaths.key(for: url)] }
-
-    package static var openSessions: [NoteFileSession] { Array(live.values) }
-
-    package static func flushAll() throws {
+    fileprivate static func flushAll(_ sessions: [NoteFileSession]) throws {
         var unsaved: [String] = []
-        for session in live.values.sorted(by: { $0.url.path < $1.url.path }) {
+        for session in sessions.sorted(by: { $0.url.path < $1.url.path }) {
             do { try session.flush() } catch {
                 if session.preserveUnattendedConflict() { continue }
                 unsaved.append(session.title)
@@ -120,6 +114,7 @@ package final class NoteFileSession {
     package let kind: NoteFileKind
     package let page: NotePageSession
     package let environment: NoteEnvironment
+    package let files: NoteFiles
     @Published package private(set) var state: NoteFileSaveState = .saved
     package let urlChanges = PassthroughSubject<URL, Never>()
     package private(set) var format: NoteFileFormat
@@ -153,19 +148,20 @@ package final class NoteFileSession {
     private var registryKey = ""
     private var reportedMissing = false
 
-    private init(url: URL, kind: NoteFileKind, contents: NoteFileContents) {
+    private init(url: URL, kind: NoteFileKind, contents: NoteFileContents, files: NoteFiles) {
+        self.files = files
         self.url = url
         self.kind = kind
         format = contents.format
         disk = NoteFileDisk(text: contents.text)
-        let library = kind == .markdown ? NoteEmojiLibrary.library(for: url) : nil
+        let library = kind == .markdown ? files.emojiLibrary(for: url) : nil
         let names = library?.names ?? []
         let parsed = Self.parse(contents, kind: kind, customEmoji: names)
         let session = NotePageSession(page: parsed)
         session.isFlat = kind == .plainText
         page = session
         baseline = session.page
-        fileEnvironment = NoteFileEnvironment(documentURL: url, isPlainText: kind == .plainText)
+        fileEnvironment = NoteFileEnvironment(documentURL: url, isPlainText: kind == .plainText, files: files)
         environment = fileEnvironment
         changeSubscription = page.changes.sink { [weak self] change in self?.pageChanged(change) }
         customEmoji = names
@@ -190,6 +186,8 @@ package final class NoteFileSession {
         baseline = NoteCustomEmojiName.upgrading(baseline, names: added)
         refreshState()
     }
+
+    private var settings: NoteFileSettings { files.settings }
 
     package var title: String { url.deletingPathExtension().lastPathComponent }
 
@@ -241,7 +239,7 @@ package final class NoteFileSession {
         let text = current == baseline ? vanishedText ?? render(current) : render(current)
         let encoded = NoteFileText.encode(text, format: format)
         let target = url, kind = kind, presenter = watcher, disk = disk
-        let outcome = Self.worker.sync {
+        let outcome = settings.fileWorker.sync {
             NoteFileIO.write(encoded.data, text: text, to: target, kind: kind, disk: disk, force: false, presenter: presenter)
         }
         switch outcome {
@@ -266,7 +264,7 @@ package final class NoteFileSession {
             disk.adopt(theirs.text)
             forceNextSave = true
             hasUnsavedChanges = true
-            if firstUnsavedEdit == nil { firstUnsavedEdit = Self.clock.now }
+            if firstUnsavedEdit == nil { firstUnsavedEdit = settings.clock.now }
             refreshState()
             save()
         } else {
@@ -280,7 +278,7 @@ package final class NoteFileSession {
         if NoteFilePaths.itemExists(url) {
             let source = url
             let presenter = watcher
-            try Self.worker.sync { try NoteFileIO.move(source, to: target, presenter: presenter) }
+            try settings.fileWorker.sync { try NoteFileIO.move(source, to: target, presenter: presenter) }
         }
         relocate(to: NoteFilePaths.canonical(target.deletingLastPathComponent()).appendingPathComponent(target.lastPathComponent))
         return url
@@ -291,7 +289,7 @@ package final class NoteFileSession {
         let base = NoteFileNaming.sanitizedTitle(title)
         let target = NoteFileNaming.uniqueURL(in: folder, base: base.isEmpty ? NoteFileNaming.untitled : base, pathExtension: "md")
         let text = NoteFileText.fileText(NoteMarkdown.serialize(page.page), format: .standard, kind: .markdown)
-        try Self.worker.sync { try Data(text.utf8).write(to: target, options: .withoutOverwriting) }
+        try settings.fileWorker.sync { try Data(text.utf8).write(to: target, options: .withoutOverwriting) }
         return NoteFilePaths.canonical(target)
     }
 
@@ -302,7 +300,7 @@ package final class NoteFileSession {
         let target = url, kind = kind, presenter = watcher, generation = disk.generation
         let moved = pendingMovePath ?? watcher?.movedPath()
         pendingMovePath = nil
-        Self.worker.perform({ NoteFileIO.probe(target, kind: kind, movedPath: moved, presenter: presenter) }) { [weak self] probe in
+        settings.fileWorker.perform({ NoteFileIO.probe(target, kind: kind, movedPath: moved, presenter: presenter) }) { [weak self] probe in
             self?.apply(probe, checked: target, generation: generation)
         }
     }
@@ -333,8 +331,10 @@ package final class NoteFileSession {
     private func render(_ value: NotePage) -> String { Self.render(value, kind: kind, format: format, customEmoji: customEmoji) }
 
     private func startWatching(seen: NoteFileSighting?) {
+        let hop = settings.hopToMain
         let events: @Sendable (NoteFileWatchEvent) -> Void = { [weak self] event in
-            Self.hopToMain { MainActor.assumeIsolated { self?.handle(event) } }
+            let session = self
+            hop { MainActor.assumeIsolated { session?.handle(event) } }
         }
         let disk = disk
         let saveRequest: NoteFileWatcher.SaveRequest = { [weak self] completion in
@@ -342,8 +342,8 @@ package final class NoteFileSession {
                 completion(nil)
                 return
             }
-            let delivery = StagedDelivery(written)
-            Self.hopToMain { MainActor.assumeIsolated { self?.finishStagedWrite(delivery.write) } }
+            let delivery = StagedDelivery(written), session = self
+            hop { MainActor.assumeIsolated { session?.finishStagedWrite(delivery.write) } }
             completion(written.outcome.error)
         }
         let watcher = NoteFileWatcher(url: url, events: events, saveRequest: saveRequest)
@@ -353,14 +353,14 @@ package final class NoteFileSession {
 
     private func scheduleDiskCheck() {
         diskCheckTimer?.cancel()
-        diskCheckTimer = Self.clock.schedule(after: Self.diskCheckDelay) { [weak self] in self?.checkDisk() }
+        diskCheckTimer = settings.clock.schedule(after: settings.diskCheckDelay) { [weak self] in self?.checkDisk() }
     }
 
     private func locateSynchronously() {
         let target = url, kind = kind, presenter = watcher, generation = disk.generation
         let moved = pendingMovePath ?? watcher?.movedPath()
         pendingMovePath = nil
-        let probe = Self.worker.sync { NoteFileIO.probe(target, kind: kind, movedPath: moved, presenter: presenter) }
+        let probe = settings.fileWorker.sync { NoteFileIO.probe(target, kind: kind, movedPath: moved, presenter: presenter) }
         apply(probe, checked: target, generation: generation)
     }
 
@@ -482,18 +482,18 @@ package final class NoteFileSession {
 
     private func relocate(to destination: URL) {
         let previous = url
-        if Self.sessions[registryKey] === self { Self.sessions[registryKey] = nil }
+        if files.sessions[registryKey] === self { files.sessions[registryKey] = nil }
         url = destination
         registryKey = NoteFilePaths.identityKey(ofCanonicalPath: destination.path)
-        if !isClosed, Self.sessions[registryKey] == nil { Self.sessions[registryKey] = self }
+        if !isClosed, files.sessions[registryKey] == nil { files.sessions[registryKey] = self }
         fileEnvironment.move(to: destination)
         watcher?.update(url: destination)
         if kind == .markdown {
-            let library = NoteEmojiLibrary.library(for: destination)
+            let library = files.emojiLibrary(for: destination)
             if library !== emojiLibrary { follow(library) }
         }
         urlChanges.send(destination)
-        NoteLibrary.noteDidMove(from: previous, to: destination)
+        files.noteDidMove(from: previous, to: destination)
     }
 
     private func pageChanged(_ change: NotePageChange) {
@@ -501,7 +501,7 @@ package final class NoteFileSession {
         if isClosed { reopen() }
         waitsForMissingFile = false
         hasUnsavedChanges = true
-        if firstUnsavedEdit == nil { firstUnsavedEdit = Self.clock.now }
+        if firstUnsavedEdit == nil { firstUnsavedEdit = settings.clock.now }
         refreshState()
         scheduleAutosave()
     }
@@ -509,9 +509,9 @@ package final class NoteFileSession {
     private func scheduleAutosave() {
         guard conflict == nil, !waitsForMissingFile, !isClosed else { return }
         autosaveTimer?.cancel()
-        let waited = Self.clock.now.timeIntervalSince(firstUnsavedEdit ?? Self.clock.now)
-        let delay = max(0, min(Self.autosaveDelay, Self.longestAutosaveWait - waited))
-        autosaveTimer = Self.clock.schedule(after: delay) { [weak self] in self?.save() }
+        let waited = settings.clock.now.timeIntervalSince(firstUnsavedEdit ?? settings.clock.now)
+        let delay = max(0, min(settings.autosaveDelay, settings.longestAutosaveWait - waited))
+        autosaveTimer = settings.clock.schedule(after: delay) { [weak self] in self?.save() }
     }
 
     private func resumeAutosaveIfNeeded() {
@@ -529,7 +529,7 @@ package final class NoteFileSession {
         tickets.append((ticket, request))
         refreshState()
         let presenter = watcher, kind = kind, disk = disk
-        Self.worker.perform({ () -> NoteFileWriteOutcome in
+        settings.fileWorker.perform({ () -> NoteFileWriteOutcome in
             let outcome = NoteFileIO.write(request.data, text: request.text, to: request.url, kind: kind, disk: disk,
                                            force: request.force, presenter: presenter)
             ticket.outcome = outcome
@@ -545,7 +545,7 @@ package final class NoteFileSession {
         tickets.append((ticket, request))
         refreshState()
         let presenter = watcher, kind = kind, disk = disk
-        let outcome = Self.worker.sync {
+        let outcome = settings.fileWorker.sync {
             NoteFileIO.write(request.data, text: request.text, to: request.url, kind: kind, disk: disk,
                              force: request.force, presenter: presenter)
         }
@@ -580,7 +580,7 @@ package final class NoteFileSession {
 
     private func drainWrites() {
         guard !tickets.isEmpty else { return }
-        Self.worker.sync {}
+        settings.fileWorker.sync {}
         for (ticket, _) in tickets { complete(ticket) }
     }
 
@@ -639,10 +639,10 @@ package final class NoteFileSession {
 
     private func scheduleRetry() {
         guard editorCount == 0, !isClosed, lastSaveError != nil, conflict == nil, retryTimer == nil else { return }
-        let delays = Self.retryDelays.isEmpty ? [60] : Self.retryDelays
+        let delays = settings.retryDelays.isEmpty ? [60] : settings.retryDelays
         let delay = delays[min(retryAttempt, delays.count - 1)]
         retryAttempt += 1
-        retryTimer = Self.clock.schedule(after: delay) { [weak self] in
+        retryTimer = settings.clock.schedule(after: delay) { [weak self] in
             guard let self else { return }
             self.retryTimer = nil
             guard self.editorCount == 0, !self.isClosed else { return }
@@ -658,7 +658,7 @@ package final class NoteFileSession {
         let target = NoteFileNaming.uniqueURL(in: folder, base: base.isEmpty ? NoteFileNaming.untitled : base,
                                               pathExtension: url.pathExtension)
         let data = NoteFileText.encode(render(page.page), format: format).data
-        do { try Self.worker.sync { try data.write(to: target, options: .withoutOverwriting) } } catch { return false }
+        do { try settings.fileWorker.sync { try data.write(to: target, options: .withoutOverwriting) } } catch { return false }
         conflict = nil
         hasUnsavedChanges = false
         forceNextSave = false
@@ -669,8 +669,8 @@ package final class NoteFileSession {
 
     private func joinSyncedBlocks() {
         reportedMissing = isMissing
-        NoteSyncedBlocks.shared.useNoteFiles()
-        NoteSyncedBlocks.shared.attach(page, location: { [weak self] in self?.url }, isAvailable: { [weak self] in
+        files.syncedBlocks.useNoteFiles(files)
+        files.syncedBlocks.attach(page, location: { [weak self] in self?.url }, isAvailable: { [weak self] in
             guard let self else { return false }
             return !self.isClosed && !self.isMissing
         })
@@ -679,7 +679,7 @@ package final class NoteFileSession {
     private func refreshState() {
         if isMissing != reportedMissing {
             reportedMissing = isMissing
-            NoteSyncedBlocks.shared.availabilityChanged(page)
+            files.syncedBlocks.availabilityChanged(page)
         }
         let next: NoteFileSaveState
         if conflict != nil { next = .conflict }
@@ -716,17 +716,27 @@ package final class NoteFileSession {
         disk.stage(nil)
         watcher?.stop()
         watcher = nil
-        if Self.sessions[registryKey] === self { Self.sessions[registryKey] = nil }
-        Self.live[ObjectIdentifier(self)] = nil
-        NoteSyncedBlocks.shared.detach(page)
+        if files.sessions[registryKey] === self { files.sessions[registryKey] = nil }
+        files.liveSessions[ObjectIdentifier(self)] = nil
+        files.syncedBlocks.detach(page)
     }
 
     private func reopen() {
         isClosed = false
         wasAttended = true
-        Self.live[ObjectIdentifier(self)] = self
-        if Self.sessions[registryKey] == nil { Self.sessions[registryKey] = self }
+        files.liveSessions[ObjectIdentifier(self)] = self
+        if files.sessions[registryKey] == nil { files.sessions[registryKey] = self }
         startWatching(seen: nil)
         joinSyncedBlocks()
     }
+}
+
+extension NoteFiles {
+    package func open(_ url: URL) throws -> NoteFileSession { try NoteFileSession.make(url, in: self) }
+
+    package func session(for url: URL) -> NoteFileSession? { sessions[NoteFilePaths.key(for: url)] }
+
+    package var openSessions: [NoteFileSession] { Array(liveSessions.values) }
+
+    package func flushAll() throws { try NoteFileSession.flushAll(openSessions) }
 }

@@ -243,20 +243,21 @@ package enum NoteFileIO {
         }
     }
 
-    package nonisolated(unsafe) static var trashMover: (URL) throws -> URL? = { url in
+    package static func moveToTrash(_ url: URL) throws -> URL? {
         var resulting: NSURL?
         try FileManager.default.trashItem(at: url, resultingItemURL: &resulting)
         return resulting as URL?
     }
 
     @discardableResult
-    package static func trash(_ url: URL, presenter: NSFilePresenter? = nil) throws -> URL? {
+    package static func trash(_ url: URL, presenter: NSFilePresenter? = nil,
+                              mover: (URL) throws -> URL? = NoteFileIO.moveToTrash) throws -> URL? {
         var coordinationError: NSError?
         var trashError: Error?
         var resulting: URL?
         NSFileCoordinator(filePresenter: presenter).coordinate(
             writingItemAt: url, options: .forDeleting, error: &coordinationError) { target in
-            do { resulting = try trashMover(target) } catch { trashError = error }
+            do { resulting = try mover(target) } catch { trashError = error }
         }
         if let error = coordinationError ?? trashError { throw error }
         return resulting

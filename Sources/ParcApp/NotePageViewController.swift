@@ -113,7 +113,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         editor.canvas.spaceFocus = spaceFocus
         Self.openEditors[ObjectIdentifier(file), default: 0] += 1
         lease = NoteFileLease(file)
-        syncedHold = NoteSyncedBlocks.shared.hold(file.page)
+        syncedHold = file.files.syncedBlocks.hold(file.page)
         reportedTitle = file.title
         file.$state
             .sink { [weak self] state in self?.saveStateDidChange(state) }

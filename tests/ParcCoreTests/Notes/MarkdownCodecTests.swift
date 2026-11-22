@@ -277,8 +277,8 @@ struct MarkdownCodecTests: NoteFixtures {
         #expect(entityInCode[0].text.string == "&amp; and `x`", "code spans keep entities literally")
     }
 
-    @Test func aBackslashAtTheEndOfABlockStays() {
-        let problems = onLargeStack {
+    @Test func aBackslashAtTheEndOfABlockStays() async {
+        let problems = await onLargeStack {
             let deep = NoteMarkdown.parse(String(repeating: "> ", count: 5000) + "deep\n" + String(repeating: "*a ", count: 3000) + String(repeating: "b* ", count: 3000) + "\n")
             return NoteMarkdownCheck.stableProblems(NoteMarkdown.serialize(deep), "deep nesting")
         }

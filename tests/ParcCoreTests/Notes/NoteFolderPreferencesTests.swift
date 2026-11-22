@@ -3,56 +3,102 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-extension NoteProcessWide {
-@MainActor struct NoteFolderPreferencesTests {
-    @Test func foldersAreChosenPerSpaceAndStoredStandardized() throws {
+@MainActor final class NoteFolderPreferencesTests {
+    let suite: String
+    let defaults: UserDefaults
+    let preferences: NoteFolderPreferences
+    let first = UUID(), second = UUID()
+    let standard = NoteLibrary.defaultFolder.standardizedFileURL
+    var announced: [UUID] = []
+    var subscription: AnyCancellable?
+
+    init() throws {
         let suite = "parc.tests.note-folder." + UUID().uuidString
-        let defaults = try #require(UserDefaults(suiteName: suite), "a private defaults suite opens")
-        defer { defaults.removePersistentDomain(forName: suite) }
-        NoteFolderPreferences.defaults = defaults
-        var announced: [UUID] = []
-        let subscription = NoteFolderPreferences.changes.sink { announced.append($0) }
-        defer { subscription.cancel() }
-
-        let first = UUID(), second = UUID()
-        let standard = NoteLibrary.defaultFolder.standardizedFileURL
-        #expect(standard.lastPathComponent == "Parc Notes"
-               && standard.deletingLastPathComponent().lastPathComponent == "Documents", "the default folder is Documents/Parc Notes")
-        #expect(NoteFolderPreferences.folder(for: first) == standard, "a fresh Space keeps notes in the default folder")
-        #expect(NoteFolderPreferences.customFolder(for: first) == nil, "a fresh Space has no custom folder")
-
-        let custom = URL(fileURLWithPath: "/Volumes/Archive/Thoughts/../Notes", isDirectory: true)
-        NoteFolderPreferences.setFolder(custom, for: first)
-        #expect(NoteFolderPreferences.folder(for: first).path == "/Volumes/Archive/Notes", "the chosen folder is stored standardized")
-        #expect(NoteFolderPreferences.folder(for: second) == standard, "another Space keeps its own folder")
-        #expect(announced == [first], "choosing a folder announces that Space once")
-
-        NoteFolderPreferences.setFolder(URL(fileURLWithPath: "/Volumes/Archive/Notes/"), for: first)
-        #expect(announced == [first], "choosing the same folder again is quiet")
-
-        NoteFolderPreferences.setFolder(URL(string: "https://example.com/notes")!, for: first)
-        #expect(NoteFolderPreferences.folder(for: first).path == "/Volumes/Archive/Notes" && announced == [first], "a web address is never a Notes folder")
-
-        NoteFolderPreferences.setFolder(standard, for: second)
-        #expect(announced == [first] && defaults.object(forKey: "Parc.Notes.Folder." + second.uuidString) == nil, "choosing the default for a Space already using it stores nothing")
-
-        NoteFolderPreferences.setFolder(standard, for: first)
-        #expect(NoteFolderPreferences.customFolder(for: first) == nil && NoteFolderPreferences.folder(for: first) == standard, "choosing the default folder clears the custom one")
-        #expect(announced == [first, first], "going back to the default announces the change")
-
-        defaults.set("relative/notes", forKey: "Parc.Notes.Folder." + second.uuidString)
-        #expect(NoteFolderPreferences.folder(for: second) == standard, "a stored path that isn't absolute falls back to the default")
-        NoteFolderPreferences.setFolder(standard, for: second)
-        #expect(defaults.object(forKey: "Parc.Notes.Folder." + second.uuidString) == nil && announced.last == second, "choosing the default sweeps out a broken stored path")
-
-        announced.removeAll()
-        NoteFolderPreferences.setFolder(URL(fileURLWithPath: "/Users/parc-sample/Writing", isDirectory: true), for: second)
-        #expect(NoteFolderPreferences.library(for: second) === NoteLibrary.shared(folder: URL(fileURLWithPath: "/Users/parc-sample/Writing")), "the Space's library is the shared library for its folder")
-        NoteFolderPreferences.removeProfile(second)
-        #expect(NoteFolderPreferences.folder(for: second) == standard, "removing a Space's data forgets its folder")
-        #expect(announced == [second, second], "forgetting a folder announces it")
-        NoteFolderPreferences.removeProfile(second)
-        #expect(announced == [second, second], "forgetting nothing is quiet")
+        self.suite = suite
+        defaults = try #require(UserDefaults(suiteName: suite))
+        preferences = NoteFolderPreferences(defaults: defaults)
+        subscription = preferences.changes.sink { [unowned self] in self.announced.append($0) }
     }
-}
+
+    deinit {
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func key(_ profile: UUID) -> String { "Parc.Notes.Folder." + profile.uuidString }
+
+    @Test func aFreshSpaceKeepsNotesInTheDefaultFolder() {
+        #expect(preferences.folder(for: first) == standard)
+        #expect(preferences.customFolder(for: first) == nil)
+    }
+
+    @Test func theChosenFolderIsStoredStandardizedForThatSpaceOnly() {
+        preferences.setFolder(URL(fileURLWithPath: "/Volumes/Archive/Thoughts/../Notes", isDirectory: true), for: first)
+        #expect(preferences.folder(for: first).path == "/Volumes/Archive/Notes")
+        #expect(preferences.folder(for: second) == standard)
+    }
+
+    @Test func choosingAFolderAnnouncesThatSpaceOnce() {
+        preferences.setFolder(URL(fileURLWithPath: "/Volumes/Archive/Notes", isDirectory: true), for: first)
+        #expect(announced == [first])
+    }
+
+    @Test func choosingTheSameFolderAgainIsQuiet() {
+        preferences.setFolder(URL(fileURLWithPath: "/Volumes/Archive/Notes", isDirectory: true), for: first)
+        preferences.setFolder(URL(fileURLWithPath: "/Volumes/Archive/Notes/"), for: first)
+        #expect(announced == [first])
+    }
+
+    @Test func aWebAddressIsNeverANotesFolder() {
+        preferences.setFolder(URL(string: "https://example.com/notes")!, for: first)
+        #expect(preferences.folder(for: first) == standard)
+        #expect(announced.isEmpty)
+    }
+
+    @Test func choosingTheDefaultForASpaceAlreadyUsingItStoresNothing() {
+        preferences.setFolder(standard, for: second)
+        #expect(announced.isEmpty)
+        #expect(defaults.object(forKey: key(second)) == nil)
+    }
+
+    @Test func goingBackToTheDefaultClearsTheCustomFolderAndAnnouncesIt() {
+        preferences.setFolder(URL(fileURLWithPath: "/Volumes/Archive/Notes", isDirectory: true), for: first)
+        preferences.setFolder(standard, for: first)
+        #expect(preferences.customFolder(for: first) == nil && preferences.folder(for: first) == standard)
+        #expect(announced == [first, first])
+    }
+
+    @Test func aStoredPathThatIsNotAbsoluteFallsBackToTheDefault() {
+        defaults.set("relative/notes", forKey: key(second))
+        #expect(preferences.folder(for: second) == standard)
+    }
+
+    @Test func choosingTheDefaultSweepsOutABrokenStoredPath() {
+        defaults.set("relative/notes", forKey: key(second))
+        preferences.setFolder(standard, for: second)
+        #expect(defaults.object(forKey: key(second)) == nil && announced.last == second)
+    }
+
+    @Test func allFoldersListTheDefaultAndEveryChosenFolder() {
+        preferences.setFolder(URL(fileURLWithPath: "/Volumes/Archive/Notes", isDirectory: true), for: first)
+        #expect(Set(preferences.allFolders.map(\.path)) == [standard.path, "/Volumes/Archive/Notes"])
+    }
+
+    @Test func removingASpaceForgetsItsFolderAndAnnouncesIt() {
+        preferences.setFolder(URL(fileURLWithPath: "/Users/parc-sample/Writing", isDirectory: true), for: second)
+        announced.removeAll()
+        preferences.removeProfile(second)
+        #expect(preferences.folder(for: second) == standard)
+        #expect(announced == [second])
+    }
+
+    @Test func forgettingNothingIsQuiet() {
+        preferences.removeProfile(second)
+        #expect(announced.isEmpty)
+    }
+
+    @Test func aSpacesLibraryIsTheSharedLibraryForItsFolder() {
+        let files = NoteFiles(settings: NoteFileSettings(clock: NoteManualClock(), worker: .inline, hopToMain: { _ in }, defaults: defaults))
+        files.folders.setFolder(URL(fileURLWithPath: "/Users/parc-sample/Writing", isDirectory: true), for: second)
+        #expect(files.library(forProfile: second) === files.library(folder: URL(fileURLWithPath: "/Users/parc-sample/Writing")))
+    }
 }

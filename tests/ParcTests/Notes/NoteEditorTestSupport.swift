@@ -4,8 +4,15 @@ import Testing
 @testable import Parc
 @testable import ParcCore
 
-@Suite(.serialized)
-enum NoteEditorProcessWide {}
+struct NoteEditorRealTrashRefused: Error {}
+
+@MainActor
+enum NoteEditorFiles {
+    static func make(clock: NoteFileClock, worker: NoteFileWorker = .inline) -> NoteFiles {
+        NoteFiles(settings: NoteFileSettings(clock: clock, worker: worker, hopToMain: { _ in },
+                                             trashMover: { _ in throw NoteEditorRealTrashRefused() }, notesFolders: { [] }))
+    }
+}
 
 @MainActor
 final class NoteEditorManualClock: NoteFileClock {

@@ -3,74 +3,100 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-extension NoteProcessWide {
-@MainActor final class NoteBacklinkIndexTests {
-    init() {
-        NoteFileSession.clock = clock
-        NoteFileSession.worker = .inline
-        NoteLibrary.clock = clock
-        NoteLibrary.worker = .inline
-        NoteBacklinkIndex.clock = clock
-        NoteBacklinkIndex.worker = .inline
-        folder = NoteFileTestSupport.makeFolder("backlinks")
+struct NoteBacklinkSnippetTests {
+    static let plain = "We talked for ages about the weather and the rain before finally getting to the Roadmap which matters most, then lunch."
+
+    func roadmapSnippet() -> NoteBacklinkSnippet {
+        let range = (Self.plain as NSString).range(of: "Roadmap")
+        return NoteBacklinkSnippet.around(range.location..<(range.location + range.length), in: Self.plain)
     }
+
+    @Test func longLeadInsAreClippedWithAnEllipsis() {
+        #expect(roadmapSnippet().text.hasPrefix("…"))
+    }
+
+    @Test func theHighlightCoversTheLinkText() throws {
+        let snippet = roadmapSnippet()
+        let highlight = try #require(snippet.highlight)
+        #expect((snippet.text as NSString).substring(with: NSRange(location: highlight.lowerBound, length: highlight.count)) == "Roadmap")
+    }
+
+    @Test func whitespaceIsCollapsed() {
+        #expect(!roadmapSnippet().text.contains("  "))
+    }
+
+    @Test func lineBreaksReadAsSpacesAndShortSnippetsKeepTheLinkAtTheStart() {
+        let short = NoteBacklinkSnippet.around(0..<3, in: "See\nthat")
+        #expect(short.text == "See that")
+        #expect(short.highlight == 0..<3)
+    }
+
+    @Test func emptyTextGivesAnEmptySnippet() {
+        #expect(NoteBacklinkSnippet.around(0..<0, in: "").text == "")
+    }
+}
+
+struct NoteBacklinksSettingTests {
+    @Test(arguments: [NoteBacklinksDisplay.expanded, .off, .popup])
+    func anExplicitDisplayIsWrittenToFrontMatterAndReadsBack(display: NoteBacklinksDisplay) {
+        var page = NotePage(blocks: [.paragraph("Hi")])
+        page.settings.backlinks = display
+        let text = NoteMarkdown.serialize(page)
+        #expect(text.contains("backlinks: \(display.rawValue)"))
+        #expect(NoteMarkdown.parse(text).settings.backlinks == display)
+    }
+
+    @Test func pickingTheDefaultLeavesFrontMatterAlone() {
+        var page = NotePage(blocks: [.paragraph("Hi")])
+        page.settings.backlinksDisplay = .popup
+        #expect(page.settings.backlinks == nil)
+        #expect(!NoteMarkdown.serialize(page).contains("backlinks"))
+    }
+
+    @Test func unknownValuesSurviveAsAProperty() {
+        let odd = NoteMarkdown.parse("---\nbacklinks: sometimes\n---\nHi\n")
+        #expect(odd.settings.backlinks == nil)
+        #expect(odd.settings.properties.first?.key == "backlinks")
+    }
+
+    @Test func noBacklinksMeansNoHeaderSlot() {
+        let geometry = NotePageHeaderGeometry(width: 1000, column: CGRect(x: 140, y: 0, width: 720, height: 0), titleHeight: 55)
+        #expect(geometry.layout().backlinks == nil)
+    }
+
+    @Test func theBacklinkCountSitsUnderTheTitleHangingIntoTheGutter() throws {
+        var geometry = NotePageHeaderGeometry(width: 1000, column: CGRect(x: 140, y: 0, width: 720, height: 0), titleHeight: 55)
+        let bare = geometry.layout()
+        geometry.backlinksHeight = 26
+        geometry.backlinksGutter = 8
+        let shown = geometry.layout()
+        let frame = try #require(shown.backlinks)
+        #expect(frame == CGRect(x: 132, y: bare.title.maxY + NotePageHeaderGeometry.backlinksGap, width: 728, height: 26))
+        #expect(shown.height == bare.height + 26 + NotePageHeaderGeometry.backlinksGap)
+    }
+
+    @Test func backlinksFollowTheProperties() {
+        var geometry = NotePageHeaderGeometry(width: 1000, column: CGRect(x: 140, y: 0, width: 720, height: 0), titleHeight: 55)
+        geometry.backlinksHeight = 26
+        geometry.propertiesHeight = 64
+        let both = geometry.layout()
+        #expect((both.backlinks?.minY ?? 0) > (both.properties?.maxY ?? .infinity))
+    }
+}
+
+final class NoteBacklinkScannerTests {
+    let folder = NoteFileTestSupport.makeFolder("backlink-scan")
 
     deinit {
         NoteFileTestSupport.remove(folder)
     }
 
-    let clock = NoteManualClock()
+    var base: URL { folder.appendingPathComponent("Scan", isDirectory: true) }
 
-    var folder: URL!
+    func roadmap() -> URL { NoteFileTestSupport.write("# Roadmap\n", to: base.appendingPathComponent("Roadmap.md")) }
 
-    func steadily(_ index: NoteBacklinkIndex, _ note: URL, _ titles: [String], _ context: String) {
-        for step in 0..<80 {
-            clock.advance(0.1)
-            let now = index.backlinks(to: note).map(\.title)
-            if now != titles { Issue.record("the count dipped \(context) at step \(step): \(now)") }
-        }
-        #expect(index.isSettled, "the index settles \(context)")
-    }
-
-    func settle() {
-        for _ in 0..<20 { clock.advance(0.5) }
-    }
-
-    @Test func longLeadInsAreClippedWithAnEllipsis() throws {
-        let plain = "We talked for ages about the weather and the rain before finally getting to the Roadmap which matters most, then lunch."
-        let range = (plain as NSString).range(of: "Roadmap")
-        let snippet = NoteBacklinkSnippet.around(range.location..<(range.location + range.length), in: plain)
-        #expect(snippet.text.hasPrefix("…"), "long lead-ins are clipped with an ellipsis")
-        let highlight = try #require(snippet.highlight, "the link is highlighted")
-        #expect((snippet.text as NSString).substring(with: NSRange(location: highlight.lowerBound, length: highlight.count)) == "Roadmap", "the highlight covers the link text")
-        #expect(!snippet.text.contains("  "), "whitespace is collapsed")
-        let short = NoteBacklinkSnippet.around(0..<3, in: "See\nthat")
-        #expect(short.text == "See that", "line breaks read as spaces")
-        #expect(short.highlight == 0..<3, "short snippets keep the link at the start")
-        #expect(NoteBacklinkSnippet.around(0..<0, in: "").text == "", "empty text gives an empty snippet")
-    }
-
-    @Test func isWrittenToFrontMatter() {
-        for display in [NoteBacklinksDisplay.expanded, .off, .popup] {
-            var page = NotePage(blocks: [.paragraph("Hi")])
-            page.settings.backlinks = display
-            let text = NoteMarkdown.serialize(page)
-            #expect(text.contains("backlinks: \(display.rawValue)"), "\(display) is written to front matter")
-            #expect(NoteMarkdown.parse(text).settings.backlinks == display, "\(display) reads back")
-        }
-        var page = NotePage(blocks: [.paragraph("Hi")])
-        page.settings.backlinksDisplay = .popup
-        #expect(page.settings.backlinks == nil, "picking the default leaves front matter alone")
-        #expect(!NoteMarkdown.serialize(page).contains("backlinks"), "the default writes nothing")
-        let odd = NoteMarkdown.parse("---\nbacklinks: sometimes\n---\nHi\n")
-        #expect(odd.settings.backlinks == nil, "unknown values aren't a setting")
-        #expect(odd.settings.properties.first?.key == "backlinks", "unknown values survive as a property")
-    }
-
-    @Test func wikiLinksLinkMarksMentionsAndPageLinksAll() {
-        let base = folder.appendingPathComponent("Scan", isDirectory: true)
-        let roadmap = NoteFileTestSupport.write("# Roadmap\n", to: base.appendingPathComponent("Roadmap.md"))
-        let key = NoteFilePaths.key(for: roadmap)
+    func outgoing() -> (key: String, links: [NoteOutgoingLink]) {
+        let key = NoteFilePaths.key(for: roadmap())
         let page = NoteMarkdown.parse("""
         # Plans
 
@@ -86,146 +112,278 @@ extension NoteProcessWide {
 
         Elsewhere [web](https://example.com) and [[Missing]].
         """)
-        let links = NoteBacklinkScanner.outgoing(in: page, folder: base)
+        return (key, NoteBacklinkScanner.outgoing(in: page, folder: base))
+    }
+
+    @Test func wikiLinksLinkMarksMentionsAndPageLinksCountButCodeDoesNot() {
+        let (key, links) = outgoing()
         let local = links.filter { $0.target == key }
-        #expect(local.count == 4, "wiki links, link marks, mentions and page links all count, code doesn't")
-        #expect(Set(local.map(\.kind)) == [.mention, .link, .pageLink], "each kind is recognised")
-        #expect(local.allSatisfy { $0.anchor == "plans" }, "links remember the section they sit in")
-        #expect(local.contains { $0.kind == .pageLink && $0.snippet.text == "The big plan" }, "page links use their label")
-        #expect(local.contains { $0.snippet.text == "Read the Roadmap first." && $0.snippet.highlight == 9..<16 }, "mentions show their sentence")
-        #expect(!links.contains { $0.target.hasSuffix("example.com") }, "web links are skipped")
-        #expect(NoteBacklinkScanner.targetKey("Roadmap", from: base) == key, "wiki targets find the .md file")
-        #expect(NoteBacklinkScanner.targetKey("./Roadmap.md#x", from: base) == key, "fragments are ignored")
-        #expect(NoteBacklinkScanner.targetKey(roadmap.absoluteString, from: folder) == key, "file URLs resolve")
-        #expect(NoteBacklinkScanner.targetKey("#heading", from: base) == nil, "same-page anchors aren't backlinks")
-        #expect(NoteBacklinkScanner.targetKey("mailto:a@b.c", from: base) == nil, "other schemes are skipped")
+        #expect(local.count == 4)
+        #expect(Set(local.map(\.kind)) == [.mention, .link, .pageLink])
     }
 
-    @Test func bareWikiLinksFollowAndKeepTheirForm() {
-        let base = folder.appendingPathComponent("Rewrite", isDirectory: true)
+    @Test func linksRememberTheSectionTheySitIn() {
+        let (key, links) = outgoing()
+        #expect(links.filter { $0.target == key }.allSatisfy { $0.anchor == "plans" })
+    }
+
+    @Test func pageLinksUseTheirLabelAndMentionsShowTheirSentence() {
+        let (key, links) = outgoing()
+        let local = links.filter { $0.target == key }
+        #expect(local.contains { $0.kind == .pageLink && $0.snippet.text == "The big plan" })
+        #expect(local.contains { $0.snippet.text == "Read the Roadmap first." && $0.snippet.highlight == 9..<16 })
+    }
+
+    @Test func webLinksAreSkipped() {
+        #expect(!outgoing().links.contains { $0.target.hasSuffix("example.com") })
+    }
+
+    @Test(arguments: ["Roadmap", "./Roadmap.md#x"])
+    func relativeTargetsFindTheMarkdownFile(raw: String) {
+        let key = NoteFilePaths.key(for: roadmap())
+        #expect(NoteBacklinkScanner.targetKey(raw, from: base) == key)
+    }
+
+    @Test func fileURLTargetsResolve() {
+        let url = roadmap()
+        #expect(NoteBacklinkScanner.targetKey(url.absoluteString, from: folder) == NoteFilePaths.key(for: url))
+    }
+
+    @Test(arguments: ["#heading", "mailto:a@b.c"])
+    func sameNoteAnchorsAndOtherSchemesAreNotBacklinks(raw: String) {
+        #expect(NoteBacklinkScanner.targetKey(raw, from: base) == nil)
+    }
+}
+
+final class NoteBacklinkRewriterTests {
+    let folder: URL
+    let base: URL
+    let new: URL
+    let move: NoteBacklinkMove
+
+    static let source = """
+    ---
+    icon: 🍎
+    ---
+    Read the [[Roadmap]] and [[Roadmap|the map]] first.
+
+    A [plain link](Roadmap.md#goals) and a mention [Roadmap](Roadmap.md), plus _style_ kept.
+
+    [Roadmap](Roadmap.md)
+
+    `[code](Roadmap.md)` and [other](Other.md).
+
+    """
+
+    init() {
+        folder = NoteFileTestSupport.makeFolder("backlink-rewrite")
+        base = folder.appendingPathComponent("Rewrite", isDirectory: true)
         let old = base.appendingPathComponent("Roadmap.md")
-        let new = base.appendingPathComponent("Big Plan.md")
+        new = base.appendingPathComponent("Big Plan.md")
         NoteFileTestSupport.write("x\n", to: new)
-        let move = NoteBacklinkMove(fromKey: NoteFilePaths.key(for: old), from: old, to: new)
-        let source = """
-        ---
-        icon: 🍎
-        ---
-        Read the [[Roadmap]] and [[Roadmap|the map]] first.
+        move = NoteBacklinkMove(fromKey: NoteFilePaths.key(for: old), from: old, to: new)
+    }
 
-        A [plain link](Roadmap.md#goals) and a mention [Roadmap](Roadmap.md), plus _style_ kept.
+    deinit {
+        NoteFileTestSupport.remove(folder)
+    }
 
-        [Roadmap](Roadmap.md)
+    func rewritten() throws -> String {
+        try #require(NoteBacklinkRewriter.rewritten(Self.source, resolvingFrom: base, writingFrom: base, move: move))
+    }
 
-        `[code](Roadmap.md)` and [other](Other.md).
+    @Test(arguments: [
+        "[[Big Plan]]", "[[Big Plan|the map]]", "[plain link](Big%20Plan.md#goals)", "[Big Plan](Big%20Plan.md), plus _style_ kept.",
+        "\n[Big Plan](Big%20Plan.md)\n", "`[code](Roadmap.md)`", "[other](Other.md)",
+    ])
+    func linksToTheMovedNoteFollowWhileEverythingElseStays(expected: String) throws {
+        #expect(try rewritten().contains(expected))
+    }
 
-        """
-        guard let output = NoteBacklinkRewriter.rewritten(source, resolvingFrom: base, writingFrom: base, move: move) else {
-            Issue.record("links to the moved note are rewritten")
-            return
-        }
-        #expect(output.contains("[[Big Plan]]"), "bare wiki links follow and keep their form: \(output)")
-        #expect(output.contains("[[Big Plan|the map]]"), "aliases stay")
-        #expect(output.contains("[plain link](Big%20Plan.md#goals)"), "link marks keep their text and fragment")
-        #expect(output.contains("[Big Plan](Big%20Plan.md), plus _style_ kept."), "mentions take the new name and other text is untouched")
-        #expect(output.contains("\n[Big Plan](Big%20Plan.md)\n"), "page links follow")
-        #expect(output.contains("`[code](Roadmap.md)`"), "code is left alone")
-        #expect(output.contains("[other](Other.md)"), "unrelated links stay")
-        #expect(output.hasPrefix("---\nicon: 🍎\n---\n"), "front matter stays byte for byte")
-        #expect(NoteBacklinkRewriter.rewritten("No links here.\n", resolvingFrom: base, writingFrom: base, move: move) == nil, "notes without links aren't touched")
-        let crlf = "See [[Roadmap]].\r\nNext line\r\n"
-        #expect(NoteBacklinkRewriter.rewritten(crlf, resolvingFrom: base, writingFrom: base, move: move) == "See [[Big Plan]].\r\nNext line\r\n", "line endings survive")
+    @Test func frontMatterStaysByteForByte() throws {
+        #expect(try rewritten().hasPrefix("---\nicon: 🍎\n---\n"))
+    }
 
+    @Test func notesWithoutLinksAreNotTouched() {
+        #expect(NoteBacklinkRewriter.rewritten("No links here.\n", resolvingFrom: base, writingFrom: base, move: move) == nil)
+    }
+
+    @Test func lineEndingsSurvive() {
+        #expect(NoteBacklinkRewriter.rewritten("See [[Roadmap]].\r\nNext line\r\n", resolvingFrom: base, writingFrom: base, move: move)
+                == "See [[Big Plan]].\r\nNext line\r\n")
+    }
+
+    @Test func mentionAtomsTakeTheNewTargetAndTitle() {
         var text = NoteText.atom(.page(target: "Roadmap.md", title: "Roadmap"))
-        #expect(NoteBacklinkRewriter.rewrite(&text, resolvingFrom: base, writingFrom: base, move: move), "atoms are rewritten in the model")
-        #expect(text.marks(at: 0).atom == .page(target: "Big%20Plan.md", title: "Big Plan"), "mention atoms take the new target and title")
+        #expect(NoteBacklinkRewriter.rewrite(&text, resolvingFrom: base, writingFrom: base, move: move))
+        #expect(text.marks(at: 0).atom == .page(target: "Big%20Plan.md", title: "Big Plan"))
+    }
+
+    @Test func relativeLinksStayRelativeToTheirNote() {
         let sub = base.appendingPathComponent("Sub", isDirectory: true)
-        #expect(NoteBacklinkRewriter.replacement(for: "../Roadmap.md", writingFrom: sub, to: new, wiki: false) == "../Big%20Plan.md", "relative links stay relative to their note")
+        #expect(NoteBacklinkRewriter.replacement(for: "../Roadmap.md", writingFrom: sub, to: new, wiki: false) == "../Big%20Plan.md")
     }
+}
 
-    @Test func noBacklinksNoSlot() throws {
-        var geometry = NotePageHeaderGeometry(width: 1000, column: CGRect(x: 140, y: 0, width: 720, height: 0), titleHeight: 55)
-        let bare = geometry.layout()
-        #expect(bare.backlinks == nil, "no backlinks, no slot")
-        geometry.backlinksHeight = 26
-        geometry.backlinksGutter = 8
-        let shown = geometry.layout()
-        let frame = try #require(shown.backlinks, "backlinks get a slot")
-        #expect(frame == CGRect(x: 132, y: bare.title.maxY + NotePageHeaderGeometry.backlinksGap, width: 728, height: 26), "the count sits under the title, hanging into the gutter")
-        #expect(shown.height == bare.height + 26 + NotePageHeaderGeometry.backlinksGap, "the header grows to fit")
-        geometry.propertiesHeight = 64
-        let both = geometry.layout()
-        #expect((both.backlinks?.minY ?? 0) > (both.properties?.maxY ?? .infinity), "backlinks follow the properties")
-    }
+@MainActor final class NoteBacklinkIndexTests {
+    let clock = NoteManualClock()
+    let folder: URL
+    lazy var files = NoteFileTestSupport.files(clock: clock)
+    let root: URL
+    let target: URL
+    let alpha: URL
+    let beta: URL
 
-    @Test func sourcesAreListedByTitleWithoutTheNoteItself() throws {
-        let root = folder.appendingPathComponent("Index", isDirectory: true)
-        let target = NoteFileTestSupport.write("# Target\n", to: root.appendingPathComponent("Target.md"))
-        let alpha = NoteFileTestSupport.write("See [[Target]] and [Target](Target.md).\n", to: root.appendingPathComponent("Alpha.md"))
-        NoteFileTestSupport.write("---\nicon: 🐝\n---\n## Notes\n\nAbout [the target](../Target.md).\n",
-                                  to: root.appendingPathComponent("Deep/Beta.md"))
+    init() {
+        folder = NoteFileTestSupport.makeFolder("backlinks")
+        root = folder.appendingPathComponent("Index", isDirectory: true)
+        target = NoteFileTestSupport.write("# Target\nSelf [[Target]]\n", to: root.appendingPathComponent("Target.md"))
+        alpha = NoteFileTestSupport.write("See [[Target]] and [Target](Target.md).\n", to: root.appendingPathComponent("Alpha.md"))
+        beta = NoteFileTestSupport.write("---\nicon: 🐝\n---\n## Notes\n\nAbout [the target](../Target.md).\n",
+                                         to: root.appendingPathComponent("Deep/Beta.md"))
         NoteFileTestSupport.write("Nothing to see.\n", to: root.appendingPathComponent("Gamma.md"))
         NoteFileTestSupport.write("[me](Target.md)\n", to: root.appendingPathComponent("Plain.txt"))
-        NoteFileTestSupport.write("Self [[Target]]\n", to: target)
-        let index = NoteBacklinkIndex.shared
-        let library = NoteLibrary.shared(folder: root)
+    }
+
+    deinit {
+        NoteFileTestSupport.remove(folder)
+    }
+
+    var index: NoteBacklinkIndex { files.backlinks }
+    var library: NoteLibrary { files.library(folder: root) }
+
+    func settle() {
+        for _ in 0..<20 { clock.advance(0.5) }
+    }
+
+    func indexed() {
+        index.include(library)
+        settle()
+    }
+
+    func titles(_ note: URL) -> [String] { index.backlinks(to: note).map(\.title) }
+
+    func expectSteady(_ note: URL, _ expected: [String], sourceLocation: SourceLocation = #_sourceLocation) {
+        var seen: [[String]] = []
+        for _ in 0..<80 {
+            clock.advance(0.1)
+            seen.append(titles(note))
+        }
+        #expect(seen.allSatisfy { $0 == expected }, sourceLocation: sourceLocation)
+        #expect(index.isSettled, sourceLocation: sourceLocation)
+    }
+
+    func finderMove(_ from: URL, to destination: URL) throws {
+        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: from, to: destination)
+        library.refresh()
+        clock.advance(0.3)
+    }
+
+    @Test func sourcesAreListedByTitleWithoutTheNoteItselfOrPlainText() {
+        indexed()
+        #expect(titles(target) == ["Alpha", "Beta"])
+    }
+
+    @Test func severalLinksFromOneNoteCountOnce() {
+        indexed()
+        #expect(index.backlinks(to: target).first?.links == 2)
+    }
+
+    @Test func sourcesCarryTheirIconAndOpenAtTheLinkingSection() {
+        indexed()
+        let beta = index.backlinks(to: target).last
+        #expect(beta?.icon == "🐝")
+        #expect(beta?.anchor == "notes")
+        #expect(beta?.destination.fragment == "notes")
+    }
+
+    @Test func theIndexAnnouncesChanges() {
         var heard = 0
         let watch = index.changes.sink { heard += 1 }
         defer { watch.cancel() }
-        index.include(library)
-        settle()
-        var found = index.backlinks(to: target)
-        #expect(found.map(\.title) == ["Alpha", "Beta"], "sources are listed by title, without the note itself or plain text")
-        #expect(found.first?.links == 2, "several links from one note count once")
-        #expect(found.last?.icon == "🐝", "sources carry their icon")
-        #expect(found.last?.anchor == "notes", "sources open at the linking section")
-        #expect(found.last?.destination.fragment == "notes", "the destination carries the anchor")
-        #expect(heard > 0, "the index announces changes")
+        indexed()
+        #expect(heard > 0)
+    }
 
+    @Test func eachFileEnvironmentKeepsItsOwnIndex() {
+        indexed()
+        #expect(NoteFileTestSupport.files(clock: clock).backlinks !== index)
+    }
+
+    @Test func removingALinkUpdatesTheList() {
+        indexed()
         NoteFileTestSupport.write("Gone.\n", to: alpha)
-        NoteLibrary.filesRewritten([alpha])
+        files.filesRewritten([alpha])
         settle()
-        found = index.backlinks(to: target)
-        #expect(found.map(\.title) == ["Beta"], "removing a link updates the list")
+        #expect(titles(target) == ["Beta"])
+    }
 
+    @Test func newLinksShowUp() {
+        NoteFileTestSupport.write("Gone.\n", to: alpha)
+        indexed()
         NoteFileTestSupport.write("Back to [[Target]].\n", to: alpha)
-        NoteLibrary.filesRewritten([alpha])
+        files.filesRewritten([alpha])
         settle()
-        #expect(index.backlinks(to: target).count == 2, "new links show up")
+        #expect(titles(target) == ["Alpha", "Beta"])
+    }
 
-        let renamed = try NoteLibrary.rename(target, to: "Destination")
-        #expect(index.backlinks(to: renamed).map(\.title) == ["Alpha", "Beta"], "backlinks follow a renamed note right away")
-        steadily(index, renamed, ["Alpha", "Beta"], "after a rename")
-        #expect(NoteFileTestSupport.read(alpha) == "Back to [[Destination]].\n", "links in other notes follow the rename")
-        #expect(NoteFileTestSupport.read(root.appendingPathComponent("Deep/Beta.md")).contains("[the target](../Destination.md)"), "relative links from other folders follow too")
-        #expect(NoteFileTestSupport.read(renamed).contains("[[Destination]]"), "a note's link to itself follows its new name")
-        #expect(index.backlinks(to: target) == [], "nothing points at the old name any more")
+    @Test func backlinksFollowARenamedNoteRightAwayAndStaySteady() throws {
+        indexed()
+        let renamed = try files.rename(target, to: "Destination")
+        #expect(titles(renamed) == ["Alpha", "Beta"])
+        expectSteady(renamed, ["Alpha", "Beta"])
+        #expect(index.backlinks(to: target) == [])
+    }
 
+    @Test func linksInOtherNotesFollowARename() throws {
+        indexed()
+        let renamed = try files.rename(target, to: "Destination")
+        expectSteady(renamed, ["Alpha", "Beta"])
+        #expect(NoteFileTestSupport.read(alpha).contains("[[Destination]]"))
+        #expect(NoteFileTestSupport.read(beta).contains("[the target](../Destination.md)"))
+    }
+
+    @Test func aNotesLinkToItselfFollowsItsNewName() throws {
+        indexed()
+        let renamed = try files.rename(target, to: "Destination")
+        expectSteady(renamed, ["Alpha", "Beta"])
+        #expect(NoteFileTestSupport.read(renamed).contains("[[Destination]]"))
+    }
+
+    @Test func aFinderMoveOfAClosedNoteIsRecognisedByFileIdentity() throws {
+        indexed()
         let moved = root.appendingPathComponent("Moved/Final.md")
-        try FileManager.default.createDirectory(at: moved.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try FileManager.default.moveItem(at: renamed, to: moved)
-        library.refresh()
-        clock.advance(0.3)
-        #expect(index.backlinks(to: moved).map(\.title) == ["Alpha", "Beta"], "a Finder move of a closed note is recognised by file identity")
-        #expect(index.backlinks(to: renamed) == [], "the old place has no backlinks")
-        steadily(index, moved, ["Alpha", "Beta"], "after a Finder move")
-        #expect(NoteFileTestSupport.read(alpha) == "Back to [[Moved/Final]].\n", "links in closed notes follow a Finder move")
-        #expect(NoteFileTestSupport.read(root.appendingPathComponent("Deep/Beta.md")).contains("[the target](../Moved/Final.md)"), "relative links follow a Finder move too")
-        #expect(NoteFileTestSupport.read(moved).contains("[[Final]]"), "the moved note's link to itself follows it into the new folder")
+        try finderMove(target, to: moved)
+        #expect(titles(moved) == ["Alpha", "Beta"])
+        #expect(index.backlinks(to: target) == [])
+        expectSteady(moved, ["Alpha", "Beta"])
+    }
 
-        let alphaTwo = root.appendingPathComponent("Alpha Two.md")
-        try FileManager.default.moveItem(at: alpha, to: alphaTwo)
-        library.refresh()
-        clock.advance(0.3)
-        #expect(index.backlinks(to: moved).map(\.title) == ["Alpha Two", "Beta"], "a renamed source keeps its links and takes its new name at once")
-        steadily(index, moved, ["Alpha Two", "Beta"], "after a source moves")
+    @Test func linksInClosedNotesFollowAFinderMove() throws {
+        indexed()
+        let moved = root.appendingPathComponent("Moved/Final.md")
+        try finderMove(target, to: moved)
+        expectSteady(moved, ["Alpha", "Beta"])
+        #expect(NoteFileTestSupport.read(alpha).contains("[[Moved/Final]]"))
+        #expect(NoteFileTestSupport.read(beta).contains("[the target](../Moved/Final.md)"))
+        #expect(NoteFileTestSupport.read(moved).contains("[[Final]]"))
+    }
 
-        NoteFileTestSupport.write("Copy of [[Moved/Final]].\n", to: root.appendingPathComponent("Copy.md"))
+    @Test func aRenamedSourceKeepsItsLinksAndTakesItsNewNameAtOnce() throws {
+        indexed()
+        try finderMove(alpha, to: root.appendingPathComponent("Alpha Two.md"))
+        #expect(titles(target) == ["Alpha Two", "Beta"])
+        expectSteady(target, ["Alpha Two", "Beta"])
+    }
+
+    @Test func aDeletedNoteAndANewOneAreNotMistakenForAMove() throws {
+        indexed()
+        NoteFileTestSupport.write("Copy of [[Target]].\n", to: root.appendingPathComponent("Copy.md"))
         try FileManager.default.removeItem(at: root.appendingPathComponent("Gamma.md"))
         library.refresh()
         settle()
-        #expect(index.backlinks(to: moved).map(\.title) == ["Alpha Two", "Beta", "Copy"], "a deleted note and a new one aren't mistaken for a move")
-        #expect(NoteFileTestSupport.read(alphaTwo) == "Back to [[Moved/Final]].\n", "unrelated arrivals rewrite nothing")
+        #expect(titles(target) == ["Alpha", "Beta", "Copy"])
+        #expect(NoteFileTestSupport.read(alpha) == "See [[Target]] and [Target](Target.md).\n")
     }
-}
 }

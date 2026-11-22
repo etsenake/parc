@@ -489,8 +489,9 @@ final class NoteBlockHandleController {
         let session = editor.session
         guard !session.page.topLevelSelection(ids).isEmpty else { return }
         let name = title ?? url.deletingPathExtension().lastPathComponent
+        let files = (editor.environment as? NoteFileEnvironment)?.files ?? .shared
         let file: NoteFileSession
-        do { file = try NoteFileSession.open(url) } catch {
+        do { file = try files.open(url) } catch {
             presentToast?(.standard("Couldn’t open “\(name)”. Your blocks stayed put."))
             return
         }
@@ -501,7 +502,7 @@ final class NoteBlockHandleController {
             presentToast?(.standard("“\(name)” is locked or read-only, so your blocks stayed put."))
             return
         }
-        let home = NoteFileSession.openSessions.first { $0.page === session }
+        let home = files.openSessions.first { $0.page === session }
         guard NoteCrossNoteMove.perform(ids, from: session, name: "Move to “\(name)”", target: Self.access(file),
                                         source: home.map(Self.access)) != nil else {
             presentToast?(.standard("Couldn’t move those blocks. They stayed put."))
@@ -514,7 +515,7 @@ final class NoteBlockHandleController {
     private static func access(_ file: NoteFileSession) -> NoteCrossNoteMove.Access {
         var current = file
         return { body in
-            guard let live = try? NoteFileSession.open(current.url) else { return false }
+            guard let live = try? current.files.open(current.url) else { return false }
             current = live
             live.retain()
             defer { live.release() }

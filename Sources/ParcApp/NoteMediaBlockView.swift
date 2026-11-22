@@ -39,8 +39,8 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         creditLine.isHidden = true
         addSubview(creditLine)
         setAccessibilityElement(true)
-        if editor != nil {
-            importWatch = NoteAttachmentImports.shared.changes.sink { [weak self] source in
+        if let editor {
+            importWatch = NoteMediaImport.imports(for: editor.environment).changes.sink { [weak self] source in
                 guard let self, source == self.block.props.source else { return }
                 self.importDidFinish()
             }
@@ -61,12 +61,12 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     }
 
     var isImporting: Bool {
-        guard let session = editor?.session else { return false }
-        return NoteAttachmentImports.shared.isPending(block.props.source, in: session)
+        guard let editor else { return false }
+        return NoteMediaImport.imports(for: editor.environment).isPending(block.props.source, in: editor.session)
     }
 
     private func importDidFinish() {
-        let copyError = editor.flatMap { NoteAttachmentImports.shared.takeFailure(of: block.props.source, in: $0.session) }
+        let copyError = editor.flatMap { NoteMediaImport.imports(for: $0.environment).takeFailure(of: block.props.source, in: $0.session) }
         rebuild()
         guard copyError != nil, canEdit, case .local(let url) = source, FileManager.default.fileExists(atPath: url.path) else { return }
         reportMediaError(NoteAttachmentError.leftInPlace(url.lastPathComponent))
@@ -89,8 +89,9 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         let previous = self.block
         super.update(block)
         if previous.kind != block.kind || previous.props.source != block.props.source { failure = nil }
-        if previous.kind == block.kind, previous.props.source != block.props.source, let session = editor?.session,
-           let landed = NoteAttachmentImports.shared.landedPath(for: previous.props.source, in: session), landed == block.props.source {
+        if previous.kind == block.kind, previous.props.source != block.props.source, let editor,
+           let landed = NoteMediaImport.imports(for: editor.environment).landedPath(for: previous.props.source, in: editor.session),
+           landed == block.props.source {
             content?.rebind(to: source)
         }
         rebuild(notify: false)

@@ -166,72 +166,71 @@ struct DocumentsLibraryCatalogTests {
     }
 }
 
-extension NoteEditorProcessWide {
-    @MainActor
-    final class DocumentsLibraryCatalogIndexTests {
-        let clock = NoteEditorManualClock()
+@MainActor
+final class DocumentsLibraryCatalogIndexTests {
+    let jobs: NoteFileDeferredJobs
+    let files: NoteFiles
+    let folder: NoteEditorTemporaryFolder
+    let library: NoteLibrary
+
+    init() throws {
         let jobs = NoteFileDeferredJobs()
-        let folder: NoteEditorTemporaryFolder
-        let library: NoteLibrary
+        self.jobs = jobs
+        files = NoteEditorFiles.make(clock: NoteEditorManualClock(), worker: NoteFileWorker(deferred: jobs))
+        folder = try NoteEditorTemporaryFolder("library-catalog")
+        let filler = String(repeating: "Socks, chargers and a spare umbrella for the drizzle. ", count: 40)
+        try folder.write("\(filler)\n\nDon't forget the sardine tin opener.\n", to: "Packing.md")
+        library = files.library(folder: folder.url)
+    }
 
-        init() throws {
-            NoteLibrary.clock = clock
-            NoteLibrary.worker = NoteFileWorker(deferred: jobs)
-            folder = try NoteEditorTemporaryFolder("library-catalog")
-            let filler = String(repeating: "Socks, chargers and a spare umbrella for the drizzle. ", count: 40)
-            try folder.write("\(filler)\n\nDon't forget the sardine tin opener.\n", to: "Packing.md")
-            library = NoteLibrary.shared(folder: folder.url)
-        }
+    func inputs() -> DocumentsLibraryInputs? {
+        try? DocumentsLibraryCatalog.inputs(library: library, easels: { [] }, pending: false, query: "  sardine ", searchLimit: 100)
+    }
 
-        func inputs() -> DocumentsLibraryInputs? {
-            try? DocumentsLibraryCatalog.inputs(library: library, easels: { [] }, pending: false, query: "  sardine ", searchLimit: 100)
-        }
+    func coldInputs() throws -> DocumentsLibraryInputs {
+        _ = try library.notes()
+        jobs.runAll()
+        return try #require(inputs())
+    }
 
-        func coldInputs() throws -> DocumentsLibraryInputs {
-            _ = try library.notes()
-            jobs.runAll()
-            return try #require(inputs())
-        }
+    @Test func aReadableFolderGivesTheFirstSnapshotWithSummaries() throws {
+        let before = try coldInputs()
+        #expect(before.notes.first?.snippet?.hasPrefix("Socks, chargers") == true)
+    }
 
-        @Test func aReadableFolderGivesTheFirstSnapshotWithSummaries() throws {
-            let before = try coldInputs()
-            #expect(before.notes.first?.snippet?.hasPrefix("Socks, chargers") == true)
-        }
+    @Test func aColdIndexHasNoBodyMatchesYet() throws {
+        let before = try coldInputs()
+        #expect(before.query == "sardine")
+        #expect(before.noteMatches.isEmpty)
+        #expect(DocumentsLibraryCatalog.visible(before).isEmpty)
+    }
 
-        @Test func aColdIndexHasNoBodyMatchesYet() throws {
-            let before = try coldInputs()
-            #expect(before.query == "sardine")
-            #expect(before.noteMatches.isEmpty)
-            #expect(DocumentsLibraryCatalog.visible(before).isEmpty)
-        }
+    @Test func theIndexFinishingChangesTheInputsSoTheLibraryReloads() throws {
+        let before = try coldInputs()
+        jobs.runAll()
+        #expect(try #require(inputs()) != before)
+    }
 
-        @Test func theIndexFinishingChangesTheInputsSoTheLibraryReloads() throws {
-            let before = try coldInputs()
-            jobs.runAll()
-            #expect(try #require(inputs()) != before)
-        }
+    @Test func theBodyWordFindsItsNoteOnceTheIndexIsReady() throws {
+        _ = try coldInputs()
+        jobs.runAll()
+        let after = try #require(inputs())
+        #expect(DocumentsLibraryCatalog.visible(after).map(\.title) == ["Packing"])
+    }
 
-        @Test func theBodyWordFindsItsNoteOnceTheIndexIsReady() throws {
-            _ = try coldInputs()
-            jobs.runAll()
-            let after = try #require(inputs())
-            #expect(DocumentsLibraryCatalog.visible(after).map(\.title) == ["Packing"])
-        }
+    @Test func aQuietChangeAfterTheIndexIsReadyIsSkipped() throws {
+        _ = try coldInputs()
+        jobs.runAll()
+        let after = try #require(inputs())
+        #expect(inputs() == after)
+    }
 
-        @Test func aQuietChangeAfterTheIndexIsReadyIsSkipped() throws {
-            _ = try coldInputs()
-            jobs.runAll()
-            let after = try #require(inputs())
-            #expect(inputs() == after)
-        }
-
-        @Test func theIndexFinishingAnnouncesAChange() throws {
-            _ = try coldInputs()
-            var changed = false
-            let watch = library.changes.sink { changed = true }
-            defer { watch.cancel() }
-            jobs.runAll()
-            #expect(changed)
-        }
+    @Test func theIndexFinishingAnnouncesAChange() throws {
+        _ = try coldInputs()
+        var changed = false
+        let watch = library.changes.sink { changed = true }
+        defer { watch.cancel() }
+        jobs.runAll()
+        #expect(changed)
     }
 }

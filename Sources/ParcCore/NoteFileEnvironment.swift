@@ -7,12 +7,18 @@ package final class NoteFileEnvironment: NoteEnvironment {
 
     package private(set) var documentURL: URL?
     package let isPlainText: Bool
+    package let files: NoteFiles
     package var now: () -> Date = Date.init
     private var cachedLibrary: (path: String, library: NoteEmojiLibrary)?
 
-    package init(documentURL: URL, isPlainText: Bool) {
+    package convenience init(documentURL: URL, isPlainText: Bool) {
+        self.init(documentURL: documentURL, isPlainText: isPlainText, files: .shared)
+    }
+
+    package init(documentURL: URL, isPlainText: Bool, files: NoteFiles) {
         self.documentURL = documentURL
         self.isPlainText = isPlainText
+        self.files = files
     }
 
     package func move(to url: URL) { documentURL = url }
@@ -20,7 +26,7 @@ package final class NoteFileEnvironment: NoteEnvironment {
     package var emojiLibrary: NoteEmojiLibrary? {
         guard let documentURL, !isPlainText else { return nil }
         if let cachedLibrary, cachedLibrary.path == documentURL.path { return cachedLibrary.library }
-        let library = NoteEmojiLibrary.library(for: documentURL)
+        let library = files.emojiLibrary(for: documentURL)
         cachedLibrary = (documentURL.path, library)
         return library
     }
@@ -63,8 +69,13 @@ package final class NoteFileEnvironment: NoteEnvironment {
     package func searchNotes(_ query: String, limit: Int) -> [NoteReference] {
         guard let documentURL, limit > 0 else { return [] }
         let own = NoteFilePaths.key(for: documentURL)
-        let found = NoteLibrary.library(for: documentURL).search(query, limit: limit + 1)
+        let found = files.library(for: documentURL).search(query, limit: limit + 1)
         return Array(found.filter { NoteFilePaths.key(for: $0.url) != own }.prefix(limit))
+    }
+
+    package func createNote(titled title: String) throws -> URL {
+        guard let folder else { throw NoteFileError.missing }
+        return try files.createNote(in: folder, title: title)
     }
 
     package func linkTarget(for note: URL) -> String {
