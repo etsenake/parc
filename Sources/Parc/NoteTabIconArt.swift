@@ -53,11 +53,11 @@ final class NoteTabIconArt {
         }
 
         @MainActor
-        init?(address: String, profile: UUID) {
+        init?(address: String, profile: UUID, easels: EaselTabIcons? = nil) {
             switch InternalPage(urlString: address) {
             case .note(let file)?: self = .note(InternalPage.noteFile(file) ?? file)
             case .easel(let id)?:
-                guard let directory = EaselTabIcons.shared.directory(profile) else { return nil }
+                guard let directory = (easels ?? .shared).directory(profile) else { return nil }
                 self = .easel(directory: directory, id: id)
             case nil: return nil
             }
@@ -79,7 +79,7 @@ final class NoteTabIconArt {
 
     let changes: AnyPublisher<Set<String>?, Never>
     private let icons: NoteTabIcons
-    private let easels: EaselTabIcons
+    let easels: EaselTabIcons
     private let thumbnailsChanged = PassthroughSubject<Set<String>?, Never>()
     private let thumbnails = NSCache<NSString, CGImage>()
     private var sightings: [String: Sighting] = [:]

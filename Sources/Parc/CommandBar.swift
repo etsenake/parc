@@ -231,6 +231,7 @@ import SwiftUI
     private var nativeError: String?
     private var explicitSelectionID: String?
     private var icons: [URL: NSImage] = [:]
+    private let noteIconArt: NoteTabIconArt?
     private var requestedIcons = Set<URL>()
     private var observers: [NSObjectProtocol] = []
     private var focusObservation: NSKeyValueObservation?
@@ -251,10 +252,12 @@ import SwiftUI
          loadFavicon: @escaping @MainActor (URL, String, @escaping @Sendable (NSImage?) -> Void) -> Void = {
              PCNativeBrowserApplication.favicon(for: $0, profilePath: $1, completion: $2)
          },
-         reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
+         reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
+         noteIconArt: NoteTabIconArt? = nil) {
         self.shortcuts = shortcuts ?? .shared
         self.privacyPolicy = CommandBarSearchPrivacyPolicy(defaults: privacyDefaults)
         self.loadFavicon = loadFavicon
+        self.noteIconArt = noteIconArt
         self.reduceMotion = reduceMotion
         self.resident = resident
         self.addressOnly = addressOnly
@@ -990,9 +993,9 @@ import SwiftUI
             guard let url = result.url else { continue }
             let profile = tabs.first { $0.id == result.tabID || $0.id == result.archivedTabID }?.profileID ?? tabs.first?.profileID ?? UUID()
             if result.tabID != nil || result.archivedTabID != nil,
-               let subject = NoteTabIconArt.Subject(address: url.absoluteString, profile: profile) {
+               let subject = NoteTabIconArt.Subject(address: url.absoluteString, profile: profile, easels: noteIconArt?.easels) {
                 guard requestedIcons.insert(url).inserted else { continue }
-                NoteTabIconArt.shared.requestImage(for: subject) { [weak self] image in self?.adoptIcon(image, for: url) }
+                (noteIconArt ?? .shared).requestImage(for: subject) { [weak self] image in self?.adoptIcon(image, for: url) }
                 continue
             }
             guard ["https", "http"].contains(url.scheme?.lowercased() ?? ""), requestedIcons.insert(url).inserted else { continue }
@@ -1579,9 +1582,9 @@ import SwiftUI
         inputIcon.image = icon(for: result)
     }
     private func documentIcon(_ document: CommandBarDocument) -> NSImage? {
-        guard document.kind == .easel else { return document.icon.flatMap(NoteTabIconArt.shared.image(emoji:)) }
-        guard let profile = document.profileID, let directory = EaselTabIcons.shared.directory(profile),
-              case .image(let image) = NoteTabIconArt.shared.art(for: .easel(directory: directory, id: document.id)) else { return nil }
+        guard document.kind == .easel else { return document.icon.flatMap { (noteIconArt ?? .shared).image(emoji: $0) } }
+        guard let profile = document.profileID, let directory = (noteIconArt?.easels ?? .shared).directory(profile),
+              case .image(let image) = (noteIconArt ?? .shared).art(for: .easel(directory: directory, id: document.id)) else { return nil }
         return image
     }
     private func icon(for result: Result) -> NSImage? {
