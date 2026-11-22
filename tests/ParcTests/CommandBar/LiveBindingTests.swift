@@ -149,3 +149,206 @@ extension LiveBindingTests {
         #expect((upsell.message(copied: address, pageURL: address, shortcut: chord, now: later) != nil) == offers)
     }
 }
+
+extension LiveBindingTests {
+    @MainActor private final class PeekTarget: NSObject, NSMenuItemValidation {
+        var enabled = false
+        func validateMenuItem(_ item: NSMenuItem) -> Bool { enabled }
+        @objc func openInCurrentSpace(_ sender: NSMenuItem) {}
+    }
+
+    @MainActor private final class PeekBench {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = NSMenu()
+        let menu = NSMenu(title: "Tabs")
+        let target = PeekTarget()
+        let open = NSMenuItem(title: "Open Peek in Current Space", action: #selector(PeekTarget.openInCurrentSpace), keyEquivalent: "")
+        let registry: KeyboardShortcuts
+        let chord = KeyboardShortcut(key: "o", flags: .command)
+
+        init() throws {
+            _ = NSApplication.shared
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let parent = NSMenuItem()
+            parent.submenu = menu
+            root.addItem(parent)
+            let root = root
+            registry = KeyboardShortcuts(mainMenu: { root }, observesKeyboardLayout: false)
+            open.target = target
+            open.isHidden = true
+            open.allowsKeyEquivalentWhenHidden = true
+            menu.addItem(open)
+            registry.configure(directory: directory)
+            registry.register(open, group: "Tabs", discoverable: false)
+        }
+
+        deinit { try? FileManager.default.removeItem(at: directory) }
+
+        var event: NSEvent { CommandBarTestSupport.keyEvent(31, .command, characters: "o") }
+
+        func writeSettings(_ overrides: [String: Any]) throws -> URL {
+            let file = directory.appendingPathComponent("keyboard-shortcuts.json")
+            try JSONSerialization.data(withJSONObject: ["version": 3, "overrides": overrides]).write(to: file)
+            return file
+        }
+    }
+
+    @MainActor private func help(_ button: NSButton) -> String? {
+        #expect(button.toolTip == nil)
+        #expect(button.cell?.accessibilityHelp() == button.accessibilityHelp())
+        return button.accessibilityHelp()
+    }
+
+    @Test @MainActor func aTooltipAppendsTheBindingWhenThereIsOne() {
+        #expect(KeyboardShortcuts.toolTip("Hide sidebar", shortcut: KeyboardShortcut(key: "s", flags: .command)) == "Hide sidebar ⌘S")
+        #expect(KeyboardShortcuts.toolTip("Hide sidebar", shortcut: nil) == "Hide sidebar")
+    }
+
+    @Test @MainActor func anUnregisteredCommandShowsItsTitleAlone() throws {
+        let fixture = try Fixture()
+        #expect(fixture.registry.toolTip("Go back", for: "goBack:") == "Go back")
+    }
+
+    @Test @MainActor func initialHelpCarriesTheLiveBindingOrNone() throws {
+        let fixture = try Fixture()
+        fixture.register("resetTab:", chord: KeyboardShortcut(key: "r", flags: [.command, .shift]))
+        let toggle = NSButton(), reset = NSButton(), plain = NSButton()
+        fixture.registry.bindHelp(toggle, title: "Hide sidebar", commandID: "toggleSidebar:")
+        fixture.registry.bindHelp(reset, title: "Reset Tab", commandID: "resetTab:", requiresBinding: true)
+        fixture.registry.bindHelp(plain, title: "Site Control Center", commandID: nil)
+        #expect(help(toggle) == "Hide sidebar ⌘S")
+        #expect(help(reset) == "Reset Tab ⇧⌘R")
+        #expect(help(plain) == "Site Control Center")
+    }
+
+    @Test @MainActor func aChangedClearedAndResetBindingFollowsIntoTheHelp() throws {
+        let fixture = try Fixture()
+        fixture.register("resetTab:", chord: KeyboardShortcut(key: "r", flags: [.command, .shift]))
+        let toggle = NSButton(), reset = NSButton()
+        fixture.registry.bindHelp(toggle, title: "Hide sidebar", commandID: "toggleSidebar:")
+        fixture.registry.bindHelp(reset, title: "Reset Tab", commandID: "resetTab:", requiresBinding: true)
+        try fixture.registry.set(KeyboardShortcut(key: "b", flags: [.command, .option]), for: "toggleSidebar:")
+        #expect(help(toggle) == "Hide sidebar ⌥⌘B")
+        try fixture.registry.set(nil, for: "resetTab:")
+        #expect(help(reset) == nil)
+        try fixture.registry.reset("resetTab:")
+        #expect(help(reset) == "Reset Tab ⇧⌘R")
+    }
+
+    @Test @MainActor func aConflictingBindingIsNotAdvertisedUntilResolved() throws {
+        let fixture = try Fixture()
+        let toggle = NSButton()
+        fixture.registry.bindHelp(toggle, title: "Hide sidebar", commandID: "toggleSidebar:")
+        try fixture.registry.set(fixture.copyDefault, for: "toggleSidebar:")
+        #expect(help(toggle) == "Hide sidebar")
+        try fixture.registry.reset("toggleSidebar:")
+        #expect(help(toggle) == "Hide sidebar ⌘S")
+    }
+
+    @Test @MainActor func aMenuEntryShowsTheBindingHidesItWhenClearedAndRestoresIt() throws {
+        let fixture = try Fixture()
+        let item = fixture.copyItem()
+        #expect(item.keyEquivalent == "c" && item.keyEquivalentModifierMask == [.command, .shift])
+        try fixture.registry.set(nil, for: "copyCurrentURL:")
+        #expect(item.keyEquivalent.isEmpty && item.keyEquivalentModifierMask.isEmpty)
+        try fixture.registry.reset("copyCurrentURL:")
+        #expect(item.keyEquivalent == "c")
+    }
+
+    @Test @MainActor func reregisteringARetiredCommandRestoresTheSavedBindingAndRetainedMenu() throws {
+        let fixture = try Fixture()
+        let item = fixture.copyItem()
+        let custom = KeyboardShortcut(key: "y", flags: [.command, .shift])
+        try fixture.registry.set(custom, for: "copyCurrentURL:")
+        fixture.registry.retireCommands(["copyCurrentURL:"])
+        #expect(fixture.registry.activeShortcut(for: "copyCurrentURL:") == nil)
+        fixture.register("copyCurrentURL:", chord: fixture.copyDefault)
+        #expect(fixture.registry.activeShortcut(for: "copyCurrentURL:") == custom)
+        #expect(item.keyEquivalent == "y")
+    }
+
+    @Test @MainActor func aReleasedViewLeavesOtherBindingsAlone() throws {
+        let fixture = try Fixture()
+        fixture.register("reload:", chord: KeyboardShortcut(key: "r", flags: .command))
+        let toggle = NSButton()
+        fixture.registry.bindHelp(toggle, title: "Lock sidebar", commandID: "toggleSidebar:")
+        do {
+            let transient = NSButton()
+            fixture.registry.bindHelp(transient, title: "Reload this page", commandID: "reload:")
+            #expect(help(transient) == "Reload this page ⌘R")
+        }
+        try fixture.registry.set(KeyboardShortcut(key: "r", flags: [.command, .option]), for: "reload:")
+        #expect(help(toggle) == "Lock sidebar ⌘S")
+    }
+
+    @Test @MainActor func peeksDefaultSurvivesAnInitiallyHiddenMenuAndKeepsItsPriority() throws {
+        let bench = try PeekBench()
+        #expect(bench.registry.activeShortcut(for: "openInCurrentSpace:") == bench.chord)
+        #expect(bench.open.keyEquivalent == "o")
+        #expect(bench.registry.priority(for: "openInCurrentSpace:") == .useBoth)
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func theHiddenPeekEntryRevalidatesAgainstTheModal(available: Bool) throws {
+        let bench = try PeekBench()
+        bench.target.enabled = available
+        let command = bench.registry.nativeCommand(for: bench.event, editable: true)
+        #expect((command?.item === bench.open) == available)
+        #expect(available || command == nil)
+    }
+
+    @Test @MainActor func removingPeeksBindingClearsTheMenuAndExpandHintAndResetRestoresThem() throws {
+        let bench = try PeekBench()
+        let expand = NSButton()
+        bench.registry.bindHelp(expand, title: "Open Peek as Tab", commandID: "openInCurrentSpace:")
+        try bench.registry.set(nil, for: "openInCurrentSpace:")
+        #expect(help(expand) == "Open Peek as Tab")
+        #expect(bench.open.keyEquivalent.isEmpty)
+        try bench.registry.reset("openInCurrentSpace:")
+        #expect(help(expand) == "Open Peek as Tab ⌘O")
+    }
+
+    @Test @MainActor func peeksNewDefaultNeverStealsASavedChordAndMigratesIndependently() throws {
+        let bench = try PeekBench()
+        let file = try bench.writeSettings(["other:": ["shortcut": ["key": "o", "modifiers": NSEvent.ModifierFlags.command.rawValue]]])
+        bench.registry.configure(directory: bench.directory)
+        #expect(bench.registry.activeShortcut(for: "openInCurrentSpace:") == nil)
+        #expect(bench.registry.shortcut(for: "other:") == bench.chord)
+        let migrated = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        #expect(migrated["peekOpenShortcutDefaults"] as? Int == 1)
+    }
+
+    @Test @MainActor func peeksSavedDisableAndCustomChordSurviveIntroduction() throws {
+        let bench = try PeekBench()
+        _ = try bench.writeSettings(["openInCurrentSpace:": [:]])
+        bench.registry.configure(directory: bench.directory)
+        #expect(bench.registry.activeShortcut(for: "openInCurrentSpace:") == nil)
+        let flags = NSEvent.ModifierFlags([.command, .shift])
+        _ = try bench.writeSettings(["openInCurrentSpace:": ["shortcut": ["key": "o", "modifiers": flags.rawValue]]])
+        bench.registry.configure(directory: bench.directory)
+        #expect(bench.registry.activeShortcut(for: "openInCurrentSpace:") == .init(key: "o", flags: flags))
+    }
+
+    @Test @MainActor func untouchedOldSettingsReceiveThePeekDefaultAndPriority() throws {
+        let bench = try PeekBench()
+        _ = try bench.writeSettings([:])
+        bench.registry.configure(directory: bench.directory)
+        #expect(bench.registry.activeShortcut(for: "openInCurrentSpace:") == bench.chord)
+        #expect(bench.registry.priority(for: "openInCurrentSpace:") == .useBoth)
+    }
+
+    @Test @MainActor func theOriginalPeekTargetIsAdmitted() {
+        _ = NSApplication.shared
+        let window = PeekWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+                                styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let command = PeekOpenCommand(window: window, targetIsAvailable: { true }, execute: {})
+        #expect(command.isAvailable)
+    }
+
+    @Test func theUpsellToastIsShortcutContentWithItsOwnText() {
+        let toast = ParcToastContent.superCopyUpsell(shortcut: "⇧⌘C", message: "Copy links faster by pressing ⇧⌘C")
+        #expect(toast.body == .shortcut(leading: SuperCopyUpsell.prefix, shortcut: "⇧⌘C", trailing: nil))
+        #expect(toast.showsShortcut)
+    }
+}

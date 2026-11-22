@@ -202,3 +202,103 @@ extension ShortcutHintPresentationTests {
         #expect(fixture.hint.state.basicBackground === (isPrivate ? basic : nil))
     }
 }
+
+extension ShortcutHintPresentationTests {
+    @Test @MainActor func aSaturatedColorKeepsItsHueWhileItsLightnessAdjusts() {
+        let palette = ParcToastPalette(colors: [NSColor(displayP3Red: 1, green: 0, blue: 0, alpha: 1)])
+        #expect(abs(palette.background.greenComponent - 0.2) < 0.0001)
+        #expect(abs(palette.background.blueComponent - 0.2) < 0.0001)
+    }
+
+    @Test @MainActor func aGradientAveragesItsAdjustedColors() {
+        let palette = ParcToastPalette(colors: [.black, .white])
+        #expect(abs(palette.background.redComponent - 0.625) < 0.0001)
+    }
+
+    @Test @MainActor func theIncognitoBasicColorReplacesTheSpacesColors() throws {
+        let basic = NSColor(displayP3Red: 0.054, green: 0.06, blue: 0.075, alpha: 1)
+        let theme = SpaceTheme.singleColor(try #require(ThemeColor(hex: "202020")))
+        let incognito = ParcToastPalette(theme: theme, isDark: true, basicBackground: basic)
+        #expect(abs(incognito.background.redComponent - 0.1594) < 0.001)
+        #expect(abs(incognito.background.greenComponent - 0.2766) < 0.001)
+        #expect(abs(incognito.background.blueComponent - 0.5696) < 0.001)
+        #expect(incognito.isDark && incognito.foreground == .white)
+        let grey = ParcToastPalette(theme: theme, isDark: true)
+        #expect(abs(grey.background.redComponent - grey.background.blueComponent) < 0.0001)
+    }
+
+    @Test @MainActor func aPrivateWindowsCueStartsOnTheBasicColorAndKeepsItAcrossThemeRefreshes() throws {
+        _ = NSApplication.shared
+        let basic = NSColor(displayP3Red: 0.054, green: 0.06, blue: 0.075, alpha: 1)
+        let cue = ShortcutPriorityHintView(title: "New Tab", shortcut: "⌘T", canEdit: true,
+            theme: .singleColor(try #require(ThemeColor(hex: "202020"))), basicBackground: basic)
+        #expect(cue.state.basicBackground === basic)
+        let next = SpaceTheme.singleColor(try #require(ThemeColor(hex: "303030")))
+        cue.update(theme: next, basicBackground: basic)
+        #expect(cue.state.basicBackground === basic && cue.state.theme == next)
+        cue.update(theme: SpaceTheme(), basicBackground: nil)
+        #expect(cue.state.basicBackground == nil)
+    }
+
+    @Test @MainActor func thePresentedChildIsPassiveAndFramedOverTheParent() throws {
+        let fixture = Fixture()
+        try #require(fixture.hint.present(in: fixture.parent))
+        defer { fixture.hint.dismiss(animated: false) }
+        let child = try #require(fixture.parent.childWindows?.first)
+        #expect(fixture.hint.originalWindow === fixture.parent)
+        #expect(child.frame == ShortcutPriorityHintView.frame(for: fixture.parent.frame))
+        #expect(!child.canBecomeKey && !child.canBecomeMain)
+    }
+
+    @Test @MainActor func anEmptyHostHasNoInputTarget() throws {
+        let fixture = Fixture()
+        try #require(fixture.hint.present(in: fixture.parent))
+        defer { fixture.hint.dismiss(animated: false) }
+        #expect(fixture.hint.accessoryRect.isEmpty)
+        #expect(fixture.hint.hitTest(NSPoint(x: 20, y: 400)) == nil)
+    }
+
+    @Test @MainActor func aRetiringChildRefusesInput() throws {
+        let fixture = Fixture()
+        try #require(fixture.hint.present(in: fixture.parent))
+        fixture.hint.dismiss(animated: true)
+        #expect(fixture.hint.hitTest(NSPoint(x: fixture.hint.bodyRect.midX, y: fixture.hint.bodyRect.midY)) == nil)
+    }
+
+    @Test @MainActor func anImmediateDismissalRemovesTheChildAndAnOldCompletionCannotRetireAReplacement() throws {
+        let fixture = Fixture()
+        try #require(fixture.hint.present(in: fixture.parent))
+        let first = try #require(fixture.parent.childWindows?.first)
+        fixture.hint.dismiss(animated: true)
+        let replacement = ShortcutPriorityHintView(title: "Close Tab", shortcut: "⌘W", canEdit: true, theme: SpaceTheme(),
+            basicBackground: nil, clock: fixture.clock.clock, makeWindow: { frame in
+                let child = Window(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+                child.key = false
+                return child
+            }, reduceMotion: { false })
+        try #require(replacement.present(in: fixture.parent))
+        fixture.clock.fire(ParcToastTiming.retirement)
+        #expect(first.parent == nil && first.contentView == nil)
+        #expect(replacement.originalWindow === fixture.parent && replacement.window?.parent === fixture.parent)
+        replacement.dismiss(animated: false)
+        #expect(fixture.parent.childWindows?.isEmpty == true)
+        #expect(!replacement.present(in: fixture.parent))
+    }
+
+    @Test @MainActor func hidingTheHostConsumesTheCueOnceAndRetiresIt() throws {
+        let fixture = Fixture()
+        try #require(fixture.hint.present(in: fixture.parent))
+        var dismissals = 0
+        fixture.hint.onDismiss = { dismissals += 1 }
+        fixture.hint.isHidden = true
+        #expect(dismissals == 1)
+        #expect(fixture.hint.isRetiring && fixture.hint.window == nil)
+    }
+
+    @Test @MainActor func detachingTheHostRetiresTheCue() throws {
+        let fixture = Fixture()
+        try #require(fixture.hint.present(in: fixture.parent))
+        fixture.hint.removeFromSuperview()
+        #expect(fixture.hint.isRetiring && fixture.hint.window == nil)
+    }
+}

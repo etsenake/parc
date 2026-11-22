@@ -155,3 +155,100 @@ extension RecentSwitcherPresentationTests {
         #expect(chosen == expected)
     }
 }
+
+extension RecentSwitcherPresentationTests {
+    @Test @MainActor func fiveCardsKeepTheOriginalPanelSizeAndCardMetrics() {
+        let parent = NSRect(x: 50, y: 70, width: 1200, height: 800)
+        let screen = NSRect(x: 0, y: 0, width: 1440, height: 1000)
+        let frame = RecentTabSwitcherView.panelFrame(itemCount: 5, parent: parent, screen: screen)
+        #expect(abs(RecentTabSwitcherView.Metrics.cardWidth - 181.7) < 0.0001)
+        #expect(frame.height == 478)
+        #expect(abs(frame.width - 1228.5) < 0.0001)
+        #expect(frame.minX + 144 + 940.5 / 2 == parent.midX)
+        #expect(frame.minY + 168 + 95 == parent.midY)
+    }
+
+    @Test @MainActor func aNarrowParentScrollsHorizontally() {
+        let frame = RecentTabSwitcherView.panelFrame(itemCount: 5, parent: NSRect(x: 0, y: 0, width: 600, height: 700),
+                                                     screen: NSRect(x: 0, y: 0, width: 1440, height: 1000))
+        #expect(frame.width - 288 == 520)
+    }
+
+    @Test @MainActor func aSinglePaneItemDrawsFlat() {
+        let fixture = Fixture()
+        #expect(fixture.items[0].slots == nil)
+    }
+
+    @Test @MainActor func hoveringAndChoosingMapTheOriginalIdentityToItsCurrentItem() {
+        let fixture = Fixture()
+        var hovered: [Int] = [], chosen: [Int] = []
+        fixture.content.onHover = { hovered.append($0) }
+        fixture.content.onChoose = { chosen.append($0) }
+        fixture.content.hover("three")
+        fixture.content.choose("three")
+        fixture.content.choose("retired")
+        #expect(hovered == [2] && chosen == [2])
+    }
+
+    @Test @MainActor func anOwnerThatRefusesInteractionBlocksHoverAndChoice() {
+        let fixture = Fixture()
+        var hovered: [Int] = [], chosen: [Int] = []
+        fixture.content.onHover = { hovered.append($0) }
+        fixture.content.onChoose = { chosen.append($0) }
+        fixture.content.canInteract = { false }
+        fixture.content.choose("one")
+        fixture.content.hover("one")
+        #expect(hovered.isEmpty && chosen.isEmpty)
+    }
+
+    @Test @MainActor func aRemovedItemCannotBeChosen() {
+        let fixture = Fixture()
+        var chosen: [Int] = []
+        fixture.content.onChoose = { chosen.append($0) }
+        fixture.content.setItems([fixture.items[2], fixture.items[1]], focused: 1)
+        fixture.content.choose("one")
+        #expect(chosen.isEmpty)
+    }
+
+    @Test @MainActor func aHiddenReserveRefusesHoverChoiceAndFocus() {
+        let fixture = Fixture()
+        var items = fixture.items
+        items[2].isHidden = true
+        fixture.content.setItems(items, focused: 1)
+        var hovered: [Int] = [], chosen: [Int] = []
+        fixture.content.onHover = { hovered.append($0) }
+        fixture.content.onChoose = { chosen.append($0) }
+        fixture.content.hover("three")
+        fixture.content.choose("three")
+        fixture.content.focus(2)
+        #expect(hovered.isEmpty && chosen.isEmpty)
+        #expect(fixture.content.focusedID == nil)
+    }
+
+    @Test @MainActor func aPromotedReserveTakesTheFocusAndDispatchesItsPosition() {
+        let fixture = Fixture()
+        var items = fixture.items
+        items[2].isHidden = true
+        fixture.content.setItems(items, focused: 1)
+        items[2].isHidden = false
+        fixture.content.setItems(items, focused: 2)
+        var chosen: [Int] = []
+        fixture.content.onChoose = { chosen.append($0) }
+        fixture.content.choose("three")
+        #expect(fixture.content.focusedID == "three")
+        #expect(chosen == [2])
+    }
+
+    @Test @MainActor func retiringRevokesCallbacksAndFurtherMutation() {
+        let fixture = Fixture()
+        var chosen: [Int] = []
+        fixture.content.onChoose = { chosen.append($0) }
+        let focused = fixture.content.focusedID
+        fixture.content.retire()
+        fixture.content.choose("one")
+        fixture.content.focus(0)
+        #expect(chosen.isEmpty)
+        #expect(fixture.content.focusedID == focused)
+        #expect(fixture.content.canInteract == nil && fixture.content.onChoose == nil)
+    }
+}

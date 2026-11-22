@@ -12,8 +12,9 @@ struct MenuCommandAvailabilityTests {
     @MainActor private final class Target: NSObject, NSMenuItemValidation {
         let owner: Owner
         var received: NSMenuItem?
+        var runs = 0
         init(owner: Owner) { self.owner = owner }
-        @objc func showReleaseNotes(_ item: NSMenuItem) { received = item }
+        @objc func showReleaseNotes(_ item: NSMenuItem) { received = item; runs += 1 }
         func validateMenuItem(_ item: NSMenuItem) -> Bool { owner.isKeyWindow }
     }
 
@@ -83,5 +84,25 @@ struct MenuCommandAvailabilityTests {
         fixture.menu.removeItem(fixture.item)
         #expect(!fixture.registry.canPerformMenuCommand(retained))
         #expect(fixture.row == nil)
+    }
+
+    @Test @MainActor func aKeyGatedRowIsOfferedAndRunsOnceWhileTheFieldHasFocus() throws {
+        let fixture = Fixture()
+        let field = NSTextField(frame: NSRect(x: 20, y: 20, width: 200, height: 22))
+        fixture.owner.contentView?.addSubview(field)
+        try #require(fixture.owner.makeFirstResponder(field))
+        let row = try #require(fixture.row)
+        #expect(fixture.registry.canPerformMenuCommand(row))
+        #expect(fixture.registry.performMenuCommand(row))
+        #expect(fixture.target.runs == 1)
+    }
+
+    @Test @MainActor func aBrowserThatIsNotKeyIsNotOfferedTheRow() throws {
+        let fixture = Fixture()
+        let row = try #require(fixture.row)
+        fixture.owner.key = false
+        #expect(!fixture.registry.canPerformMenuCommand(row))
+        #expect(!fixture.registry.performMenuCommand(row))
+        #expect(fixture.target.runs == 0)
     }
 }
