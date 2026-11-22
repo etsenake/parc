@@ -318,6 +318,7 @@ import ParcCore
         toolbar.layoutSubtreeIfNeeded()
         let site = toolbar.subviews.compactMap { $0 as? BrowserToolbarActionButton }
             .first { $0.parcTooltip?.label == "Site Control Center" }!
+        site.reducesMotion = { false }
         return Fixture(toolbar: toolbar, window: window, site: site, surface: site.layer!.sublayers!.first!)
     }
 
@@ -328,7 +329,6 @@ import ParcCore
     }
 
     private func glyphAlpha(_ button: NSButton) -> CGFloat { button.contentTintColor?.alphaComponent ?? 0 }
-    private var motion: Bool { !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     @Test func theThreeActionButtonsShareTheTopBarStyleAndParcTooltips() {
         let f = fixture()
@@ -388,10 +388,20 @@ import ParcCore
         f.site.updateTrackingAreas()
         f.site.mouseEntered(with: hover(f.site))
         #expect(f.site.isHovered && abs(f.surface.opacity - 0.05) < 0.00001)
-        if motion { #expect(abs((f.surface.animation(forKey: "toolbar-action-opacity")?.duration ?? 0) - 0.18) < 0.00001) }
+        #expect(abs((f.surface.animation(forKey: "toolbar-action-opacity")?.duration ?? 0) - 0.18) < 0.00001)
         try #require(f.site.cell).highlight(true, withFrame: f.site.bounds, in: f.site)
         #expect(f.site.isPressed && abs(f.surface.opacity - 0.09) < 0.00001)
-        if motion { #expect(abs((f.surface.animation(forKey: "toolbar-action-opacity")?.duration ?? 0) - 0.16) < 0.00001) }
+        #expect(abs((f.surface.animation(forKey: "toolbar-action-opacity")?.duration ?? 0) - 0.16) < 0.00001)
+        f.window.close()
+    }
+
+    @Test func reduceMotionShowsTheHoverSurfaceWithoutAFade() {
+        let f = fixture()
+        f.site.reducesMotion = { true }
+        f.site.updateTrackingAreas()
+        f.site.mouseEntered(with: hover(f.site))
+        #expect(f.site.isHovered && f.surface.opacity > 0)
+        #expect(f.surface.animation(forKey: "toolbar-action-opacity") == nil)
         f.window.close()
     }
 
@@ -426,7 +436,7 @@ import ParcCore
         f.site.isEnabled = true
         f.site.updateTrackingAreas()
         #expect(f.site.isHovered && f.surface.opacity > 0)
-        if motion { #expect(f.surface.animation(forKey: "toolbar-action-opacity") != nil) }
+        #expect(f.surface.animation(forKey: "toolbar-action-opacity") != nil)
         f.window.close()
     }
 

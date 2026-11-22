@@ -10,7 +10,7 @@ struct SidebarFocusTests {
     @MainActor private final class Registry {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         var file: URL { directory.appendingPathComponent("keyboard-shortcuts.json") }
-        let registry = KeyboardShortcuts()
+        let registry = KeyboardShortcuts(mainMenu: { nil }, observesKeyboardLayout: false)
         let reveal = NSMenuItem(title: "Reveal Current Tab", action: NSSelectorFromString("focusSidebar:"), keyEquivalent: " ")
         let other = NSMenuItem(title: "Other", action: NSSelectorFromString("other:"), keyEquivalent: "")
 
@@ -38,6 +38,7 @@ struct SidebarFocusTests {
     @Test func aFreshInstallationReceivesTheRecoveredDefault() throws {
         let fixture = try Registry()
         #expect(fixture.registry.shortcut(for: "focusSidebar:") == chord)
+        #expect(fixture.registry.activeShortcut(for: "focusSidebar:") == chord)
     }
 
     @Test func theDefaultPassesTheOriginalRegistryValidation() {
@@ -55,6 +56,7 @@ struct SidebarFocusTests {
         let fixture = try Registry()
         try fixture.write(["other:": fixture.encoded(chord)])
         #expect(fixture.registry.shortcut(for: "focusSidebar:") == nil)
+        #expect(fixture.registry.activeShortcut(for: "focusSidebar:") == nil)
     }
 
     @Test func theOriginalCustomOwnerRemains() throws {
@@ -104,6 +106,7 @@ struct SidebarFocusTests {
         let fixture = try Registry()
         try fixture.write([:])
         #expect(fixture.registry.shortcut(for: "focusSidebar:") == chord)
+        #expect(fixture.registry.activeShortcut(for: "focusSidebar:") == chord)
     }
 
     @Test func explicitResetAllRestoresTheCurrentDefault() throws {

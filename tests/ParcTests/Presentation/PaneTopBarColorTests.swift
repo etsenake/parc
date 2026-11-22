@@ -28,10 +28,10 @@ import ParcEngineDoubles
         toolbar.layoutSubtreeIfNeeded()
         let site = toolbar.subviews.compactMap { $0 as? BrowserToolbarActionButton }
             .first { $0.parcTooltip?.label == "Site Control Center" }!
+        toolbar.reducesMotion = { false }
         return Fixture(toolbar: toolbar, window: window, site: site)
     }
 
-    private var motion: Bool { !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     private let black = NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
     private let theme = NSColor(srgbRed: 0.02, green: 0.447, blue: 0.925, alpha: 1)
     private let background = NSColor(srgbRed: 0.059, green: 0.059, blue: 0.059, alpha: 1)
@@ -57,12 +57,23 @@ import ParcEngineDoubles
         f.window.close()
     }
 
+    @Test func reduceMotionSwapsALaterColorWithoutACrossfade() {
+        let f = fixture()
+        f.toolbar.reducesMotion = { true }
+        let page = NSObject()
+        f.toolbar.setPageColor(NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1), for: page)
+        f.toolbar.setPageColor(black, for: page)
+        #expect(f.toolbar.layer?.animation(forKey: "page-color") == nil)
+        #expect(f.shown == black)
+        f.window.close()
+    }
+
     @Test func aLaterColorForTheSameContentCrossfades() {
         let f = fixture()
         let page = NSObject()
         f.toolbar.setPageColor(NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1), for: page)
         f.toolbar.setPageColor(black, for: page)
-        if motion { #expect(abs((f.toolbar.layer?.animation(forKey: "page-color")?.duration ?? 0) - 0.18) < 0.00001) }
+        #expect(abs((f.toolbar.layer?.animation(forKey: "page-color")?.duration ?? 0) - 0.18) < 0.00001)
         #expect(f.shown == black)
         f.window.close()
     }

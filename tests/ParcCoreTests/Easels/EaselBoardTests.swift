@@ -322,11 +322,10 @@ struct EaselBoardTests {
 
 @MainActor final class EaselBoardBacklinkIndexTests {
     let clock = NoteManualClock()
-    let files: NoteFiles
     let folder: URL
+    lazy var files = NoteFileTestSupport.files(clock: clock)
 
     init() {
-        files = NoteFileTestSupport.files(clock: clock)
         folder = NoteFileTestSupport.makeFolder("easel-backlinks")
     }
 
@@ -341,7 +340,7 @@ struct EaselBoardTests {
         let session = try store.create(title: "Plans")
         let linked = EaselBoardTests.linked("Roadmap", to: note.absoluteString)
         try session.perform("Add") { $0.items = [linked] }
-        let index = NoteBacklinkIndex(files: files)
+        let index = files.backlinks
         index.include(store)
         clock.advance(2)
         let found = index.backlinks(to: note)

@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-@Suite(.serialized) @MainActor final class EaselTabIconsTests {
+@MainActor final class EaselTabIconsTests {
     let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3uoAAAAASUVORK5CYII=")!
     let root: URL
     let notes: URL
@@ -12,7 +12,6 @@ import Testing
     var cancellables: [AnyCancellable] = []
 
     init() {
-        EaselTabIcons.worker = .inline
         root = NoteFileTestSupport.makeFolder("easel-tab-icons")
         notes = NoteFileTestSupport.makeFolder("easel-tab-icon-notes")
     }
@@ -24,6 +23,7 @@ import Testing
 
     func icons(_ store: EaselStore) -> EaselTabIcons {
         let icons = EaselTabIcons()
+        icons.worker = .inline
         let directory = store.directory
         let notes = notes
         icons.directory = { _ in directory }
