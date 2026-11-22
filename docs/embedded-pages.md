@@ -94,6 +94,10 @@ history-swipe handler. Note shortcuts stay out of a focused page: Find, Find
 Next, Find Previous and Use Selection for Find search the page with its own find
 bar, as in an Easel, and Find and Replace is off.
 
+An Easel page keeps its layout at every canvas zoom. Chromium sizes it from the object's own
+bounds, so it lays out at the object's size, scales with the canvas and takes clicks where it is
+drawn; zooming never reflows it into a smaller viewport.
+
 Easel blocks in notes reuse this scroll latch for their canvas. Their webpage
 objects and live captures are pages in the note's own pool, so they share the
 note tab's window, Profile, sleep, window moves and leave-page checks; each

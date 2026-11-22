@@ -158,7 +158,11 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
   in `chrome/browser/ui`, `chrome/browser/devtools` and `chrome/browser/extensions/api/tabs`.
   The gates sit at Chromium's private construction, deletion and navigation points.
 - **`native-page-retirement`**: only the unload-controller hooks, in `unload_controller.cc`.
-- **`native-embedded-pages`**: only the three restore-omission hooks, in the three sessions files.
+- **`native-embedded-pages`**: the three restore-omission hooks, in the three sessions files, and
+  one line in `render_widget_host_view_cocoa.mm` that sizes a page from its own bounds rather than
+  its size in the window. An Easel zooms its pages with the canvas's magnification, and Chromium
+  otherwise laid the page out at the zoomed size and drew it in a corner of its object. No observer
+  or delegate sees that measurement; an unscaled view gets the same size as before.
 - **`native-host-direct`**: the profile-removal and deletion hooks, capture-picker revocation and
   capture-indicator fixes and tab previews. Touches 9 files, including `profile_manager.cc`,
   `delete_profile_helper.cc`, `desktop_media_picker.cc`, `media_stream_capture_indicator.cc` and

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 795,
+  "version": 796,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -3812,7 +3812,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-embedded-pages.patch",
-      "sha256": "7fc4f1edd204c972c423cd20376ed0712c256ad902a10c8b0ac3a1067afdb47f",
+      "sha256": "a134d67220eaf178ae2dc4a4b75cdf869000400543e6444827e1d50febbd7195",
       "files": [
         {
           "target": "components/sessions/content/session_tab_helper.cc",
@@ -3828,6 +3828,11 @@
           "target": "chrome/browser/sessions/session_service_base.cc",
           "before_sha256": "c0953fb7c294d695a11481ebe3180f434cf2e632a5f566837f18f0d3829ac478",
           "after_sha256": "b52f82ad759a289fa182f7ea8b26a8116a9056ecfbeb91199524e3e529efbf09"
+        },
+        {
+          "target": "content/app_shim_remote_cocoa/render_widget_host_view_cocoa.mm",
+          "before_sha256": "a4a368964cd1f8b903635dfa00da9f3836ee11e9edd9a90ed21f608c72bd082b",
+          "after_sha256": "f79bf2b599767a84111e8fe368528f6e9f1f096da52514a868eb7603778a7a5d"
         }
       ]
     },
