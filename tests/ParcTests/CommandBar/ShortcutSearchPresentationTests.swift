@@ -144,11 +144,11 @@ extension ShortcutSearchPresentationTests {
 }
 
 extension ShortcutSearchPresentationTests {
-    private func scroll(_ fixture: Fixture) throws -> NSScrollView {
+    @MainActor private func scroll(_ fixture: Fixture) throws -> NSScrollView {
         try #require(fixture.view.subviews.compactMap { $0 as? NSScrollView }.first)
     }
 
-    private func icon(_ fixture: Fixture) throws -> NSImageView {
+    @MainActor private func icon(_ fixture: Fixture) throws -> NSImageView {
         try #require(fixture.header.subviews.compactMap { $0 as? NSImageView }.first)
     }
 
