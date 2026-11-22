@@ -496,6 +496,28 @@ import Testing
         #expect(scene.commits == 0)
         #expect(scene.split.arrangedSubviews.map(\.frame) == scene.originalFrames)
     }
+
+    @Test func aTextReceiversTerminalCollapseRemovesItsPassiveRegion() throws {
+        let scene = Scene()
+        var complete: (@MainActor () -> Void)?
+        scene.split.registerDropRegionCompletion = { complete = $0 }
+        let receiver = LocalContentDropTextView(frame: scene.pageA.body.bounds)
+        scene.pageA.body.addSubview(receiver)
+        scene.place(NSPoint(x: 1, y: 200))
+        try #require(receiver.draggingEntered(scene.drag) == .copy)
+        let region = try #require(scene.split.subviews.first { $0 !== scene.pageA && $0 !== scene.pageB })
+        scene.place(NSPoint(x: 200, y: 200))
+        receiver.draggingExited(scene.drag)
+        try #require(scene.host.draggingEntered(scene.drag) == .copy)
+        receiver.draggingEnded(scene.drag)
+        try #require(region.superview === scene.split)
+        let finishCollapse = try #require(complete)
+
+        finishCollapse()
+
+        #expect(region.superview == nil)
+        #expect(scene.split.subviews == [scene.pageA, scene.pageB])
+    }
 }
 
 @MainActor private final class HeaderScene {

@@ -290,6 +290,23 @@ import Testing
         #expect(lease.reusedRegion == !scene.reduceMotion)
     }
 
+    @Test func aReenteredRegionSurvivesItsOldCollapseCompletion() throws {
+        let scene = Scene()
+        var complete: (@MainActor () -> Void)?
+        scene.split.registerDropRegionCompletion = { complete = $0 }
+        let lease = scene.lease()
+        _ = scene.leftEdge(lease)
+        let region = try #require(scene.region())
+        _ = scene.leave(lease)
+        let finishCollapse = try #require(complete)
+        _ = scene.leftEdge(lease)
+
+        finishCollapse()
+
+        #expect(region.superview === scene.split)
+        #expect(region.layer?.opacity == 1)
+    }
+
     @Test func clearingSynchronouslyRemovesTheBorderAndItsAnimation() throws {
         let scene = Scene()
         let lease = scene.lease()
@@ -606,6 +623,23 @@ import Testing
         #expect(lease.ended)
         #expect(!lease.isCurrent)
         #expect(scene.split.arrangedSubviews.map(\.frame) == before)
+    }
+
+    @Test func thePassiveCollapseCompletionRemovesItsOwnRegion() throws {
+        let scene = Scene()
+        var complete: (@MainActor () -> Void)?
+        scene.split.registerDropRegionCompletion = { complete = $0 }
+        let lease = scene.lease()
+        _ = scene.leftEdge(lease)
+        let region = try #require(scene.region())
+        lease.end(animated: true)
+        try #require(region.superview === scene.split)
+        let finishCollapse = try #require(complete)
+
+        finishCollapse()
+
+        #expect(region.superview == nil)
+        #expect(scene.split.subviews == scene.panes)
     }
 
     @Test func theOriginalWindowResigningKeyClearsTheTerminalBorderAndTransition() {
