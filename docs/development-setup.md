@@ -260,6 +260,9 @@ depends on it.
 no AppKit or engine dependency. `ParcTests` (in `tests/ParcTests`) tests the `Parc`
 app library with `@testable import Parc`. The app's code is the `Parc` library; the `ParcMain` executable only calls its launch function, so tests load the app's code without starting the app. Put a test in the lowest target that
 can reach the code under test, in a folder named for its feature area.
+`ParcCore` declarations are `internal` unless `Parc` or `ParcMain` uses them;
+mark one `package` only when app code needs it. Tests reach internal
+declarations through `@testable import`, so a test never needs `package`.
 
 Sparkle is a package dependency on the official `sparkle-project/Sparkle`
 package, pinned to the exact version in `Package.resolved`, so a fresh clone
