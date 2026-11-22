@@ -44,6 +44,7 @@ private let canvasSide = NSSize(width: 32, height: 32)
 
     init(style: ExtensionControlStyle = .sidebar) {
         button = ExtensionActionButton(item: controlItem("a"), style: style)
+        button.appearance = NSAppearance(named: .aqua)
         window.contentView?.addSubview(button)
         button.frame = NSRect(origin: .zero, size: style.surfaceSize)
     }
@@ -282,8 +283,9 @@ private let canvasSide = NSSize(width: 32, height: 32)
         view.frame.size.width = 28
         view.needsLayout = true
         view.layoutSubtreeIfNeeded()
-        #expect(try #require(button(view, "a")).isHidden)
-        #expect(try !#require(button(view, "b")).isHidden)
+        let a = try #require(button(view, "a")), b = try #require(button(view, "b"))
+        #expect(a.isHidden)
+        #expect(!b.isHidden)
     }
 
     @Test func aRemovedPinIsDetachedAndDisabled() throws {
