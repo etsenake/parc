@@ -199,7 +199,7 @@ extension LiveBindingTests {
         return button.accessibilityHelp()
     }
 
-    @Test func aTooltipAppendsTheBindingWhenThereIsOne() {
+    @Test @MainActor func aTooltipAppendsTheBindingWhenThereIsOne() {
         #expect(KeyboardShortcuts.toolTip("Hide sidebar", shortcut: KeyboardShortcut(key: "s", flags: .command)) == "Hide sidebar ⌘S")
         #expect(KeyboardShortcuts.toolTip("Hide sidebar", shortcut: nil) == "Hide sidebar")
     }

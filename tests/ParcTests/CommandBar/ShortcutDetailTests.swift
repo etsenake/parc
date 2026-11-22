@@ -190,7 +190,8 @@ extension ShortcutDetailTests {
     @MainActor private func labels(_ fixture: Fixture) -> [NSTextField] { fixture.view.subviews.compactMap { $0 as? NSTextField } }
 
     @MainActor private func table(_ view: ShortcutsSettingsView) throws -> NSTableView {
-        try #require(view.subviews.compactMap { ($0 as? NSScrollView)?.documentView as? NSTableView }.first)
+        let found: NSTableView? = view.subviews.compactMap { ($0 as? NSScrollView)?.documentView as? NSTableView }.first
+        return try #require(found)
     }
 
     @MainActor private func cell(_ id: String, in view: ShortcutsSettingsView) throws -> NSView {
@@ -601,7 +602,8 @@ extension ShortcutDetailTests {
 
         init() throws {
             let fixture = try Fixture()
-            let box = SnapshotBox([try #require(fixture.registry.shortcut(for: "closeTab:"))])
+            let closeBinding = try #require(fixture.registry.shortcut(for: "closeTab:"))
+            let box = SnapshotBox([closeBinding])
             self.fixture = fixture
             self.box = box
             view = ShortcutsSettingsView(shortcuts: fixture.registry, systemShortcutProvider: { box.value })
@@ -625,7 +627,8 @@ extension ShortcutDetailTests {
         warnings.view.selectCommand("captureFullPage:")
         let proposed = try recorder("captureFullPage:", in: warnings.view)
         proposed.onBegin?()
-        #expect(proposed.onChange?(try #require(registry.shortcut(for: "closeTab:"))) == true)
+        let closeBinding = try #require(registry.shortcut(for: "closeTab:"))
+        #expect(proposed.onChange?(closeBinding) == true)
         let conflicted = try cell("captureFullPage:", in: warnings.view)
         let reveal = try #require(conflicted.subviews.compactMap { $0 as? NSButton }.first)
         #expect(reveal.frame.size == NSSize(width: 16, height: 16) && reveal.contentTintColor == .systemRed)
@@ -650,7 +653,8 @@ extension ShortcutDetailTests {
         warnings.view.selectCommand("captureFullPage:")
         let proposed = try recorder("captureFullPage:", in: warnings.view)
         proposed.onBegin?()
-        _ = proposed.onChange?(try #require(registry.shortcut(for: "closeTab:")))
+        let closeBinding = try #require(registry.shortcut(for: "closeTab:"))
+        _ = proposed.onChange?(closeBinding)
         let action = try #require(warnings.view.moreMenu()?.items.first)
         let revision = registry.revision
         warnings.window.permitsCommands = false

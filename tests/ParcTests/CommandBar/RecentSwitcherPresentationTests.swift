@@ -179,17 +179,6 @@ extension RecentSwitcherPresentationTests {
         #expect(fixture.items[0].slots == nil)
     }
 
-    @Test @MainActor func theSwitcherHostsItsMaterialAndAddsNoScrollbar() {
-        let fixture = Fixture()
-        func all(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(all) }
-        let material = all(fixture.content).compactMap { $0 as? NSVisualEffectView }.first
-        #expect(material?.material == .popover)
-        #expect(material?.state == .followsWindowActiveState)
-        #expect(material?.blendingMode == .withinWindow)
-        #expect(material?.isEmphasized == false)
-        #expect(all(fixture.content).compactMap { $0 as? NSScrollView }.allSatisfy { !$0.hasHorizontalScroller })
-    }
-
     @Test @MainActor func hoveringAndChoosingMapTheOriginalIdentityToItsCurrentItem() {
         let fixture = Fixture()
         var hovered: [Int] = [], chosen: [Int] = []

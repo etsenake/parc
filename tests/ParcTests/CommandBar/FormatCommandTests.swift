@@ -84,6 +84,13 @@ struct FormatCommandTests {
 }
 
 extension FormatCommandTests {
+    static let collisionRows: [(String, String, NSEvent.ModifierFlags)] = [
+            ("newTab:", "t", .command), ("restoreTab:", "t", [.command, .shift]), ("downloads:", "j", [.command, .shift]),
+            ("goBack:", "[", .command), ("goForward:", "]", .command), ("zoomIn:", "+", .command), ("zoomOut:", "-", .command),
+            ("copyCurrentURL:", "c", [.command, .shift]), ("inspectElements:", "c", [.command, .option]),
+            ("nextTab", "}", .command), ("previousTab", "{", .command),
+        ]
+
     @MainActor private final class ParcTarget: NSObject, NSMenuItemValidation {
         func validateMenuItem(_ item: NSMenuItem) -> Bool { true }
         @objc func parcCommand(_ sender: Any?) {}
@@ -96,12 +103,6 @@ extension FormatCommandTests {
     }
 
     @MainActor private final class Bench {
-        static let collisions: [(String, String, NSEvent.ModifierFlags)] = [
-            ("newTab:", "t", .command), ("restoreTab:", "t", [.command, .shift]), ("downloads:", "j", [.command, .shift]),
-            ("goBack:", "[", .command), ("goForward:", "]", .command), ("zoomIn:", "+", .command), ("zoomOut:", "-", .command),
-            ("copyCurrentURL:", "c", [.command, .shift]), ("inspectElements:", "c", [.command, .option]),
-            ("nextTab", "}", .command), ("previousTab", "{", .command),
-        ]
         static let expected: [TextFormatCommand: KeyboardShortcut] = [
             .bold: .init(key: "b", flags: .command), .italic: .init(key: "i", flags: .command),
             .underline: .init(key: "u", flags: .command),
@@ -143,7 +144,7 @@ extension FormatCommandTests {
 
         private func build(target: AnyObject?) {
             menu.removeAllItems()
-            for (id, key, flags) in Self.collisions {
+            for (id, key, flags) in FormatCommandTests.collisionRows {
                 let item = NSMenuItem(title: id, action: #selector(ParcTarget.parcCommand(_:)), keyEquivalent: key)
                 item.keyEquivalentModifierMask = flags
                 item.target = parc
@@ -205,10 +206,10 @@ extension FormatCommandTests {
         for (command, chord) in Bench.expected { #expect(KeyboardShortcuts.formatShortcuts[command.bindingID] == chord) }
     }
 
-    @Test(arguments: Bench.collisions.indices)
+    @Test(arguments: FormatCommandTests.collisionRows.indices)
     @MainActor func aParcCommandKeepsItsChordAgainstFormatting(index: Int) throws {
         let bench = try Bench()
-        let (id, key, flags) = Bench.collisions[index]
+        let (id, key, flags) = FormatCommandTests.collisionRows[index]
         let chord = KeyboardShortcut(key: key, flags: flags)
         #expect(!bench.registry.isConflicting(id))
         #expect(Bench.chord(bench.menu.items.first { $0.title == id }) == chord)

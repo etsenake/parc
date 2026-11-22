@@ -72,7 +72,7 @@ extension NumberRowTests {
         injected(base: digits, shift: ["!", "@", "#", "$", "%", "^", "&", "*", "(", ")"], extra: [12: ("q", "Q")])
     }
 
-    private static func key(_ code: UInt16, _ characters: String, _ flags: NSEvent.ModifierFlags) -> NSEvent {
+    @MainActor private static func key(_ code: UInt16, _ characters: String, _ flags: NSEvent.ModifierFlags) -> NSEvent {
         CommandBarTestSupport.keyEvent(code, flags, characters: characters)
     }
 

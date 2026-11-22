@@ -191,7 +191,7 @@ extension FindPresentationTests {
         #expect(PageFindResultPresentation.matches(ordinal: 2, total: 4).canAdvance)
     }
 
-    @Test func placingTheBarDoesNotMoveThePageItSitsOver() {
+    @Test @MainActor func placingTheBarDoesNotMoveThePageItSitsOver() {
         let page = NSRect(x: 228, y: 9, width: 1000, height: 700)
         var copy = page
         #expect(PageFindView.frame(in: page) == NSRect(x: 918, y: 19, width: 300, height: 32))

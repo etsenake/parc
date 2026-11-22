@@ -100,6 +100,8 @@ extension KeypadShortcutTests {
         @objc func deliver(_ sender: NSMenuItem) { delivered.append(sender.title) }
     }
 
+    private struct CaptureFailure: Error {}
+
     @MainActor private final class Bench {
         static let legacy: [String: [String: Any]] = [
             "rowCustom:": record("1", [.control, .option]),
@@ -157,9 +159,11 @@ extension KeypadShortcutTests {
         var shiftEight: NSEvent { key(28, "*", [.command, .option, .shift]) }
 
         func bindAll() throws {
-            try registry.set(try #require(KeyboardShortcut.capture(keypadOne)), for: "keypadCommand:")
-            try registry.set(try #require(KeyboardShortcut.capture(clear)), for: "clearCommand:")
-            try registry.set(try #require(KeyboardShortcut.capture(keypadStar)), for: "starCommand:")
+            let pairs: [(NSEvent, String)] = [(keypadOne, "keypadCommand:"), (clear, "clearCommand:"), (keypadStar, "starCommand:")]
+            for (event, id) in pairs {
+                guard let chord = KeyboardShortcut.capture(event) else { throw CaptureFailure() }
+                try registry.set(chord, for: id)
+            }
         }
     }
 
