@@ -18,6 +18,7 @@ final class TabCloseFade {
         let timer = Timer(timeInterval: delay, repeats: false) { _ in MainActor.assumeIsolated { body() } }
         RunLoop.main.add(timer, forMode: .common)
     }
+    var hop: (@escaping () -> Void) -> Void = { work in DispatchQueue.main.async { work() } }
     var passesInput: ((Bool) -> Void)?
     var returnFocus: ((NSResponder?) -> Void)?
     var onRequestClose: (() -> Void)?
@@ -66,7 +67,7 @@ final class TabCloseFade {
         let effects = transition.hide()
         apply(effects.filter { $0 != .requestClose })
         if effects.contains(.requestClose), let request = onRequestClose {
-            DispatchQueue.main.async { request() }
+            hop { request() }
         }
     }
 
