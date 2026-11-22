@@ -30,11 +30,14 @@ package final class EaselTabIcons {
     private var reading: Set<String> = []
     private var followed: [ObjectIdentifier: Followed] = [:]
     private var subscriptions: [AnyCancellable] = []
+    private let files: NoteFiles
 
-    package init() {
+    package init(files: NoteFiles? = nil) {
+        let files = files ?? .shared
+        self.files = files
         subscriptions = [
-            NoteEmojiLibrary.anyChange.sink { [weak self] _ in self?.resolveAgain() },
-            NoteFolderPreferences.changes.sink { [weak self] _ in self?.resolveAgain() },
+            files.emojiChanges.sink { [weak self] _ in self?.resolveAgain() },
+            files.folders.changes.sink { [weak self] _ in self?.resolveAgain() },
             NotificationCenter.default.publisher(for: .easelDocumentRemoved).sink { [weak self] note in
                 guard let id = note.object as? UUID else { return }
                 self?.forget(id)
@@ -134,7 +137,7 @@ package final class EaselTabIcons {
         case .emoji:
             return .emoji(icon.value)
         case .custom:
-            return notesFolder(directory).flatMap { NoteEmojiLibrary.library(root: $0).imageURL(named: icon.value) }
+            return notesFolder(directory).flatMap { files.emojiLibrary(root: $0).imageURL(named: icon.value) }
                 .map { .image(URL(fileURLWithPath: $0.path, isDirectory: false)) }
         case .image:
             return store(directory)?.assetFileURL(icon.value).map { .image(URL(fileURLWithPath: $0.path, isDirectory: false)) }
