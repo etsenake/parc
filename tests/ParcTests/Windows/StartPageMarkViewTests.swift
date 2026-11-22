@@ -43,7 +43,7 @@ private func same(_ a: CGColor?, _ b: CGColor?) -> Bool {
     return x.count == 4 && y.count == 4 && zip(x, y).allSatisfy { abs($0 - $1) < 1e-4 }
 }
 
-private func tint(_ theme: SpaceTheme) -> CGColor {
+@MainActor private func tint(_ theme: SpaceTheme) -> CGColor {
     let palette = ThemeChromePalette(theme: theme, isDark: false)
     guard theme.isValid, theme.colorCount > 0 else { return palette.foregroundSecondary.cgColor }
     return palette.maxContrastColor.cgColor.copy(alpha: StartPageMarkView.tintAlpha)!

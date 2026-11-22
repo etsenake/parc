@@ -88,7 +88,7 @@ struct TaffyStretchTests {
         #expect(near(TaffyStretch.elongation(0.001) / 0.001, TaffyStretch.resistance, 1e-3))
     }
 
-    @Test(arguments: stride(from: CGFloat(5), through: 2000, by: 5))
+    @Test(arguments: (1...400).map { CGFloat($0 * 5) })
     func theStretchGrowsWithThePullAndNeverPassesItsReach(distance: CGFloat) {
         let value = TaffyStretch.elongation(distance)
         #expect(value > TaffyStretch.elongation(distance - 5) && value < TaffyStretch.reach)

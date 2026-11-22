@@ -50,7 +50,7 @@ private func stop(_ layer: CALayer, _ key: String, sourceLocation: SourceLocatio
 }
 
 @MainActor struct TaffyAnimatorTests {
-    private struct Rig {
+    @MainActor private struct Rig {
         let stage = CALayer()
         let flipped = CALayer()
         let animator = TaffyAnimator()
