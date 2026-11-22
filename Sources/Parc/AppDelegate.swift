@@ -137,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var spaceCommandWindow: BrowserWindowController? {
         windows.first { $0.ownsSpaceCommandFocus }
     }
+    lazy var splitCommandWindow: () -> BrowserWindowController? = { [weak self] in self?.spaceCommandWindow }
 
     private var browserWindowCommandOwner: BrowserWindowController? {
         windows.first { $0.ownsWindowCommandFocus && $0.windowCommandSecurityAvailable }
@@ -1819,7 +1820,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return education.canActivateCommand(NSStringFromSelector(action))
         }
         if let command = splitCommand(for: item.action) {
-            guard let owner = spaceCommandWindow else { item.representedObject = nil; return false }
+            guard let owner = splitCommandWindow() else { item.representedObject = nil; return false }
             return owner.prepareSplitMenuItem(item, command: command, preservingTarget: splitMenuIsTracking)
         }
         if let expanded = folderDisclosure(for: item.action) {
@@ -2645,7 +2646,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 }
                 guard let command = splitCommand(for: item.action) else { continue }
                 item.representedObject = nil
-                item.isEnabled = spaceCommandWindow?.prepareSplitMenuItem(item, command: command,
+                item.isEnabled = splitCommandWindow()?.prepareSplitMenuItem(item, command: command,
                     preservingTarget: false) ?? false
             }
             return
