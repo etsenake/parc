@@ -17,7 +17,7 @@ struct LibraryArchivePresentationTests {
             let manual = store.open("https://manual.example.test")
             store.closeTabs([auto], reason: .automatic)
             store.closeTabs([manual], reason: .manual)
-            view = LibraryView(store: store, kind: .archive, profileID: store.activeSpace.profileID, reduceMotion: { true })
+            view = LibraryView(store: store, kind: .archive, profileID: store.activeSpace.profileID, files: IsolatedNoteFiles.make(), reduceMotion: { true })
             window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 460, height: 540),
                               styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false

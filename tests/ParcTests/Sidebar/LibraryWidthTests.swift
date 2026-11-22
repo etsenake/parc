@@ -37,7 +37,7 @@ struct LibraryWidthTests {
         init() throws {
             store = try BrowserStore(directory: directory)
             profile = store.state.profiles[0].id
-            library = LibraryView(store: store, kind: .archive, profileID: profile, scheduleReload: reloads.schedule)
+            library = LibraryView(store: store, kind: .archive, profileID: profile, files: IsolatedNoteFiles.make(), scheduleReload: reloads.schedule)
             reloads.deliver()
             library.onContentWidthChange = { [weak self] in
                 guard let self else { return }
@@ -59,7 +59,7 @@ struct LibraryWidthTests {
         }
 
         func page(_ kind: LibraryView.Kind) -> LibraryView {
-            let page = LibraryView(store: store, kind: kind, profileID: profile, scheduleReload: reloads.schedule)
+            let page = LibraryView(store: store, kind: kind, profileID: profile, files: IsolatedNoteFiles.make(), scheduleReload: reloads.schedule)
             reloads.deliver()
             return page
         }

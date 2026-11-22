@@ -17,7 +17,7 @@ struct LibraryArchiveHeaderTests {
             _ = NSApplication.shared
             store = try BrowserStore(directory: directory)
             profile = store.state.profiles[0].id
-            archive = LibraryView(store: store, kind: kind, profileID: profile, reduceMotion: { true })
+            archive = LibraryView(store: store, kind: kind, profileID: profile, files: IsolatedNoteFiles.make(), reduceMotion: { true })
             archive.frame = NSRect(x: 0, y: 0, width: width, height: 600)
             window = NSWindow(contentRect: archive.frame, styleMask: .titled, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -97,7 +97,7 @@ struct LibraryArchiveHeaderTests {
     @MainActor @Test func theDownloadsSearchStartsWhereTheArchivesDoesAndRunsToThePageInset() throws {
         let fixture = try Fixture()
         defer { fixture.teardown() }
-        let downloads = LibraryView(store: fixture.store, kind: .downloads, profileID: fixture.profile, reduceMotion: { true })
+        let downloads = LibraryView(store: fixture.store, kind: .downloads, profileID: fixture.profile, files: IsolatedNoteFiles.make(), reduceMotion: { true })
         downloads.frame = fixture.archive.frame
         let host = NSWindow(contentRect: downloads.frame, styleMask: .titled, backing: .buffered, defer: false)
         host.isReleasedWhenClosed = false

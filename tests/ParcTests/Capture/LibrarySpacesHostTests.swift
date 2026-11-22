@@ -14,7 +14,7 @@ struct LibrarySpacesHostTests {
         init() throws {
             _ = NSApplication.shared
             store = try BrowserStore(directory: directory)
-            view = LibraryView(store: store, kind: .spaces, profileID: store.activeSpace.profileID, reduceMotion: { true })
+            view = LibraryView(store: store, kind: .spaces, profileID: store.activeSpace.profileID, files: IsolatedNoteFiles.make(), reduceMotion: { true })
             view.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
             window = NSWindow(contentRect: view.frame, styleMask: .titled, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false

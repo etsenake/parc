@@ -47,7 +47,7 @@ struct LibraryArchiveRowsTests {
                 let tab = store.open("https://hover-only.example.invalid")
                 store.closeTabs([tab])
             }
-            view = LibraryView(store: store, kind: .archive, profileID: profile, reduceMotion: { true })
+            view = LibraryView(store: store, kind: .archive, profileID: profile, files: IsolatedNoteFiles.make(), reduceMotion: { true })
             view.frame = NSRect(x: 0, y: 0, width: 416, height: 600)
             window = KeyedWindow(contentRect: view.frame, styleMask: .titled, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false

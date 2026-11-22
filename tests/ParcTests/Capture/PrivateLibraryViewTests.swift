@@ -81,7 +81,7 @@ struct PrivateLibraryViewTests {
 
     @MainActor private func privateRail(_ fixture: Fixture) -> (LibraryView, NSWindow) {
         fixture.privateStore.recordPrivateDownload(fixture.record)
-        let rail = LibraryView(store: fixture.privateStore, kind: .documents, profileID: fixture.privateID, reduceMotion: { true })
+        let rail = LibraryView(store: fixture.privateStore, kind: .documents, profileID: fixture.privateID, files: IsolatedNoteFiles.make(), reduceMotion: { true })
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 512, height: 590), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = rail
@@ -255,7 +255,7 @@ struct PrivateLibraryViewTests {
         let privateStore = BrowserStore(privateParentProfileID: merged.profile, engineProfilePath: merged.path, directory: privateDir,
                                         settings: merged.store.state.settings)
         let rail = LibraryView(store: privateStore, kind: .downloads, profileID: privateStore.activeSpace.profileID,
-                               downloadStore: merged.store, reduceMotion: { true })
+                               downloadStore: merged.store, files: IsolatedNoteFiles.make(), reduceMotion: { true })
         let privateWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 512, height: 590), styleMask: [.titled], backing: .buffered, defer: false)
         privateWindow.isReleasedWhenClosed = false
         privateWindow.contentView = rail
@@ -346,7 +346,7 @@ struct PrivateLibraryViewTests {
                                          preferencesAreEphemeral: true, systemFolders: { [] })
         let context = LibraryView.PrivateMediaContext(store: fixture.store, profileID: fixture.profile, media: media, isValid: valid)
         return LibraryView(store: fixture.privateStore, kind: .downloads, profileID: fixture.privateID, downloadStore: fixture.store,
-                           privateMediaContext: context, reduceMotion: { true })
+                           privateMediaContext: context, files: IsolatedNoteFiles.make(), reduceMotion: { true })
     }
 
     @MainActor @Test func privateDownloadsDoesNotEagerlyInitializeMedia() throws {

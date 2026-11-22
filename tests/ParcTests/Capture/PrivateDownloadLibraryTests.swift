@@ -107,7 +107,7 @@ extension PrivateDownloadLibraryTests {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
         let store = fixture.privateStore()
-        let library = LibraryView(store: store, kind: .documents, profileID: store.activeSpace.profileID)
+        let library = LibraryView(store: store, kind: .documents, profileID: store.activeSpace.profileID, files: IsolatedNoteFiles.make())
         #expect(library.kind == .downloads)
         #expect(library.accessibilityLabel() == "Downloads")
         #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("Private").path))
@@ -118,7 +118,7 @@ extension PrivateDownloadLibraryTests {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
         let store = fixture.privateStore()
-        let library = LibraryView(store: store, kind: .downloads, profileID: store.activeSpace.profileID)
+        let library = LibraryView(store: store, kind: .downloads, profileID: store.activeSpace.profileID, files: IsolatedNoteFiles.make())
         library.show(category)
         #expect(library.kind == .downloads)
     }
