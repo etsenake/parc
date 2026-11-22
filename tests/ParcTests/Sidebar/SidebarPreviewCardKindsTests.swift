@@ -43,7 +43,7 @@ struct SidebarPreviewCardKindsTests {
         let r = Recents(provider: provider)
         let buttons = all(r.card, NSButton.self)
         #expect(buttons.map { $0.accessibilityLabel() ?? "" } == ["New Page", "Previews Settings"])
-        buttons.forEach { $0.performClick(nil) }
+        buttons.forEach { $0.sendClick() }
         #expect(r.created == [URL(string: "https://notion.so/new")!] && r.settings == 1)
     }
 
@@ -121,7 +121,7 @@ struct SidebarPreviewCardKindsTests {
         #expect(all(p.card, NSScrollView.self).isEmpty && p.resized == 0)
         let buttons = all(p.card, NSButton.self)
         #expect(buttons.map { $0.accessibilityLabel() ?? "" } == ["Open in Split View"])
-        buttons.forEach { $0.performClick(nil) }
+        buttons.forEach { $0.sendClick() }
         #expect(p.actions == [.split])
     }
 

@@ -710,7 +710,7 @@ struct SidebarSpaceHeaderTests {
         let header = editing()
         header.field.isEditable = true
         let began = header.window.makeFirstResponder(header.field)
-        header.button.performClick(nil)
+        header.button.sendClick()
         #expect(began && header.window.firstResponder === header.window)
     }
 

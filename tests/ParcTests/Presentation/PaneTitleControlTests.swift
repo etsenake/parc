@@ -158,10 +158,10 @@ import Testing
         let (control, _) = title()
         var actions = 0
         control.actionBlock = { actions += 1 }
-        control.performClick(nil)
+        control.sendClick()
         #expect(actions == 1)
         control.isEnabled = false
-        control.performClick(nil)
+        control.sendClick()
         #expect(actions == 1)
     }
 

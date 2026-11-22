@@ -142,7 +142,7 @@ import ParcCore
         update(toolbar, insecure: true)
         let recorder = Recorder()
         toolbar.onAction = { action, _ in recorder.actions.append(action) }
-        splitControl(toolbar, .insecure).performClick(nil)
+        splitControl(toolbar, .insecure).sendClick()
         #expect(recorder.actions.isEmpty)
     }
 
@@ -152,7 +152,7 @@ import ParcCore
         let window = hosted(toolbar)
         let recorder = Recorder()
         toolbar.onAction = { action, anchor in recorder.actions.append(action); recorder.anchors.append(anchor) }
-        splitControl(toolbar, .insecure).performClick(nil)
+        splitControl(toolbar, .insecure).sendClick()
         #expect(recorder.actions.count == 1)
         guard case .siteInsecure = try #require(recorder.actions.first) else {
             Issue.record("The lock sent another action")
@@ -273,7 +273,7 @@ import ParcCore
         let toolbar = toolbar()
         let recorder = Recorder()
         toolbar.onAction = { _, _ in recorder.invocations += 1 }
-        try #require(named(toolbar, "Copy Current URL") as? NSButton).performClick(nil)
+        try #require(named(toolbar, "Copy Current URL") as? NSButton).sendClick()
         #expect(recorder.invocations == 1)
     }
 
@@ -284,7 +284,7 @@ import ParcCore
         update(toolbar, enabled: false, recorder: recorder)
         toolbar.updateExtensionItems([item(recorder)])
         #expect(toolbar.extensionToolbar.subviews.isEmpty)
-        pin.performClick(nil)
+        pin.sendClick()
         #expect(recorder.invocations == 0)
     }
 
@@ -293,7 +293,7 @@ import ParcCore
         let recorder = Recorder()
         toolbar.onAction = { _, _ in recorder.invocations += 1 }
         toolbar.invalidate()
-        try #require(named(toolbar, "Copy Current URL") as? NSButton).performClick(nil)
+        try #require(named(toolbar, "Copy Current URL") as? NSButton).sendClick()
         #expect(recorder.invocations == 0)
     }
 }

@@ -61,14 +61,14 @@ struct SidebarPlusMenuLayoutTests {
     func clickingAnAvailableRowPerformsIt(action: SidebarPlusAction) throws {
         var chosen: SidebarPlusAction?
         let view = SidebarPlusMenuView(rows: rows, colors: neutral) { chosen = $0 }
-        try #require(buttons(view).first { $0.row.action == action }).performClick(nil)
+        try #require(buttons(view).first { $0.row.action == action }).sendClick()
         #expect(chosen == action)
     }
 
     @Test func clickingAnUnavailableNewNoteDoesNothing() throws {
         var chosen: SidebarPlusAction?
         let view = SidebarPlusMenuView(rows: privateRows, colors: neutral) { chosen = $0 }
-        try #require(buttons(view).first { $0.row.action == .note }).performClick(nil)
+        try #require(buttons(view).first { $0.row.action == .note }).sendClick()
         #expect(chosen == nil)
     }
 
@@ -77,7 +77,7 @@ struct SidebarPlusMenuLayoutTests {
         var dismissed = false
         let view = SidebarPlusMenuView(rows: rows, colors: neutral, dismiss: { dismissed = true }) { chosen = $0 }
         view.acceptsActions = false
-        buttons(view).last?.performClick(nil)
+        buttons(view).last?.sendClick()
         view.keyDown(with: escape)
         #expect(chosen == nil)
         #expect(!dismissed)
@@ -271,7 +271,7 @@ struct SidebarPlusMenuControllerTests {
                                                        windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "",
                                                        isARepeat: false, keyCode: 53)!)
         case .row:
-            opened.rowButtons.last?.performClick(nil)
+            opened.rowButtons.last?.sendClick()
         case .outsideClick:
             try #require(opened.panel).resignKey()
         case .parentClose:

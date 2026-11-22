@@ -269,7 +269,7 @@ struct SidebarWindowButtonsTests {
         closing.contentView?.addSubview(lights)
         #expect(!closing.isKeyWindow)
         #expect(!other.isKeyWindow)
-        lights.buttons[0].performClick(nil)
+        lights.buttons[0].sendClick()
         #expect(closing.closes == 1)
         #expect(other.closes == 0)
     }
