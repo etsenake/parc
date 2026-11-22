@@ -161,4 +161,30 @@ extension NavigationPipelineTests {
                                                      unavailable: [closing.id, retiring.id, transferring.id], isPopupWindow: false)
         #expect(eligible.map(\.id) == [other.id])
     }
+
+    @Test func aPopupCannotSwitchToAnOtherwiseEligibleTab() {
+        let candidate = tab("https://example.test/")
+        let eligible = CommandBarTabEligibility.tabs([candidate], profileID: candidate.profileID, excluding: nil,
+                                                     unavailable: [], isPopupWindow: true)
+        #expect(eligible.isEmpty)
+    }
+
+    @Test @MainActor func anIdleRefreshKeepsThePublishedRowUsable() throws {
+        let query = "youtube.com"
+        let address = "https://www.youtube.com/"
+        let fixture = try Fixture(query: query)
+        defer { fixture.bar.dismiss(restoreFocus: false) }
+        fixture.publish(query, results: [["url": address, "title": query, "type": "url-what-you-typed"], search(query)])
+        let row = try #require(fixture.bar.tableView(NSTableView(), rowViewForRow: 0) as? CommandResultRowView)
+        let press = try #require(row.onPress)
+        let click = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [],
+            timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+        var opened: URL?
+        fixture.bar.onSearchNavigation = { opened = $0.url }
+
+        fixture.bar.reconcileExtensionActions()
+
+        #expect(press(click))
+        #expect(opened == URL(string: address))
+    }
 }
