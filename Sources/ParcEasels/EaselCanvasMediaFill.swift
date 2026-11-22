@@ -1,5 +1,6 @@
 import AppKit
 import ParcCore
+import ParcNotes
 
 extension EaselCanvasView {
     private func fillTarget(_ id: UUID) -> EaselItem? {
@@ -43,25 +44,41 @@ extension EaselCanvasView {
 
     func fillPlaceholder(fromDrop sender: NSDraggingInfo) -> Bool? {
         let point = convert(sender.draggingLocation, from: nil)
-        guard fixedCanvasSize == nil, let item = items.last(where: { item in
-            item.isEmptyPlaceholder && item.kind.isMedia && !item.isLocked
-                && NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height).contains(point)
+        guard let item = items.last(where: { item in
+            Self.fillsFromPasteboard(item) && NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height).contains(point)
         }) else { return nil }
-        let board = sender.draggingPasteboard
-        if let urls = board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], let url = urls.first {
+        return fillPlaceholder(item, from: sender.draggingPasteboard)
+    }
+
+    func fillSelectedPlaceholder(from board: NSPasteboard, at point: NSPoint?) -> Bool? {
+        guard selection.count == 1, let id = selection.first, let item = items.first(where: { $0.id == id }),
+              Self.fillsFromPasteboard(item) else { return nil }
+        if let point, !NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height).contains(point) { return nil }
+        return fillPlaceholder(item, from: board)
+    }
+
+    private static func fillsFromPasteboard(_ item: EaselItem) -> Bool {
+        item.isEmptyPlaceholder && !item.isLocked && (item.kind.isMedia || item.kind == .link || item.kind == .browser)
+    }
+
+    private func fillPlaceholder(_ item: EaselItem, from board: NSPasteboard) -> Bool? {
+        guard fixedCanvasSize == nil, !viewOnly, !session.isClosed else { return nil }
+        let reading = NoteClipboard.read(board)
+        if item.kind.isMedia, let url = reading.files.first {
             fillMedia(item.id, fileURL: url)
             return true
         }
-        if item.kind == .image, let data = board.data(forType: Self.gifPasteboardType) ?? board.data(forType: .png) ?? board.data(forType: .tiff) {
+        if item.kind == .image, let data = pastedImageData(board, reading) {
             do { try fillImage(item.id, data: data) } catch { onError?(error) }
             return true
         }
-        if let link = (board.readObjects(forClasses: [NSURL.self], options: nil) as? [URL])?.first,
-           let scheme = link.scheme?.lowercased(), scheme == "http" || scheme == "https" {
-            if !hostedObjects.contains(where: { $0.fillHosted(item.id, link: link) }) { fillMediaLink(item.id, url: link) }
-            return true
+        let dropped = (board.readObjects(forClasses: [NSURL.self], options: nil) as? [URL])?.first {
+            ["http", "https"].contains($0.scheme?.lowercased() ?? "")
         }
-        return nil
+        guard let link = dropped ?? (try? EaselClipboardURL.read(from: board)) else { return nil }
+        if item.kind == .link || item.kind == .browser { return fillWebObject(item.id, url: link) }
+        if !hostedObjects.contains(where: { $0.fillHosted(item.id, link: link) }) { fillMediaLink(item.id, url: link) }
+        return true
     }
 
     func fillMedia(_ id: UUID, data: Data, fileExtension: String, fileName: String?) {

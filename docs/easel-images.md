@@ -24,7 +24,8 @@ click elsewhere leaves it empty, Delete removes it, and exports skip it.
 YouTube, Vimeo and Loom links pasted into a video turn it into an Embed with
 its player, as a note decides.
 
-Dropping or pasting files anywhere else adds them straight away: pictures,
+Pasting with an empty object selected fills it the same way, as a note fills a
+selected empty block. Dropping or pasting files anywhere else adds them straight away: pictures,
 videos, audio (M4A, MP3, WAV, AAC, AIFF), PDFs and any other file become Image,
 Video, Audio, PDF and File objects, several at once laid out in one tidy row
 around the drop point as one Undo step. Each kind is checked by its first bytes,
@@ -38,6 +39,18 @@ limit is aborted, with the same too-big message a dropped file gets. A file's
 extension and type decide what it is; its first bytes are only used when the
 extension is unknown.
 
+A paste reads the clipboard in the order a note does: copied files come first,
+so a picture copied in Finder arrives as itself rather than as the file icon
+Finder also puts on the clipboard, and a Markdown note file becomes a note
+mention. Then a picture with no words beside it, then blocks copied from a note:
+image, video, audio, file and PDF blocks become the matching objects (copied
+from the note's Attachments folder, never from outside it, keeping alt text,
+crop, mask and Unsplash credit), a capture block becomes a captured webpage
+card, and a bookmark or embed block becomes a bookmark or webpage. HTML that
+holds only pictures adds those pictures;
+any other copied text stays a text object. Pasted pictures and files land where
+Paste Here or the drop points, or in the middle of the view.
+
 ### Pictures
 
 Image in the toolbar's Media ▾ menu places an empty image, like a note's empty
@@ -49,8 +62,8 @@ a portrait iPhone photo stands up straight, and animated GIFs keep their own
 bytes so they can still play. The store checks each file's first bytes against
 its type before writing it and refuses anything over 30 MB, pictures larger
 than 16,384 pixels on a side or 80 million pixels in all, and anything it can't
-decode. A new picture lands near the middle of the view at up to 480 points
-wide. Pasting prefers GIF data over PNG or TIFF when an app offers both, so a
+decode. A new picture lands in the middle of the view, or where it was dropped,
+at up to 480 points wide. Pasting prefers GIF data over PNG or TIFF when an app offers both, so a
 GIF copied from a web page stays animated.
 
 ## Cropping

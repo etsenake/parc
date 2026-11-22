@@ -29,7 +29,11 @@ extension EaselCanvasView {
     func dropSidebarDocument(_ sender: NSDraggingInfo) -> Bool? {
         guard let drag = sidebarDocumentDrag(sender.draggingPasteboard), let link = documentLink(for: drag.address),
               let url = URL(string: link) else { return nil }
-        let title = documentTitle(for: drag)
+        return withObjectMotion(.appear) { insertDocumentLink(url, title: documentTitle(for: drag), at: convert(sender.draggingLocation, from: nil)) }
+    }
+
+    @discardableResult
+    func insertDocumentLink(_ url: URL, title: String, at point: NSPoint?) -> Bool {
         let style = EaselTextStyle(family: session.document.resolvedDefaultFamily)
         let typing = EaselTextAppearance.attributed(title, style: style, color: insertionColor).attributes(at: 0, effectiveRange: nil)
         var attributes = typing
@@ -42,11 +46,24 @@ extension EaselCanvasView {
         }
         do {
             let styled = try EaselStyledText.capture(value, style: style, color: insertionColor)
-            let point = convert(sender.draggingLocation, from: nil)
-            return withObjectMotion(.appear) { insert(kind: .text, text: value.string, styledText: styled, at: point) }
+            return insert(kind: .text, text: value.string, styledText: styled, at: point)
         } catch {
             onError?(error)
             return false
         }
+    }
+
+    func importPastedFiles(_ urls: [URL], at point: NSPoint?) throws {
+        let notes = fixedCanvasSize == nil ? urls.filter { NoteFileKind(url: $0) == .markdown } : []
+        let media = urls.filter { !notes.contains($0) }
+        let shown = uncoveredVisibleRect
+        let anchor = point ?? NSPoint(x: shown.midX - 140, y: shown.midY)
+        for (index, note) in notes.enumerated() {
+            let title = note.deletingPathExtension().lastPathComponent
+            insertDocumentLink(note, title: title, at: NSPoint(x: anchor.x, y: anchor.y + CGFloat(index) * 40))
+        }
+        guard !media.isEmpty else { return }
+        let below = notes.isEmpty ? point : NSPoint(x: anchor.x + 140, y: anchor.y + CGFloat(notes.count) * 40 + 200)
+        try importMediaFiles(media, at: below)
     }
 }

@@ -17,7 +17,7 @@ extension NoteCaptureGeometry {
 }
 
 package enum NoteCaptureLive {
-    static func chromeItem(of block: NoteBlock) -> EaselItem? {
+    package static func chromeItem(of block: NoteBlock) -> EaselItem? {
         guard let capture = capture(of: block) else { return nil }
         var item = EaselItem(kind: .webCard, frame: EaselRect(x: 0, y: 0, width: 1, height: 1))
         item.url = capture.sourceURL

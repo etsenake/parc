@@ -10,24 +10,26 @@ protocol EaselCanvasPasteChoices: AnyObject {
 
 extension EaselCanvasView {
     @discardableResult
-    func pasteWebLink(_ url: URL, at point: NSPoint? = nil) -> Bool {
-        guard fixedCanvasSize == nil, !session.isClosed, EaselLinkPreviewData.isAddress(url.absoluteString) else { return false }
+    func pasteWebLink(_ url: URL, at point: NSPoint? = nil, as kind: EaselItemKind = .link, offersChoices: Bool = true) -> Bool {
+        guard fixedCanvasSize == nil, !session.isClosed, kind == .link || kind == .browser,
+              EaselLinkPreviewData.isAddress(url.absoluteString) else { return false }
         cancelPointerInteraction()
         guard finishEditing() else { return false }
         drawing = false
-        let size = EaselMediaPlacement.filledSize(for: .link)
+        let size = EaselMediaPlacement.filledSize(for: kind)
         let shown = uncoveredVisibleRect
         let centre = point.map { EaselPoint(x: $0.x, y: $0.y) } ?? EaselPoint(x: shown.midX, y: shown.midY)
         let frame = EaselMediaPlacement.resized(EaselRect(x: centre.x, y: centre.y, width: 0, height: 0), width: size.width, height: size.height)
         let top = session.document.items.map(\.zIndex).max() ?? 0
         guard top < Int.max else { return false }
-        let item = EaselItem(kind: .link, frame: frame, zIndex: top + 1, text: url.host ?? url.absoluteString,
+        let item = EaselItem(kind: kind, frame: frame, zIndex: top + 1, text: url.host ?? url.absoluteString,
                              url: url.absoluteString, color: insertionColor)
-        guard commit("Add bookmark", { $0.items.append(item) }) else { return false }
+        guard commit(kind == .link ? "Add bookmark" : "Add embed", { $0.items.append(item) }) else { return false }
         selection = [item.id]
         window?.makeFirstResponder(self)
         needsLayout = true
         layoutSubtreeIfNeeded()
+        guard offersChoices, kind == .link else { return true }
         hostedObjects.lazy.compactMap { $0 as? EaselCanvasPasteChoices }.first?.offerPasteChoices(for: item.id, url: url)
         return true
     }

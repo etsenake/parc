@@ -162,9 +162,10 @@ extension EaselCanvasView {
 
     @discardableResult
     func pasteHere(_ point: NSPoint?) -> Bool {
-        withObjectMotion(.appear) {
+        if let filled = fillSelectedPlaceholder(from: .general, at: point) { return filled }
+        return withObjectMotion(.appear) {
             if let pasted = pasteObjects(from: .general, at: point) { return pasted }
-            return readPasteboard(.general)
+            return readPasteboard(.general, at: point)
         }
     }
 

@@ -744,15 +744,15 @@ extension EaselCanvasView {
         return replaceSelectedImageFromPasteboard(sender.draggingPasteboard)
     }
 
-    private func pastedImageData(_ pasteboard: NSPasteboard) -> Data? {
-        if let data = pasteboard.data(forType: Self.gifPasteboardType) ?? pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff) {
-            return data
+    func pastedImageData(_ pasteboard: NSPasteboard, _ reading: NoteClipboard.Reading? = nil) -> Data? {
+        let reading = reading ?? NoteClipboard.read(pasteboard)
+        guard reading.files.isEmpty else {
+            guard reading.files.count == 1, let url = reading.files.first,
+                  let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey]), values.isRegularFile == true,
+                  values.contentType?.conforms(to: .image) == true, let size = values.fileSize, size <= EaselStore.maximumAssetBytes else { return nil }
+            return try? Data(contentsOf: url, options: .mappedIfSafe)
         }
-        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
-              urls.count == 1, let url = urls.first,
-              let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey]), values.isRegularFile == true,
-              values.contentType?.conforms(to: .image) == true, let size = values.fileSize, size <= EaselStore.maximumAssetBytes else { return nil }
-        return try? Data(contentsOf: url, options: .mappedIfSafe)
+        return pasteboard.data(forType: Self.gifPasteboardType) ?? reading.image
     }
 
     func preparedImageAsset(_ data: Data) throws -> (data: Data, type: EaselAssetType, pixelSize: CGSize) {
@@ -780,17 +780,27 @@ extension EaselCanvasView {
         return (output as Data, .png, CGSize(width: oriented.width, height: oriented.height))
     }
 
-    func insertImageData(_ data: Data) throws {
+    func insertImageData(_ data: Data, at point: NSPoint? = nil) throws {
         let asset = try preparedImageAsset(data)
         cancelPointerInteraction()
         guard finishEditing() else { throw EaselStoreError.invalidDocument("finish the current text edit") }
         if drawing { drawing = false }
+        let natural = (width: Double(asset.pixelSize.width), height: Double(asset.pixelSize.height))
+        let visible = fixedCanvasSize == nil ? uncoveredVisibleRect : visibleRect
+        let centre = point ?? NSPoint(x: visible.midX, y: visible.midY)
+        let frame: EaselRect
+        if fixedCanvasSize == nil {
+            let fitted = EaselMediaPlacement.filledSize(for: .image, natural: natural)
+            guard let placed = EaselMediaPlacement.row(of: [fitted], centredAt: EaselPoint(x: Double(centre.x), y: Double(centre.y))).first else {
+                throw EaselStoreError.invalidImage
+            }
+            frame = placed
+        } else {
+            let width = min(480.0, natural.width)
+            frame = EaselRect(x: 0, y: 0, width: width, height: max(1, width * natural.height / natural.width))
+        }
         let assetID = try session.importAsset(asset.data, type: asset.type)
-        let width = min(480.0, Double(asset.pixelSize.width))
-        let visible = visibleRect
-        var item = EaselItem(kind: .image, frame: EaselRect(x: max(24, visible.midX - width / 2), y: visible.minY + 70,
-                             width: width, height: max(1, width * Double(asset.pixelSize.height) / Double(asset.pixelSize.width))),
-                             zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1, assetID: assetID)
+        var item = EaselItem(kind: .image, frame: frame, zIndex: (session.document.items.map(\.zIndex).max() ?? 0) + 1, assetID: assetID)
         if let size = fixedCanvasSize {
             let ratio = min(1, size.width / item.frame.width, size.height / item.frame.height)
             item.frame.width *= ratio; item.frame.height *= ratio

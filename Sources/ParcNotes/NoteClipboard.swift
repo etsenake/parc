@@ -139,7 +139,7 @@ extension NoteClipboard {
         return (mime, parts.contains("base64"), comma)
     }
 
-    static func decodeDataURL(_ source: String) -> (data: Data, fileExtension: String)? {
+    package static func decodeDataURL(_ source: String) -> (data: Data, fileExtension: String)? {
         guard let header = mediaDataURLHeader(source) else { return nil }
         let mime = header.mime
         let payload = String(source[source.index(after: header.comma)...])
@@ -175,7 +175,7 @@ extension NoteClipboard {
         return (blocks.map(walk), failures)
     }
 
-    static func trustedMediaFolder(_ base: URL) -> URL? {
+    package static func trustedMediaFolder(_ base: URL) -> URL? {
         guard base.isFileURL else { return nil }
         let folder = NoteFilePaths.canonical(URL(fileURLWithPath: base.standardizedFileURL.path, isDirectory: true))
         let components = folder.pathComponents
@@ -186,7 +186,7 @@ extension NoteClipboard {
         return folder
     }
 
-    static func mayImportMedia(_ file: URL, from base: URL, trusted folder: URL) -> Bool {
+    package static func mayImportMedia(_ file: URL, from base: URL, trusted folder: URL) -> Bool {
         let root = URL(fileURLWithPath: base.standardizedFileURL.path, isDirectory: true).standardizedFileURL.pathComponents
         let path = file.standardizedFileURL.pathComponents
         guard path.count > root.count, Array(path.prefix(root.count)) == root,

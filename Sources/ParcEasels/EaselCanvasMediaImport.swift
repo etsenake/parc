@@ -13,6 +13,11 @@ struct EaselPreparedMedia {
     var fileExtension: String?
     var natural: (width: Double, height: Double)?
     var poster: CGImage?
+    var altText: String?
+    var crop: EaselRect?
+    var mask: EaselImageMask?
+    var credit: EaselMediaCredit?
+    var captured: EaselItem?
 }
 
 extension EaselCanvasView {
@@ -32,6 +37,10 @@ extension EaselCanvasView {
             return
         }
         if let firstError { onError?(firstError) }
+        try importPreparedMedia(prepared, at: point)
+    }
+
+    func importPreparedMedia(_ prepared: [EaselPreparedMedia], at point: NSPoint?) throws {
         if prepared.contains(where: { $0.source.needsFacts }) {
             let owner = window, document = session.document.id
             Task { @MainActor [weak self] in
@@ -137,13 +146,18 @@ extension EaselCanvasView {
         }
     }
 
-    private func commitMedia(_ entries: [EaselPreparedMedia], at point: NSPoint?) throws {
+    func commitMedia(_ entries: [EaselPreparedMedia], at point: NSPoint?) throws {
         cancelPointerInteraction()
         guard finishEditing() else { throw EaselStoreError.invalidDocument("finish the current text edit") }
         if drawing { drawing = false }
         var imported: [String] = []
         var items: [EaselItem] = []
-        let sizes = entries.map { EaselMediaPlacement.filledSize(for: $0.source.itemKind, natural: $0.natural) }
+        let sizes = entries.map { entry in
+            EaselMediaPlacement.filledSize(for: entry.source.itemKind, natural: entry.natural.map { natural in
+                guard let crop = entry.crop else { return natural }
+                return (natural.width * crop.width, natural.height * crop.height)
+            })
+        }
         let centre = point ?? NSPoint(x: visibleRect.midX, y: visibleRect.midY)
         let frames = EaselMediaImportPlan.layout(sizes, centre: EaselPoint(x: Double(centre.x), y: Double(centre.y)))
         let top = (session.document.items.map(\.zIndex).max() ?? 0) + 1
@@ -154,6 +168,23 @@ extension EaselCanvasView {
                 imported.append(assetID)
                 var item = EaselItem(kind: entry.source.itemKind, frame: frames[index], zIndex: top + index, assetID: assetID)
                 if entry.source.itemKind.takesFileName { item.fileName = entry.name }
+                if entry.source.itemKind == .image {
+                    item.crop = entry.crop
+                    item.mask = entry.mask
+                    item.credit = entry.credit
+                }
+                if entry.source.itemKind == .image || entry.source.itemKind == .video { item.altText = entry.altText }
+                if entry.source.itemKind == .image, let captured = entry.captured {
+                    item.kind = .webCard
+                    item.url = captured.url
+                    item.text = captured.text
+                    item.capturedAt = captured.capturedAt ?? Date()
+                    item.captureLayout = captured.captureLayout
+                    item.liveCapture = captured.captureLayout != nil && captured.liveCapture == true ? true : nil
+                    item.crop = nil
+                    item.mask = nil
+                    item.altText = nil
+                }
                 if let poster = entry.poster, let png = NSBitmapImageRep(cgImage: poster).representation(using: .png, properties: [:]),
                    let posterID = try? session.importAsset(png, type: .png) {
                     imported.append(posterID)

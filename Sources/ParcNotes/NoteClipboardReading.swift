@@ -17,7 +17,7 @@ package enum NoteClipboard {
     package struct Archive: Codable, Equatable {
         var version = 1
         package var blocks: [NoteBlock]
-        var base: URL?
+        package var base: URL?
         var inline: Bool
     }
 
@@ -30,8 +30,8 @@ package enum NoteClipboard {
 
     package struct Reading: Equatable {
         package var archive: Archive?
-        var files: [URL] = []
-        var image: Data?
+        package var files: [URL] = []
+        package var image: Data?
         var imageExtension: String?
         package var html: String?
         package var string: String?

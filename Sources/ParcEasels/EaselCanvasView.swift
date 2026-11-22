@@ -1322,7 +1322,6 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         cancelPointerInteraction(); guard finishEditing() else { return }; drawing = false; selection = [id]
         scrollToVisible(rect(item)); needsLayout = true; layoutSubtreeIfNeeded()
     }
-    func importImage(_ data: Data) throws { try insertImageData(data) }
     package func importImageFile(_ url: URL) throws { try importMediaFiles([url]) }
     func beginEditing(_ item: EaselItem, at point: NSPoint? = nil) {
         guard item.kind.holdsText || item.kind == .arrow, !item.isLocked else { return }
@@ -2273,8 +2272,15 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
     func readPasteboard(_ pasteboard: NSPasteboard, at point: NSPoint? = nil) -> Bool {
         if readTablePasteboard(pasteboard) { return true }
         do {
+            let reading = NoteClipboard.read(pasteboard)
+            if pasteboard.availableType(from: EaselClipboardText.privateTypes) == nil {
+                if !reading.files.isEmpty { try importPastedFiles(reading.files, at: point); return true }
+                let choice = NoteClipboard.choose(reading, plainOnly: false, canReadHTML: true)
+                if choice == .image, let data = pastedImageData(pasteboard, reading) { try insertImageData(data, at: point); return true }
+                if choice == .blocks || choice == .html, pasteNoteBlocks(reading, choice: choice, at: point) { return true }
+            }
             if let url = try EaselClipboardURL.read(from: pasteboard) {
-                if fixedCanvasSize == nil { return pasteWebLink(url) }
+                if fixedCanvasSize == nil { return pasteWebLink(url, at: point) }
                 return insert(kind: .text, text: url.absoluteString)
             }
             if pasteMermaid(from: pasteboard) { return true }
@@ -2285,10 +2291,8 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
             if let text = try EaselStyledText.read(from: pasteboard) {
                 return insert(kind: .text, text: text.text, styledText: text)
             }
-            if let data = pasteboard.data(forType: Self.gifPasteboardType) ?? pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff) { try importImage(data); return true }
-            if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
-                try importMediaFiles(urls, at: point); return true
-            }
+            if reading.files.isEmpty, let data = pastedImageData(pasteboard, reading) { try insertImageData(data, at: point); return true }
+            if !reading.files.isEmpty { try importPastedFiles(reading.files, at: point); return true }
             if let text = try EaselStyledText.plainText(from: pasteboard) { return insert(kind: .text, text: text) }
         } catch { onError?(error) }
         return false
