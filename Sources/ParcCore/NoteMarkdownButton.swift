@@ -1,17 +1,17 @@
 import Foundation
 
 package enum NoteMDButtonFormat {
-    package static let flag = "button"
+    static let flag = "button"
     static let insertKey = "insert"
     static let confirmKey = "confirm"
     static let openKey = "open"
 
-    package static func action(_ node: NoteMDBlock) -> NoteButtonAction? {
+    static func action(_ node: NoteMDBlock) -> NoteButtonAction? {
         guard node.kind == .html, let attributes = NoteMDAttributes.parse(NoteMDByte.string(node.content)) else { return nil }
         return action(attributes)
     }
 
-    package static func action(_ attributes: NoteMDAttributes) -> NoteButtonAction? {
+    static func action(_ attributes: NoteMDAttributes) -> NoteButtonAction? {
         guard attributes.kind == nil, !attributes.flags.contains(flag) else { return nil }
         if let value = attributes.values[insertKey] {
             return .insert(placement: NoteButtonPlacement(rawValue: value.lowercased()) ?? .below, blocks: [])
@@ -23,7 +23,7 @@ package enum NoteMDButtonFormat {
         return nil
     }
 
-    package static func marker(for action: NoteButtonAction) -> (String, String?) {
+    static func marker(for action: NoteButtonAction) -> (String, String?) {
         switch action {
         case .insert(let placement, _): return (insertKey, placement.rawValue)
         case .confirm(let message): return (confirmKey, message)
@@ -40,7 +40,7 @@ package enum NoteMDButtonFormat {
         [icon ?? "", name].filter { !$0.isEmpty }.joined(separator: " ")
     }
 
-    package static func name(fromLabel label: String, icon: String?) -> String {
+    static func name(fromLabel label: String, icon: String?) -> String {
         guard let icon, !icon.isEmpty else { return label }
         if label == icon { return "" }
         let prefix = icon + " "
@@ -49,7 +49,7 @@ package enum NoteMDButtonFormat {
 }
 
 extension NoteMDReader {
-    package func button(_ opener: DetailsOpener, label: NoteText, attributes: NoteMDAttributes, children: ArraySlice<NoteMDBlock>,
+    func button(_ opener: DetailsOpener, label: NoteText, attributes: NoteMDAttributes, children: ArraySlice<NoteMDBlock>,
                 trailing: Int) -> NoteBlock {
         var block = NoteBlock(.button)
         apply(attributes, to: &block)
@@ -100,7 +100,7 @@ extension NoteMDReader {
 }
 
 extension NoteMDWriter {
-    package func button(_ block: NoteBlock) -> [String] {
+    func button(_ block: NoteBlock) -> [String] {
         let button = block.buttonValue
         let icon = block.props.icon.flatMap { $0.isEmpty ? nil : $0 }
         var items: [(String, String?)] = [(NoteMDButtonFormat.flag, nil)]

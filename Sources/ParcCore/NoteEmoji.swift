@@ -3,7 +3,7 @@ import Foundation
 package enum NoteEmojiSkinTone: Int, CaseIterable, Codable {
     case none, light, mediumLight, medium, mediumDark, dark
 
-    package static let modifiers: ClosedRange<UInt32> = 0x1F3FB...0x1F3FF
+    static let modifiers: ClosedRange<UInt32> = 0x1F3FB...0x1F3FF
 
     package var modifier: Unicode.Scalar? {
         self == .none ? nil : Unicode.Scalar(Self.modifiers.lowerBound + UInt32(rawValue - 1))
@@ -41,7 +41,7 @@ package enum NoteEmojiCategory: String, CaseIterable {
         }
     }
 
-    package init(unicodeGroup: String) {
+    init(unicodeGroup: String) {
         switch unicodeGroup {
         case "Smileys & Emotion", "People & Body": self = .people
         case "Animals & Nature": self = .nature
@@ -57,21 +57,21 @@ package enum NoteEmojiCategory: String, CaseIterable {
 
 package struct NoteEmoji: Hashable {
     package let character: String
-    package let name: String
-    package let keywords: [String]
+    let name: String
+    let keywords: [String]
     let shortcodes: [String]
-    package let category: NoteEmojiCategory
+    let category: NoteEmojiCategory
     package let version: Double
     let skinToneVariants: [String]
-    package let order: Int
+    let order: Int
 
-    package var supportsSkinTones: Bool { skinToneVariants.count == 5 }
+    var supportsSkinTones: Bool { skinToneVariants.count == 5 }
 
     package var displayName: String { name.prefix(1).uppercased() + name.dropFirst() }
 
     package var shortcode: String { shortcodes.first ?? NoteEmojiCatalog.shortcode(fromName: name) }
 
-    package init(character: String, name: String, keywords: [String], shortcodes: [String], category: NoteEmojiCategory, version: Double, skinToneVariants: [String], order: Int) {
+    init(character: String, name: String, keywords: [String], shortcodes: [String], category: NoteEmojiCategory, version: Double, skinToneVariants: [String], order: Int) {
         self.character = character
         self.name = name
         self.keywords = keywords
@@ -95,7 +95,7 @@ package struct NoteEmoji: Hashable {
 
 @MainActor
 package final class NoteEmojiCatalog {
-    package static let recentsKey = "Parc.Notes.Emoji.Recents"
+    static let recentsKey = "Parc.Notes.Emoji.Recents"
     static let skinToneKey = "Parc.Notes.Emoji.SkinTone"
     static let recentsLimit = 36
     static let randomCategories: Set<NoteEmojiCategory> = [.people, .nature, .food, .activities, .travel, .objects]
@@ -116,21 +116,21 @@ package final class NoteEmojiCatalog {
         didSet { availableCache = nil }
     }
 
-    package init(url: URL?, defaults: UserDefaults = .standard) {
+    init(url: URL?, defaults: UserDefaults = .standard) {
         source = { url.flatMap { try? Data(contentsOf: $0, options: .mappedIfSafe) } }
         self.defaults = defaults
     }
 
-    package init(data: Data, defaults: UserDefaults = .standard) {
+    init(data: Data, defaults: UserDefaults = .standard) {
         source = { data }
         self.defaults = defaults
     }
 
     var isLoaded: Bool { !index.entries.isEmpty }
     var unicodeVersion: String { index.unicodeVersion }
-    package var all: [NoteEmoji] { index.entries }
+    var all: [NoteEmoji] { index.entries }
 
-    package var available: [NoteEmoji] {
+    var available: [NoteEmoji] {
         if let availableCache { return availableCache }
         let entries = index.entries
         let filtered = availability.map { check in entries.filter { check($0) } } ?? entries
@@ -138,7 +138,7 @@ package final class NoteEmojiCatalog {
         return filtered
     }
 
-    package func emoji(in category: NoteEmojiCategory) -> [NoteEmoji] {
+    func emoji(in category: NoteEmojiCategory) -> [NoteEmoji] {
         if category == .recents { return recents.compactMap { entry(for: $0) } }
         return available.filter { $0.category == category }
     }
@@ -194,7 +194,7 @@ package final class NoteEmojiCatalog {
         return random(using: &generator)
     }
 
-    package func random<Generator: RandomNumberGenerator>(using generator: inout Generator) -> NoteEmoji? {
+    func random<Generator: RandomNumberGenerator>(using generator: inout Generator) -> NoteEmoji? {
         let pool = available.filter { Self.randomCategories.contains($0.category) }
         return (pool.isEmpty ? available : pool).randomElement(using: &generator)
     }
@@ -208,7 +208,7 @@ package final class NoteEmojiCatalog {
         emoji.character(with: skinTone)
     }
 
-    package func applying(_ tone: NoteEmojiSkinTone, to character: String) -> String {
+    func applying(_ tone: NoteEmojiSkinTone, to character: String) -> String {
         entry(for: character)?.character(with: tone) ?? character
     }
 
@@ -255,7 +255,7 @@ package final class NoteEmojiCatalog {
         availability?(emoji) ?? true
     }
 
-    package nonisolated static func fold(_ text: String) -> String {
+    nonisolated static func fold(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: Locale(identifier: "en"))
             .replacingOccurrences(of: "\u{2019}", with: "'")
     }
@@ -266,11 +266,11 @@ package final class NoteEmojiCatalog {
         return String(scalars)
     }
 
-    package nonisolated static func shortcode(fromName name: String) -> String {
+    nonisolated static func shortcode(fromName name: String) -> String {
         words(in: fold(name).replacingOccurrences(of: "'", with: "")).joined(separator: "_")
     }
 
-    package nonisolated static func words(in text: String) -> [String] {
+    nonisolated static func words(in text: String) -> [String] {
         text.split { !$0.isLetter && !$0.isNumber }.map(String.init)
     }
 }
@@ -280,7 +280,7 @@ private struct NoteEmojiFile: Decodable {
         let name: String
         let emoji: [Entry]
 
-        package init(name: String, emoji: [Entry]) {
+        init(name: String, emoji: [Entry]) {
             self.name = name
             self.emoji = emoji
         }
@@ -293,7 +293,7 @@ private struct NoteEmojiFile: Decodable {
         let s: [String]?
         let v: Double
 
-        package init(e: String, n: String, k: [String]?, c: [String]?, s: [String]?, v: Double) {
+        init(e: String, n: String, k: [String]?, c: [String]?, s: [String]?, v: Double) {
             self.e = e
             self.n = n
             self.k = k

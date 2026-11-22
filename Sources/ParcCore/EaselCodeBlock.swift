@@ -37,7 +37,7 @@ package enum EaselCodeBlock {
         stored.flatMap(NoteCodeLanguage.named)?.id ?? NoteCodeLanguage.plainText.id
     }
 
-    package static func lineCount(_ code: String) -> Int {
+    static func lineCount(_ code: String) -> Int {
         code.utf16.reduce(1) { $1 == 10 ? $0 + 1 : $0 }
     }
 
@@ -89,9 +89,9 @@ package enum EaselCodeBlock {
 
 package struct EaselCodePalette: Equatable {
     package struct Swatch: Equatable {
-        package var fill: String
-        package var line: String
-        package var ink: String
+        var fill: String
+        var line: String
+        var ink: String
         package var syntax: [String: String]
 
         package init(fill: String, line: String, ink: String, syntax: [String: String]) {
@@ -102,7 +102,7 @@ package struct EaselCodePalette: Equatable {
         }
     }
     package var light: Swatch
-    package var dark: Swatch
+    var dark: Swatch
 
     package init(light: Swatch, dark: Swatch) {
         self.light = light
@@ -125,7 +125,7 @@ package struct EaselCodePalette: Equatable {
 extension EaselVectorExport {
     package static let codeFontFamily = "\"Space Mono\",ui-monospace,\"SF Mono\",Menlo,monospace"
 
-    package static func codeBlock(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
+    static func codeBlock(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
         let f = item.frame, radius = number(EaselCodeBlock.cornerRadius)
         let box = "x=\"" + number(f.x) + "\" y=\"" + number(f.y) + "\" width=\"" + number(f.width) + "\" height=\""
             + number(f.height) + "\" rx=\"" + radius + "\" ry=\"" + radius + "\""

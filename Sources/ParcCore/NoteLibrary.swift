@@ -2,9 +2,9 @@ import Combine
 import Foundation
 
 package struct NoteNewCover: Sendable {
-    package var data: Data
-    package var fileExtension: String
-    package var suggestedName: String
+    var data: Data
+    var fileExtension: String
+    var suggestedName: String
     package init(data: Data, fileExtension: String, suggestedName: String) {
         self.data = data
         self.fileExtension = fileExtension
@@ -14,16 +14,16 @@ package struct NoteNewCover: Sendable {
 
 @MainActor
 package final class NoteLibrary {
-    package struct Entry: Hashable, Sendable {
-        package var url: URL
-        package var title: String
-        package var icon: String?
-        package var snippet: String
-        package var modifiedAt: Date
-        package var size: Int
+    struct Entry: Hashable, Sendable {
+        var url: URL
+        var title: String
+        var icon: String?
+        var snippet: String
+        var modifiedAt: Date
+        var size: Int
         var foldedTitle: String
         var summarized = true
-        package init(url: URL, title: String, icon: String? = nil, snippet: String, modifiedAt: Date, size: Int, foldedTitle: String, summarized: Bool = true) {
+        init(url: URL, title: String, icon: String? = nil, snippet: String, modifiedAt: Date, size: Int, foldedTitle: String, summarized: Bool = true) {
             self.url = url
             self.title = title
             self.icon = icon
@@ -34,16 +34,16 @@ package final class NoteLibrary {
             self.summarized = summarized
         }
 
-        package var reference: NoteReference {
+        var reference: NoteReference {
             NoteReference(url: url, title: title, icon: icon, modifiedAt: modifiedAt, snippet: snippet)
         }
     }
 
-    package struct IndexedContent: Hashable, Sendable {
-        package var modifiedAt: Date
-        package var size: Int
-        package var folded: String
-        package init(modifiedAt: Date, size: Int, folded: String) {
+    struct IndexedContent: Hashable, Sendable {
+        var modifiedAt: Date
+        var size: Int
+        var folded: String
+        init(modifiedAt: Date, size: Int, folded: String) {
             self.modifiedAt = modifiedAt
             self.size = size
             self.folded = folded
@@ -58,9 +58,9 @@ package final class NoteLibrary {
     nonisolated private static let bundleExtensions: Set<String> = [
         "textbundle", "textpack", "app", "bundle", "framework", "plugin", "photoslibrary", "xcodeproj", "xcworkspace", "playground"]
 
-    package static var opened: PassthroughSubject<NoteLibrary, Never> { NoteFiles.shared.libraryOpened }
+    static var opened: PassthroughSubject<NoteLibrary, Never> { NoteFiles.shared.libraryOpened }
 
-    package static var known: [NoteLibrary] { NoteFiles.shared.knownLibraries }
+    static var known: [NoteLibrary] { NoteFiles.shared.knownLibraries }
 
     nonisolated static var defaultFolder: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -69,13 +69,13 @@ package final class NoteLibrary {
 
     package static func shared(folder: URL) -> NoteLibrary { NoteFiles.shared.library(folder: folder) }
 
-    package static func browsing(_ folder: URL) -> NoteLibrary { NoteFiles.shared.browsing(folder) }
+    static func browsing(_ folder: URL) -> NoteLibrary { NoteFiles.shared.browsing(folder) }
 
-    package static func library(for note: URL) -> NoteLibrary { NoteFiles.shared.library(for: note) }
+    static func library(for note: URL) -> NoteLibrary { NoteFiles.shared.library(for: note) }
 
-    package static func trash(_ url: URL) throws { try NoteFiles.shared.trash(url) }
+    static func trash(_ url: URL) throws { try NoteFiles.shared.trash(url) }
 
-    package static func rename(_ url: URL, to title: String) throws -> URL { try NoteFiles.shared.rename(url, to: title) }
+    static func rename(_ url: URL, to title: String) throws -> URL { try NoteFiles.shared.rename(url, to: title) }
 
     static func noteDidMove(from source: URL, to destination: URL) { NoteFiles.shared.noteDidMove(from: source, to: destination) }
 
@@ -136,11 +136,11 @@ package final class NoteLibrary {
         return Self.rank(query, entries: Array(entries.values), contents: contents, limit: limit).map(\.reference)
     }
 
-    package func notes(withSyncedOriginal anchor: String) -> [URL] {
+    func notes(withSyncedOriginal anchor: String) -> [URL] {
         syncedNotes(matching: ["synced id=\"" + anchor + "\""])
     }
 
-    package func notes(mentioningSynced anchor: String) -> [URL] {
+    func notes(mentioningSynced anchor: String) -> [URL] {
         syncedNotes(matching: ["synced id=\"" + anchor + "\"", "#" + anchor + "\""])
     }
 
@@ -157,14 +157,14 @@ package final class NoteLibrary {
         }.sorted { $0.path < $1.path }
     }
 
-    package func snippet(for url: URL) -> String? {
+    func snippet(for url: URL) -> String? {
         let file = NoteFilePaths.canonical(url)
         if let entry = entries[file.path], entry.summarized { return entry.snippet }
         guard let kind = NoteFileKind(url: file), NoteFilePaths.isOpenableFile(file) else { return nil }
         return NoteFileSummary.read(file, kind: kind).snippet
     }
 
-    package func refresh() {
+    func refresh() {
         folderChanged(events: [], broad: true)
     }
 
@@ -333,7 +333,7 @@ package final class NoteLibrary {
         }
     }
 
-    package nonisolated static func scan(folder: URL, recursive: Bool, previous: [String: Entry]) -> [String: Entry] {
+    nonisolated static func scan(folder: URL, recursive: Bool, previous: [String: Entry]) -> [String: Entry] {
         summarize(list(folder: folder, recursive: recursive, previous: previous))
     }
 
@@ -349,7 +349,7 @@ package final class NoteLibrary {
         return result
     }
 
-    package nonisolated static func entry(at url: URL, previous: Entry?) -> Entry? {
+    nonisolated static func entry(at url: URL, previous: Entry?) -> Entry? {
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
         guard NoteFileKind(url: url) != nil, let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true else { return nil }
         let modifiedAt = values.contentModificationDate ?? .distantPast
@@ -374,7 +374,7 @@ package final class NoteLibrary {
                      foldedTitle: fold(title), summarized: false)
     }
 
-    package nonisolated static func list(folder: URL, recursive: Bool, previous: [String: Entry], budget: Int = .max) -> [String: Entry] {
+    nonisolated static func list(folder: URL, recursive: Bool, previous: [String: Entry], budget: Int = .max) -> [String: Entry] {
         let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey, .isPackageKey, .contentModificationDateKey, .fileSizeKey]
         var options: FileManager.DirectoryEnumerationOptions = [.skipsHiddenFiles, .skipsPackageDescendants]
         if !recursive { options.insert(.skipsSubdirectoryDescendants) }
@@ -406,7 +406,7 @@ package final class NoteLibrary {
         return result
     }
 
-    package nonisolated static func index(_ entries: [Entry], previous: [String: IndexedContent]) -> [String: IndexedContent] {
+    nonisolated static func index(_ entries: [Entry], previous: [String: IndexedContent]) -> [String: IndexedContent] {
         var result: [String: IndexedContent] = [:]
         for entry in entries {
             let key = entry.url.path
@@ -421,22 +421,22 @@ package final class NoteLibrary {
         return result
     }
 
-    package nonisolated static func fold(_ text: String) -> String {
+    nonisolated static func fold(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
     }
 
-    package nonisolated static func newestFirst(_ entries: [Entry]) -> [Entry] {
+    nonisolated static func newestFirst(_ entries: [Entry]) -> [Entry] {
         entries.sorted { isNewer($0, than: $1) }
     }
 
-    package nonisolated static func isNewer(_ first: Entry, than second: Entry) -> Bool {
+    nonisolated static func isNewer(_ first: Entry, than second: Entry) -> Bool {
         if first.modifiedAt != second.modifiedAt { return first.modifiedAt > second.modifiedAt }
         let order = first.title.localizedStandardCompare(second.title)
         if order != .orderedSame { return order == .orderedAscending }
         return first.url.path < second.url.path
     }
 
-    package nonisolated static func rank(_ query: String, entries: [Entry], contents: [String: IndexedContent], limit: Int) -> [Entry] {
+    nonisolated static func rank(_ query: String, entries: [Entry], contents: [String: IndexedContent], limit: Int) -> [Entry] {
         let tokens = fold(query).split(whereSeparator: \.isWhitespace).map(String.init)
         guard !tokens.isEmpty else { return Array(newestFirst(entries).prefix(limit)) }
         let phrase = tokens.joined(separator: " ")
@@ -476,7 +476,7 @@ package final class NoteLibrary {
 extension NoteFiles {
     var knownLibraries: [NoteLibrary] { Array(libraries.values) + Array(shallowLibraries.values) }
 
-    package func library(folder: URL) -> NoteLibrary {
+    func library(folder: URL) -> NoteLibrary {
         let canonical = NoteFilePaths.canonical(folder)
         let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
         if let existing = libraries[key] { return existing }
@@ -495,7 +495,7 @@ extension NoteFiles {
         return library
     }
 
-    package func library(for note: URL) -> NoteLibrary {
+    func library(for note: URL) -> NoteLibrary {
         let containing = libraries.values.filter { $0.contains(note) }
         if let deepest = containing.max(by: { $0.folder.path.count < $1.folder.path.count }) { return deepest }
         let parent = NoteFilePaths.canonical(note.deletingLastPathComponent())
@@ -507,7 +507,7 @@ extension NoteFiles {
         return library
     }
 
-    package func trash(_ url: URL) throws {
+    func trash(_ url: URL) throws {
         let open = session(for: url)
         try? open?.flush()
         let file = NoteFilePaths.canonical(url)

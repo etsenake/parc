@@ -21,7 +21,7 @@ package enum SidebarHoverRegion: CaseIterable {
 package struct SidebarHoverInfo: Equatable {
     private var states: [SidebarHoverRegion: SidebarHoverState] = [:]
 
-    package init() {}
+    init() {}
     package subscript(region: SidebarHoverRegion) -> SidebarHoverState {
         get { states[region] ?? .none }
         set { states[region] = newValue == .none ? nil : newValue }
@@ -127,7 +127,7 @@ package enum SidebarHoverPresentationRule {
         package var isActive: Bool
         package var action: Action
 
-        package init(isActive: Bool, action: Action) {
+        init(isActive: Bool, action: Action) {
             self.isActive = isActive
             self.action = action
         }

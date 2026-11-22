@@ -4,9 +4,9 @@ package struct ProfileRemovalRecord: Codable, Equatable, Identifiable {
     package let id: UUID
     package let profileID: UUID
     package let profileName: String
-    package var fallbackProfileID: UUID?
+    var fallbackProfileID: UUID?
 
-    package init(id: UUID, profileID: UUID, profileName: String, fallbackProfileID: UUID? = nil) {
+    init(id: UUID, profileID: UUID, profileName: String, fallbackProfileID: UUID? = nil) {
         self.id = id
         self.profileID = profileID
         self.profileName = profileName
@@ -90,10 +90,10 @@ extension BrowserStore {
 
 @MainActor package final class ProfileWriteReservation {
     private var release: (() -> Void)?
-    package init(release: @escaping () -> Void) { self.release = release }
+    init(release: @escaping () -> Void) { self.release = release }
     package func perform<T>(_ operation: () async throws -> T) async rethrows -> T {
         defer { finish() }
         return try await operation()
     }
-    package func finish() { let action = release; release = nil; action?() }
+    func finish() { let action = release; release = nil; action?() }
 }

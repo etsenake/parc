@@ -5,7 +5,7 @@ package enum NoteHTMLReader {
         NoteHTMLConversion(document: NoteHTMLParser.parse(html), baseURL: baseURL).run()
     }
 
-    package static func tidy(_ blocks: [NoteBlock], parent: NoteBlockKind? = nil) -> [NoteBlock] {
+    static func tidy(_ blocks: [NoteBlock], parent: NoteBlockKind? = nil) -> [NoteBlock] {
         var result: [NoteBlock] = []
         for var block in blocks {
             block.children = tidy(block.children, parent: block.kind)

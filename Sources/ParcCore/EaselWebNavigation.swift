@@ -16,16 +16,16 @@ package enum EaselWebNavigation {
         }
     }
     package struct Draft: Equatable {
-        package var mode: Mode = .address
-        package var text = ""
-        package var category: Category = .images
+        var mode: Mode = .address
+        var text = ""
+        var category: Category = .images
         package init(mode: Mode = .address, text: String = "", category: Category = .images) {
             self.mode = mode
             self.text = text
             self.category = category
         }
     }
-    package static func address(_ raw: String) -> URL? {
+    static func address(_ raw: String) -> URL? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.utf8.count <= 16_384,
               !text.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),

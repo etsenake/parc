@@ -1,13 +1,13 @@
 import Foundation
 
 package enum EaselWebItemChrome {
-    package enum State: Equatable {
+    enum State: Equatable {
         case snapshot(canGoLive: Bool)
         case live
         case page
     }
 
-    package static let headerHeight: Double = 38
+    static let headerHeight: Double = 38
     static let minimumHeaderWidth: Double = 320
     package static let makeLiveTitle = "Make live"
     package static let backToSnapshotTitle = "Back to snapshot"
@@ -22,7 +22,7 @@ package enum EaselWebItemChrome {
         return scheme == "http" || scheme == "https"
     }
 
-    package static func state(of item: EaselItem) -> State? {
+    static func state(of item: EaselItem) -> State? {
         switch item.kind {
         case .browser: return .page
         case .webCard where item.ownsEmbeddedPage: return .live

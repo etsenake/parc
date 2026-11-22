@@ -19,7 +19,7 @@ package enum SidebarKeyboardAnnouncement {
         return highlight(cursor, in: items, state: state) ?? unnamedItem
     }
 
-    package static func text(_ item: SidebarKeyboardNavigation.Item, state: BrowserState) -> String? {
+    static func text(_ item: SidebarKeyboardNavigation.Item, state: BrowserState) -> String? {
         switch item.reference {
         case .tab(let id):
             return state.tab(id).map(SidebarTabTitle.display)

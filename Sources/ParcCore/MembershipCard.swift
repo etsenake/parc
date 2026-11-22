@@ -2,7 +2,7 @@ import Foundation
 import Combine
 
 package struct MembershipCardState: Codable, Equatable {
-    package var version = 1
+    var version = 1
     package var name: String
     package var createdAt: Date
     package var palette: Int
@@ -10,7 +10,7 @@ package struct MembershipCardState: Codable, Equatable {
     package var title: String
     package var backgroundBlobInfo: [Int]
 
-    package init(version: Int = 1, name: String, createdAt: Date, palette: Int, shape: Int, title: String, backgroundBlobInfo: [Int]) {
+    init(version: Int = 1, name: String, createdAt: Date, palette: Int, shape: Int, title: String, backgroundBlobInfo: [Int]) {
         self.version = version
         self.name = name
         self.createdAt = createdAt
@@ -35,7 +35,7 @@ package struct MembershipCardState: Codable, Equatable {
         }
         return result
     }
-    package var isValid: Bool {
+    var isValid: Bool {
         version == 1 && (try? Self.validatedName(name)) == name &&
             Self.palettes.indices.contains(palette) && (1...4).contains(shape) &&
             createdAt.timeIntervalSince1970.isFinite && createdAt.timeIntervalSince1970 >= 0 &&
@@ -123,7 +123,7 @@ package final class MembershipCardStore: ObservableObject {
     private let write: (Data, URL) throws -> Void
     private var savedData: Data?
 
-    package init(url: URL, initialName: String, now: @escaping () -> Date = Date.init,
+    init(url: URL, initialName: String, now: @escaping () -> Date = Date.init,
          write: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) }) {
         self.url = url
         self.initialName = (try? MembershipCardState.validatedName(initialName)) ?? "You"

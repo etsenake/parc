@@ -1,7 +1,7 @@
 import AppKit
 import Combine
 import Testing
-import ParcCore
+@testable import ParcCore
 @testable import Parc
 
 @MainActor

@@ -35,7 +35,7 @@ package struct SplitPaneInsertion: Equatable {
     package let profileID: UUID
     package let selection: [UUID]
     package let layout: BrowserSplitLayout?
-    package let paneID: UUID
+    let paneID: UUID
     package let index: Int
     package let orientation: SplitOrientation
     package let target: SplitDropTarget

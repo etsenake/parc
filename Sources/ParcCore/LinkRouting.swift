@@ -16,7 +16,7 @@ package struct LinkRouteCondition: Codable, Equatable, Identifiable {
         self.pattern = pattern
     }
 
-    package func accepts(_ url: URL) -> Bool {
+    func accepts(_ url: URL) -> Bool {
         switch style {
         case .matches:
             guard let incoming = LinkRouteCondition.siteURL(Self.normalized(url).absoluteString),
@@ -59,7 +59,7 @@ package struct LinkRouteCondition: Codable, Equatable, Identifiable {
         return parts.url
     }
 
-    package static func normalized(_ url: URL) -> URL {
+    static func normalized(_ url: URL) -> URL {
         guard var parts = URLComponents(string: url.absoluteString.lowercased()) else { return url }
         if parts.scheme == nil || parts.scheme == "http" { parts.scheme = "https" }
         if parts.host?.hasPrefix("www.") == true { parts.host = String(parts.host!.dropFirst(4)) }
@@ -96,7 +96,7 @@ package struct LinkRoute: Codable, Equatable, Identifiable {
 }
 
 package struct LinkRoutingState: Codable, Equatable {
-    package var version = 1
+    var version = 1
     package var rules: [LinkRoute] = []
     var defaultDestination = LinkRouteDestination.mostRecent
     package var recentSpaceIDs: [UUID] = []
@@ -132,8 +132,8 @@ package enum LinkRoutingDraft {
 }
 
 package struct LinkRoutingSpace: Equatable {
-    package let id: UUID
-    package let profileID: UUID
+    let id: UUID
+    let profileID: UUID
 
     package init(id: UUID, profileID: UUID) {
         self.id = id
@@ -167,7 +167,7 @@ package final class LinkRoutingStore: ObservableObject {
     private var unreadableFile = false
     private var lastWrittenBytes: Data?
 
-    package init(directory: URL) {
+    init(directory: URL) {
         file = directory.appendingPathComponent("link-routing.json")
         guard FileManager.default.fileExists(atPath: file.path) else { return }
         do {
@@ -206,7 +206,7 @@ package final class LinkRoutingStore: ObservableObject {
     }
 
     @discardableResult
-    package func save(_ rule: LinkRoute) -> Bool {
+    func save(_ rule: LinkRoute) -> Bool {
         guard !rule.conditions.isEmpty,
               rule.conditions.allSatisfy({ !$0.pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                   ($0.style != .matches || LinkRouteCondition.siteURL($0.pattern) != nil) }) else {
@@ -232,12 +232,12 @@ package final class LinkRoutingStore: ObservableObject {
     }
 
     @discardableResult
-    package func remove(_ id: UUID) -> Bool {
+    func remove(_ id: UUID) -> Bool {
         var next = state; next.rules.removeAll { $0.id == id }; return commit(next)
     }
 
     @discardableResult
-    package func move(_ id: UUID, by offset: Int) -> Bool {
+    func move(_ id: UUID, by offset: Int) -> Bool {
         guard let from = state.rules.firstIndex(where: { $0.id == id }),
               state.rules.indices.contains(from + offset) else { return false }
         var next = state; next.rules.swapAt(from, from + offset); return commit(next)

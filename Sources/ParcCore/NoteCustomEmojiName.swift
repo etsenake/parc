@@ -1,13 +1,13 @@
 import Foundation
 
 package enum NoteCustomEmojiName {
-    package static let maximumLength = 48
+    static let maximumLength = 48
 
     static func isNameByte(_ byte: UInt8) -> Bool {
         (byte >= 97 && byte <= 122) || (byte >= 48 && byte <= 57) || byte == 95 || byte == 45 || byte == 43
     }
 
-    package static func isValid(_ name: String) -> Bool {
+    static func isValid(_ name: String) -> Bool {
         let bytes = Array(name.utf8)
         guard !bytes.isEmpty, bytes.count <= maximumLength, bytes.allSatisfy(isNameByte) else { return false }
         return bytes.contains { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) }
@@ -49,7 +49,7 @@ package enum NoteCustomEmojiName {
 
     package static func isReference(_ value: String) -> Bool { name(inReference: value) != nil }
 
-    package static func names(in page: NotePage) -> Set<String> {
+    static func names(in page: NotePage) -> Set<String> {
         var found = Set<String>()
         func scan(_ text: NoteText) {
             for span in text.spans {

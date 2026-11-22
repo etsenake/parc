@@ -52,7 +52,7 @@ package struct NoteSyncedInfo: Equatable {
     var originalBlock: NoteBlockID?
     package var notes: [URL]
 
-    package init(isOriginal: Bool, isMissing: Bool, anchor: String? = nil, originalURL: URL? = nil, originalBlock: NoteBlockID? = nil, notes: [URL]) {
+    init(isOriginal: Bool, isMissing: Bool, anchor: String? = nil, originalURL: URL? = nil, originalBlock: NoteBlockID? = nil, notes: [URL]) {
         self.isOriginal = isOriginal
         self.isMissing = isMissing
         self.anchor = anchor
@@ -152,7 +152,7 @@ final class NoteSyncedUnsync {
 
 @MainActor
 package final class NoteSyncedBlocks {
-    package static let shared = NoteSyncedBlocks()
+    static let shared = NoteSyncedBlocks()
 
     static let stepName = "Synced Edit"
 
@@ -206,7 +206,7 @@ package final class NoteSyncedBlocks {
     }
 
     package let changes = PassthroughSubject<Void, Never>()
-    package let retries = PassthroughSubject<Void, Never>()
+    let retries = PassthroughSubject<Void, Never>()
     var opener: @MainActor (URL) -> NoteSyncedLease? = { _ in nil }
     var originalFinder: @MainActor (String, URL) -> [URL] = { _, _ in [] }
     var noteFinder: @MainActor (String, URL) -> [URL] = { _, _ in [] }
@@ -221,9 +221,9 @@ package final class NoteSyncedBlocks {
     private var pendingRewrites: [(session: NotePageSession, block: NoteBlockID, change: (inout NoteBlock) -> Void)] = []
     private var announce = false
 
-    package init() {}
+    init() {}
 
-    package func attach(_ session: NotePageSession, location: @escaping () -> URL?, isAvailable: @escaping () -> Bool = { true }) {
+    func attach(_ session: NotePageSession, location: @escaping () -> URL?, isAvailable: @escaping () -> Bool = { true }) {
         let key = ObjectIdentifier(session)
         guard documents[key] == nil else { return }
         let document = Document(session: session, location: location, isAvailable: isAvailable)
@@ -239,13 +239,13 @@ package final class NoteSyncedBlocks {
         }
     }
 
-    package func detach(_ session: NotePageSession) {
+    func detach(_ session: NotePageSession) {
         guard let document = documents.removeValue(forKey: ObjectIdentifier(session)) else { return }
         document.subscription = nil
         changes.send()
     }
 
-    package func isAttached(_ session: NotePageSession) -> Bool { documents[ObjectIdentifier(session)] != nil }
+    func isAttached(_ session: NotePageSession) -> Bool { documents[ObjectIdentifier(session)] != nil }
 
     func availabilityChanged(_ session: NotePageSession) {
         guard let document = documents[ObjectIdentifier(session)] else { return }
@@ -296,7 +296,7 @@ package final class NoteSyncedBlocks {
         return found.map(\.url)
     }
 
-    package func originalKey(for id: NoteBlockID, in session: NotePageSession) -> String? {
+    func originalKey(for id: NoteBlockID, in session: NotePageSession) -> String? {
         guard let document = documents[ObjectIdentifier(session)], let block = session.page.block(id) else { return nil }
         return group(of: block, in: document)?.file
     }
@@ -397,7 +397,7 @@ package final class NoteSyncedBlocks {
         }
     }
 
-    package func batch(_ body: () -> Void) {
+    func batch(_ body: () -> Void) {
         depth += 1
         body()
         depth -= 1
@@ -702,7 +702,7 @@ package final class NoteSyncedBlocks {
         return NoteSyncedGroup(file: key, anchor: reference.anchor)
     }
 
-    package static func mapped(_ blocks: [NoteBlock], key: NoteBlockID) -> [NoteBlock] {
+    static func mapped(_ blocks: [NoteBlock], key: NoteBlockID) -> [NoteBlock] {
         blocks.map { block in
             var copy = block
             copy.id = mix(block.id, key)

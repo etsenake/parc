@@ -3,10 +3,10 @@ import Foundation
 
 package enum NoteAttachments {
     package struct Placement: Equatable, Sendable {
-        package var path: String
-        package var created: Bool
+        var path: String
+        var created: Bool
 
-        package init(path: String, created: Bool) {
+        init(path: String, created: Bool) {
             self.path = path
             self.created = created
         }
@@ -15,7 +15,7 @@ package enum NoteAttachments {
     package static let folderName = "Attachments"
     static let stagingFolder = FileManager.default.temporaryDirectory.appendingPathComponent("Parc Note Imports", isDirectory: true)
 
-    package static func folder(for note: URL) -> URL {
+    static func folder(for note: URL) -> URL {
         note.deletingLastPathComponent().appendingPathComponent(folderName, isDirectory: true)
     }
 
@@ -26,7 +26,7 @@ package enum NoteAttachments {
         return NoteFilePaths.relativePath(from: noteFolder, to: original)
     }
 
-    package static func importFile(_ source: URL, into note: URL) throws -> String {
+    static func importFile(_ source: URL, into note: URL) throws -> String {
         try placeFile(source, into: note).path
     }
 
@@ -58,7 +58,7 @@ package enum NoteAttachments {
         throw NoteFileError.nameTaken(base)
     }
 
-    package static func importData(_ data: Data, fileExtension: String, suggestedName: String?, into note: URL, date: Date) throws -> String {
+    static func importData(_ data: Data, fileExtension: String, suggestedName: String?, into note: URL, date: Date) throws -> String {
         try placeData(data, fileExtension: fileExtension, suggestedName: suggestedName, into: note, date: date).path
     }
 
@@ -148,15 +148,15 @@ package final class NoteAttachmentImports {
         init(_ session: NotePageSession) { self.session = session }
     }
 
-    package static var shared: NoteAttachmentImports { NoteFiles.shared.attachmentImports }
+    static var shared: NoteAttachmentImports { NoteFiles.shared.attachmentImports }
 
-    package unowned let files: NoteFiles
+    unowned let files: NoteFiles
     package let changes = PassthroughSubject<String, Never>()
     private var ledgers: [ObjectIdentifier: Ledger] = [:]
     private var originals: Set<String> = []
     private var orphans: [String: [String: String]] = [:]
 
-    package init(files: NoteFiles) {
+    init(files: NoteFiles) {
         self.files = files
     }
 
@@ -252,7 +252,7 @@ package final class NoteAttachmentImports {
         }
     }
 
-    package nonisolated static func rebase(_ landed: URL, created: Bool, into note: URL, discardingOriginal: Bool) throws -> NoteAttachments.Placement {
+    nonisolated static func rebase(_ landed: URL, created: Bool, into note: URL, discardingOriginal: Bool) throws -> NoteAttachments.Placement {
         let folder = note.deletingLastPathComponent()
         do {
             let placed = try NoteAttachments.placeFile(landed, into: note)
@@ -314,7 +314,7 @@ package final class NoteAttachmentImports {
         return files.session(for: note)?.page
     }
 
-    package static func settle(_ replacements: [String: String], in session: NotePageSession) {
+    static func settle(_ replacements: [String: String], in session: NotePageSession) {
         guard !replacements.isEmpty else { return }
         let page = session.page
         for id in page.documentOrder(includingCollapsed: true) {

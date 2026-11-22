@@ -6,15 +6,15 @@ enum NoteFileLineEnding: String, Hashable, Sendable {
     case cr = "\r"
 }
 
-package struct NoteFileFormat: Hashable, Sendable {
-    package var encoding: String.Encoding
+struct NoteFileFormat: Hashable, Sendable {
+    var encoding: String.Encoding
     var byteOrderMark: Bool
     var lineEnding: NoteFileLineEnding
-    package var endsWithNewline: Bool
+    var endsWithNewline: Bool
 
-    package static let standard = NoteFileFormat(encoding: .utf8, byteOrderMark: false, lineEnding: .lf, endsWithNewline: true)
+    static let standard = NoteFileFormat(encoding: .utf8, byteOrderMark: false, lineEnding: .lf, endsWithNewline: true)
 
-    package static func empty(for kind: NoteFileKind) -> NoteFileFormat {
+    static func empty(for kind: NoteFileKind) -> NoteFileFormat {
         var format = standard
         format.endsWithNewline = kind == .markdown
         return format
@@ -22,12 +22,12 @@ package struct NoteFileFormat: Hashable, Sendable {
 }
 
 package struct NoteFileContents: Hashable, Sendable {
-    package var text: String
-    package var format: NoteFileFormat
+    var text: String
+    var format: NoteFileFormat
 }
 
 package enum NoteFileText {
-    package static let maximumSize = 20 * 1024 * 1024
+    static let maximumSize = 20 * 1024 * 1024
 
     private static let utf8Mark: [UInt8] = [0xEF, 0xBB, 0xBF]
     private static let utf16LittleMark: [UInt8] = [0xFF, 0xFE]
@@ -35,7 +35,7 @@ package enum NoteFileText {
     private static let utf32LittleMark: [UInt8] = [0xFF, 0xFE, 0x00, 0x00]
     private static let utf32BigMark: [UInt8] = [0x00, 0x00, 0xFE, 0xFF]
 
-    package static func decode(_ data: Data, kind: NoteFileKind) -> NoteFileContents? {
+    static func decode(_ data: Data, kind: NoteFileKind) -> NoteFileContents? {
         guard !data.isEmpty else { return NoteFileContents(text: "", format: .empty(for: kind)) }
         guard let (text, encoding, marked) = decodeText(data) else { return nil }
         let format = NoteFileFormat(encoding: encoding, byteOrderMark: marked,
@@ -43,7 +43,7 @@ package enum NoteFileText {
         return NoteFileContents(text: text, format: format)
     }
 
-    package static func encode(_ text: String, format: NoteFileFormat) -> (data: Data, format: NoteFileFormat) {
+    static func encode(_ text: String, format: NoteFileFormat) -> (data: Data, format: NoteFileFormat) {
         var format = format
         var body: Data
         if format.encoding == .utf8 {
@@ -107,7 +107,7 @@ package enum NoteFileText {
         return .lf
     }
 
-    package static func endsWithNewline(_ text: String) -> Bool {
+    static func endsWithNewline(_ text: String) -> Bool {
         guard let last = text.utf8.last else { return false }
         return last == 10 || last == 13
     }

@@ -15,7 +15,7 @@ package enum EaselWashiPattern: String, CaseIterable {
         }
     }
 
-    package var family: NoteColor {
+    var family: NoteColor {
         switch self {
         case .stripes: return .pink
         case .dots: return .blue
@@ -42,11 +42,11 @@ package struct EaselWashiMark: Equatable {
 
 package struct EaselWashiTile: Equatable {
     package var width: Double
-    package var height: Double
+    var height: Double
     package var base: String
     package var marks: [EaselWashiMark]
 
-    package init(width: Double, height: Double, base: String, marks: [EaselWashiMark]) {
+    init(width: Double, height: Double, base: String, marks: [EaselWashiMark]) {
         self.width = width
         self.height = height
         self.base = base
@@ -74,7 +74,7 @@ package enum EaselWashi {
 
     package static func pattern(_ item: EaselItem) -> EaselWashiPattern { pattern(named: item.pattern) }
 
-    package static func pattern(named name: String?) -> EaselWashiPattern {
+    static func pattern(named name: String?) -> EaselWashiPattern {
         name.flatMap(EaselWashiPattern.init(rawValue:)) ?? defaultPattern
     }
 
@@ -176,13 +176,13 @@ package enum EaselWashi {
         }
     }
 
-    package enum Tint: Equatable {
+    enum Tint: Equatable {
         case automatic
         case palette(NoteColor)
         case custom(String)
     }
 
-    package static func tint(_ color: String) -> Tint {
+    static func tint(_ color: String) -> Tint {
         guard let value = EaselPalette.normalized(color), value != EaselPalette.automaticInk else { return .automatic }
         for role in EaselColorRole.allCases {
             if case .note(let note)? = EaselPalette.color(for: value, role: role) { return .palette(note) }
@@ -190,7 +190,7 @@ package enum EaselWashi {
         return .custom(value)
     }
 
-    package static func dash(_ center: EaselPoint, length: Double, thickness: Double, degrees: Double) -> [EaselPoint] {
+    static func dash(_ center: EaselPoint, length: Double, thickness: Double, degrees: Double) -> [EaselPoint] {
         let radians = degrees * Double.pi / 180
         return [EaselPoint(x: -length / 2, y: -thickness / 2), EaselPoint(x: length / 2, y: -thickness / 2),
                 EaselPoint(x: length / 2, y: thickness / 2), EaselPoint(x: -length / 2, y: thickness / 2)].map {
@@ -199,7 +199,7 @@ package enum EaselWashi {
         }
     }
 
-    package static func clipped(_ polygon: [EaselPoint], to rect: EaselRect) -> [EaselPoint] {
+    static func clipped(_ polygon: [EaselPoint], to rect: EaselRect) -> [EaselPoint] {
         var result = polygon
         let edges: [(EaselPoint) -> Double] = [{ $0.x - rect.x }, { rect.x + rect.width - $0.x },
                                                { $0.y - rect.y }, { rect.y + rect.height - $0.y }]

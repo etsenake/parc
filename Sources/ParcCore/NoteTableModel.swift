@@ -13,7 +13,7 @@ package struct NoteTableMerge: Hashable, Codable {
         self.columnSpan = columnSpan
     }
 
-    package init(rows: ClosedRange<Int>, columns: ClosedRange<Int>) {
+    init(rows: ClosedRange<Int>, columns: ClosedRange<Int>) {
         self.init(row: rows.lowerBound, column: columns.lowerBound, rowSpan: rows.count, columnSpan: columns.count)
     }
 
@@ -24,15 +24,15 @@ package struct NoteTableMerge: Hashable, Codable {
     package var columns: ClosedRange<Int> { column...lastColumn }
     package var cellCount: Int { rowSpan * columnSpan }
 
-    package var cells: [NoteTableCell] {
+    var cells: [NoteTableCell] {
         rows.flatMap { row in columns.map { NoteTableCell(row: row, column: $0) } }
     }
 
-    package func contains(_ cell: NoteTableCell) -> Bool {
+    func contains(_ cell: NoteTableCell) -> Bool {
         rows.contains(cell.row) && columns.contains(cell.column)
     }
 
-    package func intersects(rows other: ClosedRange<Int>, columns otherColumns: ClosedRange<Int>) -> Bool {
+    func intersects(rows other: ClosedRange<Int>, columns otherColumns: ClosedRange<Int>) -> Bool {
         rows.overlaps(other) && columns.overlaps(otherColumns)
     }
 }
@@ -42,7 +42,7 @@ package enum NoteTableFill: Hashable {
 }
 
 extension NoteTable {
-    package func merge(containing cell: NoteTableCell) -> NoteTableMerge? {
+    func merge(containing cell: NoteTableCell) -> NoteTableMerge? {
         merges.first { $0.contains(cell) }
     }
 
@@ -110,7 +110,7 @@ extension NoteTable {
     }
 
     @discardableResult
-    package mutating func mergeCells(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
+    mutating func mergeCells(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
         normalize()
         guard canMerge(rows: rowRange, columns: columnRange) else { return false }
         let area = expanded(rows: rowRange, columns: columnRange)
@@ -126,7 +126,7 @@ extension NoteTable {
     }
 
     @discardableResult
-    package mutating func unmergeCells(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
+    mutating func unmergeCells(rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
         let before = merges.count
         merges.removeAll { $0.intersects(rows: rowRange, columns: columnRange) }
         return merges.count != before
@@ -137,7 +137,7 @@ extension NoteTable {
     }
 
     @discardableResult
-    package mutating func setColor(_ style: NoteColorStyle?, rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
+    mutating func setColor(_ style: NoteColorStyle?, rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
         normalize()
         let before = cellColors
         let area = expanded(rows: rowRange, columns: columnRange)
@@ -184,7 +184,7 @@ extension NoteTable {
     }
 
     @discardableResult
-    package mutating func fill(_ direction: NoteTableFill, rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
+    mutating func fill(_ direction: NoteTableFill, rows rowRange: ClosedRange<Int>, columns columnRange: ClosedRange<Int>) -> Bool {
         normalize()
         guard rowRange.lowerBound >= 0, columnRange.lowerBound >= 0, rowRange.upperBound < rowCount, columnRange.upperBound < columnCount else { return false }
         let before = self

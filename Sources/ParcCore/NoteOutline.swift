@@ -2,11 +2,11 @@ import Foundation
 
 package struct NoteOutlineEntry: Hashable {
     package var id: NoteBlockID
-    package var level: Int
+    var level: Int
     package var depth: Int
     package var title: String
 
-    package init(id: NoteBlockID, level: Int, depth: Int, title: String) {
+    init(id: NoteBlockID, level: Int, depth: Int, title: String) {
         self.id = id
         self.level = level
         self.depth = depth
@@ -35,7 +35,7 @@ package enum NoteOutline {
         return found.map { NoteOutlineEntry(id: $0.id, level: $0.level, depth: $0.level - top, title: $0.title) }
     }
 
-    package static func title(of text: NoteText) -> String {
+    static func title(of text: NoteText) -> String {
         text.plainText
             .components(separatedBy: .newlines)
             .joined(separator: " ")

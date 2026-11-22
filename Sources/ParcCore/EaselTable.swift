@@ -34,24 +34,24 @@ package struct EaselTableRange: Hashable {
     package var isSingleCell: Bool { rows.count == 1 && columns.count == 1 }
 
     package func contains(_ cell: EaselTableCoordinate) -> Bool { rows.contains(cell.row) && columns.contains(cell.column) }
-    package func intersects(_ other: EaselTableRange) -> Bool { rows.overlaps(other.rows) && columns.overlaps(other.columns) }
+    func intersects(_ other: EaselTableRange) -> Bool { rows.overlaps(other.rows) && columns.overlaps(other.columns) }
     package var cells: [EaselTableCoordinate] { rows.flatMap { row in columns.map { EaselTableCoordinate(row: row, column: $0) } } }
 }
 
 package struct EaselTableMerge: Codable, Hashable {
-    package var row: Int
-    package var column: Int
-    package var rowSpan: Int
-    package var columnSpan: Int
+    var row: Int
+    var column: Int
+    var rowSpan: Int
+    var columnSpan: Int
 
-    package init(row: Int, column: Int, rowSpan: Int, columnSpan: Int) {
+    init(row: Int, column: Int, rowSpan: Int, columnSpan: Int) {
         self.row = row
         self.column = column
         self.rowSpan = rowSpan
         self.columnSpan = columnSpan
     }
 
-    package init(_ range: EaselTableRange) {
+    init(_ range: EaselTableRange) {
         self.init(row: range.rows.lowerBound, column: range.columns.lowerBound,
                   rowSpan: range.rows.count, columnSpan: range.columns.count)
     }
@@ -73,7 +73,7 @@ package struct EaselTableCell: Codable, Equatable {
         self.fill = fill
     }
 
-    package var isBlank: Bool { text.isEmpty && richText == nil && fill == nil }
+    var isBlank: Bool { text.isEmpty && richText == nil && fill == nil }
 
     private enum CodingKeys: String, CodingKey { case text, richText, fill }
 
@@ -113,7 +113,7 @@ package struct EaselTable: Codable, Equatable {
     package static let maximumPastedCells = 500
     package static let maximumCellBytes = 65_536
     static let maximumTextBytes = 1_048_576
-    package static let minimumColumnWidth = 48.0
+    static let minimumColumnWidth = 48.0
     package static let minimumRowHeight = 24.0
     package static let maximumLength = 8_000.0
     package static let defaultColumnWidth = 140.0
@@ -126,7 +126,7 @@ package struct EaselTable: Codable, Equatable {
     package var cells: [[EaselTableCell]]
     package var merges: [EaselTableMerge]
 
-    package init(columnWidths: [Double], rowHeights: [Double], cells: [[EaselTableCell]]? = nil, merges: [EaselTableMerge] = []) {
+    init(columnWidths: [Double], rowHeights: [Double], cells: [[EaselTableCell]]? = nil, merges: [EaselTableMerge] = []) {
         self.columnWidths = columnWidths
         self.rowHeights = rowHeights
         self.cells = cells ?? Array(repeating: Array(repeating: EaselTableCell(), count: columnWidths.count), count: rowHeights.count)
@@ -222,7 +222,7 @@ package struct EaselTable: Codable, Equatable {
         return true
     }
 
-    package func merge(containing cell: EaselTableCoordinate) -> EaselTableMerge? {
+    func merge(containing cell: EaselTableCoordinate) -> EaselTableMerge? {
         merges.first { $0.range.contains(cell) }
     }
 
@@ -239,7 +239,7 @@ package struct EaselTable: Codable, Equatable {
         return merge.anchor != cell
     }
 
-    package var coveredCells: Set<EaselTableCoordinate> {
+    var coveredCells: Set<EaselTableCoordinate> {
         var result = Set<EaselTableCoordinate>()
         for merge in merges {
             for cell in merge.range.cells where cell != merge.anchor { result.insert(cell) }
@@ -252,7 +252,7 @@ package struct EaselTable: Codable, Equatable {
         return all.cells.filter { !covered.contains($0) }
     }
 
-    package func clamped(_ range: EaselTableRange) -> EaselTableRange? {
+    func clamped(_ range: EaselTableRange) -> EaselTableRange? {
         guard rowCount > 0, columnCount > 0, range.rows.lowerBound < rowCount, range.columns.lowerBound < columnCount,
               range.rows.upperBound >= 0, range.columns.upperBound >= 0 else { return nil }
         return EaselTableRange(rows: max(0, range.rows.lowerBound)...min(range.rows.upperBound, rowCount - 1),

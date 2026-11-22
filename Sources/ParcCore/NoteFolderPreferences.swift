@@ -3,19 +3,19 @@ import Foundation
 
 @MainActor
 package final class NoteFolderPreferences {
-    package let defaults: UserDefaults
+    let defaults: UserDefaults
     package let changes = PassthroughSubject<UUID, Never>()
     private let defaultFolder: @Sendable () -> URL
 
     private static let keyPrefix = "Parc.Notes.Folder."
     private static func key(_ profileID: UUID) -> String { keyPrefix + profileID.uuidString }
 
-    package init(defaults: UserDefaults, defaultFolder: @escaping @Sendable () -> URL = { NoteLibrary.defaultFolder }) {
+    init(defaults: UserDefaults, defaultFolder: @escaping @Sendable () -> URL = { NoteLibrary.defaultFolder }) {
         self.defaults = defaults
         self.defaultFolder = defaultFolder
     }
 
-    package func folder(for profileID: UUID) -> URL {
+    func folder(for profileID: UUID) -> URL {
         customFolder(for: profileID) ?? defaultFolder().standardizedFileURL
     }
 
@@ -24,7 +24,7 @@ package final class NoteFolderPreferences {
         return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
     }
 
-    package var allFolders: [URL] {
+    var allFolders: [URL] {
         var folders = [defaultFolder().standardizedFileURL]
         for (key, value) in defaults.dictionaryRepresentation() where key.hasPrefix(Self.keyPrefix) {
             guard let path = value as? String, path.hasPrefix("/") else { continue }
@@ -33,7 +33,7 @@ package final class NoteFolderPreferences {
         return folders
     }
 
-    package func setFolder(_ url: URL, for profileID: UUID) {
+    func setFolder(_ url: URL, for profileID: UUID) {
         guard url.isFileURL else { return }
         let chosen = URL(fileURLWithPath: url.standardizedFileURL.path, isDirectory: true).standardizedFileURL
         if chosen.path == defaultFolder().standardizedFileURL.path {
@@ -67,5 +67,5 @@ extension NoteFolderPreferences {
     static func customFolder(for profileID: UUID) -> URL? { shared.customFolder(for: profileID) }
     package static func library(for profileID: UUID) -> NoteLibrary { NoteFiles.shared.library(forProfile: profileID) }
     package static func setFolder(_ url: URL, for profileID: UUID) { shared.setFolder(url, for: profileID) }
-    package static func removeProfile(_ profileID: UUID) { shared.removeProfile(profileID) }
+    static func removeProfile(_ profileID: UUID) { shared.removeProfile(profileID) }
 }

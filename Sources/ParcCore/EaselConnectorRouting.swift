@@ -36,15 +36,15 @@ private enum RouteMath {
     }
 }
 
-package enum EaselRouteDirection: Int, CaseIterable, Equatable {
+enum EaselRouteDirection: Int, CaseIterable, Equatable {
     case up, right, down, left
 
-    package var dx: Double { self == .right ? 1 : self == .left ? -1 : 0 }
-    package var dy: Double { self == .down ? 1 : self == .up ? -1 : 0 }
-    package var vector: EaselPoint { EaselPoint(x: dx, y: dy) }
-    package var horizontal: Bool { self == .left || self == .right }
+    var dx: Double { self == .right ? 1 : self == .left ? -1 : 0 }
+    var dy: Double { self == .down ? 1 : self == .up ? -1 : 0 }
+    var vector: EaselPoint { EaselPoint(x: dx, y: dy) }
+    var horizontal: Bool { self == .left || self == .right }
 
-    package var opposite: EaselRouteDirection {
+    var opposite: EaselRouteDirection {
         switch self {
         case .up: return .down
         case .down: return .up
@@ -53,7 +53,7 @@ package enum EaselRouteDirection: Int, CaseIterable, Equatable {
         }
     }
 
-    package init(_ side: EaselConnection.Side) {
+    init(_ side: EaselConnection.Side) {
         switch side {
         case .top: self = .up
         case .right: self = .right
@@ -62,7 +62,7 @@ package enum EaselRouteDirection: Int, CaseIterable, Equatable {
         }
     }
 
-    package var side: EaselConnection.Side {
+    var side: EaselConnection.Side {
         switch self {
         case .up: return .top
         case .right: return .right
@@ -76,13 +76,13 @@ package enum EaselRouteDirection: Int, CaseIterable, Equatable {
     }
 }
 
-package struct EaselConnectorTerminal: Equatable {
-    package var point: EaselPoint
-    package var normal: EaselPoint?
-    package var box: EaselRect?
-    package var exit: EaselPoint?
-    package var direction: EaselRouteDirection? { normal.map { EaselRouteDirection.dominant($0.x, $0.y) } }
-    package var attached: Bool { normal != nil }
+struct EaselConnectorTerminal: Equatable {
+    var point: EaselPoint
+    var normal: EaselPoint?
+    var box: EaselRect?
+    var exit: EaselPoint?
+    var direction: EaselRouteDirection? { normal.map { EaselRouteDirection.dominant($0.x, $0.y) } }
+    var attached: Bool { normal != nil }
 }
 
 package enum EaselConnectorAttachment {
@@ -108,7 +108,7 @@ package enum EaselConnectorAttachment {
         EaselConnection.Side.allCases.map { ($0, magnet($0, on: item)) }
     }
 
-    package static func outward(_ side: EaselConnection.Side, on item: EaselItem) -> EaselPoint {
+    static func outward(_ side: EaselConnection.Side, on item: EaselItem) -> EaselPoint {
         let degrees = EaselShapeGeometry.rotation(of: item)
         let base = EaselRouteDirection(side).vector
         guard degrees != 0 else { return base }
@@ -117,13 +117,13 @@ package enum EaselConnectorAttachment {
                                          y: base.x * sin(radians) + base.y * cos(radians)), fallback: base)
     }
 
-    package static func anchorPoint(_ anchor: EaselPoint, on item: EaselItem) -> EaselPoint {
+    static func anchorPoint(_ anchor: EaselPoint, on item: EaselItem) -> EaselPoint {
         let r = item.frame
         let local = EaselPoint(x: r.x + min(1, max(0, anchor.x)) * r.width, y: r.y + min(1, max(0, anchor.y)) * r.height)
         return EaselShapeGeometry.transform(for: item).apply(local)
     }
 
-    package static func anchor(at point: EaselPoint, on item: EaselItem) -> EaselPoint {
+    static func anchor(at point: EaselPoint, on item: EaselItem) -> EaselPoint {
         let r = item.frame, local = EaselShapeGeometry.localPoint(point, in: item)
         let u = r.width > 0 ? (local.x - r.x) / r.width : 0.5, v = r.height > 0 ? (local.y - r.y) / r.height : 0.5
         return EaselPoint(x: u.isFinite ? min(1, max(0, u)) : 0.5, y: v.isFinite ? min(1, max(0, v)) : 0.5)
@@ -147,15 +147,15 @@ package enum EaselConnectorAttachment {
         return ny >= 0 ? .bottom : .top
     }
 
-    package static func box(of item: EaselItem) -> EaselRect { EaselShapeGeometry.visualBounds(of: item) }
+    static func box(of item: EaselItem) -> EaselRect { EaselShapeGeometry.visualBounds(of: item) }
 
-    package static func reference(_ connection: EaselConnection?, stored: EaselPoint, lookup: (UUID) -> EaselItem?) -> EaselPoint {
+    static func reference(_ connection: EaselConnection?, stored: EaselPoint, lookup: (UUID) -> EaselItem?) -> EaselPoint {
         guard let connection, let target = lookup(connection.itemID), resolves(target) else { return stored }
         if let anchor = connection.anchor { return anchorPoint(anchor, on: target) }
         return RouteMath.center(target.frame)
     }
 
-    package static func terminal(_ connection: EaselConnection?, stored: EaselPoint, other: EaselPoint,
+    static func terminal(_ connection: EaselConnection?, stored: EaselPoint, other: EaselPoint,
                          lookup: (UUID) -> EaselItem?) -> EaselConnectorTerminal {
         guard let connection, let target = lookup(connection.itemID), resolves(target) else {
             return EaselConnectorTerminal(point: stored, normal: nil, box: nil)
@@ -170,7 +170,7 @@ package enum EaselConnectorAttachment {
         return EaselConnectorTerminal(point: magnet(side, on: target), normal: outward(side, on: target), box: box(of: target))
     }
 
-    package static func outline(of item: EaselItem) -> [[EaselPoint]] {
+    static func outline(of item: EaselItem) -> [[EaselPoint]] {
         if let path = EaselShapeGeometry.outline(for: item) {
             let rings = path.subpaths(tolerance: 0.5).map(\.points).filter { $0.count > 2 }
             if !rings.isEmpty { return rings }
@@ -197,7 +197,7 @@ package enum EaselConnectorAttachment {
         return farthest.map { EaselPoint(x: point.x + direction.x * $0, y: point.y + direction.y * $0) }
     }
 
-    package static func clockwise(_ side: EaselConnection.Side) -> EaselConnection.Side {
+    static func clockwise(_ side: EaselConnection.Side) -> EaselConnection.Side {
         switch side {
         case .top: return .right
         case .right: return .bottom
@@ -239,13 +239,13 @@ package struct EaselConnectorRoute: Equatable {
             }
         }
 
-        package var end: EaselPoint {
+        var end: EaselPoint {
             switch self {
             case .line(_, let b), .cubic(_, _, _, let b): return b
             }
         }
 
-        package func point(_ t: Double) -> EaselPoint {
+        func point(_ t: Double) -> EaselPoint {
             switch self {
             case .line(let a, let b): return RouteMath.lerp(a, b, t)
             case .cubic(let a, let c1, let c2, let b):
@@ -256,7 +256,7 @@ package struct EaselConnectorRoute: Equatable {
             }
         }
 
-        package func split(_ t: Double) -> (Segment, Segment) {
+        func split(_ t: Double) -> (Segment, Segment) {
             switch self {
             case .line(let a, let b):
                 let m = RouteMath.lerp(a, b, t)
@@ -268,7 +268,7 @@ package struct EaselConnectorRoute: Equatable {
             }
         }
 
-        package func portion(from t0: Double, to t1: Double) -> Segment {
+        func portion(from t0: Double, to t1: Double) -> Segment {
             let low = min(1, max(0, t0)), high = min(1, max(0, t1))
             guard high > low else { let p = point(low); return .line(p, p) }
             let head = high >= 1 ? self : split(high).0
@@ -276,7 +276,7 @@ package struct EaselConnectorRoute: Equatable {
             return head.split(low / high).1
         }
 
-        package var samples: [EaselPoint] {
+        var samples: [EaselPoint] {
             switch self {
             case .line(let a, let b): return [a, b]
             case .cubic:
@@ -291,10 +291,10 @@ package struct EaselConnectorRoute: Equatable {
     package let segments: [Segment]
     package let vertices: [EaselPoint]
     let polyline: [EaselPoint]
-    package let cumulative: [Double]
+    let cumulative: [Double]
     private let sampleOwners: [(segment: Int, t: Double)]
 
-    package init?(routing: EaselConnectorRouting, segments: [Segment], vertices: [EaselPoint]) {
+    init?(routing: EaselConnectorRouting, segments: [Segment], vertices: [EaselPoint]) {
         guard !segments.isEmpty else { return nil }
         var polyline: [EaselPoint] = [], owners: [(segment: Int, t: Double)] = [], cumulative: [Double] = []
         for (index, segment) in segments.enumerated() {
@@ -348,7 +348,7 @@ package struct EaselConnectorRoute: Equatable {
         return EaselPoint(x: 1, y: 0)
     }
 
-    package var bounds: EaselRect { RouteMath.bounds(polyline) ?? EaselRect(x: start.x, y: start.y, width: 0, height: 0) }
+    var bounds: EaselRect { RouteMath.bounds(polyline) ?? EaselRect(x: start.x, y: start.y, width: 0, height: 0) }
 
     private func sampleIndex(at arc: Double) -> Int {
         var low = 0, high = cumulative.count - 1
@@ -359,7 +359,7 @@ package struct EaselConnectorRoute: Equatable {
         return low
     }
 
-    package func location(at arc: Double) -> (point: EaselPoint, tangent: EaselPoint) {
+    func location(at arc: Double) -> (point: EaselPoint, tangent: EaselPoint) {
         let clamped = min(length, max(0, arc.isFinite ? arc : 0))
         let index = min(sampleIndex(at: clamped), polyline.count - 2)
         let a = polyline[index], b = polyline[index + 1]
@@ -384,7 +384,7 @@ package struct EaselConnectorRoute: Equatable {
         return best
     }
 
-    package func distance(to point: EaselPoint) -> Double { nearest(to: point).distance }
+    func distance(to point: EaselPoint) -> Double { nearest(to: point).distance }
 
     private func parameter(at arc: Double) -> (segment: Int, t: Double) {
         let clamped = min(length, max(0, arc))
@@ -396,7 +396,7 @@ package struct EaselConnectorRoute: Equatable {
         return (lower.segment, lower.t + (upper.t - lower.t) * fraction)
     }
 
-    package func subpath(from a: Double, to b: Double) -> [Segment] {
+    func subpath(from a: Double, to b: Double) -> [Segment] {
         guard b - a > 1e-6 else { return [] }
         let first = parameter(at: a), last = parameter(at: b)
         if first.segment == last.segment { return [segments[first.segment].portion(from: first.t, to: last.t)] }
@@ -406,7 +406,7 @@ package struct EaselConnectorRoute: Equatable {
         return result
     }
 
-    package func pieces(hiding ranges: [ClosedRange<Double>]) -> [[Segment]] {
+    func pieces(hiding ranges: [ClosedRange<Double>]) -> [[Segment]] {
         var visible: [ClosedRange<Double>] = [0...length]
         for hidden in ranges {
             visible = visible.flatMap { range -> [ClosedRange<Double>] in
@@ -438,7 +438,7 @@ package struct EaselConnectorRoute: Equatable {
         return data
     }
 
-    package static func number(_ point: EaselPoint) -> String {
+    static func number(_ point: EaselPoint) -> String {
         EaselPath.svgNumber(point.x) + " " + EaselPath.svgNumber(point.y)
     }
 }
@@ -458,19 +458,19 @@ package struct EaselArrowHeadGeometry: Equatable {
 
     package var strokes: [Stroke] = []
     package var dots: [Dot] = []
-    package var inset = 0.0
-    package var gaps: [ClosedRange<Double>] = []
+    var inset = 0.0
+    var gaps: [ClosedRange<Double>] = []
 
-    package var isEmpty: Bool { strokes.isEmpty && dots.isEmpty }
+    var isEmpty: Bool { strokes.isEmpty && dots.isEmpty }
 
-    package init(strokes: [Stroke] = [], dots: [Dot] = [], inset: Double = 0.0, gaps: [ClosedRange<Double>] = []) {
+    init(strokes: [Stroke] = [], dots: [Dot] = [], inset: Double = 0.0, gaps: [ClosedRange<Double>] = []) {
         self.strokes = strokes
         self.dots = dots
         self.inset = inset
         self.gaps = gaps
     }
 
-    package static func make(_ head: EaselArrowHead, tip: EaselPoint, direction: EaselPoint, width: Double) -> EaselArrowHeadGeometry {
+    static func make(_ head: EaselArrowHead, tip: EaselPoint, direction: EaselPoint, width: Double) -> EaselArrowHeadGeometry {
         let w = width.isFinite ? max(0, width) : EaselPaintRules.lineWidth
         let size = EaselPaintRules.arrowHeadLength(width: w)
         let u = RouteMath.unit(direction), n = EaselPoint(x: -u.y, y: u.x)
@@ -601,7 +601,7 @@ package enum EaselConnectorLabel {
     package static let maximumWidth = 240.0
     static let slideMargin = 10.0
 
-    package static func rect(on route: EaselConnectorRoute, position: Double, size: (width: Double, height: Double)) -> EaselRect {
+    static func rect(on route: EaselConnectorRoute, position: Double, size: (width: Double, height: Double)) -> EaselRect {
         let anchor = route.location(atFraction: clampedPosition(position, on: route, size: size)).point
         let width = max(1, size.width) + 2 * paddingX, height = max(1, size.height) + 2 * paddingY
         return EaselRect(x: anchor.x - width / 2, y: anchor.y - height / 2, width: width, height: height)
@@ -730,7 +730,7 @@ package enum EaselConnectorRouter {
         return next
     }
 
-    package static func detached(_ item: EaselItem, from removed: Set<UUID>) -> EaselItem {
+    static func detached(_ item: EaselItem, from removed: Set<UUID>) -> EaselItem {
         guard item.kind == .arrow else { return item }
         let startGone = item.startConnection.map { removed.contains($0.itemID) } == true
         let endGone = item.endConnection.map { removed.contains($0.itemID) } == true
@@ -749,13 +749,13 @@ package enum EaselConnectorRouter {
         return next
     }
 
-    package static func leaving(_ terminal: EaselConnectorTerminal) -> EaselConnectorTerminal {
+    static func leaving(_ terminal: EaselConnectorTerminal) -> EaselConnectorTerminal {
         var copy = terminal
         if let exit = terminal.exit { copy.point = exit }
         return copy
     }
 
-    package static func clearance(_ terminal: EaselConnectorTerminal, _ direction: EaselRouteDirection) -> Double {
+    static func clearance(_ terminal: EaselConnectorTerminal, _ direction: EaselRouteDirection) -> Double {
         guard terminal.attached else { return 0 }
         guard let box = terminal.box else { return stub }
         let p = terminal.point
@@ -769,7 +769,7 @@ package enum EaselConnectorRouter {
         return needed.isFinite ? max(stub, needed) : stub
     }
 
-    package static func elbow(from start: EaselConnectorTerminal, to end: EaselConnectorTerminal) -> [EaselPoint] {
+    static func elbow(from start: EaselConnectorTerminal, to end: EaselConnectorTerminal) -> [EaselPoint] {
         let s = leaving(start), e = leaving(end)
         let sDirection = s.direction ?? .dominant(e.point.x - s.point.x, e.point.y - s.point.y)
         let eDirection = e.direction ?? .dominant(s.point.x - e.point.x, s.point.y - e.point.y)
@@ -860,7 +860,7 @@ package enum EaselConnectorRouter {
         }
     }
 
-    package static func curve(from s: EaselConnectorTerminal, to e: EaselConnectorTerminal,
+    static func curve(from s: EaselConnectorTerminal, to e: EaselConnectorTerminal,
                       through waypoints: [EaselPoint]) -> [EaselConnectorRoute.Segment] {
         let points = [s.point] + waypoints + [e.point]
         if waypoints.isEmpty {
@@ -1055,14 +1055,14 @@ package enum EaselConnectorHit {
         return false
     }
 
-    package static func intersects(_ rect: EaselRect, route: EaselConnectorRoute) -> Bool {
+    static func intersects(_ rect: EaselRect, route: EaselConnectorRoute) -> Bool {
         guard rect.width > 0, rect.height > 0 else { return false }
         let points = route.polyline
         if points.contains(where: { EaselContentHitTest.contains($0, rect: rect) }) { return true }
         return zip(points, points.dropFirst()).contains { segment($0, $1, intersects: rect) }
     }
 
-    package static func segment(_ a: EaselPoint, _ b: EaselPoint, intersects r: EaselRect) -> Bool {
+    static func segment(_ a: EaselPoint, _ b: EaselPoint, intersects r: EaselRect) -> Bool {
         var low = 0.0, high = 1.0
         for (origin, delta, minimum, maximum) in [(a.x, b.x - a.x, r.x, r.x + r.width), (a.y, b.y - a.y, r.y, r.y + r.height)] {
             if abs(delta) < 1e-12 {
@@ -1081,7 +1081,7 @@ package enum EaselConnectorPath {
     package struct SegmentHandle: Equatable {
         package var index: Int
         package var point: EaselPoint
-        package var horizontal: Bool
+        var horizontal: Bool
     }
 
     package struct CurveHandle: Equatable {
@@ -1089,7 +1089,7 @@ package enum EaselConnectorPath {
         package var waypoint: Int?
         package var insertion: Int
 
-        package init(point: EaselPoint, waypoint: Int? = nil, insertion: Int) {
+        init(point: EaselPoint, waypoint: Int? = nil, insertion: Int) {
             self.point = point
             self.waypoint = waypoint
             self.insertion = insertion
@@ -1147,20 +1147,20 @@ package enum EaselConnectorPath {
         return handles
     }
 
-    package static func mapped(_ waypoints: [EaselPoint], from old: EaselRect, to new: EaselRect) -> [EaselPoint] {
+    static func mapped(_ waypoints: [EaselPoint], from old: EaselRect, to new: EaselRect) -> [EaselPoint] {
         let sx = old.width > 1e-9 ? new.width / old.width : 1, sy = old.height > 1e-9 ? new.height / old.height : 1
         return waypoints.map { EaselPoint(x: new.x + ($0.x - old.x) * sx, y: new.y + ($0.y - old.y) * sy) }
     }
 }
 
 package struct EaselConnectorStyle: Equatable {
-    package var startHead: EaselArrowHead?
-    package var endHead: EaselArrowHead?
+    var startHead: EaselArrowHead?
+    var endHead: EaselArrowHead?
     package var routing: EaselConnectorRouting?
-    package var strokeWidth: Double?
-    package var strokeDash: EaselStrokeDash?
-    package var color: String
-    package var labelBackground: Bool?
+    var strokeWidth: Double?
+    var strokeDash: EaselStrokeDash?
+    var color: String
+    var labelBackground: Bool?
 
     package init(startHead: EaselArrowHead? = nil, endHead: EaselArrowHead? = nil, routing: EaselConnectorRouting? = nil,
          strokeWidth: Double? = nil, strokeDash: EaselStrokeDash? = nil, color: String = EaselPalette.automaticInk,
@@ -1183,7 +1183,7 @@ package struct EaselConnectorStyle: Equatable {
 }
 
 extension EaselConnectorRouter {
-    package static func placing(_ item: EaselItem, end: EaselArrowEndpoint, at point: EaselPoint) -> EaselItem {
+    static func placing(_ item: EaselItem, end: EaselArrowEndpoint, at point: EaselPoint) -> EaselItem {
         guard item.kind == .arrow, item.points.count >= 2, RouteMath.finite(point) else { return item }
         var absolute = absolutePoints(item)
         absolute[end.index(in: item)] = point
@@ -1219,9 +1219,9 @@ extension EaselConnectorRouter {
 }
 
 package struct EaselConnectorLabelArt: Equatable {
-    package var text: EaselVectorText
-    package var width: Double
-    package var height: Double
+    var text: EaselVectorText
+    var width: Double
+    var height: Double
 
     package init(text: EaselVectorText, width: Double, height: Double) {
         self.text = text
@@ -1231,7 +1231,7 @@ package struct EaselConnectorLabelArt: Equatable {
 }
 
 extension EaselVectorExport {
-    package static func connector(_ item: EaselItem, art: EaselVectorArt) -> String {
+    static func connector(_ item: EaselItem, art: EaselVectorArt) -> String {
         guard let route = art.connectorRoutes[item.id] ?? EaselConnectorRouter.storedRoute(item) else { return "" }
         let label = art.connectorLabels[item.id]
         let drawing = EaselConnectorDrawing(route: route, item: item, labelSize: label.map { (width: $0.width, height: $0.height) })
@@ -1270,7 +1270,7 @@ extension EaselVectorExport {
         return result + "</g>"
     }
 
-    package static func labelInk(on hex: String) -> String {
+    static func labelInk(on hex: String) -> String {
         if isAutomatic(hex) { return "var(--easel-card)" }
         guard let value = color(hex), let rgb = UInt32(value.dropFirst(), radix: 16) else { return "#FFFFFF" }
         let r = Double(rgb >> 16 & 255) / 255, g = Double(rgb >> 8 & 255) / 255, b = Double(rgb & 255) / 255

@@ -20,19 +20,19 @@ extension EaselVectorExport {
         return reach
     }
 
-    package static func outset(_ r: EaselRect, by amount: Double) -> EaselRect {
+    static func outset(_ r: EaselRect, by amount: Double) -> EaselRect {
         guard amount > 0, amount.isFinite else { return r }
         return EaselRect(x: r.x - amount, y: r.y - amount, width: r.width + 2 * amount, height: r.height + 2 * amount)
     }
 
-    package static func union(_ a: EaselRect, _ b: EaselRect) -> EaselRect {
+    static func union(_ a: EaselRect, _ b: EaselRect) -> EaselRect {
         let minX = min(a.x, b.x), minY = min(a.y, b.y)
         return EaselRect(x: minX, y: minY, width: max(a.x + a.width, b.x + b.width) - minX, height: max(a.y + a.height, b.y + b.height) - minY)
     }
 }
 
 package enum EaselPreviewRegion {
-    package static let margin = 40.0
+    static let margin = 40.0
 
     package static func content(_ items: [EaselItem]) -> EaselRect? {
         let shown = EaselBoardObjects.displayed(items)
@@ -55,7 +55,7 @@ package enum EaselPreviewRegion {
 }
 
 package enum EaselExportScale {
-    package static let maximumPixels = 64_000_000.0
+    static let maximumPixels = 64_000_000.0
     static let maximumSide = 32_000.0
 
     package static func capped(_ scale: Double, width: Double, height: Double) -> Double {

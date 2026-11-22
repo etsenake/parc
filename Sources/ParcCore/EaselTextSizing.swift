@@ -31,7 +31,7 @@ extension EaselTextStyle.Alignment {
 }
 
 extension EaselRichText.Attributes {
-    package mutating func scale(by ratio: Double) {
+    mutating func scale(by ratio: Double) {
         guard ratio.isFinite, ratio > 0, ratio != 1 else { return }
         func scaled(_ value: Double, limit: Double) -> Double {
             let result = (value * ratio * 100).rounded() / 100
@@ -73,7 +73,7 @@ package enum EaselTextSizing {
         return min(autoWidthCeiling, max(autoWidthFloor, (size * autoWidthEms).rounded(.up)))
     }
 
-    package static func autoWidth(natural: Double, pointSize: Double) -> Double {
+    static func autoWidth(natural: Double, pointSize: Double) -> Double {
         let limit = maximumAutoWidth(pointSize: pointSize)
         guard natural.isFinite, natural > 0 else { return minimumWidth }
         return min(limit, max(minimumWidth, natural.rounded(.up)))

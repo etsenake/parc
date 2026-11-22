@@ -1,26 +1,26 @@
 import Foundation
 
-package struct EaselChord: Hashable {
-    package enum Key: Hashable {
+struct EaselChord: Hashable {
+    enum Key: Hashable {
         case character(Character)
         case delete
         case returnKey
         case up, down, left, right
     }
 
-    package let key: Key
-    package let modifiers: EaselKeyModifiers
+    let key: Key
+    let modifiers: EaselKeyModifiers
 
-    package init(_ key: Key, _ modifiers: EaselKeyModifiers) {
+    init(_ key: Key, _ modifiers: EaselKeyModifiers) {
         self.key = key
         self.modifiers = modifiers.intersection([.shift, .control, .option, .command])
     }
 
-    package init(_ character: Character, _ modifiers: EaselKeyModifiers) {
+    init(_ character: Character, _ modifiers: EaselKeyModifiers) {
         self.init(.character(character), modifiers)
     }
 
-    package init?(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers) {
+    init?(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers) {
         switch keyCode {
         case 51, 117: self.init(.delete, modifiers)
         case 36, 76: self.init(.returnKey, modifiers)
@@ -34,7 +34,7 @@ package struct EaselChord: Hashable {
         }
     }
 
-    package static func character(characters: String?, keyCode: UInt16) -> Character? {
+    static func character(characters: String?, keyCode: UInt16) -> Character? {
         if let letter = EaselKeyCommands.letter(characters: characters, keyCode: keyCode) { return letter }
         let typed = (characters ?? "").lowercased()
         if typed.count == 1, let first = typed.first, first.isASCII {
@@ -65,7 +65,7 @@ package enum EaselChordCommand: Hashable {
 }
 
 package enum EaselChords {
-    package static let table: [EaselChord: EaselChordCommand] = [
+    static let table: [EaselChord: EaselChordCommand] = [
         EaselChord("d", .command): .duplicate,
         EaselChord("g", .command): .group,
         EaselChord("g", [.command, .shift]): .ungroup,
@@ -82,15 +82,15 @@ package enum EaselChords {
         EaselChord(.returnKey, [.command, .shift]): .mindMapSibling,
     ]
 
-    package static let reserved: [EaselChord] = [
+    static let reserved: [EaselChord] = [
         EaselChord("l", .command), EaselChord("p", .command), EaselChord("k", .command),
         EaselChord("k", [.command, .shift]), EaselChord("c", [.command, .shift]),
         EaselChord(.up, [.command, .option]), EaselChord(.down, [.command, .option]),
     ]
 
-    package static func command(for chord: EaselChord) -> EaselChordCommand? { table[chord] }
+    static func command(for chord: EaselChord) -> EaselChordCommand? { table[chord] }
 
-    package static func command(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers) -> EaselChordCommand? {
+    static func command(characters: String?, keyCode: UInt16, modifiers: EaselKeyModifiers) -> EaselChordCommand? {
         EaselChord(characters: characters, keyCode: keyCode, modifiers: modifiers).flatMap(command(for:))
     }
 

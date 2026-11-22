@@ -1,6 +1,6 @@
 import Foundation
 
-package enum NoteFileWatchEvent: Sendable, Equatable {
+enum NoteFileWatchEvent: Sendable, Equatable {
     case changed
     case moved(URL)
     case relocated(String?)

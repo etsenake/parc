@@ -1,7 +1,7 @@
 import Foundation
 
 package enum NoteFileNaming {
-    package static let untitled = "Untitled"
+    static let untitled = "Untitled"
     static let maximumComponentBytes = 255
     package static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "heif", "tif", "tiff", "webp", "bmp", "svg", "avif"]
     private static let suffixAllowance = 6
@@ -35,7 +35,7 @@ package enum NoteFileNaming {
             .lowercased()
     }
 
-    package static func fileName(base: String, pathExtension: String, suffix: String = "") -> String {
+    static func fileName(base: String, pathExtension: String, suffix: String = "") -> String {
         let extensionBytes = pathExtension.isEmpty ? 0 : pathExtension.utf8.count + 1
         let limit = maximumComponentBytes - extensionBytes - max(suffix.utf8.count, suffixAllowance)
         let stem = truncated(base, toBytes: limit) + suffix
@@ -55,7 +55,7 @@ package enum NoteFileNaming {
         return result.trimmingCharacters(in: .whitespaces)
     }
 
-    package static func candidates(in folder: URL, base: String, pathExtension: String) -> AnySequence<URL> {
+    static func candidates(in folder: URL, base: String, pathExtension: String) -> AnySequence<URL> {
         AnySequence(sequence(state: 1) { (index: inout Int) -> URL? in
             defer { index += 1 }
             let suffix = index == 1 ? "" : " \(index)"

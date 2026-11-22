@@ -24,7 +24,7 @@ package struct TabSelectionHistory {
         spaces[item.spaceID] = stack
     }
 
-    package func destination(in space: UUID, forward: Bool,
+    func destination(in space: UUID, forward: Bool,
                      available: (RecentTabOrder.Item) -> Bool) -> RecentTabOrder.Item? {
         guard let stack = spaces[space] else { return nil }
         let step = forward ? 1 : -1

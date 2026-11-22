@@ -1,7 +1,7 @@
 import Foundation
 
 package struct EaselSettleContext {
-    package let previous: EaselDocument
+    let previous: EaselDocument
     private let positions: [UUID: Int]
 
     package init(previous: EaselDocument) {
@@ -11,12 +11,12 @@ package struct EaselSettleContext {
         self.positions = positions
     }
 
-    package func before(_ id: UUID) -> EaselItem? {
+    func before(_ id: UUID) -> EaselItem? {
         guard let index = positions[id], previous.items.indices.contains(index) else { return nil }
         return previous.items[index]
     }
 
-    package func item(_ id: UUID, in document: EaselDocument) -> EaselItem? {
+    func item(_ id: UUID, in document: EaselDocument) -> EaselItem? {
         if let index = positions[id], document.items.indices.contains(index), document.items[index].id == id { return document.items[index] }
         return document.items.first { $0.id == id }
     }

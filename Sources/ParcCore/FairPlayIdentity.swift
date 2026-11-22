@@ -35,7 +35,7 @@ package struct FairPlayIdentitySites: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey { case version, safari, chrome }
 
-    package static func normalized(_ site: String) -> String? {
+    static func normalized(_ site: String) -> String? {
         let value = site.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let refused = Set("/\\?#@ ")
         guard !value.isEmpty, value.count <= 253, !value.hasPrefix("."), !value.hasSuffix("."),
@@ -44,7 +44,7 @@ package struct FairPlayIdentitySites: Codable, Equatable {
         return value
     }
 
-    package var isEmpty: Bool { safari.isEmpty && chrome.isEmpty }
+    var isEmpty: Bool { safari.isEmpty && chrome.isEmpty }
 
     package func identity(of site: String) -> Identity {
         guard let site = Self.normalized(site) else { return .undecided }

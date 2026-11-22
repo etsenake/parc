@@ -6,18 +6,18 @@ package enum OnboardingTransitionDirection: Equatable {
 
 package enum OnboardingStepMotion {
     package struct Spring: Equatable {
-        package let response: Double
-        package let dampingFraction: Double
+        let response: Double
+        let dampingFraction: Double
         package var stiffness: Double { pow(2 * .pi / response, 2) }
         package var damping: Double { 4 * .pi * dampingFraction / response }
 
-        package init(response: Double, dampingFraction: Double) {
+        init(response: Double, dampingFraction: Double) {
             self.response = response
             self.dampingFraction = dampingFraction
         }
     }
 
-    package static let offset: Double = 400
+    static let offset: Double = 400
     package static let titleSpring = Spring(response: 0.4, dampingFraction: 0.8)
     package static let messageSpring = Spring(response: 0.5, dampingFraction: 0.8)
     package static let contentFadeDuration: Double = 0.5

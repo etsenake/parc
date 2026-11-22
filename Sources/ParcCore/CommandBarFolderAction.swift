@@ -4,9 +4,9 @@ package struct CommandBarFolderAction: Equatable, Identifiable {
     package let folderID: UUID
     package let reveal: SidebarItemReveal
     package let name: String
-    package let path: [String]
+    let path: [String]
     let ancestorIDs: [UUID]
-    package let spaceName: String
+    let spaceName: String
 
     package var spaceID: UUID { reveal.spaceID }
     package var profileID: UUID { reveal.profileID }
@@ -17,7 +17,7 @@ package struct CommandBarFolderAction: Equatable, Identifiable {
     package var title: String { "Open" }
     package var detail: String { ([spaceName] + path).joined(separator: " › ") }
 
-    package init(folderID: UUID, reveal: SidebarItemReveal, name: String, path: [String], ancestorIDs: [UUID], spaceName: String) {
+    init(folderID: UUID, reveal: SidebarItemReveal, name: String, path: [String], ancestorIDs: [UUID], spaceName: String) {
         self.folderID = folderID
         self.reveal = reveal
         self.name = name

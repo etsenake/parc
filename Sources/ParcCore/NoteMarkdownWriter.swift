@@ -1,11 +1,11 @@
 import Foundation
 
 package struct NoteMDWriter {
-    package let reader: NoteMDReader
-    package let inline: NoteMDInlineWriter
+    let reader: NoteMDReader
+    let inline: NoteMDInlineWriter
     let portable: Bool
 
-    package init(page: NotePage, customEmoji: Set<String> = [], portable: Bool = false) {
+    init(page: NotePage, customEmoji: Set<String> = [], portable: Bool = false) {
         self.portable = portable
         var references: [String: NoteMDLinkReference] = [:]
         var labels: [String: String] = [:]
@@ -39,7 +39,7 @@ package struct NoteMDWriter {
         inline = NoteMDInlineWriter(reader: reader, referenceLabels: labels, portable: portable)
     }
 
-    package func write(_ page: NotePage) -> String {
+    func write(_ page: NotePage) -> String {
         let front = NoteMDFrontMatter.write(page.settings)
         var body = sequence(page.blocks, frame: front == nil ? .document : .documentAfterFrontMatter)
         if front == nil, let first = body.first, NoteMDFrontMatter.split(Array((body.joined(separator: "\n") + "\n").utf8)) != nil {
@@ -50,7 +50,7 @@ package struct NoteMDWriter {
         return output
     }
 
-    package enum Frame {
+    enum Frame {
         case document, documentAfterFrontMatter, container(leading: Int, trailing: Int), listItem(leading: Int)
     }
 
@@ -72,7 +72,7 @@ package struct NoteMDWriter {
         return "b" + (block.props.bulletMarker.flatMap { ["*", "+", "-"].contains($0) ? $0 : nil } ?? "-")
     }
 
-    package func sequence(_ blocks: [NoteBlock], frame: Frame) -> [String] {
+    func sequence(_ blocks: [NoteBlock], frame: Frame) -> [String] {
         var lines: [String] = []
         var empties = 0
         var placedAny = false
@@ -177,7 +177,7 @@ package struct NoteMDWriter {
         return lines
     }
 
-    package func attributes(_ items: [(String, String?)]) -> String {
+    func attributes(_ items: [(String, String?)]) -> String {
         guard !items.isEmpty, !portable else { return "" }
         var result = "<!-- parc"
         for (name, value) in items {
@@ -195,7 +195,7 @@ package struct NoteMDWriter {
         return items
     }
 
-    package func suffix(_ items: [(String, String?)]) -> String {
+    func suffix(_ items: [(String, String?)]) -> String {
         let text = attributes(items)
         return text.isEmpty ? "" : " " + text
     }
@@ -682,7 +682,7 @@ package struct NoteMDWriter {
         return lines + trailingAttributes(blockAttributes(block))
     }
 
-    package static func number(_ value: Double) -> String {
+    static func number(_ value: Double) -> String {
         if value == value.rounded(), abs(value) < 1e15 { return String(Int64(value)) }
         return "\(value)"
     }

@@ -19,7 +19,7 @@ package struct NoteEmbedScrollLatch: Equatable {
 
     static let discreteRunGap: TimeInterval = 0.5
 
-    package private(set) var target: Target?
+    private(set) var target: Target?
     package private(set) var handedOver = false
     private var awaitingPageBegin = false
     private var lastDiscrete: TimeInterval?
@@ -78,7 +78,7 @@ package struct NoteEmbedScrollLatch: Equatable {
 }
 
 package struct NoteEmbedEscapeConfirmation: Equatable {
-    package static let window: TimeInterval = 1
+    static let window: TimeInterval = 1
 
     private(set) var armedAt: TimeInterval?
 

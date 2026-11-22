@@ -44,7 +44,7 @@ package struct WindowRestorationLaunch {
 
 package struct LaunchContinuity: Codable, Equatable {
     package var running: Bool
-    package var build: String
+    var build: String
 
     package init(running: Bool, build: String) {
         self.running = running
@@ -60,7 +60,7 @@ package struct LaunchContinuity: Codable, Equatable {
         everyWindow || (recordID != nil && recordID == launchWindowID)
     }
 
-    package static func file(in directory: URL) -> URL { directory.appendingPathComponent("launch.json") }
+    static func file(in directory: URL) -> URL { directory.appendingPathComponent("launch.json") }
     package static func read(in directory: URL) -> LaunchContinuity? {
         (try? Data(contentsOf: file(in: directory))).flatMap { try? JSONDecoder().decode(Self.self, from: $0) }
     }

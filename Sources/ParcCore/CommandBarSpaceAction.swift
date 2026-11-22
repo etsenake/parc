@@ -12,7 +12,7 @@ package struct CommandBarSpaceAction: Equatable, Identifiable {
     package var title: String { "Focus on" }
     package var detail: String { needsPositionLabel ? "Space \(position)" : "" }
 
-    package init(spaceID: UUID, profileID: UUID, name: String, symbol: String, position: Int, needsPositionLabel: Bool) {
+    init(spaceID: UUID, profileID: UUID, name: String, symbol: String, position: Int, needsPositionLabel: Bool) {
         self.spaceID = spaceID
         self.profileID = profileID
         self.name = name

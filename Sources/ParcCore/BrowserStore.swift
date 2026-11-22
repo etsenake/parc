@@ -9,7 +9,7 @@ package enum AutoArchiveInterval: Double, CaseIterable {
     case twentyFourHours = 24, sevenDays = 168, thirtyDays = 720
 
     package static let settingsChoices: [Self] = [.twelveHours, .twentyFourHours, .sevenDays, .thirtyDays]
-    package var seconds: TimeInterval? { self == .never ? nil : rawValue * 3600 }
+    var seconds: TimeInterval? { self == .never ? nil : rawValue * 3600 }
     var durationTitle: String { self == .twelveHours ? "12 hours" : title }
     package var title: String {
         switch self {
@@ -27,9 +27,9 @@ package enum AutoArchiveInterval: Double, CaseIterable {
 package struct BrowserProfile: Codable, Identifiable, Equatable {
     package var id: UUID
     package var name: String
-    package var autoArchiveHours: Double = AutoArchiveInterval.twelveHours.rawValue
+    var autoArchiveHours: Double = AutoArchiveInterval.twelveHours.rawValue
 
-    package init(id: UUID, name: String, autoArchiveHours: Double = AutoArchiveInterval.twelveHours.rawValue) {
+    init(id: UUID, name: String, autoArchiveHours: Double = AutoArchiveInterval.twelveHours.rawValue) {
         self.id = id
         self.name = name
         self.autoArchiveHours = autoArchiveHours
@@ -260,11 +260,11 @@ package struct BrowserArchivedItem: Identifiable {
 }
 
 package struct ArchivePreviewLease: Equatable {
-    package let token: UUID
+    let token: UUID
     package let profileID: UUID
     package let tabs: [BrowserTab]
 
-    package init(token: UUID, profileID: UUID, tabs: [BrowserTab]) {
+    init(token: UUID, profileID: UUID, tabs: [BrowserTab]) {
         self.token = token
         self.profileID = profileID
         self.tabs = tabs
@@ -387,8 +387,8 @@ extension BrowserTab {
 }
 
 package struct TabCreationProvenance: Equatable {
-    package let referrerID: UUID?
-    package let activeTabBeforeCreationID: UUID?
+    let referrerID: UUID?
+    let activeTabBeforeCreationID: UUID?
     package init(referrerID: UUID?, activeTabID: UUID?, profileID: UUID, state: BrowserState) {
         func original(_ id: UUID?) -> UUID? {
             id.flatMap { value in state.containsTab(value, where: { $0.profileID == profileID && $0.archivedAt == nil }) ? value : nil }
@@ -399,7 +399,7 @@ package struct TabCreationProvenance: Equatable {
     package init(routedFrom source: UUID?, openedLink: Bool, profileID: UUID, state: BrowserState) {
         self.init(referrerID: openedLink ? nil : source, activeTabID: source, profileID: profileID, state: state)
     }
-    package func validated(profileID: UUID, state: BrowserState) -> Self {
+    func validated(profileID: UUID, state: BrowserState) -> Self {
         Self(referrerID: referrerID, activeTabID: activeTabBeforeCreationID, profileID: profileID, state: state)
     }
 }
@@ -456,7 +456,7 @@ package struct BrowserHistoryEntry: Codable, Identifiable, Equatable {
     package var visitedAt: Date
     package var profileID: UUID
 
-    package init(id: UUID, url: String, title: String, visitedAt: Date, profileID: UUID) {
+    init(id: UUID, url: String, title: String, visitedAt: Date, profileID: UUID) {
         self.id = id
         self.url = url
         self.title = title
@@ -519,7 +519,7 @@ enum BrowserHistoryFile {
 }
 
 package enum BrowserHistoryOrder {
-    package static let capacity = 20_000
+    static let capacity = 20_000
 
     static func isStrictlyChronological(_ history: [BrowserHistoryEntry]) -> Bool {
         guard history.count > 1 else { return true }
@@ -539,12 +539,12 @@ package enum BrowserHistoryOrder {
 }
 
 package struct ChromiumHistoryDeletion {
-    package var profilePath: String?
-    package var all: Bool
-    package var range: ClosedRange<Date>?
+    var profilePath: String?
+    var all: Bool
+    var range: ClosedRange<Date>?
     var rangeURLs: Set<String>?
-    package var urls: Set<String>?
-    package var hosts: Set<String>
+    var urls: Set<String>?
+    var hosts: Set<String>
 
     package init(userInfo: [AnyHashable: Any]) {
         func urls(_ key: String) -> Set<String>? {
@@ -591,7 +591,7 @@ package struct BrowserDownload: Codable, Identifiable, Equatable {
     package var status: BrowserDownloadStatus
     package var profileID: UUID? = nil
     package var nativeID: String? = nil
-    package var errorCode: Int? = nil
+    var errorCode: Int? = nil
     package var requiresReview = false
     package var sourceURL: String?
     package var startedAt: Date?
@@ -614,9 +614,9 @@ package struct BrowserDownload: Codable, Identifiable, Equatable {
     package var mimeType: String?
     package var timeRemaining: TimeInterval?
     package var isComplete: Bool { status == .completed }
-    package var isCancelled: Bool { status == .cancelled }
+    var isCancelled: Bool { status == .cancelled }
 
-    package init(id: String, name: String, path: String, receivedBytes: Int64, totalBytes: Int64,
+    init(id: String, name: String, path: String, receivedBytes: Int64, totalBytes: Int64,
          status: BrowserDownloadStatus) {
         self.id = id
         self.name = name
@@ -626,7 +626,7 @@ package struct BrowserDownload: Codable, Identifiable, Equatable {
         self.status = status
     }
 
-    package static func snapshot(_ values: [String: Any], id: String, nativeID: String,
+    static func snapshot(_ values: [String: Any], id: String, nativeID: String,
                          profileID: UUID?) -> BrowserDownload {
         let receivedBytes = (values["receivedBytes"] as? NSNumber)?.int64Value ?? 0
         let status = (values["status"] as? String).flatMap(BrowserDownloadStatus.init(rawValue:))
@@ -815,7 +815,7 @@ package struct BrowserSplitLayout: Codable, Equatable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, sidebarAnchorID, customTitle, customIcon, spaceID, tabIDs, orientation, widthFactors, stacks
     }
-    package init(sidebarAnchorID: UUID? = nil, customTitle: String? = nil, customIcon: SidebarGroupIcon? = nil, spaceID: UUID,
+    init(sidebarAnchorID: UUID? = nil, customTitle: String? = nil, customIcon: SidebarGroupIcon? = nil, spaceID: UUID,
          tabIDs: [UUID], orientation: SplitOrientation = .horizontal, widthFactors: [Double]) {
         self.init(id: UUID(), sidebarAnchorID: sidebarAnchorID, customTitle: customTitle, customIcon: customIcon,
                   spaceID: spaceID, tabIDs: tabIDs, orientation: orientation, widthFactors: widthFactors, stacks: nil)
@@ -863,7 +863,7 @@ package struct BrowserSplitStacks: Codable, Equatable {
     var slotFactors: [Double]
     var stackFactors: [[Double]]
 
-    package init(slotSizes: [Int], slotFactors: [Double], stackFactors: [[Double]]) {
+    init(slotSizes: [Int], slotFactors: [Double], stackFactors: [[Double]]) {
         self.slotSizes = slotSizes
         self.slotFactors = slotFactors
         self.stackFactors = stackFactors
@@ -891,14 +891,14 @@ package struct BrowserSplitStacks: Codable, Equatable {
     }
 }
 
-package struct BrowserSplitSlot: Equatable {
-    package var tabIDs: [UUID]
-    package var factor: Double
+struct BrowserSplitSlot: Equatable {
+    var tabIDs: [UUID]
+    var factor: Double
     var stackFactors: [Double]
 }
 
 extension BrowserSplitLayout {
-    package static func settled(_ factors: [Double]) -> [Double]? {
+    static func settled(_ factors: [Double]) -> [Double]? {
         guard !factors.isEmpty, factors.allSatisfy({ $0.isFinite && $0 > 0 }) else { return nil }
         if factors.count == 1 { return [1] }
         if abs(factors.reduce(0, +) - 1) <= 1e-12 { return factors }
@@ -909,7 +909,7 @@ extension BrowserSplitLayout {
         settled(factors) ?? Array(repeating: 1 / Double(max(factors.count, 1)), count: factors.count)
     }
 
-    package static func shape(orientation: SplitOrientation, sizes: [Int], factors: [Double], stackFactors: [[Double]])
+    static func shape(orientation: SplitOrientation, sizes: [Int], factors: [Double], stackFactors: [[Double]])
         -> (orientation: SplitOrientation, widthFactors: [Double], stacks: BrowserSplitStacks?) {
         if sizes.count == 1, sizes[0] > 1, let stack = stackFactors.first {
             return (orientation == .horizontal ? .vertical : .horizontal, settledOrEqual(stack), nil)
@@ -921,7 +921,7 @@ extension BrowserSplitLayout {
         return (orientation, stacks.flattenedFactors, stacks)
     }
 
-    package var slots: [BrowserSplitSlot] {
+    var slots: [BrowserSplitSlot] {
         guard let stacks = stacks?.validated(paneCount: tabIDs.count) else {
             return tabIDs.indices.map { index in
                 BrowserSplitSlot(tabIDs: [tabIDs[index]],
@@ -938,24 +938,24 @@ extension BrowserSplitLayout {
         return result
     }
 
-    package var slotBoundaries: [Int] {
+    var slotBoundaries: [Int] {
         slots.reduce(into: [0]) { boundaries, slot in boundaries.append(boundaries[boundaries.count - 1] + slot.tabIDs.count) }
     }
 
-    package func position(of id: UUID) -> (slot: Int, index: Int)? {
+    func position(of id: UUID) -> (slot: Int, index: Int)? {
         for (slot, item) in slots.enumerated() {
             if let index = item.tabIDs.firstIndex(of: id) { return (slot, index) }
         }
         return nil
     }
 
-    package func slotRange(_ slot: Int) -> Range<Int>? {
+    func slotRange(_ slot: Int) -> Range<Int>? {
         let boundaries = slotBoundaries
         guard slot >= 0, slot < boundaries.count - 1 else { return nil }
         return boundaries[slot]..<boundaries[slot + 1]
     }
 
-    package func paneID(slot: Int, index: Int) -> UUID? {
+    func paneID(slot: Int, index: Int) -> UUID? {
         let all = slots
         guard all.indices.contains(slot), all[slot].tabIDs.indices.contains(index) else { return nil }
         return all[slot].tabIDs[index]
@@ -965,7 +965,7 @@ extension BrowserSplitLayout {
         position(of: id).flatMap { slotRange($0.slot)?.upperBound }
     }
 
-    package mutating func arrange(_ slots: [BrowserSplitSlot]) {
+    mutating func arrange(_ slots: [BrowserSplitSlot]) {
         let kept = slots.filter { !$0.tabIDs.isEmpty }
         let shaped = Self.shape(orientation: orientation, sizes: kept.map(\.tabIDs.count),
                                 factors: kept.map(\.factor), stackFactors: kept.map(\.stackFactors))
@@ -1117,7 +1117,7 @@ extension BrowserSplitLayout {
 }
 
 package struct BrowserState: Codable, Equatable {
-    package var version: Int = 1
+    var version: Int = 1
     package var profiles: [BrowserProfile]
     package var spaces: [BrowserSpace]
     package var tabs: [BrowserTab] = [] { didSet { tabLookup = BrowserTabLookupSlot() } }
@@ -1136,11 +1136,11 @@ package struct BrowserState: Codable, Equatable {
     package var settings = BrowserSettings()
     package var profileRemovals: [ProfileRemovalRecord] = []
     var arcImportedSpaces: [String: UUID] = [:]
-    package var windows: [BrowserWindowRecord] = []
+    var windows: [BrowserWindowRecord] = []
     var spaceSharingVersion = SpaceSharing.version
     var tabLookup = BrowserTabLookupSlot()
 
-    package init(version: Int = 1, profiles: [BrowserProfile], spaces: [BrowserSpace], tabs: [BrowserTab] = [], folders: [BrowserFolder] = [], activeSpaceID: UUID, selectedTabIDs: [UUID] = [], selectionBySpace: [String: [UUID]] = [:], splitLayouts: [BrowserSplitLayout] = [], sidebarItemOrder: [String: [SidebarItemReference]] = [:], autoArchiveStartedAt: Date? = nil, autoArchiveDefaultHours: Double = AutoArchiveInterval.twelveHours.rawValue, autoArchiveEducationEligible: Bool = false, history: [BrowserHistoryEntry] = [], downloads: [BrowserDownload] = [], recentlyClosedIDs: [UUID] = [], settings: BrowserSettings = BrowserSettings(), profileRemovals: [ProfileRemovalRecord] = [], arcImportedSpaces: [String: UUID] = [:], windows: [BrowserWindowRecord] = [], spaceSharingVersion: Int = SpaceSharing.version, tabLookup: BrowserTabLookupSlot = BrowserTabLookupSlot()) {
+    init(version: Int = 1, profiles: [BrowserProfile], spaces: [BrowserSpace], tabs: [BrowserTab] = [], folders: [BrowserFolder] = [], activeSpaceID: UUID, selectedTabIDs: [UUID] = [], selectionBySpace: [String: [UUID]] = [:], splitLayouts: [BrowserSplitLayout] = [], sidebarItemOrder: [String: [SidebarItemReference]] = [:], autoArchiveStartedAt: Date? = nil, autoArchiveDefaultHours: Double = AutoArchiveInterval.twelveHours.rawValue, autoArchiveEducationEligible: Bool = false, history: [BrowserHistoryEntry] = [], downloads: [BrowserDownload] = [], recentlyClosedIDs: [UUID] = [], settings: BrowserSettings = BrowserSettings(), profileRemovals: [ProfileRemovalRecord] = [], arcImportedSpaces: [String: UUID] = [:], windows: [BrowserWindowRecord] = [], spaceSharingVersion: Int = SpaceSharing.version, tabLookup: BrowserTabLookupSlot = BrowserTabLookupSlot()) {
         self.version = version
         self.profiles = profiles
         self.spaces = spaces
@@ -1286,9 +1286,9 @@ package struct BrowserWindowRecord: Codable, Equatable {
     package var sidebarWidth: Double
     package var itemLastActiveDates: [UUID: Date]
     package var id: UUID?
-    package var focusedSpaceID: UUID?
-    package var selectedTabIDs: [UUID]?
-    package var focusedTabID: UUID?
+    var focusedSpaceID: UUID?
+    var selectedTabIDs: [UUID]?
+    var focusedTabID: UUID?
     package var sidebarHidden: Bool?
     package var stayOnTop: Bool
     package var peekedFolders: [UUID: [SidebarItemReference]]?
@@ -1374,17 +1374,17 @@ package struct SidebarContainerLocation: Equatable {
 }
 
 package struct SidebarHierarchySnapshot: Equatable {
-    package struct Placement: Equatable {
-        package let id: UUID, profileID: UUID, spaceID: UUID
-        package let kind: TabKind
-        package let folderID: UUID?
+    struct Placement: Equatable {
+        let id: UUID, profileID: UUID, spaceID: UUID
+        let kind: TabKind
+        let folderID: UUID?
     }
     package let spaceID: UUID, profileID: UUID
     package let includesFavorites: Bool
-    package let tabs: [Placement]
-    package let folders: [BrowserFolder]
+    let tabs: [Placement]
+    let folders: [BrowserFolder]
     package let groups: [BrowserSplitLayout]
-    package let order: [String: [SidebarItemReference]]
+    let order: [String: [SidebarItemReference]]
 
     package init?(state: BrowserState, spaceID: UUID, profileID: UUID, includesFavorites: Bool = false) {
         guard state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }),
@@ -1524,7 +1524,7 @@ package enum SidebarHierarchy {
         if case .split(let id) = item, let anchor = state.splitLayouts.first(where: { $0.id == id })?.sidebarAnchorID { return .tab(anchor) }
         return item
     }
-    package static func placing(_ item: SidebarItemReference, in location: SidebarContainerLocation,
+    static func placing(_ item: SidebarItemReference, in location: SidebarContainerLocation,
                         following recorded: [SidebarItemReference], state: inout BrowserState) {
         let snapshot = state
         var siblings = children(in: location, state: snapshot).map { storedReference($0, state: snapshot) }.filter { $0 != item }
@@ -1555,7 +1555,7 @@ package enum SidebarHierarchy {
             collect(id); var seen = Set<UUID>(); return result.filter { seen.insert($0).inserted }
         }
     }
-    package static func moving(_ item: SidebarItemReference, to destination: SidebarContainerLocation,
+    static func moving(_ item: SidebarItemReference, to destination: SidebarContainerLocation,
                        before: SidebarItemReference?, expected: SidebarHierarchySnapshot,
                        state: BrowserState) -> BrowserState? {
         guard SidebarHierarchySnapshot(state: state, spaceID: expected.spaceID, profileID: expected.profileID, includesFavorites: expected.includesFavorites) == expected,
@@ -1626,13 +1626,13 @@ package enum SidebarHierarchy {
 
 
 package struct SidebarDocumentReference {
-    package let page: InternalPage
-    package let profileID: UUID
+    let page: InternalPage
+    let profileID: UUID
     private let validate: @MainActor () throws -> Void
     package init(page: InternalPage, profileID: UUID, validate: @escaping @MainActor () throws -> Void) {
         self.page = page; self.profileID = profileID; self.validate = validate
     }
-    @MainActor package func isCurrent() -> Bool { do { try validate(); return true } catch { return false } }
+    @MainActor func isCurrent() -> Bool { do { try validate(); return true } catch { return false } }
     @MainActor package static func validates(_ originals: [BrowserTab], references: [UUID: Self]) -> Bool {
         guard Set(references.keys).isSubset(of: Set(originals.map(\.id))) else { return false }
         return originals.allSatisfy { original in
@@ -1673,11 +1673,11 @@ package struct SidebarCopySources {
 }
 
 package struct SidebarDuplicateTarget: Equatable {
-    package let source: CommandBarFolderMoveSource
-    package let folderIDs: [UUID]
+    let source: CommandBarFolderMoveSource
+    let folderIDs: [UUID]
     package let tabs: [BrowserTab]
-    package let groups: [BrowserSplitLayout]
-    package var roots: [SidebarItemReference] { source.roots }
+    let groups: [BrowserSplitLayout]
+    var roots: [SidebarItemReference] { source.roots }
     package var hierarchy: SidebarHierarchySnapshot { source.hierarchy }
 
     package init?(items: [SidebarItemReference], spaceID: UUID, profileID: UUID, state: BrowserState) {
@@ -1712,14 +1712,14 @@ package struct SidebarDuplicateTarget: Equatable {
 }
 
 package struct FolderDuplicateTarget: Equatable {
-    package let folderID: UUID
-    package let collection: SidebarDuplicateTarget
-    package var hierarchy: SidebarHierarchySnapshot { collection.hierarchy }
-    package var folderIDs: [UUID] { collection.folderIDs }
-    package var tabs: [BrowserTab] { collection.tabs }
-    package var groups: [BrowserSplitLayout] { collection.groups }
+    let folderID: UUID
+    let collection: SidebarDuplicateTarget
+    var hierarchy: SidebarHierarchySnapshot { collection.hierarchy }
+    var folderIDs: [UUID] { collection.folderIDs }
+    var tabs: [BrowserTab] { collection.tabs }
+    var groups: [BrowserSplitLayout] { collection.groups }
 
-    package init?(folderID: UUID, spaceID: UUID, profileID: UUID, state: BrowserState) {
+    init?(folderID: UUID, spaceID: UUID, profileID: UUID, state: BrowserState) {
         guard let collection = SidebarDuplicateTarget(items: [.folder(folderID)], spaceID: spaceID, profileID: profileID, state: state) else { return nil }
         self.folderID = folderID; self.collection = collection
     }
@@ -1736,10 +1736,10 @@ package struct FolderDuplicateTarget: Equatable {
 
 package struct SidebarDuplicateResult {
     package let roots: [SidebarItemReference]
-    package let tabIDs: [UUID]
+    let tabIDs: [UUID]
     package let openTabIDs: [UUID]
 
-    package init(roots: [SidebarItemReference], tabIDs: [UUID], openTabIDs: [UUID]) {
+    init(roots: [SidebarItemReference], tabIDs: [UUID], openTabIDs: [UUID]) {
         self.roots = roots
         self.tabIDs = tabIDs
         self.openTabIDs = openTabIDs
@@ -1747,11 +1747,11 @@ package struct SidebarDuplicateResult {
 }
 
 package struct SidebarItemsCopy: Equatable {
-    package let collection: SidebarMoveCollection
+    let collection: SidebarMoveCollection
     package let groups: [BrowserSplitLayout]
     package var roots: [SidebarItemReference] { collection.roots }
     package var tabs: [BrowserTab] { collection.tabs }
-    package var folderIDs: [UUID] { collection.folderIDs }
+    var folderIDs: [UUID] { collection.folderIDs }
     package var source: SidebarHierarchySnapshot { collection.hierarchy }
     package var wholeSplits: Bool { roots.allSatisfy { if case .split = $0 { return true } else { return false } } }
 
@@ -1783,10 +1783,10 @@ package struct SidebarItemsCopy: Equatable {
     }
 }
 
-package struct FolderDuplicateResult {
-    package let folderID: UUID
-    package let tabIDs: [UUID]
-    package let openTabIDs: [UUID]
+struct FolderDuplicateResult {
+    let folderID: UUID
+    let tabIDs: [UUID]
+    let openTabIDs: [UUID]
 }
 
 package struct FolderRemovalTarget: Equatable {
@@ -1795,9 +1795,9 @@ package struct FolderRemovalTarget: Equatable {
     package let hierarchy: SidebarHierarchySnapshot
     package let folderIDs: [UUID]
     package let tabs: [BrowserTab]
-    package let groups: [BrowserSplitLayout]
+    let groups: [BrowserSplitLayout]
 
-    package init?(folderID: UUID, spaceID: UUID, profileID: UUID, state: BrowserState) {
+    init?(folderID: UUID, spaceID: UUID, profileID: UUID, state: BrowserState) {
         self.init(items: [.folder(folderID)], spaceID: spaceID, profileID: profileID, state: state)
     }
 
@@ -1841,7 +1841,7 @@ package struct FolderRemovalTarget: Equatable {
         self.hierarchy = hierarchy; folderIDs = folders; self.tabs = tabs; self.groups = groups
     }
 
-    package func refreshed(in state: BrowserState) -> FolderRemovalTarget? {
+    func refreshed(in state: BrowserState) -> FolderRemovalTarget? {
         FolderRemovalTarget(items: roots, spaceID: hierarchy.spaceID, profileID: hierarchy.profileID,
                             includesFavorites: hierarchy.includesFavorites, state: state)
     }
@@ -1873,14 +1873,14 @@ package struct FolderDeletionUndo: SidebarItemsRecord {
     package let spaceID: UUID, profileID: UUID
     package let folders: [BrowserFolder]
     package let tabs: [BrowserTab]
-    package let archivedTabs: [BrowserTab]
+    let archivedTabs: [BrowserTab]
     package let documentReferences: [UUID: SidebarDocumentReference]
     package let groups: [BrowserSplitLayout]
     package struct Location {
-        package let container: SidebarContainerLocation
-        package let siblings: [SidebarItemReference]
+        let container: SidebarContainerLocation
+        let siblings: [SidebarItemReference]
 
-        package init(container: SidebarContainerLocation, siblings: [SidebarItemReference]) {
+        init(container: SidebarContainerLocation, siblings: [SidebarItemReference]) {
             self.container = container
             self.siblings = siblings
         }
@@ -2000,7 +2000,7 @@ package struct SidebarCopyUndo: SidebarItemsRecord {
     package let locations: [FolderDeletionUndo.Location]
     let childOrder: [String: [SidebarItemReference]]
     let detachedArchive: [BrowserTab]
-    package let documentReferences: [UUID: SidebarDocumentReference]
+    let documentReferences: [UUID: SidebarDocumentReference]
     package let openTabIDs: [UUID]
 
     package init?(actionName: String, roots: [SidebarItemReference], spaceID: UUID, profileID: UUID,
@@ -2035,7 +2035,7 @@ package struct SidebarCopyUndo: SidebarItemsRecord {
         self.openTabIDs = openTabIDs
     }
 
-    package func refreshed(in state: BrowserState) -> SidebarCopyUndo? {
+    func refreshed(in state: BrowserState) -> SidebarCopyUndo? {
         SidebarCopyUndo(actionName: actionName, roots: roots, spaceID: spaceID, profileID: profileID,
                         documents: Array(documentReferences.values), openTabIDs: openTabIDs, state: state)
     }
@@ -2046,7 +2046,7 @@ package struct SidebarCopyUndo: SidebarItemsRecord {
 }
 
 extension FolderRemovalSelection {
-    package func isCurrent(for target: FolderRemovalTarget, in state: BrowserState) -> Bool {
+    func isCurrent(for target: FolderRemovalTarget, in state: BrowserState) -> Bool {
         Self.resolve(target: target, state: state, spaceID: spaceID, selected: original, focused: originalFocus,
                      referrerPool: referrerPool, previouslySelectedItemID: previouslySelectedItemID,
                      available: { tabIDs.contains($0) }) == self
@@ -2064,12 +2064,12 @@ package struct ClosedTabsUndo {
         }
     }
     package let prompt: Prompt
-    package let spaceID: UUID, profileID: UUID
+    let spaceID: UUID, profileID: UUID
     package let tabs: [BrowserTab]
-    package let archivedTabs: [BrowserTab]
-    package let groups: [BrowserSplitLayout]
+    let archivedTabs: [BrowserTab]
+    let groups: [BrowserSplitLayout]
     let memberships: [UUID: ClosedSplitMembership]
-    package let order: [SidebarItemReference]
+    let order: [SidebarItemReference]
     package let focusedTabID: UUID?
 
     package var actionName: String { prompt.name(count: itemCount(of: Set(tabs.map(\.id)))) }
@@ -2123,7 +2123,7 @@ package struct ClosedTabsUndo {
                 && $0.spaceID == spaceID && $0.profileID == profileID }) }.map(\.id))
     }
 
-    package func restoring(_ state: BrowserState, regroupable: (UUID) -> Bool = { _ in true }) -> BrowserState? {
+    func restoring(_ state: BrowserState, regroupable: (UUID) -> Bool = { _ in true }) -> BrowserState? {
         let ids = restorableIDs(in: state)
         guard !ids.isEmpty else { return nil }
         var next = state
@@ -2198,17 +2198,17 @@ package struct ClosedTabsUndo {
 }
 
 package struct FolderRemovalSelection: Equatable {
-    package let spaceID: UUID, profileID: UUID
-    package let original: [UUID]
-    package let originalFocus: UUID?
+    let spaceID: UUID, profileID: UUID
+    let original: [UUID]
+    let originalFocus: UUID?
     package let tabIDs: [UUID]
     package let focusedTabID: UUID?
-    package let removed: Set<UUID>
-    package let referrerPool: Set<UUID>
-    package let previouslySelectedItemID: UUID?
+    let removed: Set<UUID>
+    let referrerPool: Set<UUID>
+    let previouslySelectedItemID: UUID?
     package let replacementSpaceID: UUID
 
-    package init(spaceID: UUID, profileID: UUID, original: [UUID], originalFocus: UUID?,
+    init(spaceID: UUID, profileID: UUID, original: [UUID], originalFocus: UUID?,
          tabIDs: [UUID], focusedTabID: UUID?, removed: Set<UUID> = [], referrerPool: Set<UUID> = [],
          previouslySelectedItemID: UUID? = nil, replacementSpaceID: UUID? = nil) {
         self.spaceID = spaceID; self.profileID = profileID; self.original = original
@@ -2341,7 +2341,7 @@ package struct FolderRemovalSelection: Equatable {
 package struct SidebarItemSelection: Equatable {
     package private(set) var items: [SidebarItemReference] = []
     package private(set) var singleItem: SidebarItemReference?
-    package private(set) var anchor: SidebarItemReference?
+    private(set) var anchor: SidebarItemReference?
     package private(set) var focus: SidebarItemReference?
 
     package init(items: [SidebarItemReference] = [], singleItem: SidebarItemReference? = nil, anchor: SidebarItemReference? = nil, focus: SidebarItemReference? = nil) {
@@ -2366,7 +2366,7 @@ package struct SidebarItemSelection: Equatable {
         focus = focus.flatMap { visible.contains($0) ? $0 : nil }
             ?? active.flatMap { visible.contains($0) ? $0 : nil } ?? visible.first
     }
-    package mutating func reconcile(order: [SidebarItemReference]) {
+    mutating func reconcile(order: [SidebarItemReference]) {
         let allowed = Set(order)
         items.removeAll { !allowed.contains($0) }
         if let singleItem, !allowed.contains(singleItem) { self.singleItem = nil }
@@ -2520,7 +2520,7 @@ package enum InternalPage: Equatable {
     }
     package var easelID: UUID? { if case let .easel(id) = self { return id }; return nil }
     package var noteURL: URL? { if case let .note(url) = self { return Self.noteFile(url) ?? url }; return nil }
-    package var canonical: InternalPage {
+    var canonical: InternalPage {
         guard let url = noteURL else { return self }
         return .note(NoteFilePaths.canonical(url))
     }
@@ -2613,13 +2613,13 @@ enum NavigationInput {
 }
 
 package struct SpaceThemeChange: Equatable {
-    package let spaceID: UUID
-    package let profileID: UUID
+    let spaceID: UUID
+    let profileID: UUID
     let previousTheme: SpaceTheme
-    package let theme: SpaceTheme
+    let theme: SpaceTheme
     package var actionName: String { "Update Theme" }
 
-    package init(spaceID: UUID, profileID: UUID, previousTheme: SpaceTheme, theme: SpaceTheme) {
+    init(spaceID: UUID, profileID: UUID, previousTheme: SpaceTheme, theme: SpaceTheme) {
         self.spaceID = spaceID
         self.profileID = profileID
         self.previousTheme = previousTheme
@@ -2797,12 +2797,12 @@ package final class BrowserStore: ObservableObject {
     package var activeSplitLayout: BrowserSplitLayout? {
         SidebarSplitItems.groups(in: state, spaceID: activeSpaceID).first { $0.tabIDs == state.selectedTabIDs }
     }
-    package var visibleTabs: [BrowserTab] { state.openTabs(where: { ($0.kind == .favorite ? $0.profileID == activeSpace.profileID : $0.spaceID == activeSpaceID) }) }
-    package var favorites: [BrowserTab] { visibleTabs.filter { $0.kind == .favorite } }
+    var visibleTabs: [BrowserTab] { state.openTabs(where: { ($0.kind == .favorite ? $0.profileID == activeSpace.profileID : $0.spaceID == activeSpaceID) }) }
+    var favorites: [BrowserTab] { visibleTabs.filter { $0.kind == .favorite } }
     var pinnedTabs: [BrowserTab] { visibleTabs.filter { $0.kind == .pinned } }
     var todayTabs: [BrowserTab] { visibleTabs.filter { $0.kind == .today } }
-    package var folders: [BrowserFolder] { state.folders.filter { $0.spaceID == activeSpaceID } }
-    package var archivedTabs: [BrowserTab] { state.archivedTabs(where: { $0.profileID == activeSpace.profileID }).sorted { $0.archivedAt! > $1.archivedAt! } }
+    var folders: [BrowserFolder] { state.folders.filter { $0.spaceID == activeSpaceID } }
+    var archivedTabs: [BrowserTab] { state.archivedTabs(where: { $0.profileID == activeSpace.profileID }).sorted { $0.archivedAt! > $1.archivedAt! } }
 
     package func archivedItems(profileID: UUID) -> [BrowserArchivedItem] {
         let tabs = state.archivedTabs(where: { $0.profileID == profileID })
@@ -2922,7 +2922,7 @@ package final class BrowserStore: ObservableObject {
         deleteArchivedTabs(ids, profileID: profileID, forgettingBackups: true)
     }
 
-    package func profilePath(for tab: BrowserTab) -> String {
+    func profilePath(for tab: BrowserTab) -> String {
         directory.appendingPathComponent("Profiles", isDirectory: true)
             .appendingPathComponent(tab.profileID.uuidString, isDirectory: true).path
     }
@@ -2993,7 +2993,7 @@ package final class BrowserStore: ObservableObject {
             .appendingPathComponent(profileID.uuidString, isDirectory: true)
             .appendingPathComponent("Easels", isDirectory: true)
     }
-    package var activeEaselsDirectory: URL { easelsDirectory(for: activeSpace.profileID) }
+    var activeEaselsDirectory: URL { easelsDirectory(for: activeSpace.profileID) }
 
     package func capturesDirectory(for profileID: UUID) -> URL {
         directory.appendingPathComponent("Profiles", isDirectory: true)
@@ -3052,7 +3052,7 @@ package final class BrowserStore: ObservableObject {
     }
 
     @discardableResult
-    package func stepNoteVisit(_ id: UUID, forward: Bool) -> Bool {
+    func stepNoteVisit(_ id: UUID, forward: Bool) -> Bool {
         stepNoteVisit(id, by: forward ? 1 : -1)
     }
 
@@ -3381,7 +3381,7 @@ package final class BrowserStore: ObservableObject {
         return request.targetID
     }
 
-    package func navigate(_ id: UUID, input: String) {
+    func navigate(_ id: UUID, input: String) {
         guard let url = NavigationInput.resolve(input, searchEngine: state.settings.searchEngine) else { return }
         guard let tab = state.tab(id) else { return }
         if !InternalPage.isInternal(tab.url), InternalPage.isInternal(url.absoluteString) {
@@ -3531,7 +3531,7 @@ package final class BrowserStore: ObservableObject {
         closeTabs([id])
     }
 
-    package func closeTabs(_ ids: Set<UUID>, reason: ArchiveReason = .manual, completion: ((Bool) -> Void)? = nil) {
+    func closeTabs(_ ids: Set<UUID>, reason: ArchiveReason = .manual, completion: ((Bool) -> Void)? = nil) {
         closeTabs(ids, reason: reason, shouldCommit: { true }, completion: completion)
     }
 
@@ -3891,7 +3891,7 @@ package final class BrowserStore: ObservableObject {
     }
 
     @discardableResult
-    package func createSpace(name: String, color: String = "B9B5D4") -> UUID {
+    func createSpace(name: String, color: String = "B9B5D4") -> UUID {
         var space = BrowserSpace(id: UUID(), name: name,
                                  symbol: "circle.fill", color: color, profileID: activeSpace.profileID)
         space.updateDisplayName(position: state.spaces.count)
@@ -3910,7 +3910,7 @@ package final class BrowserStore: ObservableObject {
     }
 
     @discardableResult
-    package func createSpace(name: String, sharing: SpaceDataSharing, newProfileID: UUID = UUID()) throws -> UUID {
+    func createSpace(name: String, sharing: SpaceDataSharing, newProfileID: UUID = UUID()) throws -> UUID {
         guard !isEphemeral else { throw ProfileSettingsError.unavailable }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         var next = state
@@ -3942,7 +3942,7 @@ package final class BrowserStore: ObservableObject {
         return space.id
     }
 
-    package func renameSpace(_ id: UUID, name: String) {
+    func renameSpace(_ id: UUID, name: String) {
         guard !name.isEmpty, let index = state.spaces.firstIndex(where: { $0.id == id }) else { return }
         state.spaces[index].title = name
         state.spaces[index].updateDisplayName(position: index)
@@ -4463,7 +4463,7 @@ package final class BrowserStore: ObservableObject {
     }
 
     @discardableResult
-    package func createFolder(name: String, parentID: UUID? = nil) -> UUID {
+    func createFolder(name: String, parentID: UUID? = nil) -> UUID {
         let id = UUID()
         let parent = parentID.flatMap { parent in folders.contains { $0.id == parent } ? parent : nil }
         state.folders.append(BrowserFolder(id: id, spaceID: activeSpaceID, name: name.isEmpty ? SidebarFolderFromItems.defaultName : name, parentID: parent))
@@ -4518,7 +4518,7 @@ package final class BrowserStore: ObservableObject {
         try commitProfileSettings(next); return true
     }
 
-    package func renameFolder(_ id: UUID, name: String) {
+    func renameFolder(_ id: UUID, name: String) {
         guard !name.isEmpty, let index = state.folders.firstIndex(where: { $0.id == id }) else { return }
         state.folders[index].name = name
         changed()
@@ -4718,7 +4718,7 @@ package final class BrowserStore: ObservableObject {
         return copy
     }
 
-    package func duplicateFolder(_ target: FolderDuplicateTarget,
+    func duplicateFolder(_ target: FolderDuplicateTarget,
                          destinations: [UUID: String],
                          documents: [UUID: SidebarDocumentReference] = [:],
                          creation: TabCreationProvenance? = nil) throws -> FolderDuplicateResult? {
@@ -5302,7 +5302,7 @@ package final class BrowserStore: ObservableObject {
         do { try commitProfileSettings(next); return true } catch { return false }
     }
 
-    package func closeSplit() {
+    func closeSplit() {
         let originalID = activeSplitLayout?.id, before = state
         var next = state
         next.splitLayouts.removeAll { $0.id == originalID }
@@ -5314,7 +5314,7 @@ package final class BrowserStore: ObservableObject {
         changed(selectionAlreadyStamped: true)
     }
     @discardableResult
-    package func separateSplitPane(_ id: UUID) -> Bool {
+    func separateSplitPane(_ id: UUID) -> Bool {
         guard let group = activeSplitLayout else { return false }
         return separateTabFromSplit(id, expected: group, focusedID: id)
     }
@@ -5511,12 +5511,12 @@ package final class BrowserStore: ObservableObject {
         catch { return false }
     }
 
-    package func autoArchiveInterval(for profileID: UUID) -> AutoArchiveInterval? {
+    func autoArchiveInterval(for profileID: UUID) -> AutoArchiveInterval? {
         state.profiles.first { $0.id == profileID }.flatMap { AutoArchiveInterval(rawValue: $0.autoArchiveHours) }
     }
 
     @discardableResult
-    package func setAutoArchiveInterval(_ interval: AutoArchiveInterval, for profileID: UUID) -> Bool {
+    func setAutoArchiveInterval(_ interval: AutoArchiveInterval, for profileID: UUID) -> Bool {
         do { _ = try changeAutoArchiveInterval(interval, for: profileID); return true }
         catch { return false }
     }
@@ -5617,7 +5617,7 @@ package final class BrowserStore: ObservableObject {
     }
 
     @discardableResult
-    package func archiveExpiredTabs(protectedTabIDs: Set<UUID> = []) -> [UUID] {
+    func archiveExpiredTabs(protectedTabIDs: Set<UUID> = []) -> [UUID] {
         guard requestPageRetirement == nil else {
             archiveExpiredTabs(protectedTabIDs: protectedTabIDs, completion: { _ in })
             return []
@@ -5841,7 +5841,7 @@ package final class BrowserStore: ObservableObject {
     }
 
     @discardableResult
-    package func commitImportedBookmarks(_ roots: [BrowserImportBookmark], destination: BrowserImportDestination) throws -> BrowserImportPlacement {
+    func commitImportedBookmarks(_ roots: [BrowserImportBookmark], destination: BrowserImportDestination) throws -> BrowserImportPlacement {
         try commitImportedBookmarks([(roots, destination, BrowserImportPlacement())])[0]
     }
 
@@ -6308,7 +6308,7 @@ enum SplitDropTransaction {
 }
 
 package enum SidebarSplitItems {
-    package static func isFavorite(_ group: BrowserSplitLayout, in state: BrowserState, profileID: UUID) -> Bool {
+    static func isFavorite(_ group: BrowserSplitLayout, in state: BrowserState, profileID: UUID) -> Bool {
         group.tabIDs.count > 1 && group.tabIDs.allSatisfy { id in
             state.containsTab(id, where: { $0.archivedAt == nil && $0.profileID == profileID && $0.kind == .favorite && $0.folderID == nil })
         }
@@ -6385,13 +6385,13 @@ package enum SidebarTabTitle {
 }
 
 package struct SidebarTabTitleChange: Equatable {
-    package let tabID: UUID
+    let tabID: UUID
     package let profileID: UUID
     let previousTitle: String?
-    package let title: String?
+    let title: String?
     package var actionName: String { "Rename Item" }
 
-    package init(tabID: UUID, profileID: UUID, previousTitle: String?, title: String?) {
+    init(tabID: UUID, profileID: UUID, previousTitle: String?, title: String?) {
         self.tabID = tabID
         self.profileID = profileID
         self.previousTitle = previousTitle
@@ -6453,10 +6453,10 @@ package struct SidebarSplitTitleChange: Equatable {
     let containerID: UUID
     package let profileID: UUID
     let previousTitle: String?
-    package let title: String?
+    let title: String?
     package var actionName: String { "Rename Item" }
 
-    package init(containerID: UUID, profileID: UUID, previousTitle: String?, title: String?) {
+    init(containerID: UUID, profileID: UUID, previousTitle: String?, title: String?) {
         self.containerID = containerID
         self.profileID = profileID
         self.previousTitle = previousTitle
@@ -6477,13 +6477,13 @@ package struct SidebarSplitAppearanceChange: Equatable {
     let containerID: UUID
     package let profileID: UUID
     let previousTitle: String?
-    package let title: String?
+    let title: String?
     let previousIcon: SidebarGroupIcon?
-    package let icon: SidebarGroupIcon?
+    let icon: SidebarGroupIcon?
     let resetsTitle: Bool
     package var actionName: String { resetsTitle ? "Reset Name and Icon" : "Customize Tab" }
 
-    package init(containerID: UUID, profileID: UUID, previousTitle: String?, title: String?, previousIcon: SidebarGroupIcon?, icon: SidebarGroupIcon?, resetsTitle: Bool) {
+    init(containerID: UUID, profileID: UUID, previousTitle: String?, title: String?, previousIcon: SidebarGroupIcon?, icon: SidebarGroupIcon?, resetsTitle: Bool) {
         self.containerID = containerID
         self.profileID = profileID
         self.previousTitle = previousTitle
@@ -6502,15 +6502,15 @@ package struct SidebarSplitAppearanceChange: Equatable {
 }
 
 package struct SessionFileOperations {
-    package let exists: (URL) -> Bool
-    package let replace: (Data, URL) throws -> Void
+    let exists: (URL) -> Bool
+    let replace: (Data, URL) throws -> Void
 
-    package init(exists: @escaping (URL) -> Bool, replace: @escaping (Data, URL) throws -> Void) {
+    init(exists: @escaping (URL) -> Bool, replace: @escaping (Data, URL) throws -> Void) {
         self.exists = exists
         self.replace = replace
     }
 
-    package static var live: Self {
+    static var live: Self {
         Self(exists: { FileManager.default.fileExists(atPath: $0.path) },
              replace: { try SessionFileWriter.replaceAtomically($0, at: $1) })
     }

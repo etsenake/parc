@@ -20,7 +20,7 @@ extension EaselVectorExport {
         items.contains(where: EaselPaintRules.isHighlighter) ? "<style>" + highlightCSS + "</style>" : ""
     }
 
-    package static func drawing(_ item: EaselItem) -> String {
+    static func drawing(_ item: EaselItem) -> String {
         switch item.resolvedBrush {
         case .marker, .highlighter: return brushStroke(item)
         case .washi: return tape(item)

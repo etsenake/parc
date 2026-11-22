@@ -8,7 +8,7 @@ package struct HistorySpotlightItem: Equatable {
     package var lastVisit: Date
     package var visits: Int
 
-    package init(url: String, title: String, site: String, lastVisit: Date, visits: Int) {
+    init(url: String, title: String, site: String, lastVisit: Date, visits: Int) {
         self.url = url
         self.title = title
         self.site = site
@@ -18,7 +18,7 @@ package struct HistorySpotlightItem: Equatable {
 }
 
 package enum HistorySpotlight {
-    package static let format = Data("parc-history-1".utf8)
+    static let format = Data("parc-history-1".utf8)
 
     package static func site(of address: String) -> String? {
         guard let parts = URLComponents(string: address),

@@ -1,12 +1,12 @@
 import Foundation
 
 package struct SidebarSpaceMove: Equatable {
-    package let source: SidebarHierarchySnapshot
-    package let destination: SidebarHierarchySnapshot
+    let source: SidebarHierarchySnapshot
+    let destination: SidebarHierarchySnapshot
     package let roots: [SidebarItemReference]
     package let tabIDs: [UUID]
-    package let folderIDs: [UUID]
-    package let groupIDs: [UUID]
+    let folderIDs: [UUID]
+    let groupIDs: [UUID]
     package var pinsToday = false
 
     package init?(items: [SidebarItemReference], from source: SidebarHierarchySnapshot,
@@ -137,8 +137,8 @@ package struct SidebarSpaceMove: Equatable {
 
 package struct SidebarItemReveal: Equatable {
     package let item: SidebarItemReference
-    package let spaceID: UUID
-    package let profileID: UUID
+    let spaceID: UUID
+    let profileID: UUID
     let expandedFolderIDs: Set<UUID>
 
     package init?(item: SidebarItemReference, spaceID: UUID, profileID: UUID, state: BrowserState) {
@@ -160,7 +160,7 @@ package struct SidebarItemReveal: Equatable {
         self.item = item; self.spaceID = spaceID; self.profileID = profileID; expandedFolderIDs = expanded
     }
 
-    package func applying(to state: BrowserState) -> BrowserState? {
+    func applying(to state: BrowserState) -> BrowserState? {
         guard SidebarItemReveal(item: item, spaceID: spaceID, profileID: profileID, state: state) == self else { return nil }
         var next = state
         for index in next.folders.indices where expandedFolderIDs.contains(next.folders[index].id) {
@@ -175,7 +175,7 @@ package enum SidebarSpaceInsertion: Equatable {
     case after(UUID)
     case absolute(Int)
 
-    package func index(in state: BrowserState) -> Int? {
+    func index(in state: BrowserState) -> Int? {
         switch self {
         case .after(let id): return state.spaces.firstIndex { $0.id == id }.map { $0 + 1 }
         case .absolute(let index): return (0...state.spaces.count).contains(index) ? index : nil
@@ -186,13 +186,13 @@ package enum SidebarSpaceInsertion: Equatable {
 package struct SidebarNewSpaceDraft: Equatable {
     package let source: SidebarHierarchySnapshot
     package let spaceID: UUID
-    package let insertion: SidebarSpaceInsertion
+    let insertion: SidebarSpaceInsertion
     package let roots: [SidebarItemReference]
     package let tabIDs: [UUID]
-    package let folderIDs: [UUID]
-    package let groupIDs: [UUID]
+    let folderIDs: [UUID]
+    let groupIDs: [UUID]
     package var name: String
-    package var profileID: UUID
+    var profileID: UUID
     package var customIcon: SidebarGroupIcon?
     package var theme: SpaceTheme
     private(set) var separateProfileID: UUID?

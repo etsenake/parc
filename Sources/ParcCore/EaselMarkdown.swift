@@ -11,14 +11,14 @@ package enum EaselMarkdown {
     static let boldTrait: UInt32 = 1 << 1
     static let italicTrait: UInt32 = 1 << 0
     static let monospaceTrait: UInt32 = 1 << 10
-    package static let quoteMarker = "\u{258E}"
+    static let quoteMarker = "\u{258E}"
 
     package static func markdown(_ document: EaselDocument, options: Options = Options()) -> String {
         let body = NoteMarkdown.serialize(page(document, options: options), purpose: .export)
         return NotePageExport.markdownForCopy(body: body, title: document.title)
     }
 
-    package static func page(_ document: EaselDocument, options: Options = Options()) -> NotePage {
+    static func page(_ document: EaselDocument, options: Options = Options()) -> NotePage {
         let pages = EaselPages.contentPages(document)
         var blocks: [NoteBlock] = []
         if pages.count > 1 {
@@ -72,7 +72,7 @@ package enum EaselMarkdown {
         return nest(entries)
     }
 
-    package static func sectionTitle(_ item: EaselItem) -> String? {
+    static func sectionTitle(_ item: EaselItem) -> String? {
         let title = item.text.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
         return title.isEmpty ? nil : title
     }
@@ -93,7 +93,7 @@ package enum EaselMarkdown {
         return take(depth: 0)
     }
 
-    package static func blocks(for item: EaselItem, options: Options) -> [(block: NoteBlock, depth: Int)] {
+    static func blocks(for item: EaselItem, options: Options) -> [(block: NoteBlock, depth: Int)] {
         let flat: (NoteBlock) -> [(block: NoteBlock, depth: Int)] = { [($0, 0)] }
         switch item.kind {
         case .text, .rectangle, .circle, .arrow:
@@ -124,7 +124,7 @@ package enum EaselMarkdown {
         }
     }
 
-    package static func blockKind(_ kind: EaselItemKind) -> NoteBlockKind {
+    static func blockKind(_ kind: EaselItemKind) -> NoteBlockKind {
         switch kind {
         case .video: return .video
         case .audio: return .audio
@@ -134,7 +134,7 @@ package enum EaselMarkdown {
         }
     }
 
-    package static func media(_ item: EaselItem, options: Options) -> [(block: NoteBlock, depth: Int)] {
+    static func media(_ item: EaselItem, options: Options) -> [(block: NoteBlock, depth: Int)] {
         let kind = blockKind(item.kind)
         let alt = item.altText ?? item.fileName ?? ""
         guard let path = options.assetPath(item) else {
@@ -147,12 +147,12 @@ package enum EaselMarkdown {
         return [(NoteBlock(kind, props: props), 0)]
     }
 
-    package static func displayName(_ raw: String) -> String {
+    static func displayName(_ raw: String) -> String {
         guard let host = URL(string: raw)?.host, !host.isEmpty else { return raw }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
-    package static func linked(_ title: String, _ link: String) -> NoteText {
+    static func linked(_ title: String, _ link: String) -> NoteText {
         var marks = NoteMarks()
         marks.link = link
         return NoteText(title, marks: marks)
@@ -169,7 +169,7 @@ package enum EaselMarkdown {
         text.trimmingTrailingNewlines()
     }
 
-    package static func paragraphs(of item: EaselItem) -> [(block: NoteBlock, depth: Int)] {
+    static func paragraphs(of item: EaselItem) -> [(block: NoteBlock, depth: Int)] {
         let source = item.text as NSString
         guard source.length > 0 else { return [] }
         var result: [(block: NoteBlock, depth: Int)] = []
@@ -198,7 +198,7 @@ package enum EaselMarkdown {
         return runs.first { probe >= $0.location && probe < $0.location + $0.length }?.attributes.paragraph
     }
 
-    package static func block(for text: NoteText, attributes: EaselRichText.Paragraph?) -> (block: NoteBlock, depth: Int) {
+    static func block(for text: NoteText, attributes: EaselRichText.Paragraph?) -> (block: NoteBlock, depth: Int) {
         if let level = attributes?.heading, level > 0 { return (.heading(min(level + 1, 6), text), 0) }
         guard let lists = attributes?.lists, let last = lists.last else { return (.paragraph(text), 0) }
         if last.marker == quoteMarker { return (NoteBlock(.quote, text: text), 0) }
@@ -215,7 +215,7 @@ package enum EaselMarkdown {
         return (NoteBlock(numbered ? .numberedItem : .bulletedItem, text: text), depth)
     }
 
-    package static func noteText(of item: EaselItem, range: Range<Int>) -> NoteText {
+    static func noteText(of item: EaselItem, range: Range<Int>) -> NoteText {
         let source = item.text as NSString
         let length = source.length
         let lower = min(max(0, range.lowerBound), length), upper = min(max(lower, range.upperBound), length)
@@ -241,7 +241,7 @@ package enum EaselMarkdown {
         return NoteText(pieces: pieces)
     }
 
-    package static func marks(for attributes: EaselRichText.Attributes) -> NoteMarks {
+    static func marks(for attributes: EaselRichText.Attributes) -> NoteMarks {
         var marks = NoteMarks()
         let font = attributes.font
         marks.bold = font.traits & boldTrait != 0 || font.weight >= 0.3

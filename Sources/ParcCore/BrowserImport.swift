@@ -90,7 +90,7 @@ package struct BrowserImportDestination: Equatable {
         try replacing(BrowserImportPlacement(), with: roots, in: state, at: date).state
     }
 
-    package func replacing(_ placed: BrowserImportPlacement, with roots: [BrowserImportBookmark],
+    func replacing(_ placed: BrowserImportPlacement, with roots: [BrowserImportBookmark],
                    in state: BrowserState, at date: Date) throws -> (state: BrowserState, placement: BrowserImportPlacement) {
         guard isCurrent(in: state) else { throw CocoaError(.userCancelled) }
         _ = try BrowserImportSelection(roots: roots)
@@ -197,8 +197,8 @@ package struct BrowserImportDestination: Equatable {
 
 package struct BrowserImportPlacement: Equatable {
     package fileprivate(set) var tabs: [String: BrowserTab] = [:]
-    package fileprivate(set) var folders: [String: BrowserFolder] = [:]
-    package var isEmpty: Bool { tabs.isEmpty && folders.isEmpty }
+    fileprivate(set) var folders: [String: BrowserFolder] = [:]
+    var isEmpty: Bool { tabs.isEmpty && folders.isEmpty }
 
     package init(tabs: [String: BrowserTab] = [:], folders: [String: BrowserFolder] = [:]) {
         self.tabs = tabs
@@ -208,9 +208,9 @@ package struct BrowserImportPlacement: Equatable {
 
 package struct BrowserImportProfileTarget: Equatable {
     package let profileID: UUID
-    package let spaceID: UUID?
+    let spaceID: UUID?
 
-    package init(profileID: UUID, spaceID: UUID?) {
+    init(profileID: UUID, spaceID: UUID?) {
         self.profileID = profileID
         self.spaceID = spaceID
     }
@@ -225,7 +225,7 @@ package struct BrowserImportProfileTarget: Equatable {
         }
     }
 
-    package func isCurrent(in state: BrowserState) -> Bool {
+    func isCurrent(in state: BrowserState) -> Bool {
         guard state.profiles.contains(where: { $0.id == profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == profileID }) else { return false }
         if let spaceID {

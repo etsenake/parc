@@ -1,10 +1,10 @@
 import Foundation
 
 package struct EaselVectorSectionTitle: Equatable {
-    package var text: String
-    package var width: Double
-    package var baseline: Double
-    package var hiddenCount: Int?
+    var text: String
+    var width: Double
+    var baseline: Double
+    var hiddenCount: Int?
 
     package init(text: String, width: Double, baseline: Double, hiddenCount: Int? = nil) {
         self.text = text
@@ -31,12 +31,12 @@ extension EaselVectorExport {
         }
     }
 
-    package static func rounded(_ r: EaselRect, radius: Double, style: String) -> String {
+    static func rounded(_ r: EaselRect, radius: Double, style: String) -> String {
         "<rect x=\"" + number(r.x) + "\" y=\"" + number(r.y) + "\" width=\"" + number(max(0, r.width)) + "\" height=\""
             + number(max(0, r.height)) + "\" rx=\"" + number(radius) + "\" ry=\"" + number(radius) + "\" style=\"" + style + "\"/>"
     }
 
-    package static func sticky(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
+    static func sticky(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
         let f = item.frame, scale = EaselBoardObjects.textScale(item)
         let radius = max(1.5, 4 * scale), lift = min(f.height * 0.45, 72 * scale)
         guard case .color = EaselPaintRules.fill(item) else { return "<g class=\"easel-sticky\">" + text(item, layout) + "</g>" }
@@ -87,7 +87,7 @@ extension EaselVectorExport {
         }
     }
 
-    package static func section(_ item: EaselItem, title: EaselVectorSectionTitle?) -> String {
+    static func section(_ item: EaselItem, title: EaselVectorSectionTitle?) -> String {
         let f = item.frame, ink = paint(item.color, role: .ink)
         let border = isAutomatic(item.color) ? 0.22 : 0.5
         let line = ";stroke:" + ink + ";stroke-opacity:" + number(border)

@@ -1,12 +1,12 @@
 import Foundation
 
 package struct SplitLinkSnapshot: Equatable {
-    package let spaceID: UUID
-    package let profileID: UUID
+    let spaceID: UUID
+    let profileID: UUID
     package let selection: [UUID]
     package let focusedID: UUID
-    package let sourceURL: URL?
-    package let generation: UInt64
+    let sourceURL: URL?
+    let generation: UInt64
 
     package init(spaceID: UUID, profileID: UUID, selection: [UUID], focusedID: UUID, sourceURL: URL?, generation: UInt64) {
         self.spaceID = spaceID

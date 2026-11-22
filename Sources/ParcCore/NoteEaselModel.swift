@@ -1,8 +1,8 @@
 import Foundation
 
 package enum NoteEaselAddress {
-    package static let scheme = "parc"
-    package static let host = "easel"
+    static let scheme = "parc"
+    static let host = "easel"
 
     package static func address(_ id: UUID) -> String { scheme + "://" + host + "/" + id.uuidString.lowercased() }
 
@@ -30,7 +30,7 @@ package enum NoteEaselAddress {
 
     package static let defaultTitle = "Easel"
 
-    package static func block(id: UUID, title: String?) -> NoteBlock {
+    static func block(id: UUID, title: String?) -> NoteBlock {
         var props = NoteBlockProps()
         props.source = address(id)
         let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -86,7 +86,7 @@ package struct NoteEaselChoice: Equatable {
     package var title: String
     package var subtitle: String
 
-    package init(action: Action, title: String, subtitle: String) {
+    init(action: Action, title: String, subtitle: String) {
         self.action = action
         self.title = title
         self.subtitle = subtitle
@@ -94,13 +94,13 @@ package struct NoteEaselChoice: Equatable {
 }
 
 package enum NoteEaselPicker {
-    package static let limit = 8
-    package static let untitled = "Untitled Easel"
+    static let limit = 8
+    static let untitled = "Untitled Easel"
 
     package struct Candidate: Equatable {
-        package var id: UUID
-        package var title: String
-        package var itemCount: Int
+        var id: UUID
+        var title: String
+        var itemCount: Int
 
         package init(id: UUID, title: String, itemCount: Int) {
             self.id = id
@@ -109,7 +109,7 @@ package enum NoteEaselPicker {
         }
     }
 
-    package static func newTitle(for query: String) -> String {
+    static func newTitle(for query: String) -> String {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? untitled : String(trimmed.prefix(200))
     }

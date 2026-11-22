@@ -4,22 +4,22 @@ package struct SidebarFolderFromItems: Equatable {
     package static let defaultName = "Untitled"
     package static let undoName = "New Folder…"
 
-    package struct Placement: Equatable { package let id: UUID, spaceID: UUID, kind: TabKind, folderID: UUID? }
+    package struct Placement: Equatable { let id: UUID, spaceID: UUID, kind: TabKind, folderID: UUID? }
     package struct Parts: Equatable {
-        package var tabs: [Placement]
-        package var folder: Placement?
-        package var order: [String: [SidebarItemReference]]
+        var tabs: [Placement]
+        var folder: Placement?
+        var order: [String: [SidebarItemReference]]
     }
     package let folderID: UUID
     package let spaceID: UUID
     package let profileID: UUID
-    package let tabIDs: [UUID]
-    package var folder: BrowserFolder
+    let tabIDs: [UUID]
+    var folder: BrowserFolder
     let orderKeys: [String]
-    package let before: Parts
-    package let after: Parts
+    let before: Parts
+    let after: Parts
 
-    package init(folderID: UUID, spaceID: UUID, profileID: UUID, tabIDs: [UUID], folder: BrowserFolder, orderKeys: [String], before: Parts, after: Parts) {
+    init(folderID: UUID, spaceID: UUID, profileID: UUID, tabIDs: [UUID], folder: BrowserFolder, orderKeys: [String], before: Parts, after: Parts) {
         self.folderID = folderID
         self.spaceID = spaceID
         self.profileID = profileID
@@ -30,7 +30,7 @@ package struct SidebarFolderFromItems: Equatable {
         self.after = after
     }
 
-    package static func make(items: [SidebarItemReference], folderID: UUID, name: String = defaultName,
+    static func make(items: [SidebarItemReference], folderID: UUID, name: String = defaultName,
                      expected: SidebarHierarchySnapshot, state: BrowserState) -> (Self, BrowserState)? {
         let spaceID = expected.spaceID, profileID = expected.profileID
         guard !items.isEmpty, !state.folders.contains(where: { $0.id == folderID }),
@@ -64,7 +64,7 @@ package struct SidebarFolderFromItems: Equatable {
         return (receipt, next)
     }
 
-    package func parts(of state: BrowserState) -> Parts {
+    func parts(of state: BrowserState) -> Parts {
         let tabs = tabIDs.compactMap { id in state.tab(id, where: { $0.archivedAt == nil }) }
             .map { Placement(id: $0.id, spaceID: $0.spaceID, kind: $0.kind, folderID: $0.folderID) }
         let folder = state.folders.first { $0.id == folderID }

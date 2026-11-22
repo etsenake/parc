@@ -8,7 +8,7 @@ package struct SidebarKeyboardCursor {
         if let highlightedID, !ids.contains(highlightedID) { self.highlightedID = nil }
     }
 
-    package mutating func move(_ delta: Int, in ids: [String]) {
+    mutating func move(_ delta: Int, in ids: [String]) {
         reconcile(ids)
         guard !ids.isEmpty, delta != 0 else { return }
         guard let highlightedID, let index = ids.firstIndex(of: highlightedID) else {

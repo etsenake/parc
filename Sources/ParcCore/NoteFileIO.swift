@@ -1,13 +1,13 @@
 import Foundation
 
-package struct NoteFileStamp: Hashable, Sendable {
-    package var device: UInt64
-    package var inode: UInt64
-    package var size: Int64
-    package var seconds: Int
-    package var nanoseconds: Int
+struct NoteFileStamp: Hashable, Sendable {
+    var device: UInt64
+    var inode: UInt64
+    var size: Int64
+    var seconds: Int
+    var nanoseconds: Int
 
-    package init(_ info: stat) {
+    init(_ info: stat) {
         device = UInt64(info.st_dev)
         inode = UInt64(info.st_ino)
         size = Int64(info.st_size)
@@ -15,7 +15,7 @@ package struct NoteFileStamp: Hashable, Sendable {
         nanoseconds = info.st_mtimespec.tv_nsec
     }
 
-    package init?(path: String) {
+    init?(path: String) {
         var info = stat()
         guard stat(path, &info) == 0 else { return nil }
         self.init(info)
@@ -27,21 +27,21 @@ enum NoteFileSighting: Hashable, Sendable {
     case absent
 }
 
-package enum NoteFileWriteOutcome: Sendable {
+enum NoteFileWriteOutcome: Sendable {
     case written(NoteFileStamp?)
     case unchanged
     case conflict(NoteFileContents)
     case missing
     case failed(String)
 
-    package var succeeded: Bool {
+    var succeeded: Bool {
         switch self {
         case .written, .unchanged: return true
         case .conflict, .missing, .failed: return false
         }
     }
 
-    package var error: NoteFileError? {
+    var error: NoteFileError? {
         switch self {
         case .written, .unchanged: return nil
         case .conflict: return .conflict
@@ -51,21 +51,21 @@ package enum NoteFileWriteOutcome: Sendable {
     }
 }
 
-package enum NoteFileProbe: Sendable {
+enum NoteFileProbe: Sendable {
     case contents(NoteFileContents, NoteFileStamp?)
     case moved(URL)
     case missing
     case unreadable(NoteFileError)
 }
 
-package final class NoteFileDisk: @unchecked Sendable {
-    package struct Staged {
-        package var page: NotePage
-        package var kind: NoteFileKind
-        package var format: NoteFileFormat
-        package var url: URL
-        package var force: Bool
-        package var customEmoji: Set<String> = []
+final class NoteFileDisk: @unchecked Sendable {
+    struct Staged {
+        var page: NotePage
+        var kind: NoteFileKind
+        var format: NoteFileFormat
+        var url: URL
+        var force: Bool
+        var customEmoji: Set<String> = []
     }
 
     struct StagedWrite {
@@ -80,22 +80,22 @@ package final class NoteFileDisk: @unchecked Sendable {
     private var generationCount = 0
     private var staged: Staged?
 
-    package init(text: String?) { known = text }
+    init(text: String?) { known = text }
 
-    package var text: String? { lock.withLock { known } }
+    var text: String? { lock.withLock { known } }
 
-    package var generation: Int { lock.withLock { generationCount } }
+    var generation: Int { lock.withLock { generationCount } }
 
-    package func adopt(_ text: String?) {
+    func adopt(_ text: String?) {
         lock.withLock {
             known = text
             generationCount += 1
         }
     }
 
-    package func stage(_ save: Staged?) { lock.withLock { staged = save } }
+    func stage(_ save: Staged?) { lock.withLock { staged = save } }
 
-    package func write(_ data: Data, text: String, to url: URL, kind: NoteFileKind, force: Bool) -> NoteFileWriteOutcome {
+    func write(_ data: Data, text: String, to url: URL, kind: NoteFileKind, force: Bool) -> NoteFileWriteOutcome {
         lock.withLock {
             let outcome = NoteFileIO.writeNow(data, text: text, to: url, kind: kind, expecting: known, force: force)
             if outcome.succeeded {
@@ -123,7 +123,7 @@ package final class NoteFileDisk: @unchecked Sendable {
 }
 
 package enum NoteFileIO {
-    package static func read(_ url: URL, kind: NoteFileKind, presenter: NSFilePresenter? = nil,
+    static func read(_ url: URL, kind: NoteFileKind, presenter: NSFilePresenter? = nil,
                      withoutChanges: Bool = false) throws -> NoteFileContents {
         try readStamped(url, kind: kind, presenter: presenter, withoutChanges: withoutChanges).contents
     }
@@ -161,7 +161,7 @@ package enum NoteFileIO {
         return (contents, NoteFileStamp(info))
     }
 
-    package static func probe(_ url: URL, kind: NoteFileKind, movedPath: String?, presenter: NSFilePresenter?) -> NoteFileProbe {
+    static func probe(_ url: URL, kind: NoteFileKind, movedPath: String?, presenter: NSFilePresenter?) -> NoteFileProbe {
         if NoteFilePaths.itemExists(url) {
             do {
                 let read = try readStamped(url, kind: kind, presenter: presenter, withoutChanges: true)
@@ -178,7 +178,7 @@ package enum NoteFileIO {
         return .missing
     }
 
-    package static func write(_ data: Data, text: String, to url: URL, kind: NoteFileKind, disk: NoteFileDisk,
+    static func write(_ data: Data, text: String, to url: URL, kind: NoteFileKind, disk: NoteFileDisk,
                       force: Bool, presenter: NSFilePresenter?) -> NoteFileWriteOutcome {
         var coordinationError: NSError?
         var outcome = NoteFileWriteOutcome.failed("Parc couldn’t get to the file.")
@@ -216,7 +216,7 @@ package enum NoteFileIO {
         }
     }
 
-    package static func move(_ source: URL, to destination: URL, presenter: NSFilePresenter?) throws {
+    static func move(_ source: URL, to destination: URL, presenter: NSFilePresenter?) throws {
         var coordinationError: NSError?
         var moveError: Error?
         let coordinator = NSFileCoordinator(filePresenter: presenter)
@@ -243,14 +243,14 @@ package enum NoteFileIO {
         }
     }
 
-    package static func moveToTrash(_ url: URL) throws -> URL? {
+    static func moveToTrash(_ url: URL) throws -> URL? {
         var resulting: NSURL?
         try FileManager.default.trashItem(at: url, resultingItemURL: &resulting)
         return resulting as URL?
     }
 
     @discardableResult
-    package static func trash(_ url: URL, presenter: NSFilePresenter? = nil,
+    static func trash(_ url: URL, presenter: NSFilePresenter? = nil,
                               mover: (URL) throws -> URL? = NoteFileIO.moveToTrash) throws -> URL? {
         var coordinationError: NSError?
         var trashError: Error?
@@ -276,7 +276,7 @@ package enum NoteFileIO {
         _ = try manager.replaceItemAt(target, withItemAt: staged, backupItemName: nil, options: [])
     }
 
-    package static func mapped(_ error: Error) -> NoteFileError {
+    static func mapped(_ error: Error) -> NoteFileError {
         if let error = error as? NoteFileError { return error }
         let nsError = error as NSError
         if nsError.domain == NSCocoaErrorDomain {

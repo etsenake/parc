@@ -1,14 +1,14 @@
 import Foundation
 
 package struct EaselTableGrid: Equatable {
-    package var cells: [[String]]
-    package var merges: [EaselTableMerge] = []
+    var cells: [[String]]
+    var merges: [EaselTableMerge] = []
     var truncated = false
 
     package var rowCount: Int { cells.count }
     package var columnCount: Int { cells.map(\.count).max() ?? 0 }
 
-    package init(cells: [[String]], merges: [EaselTableMerge] = [], truncated: Bool = false) {
+    init(cells: [[String]], merges: [EaselTableMerge] = [], truncated: Bool = false) {
         self.cells = cells
         self.merges = merges
         self.truncated = truncated
@@ -243,7 +243,7 @@ package enum EaselTableData {
         "times": "\u{00D7}", "divide": "\u{00F7}", "middot": "\u{00B7}", "bull": "\u{2022}",
     ]
 
-    package static func decodeEntities(_ text: String) -> String {
+    static func decodeEntities(_ text: String) -> String {
         guard text.contains("&") else { return text }
         var result = ""
         var index = text.startIndex
@@ -274,7 +274,7 @@ package enum EaselTableData {
         return result
     }
 
-    package static func table(from grid: EaselTableGrid) -> EaselTable? { imported(grid)?.table }
+    static func table(from grid: EaselTableGrid) -> EaselTable? { imported(grid)?.table }
 
     package static func imported(_ grid: EaselTableGrid, limit: Int = EaselTable.maximumPastedCells) -> (table: EaselTable, trimmed: Bool)? {
         let width = min(EaselTable.maximumColumns, grid.columnCount, max(1, limit))
@@ -338,7 +338,7 @@ package enum EaselTableData {
         }.joined(separator: lineEnding) + lineEnding
     }
 
-    package static func field(_ raw: String, separator: Character) -> String {
+    static func field(_ raw: String, separator: Character) -> String {
         let text = raw.replacingOccurrences(of: "\u{FFFC}", with: "")
         guard text.contains(where: { $0 == separator || $0 == "\"" || $0.isNewline }) else { return text }
         return "\"" + text.replacingOccurrences(of: "\"", with: "\"\"") + "\""

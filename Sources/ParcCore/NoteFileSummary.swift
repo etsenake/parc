@@ -1,10 +1,10 @@
 import Foundation
 
 package struct NoteFileSummary: Hashable, Sendable {
-    package var icon: String?
+    var icon: String?
     package var snippet: String
 
-    package init(icon: String? = nil, snippet: String) {
+    init(icon: String? = nil, snippet: String) {
         self.icon = icon
         self.snippet = snippet
     }

@@ -1,7 +1,7 @@
 import Foundation
 
 extension NoteCaptureGeometry {
-    package init(_ layout: EaselCaptureLayout) {
+    init(_ layout: EaselCaptureLayout) {
         self.init(viewportWidth: layout.viewport.x, viewportHeight: layout.viewport.y, scrollX: layout.scroll.x, scrollY: layout.scroll.y,
                   regionX: layout.region.x, regionY: layout.region.y, regionWidth: layout.region.width, regionHeight: layout.region.height,
                   scrollers: layout.scrollContainers.map(EaselScrollContainer.encode))

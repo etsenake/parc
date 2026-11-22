@@ -5,7 +5,7 @@ package enum EaselBoardObjects {
     static let stickyWideWidth = 440.0
     static let stickyMaximumWidth = 880.0
     static let stickyPadding = 18.0
-    package static let textScales = EaselTextStyle.textScales
+    static let textScales = EaselTextStyle.textScales
     static let sectionWidth = 640.0
     static let sectionHeight = 480.0
     static let sectionMinimumWidth = 120.0
@@ -15,9 +15,9 @@ package enum EaselBoardObjects {
     package static let sectionTitleGap = 6.0
     package static let sectionTitlePadding = 10.0
     package static let sectionTitleLimit = 120
-    package static let sectionName = "Section"
+    static let sectionName = "Section"
 
-    package static func transforms(_ kind: EaselItemKind) -> Bool { kind != .sticky && kind != .section }
+    static func transforms(_ kind: EaselItemKind) -> Bool { kind != .sticky && kind != .section }
 
     package static func textScale(_ item: EaselItem) -> Double {
         guard let value = item.textStyle?.textScale, value.isFinite else { return 1 }
@@ -127,13 +127,13 @@ package enum EaselBoardObjects {
             && inner.y + inner.height <= outer.y + outer.height + tolerance
     }
 
-    package static func contains(_ section: EaselItem, _ item: EaselItem) -> Bool {
+    static func contains(_ section: EaselItem, _ item: EaselItem) -> Bool {
         guard section.kind == .section, item.id != section.id, encloses(section.frame, item.frame) else { return false }
         guard item.kind == .section else { return true }
         return item.frame.width * item.frame.height < section.frame.width * section.frame.height
     }
 
-    package static func members(of section: EaselItem, in items: [EaselItem]) -> [EaselItem] {
+    static func members(of section: EaselItem, in items: [EaselItem]) -> [EaselItem] {
         guard section.kind == .section else { return [] }
         return items.filter { contains(section, $0) }
     }
@@ -166,7 +166,7 @@ package enum EaselBoardObjects {
         return hidden
     }
 
-    package static func paintOrder(_ items: [EaselItem]) -> [EaselItem] {
+    static func paintOrder(_ items: [EaselItem]) -> [EaselItem] {
         let sections = items.filter { $0.kind == .section }
         guard !sections.isEmpty else { return items.sorted { $0.zIndex < $1.zIndex } }
         var depth: [UUID: Int] = [:]
@@ -262,7 +262,7 @@ package enum EaselBoardObjects {
         return result
     }
 
-    package static func deletion(_ ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
+    static func deletion(_ ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
         var result = ids
         for section in document.items where ids.contains(section.id) && section.kind == .section && !section.isLocked {
             for item in contents(of: section, in: document.items) where !item.isLocked { result.insert(item.id) }

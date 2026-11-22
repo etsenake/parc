@@ -27,7 +27,7 @@ package struct EaselCountdown: Equatable {
 
     package func isDue(at now: Date) -> Bool { phase == .running && remaining(at: now) <= 0 }
 
-    package mutating func set(minutes: Int) {
+    mutating func set(minutes: Int) {
         guard phase == .idle || phase == .finished else { return }
         duration = Self.clamped(TimeInterval(max(0, minutes) * 60))
         remainingAtPause = duration
@@ -56,7 +56,7 @@ package struct EaselCountdown: Equatable {
         }
     }
 
-    package mutating func start(at now: Date) {
+    mutating func start(at now: Date) {
         switch phase {
         case .idle:
             guard duration > 0 else { return }
@@ -71,14 +71,14 @@ package struct EaselCountdown: Equatable {
         }
     }
 
-    package mutating func pause(at now: Date) {
+    mutating func pause(at now: Date) {
         guard phase == .running else { return }
         remainingAtPause = remaining(at: now)
         endsAt = nil
         phase = remainingAtPause > 0 ? .paused : .finished
     }
 
-    package mutating func resume(at now: Date) {
+    mutating func resume(at now: Date) {
         guard phase == .paused else { return }
         endsAt = now.addingTimeInterval(remainingAtPause)
         phase = .running

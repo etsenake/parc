@@ -48,10 +48,10 @@ package struct WindowPresentation {
     }
 
     package struct SessionSelection: Equatable {
-        package let spaceID: UUID
-        package let isReady: Bool
-        package let tabIDs: [UUID]
-        package let focusedTabID: UUID?
+        let spaceID: UUID
+        let isReady: Bool
+        let tabIDs: [UUID]
+        let focusedTabID: UUID?
     }
 
     package var sessionSelection: SessionSelection {
@@ -439,11 +439,11 @@ package enum PageReparenting {
     }
 
     package struct Candidate: Equatable {
-        package let windowID: UUID
-        package let displaysPlaceholder: Bool
-        package let showsPlaceholder: Bool
-        package let lastActive: Date
-        package var canReceive = true
+        let windowID: UUID
+        let displaysPlaceholder: Bool
+        let showsPlaceholder: Bool
+        let lastActive: Date
+        var canReceive = true
 
         package init(windowID: UUID, displaysPlaceholder: Bool, showsPlaceholder: Bool, lastActive: Date, canReceive: Bool = true) {
             self.windowID = windowID
@@ -480,12 +480,12 @@ package final class NativePageOwnership {
     private var pages: [String: (owner: UUID, tab: UUID)] = [:]
     package struct Transfer: Equatable {
         fileprivate let id = UUID()
-        package let tab: UUID
-        package let page: String
-        package let source: UUID
-        package let destination: UUID
+        let tab: UUID
+        let page: String
+        let source: UUID
+        let destination: UUID
 
-        package init(tab: UUID, page: String, source: UUID, destination: UUID) {
+        init(tab: UUID, page: String, source: UUID, destination: UUID) {
             self.tab = tab
             self.page = page
             self.source = source
@@ -495,11 +495,11 @@ package final class NativePageOwnership {
     private var transfers: [UUID: Transfer] = [:]
     package struct CollectionTransfer: Equatable {
         fileprivate let id = UUID()
-        package let source: UUID
-        package let destination: UUID
-        package let originals: [UUID: Claim]
+        let source: UUID
+        let destination: UUID
+        let originals: [UUID: Claim]
 
-        package init(source: UUID, destination: UUID, originals: [UUID: Claim]) {
+        init(source: UUID, destination: UUID, originals: [UUID: Claim]) {
             self.source = source
             self.destination = destination
             self.originals = originals
@@ -567,10 +567,10 @@ package final class NativePageOwnership {
 
     package struct Claim: Equatable {
         package let owner: UUID?
-        package let pages: Set<String>
+        let pages: Set<String>
         package let transfer: Transfer?
 
-        package init(owner: UUID?, pages: Set<String>, transfer: Transfer?) {
+        init(owner: UUID?, pages: Set<String>, transfer: Transfer?) {
             self.owner = owner
             self.pages = pages
             self.transfer = transfer

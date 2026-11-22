@@ -6,7 +6,7 @@ package enum SidebarKeyboardNavigation {
         package let selection: RecentTabOrder.Item?
         package let folder: BrowserFolder?
 
-        package init(reference: SidebarItemReference, selection: RecentTabOrder.Item?, folder: BrowserFolder?) {
+        init(reference: SidebarItemReference, selection: RecentTabOrder.Item?, folder: BrowserFolder?) {
             self.reference = reference
             self.selection = selection
             self.folder = folder

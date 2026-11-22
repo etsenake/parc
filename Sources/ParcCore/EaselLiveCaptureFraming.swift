@@ -11,7 +11,7 @@ package enum EaselCaptureGeometry {
         return EaselRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
-    package static func layout(captureArea: EaselRect, viewport: EaselPoint, scroll: EaselPoint,
+    static func layout(captureArea: EaselRect, viewport: EaselPoint, scroll: EaselPoint,
                        pageZoom: Double, visualScale: Double) -> EaselCaptureLayout? {
         let factor = pageZoom * visualScale
         guard factor.isFinite, factor > 0 else { return nil }
@@ -36,13 +36,13 @@ package enum EaselCaptureGeometry {
         return (width, width / aspect)
     }
 
-    package struct Framing: Equatable {
-        package var scale: Double
-        package var scrollTarget: EaselPoint
+    struct Framing: Equatable {
+        var scale: Double
+        var scrollTarget: EaselPoint
         var documentRegion: EaselRect
     }
 
-    package static func framing(_ layout: EaselCaptureLayout, displayWidth: Double, pageZoom: Double) -> Framing? {
+    static func framing(_ layout: EaselCaptureLayout, displayWidth: Double, pageZoom: Double) -> Framing? {
         let scale = displayWidth / (layout.region.width * pageZoom)
         guard scale.isFinite, scale > 0, scale <= 10_000 else { return nil }
         return Framing(scale: scale,
@@ -60,7 +60,7 @@ package struct EaselLiveFraming: Equatable {
     package static let failureBadge = "Snapshot · couldn't go live"
     package static let failureHelp = "The live page couldn't line up with the region you captured, so the card stays a snapshot. The site may have changed; you can try Make live again."
 
-    package private(set) var phase: Phase = .waiting
+    private(set) var phase: Phase = .waiting
 
     package var revealsPage: Bool { phase == .framed }
 

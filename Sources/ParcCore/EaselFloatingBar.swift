@@ -1,8 +1,8 @@
 import Foundation
 
 package enum EaselFloatingBar {
-    package static let bottomMargin = 16.0
-    package static let sideMargin = 12.0
+    static let bottomMargin = 16.0
+    static let sideMargin = 12.0
     package static let clearance = 8.0
     package static let chipGap = 10.0
     package static let entranceRise = 12.0
@@ -67,7 +67,7 @@ package enum EaselToolFlourish: Equatable {
         package var rotation = 0.0
         package var scaleX = 1.0
         package var scaleY = 1.0
-        package init(dx: Double = 0.0, dy: Double = 0.0, rotation: Double = 0.0, scaleX: Double = 1.0, scaleY: Double = 1.0) {
+        init(dx: Double = 0.0, dy: Double = 0.0, rotation: Double = 0.0, scaleX: Double = 1.0, scaleY: Double = 1.0) {
             self.dx = dx
             self.dy = dy
             self.rotation = rotation
@@ -75,7 +75,7 @@ package enum EaselToolFlourish: Equatable {
             self.scaleY = scaleY
         }
 
-        package static let rest = Frame()
+        static let rest = Frame()
 
         var isRest: Bool {
             abs(dx) < 1e-9 && abs(dy) < 1e-9 && abs(rotation) < 1e-9 && abs(scaleX - 1) < 1e-9 && abs(scaleY - 1) < 1e-9
@@ -125,7 +125,7 @@ package enum EaselToolFlourish: Equatable {
         return exp(-decay * time) * sin(damped * time) / peak
     }
 
-    package func frame(at time: Double) -> Frame {
+    func frame(at time: Double) -> Frame {
         guard time > 0, time < duration else { return .rest }
         let taper = 1 - pow(time / duration, 3)
         let k = Self.kick(at: time, response: spring.response, damping: spring.damping) * taper

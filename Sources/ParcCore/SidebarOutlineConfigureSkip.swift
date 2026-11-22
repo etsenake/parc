@@ -1,16 +1,16 @@
 import Foundation
 
 package struct SidebarOutlineConfigureFingerprint: Equatable {
-    package var contentIdentity: ObjectIdentifier?
-    package var cellHeight: CGFloat
-    package var spanMinY: CGFloat?
-    package var spanHeight: CGFloat?
-    package var level: Int
-    package var isHidden: Bool
-    package var expanded: Bool?
-    package var isItem: Bool
-    package var disclosesNothing: Bool
-    package var disclosedByKey: AnyHashable?
+    var contentIdentity: ObjectIdentifier?
+    var cellHeight: CGFloat
+    var spanMinY: CGFloat?
+    var spanHeight: CGFloat?
+    var level: Int
+    var isHidden: Bool
+    var expanded: Bool?
+    var isItem: Bool
+    var disclosesNothing: Bool
+    var disclosedByKey: AnyHashable?
 
     package init(contentIdentity: ObjectIdentifier? = nil, cellHeight: CGFloat, spanMinY: CGFloat? = nil, spanHeight: CGFloat? = nil, level: Int, isHidden: Bool, expanded: Bool? = nil, isItem: Bool, disclosesNothing: Bool, disclosedByKey: AnyHashable? = nil) {
         self.contentIdentity = contentIdentity

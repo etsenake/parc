@@ -9,10 +9,10 @@ package struct HistorySwipeParameters: Equatable {
     var verticalDominance = 2.0
     var verticalExcess = 1.3
     var trackedArmAmount = 0.3
-    package var rubberBand = 0.15
-    package var holdDelay: TimeInterval = 0.3
-    package var rowStep = 0.08
-    package var edgeZone = 0.15
+    var rubberBand = 0.15
+    var holdDelay: TimeInterval = 0.3
+    var rowStep = 0.08
+    var edgeZone = 0.15
     var edgeMargin = 0.03
     var edgeStepInterval: TimeInterval = 0.1
     var listCloseProgress = 0.85
@@ -21,13 +21,13 @@ package struct HistorySwipeParameters: Equatable {
     var dismissDisarmProgress = 0.45
     var flickVelocity = 0.6
     var flickProgress = 0.1
-    package var velocityWindow: TimeInterval = 0.08
+    var velocityWindow: TimeInterval = 0.08
 
     static let dia = HistorySwipeParameters()
 }
 
-package struct HistorySwipeRecognizer {
-    package enum State: Equatable {
+struct HistorySwipeRecognizer {
+    enum State: Equatable {
         case waitingForPage
         case possible
         case tracking
@@ -37,19 +37,19 @@ package struct HistorySwipeRecognizer {
         case cancelled
     }
 
-    package enum Source: Equatable {
+    enum Source: Equatable {
         case touches
         case trackedSwipe
     }
 
-    package let parameters: HistorySwipeParameters
-    package private(set) var state = State.waitingForPage
-    package private(set) var direction: HistorySwipeDirection?
-    package private(set) var source: Source?
-    package private(set) var selection: Int?
-    package private(set) var holdDeadline: TimeInterval?
-    package private(set) var entries = 0
-    package private(set) var dismissing = false
+    let parameters: HistorySwipeParameters
+    private(set) var state = State.waitingForPage
+    private(set) var direction: HistorySwipeDirection?
+    private(set) var source: Source?
+    private(set) var selection: Int?
+    private(set) var holdDeadline: TimeInterval?
+    private(set) var entries = 0
+    private(set) var dismissing = false
     private var samples: [(time: TimeInterval, x: Double)] = []
     private var inverted = false
     private var announced = false
@@ -77,18 +77,18 @@ package struct HistorySwipeRecognizer {
     private var liveTracking: Int?
     private var lastProgress: HistorySwipeProgress?
 
-    package init(parameters: HistorySwipeParameters = .dia) {
+    init(parameters: HistorySwipeParameters = .dia) {
         self.parameters = parameters
     }
 
-    package var isLive: Bool {
+    var isLive: Bool {
         switch state {
         case .possible, .tracking, .armed, .holding: true
         case .waitingForPage, .completed, .cancelled: false
         }
     }
 
-    package mutating func receive(_ input: HistorySwipeInput, in environment: any HistorySwipeEnvironment) -> HistorySwipeStep {
+    mutating func receive(_ input: HistorySwipeInput, in environment: any HistorySwipeEnvironment) -> HistorySwipeStep {
         var step = HistorySwipeStep()
         if isLive && !environment.allowsHistorySwipe { cancel(&step) }
         switch input {

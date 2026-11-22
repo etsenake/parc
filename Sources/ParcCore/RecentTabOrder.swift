@@ -72,7 +72,7 @@ package struct RecentTabSwitcherSelection {
     package static let maximumDisplayedItems = 5
     package private(set) var itemIDs: [String]
     package private(set) var focusedIndex: Int
-    package var displayedIDs: ArraySlice<String> { itemIDs.prefix(Self.maximumDisplayedItems) }
+    var displayedIDs: ArraySlice<String> { itemIDs.prefix(Self.maximumDisplayedItems) }
 
     package init(itemIDs: [String], currentID: String?, forward: Bool) {
         var seen = Set<String>()
@@ -100,8 +100,8 @@ package struct RecentTabSwitcherSelection {
 }
 
 package struct RecentTabSwitcherInput {
-    package static let modifierMask: UInt = 0x1E_0000
-    package static let control: UInt = 0x4_0000
+    static let modifierMask: UInt = 0x1E_0000
+    static let control: UInt = 0x4_0000
     package enum KeyAction: Equatable { case forward, backward, cancel, close, consume }
     let continuationFlags: [UInt]
 

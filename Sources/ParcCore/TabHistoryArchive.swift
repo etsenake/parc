@@ -3,9 +3,9 @@ import Foundation
 
 package final class TabHistoryArchive {
     package struct Record: Codable, Equatable {
-        package var url: String
-        package var profileID: UUID
-        package var navigation: Data
+        var url: String
+        var profileID: UUID
+        var navigation: Data
 
         package init(url: String, profileID: UUID, navigation: Data) {
             self.url = url
@@ -14,14 +14,14 @@ package final class TabHistoryArchive {
         }
     }
 
-    package let directory: URL
+    let directory: URL
     private let queue = DispatchQueue(label: "org.parc.tab-history", qos: .utility)
     private var written: [UUID: SHA256.Digest] = [:]
     private var paged: Set<UUID> = []
 
-    package init(directory: URL) { self.directory = directory }
+    init(directory: URL) { self.directory = directory }
 
-    package func takeLaunchNavigation(for id: UUID, url: String, profileID: UUID) -> Data? {
+    func takeLaunchNavigation(for id: UUID, url: String, profileID: UUID) -> Data? {
         takeLaunchNavigation(for: id, urls: [url], profileID: profileID)
     }
 
@@ -48,7 +48,7 @@ package final class TabHistoryArchive {
         }
     }
 
-    package func remove(_ id: UUID) {
+    func remove(_ id: UUID) {
         written.removeValue(forKey: id)
         let file = file(id)
         queue.async { try? FileManager.default.removeItem(at: file) }

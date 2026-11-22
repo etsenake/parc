@@ -1,7 +1,7 @@
 import Foundation
 
 package enum EaselBoardSend {
-    package static let gap = 80.0
+    static let gap = 80.0
 
     package static func landing(_ items: [EaselItem], in document: EaselDocument) -> EaselDocument? {
         guard let content = EaselArrange.union(items.map(EaselArrange.visualFrame)) else { return nil }

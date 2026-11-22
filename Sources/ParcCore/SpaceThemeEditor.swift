@@ -11,7 +11,7 @@ package final class SpaceThemeEditorState {
         var lowerLightness: Double
         var upperLightness: Double
 
-        package init(theme: SpaceTheme, saturation: Double, lowerLightness: Double, upperLightness: Double) {
+        init(theme: SpaceTheme, saturation: Double, lowerLightness: Double, upperLightness: Double) {
             self.theme = theme
             self.saturation = saturation
             self.lowerLightness = lowerLightness

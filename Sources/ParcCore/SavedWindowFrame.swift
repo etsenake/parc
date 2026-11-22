@@ -2,16 +2,16 @@ import CoreGraphics
 import Foundation
 
 package struct SavedWindowFrame: Codable, Equatable {
-    package let x: Double
-    package let y: Double
-    package let width: Double
-    package let height: Double
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
 
     package init?(_ rect: CGRect) {
         self.init(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)
     }
 
-    package init?(x: Double, y: Double, width: Double, height: Double) {
+    init?(x: Double, y: Double, width: Double, height: Double) {
         guard [x, y, width, height].allSatisfy({ $0.isFinite && abs($0) <= 1e7 }), width > 0, height > 0 else { return nil }
         self.x = x; self.y = y; self.width = width; self.height = height
     }

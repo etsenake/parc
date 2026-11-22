@@ -15,13 +15,13 @@ package final class NoteFileEnvironment: NoteEnvironment {
         self.init(documentURL: documentURL, isPlainText: isPlainText, files: .shared)
     }
 
-    package init(documentURL: URL, isPlainText: Bool, files: NoteFiles) {
+    init(documentURL: URL, isPlainText: Bool, files: NoteFiles) {
         self.documentURL = documentURL
         self.isPlainText = isPlainText
         self.files = files
     }
 
-    package func move(to url: URL) { documentURL = url }
+    func move(to url: URL) { documentURL = url }
 
     package var emojiLibrary: NoteEmojiLibrary? {
         guard let documentURL, !isPlainText else { return nil }
@@ -31,7 +31,7 @@ package final class NoteFileEnvironment: NoteEnvironment {
         return library
     }
 
-    package var folder: URL? { documentURL?.deletingLastPathComponent() }
+    var folder: URL? { documentURL?.deletingLastPathComponent() }
 
     package func resolve(_ source: String) -> URL? {
         var value = source.trimmingCharacters(in: .whitespacesAndNewlines)

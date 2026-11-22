@@ -2,8 +2,8 @@ import Foundation
 
 package enum DockReopen {
     package struct Window {
-        package var available: Bool
-        package var isMiniaturized: Bool
+        var available: Bool
+        var isMiniaturized: Bool
 
         package init(available: Bool, isMiniaturized: Bool) {
             self.available = available

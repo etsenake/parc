@@ -29,7 +29,7 @@ package enum EaselTemplate: String, CaseIterable, Identifiable {
         }
     }
 
-    package var keywords: [String] {
+    var keywords: [String] {
         switch self {
         case .brainstorm: return ["ideas", "storm", "workshop"]
         case .retro: return ["retrospective", "review", "sprint"]
@@ -48,9 +48,9 @@ package struct EaselTemplateDrawing: Equatable {
 }
 
 package enum EaselTemplates {
-    package static let margin = EaselPoint(x: 48, y: 56)
+    static let margin = EaselPoint(x: 48, y: 56)
 
-    package static func drawing(_ template: EaselTemplate) -> EaselTemplateDrawing {
+    static func drawing(_ template: EaselTemplate) -> EaselTemplateDrawing {
         var builder = Builder()
         switch template {
         case .brainstorm: builder.brainstorm()

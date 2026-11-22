@@ -19,10 +19,10 @@ package struct NoteBreadcrumbSegment: Hashable, Sendable {
 }
 
 package struct NoteBreadcrumbPlaces {
-    package var notesFolder: URL?
-    package var home: URL
-    package var volume: (URL) -> (url: URL, name: String)?
-    package var displayName: (URL) -> String
+    var notesFolder: URL?
+    var home: URL
+    var volume: (URL) -> (url: URL, name: String)?
+    var displayName: (URL) -> String
 
     package static func system(notesFolder: URL?) -> NoteBreadcrumbPlaces {
         NoteBreadcrumbPlaces(notesFolder: notesFolder, home: FileManager.default.homeDirectoryForCurrentUser,
@@ -49,12 +49,12 @@ package enum NoteBreadcrumb {
         return segments
     }
 
-    package static func title(of file: URL) -> String {
+    static func title(of file: URL) -> String {
         let name = file.deletingPathExtension().lastPathComponent
         return name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled" : name
     }
 
-    package static func text(of trail: [NoteBreadcrumbSegment]) -> String {
+    static func text(of trail: [NoteBreadcrumbSegment]) -> String {
         trail.map(\.name).joined(separator: " " + separator + " ")
     }
 
@@ -79,14 +79,14 @@ package enum NoteBreadcrumb {
         URL(fileURLWithPath: url.path, isDirectory: true)
     }
 
-    package static func volume(of file: URL) -> (url: URL, name: String)? {
+    static func volume(of file: URL) -> (url: URL, name: String)? {
         guard let values = try? file.deletingLastPathComponent().resourceValues(forKeys: [.volumeURLKey, .volumeLocalizedNameKey, .volumeNameKey]),
               let url = values.volume else { return nil }
         let name = values.volumeLocalizedName ?? values.volumeName ?? url.lastPathComponent
         return (url, name.isEmpty ? separator : name)
     }
 
-    package static func displayName(of url: URL) -> String {
+    static func displayName(of url: URL) -> String {
         let name = FileManager.default.displayName(atPath: url.path)
         return name.isEmpty ? url.lastPathComponent : name
     }

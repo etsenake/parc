@@ -1,8 +1,8 @@
 import Foundation
 
 package enum SplitPaneResize {
-    package static let step = 0.1
-    package static let snapTolerance = 0.01
+    static let step = 0.1
+    static let snapTolerance = 0.01
 
     package static func movingDivider(_ divider: Int, in shares: [Double], forward: Bool, minimum: Double) -> [Double]? {
         guard isValid(shares, minimum: minimum),

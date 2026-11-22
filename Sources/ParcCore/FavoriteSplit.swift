@@ -17,17 +17,17 @@ package enum FavoriteOptionRoute: Equatable {
 }
 
 package struct FavoriteSplitRequest {
-    package let favorite: BrowserTab
-    package let spaceID: UUID
-    package let selection: [UUID]
-    package let focusedID: UUID
-    package let members: [BrowserTab]
-    package let layouts: [BrowserSplitLayout]
-    package let layout: BrowserSplitLayout?
-    package let duplicateURL: String?
-    package let duplicateTitle: String?
+    let favorite: BrowserTab
+    let spaceID: UUID
+    let selection: [UUID]
+    let focusedID: UUID
+    let members: [BrowserTab]
+    let layouts: [BrowserSplitLayout]
+    let layout: BrowserSplitLayout?
+    let duplicateURL: String?
+    let duplicateTitle: String?
     package let newID: UUID
-    package let homeIDs: [UUID: UUID]
+    let homeIDs: [UUID: UUID]
 
     package init?(favorite: BrowserTab, spaceID: UUID, selection: [UUID], focusedID: UUID,
           state: BrowserState, duplicateURL: String? = nil, duplicateTitle: String? = nil,
@@ -52,7 +52,7 @@ package struct FavoriteSplitRequest {
         self.homeIDs = homeIDs
     }
 
-    package var targetID: UUID { favorite.id == focusedID ? newID : favorite.id }
+    var targetID: UUID { favorite.id == focusedID ? newID : favorite.id }
 
     var paneIDs: [UUID] {
         var ids = selection
@@ -68,7 +68,7 @@ package struct FavoriteSplitRequest {
             added: favorite.id == focusedID ? newID : nil, state: state)
     }
 
-    package func applying(to state: BrowserState, retiring: Set<UUID>, now: Date) -> BrowserState? {
+    func applying(to state: BrowserState, retiring: Set<UUID>, now: Date) -> BrowserState? {
         guard state.activeSpaceID == spaceID, state.selectedTabIDs == selection,
               state.spaces.contains(where: { $0.id == spaceID && $0.profileID == favorite.profileID }),
               state.profiles.contains(where: { $0.id == favorite.profileID }),

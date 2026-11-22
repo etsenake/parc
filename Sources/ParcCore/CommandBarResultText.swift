@@ -1,18 +1,18 @@
 import Foundation
 
 package enum CommandBarResultText {
-    package struct Address: Equatable {
-        package let host: String
-        package let path: String
-        package var text: String { host + path }
+    struct Address: Equatable {
+        let host: String
+        let path: String
+        var text: String { host + path }
 
-        package init(host: String, path: String) {
+        init(host: String, path: String) {
             self.host = host
             self.path = path
         }
     }
 
-    package static func address(_ url: String) -> Address {
+    static func address(_ url: String) -> Address {
         if isData(url) { return Address(host: "", path: String(url.prefix(dataURLLimit))) }
         guard let parts = split(url) else {
             return Address(host: "", path: readable(url.prefix(pathLimit).prefix { $0 != "?" && $0 != "#" }))
@@ -42,7 +42,7 @@ package enum CommandBarResultText {
         return text.isEmpty ? nil : "— " + text
     }
 
-    package static func pageTitle(_ title: String, url: String) -> String? {
+    static func pageTitle(_ title: String, url: String) -> String? {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty || isAddress(trimmed, of: url) ? nil : title
     }

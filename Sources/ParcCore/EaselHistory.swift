@@ -13,24 +13,24 @@ package struct EaselVersion: Identifiable, Hashable {
     }
 }
 
-package struct EaselHistoryPolicy: Equatable {
+struct EaselHistoryPolicy: Equatable {
     var minimumInterval: TimeInterval = 300
-    package var idleDelay: TimeInterval = 120
+    var idleDelay: TimeInterval = 120
     var maximumVersions = 40
-    package var maximumBytes = 96 * 1024 * 1024
-    package init(minimumInterval: TimeInterval = 300, idleDelay: TimeInterval = 120, maximumVersions: Int = 40, maximumBytes: Int = 96 * 1024 * 1024) {
+    var maximumBytes = 96 * 1024 * 1024
+    init(minimumInterval: TimeInterval = 300, idleDelay: TimeInterval = 120, maximumVersions: Int = 40, maximumBytes: Int = 96 * 1024 * 1024) {
         self.minimumInterval = minimumInterval
         self.idleDelay = idleDelay
         self.maximumVersions = maximumVersions
         self.maximumBytes = maximumBytes
     }
 
-    package func shouldRecord(lastRecordedAt: Date?, now: Date) -> Bool {
+    func shouldRecord(lastRecordedAt: Date?, now: Date) -> Bool {
         guard let lastRecordedAt else { return true }
         return now.timeIntervalSince(lastRecordedAt) >= minimumInterval
     }
 
-    package func expired(_ versions: [(version: EaselVersion, bytes: Int)]) -> [EaselVersion] {
+    func expired(_ versions: [(version: EaselVersion, bytes: Int)]) -> [EaselVersion] {
         var kept = 0, bytes = 0
         var removed: [EaselVersion] = []
         for entry in versions.sorted(by: { $0.version.savedAt == $1.version.savedAt ? $0.version.id > $1.version.id : $0.version.savedAt > $1.version.savedAt }) {
@@ -47,9 +47,9 @@ package struct EaselHistoryPolicy: Equatable {
 
 @MainActor
 package final class EaselHistory {
-    package nonisolated static let maximumDocumentBytes = 8 * 1024 * 1024
-    package let directory: URL
-    package var policy = EaselHistoryPolicy()
+    nonisolated static let maximumDocumentBytes = 8 * 1024 * 1024
+    let directory: URL
+    var policy = EaselHistoryPolicy()
     private var lastRecordedAt: [UUID: Date] = [:]
     private var lastRecorded: [UUID: EaselDocument] = [:]
     private var lastSeen: [UUID: EaselDocument] = [:]
@@ -57,29 +57,29 @@ package final class EaselHistory {
     private var followers: [UUID: AnyCancellable] = [:]
     private let writer = DispatchQueue(label: "org.parc.easel-history", qos: .utility)
 
-    package init(directory: URL) {
+    init(directory: URL) {
         self.directory = directory.standardizedFileURL
     }
 
-    package func folder(for id: UUID) -> URL {
+    func folder(for id: UUID) -> URL {
         directory.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
     }
 
     nonisolated static let maximumSavedSeconds = 1e13
 
-    package nonisolated static func fileName(savedAt: Date, itemCount: Int) -> String {
+    nonisolated static func fileName(savedAt: Date, itemCount: Int) -> String {
         let millis = Int64((min(max(0, savedAt.timeIntervalSince1970), maximumSavedSeconds) * 1000).rounded())
         return "v-\(millis)-\(max(0, itemCount)).json"
     }
 
-    package nonisolated static func parse(_ name: String) -> (savedAt: Date, itemCount: Int)? {
+    nonisolated static func parse(_ name: String) -> (savedAt: Date, itemCount: Int)? {
         guard name.hasPrefix("v-"), name.hasSuffix(".json"), name.utf8.count <= 64 else { return nil }
         let parts = name.dropFirst(2).dropLast(5).split(separator: "-", omittingEmptySubsequences: false)
         guard parts.count == 2, let millis = Int64(parts[0]), let count = Int(parts[1]), millis >= 0, count >= 0 else { return nil }
         return (Date(timeIntervalSince1970: Double(millis) / 1000), count)
     }
 
-    package func follow(_ document: EaselDocument, changes: AnyPublisher<EaselDocument, Never>) {
+    func follow(_ document: EaselDocument, changes: AnyPublisher<EaselDocument, Never>) {
         let id = document.id
         lastSeen[id] = document
         followers[id] = changes.sink { [weak self] next in
@@ -108,7 +108,7 @@ package final class EaselHistory {
         return EaselStore.repairingStackOrder(EaselStore.repairingDuplicateIDs(document))
     }
 
-    package func documentDidChange(from previous: EaselDocument, to next: EaselDocument, now: Date) {
+    func documentDidChange(from previous: EaselDocument, to next: EaselDocument, now: Date) {
         if lastRecordedAt[next.id] == nil {
             record(previous, savedAt: previous.modifiedAt)
             lastRecordedAt[next.id] = now
@@ -135,7 +135,7 @@ package final class EaselHistory {
         return true
     }
 
-    package func removeAll(for id: UUID) {
+    func removeAll(for id: UUID) {
         idleTimers.removeValue(forKey: id)?.invalidate()
         followers.removeValue(forKey: id)
         lastRecordedAt.removeValue(forKey: id)

@@ -26,11 +26,11 @@ package enum EaselDigitRoll {
         case down
     }
 
-    package struct Column: Equatable {
-        package var old: Character?
-        package var new: Character?
-        package var direction: Direction
-        package init(old: Character? = nil, new: Character? = nil, direction: Direction) {
+    struct Column: Equatable {
+        var old: Character?
+        var new: Character?
+        var direction: Direction
+        init(old: Character? = nil, new: Character? = nil, direction: Direction) {
             self.old = old
             self.new = new
             self.direction = direction
@@ -40,13 +40,13 @@ package enum EaselDigitRoll {
     }
 
     static let rollDistance = 0.62
-    package static let reducedFade: TimeInterval = 0.15
+    static let reducedFade: TimeInterval = 0.15
 
     package static func direction(from old: String, to new: String) -> Direction {
         value(of: new) < value(of: old) ? .down : .up
     }
 
-    package static func columns(from old: String, to new: String) -> [Column] {
+    static func columns(from old: String, to new: String) -> [Column] {
         let direction = direction(from: old, to: new)
         let before = Array(old), after = Array(new)
         let count = max(before.count, after.count)
@@ -81,10 +81,10 @@ package enum EaselDigitRoll {
 }
 
 package struct EaselPulseTrain: Equatable {
-    package static let count = 3
+    static let count = 3
     package static let duration: TimeInterval = 1.8
     package static let peak = 0.55
-    package static let falloff = 0.72
+    static let falloff = 0.72
 
     package static var keyTimes: [Double] {
         var times: [Double] = [0]

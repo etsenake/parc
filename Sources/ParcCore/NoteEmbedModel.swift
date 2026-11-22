@@ -1,11 +1,11 @@
 import Foundation
 
 package enum NoteEmbedSizing {
-    package static let defaultHeight: Double = 420
-    package static let minimumHeight: Double = 160
-    package static let maximumHeight: Double = 1600
+    static let defaultHeight: Double = 420
+    static let minimumHeight: Double = 160
+    static let maximumHeight: Double = 1600
 
-    package static func clamped(_ height: Double?) -> Double {
+    static func clamped(_ height: Double?) -> Double {
         guard let height, height.isFinite else { return defaultHeight }
         return min(maximumHeight, max(minimumHeight, height.rounded()))
     }

@@ -1,10 +1,10 @@
 import Foundation
 
 package struct SidebarResizeGesture {
-    package static let minimumWidth = 164.0
-    package static let maximumWidth = 500.0
+    static let minimumWidth = 164.0
+    static let maximumWidth = 500.0
     static let collapseThreshold = 82.0
-    package static let defaultWidth = 228.0
+    static let defaultWidth = 228.0
     static let snapBand = 14.0
     static let snapMaximumVelocity = 50.0
     static let releaseFeedbackHold: TimeInterval = 0.5
@@ -17,29 +17,29 @@ package struct SidebarResizeGesture {
     }
     package enum Completion { case ended, cancelled, failed }
     package struct Change: Equatable {
-        package var width: Double
+        var width: Double
         package var widthChanged: Bool
         package var events: [Event]
 
-        package init(width: Double, widthChanged: Bool, events: [Event]) {
+        init(width: Double, widthChanged: Bool, events: [Event]) {
             self.width = width
             self.widthChanged = widthChanged
             self.events = events
         }
     }
     package struct Commit: Equatable {
-        package var width: Double
+        var width: Double
         package var collapses: Bool
     }
 
     package let widthOnBegin: Double
-    package let locked: Bool
+    let locked: Bool
     private let breakpoints: [Double]
     private(set) var canSnap = false
     private(set) var timeOfSnap: TimeInterval?
     package private(set) var effectiveWidth: Double
     private(set) var breakpointIndex: Int
-    package var isSnapped: Bool { timeOfSnap != nil }
+    var isSnapped: Bool { timeOfSnap != nil }
     package var isPreviewingHidden: Bool { effectiveWidth == 0 }
 
     package init(width: Double, locked: Bool, breakpoints: [Double] = []) {
@@ -49,7 +49,7 @@ package struct SidebarResizeGesture {
         breakpointIndex = Self.breakpointIndex(for: width, in: breakpoints)
     }
 
-    package static func clamped(_ width: Double) -> Double { min(maximumWidth, max(minimumWidth, width)) }
+    static func clamped(_ width: Double) -> Double { min(maximumWidth, max(minimumWidth, width)) }
     static func breakpointIndex(for width: Double, in breakpoints: [Double]) -> Int {
         breakpoints.firstIndex { width >= 0 && width < $0 } ?? breakpoints.count
     }

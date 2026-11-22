@@ -67,15 +67,15 @@ package enum EaselLayerMove: String, CaseIterable {
 package struct EaselClipboardPayload: Codable, Equatable {
     static let currentVersion = 1
     package static let typeIdentifier = "org.parc.easel-objects.v1"
-    package static let maximumBytes = 128 * 1024 * 1024
+    static let maximumBytes = 128 * 1024 * 1024
     static let maximumItems = 10_000
-    package static let maximumAssetBytes = 30 * 1024 * 1024
+    static let maximumAssetBytes = 30 * 1024 * 1024
 
-    package var version = currentVersion
+    var version = currentVersion
     package var documentID: UUID?
     package var items: [EaselItem]
     package var assets: [String: Data] = [:]
-    package init(version: Int = currentVersion, documentID: UUID? = nil, items: [EaselItem], assets: [String: Data] = [:]) {
+    init(version: Int = currentVersion, documentID: UUID? = nil, items: [EaselItem], assets: [String: Data] = [:]) {
         self.version = version
         self.documentID = documentID
         self.items = items
@@ -120,7 +120,7 @@ package struct EaselClipboardPayload: Codable, Equatable {
         return payload
     }
 
-    package func validate() throws {
+    func validate() throws {
         guard version == Self.currentVersion, !items.isEmpty, items.count <= Self.maximumItems,
               Set(items.map(\.id)).count == items.count,
               items.allSatisfy({ $0.assetID.map { assets[$0] != nil } ?? true }),
@@ -134,7 +134,7 @@ package struct EaselClipboardPayload: Codable, Equatable {
 package struct EaselDuplication: Equatable {
     package var document: EaselDocument
     package var copies: [UUID]
-    package init(document: EaselDocument, copies: [UUID]) {
+    init(document: EaselDocument, copies: [UUID]) {
         self.document = document
         self.copies = copies
     }
@@ -144,10 +144,10 @@ package enum EaselArrange {
     package static let duplicateOffset = 24.0
     static let tidySpacing = 24.0
 
-    package struct Unit: Equatable {
-        package var ids: [UUID]
-        package var frame: EaselRect
-        package init(ids: [UUID], frame: EaselRect) {
+    struct Unit: Equatable {
+        var ids: [UUID]
+        var frame: EaselRect
+        init(ids: [UUID], frame: EaselRect) {
             self.ids = ids
             self.frame = frame
         }
@@ -211,7 +211,7 @@ package enum EaselArrange {
         package var selection: Set<UUID>
         package var enteredGroup: UUID?
         package var enteredByClick: Bool
-        package init(selection: Set<UUID>, enteredGroup: UUID? = nil, enteredByClick: Bool) {
+        init(selection: Set<UUID>, enteredGroup: UUID? = nil, enteredByClick: Bool) {
             self.selection = selection
             self.enteredGroup = enteredGroup
             self.enteredByClick = enteredByClick
@@ -288,7 +288,7 @@ package enum EaselArrange {
         return [item.startConnection?.itemID, item.endConnection?.itemID].contains { $0.map(present.contains) == true }
     }
 
-    package static func units(_ ids: Set<UUID>, in document: EaselDocument) -> [Unit] {
+    static func units(_ ids: Set<UUID>, in document: EaselDocument) -> [Unit] {
         let present = Set(document.items.map(\.id))
         let whole = completeGroups(ids, in: document)
         var units: [Unit] = [], slots: [UUID: Int] = [:]
@@ -312,7 +312,7 @@ package enum EaselArrange {
         return abs(translation.x) >= abs(translation.y) ? EaselPoint(x: translation.x, y: 0) : EaselPoint(x: 0, y: translation.y)
     }
 
-    package static func move(_ item: inout EaselItem, dx: Double, dy: Double) {
+    static func move(_ item: inout EaselItem, dx: Double, dy: Double) {
         item.frame.x += dx; item.frame.y += dy
         if let waypoints = item.waypoints { item.waypoints = waypoints.map { EaselPoint(x: $0.x + dx, y: $0.y + dy) } }
     }

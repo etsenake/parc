@@ -31,9 +31,9 @@ package struct InterProfileMovePrompt: Equatable {
     package static let dialogWidth: Double = 455
 
     let destinationName: String
-    package let tabCount: Int
+    let tabCount: Int
 
-    package init(tabCount: Int, spaceName: String) {
+    init(tabCount: Int, spaceName: String) {
         self.tabCount = max(1, tabCount)
         destinationName = Self.displayName(spaceName)
     }
@@ -44,7 +44,7 @@ package struct InterProfileMovePrompt: Equatable {
     }
 
     package var title: String { "Move \(tabCount > 1 ? "tabs" : "tab") to \(destinationName)?" }
-    package var message: String {
+    var message: String {
         "\(destinationName) uses different data, so you might get logged out or lose your progress in "
             + (tabCount > 1 ? "these tabs" : "this tab") + ".\n\nThis can't be undone!"
     }
@@ -57,7 +57,7 @@ package struct InterProfileMovePrompt: Equatable {
             + (tabCount > 1 ? "these tabs" : "this tab") + ".\n\nThis can't be undone!", false)]
     }
 
-    package static func displayName(_ name: String) -> String {
+    static func displayName(_ name: String) -> String {
         guard name.count > 24 else { return name }
         return String(name.prefix(24)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
@@ -68,21 +68,21 @@ package struct InterProfileMovePrompt: Equatable {
 }
 
 package struct InterProfileDocumentBlock: Equatable {
-    package enum Section: Equatable { case pinned, today, favorites, folder(String) }
-    package enum Place: Equatable {
+    enum Section: Equatable { case pinned, today, favorites, folder(String) }
+    enum Place: Equatable {
         case sidebar(Section, split: Bool, otherSpace: String?)
         case leftBehind(Section, split: Bool)
         case archive
     }
-    package enum Change: Equatable { case move, share(target: String), keepSeparate }
+    enum Change: Equatable { case move, share(target: String), keepSeparate }
 
-    package let document: InternalPage
-    package let subject: String
-    package let sourceSpace: String
+    let document: InternalPage
+    let subject: String
+    let sourceSpace: String
     let destinationSpace: String
-    package let places: [Place]
-    package let others: [InternalPage]
-    package let change: Change
+    let places: [Place]
+    let others: [InternalPage]
+    let change: Change
 
     package init?(moving ids: Set<UUID>, before: BrowserState, after: BrowserState?, sharing: SpaceDataSharing? = nil) {
         guard let after else { return nil }
@@ -218,7 +218,7 @@ package struct InterProfileDocumentBlock: Equatable {
 package enum InterProfileMove {
     package static func admits(_ tab: BrowserTab) -> Bool { tab.archivedAt == nil }
 
-    package static func documents(moving ids: Set<UUID>, after state: BrowserState) -> [InternalPage]? {
+    static func documents(moving ids: Set<UUID>, after state: BrowserState) -> [InternalPage]? {
         var pages: [InternalPage] = []
         for id in ids.sorted(by: { $0.uuidString < $1.uuidString }) {
             guard let tab = state.tab(id) else { return nil }
@@ -248,7 +248,7 @@ package enum InterProfileMove {
         return tab.kind == .today || (tab.savedURL == original.savedURL && tab.savedTitle == original.savedTitle)
     }
 
-    package static func sourceProfile(of ids: [UUID], in state: BrowserState) -> UUID? {
+    static func sourceProfile(of ids: [UUID], in state: BrowserState) -> UUID? {
         let profiles = Set(ids.compactMap { id in state.tab(id)?.profileID })
         guard profiles.count == 1, ids.allSatisfy({ id in state.containsTab(id) }) else { return nil }
         return profiles.first
@@ -263,15 +263,15 @@ package enum InterProfileMove {
 
 package enum ForeignSplitDrop {
     package struct Request: Equatable {
-        package let source: BrowserTab
-        package let sourceHomeID: UUID
-        package let spaceID: UUID
-        package let profileID: UUID
-        package let selection: [UUID]
-        package let layout: BrowserSplitLayout?
-        package let target: SplitDropTarget
-        package let orientation: SplitOrientation
-        package let destinationHomeIDs: [UUID: UUID]
+        let source: BrowserTab
+        let sourceHomeID: UUID
+        let spaceID: UUID
+        let profileID: UUID
+        let selection: [UUID]
+        let layout: BrowserSplitLayout?
+        let target: SplitDropTarget
+        let orientation: SplitOrientation
+        let destinationHomeIDs: [UUID: UUID]
 
         package init(source: BrowserTab, sourceHomeID: UUID, spaceID: UUID, profileID: UUID, selection: [UUID], layout: BrowserSplitLayout?, target: SplitDropTarget, orientation: SplitOrientation, destinationHomeIDs: [UUID: UUID]) {
             self.source = source

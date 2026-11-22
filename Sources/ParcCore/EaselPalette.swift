@@ -44,7 +44,7 @@ package struct EaselColorVariants: Equatable {
     package var dark: String
     package var adapts: Bool { light != dark }
 
-    package init(canonical: String, light: String, dark: String) {
+    init(canonical: String, light: String, dark: String) {
         self.canonical = canonical
         self.light = light
         self.dark = dark
@@ -54,7 +54,7 @@ package struct EaselColorVariants: Equatable {
 package enum EaselPalette {
     package static let automaticInk = "#252525"
     package static let inkLight = "#1F1B2E"
-    package static let inkDark = "#EDEBFA"
+    static let inkDark = "#EDEBFA"
     package static let neutralLight = "#FFFFFF"
     static let neutralDark = "#2A2733"
     static let defaultSticky = EaselPaletteColor.note(.yellow)
@@ -135,7 +135,7 @@ package enum EaselPalette {
         return NoteColor.allCases.first { pair($0, role: role).light == value }.map { .note($0) }
     }
 
-    package static func resolve(_ hex: String, role: EaselColorRole, dark: Bool) -> String {
+    static func resolve(_ hex: String, role: EaselColorRole, dark: Bool) -> String {
         guard let value = normalized(hex) else { return hex }
         switch color(for: value, role: role) {
         case .automatic?: return dark ? inkDark : inkLight
@@ -186,7 +186,7 @@ package enum EaselPalette {
 }
 
 extension EaselVectorExport {
-    package static func paint(_ hex: String, role: EaselColorRole) -> String {
+    static func paint(_ hex: String, role: EaselColorRole) -> String {
         guard let value = color(hex) else { return "var(--easel-ink)" }
         if role == .ink, isAutomatic(hex) { return "var(--easel-ink)" }
         guard let name = EaselPalette.cssVariable(value, role: role) else { return value }
@@ -226,11 +226,11 @@ package enum EaselPaintRules {
     }
 
     static let shapeWidth = 2.5
-    package static let lineWidth = 3.0
+    static let lineWidth = 3.0
     static let highlighterWidth = 16.0
     static let highlighterOpacity = 0.35
-    package static let washOpacity = 0.09
-    package static let maximumWidth = 64.0
+    static let washOpacity = 0.09
+    static let maximumWidth = 64.0
     static let minimumLineWidth = 1.0
 
     static func isHighlighter(_ item: EaselItem) -> Bool { item.kind == .freehand && item.resolvedBrush == .highlighter }

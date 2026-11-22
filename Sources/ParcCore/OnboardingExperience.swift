@@ -28,9 +28,9 @@ package enum OnboardingExperience {
     }
 
     package struct CounterPage: Equatable {
-        package let stage: OnboardingDraft.Stage
+        let stage: OnboardingDraft.Stage
         package let importPage: OnboardingDraft.ImportPage?
-        package let importStarted: Bool
+        let importStarted: Bool
         package init(stage: OnboardingDraft.Stage, importPage: OnboardingDraft.ImportPage?, importStarted: Bool) {
             self.stage = stage
             self.importPage = stage == .continuedImport ? importPage : nil
@@ -78,7 +78,7 @@ package enum OnboardingExperience {
         return stage == .bookmarks && started && !skippingImport ? .favorites : .importPage
     }
 
-    package typealias Spring = OnboardingStepMotion.Spring
+    typealias Spring = OnboardingStepMotion.Spring
     package typealias StepMotion = OnboardingStepMotion
 
     package enum MusicEvent: Equatable {

@@ -9,7 +9,7 @@ package struct NoteSyntaxToken: Hashable, Sendable {
     package let range: Range<Int>
     package let kind: NoteSyntaxKind
 
-    package init(range: Range<Int>, kind: NoteSyntaxKind) {
+    init(range: Range<Int>, kind: NoteSyntaxKind) {
         self.range = range
         self.kind = kind
     }

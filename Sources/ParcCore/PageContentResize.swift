@@ -27,7 +27,7 @@ package struct PageContentResizeReasons: OptionSet, Hashable {
 
 package struct PageContentResizeHold {
     static let maxPendingFrames = 1
-    package static let tolerance = 1.00001
+    static let tolerance = 1.00001
 
     package private(set) var mode = PageContentResizeMode.intrinsic
     private(set) var pendingFrames: [CGSize] = []

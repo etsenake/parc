@@ -63,9 +63,9 @@ extension EaselRichText {
         runs.compactMap { run in run.attributes.inline.map { (run.location, $0) } }
     }
 
-    package var dateMentions: [NoteDateMention] { inlines.compactMap { $0.inline.dateMention } }
+    var dateMentions: [NoteDateMention] { inlines.compactMap { $0.inline.dateMention } }
 
-    package func inline(at location: Int) -> Inline? {
+    func inline(at location: Int) -> Inline? {
         runs.first { $0.location == location && $0.length == 1 }?.attributes.inline
     }
 
@@ -109,7 +109,7 @@ extension EaselRichText {
 }
 
 extension EaselRichText {
-    package static func noteText(_ text: String, rich: EaselRichText?) -> NoteText {
+    static func noteText(_ text: String, rich: EaselRichText?) -> NoteText {
         let source = text as NSString
         var value = NoteText()
         var location = 0

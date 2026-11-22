@@ -11,7 +11,7 @@ package enum WindowFrameThickness {
 
     package static func clamped(_ value: Int) -> Int { min(range.upperBound, max(range.lowerBound, value)) }
     package static func nearest(_ value: CGFloat) -> Int { clamped(Int(value.rounded())) }
-    package static func name(_ value: Int) -> String { names[clamped(value)] ?? "" }
+    static func name(_ value: Int) -> String { names[clamped(value)] ?? "" }
     package static func label(_ value: Int) -> String { "\(clamped(value)) · \(name(value))" }
     package static func spokenValue(_ value: Int) -> String { "\(clamped(value)) points, \(name(value))" }
     package static func cornerRadius(for thickness: CGFloat) -> CGFloat { max(4, min(12, windowCornerRadius - thickness)) }
@@ -140,7 +140,7 @@ package enum WindowFrameCrankPlacement {
                        y: clamp(bounds.minY + hubInset, bounds.minY + hubInset, bounds.maxY - hubInset, center: bounds.midY))
     }
 
-    package static func fits(hub: CGPoint, in bounds: CGRect) -> Bool {
+    static func fits(hub: CGPoint, in bounds: CGRect) -> Bool {
         bounds.insetBy(dx: -0.001, dy: -0.001).contains(CGRect(x: hub.x - extent, y: hub.y - extent, width: 2 * extent, height: 2 * extent))
     }
 

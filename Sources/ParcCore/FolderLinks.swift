@@ -1,7 +1,7 @@
 import Foundation
 
 package struct FolderLinkTarget: Equatable {
-    package let folderID: UUID
+    let folderID: UUID
     package let spaceID: UUID
     package let profileID: UUID
 
@@ -16,11 +16,11 @@ package enum FolderLinkFormat { case plain, markdown }
 
 package enum FolderLinks {
     package struct Link: Equatable {
-        package let tabID: UUID
-        package let title: String
+        let tabID: UUID
+        let title: String
         package let url: String
 
-        package init(tabID: UUID, title: String, url: String) {
+        init(tabID: UUID, title: String, url: String) {
             self.tabID = tabID
             self.title = title
             self.url = url

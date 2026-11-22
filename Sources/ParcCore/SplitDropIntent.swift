@@ -19,7 +19,7 @@ package struct SplitDropIntent {
         package let changed: Bool
         package var appeared: Bool { changed && shown != nil }
 
-        package init(shown: Zone?, changed: Bool) {
+        init(shown: Zone?, changed: Bool) {
             self.shown = shown
             self.changed = changed
         }
@@ -29,7 +29,7 @@ package struct SplitDropIntent {
         let y: Double
         let time: TimeInterval
 
-        package init(x: Double, y: Double, time: TimeInterval) {
+        init(x: Double, y: Double, time: TimeInterval) {
             self.x = x
             self.y = y
             self.time = time
@@ -42,8 +42,8 @@ package struct SplitDropIntent {
 
     let settleSpeed: Double
     let traversalSpeed: Double
-    package let dwell: TimeInterval
-    package let window: TimeInterval
+    let dwell: TimeInterval
+    let window: TimeInterval
     package private(set) var shown: Zone?
     private var pending: Pending?
     private var samples: [Sample] = []
@@ -53,14 +53,14 @@ package struct SplitDropIntent {
         self.dwell = dwell; self.window = window
     }
 
-    package var isPending: Bool { pending != nil }
+    var isPending: Bool { pending != nil }
 
     package var deadline: TimeInterval? {
         guard let pending, let last = samples.last else { return nil }
         return min(pending.since + dwell, last.time + window)
     }
 
-    package func dropZone(at place: Place) -> Zone? {
+    func dropZone(at place: Place) -> Zone? {
         if case .pane(let zone) = place { return zone }
         return shown
     }

@@ -29,14 +29,14 @@ package enum EaselDrawing {
     package static func safeScale(_ scale: Double) -> Double { scale.isFinite && scale > 0 ? scale : 1 }
 
     @discardableResult
-    package static func append(_ point: EaselPoint, to points: inout [EaselPoint], scale: Double) -> Bool {
+    static func append(_ point: EaselPoint, to points: inout [EaselPoint], scale: Double) -> Bool {
         guard point.x.isFinite, point.y.isFinite, points.count < maximumPoints else { return false }
         if let last = points.last, hypot(point.x - last.x, point.y - last.y) < 1 / safeScale(scale) { return false }
         points.append(point)
         return true
     }
 
-    package static func smoothed(_ points: [EaselPoint]) -> [EaselPoint] {
+    static func smoothed(_ points: [EaselPoint]) -> [EaselPoint] {
         guard points.count > 2 else { return points }
         var result = points
         for index in 1..<(points.count - 1) {
@@ -81,7 +81,7 @@ package enum EaselDrawing {
         return spaced.indices.compactMap { keep[$0] ? spaced[$0] : nil }
     }
 
-    package static func finished(_ points: [EaselPoint], scale: Double) -> [EaselPoint] {
+    static func finished(_ points: [EaselPoint], scale: Double) -> [EaselPoint] {
         let clean = points.filter { $0.x.isFinite && $0.y.isFinite }
         guard let first = clean.first, let last = clean.last else { return [] }
         guard clean.count > 2 else { return [first, last] }
@@ -101,7 +101,7 @@ package enum EaselDrawing {
                           y: abs(snapped.y - start.y) < 1e-9 ? start.y : snapped.y)
     }
 
-    package static func geometry(_ absolute: [EaselPoint]) -> (frame: EaselRect, points: [EaselPoint])? {
+    static func geometry(_ absolute: [EaselPoint]) -> (frame: EaselRect, points: [EaselPoint])? {
         guard let first = absolute.first,
               absolute.allSatisfy({ $0.x.isFinite && $0.y.isFinite && abs($0.x) <= 1_000_000 && abs($0.y) <= 1_000_000 }) else { return nil }
         var minX = first.x, minY = first.y, maxX = first.x, maxY = first.y
@@ -167,7 +167,7 @@ package enum EaselDrawing {
         }
     }
 
-    package static func placing(_ visual: [EaselPoint], like item: EaselItem) -> (frame: EaselRect, points: [EaselPoint])? {
+    static func placing(_ visual: [EaselPoint], like item: EaselItem) -> (frame: EaselRect, points: [EaselPoint])? {
         guard let first = visual.first,
               visual.allSatisfy({ $0.x.isFinite && $0.y.isFinite && abs($0.x) <= 1_000_000 && abs($0.y) <= 1_000_000 }) else { return nil }
         let radians = item.resolvedRotation * Double.pi / 180
@@ -198,7 +198,7 @@ package enum EaselDrawing {
 
     package static func eraserRadius(scale: Double) -> Double { eraserRadius / safeScale(scale) }
 
-    package static func touches(_ item: EaselItem, from a: EaselPoint, to b: EaselPoint, scale: Double) -> Bool {
+    static func touches(_ item: EaselItem, from a: EaselPoint, to b: EaselPoint, scale: Double) -> Bool {
         guard isErasable(item), [a.x, a.y, b.x, b.y].allSatisfy(\.isFinite), !item.points.isEmpty else { return false }
         let radius = eraserRadius(scale: scale), reach = radius + reach(of: item) + EaselWashi.tooth
         let f = item.frame, turn = item.resolvedRotation * Double.pi / 180
@@ -240,7 +240,7 @@ package enum EaselDrawing {
         return nearest
     }
 
-    package static func canHold(_ item: EaselItem) -> Bool {
+    static func canHold(_ item: EaselItem) -> Bool {
         item.kind != .section && item.kind != .freehand && item.kind != .arrow && !item.isLocked
     }
 
@@ -265,7 +265,7 @@ package enum EaselDrawing {
         return best.key
     }
 
-    package static func covers(_ item: EaselItem, _ point: EaselPoint) -> Bool {
+    static func covers(_ item: EaselItem, _ point: EaselPoint) -> Bool {
         let f = item.frame
         guard f.width > 0, f.height > 0 else { return false }
         let center = EaselPoint(x: f.x + f.width / 2, y: f.y + f.height / 2)
@@ -307,7 +307,7 @@ package enum EaselDrawing {
         return min(segmentDistance(a, c, d), segmentDistance(b, c, d), segmentDistance(c, a, b), segmentDistance(d, a, b))
     }
 
-    package static func rotated(_ point: EaselPoint, by radians: Double) -> EaselPoint {
+    static func rotated(_ point: EaselPoint, by radians: Double) -> EaselPoint {
         guard radians != 0 else { return point }
         let c = cos(radians), s = sin(radians)
         return EaselPoint(x: point.x * c - point.y * s, y: point.x * s + point.y * c)

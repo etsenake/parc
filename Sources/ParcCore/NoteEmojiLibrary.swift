@@ -3,12 +3,12 @@ import Foundation
 
 package struct NoteCustomEmoji: Hashable, Sendable {
     package var name: String
-    package var file: String
-    package var aliases: [String] = []
+    var file: String
+    var aliases: [String] = []
 
     package var reference: String { NoteCustomEmojiName.reference(name) }
 
-    package init(name: String, file: String, aliases: [String] = []) {
+    init(name: String, file: String, aliases: [String] = []) {
         self.name = name
         self.file = file
         self.aliases = aliases
@@ -41,7 +41,7 @@ package final class NoteEmojiLibrary {
             var file: String
             var aliases: [String]?
 
-            package init(name: String, file: String, aliases: [String]? = nil) {
+            init(name: String, file: String, aliases: [String]? = nil) {
                 self.name = name
                 self.file = file
                 self.aliases = aliases
@@ -55,20 +55,20 @@ package final class NoteEmojiLibrary {
         var manifest: Date?
         var folder: Date?
 
-        package init(manifest: Date? = nil, folder: Date? = nil) {
+        init(manifest: Date? = nil, folder: Date? = nil) {
             self.manifest = manifest
             self.folder = folder
         }
     }
 
-    package nonisolated static let folderName = ".parc"
+    nonisolated static let folderName = ".parc"
     nonisolated static let emojiFolderName = "emoji"
     nonisolated static let manifestName = "emoji.json"
-    package nonisolated static let imageExtensions: Set<String> = ["png", "gif", "jpg", "jpeg", "webp", "heic", "tif", "tiff"]
+    nonisolated static let imageExtensions: Set<String> = ["png", "gif", "jpg", "jpeg", "webp", "heic", "tif", "tiff"]
 
-    package static var anyChange: PassthroughSubject<NoteEmojiLibrary, Never> { NoteFiles.shared.emojiChanges }
+    static var anyChange: PassthroughSubject<NoteEmojiLibrary, Never> { NoteFiles.shared.emojiChanges }
 
-    package nonisolated static func directory(in root: URL) -> URL {
+    nonisolated static func directory(in root: URL) -> URL {
         root.appendingPathComponent(folderName, isDirectory: true).appendingPathComponent(emojiFolderName, isDirectory: true)
     }
 
@@ -76,7 +76,7 @@ package final class NoteEmojiLibrary {
 
     package static func library(root: URL) -> NoteEmojiLibrary { NoteFiles.shared.emojiLibrary(root: root) }
 
-    package nonisolated static func root(for note: URL, notesFolders: [URL]) -> URL {
+    nonisolated static func root(for note: URL, notesFolders: [URL]) -> URL {
         let start = NoteFilePaths.canonical(note.deletingLastPathComponent())
         let boundary = notesFolders.map { NoteFilePaths.canonical($0) }
             .filter { start.path == $0.path || start.path.hasPrefix($0.path.hasSuffix("/") ? $0.path : $0.path + "/") }
@@ -93,7 +93,7 @@ package final class NoteEmojiLibrary {
         return boundary ?? start
     }
 
-    package let root: URL
+    let root: URL
     package let changes = PassthroughSubject<Void, Never>()
     private let announcements: PassthroughSubject<NoteEmojiLibrary, Never>
     package private(set) var emoji: [NoteCustomEmoji] = []
@@ -102,21 +102,21 @@ package final class NoteEmojiLibrary {
     private var byAlias: [String: Int] = [:]
     private var stamp = Stamp()
 
-    package convenience init(root: URL) {
+    convenience init(root: URL) {
         self.init(root: root, announcing: NoteFiles.shared.emojiChanges)
     }
 
-    package init(root: URL, announcing announcements: PassthroughSubject<NoteEmojiLibrary, Never>) {
+    init(root: URL, announcing announcements: PassthroughSubject<NoteEmojiLibrary, Never>) {
         self.root = root
         self.announcements = announcements
         reload()
     }
 
-    package var directory: URL { Self.directory(in: root) }
+    var directory: URL { Self.directory(in: root) }
     var manifestURL: URL { directory.appendingPathComponent(Self.manifestName) }
     package var isEmpty: Bool { emoji.isEmpty }
 
-    package var names: Set<String> { Set(byName.keys).union(byAlias.keys) }
+    var names: Set<String> { Set(byName.keys).union(byAlias.keys) }
 
     package func emoji(named name: String) -> NoteCustomEmoji? {
         if let index = byName[name] ?? byAlias[name] { return emoji[index] }
@@ -403,7 +403,7 @@ extension NoteCustomEmojiName {
 }
 
 extension NoteFiles {
-    package func emojiLibrary(for note: URL) -> NoteEmojiLibrary {
+    func emojiLibrary(for note: URL) -> NoteEmojiLibrary {
         emojiLibrary(root: NoteEmojiLibrary.root(for: note, notesFolders: notesFolders))
     }
 

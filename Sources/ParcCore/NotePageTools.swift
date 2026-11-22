@@ -14,14 +14,14 @@ package struct NoteFindMatch: Hashable {
     static let titleBlock = NoteBlockID(UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)))
 
     package var position: NotePosition
-    package var length: Int
+    var length: Int
 
-    package init(_ block: NoteBlockID, field: NoteTextField = .body, offset: Int, length: Int) {
+    init(_ block: NoteBlockID, field: NoteTextField = .body, offset: Int, length: Int) {
         position = NotePosition(block, offset, field: field)
         self.length = length
     }
 
-    package static func title(offset: Int, length: Int) -> NoteFindMatch {
+    static func title(offset: Int, length: Int) -> NoteFindMatch {
         NoteFindMatch(titleBlock, offset: offset, length: length)
     }
 
@@ -53,7 +53,7 @@ struct NoteFindOrder {
 }
 
 package enum NotePageFinder {
-    package static func fields(of block: NoteBlock) -> [NoteTextField] {
+    static func fields(of block: NoteBlock) -> [NoteTextField] {
         var result: [NoteTextField] = []
         if block.kind.hasRichText || block.kind.hasPlainText { result.append(.body) }
         if let table = block.props.table {
@@ -65,7 +65,7 @@ package enum NotePageFinder {
         return result
     }
 
-    package static func ranges(of query: String, in string: String, options: NoteFindOptions = NoteFindOptions()) -> [Range<Int>] {
+    static func ranges(of query: String, in string: String, options: NoteFindOptions = NoteFindOptions()) -> [Range<Int>] {
         guard !query.isEmpty else { return [] }
         let haystack = string as NSString
         var result: [Range<Int>] = []
@@ -200,7 +200,7 @@ package struct NotePageHeaderGeometry: Equatable {
         package var backlinks: CGRect?
         package var height: CGFloat
 
-        package init(cover: CGRect? = nil, icon: CGRect? = nil, affordances: CGRect, title: CGRect, error: CGRect? = nil, properties: CGRect? = nil, backlinks: CGRect? = nil, height: CGFloat) {
+        init(cover: CGRect? = nil, icon: CGRect? = nil, affordances: CGRect, title: CGRect, error: CGRect? = nil, properties: CGRect? = nil, backlinks: CGRect? = nil, height: CGFloat) {
             self.cover = cover
             self.icon = icon
             self.affordances = affordances
@@ -214,7 +214,7 @@ package struct NotePageHeaderGeometry: Equatable {
 
     package static let iconSide: CGFloat = 80
     static let iconLead: CGFloat = 6
-    package static let topPadding: CGFloat = 52
+    static let topPadding: CGFloat = 52
     static let plainTextTop: CGFloat = 56
     static let inkGap: CGFloat = 14
     static let affordanceGap: CGFloat = 8
@@ -222,15 +222,15 @@ package struct NotePageHeaderGeometry: Equatable {
     static let errorGap: CGFloat = 4
     static let propertiesGap: CGFloat = 8
     static let backlinksGap: CGFloat = 6
-    package static let bottomPadding: CGFloat = 14
+    static let bottomPadding: CGFloat = 14
 
-    package var width: CGFloat
-    package var column: CGRect
+    var width: CGFloat
+    var column: CGRect
     package var coverHeight: CGFloat?
     package var hasIcon = false
     package var isPlainText = false
     package var iconInkInset: CGFloat = 11
-    package var titleHeight: CGFloat
+    var titleHeight: CGFloat
     package var titleCapInset: CGFloat = 0
     package var affordanceHeight: CGFloat = 26
     package var errorHeight: CGFloat?
@@ -239,7 +239,7 @@ package struct NotePageHeaderGeometry: Equatable {
     package var backlinksHeight: CGFloat?
     package var backlinksGutter: CGFloat = 0
 
-    package var hasCover: Bool { (coverHeight ?? 0) > 0 && !isPlainText }
+    var hasCover: Bool { (coverHeight ?? 0) > 0 && !isPlainText }
 
     package init(width: CGFloat, column: CGRect, coverHeight: CGFloat? = nil, hasIcon: Bool = false, isPlainText: Bool = false, iconInkInset: CGFloat = 11, titleHeight: CGFloat, titleCapInset: CGFloat = 0, affordanceHeight: CGFloat = 26, errorHeight: CGFloat? = nil, propertiesHeight: CGFloat? = nil, propertiesGutter: CGFloat = 0, backlinksHeight: CGFloat? = nil, backlinksGutter: CGFloat = 0) {
         self.width = width
@@ -320,7 +320,7 @@ package struct NotePageStats: Hashable {
     package var words: Int
     package var characters: Int
 
-    package init(words: Int, characters: Int) {
+    init(words: Int, characters: Int) {
         self.words = words
         self.characters = characters
     }
@@ -396,7 +396,7 @@ package enum NotePropertyKind: String, CaseIterable, Hashable {
         }
     }
 
-    package var defaultValue: NotePropertyValue {
+    var defaultValue: NotePropertyValue {
         switch self {
         case .text: return .text("")
         case .number: return .number(0)
@@ -453,7 +453,7 @@ extension NotePropertyValue {
         }
     }
 
-    package func converted(to kind: NotePropertyKind) -> NotePropertyValue {
+    func converted(to kind: NotePropertyKind) -> NotePropertyValue {
         guard kind != self.kind else { return self }
         switch (self, kind) {
         case (.text(let value), .number), (.date(let value), .number):
@@ -504,7 +504,7 @@ package enum NotePropertyEditing {
         return !properties.indices.contains { $0 != index && properties[$0].key.lowercased() == value.lowercased() }
     }
 
-    package static func uniqueKey(_ base: String, among properties: [NotePageProperty]) -> String {
+    static func uniqueKey(_ base: String, among properties: [NotePageProperty]) -> String {
         let root = normalizedKey(base).isEmpty ? "Property" : normalizedKey(base)
         if isUsable(root, among: properties) { return root }
         var counter = 2
@@ -554,7 +554,7 @@ package enum NotePropertyEditing {
         return value
     }
 
-    package static func format(_ value: Double) -> String {
+    static func format(_ value: Double) -> String {
         if value.rounded() == value && abs(value) < 1e15 { return String(Int64(value)) }
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -763,9 +763,9 @@ extension NoteBlock {
 }
 
 package struct NotePagePrintSpan: Hashable {
-    package var minY: CGFloat
-    package var maxY: CGFloat
-    package var keepsTogether: Bool
+    var minY: CGFloat
+    var maxY: CGFloat
+    var keepsTogether: Bool
 
     package init(minY: CGFloat, maxY: CGFloat, keepsTogether: Bool) {
         self.minY = minY

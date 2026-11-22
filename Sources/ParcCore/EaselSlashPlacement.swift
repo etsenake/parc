@@ -22,7 +22,7 @@ package struct EaselSlashContext: Hashable {
 }
 
 package enum EaselSlashPlacement {
-    package static let gap = 32.0
+    static let gap = 32.0
 
     package static func frame(size: (width: Double, height: Double), beside text: EaselRect, occupied: [EaselRect]) -> EaselRect {
         guard [text.x, text.y, text.width, text.height, size.width, size.height].allSatisfy(\.isFinite) else {

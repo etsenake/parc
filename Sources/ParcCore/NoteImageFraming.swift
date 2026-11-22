@@ -8,8 +8,8 @@ package struct NoteImageCrop: Hashable, Codable {
     package var height: Double
 
     package static let full = NoteImageCrop(x: 0, y: 0, width: 1, height: 1)
-    package static let minimumSide = 0.01
-    package static let precision = 10_000.0
+    static let minimumSide = 0.01
+    static let precision = 10_000.0
 
     package init(x: Double, y: Double, width: Double, height: Double) {
         self.x = x
@@ -24,7 +24,7 @@ package struct NoteImageCrop: Hashable, Codable {
                              width: Double(rect.width / bounds.width), height: Double(rect.height / bounds.height)).normalized
     }
 
-    package init?(attribute: String) {
+    init?(attribute: String) {
         let parts = attribute.split(separator: ",", omittingEmptySubsequences: false)
             .map { Double($0.trimmingCharacters(in: .whitespaces)) }
         guard parts.count == 4, let x = parts[0], let y = parts[1], let width = parts[2], let height = parts[3],
@@ -46,7 +46,7 @@ package struct NoteImageCrop: Hashable, Codable {
         return abs(x) <= tolerance && abs(y) <= tolerance && abs(width - 1) <= tolerance && abs(height - 1) <= tolerance
     }
 
-    package var attribute: String { [x, y, width, height].map(Self.format).joined(separator: ",") }
+    var attribute: String { [x, y, width, height].map(Self.format).joined(separator: ",") }
 
     package func rect(in bounds: CGRect) -> CGRect {
         CGRect(x: bounds.minX + CGFloat(x) * bounds.width, y: bounds.minY + CGFloat(y) * bounds.height,
@@ -63,9 +63,9 @@ package struct NoteImageCrop: Hashable, Codable {
         return CGRect(x: frame.minX - CGFloat(x) * fullWidth, y: frame.minY - CGFloat(y) * fullHeight, width: fullWidth, height: fullHeight)
     }
 
-    package static func rounded(_ value: Double) -> Double { (value * precision).rounded() / precision }
+    static func rounded(_ value: Double) -> Double { (value * precision).rounded() / precision }
 
-    package static func format(_ value: Double) -> String {
+    static func format(_ value: Double) -> String {
         var text = String(format: "%.4f", rounded(value))
         while text.hasSuffix("0") { text.removeLast() }
         if text.hasSuffix(".") { text.removeLast() }
@@ -248,7 +248,7 @@ package enum NoteImageCropHandle: CaseIterable, Hashable {
     package var movesBottom: Bool { self == .bottomLeft || self == .bottom || self == .bottomRight }
     package var isCorner: Bool { (movesLeft || movesRight) && (movesTop || movesBottom) }
 
-    package var title: String {
+    var title: String {
         switch self {
         case .topLeft: return "top left corner"
         case .top: return "top edge"
@@ -367,7 +367,7 @@ package enum NoteImageCropGeometry {
         return CGRect(x: x, y: y, width: size.width, height: size.height)
     }
 
-    package static func matches(_ rect: CGRect, aspect: CGFloat?) -> Bool {
+    static func matches(_ rect: CGRect, aspect: CGFloat?) -> Bool {
         guard let aspect, rect.height > 0 else { return true }
         return abs(rect.width / rect.height - aspect) < 0.01
     }

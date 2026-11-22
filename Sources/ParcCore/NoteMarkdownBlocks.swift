@@ -1,38 +1,38 @@
 import Foundation
 
-package final class NoteMDBlock {
-    package enum Kind { case document, quote, list, item, paragraph, heading, thematicBreak, code, html, table, math, directive, footnote, definitions }
+final class NoteMDBlock {
+    enum Kind { case document, quote, list, item, paragraph, heading, thematicBreak, code, html, table, math, directive, footnote, definitions }
 
-    package let kind: Kind
-    package weak var parent: NoteMDBlock?
-    package var children: [NoteMDBlock] = []
-    package var isOpen = true
-    package var content: [UInt8] = []
+    let kind: Kind
+    weak var parent: NoteMDBlock?
+    var children: [NoteMDBlock] = []
+    var isOpen = true
+    var content: [UInt8] = []
     var blankBefore = 0
     var pendingBlank = 0
     var trailingBlank = 0
-    package var ordered = false
-    package var marker: UInt8 = 0
-    package var start = 1
+    var ordered = false
+    var marker: UInt8 = 0
+    var start = 1
     var markerOffset = 0
-    package var padding = 0
+    var padding = 0
     var loose = false
-    package var level = 0
+    var level = 0
     var setext: UInt8 = 0
-    package var fenced = false
+    var fenced = false
     var fenceChar: UInt8 = 0
     var fenceLength = 0
     var fenceOffset = 0
-    package var info = ""
+    var info = ""
     var htmlType = 0
-    package var alignments: [NoteAlignment?] = []
-    package var rows: [[[UInt8]]] = []
-    package var literal = ""
+    var alignments: [NoteAlignment?] = []
+    var rows: [[[UInt8]]] = []
+    var literal = ""
     var directiveName = ""
     var directiveWidth: Double?
     var rawLines: [[UInt8]] = []
 
-    package init(_ kind: Kind) { self.kind = kind }
+    init(_ kind: Kind) { self.kind = kind }
 
     var acceptsLines: Bool {
         switch kind {

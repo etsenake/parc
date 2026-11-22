@@ -9,9 +9,9 @@ package struct CapturePaletteDocument: Equatable {
     package let icon: String?
     package let modifiedAt: Date?
     package let profileID: UUID?
-    package let id: String
+    let id: String
 
-    package init(target: Target, title: String, icon: String? = nil, modifiedAt: Date? = nil, profileID: UUID? = nil) {
+    init(target: Target, title: String, icon: String? = nil, modifiedAt: Date? = nil, profileID: UUID? = nil) {
         self.target = target; self.title = title; self.icon = icon; self.modifiedAt = modifiedAt; self.profileID = profileID
         switch target {
         case .easel(let id): self.id = "easel:" + id.uuidString
@@ -19,11 +19,11 @@ package struct CapturePaletteDocument: Equatable {
         }
     }
 
-    package init(_ easel: CaptureEaselDestination) {
+    init(_ easel: CaptureEaselDestination) {
         self.init(target: .easel(easel.id), title: easel.title, modifiedAt: easel.modifiedAt, profileID: easel.profileID)
     }
 
-    package init(_ note: CaptureNoteDestination) {
+    init(_ note: CaptureNoteDestination) {
         self.init(target: .note(note.url), title: note.title, icon: note.icon, modifiedAt: note.modifiedAt)
     }
 
@@ -59,7 +59,7 @@ package enum CapturePaletteAction: Equatable {
         }
     }
 
-    package var title: String {
+    var title: String {
         switch self {
         case .library: return "Save to Library"
         case .copy: return "Copy"
@@ -104,7 +104,7 @@ package enum CapturePaletteAction: Equatable {
         }
     }
 
-    package func title(librarySaved: Bool, framed: Bool) -> String {
+    func title(librarySaved: Bool, framed: Bool) -> String {
         if self == .library && librarySaved { return "Saved to Library" }
         if self == .frame && framed { return "Edit Portrait Frame" }
         return title
@@ -119,7 +119,7 @@ package struct CapturePaletteRow: Equatable {
     package var separatorBefore = false
     package var isEnabled = true
     package var isChecked = false
-    package init(action: CapturePaletteAction, title: String, subtitle: String? = nil, section: String? = nil, separatorBefore: Bool = false, isEnabled: Bool = true, isChecked: Bool = false) {
+    init(action: CapturePaletteAction, title: String, subtitle: String? = nil, section: String? = nil, separatorBefore: Bool = false, isEnabled: Bool = true, isChecked: Bool = false) {
         self.action = action
         self.title = title
         self.subtitle = subtitle
@@ -163,7 +163,7 @@ package enum CapturePaletteMenu {
     static let sendToTitle = "Send To"
     static let recentTitle = "Recent"
 
-    package static func isEnabled(_ action: CapturePaletteAction, in context: CapturePaletteContext) -> Bool {
+    static func isEnabled(_ action: CapturePaletteAction, in context: CapturePaletteContext) -> Bool {
         !context.busy && (action != .message || context.messageAvailable)
     }
 
@@ -184,7 +184,7 @@ package enum CapturePaletteMenu {
         return rows
     }
 
-    package static func search(_ context: CapturePaletteContext, query: String) -> [CapturePaletteRow] {
+    static func search(_ context: CapturePaletteContext, query: String) -> [CapturePaletteRow] {
         let needle = query.lowercased()
         func matches(_ title: String) -> Bool { title.lowercased().contains(needle) }
         var actions = quickActions(context) + editActions(context)
@@ -217,7 +217,7 @@ package enum CapturePaletteMenu {
         }
     }
 
-    package static func documents(_ context: CapturePaletteContext) -> [CapturePaletteDocument] {
+    static func documents(_ context: CapturePaletteContext) -> [CapturePaletteDocument] {
         (context.offersEasels ? CaptureEaselDestination.ranked(context.easels).map(CapturePaletteDocument.init) : [])
             + (context.offersNotes ? CaptureNoteDestination.ranked(context.notes).map(CapturePaletteDocument.init) : [])
     }
@@ -297,9 +297,9 @@ package struct CaptureFrameSettings: Equatable {
     package enum Background: Int, CaseIterable { case color, page, desktop }
     static let fractionTolerance = 0.001
 
-    package var background: Background
-    package var fraction: Double
-    package var watermark: Bool
+    var background: Background
+    var fraction: Double
+    var watermark: Bool
     package init(background: Background, fraction: Double, watermark: Bool) {
         self.background = background
         self.fraction = fraction

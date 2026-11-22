@@ -90,9 +90,9 @@ enum NoteMDText {
     }
 }
 
-package struct NoteMDLinkReference: Hashable {
-    package var destination: String
-    package var title: String?
+struct NoteMDLinkReference: Hashable {
+    var destination: String
+    var title: String?
 }
 
 enum NoteMDScan {

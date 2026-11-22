@@ -93,20 +93,20 @@ package struct EaselRichText: Codable, Equatable {
     }
     package struct Inline: Codable, Equatable {
         package enum Kind: String, Codable { case note, date, equation, emoji }
-        package struct Moment: Codable, Equatable {
-            package var year: Int
-            package var month: Int
-            package var day: Int
-            package var hour: Int?
-            package var minute: Int?
-            package init(year: Int, month: Int, day: Int, hour: Int? = nil, minute: Int? = nil) {
+        struct Moment: Codable, Equatable {
+            var year: Int
+            var month: Int
+            var day: Int
+            var hour: Int?
+            var minute: Int?
+            init(year: Int, month: Int, day: Int, hour: Int? = nil, minute: Int? = nil) {
                 self.year = year
                 self.month = month
                 self.day = day
                 self.hour = hour
                 self.minute = minute
             }
-            package var isValid: Bool {
+            var isValid: Bool {
                 guard (1...9999).contains(year), (1...12).contains(month), (1...31).contains(day),
                       hour.map({ (0...23).contains($0) }) ?? (minute == nil), minute.map({ (0...59).contains($0) }) ?? true else { return false }
                 var calendar = Calendar(identifier: .gregorian)
@@ -119,17 +119,17 @@ package struct EaselRichText: Codable, Equatable {
         static let maximumImageBytes = 1_048_576
         package var kind: Kind
         package var target: String?
-        package var title: String?
+        var title: String?
         package var tex: String?
-        package var start: Moment?
-        package var end: Moment?
-        package var remind: Bool?
-        package var remindBefore: Int?
-        package var timeZone: String?
-        package var format: String?
-        package var timeFormat: String?
+        var start: Moment?
+        var end: Moment?
+        var remind: Bool?
+        var remindBefore: Int?
+        var timeZone: String?
+        var format: String?
+        var timeFormat: String?
         package var image: Data?
-        package init(kind: Kind, target: String? = nil, title: String? = nil, tex: String? = nil, start: Moment? = nil, end: Moment? = nil, remind: Bool? = nil, remindBefore: Int? = nil, timeZone: String? = nil, format: String? = nil, timeFormat: String? = nil, image: Data? = nil) {
+        init(kind: Kind, target: String? = nil, title: String? = nil, tex: String? = nil, start: Moment? = nil, end: Moment? = nil, remind: Bool? = nil, remindBefore: Int? = nil, timeZone: String? = nil, format: String? = nil, timeFormat: String? = nil, image: Data? = nil) {
             self.kind = kind
             self.target = target
             self.title = title

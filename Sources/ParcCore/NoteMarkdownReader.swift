@@ -1,24 +1,24 @@
 import Foundation
 
-package struct NoteMDAttributes: Equatable {
-    package var flags: Set<String> = []
-    package var values: [String: String] = [:]
+struct NoteMDAttributes: Equatable {
+    var flags: Set<String> = []
+    var values: [String: String] = [:]
 
-    package var isEmpty: Bool { flags.isEmpty && values.isEmpty }
+    var isEmpty: Bool { flags.isEmpty && values.isEmpty }
 
     static let kindNames: [String: NoteBlockKind] = [
         "paragraph": .paragraph, "image": .image, "video": .video, "audio": .audio, "file": .file,
         "embed": .embed, "easel": .easel, "bookmark": .bookmark, "pdf": .pdf, "breadcrumb": .breadcrumb,
     ]
 
-    package var kind: NoteBlockKind? {
+    var kind: NoteBlockKind? {
         for (name, kind) in Self.kindNames where flags.contains(name) { return kind }
         return nil
     }
 
-    package var color: NoteColorStyle? { values["color"].flatMap(NoteMDColor.style) }
+    var color: NoteColorStyle? { values["color"].flatMap(NoteMDColor.style) }
 
-    package static func parse(_ comment: String) -> NoteMDAttributes? {
+    static func parse(_ comment: String) -> NoteMDAttributes? {
         let trimmed = comment.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("<!--"), trimmed.hasSuffix("-->"), trimmed.count >= 7 else { return nil }
         let inner = Array(trimmed.dropFirst(4).dropLast(3).utf8)
@@ -87,7 +87,7 @@ enum NoteMDSynced {
 }
 
 package enum NoteMDColor {
-    package static func style(_ value: String) -> NoteColorStyle? {
+    static func style(_ value: String) -> NoteColorStyle? {
         let lowered = value.lowercased()
         for suffix in ["_background", "-background", "_bg", "-bg"] where lowered.hasSuffix(suffix) {
             return NoteColor(rawValue: String(lowered.dropLast(suffix.count))).map(NoteColorStyle.background)
@@ -108,7 +108,7 @@ package enum NoteMDMedia {
         kind.isMedia || kind == .embed
     }
 
-    package static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "svg", "heic", "heif", "tif", "tiff", "bmp", "ico", "avif", "apng", "jfif"]
+    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "svg", "heic", "heif", "tif", "tiff", "bmp", "ico", "avif", "apng", "jfif"]
     static let videoExtensions: Set<String> = ["mp4", "m4v", "mov", "webm", "ogv", "mkv", "avi", "mpg", "mpeg", "3gp"]
     static let audioExtensions: Set<String> = ["mp3", "m4a", "wav", "aac", "flac", "ogg", "oga", "opus", "aif", "aiff", "caf", "weba", "mid", "midi"]
     static let embedHosts: Set<String> = [
@@ -129,7 +129,7 @@ package enum NoteMDMedia {
         return name[name.index(after: dot)...].lowercased()
     }
 
-    package static func host(_ source: String) -> String? {
+    static func host(_ source: String) -> String? {
         guard let components = URLComponents(string: source), let scheme = components.scheme?.lowercased(),
               scheme == "http" || scheme == "https", var host = components.host?.lowercased() else { return nil }
         for prefix in ["www.", "m.", "player."] where host.hasPrefix(prefix) { host.removeFirst(prefix.count) }
@@ -167,10 +167,10 @@ enum NoteMDLinks {
     }
 }
 
-package struct NoteMDReader {
-    package let references: [String: NoteMDLinkReference]
+struct NoteMDReader {
+    let references: [String: NoteMDLinkReference]
     let footnotes: Set<String>
-    package var customEmoji: Set<String> = []
+    var customEmoji: Set<String> = []
 
     private struct Event {
         enum Content {
@@ -181,7 +181,7 @@ package struct NoteMDReader {
         var content: Content
         var marks: NoteMarks
 
-        package init(content: Content, marks: NoteMarks) {
+        init(content: Content, marks: NoteMarks) {
             self.content = content
             self.marks = marks
         }
@@ -196,7 +196,7 @@ package struct NoteMDReader {
 
     private static let pairableTags: Set<String> = ["b", "strong", "i", "em", "s", "del", "strike", "u", "ins", "code", "mark", "span", "a", "time"]
 
-    package func sequence(_ nodes: ArraySlice<NoteMDBlock>, documentEdges: Bool, trailingBlank: Int) -> [NoteBlock] {
+    func sequence(_ nodes: ArraySlice<NoteMDBlock>, documentEdges: Bool, trailingBlank: Int) -> [NoteBlock] {
         var result: [NoteBlock] = []
         var lastNumber: Int?
         var index = nodes.startIndex
@@ -377,7 +377,7 @@ package struct NoteMDReader {
         return block
     }
 
-    package func paragraph(_ content: [UInt8]) -> NoteBlock {
+    func paragraph(_ content: [UInt8]) -> NoteBlock {
         var tree = NoteMDInlineParser.parse(content, references: references, footnotes: footnotes, customEmoji: customEmoji)
         var children = tree.children(of: 0)
         let attributes = Self.stripTrailingAttributes(&tree, &children)
@@ -438,7 +438,7 @@ package struct NoteMDReader {
         return block
     }
 
-    package func caption(_ title: String) -> NoteText {
+    func caption(_ title: String) -> NoteText {
         let tree = NoteMDInlineParser.parseVerbatim(Array(title.utf8), references: references, footnotes: footnotes, customEmoji: customEmoji)
         return text(tree, children: tree.children(of: 0))
     }
@@ -564,14 +564,14 @@ package struct NoteMDReader {
         return CalloutMarker(type: type, fold: fold, title: title, rest: rest)
     }
 
-    package struct DetailsOpener {
-        package var open: Bool
-        package var level: Int?
-        package var summary: [UInt8]
-        package var closed: Bool
+    struct DetailsOpener {
+        var open: Bool
+        var level: Int?
+        var summary: [UInt8]
+        var closed: Bool
     }
 
-    package static func details(_ content: [UInt8]) -> DetailsOpener? {
+    static func details(_ content: [UInt8]) -> DetailsOpener? {
         var index = 0
         let end = content.count
         func skip() { while index < end, NoteMDByte.isWhitespace(content[index]) { index += 1 } }
@@ -716,7 +716,7 @@ package struct NoteMDReader {
         return block
     }
 
-    package func apply(_ attributes: NoteMDAttributes, to block: inout NoteBlock) {
+    func apply(_ attributes: NoteMDAttributes, to block: inout NoteBlock) {
         if let color = attributes.color { block.color = color }
         let values = attributes.values
         if let icon = values["icon"] { block.props.icon = icon }
@@ -760,7 +760,7 @@ package struct NoteMDReader {
         if block.kind == .code, block.props.fence == "    ", !NoteMDWriter.writesIndentedCode(block, afterList: false) { block.props.fence = nil }
     }
 
-    package func inline(_ content: [UInt8]) -> (NoteText, NoteMDAttributes?) {
+    func inline(_ content: [UInt8]) -> (NoteText, NoteMDAttributes?) {
         var tree = NoteMDInlineParser.parse(content, references: references, footnotes: footnotes, customEmoji: customEmoji)
         var children = tree.children(of: 0)
         let attributes = Self.stripTrailingAttributes(&tree, &children)
@@ -784,7 +784,7 @@ package struct NoteMDReader {
         return attributes
     }
 
-    package func text(_ tree: NoteMDInlineTree, children: [Int]) -> NoteText {
+    func text(_ tree: NoteMDInlineTree, children: [Int]) -> NoteText {
         var events: [Event] = []
         for child in children { flatten(tree, child, marks: .plain, depth: 0, into: &events) }
         return build(events)

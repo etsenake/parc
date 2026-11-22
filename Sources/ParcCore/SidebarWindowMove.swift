@@ -1,11 +1,11 @@
 import Foundation
 
 package struct SidebarMoveCollection: Equatable {
-    package let hierarchy: SidebarHierarchySnapshot
+    let hierarchy: SidebarHierarchySnapshot
     package let roots: [SidebarItemReference]
     package let tabIDs: [UUID]
-    package let tabs: [BrowserTab]
-    package let folderIDs: [UUID]
+    let tabs: [BrowserTab]
+    let folderIDs: [UUID]
 
     package init?(items: [SidebarItemReference], spaceID: UUID, profileID: UUID, state: BrowserState) {
         guard let hierarchy = SidebarHierarchySnapshot(state: state, spaceID: spaceID, profileID: profileID, includesFavorites: true),

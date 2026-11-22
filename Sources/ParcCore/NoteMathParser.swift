@@ -25,7 +25,7 @@ package struct NoteMathColor: Equatable, Sendable {
     package var green: Double
     package var blue: Double
 
-    package init(red: Double, green: Double, blue: Double) {
+    init(red: Double, green: Double, blue: Double) {
         self.red = red
         self.green = green
         self.blue = blue
@@ -41,7 +41,7 @@ package struct NoteMathFraction: Equatable {
     package var left: String?
     package var right: String?
 
-    package init(numerator: [NoteMathNode], denominator: [NoteMathNode], hasRule: Bool = true, thickness: Double? = nil, level: NoteMathStyleLevel? = nil, left: String? = nil, right: String? = nil) {
+    init(numerator: [NoteMathNode], denominator: [NoteMathNode], hasRule: Bool = true, thickness: Double? = nil, level: NoteMathStyleLevel? = nil, left: String? = nil, right: String? = nil) {
         self.numerator = numerator
         self.denominator = denominator
         self.hasRule = hasRule
@@ -91,7 +91,7 @@ package struct NoteMathDiagramArrow: Equatable {
     package var first: [NoteMathNode] = []
     package var second: [NoteMathNode] = []
 
-    package init(direction: NoteMathDiagramArrowDirection, first: [NoteMathNode] = [], second: [NoteMathNode] = []) {
+    init(direction: NoteMathDiagramArrowDirection, first: [NoteMathNode] = [], second: [NoteMathNode] = []) {
         self.direction = direction
         self.first = first
         self.second = second
@@ -167,19 +167,19 @@ package indirect enum NoteMathNode: Equatable {
     case vcenter([NoteMathNode])
 }
 
-package enum NoteMathLabelTarget: Equatable {
+enum NoteMathLabelTarget: Equatable {
     case automatic(Int)
     case tag([NoteMathNode])
 }
 
-package struct NoteMathLabel: Equatable {
-    package var key: String
-    package var target: NoteMathLabelTarget
+struct NoteMathLabel: Equatable {
+    var key: String
+    var target: NoteMathLabelTarget
 }
 
 package struct NoteMathNumberingContext: Equatable {
     var firstNumber = 0
-    package var references: [String: [NoteMathNode]] = [:]
+    var references: [String: [NoteMathNode]] = [:]
     var takenLabels: Set<String> = []
     var referenceDigest = ""
 
@@ -206,10 +206,10 @@ package struct NoteMathNumberingContext: Equatable {
 package struct NoteMathEquation: Equatable {
     package var nodes: [NoteMathNode]
     package var tag: [NoteMathNode]?
-    package var labels: [NoteMathLabel] = []
+    var labels: [NoteMathLabel] = []
     var automaticNumbers = 0
 
-    package init(nodes: [NoteMathNode], tag: [NoteMathNode]? = nil, labels: [NoteMathLabel] = [], automaticNumbers: Int = 0) {
+    init(nodes: [NoteMathNode], tag: [NoteMathNode]? = nil, labels: [NoteMathLabel] = [], automaticNumbers: Int = 0) {
         self.nodes = nodes
         self.tag = tag
         self.labels = labels
@@ -278,7 +278,7 @@ package struct NoteMathParser {
         self.numbering = numbering
     }
 
-    package static func parse(_ source: String) throws(NoteMathParseError) -> [NoteMathNode] {
+    static func parse(_ source: String) throws(NoteMathParseError) -> [NoteMathNode] {
         try parseEquation(source, display: true).nodes
     }
 

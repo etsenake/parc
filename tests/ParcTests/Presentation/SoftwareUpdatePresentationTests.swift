@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
-import ParcCore
+@testable import ParcCore
 @testable import Parc
 
 struct SoftwareUpdateBannerTests {

@@ -1,27 +1,27 @@
 import Foundation
 
-package struct NoteMDInlineStyle {
-    package enum Shape { case paragraph, line, heading, cell, verbatim }
+struct NoteMDInlineStyle {
+    enum Shape { case paragraph, line, heading, cell, verbatim }
 
-    package var shape: Shape
+    var shape: Shape
     var taskSensitive = false
     var insideLink = false
     var htmlSafe = false
     var trailingComment = false
     var calloutSensitive = false
 
-    package static let paragraph = NoteMDInlineStyle(shape: .paragraph)
-    package static let line = NoteMDInlineStyle(shape: .line)
-    package static let heading = NoteMDInlineStyle(shape: .heading)
-    package static let cell = NoteMDInlineStyle(shape: .cell)
+    static let paragraph = NoteMDInlineStyle(shape: .paragraph)
+    static let line = NoteMDInlineStyle(shape: .line)
+    static let heading = NoteMDInlineStyle(shape: .heading)
+    static let cell = NoteMDInlineStyle(shape: .cell)
     static let verbatim = NoteMDInlineStyle(shape: .verbatim)
 
     var multiline: Bool { shape == .paragraph }
     var trimSensitive: Bool { shape != .verbatim }
 }
 
-package struct NoteMDInlineWriter {
-    package let reader: NoteMDReader
+struct NoteMDInlineWriter {
+    let reader: NoteMDReader
     let referenceLabels: [String: String]
     var portable = false
 
@@ -55,7 +55,7 @@ package struct NoteMDInlineWriter {
         case literal(String)
     }
 
-    package func write(_ text: NoteText, style: NoteMDInlineStyle) -> String {
+    func write(_ text: NoteText, style: NoteMDInlineStyle) -> String {
         guard !text.isEmpty else { return "" }
         let markdown = render(text, style: style, safe: false)
         if matches(markdown, text, style: style) { return markdown }
@@ -384,7 +384,7 @@ package struct NoteMDInlineWriter {
         return fence + body + fence
     }
 
-    package static func destination(_ url: String) -> String {
+    static func destination(_ url: String) -> String {
         if url.isEmpty { return "<>" }
         var depth = 0
         var balanced = true

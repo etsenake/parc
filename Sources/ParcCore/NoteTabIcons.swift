@@ -5,7 +5,7 @@ package enum NoteTabIcon: Hashable, Sendable {
     case emoji(String)
     case image(URL)
 
-    package init?(_ raw: String?, resolve: (String) -> URL?) {
+    init?(_ raw: String?, resolve: (String) -> URL?) {
         guard let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
         if let emoji = Self.emoji(value) {
             self = .emoji(emoji)
@@ -46,7 +46,7 @@ package final class NoteTabIcons {
                                               clock: NoteFileSystemClock.shared)
     nonisolated static let rememberedNotes = 4_096
 
-    package let files: NoteFiles
+    let files: NoteFiles
     package let worker: NoteFileWorker
     package let clock: NoteFileClock
     package let changes = PassthroughSubject<Set<String>?, Never>()
@@ -65,7 +65,7 @@ package final class NoteTabIcons {
     private var announcement: NoteFileTimer?
     private var emojiSubscription: AnyCancellable?
 
-    package init(files: NoteFiles, worker: NoteFileWorker, clock: NoteFileClock) {
+    init(files: NoteFiles, worker: NoteFileWorker, clock: NoteFileClock) {
         self.files = files
         self.worker = worker
         self.clock = clock
@@ -89,7 +89,7 @@ package final class NoteTabIcons {
         change.map { $0.contains(key(note)) } ?? true
     }
 
-    package nonisolated static func frontMatterIcon(_ note: URL) -> String? {
+    nonisolated static func frontMatterIcon(_ note: URL) -> String? {
         guard NoteFileKind(url: note) == .markdown,
               let head = NoteFileSummary.readHead(note, kind: .markdown, upTo: NoteFileSummary.headSize) else { return nil }
         return NoteFileSummary.frontMatter(head.components(separatedBy: "\n")).icon
@@ -126,7 +126,7 @@ package final class NoteTabIcons {
         return icon
     }
 
-    package func forget() {
+    func forget() {
         known.removeAll()
         reading.removeAll()
         generations.removeAll()

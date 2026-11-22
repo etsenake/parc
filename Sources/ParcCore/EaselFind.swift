@@ -25,7 +25,7 @@ package struct EaselFindReplacement: Equatable {
     var skippedLocked = 0
     var skippedReadOnly = 0
     var skippedOther = 0
-    package init(document: EaselDocument, count: Int = 0, touched: Set<UUID> = Set<UUID>(), skippedLocked: Int = 0, skippedReadOnly: Int = 0, skippedOther: Int = 0) {
+    init(document: EaselDocument, count: Int = 0, touched: Set<UUID> = Set<UUID>(), skippedLocked: Int = 0, skippedReadOnly: Int = 0, skippedOther: Int = 0) {
         self.document = document
         self.count = count
         self.touched = touched
@@ -34,7 +34,7 @@ package struct EaselFindReplacement: Equatable {
         self.skippedOther = skippedOther
     }
 
-    package var skipped: Int { skippedLocked + skippedReadOnly + skippedOther }
+    var skipped: Int { skippedLocked + skippedReadOnly + skippedOther }
 }
 
 enum EaselFinder {
@@ -236,7 +236,7 @@ enum EaselFinder {
 }
 
 extension EaselRichText {
-    package func replacing(_ range: Range<Int>, with insertedLength: Int) -> EaselRichText? {
+    func replacing(_ range: Range<Int>, with insertedLength: Int) -> EaselRichText? {
         guard insertedLength >= 0,
               let source = runs.first(where: { $0.location <= range.lowerBound && range.lowerBound < $0.location + $0.length }),
               !runs.contains(where: { $0.attributes.isAtomic && $0.location < range.upperBound && range.lowerBound < $0.location + $0.length }) else {
@@ -374,7 +374,7 @@ package enum EaselViewportFocus {
     package struct Plan: Equatable {
         package var magnification: Double
         package var center: EaselPoint
-        package init(magnification: Double, center: EaselPoint) {
+        init(magnification: Double, center: EaselPoint) {
             self.magnification = magnification
             self.center = center
         }

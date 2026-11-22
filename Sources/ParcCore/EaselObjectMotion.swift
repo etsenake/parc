@@ -6,8 +6,8 @@ package struct EaselObjectPresentation: Equatable {
     package var offset: EaselPoint
     package var rotation: Double = 0
     package var shadow: Double = 0
-    package var stretch = EaselPoint(x: 1, y: 1)
-    package init(opacity: Double, scale: Double, offset: EaselPoint, rotation: Double = 0, shadow: Double = 0, stretch: EaselPoint = EaselPoint(x: 1, y: 1)) {
+    var stretch = EaselPoint(x: 1, y: 1)
+    init(opacity: Double, scale: Double, offset: EaselPoint, rotation: Double = 0, shadow: Double = 0, stretch: EaselPoint = EaselPoint(x: 1, y: 1)) {
         self.opacity = opacity
         self.scale = scale
         self.offset = offset
@@ -16,7 +16,7 @@ package struct EaselObjectPresentation: Equatable {
         self.stretch = stretch
     }
 
-    package static let identity = EaselObjectPresentation(opacity: 1, scale: 1, offset: EaselPoint(x: 0, y: 0))
+    static let identity = EaselObjectPresentation(opacity: 1, scale: 1, offset: EaselPoint(x: 0, y: 0))
     package var isIdentity: Bool { self == .identity }
     package var scaleX: Double { scale * stretch.x }
     package var scaleY: Double { scale * stretch.y }
@@ -61,23 +61,23 @@ package enum EaselObjectEffect: Equatable {
 }
 
 package struct EaselObjectSpring: Equatable {
-    package let response: Double
-    package let damping: Double
-    package init(response: Double, damping: Double) {
+    let response: Double
+    let damping: Double
+    init(response: Double, damping: Double) {
         self.response = response
         self.damping = damping
     }
 
-    package static let pop = EaselObjectSpring(response: 0.4, damping: 0.7)
-    package static let press = EaselObjectSpring(response: 0.3, damping: 0.6)
-    package static let toggle = EaselObjectSpring(response: 0.2, damping: 0.5)
-    package static let settle = EaselObjectSpring(response: 0.34, damping: 0.86)
-    package static let lift = EaselObjectSpring(response: 0.3, damping: 0.95)
+    static let pop = EaselObjectSpring(response: 0.4, damping: 0.7)
+    static let press = EaselObjectSpring(response: 0.3, damping: 0.6)
+    static let toggle = EaselObjectSpring(response: 0.2, damping: 0.5)
+    static let settle = EaselObjectSpring(response: 0.34, damping: 0.86)
+    static let lift = EaselObjectSpring(response: 0.3, damping: 0.95)
     package static let highlight = EaselObjectSpring(response: 0.15, damping: 0.825)
-    package static let glide = settle
+    static let glide = settle
     package static let hover = highlight
 
-    package var omega: Double { 2 * Double.pi / response }
+    var omega: Double { 2 * Double.pi / response }
 
     package func progress(at time: Double) -> Double {
         guard time > 0 else { return 0 }
@@ -91,13 +91,13 @@ package struct EaselObjectSpring: Equatable {
 }
 
 package struct EaselObjectTransition: Equatable {
-    package static let appearDuration: TimeInterval = 0.42
+    static let appearDuration: TimeInterval = 0.42
     static let appearFade: TimeInterval = 0.12
     static let slamDuration: TimeInterval = 0.36
     static let slamFade: TimeInterval = 0.08
     static let quickDuration: TimeInterval = 0.24
     package static let vanishDuration: TimeInterval = 0.18
-    package static let glideDuration: TimeInterval = 0.45
+    static let glideDuration: TimeInterval = 0.45
     static let liftDuration: TimeInterval = 0.2
     static let landDuration: TimeInterval = 0.42
     static let pulseDuration: TimeInterval = 0.5
@@ -105,7 +105,7 @@ package struct EaselObjectTransition: Equatable {
     static let shakeDuration: TimeInterval = 0.3
     static let restyleDuration: TimeInterval = 0.15
     package static let reducedFade: TimeInterval = 0.15
-    package static let hiddenScale = 0.8
+    static let hiddenScale = 0.8
     static let quickScale = 0.92
     static let dropScale = 1.08
     static let dropRise = 8.0
@@ -125,7 +125,7 @@ package struct EaselObjectTransition: Equatable {
     package let effect: EaselObjectEffect
     package let start: TimeInterval
     package let reduced: Bool
-    package init(effect: EaselObjectEffect, start: TimeInterval, reduced: Bool) {
+    init(effect: EaselObjectEffect, start: TimeInterval, reduced: Bool) {
         self.effect = effect
         self.start = start
         self.reduced = reduced
@@ -156,14 +156,14 @@ package struct EaselObjectTransition: Equatable {
         }
     }
 
-    package func finished(at time: TimeInterval) -> Bool { time - start >= duration }
+    func finished(at time: TimeInterval) -> Bool { time - start >= duration }
 
     package static func easeOut(_ t: Double) -> Double {
         let clamped = min(1, max(0, t))
         return 1 - pow(1 - clamped, 3)
     }
 
-    package static func easeIn(_ t: Double) -> Double {
+    static func easeIn(_ t: Double) -> Double {
         let clamped = min(1, max(0, t))
         return clamped * clamped
     }
@@ -173,7 +173,7 @@ package struct EaselObjectTransition: Equatable {
         return clamped * clamped * (3 - 2 * clamped)
     }
 
-    package static func squash(at elapsed: Double, from start: Double, length: Double, amount: Double) -> Double {
+    static func squash(at elapsed: Double, from start: Double, length: Double, amount: Double) -> Double {
         let u = (elapsed - start) / length
         guard u > 0, u < 1 else { return 0 }
         return amount * sin(Double.pi * u) * (1 - 0.35 * u)
@@ -263,31 +263,31 @@ package struct EaselObjectTransition: Equatable {
 package struct EaselFadingLook: Equatable {
     package let item: EaselItem
     package let weight: Double
-    package init(item: EaselItem, weight: Double) {
+    init(item: EaselItem, weight: Double) {
         self.item = item
         self.weight = weight
     }
 }
 
-package struct EaselCarryTilt: Equatable {
-    package static let maximum = 5.0
-    package static let gain = 0.006
-    package static let idle: TimeInterval = 0.06
-    package static let spring = EaselObjectSpring.press
+struct EaselCarryTilt: Equatable {
+    static let maximum = 5.0
+    static let gain = 0.006
+    static let idle: TimeInterval = 0.06
+    static let spring = EaselObjectSpring.press
 
-    package private(set) var angle = 0.0
-    package private(set) var velocity = 0.0
-    package init(angle: Double = 0.0, velocity: Double = 0.0) {
+    private(set) var angle = 0.0
+    private(set) var velocity = 0.0
+    init(angle: Double = 0.0, velocity: Double = 0.0) {
         self.angle = angle
         self.velocity = velocity
     }
 
-    package static func target(forPointerSpeed speed: Double) -> Double {
+    static func target(forPointerSpeed speed: Double) -> Double {
         guard speed.isFinite else { return 0 }
         return min(maximum, max(-maximum, speed * gain))
     }
 
-    package mutating func step(by interval: Double, toward target: Double) {
+    mutating func step(by interval: Double, toward target: Double) {
         guard interval > 0, interval.isFinite, target.isFinite else { return }
         let omega = Self.spring.omega, zeta = Self.spring.damping
         var left = min(interval, 0.1)
@@ -300,22 +300,22 @@ package struct EaselCarryTilt: Equatable {
         angle = min(Self.maximum, max(-Self.maximum, angle))
     }
 
-    package var isResting: Bool { abs(angle) < 0.05 && abs(velocity) < 0.5 }
+    var isResting: Bool { abs(angle) < 0.05 && abs(velocity) < 0.5 }
 }
 
 package struct EaselObjectCarry: Equatable {
-    package static let scale = 1.025
+    static let scale = 1.025
 
     package let ids: Set<UUID>
-    package let tilting: Set<UUID>
-    package let shadowOnly: Set<UUID>
-    package let start: TimeInterval
-    package private(set) var tilt = EaselCarryTilt()
-    package private(set) var stepped: TimeInterval
-    package private(set) var speed = 0.0
-    package private(set) var moved: TimeInterval
+    let tilting: Set<UUID>
+    let shadowOnly: Set<UUID>
+    let start: TimeInterval
+    private(set) var tilt = EaselCarryTilt()
+    private(set) var stepped: TimeInterval
+    private(set) var speed = 0.0
+    private(set) var moved: TimeInterval
 
-    package init(ids: Set<UUID>, tilting: Set<UUID>, shadowOnly: Set<UUID>, at time: TimeInterval) {
+    init(ids: Set<UUID>, tilting: Set<UUID>, shadowOnly: Set<UUID>, at time: TimeInterval) {
         self.ids = ids
         self.tilting = tilting.intersection(ids)
         self.shadowOnly = shadowOnly.intersection(ids)
@@ -336,9 +336,9 @@ package struct EaselObjectCarry: Equatable {
         stepped = time
     }
 
-    package func lift(at time: TimeInterval) -> Double { EaselObjectSpring.lift.progress(at: time - start) }
+    func lift(at time: TimeInterval) -> Double { EaselObjectSpring.lift.progress(at: time - start) }
 
-    package func presentation(for id: UUID, at time: TimeInterval) -> EaselObjectPresentation {
+    func presentation(for id: UUID, at time: TimeInterval) -> EaselObjectPresentation {
         guard ids.contains(id) else { return .identity }
         let raised = min(1.2, max(0, lift(at: time)))
         var result = EaselObjectPresentation.identity
@@ -401,7 +401,7 @@ package struct EaselObjectMotion {
         return result
     }
 
-    package mutating func appear(_ ids: some Sequence<UUID>, at time: TimeInterval, reduced: Bool) {
+    mutating func appear(_ ids: some Sequence<UUID>, at time: TimeInterval, reduced: Bool) {
         for id in ids { transitions[id] = EaselObjectTransition(effect: .appear(.pop), start: time, reduced: reduced) }
     }
 
@@ -497,7 +497,7 @@ package struct EaselObjectMotion {
         }
     }
 
-    package static func trimmed(_ looks: [EaselFadingLook]) -> [EaselFadingLook] {
+    static func trimmed(_ looks: [EaselFadingLook]) -> [EaselFadingLook] {
         var kept = looks.filter { $0.weight > 0.001 }
         if kept.count > fadingLookLimit {
             let floor = kept.map(\.weight).sorted(by: >)[fadingLookLimit - 1]
@@ -654,7 +654,7 @@ package struct EaselObjectMotion {
         package var stretches: [UUID: EaselPoint] = [:]
         package var turns: [UUID: Double] = [:]
         package var restyled: [EaselItem] = []
-        package init(added: [UUID] = [], removed: [EaselItem] = [], offsets: [UUID: EaselPoint] = [:], stretches: [UUID: EaselPoint] = [:], turns: [UUID: Double] = [:], restyled: [EaselItem] = []) {
+        init(added: [UUID] = [], removed: [EaselItem] = [], offsets: [UUID: EaselPoint] = [:], stretches: [UUID: EaselPoint] = [:], turns: [UUID: Double] = [:], restyled: [EaselItem] = []) {
             self.added = added
             self.removed = removed
             self.offsets = offsets
@@ -737,7 +737,7 @@ package struct EaselBurstSpeck: Equatable {
     package let delay: TimeInterval
     package let spin: Double
     package let hue: Double
-    package init(angle: Double, distance: Double, size: Double, delay: TimeInterval, spin: Double, hue: Double) {
+    init(angle: Double, distance: Double, size: Double, delay: TimeInterval, spin: Double, hue: Double) {
         self.angle = angle
         self.distance = distance
         self.size = size
@@ -770,7 +770,7 @@ package enum EaselBurstPlan {
         }
     }
 
-    package static func seed(_ id: UUID) -> UInt64 {
+    static func seed(_ id: UUID) -> UInt64 {
         let bytes = id.uuid
         return [bytes.0, bytes.1, bytes.2, bytes.3, bytes.4, bytes.5, bytes.6, bytes.7]
             .reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
@@ -801,19 +801,19 @@ package enum EaselBurstPlan {
 }
 
 package enum EaselStampGrowth {
-    package static let spring = EaselObjectSpring.press
+    static let spring = EaselObjectSpring.press
 
     package static func side(from start: Double, to target: Double, since elapsed: TimeInterval, reduced: Bool) -> Double {
         guard !reduced, elapsed.isFinite, start.isFinite else { return target }
         return start + (target - start) * spring.progress(at: elapsed)
     }
 
-    package static func settled(since elapsed: TimeInterval) -> Bool { elapsed >= 0.45 }
+    static func settled(since elapsed: TimeInterval) -> Bool { elapsed >= 0.45 }
 }
 
 package enum EaselStampWheelMotion {
-    package static let stagger: TimeInterval = 0.022
-    package static let fade: TimeInterval = 0.08
+    static let stagger: TimeInterval = 0.022
+    static let fade: TimeInterval = 0.08
     package static let tuck: TimeInterval = 0.18
     package static let hoverScale = 1.14
     static let startScale = 0.35

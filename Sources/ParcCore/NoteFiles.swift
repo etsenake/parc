@@ -2,18 +2,18 @@ import Combine
 import Foundation
 
 @MainActor
-package struct NoteFileSettings {
-    package typealias MainHop = @Sendable (@escaping @Sendable () -> Void) -> Void
-    package typealias TrashMover = @Sendable (URL) throws -> URL?
+struct NoteFileSettings {
+    typealias MainHop = @Sendable (@escaping @Sendable () -> Void) -> Void
+    typealias TrashMover = @Sendable (URL) throws -> URL?
 
-    package var clock: NoteFileClock
+    var clock: NoteFileClock
     var fileWorker: NoteFileWorker
     var indexWorker: NoteFileWorker
     var backlinkWorker: NoteFileWorker
     var attachmentWorker: NoteFileWorker
     var hopToMain: MainHop
     var trashMover: TrashMover
-    package var defaults: UserDefaults
+    var defaults: UserDefaults
     var notesFolders: (@MainActor () -> [URL])?
     var autosaveDelay: TimeInterval = 0.6
     var longestAutosaveWait: TimeInterval = 5
@@ -27,7 +27,7 @@ package struct NoteFileSettings {
 
     nonisolated static let mainQueueHop: MainHop = { DispatchQueue.main.async(execute: $0) }
 
-    package init(clock: NoteFileClock, worker: NoteFileWorker, hopToMain: @escaping MainHop = NoteFileSettings.mainQueueHop,
+    init(clock: NoteFileClock, worker: NoteFileWorker, hopToMain: @escaping MainHop = NoteFileSettings.mainQueueHop,
                  trashMover: @escaping TrashMover = { try NoteFileIO.moveToTrash($0) }, defaults: UserDefaults = .standard,
                  notesFolders: (@MainActor () -> [URL])? = nil) {
         self.clock = clock
@@ -54,7 +54,7 @@ package struct NoteFileSettings {
 package final class NoteFiles {
     package static let shared = NoteFiles(settings: .production(), syncedBlocks: .shared)
 
-    package let settings: NoteFileSettings
+    let settings: NoteFileSettings
     package let syncedBlocks: NoteSyncedBlocks
     package let folders: NoteFolderPreferences
     let libraryOpened = PassthroughSubject<NoteLibrary, Never>()
@@ -69,17 +69,17 @@ package final class NoteFiles {
     var shallowLibraries: [String: NoteLibrary] = [:]
     var emojiLibraries: [String: NoteEmojiLibrary] = [:]
 
-    package convenience init(settings: NoteFileSettings) {
+    convenience init(settings: NoteFileSettings) {
         self.init(settings: settings, syncedBlocks: NoteSyncedBlocks())
     }
 
-    package init(settings: NoteFileSettings, syncedBlocks: NoteSyncedBlocks) {
+    init(settings: NoteFileSettings, syncedBlocks: NoteSyncedBlocks) {
         self.settings = settings
         self.syncedBlocks = syncedBlocks
         folders = NoteFolderPreferences(defaults: settings.defaults, defaultFolder: settings.defaultFolder)
     }
 
-    package var clock: NoteFileClock { settings.clock }
+    var clock: NoteFileClock { settings.clock }
 
     var notesFolders: [URL] { settings.notesFolders?() ?? folders.allFolders }
 }

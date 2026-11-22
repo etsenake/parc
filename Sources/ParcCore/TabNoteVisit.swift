@@ -5,7 +5,7 @@ package struct TabNoteVisit: Equatable {
         package var url: String
         package var title: String
 
-        package init(url: String, title: String) {
+        init(url: String, title: String) {
             self.url = url
             self.title = title
         }
@@ -46,7 +46,7 @@ package struct TabNoteVisit: Equatable {
     package struct PageHistory: Equatable {
         package var entries: [PageEntry]
         package var current: Int
-        package var navigating: Bool
+        var navigating: Bool
 
         package init(entries: [PageEntry], current: Int, navigating: Bool = false) {
             self.entries = entries; self.current = current; self.navigating = navigating
@@ -58,12 +58,12 @@ package struct TabNoteVisit: Equatable {
         }
     }
 
-    package static let limit = 50
+    static let limit = 50
 
     package private(set) var steps: [Step]
     package private(set) var position: Int
     package private(set) var leaving = false
-    package private(set) var pageID: String?
+    private(set) var pageID: String?
 
     private init?(steps: [Step], position: Int, leaving: Bool) {
         guard steps.first?.page != nil, steps.indices.contains(position),
@@ -74,7 +74,7 @@ package struct TabNoteVisit: Equatable {
         trimDocuments()
     }
 
-    package init(page: Entry, documents: [Entry], position: Int?) {
+    init(page: Entry, documents: [Entry], position: Int?) {
         let kept = Array(documents.suffix(Self.limit))
         let dropped = documents.count - kept.count
         let shown = position.map { min(max($0 - dropped, 0), max(kept.count - 1, 0)) + 1 } ?? 0
@@ -82,7 +82,7 @@ package struct TabNoteVisit: Equatable {
         self.position = shown
     }
 
-    package init(page: Entry, note: Entry, showsNote: Bool) {
+    init(page: Entry, note: Entry, showsNote: Bool) {
         self.init(page: page, documents: [note], position: showsNote ? 0 : nil)
     }
 
@@ -108,11 +108,11 @@ package struct TabNoteVisit: Equatable {
     package var tracksPageHistory: Bool { !steps.contains { $0.page?.id.isEmpty == true } }
     package var behind: [Step] { Array((leaving ? steps[...position] : steps[..<position]).reversed()) }
     package var ahead: [Step] { leaving ? [] : Array(steps[(position + 1)...]) }
-    package var note: Entry { current ?? documents[0] }
-    package var noteFile: URL? { InternalPage.noteFile(note.url) }
-    package var document: InternalPage? { InternalPage(urlString: note.url) }
+    var note: Entry { current ?? documents[0] }
+    var noteFile: URL? { InternalPage.noteFile(note.url) }
+    var document: InternalPage? { InternalPage(urlString: note.url) }
 
-    package static func noteFile(_ entry: Entry) -> URL? { InternalPage.noteFile(entry.url) }
+    static func noteFile(_ entry: Entry) -> URL? { InternalPage.noteFile(entry.url) }
     package static func document(_ entry: Entry) -> InternalPage? { InternalPage(urlString: entry.url) }
 
     package func hasDocument(towardBack back: Bool) -> Bool {
@@ -157,7 +157,7 @@ package struct TabNoteVisit: Equatable {
         return true
     }
 
-    package mutating func move(by offset: Int) -> Bool {
+    mutating func move(by offset: Int) -> Bool {
         guard let target = targetIndex(offset) else { return false }
         position = target
         leaving = false
@@ -165,7 +165,7 @@ package struct TabNoteVisit: Equatable {
         return true
     }
 
-    package mutating func push(_ entry: Entry) {
+    mutating func push(_ entry: Entry) {
         var kept = Array(steps[...position])
         if kept.last?.document?.url == entry.url { kept[kept.count - 1] = .document(entry) } else { kept.append(.document(entry)) }
         steps = kept
@@ -174,7 +174,7 @@ package struct TabNoteVisit: Equatable {
         trimDocuments()
     }
 
-    package mutating func leave() -> Bool {
+    mutating func leave() -> Bool {
         guard showsNote else { return false }
         steps = Array(steps[...position])
         leaving = true
@@ -182,7 +182,7 @@ package struct TabNoteVisit: Equatable {
     }
 
     @discardableResult
-    package mutating func sync(_ history: PageHistory) -> Bool {
+    mutating func sync(_ history: PageHistory) -> Bool {
         guard history.isValid else { return false }
         let before = self
         let currentID = history.entries[history.current].id
@@ -237,7 +237,7 @@ package struct TabNoteVisit: Equatable {
         return self != before
     }
 
-    package mutating func rename(matching matches: (String) -> Bool, to destination: String, title: String) -> Bool {
+    mutating func rename(matching matches: (String) -> Bool, to destination: String, title: String) -> Bool {
         let renamed = steps.map { step -> Step in
             guard let document = step.document, matches(document.url) else { return step }
             return .document(Entry(url: destination, title: title))
@@ -248,7 +248,7 @@ package struct TabNoteVisit: Equatable {
         return true
     }
 
-    package func removing(matching matches: (String) -> Bool) -> TabNoteVisit? {
+    func removing(matching matches: (String) -> Bool) -> TabNoteVisit? {
         var next = self
         let removed = steps.indices.filter { steps[$0].document.map { matches($0.url) } ?? false }
         guard !removed.isEmpty else { return self }
@@ -289,7 +289,7 @@ package struct TabNoteVisit: Equatable {
         position = shown
     }
 
-    package static func entry(_ document: InternalPage, title: String) -> Entry? {
+    static func entry(_ document: InternalPage, title: String) -> Entry? {
         switch document {
         case .note(let url):
             guard let file = InternalPage.noteFile(url) else { return nil }
@@ -300,7 +300,7 @@ package struct TabNoteVisit: Equatable {
         }
     }
 
-    package static func page(_ url: String, title: String, history: PageHistory?) -> TabNoteVisit {
+    static func page(_ url: String, title: String, history: PageHistory?) -> TabNoteVisit {
         TabNoteVisit(page: Entry(url: url, title: title), history: history)
     }
 }
@@ -394,7 +394,7 @@ extension BrowserTab {
     mutating func stepForwardToNote() -> Bool { stepNoteVisit(by: 1) }
 
     @discardableResult
-    package mutating func stepNoteVisit(by offset: Int) -> Bool {
+    mutating func stepNoteVisit(by offset: Int) -> Bool {
         guard var visit = noteVisit, archivedAt == nil, visit.step(offset) != nil,
               visit.showsNote == InternalPage.isInternal(url) else { return false }
         visit.syncShown(url: url, title: title)
@@ -413,7 +413,7 @@ extension BrowserTab {
     }
 
     @discardableResult
-    package mutating func syncPageHistory(_ history: TabNoteVisit.PageHistory) -> Bool {
+    mutating func syncPageHistory(_ history: TabNoteVisit.PageHistory) -> Bool {
         guard var visit = noteVisit, archivedAt == nil, visit.sync(history) else { return false }
         noteVisit = visit.documents.isEmpty ? nil : visit
         return true

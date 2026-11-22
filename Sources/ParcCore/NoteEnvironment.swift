@@ -9,7 +9,7 @@ package struct NoteReference: Hashable, Identifiable {
     package var snippet: String? = nil
     package var id: URL { url }
 
-    package init(url: URL, title: String, icon: String? = nil, modifiedAt: Date, snippet: String? = nil) {
+    init(url: URL, title: String, icon: String? = nil, modifiedAt: Date, snippet: String? = nil) {
         self.url = url
         self.title = title
         self.icon = icon
@@ -38,7 +38,7 @@ extension NoteEnvironment {
 
     package var emojiChanges: AnyPublisher<NoteEmojiLibrary, Never> { files.emojiChanges.eraseToAnyPublisher() }
 
-    package var emojiLibrary: NoteEmojiLibrary? { nil }
+    var emojiLibrary: NoteEmojiLibrary? { nil }
 
     package var customEmojiNames: Set<String> { emojiLibrary?.names ?? [] }
 

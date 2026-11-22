@@ -2,16 +2,16 @@ import Foundation
 
 package struct NoteCaptureGeometry: Hashable, Codable {
     var viewportWidth: Double
-    package var viewportHeight: Double
+    var viewportHeight: Double
     var scrollX: Double
     var scrollY: Double
     var regionX: Double
     var regionY: Double
     var regionWidth: Double
-    package var regionHeight: Double
+    var regionHeight: Double
     var scrollers: String?
 
-    package var isValid: Bool {
+    var isValid: Bool {
         [viewportWidth, viewportHeight, scrollX, scrollY, regionX, regionY, regionWidth, regionHeight]
             .allSatisfy { $0.isFinite && abs($0) <= 1_000_000 }
             && viewportWidth >= 1 && viewportHeight >= 1 && viewportWidth <= 16_384 && viewportHeight <= 16_384
@@ -20,9 +20,9 @@ package struct NoteCaptureGeometry: Hashable, Codable {
             && scrollers.map { !$0.isEmpty && $0.utf8.count <= 24_576 } != false
     }
 
-    package var aspectRatio: Double { regionWidth / regionHeight }
+    var aspectRatio: Double { regionWidth / regionHeight }
 
-    package init(viewportWidth: Double, viewportHeight: Double, scrollX: Double, scrollY: Double,
+    init(viewportWidth: Double, viewportHeight: Double, scrollX: Double, scrollY: Double,
          regionX: Double, regionY: Double, regionWidth: Double, regionHeight: Double, scrollers: String? = nil) {
         self.viewportWidth = viewportWidth; self.viewportHeight = viewportHeight
         self.scrollX = scrollX; self.scrollY = scrollY
@@ -30,7 +30,7 @@ package struct NoteCaptureGeometry: Hashable, Codable {
         self.scrollers = scrollers
     }
 
-    package init?(viewport: String?, scroll: String?, region: String?, scrollers: String? = nil) {
+    init?(viewport: String?, scroll: String?, region: String?, scrollers: String? = nil) {
         guard let viewport = Self.numbers(viewport, count: 2), let scroll = Self.numbers(scroll, count: 2),
               let region = Self.numbers(region, count: 4) else { return nil }
         self.init(viewportWidth: viewport[0], viewportHeight: viewport[1], scrollX: scroll[0], scrollY: scroll[1],
@@ -58,11 +58,11 @@ package struct NoteCaptureGeometry: Hashable, Codable {
 
 package struct NoteCapture: Hashable, Codable {
     package var sourceURL: String
-    package var capturedAt: Date?
+    var capturedAt: Date?
     package var geometry: NoteCaptureGeometry?
     package var live = false
 
-    package static let sourceKey = "capture", dateKey = "captured", viewportKey = "viewport", scrollKey = "scroll", regionKey = "region"
+    static let sourceKey = "capture", dateKey = "captured", viewportKey = "viewport", scrollKey = "scroll", regionKey = "region"
     static let scrollersKey = "scrollers"
     static let liveFlag = "live"
 
@@ -72,9 +72,9 @@ package struct NoteCapture: Hashable, Codable {
         return url
     }
 
-    package var canMakeLive: Bool { sourceAddress != nil && geometry?.isValid == true }
+    var canMakeLive: Bool { sourceAddress != nil && geometry?.isValid == true }
 
-    package var attributes: [(String, String?)] {
+    var attributes: [(String, String?)] {
         var items: [(String, String?)] = [(Self.sourceKey, sourceURL)]
         if let capturedAt { items.append((Self.dateKey, Self.dateFormatter.string(from: capturedAt))) }
         if let geometry, geometry.isValid {
@@ -86,14 +86,14 @@ package struct NoteCapture: Hashable, Codable {
         return items
     }
 
-    package init(sourceURL: String, capturedAt: Date? = nil, geometry: NoteCaptureGeometry? = nil, live: Bool = false) {
+    init(sourceURL: String, capturedAt: Date? = nil, geometry: NoteCaptureGeometry? = nil, live: Bool = false) {
         self.sourceURL = sourceURL
         self.capturedAt = capturedAt.flatMap { $0.timeIntervalSinceReferenceDate.isFinite ? Self.wholeSeconds($0) : nil }
         self.geometry = geometry?.isValid == true ? geometry : nil
         self.live = live && self.geometry != nil
     }
 
-    package init?(values: [String: String], flags: Set<String>) {
+    init?(values: [String: String], flags: Set<String>) {
         guard let source = values[Self.sourceKey]?.trimmingCharacters(in: .whitespacesAndNewlines), !source.isEmpty else { return nil }
         self.init(sourceURL: source, capturedAt: values[Self.dateKey].flatMap(Self.dateFormatter.date(from:)),
                   geometry: NoteCaptureGeometry(viewport: values[Self.viewportKey], scroll: values[Self.scrollKey],
@@ -101,7 +101,7 @@ package struct NoteCapture: Hashable, Codable {
                   live: flags.contains(Self.liveFlag))
     }
 
-    package static func block(source: String, title: String, capture: NoteCapture) -> NoteBlock {
+    static func block(source: String, title: String, capture: NoteCapture) -> NoteBlock {
         var props = NoteBlockProps()
         props.source = source
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)

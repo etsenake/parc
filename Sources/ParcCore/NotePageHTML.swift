@@ -2,8 +2,8 @@ import Foundation
 
 package struct NoteEquationArt {
     package struct Link: Equatable {
-        package var key: String
-        package var rect: CGRect
+        var key: String
+        var rect: CGRect
 
         package init(key: String, rect: CGRect) {
             self.key = key
@@ -11,8 +11,8 @@ package struct NoteEquationArt {
         }
     }
 
-    package var url: URL
-    package var links: [Link] = []
+    var url: URL
+    var links: [Link] = []
 
     package init(url: URL, links: [Link] = []) {
         self.url = url

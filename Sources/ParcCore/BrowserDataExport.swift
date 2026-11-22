@@ -5,7 +5,7 @@ package struct BrowserDataExport {
 
     package init(state: BrowserState) { self.state = state }
 
-    package var markdown: String {
+    var markdown: String {
         state.spaces.enumerated().map { index, space in
             let title = space.name.isEmpty ? "Space \(index + 1)" : space.name
             var lines = ["# " + Self.heading(title)]

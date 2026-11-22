@@ -3,10 +3,10 @@ import Foundation
 package struct SidebarPreviewModifiers: OptionSet, Hashable {
     package let rawValue: UInt8
     package init(rawValue: UInt8) { self.rawValue = rawValue }
-    package static let shift = Self(rawValue: 1), control = Self(rawValue: 2)
-    package static let option = Self(rawValue: 4), command = Self(rawValue: 8)
+    static let shift = Self(rawValue: 1), control = Self(rawValue: 2)
+    static let option = Self(rawValue: 4), command = Self(rawValue: 8)
     static let numericPad = Self(rawValue: 0x10), capsLock = Self(rawValue: 0x20)
-    package static let help = Self(rawValue: 0x40), function = Self(rawValue: 0x80)
+    static let help = Self(rawValue: 0x40), function = Self(rawValue: 0x80)
 
     package init(eventFlags flags: UInt) {
         let bits: [(UInt, Self)] = [(1 << 16, .capsLock), (1 << 17, .shift), (1 << 18, .control), (1 << 19, .option),
@@ -14,7 +14,7 @@ package struct SidebarPreviewModifiers: OptionSet, Hashable {
         self = bits.reduce(into: []) { result, bit in if flags & bit.0 != 0 { result.insert(bit.1) } }
     }
 
-    package var normalized: Self { subtracting(Self(rawValue: 0xF0)) }
+    var normalized: Self { subtracting(Self(rawValue: 0xF0)) }
 }
 
 package enum SidebarPreviewActivation: Equatable {

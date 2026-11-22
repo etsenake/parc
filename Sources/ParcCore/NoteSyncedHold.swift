@@ -14,7 +14,7 @@ package final class NoteSyncedHold {
     private var wantsRefresh = false
     private var ended = false
 
-    package init(engine: NoteSyncedBlocks, session: NotePageSession) {
+    init(engine: NoteSyncedBlocks, session: NotePageSession) {
         self.engine = engine
         self.session = session
         engine.changes.sink { [weak self] in self?.refresh() }.store(in: &subscriptions)
@@ -41,7 +41,7 @@ package final class NoteSyncedHold {
         for lease in held { lease.end() }
     }
 
-    package func refresh() {
+    func refresh() {
         guard !ended else { return }
         if isRefreshing {
             wantsRefresh = true

@@ -4,7 +4,7 @@ package struct SplitStackDivider: Equatable {
     package let slot: Int?
     package let index: Int
 
-    package init(slot: Int?, index: Int) {
+    init(slot: Int?, index: Int) {
         self.slot = slot
         self.index = index
     }
@@ -124,12 +124,12 @@ package struct SplitStackGeometry {
     static let dividerEndInset: CGFloat = 8
 
     package struct Divider: Equatable {
-        package let id: SplitStackDivider
+        let id: SplitStackDivider
         package let rect: CGRect
         package let region: CGRect
         package let isVerticalBar: Bool
 
-        package init(id: SplitStackDivider, rect: CGRect, region: CGRect, isVerticalBar: Bool) {
+        init(id: SplitStackDivider, rect: CGRect, region: CGRect, isVerticalBar: Bool) {
             self.id = id
             self.rect = rect
             self.region = region
@@ -137,7 +137,7 @@ package struct SplitStackGeometry {
         }
     }
 
-    package static func lengths(_ factors: [Double], available: CGFloat, minimum: CGFloat) -> [CGFloat] {
+    static func lengths(_ factors: [Double], available: CGFloat, minimum: CGFloat) -> [CGFloat] {
         var lengths = Array(repeating: CGFloat(0), count: factors.count)
         var remaining = available
         var pending = Array(factors.indices)
@@ -167,7 +167,7 @@ package struct SplitStackGeometry {
         return factors.map { _ in share }
     }
 
-    package static func runs(_ factors: [Double], length: CGFloat, thickness: CGFloat, minimum: CGFloat,
+    static func runs(_ factors: [Double], length: CGFloat, thickness: CGFloat, minimum: CGFloat,
                      scale: CGFloat) -> [(start: CGFloat, length: CGFloat)] {
         guard factors.count > 1 else { return factors.isEmpty ? [] : [(0, length)] }
         let available = max(0, length - thickness * CGFloat(factors.count - 1))
@@ -191,7 +191,7 @@ package struct SplitStackGeometry {
         }
     }
 
-    package static func aligned(_ frame: CGRect) -> CGRect {
+    static func aligned(_ frame: CGRect) -> CGRect {
         let left = frame.minX.rounded(), top = frame.minY.rounded()
         return CGRect(x: left, y: top, width: max(0, frame.maxX.rounded() - left),
                       height: max(0, frame.maxY.rounded() - top))

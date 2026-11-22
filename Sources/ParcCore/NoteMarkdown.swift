@@ -42,7 +42,7 @@ package enum NotePlainText {
         page.allBlocks().map(line).joined(separator: "\n")
     }
 
-    package static func line(_ block: NoteBlock) -> String {
+    static func line(_ block: NoteBlock) -> String {
         guard block.kind.isMedia || block.kind == .bookmark || block.kind == .embed || block.kind == .easel, block.text.isEmpty,
               let source = block.props.source, !source.isEmpty else { return block.text.plainText }
         return source

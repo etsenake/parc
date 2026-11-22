@@ -7,7 +7,7 @@ package enum NotePageHTMLStyle {
         var darkText: String
         var darkBackground: String
 
-        package init(text: String, background: String, darkText: String, darkBackground: String) {
+        init(text: String, background: String, darkText: String, darkBackground: String) {
             self.text = text
             self.background = background
             self.darkText = darkText
@@ -58,7 +58,7 @@ package enum NotePageHTMLStyle {
         }.joined()
     }
 
-    package static let css: String = """
+    static let css: String = """
     :root{--ink:#1F1B2E;--title:#220C7F;--muted:rgba(31,27,46,.62);--faint:rgba(31,27,46,.38);\
     --line:rgba(31,27,46,.12);--accent:#2702C2;--link:#220C7F;--paper:#FFFFFF;--fill:rgba(31,27,46,.045);\
     --callout:rgba(31,27,46,.045);--code-ink:#C0306A;--code-fill:rgba(39,2,194,.07);--check:#2702C2;\

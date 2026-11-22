@@ -1,11 +1,11 @@
 import Foundation
 
 package struct CommandBarFolderMoveSource: Equatable {
-    package let hierarchy: SidebarHierarchySnapshot
-    package let roots: [SidebarItemReference]
-    package let targets: [CommandBarFavoriteAction.Target]
+    let hierarchy: SidebarHierarchySnapshot
+    let roots: [SidebarItemReference]
+    let targets: [CommandBarFavoriteAction.Target]
     package let groupIDs: [UUID]
-    package var spaceID: UUID { hierarchy.spaceID }
+    var spaceID: UUID { hierarchy.spaceID }
     package var profileID: UUID { hierarchy.profileID }
     package var tabIDs: [UUID] { targets.map(\.id) }
 
@@ -34,10 +34,10 @@ package struct CommandBarFolderMoveSource: Equatable {
         groupIDs = groups.map(\.id)
     }
 
-    package func isCurrent(in state: BrowserState) -> Bool {
+    func isCurrent(in state: BrowserState) -> Bool {
         Self(items: roots, spaceID: spaceID, profileID: profileID, state: state) == self
     }
-    package func projected(_ state: BrowserState) -> BrowserState? {
+    func projected(_ state: BrowserState) -> BrowserState? {
         guard isCurrent(in: state) else { return nil }
         return Self.projectingFavorites(roots, spaceID: spaceID, profileID: profileID, state: state)
     }
@@ -59,12 +59,12 @@ package struct CommandBarFolderMoveSource: Equatable {
 package struct CommandBarFolderMove: Equatable, Identifiable {
     package let source: CommandBarFolderMoveSource
     package let folder: CommandBarFolderAction
-    package let destination: SidebarHierarchySnapshot
+    let destination: SidebarHierarchySnapshot
     package var id: String { "pin-to:" + folder.id }
     package var title: String { "Pin to" }
     package var tabIDs: [UUID] { source.tabIDs }
 
-    package init?(source: CommandBarFolderMoveSource, folder: CommandBarFolderAction, state: BrowserState) {
+    init?(source: CommandBarFolderMoveSource, folder: CommandBarFolderAction, state: BrowserState) {
         guard source.isCurrent(in: state), folder.isCurrent(in: state, profileID: source.profileID),
               let destination = SidebarHierarchySnapshot(state: state, spaceID: folder.spaceID, profileID: source.profileID),
               let projected = source.projected(state),
@@ -76,7 +76,7 @@ package struct CommandBarFolderMove: Equatable, Identifiable {
         source.isCurrent(in: state) && folder.isCurrent(in: state, profileID: source.profileID)
             && SidebarHierarchySnapshot(state: state, spaceID: destination.spaceID, profileID: destination.profileID) == destination
     }
-    package func applying(to state: BrowserState) -> BrowserState? {
+    func applying(to state: BrowserState) -> BrowserState? {
         guard isCurrent(in: state) else { return nil }
         return proposal(in: state)
     }
@@ -117,17 +117,17 @@ package struct CommandBarFolderMove: Equatable, Identifiable {
 
 @MainActor
 package struct CommandBarFolderCopy {
-    package let move: CommandBarFolderMove
+    let move: CommandBarFolderMove
     private let sources: SidebarCopySources
     package let roots: [SidebarItemReference]
-    package let folders: [BrowserFolder]
-    package let tabs: [BrowserTab]
-    package let groups: [BrowserSplitLayout]
+    let folders: [BrowserFolder]
+    let tabs: [BrowserTab]
+    let groups: [BrowserSplitLayout]
     let childOrder: [String: [SidebarItemReference]]
     package let openTabIDs: [UUID]
-    package var tabIDs: [UUID] { tabs.map(\.id) }
+    var tabIDs: [UUID] { tabs.map(\.id) }
 
-    package init?(move: CommandBarFolderMove, destinations: [UUID: String],
+    init?(move: CommandBarFolderMove, destinations: [UUID: String],
           documents: [UUID: SidebarDocumentReference] = [:], creation: TabCreationProvenance? = nil,
           state: BrowserState, now: Date) {
         let sources = SidebarCopySources(destinations: destinations, documents: documents)
@@ -198,7 +198,7 @@ package struct CommandBarFolderCopy {
         childOrder = order.mapValues { $0.map(stored) }; openTabIDs = eager
     }
 
-    package func applying(to state: BrowserState) -> BrowserState? {
+    func applying(to state: BrowserState) -> BrowserState? {
         let originals = move.tabIDs.compactMap { id in state.tab(id) }
         guard move.isCurrent(in: state), originals.count == move.tabIDs.count, sources.validates(originals),
               tabs.allSatisfy({ copy in !state.containsTab(copy.id) }),

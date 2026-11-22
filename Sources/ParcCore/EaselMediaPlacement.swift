@@ -2,12 +2,12 @@ import Foundation
 
 package enum EaselMediaPlacement {
     static let mediaWidth = 480.0
-    package static let placeholderHeight = 52.0
+    static let placeholderHeight = 52.0
     static let embedSize = (width: 640.0, height: 420.0)
     static let audioHeight = 72.0
     static let fileHeight = 60.0
     static let bookmarkHeight = 120.0
-    package static let minimumSide = 24.0
+    static let minimumSide = 24.0
 
     package static func placesEmpty(_ kind: EaselItemKind) -> Bool {
         kind.isMedia || kind == .link || kind == .browser || kind == .equation
@@ -41,7 +41,7 @@ package enum EaselMediaPlacement {
         return name.prefix(1).lowercased() + name.dropFirst()
     }
 
-    package static func displayName(for kind: EaselItemKind) -> String {
+    static func displayName(for kind: EaselItemKind) -> String {
         switch kind {
         case .image: return "Image"
         case .video: return "Video"
@@ -75,7 +75,7 @@ package enum EaselMediaPlacement {
         return frame
     }
 
-    package static func fitted(width naturalWidth: Double, height naturalHeight: Double, maximumWidth: Double = mediaWidth) -> (width: Double, height: Double) {
+    static func fitted(width naturalWidth: Double, height naturalHeight: Double, maximumWidth: Double = mediaWidth) -> (width: Double, height: Double) {
         guard naturalWidth.isFinite, naturalHeight.isFinite, naturalWidth > 0, naturalHeight > 0 else { return (maximumWidth, maximumWidth * 9 / 16) }
         let width = min(maximumWidth, max(minimumSide, naturalWidth))
         let height = max(minimumSide, (width * naturalHeight / naturalWidth).rounded())

@@ -1,12 +1,12 @@
 import Foundation
 
 package struct PeekSplitBlockers: Equatable {
-    package var windowClosing = false
-    package var libraryOpen = false
-    package var fullscreenTabID: UUID?
-    package var transferringTabIDs = Set<UUID>()
-    package var selectedTabIDs: [UUID] = []
-    package var grouped = false
+    var windowClosing = false
+    var libraryOpen = false
+    var fullscreenTabID: UUID?
+    var transferringTabIDs = Set<UUID>()
+    var selectedTabIDs: [UUID] = []
+    var grouped = false
 
     package init(windowClosing: Bool = false, libraryOpen: Bool = false, fullscreenTabID: UUID? = nil, transferringTabIDs: Set<UUID> = Set<UUID>(), selectedTabIDs: [UUID] = [], grouped: Bool = false) {
         self.windowClosing = windowClosing

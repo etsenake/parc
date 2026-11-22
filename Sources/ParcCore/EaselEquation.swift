@@ -1,8 +1,8 @@
 import Foundation
 
 package struct EaselEquationSize: Equatable {
-    package var width: Double
-    package var height: Double
+    var width: Double
+    var height: Double
     package init(width: Double, height: Double) {
         self.width = width
         self.height = height
@@ -13,11 +13,11 @@ package struct EaselEquationSize: Equatable {
 
 package enum EaselEquation {
     package static let fontSize = 30.0
-    package static let padding = 14.0
+    static let padding = 14.0
     package static let emptySize = EaselEquationSize(width: 360, height: 72)
     static let minimumScale = 0.2
     static let maximumScale = 16.0
-    package static let maximumLength = 20_000
+    static let maximumLength = 20_000
 
     package static func isBlank(_ tex: String) -> Bool {
         tex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -48,14 +48,14 @@ package enum EaselEquation {
         return Self.frame(natural: new, scale: scale(of: frame, natural: old), centeredOn: centre)
     }
 
-    package static func inner(_ frame: EaselRect, natural: EaselEquationSize) -> EaselRect {
+    static func inner(_ frame: EaselRect, natural: EaselEquationSize) -> EaselRect {
         let factor = scale(of: frame, natural: natural)
         let inset = padding * factor
         return EaselRect(x: frame.x + inset, y: frame.y + inset,
                          width: max(0, frame.width - 2 * inset), height: max(0, frame.height - 2 * inset))
     }
 
-    package static func placed(natural: EaselEquationSize, visible: EaselRect, occupied: [EaselRect]) -> EaselRect {
+    static func placed(natural: EaselEquationSize, visible: EaselRect, occupied: [EaselRect]) -> EaselRect {
         let centre = EaselPoint(x: visible.x + visible.width / 2, y: visible.y + visible.height / 2)
         var frame = Self.frame(natural: natural, scale: 1, centeredOn: centre)
         let step = 24.0
@@ -70,9 +70,9 @@ package enum EaselEquation {
 }
 
 package struct EaselVectorEquationPart: Equatable {
-    package var path: String
-    package var color: String? = nil
-    package var opacity: Double? = nil
+    var path: String
+    var color: String? = nil
+    var opacity: Double? = nil
     package init(path: String, color: String? = nil, opacity: Double? = nil) {
         self.path = path
         self.color = color
@@ -81,10 +81,10 @@ package struct EaselVectorEquationPart: Equatable {
 }
 
 package struct EaselVectorEquation: Equatable {
-    package var width: Double
-    package var height: Double
-    package var parts: [EaselVectorEquationPart]
-    package var error: String? = nil
+    var width: Double
+    var height: Double
+    var parts: [EaselVectorEquationPart]
+    var error: String? = nil
     package init(width: Double, height: Double, parts: [EaselVectorEquationPart], error: String? = nil) {
         self.width = width
         self.height = height
@@ -94,7 +94,7 @@ package struct EaselVectorEquation: Equatable {
 }
 
 extension EaselVectorExport {
-    package static func equation(_ item: EaselItem, _ art: EaselVectorEquation?) -> String {
+    static func equation(_ item: EaselItem, _ art: EaselVectorEquation?) -> String {
         guard !EaselEquation.isBlank(item.text) else { return "" }
         let f = item.frame
         let label = " role=\"img\" aria-label=\"" + escape(NoteEquationSpeech.label(source: item.text, error: art?.error)) + "\""

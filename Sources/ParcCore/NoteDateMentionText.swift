@@ -106,7 +106,7 @@ package enum NoteDateText {
         }
     }
 
-    package static func dayText(_ day: DateComponents, format: NoteDateFormat?, now: Date?, calendar: Calendar, zoned: Calendar,
+    static func dayText(_ day: DateComponents, format: NoteDateFormat?, now: Date?, calendar: Calendar, zoned: Calendar,
                         locale: Locale) -> String {
         let year = day.year ?? 0, month = day.month ?? 1, date = day.day ?? 1
         if format == nil, let now, let distance = dayDistance(day, from: now, calendar: calendar), let word = relativeWord(distance) {
@@ -166,7 +166,7 @@ package enum NoteDateText {
         return "GMT" + sign + (minutes == 0 ? "\(hours)" : String(format: "%d:%02d", hours, minutes))
     }
 
-    package static func formatted(_ date: Date, template: String, calendar: Calendar, locale: Locale) -> String {
+    static func formatted(_ date: Date, template: String, calendar: Calendar, locale: Locale) -> String {
         let formatter = DateFormatter()
         formatter.calendar = calendar
         formatter.timeZone = calendar.timeZone
@@ -203,11 +203,11 @@ package enum NoteDateText {
 }
 
 package enum NoteReminderLead {
-    package static let hour = 60
-    package static let day = 1440
+    static let hour = 60
+    static let day = 1440
     static let week = 10080
     static let timed = [0, 5, 10, 15, 30, 60, 120, 1440, 2880]
-    package static let allDay = [0, 1440, 2880, 10080]
+    static let allDay = [0, 1440, 2880, 10080]
 
     package static func choices(allDay: Bool) -> [Int] { allDay ? Self.allDay : timed }
 
@@ -223,7 +223,7 @@ package enum NoteReminderLead {
         return lead == 0 ? "At time of event" : span(lead) + " before"
     }
 
-    package static func span(_ minutes: Int) -> String {
+    static func span(_ minutes: Int) -> String {
         let (value, unit) = parts(minutes)
         let names: [Character: String] = ["w": "week", "d": "day", "h": "hour", "m": "minute"]
         let name = names[unit] ?? "minute"
@@ -235,7 +235,7 @@ package enum NoteReminderLead {
         return "\(value)" + String(unit)
     }
 
-    package static func lead(fromToken token: String) -> Int? {
+    static func lead(fromToken token: String) -> Int? {
         let factors: [Character: Int] = ["m": 1, "h": hour, "d": day, "w": week]
         guard let unit = token.last, let factor = factors[unit] else { return nil }
         let digits = token.dropLast()

@@ -7,11 +7,11 @@ package enum CommandBarCommandPresentation {
         return groupSymbols[group] ?? "arrow.right.circle"
     }
 
-    package static func symbol(forCommandID commandID: String) -> String? { commandSymbols[selectorName(commandID)] }
+    static func symbol(forCommandID commandID: String) -> String? { commandSymbols[selectorName(commandID)] }
 
-    package static func title(commandID: String, title: String) -> String { commandTitles[selectorName(commandID)] ?? title }
+    static func title(commandID: String, title: String) -> String { commandTitles[selectorName(commandID)] ?? title }
 
-    package static func selectorName(_ commandID: String) -> String { String(commandID.prefix { $0 != ":" }) }
+    static func selectorName(_ commandID: String) -> String { String(commandID.prefix { $0 != ":" }) }
 
     private static let commandTitles = ["sharePage": "Share URL"]
 

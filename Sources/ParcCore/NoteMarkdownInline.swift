@@ -1,27 +1,27 @@
 import Foundation
 
-package struct NoteMDInlineNode {
-    package enum Kind { case root, text, softBreak, hardBreak, code, emphasis, strong, strike, highlight, link, image, html, math, rawSource, wiki, autolink, customEmoji }
+struct NoteMDInlineNode {
+    enum Kind { case root, text, softBreak, hardBreak, code, emphasis, strong, strike, highlight, link, image, html, math, rawSource, wiki, autolink, customEmoji }
 
-    package var kind: Kind
-    package var literal = ""
-    package var destination = ""
-    package var title: String?
-    package var decoded = false
+    var kind: Kind
+    var literal = ""
+    var destination = ""
+    var title: String?
+    var decoded = false
     var sourceStart = 0
     var sourceEnd = 0
-    package var parent = -1
-    package var first = -1
-    package var last = -1
-    package var next = -1
-    package var previous = -1
+    var parent = -1
+    var first = -1
+    var last = -1
+    var next = -1
+    var previous = -1
 }
 
-package struct NoteMDInlineTree {
-    package var nodes: [NoteMDInlineNode]
-    package var source: [UInt8]
+struct NoteMDInlineTree {
+    var nodes: [NoteMDInlineNode]
+    var source: [UInt8]
 
-    package func children(of index: Int) -> [Int] {
+    func children(of index: Int) -> [Int] {
         var result: [Int] = []
         var child = nodes[index].first
         while child != -1 {
@@ -31,13 +31,13 @@ package struct NoteMDInlineTree {
         return result
     }
 
-    package func source(of index: Int) -> String {
+    func source(of index: Int) -> String {
         let node = nodes[index]
         guard node.sourceEnd > node.sourceStart, node.sourceEnd <= source.count else { return node.literal }
         return NoteMDByte.string(source[node.sourceStart..<node.sourceEnd])
     }
 
-    package func plainText(of index: Int) -> String {
+    func plainText(of index: Int) -> String {
         var result = ""
         func walk(_ node: Int, _ depth: Int = 0) {
             let value = nodes[node]

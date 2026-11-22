@@ -1,19 +1,19 @@
 import Foundation
 
 package struct EaselKey: Hashable {
-    package enum Base: Hashable {
+    enum Base: Hashable {
         case character(Character)
         case physical(UInt16, label: String)
     }
-    package let base: Base
-    package let shift: Bool
+    let base: Base
+    let shift: Bool
 
-    package init(_ character: Character, shift: Bool = false) {
+    init(_ character: Character, shift: Bool = false) {
         base = .character(character)
         self.shift = shift
     }
 
-    package init(keyCode: UInt16, label: String, shift: Bool) {
+    init(keyCode: UInt16, label: String, shift: Bool) {
         base = .physical(keyCode, label: label)
         self.shift = shift
     }
@@ -60,7 +60,7 @@ package enum EaselTool: String, CaseIterable, Equatable {
         }
     }
 
-    package var keys: [EaselKey] { EaselKeyCommands.bindings.filter { $0.command == .tool(self) }.map(\.key) }
+    var keys: [EaselKey] { EaselKeyCommands.bindings.filter { $0.command == .tool(self) }.map(\.key) }
     package var key: EaselKey? { keys.first }
 
     package var routing: EaselConnectorRouting? {
@@ -72,7 +72,7 @@ package enum EaselTool: String, CaseIterable, Equatable {
         }
     }
 
-    package static func connector(_ routing: EaselConnectorRouting) -> EaselTool {
+    static func connector(_ routing: EaselConnectorRouting) -> EaselTool {
         switch routing {
         case .straight: return .straightConnector
         case .elbow: return .elbowConnector
@@ -174,7 +174,7 @@ package enum EaselKeyCommand: Equatable {
 package enum EaselKeyCommands {
     package static let spaceKeyCode: UInt16 = 49
 
-    package static let bindings: [(key: EaselKey, command: EaselKeyCommand)] = [
+    static let bindings: [(key: EaselKey, command: EaselKeyCommand)] = [
         (EaselKey("v"), .tool(.select)),
         (EaselKey("h"), .tool(.hand)),
         (EaselKey("s"), .tool(.sticky)),
@@ -228,7 +228,7 @@ package enum EaselKeyCommands {
         return bindings.first { $0.key == EaselKey(character, shift: shift) }?.command
     }
 
-    package static func letter(characters: String?, keyCode: UInt16) -> Character? {
+    static func letter(characters: String?, keyCode: UInt16) -> Character? {
         guard let character = keyCharacter(characters: characters, keyCode: keyCode), character.isLetter else { return nil }
         return character
     }
@@ -244,7 +244,7 @@ package enum EaselKeyCommands {
         return positionKeyCodes[keyCode]
     }
 
-    package static func zoomChord(characters: String?, keyCode: UInt16, shift: Bool) -> EaselZoomCommand? {
+    static func zoomChord(characters: String?, keyCode: UInt16, shift: Bool) -> EaselZoomCommand? {
         let typed = characters ?? ""
         switch typed {
         case "=", "+": return .zoomIn
@@ -316,7 +316,7 @@ package enum EaselToolGeometry {
 }
 
 package enum EaselZoom {
-    package static let levels: [Double] = [0.25, 0.3333, 0.5, 0.75, 1, 1.5, 2, 3, 4]
+    static let levels: [Double] = [0.25, 0.3333, 0.5, 0.75, 1, 1.5, 2, 3, 4]
     package static let presets: [Double] = [0.5, 1, 2]
     static let fitPadding = 48.0
     package static let animationDuration = 0.24

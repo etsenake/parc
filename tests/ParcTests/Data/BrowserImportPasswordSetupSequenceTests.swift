@@ -1,5 +1,5 @@
 import AppKit
-import ParcCore
+@testable import ParcCore
 import ParcEngine
 import ParcEngineDoubles
 import Testing

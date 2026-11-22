@@ -23,7 +23,7 @@ package enum NoteBlockConversion: Hashable {
         .code, .quote, .callout, .equation, .toggleHeading(1), .toggleHeading(2), .toggleHeading(3), .toggleHeading(4),
     ]
 
-    package var kind: NoteBlockKind {
+    var kind: NoteBlockKind {
         switch self {
         case .text: return .paragraph
         case .heading, .toggleHeading: return .heading
@@ -39,7 +39,7 @@ package enum NoteBlockConversion: Hashable {
         }
     }
 
-    package func configure(_ props: inout NoteBlockProps, from source: NoteBlock) {
+    func configure(_ props: inout NoteBlockProps, from source: NoteBlock) {
         switch self {
         case .heading(let level):
             props.level = min(max(level, 1), 6)
@@ -87,7 +87,7 @@ extension NotePage {
         return nil
     }
 
-    package func nextContent(after id: NoteBlockID) -> NoteBlockID? {
+    func nextContent(after id: NoteBlockID) -> NoteBlockID? {
         guard var position = visiblePosition(of: id) else { return nil }
         let boundary = containingColumn(of: id)
         let order = index.visibleIDs
@@ -122,7 +122,7 @@ extension NotePage {
         return block.kind.hasText ? .caret(NotePosition(id, 0)) : .blocks([id])
     }
 
-    package func clamped(_ selection: NotePageSelection) -> NotePageSelection {
+    func clamped(_ selection: NotePageSelection) -> NotePageSelection {
         func clamp(_ position: NotePosition) -> NotePosition? {
             guard let text = text(of: position) else { return nil }
             return NotePosition(position.block, min(max(0, position.offset), text.length), field: position.field)
@@ -154,7 +154,7 @@ extension NotePage {
         }
     }
 
-    package func precedes(_ lhs: NotePosition, _ rhs: NotePosition) -> Bool {
+    func precedes(_ lhs: NotePosition, _ rhs: NotePosition) -> Bool {
         if lhs.block != rhs.block {
             return (documentPosition(of: lhs.block) ?? 0) < (documentPosition(of: rhs.block) ?? 0)
         }
@@ -166,7 +166,7 @@ extension NotePage {
     }
 
     @discardableResult
-    package mutating func merge(_ id: NoteBlockID, into targetID: NoteBlockID) -> Bool {
+    mutating func merge(_ id: NoteBlockID, into targetID: NoteBlockID) -> Bool {
         guard id != targetID, let merged = block(id), let target = block(targetID), target.kind.hasText,
               !isAncestor(id, of: targetID) else { return false }
         let appended: NoteText
@@ -379,7 +379,7 @@ extension NoteBlock {
         }
     }
 
-    package var conversion: NoteBlockConversion? {
+    var conversion: NoteBlockConversion? {
         switch kind {
         case .paragraph: return .text
         case .heading: return props.toggleable ? .toggleHeading(props.level) : .heading(props.level)
@@ -405,7 +405,7 @@ extension NoteBlock {
         }
     }
 
-    package func continuation() -> NoteBlock {
+    func continuation() -> NoteBlock {
         var fresh = NoteBlock(continuationKind)
         switch kind {
         case .bulletedItem, .numberedItem, .todo:
@@ -634,7 +634,7 @@ extension NotePageSession {
     }
 
     @discardableResult
-    package func deleteBackward() -> Bool {
+    func deleteBackward() -> Bool {
         switch selection {
         case .none:
             return false
@@ -659,7 +659,7 @@ extension NotePageSession {
     }
 
     @discardableResult
-    package func deleteForward() -> Bool {
+    func deleteForward() -> Bool {
         switch selection {
         case .none:
             return false
@@ -774,7 +774,7 @@ extension NotePageSession {
         }
     }
 
-    package func turnInto(_ ids: [NoteBlockID], conversion: NoteBlockConversion) {
+    func turnInto(_ ids: [NoteBlockID], conversion: NoteBlockConversion) {
         let targets = page.ordered(ids)
         guard !targets.isEmpty else { return }
         convert(targets, name: "Turn Into", selection: selection) { page in
@@ -830,7 +830,7 @@ extension NotePageSession {
         return blocks.map(\.id)
     }
 
-    package static func landing(after blocks: [NoteBlock]) -> NotePageSelection {
+    static func landing(after blocks: [NoteBlock]) -> NotePageSelection {
         guard var current = blocks.last else { return .none }
         while current.showsChildren, let last = current.children.last { current = last }
         return current.kind.hasText ? .caret(NotePosition(current.id, current.text.length)) : .blocks([current.id])
@@ -916,7 +916,7 @@ extension NotePageSession {
         }
     }
 
-    package func moveBlocks(_ ids: [NoteBlockID], toColumn column: NoteBlockID, at index: Int) {
+    func moveBlocks(_ ids: [NoteBlockID], toColumn column: NoteBlockID, at index: Int) {
         guard let target = page.block(column), target.kind == .column else { return }
         let moving = Set(page.topLevelSelection(ids))
         let remaining = target.children.filter { !moving.contains($0.id) }
@@ -1343,7 +1343,7 @@ extension NotePageSession {
     }
 
     @discardableResult
-    package func selectAllStep() -> NotePageSelection {
+    func selectAllStep() -> NotePageSelection {
         let everything = NotePageSelection.blocks(page.blocks.map(\.id))
         let next: NotePageSelection
         switch selection {
@@ -1394,7 +1394,7 @@ extension NotePageSession {
         setText(text, of: (id, .caption), origin: origin, selection: .caret(caret))
     }
 
-    package func addCaption(to id: NoteBlockID) {
+    func addCaption(to id: NoteBlockID) {
         guard let block = page.block(id), block.kind.hasCaption else { return }
         setSelection(.caret(NotePosition(id, block.props.caption.length, field: .caption)))
     }
@@ -1595,7 +1595,7 @@ extension NotePageSession {
         return copy
     }
 
-    package static func plainLines(of blocks: [NoteBlock]) -> [String] {
+    static func plainLines(of blocks: [NoteBlock]) -> [String] {
         var lines: [String] = []
         func walk(_ block: NoteBlock) {
             if block.kind.hasText { lines.append(block.text.plainText) }

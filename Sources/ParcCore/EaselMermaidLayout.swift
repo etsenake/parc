@@ -1,8 +1,8 @@
 import Foundation
 
 package struct EaselMermaidSize: Equatable {
-    package var width: Double
-    package var height: Double
+    var width: Double
+    var height: Double
 
     package init(width: Double, height: Double) {
         self.width = width
@@ -26,7 +26,7 @@ package struct EaselMermaidDrawing: Equatable {
     package var height: Double
     package var headings: Set<UUID> = []
 
-    package init(items: [EaselItem], width: Double, height: Double, headings: Set<UUID> = []) {
+    init(items: [EaselItem], width: Double, height: Double, headings: Set<UUID> = []) {
         self.items = items
         self.width = width
         self.height = height
@@ -456,8 +456,8 @@ enum EaselMermaidLayoutEngine {
 }
 
 extension EaselMermaid {
-    package static let textWidth = 220.0
-    package static let labelWidth = 180.0
+    static let textWidth = 220.0
+    static let labelWidth = 180.0
     static let thickStroke = 6.0
     static let doubleStroke = 5.0
 
@@ -490,12 +490,12 @@ extension EaselMermaid {
         return EaselMermaidSize(width: min(limit, widest), height: Double(max(1, lines)) * lineHeight)
     }
 
-    package static func displayText(_ node: EaselMermaidNode) -> String {
+    static func displayText(_ node: EaselMermaidNode) -> String {
         guard node.shape == .entity, !node.attributes.isEmpty else { return node.label }
         return ([node.label] + node.attributes.map(\.line)).joined(separator: "\n")
     }
 
-    package static func appearance(_ shape: EaselMermaidShape) -> (kind: EaselItemKind, shape: EaselShape?, flipped: Bool, strokeWidth: Double?) {
+    static func appearance(_ shape: EaselMermaidShape) -> (kind: EaselItemKind, shape: EaselShape?, flipped: Bool, strokeWidth: Double?) {
         switch shape {
         case .rectangle, .entity: return (.rectangle, nil, false, nil)
         case .rounded, .stadium: return (.rectangle, .roundedRectangle, false, nil)
@@ -523,7 +523,7 @@ extension EaselMermaid {
         }
     }
 
-    package static func frameSize(_ shape: EaselMermaidShape, text: EaselMermaidSize) -> EaselMermaidSize {
+    static func frameSize(_ shape: EaselMermaidShape, text: EaselMermaidSize) -> EaselMermaidSize {
         let look = appearance(shape)
         let round = shape == .circle || shape == .doubleCircle || shape == .crossedCircle
         let minimum: EaselMermaidSize
@@ -633,7 +633,7 @@ extension EaselMermaid {
         return minX < 0 || minY < 0 ? drawing.moved(by: -minX, -minY) : drawing
     }
 
-    package static func sides(from a: EaselRect, to b: EaselRect, direction: EaselMermaidDirection,
+    static func sides(from a: EaselRect, to b: EaselRect, direction: EaselMermaidDirection,
                       loop: Bool) -> (start: EaselConnection.Side?, end: EaselConnection.Side?) {
         if loop { return direction.isVertical ? (.right, .top) : (.bottom, .left) }
         let forward: Bool
@@ -652,7 +652,7 @@ extension EaselMermaid {
         }
     }
 
-    package static func attachment(_ item: EaselItem, side: EaselConnection.Side?, toward target: EaselPoint) -> EaselPoint {
+    static func attachment(_ item: EaselItem, side: EaselConnection.Side?, toward target: EaselPoint) -> EaselPoint {
         let r = item.frame
         if let side {
             if item.resolvedShape != nil, let point = EaselShapeGeometry.anchorPoint(of: item, side: side) { return point }
@@ -670,7 +670,7 @@ extension EaselMermaid {
         return EaselPoint(x: center.x + dx * scale, y: center.y + dy * scale)
     }
 
-    package static func head(_ head: EaselMermaidHead) -> EaselArrowHead {
+    static func head(_ head: EaselMermaidHead) -> EaselArrowHead {
         switch head {
         case .none: return .none
         case .arrow: return .arrow

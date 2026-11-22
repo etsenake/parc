@@ -2,8 +2,8 @@ import Foundation
 
 package struct CommandBarFavoriteRenameAction: Equatable, Identifiable {
     package let tab: BrowserTab
-    package let spaceID: UUID
-    package let profileID: UUID
+    let spaceID: UUID
+    let profileID: UUID
     package var id: String { "rename-favorite:\(profileID):\(spaceID):\(tab.id):\(tab.createdAt.timeIntervalSinceReferenceDate)" }
     package var title: String { "Rename Current Tab…" }
 

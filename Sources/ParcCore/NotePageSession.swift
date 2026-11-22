@@ -7,9 +7,9 @@ package struct NotePageChange {
     package var blocks: Set<NoteBlockID>
     package var origin: ObjectIdentifier?
     package var isUndoRedo = false
-    package var revision: UInt64
+    var revision: UInt64
 
-    package init(kind: Kind, blocks: Set<NoteBlockID>, origin: ObjectIdentifier? = nil, isUndoRedo: Bool = false, revision: UInt64) {
+    init(kind: Kind, blocks: Set<NoteBlockID>, origin: ObjectIdentifier? = nil, isUndoRedo: Bool = false, revision: UInt64) {
         self.kind = kind
         self.blocks = blocks
         self.origin = origin
@@ -19,9 +19,9 @@ package struct NotePageChange {
 }
 
 package struct NoteUndoEffect {
-    package var undo: @MainActor () -> Void
-    package var redo: @MainActor () -> Void
-    package var owner: ObjectIdentifier? = nil
+    var undo: @MainActor () -> Void
+    var redo: @MainActor () -> Void
+    var owner: ObjectIdentifier? = nil
 
     package init(undo: @escaping @MainActor () -> Void, redo: @escaping @MainActor () -> Void, owner: ObjectIdentifier? = nil) {
         self.undo = undo
@@ -68,10 +68,10 @@ package final class NotePageSession {
     package private(set) var selection: NotePageSelection = .none
     package private(set) var revision: UInt64 = 0
     package let changes = PassthroughSubject<NotePageChange, Never>()
-    package let settled = PassthroughSubject<NotePageChange, Never>()
+    let settled = PassthroughSubject<NotePageChange, Never>()
     package var isReadOnly = false
     package var isFlat = false
-    package var now: () -> Date = Date.init
+    var now: () -> Date = Date.init
     var undoLimit = 300
     var typingCoalesceInterval: TimeInterval = 1.5
     private var undoStack: [HistoryStep] = []
@@ -123,7 +123,7 @@ package final class NotePageSession {
                  effect: effect, body)
     }
 
-    package func edit(_ name: String, kind: NotePageChange.Kind = .structure, coalescing: NoteEditCoalescing = .none,
+    func edit(_ name: String, kind: NotePageChange.Kind = .structure, coalescing: NoteEditCoalescing = .none,
               affected: Set<NoteBlockID>? = nil, origin: AnyObject? = nil,
               selecting: (NotePage) -> NotePageSelection?, effect: NoteUndoEffect? = nil,
               _ body: (inout NotePage) throws -> Void) rethrows {
@@ -156,7 +156,7 @@ package final class NotePageSession {
     }
 
     @discardableResult
-    package func group<Result>(_ name: String, continuing: NoteEditCoalescing, _ body: () throws -> Result) rethrows -> Result {
+    func group<Result>(_ name: String, continuing: NoteEditCoalescing, _ body: () throws -> Result) rethrows -> Result {
         if openGroup != nil { return try body() }
         breakCoalescing()
         openGroup = OpenGroup(name: name, page: page, selection: selection, continuing: continuing, serial: nextSerial())
@@ -262,14 +262,14 @@ package final class NotePageSession {
     }
 
     @discardableResult
-    package func undo(ifTopBelongsTo owner: ObjectIdentifier) -> Bool {
+    func undo(ifTopBelongsTo owner: ObjectIdentifier) -> Bool {
         guard openGroup == nil, !isReadOnly, undoStack.last?.effects.contains(where: { $0.owner == owner }) == true else { return false }
         undo()
         return true
     }
 
     @discardableResult
-    package func redo(ifTopBelongsTo owner: ObjectIdentifier) -> Bool {
+    func redo(ifTopBelongsTo owner: ObjectIdentifier) -> Bool {
         guard openGroup == nil, !isReadOnly, redoStack.last?.effects.contains(where: { $0.owner == owner }) == true else { return false }
         redo()
         return true
@@ -339,7 +339,7 @@ package final class NotePageSession {
     }
 
     @discardableResult
-    package func ensureAnchor<Generator: RandomNumberGenerator>(for id: NoteBlockID, using generator: inout Generator) -> String? {
+    func ensureAnchor<Generator: RandomNumberGenerator>(for id: NoteBlockID, using generator: inout Generator) -> String? {
         guard let block = page.block(id) else { return nil }
         if let existing = block.props.anchor, !existing.isEmpty { return existing }
         guard !isReadOnly else { return nil }
@@ -444,8 +444,8 @@ package final class NotePageSession {
 
 @MainActor
 package final class NoteCreatedFile {
-    package let url: URL
-    package let contents: Data
+    let url: URL
+    let contents: Data
     private let trash: (URL) throws -> URL?
     private var withdrawn = false
     private var trashedURL: URL?
@@ -456,7 +456,7 @@ package final class NoteCreatedFile {
         self.trash = trash
     }
 
-    package nonisolated static func moveToTrash(_ url: URL) throws -> URL? {
+    nonisolated static func moveToTrash(_ url: URL) throws -> URL? {
         var resulting: NSURL?
         try FileManager.default.trashItem(at: url, resultingItemURL: &resulting)
         return resulting as URL?
@@ -464,7 +464,7 @@ package final class NoteCreatedFile {
 
     var isWithdrawn: Bool { withdrawn }
 
-    package var effect: NoteUndoEffect {
+    var effect: NoteUndoEffect {
         NoteUndoEffect(undo: { [self] in withdraw() }, redo: { [self] in restore() })
     }
 

@@ -6,7 +6,7 @@ package struct EaselMediaCardLayout: Equatable {
     package var textWidth: Double
     package var titleBaseline: Double
     package var subtitleBaseline: Double?
-    package init(tile: EaselRect, textX: Double, textWidth: Double, titleBaseline: Double, subtitleBaseline: Double? = nil) {
+    init(tile: EaselRect, textX: Double, textWidth: Double, titleBaseline: Double, subtitleBaseline: Double? = nil) {
         self.tile = tile
         self.textX = textX
         self.textWidth = textWidth

@@ -6,7 +6,7 @@ package struct SafariBrowsingExport {
         package let name: String?
         package let directory: URL
 
-        package init(name: String?, directory: URL) {
+        init(name: String?, directory: URL) {
             self.name = name
             self.directory = directory
         }
@@ -21,7 +21,7 @@ package struct SafariBrowsingExport {
     let includesExtensions: Bool
     package let skippedParts: Int
 
-    package init(directory: URL, profiles: [Profile], bookmarks: [BrowserImportBookmark], passwordsFile: URL?, paymentCardsFile: URL?, includesPaymentCards: Bool, includesExtensions: Bool, skippedParts: Int) {
+    init(directory: URL, profiles: [Profile], bookmarks: [BrowserImportBookmark], passwordsFile: URL?, paymentCardsFile: URL?, includesPaymentCards: Bool, includesExtensions: Bool, skippedParts: Int) {
         self.directory = directory
         self.profiles = profiles
         self.bookmarks = bookmarks
@@ -243,7 +243,7 @@ private final class SafariExportZip {
         let uncompressedSize: UInt64
         let localOffset: UInt64
 
-        package init(name: String, flags: UInt16, method: UInt16, crc: UInt32, compressedSize: UInt64, uncompressedSize: UInt64, localOffset: UInt64) {
+        init(name: String, flags: UInt16, method: UInt16, crc: UInt32, compressedSize: UInt64, uncompressedSize: UInt64, localOffset: UInt64) {
             self.name = name
             self.flags = flags
             self.method = method

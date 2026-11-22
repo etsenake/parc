@@ -4,15 +4,15 @@ import Foundation
 package struct NoteBacklinkSnippet: Hashable, Sendable {
     package var text: String
     package var highlight: Range<Int>?
-    package init(text: String, highlight: Range<Int>? = nil) {
+    init(text: String, highlight: Range<Int>? = nil) {
         self.text = text
         self.highlight = highlight
     }
 
     static let leadingContext = 40
-    package static let maximumLength = 150
+    static let maximumLength = 150
 
-    package static func around(_ range: Range<Int>, in plain: String) -> NoteBacklinkSnippet {
+    static func around(_ range: Range<Int>, in plain: String) -> NoteBacklinkSnippet {
         let string = plain as NSString
         let length = string.length
         guard length > 0 else { return NoteBacklinkSnippet(text: "", highlight: nil) }
@@ -43,7 +43,7 @@ package struct NoteBacklinkSnippet: Hashable, Sendable {
         return NoteBacklinkSnippet(text: text, highlight: span > 0 ? offset..<(offset + span) : nil)
     }
 
-    package static func whole(_ text: String) -> NoteBacklinkSnippet {
+    static func whole(_ text: String) -> NoteBacklinkSnippet {
         around(0..<(text as NSString).length, in: text)
     }
 
@@ -94,9 +94,9 @@ package struct NoteBacklink: Hashable, Identifiable, Sendable {
     package var title: String
     package var icon: String?
     package var snippet: NoteBacklinkSnippet
-    package var anchor: String?
+    var anchor: String?
     package var links: Int
-    package init(source: URL, title: String, icon: String? = nil, snippet: NoteBacklinkSnippet, anchor: String? = nil, links: Int) {
+    init(source: URL, title: String, icon: String? = nil, snippet: NoteBacklinkSnippet, anchor: String? = nil, links: Int) {
         self.source = source
         self.title = title
         self.icon = icon
@@ -323,10 +323,10 @@ package final class NoteBacklinkIndex {
     package static var shared: NoteBacklinkIndex { NoteFiles.shared.backlinks }
     static let chunkSize = 200
 
-    package unowned let files: NoteFiles
+    unowned let files: NoteFiles
 
     package let changes = PassthroughSubject<Void, Never>()
-    package private(set) var isActive = false
+    private(set) var isActive = false
     private var libraries: [NoteLibrary] = []
     private var tracked: [ObjectIdentifier: AnyCancellable] = [:]
     private var creation: AnyCancellable?
@@ -347,18 +347,18 @@ package final class NoteBacklinkIndex {
     private var easelListingAgain = false
     private var easelTimer: NoteFileTimer?
 
-    package init(files: NoteFiles) {
+    init(files: NoteFiles) {
         self.files = files
     }
 
     private var settings: NoteFileSettings { files.settings }
 
-    package var isSettled: Bool {
+    var isSettled: Bool {
         !isReading && queue.isEmpty && refreshTimer == nil && followTimer == nil && rewriting == 0 && moves.isEmpty
             && easelTimer == nil && !easelListing
     }
 
-    package func activate() {
+    func activate() {
         guard !isActive else { return }
         isActive = true
         creation = files.libraryOpened.sink { [weak self] library in self?.track(library) }
@@ -393,7 +393,7 @@ package final class NoteBacklinkIndex {
         return incoming[NoteFilePaths.key(for: note)] ?? []
     }
 
-    package func noteMoved(from old: URL, to new: URL) {
+    func noteMoved(from old: URL, to new: URL) {
         guard old.isFileURL, new.isFileURL, old.path != new.path else { return }
         activate()
         track(files.library(for: new))

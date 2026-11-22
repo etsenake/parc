@@ -1,7 +1,7 @@
 package enum PopupTabHandoff {
     package struct Candidate<ID: Equatable>: Equatable {
-        package var id: ID
-        package var isPrivate = false
+        var id: ID
+        var isPrivate = false
         package var sharesSession = true
         package var acceptsTabs = true
         package var isMinimized = false

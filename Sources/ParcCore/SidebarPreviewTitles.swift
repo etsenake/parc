@@ -1,14 +1,14 @@
 import Foundation
 
 package struct TidyTitleRule: Equatable {
-    package enum Match: Equatable {
+    enum Match: Equatable {
         case pathEquals(String), pathContainsRegex(String), fragmentEquals(String), fragmentContainsRegex(String)
     }
-    package enum Title: Equatable { case always(String), removing([String]) }
-    package var match: Match?
-    package var title: Title
+    enum Title: Equatable { case always(String), removing([String]) }
+    var match: Match?
+    var title: Title
 
-    package func matches(_ url: URL) -> Bool {
+    func matches(_ url: URL) -> Bool {
         let path = url.path.isEmpty ? "/" : url.path, fragment = url.fragment ?? ""
         switch match {
         case nil: return true
@@ -38,7 +38,7 @@ package enum TidyTitles {
     }
 
     private static let expressions = NSCache<NSString, NSRegularExpression>()
-    package static func expression(_ pattern: String) -> NSRegularExpression? {
+    static func expression(_ pattern: String) -> NSRegularExpression? {
         if let cached = expressions.object(forKey: pattern as NSString) { return cached }
         guard let compiled = try? NSRegularExpression(pattern: pattern) else { return nil }
         expressions.setObject(compiled, forKey: pattern as NSString)

@@ -9,7 +9,7 @@ package struct EaselPage: Codable, Equatable, Identifiable {
     package var id: UUID
     package var name: String
 
-    package init(id: UUID, name: String) {
+    init(id: UUID, name: String) {
         self.id = id
         self.name = name
     }
@@ -24,7 +24,7 @@ package struct EaselPageChange: Equatable {
 package enum EaselPages {
     package static let firstPageName = "Page 1"
 
-    package static func pages(in document: EaselDocument) -> [EaselPage] { document.pages ?? [] }
+    static func pages(in document: EaselDocument) -> [EaselPage] { document.pages ?? [] }
 
     static func firstPageID(_ document: EaselDocument) -> UUID? { document.pages?.first?.id }
 
@@ -35,7 +35,7 @@ package enum EaselPages {
         return item.page == page
     }
 
-    package static func items(on page: UUID?, in document: EaselDocument) -> [EaselItem] {
+    static func items(on page: UUID?, in document: EaselDocument) -> [EaselItem] {
         guard document.pages != nil else { return document.items }
         let first = firstPageID(document)
         return document.items.filter { isOnPage($0, page, first: first) }

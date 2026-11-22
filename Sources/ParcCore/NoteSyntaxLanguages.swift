@@ -5,7 +5,7 @@ package struct NoteCodeLanguage: Hashable, Sendable {
     package let name: String
     package let aliases: [String]
 
-    package init(id: String, name: String, aliases: [String]) {
+    init(id: String, name: String, aliases: [String]) {
         self.id = id
         self.name = name
         self.aliases = aliases

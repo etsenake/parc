@@ -59,14 +59,14 @@ extension EaselPages {
         return pinned(next)
     }
 
-    package static func pinned(_ document: EaselDocument) -> EaselDocument {
+    static func pinned(_ document: EaselDocument) -> EaselDocument {
         guard let first = firstPageID(document), document.items.contains(where: { $0.page == nil }) else { return document }
         var next = document
         for index in next.items.indices where next.items[index].page == nil { next.items[index].page = first }
         return next
     }
 
-    package static func collapsed(_ document: EaselDocument) -> EaselDocument {
+    static func collapsed(_ document: EaselDocument) -> EaselDocument {
         guard let pages = document.pages, pages.count == 1, pages[0].name == firstPageName else { return document }
         var next = document
         next.pages = nil
@@ -140,7 +140,7 @@ extension EaselPages {
         return next
     }
 
-    package static func reordered(_ document: EaselDocument, order: [UUID]) -> EaselDocument? {
+    static func reordered(_ document: EaselDocument, order: [UUID]) -> EaselDocument? {
         guard let pages = document.pages, order.count == pages.count, Set(order) == Set(pages.map(\.id)),
               order != pages.map(\.id) else { return nil }
         var byID: [UUID: EaselPage] = [:]

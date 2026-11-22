@@ -4,14 +4,14 @@ package struct AutomaticUpdate {
     package enum Away: Hashable { case sleep, displaySleep, screenSaver, screenLock }
 
     package struct Activity {
-        package var enabled = true
-        package var updateReady = true
-        package var pageInUse = false
-        package var downloading = false
-        package var dialogOpen = false
-        package var privateWindowOpen = false
-        package var idleTime: TimeInterval = .infinity
-        package var displayKeptOn = false
+        var enabled = true
+        var updateReady = true
+        var pageInUse = false
+        var downloading = false
+        var dialogOpen = false
+        var privateWindowOpen = false
+        var idleTime: TimeInterval = .infinity
+        var displayKeptOn = false
 
         package init(enabled: Bool = true, updateReady: Bool = true, pageInUse: Bool = false, downloading: Bool = false, dialogOpen: Bool = false, privateWindowOpen: Bool = false, idleTime: TimeInterval = .infinity, displayKeptOn: Bool = false) {
             self.enabled = enabled
@@ -29,7 +29,7 @@ package struct AutomaticUpdate {
     static let requiredIdleTime: TimeInterval = 3
     static let idleAwayTime: TimeInterval = 1800
 
-    package private(set) var away: Set<Away> = []
+    private(set) var away: Set<Away> = []
     private(set) var awaySince: TimeInterval?
 
     package init(away: Set<Away> = [], awaySince: TimeInterval? = nil) {

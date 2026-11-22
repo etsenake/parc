@@ -1,17 +1,17 @@
 import Foundation
 
 package struct CommandBarWebDocument: Hashable, Sendable {
-    package let title: String
+    let title: String
     package let url: String
-    package let domains: [String]
+    let domains: [String]
 
-    package init(title: String, url: String, domains: [String]) {
+    init(title: String, url: String, domains: [String]) {
         self.title = title
         self.url = url
         self.domains = domains
     }
 
-    package static let catalog: [CommandBarWebDocument] = [
+    static let catalog: [CommandBarWebDocument] = [
         .init(title: "Google Doc", url: "https://doc.new", domains: ["drive.google.com", "docs.google.com"]),
         .init(title: "Google Sheet", url: "https://sheet.new", domains: ["drive.google.com", "sheets.google.com"]),
         .init(title: "Google Slide", url: "https://slide.new", domains: ["drive.google.com", "slides.google.com"]),
@@ -43,7 +43,7 @@ package struct CommandBarTypedCommand: Hashable, Sendable {
     package enum SettingsPane: CaseIterable, Hashable, Sendable {
         case account, general, profiles, shortcuts, links, appIcon, advanced
 
-        package var title: String {
+        var title: String {
             switch self {
             case .account: return "Settings"
             case .general: return "Open General Preferences"
@@ -68,12 +68,12 @@ package struct CommandBarTypedCommand: Hashable, Sendable {
             }
         }
 
-        package var bump: Double { self == .general ? 0.6 : 0.5 }
+        var bump: Double { self == .general ? 0.6 : 0.5 }
     }
     package enum Appearance: CaseIterable, Hashable, Sendable {
         case light, dark, automatic
 
-        package var title: String {
+        var title: String {
             switch self {
             case .light: return "Switch to Light Mode"
             case .dark: return "Switch to Dark Mode"

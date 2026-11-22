@@ -105,7 +105,7 @@ package final class NoteFileSession {
         if !unsaved.isEmpty { throw NoteFileError.unsaved(unsaved) }
     }
 
-    package nonisolated static func render(_ value: NotePage, kind: NoteFileKind, format: NoteFileFormat, customEmoji: Set<String> = []) -> String {
+    nonisolated static func render(_ value: NotePage, kind: NoteFileKind, format: NoteFileFormat, customEmoji: Set<String> = []) -> String {
         let body = kind == .markdown ? NoteMarkdown.serialize(value, customEmoji: customEmoji) : NotePlainText.serialize(value)
         return NoteFileText.fileText(body, format: format, kind: kind)
     }
@@ -117,12 +117,12 @@ package final class NoteFileSession {
     package let files: NoteFiles
     @Published package private(set) var state: NoteFileSaveState = .saved
     package let urlChanges = PassthroughSubject<URL, Never>()
-    package private(set) var format: NoteFileFormat
+    private(set) var format: NoteFileFormat
     private(set) var hasUnsavedChanges = false
     private(set) var editorCount = 0
     private(set) var lastSaveError: String?
     private(set) var readProblem: String?
-    package private(set) var customEmoji: Set<String> = []
+    private(set) var customEmoji: Set<String> = []
     private var emojiLibrary: NoteEmojiLibrary?
     private var emojiSubscription: AnyCancellable?
 
@@ -193,9 +193,9 @@ package final class NoteFileSession {
 
     var conflictingText: String? { conflict.map { NoteFileText.editableText($0, kind: kind) } }
 
-    package var isMissing: Bool { diskText == nil }
+    var isMissing: Bool { diskText == nil }
 
-    package var presenter: NSFilePresenter? { watcher }
+    var presenter: NSFilePresenter? { watcher }
 
     private var diskText: String? { disk.text }
 
@@ -310,7 +310,7 @@ package final class NoteFileSession {
         refreshState()
     }
 
-    package func handle(_ event: NoteFileWatchEvent) {
+    func handle(_ event: NoteFileWatchEvent) {
         guard !isClosed else { return }
         switch event {
         case .moved(let destination):
@@ -738,5 +738,5 @@ extension NoteFiles {
 
     package var openSessions: [NoteFileSession] { Array(liveSessions.values) }
 
-    package func flushAll() throws { try NoteFileSession.flushAll(openSessions) }
+    func flushAll() throws { try NoteFileSession.flushAll(openSessions) }
 }

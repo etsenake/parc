@@ -2,21 +2,21 @@ import Foundation
 
 package struct CommandBarMenuItemInfo: Equatable, Sendable {
     let triggers: [String]
-    package var bump: Double? = nil
+    var bump: Double? = nil
 
-    package init(triggers: [String], bump: Double? = nil) {
+    init(triggers: [String], bump: Double? = nil) {
         self.triggers = triggers
         self.bump = bump
     }
 
-    package static func info(forMenuCommand id: String) -> CommandBarMenuItemInfo? { table[id] }
+    static func info(forMenuCommand id: String) -> CommandBarMenuItemInfo? { table[id] }
 
     package static func candidateBump(forMenuCommand id: String) -> Double? { table[id]?.bump }
 
     static let bumpWeight = 0.06
     package static func rankingBump(_ bump: Double?) -> Double { (bump ?? 0) * bumpWeight }
 
-    package static func searchText(forMenuCommand id: String) -> String {
+    static func searchText(forMenuCommand id: String) -> String {
         table[id]?.triggers.joined(separator: " ") ?? ""
     }
 

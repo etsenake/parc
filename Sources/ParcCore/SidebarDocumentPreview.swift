@@ -22,7 +22,7 @@ package enum SidebarDocumentKind: Hashable, Sendable {
         }
     }
 
-    package var isNote: Bool { if case .note = self { return true }; return false }
+    var isNote: Bool { if case .note = self { return true }; return false }
 }
 
 package enum SidebarDocumentAvailability: Equatable, Sendable {
@@ -32,8 +32,8 @@ package enum SidebarDocumentAvailability: Equatable, Sendable {
 
 package struct SidebarDocumentContent: Equatable, Sendable {
     package var availability: SidebarDocumentAvailability = .available
-    package var snippet = ""
-    package var objectCount: Int?
+    var snippet = ""
+    var objectCount: Int?
     package init(availability: SidebarDocumentAvailability = .available, snippet: String = "", objectCount: Int? = nil) {
         self.availability = availability
         self.snippet = snippet
@@ -48,11 +48,11 @@ package enum SidebarDocumentButton: Equatable, Sendable {
 package enum SidebarDocumentPreviewText {
     static func kindName(_ kind: SidebarDocumentKind) -> String { kind.isNote ? "Note" : "Easel" }
 
-    package static func missing(_ kind: SidebarDocumentKind) -> String {
+    static func missing(_ kind: SidebarDocumentKind) -> String {
         kind.isNote ? "This note moved or was deleted" : "This Easel was deleted"
     }
 
-    package static func objects(_ count: Int) -> String {
+    static func objects(_ count: Int) -> String {
         switch count {
         case 0: return "No objects yet"
         case 1: return "1 object"
@@ -84,7 +84,7 @@ package enum SidebarDocumentPreviewButtons {
 package struct SidebarThumbnailCache<Image, Revision: Hashable> {
     package struct Key: Hashable {
         package let document: String
-        package let appearance: String
+        let appearance: String
         package init(document: String, appearance: String) {
             self.document = document
             self.appearance = appearance
@@ -96,8 +96,8 @@ package struct SidebarThumbnailCache<Image, Revision: Hashable> {
         var revision: Revision
     }
 
-    package let capacity: Int
-    package let interval: TimeInterval
+    let capacity: Int
+    let interval: TimeInterval
     private var entries: [Key: Entry] = [:]
     private var order: [Key] = []
     private var renderedAt: [Key: Date] = [:]
@@ -107,7 +107,7 @@ package struct SidebarThumbnailCache<Image, Revision: Hashable> {
         self.interval = max(0, interval)
     }
 
-    package var count: Int { entries.count }
+    var count: Int { entries.count }
 
     package func fresh(_ key: Key, revision: Revision) -> Image? {
         guard let entry = entries[key], entry.revision == revision else { return nil }
@@ -140,7 +140,7 @@ package struct SidebarThumbnailCache<Image, Revision: Hashable> {
         order.removeAll { $0.document == document }
     }
 
-    package mutating func removeAll() {
+    mutating func removeAll() {
         entries.removeAll(); order.removeAll(); renderedAt.removeAll()
     }
 

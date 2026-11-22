@@ -1,25 +1,25 @@
 import Foundation
 
 package struct CommandBarFavoriteAction: Equatable, Identifiable {
-    package enum Operation: String {
+    enum Operation: String {
         case favorite, unfavorite
-        package var title: String { self == .favorite ? "Favorite Tab" : "Unfavorite Tab" }
+        var title: String { self == .favorite ? "Favorite Tab" : "Unfavorite Tab" }
     }
-    package struct Target: Equatable {
-        package let id: UUID
-        package let createdAt: Date
-        package let spaceID: UUID
-        package let kind: TabKind
-        package let folderID: UUID?
-        package init(_ tab: BrowserTab) {
+    struct Target: Equatable {
+        let id: UUID
+        let createdAt: Date
+        let spaceID: UUID
+        let kind: TabKind
+        let folderID: UUID?
+        init(_ tab: BrowserTab) {
             id = tab.id; createdAt = tab.createdAt; spaceID = tab.spaceID
             kind = tab.kind; folderID = tab.folderID
         }
     }
-    package let operation: Operation
-    package let spaceID: UUID
-    package let profileID: UUID
-    package let targets: [Target]
+    let operation: Operation
+    let spaceID: UUID
+    let profileID: UUID
+    let targets: [Target]
     package var tabIDs: [UUID] { targets.map(\.id) }
     package var title: String { operation.title }
     package var id: String {
@@ -62,7 +62,7 @@ package struct CommandBarFavoriteAction: Equatable, Identifiable {
         return !words.isEmpty && words.allSatisfy { text.contains($0) }
     }
 
-    package func applying(to state: BrowserState) -> BrowserState? {
+    func applying(to state: BrowserState) -> BrowserState? {
         guard isCurrent(in: state) else { return nil }
         let ids = Set(tabIDs)
         var next = state

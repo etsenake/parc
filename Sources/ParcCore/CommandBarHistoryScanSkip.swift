@@ -2,12 +2,12 @@ import Foundation
 
 package enum CommandBarHistoryScanSkip {
     package struct Key: Equatable {
-        package var query: String
-        package var historyRevision: UInt64
-        package var excludedURL: String
+        var query: String
+        var historyRevision: UInt64
+        var excludedURL: String
         var tabIdentityFingerprint: String
 
-        package init(query: String, historyRevision: UInt64, excludedURL: String, tabIdentityFingerprint: String) {
+        init(query: String, historyRevision: UInt64, excludedURL: String, tabIdentityFingerprint: String) {
             self.query = query
             self.historyRevision = historyRevision
             self.excludedURL = excludedURL
@@ -19,7 +19,7 @@ package enum CommandBarHistoryScanSkip {
         package var url: String
         package var title: String
 
-        package init(url: String, title: String) {
+        init(url: String, title: String) {
             self.url = url
             self.title = title
         }

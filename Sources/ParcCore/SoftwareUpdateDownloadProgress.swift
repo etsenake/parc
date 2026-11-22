@@ -6,7 +6,7 @@ package struct SoftwareUpdateDownloadProgress {
         package let fraction: Double?
         package let widthTemplate: String?
 
-        package init(text: String, fraction: Double?, widthTemplate: String?) {
+        init(text: String, fraction: Double?, widthTemplate: String?) {
             self.text = text
             self.fraction = fraction
             self.widthTemplate = widthTemplate

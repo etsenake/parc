@@ -3,7 +3,7 @@ import Foundation
 package enum EaselToolbarSubject: String, CaseIterable, Equatable {
     case text, sticky, shape, connector, section, image, drawing, page, table, code, stamp, icon, media, equation
 
-    package init(_ kind: EaselItemKind) {
+    init(_ kind: EaselItemKind) {
         switch kind {
         case .text: self = .text
         case .sticky: self = .sticky
@@ -73,7 +73,7 @@ package enum EaselSelectionToolbarPlan {
     private static let emphasis: [EaselToolbarControl] = [.bold, .italic, .underline, .strikethrough]
     private static let marks: [EaselToolbarControl] = emphasis + [.code, .equation]
 
-    package static func controls(for subject: EaselToolbarSubject, editingText: Bool) -> [[EaselToolbarControl]] {
+    static func controls(for subject: EaselToolbarSubject, editingText: Bool) -> [[EaselToolbarControl]] {
         switch subject {
         case .text:
             return editingText
@@ -128,7 +128,7 @@ package struct EaselSelectionToolbarPlacement: Equatable {
 
     package var frame: EaselRect
     package var edge: Edge
-    package init(frame: EaselRect, edge: Edge) {
+    init(frame: EaselRect, edge: Edge) {
         self.frame = frame
         self.edge = edge
     }

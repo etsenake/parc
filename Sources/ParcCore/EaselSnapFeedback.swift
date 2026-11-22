@@ -7,10 +7,10 @@ enum EaselFeedbackSpring {
 }
 
 package struct EaselGuideSnapKey: Hashable {
-    package let anchor: Int
+    let anchor: Int
     let coordinate: Double
 
-    package init(anchor: EaselAnchor, coordinate: Double) {
+    init(anchor: EaselAnchor, coordinate: Double) {
         self.anchor = anchor.rawValue
         self.coordinate = coordinate.isFinite ? (coordinate * 100).rounded() / 100 : 0
     }
@@ -37,13 +37,13 @@ package enum EaselFeedbackCurve {
     package static let grow: TimeInterval = 0.45
     package static let tableSlide: TimeInterval = 0.24
 
-    package static func clamped(_ value: Double) -> Double { value.isFinite ? min(1, max(0, value)) : 1 }
+    static func clamped(_ value: Double) -> Double { value.isFinite ? min(1, max(0, value)) : 1 }
 
-    package static func easeOut(_ t: Double) -> Double { let c = clamped(t); return 1 - pow(1 - c, 3) }
+    static func easeOut(_ t: Double) -> Double { let c = clamped(t); return 1 - pow(1 - c, 3) }
 
-    package static func easeIn(_ t: Double) -> Double { let c = clamped(t); return c * c }
+    static func easeIn(_ t: Double) -> Double { let c = clamped(t); return c * c }
 
-    package static func easeInOut(_ t: Double) -> Double {
+    static func easeInOut(_ t: Double) -> Double {
         let c = clamped(t)
         return c < 0.5 ? 4 * c * c * c : 1 - pow(-2 * c + 2, 3) / 2
     }
@@ -137,7 +137,7 @@ package enum EaselRotationSnap {
 }
 
 package enum EaselConnectorReveal {
-    package static func length(of segment: EaselConnectorRoute.Segment) -> Double {
+    static func length(of segment: EaselConnectorRoute.Segment) -> Double {
         let points = segment.samples
         guard points.count > 1 else { return 0 }
         var total = 0.0
@@ -147,7 +147,7 @@ package enum EaselConnectorReveal {
         return total
     }
 
-    package static func length(of pieces: [[EaselConnectorRoute.Segment]]) -> Double {
+    static func length(of pieces: [[EaselConnectorRoute.Segment]]) -> Double {
         pieces.reduce(0) { sum, piece in piece.reduce(sum) { $0 + length(of: $1) } }
     }
 
@@ -186,7 +186,7 @@ package enum EaselConnectorReveal {
         return result
     }
 
-    package static func tip(_ pieces: [[EaselConnectorRoute.Segment]], fraction: Double) -> EaselPoint? {
+    static func tip(_ pieces: [[EaselConnectorRoute.Segment]], fraction: Double) -> EaselPoint? {
         trimmed(pieces, fraction: fraction).last?.last?.end
     }
 }
@@ -210,16 +210,16 @@ package enum EaselSectionDrop {
 }
 
 package struct EaselSizeMatch: Equatable, Hashable {
-    package let other: UUID
-    package let horizontal: Bool
-    package init(other: UUID, horizontal: Bool) {
+    let other: UUID
+    let horizontal: Bool
+    init(other: UUID, horizontal: Bool) {
         self.other = other
         self.horizontal = horizontal
     }
 }
 
 package enum EaselEqualSize {
-    package static let tolerance = 6.0
+    static let tolerance = 6.0
     static let indicatorLimit = 3
 
     package static func resizes(_ kind: EaselItemKind) -> Bool {
@@ -258,7 +258,7 @@ package enum EaselEqualSize {
         return (next, matches(next, handle: handle, candidates: candidates))
     }
 
-    package static func matches(_ item: EaselItem, handle: EaselResizeHandle, candidates: [EaselItem]) -> [EaselSizeMatch] {
+    static func matches(_ item: EaselItem, handle: EaselResizeHandle, candidates: [EaselItem]) -> [EaselSizeMatch] {
         func center(_ r: EaselRect) -> EaselPoint { EaselPoint(x: r.x + r.width / 2, y: r.y + r.height / 2) }
         let origin = center(item.frame)
         let ordered = candidates.sorted {

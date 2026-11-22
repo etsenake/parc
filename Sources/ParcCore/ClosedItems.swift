@@ -1,18 +1,18 @@
 import Foundation
 
 package struct ClosedItemRecord: Equatable {
-    package enum Kind { case saved, archived }
-    package let id: UUID
-    package let kind: Kind
-    package let spaceID: UUID
-    package let profileID: UUID
-    package let tabs: [BrowserTab]
-    package let split: BrowserSplitLayout?
+    enum Kind { case saved, archived }
+    let id: UUID
+    let kind: Kind
+    let spaceID: UUID
+    let profileID: UUID
+    let tabs: [BrowserTab]
+    let split: BrowserSplitLayout?
     package let focusedTabID: UUID
-    package var membership: ClosedSplitMembership? = nil
+    var membership: ClosedSplitMembership? = nil
     package var tabIDs: [UUID] { tabs.map(\.id) }
 
-    package init(id: UUID, kind: Kind, spaceID: UUID, profileID: UUID, tabs: [BrowserTab], split: BrowserSplitLayout?, focusedTabID: UUID, membership: ClosedSplitMembership? = nil) {
+    init(id: UUID, kind: Kind, spaceID: UUID, profileID: UUID, tabs: [BrowserTab], split: BrowserSplitLayout?, focusedTabID: UUID, membership: ClosedSplitMembership? = nil) {
         self.id = id
         self.kind = kind
         self.spaceID = spaceID
@@ -23,7 +23,7 @@ package struct ClosedItemRecord: Equatable {
         self.membership = membership
     }
 
-    package func isValid(in state: BrowserState) -> Bool {
+    func isValid(in state: BrowserState) -> Bool {
         if let membership {
             guard kind == .archived, split == nil, tabs.count == 1, membership.layout.spaceID == spaceID,
                   membership.layout.tabIDs.contains(tabs[0].id) else { return false }
@@ -63,12 +63,12 @@ package struct ClosedItemRecord: Equatable {
 }
 
 package struct ClosedSplitMembership: Equatable {
-    package let layout: BrowserSplitLayout
-    package let index: Int
+    let layout: BrowserSplitLayout
+    let index: Int
     let dissolved: Bool
     let closedSiblings: Set<UUID>
 
-    package func restoredLayout(restoring id: UUID, in state: BrowserState,
+    func restoredLayout(restoring id: UUID, in state: BrowserState,
                         available: (UUID) -> Bool) -> BrowserSplitLayout? {
         guard let position = layout.tabIDs.firstIndex(of: id),
               let profileID = state.spaces.first(where: { $0.id == layout.spaceID })?.profileID else { return nil }
@@ -155,10 +155,10 @@ package struct ClosedSplitMembership: Equatable {
 }
 
 package struct ClosedItemIntent {
-    package let spaceID: UUID
-    package let profileID: UUID
-    package let tabs: [BrowserTab]
-    package let focusedTabID: UUID?
+    let spaceID: UUID
+    let profileID: UUID
+    let tabs: [BrowserTab]
+    let focusedTabID: UUID?
     let completeSplits: [BrowserSplitLayout]
     let partialSplits: [BrowserSplitLayout]
     package init?(ids: Set<UUID>, state: BrowserState, spaceID: UUID, profileID: UUID, focusedTabID: UUID?) {
@@ -175,7 +175,7 @@ package struct ClosedItemIntent {
         }
     }
 
-    package func membership(of id: UUID, in state: BrowserState) -> ClosedSplitMembership? {
+    func membership(of id: UUID, in state: BrowserState) -> ClosedSplitMembership? {
         let closed = Set(tabs.map(\.id))
         guard let layout = partialSplits.first(where: { $0.tabIDs.contains(id) }),
               let position = layout.tabIDs.firstIndex(of: id),
@@ -325,7 +325,7 @@ package struct WindowClosedItems {
         }
         return nil
     }
-    package mutating func next(in state: BrowserState) -> ClosedItemRecord? {
+    mutating func next(in state: BrowserState) -> ClosedItemRecord? {
         guard case .items(let record)? = nextStep(in: state, restorable: { _ in true }) else { return nil }
         return record
     }
@@ -343,11 +343,11 @@ package struct WindowClosedItems {
 }
 
 package struct ClosedPageHistory<State> {
-    package let limit: Int
+    let limit: Int
     private var states: [UUID: State] = [:]
     private var order: [UUID] = []
     private var restored: Set<UUID> = []
-    package init(limit: Int = 100) { self.limit = limit }
+    init(limit: Int = 100) { self.limit = limit }
 
     package mutating func closed(_ id: UUID, state: State) {
         if states.updateValue(state, forKey: id) != nil { order.removeAll { $0 == id } }

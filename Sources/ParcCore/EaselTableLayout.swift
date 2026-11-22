@@ -1,7 +1,7 @@
 import Foundation
 
 package struct EaselTableLayout: Equatable {
-    package let frame: EaselRect
+    let frame: EaselRect
     package let columnEdges: [Double]
     package let rowEdges: [Double]
 
@@ -104,7 +104,7 @@ package struct EaselTableLayout: Equatable {
 }
 
 package enum EaselTableGeometry {
-    package static func fitted(_ item: EaselItem) -> EaselItem {
+    static func fitted(_ item: EaselItem) -> EaselItem {
         guard item.kind == .table, var table = item.table, table.width > 0, table.height > 0 else { return item }
         var next = item
         if abs(table.width - item.frame.width) > 0.001 { table.scaleColumns(toWidth: item.frame.width) }
@@ -209,7 +209,7 @@ extension EaselTableLayout {
 extension EaselVectorExport {
     package static let tableCornerRadius = 6.0
 
-    package static func table(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
+    static func table(_ item: EaselItem, _ layout: EaselVectorText?) -> String {
         guard let model = item.table else { return "" }
         let f = item.frame, grid = EaselTableLayout(table: model, frame: f)
         func box(_ r: EaselRect) -> String {

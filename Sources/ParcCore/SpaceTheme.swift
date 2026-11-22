@@ -84,7 +84,7 @@ package struct SpaceTheme: Codable, Equatable {
 
     package var primaryColor: ThemeColor?
     package var colorCount: Int
-    package var wheel: Wheel
+    var wheel: Wheel
     package var appearance: Appearance
     package var noise: Double
     package var intensity: Double
@@ -129,7 +129,7 @@ package struct SpaceTheme: Codable, Equatable {
         }
     }
 
-    package mutating func removeColor() {
+    mutating func removeColor() {
         guard colorCount > 0 else { return }
         colorCount -= 1
         if colorCount == 1 { wheel = .complimentary }
@@ -138,7 +138,7 @@ package struct SpaceTheme: Codable, Equatable {
         }
     }
 
-    package mutating func setNoise(_ value: Double, rotating: Bool = false) {
+    mutating func setNoise(_ value: Double, rotating: Bool = false) {
         guard value.isFinite else { return }
         let bounded = min(1, max(0, value))
         noise = rotating ? bounded : (bounded * 20).rounded() / 20

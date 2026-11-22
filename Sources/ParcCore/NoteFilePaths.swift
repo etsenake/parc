@@ -63,12 +63,12 @@ package enum NoteFilePaths {
 
     package static func itemExists(_ url: URL) -> Bool { itemExists(atPath: url.path) }
 
-    package static func itemExists(atPath path: String) -> Bool {
+    static func itemExists(atPath path: String) -> Bool {
         var info = stat()
         return lstat(path, &info) == 0
     }
 
-    package static func isDirectory(_ url: URL) -> Bool {
+    static func isDirectory(_ url: URL) -> Bool {
         var info = stat()
         return stat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR
     }

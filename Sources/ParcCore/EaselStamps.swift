@@ -1,7 +1,7 @@
 import Foundation
 
 extension EaselStampDesign {
-    package var title: String {
+    var title: String {
         switch self {
         case .plusOne: return "Plus one"
         case .dot: return "Dot"
@@ -46,7 +46,7 @@ package enum EaselStamps {
 
     package static func side(heldFor seconds: Double) -> Double { sizes[stage(heldFor: seconds)] }
 
-    package static func frame(centeredAt point: EaselPoint, side: Double) -> EaselRect {
+    static func frame(centeredAt point: EaselPoint, side: Double) -> EaselRect {
         let value = side.isFinite && side >= 1 ? side : sizes[0]
         let x = point.x.isFinite ? point.x : 0, y = point.y.isFinite ? point.y : 0
         return EaselRect(x: max(0, x - value / 2), y: max(0, y - value / 2), width: value, height: value)
@@ -60,11 +60,11 @@ package enum EaselStamps {
 
     static func carriesStamps(_ item: EaselItem) -> Bool { item.kind != .stamp && EaselDrawing.canHold(item) }
 
-    package static func centre(of item: EaselItem) -> EaselPoint {
+    static func centre(of item: EaselItem) -> EaselPoint {
         EaselPoint(x: item.frame.x + item.frame.width / 2, y: item.frame.y + item.frame.height / 2)
     }
 
-    package static func attachmentTarget(at point: EaselPoint, in items: [EaselItem], excluding: Set<UUID> = []) -> UUID? {
+    static func attachmentTarget(at point: EaselPoint, in items: [EaselItem], excluding: Set<UUID> = []) -> UUID? {
         let byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let ordered = items.enumerated().sorted {
             $0.element.zIndex == $1.element.zIndex ? $0.offset < $1.offset : $0.element.zIndex < $1.element.zIndex
@@ -175,13 +175,13 @@ package struct EaselStampIcon: Hashable {
     package let title: String
     package let keywords: [String]
 
-    package init(_ symbol: String, _ title: String, _ keywords: [String] = []) {
+    init(_ symbol: String, _ title: String, _ keywords: [String] = []) {
         self.symbol = symbol
         self.title = title
         self.keywords = keywords
     }
 
-    package func matches(_ query: String) -> Bool {
+    func matches(_ query: String) -> Bool {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !needle.isEmpty else { return true }
         return ([title.lowercased(), symbol] + keywords).contains { $0.contains(needle) }
@@ -193,7 +193,7 @@ package enum EaselStampIcons {
         package let title: String
         package let icons: [EaselStampIcon]
 
-        package init(title: String, icons: [EaselStampIcon]) {
+        init(title: String, icons: [EaselStampIcon]) {
             self.title = title
             self.icons = icons
         }
@@ -322,13 +322,13 @@ package enum EaselStampIcons {
         ]),
     ]
 
-    package static let all: [EaselStampIcon] = sections.flatMap(\.icons)
+    static let all: [EaselStampIcon] = sections.flatMap(\.icons)
 
     private static let index: [String: EaselStampIcon] = Dictionary(all.map { ($0.symbol, $0) }, uniquingKeysWith: { first, _ in first })
 
-    package static func icon(named symbol: String) -> EaselStampIcon? { index[symbol] }
+    static func icon(named symbol: String) -> EaselStampIcon? { index[symbol] }
 
-    package static func search(_ query: String) -> [EaselStampIcon] {
+    static func search(_ query: String) -> [EaselStampIcon] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return all }
         let lowered = trimmed.lowercased()
@@ -347,22 +347,22 @@ package struct EaselStampPath: Equatable {
 
     package var elements: [Element] = []
 
-    package init(elements: [Element] = []) {
+    init(elements: [Element] = []) {
         self.elements = elements
     }
 
-    package mutating func move(_ x: Double, _ y: Double) { elements.append(.move(EaselPoint(x: x, y: y))) }
-    package mutating func line(_ x: Double, _ y: Double) { elements.append(.line(EaselPoint(x: x, y: y))) }
-    package mutating func curve(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double, _ x: Double, _ y: Double) {
+    mutating func move(_ x: Double, _ y: Double) { elements.append(.move(EaselPoint(x: x, y: y))) }
+    mutating func line(_ x: Double, _ y: Double) { elements.append(.line(EaselPoint(x: x, y: y))) }
+    mutating func curve(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double, _ x: Double, _ y: Double) {
         elements.append(.curve(EaselPoint(x: x1, y: y1), EaselPoint(x: x2, y: y2), EaselPoint(x: x, y: y)))
     }
-    package mutating func close() { elements.append(.close) }
+    mutating func close() { elements.append(.close) }
 
-    package static func + (lhs: EaselStampPath, rhs: EaselStampPath) -> EaselStampPath {
+    static func + (lhs: EaselStampPath, rhs: EaselStampPath) -> EaselStampPath {
         EaselStampPath(elements: lhs.elements + rhs.elements)
     }
 
-    package func mapped(_ transform: (EaselPoint) -> EaselPoint) -> EaselStampPath {
+    func mapped(_ transform: (EaselPoint) -> EaselPoint) -> EaselStampPath {
         EaselStampPath(elements: elements.map { element in
             switch element {
             case .move(let point): return .move(transform(point))
@@ -373,7 +373,7 @@ package struct EaselStampPath: Equatable {
         })
     }
 
-    package func rotated(by degrees: Double, around centre: EaselPoint) -> EaselStampPath {
+    func rotated(by degrees: Double, around centre: EaselPoint) -> EaselStampPath {
         let angle = degrees * .pi / 180, c = cos(angle), s = sin(angle)
         return mapped { point in
             let dx = point.x - centre.x, dy = point.y - centre.y
@@ -381,9 +381,9 @@ package struct EaselStampPath: Equatable {
         }
     }
 
-    package func translated(_ dx: Double, _ dy: Double) -> EaselStampPath { mapped { EaselPoint(x: $0.x + dx, y: $0.y + dy) } }
+    func translated(_ dx: Double, _ dy: Double) -> EaselStampPath { mapped { EaselPoint(x: $0.x + dx, y: $0.y + dy) } }
 
-    package var points: [EaselPoint] {
+    var points: [EaselPoint] {
         elements.flatMap { element -> [EaselPoint] in
             switch element {
             case .move(let point), .line(let point): return [point]
@@ -393,7 +393,7 @@ package struct EaselStampPath: Equatable {
         }
     }
 
-    package static func ellipse(_ cx: Double, _ cy: Double, _ rx: Double, _ ry: Double) -> EaselStampPath {
+    static func ellipse(_ cx: Double, _ cy: Double, _ rx: Double, _ ry: Double) -> EaselStampPath {
         let k = 0.5522847498
         var path = EaselStampPath()
         path.move(cx + rx, cy)
@@ -405,9 +405,9 @@ package struct EaselStampPath: Equatable {
         return path
     }
 
-    package static func circle(_ cx: Double, _ cy: Double, _ r: Double) -> EaselStampPath { ellipse(cx, cy, r, r) }
+    static func circle(_ cx: Double, _ cy: Double, _ r: Double) -> EaselStampPath { ellipse(cx, cy, r, r) }
 
-    package static func roundedRect(_ x: Double, _ y: Double, _ width: Double, _ height: Double, _ radius: Double) -> EaselStampPath {
+    static func roundedRect(_ x: Double, _ y: Double, _ width: Double, _ height: Double, _ radius: Double) -> EaselStampPath {
         let r = max(0, min(radius, width / 2, height / 2)), k = 0.5522847498 * r
         var path = EaselStampPath()
         path.move(x + r, y)
@@ -423,7 +423,7 @@ package struct EaselStampPath: Equatable {
         return path
     }
 
-    package static func capsule(from start: EaselPoint, to end: EaselPoint, thickness: Double) -> EaselStampPath {
+    static func capsule(from start: EaselPoint, to end: EaselPoint, thickness: Double) -> EaselStampPath {
         let length = hypot(end.x - start.x, end.y - start.y)
         let angle = atan2(end.y - start.y, end.x - start.x) * 180 / .pi
         let centre = EaselPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
@@ -452,7 +452,7 @@ package struct EaselStampPath: Equatable {
         return path
     }
 
-    package static func star(centre: EaselPoint, outer: Double, inner: Double, points: Int = 5,
+    static func star(centre: EaselPoint, outer: Double, inner: Double, points: Int = 5,
                      outerRounding: Double = 0.2, innerRounding: Double = 0.12) -> EaselStampPath {
         let count = max(3, points) * 2
         var corners: [EaselPoint] = []
@@ -466,7 +466,7 @@ package struct EaselStampPath: Equatable {
         return roundedPolygon(corners, rounding: rounding)
     }
 
-    package static func ring(centre: EaselPoint, outer: Double, inner: Double, from start: Double, to end: Double) -> EaselStampPath {
+    static func ring(centre: EaselPoint, outer: Double, inner: Double, from start: Double, to end: Double) -> EaselStampPath {
         func point(_ degrees: Double, _ radius: Double) -> EaselPoint {
             EaselPoint(x: centre.x + cos(degrees * .pi / 180) * radius, y: centre.y + sin(degrees * .pi / 180) * radius)
         }
@@ -524,7 +524,7 @@ package struct EaselStampLayer: Equatable {
     package var opacity: Double = 1
     package var filled = true
     package var outline: Double?
-    package init(path: EaselStampPath, tone: EaselStampTone, opacity: Double = 1, filled: Bool = true, outline: Double? = nil) {
+    init(path: EaselStampPath, tone: EaselStampTone, opacity: Double = 1, filled: Bool = true, outline: Double? = nil) {
         self.path = path
         self.tone = tone
         self.opacity = opacity
@@ -533,14 +533,14 @@ package struct EaselStampLayer: Equatable {
     }
 }
 
-package struct EaselStampColors: Equatable {
-    package var base: String
-    package var shade: String
-    package var light = "#FFFFFF"
-    package var glyph = "#FFFFFF"
-    package var detail = "#FFFFFF"
-    package var accent = "#FFFFFF"
-    package init(base: String, shade: String, light: String = "#FFFFFF", glyph: String = "#FFFFFF", detail: String = "#FFFFFF", accent: String = "#FFFFFF") {
+struct EaselStampColors: Equatable {
+    var base: String
+    var shade: String
+    var light = "#FFFFFF"
+    var glyph = "#FFFFFF"
+    var detail = "#FFFFFF"
+    var accent = "#FFFFFF"
+    init(base: String, shade: String, light: String = "#FFFFFF", glyph: String = "#FFFFFF", detail: String = "#FFFFFF", accent: String = "#FFFFFF") {
         self.base = base
         self.shade = shade
         self.light = light
@@ -553,11 +553,11 @@ package struct EaselStampColors: Equatable {
 package enum EaselStampArt {
     package static let box = 100.0
     static let rim = "#FFFFFF"
-    package static let shadow = "#000000"
+    static let shadow = "#000000"
     package static let rimWidth = 9.0
     private static let centre = EaselPoint(x: 50, y: 50)
 
-    package static func colors(_ design: EaselStampDesign) -> EaselStampColors {
+    static func colors(_ design: EaselStampDesign) -> EaselStampColors {
         switch design {
         case .plusOne: return EaselStampColors(base: "#3D7EF0", shade: "#2C5FC4")
         case .dot: return EaselStampColors(base: "#8B5CF6", shade: "#6B3FD6")
@@ -584,7 +584,7 @@ package enum EaselStampArt {
         }
     }
 
-    package static func silhouette(_ design: EaselStampDesign) -> EaselStampPath {
+    static func silhouette(_ design: EaselStampDesign) -> EaselStampPath {
         switch design {
         case .heart: return heart
         case .star: return star(outer: 42, inner: 21)
@@ -699,7 +699,7 @@ package enum EaselStampArt {
 }
 
 extension EaselVectorExport {
-    package static func stamp(_ item: EaselItem, _ picture: EaselVectorImage?) -> String {
+    static func stamp(_ item: EaselItem, _ picture: EaselVectorImage?) -> String {
         guard let face = EaselStampFace(item: item) else { return "" }
         let f = item.frame
         switch face {

@@ -18,7 +18,7 @@ package final class EaselTabIcons {
 
     package static let shared = EaselTabIcons()
     private static let sharedWorker = NoteFileWorker(label: "org.parc.easels.tab-icons", qos: .utility)
-    package var worker = EaselTabIcons.sharedWorker
+    var worker = EaselTabIcons.sharedWorker
 
     package let changes = PassthroughSubject<Set<String>?, Never>()
     package var directory: (UUID) -> URL? = { _ in nil }
@@ -32,7 +32,7 @@ package final class EaselTabIcons {
     private var subscriptions: [AnyCancellable] = []
     package let files: NoteFiles
 
-    package init(files: NoteFiles? = nil) {
+    init(files: NoteFiles? = nil) {
         let files = files ?? .shared
         self.files = files
         subscriptions = [
@@ -57,11 +57,11 @@ package final class EaselTabIcons {
         change.map { $0.contains(key) } ?? true
     }
 
-    package func key(profile: UUID, id: UUID) -> String? {
+    func key(profile: UUID, id: UUID) -> String? {
         directory(profile).map { Self.key(directory: $0, id: id) }
     }
 
-    package func lookup(profile: UUID, id: UUID) -> NoteTabIcons.Lookup {
+    func lookup(profile: UUID, id: UUID) -> NoteTabIcons.Lookup {
         guard let directory = directory(profile) else { return .known(nil) }
         return lookup(directory: directory, id: id)
     }
@@ -97,7 +97,7 @@ package final class EaselTabIcons {
         followed[identifier] = Followed(session: session, key: key, subscription: subscription)
     }
 
-    package func forget() {
+    func forget() {
         known.removeAll()
         reading.removeAll()
         followed.removeAll()

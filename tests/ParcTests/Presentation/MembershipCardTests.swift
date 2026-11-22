@@ -1,6 +1,6 @@
 import AppKit
 import Testing
-import ParcCore
+@testable import ParcCore
 @testable import Parc
 
 struct MembershipCardTests {

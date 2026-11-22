@@ -45,7 +45,7 @@ package enum PinnedSectionCollapse {
         static let shownIcons = 4
         package var tabs: [BrowserTab]
         package var count: Int
-        package var hidden: Int { max(0, count - tabs.count) }
+        var hidden: Int { max(0, count - tabs.count) }
 
         package init(tabs: [BrowserTab], count: Int) {
             self.tabs = tabs

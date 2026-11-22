@@ -39,12 +39,12 @@ package enum EaselResizeHandle: Int, CaseIterable {
     package var movesBottom: Bool { self == .bottomLeft || self == .bottomRight || self == .bottom }
     package var isCorner: Bool { rawValue < 4 }
 
-    package func point(in rect: EaselRect) -> EaselPoint {
+    func point(in rect: EaselRect) -> EaselPoint {
         EaselPoint(x: movesLeft ? rect.x : movesRight ? rect.x + rect.width : rect.x + rect.width / 2,
                    y: movesTop ? rect.y : movesBottom ? rect.y + rect.height : rect.y + rect.height / 2)
     }
 
-    package func hitRect(in rect: EaselRect, scale: Double = 1) -> EaselRect? {
+    func hitRect(in rect: EaselRect, scale: Double = 1) -> EaselRect? {
         guard scale.isFinite, scale > 0 else { return nil }
         let point = point(in: rect), radius = 10 / scale, thickness = 10 / scale
         if isCorner { return .init(x: point.x - radius, y: point.y - radius, width: 2 * radius, height: 2 * radius) }
@@ -58,13 +58,13 @@ package enum EaselResizeHandle: Int, CaseIterable {
 
 package enum EaselArrowEndpoint: CaseIterable {
     case start, end
-    package func index(in item: EaselItem) -> Int { self == .start ? 0 : item.points.count - 1 }
-    package func point(in item: EaselItem) -> EaselPoint? {
+    func index(in item: EaselItem) -> Int { self == .start ? 0 : item.points.count - 1 }
+    func point(in item: EaselItem) -> EaselPoint? {
         guard item.kind == .arrow, item.points.count == 2 else { return nil }
         let p = item.points[index(in: item)]
         return .init(x: item.frame.x + p.x, y: item.frame.y + p.y)
     }
-    package func hitRect(in item: EaselItem, scale: Double = 1) -> EaselRect? {
+    func hitRect(in item: EaselItem, scale: Double = 1) -> EaselRect? {
         guard let p = point(in: item), scale.isFinite, scale > 0 else { return nil }
         let radius = 10 / scale
         return .init(x: p.x - radius, y: p.y - radius, width: 2 * radius, height: 2 * radius)
@@ -76,13 +76,13 @@ package struct EaselResizeCentering: OptionSet {
     package init(rawValue: Int) {
         self.rawValue = rawValue
     }
-    package static let horizontal = Self(rawValue: 1)
-    package static let vertical = Self(rawValue: 2)
-    package static let both: Self = [.horizontal, .vertical]
+    static let horizontal = Self(rawValue: 1)
+    static let vertical = Self(rawValue: 2)
+    static let both: Self = [.horizontal, .vertical]
 }
 
 package struct EaselGeometryEdit {
-    package let documentID: UUID
+    let documentID: UUID
     package let originals: [EaselItem]
     package var ids: Set<UUID> { Set(originals.map(\.id)) }
 
@@ -158,7 +158,7 @@ package struct EaselGeometryEdit {
         resized(using: handle, x: x, y: y, centering: centered ? .both : [])
     }
 
-    package func resized(using handle: EaselResizeHandle, x: Double, y: Double, centering: EaselResizeCentering) -> [EaselItem]? {
+    func resized(using handle: EaselResizeHandle, x: Double, y: Double, centering: EaselResizeCentering) -> [EaselItem]? {
         if resizesRotated { return rotatedResize(using: handle, x: x, y: y, centering: centering, preservingAspect: false) }
         guard let proposal = resizingFrame(using: handle, x: x, y: y, centering: centering) else { return nil }
         return mapped(to: proposal.frame, flipX: proposal.flipX, flipY: proposal.flipY)
@@ -304,7 +304,7 @@ package struct EaselGeometryEdit {
 }
 
 package struct EaselObjectCommand {
-    package let documentID: UUID
+    let documentID: UUID
     package let originals: [EaselItem]
     package var ids: Set<UUID> { Set(originals.map(\.id)) }
 
@@ -321,7 +321,7 @@ package struct EaselObjectCommand {
         return originals.allSatisfy { current[$0.id] == $0 }
     }
 
-    package func duplicates(in document: EaselDocument) -> [EaselItem]? {
+    func duplicates(in document: EaselDocument) -> [EaselItem]? {
         guard isCurrent(in: document) else { return nil }
         let maximum = document.items.map(\.zIndex).max() ?? 0
         guard maximum <= Int.max - originals.count else { return nil }
@@ -359,7 +359,7 @@ package enum EaselContentHitTest {
         }
     }
 
-    package static func intersects(_ rect: EaselRect, item: EaselItem, selected: Bool) -> Bool {
+    static func intersects(_ rect: EaselRect, item: EaselItem, selected: Bool) -> Bool {
         guard rect.width > 0, rect.height > 0 else { return false }
         if item.resolvedShape != nil, !EaselShapeGeometry.usesOriginalLook(item) {
             return EaselShapeGeometry.intersects(rect, item: item, selected: selected)
@@ -383,7 +383,7 @@ package enum EaselContentHitTest {
         default: return intersects(rect, r)
         }
     }
-    package static func contains(_ point: EaselPoint, rect: EaselRect) -> Bool {
+    static func contains(_ point: EaselPoint, rect: EaselRect) -> Bool {
         point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height
     }
     package static func intersects(_ a: EaselRect, _ b: EaselRect) -> Bool {
@@ -420,7 +420,7 @@ package enum EaselContentHitTest {
 package enum EaselAnchor: Int, CaseIterable {
     case left, right, centerX, top, bottom, centerY
     package var horizontal: Bool { rawValue < 3 }
-    package func value(in r: EaselRect) -> Double {
+    func value(in r: EaselRect) -> Double {
         switch self {
         case .left: return r.x
         case .right: return r.x + r.width
@@ -436,7 +436,7 @@ package struct EaselAlignmentGuides {
     package struct Segment: Equatable {
         package let start: EaselPoint
         package let end: EaselPoint
-        package init(start: EaselPoint, end: EaselPoint) {
+        init(start: EaselPoint, end: EaselPoint) {
             self.start = start
             self.end = end
         }
@@ -446,7 +446,7 @@ package struct EaselAlignmentGuides {
         let coordinate: Double
         package let targetSegments: [Segment]
         package let anchorSegments: [Segment]
-        package init(anchor: EaselAnchor, coordinate: Double, targetSegments: [Segment], anchorSegments: [Segment]) {
+        init(anchor: EaselAnchor, coordinate: Double, targetSegments: [Segment], anchorSegments: [Segment]) {
             self.anchor = anchor
             self.coordinate = coordinate
             self.targetSegments = targetSegments

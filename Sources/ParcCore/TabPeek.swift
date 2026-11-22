@@ -6,7 +6,7 @@ package struct TabPeekCandidate: Equatable {
     package enum Shown: Equatable { case none, peek(canClose: Bool), tab(UUID, canClose: Bool) }
     package enum Content: Equatable { case web, document, unsupported }
 
-    package var tabID: UUID
+    var tabID: UUID
     package var windowAdmits = true
     package var parentCanHost = true
     package var inActiveSpace = true
@@ -121,8 +121,8 @@ package struct TabPeekSession: Equatable {
 
     package let tabID: UUID
     package private(set) var phase: Phase
-    package private(set) var page: String?
-    package private(set) var loads: Int
+    private(set) var page: String?
+    private(set) var loads: Int
 
     package init?(tabID: UUID, plan: TabPeekPlan) {
         self.tabID = tabID
@@ -156,7 +156,7 @@ package struct TabPeekSession: Equatable {
         return [.returnPage(page), .finish]
     }
 
-    package mutating func promote() -> [Effect] {
+    mutating func promote() -> [Effect] {
         guard phase == .shown, let page else { return [] }
         phase = .promoting
         return [.returnPage(page), .exit]
@@ -217,7 +217,7 @@ package enum TabPeekSplitRefusal: Equatable {
 }
 
 package enum TabPeekSplit {
-    package static let paneLimit = 4
+    static let paneLimit = 4
 
     package static func refusal(_ facts: TabPeekSplitFacts) -> TabPeekSplitRefusal? {
         guard facts.peekInteractive, facts.tabUsable, facts.parentSelected else { return .unavailable }

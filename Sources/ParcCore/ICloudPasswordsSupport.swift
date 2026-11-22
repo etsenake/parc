@@ -2,17 +2,17 @@ import Foundation
 import Security
 
 package enum ICloudPasswordsSupport {
-    package enum Helper: Equatable {
+    enum Helper: Equatable {
         case unrestricted
         case restricted(Data)
     }
 
-    package struct Signer {
-        package var identifier: String?
+    struct Signer {
+        var identifier: String?
         var team: String?
         var entitlements: [String: Any] = [:]
 
-        package static var current: Signer {
+        static var current: Signer {
             var code: SecCode?
             var staticCode: SecStaticCode?
             var information: CFDictionary?
@@ -27,7 +27,7 @@ package enum ICloudPasswordsSupport {
         }
     }
 
-    package static let manifest = URL(fileURLWithPath: "/Library/Google/Chrome/NativeMessagingHosts/com.apple.passwordmanager.json")
+    static let manifest = URL(fileURLWithPath: "/Library/Google/Chrome/NativeMessagingHosts/com.apple.passwordmanager.json")
     static let systemHelper = URL(fileURLWithPath:
         "/System/Cryptexes/App/System/Library/CoreServices/PasswordManagerBrowserExtensionHelper.app/Contents/MacOS/PasswordManagerBrowserExtensionHelper")
 
@@ -35,7 +35,7 @@ package enum ICloudPasswordsSupport {
         connects(helper: installedHelper(), signer: .current, on: ProcessInfo.processInfo.operatingSystemVersion)
     }
 
-    package static func connects(helper: Helper?, signer: @autoclosure () -> Signer, on version: OperatingSystemVersion) -> Bool {
+    static func connects(helper: Helper?, signer: @autoclosure () -> Signer, on version: OperatingSystemVersion) -> Bool {
         let release = (version.majorVersion, version.minorVersion)
         guard release >= (14, 0) else { return false }
         switch helper {

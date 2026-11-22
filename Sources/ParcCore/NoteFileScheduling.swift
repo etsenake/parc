@@ -4,9 +4,9 @@ import Foundation
 package final class NoteFileTimer {
     private var cancellation: (@MainActor () -> Void)?
 
-    package init(cancel: @escaping @MainActor () -> Void) { cancellation = cancel }
+    init(cancel: @escaping @MainActor () -> Void) { cancellation = cancel }
 
-    package func cancel() {
+    func cancel() {
         cancellation?()
         cancellation = nil
     }
@@ -30,7 +30,7 @@ package final class NoteFileSystemClock: NoteFileClock {
 
     package var now: Date { Date() }
 
-    package init() {}
+    init() {}
 
     package func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) -> NoteFileTimer {
         let box = NoteFileMainAction(action)
@@ -40,14 +40,14 @@ package final class NoteFileSystemClock: NoteFileClock {
     }
 }
 
-package final class NoteFileDeferredJobs: @unchecked Sendable {
+final class NoteFileDeferredJobs: @unchecked Sendable {
     private var jobs: [@MainActor () -> Void] = []
 
-    package init() {}
+    init() {}
 
     fileprivate func add(_ job: @escaping @MainActor () -> Void) { jobs.append(job) }
 
-    package var isEmpty: Bool { jobs.isEmpty }
+    var isEmpty: Bool { jobs.isEmpty }
 
     @MainActor
     func runAll() {
@@ -59,19 +59,19 @@ package final class NoteFileDeferredJobs: @unchecked Sendable {
 }
 
 package final class NoteFileWorker: @unchecked Sendable {
-    package static let files = NoteFileWorker(label: "org.parc.notes.files")
-    package static let index = NoteFileWorker(label: "org.parc.notes.index", qos: .utility)
-    package static let inline = NoteFileWorker()
+    static let files = NoteFileWorker(label: "org.parc.notes.files")
+    static let index = NoteFileWorker(label: "org.parc.notes.index", qos: .utility)
+    static let inline = NoteFileWorker()
 
     private let queue: DispatchQueue?
     private let deferred: NoteFileDeferredJobs?
 
-    package init(label: String, qos: DispatchQoS = .userInitiated) {
+    init(label: String, qos: DispatchQoS = .userInitiated) {
         queue = DispatchQueue(label: label, qos: qos)
         deferred = nil
     }
 
-    package init(deferred jobs: NoteFileDeferredJobs) {
+    init(deferred jobs: NoteFileDeferredJobs) {
         queue = nil
         deferred = jobs
     }
@@ -81,7 +81,7 @@ package final class NoteFileWorker: @unchecked Sendable {
         deferred = nil
     }
 
-    package var isInline: Bool { queue == nil }
+    var isInline: Bool { queue == nil }
 
     @MainActor
     package func perform<Value>(_ work: @escaping () -> Value, then finish: @escaping @MainActor (Value) -> Void) {
@@ -97,7 +97,7 @@ package final class NoteFileWorker: @unchecked Sendable {
         queue.async { job.run() }
     }
 
-    package func sync<Value>(_ work: () throws -> Value) rethrows -> Value {
+    func sync<Value>(_ work: () throws -> Value) rethrows -> Value {
         guard let queue else { return try work() }
         return try queue.sync(execute: work)
     }

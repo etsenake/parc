@@ -11,7 +11,7 @@ package struct OnboardingDraft: Codable, Equatable {
         package var holdsImport: Bool { self == .bookmarks || self == .favorites || self == .continuedImport }
         package var showsImport: Bool { self == .bookmarks || self == .continuedImport }
 
-        package static var setupOrder: [Self] { setupOrder(includingAdBlockers: false) }
+        static var setupOrder: [Self] { setupOrder(includingAdBlockers: false) }
         package static func setupOrder(includingAdBlockers: Bool, continuingImport: Bool = false,
                                retaining current: Self? = nil) -> [Self] {
             var order: [Self] = [.bookmarks, .favorites]
@@ -22,8 +22,8 @@ package struct OnboardingDraft: Codable, Equatable {
             return order
         }
         package var current: Self { self == .introduction ? .bookmarks : self }
-        package var next: Self? { next(includingAdBlockers: false) }
-        package func next(includingAdBlockers: Bool, continuingImport: Bool = false) -> Self? {
+        var next: Self? { next(includingAdBlockers: false) }
+        func next(includingAdBlockers: Bool, continuingImport: Bool = false) -> Self? {
             switch self {
             case .introAnimation: return .sellIntro
             case .sellIntro: return .sellCompleted
@@ -35,18 +35,18 @@ package struct OnboardingDraft: Codable, Equatable {
                 return order[index + 1]
             }
         }
-        package var previous: Self? { previous(includingAdBlockers: false) }
-        package func previous(includingAdBlockers: Bool) -> Self? {
+        var previous: Self? { previous(includingAdBlockers: false) }
+        func previous(includingAdBlockers: Bool) -> Self? {
             let order = Self.setupOrder(includingAdBlockers: includingAdBlockers, retaining: current)
             guard let index = order.firstIndex(of: current), index > 0 else { return nil }
             return order[index - 1]
         }
     }
-    package struct Bookmark: Codable, Equatable {
-        package var title: String
-        package var url: String
+    struct Bookmark: Codable, Equatable {
+        var title: String
+        var url: String
 
-        package init(title: String, url: String) {
+        init(title: String, url: String) {
             self.title = title
             self.url = url
         }
@@ -54,14 +54,14 @@ package struct OnboardingDraft: Codable, Equatable {
     package enum ImportPage: String, Codable {
         case progress, bookmarks, passwordChoice, passwordFile
     }
-    package var version = 1
+    var version = 1
     package var spaceID: UUID
     package var stage: Stage = .introAnimation
     package var spaceName: String
     package var theme: SpaceTheme
     package var favoriteURLs: Set<String> = ["https://youtube.com", "https://calendar.google.com"]
     var favoriteOrder: [String]? = ["https://youtube.com", "https://calendar.google.com"]
-    package var bookmarks: [Bookmark] = []
+    var bookmarks: [Bookmark] = []
     var bookmarkFileName: String?
     package var defaultBrowserChoice: Bool?
     package var iCloudPasswordsProfileID: UUID?
@@ -176,9 +176,9 @@ package struct OnboardingDraft: Codable, Equatable {
         package let title: String
         package let url: String
         package var artwork: String { "favorite-" + id }
-        package var bookmark: Bookmark { .init(title: title, url: url) }
+        var bookmark: Bookmark { .init(title: title, url: url) }
 
-        package init(id: String, title: String, url: String) {
+        init(id: String, title: String, url: String) {
             self.id = id
             self.title = title
             self.url = url

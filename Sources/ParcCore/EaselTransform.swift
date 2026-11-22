@@ -2,7 +2,7 @@ import Foundation
 
 package struct EaselTransform: Equatable {
     package var a = 1.0, b = 0.0, c = 0.0, d = 1.0, tx = 0.0, ty = 0.0
-    package init(a: Double = 1.0, b: Double = 0.0, c: Double = 0.0, d: Double = 1.0, tx: Double = 0.0, ty: Double = 0.0) {
+    init(a: Double = 1.0, b: Double = 0.0, c: Double = 0.0, d: Double = 1.0, tx: Double = 0.0, ty: Double = 0.0) {
         self.a = a
         self.b = b
         self.c = c
@@ -11,7 +11,7 @@ package struct EaselTransform: Equatable {
         self.ty = ty
     }
 
-    package static let identity = EaselTransform()
+    static let identity = EaselTransform()
 
     package static func rotation(degrees: Double, around center: EaselPoint) -> EaselTransform {
         guard degrees.isFinite, degrees.truncatingRemainder(dividingBy: 360) != 0 else { return .identity }
@@ -24,7 +24,7 @@ package struct EaselTransform: Equatable {
                               ty: center.y - center.x * sine - center.y * cosine)
     }
 
-    package static func translation(x: Double, y: Double) -> EaselTransform { EaselTransform(tx: x, ty: y) }
+    static func translation(x: Double, y: Double) -> EaselTransform { EaselTransform(tx: x, ty: y) }
 
     package var isIdentity: Bool { self == .identity }
 
@@ -36,7 +36,7 @@ package struct EaselTransform: Equatable {
         EaselPoint(x: a * vector.x + c * vector.y, y: b * vector.x + d * vector.y)
     }
 
-    package var inverted: EaselTransform? {
+    var inverted: EaselTransform? {
         let determinant = a * d - b * c
         guard determinant.isFinite, abs(determinant) > 1e-12 else { return nil }
         return EaselTransform(a: d / determinant, b: -b / determinant, c: -c / determinant, d: a / determinant,
@@ -49,7 +49,7 @@ package struct EaselTransform: Equatable {
                               tx: horizontally ? 2 * center.x : 0, ty: vertically ? 2 * center.y : 0)
     }
 
-    package func concatenating(_ next: EaselTransform) -> EaselTransform {
+    func concatenating(_ next: EaselTransform) -> EaselTransform {
         EaselTransform(a: next.a * a + next.c * b, b: next.b * a + next.d * b,
                        c: next.a * c + next.c * d, d: next.b * c + next.d * d,
                        tx: next.a * tx + next.c * ty + next.tx, ty: next.b * tx + next.d * ty + next.ty)
@@ -95,12 +95,12 @@ package enum EaselRotation {
         return abs(value) < 1e-9 ? 0 : value
     }
 
-    package static func stored(_ degrees: Double) -> Double? {
+    static func stored(_ degrees: Double) -> Double? {
         let value = normalized((normalized(degrees) * 100).rounded() / 100)
         return value == 0 ? nil : value
     }
 
-    package static func snapped(_ degrees: Double, step: Double = dragStep) -> Double {
+    static func snapped(_ degrees: Double, step: Double = dragStep) -> Double {
         guard degrees.isFinite, step > 0 else { return 0 }
         return (degrees / step).rounded() * step
     }
@@ -126,7 +126,7 @@ package enum EaselRotation {
         .mirror(horizontally: mirrorsHorizontally(item), vertically: mirrorsVertically(item), around: center(of: rect))
     }
 
-    package static func canvasPoint(_ point: EaselPoint, in item: EaselItem) -> EaselPoint { transform(for: item).apply(point) }
+    static func canvasPoint(_ point: EaselPoint, in item: EaselItem) -> EaselPoint { transform(for: item).apply(point) }
 
     static func localPoint(_ point: EaselPoint, in item: EaselItem) -> EaselPoint {
         let forward = transform(for: item)
@@ -139,7 +139,7 @@ package enum EaselRotation {
          EaselPoint(x: r.x + r.width, y: r.y + r.height), EaselPoint(x: r.x, y: r.y + r.height)]
     }
 
-    package static func polygon(of item: EaselItem) -> [EaselPoint] {
+    static func polygon(of item: EaselItem) -> [EaselPoint] {
         let forward = transform(for: item)
         return corners(of: item.frame).map(forward.apply)
     }
@@ -150,7 +150,7 @@ package enum EaselRotation {
         return EaselTransform.rotation(degrees: angle, around: center(of: item.frame)).bounds(of: item.frame)
     }
 
-    package static func bounds(of items: [EaselItem]) -> EaselRect? {
+    static func bounds(of items: [EaselItem]) -> EaselRect? {
         guard let first = items.first else { return nil }
         let start = bounds(of: first)
         var left = start.x, top = start.y, right = start.x + start.width, bottom = start.y + start.height
@@ -173,7 +173,7 @@ package enum EaselRotation {
         return (inverse.apply(point), upright(item))
     }
 
-    package static func intersects(_ rect: EaselRect, item: EaselItem, selected: Bool) -> Bool? {
+    static func intersects(_ rect: EaselRect, item: EaselItem, selected: Bool) -> Bool? {
         guard isTransformed(item), let inverse = transform(for: item).inverted else { return nil }
         guard rect.width > 0, rect.height > 0 else { return false }
         let area = corners(of: rect).map(inverse.apply), r = item.frame
@@ -185,7 +185,7 @@ package enum EaselRotation {
         }
     }
 
-    package static func contains(_ point: EaselPoint, polygon: [EaselPoint]) -> Bool {
+    static func contains(_ point: EaselPoint, polygon: [EaselPoint]) -> Bool {
         guard polygon.count >= 3 else { return false }
         var inside = false, previous = polygon[polygon.count - 1]
         for current in polygon {
@@ -213,7 +213,7 @@ package enum EaselRotation {
         return true
     }
 
-    package static func ellipse(_ r: EaselRect, overlaps polygon: [EaselPoint]) -> Bool {
+    static func ellipse(_ r: EaselRect, overlaps polygon: [EaselPoint]) -> Bool {
         guard r.width > 0, r.height > 0, polygon.count >= 3 else { return false }
         let middle = center(of: r)
         let unit = polygon.map { EaselPoint(x: ($0.x - middle.x) / (r.width / 2), y: ($0.y - middle.y) / (r.height / 2)) }
@@ -224,13 +224,13 @@ package enum EaselRotation {
         }
     }
 
-    package static func distance(_ p: EaselPoint, from a: EaselPoint, to b: EaselPoint) -> Double {
+    static func distance(_ p: EaselPoint, from a: EaselPoint, to b: EaselPoint) -> Double {
         let dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy
         let t = length > 0 ? min(1, max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length)) : 0
         return hypot(p.x - a.x - t * dx, p.y - a.y - t * dy)
     }
 
-    package static func angle(of point: EaselPoint, around center: EaselPoint) -> Double? {
+    static func angle(of point: EaselPoint, around center: EaselPoint) -> Double? {
         let dx = point.x - center.x, dy = point.y - center.y
         guard dx.isFinite, dy.isFinite, hypot(dx, dy) > 1e-6 else { return nil }
         return atan2(dy, dx) * 180 / .pi
@@ -257,7 +257,7 @@ package enum EaselRotation {
                 item.frame.height * hypot(scaleX * sine, scaleY * cosine))
     }
 
-    package static func mirrored(_ item: EaselItem, horizontally: Bool, across pivot: EaselPoint, moves: Bool) -> EaselItem {
+    static func mirrored(_ item: EaselItem, horizontally: Bool, across pivot: EaselPoint, moves: Bool) -> EaselItem {
         var next = item
         if moves {
             let middle = center(of: item.frame)
@@ -272,7 +272,7 @@ package enum EaselRotation {
         return next
     }
 
-    package static func flipped(_ items: [EaselItem], horizontally: Bool) -> [EaselItem]? {
+    static func flipped(_ items: [EaselItem], horizontally: Bool) -> [EaselItem]? {
         guard canFlip(items), let box = bounds(of: items) else { return nil }
         let pivot = center(of: box), moves = items.count > 1
         return items.map { item in
@@ -288,7 +288,7 @@ package enum EaselRotation {
         }
     }
 
-    package static func rotated(_ items: [EaselItem], by delta: Double, around pivot: EaselPoint) -> [EaselItem]? {
+    static func rotated(_ items: [EaselItem], by delta: Double, around pivot: EaselPoint) -> [EaselItem]? {
         guard delta.isFinite, canRotate(items) else { return nil }
         let turn = EaselTransform.rotation(degrees: delta, around: pivot), moves = items.count > 1
         return items.map { item in
@@ -306,7 +306,7 @@ package enum EaselRotation {
         }
     }
 
-    package static func reshaped(_ item: EaselItem, _ map: (EaselPoint) -> EaselPoint) -> EaselItem {
+    static func reshaped(_ item: EaselItem, _ map: (EaselPoint) -> EaselPoint) -> EaselItem {
         guard !item.points.isEmpty else { return item }
         var next = item
         let absolute = item.points.map { map(EaselPoint(x: item.frame.x + $0.x, y: item.frame.y + $0.y)) }
@@ -327,7 +327,7 @@ package enum EaselRotation {
 
 package struct EaselRotationDrag: Equatable {
     package let pivot: EaselPoint
-    package let startAngle: Double
+    let startAngle: Double
     package let baseRotation: Double?
 
     package init?(items: [EaselItem], pointer: EaselPoint) {
@@ -361,13 +361,13 @@ package struct EaselSelectionChrome: Equatable {
     }
 
     package var isTurned: Bool { !transform.isIdentity }
-    package var corners: [EaselPoint] { EaselRotation.corners(of: frame).map(transform.apply) }
-    package var center: EaselPoint { transform.apply(EaselRotation.center(of: frame)) }
+    var corners: [EaselPoint] { EaselRotation.corners(of: frame).map(transform.apply) }
+    var center: EaselPoint { transform.apply(EaselRotation.center(of: frame)) }
 
     package func point(_ handle: EaselResizeHandle) -> EaselPoint { transform.apply(handle.point(in: frame)) }
     package func local(_ point: EaselPoint) -> EaselPoint { transform.inverted?.apply(point) ?? point }
 
-    package func handle(at point: EaselPoint, scale: Double, where shows: (EaselResizeHandle) -> Bool) -> EaselResizeHandle? {
+    func handle(at point: EaselPoint, scale: Double, where shows: (EaselResizeHandle) -> Bool) -> EaselResizeHandle? {
         let inside = local(point)
         return EaselResizeHandle.allCases.first { handle in
             guard shows(handle), let r = handle.hitRect(in: frame, scale: scale) else { return false }

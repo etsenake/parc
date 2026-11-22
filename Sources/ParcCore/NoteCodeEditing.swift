@@ -5,13 +5,13 @@ package struct NoteCodeEdit: Hashable {
     package var replacement: String
     package var selection: Range<Int>
 
-    package init(range: Range<Int>, replacement: String, selection: Range<Int>) {
+    init(range: Range<Int>, replacement: String, selection: Range<Int>) {
         self.range = range
         self.replacement = replacement
         self.selection = selection
     }
 
-    package func applied(to text: String) -> String {
+    func applied(to text: String) -> String {
         (text as NSString).replacingCharacters(in: NSRange(location: range.lowerBound, length: range.count), with: replacement)
     }
 }
@@ -20,7 +20,7 @@ package enum NoteCodeIndent: Hashable {
     case spaces(Int)
     case tab(Int)
 
-    package var unit: String {
+    var unit: String {
         switch self {
         case .spaces(let width): return String(repeating: " ", count: width)
         case .tab: return "\t"
@@ -220,7 +220,7 @@ package enum NoteCodeEditing {
         return characters.substring(to: lineEnd(of: end, in: characters))
     }
 
-    package static func lineRange(at offset: Int, in text: String) -> Range<Int> {
+    static func lineRange(at offset: Int, in text: String) -> Range<Int> {
         let characters = text as NSString
         let clamped = min(max(0, offset), characters.length)
         return lineStart(of: clamped, in: characters)..<lineEnd(of: clamped, in: characters)

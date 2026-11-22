@@ -6,8 +6,8 @@ package enum HistorySwipeDirection: Equatable {
 }
 
 package struct HistorySwipePoint: Equatable {
-    package var x: Double
-    package var y: Double
+    var x: Double
+    var y: Double
 
     package init(x: Double, y: Double) {
         self.x = x
@@ -33,11 +33,11 @@ package enum HistorySwipeTouchPhase: Equatable {
 }
 
 package struct HistorySwipeScroll: Equatable {
-    package var phase: HistorySwipeEventPhase
-    package var momentumPhase: HistorySwipeEventPhase = .none
-    package var deltaX = 0.0
-    package var deltaY = 0.0
-    package var directionInverted: Bool
+    var phase: HistorySwipeEventPhase
+    var momentumPhase: HistorySwipeEventPhase = .none
+    var deltaX = 0.0
+    var deltaY = 0.0
+    var directionInverted: Bool
 
     package init(phase: HistorySwipeEventPhase, momentumPhase: HistorySwipeEventPhase = .none, deltaX: Double = 0.0, deltaY: Double = 0.0, directionInverted: Bool) {
         self.phase = phase
@@ -54,10 +54,10 @@ package enum HistorySwipePageScroll: Equatable {
 }
 
 package struct HistorySwipeTrackedUpdate: Equatable {
-    package var generation: Int
-    package var amount: Double
-    package var phase: HistorySwipeEventPhase
-    package var isComplete = false
+    var generation: Int
+    var amount: Double
+    var phase: HistorySwipeEventPhase
+    var isComplete = false
 
     package init(generation: Int, amount: Double, phase: HistorySwipeEventPhase, isComplete: Bool = false) {
         self.generation = generation
@@ -103,10 +103,10 @@ package enum HistorySwipeOutput: Equatable {
 }
 
 package struct HistorySwipeTrackingRequest: Equatable {
-    package var direction: HistorySwipeDirection
+    var direction: HistorySwipeDirection
     package var generation: Int
 
-    package init(direction: HistorySwipeDirection, generation: Int) {
+    init(direction: HistorySwipeDirection, generation: Int) {
         self.direction = direction
         self.generation = generation
     }
@@ -138,7 +138,7 @@ package protocol HistorySwipeEnvironment {
 }
 
 extension HistorySwipeEnvironment {
-    package func dismisses(toward direction: HistorySwipeDirection) -> Bool { false }
+    func dismisses(toward direction: HistorySwipeDirection) -> Bool { false }
 }
 
 package protocol HistorySwipeShell: AnyObject {
@@ -146,7 +146,7 @@ package protocol HistorySwipeShell: AnyObject {
 }
 
 package final class HistorySwipeController {
-    package private(set) var recognizer: HistorySwipeRecognizer
+    private(set) var recognizer: HistorySwipeRecognizer
     private weak var shell: (any HistorySwipeShell)?
 
     package init(shell: any HistorySwipeShell, parameters: HistorySwipeParameters = .dia) {

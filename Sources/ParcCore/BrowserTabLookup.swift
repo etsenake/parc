@@ -1,14 +1,14 @@
 import Foundation
 
-package final class BrowserTabLookup {
-    package enum Match: Equatable { case found(Int), absent, ambiguous }
+final class BrowserTabLookup {
+    enum Match: Equatable { case found(Int), absent, ambiguous }
 
     private struct Table {
         let ids: [UUID]
         let positions: [UUID: Int]
         let ambiguous: Bool
 
-        package init(ids: [UUID], positions: [UUID: Int], ambiguous: Bool) {
+        init(ids: [UUID], positions: [UUID: Int], ambiguous: Bool) {
             self.ids = ids
             self.positions = positions
             self.ambiguous = ambiguous
@@ -21,17 +21,17 @@ package final class BrowserTabLookup {
     private var open: [BrowserTab]?
     private var archived: [BrowserTab]?
 
-    package init(after previous: BrowserTabLookup?) {
+    init(after previous: BrowserTabLookup?) {
         predecessor = previous?.reusableSource
     }
 
-    package func match(_ id: UUID, in tabs: [BrowserTab]) -> Match {
+    func match(_ id: UUID, in tabs: [BrowserTab]) -> Match {
         let table = resolvedTable(for: tabs)
         if table.ambiguous { return .ambiguous }
         return table.positions[id].map(Match.found) ?? .absent
     }
 
-    package func openTabs(in tabs: [BrowserTab]) -> [BrowserTab] {
+    func openTabs(in tabs: [BrowserTab]) -> [BrowserTab] {
         lock.lock(); defer { lock.unlock() }
         if let open { return open }
         let built = tabs.filter { $0.archivedAt == nil }
@@ -39,7 +39,7 @@ package final class BrowserTabLookup {
         return built
     }
 
-    package func archivedTabs(in tabs: [BrowserTab]) -> [BrowserTab] {
+    func archivedTabs(in tabs: [BrowserTab]) -> [BrowserTab] {
         lock.lock(); defer { lock.unlock() }
         if let archived { return archived }
         let built = tabs.filter { $0.archivedAt != nil }
@@ -82,9 +82,9 @@ package final class BrowserTabLookup {
     }
 }
 
-package struct BrowserTabLookupSlot: Equatable {
-    package var lookup: BrowserTabLookup?
-    package static func == (_: Self, _: Self) -> Bool { true }
+struct BrowserTabLookupSlot: Equatable {
+    var lookup: BrowserTabLookup?
+    static func == (_: Self, _: Self) -> Bool { true }
 }
 
 extension BrowserState {

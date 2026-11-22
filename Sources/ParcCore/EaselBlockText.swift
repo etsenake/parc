@@ -13,7 +13,7 @@ package enum EaselBlockText {
         package var kind: Kind
         package var depth: Int
         package var text: NoteText
-        package init(kind: Kind, depth: Int, text: NoteText) {
+        init(kind: Kind, depth: Int, text: NoteText) {
             self.kind = kind
             self.depth = depth
             self.text = text
@@ -74,7 +74,7 @@ package enum EaselBlockText {
         return result
     }
 
-    package static func reference(_ block: NoteBlock) -> NoteText? {
+    static func reference(_ block: NoteBlock) -> NoteText? {
         let source = block.props.source ?? block.props.target ?? ""
         let label = [block.text.plainText, block.props.bookmark?.title ?? "", block.props.alt ?? "", block.props.caption.plainText]
             .first { !$0.isEmpty } ?? ""
@@ -89,7 +89,7 @@ package enum EaselBlockText {
         return marks
     }
 
-    package static func flattened(_ text: NoteText) -> NoteText {
+    static func flattened(_ text: NoteText) -> NoteText {
         var pieces: [(String, NoteMarks)] = []
         for run in text.runs() {
             var marks = run.marks

@@ -3,18 +3,18 @@ import Foundation
 package struct CaptureNoteDestination: Equatable, Identifiable {
     static let catalogLimit = 50
 
-    package let url: URL
-    package let title: String
-    package let icon: String?
-    package let lastActive: Date?
-    package let modifiedAt: Date
+    let url: URL
+    let title: String
+    let icon: String?
+    let lastActive: Date?
+    let modifiedAt: Date
 
     package var id: String { "note:" + NoteFilePaths.key(for: url) }
 
     package struct Activity {
-        package let url: URL
-        package let profileID: UUID
-        package let date: Date
+        let url: URL
+        let profileID: UUID
+        let date: Date
 
         package init(url: URL, profileID: UUID, date: Date) {
             self.url = url
@@ -38,7 +38,7 @@ package struct CaptureNoteDestination: Equatable, Identifiable {
         return Array(ranked(destinations).prefix(max(0, limit)))
     }
 
-    package static func ranked(_ destinations: [Self]) -> [Self] {
+    static func ranked(_ destinations: [Self]) -> [Self] {
         destinations.sorted {
             let left = $0.lastActive ?? .distantPast, right = $1.lastActive ?? .distantPast
             if left != right { return left > right }
@@ -47,13 +47,13 @@ package struct CaptureNoteDestination: Equatable, Identifiable {
         }
     }
 
-    package static func search(_ destinations: [Self], query: String) -> [Self] {
+    static func search(_ destinations: [Self], query: String) -> [Self] {
         guard !query.isEmpty else { return destinations }
         let query = query.lowercased()
         return destinations.filter { $0.title.lowercased().contains(query) }
     }
 
-    package static func reselect(_ previousID: String?, in destinations: [Self]) -> Self? {
+    static func reselect(_ previousID: String?, in destinations: [Self]) -> Self? {
         guard let previousID else { return nil }
         return destinations.first { $0.id == previousID }
     }
@@ -67,7 +67,7 @@ package enum CaptureNoteTarget: Equatable {
     static let newNoteSymbol = "square.and.pencil"
     static let noteSymbol = "doc.text"
 
-    package var id: String {
+    var id: String {
         switch self {
         case .newNote: return "newNote"
         case .note(let url): return "note:" + NoteFilePaths.key(for: url)

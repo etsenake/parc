@@ -9,7 +9,7 @@ package struct EmbeddedPageFingerprint: Equatable {
         matches = { ($0 as? Value) == value }
     }
 
-    package func unwrap<Value>(_ type: Value.Type) -> Value? { value as? Value }
+    func unwrap<Value>(_ type: Value.Type) -> Value? { value as? Value }
 
     package static func == (lhs: EmbeddedPageFingerprint, rhs: EmbeddedPageFingerprint) -> Bool { lhs.matches(rhs.value) }
 }
@@ -63,13 +63,13 @@ package struct EmbeddedPageSleepPolicy {
     package enum Protection: Equatable { case eligible, protected, unknown }
 
     package struct Candidate: Equatable {
-        package var lastShown: Date
-        package var shown: Bool
-        package var closing: Bool
-        package var transferring: Bool
-        package var editing: Bool
-        package var pendingCreation: Bool
-        package var pages: [Protection]
+        var lastShown: Date
+        var shown: Bool
+        var closing: Bool
+        var transferring: Bool
+        var editing: Bool
+        var pendingCreation: Bool
+        var pages: [Protection]
 
         package init(lastShown: Date, shown: Bool, closing: Bool, transferring: Bool, editing: Bool, pendingCreation: Bool, pages: [Protection]) {
             self.lastShown = lastShown

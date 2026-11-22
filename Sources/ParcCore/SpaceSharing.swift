@@ -13,15 +13,15 @@ package struct UnusedProfile: Equatable {
     package let id: UUID
     package let name: String
 
-    package init(id: UUID, name: String) {
+    init(id: UUID, name: String) {
         self.id = id
         self.name = name
     }
 }
 
 package struct SpaceSharingChange: Equatable {
-    package let spaceID: UUID
-    package let profileID: UUID
+    let spaceID: UUID
+    let profileID: UUID
     let previousProfileID: UUID
     package let unusedProfile: UnusedProfile?
 }
@@ -32,7 +32,7 @@ package enum SpaceSharingWarning: Equatable {
 
     package static let deletionNote = "This also deletes its logins, saved passwords and history. This can’t be undone."
 
-    package static func choose(_ sharing: SpaceDataSharing, space: String, target: String?, joinsOtherData: Bool,
+    static func choose(_ sharing: SpaceDataSharing, space: String, target: String?, joinsOtherData: Bool,
                        spaceSharesData: Bool, discardsOwnData: Bool) -> SpaceSharingWarning? {
         switch sharing {
         case .share:
@@ -124,7 +124,7 @@ extension BrowserStore {
         return true
     }
 
-    package func unusedProfile(_ profileID: UUID) -> UnusedProfile? {
+    func unusedProfile(_ profileID: UUID) -> UnusedProfile? {
         guard let profile = state.profiles.first(where: { $0.id == profileID }),
               !state.spaces.contains(where: { $0.profileID == profileID }),
               !isProfileRemovalPending(profileID) else { return nil }
@@ -139,7 +139,7 @@ extension BrowserStore {
         return UnusedProfile(id: profile.id, name: profile.name)
     }
 
-    package func unusedProfile(ifSpace spaceID: UUID, joins sharing: SpaceDataSharing) -> UnusedProfile? {
+    func unusedProfile(ifSpace spaceID: UUID, joins sharing: SpaceDataSharing) -> UnusedProfile? {
         guard case .share(let otherID) = sharing,
               let space = state.spaces.first(where: { $0.id == spaceID }),
               let other = state.spaces.first(where: { $0.id == otherID }),

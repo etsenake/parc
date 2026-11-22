@@ -4,7 +4,7 @@ package struct SessionFileUnreadable: LocalizedError {
     package let underlying: Error
     package var errorDescription: String? { underlying.localizedDescription }
 
-    package init(underlying: Error) {
+    init(underlying: Error) {
         self.underlying = underlying
     }
 }
@@ -26,9 +26,9 @@ package final class SessionBackups {
     package struct Backup: Equatable {
         package let url: URL
         package let date: Date
-        package var sequence = 0
+        var sequence = 0
 
-        package init(url: URL, date: Date, sequence: Int = 0) {
+        init(url: URL, date: Date, sequence: Int = 0) {
             self.url = url
             self.date = date
             self.sequence = sequence
@@ -44,13 +44,13 @@ package final class SessionBackups {
         package let data: Data
     }
 
-    package enum Pruning: Equatable {
+    enum Pruning: Equatable {
         case all
         case since(Date)
         case addresses([[String]])
         case profile(UUID)
 
-        package init?(_ deletion: ChromiumHistoryDeletion) {
+        init?(_ deletion: ChromiumHistoryDeletion) {
             if deletion.all { self = .all; return }
             if deletion.range != nil, let addresses = deletion.rangeURLs, !addresses.isEmpty {
                 self = .addresses(Self.values(addresses)); return
@@ -68,13 +68,13 @@ package final class SessionBackups {
             addresses.sorted().map { ["\"" + $0 + "\"", "\"" + $0.replacingOccurrences(of: "/", with: "\\/") + "\""] }
         }
 
-        package func excluding(_ current: Data?) -> Self? {
+        func excluding(_ current: Data?) -> Self? {
             guard case .addresses(let items) = self, let current else { return self }
             let remaining = items.filter { !Self.found($0, in: current) }
             return remaining.isEmpty ? nil : .addresses(remaining)
         }
 
-        package func removed(from backups: [Backup]) -> [Backup] {
+        func removed(from backups: [Backup]) -> [Backup] {
             guard case .since = self else { return backups.filter(removes) }
             let written = backups.sorted { $1.isNewer(than: $0) }
             var laterMinimum = Array(repeating: Date.distantFuture, count: written.count)
@@ -109,33 +109,33 @@ package final class SessionBackups {
         }
     }
 
-    package static let folderName = "Sidebar Backups"
-    package static let interval: TimeInterval = 60 * 60
+    static let folderName = "Sidebar Backups"
+    static let interval: TimeInterval = 60 * 60
     static let recentCount = 6
     static let dailyCount = 7
     private static let stamp = Date.ISO8601FormatStyle(timeZone: TimeZone(identifier: "UTC")!)
         .year().month().day().dateSeparator(.omitted)
         .time(includingFractionalSeconds: false).timeSeparator(.omitted)
 
-    package let directory: URL
-    package let calendar: Calendar
+    let directory: URL
+    let calendar: Calendar
     private var lastBackup: Date?
     private var lastBackupKnown = false
 
-    package init(directory: URL, calendar: Calendar = .current) {
+    init(directory: URL, calendar: Calendar = .current) {
         self.directory = directory
         self.calendar = calendar
     }
 
-    package static func folder(in directory: URL) -> URL {
+    static func folder(in directory: URL) -> URL {
         directory.appendingPathComponent(folderName, isDirectory: true)
     }
 
-    package static func name(for date: Date, sequence: Int) -> String {
+    static func name(for date: Date, sequence: Int) -> String {
         "session-" + date.formatted(stamp) + "-\(sequence).json"
     }
 
-    package static func backup(named name: String, in folder: URL) -> Backup? {
+    static func backup(named name: String, in folder: URL) -> Backup? {
         guard name.hasPrefix("session-"), name.hasSuffix(".json") else { return nil }
         let fields = name.dropFirst("session-".count).dropLast(".json".count)
             .split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
@@ -152,7 +152,7 @@ package final class SessionBackups {
         return names.compactMap { backup(named: $0, in: folder) }.sorted { $0.isNewer(than: $1) }
     }
 
-    package static func retained(_ backups: [Backup], calendar: Calendar) -> Set<URL> {
+    static func retained(_ backups: [Backup], calendar: Calendar) -> Set<URL> {
         let newest = backups.sorted { $0.isNewer(than: $1) }
         var keep = Set(newest.prefix(recentCount).map(\.url))
         var days: [(day: Date, first: Backup)] = []
@@ -164,7 +164,7 @@ package final class SessionBackups {
         return keep
     }
 
-    package static func encoded(_ state: BrowserState) throws -> Data {
+    static func encoded(_ state: BrowserState) throws -> Data {
         var copy = state
         copy.history = []
         copy.downloads = []
@@ -202,12 +202,12 @@ package final class SessionBackups {
         }
     }
 
-    package func forget(_ pruning: Pruning) {
+    func forget(_ pruning: Pruning) {
         Self.prune(pruning, in: directory)
         lastBackupKnown = false
     }
 
-    package static func prune(_ pruning: Pruning, in directory: URL) {
+    static func prune(_ pruning: Pruning, in directory: URL) {
         for backup in pruning.removed(from: list(in: directory)) {
             try? FileManager.default.removeItem(at: backup.url)
         }

@@ -1,14 +1,14 @@
 import Foundation
 
 package struct NoteUnsplashPhoto: Hashable, Decodable, Identifiable, Sendable {
-    package struct URLs: Hashable, Decodable, Sendable {
-        package var raw: String?
-        package var full: String?
-        package var regular: String?
-        package var small: String?
-        package var thumb: String?
+    struct URLs: Hashable, Decodable, Sendable {
+        var raw: String?
+        var full: String?
+        var regular: String?
+        var small: String?
+        var thumb: String?
 
-        package init(raw: String? = nil, full: String? = nil, regular: String? = nil, small: String? = nil, thumb: String? = nil) {
+        init(raw: String? = nil, full: String? = nil, regular: String? = nil, small: String? = nil, thumb: String? = nil) {
             self.raw = raw
             self.full = full
             self.regular = regular
@@ -21,26 +21,26 @@ package struct NoteUnsplashPhoto: Hashable, Decodable, Identifiable, Sendable {
         package var html: String?
         var downloadLocation: String?
 
-        package init(html: String? = nil, downloadLocation: String? = nil) {
+        init(html: String? = nil, downloadLocation: String? = nil) {
             self.html = html
             self.downloadLocation = downloadLocation
         }
     }
 
-    package struct User: Hashable, Decodable, Sendable {
-        package struct Links: Hashable, Decodable, Sendable {
-            package var html: String?
+    struct User: Hashable, Decodable, Sendable {
+        struct Links: Hashable, Decodable, Sendable {
+            var html: String?
 
-            package init(html: String? = nil) {
+            init(html: String? = nil) {
                 self.html = html
             }
         }
 
-        package var name: String?
+        var name: String?
         var username: String
-        package var links: Links?
+        var links: Links?
 
-        package init(name: String? = nil, username: String, links: Links? = nil) {
+        init(name: String? = nil, username: String, links: Links? = nil) {
             self.name = name
             self.username = username
             self.links = links
@@ -48,16 +48,16 @@ package struct NoteUnsplashPhoto: Hashable, Decodable, Identifiable, Sendable {
     }
 
     package var id: String
-    package var width: Int?
-    package var height: Int?
-    package var color: String?
-    package var description: String?
+    var width: Int?
+    var height: Int?
+    var color: String?
+    var description: String?
     var altDescription: String?
-    package var urls: URLs
+    var urls: URLs
     package var links: Links
-    package var user: User
+    var user: User
 
-    package init(id: String, width: Int? = nil, height: Int? = nil, color: String? = nil, description: String? = nil, altDescription: String? = nil, urls: URLs, links: Links, user: User) {
+    init(id: String, width: Int? = nil, height: Int? = nil, color: String? = nil, description: String? = nil, altDescription: String? = nil, urls: URLs, links: Links, user: User) {
         self.id = id
         self.width = width
         self.height = height
@@ -69,7 +69,7 @@ package struct NoteUnsplashPhoto: Hashable, Decodable, Identifiable, Sendable {
         self.user = user
     }
 
-    package var aspectRatio: Double {
+    var aspectRatio: Double {
         guard let width, let height, width > 0, height > 0 else { return 1.5 }
         return Double(width) / Double(height)
     }
@@ -116,7 +116,7 @@ package enum NoteUnsplash {
         package var photos: [NoteUnsplashPhoto]
         package var hasMore: Bool
 
-        package init(photos: [NoteUnsplashPhoto], hasMore: Bool) {
+        init(photos: [NoteUnsplashPhoto], hasMore: Bool) {
             self.photos = photos
             self.hasMore = hasMore
         }
@@ -125,7 +125,7 @@ package enum NoteUnsplash {
     static let builtInAccessKey = ""
     static let accessKeyDefaultsKey = "NoteUnsplashAccessKey"
     static let apiBase = URL(string: "https://api.unsplash.com")!
-    package static let pageSize = 30
+    static let pageSize = 30
     package static let coverWidth = 2400
     package static let imageWidth = 2000
 
@@ -139,7 +139,7 @@ package enum NoteUnsplash {
 
     package static var isAvailable: Bool { accessKey() != nil }
 
-    package static func request(_ url: URL, key: String) -> URLRequest {
+    static func request(_ url: URL, key: String) -> URLRequest {
         var request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 20)
         request.setValue("Client-ID " + key, forHTTPHeaderField: "Authorization")
         request.setValue("v1", forHTTPHeaderField: "Accept-Version")
@@ -215,7 +215,7 @@ package enum NoteUnsplash {
         return nil
     }
 
-    package static func decoder() -> JSONDecoder {
+    static func decoder() -> JSONDecoder {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return decoder

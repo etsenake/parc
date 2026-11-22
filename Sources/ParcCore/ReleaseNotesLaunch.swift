@@ -2,16 +2,16 @@ import Foundation
 
 package struct AppVersion: Codable, Equatable {
     package var version: String
-    package var build: String
+    var build: String
 
-    package init(version: String, build: String) { self.version = version; self.build = build }
+    init(version: String, build: String) { self.version = version; self.build = build }
     package init?(infoDictionary info: [String: Any]?) {
         guard let version = info?["CFBundleShortVersionString"] as? String,
               let build = info?["CFBundleVersion"] as? String else { return nil }
         self.init(version: version, build: build)
     }
 
-    package func isNewer(than other: AppVersion) -> Bool {
+    func isNewer(than other: AppVersion) -> Bool {
         switch version.compare(other.version, options: .numeric) {
         case .orderedDescending: return true
         case .orderedAscending: return false
@@ -23,10 +23,10 @@ package struct AppVersion: Codable, Equatable {
 package struct ReleaseNotesLaunch: Codable, Equatable {
     var lastLaunched: AppVersion
     package var pending: AppVersion?
-    package var lastShown: AppVersion? = nil
+    var lastShown: AppVersion? = nil
     package var updatedFrom: AppVersion? = nil
 
-    package init(lastLaunched: AppVersion, pending: AppVersion? = nil, lastShown: AppVersion? = nil, updatedFrom: AppVersion? = nil) {
+    init(lastLaunched: AppVersion, pending: AppVersion? = nil, lastShown: AppVersion? = nil, updatedFrom: AppVersion? = nil) {
         self.lastLaunched = lastLaunched
         self.pending = pending
         self.lastShown = lastShown
@@ -56,7 +56,7 @@ package struct ReleaseNotesLaunch: Codable, Equatable {
         updatedFrom = nil
     }
 
-    package static func file(in directory: URL) -> URL { directory.appendingPathComponent("release-notes-launch.json") }
+    static func file(in directory: URL) -> URL { directory.appendingPathComponent("release-notes-launch.json") }
     package static func read(in directory: URL) -> ReleaseNotesLaunch? {
         (try? Data(contentsOf: file(in: directory))).flatMap { try? JSONDecoder().decode(Self.self, from: $0) }
     }

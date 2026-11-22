@@ -89,15 +89,15 @@ package final class NoteButtonPress {
     package typealias Confirm = @MainActor (String, @escaping @MainActor (Bool) -> Void) -> Void
     package typealias Open = @MainActor (String) -> Void
 
-    package let session: NotePageSession
-    package let button: NoteBlockID
-    package let actions: [NoteButtonAction]
+    let session: NotePageSession
+    let button: NoteBlockID
+    let actions: [NoteButtonAction]
     private let token = UUID()
     private let confirm: Confirm
     private let open: Open
     package private(set) var inserted: [NoteBlockID] = []
-    package private(set) var isFinished = false
-    package private(set) var wasCancelled = false
+    private(set) var isFinished = false
+    private(set) var wasCancelled = false
     package var onFinish: (@MainActor (NoteButtonPress) -> Void)?
 
     package init?(session: NotePageSession, button: NoteBlockID, confirm: @escaping Confirm, open: @escaping Open) {
