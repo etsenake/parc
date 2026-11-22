@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcTestSupport
 import Testing
 @testable import ParcCore
 @testable import Parc
@@ -168,9 +169,7 @@ struct QuitWarningTests {
     private let key = "parc.quitWarning.v1"
 
     @MainActor private func withPreferences(_ body: (QuitWarningPreferences, UserDefaults) throws -> Void) throws {
-        let name = "parc.quit-warning.\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
+        let defaults = try #require(TestDefaults("parc.quit-warning."))
         _ = NSApplication.shared
         try body(QuitWarningPreferences(defaults: defaults), defaults)
     }

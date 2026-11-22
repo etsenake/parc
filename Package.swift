@@ -77,7 +77,8 @@ let package = Package(
                               "-Xlinker", "-fatal_warnings"]),
             ]
         ),
-        .testTarget(name: "ParcCoreTests", dependencies: ["ParcCore"], path: "tests/ParcCoreTests",
+        .target(name: "ParcTestSupport", path: "tests/ParcTestSupport", swiftSettings: strict),
+        .testTarget(name: "ParcCoreTests", dependencies: ["ParcCore", "ParcTestSupport"], path: "tests/ParcCoreTests",
                     resources: [.process("Notes/Fixtures"), .copy("Easels/Fixtures/EaselRoundTrip"), .copy("Resources/ArcSidebar")],
                     swiftSettings: strict),
         .target(name: "ParcNative", path: ".", exclude: nativeLibraryExcludes,
@@ -108,7 +109,7 @@ let package = Package(
         ),
         .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: ".",
                 cSettings: [.headerSearchPath("../../Engine/ParcNative"), .headerSearchPath("../../Sources/ParcEngine")]),
-        .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles"], path: "tests/ParcTests",
+        .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles", "ParcTestSupport"], path: "tests/ParcTests",
                     resources: [.copy("Notes/Fixtures"), .process("Notes/emoji.json"), .copy("Presentation/Fixtures/AppIcons"), .copy("Presentation/Fixtures/NativeIcon.icns"),
                                 .copy("Presentation/Fixtures/MembershipCard"), .copy("Presentation/Fixtures/ThemeEditor"),
                                 .process("Easels/Fixtures/EaselFonts"),

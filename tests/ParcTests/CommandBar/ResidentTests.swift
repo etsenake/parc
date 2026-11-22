@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -77,7 +78,7 @@ struct ResidentTests {
     @MainActor func onlyTheResidentCardInterceptsThePointer(y: Double, intercepts: Bool) throws {
         let window = CommandBarTestSupport.borderlessWindow(width: 765, height: 420)
         let slot = try #require(window.contentView)
-        let defaults = try #require(UserDefaults(suiteName: "Parc.ResidentTests." + UUID().uuidString))
+        let defaults = try #require(TestDefaults("Parc.ResidentTests."))
         let shortcuts = KeyboardShortcuts(mainMenu: { nil }, observesKeyboardLayout: false)
         let bar = CommandBar(parent: window, tabs: [], history: [], currentURL: nil, profilePath: "", page: nil,
                              resident: true, shortcuts: shortcuts, privacyDefaults: defaults,

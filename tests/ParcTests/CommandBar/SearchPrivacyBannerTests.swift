@@ -1,12 +1,11 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 
 struct SearchPrivacyBannerTests {
     @Test func dismissalIsRememberedAcrossSessions() throws {
-        let suite = "Parc.SearchPrivacyBannerTests." + UUID().uuidString
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = try #require(TestDefaults("Parc.SearchPrivacyBannerTests."))
         CommandBarSearchPrivacyPolicy(defaults: defaults).dismiss()
         #expect(CommandBarSearchPrivacyPolicy(defaults: defaults).hasBeenExplicitlyDismissed)
     }
@@ -84,9 +83,7 @@ struct SearchPrivacyBannerTests {
 
 extension SearchPrivacyBannerTests {
     @Test func aFreshProfileHasNotDismissedTheBannerAndDismissalIsStoredUnderItsKey() throws {
-        let suite = "Parc.SearchPrivacyBannerTests." + UUID().uuidString
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = try #require(TestDefaults("Parc.SearchPrivacyBannerTests."))
         let policy = CommandBarSearchPrivacyPolicy(defaults: defaults)
         #expect(!policy.hasBeenExplicitlyDismissed)
         policy.dismiss()

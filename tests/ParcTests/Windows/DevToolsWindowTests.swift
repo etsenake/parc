@@ -4,7 +4,18 @@ import Testing
 
 @MainActor private final class GeometryWindow: NSWindow {
     var key = true
+    var savedFrames: [String: String] = [:]
     override var isKeyWindow: Bool { key }
+
+    override func saveFrame(usingName name: NSWindow.FrameAutosaveName) {
+        savedFrames[name] = frameDescriptor
+    }
+
+    override func setFrameUsingName(_ name: NSWindow.FrameAutosaveName) -> Bool {
+        guard let frame = savedFrames[name] else { return false }
+        setFrame(from: frame)
+        return true
+    }
 }
 
 struct DevToolsWindowTests {
@@ -62,24 +73,24 @@ struct DevToolsWindowTests {
         chrome.close()
     }
 
-    @MainActor private static func savedFrame(_ name: String) -> NSRect {
+    @MainActor private static func savedFrame(_ name: String) -> (NSRect, [String: String]) {
         let chrome = window()
         DevToolsWindowGeometry.applyChrome(to: chrome)
         let saved = NSRect(x: 40, y: 50, width: 620, height: 480)
         chrome.setFrame(saved, display: false)
         chrome.saveFrame(usingName: name)
         chrome.close()
-        return saved
+        return (saved, chrome.savedFrames)
     }
 
     @MainActor @Test func aSavedToolsFrameIsRestoredByName() {
         let name = "Parc.TESTS.DevToolsWindow.\(UUID().uuidString)"
-        let saved = Self.savedFrame(name)
+        let (saved, savedFrames) = Self.savedFrame(name)
         let restored = Self.window()
+        restored.savedFrames = savedFrames
         #expect(DevToolsWindowGeometry.restoreFrame(restored, using: name))
         #expect(abs(restored.frame.width - saved.width) < 0.5)
         #expect(abs(restored.frame.height - saved.height) < 0.5)
-        UserDefaults.standard.removeObject(forKey: "NSWindow Frame \(name)")
         restored.close()
     }
 

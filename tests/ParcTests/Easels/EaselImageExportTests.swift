@@ -11,7 +11,7 @@ struct EaselImageExportTests {
         let date = Date(timeIntervalSince1970: 0)
         let document = EaselDocument(id: UUID(), title: "Export board", createdAt: date, modifiedAt: date, items: items)
         let session = try EaselSession(inMemory: document, assets: [:])
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         canvas.appearance = NSAppearance(named: .aqua)
         return (canvas, session)
     }
@@ -161,7 +161,7 @@ struct EaselImageExportTests {
     func aFixedCanvasExportsItsOwnSizeAndArtwork() throws {
         let now = Date(timeIntervalSince1970: 0)
         var mark = EaselItem(kind: .rectangle, frame: .init(x: 10, y: 10, width: 50, height: 30)); mark.color = "#D03030"
-        let fixed = EaselCanvasView(session: try EaselSession(inMemory: EaselDocument(id: UUID(), title: "Capture", createdAt: now, modifiedAt: now, items: [mark]), assets: [:]))
+        let fixed = makeTestEaselCanvas(session: try EaselSession(inMemory: EaselDocument(id: UUID(), title: "Capture", createdAt: now, modifiedAt: now, items: [mark]), assets: [:]))
         fixed.fixedCanvasSize = NSSize(width: 300, height: 200)
         let fixedImage = fixed.exportImage(backingScale: 2)!
         #expect(fixedImage.width == 600 && fixedImage.height == 400, "A fixed canvas exports exactly its bounds")

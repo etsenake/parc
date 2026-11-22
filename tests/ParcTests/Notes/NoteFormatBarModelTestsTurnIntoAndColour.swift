@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -182,7 +183,7 @@ struct NoteFormatBarModelTestsTurnIntoAndColour {
     }
 
     private func recentColours() -> [NoteColorStyle] {
-        let defaults = UserDefaults(suiteName: "NoteFormatBarModelTestsTurnIntoAndColour.\(UUID().uuidString)")!
+        let defaults = TestDefaults("NoteFormatBarModelTestsTurnIntoAndColour.")!
         for style in [NoteColorStyle.text(.red), .background(.blue), .text(.red), .text(.green), .text(.gray), .text(.brown), .text(.orange)] {
             NoteColorRecents.record(style, in: defaults)
         }

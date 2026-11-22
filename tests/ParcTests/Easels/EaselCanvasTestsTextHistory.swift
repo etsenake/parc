@@ -11,7 +11,7 @@ struct EaselCanvasTestsTextHistory {
         let one = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 180), text: "Longer text\nShort")
         let now = Date()
         let memory = try EaselSession(inMemory: EaselDocument(id: UUID(), title: "Memory fill", createdAt: now, modifiedAt: now, items: [one]), assets: [:])
-        let captureCanvas = EaselCanvasView(session: memory)
+        let captureCanvas = makeTestEaselCanvas(session: memory)
         captureCanvas.selectAll(nil); captureCanvas.setTextFill(.contentHugging)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -24,7 +24,7 @@ struct EaselCanvasTestsTextHistory {
         let editor = captureCanvas.subviews.compactMap { $0 as? EaselStyledTextView }.first!
         editor.localUndo.groupsByEvent = false
         let shared = try EaselSession(inMemory: EaselDocument(id: UUID(), title: "Shared", createdAt: now, modifiedAt: now, items: [one]), assets: [:])
-        let sharedCanvas = EaselCanvasView(session: shared)
+        let sharedCanvas = makeTestEaselCanvas(session: shared)
         window.contentView = sharedCanvas; sharedCanvas.selectAll(nil); window.makeFirstResponder(sharedCanvas); sharedCanvas.keyDown(with: enter)
         let sharedEditor = sharedCanvas.subviews.compactMap { $0 as? EaselStyledTextView }.first!
         sharedEditor.localUndo.groupsByEvent = false
@@ -48,7 +48,7 @@ struct EaselCanvasTestsTextHistory {
         let store = try EaselStore(directory: directory), session = try store.create()
         let item = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 100), text: "Before After")
         try session.perform("Seed") { $0.items = [item] }
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -72,7 +72,7 @@ struct EaselCanvasTestsTextHistory {
         let store = try EaselStore(directory: directory), session = try store.create()
         let item = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 100), text: "Before After")
         try session.perform("Seed") { $0.items = [item] }
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -95,7 +95,7 @@ struct EaselCanvasTestsTextHistory {
         let store = try EaselStore(directory: directory), session = try store.create()
         let item = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 100), text: "Before After")
         try session.perform("Seed") { $0.items = [item] }
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -122,7 +122,7 @@ struct EaselCanvasTestsTextHistory {
         let store = try EaselStore(directory: directory), session = try store.create()
         let item = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 100), text: "Before After")
         try session.perform("Seed") { $0.items = [item] }
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas

@@ -1,15 +1,14 @@
 import Foundation
+import ParcTestSupport
 import Testing
 @testable import Parc
 
 @MainActor private final class Store {
-    let suite = "parc.windowFrame.tests.\(UUID().uuidString)"
     let defaults: UserDefaults
     let key = "parc.windowFrame.v1"
 
-    init() { defaults = UserDefaults(suiteName: suite)! }
+    init() { defaults = TestDefaults("parc.windowFrame.tests.")! }
 
-    deinit { defaults.removePersistentDomain(forName: suite) }
 }
 
 struct WindowFramePreferenceTests {

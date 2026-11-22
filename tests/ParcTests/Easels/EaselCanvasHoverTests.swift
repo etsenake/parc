@@ -43,7 +43,7 @@ struct EaselCanvasHoverTests {
         let cover = EaselItem(kind: .section, frame: .init(x: 60, y: 60, width: 240, height: 240), zIndex: 10, text: "On top")
         let document = EaselDocument(id: UUID(), title: "Links", createdAt: date, modifiedAt: date, items: [section, left, right, cover])
         let session = try EaselSession(inMemory: document, assets: [:])
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         func count(_ kind: EaselItemKind) -> Int { session.document.items.filter { $0.kind == kind }.count }
         dragDot(canvas, from: left, side: .right, to: NSPoint(x: 580, y: 180))
         let links = session.document.items.filter { $0.kind == .arrow }
@@ -66,7 +66,7 @@ struct EaselCanvasHoverTests {
         let cover = EaselItem(kind: .section, frame: .init(x: 60, y: 60, width: 240, height: 240), zIndex: 10, text: "On top")
         let document = EaselDocument(id: UUID(), title: "Links", createdAt: date, modifiedAt: date, items: [section, left, right, cover])
         let session = try EaselSession(inMemory: document, assets: [:])
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         func count(_ kind: EaselItemKind) -> Int { session.document.items.filter { $0.kind == kind }.count }
         dragDot(canvas, from: left, side: .right, to: NSPoint(x: 150, y: 150))
         #expect(count(.sticky) == 2 && count(.arrow) == 0, "Letting go back on the source changes nothing, even under a section on top")
@@ -81,7 +81,7 @@ struct EaselCanvasHoverTests {
         let cover = EaselItem(kind: .section, frame: .init(x: 60, y: 60, width: 240, height: 240), zIndex: 10, text: "On top")
         let document = EaselDocument(id: UUID(), title: "Links", createdAt: date, modifiedAt: date, items: [section, left, right, cover])
         let session = try EaselSession(inMemory: document, assets: [:])
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         func count(_ kind: EaselItemKind) -> Int { session.document.items.filter { $0.kind == kind }.count }
         dragDot(canvas, from: left, side: .bottom, to: NSPoint(x: 700, y: 700))
         #expect(count(.sticky) == 3 && count(.arrow) == 1, "Letting go inside a section places a new sticky there instead of joining the section")
@@ -103,7 +103,7 @@ struct EaselCanvasHoverTests {
             let date = Date(timeIntervalSince1970: 0)
             let document = EaselDocument(id: UUID(), title: "Hover", createdAt: date, modifiedAt: date, items: [sticky, locked, label])
             session = try EaselSession(inMemory: document, assets: [:])
-            canvas = EaselCanvasView(session: session)
+            canvas = makeTestEaselCanvas(session: session)
         }
     }
 

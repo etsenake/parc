@@ -1,4 +1,5 @@
 import Foundation
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -47,7 +48,6 @@ struct NoteSlashRemindersTests {
     @MainActor final class Setup {
         let clock = Clock()
         let folder: URL
-        let suite = "parc.tests.reminders.\(UUID().uuidString)"
         let defaults: UserDefaults
         let scheduler = Scheduler()
         let book: NoteReminderBook
@@ -55,7 +55,7 @@ struct NoteSlashRemindersTests {
         init(withLegacy: Bool = false) {
             folder = NoteFilePaths.canonical(FileManager.default.temporaryDirectory.appendingPathComponent("parc-reminders-\(UUID().uuidString)", isDirectory: true))
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            defaults = UserDefaults(suiteName: suite)!
+            defaults = TestDefaults("parc.tests.reminders.")!
             if withLegacy {
                 let legacy = NoteReminderRequest(identifier: NoteReminderBook.identifierPrefix + folder.path + "/Old.md|2026-11-21T15:30",
                                                  noteID: folder.path + "/Old.md", title: "Old", body: "", fireDate: clock.now.addingTimeInterval(3600),
@@ -70,7 +70,6 @@ struct NoteSlashRemindersTests {
 
         deinit {
             try? FileManager.default.removeItem(at: folder)
-            defaults.removePersistentDomain(forName: suite)
         }
 
         func page(_ words: String, _ mentions: [NoteDateMention]) -> NotePage {

@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 
@@ -36,9 +37,7 @@ struct NavigationLoadingTestsReloadOptions {
     }
 
     private static func withDefaults(_ body: (UserDefaults) -> Void) {
-        let name = "parc.navigation-loading-tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: name)!
-        defer { defaults.removePersistentDomain(forName: name) }
+        let defaults = TestDefaults("parc.navigation-loading-tests.")!
         body(defaults)
     }
 

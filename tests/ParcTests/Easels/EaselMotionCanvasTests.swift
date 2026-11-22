@@ -20,7 +20,7 @@ struct EaselMotionCanvasTests {
             let date = Date(timeIntervalSince1970: 0)
             document = EaselDocument(id: UUID(), title: "Motion", createdAt: date, modifiedAt: date, items: [object])
             session = try EaselSession(inMemory: document, assets: [:])
-            canvas = EaselCanvasView(session: session)
+            canvas = makeTestEaselCanvas(session: session)
             scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
             scroll.allowsMagnification = true
             scroll.minMagnification = 0.3333

@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 
@@ -30,9 +31,7 @@ struct TopBarColorClientTests {
     }
 
     @MainActor private func withDefaults(_ body: (UserDefaults) throws -> Void) throws {
-        let name = "parc.top-bar-color.\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
+        let defaults = try #require(TestDefaults("parc.top-bar-color."))
         try body(defaults)
     }
 

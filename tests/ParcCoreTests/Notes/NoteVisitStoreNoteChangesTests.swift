@@ -97,9 +97,14 @@ import Testing
         let renamed = try tabs.rename(fixture.readme, in: fixture.notes)
         let store = tabs.store
         var finished: Error??
+        let trash = fixture.notes.appendingPathComponent(".Trash", isDirectory: true)
+        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+        let trashedNote = trash.appendingPathComponent(renamed.lastPathComponent)
         store.deleteLocalDocument(.note(renamed), profileID: store.activeSpace.profileID, ownerValid: { true },
+                                  deleteDocument: { try FileManager.default.moveItem(at: renamed, to: trashedNote) },
                                   completion: { finished = .some($0) })
         #expect(finished != nil && finished! == nil, "The note moves to the Trash")
+        #expect(FileManager.default.fileExists(atPath: trashedNote.path))
     }
 
     @Test func deletingANoteClosesItsStandaloneTab() throws {

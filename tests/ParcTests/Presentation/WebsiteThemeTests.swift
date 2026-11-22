@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcTestSupport
 import Testing
 import ParcCore
 @testable import Parc
@@ -8,9 +9,7 @@ struct WebsiteThemeTests {
     private let key = "parc.websiteTheme.v1"
 
     @MainActor private func withDefaults(_ body: (UserDefaults) throws -> Void) throws {
-        let name = "parc.website-theme.\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
+        let defaults = try #require(TestDefaults("parc.website-theme."))
         try body(defaults)
     }
 

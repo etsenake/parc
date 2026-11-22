@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -294,7 +295,7 @@ struct PinnedHeaderTests {
     }
 
     private func preferences() -> (UserDefaults, PinnedSectionPreferences) {
-        let defaults = UserDefaults(suiteName: "parc.pinned.tests." + UUID().uuidString)!
+        let defaults = TestDefaults("parc.pinned.tests.")!
         return (defaults, PinnedSectionPreferences(defaults: defaults))
     }
 

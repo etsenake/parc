@@ -1,12 +1,11 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 
 struct DeveloperModeTests {
     private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
-        let suite = "Parc.DeveloperModeTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = TestDefaults("Parc.DeveloperModeTests.")!
         try body(defaults)
     }
 

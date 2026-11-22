@@ -37,7 +37,7 @@ struct EaselSelectionToolbarCanvasTests {
             let date = Date(timeIntervalSince1970: 0)
             let document = EaselDocument(id: UUID(), title: "Toolbar", createdAt: date, modifiedAt: date, items: [text, shape])
             session = try EaselSession(inMemory: document, assets: [:])
-            canvas = EaselCanvasView(session: session)
+            canvas = makeTestEaselCanvas(session: session)
             canvas.selectionToolbar = toolbar
         }
     }

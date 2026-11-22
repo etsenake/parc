@@ -1,16 +1,15 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 
 private let preferenceKey = "parc.webpageWindowDragging.v1"
 
 @MainActor private final class Defaults {
-    let suite = "Parc.WindowDragging.Tests.\(UUID().uuidString)"
     let defaults: UserDefaults
 
-    init() { defaults = UserDefaults(suiteName: suite)! }
+    init() { defaults = TestDefaults("Parc.WindowDragging.Tests.")! }
 
-    deinit { defaults.removePersistentDomain(forName: suite) }
 }
 
 struct WebpageWindowDraggingTests {

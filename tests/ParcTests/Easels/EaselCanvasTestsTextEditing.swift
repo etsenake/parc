@@ -9,7 +9,7 @@ struct EaselCanvasTestsTextEditing {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-text-defaults-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -27,7 +27,7 @@ struct EaselCanvasTestsTextEditing {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-text-defaults-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -46,7 +46,7 @@ struct EaselCanvasTestsTextEditing {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-text-defaults-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -66,7 +66,7 @@ struct EaselCanvasTestsTextEditing {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-text-defaults-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -101,7 +101,7 @@ struct EaselCanvasTestsTextEditing {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-text-defaults-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -117,7 +117,7 @@ struct EaselCanvasTestsTextEditing {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-text-defaults-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -135,7 +135,7 @@ struct EaselCanvasTestsTextEditing {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-text-defaults-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -162,7 +162,7 @@ struct EaselCanvasTestsTextEditing {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-text-defaults-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -190,7 +190,7 @@ struct EaselCanvasTestsTextEditing {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-text-defaults-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -213,7 +213,7 @@ struct EaselCanvasTestsTextEditing {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-text-defaults-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas

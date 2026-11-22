@@ -330,7 +330,9 @@ scheduler, and advance it in the test instead of sleeping or polling. End-to-end
 checks of the running app are UI tests, which this suite doesn't contain.
 
 Tests run in parallel by default, so they share no mutable state: give each test
-its own temporary directory and `UserDefaults(suiteName:)`. Never let a test
+its own temporary directory and a `TestDefaults` instance from `ParcTestSupport`.
+The instance keeps preference values in memory and clears its domain on release.
+Give tested WebKit views a nonpersistent website data store. Never let a test
 fall back to the app's production singletons, which read your real data: anything
 built without a `files:` argument uses `NoteFiles.shared` and the real Parc Notes
 folder in Documents, so pass `IsolatedNoteFiles.make()` from

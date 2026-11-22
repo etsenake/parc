@@ -249,7 +249,7 @@ struct EaselPagePoolTestsTransfer {
         let arrived = try targetStore.load(id)
         let destination = try Window()
         defer { destination.close() }
-        let canvas = EaselCanvasView(session: arrived)
+        let canvas = makeTestEaselCanvas(session: arrived)
         destination.window.contentView = canvas
         let pool = EaselBrowserObjects(session: arrived, canvas: canvas, binding: destination.binding,
             profilePath: "/fixture/target-profile", validOwner: { true }, activeOwner: { true },

@@ -33,7 +33,7 @@ struct EaselCanvasTestsZoom {
         let store = try EaselStore(directory: directory), session = try store.create()
         let moving = EaselItem(kind: .rectangle, frame: .init(x: 100, y: 100, width: 50, height: 50))
         let target = EaselItem(kind: .rectangle, frame: .init(x: 200, y: 170, width: 100, height: 50))
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         canvas.fixedCanvasSize = .init(width: 800, height: 800)
         canvas.setFrameSize(.init(width: 800, height: 800))
         _ = NSApplication.shared
@@ -65,7 +65,7 @@ struct EaselCanvasTestsZoom {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
         try session.perform("Seed zoomed extent") { $0.items = [EaselItem(kind: .rectangle, frame: .init(x: 60, y: 60, width: 700, height: 300))] }
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         let scroll = NSScrollView(frame: .init(x: 0, y: 0, width: 1213, height: 731))
         scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true; scroll.autohidesScrollers = true
         scroll.allowsMagnification = true; scroll.minMagnification = 0.3333; scroll.maxMagnification = 4
@@ -89,7 +89,7 @@ struct EaselCanvasTestsZoom {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
         try session.perform("Seed zoomed extent") { $0.items = [EaselItem(kind: .rectangle, frame: .init(x: 60, y: 60, width: 700, height: 300))] }
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         let scroll = NSScrollView(frame: .init(x: 0, y: 0, width: 1213, height: 731))
         scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true; scroll.autohidesScrollers = true
         scroll.allowsMagnification = true; scroll.minMagnification = 0.3333; scroll.maxMagnification = 4
@@ -121,7 +121,7 @@ struct EaselCanvasTestsZoom {
         var wide = EaselItem(kind: .table, frame: .init(x: 40, y: 40, width: 500, height: 144))
         wide.table = EaselTable(columnWidths: Array(repeating: 100, count: 5), rowHeights: Array(repeating: 36, count: 4))
         try session.perform("Seed wide table") { $0.items = [wide] }
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         canvas.setFrameSize(.init(width: 800, height: 600))
         canvas.tableState.hoverTable = wide.id
         canvas.tableState.hover = hover

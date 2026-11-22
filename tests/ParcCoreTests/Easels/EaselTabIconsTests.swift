@@ -145,7 +145,7 @@ import Testing
         let icons = icons(store)
         _ = icons.lookup(profile: profile, id: session.document.id)
         heard = []
-        try library.remove("party-parrot")
+        try library.remove("party-parrot", trash: FileManager.default.removeItem(at:))
         #expect(icons.lookup(profile: profile, id: session.document.id) == .known(nil))
         #expect(!heard.isEmpty)
     }

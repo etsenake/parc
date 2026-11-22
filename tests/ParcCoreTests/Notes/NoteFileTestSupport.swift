@@ -1,4 +1,5 @@
 import Foundation
+import ParcTestSupport
 @testable import ParcCore
 
 @MainActor
@@ -53,7 +54,7 @@ enum NoteFileTestSupport {
         let id = UUID().uuidString
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("parc-notes-\(id)", isDirectory: true)
         var settings = NoteFileSettings(clock: clock, worker: worker, hopToMain: hopToMain, trashMover: trashMover,
-                                        defaults: UserDefaults(suiteName: "parc.tests.notes.\(id)")!, notesFolders: notesFolders)
+                                        defaults: TestDefaults("parc.tests.notes.")!, notesFolders: notesFolders)
         settings.defaultFolder = { folder }
         return NoteFiles(settings: settings)
     }

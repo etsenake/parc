@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcTestSupport
 import Testing
 @testable import Parc
 
@@ -15,9 +16,7 @@ struct InterfaceFeedbackTests {
     }
 
     @MainActor private func withPreferences(_ body: (InterfaceFeedbackPreferences, UserDefaults) throws -> Void) throws {
-        let name = "parc.feedback.\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
+        let defaults = try #require(TestDefaults("parc.feedback."))
         try body(InterfaceFeedbackPreferences(defaults: defaults), defaults)
     }
 

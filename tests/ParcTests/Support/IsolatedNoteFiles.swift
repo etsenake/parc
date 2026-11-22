@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 @testable import Parc
 @testable import ParcCore
 
@@ -9,7 +10,7 @@ enum IsolatedNoteFiles {
             .appendingPathComponent("ParcTests-Notes-\(UUID().uuidString)", isDirectory: true)
         var settings = NoteFileSettings(clock: clock ?? NoteEditorManualClock(), worker: worker, hopToMain: { _ in },
                                         trashMover: { _ in throw NoteEditorRealTrashRefused() },
-                                        defaults: UserDefaults(suiteName: "Parc.TESTS.Notes.\(UUID().uuidString)")!,
+                                        defaults: TestDefaults("Parc.TESTS.Notes.")!,
                                         notesFolders: { [] })
         settings.defaultFolder = { folder }
         settings.attachmentWorker = attachmentWorker ?? worker

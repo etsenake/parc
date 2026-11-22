@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -6,9 +7,7 @@ import Testing
 @MainActor
 struct NoteEmojiGridFitTests {
     static let sampleItems: [NoteEmojiGridView.Item] = {
-        let suite = "Parc.Notes.EmojiGridFitTests." + UUID().uuidString
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = TestDefaults("Parc.Notes.EmojiGridFitTests.")!
         let url = Bundle.module.url(forResource: "emoji", withExtension: "json")!
         let catalog = NoteEmojiCatalog(url: url, defaults: defaults)
         return catalog.all.prefix(60).map { NoteEmojiGridView.Item(emoji: $0, character: $0.character) }
@@ -57,22 +56,15 @@ struct NoteEmojiGridFitTests {
         let picker: NoteEmojiPicker
         let scrollView: NSScrollView
         let grid: NoteEmojiGridView
-        let defaults: UserDefaults
-        let suite: String
 
         init(style: NSScroller.Style) throws {
-            let suite = "Parc.Notes.EmojiGridFitTests." + UUID().uuidString
-            let defaults = UserDefaults(suiteName: suite)!
+            let defaults = TestDefaults("Parc.Notes.EmojiGridFitTests.")!
             let url = try #require(Bundle.module.url(forResource: "emoji", withExtension: "json"))
             picker = NoteEmojiPicker(catalog: NoteEmojiCatalog(url: url, defaults: defaults), showsRemove: true, showsRandom: true)
             scrollView = try #require(picker.subviews.compactMap { $0 as? NSScrollView }.first)
             grid = try #require(scrollView.documentView as? NoteEmojiGridView)
             scrollView.scrollerStyle = style
-            self.defaults = defaults
-            self.suite = suite
         }
-
-        func finish() { defaults.removePersistentDomain(forName: suite) }
     }
 
     func checkFit(_ fixture: PickerFixture) {
@@ -84,14 +76,12 @@ struct NoteEmojiGridFitTests {
     @Test(arguments: [NSScroller.Style.overlay, .legacy])
     func thePickerFitsTheVisibleWidth(style: NSScroller.Style) throws {
         let fixture = try PickerFixture(style: style)
-        defer { fixture.finish() }
         checkFit(fixture)
     }
 
     @Test(arguments: [NSScroller.Style.overlay, .legacy])
     func thePickersGridKeepsClearOfTheScroller(style: NSScroller.Style) throws {
         let fixture = try PickerFixture(style: style)
-        defer { fixture.finish() }
         #expect(fixture.grid.gutter > 0)
         if let scroller = fixture.scrollView.verticalScroller, !scroller.isHidden {
             #expect(fixture.grid.items.indices.allSatisfy { fixture.grid.cellFrame(of: $0).maxX <= scroller.frame.minX })
@@ -101,7 +91,6 @@ struct NoteEmojiGridFitTests {
     @Test(arguments: [NSScroller.Style.overlay, .legacy])
     func thePickerStillFitsWhenResizedNarrower(style: NSScroller.Style) throws {
         let fixture = try PickerFixture(style: style)
-        defer { fixture.finish() }
         fixture.picker.setFrameSize(NSSize(width: 360, height: 388))
         fixture.picker.layoutSubtreeIfNeeded()
         checkFit(fixture)
@@ -110,7 +99,6 @@ struct NoteEmojiGridFitTests {
     @Test(arguments: [NSScroller.Style.overlay, .legacy])
     func thePickerStillFitsBackAtItsPreferredSize(style: NSScroller.Style) throws {
         let fixture = try PickerFixture(style: style)
-        defer { fixture.finish() }
         fixture.picker.setFrameSize(NSSize(width: 360, height: 388))
         fixture.picker.layoutSubtreeIfNeeded()
         fixture.picker.setFrameSize(NoteEmojiPicker.preferredSize)

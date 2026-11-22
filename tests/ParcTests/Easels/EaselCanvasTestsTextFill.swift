@@ -12,7 +12,7 @@ struct EaselCanvasTestsTextFill {
         let one = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 180), text: "Longer text\nShort")
         let two = EaselItem(kind: .text, frame: .init(x: 350, y: 30, width: 200, height: 180), text: "Other", textStyle: .init(family: .fancy, size: .h2))
         try session.perform("Seed") { $0.items = [one, two] }
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         canvas.selectAll(nil); canvas.setTextFill(.contentHugging)
         #expect(session.document.items.allSatisfy { $0.resolvedTextStyle.resolvedFill == .contentHugging }, "One real canvas operation fills the selected text objects")
         #expect(session.document.items.map(\.frame) == [one.frame, two.frame] && session.document.items.map(\.text) == [one.text, two.text], "Fill changes neither authored text nor geometry")
@@ -26,7 +26,7 @@ struct EaselCanvasTestsTextFill {
         let one = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 180), text: "Longer text\nShort")
         let two = EaselItem(kind: .text, frame: .init(x: 350, y: 30, width: 200, height: 180), text: "Other", textStyle: .init(family: .fancy, size: .h2))
         try session.perform("Seed") { $0.items = [one, two] }
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         canvas.selectAll(nil); canvas.setTextFill(.contentHugging)
         #expect(try! EaselStore(directory: directory).load(session.document.id).document == session.document, "Filled styles survive real atomic save and reopen")
     }
@@ -39,7 +39,7 @@ struct EaselCanvasTestsTextFill {
         let one = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 180), text: "Longer text\nShort")
         let two = EaselItem(kind: .text, frame: .init(x: 350, y: 30, width: 200, height: 180), text: "Other", textStyle: .init(family: .fancy, size: .h2))
         try session.perform("Seed") { $0.items = [one, two] }
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         canvas.selectAll(nil); canvas.setTextFill(.contentHugging)
         try session.undo()
         #expect(session.document.items == [one, two], "One document undo restores every original style")
@@ -55,7 +55,7 @@ struct EaselCanvasTestsTextFill {
         let one = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 180), text: "Longer text\nShort")
         let two = EaselItem(kind: .text, frame: .init(x: 350, y: 30, width: 200, height: 180), text: "Other", textStyle: .init(family: .fancy, size: .h2))
         try session.perform("Seed") { $0.items = [one, two] }
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         canvas.selectAll(nil); canvas.setTextFill(.contentHugging)
         let saved = session.document
         try FileManager.default.removeItem(at: directory.appendingPathComponent("documents"))
@@ -69,7 +69,7 @@ struct EaselCanvasTestsTextFill {
         let one = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 180), text: "Longer text\nShort")
         let now = Date()
         let memory = try EaselSession(inMemory: EaselDocument(id: UUID(), title: "Memory fill", createdAt: now, modifiedAt: now, items: [one]), assets: [:])
-        let captureCanvas = EaselCanvasView(session: memory)
+        let captureCanvas = makeTestEaselCanvas(session: memory)
         captureCanvas.selectAll(nil); captureCanvas.setTextFill(.contentHugging)
         let output = try captureCanvas.renderImage(pixelSize: NSSize(width: 600, height: 240), backingScale: 1)
         #expect(output.width == 600 && memory.document.items[0].resolvedTextStyle.resolvedFill == .contentHugging, "CAP21 memory canvas renders the same fill without a saved Easel or browser")
@@ -80,7 +80,7 @@ struct EaselCanvasTestsTextFill {
         let one = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 180), text: "Longer text\nShort")
         let now = Date()
         let memory = try EaselSession(inMemory: EaselDocument(id: UUID(), title: "Memory fill", createdAt: now, modifiedAt: now, items: [one]), assets: [:])
-        let captureCanvas = EaselCanvasView(session: memory)
+        let captureCanvas = makeTestEaselCanvas(session: memory)
         captureCanvas.selectAll(nil); captureCanvas.setTextFill(.contentHugging)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -105,7 +105,7 @@ struct EaselCanvasTestsTextFill {
         let one = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 180), text: "Longer text\nShort")
         let now = Date()
         let memory = try EaselSession(inMemory: EaselDocument(id: UUID(), title: "Memory fill", createdAt: now, modifiedAt: now, items: [one]), assets: [:])
-        let captureCanvas = EaselCanvasView(session: memory)
+        let captureCanvas = makeTestEaselCanvas(session: memory)
         captureCanvas.selectAll(nil); captureCanvas.setTextFill(.contentHugging)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -135,7 +135,7 @@ struct EaselCanvasTestsTextFill {
         let one = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 180), text: "Longer text\nShort")
         let now = Date()
         let memory = try EaselSession(inMemory: EaselDocument(id: UUID(), title: "Memory fill", createdAt: now, modifiedAt: now, items: [one]), assets: [:])
-        let captureCanvas = EaselCanvasView(session: memory)
+        let captureCanvas = makeTestEaselCanvas(session: memory)
         captureCanvas.selectAll(nil); captureCanvas.setTextFill(.contentHugging)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -159,7 +159,7 @@ struct EaselCanvasTestsTextFill {
         let one = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 180), text: "Longer text\nShort")
         let now = Date()
         let memory = try EaselSession(inMemory: EaselDocument(id: UUID(), title: "Memory fill", createdAt: now, modifiedAt: now, items: [one]), assets: [:])
-        let captureCanvas = EaselCanvasView(session: memory)
+        let captureCanvas = makeTestEaselCanvas(session: memory)
         captureCanvas.selectAll(nil); captureCanvas.setTextFill(.contentHugging)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -172,7 +172,7 @@ struct EaselCanvasTestsTextFill {
         let editor = captureCanvas.subviews.compactMap { $0 as? EaselStyledTextView }.first!
         editor.localUndo.groupsByEvent = false
         let history = try EaselSession(inMemory: EaselDocument(id: UUID(), title: "History", createdAt: now, modifiedAt: now, items: [one]), assets: [:])
-        let historyCanvas = EaselCanvasView(session: history)
+        let historyCanvas = makeTestEaselCanvas(session: history)
         window.contentView = historyCanvas; historyCanvas.selectAll(nil); window.makeFirstResponder(historyCanvas); historyCanvas.keyDown(with: enter)
         let native = historyCanvas.subviews.compactMap { $0 as? EaselStyledTextView }.first!
         native.localUndo.groupsByEvent = false
@@ -199,7 +199,7 @@ struct EaselCanvasTestsTextFill {
         let one = EaselItem(kind: .text, frame: .init(x: 30, y: 30, width: 300, height: 180), text: "Longer text\nShort")
         let now = Date()
         let memory = try EaselSession(inMemory: EaselDocument(id: UUID(), title: "Memory fill", createdAt: now, modifiedAt: now, items: [one]), assets: [:])
-        let captureCanvas = EaselCanvasView(session: memory)
+        let captureCanvas = makeTestEaselCanvas(session: memory)
         captureCanvas.selectAll(nil); captureCanvas.setTextFill(.contentHugging)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -212,7 +212,7 @@ struct EaselCanvasTestsTextFill {
         let editor = captureCanvas.subviews.compactMap { $0 as? EaselStyledTextView }.first!
         editor.localUndo.groupsByEvent = false
         let history = try EaselSession(inMemory: EaselDocument(id: UUID(), title: "History", createdAt: now, modifiedAt: now, items: [one]), assets: [:])
-        let historyCanvas = EaselCanvasView(session: history)
+        let historyCanvas = makeTestEaselCanvas(session: history)
         window.contentView = historyCanvas; historyCanvas.selectAll(nil); window.makeFirstResponder(historyCanvas); historyCanvas.keyDown(with: enter)
         let native = historyCanvas.subviews.compactMap { $0 as? EaselStyledTextView }.first!
         native.localUndo.groupsByEvent = false

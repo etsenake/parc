@@ -1,4 +1,5 @@
 import Foundation
+import ParcTestSupport
 import Testing
 @testable import Parc
 
@@ -7,12 +8,9 @@ struct SharedQuotePreferencesTests {
     static let key = "parc.sharedQuotes.v1"
 
     final class Store {
-        let suite = "Parc.SharedQuotes.Checks.\(UUID().uuidString)"
         let defaults: UserDefaults
 
-        init() { defaults = UserDefaults(suiteName: suite)! }
-
-        deinit { defaults.removePersistentDomain(forName: suite) }
+        init() { defaults = TestDefaults("Parc.SharedQuotes.Checks.")! }
     }
 
     @Test func anAbsentRecordFallsBackToEnabled() {

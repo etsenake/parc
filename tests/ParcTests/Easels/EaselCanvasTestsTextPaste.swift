@@ -14,7 +14,7 @@ struct EaselCanvasTestsTextPaste {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-text-defaults-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -47,7 +47,7 @@ struct EaselCanvasTestsTextPaste {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-text-defaults-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = canvas
@@ -73,7 +73,7 @@ struct EaselCanvasTestsTextPaste {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-clipboard-canvas-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         let board = NSPasteboard.withUniqueName(); defer { board.releaseGlobally() }
         board.clearContents(); board.setString("https://example.com/clipboard", forType: .URL)
         _ = NSApplication.shared
@@ -92,7 +92,7 @@ struct EaselCanvasTestsTextPaste {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-clipboard-canvas-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         let board = NSPasteboard.withUniqueName(); defer { board.releaseGlobally() }
         board.clearContents(); board.setString("https://example.com/clipboard", forType: .URL)
         _ = NSApplication.shared
@@ -113,7 +113,7 @@ struct EaselCanvasTestsTextPaste {
         let board = NSPasteboard.withUniqueName(); defer { board.releaseGlobally() }
         board.clearContents(); board.setString("https://example.com/clipboard", forType: .URL)
         let memory = try EaselSession(inMemory: EaselDocument(id: UUID(), title: "Capture", createdAt: Date(), modifiedAt: Date()), assets: [:])
-        let fixed = EaselCanvasView(session: memory); fixed.fixedCanvasSize = NSSize(width: 400, height: 300)
+        let fixed = makeTestEaselCanvas(session: memory); fixed.fixedCanvasSize = NSSize(width: 400, height: 300)
         #expect(fixed.readPasteboard(board) && memory.document.items.first?.kind == .text, "CAP21 memory-only fixed canvas keeps URL paste as annotation text")
         #expect(memory.document.items.first?.text == "https://example.com/clipboard", "Capture annotation retains URL words without a browser object")
     }
@@ -123,7 +123,7 @@ struct EaselCanvasTestsTextPaste {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-clipboard-canvas-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory), session = try store.create()
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         let board = NSPasteboard.withUniqueName(); defer { board.releaseGlobally() }
         board.clearContents(); board.setString("https://example.com/clipboard", forType: .URL)
         _ = NSApplication.shared

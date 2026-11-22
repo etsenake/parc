@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 import Testing
 import ParcCore
 import ParcEngine
@@ -283,9 +284,7 @@ struct BrowserToolbarModelTests {
     private let key = "parc.browserToolbar.v1"
 
     @MainActor private func withDefaults(_ body: (UserDefaults) throws -> Void) throws {
-        let name = "parc.toolbar.model.\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
+        let defaults = try #require(TestDefaults("parc.toolbar.model."))
         try body(defaults)
     }
 

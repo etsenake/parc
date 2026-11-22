@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -29,7 +30,6 @@ struct PageCaptureGestureTests {
         let pan = Pan()
         let window: NSWindow
         let view: NSView
-        let domain = "ParcTests.captureGesture." + UUID().uuidString
         let defaults: UserDefaults
         var current = true
         var available = true
@@ -51,11 +51,9 @@ struct PageCaptureGestureTests {
                               styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             view = try #require(window.contentView)
-            defaults = try #require(UserDefaults(suiteName: domain))
+            defaults = try #require(TestDefaults("ParcTests.captureGesture."))
             _ = gesture
         }
-
-        deinit { defaults.removePersistentDomain(forName: domain) }
 
         func admit(flags: NSEvent.ModifierFlags = [.command, .shift], type: NSEvent.EventType = .leftMouseDown) throws -> Bool {
             let event = try #require(NSEvent.mouseEvent(with: type, location: CGPoint(x: 50, y: 60), modifierFlags: flags,

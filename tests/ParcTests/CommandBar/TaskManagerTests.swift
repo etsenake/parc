@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -25,7 +26,6 @@ struct TaskManagerTests {
     }
 
     @MainActor private final class Fixture {
-        let defaultsName = "Parc.TaskManagerTests." + UUID().uuidString
         let window: Window
         let menu = NSMenu(title: "Window")
         let target = MenuTarget()
@@ -44,7 +44,7 @@ struct TaskManagerTests {
         }
 
         func bar() throws -> CommandBar {
-            let defaults = try #require(UserDefaults(suiteName: defaultsName))
+            let defaults = try #require(TestDefaults("Parc.TaskManagerTests."))
             let bar = CommandBar(parent: window, tabs: [], history: [], currentURL: nil, profilePath: "", page: nil,
                                  initialEdit: ("task manager", NSRange(location: 12, length: 0)), shortcuts: registry,
                                  privacyDefaults: defaults, makeOmnibox: { _, _, _ in nil }, loadFavicon: { _, _, _ in })

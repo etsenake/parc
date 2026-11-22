@@ -101,7 +101,7 @@ enum EaselCanvasTestsSupport {
             session = try EaselStore(directory: directory).create()
             let originals = [a, b, c]
             try session.perform("Seed") { $0.items = originals }
-            canvas = EaselCanvasView(session: session)
+            canvas = makeTestEaselCanvas(session: session)
             window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
                               styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -142,7 +142,7 @@ enum EaselCanvasTestsSupport {
             _ = NSApplication.shared
             session = try EaselStore(directory: directory).create()
             try session.perform("Seed") { $0.items = items }
-            canvas = EaselCanvasView(session: session)
+            canvas = makeTestEaselCanvas(session: session)
             window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
                               styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -198,7 +198,7 @@ enum EaselCanvasTestsSupport {
             session = try EaselStore(directory: directory).create()
             let shape = EaselItem(kind: .rectangle, frame: .init(x: 600, y: 400, width: 60, height: 60))
             try session.perform("Seed") { $0.items = [shape] }
-            canvas = EaselCanvasView(session: session)
+            canvas = makeTestEaselCanvas(session: session)
             _ = NSApplication.shared
             window = FormatKeyWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -254,7 +254,7 @@ enum EaselCanvasTestsSupport {
             session = try store.create()
             let items = [text, shape]
             try session.perform("Seed") { $0.items = items }
-            canvas = EaselCanvasView(session: session)
+            canvas = makeTestEaselCanvas(session: session)
             if let queue { canvas.scheduleAfterInteraction = queue.schedule }
             _ = NSApplication.shared
             window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 500), styleMask: .borderless, backing: .buffered, defer: false)

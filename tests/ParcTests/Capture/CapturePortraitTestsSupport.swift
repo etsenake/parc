@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import ParcTestSupport
 import Testing
 import UniformTypeIdentifiers
 @testable import Parc
@@ -7,7 +8,6 @@ import UniformTypeIdentifiers
 enum CapturePortraitTestsSupport {
     @MainActor
     final class PortraitFixture {
-        let suite = "ParcPortraitTests-" + UUID().uuidString
         let defaults: UserDefaults
         var options: PortraitCaptureOptions
         let source: CGImage
@@ -20,7 +20,7 @@ enum CapturePortraitTestsSupport {
         }
 
         init() throws {
-            defaults = UserDefaults(suiteName: suite)!
+            defaults = TestDefaults("ParcPortraitTests-")!
             options = PortraitCaptureOptions(defaults: defaults)
             let context = Self.context(width: 320, height: 160)
             context.setFillColor(NSColor.red.cgColor)
@@ -30,8 +30,6 @@ enum CapturePortraitTestsSupport {
             source = context.makeImage()!
             original = try Self.png(source)
         }
-
-        deinit { defaults.removePersistentDomain(forName: suite) }
 
         static func context(width: Int, height: Int, space: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!) -> CGContext {
             CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,

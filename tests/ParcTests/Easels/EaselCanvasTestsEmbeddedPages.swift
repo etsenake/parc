@@ -15,7 +15,7 @@ struct EaselCanvasTestsEmbeddedPages {
         let browser = EaselItem(kind: .browser, frame: .init(x: 80, y: 80, width: 400, height: 300), url: "https://example.org/original")
         let cover = EaselItem(kind: .rectangle, frame: .init(x: 160, y: 160, width: 80, height: 80), zIndex: 2)
         try session.perform("Seed") { $0.items = [browser, cover] }
-        let canvas = EaselCanvasView(session: session), surfaces = PageSurfaces()
+        let canvas = makeTestEaselCanvas(session: session), surfaces = PageSurfaces()
         canvas.pageObjects = surfaces
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -33,7 +33,7 @@ struct EaselCanvasTestsEmbeddedPages {
         let browser = EaselItem(kind: .browser, frame: .init(x: 80, y: 80, width: 400, height: 300), url: "https://example.org/original")
         let cover = EaselItem(kind: .rectangle, frame: .init(x: 160, y: 160, width: 80, height: 80), zIndex: 2)
         try session.perform("Seed") { $0.items = [browser, cover] }
-        let canvas = EaselCanvasView(session: session), surfaces = PageSurfaces()
+        let canvas = makeTestEaselCanvas(session: session), surfaces = PageSurfaces()
         canvas.pageObjects = surfaces
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -52,7 +52,7 @@ struct EaselCanvasTestsEmbeddedPages {
         let browser = EaselItem(kind: .browser, frame: .init(x: 80, y: 80, width: 400, height: 300), url: "https://example.org/original")
         let cover = EaselItem(kind: .rectangle, frame: .init(x: 160, y: 160, width: 80, height: 80), zIndex: 2)
         try session.perform("Seed") { $0.items = [browser, cover] }
-        let canvas = EaselCanvasView(session: session), surfaces = PageSurfaces()
+        let canvas = makeTestEaselCanvas(session: session), surfaces = PageSurfaces()
         canvas.pageObjects = surfaces
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -71,7 +71,7 @@ struct EaselCanvasTestsEmbeddedPages {
         let browser = EaselItem(kind: .browser, frame: .init(x: 80, y: 80, width: 400, height: 300), url: "https://example.org/original")
         let cover = EaselItem(kind: .rectangle, frame: .init(x: 160, y: 160, width: 80, height: 80), zIndex: 2)
         try session.perform("Seed") { $0.items = [browser, cover] }
-        let canvas = EaselCanvasView(session: session), surfaces = PageSurfaces()
+        let canvas = makeTestEaselCanvas(session: session), surfaces = PageSurfaces()
         canvas.pageObjects = surfaces
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -90,7 +90,7 @@ struct EaselCanvasTestsEmbeddedPages {
         let browser = EaselItem(kind: .browser, frame: .init(x: 80, y: 80, width: 400, height: 300), url: "https://example.org/original")
         let cover = EaselItem(kind: .rectangle, frame: .init(x: 160, y: 160, width: 80, height: 80), zIndex: 2)
         try session.perform("Seed") { $0.items = [browser, cover] }
-        let canvas = EaselCanvasView(session: session), surfaces = PageSurfaces()
+        let canvas = makeTestEaselCanvas(session: session), surfaces = PageSurfaces()
         canvas.pageObjects = surfaces
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -110,7 +110,7 @@ struct EaselCanvasTestsEmbeddedPages {
         let browser = EaselItem(kind: .browser, frame: .init(x: 80, y: 80, width: 400, height: 300), url: "https://example.org/original")
         let cover = EaselItem(kind: .rectangle, frame: .init(x: 160, y: 160, width: 80, height: 80), zIndex: 2)
         try session.perform("Seed") { $0.items = [browser, cover] }
-        let canvas = EaselCanvasView(session: session), surfaces = PageSurfaces()
+        let canvas = makeTestEaselCanvas(session: session), surfaces = PageSurfaces()
         canvas.pageObjects = surfaces
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -131,7 +131,7 @@ struct EaselCanvasTestsEmbeddedPages {
         let browser = EaselItem(kind: .browser, frame: .init(x: 80, y: 80, width: 400, height: 300), url: "https://example.org/original")
         let cover = EaselItem(kind: .rectangle, frame: .init(x: 160, y: 160, width: 80, height: 80), zIndex: 2)
         try session.perform("Seed") { $0.items = [browser, cover] }
-        let canvas = EaselCanvasView(session: session), surfaces = PageSurfaces()
+        let canvas = makeTestEaselCanvas(session: session), surfaces = PageSurfaces()
         canvas.pageObjects = surfaces
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -153,7 +153,7 @@ struct EaselCanvasTestsEmbeddedPages {
         let browser = EaselItem(kind: .browser, frame: .init(x: 80, y: 80, width: 400, height: 300), url: "https://example.org/original")
         let cover = EaselItem(kind: .rectangle, frame: .init(x: 160, y: 160, width: 80, height: 80), zIndex: 2)
         try session.perform("Seed") { $0.items = [browser, cover] }
-        let canvas = EaselCanvasView(session: session), surfaces = PageSurfaces()
+        let canvas = makeTestEaselCanvas(session: session), surfaces = PageSurfaces()
         canvas.pageObjects = surfaces
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -174,7 +174,7 @@ struct EaselCanvasTestsEmbeddedPages {
         let browser = EaselItem(kind: .browser, frame: .init(x: 80, y: 80, width: 400, height: 300), url: "https://example.org/original")
         let cover = EaselItem(kind: .rectangle, frame: .init(x: 160, y: 160, width: 80, height: 80), zIndex: 2)
         try session.perform("Seed") { $0.items = [browser, cover] }
-        let canvas = EaselCanvasView(session: session), surfaces = PageSurfaces()
+        let canvas = makeTestEaselCanvas(session: session), surfaces = PageSurfaces()
         canvas.pageObjects = surfaces
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -198,7 +198,7 @@ struct EaselCanvasTestsEmbeddedPages {
         let browser = EaselItem(kind: .browser, frame: .init(x: 80, y: 80, width: 400, height: 300), url: "https://example.org/original")
         let cover = EaselItem(kind: .rectangle, frame: .init(x: 160, y: 160, width: 80, height: 80), zIndex: 2)
         try session.perform("Seed") { $0.items = [browser, cover] }
-        let canvas = EaselCanvasView(session: session), surfaces = PageSurfaces()
+        let canvas = makeTestEaselCanvas(session: session), surfaces = PageSurfaces()
         canvas.pageObjects = surfaces
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
@@ -222,7 +222,7 @@ struct EaselCanvasTestsEmbeddedPages {
         let browser = EaselItem(kind: .browser, frame: .init(x: 80, y: 80, width: 400, height: 300), url: "https://example.org/original")
         let cover = EaselItem(kind: .rectangle, frame: .init(x: 160, y: 160, width: 80, height: 80), zIndex: 2)
         try session.perform("Seed") { $0.items = [browser, cover] }
-        let canvas = EaselCanvasView(session: session), surfaces = PageSurfaces()
+        let canvas = makeTestEaselCanvas(session: session), surfaces = PageSurfaces()
         canvas.pageObjects = surfaces
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)

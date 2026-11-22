@@ -20,7 +20,7 @@ import Testing
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         easelStore = try EaselStore(directory: root.appendingPathComponent("easels"))
         easel = try easelStore.create()
-        canvas = EaselCanvasView(session: easel)
+        canvas = makeTestEaselCanvas(session: easel)
         window.isReleasedWhenClosed = false
         window.contentView = host
         host.addSubview(routing)

@@ -1,4 +1,5 @@
 import Foundation
+import ParcTestSupport
 import Testing
 @testable import ParcCore
 
@@ -61,17 +62,13 @@ struct NoteUnsplashTestsDownloadAndAccessTests {
 
     @Test
     func unsplashIsOffWithoutAnAccessKey() throws {
-        let suite = "parc.tests.unsplash." + UUID().uuidString
-        let defaults = try #require(UserDefaults(suiteName: suite), "a scratch defaults suite opens")
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = try #require(TestDefaults("parc.tests.unsplash."), "a scratch defaults suite opens")
         #expect(NoteUnsplash.accessKey(defaults: defaults) == nil, "no key means no Unsplash tab")
     }
 
     @Test
     func aSavedAccessKeyIsTrimmed() throws {
-        let suite = "parc.tests.unsplash." + UUID().uuidString
-        let defaults = try #require(UserDefaults(suiteName: suite), "a scratch defaults suite opens")
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = try #require(TestDefaults("parc.tests.unsplash."), "a scratch defaults suite opens")
         _ = NoteUnsplash.accessKey(defaults: defaults)
         defaults.set("  live-key \n", forKey: NoteUnsplash.accessKeyDefaultsKey)
         #expect(NoteUnsplash.accessKey(defaults: defaults) == "live-key", "a key set in defaults turns Unsplash on")
@@ -79,9 +76,7 @@ struct NoteUnsplashTestsDownloadAndAccessTests {
 
     @Test
     func aWhitespaceOnlyAccessKeyKeepsUnsplashOff() throws {
-        let suite = "parc.tests.unsplash." + UUID().uuidString
-        let defaults = try #require(UserDefaults(suiteName: suite), "a scratch defaults suite opens")
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = try #require(TestDefaults("parc.tests.unsplash."), "a scratch defaults suite opens")
         defaults.set("  live-key \n", forKey: NoteUnsplash.accessKeyDefaultsKey)
         _ = NoteUnsplash.accessKey(defaults: defaults)
         defaults.set("   ", forKey: NoteUnsplash.accessKeyDefaultsKey)

@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -39,9 +40,7 @@ private struct LibraryEntryItems {
 
 struct LibraryEntryPreferencesTests {
     @MainActor private func withPreferences(_ body: (LibraryEntryPreferences, LibraryEntryPreferences) throws -> Void) throws {
-        let domain = "ParcTests.libraryEntry." + UUID().uuidString
-        let defaults = try #require(UserDefaults(suiteName: domain))
-        defer { defaults.removePersistentDomain(forName: domain) }
+        let defaults = try #require(TestDefaults("ParcTests.libraryEntry."))
         try body(LibraryEntryPreferences(defaults: defaults), LibraryEntryPreferences(defaults: defaults))
     }
 
@@ -297,7 +296,6 @@ struct SidebarLibraryEntryTests {
         let entry = SidebarLibraryEntry()
         let items = LibraryEntryItems()
         let schedule = LibraryTestSchedule()
-        let domain = "ParcTests.sidebarLibrary." + UUID().uuidString
         let defaults: UserDefaults
         var opened: [LibraryEntryPage?] = []
         var actions: [LibraryFlyoutAction] = []
@@ -307,7 +305,7 @@ struct SidebarLibraryEntryTests {
             window = NSWindow(contentRect: sidebar.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.contentView = sidebar
-            defaults = try #require(UserDefaults(suiteName: domain))
+            defaults = try #require(TestDefaults("ParcTests.sidebarLibrary."))
             entry.preferences = LibraryEntryPreferences(defaults: defaults)
             entry.model.after = schedule.schedule
             entry.badge.after = schedule.schedule
@@ -326,8 +324,6 @@ struct SidebarLibraryEntryTests {
         func update(_ downloads: [BrowserDownload], privateWindow: Bool = false, badging: Bool = true) {
             entry.updateFlyoutDownloads(downloads, profiles: [items.profile], privateWindow: privateWindow, badging: badging)
         }
-
-        deinit { defaults.removePersistentDomain(forName: domain) }
     }
 
     @MainActor @Test func theHomeButtonOccupiesTheOriginalLeadingDockSlot() throws {

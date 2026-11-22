@@ -1,5 +1,6 @@
 import AppKit
 import ParcEngine
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -22,7 +23,7 @@ struct NavigationPipelineTests {
             window.isReleasedWhenClosed = false
             let native = PCNativeOmnibox(profilePath: "test", page: nil, window: nil)
             self.native = native
-            let defaults = try #require(UserDefaults(suiteName: "Parc.NavigationPipeline." + UUID().uuidString))
+            let defaults = try #require(TestDefaults("Parc.NavigationPipeline."))
             let files = IsolatedNoteFiles.make()
             let noteIcons = NoteTabIcons(files: files, worker: .inline, clock: files.clock)
             let iconArt = NoteTabIconArt(icons: noteIcons, easels: EaselTabIcons(files: files))

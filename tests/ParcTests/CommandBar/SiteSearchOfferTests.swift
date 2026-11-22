@@ -1,5 +1,6 @@
 import AppKit
 import ParcEngine
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -28,7 +29,7 @@ struct SiteSearchOfferTests {
                 [BrowserTab(id: UUID(), spaceID: UUID(), profileID: Self.profile, url: value, title: value, kind: .today,
                             createdAt: .distantPast, lastAccessed: .distantPast, savedURL: "", savedTitle: "")]
             } ?? []
-            let defaults = try #require(UserDefaults(suiteName: "Parc.SiteSearchOffer." + UUID().uuidString))
+            let defaults = try #require(TestDefaults("Parc.SiteSearchOffer."))
             bar = CommandBar(parent: window, tabs: tabs, history: [], currentURL: nil, profilePath: "test", page: nil,
                 initialEdit: query.isEmpty ? nil : (query, NSRange(location: query.utf16.count, length: 0)),
                 extensionDisposition: allowsExtension ? .currentTab : nil,

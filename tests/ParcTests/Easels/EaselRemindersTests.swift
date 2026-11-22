@@ -1,4 +1,5 @@
 import Foundation
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -19,7 +20,6 @@ struct EaselRemindersTests {
         let profileA = UUID(), profileB = UUID()
         let documentsA: URL
         let documentsB: URL
-        let suite = "parc.tests.easel-reminders.\(UUID().uuidString)"
         let defaults: UserDefaults
         let scheduler = Scheduler()
         let book: NoteReminderBook
@@ -36,7 +36,7 @@ struct EaselRemindersTests {
             documentsB = root.appendingPathComponent("Profiles/\(profileB.uuidString)/Easels/documents", isDirectory: true)
             try FileManager.default.createDirectory(at: documentsA, withIntermediateDirectories: true)
             try FileManager.default.createDirectory(at: documentsB, withIntermediateDirectories: true)
-            defaults = UserDefaults(suiteName: suite)!
+            defaults = TestDefaults("parc.tests.easel-reminders.")!
             book = NoteReminderBook(scheduler: scheduler, defaults: defaults)
             let now = now
             book.now = { now }
@@ -47,7 +47,6 @@ struct EaselRemindersTests {
 
         deinit {
             try? FileManager.default.removeItem(at: root)
-            defaults.removePersistentDomain(forName: suite)
         }
 
         static func easel(_ title: String, reminder: NoteDateMention) -> EaselDocument {

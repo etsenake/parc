@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -11,14 +12,13 @@ struct ArchivePreviewBackdropFocusTests {
 
     @MainActor private final class Fixture {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let defaultsName = "Parc.ArchiveBackdrop." + UUID().uuidString
         let host = SplitResizeCommandAvailabilityTests.Host.make()
         let store: BrowserStore
         let owner: BrowserWindowController
         let defaults: UserDefaults
 
         init() throws {
-            defaults = try #require(UserDefaults(suiteName: defaultsName))
+            defaults = try #require(TestDefaults("Parc.ArchiveBackdrop."))
             store = try BrowserStore(directory: directory)
             store.scheduleDeferredSave = { _, _ in }
             owner = try BrowserWindowController(store: store, ownership: NativePageOwnership(), windowHost: host)
@@ -32,7 +32,6 @@ struct ArchivePreviewBackdropFocusTests {
                 owner.noteEditors.removeAll()
                 host.close()
             }
-            defaults.removePersistentDomain(forName: defaultsName)
             try? FileManager.default.removeItem(at: directory)
         }
 

@@ -1,5 +1,6 @@
 import AppKit
 import ParcCore
+import ParcTestSupport
 import Testing
 @testable import Parc
 
@@ -213,9 +214,7 @@ extension LiveBindingTests {
 
     @Test(arguments: Copy.allCases)
     func theCopyCueRequiresTheCurrentPagesExactURLAndAnActiveChord(copy: Copy) throws {
-        let suite = "Parc.LiveBinding." + UUID().uuidString
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = try #require(TestDefaults("Parc.LiveBinding."))
         let upsell = SuperCopyUpsell(defaults: defaults)
         let url = "https://example.test/a?b=1"
         let chord = KeyboardShortcut(key: "c", flags: [.command, .shift])
@@ -227,9 +226,7 @@ extension LiveBindingTests {
 
     @Test(arguments: [(1, false), (2, true)])
     func theCopyCueUsesCalendarDaysForItsCooldown(days: Int, offers: Bool) throws {
-        let suite = "Parc.LiveBinding." + UUID().uuidString
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = try #require(TestDefaults("Parc.LiveBinding."))
         var upsell = SuperCopyUpsell(defaults: defaults)
         upsell.calendar = Calendar(identifier: .gregorian)
         let now = Date(timeIntervalSince1970: 1_800_000_000)

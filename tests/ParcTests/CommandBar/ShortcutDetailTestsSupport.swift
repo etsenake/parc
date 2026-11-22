@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -13,7 +14,6 @@ enum ShortcutDetailTestsSupport {
 
     @MainActor final class Fixture {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let suite = "Parc.ShortcutDetail." + UUID().uuidString
         let registry: KeyboardShortcuts
         let view: ShortcutsSettingsView
         let window: Window
@@ -41,7 +41,7 @@ enum ShortcutDetailTestsSupport {
                 menu.addItem(item)
                 registry.register(item, group: "Tabs", bindingID: NumberedTarget.itemBindingID(number))
             }
-            defaults = try #require(UserDefaults(suiteName: suite))
+            defaults = try #require(TestDefaults("Parc.ShortcutDetail."))
             view = ShortcutsSettingsView(shortcuts: registry, numberedTargetDefaults: defaults)
             window = Window(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -51,7 +51,6 @@ enum ShortcutDetailTestsSupport {
         }
 
         deinit {
-            UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(at: directory)
         }
 

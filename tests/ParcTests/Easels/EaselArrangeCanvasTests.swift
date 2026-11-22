@@ -15,7 +15,7 @@ struct EaselArrangeCanvasTests {
         let document = EaselDocument(id: UUID(), title: "Board", createdAt: Date(timeIntervalSince1970: 0),
                                      modifiedAt: Date(timeIntervalSince1970: 0), items: items)
         let session = try EaselSession(inMemory: document, assets: [:])
-        return (EaselCanvasView(session: session), session)
+        return (makeTestEaselCanvas(session: session), session)
     }
 
     @MainActor @Test

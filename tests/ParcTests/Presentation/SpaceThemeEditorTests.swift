@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcTestSupport
 import Testing
 @testable import ParcCore
 @testable import Parc
@@ -237,9 +238,7 @@ struct SpaceThemeAppearanceTests {
 
     @MainActor private func withAppearance(_ body: (UserDefaults, Host) throws -> Void) throws {
         _ = NSApplication.shared
-        let name = "parc.appearance.\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
+        let defaults = try #require(TestDefaults("parc.appearance."))
         try body(defaults, Host())
     }
 

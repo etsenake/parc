@@ -26,7 +26,7 @@ private struct CaptureEditingFixture {
         let date = Date(timeIntervalSince1970: 1_600_000_000)
         original = EaselDocument(id: UUID(), title: "Capture", createdAt: date, modifiedAt: date, items: [source])
         draft = try EaselSession(inMemory: original, assets: [id: png])
-        canvas = EaselCanvasView(session: draft)
+        canvas = makeTestEaselCanvas(session: draft)
         canvas.fixedCanvasSize = NSSize(width: 20, height: 10)
         canvas.resizeCanvas(viewport: NSSize(width: 800, height: 600))
     }
@@ -171,7 +171,7 @@ struct CaptureEditingTests {
 
     @MainActor @Test func anUnfixedCanvasIsNotACaptureBoard() throws {
         let fixture = try CaptureEditingFixture()
-        #expect(!EaselCanvasView(session: fixture.draft).isCaptureBoard)
+        #expect(!makeTestEaselCanvas(session: fixture.draft).isCaptureBoard)
     }
 
     @MainActor @Test(arguments: [EaselToolbarControl.createSection, .sectionTitle, .link, .connectorLabel, .altText])
@@ -194,7 +194,7 @@ struct CaptureEditingTests {
 
     @MainActor @Test func anEaselPasteKeepsEveryKind() throws {
         let fixture = try CaptureEditingFixture()
-        #expect(EaselCanvasView(session: fixture.draft).captureBoardPasteable(Self.pasteItems).count == Self.pasteKinds.count)
+        #expect(makeTestEaselCanvas(session: fixture.draft).captureBoardPasteable(Self.pasteItems).count == Self.pasteKinds.count)
     }
 
     @MainActor @Test func captureObjectsNeverTakeObjectLinks() throws {
@@ -255,7 +255,7 @@ struct CaptureEditingTests {
         wide.fill(CGRect(x: 0, y: 0, width: 40, height: 20))
         let widePNG = NSBitmapImageRep(cgImage: wide.makeImage()!).representation(using: .png, properties: [:])!
         let session = try EaselSession(inMemory: fixture.original, assets: [fixture.id: widePNG])
-        let canvas = EaselCanvasView(session: session)
+        let canvas = makeTestEaselCanvas(session: session)
         canvas.fixedCanvasSize = NSSize(width: 20, height: 10)
         canvas.resizeCanvas(viewport: .zero)
         canvas.insert(kind: .circle)

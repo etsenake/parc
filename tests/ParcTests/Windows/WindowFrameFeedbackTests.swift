@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -367,10 +368,8 @@ struct WindowFrameFeedbackTests {
     }
 
     private final class Defaults {
-        let name = "parc.windowFrameFeedbackTests.\(UUID().uuidString)"
         let store: UserDefaults
-        init() throws { store = try #require(UserDefaults(suiteName: name)) }
-        deinit { store.removePersistentDomain(forName: name) }
+        init() throws { store = try #require(TestDefaults("parc.windowFrameFeedbackTests.")) }
     }
 
     @MainActor

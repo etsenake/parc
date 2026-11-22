@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
@@ -6,7 +7,6 @@ import Testing
 struct DocumentsLibraryViewTests {
     @MainActor final class Fixture {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let suite = "parc.tests.documents-library." + UUID().uuidString
         let clock = NoteEditorManualClock()
         let store: BrowserStore
         let profile: UUID
@@ -22,7 +22,7 @@ struct DocumentsLibraryViewTests {
             _ = NSApplication.shared
             store = try BrowserStore(directory: directory)
             profile = store.activeSpace.profileID
-            let defaults = try #require(UserDefaults(suiteName: suite))
+            let defaults = try #require(TestDefaults("parc.tests.documents-library."))
             let defaultFolder = directory.appendingPathComponent("Default Notes", isDirectory: true)
             var settings = NoteFileSettings(clock: clock, worker: .inline, hopToMain: { _ in },
                 trashMover: { _ in throw NoteEditorRealTrashRefused() }, defaults: defaults, notesFolders: { [] })
@@ -54,7 +54,6 @@ struct DocumentsLibraryViewTests {
         func teardown() {
             window.contentView = nil
             store.flushPendingWrites()
-            UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(at: directory)
         }
 

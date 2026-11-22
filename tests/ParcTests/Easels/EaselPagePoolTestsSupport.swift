@@ -90,7 +90,7 @@ enum EaselPagePoolTestsSupport {
                 let document = EaselDocument(id: UUID(), title: "Page pool", createdAt: date, modifiedAt: date, items: [item])
                 session = try EaselSession(inMemory: document, assets: kind == .capture ? [assetName: Self.png] : [:])
             }
-            canvas = EaselCanvasView(session: session)
+            canvas = makeTestEaselCanvas(session: session)
             source.window.contentView = canvas
             pool = EaselBrowserObjects(session: session, canvas: canvas, binding: source.binding,
                 profilePath: Self.profile, validOwner: { true }, activeOwner: { true },

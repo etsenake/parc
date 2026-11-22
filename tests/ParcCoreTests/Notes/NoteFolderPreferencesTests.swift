@@ -1,10 +1,10 @@
 import Combine
 import Foundation
+import ParcTestSupport
 import Testing
 @testable import ParcCore
 
 @MainActor final class NoteFolderPreferencesTests {
-    let suite: String
     let defaults: UserDefaults
     let preferences: NoteFolderPreferences
     let first = UUID(), second = UUID()
@@ -15,15 +15,10 @@ import Testing
     init() throws {
         let suite = "parc.tests.note-folder." + UUID().uuidString
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true).standardizedFileURL
-        self.suite = suite
         standard = folder
-        defaults = try #require(UserDefaults(suiteName: suite))
+        defaults = try #require(TestDefaults("parc.tests.note-folder."))
         preferences = NoteFolderPreferences(defaults: defaults, defaultFolder: { folder })
         subscription = preferences.changes.sink { [unowned self] in self.announced.append($0) }
-    }
-
-    deinit {
-        defaults.removePersistentDomain(forName: suite)
     }
 
     func key(_ profile: UUID) -> String { "Parc.Notes.Folder." + profile.uuidString }

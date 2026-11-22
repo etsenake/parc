@@ -1,4 +1,5 @@
 import AppKit
+import ParcTestSupport
 import Testing
 @testable import Parc
 
@@ -69,7 +70,7 @@ struct CompactLayoutTests {
             anchor.addSubview(pillIcon)
             window = owner
             self.content = content
-            let defaults = try #require(UserDefaults(suiteName: "Parc.CompactLayoutTests." + UUID().uuidString))
+            let defaults = try #require(TestDefaults("Parc.CompactLayoutTests."))
             bar = CommandBar(parent: owner, tabs: [], history: [], currentURL: nil, profilePath: "", page: nil,
                 sidebarAnchor: compact ? anchor : nil, addressOnly: compact,
                 shortcuts: KeyboardShortcuts(mainMenu: { nil }, observesKeyboardLayout: false),

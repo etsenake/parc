@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ParcTestSupport
 import Testing
 @testable import ParcCore
 @testable import Parc
@@ -8,9 +9,7 @@ struct BrowserToolbarTests {
     private let key = "parc.browserToolbar.v1"
 
     @MainActor private func withPreferences(_ body: (BrowserToolbarPreferences, UserDefaults) throws -> Void) throws {
-        let name = "parc.toolbar.\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
+        let defaults = try #require(TestDefaults("parc.toolbar."))
         try body(BrowserToolbarPreferences(defaults: defaults), defaults)
     }
 
@@ -278,7 +277,7 @@ extension MenuImagesTests {
         _ = NSApplication.shared
         let date = Date(timeIntervalSince1970: 1_800_000_000)
         let document = EaselDocument(id: UUID(), title: "Menu Colors", createdAt: date, modifiedAt: date, items: [item])
-        let canvas = EaselCanvasView(session: try EaselSession(inMemory: document, assets: [:]))
+        let canvas = makeTestEaselCanvas(session: try EaselSession(inMemory: document, assets: [:]))
         try #require(canvas.selectOnly(item.id))
         return canvas
     }
