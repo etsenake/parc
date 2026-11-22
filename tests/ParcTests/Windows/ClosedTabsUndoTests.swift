@@ -968,7 +968,8 @@ private func temporaryRoot() throws -> URL {
         let focusedClose = try #require(f.close([f.t2.id], focused: f.t2.id))
         var presented = WindowPresentation(state: f.store.state, ready: true)
         f.register(focusedClose).undo()
-        #expect(presented.finishClosedTabsUndo(focusedClose, state: f.store.state, available: { _ in true }) && presented.selectedTabIDs == [f.t2.id])
+        let finished = presented.finishClosedTabsUndo(focusedClose, state: f.store.state, available: { _ in true })
+        #expect(finished && presented.selectedTabIDs == [f.t2.id])
     }
 
     @Test func redoArchivesItAgainAndReturnsTheGroupToUndo() throws {
@@ -988,8 +989,8 @@ private func temporaryRoot() throws -> URL {
         var unfocused = WindowPresentation(state: f.store.state, ready: true)
         #expect(background.focusedTabID == nil)
         f.register(background).undo()
-        #expect(f.order == f.original && !unfocused.finishClosedTabsUndo(background, state: f.store.state, available: { _ in true })
-                && unfocused.selectedTabIDs == [f.t1.id])
+        let selected = unfocused.finishClosedTabsUndo(background, state: f.store.state, available: { _ in true })
+        #expect(f.order == f.original && !selected && unfocused.selectedTabIDs == [f.t1.id])
     }
 
     @Test func closingAPinnedTabOnlyUnloadsItSoItRegistersNoUndo() throws {
@@ -1051,7 +1052,8 @@ private func temporaryRoot() throws -> URL {
         #expect(todayLive.contains(f.t2.id) && focusedClear.prompt == .clear && focusedClear.focusedTabID == f.t2.id)
         var afterClear = WindowPresentation(state: f.store.state, ready: true)
         f.register(focusedClear).undo()
-        #expect(afterClear.finishClosedTabsUndo(focusedClear, state: f.store.state, available: { _ in true }) && afterClear.selectedTabIDs == [f.t2.id])
+        let finished = afterClear.finishClosedTabsUndo(focusedClear, state: f.store.state, available: { _ in true })
+        #expect(finished && afterClear.selectedTabIDs == [f.t2.id])
     }
 
     @Test func aClearRegistersAndUndoRestoresIt() throws {

@@ -337,7 +337,8 @@ struct StartPageMarkBusyTests {
     }
 
     @Test func aPressDuringPlaybackIsIgnoredForItsWholeGesture() {
-        var (pointer, playing) = playingTaffy()
+        let (started, playing) = playingTaffy()
+        var pointer = started
         #expect(pointer.session.phase == .playing(.taffy, .motion))
         #expect(pointer.recognizer.pointerDown(at: .zero, time: 0.3, idle: false).isEmpty)
         #expect(pointer.recognizer.holdDeadline == nil)

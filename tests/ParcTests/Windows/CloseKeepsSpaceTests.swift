@@ -85,7 +85,8 @@ import Testing
         scene.engineSelects(scene.elsewhere.id)
         let landed = scene.archived([last])
         scene.window.reconcile(landed) { _ in true }
-        #expect(scene.window.finishFolderRemoval(decision, state: landed, available: { _ in true })
+        let finished = scene.window.finishFolderRemoval(decision, state: landed, available: { _ in true })
+        #expect(finished
                 && scene.window.activeSpaceID == scene.home.id && scene.window.selectedTabIDs.isEmpty)
     }
 
@@ -113,7 +114,8 @@ import Testing
         let undo = try #require(ClosedTabsUndo(prompt: .archive, ids: [last], spaceID: scene.home.id, profileID: scene.home.profileID,
                                                focusedTabID: last, before: scene.state, after: landed))
         landed = try #require(undo.restoring(landed))
-        #expect(scene.window.finishClosedTabsUndo(undo, state: landed, available: { _ in true })
+        let finished = scene.window.finishClosedTabsUndo(undo, state: landed, available: { _ in true })
+        #expect(finished
                 && scene.window.activeSpaceID == scene.home.id && scene.window.selectedTabIDs == [last])
     }
 
@@ -135,7 +137,8 @@ import Testing
         var emptied = only
         emptied.tabs[0].archivedAt = Date(timeIntervalSince1970: 100)
         emptied.selectedTabIDs = []
-        #expect(window.finishFolderRemoval(alone, state: emptied, available: { _ in true })
+        let finished = window.finishFolderRemoval(alone, state: emptied, available: { _ in true })
+        #expect(finished
                 && window.activeSpaceID == space.id && window.selectedTabIDs.isEmpty)
     }
 
@@ -154,7 +157,8 @@ import Testing
         scene.window.closePage(today)
         scene.engineSelects(scene.elsewhere.id)
         let landed = scene.archived([today])
-        #expect(scene.window.finishFolderRemoval(decision, state: landed, available: { _ in true })
+        let finished = scene.window.finishFolderRemoval(decision, state: landed, available: { _ in true })
+        #expect(finished
                 && scene.window.activeSpaceID == scene.home.id && scene.window.selectedTabIDs == [pinned])
     }
 
@@ -167,7 +171,8 @@ import Testing
         #expect(decision.tabIDs == [shared] && decision.replacementSpaceID == scene.home.id)
         let landed = scene.archived([opened])
         scene.window.closePage(opened)
-        #expect(scene.window.finishFolderRemoval(decision, state: landed, available: { _ in true })
+        let finished = scene.window.finishFolderRemoval(decision, state: landed, available: { _ in true })
+        #expect(finished
                 && scene.window.activeSpaceID == scene.home.id && scene.window.selectedTabIDs == [shared])
     }
 
@@ -179,7 +184,8 @@ import Testing
         for id in ids { scene.window.closePage(id) }
         scene.engineSelects(scene.elsewhere.id)
         let cleared = scene.archived(ids)
-        #expect(scene.window.finishFolderRemoval(wiped, state: cleared, available: { _ in true })
+        let finished = scene.window.finishFolderRemoval(wiped, state: cleared, available: { _ in true })
+        #expect(finished
                 && scene.window.activeSpaceID == scene.home.id && scene.window.selectedTabIDs.isEmpty)
     }
 
@@ -188,7 +194,8 @@ import Testing
         let closer = scene.tabs[0].id, sibling = scene.tabs[1].id
         let handOver = try #require(scene.decide([closer]))
         scene.window.closePage(closer)
-        #expect(scene.window.finishFolderRemoval(handOver, state: scene.state, available: { _ in true }))
+        let finished = scene.window.finishFolderRemoval(handOver, state: scene.state, available: { _ in true })
+        #expect(finished)
         scene.engineSelects(scene.elsewhere.id)
         #expect(scene.window.activeSpaceID == scene.home.id && scene.window.selectedTabIDs == [sibling])
     }
@@ -198,7 +205,8 @@ import Testing
         let closer = scene.tabs[0].id
         let lastOut = try #require(scene.decide([closer]))
         scene.window.closePage(closer)
-        #expect(scene.window.finishFolderRemoval(lastOut, state: scene.state, available: { _ in true })
+        let finished = scene.window.finishFolderRemoval(lastOut, state: scene.state, available: { _ in true })
+        #expect(finished
                 && scene.window.activeSpaceID == scene.home.id && scene.window.selectedTabIDs.isEmpty)
     }
 }
