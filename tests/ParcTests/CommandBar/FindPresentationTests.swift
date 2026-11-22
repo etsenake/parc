@@ -97,6 +97,63 @@ struct FindPresentationTests {
 }
 
 extension FindPresentationTests {
+    @MainActor private final class FindWindow: NSWindow {
+        override var isVisible: Bool { true }
+        override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+    }
+
+    @MainActor private final class FindRoot: NSView {
+        override var isFlipped: Bool { true }
+    }
+
+    @MainActor private struct Placement {
+        let window: FindWindow
+        let root: FindRoot
+        let pane = NSView(frame: CGRect(x: 228, y: 9, width: 1000, height: 700))
+        let bar = PageFindView(frame: .zero)
+
+        init() {
+            let frame = CGRect(x: 100, y: 120, width: 1228, height: 709)
+            window = FindWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            root = FindRoot(frame: CGRect(origin: .zero, size: frame.size))
+            window.contentView = root
+            pane.autoresizingMask = [.width, .height]
+            root.addSubview(pane)
+            root.addSubview(bar)
+            place()
+        }
+
+        func place() { bar.place(over: pane, in: root, window: window) }
+
+        var barOnScreen: NSRect {
+            window.convertToScreen(bar.convert(bar.bounds, to: nil))
+        }
+    }
+
+    @Test @MainActor func resizingTheWindowFitsTheFindBarInsideTheResizedPane() {
+        _ = NSApplication.shared
+        let fixture = Placement()
+        fixture.window.setContentSize(NSSize(width: 478, height: 609))
+        let resizedPane = fixture.pane.frame
+        fixture.place()
+        #expect(fixture.bar.frame == NSRect(x: 238, y: 19, width: 230, height: 32))
+        #expect(fixture.pane.frame == resizedPane)
+    }
+
+    @Test @MainActor func movingTheWindowCarriesTheFindBarWithItsPage() {
+        _ = NSApplication.shared
+        let fixture = Placement()
+        let bar = fixture.bar.frame
+        let originalScreenFrame = fixture.barOnScreen
+        let origin = fixture.window.frame.origin
+        fixture.window.setFrameOrigin(NSPoint(x: origin.x + 20, y: origin.y + 30))
+        #expect(fixture.bar.frame == bar)
+        #expect(fixture.barOnScreen == originalScreenFrame.offsetBy(dx: 20, dy: 30))
+    }
+}
+
+extension FindPresentationTests {
     @MainActor private final class HoverWindow: NSWindow {
         var key = true
         var pointer = NSPoint(x: 33, y: 33)

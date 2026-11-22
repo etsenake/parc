@@ -16,6 +16,7 @@ final class ShortcutPriorityHintView: NSView {
     private let clock: ParcToastClock
     private let makeWindow: @MainActor (NSRect) -> NSWindow
     private let reduceMotion: @MainActor () -> Bool
+    private let scheduleShow: @MainActor (@escaping @MainActor @Sendable () -> Void) -> Void
     private var cancelReveal: (() -> Void)?
     private var cancelClose: (() -> Void)?
     private var generation = UUID()
@@ -40,12 +41,14 @@ final class ShortcutPriorityHintView: NSView {
 
     init(title: String, shortcut: String, canEdit: Bool, theme: SpaceTheme, basicBackground: NSColor?,
          clock: ParcToastClock = .system, makeWindow: (@MainActor (NSRect) -> NSWindow)? = nil,
-         reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
+         reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
+         scheduleShow: @escaping @MainActor (@escaping @MainActor @Sendable () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) {
         self.clock = clock
         self.makeWindow = makeWindow ?? {
             ShortcutHintWindow(contentRect: $0, styleMask: .borderless, backing: .buffered, defer: false)
         }
         self.reduceMotion = reduceMotion
+        self.scheduleShow = scheduleShow
         state = ParcToastState(content: .pressAgain(shortcut: shortcut, title: title),
             accessory: canEdit ? ParcToastAccessory(text: "Edit the shortcut", image: "arrow.up.right",
                                                    accessibilityLabel: "Edit the shortcut for " + title) : nil,
@@ -88,7 +91,7 @@ final class ShortcutPriorityHintView: NSView {
         layoutSubtreeIfNeeded()
         guard panel.parent === parent, panel.isVisible else { dismiss(animated: false); return false }
         let token = generation
-        DispatchQueue.main.async { [weak self, weak panel] in
+        scheduleShow { [weak self, weak panel] in
             guard let self, self.generation == token, self.toastWindow === panel, self.isAvailable else { return }
             self.state.show()
         }

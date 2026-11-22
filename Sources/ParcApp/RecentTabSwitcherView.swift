@@ -69,10 +69,11 @@ final class RecentTabSwitcherView: NSView {
         self.init(frame: frame, schedulePublication: { DispatchQueue.main.async(execute: $0) })
     }
 
-    init(frame: NSRect, schedulePublication: @escaping (DispatchWorkItem) -> Void) {
+    init(frame: NSRect, schedulePublication: @escaping (DispatchWorkItem) -> Void,
+         reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
         self.schedulePublication = schedulePublication
         super.init(frame: frame)
-        catalog.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        catalog.reduceMotion = reduceMotion()
         host = RecentSwitcherHost(rootView: RecentSwitcherContent(catalog: catalog, focus: focusState,
             hover: { [weak self] id in self?.hover(id) },
             choose: { [weak self] id in self?.choose(id) },
@@ -84,7 +85,7 @@ final class RecentTabSwitcherView: NSView {
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, !self.retired else { return }
-                    let next = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                    let next = reduceMotion()
                     if self.catalog.reduceMotion != next { self.catalog.reduceMotion = next }
                 }
             }
@@ -586,7 +587,7 @@ private struct RecentSwitcherRecordingDot: View {
 }
 
 @MainActor final class RecentSwitcherArtwork {
-    static let shared = RecentSwitcherArtwork()
+    static let bundled = RecentSwitcherArtwork(resources: Bundle.main.resourceURL)
     let directory: URL?
     private var cache: [String: NSImage] = [:]
 
@@ -597,6 +598,7 @@ private struct RecentSwitcherRecordingDot: View {
     var note: NSImage? { template("NotePreviewThumbnail") }
     var easel: NSImage? { template("EaselPreviewThumbnail") }
     var incognito: NSImage? { template("IncognitoTabPreviewThumbnail") }
+
     private func template(_ name: String) -> NSImage? {
         if let image = cache[name] { return image }
         guard let url = directory?.appendingPathComponent(name + ".pdf"),

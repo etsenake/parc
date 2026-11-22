@@ -475,9 +475,9 @@ extension BrowserWindowController {
                 var component = RecentTabSwitcher.Component(id: id, title: title,
                     page: browsers[id]?.nativePage, localPreview: preview)
                 switch InternalPage(urlString: tab.url) {
-                case .note?: component.template = RecentSwitcherArtwork.shared.note.map { .init(image: $0, title: title) }
-                case .easel?: component.template = RecentSwitcherArtwork.shared.easel.map { .init(image: $0, title: title) }
-                case nil: if privateWindow { component.template = RecentSwitcherArtwork.shared.incognito.map { .init(image: $0, title: nil) } }
+                case .note?: component.template = RecentSwitcherArtwork.bundled.note.map { .init(image: $0, title: title) }
+                case .easel?: component.template = RecentSwitcherArtwork.bundled.easel.map { .init(image: $0, title: title) }
+                case nil: if privateWindow { component.template = RecentSwitcherArtwork.bundled.incognito.map { .init(image: $0, title: nil) } }
                 }
                 if let page = InternalPage(urlString: tab.url) {
                     component.favicon = DocumentDefaultIcon.fallback(named: page.sidebarFallbackSymbol)

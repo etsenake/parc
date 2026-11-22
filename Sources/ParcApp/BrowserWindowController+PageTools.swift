@@ -411,10 +411,8 @@ extension BrowserWindowController {
     func layoutFindBar() {
         guard !findHost.isHidden, let state = visibleFind, isCurrentFind(state),
               libraryView == nil, nativeFullscreenTabID == nil,
-              let page = state.owner, page.nativeView.window === window,
-              !page.nativeView.isHiddenOrHasHiddenAncestor else { return }
-        let pageFrame = page.nativeView.convert(page.nativeView.bounds, to: rootView)
-        findHost.frame = PageFindView.frame(in: pageFrame.intersection(rootView.bounds))
+              let page = state.owner else { return }
+        findHost.place(over: page.nativeView, in: rootView, window: window)
     }
     private var canOwnFind: Bool {
         ownsSpaceCommandFocus && !isClosing && !wholeWindowClose && !windowClosePending && !windowCloseApproved

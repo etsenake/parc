@@ -1,4 +1,5 @@
 import AppKit
+import ParcCore
 import Testing
 @testable import Parc
 
@@ -94,6 +95,96 @@ struct LiveBindingTests {
         #expect(item.keyEquivalent.isEmpty)
         fixture.register("copyCurrentURL:", chord: fixture.copyDefault)
         #expect(item.keyEquivalent == chord.key)
+    }
+}
+
+extension LiveBindingTests {
+    @MainActor private final class ToastParent: NSWindow {
+        private var children: [NSWindow] = []
+        var recordedVisibility = true
+
+        override var isKeyWindow: Bool { true }
+        override var isVisible: Bool { recordedVisibility }
+        override var childWindows: [NSWindow]? { children }
+
+        override func addChildWindow(_ childWin: NSWindow, ordered place: NSWindow.OrderingMode) {
+            children.append(childWin)
+            childWin.parent = self
+        }
+
+        override func removeChildWindow(_ childWin: NSWindow) {
+            children.removeAll { $0 === childWin }
+            childWin.parent = nil
+        }
+    }
+
+    @MainActor private final class ToastChild: ParcToastWindow {
+        private weak var owner: NSWindow?
+
+        override var isVisible: Bool { owner != nil }
+        override var parent: NSWindow? {
+            get { owner }
+            set { owner = newValue }
+        }
+
+        override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+            super.setFrame(frameRect, display: false)
+        }
+    }
+
+    @MainActor private struct ToastFixture {
+        let parent: ToastParent
+        let anchor = NSView(frame: NSRect(x: 20, y: 10, width: 260, height: 160))
+        let presenter = ParcToastPresenter(clock: ParcToastClock(repeating: { _, _ in {} }, after: { _, _ in {} }),
+                                           present: { toast, parent, anchor in
+            toast.present(in: parent, over: anchor, makeWindow: {
+                ToastChild(contentRect: $0, styleMask: .borderless, backing: .buffered, defer: true)
+            })
+        })
+
+        init() {
+            parent = ToastParent(contentRect: NSRect(x: 100, y: 100, width: 300, height: 200),
+                                 styleMask: .borderless, backing: .buffered, defer: true)
+            parent.isReleasedWhenClosed = false
+            parent.contentView?.addSubview(anchor)
+        }
+
+        func showUpsell() -> ParcToastPresentation? {
+            presenter.show(.superCopyUpsell(shortcut: "⇧⌘C", message: "Copy links faster by pressing ⇧⌘C"),
+                           in: parent, over: anchor, theme: SpaceTheme())
+        }
+    }
+
+    @Test @MainActor func theCopyUpsellAttachesToItsOriginalWindow() throws {
+        _ = NSApplication.shared
+        let fixture = ToastFixture()
+        defer { fixture.presenter.dismiss(animated: false) }
+        let toast = try #require(fixture.showUpsell())
+        let children = try #require(fixture.parent.childWindows)
+        try #require(children.count == 1)
+        #expect(children[0].parent === fixture.parent)
+        #expect(children[0].contentView === toast)
+    }
+
+    @Test @MainActor func aHiddenWindowCannotAttachTheCopyUpsell() {
+        _ = NSApplication.shared
+        let fixture = ToastFixture()
+        fixture.parent.recordedVisibility = false
+        defer { fixture.presenter.dismiss(animated: false) }
+        #expect(fixture.showUpsell() == nil)
+        #expect(fixture.parent.childWindows?.isEmpty == true)
+    }
+
+    @Test @MainActor func theCopyUpsellPreservesTheWindowsFieldEditor() throws {
+        _ = NSApplication.shared
+        let fixture = ToastFixture()
+        defer { fixture.presenter.dismiss(animated: false) }
+        let field = NSTextField(string: "https://example.test/")
+        fixture.anchor.addSubview(field)
+        try #require(fixture.parent.makeFirstResponder(field))
+        let fieldEditor = try #require(field.currentEditor())
+        try #require(fixture.showUpsell() != nil)
+        #expect(fixture.parent.firstResponder === fieldEditor)
     }
 }
 
