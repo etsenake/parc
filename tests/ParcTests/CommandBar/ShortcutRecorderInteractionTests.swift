@@ -113,3 +113,42 @@ struct ShortcutRecorderInteractionTests {
         #expect(pulse == !reduceMotion)
     }
 }
+
+extension ShortcutRecorderInteractionTests {
+    @Test @MainActor func anUnsupportedPrintableKeyEndsCaptureWithoutACommit() throws {
+        let fixture = try Fixture()
+        try fixture.press(0)
+        #expect(fixture.changes.isEmpty)
+        #expect(!fixture.recorder.isRecording)
+    }
+
+    @Test @MainActor func movingFocusAwayEndsCapture() throws {
+        let fixture = try Fixture()
+        let next = NSButton(title: "Next", target: nil, action: nil)
+        fixture.recorder.addSubview(next)
+        #expect(fixture.window.makeFirstResponder(next))
+        #expect(!fixture.recorder.isRecording)
+        #expect(fixture.changes.isEmpty)
+    }
+
+    @Test @MainActor func aDisabledRecorderRefusesFocusAndAccessibilityPress() throws {
+        let fixture = try Fixture()
+        fixture.recorder.isEnabled = false
+        #expect(!fixture.recorder.isRecording)
+        #expect(!fixture.recorder.acceptsFirstResponder)
+        #expect(!fixture.recorder.accessibilityPerformPress())
+    }
+
+    @Test @MainActor func removingTheRecorderEndsEachCaptureExactlyOnce() throws {
+        let fixture = try Fixture()
+        fixture.recorder.cancelRecording()
+        var begins = 0, ends = 0
+        fixture.recorder.onBegin = { begins += 1 }
+        fixture.recorder.onEnd = { ends += 1 }
+        #expect(fixture.window.makeFirstResponder(fixture.recorder))
+        fixture.window.contentView = nil
+        #expect(!fixture.recorder.isRecording)
+        #expect(begins == 1)
+        #expect(ends == 1)
+    }
+}

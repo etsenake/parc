@@ -23,7 +23,8 @@ extension NavigationPipelineTests.Fixture {
 
     func move(_ command: String) throws {
         let field = try input()
-        #expect(bar.control(field, textView: try editor(), doCommandBy: NSSelectorFromString(command)))
+        let textView = try editor()
+        #expect(bar.control(field, textView: textView, doCommandBy: NSSelectorFromString(command)))
     }
 
     func choose(_ text: String) throws {
