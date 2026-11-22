@@ -23,11 +23,15 @@ struct NavigationPipelineTests {
             let native = PCNativeOmnibox(profilePath: "test", page: nil, window: nil)
             self.native = native
             let defaults = try #require(UserDefaults(suiteName: "Parc.NavigationPipeline." + UUID().uuidString))
+            let files = IsolatedNoteFiles.make()
+            let noteIcons = NoteTabIcons(files: files, worker: .inline, clock: files.clock)
+            let iconArt = NoteTabIconArt(icons: noteIcons, easels: EaselTabIcons(files: files))
             bar = CommandBar(parent: window, tabs: tabs, history: [], documents: { documents }, currentURL: address,
                 profilePath: "test", page: nil, addressOnly: compact, currentPageTitle: "Current page",
                 initialEdit: query.isEmpty ? nil : (query, NSRange(location: query.utf16.count, length: 0)),
                 shortcuts: KeyboardShortcuts(mainMenu: { nil }, observesKeyboardLayout: false),
-                privacyDefaults: defaults, makeOmnibox: { _, _, _ in native }, loadFavicon: { _, _, _ in })
+                privacyDefaults: defaults, makeOmnibox: { _, _, _ in native }, loadFavicon: { _, _, _ in },
+                noteIconArt: iconArt)
             bar.present()
         }
 

@@ -8,6 +8,7 @@ import Testing
     let root: URL
     let notes: URL
     let profile = UUID()
+    let files = NoteFileTestSupport.files(clock: NoteManualClock())
     var heard: [Set<String>?] = []
     var cancellables: [AnyCancellable] = []
 
@@ -22,7 +23,7 @@ import Testing
     }
 
     func icons(_ store: EaselStore) -> EaselTabIcons {
-        let icons = EaselTabIcons()
+        let icons = EaselTabIcons(files: files)
         icons.worker = .inline
         let directory = store.directory
         let notes = notes
@@ -72,7 +73,7 @@ import Testing
     }
 
     @Test func anUnknownProfileFallsBackToTheMark() {
-        #expect(EaselTabIcons().lookup(profile: UUID(), id: UUID()) == .known(nil))
+        #expect(EaselTabIcons(files: files).lookup(profile: UUID(), id: UUID()) == .known(nil))
     }
 
     @Test func aLiveEaselsIconShowsAtOnceAndTellsListeners() throws {
@@ -131,7 +132,7 @@ import Testing
         let (store, session) = try session(icon: EaselPageIcon.custom(named: "party-parrot"))
         let icons = icons(store)
         _ = icons.lookup(profile: profile, id: session.document.id)
-        let entry = try NoteEmojiLibrary.library(root: notes).add(png: png, name: "party-parrot")
+        let entry = try files.emojiLibrary(root: notes).add(png: png, name: "party-parrot")
         let file = try #require(imageFile(icons.lookup(profile: profile, id: session.document.id)))
         #expect(file.lastPathComponent == entry.file)
         #expect(!heard.isEmpty)
@@ -139,7 +140,7 @@ import Testing
 
     @Test func deletingTheCustomEmojiTurnsTheIconBackToTheMarkAndTellsListeners() throws {
         let (store, session) = try session(icon: EaselPageIcon.custom(named: "party-parrot"))
-        let library = NoteEmojiLibrary.library(root: notes)
+        let library = files.emojiLibrary(root: notes)
         _ = try library.add(png: png, name: "party-parrot")
         let icons = icons(store)
         _ = icons.lookup(profile: profile, id: session.document.id)

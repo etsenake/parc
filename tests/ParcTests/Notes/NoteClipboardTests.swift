@@ -8,6 +8,7 @@ import Testing
 final class NoteClipboardRecordingEnvironment: NoteEnvironment {
     let documentURL: URL?
     let isPlainText = false
+    let files = IsolatedNoteFiles.make()
     var imported: [URL] = []
     var importedData: [(Data, String)] = []
 

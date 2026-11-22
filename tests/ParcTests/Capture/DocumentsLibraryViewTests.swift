@@ -11,6 +11,8 @@ struct DocumentsLibraryViewTests {
         let store: BrowserStore
         let profile: UUID
         let files: NoteFiles
+        let easelIcons: EaselTabIcons
+        let easelStore: EaselStore
         let library: NoteLibrary
         let view: DocumentsLibraryView
         let window: NSWindow
@@ -21,16 +23,22 @@ struct DocumentsLibraryViewTests {
             store = try BrowserStore(directory: directory)
             profile = store.activeSpace.profileID
             let defaults = try #require(UserDefaults(suiteName: suite))
-            files = NoteFiles(settings: NoteFileSettings(clock: clock, worker: .inline, hopToMain: { _ in },
-                trashMover: { _ in throw NoteEditorRealTrashRefused() }, defaults: defaults, notesFolders: { [] }))
+            let defaultFolder = directory.appendingPathComponent("Default Notes", isDirectory: true)
+            var settings = NoteFileSettings(clock: clock, worker: .inline, hopToMain: { _ in },
+                trashMover: { _ in throw NoteEditorRealTrashRefused() }, defaults: defaults, notesFolders: { [] })
+            settings.defaultFolder = { defaultFolder }
+            files = NoteFiles(settings: settings)
+            easelIcons = EaselTabIcons(files: files)
+            easelIcons.worker = .inline
+            easelStore = try EaselStore(directory: store.easelsDirectory(for: profile))
             files.folders.setFolder(directory.appendingPathComponent("Library Notes", isDirectory: true), for: profile)
             library = files.library(forProfile: profile)
             if easels > 0 {
-                let easelStore = try EaselEditorViewController.sharedStore(directory: store.easelsDirectory(for: profile))
                 for index in 0..<easels { _ = try easelStore.create(title: "Disposable Easel \(index + 1)") }
             }
             for title in notes { _ = try library.createNote(title: title) }
-            view = DocumentsLibraryView(store: store, profileID: profile, files: files)
+            view = DocumentsLibraryView(store: store, profileID: profile, files: files, easelIcons: easelIcons,
+                                        easelStore: { [easelStore] _ in easelStore })
             view.ownerValid = { true }
             view.appearance = NSAppearance(named: .aqua)
             view.palette = ThemeChromePalette(theme: SpaceTheme(), isDark: false)
@@ -273,7 +281,9 @@ struct DocumentsLibraryViewTests {
     }
 
     @MainActor private func hosted(_ fixture: Fixture) throws -> (LibraryView, NSWindow, NSTableView) {
-        let library = LibraryView(store: fixture.store, kind: .documents, profileID: fixture.profile, files: fixture.files,
+        let library = LibraryView(store: fixture.store, kind: .documents, profileID: fixture.profile,
+                                  files: fixture.files, easelIcons: fixture.easelIcons,
+                                  easelStore: { _ in fixture.easelStore },
                                   reduceMotion: { true })
         library.frame = NSRect(x: 0, y: 0, width: 416, height: 600)
         let window = NSWindow(contentRect: library.frame, styleMask: [.titled], backing: .buffered, defer: false)

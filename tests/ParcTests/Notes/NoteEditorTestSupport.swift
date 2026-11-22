@@ -9,8 +9,7 @@ struct NoteEditorRealTrashRefused: Error {}
 @MainActor
 enum NoteEditorFiles {
     static func make(clock: NoteFileClock, worker: NoteFileWorker = .inline) -> NoteFiles {
-        NoteFiles(settings: NoteFileSettings(clock: clock, worker: worker, hopToMain: { _ in },
-                                             trashMover: { _ in throw NoteEditorRealTrashRefused() }, notesFolders: { [] }))
+        IsolatedNoteFiles.make(clock: clock, worker: worker)
     }
 }
 

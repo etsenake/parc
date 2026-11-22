@@ -72,7 +72,7 @@ struct ProfileRemovalControllerTests {
     private final class Fixture {
         let directory: URL
         let store: BrowserStore
-        let controller = ProfileRemovalController()
+        let controller = ProfileRemovalController(noteFolders: IsolatedNoteFiles.make().folders)
         let native = NativeDouble()
         let originalDefault: UUID
         var first = UUID(), second = UUID(), third = UUID()

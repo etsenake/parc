@@ -48,7 +48,7 @@ struct NoteClipboardImportTestsClosingAndFailures {
 
     @Test func theSavedNoteLinksToFilesThatReallyExist() throws {
         let quit = try quitMidCopy()
-        let environment = NoteFileEnvironment(documentURL: quit.page, isPlainText: false)
+        let environment = NoteFileEnvironment(documentURL: quit.page, isPlainText: false, files: importer.files)
         let saved = NoteMarkdown.parse(quit.text).blocks.filter(\.kind.isMedia)
         #expect(saved.count == 2)
         #expect(saved.allSatisfy { block in

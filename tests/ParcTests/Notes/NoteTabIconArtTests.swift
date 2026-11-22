@@ -36,7 +36,7 @@ final class NoteTabIconArtTests {
     func art(worker: NoteFileWorker = .inline) -> NoteTabIconArt {
         let icons = NoteTabIcons(files: files, worker: worker, clock: clock)
         icons.folderChanges = { _ in nil }
-        return NoteTabIconArt(icons: icons)
+        return NoteTabIconArt(icons: icons, easels: EaselTabIcons(files: files))
     }
 
     var noteMark: NSImage { DocumentDefaultIcon.note.image(size: NoteTabIconArt.side) }

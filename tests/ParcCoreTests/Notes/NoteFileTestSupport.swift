@@ -50,8 +50,12 @@ enum NoteFileTestSupport {
                       hopToMain: @escaping NoteFileSettings.MainHop = { _ in },
                       trashMover: @escaping NoteFileSettings.TrashMover = { _ in throw NoteRealTrashRefused() },
                       notesFolders: @escaping @MainActor () -> [URL] = { [] }) -> NoteFiles {
-        NoteFiles(settings: NoteFileSettings(clock: clock, worker: worker, hopToMain: hopToMain, trashMover: trashMover,
-                                             notesFolders: notesFolders))
+        let id = UUID().uuidString
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("parc-notes-\(id)", isDirectory: true)
+        var settings = NoteFileSettings(clock: clock, worker: worker, hopToMain: hopToMain, trashMover: trashMover,
+                                        defaults: UserDefaults(suiteName: "parc.tests.notes.\(id)")!, notesFolders: notesFolders)
+        settings.defaultFolder = { folder }
+        return NoteFiles(settings: settings)
     }
 
     static func isPresented(_ url: URL) -> Bool {

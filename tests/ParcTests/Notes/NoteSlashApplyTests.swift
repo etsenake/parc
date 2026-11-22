@@ -308,7 +308,8 @@ struct NoteSlashApplyTests {
 
     func newNotes() throws -> (NoteEditorTemporaryFolder, URL?, URL?, URL?) {
         let folder = try NoteEditorTemporaryFolder("slash")
-        let environment = NoteDetachedEnvironment(documentURL: folder.url.appendingPathComponent("Home.md"))
+        let environment = NoteDetachedEnvironment(documentURL: folder.url.appendingPathComponent("Home.md"),
+                                                  files: IsolatedNoteFiles.make())
         return (folder, try? environment.createNote(titled: "Untitled"), try? environment.createNote(titled: "Untitled"),
                 try? environment.createNote(titled: "a/b: c"))
     }

@@ -51,7 +51,8 @@ extension NavigationPipelineTests {
 
     @Test(arguments: [false, true])
     @MainActor func theCompactEmptyEditorLeavesOutLocalDocumentTabs(compact: Bool) throws {
-        let noteFile = URL(fileURLWithPath: "/Users/example/Documents/Parc Notes/Example Note.md")
+        let folder = try NoteEditorTemporaryFolder("navigation-note")
+        let noteFile = try folder.write("# Example Note", to: "Example Note.md")
         let web = tab("https://example.com/", title: "Example")
         let note = tab(InternalPage.note(noteFile).urlString, title: "Example Note")
         let fixture = try Fixture(compact: compact, tabs: [web, note])

@@ -22,7 +22,7 @@ struct LibraryRailLayoutTests {
             _ = NSApplication.shared
             store = try BrowserStore(directory: directory)
             profile = store.state.profiles[0].id
-            view = LibraryView(store: store, kind: kind, profileID: profile, files: IsolatedNoteFiles.make(), reduceMotion: { true })
+            view = LibraryView(isolatingNotesIn: store, kind: kind, profileID: profile, reduceMotion: { true })
             view.frame = NSRect(x: 0, y: 0, width: 416, height: height)
             view.appearance = NSAppearance(named: .aqua)
             window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)

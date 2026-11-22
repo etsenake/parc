@@ -5,8 +5,9 @@ import Testing
 
 struct NoteDefaultFolderTests {
     @Test func theDefaultFolderIsParcNotesInsideDocuments() {
-        #expect(NoteLibrary.defaultFolder.lastPathComponent == "Parc Notes")
-        #expect(NoteLibrary.defaultFolder.deletingLastPathComponent().lastPathComponent == "Documents")
+        let folder = NoteLibrary.defaultFolder
+        #expect(folder.lastPathComponent == "Parc Notes")
+        #expect(folder.deletingLastPathComponent().lastPathComponent == "Documents")
     }
 }
 

@@ -268,7 +268,8 @@ import Testing
 
     @Test func theDefaultNoteCreationWorksForAnyEnvironmentWithADocument() throws {
         let page = NoteFileTestSupport.write("", to: folder.appendingPathComponent("Detached/Page.md"))
-        #expect(try NoteDetachedEnvironment(documentURL: page).createNote(titled: "Detached").lastPathComponent == "Detached.md")
+        let environment = NoteDetachedEnvironment(documentURL: page, files: files)
+        #expect(try environment.createNote(titled: "Detached").lastPathComponent == "Detached.md")
     }
 
     @Test func noDocumentMeansNoFolderForANewNote() {

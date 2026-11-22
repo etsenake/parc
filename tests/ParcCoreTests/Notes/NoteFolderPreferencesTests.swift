@@ -8,15 +8,17 @@ import Testing
     let defaults: UserDefaults
     let preferences: NoteFolderPreferences
     let first = UUID(), second = UUID()
-    let standard = NoteLibrary.defaultFolder.standardizedFileURL
+    let standard: URL
     var announced: [UUID] = []
     var subscription: AnyCancellable?
 
     init() throws {
         let suite = "parc.tests.note-folder." + UUID().uuidString
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true).standardizedFileURL
         self.suite = suite
+        standard = folder
         defaults = try #require(UserDefaults(suiteName: suite))
-        preferences = NoteFolderPreferences(defaults: defaults)
+        preferences = NoteFolderPreferences(defaults: defaults, defaultFolder: { folder })
         subscription = preferences.changes.sink { [unowned self] in self.announced.append($0) }
     }
 
@@ -97,7 +99,7 @@ import Testing
     }
 
     @Test func aSpacesLibraryIsTheSharedLibraryForItsFolder() {
-        let files = NoteFiles(settings: NoteFileSettings(clock: NoteManualClock(), worker: .inline, hopToMain: { _ in }, defaults: defaults))
+        let files = NoteFileTestSupport.files(clock: NoteManualClock())
         files.folders.setFolder(URL(fileURLWithPath: "/Users/parc-sample/Writing", isDirectory: true), for: second)
         #expect(files.library(forProfile: second) === files.library(folder: URL(fileURLWithPath: "/Users/parc-sample/Writing")))
     }

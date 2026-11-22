@@ -12,12 +12,7 @@ enum NoteClipboardImportTestsSupport {
 
         let folder: NoteEditorTemporaryFolder
 
-        lazy var files: NoteFiles = {
-            var settings = NoteFileSettings(clock: self.clock, worker: .inline, hopToMain: { _ in },
-                                            trashMover: { _ in throw NoteEditorRealTrashRefused() }, notesFolders: { [] })
-            settings.attachmentWorker = NoteFileWorker(deferred: self.jobs)
-            return NoteFiles(settings: settings)
-        }()
+        lazy var files = IsolatedNoteFiles.make(clock: clock, attachmentWorker: NoteFileWorker(deferred: jobs))
 
         var imports: NoteAttachmentImports { files.attachmentImports }
 

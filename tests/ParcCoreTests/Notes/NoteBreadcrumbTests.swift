@@ -52,16 +52,17 @@ import Testing
     }
 
     func browsing(in root: URL) {
+        let files = NoteFileTestSupport.files(clock: NoteManualClock())
         let folder = root.appendingPathComponent("Browse", isDirectory: true)
         make(folder.appendingPathComponent("Top.md"))
         make(folder.appendingPathComponent("Deeper/Inner.md"))
-        let shallow = NoteLibrary.browsing(folder)
+        let shallow = files.browsing(folder)
         #expect(!shallow.isRecursive, "browsing a folder outside the Notes folder lists only that folder")
-        #expect(NoteLibrary.browsing(folder) === shallow, "the same folder reuses its listing")
+        #expect(files.browsing(folder) === shallow, "the same folder reuses its listing")
         #expect(shallow.contains(folder.appendingPathComponent("Top.md")) && !shallow.contains(folder.appendingPathComponent("Deeper/Inner.md")), "and leaves subfolders out")
         let notes = root.appendingPathComponent("Notes", isDirectory: true)
-        let space = NoteLibrary.shared(folder: notes)
-        #expect(NoteLibrary.browsing(notes) === space, "a folder that already has a full listing reuses it")
+        let space = files.library(folder: notes)
+        #expect(files.browsing(notes) === space, "a folder that already has a full listing reuses it")
     }
 
     @Test func parcBreadcrumbReadsAsABreadcrumb() {
