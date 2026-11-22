@@ -9,6 +9,9 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     private enum Row: Equatable { case heading(String), item(BrowserDownload) }
     private let store: BrowserStore
     private let ownerValid: () -> Bool
+    private let makePreview: () -> DownloadLibraryPreview
+    var runInspection: @Sendable (@escaping @Sendable () -> Void) -> Void = { DispatchQueue.global(qos: .userInitiated).async(execute: $0) }
+    var deliverInspection: @Sendable (@escaping @Sendable () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }
     var onClose: (() -> Void)?
     var onToast: ((ParcToastContent) -> Void)?
     var onAction: ((BrowserDownload, DownloadLibraryAction) -> Bool)?
@@ -47,9 +50,12 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     private var suspended = false
     override var isFlipped: Bool { true }
 
-    init(store: BrowserStore, ownerValid: @escaping () -> Bool) {
+    init(store: BrowserStore, ownerValid: @escaping () -> Bool,
+         makePreview: (() -> DownloadLibraryPreview)? = nil,
+         reduceMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
         self.store = store; self.ownerValid = ownerValid
-        emptyContent = DownloadEmptyContentView(ownerValid: ownerValid)
+        self.makePreview = makePreview ?? { DownloadLibraryPreview() }
+        emptyContent = DownloadEmptyContentView(ownerValid: ownerValid, reduceMotion: reduceMotion)
         super.init(frame: .zero)
         setAccessibilityRole(.group); setAccessibilityLabel("Downloads")
         for view in [searchBackdrop, scroll, emptyContent, footer, retryLoad] {
@@ -206,7 +212,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         return false
     }
     private func escape() {
-        if preview?.window?.isVisible == true { closePreview(restoringFocus: true); window?.makeFirstResponder(table) }
+        if preview?.isShown == true { closePreview(restoringFocus: true); window?.makeFirstResponder(table) }
         else if !search.stringValue.isEmpty { retireContext(); thumbnails.cancelPending(); search.stringValue = ""; reload(force: true) }
         else { onClose?() }
     }
@@ -252,7 +258,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
             restoringSelection = true
             refreshCells(at: changed)
             restoringSelection = false
-            if preview?.window?.isVisible == true { updatePreview() }
+            if preview?.isShown == true { updatePreview() }
         } else { reloadRows(selecting: DownloadLibrarySelection.retainedRows(originals, in: rowItems)) }
         scroll.contentView.scroll(to: origin); scroll.reflectScrolledClipView(scroll.contentView)
         let isUnfilteredEmpty = query.isEmpty
@@ -359,7 +365,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         guard !restoringSelection else { return }
         activationGeneration &+= 1
         retireFileDrags()
-        if preview?.window?.isVisible == true { updatePreview() }
+        if preview?.isShown == true { updatePreview() }
     }
     @discardableResult private func confirmSelection() -> Bool {
         guard ownerValid(), let window, window.attachedSheet == nil,
@@ -395,20 +401,23 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         guard let url = fileURL?(original) else {
             reportActionFailure("This file is no longer available."); return
         }
-        DispatchQueue.global(qos: .userInitiated).async { [weak self, weak parent, weak responder] in
+        let deliver = deliverInspection
+        runInspection { [weak self, weak parent, weak responder] in
             let route = DownloadFileActivation.inspect(url)
-            DispatchQueue.main.async { [weak self, weak parent, weak responder] in
-                guard let self, let parent, self.window === parent, parent.attachedSheet == nil,
-                      parent.firstResponder === responder, parent.isKeyWindow == wasKey,
-                      self.activationGeneration == token, self.contextGeneration == generation,
-                      self.ownerValid(), !self.isHiddenOrHasHiddenAncestor,
-                      self.selectedItems.map(DownloadLibraryIdentity.init) == [identity],
-                      let current = self.resolve([original])?.first,
-                      self.operations[identity] == nil, self.fileURL?(current) == url else { return }
-                switch route {
-                case .preview: self.updatePreview()
-                case .open: self.act(.open, items: [current])
-                case .unavailable: self.reportActionFailure("This file is no longer available to preview.")
+            deliver { [weak self, weak parent, weak responder] in
+                MainActor.assumeIsolated {
+                    guard let self, let parent, self.window === parent, parent.attachedSheet == nil,
+                          parent.firstResponder === responder, parent.isKeyWindow == wasKey,
+                          self.activationGeneration == token, self.contextGeneration == generation,
+                          self.ownerValid(), !self.isHiddenOrHasHiddenAncestor,
+                          self.selectedItems.map(DownloadLibraryIdentity.init) == [identity],
+                          let current = self.resolve([original])?.first,
+                          self.operations[identity] == nil, self.fileURL?(current) == url else { return }
+                    switch route {
+                    case .preview: self.updatePreview()
+                    case .open: self.act(.open, items: [current])
+                    case .unavailable: self.reportActionFailure("This file is no longer available to preview.")
+                    }
                 }
             }
         }
@@ -485,7 +494,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     }
     private func togglePreview() {
         activationGeneration &+= 1
-        if preview?.window?.isVisible == true { preview?.dismiss() }
+        if preview?.isShown == true { preview?.dismiss() }
         else { updatePreview() }
     }
     private func updatePreview() {
@@ -498,7 +507,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         let isNew = preview == nil
         if let existing = preview { controller = existing }
         else {
-            controller = DownloadLibraryPreview(); preview = controller
+            controller = makePreview(); preview = controller
             controller.onMove = { [weak self, weak controller, weak window] forward in
                 guard let self, let controller, self.preview === controller, self.window === window,
                       self.contextGeneration == generation, self.ownerValid() else { return }
@@ -566,7 +575,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         restoringSelection = true
         table.reloadData(); table.selectRowIndexes(selection, byExtendingSelection: false)
         restoringSelection = false
-        if preview?.window?.isVisible == true { updatePreview() }
+        if preview?.isShown == true { updatePreview() }
     }
     private func applyPalette() {
         empty.textColor = palette?.foregroundSecondary ?? .secondaryLabelColor
