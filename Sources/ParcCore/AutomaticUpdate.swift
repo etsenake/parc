@@ -26,11 +26,11 @@ package struct AutomaticUpdate {
     }
 
     package static let delay: TimeInterval = 300
-    package static let requiredIdleTime: TimeInterval = 3
-    package static let idleAwayTime: TimeInterval = 1800
+    static let requiredIdleTime: TimeInterval = 3
+    static let idleAwayTime: TimeInterval = 1800
 
     package private(set) var away: Set<Away> = []
-    package private(set) var awaySince: TimeInterval?
+    private(set) var awaySince: TimeInterval?
 
     package init(away: Set<Away> = [], awaySince: TimeInterval? = nil) {
         self.away = away
@@ -47,7 +47,7 @@ package struct AutomaticUpdate {
         if away.isEmpty { awaySince = nil }
     }
 
-    package func isAway(at now: TimeInterval, _ activity: Activity) -> Bool {
+    func isAway(at now: TimeInterval, _ activity: Activity) -> Bool {
         if let awaySince, now - awaySince >= Self.delay { return true }
         return activity.idleTime >= Self.idleAwayTime && !activity.displayKeptOn
     }

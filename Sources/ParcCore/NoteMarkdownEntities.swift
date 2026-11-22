@@ -1,6 +1,6 @@
 import Foundation
 
-package enum NoteMDEntities {
+enum NoteMDEntities {
     private static let packed = """
         nbsp:160,iexcl:161,cent:162,pound:163,curren:164,yen:165,brvbar:166,sect:167,uml:168,copy:169,ordf:170
         laquo:171,not:172,shy:173,reg:174,macr:175,deg:176,plusmn:177,sup2:178,sup3:179,acute:180,micro:181
@@ -38,7 +38,7 @@ package enum NoteMDEntities {
         QUOT:34
         """
 
-    package static let named: [String: String] = {
+    static let named: [String: String] = {
         var table: [String: String] = [:]
         for entry in packed.split(whereSeparator: { $0 == "," || $0 == "\n" || $0 == " " }) {
             let parts = entry.split(separator: ":")
@@ -52,7 +52,7 @@ package enum NoteMDEntities {
         return table
     }()
 
-    package static func decode(_ bytes: ArraySlice<UInt8>, at start: Int) -> (String, Int)? {
+    static func decode(_ bytes: ArraySlice<UInt8>, at start: Int) -> (String, Int)? {
         guard start < bytes.endIndex, bytes[start] == 38 else { return nil }
         var index = start + 1
         guard index < bytes.endIndex else { return nil }
@@ -85,7 +85,7 @@ package enum NoteMDEntities {
         return (value, index + 1 - start)
     }
 
-    package static func decode(_ bytes: [UInt8], at start: Int) -> (String, Int)? {
+    static func decode(_ bytes: [UInt8], at start: Int) -> (String, Int)? {
         decode(bytes[...], at: start)
     }
 }

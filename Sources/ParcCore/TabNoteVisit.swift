@@ -99,7 +99,7 @@ package struct TabNoteVisit: Equatable {
 
     package var showsNote: Bool { !leaving && steps[position].document != nil }
     package var current: Entry? { showsNote ? steps[position].document : nil }
-    package var shownStep: Step { steps[leaving ? anchorIndex(position) : position] }
+    var shownStep: Step { steps[leaving ? anchorIndex(position) : position] }
     package var shownPage: PageEntry? { leaving ? nil : steps[position].page }
     package var pageUnderShown: PageEntry { steps[anchorIndex(position)].page ?? PageEntry(id: "", url: "", title: "") }
     package var page: Entry { Entry(url: pageUnderShown.url, title: pageUnderShown.title) }
@@ -137,7 +137,7 @@ package struct TabNoteVisit: Equatable {
         steps[...index].lastIndex { $0.page != nil } ?? 0
     }
 
-    package mutating func syncShown(url: String, title: String) {
+    mutating func syncShown(url: String, title: String) {
         guard !leaving else { return }
         switch steps[position] {
         case .document: steps[position] = .document(Entry(url: url, title: title))
@@ -146,7 +146,7 @@ package struct TabNoteVisit: Equatable {
     }
 
     @discardableResult
-    package mutating func followPage(url: String?, title: String?) -> Bool {
+    mutating func followPage(url: String?, title: String?) -> Bool {
         let index = pageID.flatMap { id in steps.firstIndex { $0.page?.id == id } } ?? anchorIndex(position)
         guard case .page(var entry) = steps[index] else { return false }
         let before = entry
@@ -364,12 +364,12 @@ extension BrowserTab {
     package var hasVisitStepBehind: Bool { noteVisit.map { !$0.behind.isEmpty } ?? false }
 
     @discardableResult
-    package mutating func openNoteVisit(url noteURL: URL, title noteTitle: String) -> Bool {
+    mutating func openNoteVisit(url noteURL: URL, title noteTitle: String) -> Bool {
         openDocumentVisit(.note(noteURL), title: noteTitle)
     }
 
     @discardableResult
-    package mutating func openDocumentVisit(_ document: InternalPage, title documentTitle: String,
+    mutating func openDocumentVisit(_ document: InternalPage, title documentTitle: String,
                                     history: TabNoteVisit.PageHistory? = nil) -> Bool {
         guard archivedAt == nil, let entry = TabNoteVisit.entry(document, title: documentTitle) else { return false }
         if var visit = noteVisit, visit.showsNote == InternalPage.isInternal(url) {
@@ -388,10 +388,10 @@ extension BrowserTab {
     }
 
     @discardableResult
-    package mutating func stepBackFromNote() -> Bool { stepNoteVisit(by: -1) }
+    mutating func stepBackFromNote() -> Bool { stepNoteVisit(by: -1) }
 
     @discardableResult
-    package mutating func stepForwardToNote() -> Bool { stepNoteVisit(by: 1) }
+    mutating func stepForwardToNote() -> Bool { stepNoteVisit(by: 1) }
 
     @discardableResult
     package mutating func stepNoteVisit(by offset: Int) -> Bool {
@@ -405,7 +405,7 @@ extension BrowserTab {
     }
 
     @discardableResult
-    package mutating func followPageUnderNote(url pageURL: String?, title pageTitle: String?) -> Bool {
+    mutating func followPageUnderNote(url pageURL: String?, title pageTitle: String?) -> Bool {
         guard var visit = noteVisit, visit.showsNote || visit.leaving else { return false }
         guard visit.followPage(url: pageURL.map(BrowserInternalURL.publicString), title: pageTitle) else { return false }
         noteVisit = visit
@@ -420,14 +420,14 @@ extension BrowserTab {
     }
 
     @discardableResult
-    package mutating func followNoteRename(from matches: (String) -> Bool, to destination: String, title noteTitle: String) -> Bool {
+    mutating func followNoteRename(from matches: (String) -> Bool, to destination: String, title noteTitle: String) -> Bool {
         guard var visit = noteVisit, visit.rename(matching: matches, to: destination, title: noteTitle) else { return false }
         noteVisit = visit
         return true
     }
 
     @discardableResult
-    package mutating func forgetNote(matching matches: (String) -> Bool) -> Bool {
+    mutating func forgetNote(matching matches: (String) -> Bool) -> Bool {
         guard let visit = noteVisit, visit.documents.contains(where: { matches($0.url) }) else { return false }
         let remaining = visit.removing(matching: matches)
         noteVisit = remaining
@@ -438,7 +438,7 @@ extension BrowserTab {
         return true
     }
 
-    package mutating func leaveNoteVisit(for destination: String) -> Bool {
+    mutating func leaveNoteVisit(for destination: String) -> Bool {
         guard var visit = noteVisit, visit.tracksPageHistory, visit.showsNote, InternalPage.isInternal(url),
               !InternalPage.isInternal(destination), visit.leave() else { return false }
         noteVisit = visit

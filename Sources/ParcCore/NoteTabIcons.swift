@@ -44,14 +44,14 @@ package final class NoteTabIcons {
 
     package static let shared = NoteTabIcons(files: .shared, worker: NoteFileWorker(label: "org.parc.notes.tab-icons", qos: .utility),
                                               clock: NoteFileSystemClock.shared)
-    package nonisolated static let rememberedNotes = 4_096
+    nonisolated static let rememberedNotes = 4_096
 
     package let files: NoteFiles
     package let worker: NoteFileWorker
     package let clock: NoteFileClock
     package let changes = PassthroughSubject<Set<String>?, Never>()
-    package var readIcon: @Sendable (URL) -> String? = { NoteTabIcons.frontMatterIcon($0) }
-    package lazy var folderChanges: @MainActor (URL) -> AnyPublisher<Void, Never>? = { [unowned files] note in
+    var readIcon: @Sendable (URL) -> String? = { NoteTabIcons.frontMatterIcon($0) }
+    lazy var folderChanges: @MainActor (URL) -> AnyPublisher<Void, Never>? = { [unowned files] note in
         files.library(for: note).changes.eraseToAnyPublisher()
     }
 

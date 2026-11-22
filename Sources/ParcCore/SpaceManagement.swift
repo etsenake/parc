@@ -23,7 +23,7 @@ package struct SpaceDeletionTarget: Equatable {
         order = state.sidebarItemOrder.filter { $0.key.hasPrefix(spaceID.uuidString + ":") }
     }
     package var tabIDs: Set<UUID> { Set(tabs.map(\.id)) }
-    package static func isProfileFavorite(_ group: BrowserSplitLayout, in state: BrowserState) -> Bool {
+    static func isProfileFavorite(_ group: BrowserSplitLayout, in state: BrowserState) -> Bool {
         guard let first = group.tabIDs.first.flatMap({ id in state.tab(id) }) else { return false }
         return SidebarSplitItems.isFavorite(group, in: state, profileID: first.profileID)
     }
@@ -32,11 +32,11 @@ package struct SpaceDeletionTarget: Equatable {
 package struct SpaceDeletionUndo {
     package let target: SpaceDeletionTarget
     package let index: Int
-    package let neighboringSpaces: [UUID]
+    let neighboringSpaces: [UUID]
     package let originals: [BrowserTab]
-    package let afterimages: [BrowserTab]
-    package let favoriteMoves: [(id: UUID, profile: UUID, before: UUID, after: UUID)]
-    package let favoriteGroups: [(before: BrowserSplitLayout, after: BrowserSplitLayout)]
+    let afterimages: [BrowserTab]
+    let favoriteMoves: [(id: UUID, profile: UUID, before: UUID, after: UUID)]
+    let favoriteGroups: [(before: BrowserSplitLayout, after: BrowserSplitLayout)]
     package let sourceSelection: [UUID]
     package let replacementSpaceID: UUID
     package let documents: [UUID: SidebarDocumentReference]
@@ -168,7 +168,7 @@ package struct SpaceFolderConversion {
     package let target: SpaceDeletionTarget
     package let destination: SidebarHierarchySnapshot
     package let folderID: UUID
-    package let todayFolderID: UUID
+    let todayFolderID: UUID
     package let documents: [UUID: SidebarDocumentReference]
     package var crossesProfiles: Bool { target.space.profileID != destination.profileID }
     package var tabIDs: Set<UUID> { target.tabIDs }
@@ -241,10 +241,10 @@ package struct SpaceFolderConversion {
 package struct SpaceFolderUndo {
     package let conversion: SpaceFolderConversion
     package let deletion: SpaceDeletionUndo
-    package let afterTabs: [BrowserTab]
-    package let afterFolders: [BrowserFolder]
-    package let afterGroups: [BrowserSplitLayout]
-    package let afterOrders: [String: [SidebarItemReference]]
+    let afterTabs: [BrowserTab]
+    let afterFolders: [BrowserFolder]
+    let afterGroups: [BrowserSplitLayout]
+    let afterOrders: [String: [SidebarItemReference]]
     @MainActor package var documentsAreAvailable: Bool { SidebarDocumentReference.validates(conversion.target.tabs, references: conversion.documents) }
 
     package init(conversion: SpaceFolderConversion, deletion: SpaceDeletionUndo, afterTabs: [BrowserTab], afterFolders: [BrowserFolder], afterGroups: [BrowserSplitLayout], afterOrders: [String: [SidebarItemReference]]) {

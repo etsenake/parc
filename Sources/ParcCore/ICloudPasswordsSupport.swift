@@ -9,8 +9,8 @@ package enum ICloudPasswordsSupport {
 
     package struct Signer {
         package var identifier: String?
-        package var team: String?
-        package var entitlements: [String: Any] = [:]
+        var team: String?
+        var entitlements: [String: Any] = [:]
 
         package static var current: Signer {
             var code: SecCode?
@@ -28,7 +28,7 @@ package enum ICloudPasswordsSupport {
     }
 
     package static let manifest = URL(fileURLWithPath: "/Library/Google/Chrome/NativeMessagingHosts/com.apple.passwordmanager.json")
-    package static let systemHelper = URL(fileURLWithPath:
+    static let systemHelper = URL(fileURLWithPath:
         "/System/Cryptexes/App/System/Library/CoreServices/PasswordManagerBrowserExtensionHelper.app/Contents/MacOS/PasswordManagerBrowserExtensionHelper")
 
     package static func connects() -> Bool {
@@ -47,7 +47,7 @@ package enum ICloudPasswordsSupport {
         return release < (15, 5)
     }
 
-    package static func installedHelper(manifest: URL = manifest, fallback: URL = systemHelper) -> Helper? {
+    static func installedHelper(manifest: URL = manifest, fallback: URL = systemHelper) -> Helper? {
         let named = (try? Data(contentsOf: manifest))
             .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
             .flatMap { $0["path"] as? String }
@@ -59,7 +59,7 @@ package enum ICloudPasswordsSupport {
         return nil
     }
 
-    package static func parentConstraint(in file: Data) -> Helper? {
+    static func parentConstraint(in file: Data) -> Helper? {
         func word(_ offset: Int, bigEndian: Bool = false) -> Int? {
             guard offset >= 0, offset <= file.count - 4 else { return nil }
             let raw = file.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt32.self) }
@@ -102,21 +102,21 @@ package enum ICloudPasswordsSupport {
         return nil
     }
 
-    package struct LaunchConstraint {
-        package struct Term {
-            package let key: String
-            package let value: Value
+    struct LaunchConstraint {
+        struct Term {
+            let key: String
+            let value: Value
         }
-        package enum Value {
+        enum Value {
             case integer(Int)
             case boolean(Bool)
             case string(String)
             case array([Value])
             case dictionary([Term])
         }
-        package let requirements: [Term]
+        let requirements: [Term]
 
-        package init?(_ der: Data) {
+        init?(_ der: Data) {
             let bytes = [UInt8](der)
             var index = 0
             guard case .array(let root)? = Self.value(bytes, &index, limit: bytes.count, depth: 0), index == bytes.count,
@@ -125,7 +125,7 @@ package enum ICloudPasswordsSupport {
             self.requirements = requirements
         }
 
-        package func admits(_ signer: Signer) -> Bool? { Self.all(requirements, signer) }
+        func admits(_ signer: Signer) -> Bool? { Self.all(requirements, signer) }
 
         private static func value(_ bytes: [UInt8], _ index: inout Int, limit: Int, depth: Int) -> Value? {
             guard depth < 32, index + 2 <= limit else { return nil }

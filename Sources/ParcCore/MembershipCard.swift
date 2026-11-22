@@ -26,7 +26,7 @@ package struct MembershipCardState: Codable, Equatable {
         ["6A2794", "C0009F", "FFD335"], ["A85901", "F29BBB", "FFD335"],
         ["D12D0F", "A85901", "F2EAE4"], ["1C3648", "6CBAD9", "F29BBB"]
     ]
-    package static let fallbackNumbers = [1, 6, 5, 4, 3, 2, 8, 7]
+    static let fallbackNumbers = [1, 6, 5, 4, 3, 2, 8, 7]
     package static func validatedName(_ value: String) throws -> String {
         let result = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !result.isEmpty, result.count <= 64,
@@ -49,12 +49,12 @@ package struct MembershipCardState: Codable, Equatable {
                     shape: shape, title: randomTitle(using: &random),
                     backgroundBlobInfo: (0..<15).map { _ in Int.random(in: 1...14, using: &random) })
     }
-    package static func shapeForName(_ name: String) -> Int {
+    static func shapeForName(_ name: String) -> Int {
         var lastWord: String?
         name.enumerateSubstrings(in: name.startIndex..<name.endIndex, options: .byWords) { word, _, _, _ in lastWord = word }
         return Int((lastWord?.unicodeScalars.first?.value ?? 0) % 4) + 1
     }
-    package func regenerated<R: RandomNumberGenerator>(using random: inout R) -> Self {
+    func regenerated<R: RandomNumberGenerator>(using random: inout R) -> Self {
         var next = self
         let shapes = (1...4).filter { $0 != shape }
         next.shape = shapes[Int.random(in: shapes.indices, using: &random)]

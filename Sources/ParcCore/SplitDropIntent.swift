@@ -40,8 +40,8 @@ package struct SplitDropIntent {
         var since: TimeInterval
     }
 
-    package let settleSpeed: Double
-    package let traversalSpeed: Double
+    let settleSpeed: Double
+    let traversalSpeed: Double
     package let dwell: TimeInterval
     package let window: TimeInterval
     package private(set) var shown: Zone?

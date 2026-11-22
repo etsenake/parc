@@ -3,8 +3,8 @@ import Foundation
 package enum NoteFileKind: String, Hashable, Codable {
     case markdown, plainText
 
-    package static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdtxt", "mdtext"]
-    package static let plainTextExtensions: Set<String> = ["txt", "text"]
+    static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdtxt", "mdtext"]
+    static let plainTextExtensions: Set<String> = ["txt", "text"]
 
     package init?(pathExtension: String) {
         let value = pathExtension.lowercased()

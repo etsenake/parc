@@ -11,7 +11,7 @@ package enum NumberedTarget {
         guard let value = number(id, prefix: "item"), numbers.contains(value) else { return nil }
         return value
     }
-    package static func spaceNumber(_ id: String) -> Int? { number(id, prefix: "space") }
+    static func spaceNumber(_ id: String) -> Int? { number(id, prefix: "space") }
     private static func number(_ id: String, prefix: String) -> Int? {
         guard id.hasPrefix(prefix), let value = Int(id.dropFirst(prefix.count)),
               value > 0, id == prefix + String(value) else { return nil }

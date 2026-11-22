@@ -1,6 +1,6 @@
 import Foundation
 
-package enum NoteFileLineEnding: String, Hashable, Sendable {
+enum NoteFileLineEnding: String, Hashable, Sendable {
     case lf = "\n"
     case crlf = "\r\n"
     case cr = "\r"
@@ -8,8 +8,8 @@ package enum NoteFileLineEnding: String, Hashable, Sendable {
 
 package struct NoteFileFormat: Hashable, Sendable {
     package var encoding: String.Encoding
-    package var byteOrderMark: Bool
-    package var lineEnding: NoteFileLineEnding
+    var byteOrderMark: Bool
+    var lineEnding: NoteFileLineEnding
     package var endsWithNewline: Bool
 
     package static let standard = NoteFileFormat(encoding: .utf8, byteOrderMark: false, lineEnding: .lf, endsWithNewline: true)
@@ -67,7 +67,7 @@ package enum NoteFileText {
         return normalized
     }
 
-    package static func fileText(_ body: String, format: NoteFileFormat, kind: NoteFileKind) -> String {
+    static func fileText(_ body: String, format: NoteFileFormat, kind: NoteFileKind) -> String {
         var text = normalizedLineEndings(body)
         switch kind {
         case .markdown:
@@ -81,12 +81,12 @@ package enum NoteFileText {
         return text
     }
 
-    package static func normalizedLineEndings(_ text: String) -> String {
+    static func normalizedLineEndings(_ text: String) -> String {
         guard text.utf8.contains(13) else { return text }
         return text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
     }
 
-    package static func lineEnding(of text: String) -> NoteFileLineEnding? {
+    static func lineEnding(of text: String) -> NoteFileLineEnding? {
         var feeds = 0, pairs = 0, returns = 0
         var previousWasReturn = false
         for byte in text.utf8 {

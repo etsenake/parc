@@ -2,9 +2,9 @@ import Foundation
 
 package struct WindowRestorationLaunch {
     package enum Action: Equatable { case newWindow, blankWindow, newNote(spaceID: UUID, profileID: UUID) }
-    package private(set) var launchReady = false
-    package private(set) var restorationFinished = false
-    package private(set) var pendingDockReopen = false
+    private(set) var launchReady = false
+    private(set) var restorationFinished = false
+    private(set) var pendingDockReopen = false
     private var actions: [Action] = []
 
     package var canPresent: Bool { launchReady && restorationFinished }

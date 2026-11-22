@@ -123,7 +123,7 @@ package struct CommandBarFolderCopy {
     package let folders: [BrowserFolder]
     package let tabs: [BrowserTab]
     package let groups: [BrowserSplitLayout]
-    package let childOrder: [String: [SidebarItemReference]]
+    let childOrder: [String: [SidebarItemReference]]
     package let openTabIDs: [UUID]
     package var tabIDs: [UUID] { tabs.map(\.id) }
 

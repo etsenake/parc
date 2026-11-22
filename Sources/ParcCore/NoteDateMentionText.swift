@@ -6,7 +6,7 @@ extension NoteDateMention {
     package var startDay: DateComponents { DateComponents(year: year, month: month, day: day) }
     package var endDay: DateComponents? { end.map { DateComponents(year: $0.year, month: $0.month, day: $0.day) } }
 
-    package func zonedCalendar(_ base: Calendar) -> Calendar {
+    func zonedCalendar(_ base: Calendar) -> Calendar {
         guard includesTime, let identifier = timeZone, let zone = TimeZone(identifier: identifier) else { return base }
         var value = base
         value.timeZone = zone
@@ -89,7 +89,7 @@ package enum NoteDateText {
         return text
     }
 
-    package static func dayDistance(_ day: DateComponents, from now: Date, calendar: Calendar) -> Int? {
+    static func dayDistance(_ day: DateComponents, from now: Date, calendar: Calendar) -> Int? {
         let today = calendar.dateComponents([.year, .month, .day], from: now)
         guard let year = day.year, let month = day.month, let date = day.day,
               let from = calendar.date(from: DateComponents(year: today.year, month: today.month, day: today.day, hour: 12)),
@@ -97,7 +97,7 @@ package enum NoteDateText {
         return calendar.dateComponents([.day], from: from, to: to).day
     }
 
-    package static func relativeWord(_ distance: Int) -> String? {
+    static func relativeWord(_ distance: Int) -> String? {
         switch distance {
         case -1: return "Yesterday"
         case 0: return "Today"
@@ -205,8 +205,8 @@ package enum NoteDateText {
 package enum NoteReminderLead {
     package static let hour = 60
     package static let day = 1440
-    package static let week = 10080
-    package static let timed = [0, 5, 10, 15, 30, 60, 120, 1440, 2880]
+    static let week = 10080
+    static let timed = [0, 5, 10, 15, 30, 60, 120, 1440, 2880]
     package static let allDay = [0, 1440, 2880, 10080]
 
     package static func choices(allDay: Bool) -> [Int] { allDay ? Self.allDay : timed }
@@ -252,22 +252,22 @@ package enum NoteReminderLead {
     }
 }
 
-package enum NoteDateMarkup {
-    package static func stamp(year: Int, month: Int, day: Int, hour: Int?, minute: Int?) -> String {
+enum NoteDateMarkup {
+    static func stamp(year: Int, month: Int, day: Int, hour: Int?, minute: Int?) -> String {
         var value = String(format: "%04d-%02d-%02d", year, month, day)
         if let hour { value += String(format: "T%02d:%02d", hour, minute ?? 0) }
         return value
     }
 
-    package static func start(_ mention: NoteDateMention) -> String {
+    static func start(_ mention: NoteDateMention) -> String {
         stamp(year: mention.year, month: mention.month, day: mention.day, hour: mention.hour, minute: mention.minute)
     }
 
-    package static func end(_ end: NoteDateEnd) -> String {
+    static func end(_ end: NoteDateEnd) -> String {
         stamp(year: end.year, month: end.month, day: end.day, hour: end.hour, minute: end.minute)
     }
 
-    package static func parse(_ value: String) -> NoteDateEnd? {
+    static func parse(_ value: String) -> NoteDateEnd? {
         let bytes = Array(value.utf8)
         func number(_ range: Range<Int>) -> Int? {
             guard range.upperBound <= bytes.count, bytes[range].allSatisfy({ $0 >= 48 && $0 <= 57 }) else { return nil }
@@ -284,7 +284,7 @@ package enum NoteDateMarkup {
         return parsed
     }
 
-    package static func mention(from attributes: [(String, String?)]) -> NoteDateMention? {
+    static func mention(from attributes: [(String, String?)]) -> NoteDateMention? {
         var names = Set<String>()
         var mention: NoteDateMention?
         var end: NoteDateEnd?
@@ -331,7 +331,7 @@ package enum NoteDateMarkup {
         return result
     }
 
-    package static func markdownTag(_ mention: NoteDateMention, escape: (String) -> String) -> String {
+    static func markdownTag(_ mention: NoteDateMention, escape: (String) -> String) -> String {
         var tag = "<time datetime=\"" + start(mention) + "\""
         if let end = mention.end { tag += " data-end=\"" + self.end(end) + "\"" }
         if let zone = mention.timeZone { tag += " data-timezone=\"" + escape(zone) + "\"" }

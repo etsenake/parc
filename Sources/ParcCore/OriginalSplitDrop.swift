@@ -40,7 +40,7 @@ package enum OriginalSplitDrop {
 }
 
 package enum SplitMembership {
-    package static func isSaved(_ tab: BrowserTab) -> Bool { tab.kind == .pinned || tab.kind == .favorite }
+    static func isSaved(_ tab: BrowserTab) -> Bool { tab.kind == .pinned || tab.kind == .favorite }
 
     package static func container(of group: BrowserSplitLayout, in state: BrowserState) -> SidebarContainerLocation? {
         guard let anchorID = group.sidebarAnchorID ?? group.tabIDs.first, group.tabIDs.contains(anchorID),
@@ -93,7 +93,7 @@ package enum SplitMembership {
         return (ids, documents)
     }
 
-    package static func makeHome(of original: BrowserTab, id: UUID, now: Date, activeTabBeforeCreationID: UUID?) -> BrowserTab {
+    static func makeHome(of original: BrowserTab, id: UUID, now: Date, activeTabBeforeCreationID: UUID?) -> BrowserTab {
         var home = original
         home.id = id; home.url = original.savedURL; home.title = original.savedTitle
         home.createdAt = now; home.lastAccessed = now; home.isUnread = false
@@ -102,7 +102,7 @@ package enum SplitMembership {
         return home
     }
 
-    package static func admitting(_ group: BrowserSplitLayout, existing: BrowserSplitLayout?, added: UUID?,
+    static func admitting(_ group: BrowserSplitLayout, existing: BrowserSplitLayout?, added: UUID?,
                           state: BrowserState, spaceID: UUID, homeIDs: [UUID: UUID], now: Date,
                           activeTabBeforeCreationID: UUID? = nil) -> BrowserState? {
         let ids = group.tabIDs
@@ -203,7 +203,7 @@ package enum SplitMembership {
         return next
     }
 
-    package static func preservingSlots(before: BrowserState, after next: inout BrowserState) {
+    static func preservingSlots(before: BrowserState, after next: inout BrowserState) {
         for old in before.splitLayouts where old.tabIDs.count > 1 {
             let current = next.splitLayouts.first { $0.id == old.id }
             if current == old { continue }
@@ -237,7 +237,7 @@ package enum SplitMembership {
         next.sidebarItemOrder[container.key] = result.map { stored($0, state: next) }
     }
 
-    package static func normalizingLegacyContainers(_ state: BrowserState, now: Date) -> BrowserState {
+    static func normalizingLegacyContainers(_ state: BrowserState, now: Date) -> BrowserState {
         var next = state
         for group in state.splitLayouts where group.tabIDs.count > 1 {
             guard let target = container(of: group, in: next) else { continue }
@@ -267,7 +267,7 @@ package enum SplitMembership {
         return next
     }
 
-    package static func resolvingSharedLegacyFavorites(_ state: BrowserState) -> BrowserState {
+    static func resolvingSharedLegacyFavorites(_ state: BrowserState) -> BrowserState {
         var next = state
         let favorites = state.openTabs(where: { $0.kind == .favorite }).map(\.id)
         let visible = SidebarSplitItems.groups(in: state, spaceID: state.activeSpaceID).map(\.id)

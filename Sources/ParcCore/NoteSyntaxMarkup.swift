@@ -3,7 +3,7 @@ import Foundation
 private typealias Ch = NoteSyntaxChar
 
 extension NoteSyntaxScanner {
-    package mutating func lexMarkup(html: Bool, stopAtPHP: Bool = false) {
+    mutating func lexMarkup(html: Bool, stopAtPHP: Bool = false) {
         while pos < end {
             let c = units[pos]
             if c == Ch.less {
@@ -69,7 +69,7 @@ extension NoteSyntaxScanner {
         }
     }
 
-    package mutating func lexOpenTag(html: Bool) {
+    mutating func lexOpenTag(html: Bool) {
         emit(pos, pos + 1, .punctuation)
         pos += 1
         let nameStart = pos
@@ -180,7 +180,7 @@ extension NoteSyntaxScanner {
         pos = stop
     }
 
-    package mutating func lexPHPDocument() {
+    mutating func lexPHPDocument() {
         let open = Array("<?".utf16)
         guard find(open, from: pos) != nil else {
             lexCode(NoteSyntaxGrammars.php)
@@ -218,7 +218,7 @@ extension NoteSyntaxScanner {
         pos = stop
     }
 
-    package mutating func lexMarkdown() {
+    mutating func lexMarkdown() {
         if matches("---", at: pos) && lineEnd(from: pos) == skipSpaces(from: pos + 3) {
             var cursor = lineEnd(from: pos) + 1
             while cursor < end {
@@ -384,7 +384,7 @@ extension NoteSyntaxScanner {
         return (close + 1, urlStart)
     }
 
-    package mutating func lexMarkdownInline(from start: Int, to stop: Int) {
+    mutating func lexMarkdownInline(from start: Int, to stop: Int) {
         pos = start
         var failedRuns = Set<Int>()
         var bracketFailure = -1

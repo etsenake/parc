@@ -1,7 +1,7 @@
 import Foundation
 
 package enum EaselBookmarkCard {
-    package static let summaryLimit = 160
+    static let summaryLimit = 160
 
     package static func host(_ url: URL) -> String {
         guard let host = url.host?.lowercased(), !host.isEmpty else { return url.absoluteString }

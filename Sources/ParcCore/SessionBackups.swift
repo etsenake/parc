@@ -10,7 +10,7 @@ package struct SessionFileUnreadable: LocalizedError {
 }
 
 extension BrowserStore {
-    package nonisolated static func savedSession(from bytes: Data) throws -> BrowserState {
+    nonisolated static func savedSession(from bytes: Data) throws -> BrowserState {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let decoded = try decoder.decode(BrowserState.self, from: bytes)
@@ -111,8 +111,8 @@ package final class SessionBackups {
 
     package static let folderName = "Sidebar Backups"
     package static let interval: TimeInterval = 60 * 60
-    package static let recentCount = 6
-    package static let dailyCount = 7
+    static let recentCount = 6
+    static let dailyCount = 7
     private static let stamp = Date.ISO8601FormatStyle(timeZone: TimeZone(identifier: "UTC")!)
         .year().month().day().dateSeparator(.omitted)
         .time(includingFractionalSeconds: false).timeSeparator(.omitted)
@@ -174,7 +174,7 @@ package final class SessionBackups {
         return try encoder.encode(copy)
     }
 
-    package func backUpIfDue(_ state: BrowserState, at date: Date) {
+    func backUpIfDue(_ state: BrowserState, at date: Date) {
         if !lastBackupKnown {
             lastBackup = Self.list(in: directory).first?.date
             lastBackupKnown = true
@@ -184,7 +184,7 @@ package final class SessionBackups {
         try? backUp(state, at: date)
     }
 
-    package func backUp(_ state: BrowserState, at date: Date) throws {
+    func backUp(_ state: BrowserState, at date: Date) throws {
         let data = try Self.encoded(state)
         _ = try BrowserStore.savedSession(from: data)
         let newest = Self.list(in: directory).first
@@ -257,7 +257,7 @@ package final class SessionBackups {
         return aside
     }
 
-    package static func setAsideURL(in directory: URL, at date: Date) -> URL {
+    static func setAsideURL(in directory: URL, at date: Date) -> URL {
         let base = "session-unreadable-" + date.formatted(stamp)
         var candidate = directory.appendingPathComponent(base + ".json")
         var suffix = 2

@@ -6,9 +6,9 @@ package enum EaselControlMotion {
     package static let pressedScale = 0.95
     package static let cardPressedScale = 0.98
     package static let ringHiddenScale = 1.3
-    package static let markerHiddenScale = 0.4
-    package static let hoverShadowOpacity = 0.2
-    package static let darkHoverShadowOpacity = 0.4
+    static let markerHiddenScale = 0.4
+    static let hoverShadowOpacity = 0.2
+    static let darkHoverShadowOpacity = 0.4
 
     package static func scale(hovered: Bool, pressed: Bool, hover: Double = hoverScale, press: Double = pressedScale) -> Double {
         pressed ? press : hovered ? hover : 1
@@ -36,10 +36,10 @@ package enum EaselDigitRoll {
             self.direction = direction
         }
 
-        package var isChanged: Bool { old != new }
+        var isChanged: Bool { old != new }
     }
 
-    package static let rollDistance = 0.62
+    static let rollDistance = 0.62
     package static let reducedFade: TimeInterval = 0.15
 
     package static func direction(from old: String, to new: String) -> Direction {

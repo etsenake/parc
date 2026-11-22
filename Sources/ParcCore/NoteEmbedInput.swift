@@ -17,7 +17,7 @@ package struct NoteEmbedScrollLatch: Equatable {
     package enum Target: Equatable { case page(UUID), note }
     package enum Route: Equatable { case native, page, note }
 
-    package static let discreteRunGap: TimeInterval = 0.5
+    static let discreteRunGap: TimeInterval = 0.5
 
     package private(set) var target: Target?
     package private(set) var handedOver = false
@@ -80,7 +80,7 @@ package struct NoteEmbedScrollLatch: Equatable {
 package struct NoteEmbedEscapeConfirmation: Equatable {
     package static let window: TimeInterval = 1
 
-    package private(set) var armedAt: TimeInterval?
+    private(set) var armedAt: TimeInterval?
 
     package init(armedAt: TimeInterval? = nil) {
         self.armedAt = armedAt

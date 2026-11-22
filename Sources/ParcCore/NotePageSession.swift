@@ -37,7 +37,7 @@ package enum NoteEditCoalescing: Hashable {
     case adjusting(NoteBlockID)
     case lasting(NoteBlockID, UUID)
 
-    package var outlivesPauses: Bool {
+    var outlivesPauses: Bool {
         if case .lasting = self { return true }
         return false
     }
@@ -72,8 +72,8 @@ package final class NotePageSession {
     package var isReadOnly = false
     package var isFlat = false
     package var now: () -> Date = Date.init
-    package var undoLimit = 300
-    package var typingCoalesceInterval: TimeInterval = 1.5
+    var undoLimit = 300
+    var typingCoalesceInterval: TimeInterval = 1.5
     private var undoStack: [HistoryStep] = []
     private var redoStack: [HistoryStep] = []
     private var lastCoalescing: NoteEditCoalescing = .none
@@ -89,12 +89,12 @@ package final class NotePageSession {
     package var canRedo: Bool { !redoStack.isEmpty }
     package var undoActionName: String? { undoStack.last?.name }
     package var redoActionName: String? { redoStack.last?.name }
-    package var undoDepth: Int { undoStack.count }
-    package var redoDepth: Int { redoStack.count }
-    package var isGrouping: Bool { openGroup != nil }
-    package var historyToken: Int? { openGroup?.serial ?? undoStack.last?.serial }
+    var undoDepth: Int { undoStack.count }
+    var redoDepth: Int { redoStack.count }
+    var isGrouping: Bool { openGroup != nil }
+    var historyToken: Int? { openGroup?.serial ?? undoStack.last?.serial }
 
-    package func replacePage(_ value: NotePage, selection next: NotePageSelection = .none, keepHistory: Bool = false) {
+    func replacePage(_ value: NotePage, selection next: NotePageSelection = .none, keepHistory: Bool = false) {
         page = value.blocks.isEmpty ? NotePage(settings: value.settings, blocks: [.paragraph()]) : value
         selection = next
         if !keepHistory {
@@ -199,7 +199,7 @@ package final class NotePageSession {
     }
 
     @discardableResult
-    package func attachToLastStep(_ effect: NoteUndoEffect) -> Bool {
+    func attachToLastStep(_ effect: NoteUndoEffect) -> Bool {
         if openGroup != nil {
             guard openGroup?.effects.contains(where: { $0.owner != nil && $0.owner == effect.owner }) != true else { return false }
             openGroup?.effects.append(effect)
@@ -212,7 +212,7 @@ package final class NotePageSession {
     }
 
     @discardableResult
-    package func applyLinked(_ name: String, owner: ObjectIdentifier, effect: () -> NoteUndoEffect, origin: AnyObject? = nil,
+    func applyLinked(_ name: String, owner: ObjectIdentifier, effect: () -> NoteUndoEffect, origin: AnyObject? = nil,
                      _ body: (inout NotePage) -> Void) -> Bool {
         guard !isReadOnly else { return false }
         var next = page
@@ -234,7 +234,7 @@ package final class NotePageSession {
         return true
     }
 
-    package func applyUntracked(origin: AnyObject? = nil, _ body: (inout NotePage) -> Void) {
+    func applyUntracked(origin: AnyObject? = nil, _ body: (inout NotePage) -> Void) {
         guard !isReadOnly else { return }
         var next = page
         body(&next)
@@ -297,7 +297,7 @@ package final class NotePageSession {
         publish(NotePageChange(kind: kind, blocks: [id], origin: nil, revision: revision))
     }
 
-    package func updateAllPagesMetadata(_ transform: (NotePage) -> NotePage) {
+    func updateAllPagesMetadata(_ transform: (NotePage) -> NotePage) {
         let next = transform(page)
         for index in undoStack.indices { undoStack[index].page = transform(undoStack[index].page).withoutIndex }
         for index in redoStack.indices { redoStack[index].page = transform(redoStack[index].page).withoutIndex }
@@ -312,7 +312,7 @@ package final class NotePageSession {
         changes.send(NotePageChange(kind: .text, blocks: changed, origin: nil, revision: revision))
     }
 
-    package func updateSettingsMetadata(_ transform: (inout NotePageSettings) -> Void) {
+    func updateSettingsMetadata(_ transform: (inout NotePageSettings) -> Void) {
         guard !isReadOnly else { return }
         for index in undoStack.indices { transform(&undoStack[index].page.settings) }
         for index in redoStack.indices { transform(&redoStack[index].page.settings) }
@@ -352,7 +352,7 @@ package final class NotePageSession {
         return page.block(id)?.props.anchor
     }
 
-    package func clearHistory() {
+    func clearHistory() {
         undoStack.removeAll()
         redoStack.removeAll()
         breakCoalescing()
@@ -407,7 +407,7 @@ package final class NotePageSession {
         return NotePosition(caret.block, 0, field: caret.field)
     }
 
-    package static func changedBlocks(from old: NotePage, to new: NotePage) -> Set<NoteBlockID> {
+    static func changedBlocks(from old: NotePage, to new: NotePage) -> Set<NoteBlockID> {
         var result = Set<NoteBlockID>()
         func insertSubtree(_ list: [NoteBlock]) {
             for block in list {
@@ -462,7 +462,7 @@ package final class NoteCreatedFile {
         return resulting as URL?
     }
 
-    package var isWithdrawn: Bool { withdrawn }
+    var isWithdrawn: Bool { withdrawn }
 
     package var effect: NoteUndoEffect {
         NoteUndoEffect(undo: { [self] in withdraw() }, redo: { [self] in restore() })

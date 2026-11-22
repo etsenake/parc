@@ -29,11 +29,11 @@ package enum NoteSyntaxHighlighter {
     }
 }
 
-package enum NoteSyntaxLexer: Sendable {
+enum NoteSyntaxLexer: Sendable {
     case code(NoteSyntaxGrammar)
     case html, xml, css, scss, markdown, yaml, toml, diff, dockerfile, makefile, php
 
-    package static func lexer(for id: String) -> NoteSyntaxLexer? {
+    static func lexer(for id: String) -> NoteSyntaxLexer? {
         switch id {
         case "html": return .html
         case "xml": return .xml

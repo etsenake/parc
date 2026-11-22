@@ -21,8 +21,8 @@ package final class NoteLibrary {
         package var snippet: String
         package var modifiedAt: Date
         package var size: Int
-        package var foldedTitle: String
-        package var summarized = true
+        var foldedTitle: String
+        var summarized = true
         package init(url: URL, title: String, icon: String? = nil, snippet: String, modifiedAt: Date, size: Int, foldedTitle: String, summarized: Bool = true) {
             self.url = url
             self.title = title
@@ -50,10 +50,10 @@ package final class NoteLibrary {
         }
     }
 
-    package nonisolated static let maximumDepth = 12
-    package nonisolated static let maximumNotes = 20_000
-    package nonisolated static let quickListBudget = 1_000
-    package nonisolated static let indexedBytes = 2 * 1024 * 1024
+    nonisolated static let maximumDepth = 12
+    nonisolated static let maximumNotes = 20_000
+    nonisolated static let quickListBudget = 1_000
+    nonisolated static let indexedBytes = 2 * 1024 * 1024
     nonisolated private static let skippedFolders: Set<String> = ["attachments", "node_modules"]
     nonisolated private static let bundleExtensions: Set<String> = [
         "textbundle", "textpack", "app", "bundle", "framework", "plugin", "photoslibrary", "xcodeproj", "xcworkspace", "playground"]
@@ -62,7 +62,7 @@ package final class NoteLibrary {
 
     package static var known: [NoteLibrary] { NoteFiles.shared.knownLibraries }
 
-    package nonisolated static var defaultFolder: URL {
+    nonisolated static var defaultFolder: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Parc Notes", isDirectory: true)
     }
@@ -77,17 +77,17 @@ package final class NoteLibrary {
 
     package static func rename(_ url: URL, to title: String) throws -> URL { try NoteFiles.shared.rename(url, to: title) }
 
-    package static func noteDidMove(from source: URL, to destination: URL) { NoteFiles.shared.noteDidMove(from: source, to: destination) }
+    static func noteDidMove(from source: URL, to destination: URL) { NoteFiles.shared.noteDidMove(from: source, to: destination) }
 
-    package static func filesRewritten(_ urls: [URL]) { NoteFiles.shared.filesRewritten(urls) }
+    static func filesRewritten(_ urls: [URL]) { NoteFiles.shared.filesRewritten(urls) }
 
     package static func createNote(in folder: URL, title: String?) throws -> URL { try NoteFiles.shared.createNote(in: folder, title: title) }
 
     package let folder: URL
-    package let isRecursive: Bool
+    let isRecursive: Bool
     package unowned let files: NoteFiles
     package let changes = PassthroughSubject<Void, Never>()
-    package let listingChanges = PassthroughSubject<Void, Never>()
+    let listingChanges = PassthroughSubject<Void, Never>()
 
     private var entries: [String: Entry] = [:]
     private var hasListing = false
@@ -168,7 +168,7 @@ package final class NoteLibrary {
         folderChanged(events: [], broad: true)
     }
 
-    package func listedEntries() -> [Entry]? {
+    func listedEntries() -> [Entry]? {
         if !(listingIsCurrent && watcher != nil) {
             guard NoteFilePaths.isDirectory(folder) else { return hasListing ? Array(entries.values) : [] }
             startWatchingIfNeeded()
@@ -337,7 +337,7 @@ package final class NoteLibrary {
         summarize(list(folder: folder, recursive: recursive, previous: previous))
     }
 
-    package nonisolated static func summarize(_ entries: [String: Entry]) -> [String: Entry] {
+    nonisolated static func summarize(_ entries: [String: Entry]) -> [String: Entry] {
         var result = entries
         for (key, entry) in entries where !entry.summarized {
             guard let kind = NoteFileKind(url: entry.url) else { continue }
@@ -358,7 +358,7 @@ package final class NoteLibrary {
         return unsummarized(url, modifiedAt: modifiedAt, size: size, previous: previous)
     }
 
-    package nonisolated static func carryingSummary(into entry: Entry, from departed: [Entry]) -> Entry {
+    nonisolated static func carryingSummary(into entry: Entry, from departed: [Entry]) -> Entry {
         guard !entry.summarized, entry.snippet.isEmpty, entry.icon == nil,
               let twin = departed.first(where: { $0.modifiedAt == entry.modifiedAt && $0.size == entry.size }) else { return entry }
         var carried = entry
@@ -474,7 +474,7 @@ package final class NoteLibrary {
 }
 
 extension NoteFiles {
-    package var knownLibraries: [NoteLibrary] { Array(libraries.values) + Array(shallowLibraries.values) }
+    var knownLibraries: [NoteLibrary] { Array(libraries.values) + Array(shallowLibraries.values) }
 
     package func library(folder: URL) -> NoteLibrary {
         let canonical = NoteFilePaths.canonical(folder)
@@ -533,11 +533,11 @@ extension NoteFiles {
         return renamed
     }
 
-    package func noteDidMove(from source: URL, to destination: URL) {
+    func noteDidMove(from source: URL, to destination: URL) {
         backlinks.noteMoved(from: source, to: destination)
     }
 
-    package func filesRewritten(_ urls: [URL]) {
+    func filesRewritten(_ urls: [URL]) {
         invalidateLibraries(containing: urls.map(NoteFilePaths.canonical))
     }
 

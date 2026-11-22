@@ -3,7 +3,7 @@ import Foundation
 package struct EaselTableGrid: Equatable {
     package var cells: [[String]]
     package var merges: [EaselTableMerge] = []
-    package var truncated = false
+    var truncated = false
 
     package var rowCount: Int { cells.count }
     package var columnCount: Int { cells.map(\.count).max() ?? 0 }
@@ -17,7 +17,7 @@ package struct EaselTableGrid: Equatable {
 
 package enum EaselTableData {
     package static let maximumInputCharacters = 4_000_000
-    package static let maximumParsedRows = 10_000
+    static let maximumParsedRows = 10_000
 
     package static func delimited(_ text: String, separator: Character) -> EaselTableGrid {
         var rows: [[String]] = [], row: [String] = [], field = ""
@@ -214,7 +214,7 @@ package enum EaselTableData {
         return EaselTableGrid(cells: cells, merges: merges, truncated: truncated)
     }
 
-    package static func normalizedCellText(_ raw: String) -> String {
+    static func normalizedCellText(_ raw: String) -> String {
         let text = decodeEntities(raw)
         var collapsed = ""
         var pendingSpace = false
@@ -372,7 +372,7 @@ package enum EaselTableData {
 }
 
 extension EaselTableRange {
-    package func clampedArea(in table: EaselTable) -> EaselTableRange? {
+    func clampedArea(in table: EaselTable) -> EaselTableRange? {
         table.clamped(self)
     }
 }

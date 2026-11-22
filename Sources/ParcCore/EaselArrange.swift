@@ -65,10 +65,10 @@ package enum EaselLayerMove: String, CaseIterable {
 }
 
 package struct EaselClipboardPayload: Codable, Equatable {
-    package static let currentVersion = 1
+    static let currentVersion = 1
     package static let typeIdentifier = "org.parc.easel-objects.v1"
     package static let maximumBytes = 128 * 1024 * 1024
-    package static let maximumItems = 10_000
+    static let maximumItems = 10_000
     package static let maximumAssetBytes = 30 * 1024 * 1024
 
     package var version = currentVersion
@@ -142,7 +142,7 @@ package struct EaselDuplication: Equatable {
 
 package enum EaselArrange {
     package static let duplicateOffset = 24.0
-    package static let tidySpacing = 24.0
+    static let tidySpacing = 24.0
 
     package struct Unit: Equatable {
         package var ids: [UUID]
@@ -180,12 +180,12 @@ package enum EaselArrange {
         Set(document.items.filter { $0.groupID == group }.map(\.id))
     }
 
-    package static func expandingGroups(_ ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
+    static func expandingGroups(_ ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
         let groups = Set(document.items.filter { ids.contains($0.id) }.compactMap(\.groupID))
         return Set(document.items.filter { ids.contains($0.id) || $0.groupID.map(groups.contains) == true }.map(\.id))
     }
 
-    package static func completeGroups(_ ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
+    static func completeGroups(_ ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
         var complete: [UUID: Bool] = [:]
         for item in document.items {
             guard let group = item.groupID else { continue }
@@ -282,7 +282,7 @@ package enum EaselArrange {
         return picked
     }
 
-    package static func follows(_ item: EaselItem, present: Set<UUID>) -> Bool {
+    static func follows(_ item: EaselItem, present: Set<UUID>) -> Bool {
         if let target = item.attachedTo, present.contains(target) { return true }
         guard item.kind == .arrow else { return false }
         return [item.startConnection?.itemID, item.endConnection?.itemID].contains { $0.map(present.contains) == true }
@@ -317,7 +317,7 @@ package enum EaselArrange {
         if let waypoints = item.waypoints { item.waypoints = waypoints.map { EaselPoint(x: $0.x + dx, y: $0.y + dy) } }
     }
 
-    package static func translating(_ document: EaselDocument, by deltas: [UUID: EaselPoint]) -> EaselDocument? {
+    static func translating(_ document: EaselDocument, by deltas: [UUID: EaselPoint]) -> EaselDocument? {
         var next = document, changed = false
         for index in next.items.indices {
             guard let delta = deltas[next.items[index].id], delta.x.isFinite, delta.y.isFinite,
@@ -378,14 +378,14 @@ package enum EaselArrange {
         return translating(document, by: deltas(moves))
     }
 
-    package static func tidyUnits(_ ids: Set<UUID>, in document: EaselDocument) -> [Unit] {
+    static func tidyUnits(_ ids: Set<UUID>, in document: EaselDocument) -> [Unit] {
         let kinds = Dictionary(document.items.map { ($0.id, $0.kind) }, uniquingKeysWith: { first, _ in first })
         return units(ids, in: document).filter { unit in unit.ids.allSatisfy { kinds[$0] != .arrow && kinds[$0] != .section } }
     }
 
     package static func canTidy(_ ids: Set<UUID>, in document: EaselDocument) -> Bool { tidyUnits(ids, in: document).count >= 3 }
 
-    package static func tidyColumns(_ units: [Unit]) -> (columns: Int, order: [Unit]) {
+    static func tidyColumns(_ units: [Unit]) -> (columns: Int, order: [Unit]) {
         let byCenter = units.enumerated().sorted { a, b in
             let fa = a.element.frame, fb = b.element.frame
             return (fa.y + fa.height / 2, fa.x + fa.width / 2, a.offset) < (fb.y + fb.height / 2, fb.x + fb.width / 2, b.offset)
@@ -426,7 +426,7 @@ package enum EaselArrange {
         return translating(document, by: deltas(moves))
     }
 
-    package static func layerUnits(_ ids: Set<UUID>, in document: EaselDocument) -> [Set<UUID>] {
+    static func layerUnits(_ ids: Set<UUID>, in document: EaselDocument) -> [Set<UUID>] {
         let whole = completeGroups(ids, in: document)
         var units: [Set<UUID>] = [], slots: [UUID: Int] = [:]
         for item in document.items where ids.contains(item.id) && !item.isLocked {
@@ -484,7 +484,7 @@ package enum EaselArrange {
         return reindexed(document, order: order)
     }
 
-    package static func reindexed(_ document: EaselDocument, order: [UUID]) -> EaselDocument {
+    static func reindexed(_ document: EaselDocument, order: [UUID]) -> EaselDocument {
         var rank: [UUID: Int] = [:]
         for (index, id) in order.enumerated() where rank[id] == nil { rank[id] = index }
         var next = document

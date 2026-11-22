@@ -65,8 +65,8 @@ package struct ClosedItemRecord: Equatable {
 package struct ClosedSplitMembership: Equatable {
     package let layout: BrowserSplitLayout
     package let index: Int
-    package let dissolved: Bool
-    package let closedSiblings: Set<UUID>
+    let dissolved: Bool
+    let closedSiblings: Set<UUID>
 
     package func restoredLayout(restoring id: UUID, in state: BrowserState,
                         available: (UUID) -> Bool) -> BrowserSplitLayout? {
@@ -159,8 +159,8 @@ package struct ClosedItemIntent {
     package let profileID: UUID
     package let tabs: [BrowserTab]
     package let focusedTabID: UUID?
-    package let completeSplits: [BrowserSplitLayout]
-    package let partialSplits: [BrowserSplitLayout]
+    let completeSplits: [BrowserSplitLayout]
+    let partialSplits: [BrowserSplitLayout]
     package init?(ids: Set<UUID>, state: BrowserState, spaceID: UUID, profileID: UUID, focusedTabID: UUID?) {
         let tabs = state.openTabs(where: { ids.contains($0.id) })
         guard !ids.isEmpty, tabs.count == ids.count,

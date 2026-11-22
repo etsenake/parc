@@ -28,7 +28,7 @@ package final class SpaceThemeEditorState {
     package var canRedo: Bool { !redoStack.isEmpty }
     package var canAddColor: Bool { theme.primaryColor != nil && theme.colorCount < 3 }
     package var canRemoveColor: Bool { theme.colorCount > 0 }
-    package var lightnessRange: ClosedRange<Double> { value.lowerLightness...value.upperLightness }
+    var lightnessRange: ClosedRange<Double> { value.lowerLightness...value.upperLightness }
 
     package init(theme: SpaceTheme) {
         precondition(theme.isValid)

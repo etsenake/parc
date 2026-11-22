@@ -49,7 +49,7 @@ package enum TidyTitles {
         TidyTitleRule(match: .pathEquals("/"), title: .always("Notion")),
         TidyTitleRule(match: nil, title: .removing(["^\\([0-9]+\\+?\\)\\s", " \\| Notion$"])),
     ]
-    package static let parcRules: [String: [TidyTitleRule]] = [
+    static let parcRules: [String: [TidyTitleRule]] = [
         "notion.so": notion, "app.notion.com": notion,
         "figma.com": [
             TidyTitleRule(match: .pathEquals("/"), title: .always("Figma")),
@@ -76,7 +76,7 @@ package enum RecentPageText {
         }
     }
 
-    package static func linearTicketID(_ url: URL) -> String? {
+    static func linearTicketID(_ url: URL) -> String? {
         guard url.host?.lowercased().hasSuffix("linear.app") == true else { return nil }
         let components = url.pathComponents
         return components.count == 5 && components[2] == "issue" ? components[3] : nil
@@ -114,7 +114,7 @@ package enum RecentPageText {
         return formatter
     }()
 
-    package static func pageIdentity(_ url: URL) -> String? {
+    static func pageIdentity(_ url: URL) -> String? {
         if let id = linearTicketID(url) { return "linear:" + id }
         guard let host = url.host?.lowercased(), host == "notion.so" || host.hasSuffix(".notion.so") || host.hasSuffix(".notion.site"),
               let last = url.pathComponents.last else { return nil }

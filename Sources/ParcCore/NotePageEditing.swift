@@ -18,7 +18,7 @@ package enum NoteBlockConversion: Hashable {
     case equation
     case divider
 
-    package static let turnIntoChoices: [NoteBlockConversion] = [
+    static let turnIntoChoices: [NoteBlockConversion] = [
         .text, .heading(1), .heading(2), .heading(3), .heading(4), .bulletedList, .numberedList, .todo, .toggle,
         .code, .quote, .callout, .equation, .toggleHeading(1), .toggleHeading(2), .toggleHeading(3), .toggleHeading(4),
     ]
@@ -64,17 +64,17 @@ extension NotePage {
         index.visibleIDs.filter { block($0)?.kind.hasText == true }
     }
 
-    package func previousVisible(_ id: NoteBlockID) -> NoteBlockID? {
+    func previousVisible(_ id: NoteBlockID) -> NoteBlockID? {
         guard let position = visiblePosition(of: id), position > 0 else { return nil }
         return index.visibleIDs[position - 1]
     }
 
-    package func nextVisible(_ id: NoteBlockID) -> NoteBlockID? {
+    func nextVisible(_ id: NoteBlockID) -> NoteBlockID? {
         guard let position = visiblePosition(of: id), position + 1 < index.visibleIDs.count else { return nil }
         return index.visibleIDs[position + 1]
     }
 
-    package func previousContent(before id: NoteBlockID) -> NoteBlockID? {
+    func previousContent(before id: NoteBlockID) -> NoteBlockID? {
         guard var position = visiblePosition(of: id) else { return nil }
         let boundary = containingColumn(of: id)
         let order = index.visibleIDs
@@ -112,12 +112,12 @@ extension NotePage {
         return all.filter { id in !ancestors(of: id).contains(where: wanted.contains) }
     }
 
-    package func caretSelection(atEndOf id: NoteBlockID) -> NotePageSelection {
+    func caretSelection(atEndOf id: NoteBlockID) -> NotePageSelection {
         guard let block = block(id) else { return .none }
         return block.kind.hasText ? .caret(NotePosition(id, block.text.length)) : .blocks([id])
     }
 
-    package func caretSelection(atStartOf id: NoteBlockID) -> NotePageSelection {
+    func caretSelection(atStartOf id: NoteBlockID) -> NotePageSelection {
         guard let block = block(id) else { return .none }
         return block.kind.hasText ? .caret(NotePosition(id, 0)) : .blocks([id])
     }
@@ -146,7 +146,7 @@ extension NotePage {
         }
     }
 
-    package func fieldOrder(_ field: NoteTextField) -> (Int, Int, Int) {
+    func fieldOrder(_ field: NoteTextField) -> (Int, Int, Int) {
         switch field {
         case .body: return (0, 0, 0)
         case .cell(let row, let column): return (1, row, column)
@@ -195,7 +195,7 @@ extension NotePage {
     }
 
     @discardableResult
-    package mutating func convertBlock(_ id: NoteBlockID, to kind: NoteBlockKind, configure: (inout NoteBlockProps) -> Void = { _ in }) -> Bool {
+    mutating func convertBlock(_ id: NoteBlockID, to kind: NoteBlockKind, configure: (inout NoteBlockProps) -> Void = { _ in }) -> Bool {
         guard let block = block(id), !block.kind.isColumnStructure, !kind.isColumnStructure else { return false }
         var converted = block.converted(to: kind, configure: configure)
         let lifted = converted.acceptsChildren ? [] : converted.children
@@ -206,13 +206,13 @@ extension NotePage {
     }
 
     @discardableResult
-    package mutating func convertBlock(_ id: NoteBlockID, to conversion: NoteBlockConversion) -> Bool {
+    mutating func convertBlock(_ id: NoteBlockID, to conversion: NoteBlockConversion) -> Bool {
         guard let source = block(id) else { return false }
         return convertBlock(id, to: conversion.kind) { conversion.configure(&$0, from: source) }
     }
 
     @discardableResult
-    package mutating func deleteRange(from start: NotePosition, to end: NotePosition) -> Bool {
+    mutating func deleteRange(from start: NotePosition, to end: NotePosition) -> Bool {
         guard start.block != end.block, let startBlock = block(start.block), let endBlock = block(end.block),
               let startOrder = visiblePosition(of: start.block), let endOrder = visiblePosition(of: end.block),
               startOrder < endOrder else { return false }
@@ -277,7 +277,7 @@ extension NotePage {
         return true
     }
 
-    package func textFragment(from start: NotePosition, to end: NotePosition) -> [NoteBlock] {
+    func textFragment(from start: NotePosition, to end: NotePosition) -> [NoteBlock] {
         guard let first = visiblePosition(of: start.block), let last = visiblePosition(of: end.block), first <= last else { return [] }
         let range = index.visibleIDs[first...last].filter { block($0).map { !$0.kind.isColumnStructure } ?? false }
         let inRange = Set(range)
@@ -396,9 +396,9 @@ extension NoteBlock {
         }
     }
 
-    package var indentsChildren: Bool { kind.isListItem || kind == .toggle || kind == .heading || kind == .paragraph }
+    var indentsChildren: Bool { kind.isListItem || kind == .toggle || kind == .heading || kind == .paragraph }
 
-    package var continuationKind: NoteBlockKind {
+    var continuationKind: NoteBlockKind {
         switch kind {
         case .bulletedItem, .numberedItem, .todo, .toggle: return kind
         default: return .paragraph
@@ -456,7 +456,7 @@ extension NoteBlock {
 
 extension NotePageSession {
     package nonisolated static let maximumColumns = 5
-    package nonisolated static let minimumColumnFraction = 0.08
+    nonisolated static let minimumColumnFraction = 0.08
 
     package func setText(_ value: NoteText, of position: (block: NoteBlockID, field: NoteTextField), origin: AnyObject? = nil,
                  selection after: NotePageSelection? = nil) {
@@ -544,7 +544,7 @@ extension NotePageSession {
     }
 
     @discardableResult
-    package func insertBlockBreak() -> NoteBlockID? {
+    func insertBlockBreak() -> NoteBlockID? {
         switch selection {
         case .none, .cells:
             return nil
@@ -1004,7 +1004,7 @@ extension NotePageSession {
         }
     }
 
-    package nonisolated static func columnGroups<Item>(_ items: [Item], count: Int) -> [[Item]] {
+    nonisolated static func columnGroups<Item>(_ items: [Item], count: Int) -> [[Item]] {
         guard count > 0, !items.isEmpty else { return [] }
         let columns = min(count, items.count)
         let base = items.count / columns, extra = items.count % columns
@@ -1022,7 +1022,7 @@ extension NotePageSession {
         block.kind.isColumnStructure || block.children.contains(where: holdsColumns)
     }
 
-    package func setColumnWidths(_ columnsID: NoteBlockID, _ fractions: [Double]) {
+    func setColumnWidths(_ columnsID: NoteBlockID, _ fractions: [Double]) {
         guard let columns = page.block(columnsID), columns.kind == .columns, fractions.count == columns.children.count,
               fractions.allSatisfy({ $0.isFinite && $0 > 0 }) else { return }
         let normalized = Self.distribute(fractions, minimum: Self.minimumColumnFraction)
@@ -1033,7 +1033,7 @@ extension NotePageSession {
         }
     }
 
-    package nonisolated static func distribute(_ weights: [Double], minimum: Double) -> [Double] {
+    nonisolated static func distribute(_ weights: [Double], minimum: Double) -> [Double] {
         guard !weights.isEmpty else { return [] }
         guard minimum * Double(weights.count) < 1 else { return Array(repeating: 1 / Double(weights.count), count: weights.count) }
         var pinned = Set<Int>()
@@ -1051,7 +1051,7 @@ extension NotePageSession {
         }
     }
 
-    package func resetColumnWidths(_ columnsID: NoteBlockID) {
+    func resetColumnWidths(_ columnsID: NoteBlockID) {
         guard let columns = page.block(columnsID), columns.kind == .columns else { return }
         edit("Resize Columns", selection: selection) { page in
             page.update(columnsID) { block in for index in block.children.indices { block.children[index].props.width = nil } }
@@ -1230,7 +1230,7 @@ extension NotePageSession {
         }
     }
 
-    package func setBlockColor(_ ids: [NoteBlockID], _ style: NoteColorStyle?) {
+    func setBlockColor(_ ids: [NoteBlockID], _ style: NoteColorStyle?) {
         let targets = page.ordered(ids).filter { page.block($0)?.kind.supportsColor == true }
         guard !targets.isEmpty else { return }
         edit("Color", affected: Set(targets), selection: selection) { page in
@@ -1388,7 +1388,7 @@ extension NotePageSession {
         return selection
     }
 
-    package func setCaption(_ text: NoteText, of id: NoteBlockID, origin: AnyObject? = nil) {
+    func setCaption(_ text: NoteText, of id: NoteBlockID, origin: AnyObject? = nil) {
         guard page.block(id)?.kind.hasCaption == true else { return }
         let caret = NotePosition(id, text.length, field: .caption)
         setText(text, of: (id, .caption), origin: origin, selection: .caret(caret))
@@ -1399,7 +1399,7 @@ extension NotePageSession {
         setSelection(.caret(NotePosition(id, block.props.caption.length, field: .caption)))
     }
 
-    package func removeCaption(from id: NoteBlockID) {
+    func removeCaption(from id: NoteBlockID) {
         guard let block = page.block(id), block.kind.hasCaption else { return }
         let current = selection
         let inCaption: Bool
@@ -1473,7 +1473,7 @@ extension NotePageSession {
         }
     }
 
-    package func pasteText(_ string: String, replacing target: NotePageSelection? = nil) {
+    func pasteText(_ string: String, replacing target: NotePageSelection? = nil) {
         let normalized = string.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         guard !normalized.isEmpty else { return }
         let lines = normalized.components(separatedBy: "\n")
@@ -1607,7 +1607,7 @@ extension NotePageSession {
         return lines
     }
 
-    package static func clipboardForest(_ blocks: [NoteBlock], insideColumn: Bool) -> [NoteBlock] {
+    static func clipboardForest(_ blocks: [NoteBlock], insideColumn: Bool) -> [NoteBlock] {
         func sanitize(_ list: [NoteBlock], insideColumn: Bool) -> [NoteBlock] {
             var result: [NoteBlock] = []
             for block in list {
@@ -1638,7 +1638,7 @@ extension NotePageSession {
         return sanitize(blocks, insideColumn: insideColumn).map { $0.withFreshIDs() }
     }
 
-    package func updateTable(_ id: NoteBlockID, name: String = "Edit Table", _ transform: @escaping (inout NoteTable) -> Void) {
+    func updateTable(_ id: NoteBlockID, name: String = "Edit Table", _ transform: @escaping (inout NoteTable) -> Void) {
         updateBlock(id, name: name) { block in
             guard var table = block.props.table else { return }
             transform(&table)
@@ -1758,7 +1758,7 @@ extension NotePageSession {
     }
 
     @discardableResult
-    package func setTableColumnWidth(_ id: NoteBlockID, column: Int, width: Double?) -> Bool {
+    func setTableColumnWidth(_ id: NoteBlockID, column: Int, width: Double?) -> Bool {
         editTable(id, name: "Resize Column", kind: .text, coalescing: .adjusting(id), { table in
             guard column >= 0, column < table.columnCount else { return false }
             table.setColumnWidth(width, at: column)

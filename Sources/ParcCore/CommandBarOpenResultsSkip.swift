@@ -12,7 +12,7 @@ package enum CommandBarOpenResultsSkip {
         [id.uuidString, title, url, archived ? "1" : "0", customTitle ?? "", caption].joined(separator: "\u{1f}")
     }
 
-    package static func historyToken(url: String, title: String) -> String {
+    static func historyToken(url: String, title: String) -> String {
         [url, title].joined(separator: "\u{1f}")
     }
 

@@ -51,7 +51,7 @@ package struct LinkRouteCondition: Codable, Equatable, Identifiable {
         return URLComponents(string: encoded)?.url
     }
 
-    package static func siteURL(_ text: String) -> URL? {
+    static func siteURL(_ text: String) -> URL? {
         guard var parts = URLComponents(string: text) else { return nil }
         if parts.scheme == nil { parts = URLComponents(string: "https://" + text) ?? parts }
         guard parts.host?.isEmpty == false else { return nil }
@@ -98,12 +98,12 @@ package struct LinkRoute: Codable, Equatable, Identifiable {
 package struct LinkRoutingState: Codable, Equatable {
     package var version = 1
     package var rules: [LinkRoute] = []
-    package var defaultDestination = LinkRouteDestination.mostRecent
+    var defaultDestination = LinkRouteDestination.mostRecent
     package var recentSpaceIDs: [UUID] = []
 }
 
 extension LinkRoutingState {
-    package func convertingProfileDestinations(spaces: [LinkRoutingSpace]) -> LinkRoutingState {
+    func convertingProfileDestinations(spaces: [LinkRoutingSpace]) -> LinkRoutingState {
         func converted(_ destination: LinkRouteDestination) -> LinkRouteDestination {
             guard case .profile(let id) = destination else { return destination }
             return spaces.first { $0.profileID == id }.map { .space($0.id) } ?? .mostRecent
@@ -264,7 +264,7 @@ package final class LinkRoutingStore: ObservableObject {
     }
 
     @discardableResult
-    package func convertProfileDestinations(spaces: [LinkRoutingSpace]) -> Bool {
+    func convertProfileDestinations(spaces: [LinkRoutingSpace]) -> Bool {
         let next = state.convertingProfileDestinations(spaces: spaces)
         return next == state || commit(next)
     }

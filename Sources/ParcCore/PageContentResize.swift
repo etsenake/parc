@@ -14,7 +14,7 @@ package struct PageContentResizeReasons: OptionSet, Hashable {
         self.rawValue = rawValue
     }
 
-    package static let windowResize = Self(rawValue: 0x1)
+    static let windowResize = Self(rawValue: 0x1)
     package static let splitDividerResize = Self(rawValue: 0x2)
     package static let splitInteractiveEditing = Self(rawValue: 0x4)
     package static let sidebarResize = Self(rawValue: 0x8)
@@ -26,11 +26,11 @@ package struct PageContentResizeReasons: OptionSet, Hashable {
 }
 
 package struct PageContentResizeHold {
-    package static let maxPendingFrames = 1
+    static let maxPendingFrames = 1
     package static let tolerance = 1.00001
 
     package private(set) var mode = PageContentResizeMode.intrinsic
-    package private(set) var pendingFrames: [CGSize] = []
+    private(set) var pendingFrames: [CGSize] = []
     package private(set) var lockedSize: CGSize?
 
     package init(mode: PageContentResizeMode = PageContentResizeMode.intrinsic, pendingFrames: [CGSize] = [], lockedSize: CGSize? = nil) {
@@ -64,7 +64,7 @@ package struct PageContentResizeHold {
         lockedSize = nil
     }
 
-    package static func differs(_ a: CGSize, _ b: CGSize) -> Bool {
+    static func differs(_ a: CGSize, _ b: CGSize) -> Bool {
         abs(a.width - b.width) > tolerance || abs(a.height - b.height) > tolerance
     }
 

@@ -24,7 +24,7 @@ package enum NoteEmojiSkinTone: Int, CaseIterable, Codable {
 package enum NoteEmojiCategory: String, CaseIterable {
     case recents, custom, people, nature, food, activities, travel, objects, symbols, flags
 
-    package static let browsable: [NoteEmojiCategory] = allCases.filter { $0 != .recents && $0 != .custom }
+    static let browsable: [NoteEmojiCategory] = allCases.filter { $0 != .recents && $0 != .custom }
 
     package var displayName: String {
         switch self {
@@ -59,10 +59,10 @@ package struct NoteEmoji: Hashable {
     package let character: String
     package let name: String
     package let keywords: [String]
-    package let shortcodes: [String]
+    let shortcodes: [String]
     package let category: NoteEmojiCategory
     package let version: Double
-    package let skinToneVariants: [String]
+    let skinToneVariants: [String]
     package let order: Int
 
     package var supportsSkinTones: Bool { skinToneVariants.count == 5 }
@@ -96,11 +96,11 @@ package struct NoteEmoji: Hashable {
 @MainActor
 package final class NoteEmojiCatalog {
     package static let recentsKey = "Parc.Notes.Emoji.Recents"
-    package static let skinToneKey = "Parc.Notes.Emoji.SkinTone"
-    package static let recentsLimit = 36
-    package static let randomCategories: Set<NoteEmojiCategory> = [.people, .nature, .food, .activities, .travel, .objects]
+    static let skinToneKey = "Parc.Notes.Emoji.SkinTone"
+    static let recentsLimit = 36
+    static let randomCategories: Set<NoteEmojiCategory> = [.people, .nature, .food, .activities, .travel, .objects]
 
-    package static var bundledURL: URL? {
+    static var bundledURL: URL? {
         Bundle.main.url(forResource: "emoji", withExtension: "json", subdirectory: "NoteEmoji")
     }
 
@@ -126,8 +126,8 @@ package final class NoteEmojiCatalog {
         self.defaults = defaults
     }
 
-    package var isLoaded: Bool { !index.entries.isEmpty }
-    package var unicodeVersion: String { index.unicodeVersion }
+    var isLoaded: Bool { !index.entries.isEmpty }
+    var unicodeVersion: String { index.unicodeVersion }
     package var all: [NoteEmoji] { index.entries }
 
     package var available: [NoteEmoji] {
@@ -234,14 +234,14 @@ package final class NoteEmojiCatalog {
         defaults.set(list, forKey: Self.recentsKey)
     }
 
-    package func removeRecent(_ character: String) {
+    func removeRecent(_ character: String) {
         let base = recentBase(character) ?? character
         let list = recents.filter { (recentBase($0) ?? $0) != base }
         recentsCache = list
         defaults.set(list, forKey: Self.recentsKey)
     }
 
-    package func clearRecents() {
+    func clearRecents() {
         recentsCache = []
         defaults.removeObject(forKey: Self.recentsKey)
     }

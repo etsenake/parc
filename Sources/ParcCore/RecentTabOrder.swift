@@ -103,7 +103,7 @@ package struct RecentTabSwitcherInput {
     package static let modifierMask: UInt = 0x1E_0000
     package static let control: UInt = 0x4_0000
     package enum KeyAction: Equatable { case forward, backward, cancel, close, consume }
-    package let continuationFlags: [UInt]
+    let continuationFlags: [UInt]
 
     package init(next: UInt?, previous: UInt?) {
         continuationFlags = [next, previous, Self.control].compactMap { $0.map { $0 & Self.modifierMask } }

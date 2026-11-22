@@ -68,7 +68,7 @@ package struct BrowserImportSelection {
         return roots.compactMap(include)
     }
 
-    package var selectedPageCount: Int { nodes.values.filter { $0.url != nil && selected.contains($0.id) }.count }
+    var selectedPageCount: Int { nodes.values.filter { $0.url != nil && selected.contains($0.id) }.count }
 }
 
 package struct BrowserImportDestination: Equatable {
@@ -86,7 +86,7 @@ package struct BrowserImportDestination: Equatable {
             && !state.profileRemovals.contains { $0.profileID == profileID }
     }
 
-    package func inserting(_ roots: [BrowserImportBookmark], into state: BrowserState, at date: Date) throws -> BrowserState {
+    func inserting(_ roots: [BrowserImportBookmark], into state: BrowserState, at date: Date) throws -> BrowserState {
         try replacing(BrowserImportPlacement(), with: roots, in: state, at: date).state
     }
 

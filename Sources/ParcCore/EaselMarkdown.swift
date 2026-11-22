@@ -8,9 +8,9 @@ package enum EaselMarkdown {
         }
     }
 
-    package static let boldTrait: UInt32 = 1 << 1
-    package static let italicTrait: UInt32 = 1 << 0
-    package static let monospaceTrait: UInt32 = 1 << 10
+    static let boldTrait: UInt32 = 1 << 1
+    static let italicTrait: UInt32 = 1 << 0
+    static let monospaceTrait: UInt32 = 1 << 10
     package static let quoteMarker = "\u{258E}"
 
     package static func markdown(_ document: EaselDocument, options: Options = Options()) -> String {
@@ -43,7 +43,7 @@ package enum EaselMarkdown {
         pageBlocks(items, headingLevel: 2, options: options)
     }
 
-    package static func pageBlocks(_ items: [EaselItem], headingLevel: Int, options: Options) -> [NoteBlock] {
+    static func pageBlocks(_ items: [EaselItem], headingLevel: Int, options: Options) -> [NoteBlock] {
         let hidden = EaselBoardObjects.hiddenIDs(in: items)
         let visible = hidden.isEmpty ? items : items.filter { !hidden.contains($0.id) }
         let sections = visible.filter { $0.kind == .section }
@@ -77,7 +77,7 @@ package enum EaselMarkdown {
         return title.isEmpty ? nil : title
     }
 
-    package static func nest(_ entries: [(block: NoteBlock, depth: Int)]) -> [NoteBlock] {
+    static func nest(_ entries: [(block: NoteBlock, depth: Int)]) -> [NoteBlock] {
         var index = 0
         func take(depth: Int) -> [NoteBlock] {
             var result: [NoteBlock] = []
@@ -158,14 +158,14 @@ package enum EaselMarkdown {
         return NoteText(title, marks: marks)
     }
 
-    package static func tableProps(_ table: EaselTable) -> NoteBlockProps {
+    static func tableProps(_ table: EaselTable) -> NoteBlockProps {
         var props = NoteBlockProps()
         let rows = table.cells.map { row in row.map { NoteText($0.text.replacingOccurrences(of: "\n", with: " ")) } }
         props.table = NoteTable(rows: rows)
         return props
     }
 
-    package static func lineBroken(_ text: NoteText) -> NoteText {
+    static func lineBroken(_ text: NoteText) -> NoteText {
         text.trimmingTrailingNewlines()
     }
 
@@ -192,7 +192,7 @@ package enum EaselMarkdown {
         return result
     }
 
-    package static func paragraphAttributes(of item: EaselItem, at location: Int, length: Int) -> EaselRichText.Paragraph? {
+    static func paragraphAttributes(of item: EaselItem, at location: Int, length: Int) -> EaselRichText.Paragraph? {
         guard let runs = item.richText?.runs else { return nil }
         let probe = length > 0 ? location : max(0, location - 1)
         return runs.first { probe >= $0.location && probe < $0.location + $0.length }?.attributes.paragraph

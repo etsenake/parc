@@ -165,11 +165,11 @@ extension NoteTable {
         return .some(nil)
     }
 
-    package func uniformColor(column: Int) -> NoteColorStyle? {
+    func uniformColor(column: Int) -> NoteColorStyle? {
         uniformColor((0..<rowCount).map { NoteTableCell(row: $0, column: column) }, minimum: 2)
     }
 
-    package func uniformColor(row: Int) -> NoteColorStyle? {
+    func uniformColor(row: Int) -> NoteColorStyle? {
         uniformColor((0..<columnCount).map { NoteTableCell(row: row, column: $0) }, minimum: 2)
     }
 
@@ -257,12 +257,12 @@ extension NoteTable {
         return (rowRange, columnRange)
     }
 
-    package func isRowEmpty(_ row: Int) -> Bool {
+    func isRowEmpty(_ row: Int) -> Bool {
         guard rows.indices.contains(row) else { return false }
         return rows[row].allSatisfy(\.isEmpty) && !merges.contains { $0.rows.contains(row) }
     }
 
-    package func isColumnEmpty(_ column: Int) -> Bool {
+    func isColumnEmpty(_ column: Int) -> Bool {
         guard column >= 0, column < columnCount else { return false }
         return rows.allSatisfy { !$0.indices.contains(column) || $0[column].isEmpty } && !merges.contains { $0.columns.contains(column) }
     }
@@ -292,7 +292,7 @@ extension NoteTable {
         return self != before
     }
 
-    package mutating func normalizeSpans() {
+    mutating func normalizeSpans() {
         let rowLimit = rows.count, columnLimit = columnCount
         if !cellColors.isEmpty, cellColors.keys.contains(where: { $0.row < 0 || $0.column < 0 || $0.row >= rowLimit || $0.column >= columnLimit }) {
             cellColors = cellColors.filter { $0.key.row >= 0 && $0.key.column >= 0 && $0.key.row < rowLimit && $0.key.column < columnLimit }
@@ -384,7 +384,7 @@ extension NoteTable {
         return true
     }
 
-    package mutating func reorderRows(_ newIndex: (Int) -> Int) {
+    mutating func reorderRows(_ newIndex: (Int) -> Int) {
         normalize()
         var reordered = rows
         for (old, row) in rows.enumerated() { reordered[newIndex(old)] = row }
@@ -475,7 +475,7 @@ extension NoteTable {
         return true
     }
 
-    package mutating func reorderColumns(_ newIndex: (Int) -> Int) {
+    mutating func reorderColumns(_ newIndex: (Int) -> Int) {
         normalize()
         let columns = columnCount
         for row in rows.indices {
@@ -526,8 +526,8 @@ extension NoteTable {
     }
 }
 
-package enum NoteTableReference {
-    package static func columnName(_ index: Int) -> String {
+enum NoteTableReference {
+    static func columnName(_ index: Int) -> String {
         var value = max(0, index) + 1
         var letters: [Character] = []
         while value > 0 {
@@ -538,7 +538,7 @@ package enum NoteTableReference {
         return String(letters.reversed())
     }
 
-    package static func columnIndex<S: StringProtocol>(_ name: S) -> Int? {
+    static func columnIndex<S: StringProtocol>(_ name: S) -> Int? {
         guard !name.isEmpty, name.count <= 3 else { return nil }
         var value = 0
         for scalar in name.unicodeScalars {
@@ -550,21 +550,21 @@ package enum NoteTableReference {
         return value - 1
     }
 
-    package static func cellName(_ cell: NoteTableCell) -> String {
+    static func cellName(_ cell: NoteTableCell) -> String {
         columnName(cell.column) + String(cell.row + 1)
     }
 
-    package static func rangeName(rows: ClosedRange<Int>, columns: ClosedRange<Int>) -> String {
+    static func rangeName(rows: ClosedRange<Int>, columns: ClosedRange<Int>) -> String {
         let start = cellName(NoteTableCell(row: rows.lowerBound, column: columns.lowerBound))
         if rows.count == 1 && columns.count == 1 { return start }
         return start + ":" + cellName(NoteTableCell(row: rows.upperBound, column: columns.upperBound))
     }
 
-    package static func columnsName(_ columns: ClosedRange<Int>) -> String {
+    static func columnsName(_ columns: ClosedRange<Int>) -> String {
         columnName(columns.lowerBound) + ":" + columnName(columns.upperBound)
     }
 
-    package static func rowsName(_ rows: ClosedRange<Int>) -> String {
+    static func rowsName(_ rows: ClosedRange<Int>) -> String {
         String(rows.lowerBound + 1) + ":" + String(rows.upperBound + 1)
     }
 
@@ -590,7 +590,7 @@ package enum NoteTableReference {
         return .cell(NoteTableCell(row: number - 1, column: column))
     }
 
-    package static func range<S: StringProtocol>(_ text: S, rowCount: Int, columnCount: Int) -> (rows: ClosedRange<Int>, columns: ClosedRange<Int>)? {
+    static func range<S: StringProtocol>(_ text: S, rowCount: Int, columnCount: Int) -> (rows: ClosedRange<Int>, columns: ClosedRange<Int>)? {
         guard rowCount > 0, columnCount > 0 else { return nil }
         let pieces = text.split(separator: ":", omittingEmptySubsequences: false)
         guard pieces.count == 1 || pieces.count == 2, let first = part(pieces[0]) else { return nil }
@@ -616,12 +616,12 @@ package enum NoteTableReference {
 }
 
 extension NoteTable {
-    package var mergeAttribute: String? {
+    var mergeAttribute: String? {
         guard !merges.isEmpty else { return nil }
         return merges.map { NoteTableReference.rangeName(rows: $0.rows, columns: $0.columns) }.joined(separator: ",")
     }
 
-    package var colorsAttribute: String? {
+    var colorsAttribute: String? {
         guard !cellColors.isEmpty else { return nil }
         let covered = coveredCells
         var done = Set<NoteTableCell>()
@@ -665,7 +665,7 @@ extension NoteTable {
         return items.isEmpty ? nil : items.joined(separator: ",")
     }
 
-    package mutating func applyMergeAttribute(_ value: String) {
+    mutating func applyMergeAttribute(_ value: String) {
         normalize()
         for item in value.split(separator: ",") {
             guard let range = NoteTableReference.range(item, rowCount: rowCount, columnCount: columnCount),
@@ -675,7 +675,7 @@ extension NoteTable {
         normalize()
     }
 
-    package mutating func applyColorsAttribute(_ value: String) {
+    mutating func applyColorsAttribute(_ value: String) {
         normalize()
         for item in value.split(separator: ",") {
             guard let equals = item.lastIndex(of: "="),

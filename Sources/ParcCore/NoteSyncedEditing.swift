@@ -10,7 +10,7 @@ extension NotePage {
         }
     }
 
-    package func syncedPlacement(of id: NoteBlockID) -> NoteInsertion {
+    func syncedPlacement(of id: NoteBlockID) -> NoteInsertion {
         if let parent = parent(of: id), let siblings = block(parent)?.children {
             guard let index = siblings.firstIndex(where: { $0.id == id }) else { return .lastChild(of: parent) }
             return index == 0 ? .firstChild(of: parent) : .after(siblings[index - 1].id)
@@ -38,7 +38,7 @@ extension NotePageSession {
     }
 
     @discardableResult
-    package func insertSyncedBlock(replacing id: NoteBlockID) -> NoteBlockID? {
+    func insertSyncedBlock(replacing id: NoteBlockID) -> NoteBlockID? {
         guard !isReadOnly, !isFlat, let block = page.block(id), page.syncedSite(containing: id) == nil else { return nil }
         let inner = NoteBlock.paragraph()
         let synced = NoteBlock(.synced, children: [inner])
@@ -99,7 +99,7 @@ extension NoteBlock {
 }
 
 extension NoteSyncedReference {
-    package static func portableTarget(anchor: String, original: URL?, folder: URL?) -> String {
+    static func portableTarget(anchor: String, original: URL?, folder: URL?) -> String {
         let fragment = "#" + NoteFilePaths.encodedSegment(anchor)
         guard let original else { return fragment }
         let file = URL(fileURLWithPath: original.path)

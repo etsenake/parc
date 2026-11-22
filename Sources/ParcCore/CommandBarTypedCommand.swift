@@ -55,7 +55,7 @@ package struct CommandBarTypedCommand: Hashable, Sendable {
             }
         }
 
-        package var triggerPhrases: [String] {
+        var triggerPhrases: [String] {
             switch self {
             case .account: return ["membership card", "id card", "arc card", "parc card", "open account preferences"]
             case .general: return ["autofill", "credit cards", "general"]
@@ -80,7 +80,7 @@ package struct CommandBarTypedCommand: Hashable, Sendable {
             case .automatic: return "Switch to Automatic Appearance"
             }
         }
-        package var triggerPhrases: [String] {
+        var triggerPhrases: [String] {
             switch self {
             case .light: return ["Switch Light Mode", "Light Mode"]
             case .dark: return ["Switch Dark Mode", "Dark Mode", "Night Mode"]
@@ -206,7 +206,7 @@ package struct CommandBarTypedCommand: Hashable, Sendable {
         }
     }
 
-    package var searchPhrases: [String] {
+    var searchPhrases: [String] {
         switch kind {
         case .pinToSpace: return ["move space"]
         case .pinToNewFolder: return ["move folder create"]

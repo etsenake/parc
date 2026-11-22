@@ -85,24 +85,24 @@ package enum NotePageHTML {
     }
 }
 
-package struct NotePageHTMLWriter {
-    package enum Mode { case fragment, document }
+struct NotePageHTMLWriter {
+    enum Mode { case fragment, document }
 
-    package let mode: Mode
-    package let assets: (String) -> URL?
-    package let embedImages: Bool
-    package let equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)?
-    package var diagramArt: ((NoteBlock) -> NoteDiagramArt?)?
-    package var easelArt: ((NoteBlock) -> Data?)?
-    package var breadcrumb: [NoteBreadcrumbSegment] = []
-    package var imageSize: ((String) -> CGSize?)?
-    package private(set) var output = ""
+    let mode: Mode
+    let assets: (String) -> URL?
+    let embedImages: Bool
+    let equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)?
+    var diagramArt: ((NoteBlock) -> NoteDiagramArt?)?
+    var easelArt: ((NoteBlock) -> Data?)?
+    var breadcrumb: [NoteBreadcrumbSegment] = []
+    var imageSize: ((String) -> CGSize?)?
+    private(set) var output = ""
     private var anchors: [NoteBlockID: String] = [:]
     private var mathNumbering = NotePageMathNumbering()
     private var equationAnchors: [String: String] = [:]
     private var outline: [(level: Int, anchor: String, title: String)] = []
 
-    package init(mode: Mode, assets: @escaping (String) -> URL?, embedImages: Bool,
+    init(mode: Mode, assets: @escaping (String) -> URL?, embedImages: Bool,
          equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)?, blocks: [NoteBlock]) {
         self.mode = mode
         self.assets = assets
@@ -142,7 +142,7 @@ package struct NotePageHTMLWriter {
         }
     }
 
-    package static func slug(_ title: String) -> String {
+    static func slug(_ title: String) -> String {
         var result = ""
         var pendingDash = false
         for character in title.lowercased() {
@@ -157,7 +157,7 @@ package struct NotePageHTMLWriter {
         return result.isEmpty ? "section" : result
     }
 
-    package static func escape(_ value: String) -> String {
+    static func escape(_ value: String) -> String {
         var result = ""
         result.reserveCapacity(value.count)
         for scalar in value.unicodeScalars {
@@ -171,7 +171,7 @@ package struct NotePageHTMLWriter {
         return result
     }
 
-    package static func credit(_ credit: NoteMediaCredit) -> String {
+    static func credit(_ credit: NoteMediaCredit) -> String {
         "<span class=\"credit\">" + credit.parts.map { part -> String in
             switch part {
             case .text(let text): return escape(text)
@@ -180,18 +180,18 @@ package struct NotePageHTMLWriter {
         }.joined() + "</span>"
     }
 
-    package static func attribute(_ value: String) -> String {
+    static func attribute(_ value: String) -> String {
         escape(value).replacingOccurrences(of: "\"", with: "&quot;")
     }
 
-    package static func isImageReference(_ value: String) -> Bool {
+    static func isImageReference(_ value: String) -> Bool {
         let lowered = value.lowercased()
         if lowered.hasPrefix("http:") || lowered.hasPrefix("https:") || lowered.hasPrefix("data:") || lowered.hasPrefix("file:") { return true }
         let ext = (lowered as NSString).pathExtension
         return value.contains("/") || NotePageHTMLStyle.mimeTypes[ext] != nil
     }
 
-    package static func properties(_ list: [NotePageProperty]) -> String {
+    static func properties(_ list: [NotePageProperty]) -> String {
         var html = "<dl class=\"page-properties\">\n"
         for property in list {
             let value: String
@@ -208,17 +208,17 @@ package struct NotePageHTMLWriter {
         return html + "</dl>\n"
     }
 
-    package func link(_ value: String) -> String {
+    func link(_ value: String) -> String {
         if let url = URL(string: value), url.scheme != nil { return value }
         return assets(value)?.absoluteString ?? value
     }
 
-    package func customEmojiSource(_ value: String) -> String? {
+    func customEmojiSource(_ value: String) -> String? {
         guard NoteCustomEmojiName.isReference(value), assets(value) != nil else { return nil }
         return source(value)
     }
 
-    package func source(_ value: String) -> String {
+    func source(_ value: String) -> String {
         if value.lowercased().hasPrefix("data:") { return value }
         let url = assets(value) ?? URL(string: value).flatMap { $0.scheme != nil ? $0 : nil }
         guard let url else { return value }
@@ -256,7 +256,7 @@ package struct NotePageHTMLWriter {
         return (list.isEmpty ? "" : " class=\"" + list.joined(separator: " ") + "\"") + extra
     }
 
-    package mutating func write(_ blocks: [NoteBlock]) {
+    mutating func write(_ blocks: [NoteBlock]) {
         var index = 0
         while index < blocks.count {
             let block = blocks[index]
@@ -601,9 +601,9 @@ package struct NotePageHTMLWriter {
         output += "</figure>"
     }
 
-    package static let embeddedPDFLimit = 25_000_000
+    static let embeddedPDFLimit = 25_000_000
 
-    package func pdfSource(_ value: String) -> String {
+    func pdfSource(_ value: String) -> String {
         let url = assets(value) ?? URL(string: value).flatMap { $0.scheme != nil ? $0 : nil }
         guard let url else { return value }
         if embedImages, url.isFileURL,
@@ -762,7 +762,7 @@ package struct NotePageHTMLWriter {
         output += "</ul></nav>"
     }
 
-    package func inline(_ text: NoteText) -> String {
+    func inline(_ text: NoteText) -> String {
         let string = text.string as NSString
         let runs = text.runs()
         var html = ""

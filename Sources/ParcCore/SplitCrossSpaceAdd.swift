@@ -1,7 +1,7 @@
 import Foundation
 
-package enum SplitCrossSpaceAdd {
-    package static func relocated(_ state: BrowserState, source: UUID, into spaceID: UUID, profileID: UUID,
+enum SplitCrossSpaceAdd {
+    static func relocated(_ state: BrowserState, source: UUID, into spaceID: UUID, profileID: UUID,
                           pane: UUID?, homeID: UUID?, now: Date) -> BrowserState? {
         guard let tab = state.tab(source, where: { $0.archivedAt == nil }),
               tab.profileID == profileID,

@@ -88,14 +88,14 @@ package struct BrowserTabLookupSlot: Equatable {
 }
 
 extension BrowserState {
-    package func attachingTabLookup(after previous: BrowserState?) -> BrowserState {
+    func attachingTabLookup(after previous: BrowserState?) -> BrowserState {
         guard tabLookup.lookup == nil else { return self }
         var result = self
         result.tabLookup.lookup = BrowserTabLookup(after: previous?.tabLookup.lookup)
         return result
     }
 
-    package func tabIndex(_ id: UUID) -> Int? {
+    func tabIndex(_ id: UUID) -> Int? {
         switch tabLookup.lookup?.match(id, in: tabs) {
         case .found(let index): return index
         case .absent: return nil
@@ -103,7 +103,7 @@ extension BrowserState {
         }
     }
 
-    package func tabIndex(_ id: UUID, where matches: (BrowserTab) -> Bool) -> Int? {
+    func tabIndex(_ id: UUID, where matches: (BrowserTab) -> Bool) -> Int? {
         switch tabLookup.lookup?.match(id, in: tabs) {
         case .found(let index): return matches(tabs[index]) ? index : nil
         case .absent: return nil
@@ -136,7 +136,7 @@ extension BrowserState {
         return lookup.openTabs(in: tabs).filter(matches)
     }
 
-    package func containsOpenTab(where matches: (BrowserTab) -> Bool) -> Bool {
+    func containsOpenTab(where matches: (BrowserTab) -> Bool) -> Bool {
         guard let lookup = tabLookup.lookup else { return tabs.contains { $0.archivedAt == nil && matches($0) } }
         return lookup.openTabs(in: tabs).contains(where: matches)
     }

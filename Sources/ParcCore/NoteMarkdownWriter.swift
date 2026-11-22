@@ -3,7 +3,7 @@ import Foundation
 package struct NoteMDWriter {
     package let reader: NoteMDReader
     package let inline: NoteMDInlineWriter
-    package let portable: Bool
+    let portable: Bool
 
     package init(page: NotePage, customEmoji: Set<String> = [], portable: Bool = false) {
         self.portable = portable
@@ -187,7 +187,7 @@ package struct NoteMDWriter {
         return result + " -->"
     }
 
-    package func blockAttributes(_ block: NoteBlock) -> [(String, String?)] {
+    func blockAttributes(_ block: NoteBlock) -> [(String, String?)] {
         var items: [(String, String?)] = []
         guard !portable else { return items }
         if let color = block.color { items.append(("color", NoteMDColor.name(color))) }
@@ -218,9 +218,9 @@ package struct NoteMDWriter {
         return standalone ? Self.leadingParagraph(lines) : lines
     }
 
-    package static let paragraphLeadIn = "<b></b>"
+    static let paragraphLeadIn = "<b></b>"
 
-    package static func endsWithAttributeComment(_ text: NoteText) -> Bool {
+    static func endsWithAttributeComment(_ text: NoteText) -> Bool {
         guard text.length > 0, case .raw(let source)? = text.marks(at: text.length - 1).atom else { return false }
         return NoteMDAttributes.parse(source) != nil
     }
@@ -231,7 +231,7 @@ package struct NoteMDWriter {
         return Self.endsWithAttributeComment(text) ? (true, " " + comment([])) : (false, "")
     }
 
-    package static func needsLeadIn(_ line: String) -> Bool {
+    static func needsLeadIn(_ line: String) -> Bool {
         guard let byte = line.utf8.first, NoteMDBlockParser.mayOpenBlock(byte) else { return false }
         return !startsParagraph(line)
     }
@@ -241,12 +241,12 @@ package struct NoteMDWriter {
         return [paragraphLeadIn + first] + lines.dropFirst()
     }
 
-    package static func startsHTMLBlock(_ line: String) -> Bool {
+    static func startsHTMLBlock(_ line: String) -> Bool {
         let bytes = Array(line.utf8)
         return NoteMDHTML.blockStart(bytes, from: 0, upTo: bytes.count, interruptsParagraph: false) != nil
     }
 
-    package static func writesAsParagraph(_ block: NoteBlock?) -> Bool {
+    static func writesAsParagraph(_ block: NoteBlock?) -> Bool {
         guard let block else { return false }
         switch block.kind {
         case .paragraph, .pageLink, .image, .video, .audio, .file, .pdf, .embed, .easel, .bookmark: return true
@@ -300,11 +300,11 @@ package struct NoteMDWriter {
         return lines + ["", fence + " " + NoteMDDirective.indent] + sequence(children, frame: .container(leading: 0, trailing: 0)) + [fence]
     }
 
-    package static func writesIndent(_ block: NoteBlock) -> Bool {
+    static func writesIndent(_ block: NoteBlock) -> Bool {
         !block.children.isEmpty && (block.kind == .paragraph || (block.kind == .heading && !block.props.toggleable))
     }
 
-    package static func directiveDepth(_ blocks: [NoteBlock]) -> Int {
+    static func directiveDepth(_ blocks: [NoteBlock]) -> Int {
         blocks.reduce(0) { deepest, block in
             let own: Int
             switch block.kind {
@@ -322,7 +322,7 @@ package struct NoteMDWriter {
         return text.isEmpty ? [] : [text]
     }
 
-    package static func isThematicBreak(_ value: String) -> Bool {
+    static func isThematicBreak(_ value: String) -> Bool {
         let trimmed = value.trimmingCharacters(in: .whitespaces)
         guard trimmed == value, let first = trimmed.first, "*-_".contains(first) else { return false }
         return trimmed.allSatisfy { $0 == first || $0 == " " || $0 == "\t" } && trimmed.filter({ $0 == first }).count >= 3
@@ -468,7 +468,7 @@ package struct NoteMDWriter {
         return inner.map { $0.isEmpty ? ">" : "> " + $0 }
     }
 
-    package static func startsParagraph(_ line: String) -> Bool {
+    static func startsParagraph(_ line: String) -> Bool {
         NoteMDBlockParser.startsParagraph(Array(line.utf8)[...])
     }
 
@@ -504,7 +504,7 @@ package struct NoteMDWriter {
         return [fence + separator + Self.escapeInfo(info)] + (text.isEmpty ? [] : lines) + [fence] + trailingAttributes(items)
     }
 
-    package static func writesIndentedCode(_ block: NoteBlock, afterList: Bool) -> Bool {
+    static func writesIndentedCode(_ block: NoteBlock, afterList: Bool) -> Bool {
         guard block.kind == .code, block.props.fence == "    ", !afterList, block.props.language.isEmpty, block.props.info == nil,
               block.props.caption.isEmpty, !block.props.wrap, block.color == nil, !(block.props.anchor.map(NoteAnchor.isValid) ?? false) else { return false }
         let lines = block.text.string.components(separatedBy: "\n")
@@ -523,7 +523,7 @@ package struct NoteMDWriter {
         return result
     }
 
-    package static func fence(for text: String, preferred: String?, info: String) -> String {
+    static func fence(for text: String, preferred: String?, info: String) -> String {
         var character: Character = preferred?.first == "~" ? "~" : "`"
         if character == "`", info.contains("`") { character = "~" }
         var longest = 0
@@ -549,7 +549,7 @@ package struct NoteMDWriter {
         return ["$$"] + (text.isEmpty ? [] : lines) + ["$$"] + trailingAttributes(items)
     }
 
-    package static func equationNeedsFence(_ text: String) -> Bool {
+    static func equationNeedsFence(_ text: String) -> Bool {
         text.components(separatedBy: "\n").contains { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             return trimmed.hasSuffix("$$") || trimmed.hasPrefix("$$")

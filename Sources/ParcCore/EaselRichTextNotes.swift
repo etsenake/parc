@@ -59,7 +59,7 @@ extension EaselRichText.Inline {
 }
 
 extension EaselRichText {
-    package var inlines: [(location: Int, inline: Inline)] {
+    var inlines: [(location: Int, inline: Inline)] {
         runs.compactMap { run in run.attributes.inline.map { (run.location, $0) } }
     }
 
@@ -73,7 +73,7 @@ extension EaselRichText {
         readableMap(text, rich: rich, now: now).text
     }
 
-    package static func readableMap(_ text: String, rich: EaselRichText?, now: Date = Date()) -> (text: String, starts: [Int], ends: [Int]) {
+    static func readableMap(_ text: String, rich: EaselRichText?, now: Date = Date()) -> (text: String, starts: [Int], ends: [Int]) {
         let source = text as NSString
         var atoms: [Int: Attributes] = [:]
         for run in rich?.runs ?? [] where run.attributes.isAtomic && run.length == 1 { atoms[run.location] = run.attributes }
@@ -124,7 +124,7 @@ extension EaselRichText {
 }
 
 extension EaselDocument {
-    package var inlineTexts: [(text: String, rich: EaselRichText)] {
+    var inlineTexts: [(text: String, rich: EaselRichText)] {
         var result: [(String, EaselRichText)] = []
         for item in EaselPages.pageDocuments(self).flatMap(\.items) {
             if let rich = item.richText, rich.runs.contains(where: { $0.attributes.inline != nil }) { result.append((item.text, rich)) }

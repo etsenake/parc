@@ -1,9 +1,9 @@
 import Foundation
 
 extension EaselVectorExport {
-    package static let strokeAllowance = 4.0
+    static let strokeAllowance = 4.0
 
-    package static func exportFrame(_ item: EaselItem, art: EaselVectorArt = .init()) -> EaselRect {
+    static func exportFrame(_ item: EaselItem, art: EaselVectorArt = .init()) -> EaselRect {
         let painted = paintedFrame(item)
         let width = EaselPaintRules.strokeWidth(item)
         guard item.kind == .arrow else { return outset(painted, by: max(0, width / 2 - strokeAllowance)) }
@@ -56,7 +56,7 @@ package enum EaselPreviewRegion {
 
 package enum EaselExportScale {
     package static let maximumPixels = 64_000_000.0
-    package static let maximumSide = 32_000.0
+    static let maximumSide = 32_000.0
 
     package static func capped(_ scale: Double, width: Double, height: Double) -> Double {
         guard scale.isFinite, scale > 0, width.isFinite, height.isFinite, width > 0, height > 0 else { return scale }

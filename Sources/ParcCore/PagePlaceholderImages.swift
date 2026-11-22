@@ -33,10 +33,10 @@ package final class PagePlaceholderImages {
 }
 
 package enum PagePlaceholderCaptureOrder {
-    package static let orderedAttempts = 3
-    package static let lastAttempt = 5
+    static let orderedAttempts = 3
+    static let lastAttempt = 5
 
-    package static func mayCapture(_ tab: UUID, pending: Set<UUID>, focused: UUID?) -> Bool {
+    static func mayCapture(_ tab: UUID, pending: Set<UUID>, focused: UUID?) -> Bool {
         guard let focused, focused != tab else { return true }
         return !pending.contains(focused)
     }

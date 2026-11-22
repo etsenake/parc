@@ -14,10 +14,10 @@ package final class NoteCrossNoteMove {
     private var originals: [NoteBlock]
     private var placements: [NoteInsertion]
     private var copies: [NoteBlock]
-    package private(set) var isApplied = false
+    private(set) var isApplied = false
 
-    package var originalIDs: [NoteBlockID] { originals.map(\.id) }
-    package var copyIDs: [NoteBlockID] { copies.map(\.id) }
+    var originalIDs: [NoteBlockID] { originals.map(\.id) }
+    var copyIDs: [NoteBlockID] { copies.map(\.id) }
 
     private init(name: String, originals: [NoteBlock], placements: [NoteInsertion], source: @escaping Access, target: @escaping Access,
                  schedule: @escaping @Sendable (@escaping @Sendable () -> Void) -> Void) {

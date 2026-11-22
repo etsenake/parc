@@ -1,29 +1,29 @@
 import Foundation
 
 package struct HistorySwipeParameters: Equatable {
-    package var commitDistance = 0.08
-    package var consumeDistance = 0.01
-    package var directionDistance = 0.001
-    package var verticalCancelDistance = 0.24
-    package var verticalDriftDistance = 0.01
-    package var verticalDominance = 2.0
-    package var verticalExcess = 1.3
-    package var trackedArmAmount = 0.3
+    var commitDistance = 0.08
+    var consumeDistance = 0.01
+    var directionDistance = 0.001
+    var verticalCancelDistance = 0.24
+    var verticalDriftDistance = 0.01
+    var verticalDominance = 2.0
+    var verticalExcess = 1.3
+    var trackedArmAmount = 0.3
     package var rubberBand = 0.15
     package var holdDelay: TimeInterval = 0.3
     package var rowStep = 0.08
     package var edgeZone = 0.15
-    package var edgeMargin = 0.03
-    package var edgeStepInterval: TimeInterval = 0.1
-    package var listCloseProgress = 0.85
-    package var dismissDistance = 0.3
-    package var dismissCommitProgress = 0.5
-    package var dismissDisarmProgress = 0.45
-    package var flickVelocity = 0.6
-    package var flickProgress = 0.1
+    var edgeMargin = 0.03
+    var edgeStepInterval: TimeInterval = 0.1
+    var listCloseProgress = 0.85
+    var dismissDistance = 0.3
+    var dismissCommitProgress = 0.5
+    var dismissDisarmProgress = 0.45
+    var flickVelocity = 0.6
+    var flickProgress = 0.1
     package var velocityWindow: TimeInterval = 0.08
 
-    package static let dia = HistorySwipeParameters()
+    static let dia = HistorySwipeParameters()
 }
 
 package struct HistorySwipeRecognizer {

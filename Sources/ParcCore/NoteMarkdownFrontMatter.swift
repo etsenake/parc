@@ -1,6 +1,6 @@
 import Foundation
 
-package enum NoteMDFrontMatter {
+enum NoteMDFrontMatter {
     private enum Scalar {
         case text(String)
         case number(Double)
@@ -14,7 +14,7 @@ package enum NoteMDFrontMatter {
         case complex
     }
 
-    package static func split(_ bytes: [UInt8]) -> (yaml: String, body: ArraySlice<UInt8>)? {
+    static func split(_ bytes: [UInt8]) -> (yaml: String, body: ArraySlice<UInt8>)? {
         func line(at start: Int) -> (Range<Int>, Int) {
             var end = start
             while end < bytes.count, bytes[end] != NoteMDByte.newline { end += 1 }
@@ -38,7 +38,7 @@ package enum NoteMDFrontMatter {
         return nil
     }
 
-    package static func read(_ yaml: String) -> NotePageSettings {
+    static func read(_ yaml: String) -> NotePageSettings {
         var settings = NotePageSettings()
         var coverPosition: Double?
         var coverCredit: (name: String?, link: String?) = (nil, nil)
@@ -319,7 +319,7 @@ package enum NoteMDFrontMatter {
         value.range(of: "^[0-9]{4}-[0-9]{2}-[0-9]{2}([T ][0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$", options: .regularExpression) != nil
     }
 
-    package static func write(_ settings: NotePageSettings) -> String? {
+    static func write(_ settings: NotePageSettings) -> String? {
         var lines: [String] = []
         if let icon = settings.icon { lines.append("icon: " + scalarText(icon)) }
         if let cover = settings.cover {

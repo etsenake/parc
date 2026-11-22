@@ -7,7 +7,7 @@ extension NoteCaptureGeometry {
                   scrollers: layout.scrollContainers.map(EaselScrollContainer.encode))
     }
 
-    package var easelLayout: EaselCaptureLayout? {
+    var easelLayout: EaselCaptureLayout? {
         let containers = scrollers.map(EaselScrollContainer.decode)
         if containers == .some(nil) { return nil }
         return EaselCaptureLayout(viewport: EaselPoint(x: viewportWidth, y: viewportHeight), scroll: EaselPoint(x: scrollX, y: scrollY),
@@ -17,7 +17,7 @@ extension NoteCaptureGeometry {
 }
 
 package enum NoteCaptureLive {
-    package static func chromeItem(of block: NoteBlock) -> EaselItem? {
+    static func chromeItem(of block: NoteBlock) -> EaselItem? {
         guard let capture = capture(of: block) else { return nil }
         var item = EaselItem(kind: .webCard, frame: EaselRect(x: 0, y: 0, width: 1, height: 1))
         item.url = capture.sourceURL

@@ -60,9 +60,9 @@ package struct OnboardingDraft: Codable, Equatable {
     package var spaceName: String
     package var theme: SpaceTheme
     package var favoriteURLs: Set<String> = ["https://youtube.com", "https://calendar.google.com"]
-    package var favoriteOrder: [String]? = ["https://youtube.com", "https://calendar.google.com"]
+    var favoriteOrder: [String]? = ["https://youtube.com", "https://calendar.google.com"]
     package var bookmarks: [Bookmark] = []
-    package var bookmarkFileName: String?
+    var bookmarkFileName: String?
     package var defaultBrowserChoice: Bool?
     package var iCloudPasswordsProfileID: UUID?
     package var importedAdBlockers: [ImportedAdBlocker] = []
@@ -73,14 +73,14 @@ package struct OnboardingDraft: Codable, Equatable {
     package var replayAppearance: String?
     package var importPages: [ImportPage] = []
     package var wantsDefaultBrowser: Bool { defaultBrowserChoice ?? true }
-    package var showsAdBlockers: Bool {
+    var showsAdBlockers: Bool {
         Set(importedAdBlockers.map(\.identifier)) != [OnboardingAdBlocker.uBlockOrigin] || stage.current == .adBlockers
     }
     package func nextStage(continuingImport: Bool = false) -> Stage? {
         stage.next(includingAdBlockers: showsAdBlockers, continuingImport: continuingImport)
     }
     package func previousStage() -> Stage? { stage.previous(includingAdBlockers: showsAdBlockers) }
-    package func visibleSetupOrder() -> [Stage] {
+    func visibleSetupOrder() -> [Stage] {
         Stage.setupOrder(includingAdBlockers: showsAdBlockers, retaining: stage.current)
     }
     package func displayedSetupCount(importSteps: Int? = nil) -> Int {
@@ -136,7 +136,7 @@ package struct OnboardingDraft: Codable, Equatable {
         case keep(String)
         case uBlock
         case keepAll
-        package var keptIdentifier: String? {
+        var keptIdentifier: String? {
             if case .keep(let identifier) = self { return identifier }
             return nil
         }
@@ -213,7 +213,7 @@ package struct OnboardingDraft: Codable, Equatable {
     package func isFavoriteSelected(_ choice: FavoriteChoice) -> Bool {
         favoriteURLs.contains { Self.favoriteKey($0) == choice.url }
     }
-    package var selectedFavorites: [Bookmark] {
+    var selectedFavorites: [Bookmark] {
         let selected = Set(favoriteURLs.map(Self.favoriteKey))
         let available = Self.favoriteChoices.map(\.bookmark) + Self.legacyFavorites
         let byURL = Dictionary(uniqueKeysWithValues: available.map { ($0.url, $0) })
@@ -236,7 +236,7 @@ package struct OnboardingDraft: Codable, Equatable {
         }
         favoriteOrder = order
     }
-    package enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey {
         case version, spaceID, stage, spaceName, theme, favoriteURLs, favoriteOrder
         case bookmarks, bookmarkFileName, defaultBrowserChoice, iCloudPasswordsProfileID
         case importedAdBlockers, adBlockerChoice, windowFrameThickness
@@ -350,7 +350,7 @@ package struct OnboardingDraft: Codable, Equatable {
 }
 
 package enum OnboardingAdBlocker {
-    package static let chromeExtensionIDs: Set<String> = [
+    static let chromeExtensionIDs: Set<String> = [
         "cfhdojbkjhnklbpkdaibdccddilifddb",
         "aemffjkmgcepimloclpkecifcnipnodh",
         "mlomiejdfkolichcflejclcbmpeaniij",

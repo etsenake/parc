@@ -26,7 +26,7 @@ package enum EaselToolbarSubject: String, CaseIterable, Equatable {
         self = EaselStyleFamily.of(item) == .icons ? .icon : EaselToolbarSubject(item.kind)
     }
 
-    package var takesStyle: Bool {
+    var takesStyle: Bool {
         switch self {
         case .text, .sticky, .shape, .connector, .section, .drawing, .icon, .equation: return true
         case .image, .page, .table, .code, .stamp, .media: return false

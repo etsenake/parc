@@ -3,7 +3,7 @@ import Foundation
 private typealias Ch = NoteSyntaxChar
 
 extension NoteSyntaxScanner {
-    package mutating func lexYAML() {
+    mutating func lexYAML() {
         var blockScalarIndent: Int?
         var flowDepth = 0
         while pos < end {
@@ -201,7 +201,7 @@ extension NoteSyntaxScanner {
         return .number
     }
 
-    package mutating func lexTOML() {
+    mutating func lexTOML() {
         var stack: [UInt16] = []
         var expectKey = true
         while pos < end {
@@ -279,7 +279,7 @@ extension NoteSyntaxScanner {
         }
     }
 
-    package mutating func lexDiff() {
+    mutating func lexDiff() {
         var oldRemaining = 0
         var newRemaining = 0
         while pos < end {
@@ -340,7 +340,7 @@ extension NoteSyntaxScanner {
         return (count(after: Ch.minus), count(after: Ch.plus))
     }
 
-    package mutating func lexDockerfile() {
+    mutating func lexDockerfile() {
         var seenInstruction = false
         let bash = NoteSyntaxLexer.code(NoteSyntaxGrammars.bash)
         let json = NoteSyntaxLexer.code(NoteSyntaxGrammars.json)
@@ -536,7 +536,7 @@ extension NoteSyntaxScanner {
         pos = stop
     }
 
-    package mutating func lexMakefile() {
+    mutating func lexMakefile() {
         var inRule = false
         var inDefine = false
         let bash = NoteSyntaxLexer.code(NoteSyntaxGrammars.bash)

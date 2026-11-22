@@ -94,7 +94,7 @@ package enum EaselTool: String, CaseIterable, Equatable {
     package var drawsConnector: Bool { routing != nil }
     package var placesObjects: Bool { createsObjects && !draws && !drawsConnector }
     package var returnsToSelect: Bool { placesObjects && self != .stamp }
-    package var staysArmed: Bool { !returnsToSelect }
+    var staysArmed: Bool { !returnsToSelect }
 
     package var kind: EaselItemKind? {
         switch self {
@@ -233,7 +233,7 @@ package enum EaselKeyCommands {
         return character
     }
 
-    package static func keyCharacter(characters: String?, keyCode: UInt16) -> Character? {
+    static func keyCharacter(characters: String?, keyCode: UInt16) -> Character? {
         let typed = (characters ?? "").lowercased()
         if typed.count == 1, let character = typed.first {
             if character.isASCII { return character.isLetter || "[]`=+-_".contains(character) ? character : nil }
@@ -296,7 +296,7 @@ package enum EaselToolGeometry {
                           y: abs(snapped.y - start.y) < 1e-9 ? start.y : snapped.y)
     }
 
-    package static func lineItemGeometry(from start: EaselPoint, to end: EaselPoint) -> (frame: EaselRect, points: [EaselPoint]) {
+    static func lineItemGeometry(from start: EaselPoint, to end: EaselPoint) -> (frame: EaselRect, points: [EaselPoint]) {
         let minX = min(start.x, end.x), minY = min(start.y, end.y)
         let frame = EaselRect(x: minX, y: minY, width: max(1, abs(end.x - start.x)), height: max(1, abs(end.y - start.y)))
         return (frame, [EaselPoint(x: start.x - minX, y: start.y - minY), EaselPoint(x: end.x - minX, y: end.y - minY)])
@@ -318,7 +318,7 @@ package enum EaselToolGeometry {
 package enum EaselZoom {
     package static let levels: [Double] = [0.25, 0.3333, 0.5, 0.75, 1, 1.5, 2, 3, 4]
     package static let presets: [Double] = [0.5, 1, 2]
-    package static let fitPadding = 48.0
+    static let fitPadding = 48.0
     package static let animationDuration = 0.24
 
     package static func stepped(from current: Double, zoomingIn: Bool, minimum: Double, maximum: Double) -> Double {
@@ -383,7 +383,7 @@ package enum EaselZoom {
         return 1 - pow(1 - t, 3)
     }
 
-    package static let extentTolerance = 0.01
+    static let extentTolerance = 0.01
 
     package static func extentMatches(_ size: (width: Double, height: Double), _ current: (width: Double, height: Double)) -> Bool {
         abs(size.width - current.width) <= extentTolerance && abs(size.height - current.height) <= extentTolerance
@@ -399,7 +399,7 @@ package enum EaselWheelRoute: Equatable {
 }
 
 package struct EaselWheelGesture: Equatable {
-    package private(set) var zooming = false
+    private(set) var zooming = false
 
     package init(zooming: Bool = false) {
         self.zooming = zooming

@@ -50,7 +50,7 @@ package final class NoteFileDeferredJobs: @unchecked Sendable {
     package var isEmpty: Bool { jobs.isEmpty }
 
     @MainActor
-    package func runAll() {
+    func runAll() {
         while !jobs.isEmpty {
             let next = jobs.removeFirst()
             next()

@@ -5,7 +5,7 @@ package struct SidebarPreviewModifiers: OptionSet, Hashable {
     package init(rawValue: UInt8) { self.rawValue = rawValue }
     package static let shift = Self(rawValue: 1), control = Self(rawValue: 2)
     package static let option = Self(rawValue: 4), command = Self(rawValue: 8)
-    package static let numericPad = Self(rawValue: 0x10), capsLock = Self(rawValue: 0x20)
+    static let numericPad = Self(rawValue: 0x10), capsLock = Self(rawValue: 0x20)
     package static let help = Self(rawValue: 0x40), function = Self(rawValue: 0x80)
 
     package init(eventFlags flags: UInt) {

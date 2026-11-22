@@ -29,7 +29,7 @@ package enum EaselSelectionExport {
         return rows.joined(separator: "\r\n") + "\r\n"
     }
 
-    package static func stickyCSVField(_ raw: String) -> String {
+    static func stickyCSVField(_ raw: String) -> String {
         let text = raw.replacingOccurrences(of: "\u{FFFC}", with: "")
         guard let first = text.unicodeScalars.first else { return "\"\"" }
         guard "=+-@\t\r".unicodeScalars.contains(first) else { return EaselTableData.field(text, separator: ",") }

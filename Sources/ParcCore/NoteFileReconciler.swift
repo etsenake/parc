@@ -1,13 +1,13 @@
 import Foundation
 
-package enum NoteFileReconciler {
+enum NoteFileReconciler {
     private struct Signature: Hashable {
         var kind: NoteBlockKind
         var text: NoteText
         var props: NoteBlockProps
         var color: NoteColorStyle?
 
-        package init(kind: NoteBlockKind, text: NoteText, props: NoteBlockProps, color: NoteColorStyle? = nil) {
+        init(kind: NoteBlockKind, text: NoteText, props: NoteBlockProps, color: NoteColorStyle? = nil) {
             self.kind = kind
             self.text = text
             self.props = props
@@ -15,9 +15,9 @@ package enum NoteFileReconciler {
         }
     }
 
-    package static let identityLimit = 20_000
+    static let identityLimit = 20_000
 
-    package static func preservingIdentity(of old: NotePage, in new: NotePage) -> NotePage {
+    static func preservingIdentity(of old: NotePage, in new: NotePage) -> NotePage {
         let before = old.allBlocks(), after = new.allBlocks()
         guard !before.isEmpty, !after.isEmpty, before.count <= identityLimit, after.count <= identityLimit else { return new }
         let oldSignatures = before.map(signature), newSignatures = after.map(signature)
@@ -51,7 +51,7 @@ package enum NoteFileReconciler {
         return page
     }
 
-    package static func mapSelection(_ selection: NotePageSelection, from old: NotePage, to new: NotePage) -> NotePageSelection {
+    static func mapSelection(_ selection: NotePageSelection, from old: NotePage, to new: NotePage) -> NotePageSelection {
         switch selection {
         case .none:
             return .none
@@ -71,7 +71,7 @@ package enum NoteFileReconciler {
         }
     }
 
-    package static func mapPosition(_ position: NotePosition, from old: NotePage, to new: NotePage) -> NotePosition? {
+    static func mapPosition(_ position: NotePosition, from old: NotePage, to new: NotePage) -> NotePosition? {
         if let block = new.block(position.block), let length = length(of: position.field, in: block) {
             var mapped = position
             mapped.offset = min(max(0, position.offset), length)

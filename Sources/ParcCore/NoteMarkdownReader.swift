@@ -6,7 +6,7 @@ package struct NoteMDAttributes: Equatable {
 
     package var isEmpty: Bool { flags.isEmpty && values.isEmpty }
 
-    package static let kindNames: [String: NoteBlockKind] = [
+    static let kindNames: [String: NoteBlockKind] = [
         "paragraph": .paragraph, "image": .image, "video": .video, "audio": .audio, "file": .file,
         "embed": .embed, "easel": .easel, "bookmark": .bookmark, "pdf": .pdf, "breadcrumb": .breadcrumb,
     ]
@@ -52,12 +52,12 @@ package struct NoteMDAttributes: Equatable {
     }
 }
 
-package enum NoteMDSynced {
-    package static let flag = "synced"
-    package static let sourceKey = "from"
-    package static let closer = "<!-- parc /synced -->"
+enum NoteMDSynced {
+    static let flag = "synced"
+    static let sourceKey = "from"
+    static let closer = "<!-- parc /synced -->"
 
-    package static func isCloser(_ node: NoteMDBlock) -> Bool {
+    static func isCloser(_ node: NoteMDBlock) -> Bool {
         guard node.kind == .html else { return false }
         let inner = NoteMDByte.string(NoteMDText.trimmed(node.content[...]))
         guard inner.hasPrefix("<!--"), inner.hasSuffix("-->") else { return false }
@@ -65,11 +65,11 @@ package enum NoteMDSynced {
         return words.count == 2 && words[0].lowercased() == "parc" && words[1].lowercased() == "/" + flag
     }
 
-    package static func isOpener(_ node: NoteMDBlock) -> Bool {
+    static func isOpener(_ node: NoteMDBlock) -> Bool {
         node.kind == .html && NoteMDAttributes.parse(NoteMDByte.string(node.content))?.flags.contains(flag) == true
     }
 
-    package static func matchingClose(_ nodes: ArraySlice<NoteMDBlock>, after index: Int) -> Int? {
+    static func matchingClose(_ nodes: ArraySlice<NoteMDBlock>, after index: Int) -> Int? {
         var depth = 0
         var probe = index + 1
         while probe < nodes.endIndex {
@@ -104,19 +104,19 @@ package enum NoteMDColor {
 }
 
 package enum NoteMDMedia {
-    package static func carriesCredit(_ kind: NoteBlockKind) -> Bool {
+    static func carriesCredit(_ kind: NoteBlockKind) -> Bool {
         kind.isMedia || kind == .embed
     }
 
     package static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "svg", "heic", "heif", "tif", "tiff", "bmp", "ico", "avif", "apng", "jfif"]
-    package static let videoExtensions: Set<String> = ["mp4", "m4v", "mov", "webm", "ogv", "mkv", "avi", "mpg", "mpeg", "3gp"]
-    package static let audioExtensions: Set<String> = ["mp3", "m4a", "wav", "aac", "flac", "ogg", "oga", "opus", "aif", "aiff", "caf", "weba", "mid", "midi"]
-    package static let embedHosts: Set<String> = [
+    static let videoExtensions: Set<String> = ["mp4", "m4v", "mov", "webm", "ogv", "mkv", "avi", "mpg", "mpeg", "3gp"]
+    static let audioExtensions: Set<String> = ["mp3", "m4a", "wav", "aac", "flac", "ogg", "oga", "opus", "aif", "aiff", "caf", "weba", "mid", "midi"]
+    static let embedHosts: Set<String> = [
         "youtube.com", "youtu.be", "vimeo.com", "twitter.com", "x.com", "figma.com", "codepen.io", "loom.com",
         "open.spotify.com", "soundcloud.com", "gist.github.com", "codesandbox.io", "miro.com", "maps.google.com",
     ]
 
-    package static func writesFraming(_ kind: NoteBlockKind) -> Bool {
+    static func writesFraming(_ kind: NoteBlockKind) -> Bool {
         kind == .image || kind == .video || kind == .audio || kind == .file || kind == .embed
     }
 
@@ -136,7 +136,7 @@ package enum NoteMDMedia {
         return host
     }
 
-    package static func inferredKind(_ source: String) -> NoteBlockKind {
+    static func inferredKind(_ source: String) -> NoteBlockKind {
         if let host = host(source), embedHosts.contains(host) || (host == "google.com" && source.contains("/maps")) { return .embed }
         let ext = pathExtension(source)
         if ext.isEmpty || imageExtensions.contains(ext) { return .image }
@@ -146,8 +146,8 @@ package enum NoteMDMedia {
     }
 }
 
-package enum NoteMDLinks {
-    package static func isRelativeMarkdown(_ destination: String) -> Bool {
+enum NoteMDLinks {
+    static func isRelativeMarkdown(_ destination: String) -> Bool {
         guard !destination.isEmpty, !destination.hasPrefix("#"), !destination.hasPrefix("//") else { return false }
         if let colon = destination.firstIndex(of: ":") {
             let scheme = destination[..<colon]
@@ -157,7 +157,7 @@ package enum NoteMDLinks {
         return NoteFileKind.markdownExtensions.contains(ext)
     }
 
-    package static func stem(_ destination: String) -> String {
+    static func stem(_ destination: String) -> String {
         var path = Substring(destination)
         if let cut = path.firstIndex(where: { $0 == "?" || $0 == "#" }) { path = path[..<cut] }
         let name = path.split(separator: "/", omittingEmptySubsequences: false).last.map(String.init) ?? String(path)
@@ -169,7 +169,7 @@ package enum NoteMDLinks {
 
 package struct NoteMDReader {
     package let references: [String: NoteMDLinkReference]
-    package let footnotes: Set<String>
+    let footnotes: Set<String>
     package var customEmoji: Set<String> = []
 
     private struct Event {
@@ -192,7 +192,7 @@ package struct NoteMDReader {
         case date(NoteDateMention), mention(String), equation(String)
     }
 
-    package static let maximumInlineDepth = 96
+    static let maximumInlineDepth = 96
 
     private static let pairableTags: Set<String> = ["b", "strong", "i", "em", "s", "del", "strike", "u", "ins", "code", "mark", "span", "a", "time"]
 
@@ -481,10 +481,10 @@ package struct NoteMDReader {
 
     private static let githubAlerts: Set<String> = ["TIP", "IMPORTANT", "WARNING", "CAUTION"]
 
-    package static let noteAlert = "NOTE"
-    package static let keepsAlertFlag = "alert"
+    static let noteAlert = "NOTE"
+    static let keepsAlertFlag = "alert"
 
-    package static func calloutUsesBody(_ alert: String?) -> Bool {
+    static func calloutUsesBody(_ alert: String?) -> Bool {
         guard let alert else { return true }
         return githubAlerts.contains(alert) || alert == noteAlert
     }
@@ -613,11 +613,11 @@ package struct NoteMDReader {
         return index >= end ? opener : nil
     }
 
-    package static func isDetailsClose(_ node: NoteMDBlock) -> Bool {
+    static func isDetailsClose(_ node: NoteMDBlock) -> Bool {
         node.kind == .html && NoteMDByte.string(NoteMDText.trimmed(node.content[...])).lowercased() == "</details>"
     }
 
-    package func matchingDetailsClose(_ nodes: ArraySlice<NoteMDBlock>, after index: Int) -> Int? {
+    func matchingDetailsClose(_ nodes: ArraySlice<NoteMDBlock>, after index: Int) -> Int? {
         var depth = 0
         var probe = index + 1
         while probe < nodes.endIndex {
@@ -767,7 +767,7 @@ package struct NoteMDReader {
         return (text(tree, children: children), attributes)
     }
 
-    package func cellText(_ content: [UInt8]) -> NoteText {
+    func cellText(_ content: [UInt8]) -> NoteText {
         let tree = NoteMDInlineParser.parse(content, references: references, footnotes: footnotes, customEmoji: customEmoji)
         return text(tree, children: tree.children(of: 0))
     }

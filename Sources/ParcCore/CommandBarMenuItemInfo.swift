@@ -1,7 +1,7 @@
 import Foundation
 
 package struct CommandBarMenuItemInfo: Equatable, Sendable {
-    package let triggers: [String]
+    let triggers: [String]
     package var bump: Double? = nil
 
     package init(triggers: [String], bump: Double? = nil) {
@@ -13,7 +13,7 @@ package struct CommandBarMenuItemInfo: Equatable, Sendable {
 
     package static func candidateBump(forMenuCommand id: String) -> Double? { table[id]?.bump }
 
-    package static let bumpWeight = 0.06
+    static let bumpWeight = 0.06
     package static func rankingBump(_ bump: Double?) -> Double { (bump ?? 0) * bumpWeight }
 
     package static func searchText(forMenuCommand id: String) -> String {

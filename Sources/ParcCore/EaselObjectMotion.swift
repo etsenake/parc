@@ -30,8 +30,8 @@ package enum EaselObjectEntrance: Equatable {
     case quick
     case fade
 
-    package static let dropTilt = 3.0
-    package static let slamTilt = 12.0
+    static let dropTilt = 3.0
+    static let slamTilt = 12.0
     package static let pressedSlamTilt = 4.0
 
     package static func of(_ item: EaselItem) -> EaselObjectEntrance {
@@ -92,35 +92,35 @@ package struct EaselObjectSpring: Equatable {
 
 package struct EaselObjectTransition: Equatable {
     package static let appearDuration: TimeInterval = 0.42
-    package static let appearFade: TimeInterval = 0.12
-    package static let slamDuration: TimeInterval = 0.36
-    package static let slamFade: TimeInterval = 0.08
-    package static let quickDuration: TimeInterval = 0.24
+    static let appearFade: TimeInterval = 0.12
+    static let slamDuration: TimeInterval = 0.36
+    static let slamFade: TimeInterval = 0.08
+    static let quickDuration: TimeInterval = 0.24
     package static let vanishDuration: TimeInterval = 0.18
     package static let glideDuration: TimeInterval = 0.45
-    package static let liftDuration: TimeInterval = 0.2
-    package static let landDuration: TimeInterval = 0.42
-    package static let pulseDuration: TimeInterval = 0.5
-    package static let pulseRise: TimeInterval = 0.09
-    package static let shakeDuration: TimeInterval = 0.3
-    package static let restyleDuration: TimeInterval = 0.15
+    static let liftDuration: TimeInterval = 0.2
+    static let landDuration: TimeInterval = 0.42
+    static let pulseDuration: TimeInterval = 0.5
+    static let pulseRise: TimeInterval = 0.09
+    static let shakeDuration: TimeInterval = 0.3
+    static let restyleDuration: TimeInterval = 0.15
     package static let reducedFade: TimeInterval = 0.15
     package static let hiddenScale = 0.8
-    package static let quickScale = 0.92
-    package static let dropScale = 1.08
-    package static let dropRise = 8.0
+    static let quickScale = 0.92
+    static let dropScale = 1.08
+    static let dropRise = 8.0
     package static let slamScale = 1.6
-    package static let raisedScale = 1.15
-    package static let raisedOpacity = 0.8
-    package static let raisedShadow = 0.8
-    package static let breathDepth = 0.015
-    package static let breathPeriod = 1.1
-    package static let vanishScale = 0.85
-    package static let pulseScale = 1.05
-    package static let shakeDistance = 4.0
-    package static let shakeSwings = 3.0
-    package static let landingSquash = 0.025
-    package static let copySquash = 0.03
+    static let raisedScale = 1.15
+    static let raisedOpacity = 0.8
+    static let raisedShadow = 0.8
+    static let breathDepth = 0.015
+    static let breathPeriod = 1.1
+    static let vanishScale = 0.85
+    static let pulseScale = 1.05
+    static let shakeDistance = 4.0
+    static let shakeSwings = 3.0
+    static let landingSquash = 0.025
+    static let copySquash = 0.03
 
     package let effect: EaselObjectEffect
     package let start: TimeInterval
@@ -179,7 +179,7 @@ package struct EaselObjectTransition: Equatable {
         return amount * sin(Double.pi * u) * (1 - 0.35 * u)
     }
 
-    package static func squashed(_ stretch: EaselPoint, by amount: Double) -> EaselPoint {
+    static func squashed(_ stretch: EaselPoint, by amount: Double) -> EaselPoint {
         EaselPoint(x: stretch.x * (1 + amount), y: stretch.y * (1 - amount))
     }
 
@@ -351,13 +351,13 @@ package struct EaselObjectCarry: Equatable {
 }
 
 package struct EaselObjectMotion {
-    package private(set) var transitions: [UUID: EaselObjectTransition] = [:]
+    private(set) var transitions: [UUID: EaselObjectTransition] = [:]
     package private(set) var ghosts: [EaselItem] = []
-    package private(set) var previousLooks: [UUID: [EaselFadingLook]] = [:]
-    package static let fadingLookLimit = 3
+    private(set) var previousLooks: [UUID: [EaselFadingLook]] = [:]
+    static let fadingLookLimit = 3
     package var carry: EaselObjectCarry?
     package private(set) var raised: [UUID: TimeInterval] = [:]
-    package private(set) var raisedRatio: [UUID: Double] = [:]
+    private(set) var raisedRatio: [UUID: Double] = [:]
     package init(transitions: [UUID: EaselObjectTransition] = [:], ghosts: [EaselItem] = [], previousLooks: [UUID: [EaselFadingLook]] = [:], carry: EaselObjectCarry? = nil, raised: [UUID: TimeInterval] = [:], raisedRatio: [UUID: Double] = [:]) {
         self.transitions = transitions
         self.ghosts = ghosts
@@ -391,7 +391,7 @@ package struct EaselObjectMotion {
 
     package func isRaised(_ id: UUID) -> Bool { raised[id] != nil }
 
-    package static func raisedPresentation(since elapsed: TimeInterval) -> EaselObjectPresentation {
+    static func raisedPresentation(since elapsed: TimeInterval) -> EaselObjectPresentation {
         let up = EaselObjectSpring.lift.progress(at: elapsed)
         let breath = 1 + EaselObjectTransition.breathDepth * sin(2 * Double.pi * max(0, elapsed) / EaselObjectTransition.breathPeriod) * min(1, max(0, elapsed) / 0.3)
         var result = EaselObjectPresentation.identity
@@ -473,7 +473,7 @@ package struct EaselObjectMotion {
         transitions[id] = EaselObjectTransition(effect: effect, start: time, reduced: false)
     }
 
-    package func queuedTransition(for id: UUID) -> EaselObjectTransition? { queued[id] }
+    func queuedTransition(for id: UUID) -> EaselObjectTransition? { queued[id] }
 
     package mutating func takePromoted() -> Set<UUID> {
         defer { promoted.removeAll() }
@@ -538,7 +538,7 @@ package struct EaselObjectMotion {
 
     package func transition(for id: UUID) -> EaselObjectTransition? { transitions[id] }
 
-    package func previousLook(for id: UUID) -> EaselItem? {
+    func previousLook(for id: UUID) -> EaselItem? {
         guard let transition = transitions[id], case .restyle = transition.effect else { return nil }
         return previousLooks[id]?.max { $0.weight < $1.weight }?.item
     }
@@ -589,7 +589,7 @@ package struct EaselObjectMotion {
         promoted.removeAll()
     }
 
-    package static func glides(_ item: EaselItem) -> Bool {
+    static func glides(_ item: EaselItem) -> Bool {
         item.kind != .arrow || (item.startConnection == nil && item.endConnection == nil)
     }
 
@@ -628,8 +628,8 @@ package struct EaselObjectMotion {
         return before.items.filter { !remaining.contains($0.id) }
     }
 
-    package static let cascadeStep: TimeInterval = 0.04
-    package static let cascadeSpread: TimeInterval = 0.22
+    static let cascadeStep: TimeInterval = 0.04
+    static let cascadeSpread: TimeInterval = 0.22
 
     package static func cascade(_ frames: [UUID: EaselRect]) -> [UUID: TimeInterval] {
         guard frames.count > 1 else { return frames.mapValues { _ in 0 } }
@@ -666,7 +666,7 @@ package struct EaselObjectMotion {
         package var isEmpty: Bool { added.isEmpty && removed.isEmpty && offsets.isEmpty && stretches.isEmpty && turns.isEmpty && restyled.isEmpty }
     }
 
-    package static func looksDifferent(_ old: EaselItem, _ new: EaselItem) -> Bool {
+    static func looksDifferent(_ old: EaselItem, _ new: EaselItem) -> Bool {
         guard old.text == new.text, old.table == new.table, old.points == new.points else { return false }
         var normalized = old
         normalized.frame = new.frame
@@ -757,10 +757,10 @@ package enum EaselBurstPlan {
     package static let glowDuration: TimeInterval = 0.45
     package static let sweepDuration: TimeInterval = 0.4
 
-    package struct Random {
+    struct Random {
         private var state: UInt64
-        package init(seed: UInt64) { state = seed &+ 0x9E37_79B9_7F4A_7C15 }
-        package mutating func next() -> Double {
+        init(seed: UInt64) { state = seed &+ 0x9E37_79B9_7F4A_7C15 }
+        mutating func next() -> Double {
             state = state &+ 0x9E37_79B9_7F4A_7C15
             var z = state
             z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
@@ -816,7 +816,7 @@ package enum EaselStampWheelMotion {
     package static let fade: TimeInterval = 0.08
     package static let tuck: TimeInterval = 0.18
     package static let hoverScale = 1.14
-    package static let startScale = 0.35
+    static let startScale = 0.35
 
     package struct Face: Equatable {
         package var reach: Double

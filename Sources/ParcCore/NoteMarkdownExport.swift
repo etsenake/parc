@@ -1,7 +1,7 @@
 import Foundation
 
-package enum NoteMDExport {
-    package static func portable(_ page: NotePage) -> NotePage {
+enum NoteMDExport {
+    static func portable(_ page: NotePage) -> NotePage {
         var settings = page.settings
         settings.font = .standard
         settings.smallText = false
@@ -13,7 +13,7 @@ package enum NoteMDExport {
         return NotePage(settings: settings, blocks: contents(blocks, outline: outline(blocks)))
     }
 
-    package static func sequence(_ blocks: [NoteBlock]) -> [NoteBlock] {
+    static func sequence(_ blocks: [NoteBlock]) -> [NoteBlock] {
         blocks.flatMap(convert)
     }
 
@@ -131,7 +131,7 @@ package enum NoteMDExport {
         return [NoteBlock.paragraph(NoteText(pieces: pieces))]
     }
 
-    package static func text(_ original: NoteText) -> NoteText {
+    static func text(_ original: NoteText) -> NoteText {
         guard original.spans.contains(where: { $0.marks.color != nil || $0.marks.atom != nil }) else { return original }
         var pieces: [(String, NoteMarks)] = []
         let string = original.string as NSString
@@ -166,19 +166,19 @@ package enum NoteMDExport {
         return NoteText(pieces: pieces)
     }
 
-    package struct Heading {
-        package var level: Int
-        package var title: String
-        package var slug: String
+    struct Heading {
+        var level: Int
+        var title: String
+        var slug: String
 
-        package init(level: Int, title: String, slug: String) {
+        init(level: Int, title: String, slug: String) {
             self.level = level
             self.title = title
             self.slug = slug
         }
     }
 
-    package static func outline(_ blocks: [NoteBlock]) -> [Heading] {
+    static func outline(_ blocks: [NoteBlock]) -> [Heading] {
         var used: [String: Int] = [:]
         var result: [Heading] = []
         func walk(_ list: [NoteBlock]) {
@@ -197,7 +197,7 @@ package enum NoteMDExport {
         return result
     }
 
-    package static func slug(_ title: String) -> String {
+    static func slug(_ title: String) -> String {
         var result = ""
         for character in title.lowercased() {
             if character == " " { result.append("-") } else if character == "-" || character == "_" || character.isLetter || character.isNumber {

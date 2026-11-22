@@ -1,7 +1,7 @@
 import Foundation
 
 package enum EaselCaptureGeometry {
-    package static let elementOutset: Double = 2
+    static let elementOutset: Double = 2
 
     package static func elementCaptureArea(elementRect: EaselRect, viewport: EaselPoint) -> EaselRect? {
         let minX = max(0, elementRect.x - elementOutset), minY = max(0, elementRect.y - elementOutset)
@@ -39,7 +39,7 @@ package enum EaselCaptureGeometry {
     package struct Framing: Equatable {
         package var scale: Double
         package var scrollTarget: EaselPoint
-        package var documentRegion: EaselRect
+        var documentRegion: EaselRect
     }
 
     package static func framing(_ layout: EaselCaptureLayout, displayWidth: Double, pageZoom: Double) -> Framing? {
@@ -56,7 +56,7 @@ package struct EaselLiveFraming: Equatable {
     package enum Phase: Equatable { case waiting, framed, failed }
     package enum Outcome: Equatable { case reveal, keepWaiting, backToSnapshot }
 
-    package static let liningUp = "Lining up the region you captured…"
+    static let liningUp = "Lining up the region you captured…"
     package static let failureBadge = "Snapshot · couldn't go live"
     package static let failureHelp = "The live page couldn't line up with the region you captured, so the card stays a snapshot. The site may have changed; you can try Make live again."
 

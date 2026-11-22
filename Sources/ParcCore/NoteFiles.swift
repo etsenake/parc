@@ -7,25 +7,25 @@ package struct NoteFileSettings {
     package typealias TrashMover = @Sendable (URL) throws -> URL?
 
     package var clock: NoteFileClock
-    package var fileWorker: NoteFileWorker
-    package var indexWorker: NoteFileWorker
-    package var backlinkWorker: NoteFileWorker
-    package var attachmentWorker: NoteFileWorker
-    package var hopToMain: MainHop
-    package var trashMover: TrashMover
+    var fileWorker: NoteFileWorker
+    var indexWorker: NoteFileWorker
+    var backlinkWorker: NoteFileWorker
+    var attachmentWorker: NoteFileWorker
+    var hopToMain: MainHop
+    var trashMover: TrashMover
     package var defaults: UserDefaults
-    package var notesFolders: (@MainActor () -> [URL])?
-    package var autosaveDelay: TimeInterval = 0.6
-    package var longestAutosaveWait: TimeInterval = 5
-    package var diskCheckDelay: TimeInterval = 0.12
-    package var retryDelays: [TimeInterval] = [1, 2, 4, 8, 15, 30, 60]
-    package var libraryRefreshDelay: TimeInterval = 0.2
-    package var backlinkFollowDelay: TimeInterval = 1.5
-    package var backlinkDepartureWindow: TimeInterval = 10
-    package var easelListingDelay: TimeInterval = 1
-    package var defaultFolder: @Sendable () -> URL = { NoteLibrary.defaultFolder }
+    var notesFolders: (@MainActor () -> [URL])?
+    var autosaveDelay: TimeInterval = 0.6
+    var longestAutosaveWait: TimeInterval = 5
+    var diskCheckDelay: TimeInterval = 0.12
+    var retryDelays: [TimeInterval] = [1, 2, 4, 8, 15, 30, 60]
+    var libraryRefreshDelay: TimeInterval = 0.2
+    var backlinkFollowDelay: TimeInterval = 1.5
+    var backlinkDepartureWindow: TimeInterval = 10
+    var easelListingDelay: TimeInterval = 1
+    var defaultFolder: @Sendable () -> URL = { NoteLibrary.defaultFolder }
 
-    package nonisolated static let mainQueueHop: MainHop = { DispatchQueue.main.async(execute: $0) }
+    nonisolated static let mainQueueHop: MainHop = { DispatchQueue.main.async(execute: $0) }
 
     package init(clock: NoteFileClock, worker: NoteFileWorker, hopToMain: @escaping MainHop = NoteFileSettings.mainQueueHop,
                  trashMover: @escaping TrashMover = { try NoteFileIO.moveToTrash($0) }, defaults: UserDefaults = .standard,
@@ -41,7 +41,7 @@ package struct NoteFileSettings {
         self.notesFolders = notesFolders
     }
 
-    package static func production() -> NoteFileSettings {
+    static func production() -> NoteFileSettings {
         var settings = NoteFileSettings(clock: NoteFileSystemClock.shared, worker: .files)
         settings.indexWorker = .index
         settings.backlinkWorker = NoteFileWorker(label: "org.parc.notes.backlinks", qos: .utility)
@@ -57,8 +57,8 @@ package final class NoteFiles {
     package let settings: NoteFileSettings
     package let syncedBlocks: NoteSyncedBlocks
     package let folders: NoteFolderPreferences
-    package let libraryOpened = PassthroughSubject<NoteLibrary, Never>()
-    package let emojiChanges = PassthroughSubject<NoteEmojiLibrary, Never>()
+    let libraryOpened = PassthroughSubject<NoteLibrary, Never>()
+    let emojiChanges = PassthroughSubject<NoteEmojiLibrary, Never>()
     package var newNoteCover: (@MainActor () -> NoteNewCover?)?
     package private(set) lazy var backlinks = NoteBacklinkIndex(files: self)
     package private(set) lazy var attachmentImports = NoteAttachmentImports(files: self)
@@ -81,5 +81,5 @@ package final class NoteFiles {
 
     package var clock: NoteFileClock { settings.clock }
 
-    package var notesFolders: [URL] { settings.notesFolders?() ?? folders.allFolders }
+    var notesFolders: [URL] { settings.notesFolders?() ?? folders.allFolders }
 }

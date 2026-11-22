@@ -97,7 +97,7 @@ package enum OnboardingExperience {
 
     package static func shouldPauseOrMute(on event: MusicEvent) -> Bool { false }
 
-    package static let authFeatureOnboardingPerformsHaptics = false
+    static let authFeatureOnboardingPerformsHaptics = false
 
     package static func welcomeShowsContent(stage: OnboardingDraft.Stage, reduceMotion: Bool) -> Bool {
         stage.isWelcome && (reduceMotion || stage != .introAnimation)

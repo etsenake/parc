@@ -2,10 +2,10 @@ import Foundation
 
 package struct NotePageMathNumbering: Equatable {
     package struct Entry: Equatable {
-        package var firstNumber = 0
+        var firstNumber = 0
         package var numbers = 0
         package var labels: [String] = []
-        package var duplicateLabels: Set<String> = []
+        var duplicateLabels: Set<String> = []
 
         package init(firstNumber: Int = 0, numbers: Int = 0, labels: [String] = [], duplicateLabels: Set<String> = []) {
             self.firstNumber = firstNumber
@@ -18,7 +18,7 @@ package struct NotePageMathNumbering: Equatable {
     package var entries: [NoteBlockID: Entry] = [:]
     package var references: [String: [NoteMathNode]] = [:]
     package var targets: [String: NoteBlockID] = [:]
-    package var referenceDigest = ""
+    var referenceDigest = ""
     package var total = 0
 
     package init(entries: [NoteBlockID: Entry] = [:], references: [String: [NoteMathNode]] = [:], targets: [String: NoteBlockID] = [:], referenceDigest: String = "", total: Int = 0) {

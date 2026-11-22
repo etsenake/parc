@@ -99,7 +99,7 @@ extension BrowserSplitStacks {
 }
 
 package struct SplitDividerSnapState {
-    package private(set) var canSnap = false
+    private(set) var canSnap = false
     package private(set) var isSnapped = false
 
     package init(canSnap: Bool = false, isSnapped: Bool = false) {
@@ -120,8 +120,8 @@ package struct SplitDividerSnapState {
 }
 
 package struct SplitStackGeometry {
-    package static let dividerTopInset: CGFloat = 53
-    package static let dividerEndInset: CGFloat = 8
+    static let dividerTopInset: CGFloat = 53
+    static let dividerEndInset: CGFloat = 8
 
     package struct Divider: Equatable {
         package let id: SplitStackDivider
@@ -158,7 +158,7 @@ package struct SplitStackGeometry {
         count > 1 ? min(minimum, max(0, available) / CGFloat(count)) : minimum
     }
 
-    package static func fittedLengths(_ factors: [Double], available: CGFloat, minimum: CGFloat,
+    static func fittedLengths(_ factors: [Double], available: CGFloat, minimum: CGFloat,
                               scale: CGFloat) -> [CGFloat] {
         guard factors.count > 1, available < minimum * CGFloat(factors.count) else {
             return lengths(factors, available: available, minimum: minimum).map { max(minimum, ($0 * scale).rounded() / scale) }

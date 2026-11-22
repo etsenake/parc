@@ -1,7 +1,7 @@
 import Foundation
 
 package enum EaselBoardText {
-    package static func plainParts(in document: EaselDocument) -> [String] {
+    static func plainParts(in document: EaselDocument) -> [String] {
         var parts: [String] = []
         for page in EaselPages.pageDocuments(document) {
             for item in EaselFinder.readingOrder(page.items) {

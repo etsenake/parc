@@ -41,7 +41,7 @@ package enum EaselDependents {
         return detachConnectors(EaselMindMap.detaching(removed, from: document, in: next), from: removed)
     }
 
-    package static func removalClosure(_ ids: Set<UUID>, in document: EaselDocument, keepingSectionContents: Bool = false) -> Set<UUID> {
+    static func removalClosure(_ ids: Set<UUID>, in document: EaselDocument, keepingSectionContents: Bool = false) -> Set<UUID> {
         let present = Set(document.items.map(\.id))
         var followers: [UUID: [UUID]] = [:]
         for item in document.items {

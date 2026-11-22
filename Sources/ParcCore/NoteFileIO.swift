@@ -22,7 +22,7 @@ package struct NoteFileStamp: Hashable, Sendable {
     }
 }
 
-package enum NoteFileSighting: Hashable, Sendable {
+enum NoteFileSighting: Hashable, Sendable {
     case file(NoteFileStamp)
     case absent
 }
@@ -68,11 +68,11 @@ package final class NoteFileDisk: @unchecked Sendable {
         package var customEmoji: Set<String> = []
     }
 
-    package struct StagedWrite {
-        package var staged: Staged
-        package var text: String
-        package var format: NoteFileFormat
-        package var outcome: NoteFileWriteOutcome
+    struct StagedWrite {
+        var staged: Staged
+        var text: String
+        var format: NoteFileFormat
+        var outcome: NoteFileWriteOutcome
     }
 
     private let lock = NSLock()
@@ -106,7 +106,7 @@ package final class NoteFileDisk: @unchecked Sendable {
         }
     }
 
-    package func writeStaged() -> StagedWrite? {
+    func writeStaged() -> StagedWrite? {
         lock.withLock {
             guard let save = staged else { return nil }
             let text = NoteFileSession.render(save.page, kind: save.kind, format: save.format, customEmoji: save.customEmoji)
@@ -128,7 +128,7 @@ package enum NoteFileIO {
         try readStamped(url, kind: kind, presenter: presenter, withoutChanges: withoutChanges).contents
     }
 
-    package static func readStamped(_ url: URL, kind: NoteFileKind, presenter: NSFilePresenter? = nil,
+    static func readStamped(_ url: URL, kind: NoteFileKind, presenter: NSFilePresenter? = nil,
                             withoutChanges: Bool = false) throws -> (contents: NoteFileContents, stamp: NoteFileStamp?) {
         var coordinationError: NSError?
         var result: Result<(contents: NoteFileContents, stamp: NoteFileStamp?), NoteFileError> = .failure(.missing)
@@ -144,7 +144,7 @@ package enum NoteFileIO {
         try readStampedNow(url, kind: kind).contents
     }
 
-    package static func readStampedNow(_ url: URL, kind: NoteFileKind) throws -> (contents: NoteFileContents, stamp: NoteFileStamp?) {
+    static func readStampedNow(_ url: URL, kind: NoteFileKind) throws -> (contents: NoteFileContents, stamp: NoteFileStamp?) {
         let descriptor = open(url.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
         guard descriptor >= 0 else { throw mapped(POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)) }
         let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
@@ -190,7 +190,7 @@ package enum NoteFileIO {
         return outcome
     }
 
-    package static func writeNow(_ data: Data, text: String, to target: URL, kind: NoteFileKind, expecting expected: String?,
+    static func writeNow(_ data: Data, text: String, to target: URL, kind: NoteFileKind, expecting expected: String?,
                          force: Bool) -> NoteFileWriteOutcome {
         let exists = NoteFilePaths.itemExists(target)
         if !exists && expected != nil && !force { return .missing }
@@ -232,7 +232,7 @@ package enum NoteFileIO {
         if let error = coordinationError ?? moveError { throw error }
     }
 
-    package static func moveNow(_ source: URL, to destination: URL) throws {
+    static func moveNow(_ source: URL, to destination: URL) throws {
         let caseOnly = NoteFilePaths.itemExists(destination) && NoteFilePaths.isSameFile(source, destination)
         let result = caseOnly ? rename(source.path, destination.path)
             : renamex_np(source.path, destination.path, UInt32(RENAME_EXCL))

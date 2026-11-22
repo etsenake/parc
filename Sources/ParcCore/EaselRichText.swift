@@ -114,9 +114,9 @@ package struct EaselRichText: Codable, Equatable {
                 return DateComponents(calendar: calendar, year: year, month: month, day: day).isValidDate
             }
         }
-        package static let dateFormats: Set<String> = ["full", "short", "mdy", "dmy", "ymd"]
-        package static let timeFormats: Set<String> = ["12h", "24h"]
-        package static let maximumImageBytes = 1_048_576
+        static let dateFormats: Set<String> = ["full", "short", "mdy", "dmy", "ymd"]
+        static let timeFormats: Set<String> = ["12h", "24h"]
+        static let maximumImageBytes = 1_048_576
         package var kind: Kind
         package var target: String?
         package var title: String?
@@ -144,10 +144,10 @@ package struct EaselRichText: Codable, Equatable {
             self.image = image
         }
 
-        package static let maximumPayloadBytes = 262_144
-        package static func validTarget(_ value: String) -> Bool { value.utf8.count <= 4_096 && EaselRichText.isInternalLink(value) }
-        package var payloadBytes: Int { (target?.utf8.count ?? 0) + (title?.utf8.count ?? 0) + (tex?.utf8.count ?? 0) + (timeZone?.utf8.count ?? 0) }
-        package static func validEmojiName(_ name: String) -> Bool {
+        static let maximumPayloadBytes = 262_144
+        static func validTarget(_ value: String) -> Bool { value.utf8.count <= 4_096 && EaselRichText.isInternalLink(value) }
+        var payloadBytes: Int { (target?.utf8.count ?? 0) + (title?.utf8.count ?? 0) + (tex?.utf8.count ?? 0) + (timeZone?.utf8.count ?? 0) }
+        static func validEmojiName(_ name: String) -> Bool {
             let bytes = Array(name.utf8)
             guard !bytes.isEmpty, bytes.count <= 48 else { return false }
             return bytes.allSatisfy { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) || $0 == 95 || $0 == 45 || $0 == 43 }
@@ -231,7 +231,7 @@ package struct EaselRichText: Codable, Equatable {
         return scheme == "mailto" || scheme == "tel" || url.host?.isEmpty == false
     }
 
-    package static func isInternalLink(_ value: String) -> Bool {
+    static func isInternalLink(_ value: String) -> Bool {
         guard value.utf8.count <= 16_384, let url = URL(string: value), let scheme = url.scheme?.lowercased(),
               url.user == nil, url.password == nil, url.port == nil else { return false }
         if scheme == "file" {

@@ -8,15 +8,15 @@ package struct EaselEquationSize: Equatable {
         self.height = height
     }
 
-    package var isUsable: Bool { width.isFinite && height.isFinite && width > 0 && height > 0 }
+    var isUsable: Bool { width.isFinite && height.isFinite && width > 0 && height > 0 }
 }
 
 package enum EaselEquation {
     package static let fontSize = 30.0
     package static let padding = 14.0
     package static let emptySize = EaselEquationSize(width: 360, height: 72)
-    package static let minimumScale = 0.2
-    package static let maximumScale = 16.0
+    static let minimumScale = 0.2
+    static let maximumScale = 16.0
     package static let maximumLength = 20_000
 
     package static func isBlank(_ tex: String) -> Bool {

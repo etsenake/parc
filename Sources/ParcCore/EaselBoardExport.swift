@@ -15,7 +15,7 @@ package struct EaselVectorSectionTitle: Equatable {
 }
 
 extension EaselVectorExport {
-    package static func paintedFrame(_ item: EaselItem) -> EaselRect {
+    static func paintedFrame(_ item: EaselItem) -> EaselRect {
         let f = item.frame
         switch item.kind {
         case .sticky:
@@ -66,7 +66,7 @@ extension EaselVectorExport {
         return result + text(item, layout) + "</g>"
     }
 
-    package static func roundedPath(_ r: EaselRect, radius: Double) -> String {
+    static func roundedPath(_ r: EaselRect, radius: Double) -> String {
         let k = min(radius, r.width / 2, r.height / 2)
         return "M" + number(r.x + k) + " " + number(r.y) + "H" + number(r.x + r.width - k)
             + "A" + number(k) + " " + number(k) + " 0 0 1 " + number(r.x + r.width) + " " + number(r.y + k)
@@ -78,7 +78,7 @@ extension EaselVectorExport {
             + "A" + number(k) + " " + number(k) + " 0 0 1 " + number(r.x + k) + " " + number(r.y) + "Z"
     }
 
-    package static func sectionTabFill(_ item: EaselItem, line: String, border: Double) -> String {
+    static func sectionTabFill(_ item: EaselItem, line: String, border: Double) -> String {
         switch EaselPaintRules.fill(item) {
         case .none: return "fill:" + line + ";fill-opacity:" + number(border)
         case .wash(let opacity): return "fill:" + paint(item.color, role: .ink) + ";fill-opacity:" + number(max(opacity, 0.12))

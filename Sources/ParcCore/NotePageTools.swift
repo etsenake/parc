@@ -3,7 +3,7 @@ import Foundation
 package struct NoteFindOptions: Hashable {
     package var matchCase = false
 
-    package var compareOptions: NSString.CompareOptions { matchCase ? [] : [.caseInsensitive, .diacriticInsensitive] }
+    var compareOptions: NSString.CompareOptions { matchCase ? [] : [.caseInsensitive, .diacriticInsensitive] }
 
     package init(matchCase: Bool = false) {
         self.matchCase = matchCase
@@ -11,7 +11,7 @@ package struct NoteFindOptions: Hashable {
 }
 
 package struct NoteFindMatch: Hashable {
-    package static let titleBlock = NoteBlockID(UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)))
+    static let titleBlock = NoteBlockID(UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)))
 
     package var position: NotePosition
     package var length: Int
@@ -31,14 +31,14 @@ package struct NoteFindMatch: Hashable {
     package var isTitle: Bool { position.block == Self.titleBlock }
 }
 
-package struct NoteFindOrder {
+struct NoteFindOrder {
     private var blocks: [NoteBlockID: Int] = [:]
 
-    package init(_ page: NotePage) {
+    init(_ page: NotePage) {
         for (index, id) in page.documentOrder(includingCollapsed: true).enumerated() { blocks[id] = index }
     }
 
-    package func key(_ position: NotePosition) -> (Int, Int, Int) {
+    func key(_ position: NotePosition) -> (Int, Int, Int) {
         if position.block == NoteFindMatch.titleBlock { return (-1, 0, position.offset) }
         let field: Int
         switch position.field {
@@ -49,7 +49,7 @@ package struct NoteFindOrder {
         return (blocks[position.block] ?? Int.max, field, position.offset)
     }
 
-    package func precedes(_ lhs: NotePosition, _ rhs: NotePosition) -> Bool { key(lhs) < key(rhs) }
+    func precedes(_ lhs: NotePosition, _ rhs: NotePosition) -> Bool { key(lhs) < key(rhs) }
 }
 
 package enum NotePageFinder {
@@ -213,15 +213,15 @@ package struct NotePageHeaderGeometry: Equatable {
     }
 
     package static let iconSide: CGFloat = 80
-    package static let iconLead: CGFloat = 6
+    static let iconLead: CGFloat = 6
     package static let topPadding: CGFloat = 52
-    package static let plainTextTop: CGFloat = 56
-    package static let inkGap: CGFloat = 14
-    package static let affordanceGap: CGFloat = 8
-    package static let coverAffordanceGap: CGFloat = 14
-    package static let errorGap: CGFloat = 4
-    package static let propertiesGap: CGFloat = 8
-    package static let backlinksGap: CGFloat = 6
+    static let plainTextTop: CGFloat = 56
+    static let inkGap: CGFloat = 14
+    static let affordanceGap: CGFloat = 8
+    static let coverAffordanceGap: CGFloat = 14
+    static let errorGap: CGFloat = 4
+    static let propertiesGap: CGFloat = 8
+    static let backlinksGap: CGFloat = 6
     package static let bottomPadding: CGFloat = 14
 
     package var width: CGFloat
@@ -315,7 +315,7 @@ package struct NotePageHeaderGeometry: Equatable {
 }
 
 package struct NotePageStats: Hashable {
-    package static let wordsPerMinute = 238.0
+    static let wordsPerMinute = 238.0
 
     package var words: Int
     package var characters: Int
@@ -339,7 +339,7 @@ package struct NotePageStats: Hashable {
         characters = joined.reduce(0) { $1.isNewline ? $0 : $0 + 1 }
     }
 
-    package var readingMinutes: Int {
+    var readingMinutes: Int {
         words == 0 ? 0 : max(1, Int((Double(words) / Self.wordsPerMinute).rounded(.up)))
     }
 
@@ -406,7 +406,7 @@ package enum NotePropertyKind: String, CaseIterable, Hashable {
         }
     }
 
-    package var suggestedKey: String {
+    var suggestedKey: String {
         switch self {
         case .text: return "Notes"
         case .number: return "Number"
@@ -486,7 +486,7 @@ extension NotePropertyValue {
 }
 
 package enum NotePropertyEditing {
-    package static let reservedKeys: Set<String> = ["icon", "cover", "cover-position", "cover-credit", "cover-credit-url", "font", "small-text", "full-width", "locked", "title"]
+    static let reservedKeys: Set<String> = ["icon", "cover", "cover-position", "cover-credit", "cover-credit-url", "font", "small-text", "full-width", "locked", "title"]
 
     package static let calendar: Calendar = {
         var value = Calendar(identifier: .gregorian)
@@ -498,7 +498,7 @@ package enum NotePropertyEditing {
         key.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
     }
 
-    package static func isUsable(_ key: String, among properties: [NotePageProperty], excluding index: Int? = nil) -> Bool {
+    static func isUsable(_ key: String, among properties: [NotePageProperty], excluding index: Int? = nil) -> Bool {
         let value = normalizedKey(key)
         guard !value.isEmpty, !value.contains(":"), !reservedKeys.contains(value.lowercased()) else { return false }
         return !properties.indices.contains { $0 != index && properties[$0].key.lowercased() == value.lowercased() }
@@ -564,11 +564,11 @@ package enum NotePropertyEditing {
         return formatter.string(from: NSNumber(value: value)) ?? String(value)
     }
 
-    package static func truthy(_ text: String) -> Bool {
+    static func truthy(_ text: String) -> Bool {
         ["true", "yes", "y", "1", "x", "done", "on"].contains(text.trimmingCharacters(in: .whitespaces).lowercased())
     }
 
-    package static func listItems(from text: String) -> [String] {
+    static func listItems(from text: String) -> [String] {
         var seen = Set<String>()
         return text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { item in
             guard !item.isEmpty, !seen.contains(item.lowercased()) else { return false }
@@ -610,7 +610,7 @@ package enum NotePropertyEditing {
 package enum NotePageHistoryReason: Hashable { case save, idle, close }
 
 package struct NotePageHistoryPolicy: Hashable {
-    package var minimumInterval: TimeInterval = 300
+    var minimumInterval: TimeInterval = 300
     package var idleDelay: TimeInterval = 120
 
     package init(minimumInterval: TimeInterval = 300, idleDelay: TimeInterval = 120) {
@@ -705,9 +705,9 @@ package enum NotePageExport {
     }
 }
 
-package struct NoteCalloutAlert: Hashable {
-    package var icon: String
-    package var color: NoteColor
+struct NoteCalloutAlert: Hashable {
+    var icon: String
+    var color: NoteColor
 
     private static let table: [String: NoteCalloutAlert] = {
         let groups: [([String], String, NoteColor)] = [
@@ -734,14 +734,14 @@ package struct NoteCalloutAlert: Hashable {
         return result
     }()
 
-    package static func defaults(for alert: String?) -> NoteCalloutAlert? {
+    static func defaults(for alert: String?) -> NoteCalloutAlert? {
         guard let alert else { return nil }
         return table[alert.lowercased()]
     }
 }
 
 extension NoteBlock {
-    package var calloutAlert: NoteCalloutAlert? {
+    var calloutAlert: NoteCalloutAlert? {
         kind == .callout ? NoteCalloutAlert.defaults(for: props.alert) : nil
     }
 

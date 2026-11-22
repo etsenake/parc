@@ -29,10 +29,10 @@ package enum CommandBarResultText {
         }
     }
 
-    package static func displayURL(_ url: String) -> String { address(url).text }
+    static func displayURL(_ url: String) -> String { address(url).text }
 
-    package static let dataURLLimit = 256
-    package static let pathLimit = 4096
+    static let dataURLLimit = 256
+    static let pathLimit = 4096
 
     private static func isData(_ url: String) -> Bool { url.prefix(5).lowercased() == "data:" }
 
@@ -233,7 +233,7 @@ package enum CommandBarResultText {
         return isInSplit ? TabCaption(text: "Switch to Split View", spoken: "Switch to Split View") : .switchToTab
     }
 
-    package enum NativeKind: Equatable {
+    enum NativeKind: Equatable {
         case search
         case history
         case navSuggestion
@@ -241,7 +241,7 @@ package enum CommandBarResultText {
         case calculator(answer: String)
     }
 
-    package static func nativeKind(matchType: String?, isSearch: Bool, contents: String, description: String, input: String) -> NativeKind? {
+    static func nativeKind(matchType: String?, isSearch: Bool, contents: String, description: String, input: String) -> NativeKind? {
         guard let matchType else {
             return isSearch ? .search : description.isEmpty ? .typedURL : .history
         }
@@ -261,7 +261,7 @@ package enum CommandBarResultText {
         }
     }
 
-    package static func calculatorAnswer(contents: String, input: String) -> String? {
+    static func calculatorAnswer(contents: String, input: String) -> String? {
         let prefix = input + " = "
         guard !input.isEmpty, contents.hasPrefix(prefix) else { return nil }
         if input.split(separator: " ").count < 2, !input.contains(where: \.isNumber) { return nil }

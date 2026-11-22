@@ -17,7 +17,7 @@ package struct EmbeddedPageFingerprint: Equatable {
 package struct EmbeddedPageOwnerGate: Equatable {
     package private(set) var isDisposed = false
     package private(set) var isRetiring = false
-    package private(set) var activeTransfer: UInt64?
+    private(set) var activeTransfer: UInt64?
     package private(set) var transferGeneration: UInt64 = 0
 
     package var isTransferring: Bool { activeTransfer != nil }
@@ -58,7 +58,7 @@ package struct EmbeddedPageOwnerGate: Equatable {
 }
 
 package struct EmbeddedPageSleepPolicy {
-    package static let idleInterval: TimeInterval = 14_400
+    static let idleInterval: TimeInterval = 14_400
 
     package enum Protection: Equatable { case eligible, protected, unknown }
 

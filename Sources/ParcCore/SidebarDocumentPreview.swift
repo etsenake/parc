@@ -46,7 +46,7 @@ package enum SidebarDocumentButton: Equatable, Sendable {
 }
 
 package enum SidebarDocumentPreviewText {
-    package static func kindName(_ kind: SidebarDocumentKind) -> String { kind.isNote ? "Note" : "Easel" }
+    static func kindName(_ kind: SidebarDocumentKind) -> String { kind.isNote ? "Note" : "Easel" }
 
     package static func missing(_ kind: SidebarDocumentKind) -> String {
         kind.isNote ? "This note moved or was deleted" : "This Easel was deleted"

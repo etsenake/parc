@@ -4,7 +4,7 @@ package struct EaselCountdown: Equatable {
     package enum Phase: Equatable { case idle, running, paused, finished }
 
     package static let maximum: TimeInterval = 99 * 60 + 59
-    package static let defaultDuration: TimeInterval = 5 * 60
+    static let defaultDuration: TimeInterval = 5 * 60
 
     package private(set) var phase: Phase = .idle
     package private(set) var duration: TimeInterval = defaultDuration

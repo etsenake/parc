@@ -2,15 +2,15 @@ import Foundation
 
 package enum EaselBoardObjects {
     package static let stickySide = 220.0
-    package static let stickyWideWidth = 440.0
-    package static let stickyMaximumWidth = 880.0
-    package static let stickyPadding = 18.0
+    static let stickyWideWidth = 440.0
+    static let stickyMaximumWidth = 880.0
+    static let stickyPadding = 18.0
     package static let textScales = EaselTextStyle.textScales
-    package static let sectionWidth = 640.0
-    package static let sectionHeight = 480.0
-    package static let sectionMinimumWidth = 120.0
-    package static let sectionMinimumHeight = 80.0
-    package static let sectionFitPadding = 48.0
+    static let sectionWidth = 640.0
+    static let sectionHeight = 480.0
+    static let sectionMinimumWidth = 120.0
+    static let sectionMinimumHeight = 80.0
+    static let sectionFitPadding = 48.0
     package static let sectionTitleHeight = 26.0
     package static let sectionTitleGap = 6.0
     package static let sectionTitlePadding = 10.0
@@ -24,18 +24,18 @@ package enum EaselBoardObjects {
         return min(textScales.upperBound, max(textScales.lowerBound, value))
     }
 
-    package static func scaledStyle(_ style: EaselTextStyle?, scale: Double) -> EaselTextStyle? {
+    static func scaledStyle(_ style: EaselTextStyle?, scale: Double) -> EaselTextStyle? {
         let value = scale.isFinite ? min(textScales.upperBound, max(textScales.lowerBound, scale)) : 1
         var next = style ?? EaselTextStyle()
         next.textScale = abs(value - 1) < 0.0005 ? nil : (value * 1000).rounded() / 1000
         return next == EaselTextStyle() ? nil : next
     }
 
-    package static func stickyInset(_ item: EaselItem) -> Double { stickyPadding * textScale(item) }
+    static func stickyInset(_ item: EaselItem) -> Double { stickyPadding * textScale(item) }
 
     package static func stickyMinimumHeight(_ item: EaselItem) -> Double { stickySide * textScale(item) }
 
-    package static func stickyWidths(_ item: EaselItem) -> ClosedRange<Double> {
+    static func stickyWidths(_ item: EaselItem) -> ClosedRange<Double> {
         let scale = textScale(item)
         return stickySide * scale...stickyMaximumWidth * scale
     }
@@ -50,7 +50,7 @@ package enum EaselBoardObjects {
                          width: max(1, item.frame.width - 2 * inset), height: max(1, item.frame.height - 2 * inset))
     }
 
-    package static func stickyHeight(_ item: EaselItem, textHeight: Double) -> Double {
+    static func stickyHeight(_ item: EaselItem, textHeight: Double) -> Double {
         let minimum = stickyMinimumHeight(item)
         guard textHeight.isFinite, textHeight > 0 else { return minimum }
         return min(EaselRect.maximumCoordinate, max(minimum, (textHeight + 2 * stickyInset(item)).rounded(.up)))
@@ -120,7 +120,7 @@ package enum EaselBoardObjects {
         return next
     }
 
-    package static func encloses(_ outer: EaselRect, _ inner: EaselRect) -> Bool {
+    static func encloses(_ outer: EaselRect, _ inner: EaselRect) -> Bool {
         let tolerance = 0.5
         return inner.x >= outer.x - tolerance && inner.y >= outer.y - tolerance
             && inner.x + inner.width <= outer.x + outer.width + tolerance
@@ -254,7 +254,7 @@ package enum EaselBoardObjects {
                          width: width, height: height)
     }
 
-    package static func withContents(_ ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
+    static func withContents(_ ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
         var result = ids
         for section in document.items where ids.contains(section.id) && section.kind == .section {
             result.formUnion(contents(of: section, in: document.items).map(\.id))
@@ -298,7 +298,7 @@ package enum EaselBoardObjects {
         return targets
     }
 
-    package static func carryingSectionContents(_ next: EaselDocument, previous: EaselDocument,
+    static func carryingSectionContents(_ next: EaselDocument, previous: EaselDocument,
                                         moved: Set<UUID>) -> (document: EaselDocument, moved: Set<UUID>) {
         let movedSections = next.items.filter { moved.contains($0.id) && $0.kind == .section }
         guard !movedSections.isEmpty else { return (next, moved) }

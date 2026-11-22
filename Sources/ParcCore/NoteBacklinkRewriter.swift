@@ -1,22 +1,22 @@
 import Foundation
 
-package enum NoteBacklinkRewriter {
-    package static func isWikiStyle(target: String, title: String) -> Bool {
+enum NoteBacklinkRewriter {
+    static func isWikiStyle(target: String, title: String) -> Bool {
         !(NoteMDLinks.isRelativeMarkdown(target) && title == NoteMDLinks.stem(target) && title != target)
     }
 
-    package static func retitled(_ title: String, target: String, next: String) -> String {
+    static func retitled(_ title: String, target: String, next: String) -> String {
         if title == target { return next }
         if title == NoteMDLinks.stem(target) { return NoteMDLinks.stem(next) }
         return title
     }
 
-    package static func target(_ raw: String, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove, wiki: Bool) -> String? {
+    static func target(_ raw: String, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove, wiki: Bool) -> String? {
         guard NoteBacklinkScanner.targetKey(raw, from: folder) == move.fromKey else { return nil }
         return replacement(for: raw, writingFrom: newFolder, to: move.to, wiki: wiki)
     }
 
-    package static func replacement(for raw: String, writingFrom folder: URL, to note: URL, wiki: Bool) -> String {
+    static func replacement(for raw: String, writingFrom folder: URL, to note: URL, wiki: Bool) -> String {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         var angled = false
         if value.count >= 2, value.hasPrefix("<"), value.hasSuffix(">") {
@@ -57,7 +57,7 @@ package enum NoteBacklinkRewriter {
     }
 
     @discardableResult
-    package static func rewrite(_ block: inout NoteBlock, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) -> Bool {
+    static func rewrite(_ block: inout NoteBlock, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) -> Bool {
         var changed = false
         if block.kind == .pageLink, let current = block.props.target,
            let next = target(current, resolvingFrom: folder, writingFrom: newFolder, move: move, wiki: false) {
@@ -73,7 +73,7 @@ package enum NoteBacklinkRewriter {
         return changed
     }
 
-    package static func rewrite(_ text: inout NoteText, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) -> Bool {
+    static func rewrite(_ text: inout NoteText, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) -> Bool {
         var changed = false
         for run in text.runs() {
             if let atom = run.marks.atom {
@@ -92,7 +92,7 @@ package enum NoteBacklinkRewriter {
         return changed
     }
 
-    package static func rewrite(_ page: NotePage, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) -> NotePage? {
+    static func rewrite(_ page: NotePage, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) -> NotePage? {
         var changed = false
         func walk(_ list: inout [NoteBlock]) {
             for index in list.indices {
@@ -108,7 +108,7 @@ package enum NoteBacklinkRewriter {
         return next
     }
 
-    package static func rewriteFile(at url: URL, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) -> Bool {
+    static func rewriteFile(at url: URL, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) -> Bool {
         guard NoteFileKind(url: url) == .markdown, let read = try? NoteFileIO.readStamped(url, kind: .markdown) else { return false }
         let original = read.contents.text
         guard let text = rewritten(original, format: read.contents.format, resolvingFrom: folder, writingFrom: newFolder, move: move) else { return false }
@@ -121,7 +121,7 @@ package enum NoteBacklinkRewriter {
         return coordination == nil && outcome.succeeded
     }
 
-    package static func rewritten(_ original: String, format: NoteFileFormat? = nil, resolvingFrom folder: URL, writingFrom newFolder: URL,
+    static func rewritten(_ original: String, format: NoteFileFormat? = nil, resolvingFrom folder: URL, writingFrom newFolder: URL,
                           move: NoteBacklinkMove) -> String? {
         let normalized = NoteFileText.normalizedLineEndings(original)
         guard let page = rewrite(NoteMarkdown.parse(normalized), resolvingFrom: folder, writingFrom: newFolder, move: move) else { return nil }
@@ -134,7 +134,7 @@ package enum NoteBacklinkRewriter {
         return NoteFileText.fileText(expected, format: fallback, kind: .markdown)
     }
 
-    package static func rewriteMarkdown(_ source: String, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) -> String? {
+    static func rewriteMarkdown(_ source: String, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) -> String? {
         var lines = source.components(separatedBy: "\n")
         let edges = CharacterSet.whitespaces.union(CharacterSet(charactersIn: "\r"))
         var fence: (marker: Character, count: Int)?
@@ -168,7 +168,7 @@ package enum NoteBacklinkRewriter {
         return changed ? lines.joined(separator: "\n") : nil
     }
 
-    package static func rewriteLine(_ line: String, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) -> String? {
+    static func rewriteLine(_ line: String, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) -> String? {
         let characters = Array(line)
         var output = ""
         var changed = false

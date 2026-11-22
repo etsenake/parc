@@ -13,7 +13,7 @@ package enum NoteAttachments {
     }
 
     package static let folderName = "Attachments"
-    package static let stagingFolder = FileManager.default.temporaryDirectory.appendingPathComponent("Parc Note Imports", isDirectory: true)
+    static let stagingFolder = FileManager.default.temporaryDirectory.appendingPathComponent("Parc Note Imports", isDirectory: true)
 
     package static func folder(for note: URL) -> URL {
         note.deletingLastPathComponent().appendingPathComponent(folderName, isDirectory: true)

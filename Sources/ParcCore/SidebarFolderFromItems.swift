@@ -15,7 +15,7 @@ package struct SidebarFolderFromItems: Equatable {
     package let profileID: UUID
     package let tabIDs: [UUID]
     package var folder: BrowserFolder
-    package let orderKeys: [String]
+    let orderKeys: [String]
     package let before: Parts
     package let after: Parts
 

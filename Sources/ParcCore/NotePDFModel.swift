@@ -6,7 +6,7 @@ package enum NotePDFLayout {
     package static let minimumHeight: CGFloat = 200
     package static let maximumHeight: CGFloat = 960
     package static let pageInset: CGFloat = 8
-    package static let defaultAspect: CGFloat = 11 / 8.5
+    static let defaultAspect: CGFloat = 11 / 8.5
     package static let snapTolerance: CGFloat = 6
     package static let rubberBandDimension: CGFloat = 90
 
@@ -89,9 +89,9 @@ package enum NotePDFPages {
 
 package enum NotePDFZoom {
     package static let step: CGFloat = 1.25
-    package static let minimumRatio: CGFloat = 0.5
-    package static let maximumRatio: CGFloat = 5
-    package static let snapRatio: CGFloat = 0.03
+    static let minimumRatio: CGFloat = 0.5
+    static let maximumRatio: CGFloat = 5
+    static let snapRatio: CGFloat = 0.03
 
     package struct Outcome: Equatable {
         package var scale: CGFloat
@@ -150,7 +150,7 @@ package struct NotePDFScrollLatch: Equatable {
 
     package enum Target: Equatable { case pdf, note, handedOver }
 
-    package static let discreteRunGap: TimeInterval = 0.5
+    static let discreteRunGap: TimeInterval = 0.5
 
     package private(set) var target: Target?
     private var lastDiscrete: TimeInterval?

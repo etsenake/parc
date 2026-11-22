@@ -139,7 +139,7 @@ package struct SidebarItemReveal: Equatable {
     package let item: SidebarItemReference
     package let spaceID: UUID
     package let profileID: UUID
-    package let expandedFolderIDs: Set<UUID>
+    let expandedFolderIDs: Set<UUID>
 
     package init?(item: SidebarItemReference, spaceID: UUID, profileID: UUID, state: BrowserState) {
         guard state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }),
@@ -195,7 +195,7 @@ package struct SidebarNewSpaceDraft: Equatable {
     package var profileID: UUID
     package var customIcon: SidebarGroupIcon?
     package var theme: SpaceTheme
-    package private(set) var separateProfileID: UUID?
+    private(set) var separateProfileID: UUID?
     private var acceptsProfileChange = false
 
     package init?(items: [SidebarItemReference] = [], from source: SidebarHierarchySnapshot,
@@ -227,13 +227,13 @@ package struct SidebarNewSpaceDraft: Equatable {
         }
     }
 
-    package func canUseProfile(_ id: UUID, in state: BrowserState) -> Bool {
+    func canUseProfile(_ id: UUID, in state: BrowserState) -> Bool {
         state.profiles.contains { $0.id == id } &&
         !state.profileRemovals.contains { $0.profileID == id } &&
         (roots.isEmpty || id == source.profileID)
     }
 
-    package var keepsSeparate: Bool { separateProfileID != nil }
+    var keepsSeparate: Bool { separateProfileID != nil }
     package var movesItemsAcrossProfiles: Bool { !tabIDs.isEmpty && profileID != source.profileID }
 
     @discardableResult

@@ -1,7 +1,7 @@
 import Foundation
 
-package enum NoteSyntaxGrammars {
-    package static func grammar(for id: String) -> NoteSyntaxGrammar? {
+enum NoteSyntaxGrammars {
+    static func grammar(for id: String) -> NoteSyntaxGrammar? {
         switch id {
         case "swift": return swift
         case "javascript": return javascript
@@ -41,7 +41,7 @@ package enum NoteSyntaxGrammars {
     private static let quoted = [NoteSyntaxStringRule("\""), NoteSyntaxStringRule("'")]
     private static let classic: NoteSyntaxFeatures = [.callsAreFunctions, .memberProperties, .capitalizedTypes, .capsConstants]
 
-    package static let swift = NoteSyntaxGrammar(
+    static let swift = NoteSyntaxGrammar(
         keywords: """
         associatedtype deinit extension fileprivate import init inout internal let open operator private \
         precedencegroup public rethrows static subscript var break case catch continue default defer do else \
@@ -88,12 +88,12 @@ package enum NoteSyntaxGrammars {
             wordExtras: "$", wordStartExtras: "$", atKind: .attribute)
     }
 
-    package static let javascript = javascriptFamily(typescript: false, jsx: false)
-    package static let jsx = javascriptFamily(typescript: false, jsx: true)
-    package static let typescript = javascriptFamily(typescript: true, jsx: false)
-    package static let tsx = javascriptFamily(typescript: true, jsx: true)
+    static let javascript = javascriptFamily(typescript: false, jsx: false)
+    static let jsx = javascriptFamily(typescript: false, jsx: true)
+    static let typescript = javascriptFamily(typescript: true, jsx: false)
+    static let tsx = javascriptFamily(typescript: true, jsx: true)
 
-    package static let python = NoteSyntaxGrammar(
+    static let python = NoteSyntaxGrammar(
         keywords: """
         and as assert async await break continue del elif else except finally for from global if import in is \
         lambda nonlocal not or pass raise return try while with yield match case
@@ -116,7 +116,7 @@ package enum NoteSyntaxGrammars {
         features: classic.union(.decoratorsAtLineStart),
         atKind: .attribute)
 
-    package static let ruby = NoteSyntaxGrammar(
+    static let ruby = NoteSyntaxGrammar(
         keywords: """
         BEGIN END alias and begin break case defined? do else elsif end ensure for if in next not or redo rescue \
         retry return super then undef unless until when while yield __method__ __FILE__ __LINE__ __dir__
@@ -136,7 +136,7 @@ package enum NoteSyntaxGrammars {
         features: [.callsAreFunctions, .memberProperties, .capitalizedTypes, .regexLiterals, .rubyLiterals, .symbols],
         wordSuffixes: "?!", dollarKind: .variable, atKind: .variable)
 
-    package static let go = NoteSyntaxGrammar(
+    static let go = NoteSyntaxGrammar(
         keywords: """
         break case chan const continue default defer else fallthrough for go goto if import interface map package \
         range return select struct switch var
@@ -154,7 +154,7 @@ package enum NoteSyntaxGrammars {
                   NoteSyntaxStringRule("`", multiline: true, escapes: false)],
         features: [.callsAreFunctions, .memberProperties])
 
-    package static let rust = NoteSyntaxGrammar(
+    static let rust = NoteSyntaxGrammar(
         keywords: """
         as async await break const continue crate dyn else extern for if impl in let loop match mod move mut pub \
         ref return static super unsafe use where while yield macro_rules
@@ -184,7 +184,7 @@ package enum NoteSyntaxGrammars {
         """
     private static let cFeatures = classic.union([.preprocessor, .arrowMembers])
 
-    package static let c = NoteSyntaxGrammar(
+    static let c = NoteSyntaxGrammar(
         keywords: cKeywords, types: cTypes,
         constants: "NULL true false EOF stdin stdout stderr nullptr",
         builtins: cBuiltins,
@@ -192,7 +192,7 @@ package enum NoteSyntaxGrammars {
         lineComments: slashComments, blockComments: starComment, strings: quoted, prefixes: .cpp,
         features: cFeatures)
 
-    package static let cpp = NoteSyntaxGrammar(
+    static let cpp = NoteSyntaxGrammar(
         keywords: cKeywords + """
          and and_eq asm bitand bitor catch co_await co_return co_yield compl concept consteval constinit const_cast \
         decltype delete dynamic_cast explicit export friend mutable namespace new noexcept not not_eq operator or \
@@ -207,7 +207,7 @@ package enum NoteSyntaxGrammars {
         lineComments: slashComments, blockComments: starComment, strings: quoted, prefixes: .cpp,
         features: cFeatures, digitSeparators: "'")
 
-    package static let csharp = NoteSyntaxGrammar(
+    static let csharp = NoteSyntaxGrammar(
         keywords: """
         abstract as break case catch checked const continue default delegate do else event explicit extern finally \
         fixed for foreach goto if implicit in internal is lock new operator out override params private protected \
@@ -224,7 +224,7 @@ package enum NoteSyntaxGrammars {
                   NoteSyntaxStringRule("'")],
         features: classic.union([.csharpLiterals, .preprocessor]))
 
-    package static let objectiveC = NoteSyntaxGrammar(
+    static let objectiveC = NoteSyntaxGrammar(
         keywords: cKeywords + """
          nonatomic atomic strong weak copy assign retain readonly readwrite nullable nonnull __block __weak \
         __strong __unsafe_unretained _Nullable _Nonnull __kindof
@@ -237,7 +237,7 @@ package enum NoteSyntaxGrammars {
         lineComments: slashComments, blockComments: starComment, strings: quoted, prefixes: .cpp,
         features: cFeatures.union(.objcLiterals))
 
-    package static let java = NoteSyntaxGrammar(
+    static let java = NoteSyntaxGrammar(
         keywords: """
         abstract assert break case catch const continue default do else extends final finally for goto if \
         implements import instanceof native new package private protected public return static strictfp switch \
@@ -251,7 +251,7 @@ package enum NoteSyntaxGrammars {
         strings: [NoteSyntaxStringRule("\"\"\"", multiline: true), NoteSyntaxStringRule("\""), NoteSyntaxStringRule("'")],
         features: classic, atKind: .attribute)
 
-    package static let kotlin = NoteSyntaxGrammar(
+    static let kotlin = NoteSyntaxGrammar(
         keywords: """
         as break continue do else for if in interface is package return throw try typeof val var when while by \
         catch constructor finally import init where actual abstract annotation companion const crossinline data \
@@ -268,7 +268,7 @@ package enum NoteSyntaxGrammars {
                   NoteSyntaxStringRule("\"", interpolation: .dollarName), NoteSyntaxStringRule("'")],
         features: classic.union(.backtickIdentifiers), atKind: .attribute)
 
-    package static let scala = NoteSyntaxGrammar(
+    static let scala = NoteSyntaxGrammar(
         keywords: """
         abstract case catch do else extends final finally for forSome if implicit import lazy match new override \
         package private protected return sealed throw try val var while with yield given using export then end \
@@ -285,7 +285,7 @@ package enum NoteSyntaxGrammars {
         prefixes: .scala,
         features: classic.union(.backtickIdentifiers), atKind: .attribute)
 
-    package static let dart = NoteSyntaxGrammar(
+    static let dart = NoteSyntaxGrammar(
         keywords: """
         abstract as assert async await base break case catch const continue covariant default deferred do dynamic \
         else export extends external factory final finally for Function hide if implements import in interface is \
@@ -305,12 +305,12 @@ package enum NoteSyntaxGrammars {
         prefixes: .dart,
         features: classic, atKind: .attribute)
 
-    package static let json = NoteSyntaxGrammar(
+    static let json = NoteSyntaxGrammar(
         constants: "true false null NaN Infinity",
         lineComments: slashComments, blockComments: starComment, strings: quoted,
         features: [.keysBeforeColon, .signedNumbers], operators: "+-", punctuation: "{}[],:")
 
-    package static let sql = NoteSyntaxGrammar(
+    static let sql = NoteSyntaxGrammar(
         keywords: """
         select from where insert into values update set delete create table drop alter add column index view as \
         join inner left right full outer cross on using group by order having limit offset union all distinct and \
@@ -340,7 +340,7 @@ package enum NoteSyntaxGrammars {
         features: [.callsAreFunctions, .memberProperties, .sqlLiterals],
         operators: "+-*/%=<>!|&^~", dollarKind: .variable)
 
-    package static let bash = NoteSyntaxGrammar(
+    static let bash = NoteSyntaxGrammar(
         keywords: "fi esac done in coproc select case for",
         constants: "true false",
         builtins: """
@@ -357,7 +357,7 @@ package enum NoteSyntaxGrammars {
         wordExtras: "-./~+%@:,", wordStartExtras: "./~-+%@:",
         operators: "|&;<>=!", punctuation: "(){}[]", digitSeparators: "")
 
-    package static let powershell = NoteSyntaxGrammar(
+    static let powershell = NoteSyntaxGrammar(
         keywords: """
         begin break catch class continue data define do dynamicparam else elseif end enum exit filter finally for \
         foreach from function hidden if in param process return static switch throw trap try until using var \
@@ -370,13 +370,13 @@ package enum NoteSyntaxGrammars {
         features: [.callsAreFunctions, .memberProperties, .powershell],
         operators: "+-*/%=<>!|&", punctuation: "(){}[];,.")
 
-    package static let powershellOperators: Set<String> = [
+    static let powershellOperators: Set<String> = [
         "eq", "ne", "gt", "ge", "lt", "le", "like", "notlike", "match", "notmatch", "contains", "notcontains", "in",
         "notin", "replace", "split", "join", "and", "or", "not", "xor", "band", "bor", "bxor", "bnot", "shl", "shr",
         "is", "isnot", "as", "f", "ceq", "cne", "clike", "cmatch", "creplace", "ieq", "ine", "ilike", "imatch",
     ]
 
-    package static let lua = NoteSyntaxGrammar(
+    static let lua = NoteSyntaxGrammar(
         keywords: "and break do else elseif end for goto if in local not or repeat return then until while",
         constants: "nil true false",
         builtins: """
@@ -391,7 +391,7 @@ package enum NoteSyntaxGrammars {
         features: [.callsAreFunctions, .memberProperties, .luaLongBrackets],
         operators: "+-*/%^#=<>~&|:")
 
-    package static let r = NoteSyntaxGrammar(
+    static let r = NoteSyntaxGrammar(
         keywords: "if else repeat while function for in next break return",
         constants: "TRUE FALSE NULL Inf NaN NA NA_integer_ NA_real_ NA_character_ NA_complex_ T F",
         builtins: """
@@ -405,7 +405,7 @@ package enum NoteSyntaxGrammars {
         features: [.callsAreFunctions, .backtickIdentifiers, .percentOperators],
         wordExtras: ".", wordStartExtras: ".", operators: "+-*/^=<>!&|~?:$@", punctuation: "(){}[];,")
 
-    package static let haskell = NoteSyntaxGrammar(
+    static let haskell = NoteSyntaxGrammar(
         keywords: """
         case class data default deriving do else foreign if import in infix infixl infixr instance let module \
         newtype of then type where qualified as hiding forall mdo family pattern
@@ -422,7 +422,7 @@ package enum NoteSyntaxGrammars {
         features: [.capitalizedTypes, .haskellDashes, .lineStartFunctions, .backtickIdentifiers],
         wordExtras: "'", operators: "+-*/%=&|^!<>~?:.$#@\\", punctuation: "(){}[];,")
 
-    package static let elixir = NoteSyntaxGrammar(
+    static let elixir = NoteSyntaxGrammar(
         keywords: """
         do end fn case cond with when if else unless receive try rescue catch after raise import alias require use \
         quote unquote unquote_splicing for in and or not throw super defstruct defexception defoverridable \
@@ -440,7 +440,7 @@ package enum NoteSyntaxGrammars {
         features: [.callsAreFunctions, .memberProperties, .capitalizedTypes, .symbols, .elixirSigils],
         wordSuffixes: "?!", atKind: .attribute)
 
-    package static let mermaid = NoteSyntaxGrammar(
+    static let mermaid = NoteSyntaxGrammar(
         keywords: """
         graph flowchart subgraph end direction sequenceDiagram participant actor as Note note over left right of loop \
         alt else opt par and rect critical break autonumber activate deactivate box create destroy link links \
@@ -462,7 +462,7 @@ package enum NoteSyntaxGrammars {
         features: [.callsAreFunctions],
         operators: "-=<>.|~:&*+!", punctuation: "()[]{};,")
 
-    package static let graphql = NoteSyntaxGrammar(
+    static let graphql = NoteSyntaxGrammar(
         keywords: """
         query mutation subscription fragment on type interface union enum input scalar schema extend directive \
         implements repeatable
@@ -474,7 +474,7 @@ package enum NoteSyntaxGrammars {
         features: [.callsAreFunctions, .capitalizedTypes, .keysBeforeColon],
         operators: "=!|&:", punctuation: "(){}[],.", dollarKind: .variable, atKind: .attribute)
 
-    package static let zig = NoteSyntaxGrammar(
+    static let zig = NoteSyntaxGrammar(
         keywords: """
         addrspace align allowzero and anyframe anytype asm async await break callconv catch comptime const continue \
         defer else enum errdefer error export extern for if inline linksection noalias noinline nosuspend opaque or \
@@ -491,7 +491,7 @@ package enum NoteSyntaxGrammars {
         strings: quoted,
         features: classic.union(.zigLiterals))
 
-    package static let php = NoteSyntaxGrammar(
+    static let php = NoteSyntaxGrammar(
         keywords: """
         abstract and as break callable case catch clone const continue declare default do echo else elseif empty \
         enddeclare endfor endforeach endif endswitch endwhile extends final finally fn for foreach global goto if \
@@ -516,17 +516,17 @@ package enum NoteSyntaxGrammars {
         features: [.callsAreFunctions, .capitalizedTypes, .capsConstants, .arrowMembers, .memberProperties, .phpLiterals],
         operators: "+-*/%=&|^!<>~?:.@", punctuation: "(){}[];,", dollarKind: .variable)
 
-    package static let dockerInstructions: Set<String> = [
+    static let dockerInstructions: Set<String> = [
         "FROM", "RUN", "CMD", "LABEL", "MAINTAINER", "EXPOSE", "ENV", "ADD", "COPY", "ENTRYPOINT", "VOLUME", "USER",
         "WORKDIR", "ARG", "ONBUILD", "STOPSIGNAL", "HEALTHCHECK", "SHELL",
     ]
 
-    package static let makeDirectives: Set<String> = [
+    static let makeDirectives: Set<String> = [
         "include", "-include", "sinclude", "ifeq", "ifneq", "ifdef", "ifndef", "else", "endif", "define", "endef",
         "export", "unexport", "override", "private", "vpath", "undefine",
     ]
 
-    package static let makeFunctions: Set<String> = [
+    static let makeFunctions: Set<String> = [
         "wildcard", "patsubst", "subst", "shell", "call", "foreach", "if", "or", "and", "filter", "filter-out", "sort",
         "word", "words", "wordlist", "dir", "notdir", "suffix", "basename", "addsuffix", "addprefix", "join",
         "realpath", "abspath", "error", "warning", "info", "origin", "flavor", "eval", "value", "file", "strip",

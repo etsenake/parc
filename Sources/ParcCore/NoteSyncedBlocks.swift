@@ -1,16 +1,16 @@
 import Combine
 import Foundation
 
-package struct NoteSyncedGroup: Hashable {
-    package var file: String
-    package var anchor: String
+struct NoteSyncedGroup: Hashable {
+    var file: String
+    var anchor: String
 }
 
-package struct NoteSyncedReference: Equatable {
-    package var path: String?
-    package var anchor: String
+struct NoteSyncedReference: Equatable {
+    var path: String?
+    var anchor: String
 
-    package init?(_ target: String) {
+    init?(_ target: String) {
         guard let hash = target.lastIndex(of: "#") else { return nil }
         let fragment = String(target[target.index(after: hash)...])
         let anchor = fragment.removingPercentEncoding ?? fragment
@@ -20,7 +20,7 @@ package struct NoteSyncedReference: Equatable {
         self.anchor = anchor
     }
 
-    package func url(relativeTo document: URL?) -> URL? {
+    func url(relativeTo document: URL?) -> URL? {
         guard let path else { return document }
         if path.lowercased().hasPrefix("file:"), let url = URL(string: path), url.isFileURL {
             return URL(fileURLWithPath: url.path)
@@ -32,7 +32,7 @@ package struct NoteSyncedReference: Equatable {
         return URL(fileURLWithPath: decoded, relativeTo: document.deletingLastPathComponent()).standardizedFileURL
     }
 
-    package static func target(anchor: String, original: URL?, from document: URL?) -> String {
+    static func target(anchor: String, original: URL?, from document: URL?) -> String {
         let fragment = "#" + NoteFilePaths.encodedSegment(anchor)
         guard let original else { return fragment }
         if let document, NoteFilePaths.key(for: document) == NoteFilePaths.key(for: original) { return fragment }
@@ -49,7 +49,7 @@ package struct NoteSyncedInfo: Equatable {
     package var isMissing: Bool
     package var anchor: String?
     package var originalURL: URL?
-    package var originalBlock: NoteBlockID?
+    var originalBlock: NoteBlockID?
     package var notes: [URL]
 
     package init(isOriginal: Bool, isMissing: Bool, anchor: String? = nil, originalURL: URL? = nil, originalBlock: NoteBlockID? = nil, notes: [URL]) {
@@ -63,12 +63,12 @@ package struct NoteSyncedInfo: Equatable {
 }
 
 @MainActor
-package final class NoteSyncedLease {
+final class NoteSyncedLease {
     nonisolated(unsafe) private var ending: (() -> Void)?
 
-    package init(_ ending: @escaping () -> Void) { self.ending = ending }
+    init(_ ending: @escaping () -> Void) { self.ending = ending }
 
-    package func end() {
+    func end() {
         let pending = ending
         ending = nil
         pending?()
@@ -81,20 +81,20 @@ package final class NoteSyncedLease {
 }
 
 @MainActor
-package final class NoteSyncedEdit {
+final class NoteSyncedEdit {
     fileprivate weak var engine: NoteSyncedBlocks?
     fileprivate var groups: Set<NoteSyncedGroup> = []
     fileprivate var after: [NoteSyncedGroup: [NoteBlock]] = [:]
     fileprivate var leases: [NoteSyncedLease] = []
-    package private(set) var isApplied = true
-    package let name: String
+    private(set) var isApplied = true
+    let name: String
 
     fileprivate init(engine: NoteSyncedBlocks, name: String) {
         self.engine = engine
         self.name = name
     }
 
-    package var owner: ObjectIdentifier { ObjectIdentifier(self) }
+    var owner: ObjectIdentifier { ObjectIdentifier(self) }
 
     fileprivate func mark(applied: Bool) -> Bool {
         guard isApplied != applied else { return false }
@@ -102,7 +102,7 @@ package final class NoteSyncedEdit {
         return true
     }
 
-    package func effect(for session: NotePageSession) -> NoteUndoEffect {
+    func effect(for session: NotePageSession) -> NoteUndoEffect {
         NoteUndoEffect(undo: { [weak session] in
             guard let session else { return }
             self.engine?.reverse(self, by: session)
@@ -112,7 +112,7 @@ package final class NoteSyncedEdit {
         }, owner: owner)
     }
 
-    package func reversal(for session: NotePageSession) -> NoteUndoEffect {
+    func reversal(for session: NotePageSession) -> NoteUndoEffect {
         NoteUndoEffect(undo: { [weak session] in
             guard let session else { return }
             self.engine?.reapply(self, by: session)
@@ -124,12 +124,12 @@ package final class NoteSyncedEdit {
 }
 
 @MainActor
-package final class NoteSyncedUnsync {
+final class NoteSyncedUnsync {
     fileprivate var leases: [NoteSyncedLease] = []
     fileprivate var sessions: [() -> NotePageSession?] = []
     private var isApplied = true
 
-    package var owner: ObjectIdentifier { ObjectIdentifier(self) }
+    var owner: ObjectIdentifier { ObjectIdentifier(self) }
 
     fileprivate func effect(for session: NotePageSession, retaining: Bool) -> NoteUndoEffect {
         if retaining {
@@ -154,7 +154,7 @@ package final class NoteSyncedUnsync {
 package final class NoteSyncedBlocks {
     package static let shared = NoteSyncedBlocks()
 
-    package static let stepName = "Synced Edit"
+    static let stepName = "Synced Edit"
 
     @MainActor
     fileprivate final class Document {
@@ -207,12 +207,12 @@ package final class NoteSyncedBlocks {
 
     package let changes = PassthroughSubject<Void, Never>()
     package let retries = PassthroughSubject<Void, Never>()
-    package var opener: @MainActor (URL) -> NoteSyncedLease? = { _ in nil }
-    package var originalFinder: @MainActor (String, URL) -> [URL] = { _, _ in [] }
-    package var noteFinder: @MainActor (String, URL) -> [URL] = { _, _ in [] }
+    var opener: @MainActor (URL) -> NoteSyncedLease? = { _ in nil }
+    var originalFinder: @MainActor (String, URL) -> [URL] = { _, _ in [] }
+    var noteFinder: @MainActor (String, URL) -> [URL] = { _, _ in [] }
     package var libraryChanges: @MainActor (URL) -> AnyPublisher<Void, Never>? = { _ in nil }
-    package var usesNoteFiles = false
-    package var closedCopyDelay: TimeInterval = 2
+    var usesNoteFiles = false
+    var closedCopyDelay: TimeInterval = 2
     private var closedRefreshes: [NoteSyncedGroup: Int] = [:]
     private var documents: [ObjectIdentifier: Document] = [:]
     private var depth = 0
@@ -247,7 +247,7 @@ package final class NoteSyncedBlocks {
 
     package func isAttached(_ session: NotePageSession) -> Bool { documents[ObjectIdentifier(session)] != nil }
 
-    package func availabilityChanged(_ session: NotePageSession) {
+    func availabilityChanged(_ session: NotePageSession) {
         guard let document = documents[ObjectIdentifier(session)] else { return }
         batch {
             pendingReconcile.formUnion(groups(in: document))
@@ -307,7 +307,7 @@ package final class NoteSyncedBlocks {
         return (other, found.1.id)
     }
 
-    package func referencedOriginals(in session: NotePageSession) -> [(url: URL, anchor: String, resolved: Bool)] {
+    func referencedOriginals(in session: NotePageSession) -> [(url: URL, anchor: String, resolved: Bool)] {
         guard let document = documents[ObjectIdentifier(session)] else { return [] }
         var result: [(url: URL, anchor: String, resolved: Bool)] = []
         var seenKeys = Set<NoteSyncedGroup>()
@@ -391,7 +391,7 @@ package final class NoteSyncedBlocks {
         changes.send()
     }
 
-    package func reconcileAll() {
+    func reconcileAll() {
         batch {
             for document in documents.values { pendingReconcile.formUnion(groups(in: document)) }
         }
@@ -527,7 +527,7 @@ package final class NoteSyncedBlocks {
         }
     }
 
-    package func refreshClosedCopies(of group: NoteSyncedGroup) {
+    func refreshClosedCopies(of group: NoteSyncedGroup) {
         closedRefreshes[group] = nil
         guard let found = original(of: group), let here = found.0.url else { return }
         let open = Set(documents.values.compactMap(\.key))
@@ -712,7 +712,7 @@ package final class NoteSyncedBlocks {
         }
     }
 
-    package static func unmapped(_ blocks: [NoteBlock], key: NoteBlockID, restoringAnchorsFrom canonical: [NoteBlock]) -> [NoteBlock] {
+    static func unmapped(_ blocks: [NoteBlock], key: NoteBlockID, restoringAnchorsFrom canonical: [NoteBlock]) -> [NoteBlock] {
         var anchors: [NoteBlockID: String] = [:]
         func collect(_ list: [NoteBlock]) {
             for block in list {

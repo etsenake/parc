@@ -24,7 +24,7 @@ package final class EaselTabIcons {
     package var directory: (UUID) -> URL? = { _ in nil }
     package var store: (URL) -> EaselStore? = { _ in nil }
     package var notesFolder: (URL) -> URL? = { _ in nil }
-    package var readIcon: @Sendable (URL, UUID) -> EaselPageIcon? = { EaselStore.readIcon(directory: $0, id: $1) }
+    var readIcon: @Sendable (URL, UUID) -> EaselPageIcon? = { EaselStore.readIcon(directory: $0, id: $1) }
 
     private var known: [String: Entry] = [:]
     private var reading: Set<String> = []

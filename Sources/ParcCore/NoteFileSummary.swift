@@ -9,21 +9,21 @@ package struct NoteFileSummary: Hashable, Sendable {
         self.snippet = snippet
     }
 
-    package static let headSize = 16 * 1024
-    package static let snippetLength = 160
+    static let headSize = 16 * 1024
+    static let snippetLength = 160
 
     package static func read(_ url: URL, kind: NoteFileKind) -> NoteFileSummary {
         guard let head = readHead(url, kind: kind, upTo: headSize) else { return NoteFileSummary(icon: nil, snippet: "") }
         return make(fromHead: head, kind: kind)
     }
 
-    package static func readHead(_ url: URL, kind: NoteFileKind, upTo limit: Int) -> String? {
+    static func readHead(_ url: URL, kind: NoteFileKind, upTo limit: Int) -> String? {
         guard !NoteFilePaths.isDataless(url), let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         return decodedHead((try? handle.read(upToCount: limit)) ?? Data(), kind: kind)
     }
 
-    package static func decodedHead(_ data: Data, kind: NoteFileKind) -> String {
+    static func decodedHead(_ data: Data, kind: NoteFileKind) -> String {
         if let contents = NoteFileText.decode(data, kind: kind) { return NoteFileText.normalizedLineEndings(contents.text) }
         var trimmed = data
         for _ in 0..<3 where !trimmed.isEmpty {
@@ -86,7 +86,7 @@ package struct NoteFileSummary: Hashable, Sendable {
         return kept
     }
 
-    package static func frontMatter(_ lines: [String]) -> (icon: String?, bodyStart: Int) {
+    static func frontMatter(_ lines: [String]) -> (icon: String?, bodyStart: Int) {
         guard let first = lines.first, first.trimmingCharacters(in: .whitespaces) == "---" else { return (nil, 0) }
         var icon: String?
         for index in 1..<lines.count {
@@ -109,7 +109,7 @@ package struct NoteFileSummary: Hashable, Sendable {
         return first == "'" ? inner.replacingOccurrences(of: "''", with: "'") : inner.replacingOccurrences(of: "\\\"", with: "\"")
     }
 
-    package static func plainLine(_ line: String) -> String {
+    static func plainLine(_ line: String) -> String {
         var text = line
         if text.allSatisfy({ "-*_=|:+ ".contains($0) }) || text.hasPrefix(":::") { return "" }
         if text.hasPrefix("|") { text = text.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: " ") }

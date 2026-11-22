@@ -1,7 +1,7 @@
 import Foundation
 
 package struct CaptureNoteDestination: Equatable, Identifiable {
-    package static let catalogLimit = 50
+    static let catalogLimit = 50
 
     package let url: URL
     package let title: String
@@ -63,9 +63,9 @@ package enum CaptureNoteTarget: Equatable {
     case newNote
     case note(URL)
 
-    package static let newNoteTitle = "New Note"
-    package static let newNoteSymbol = "square.and.pencil"
-    package static let noteSymbol = "doc.text"
+    static let newNoteTitle = "New Note"
+    static let newNoteSymbol = "square.and.pencil"
+    static let noteSymbol = "doc.text"
 
     package var id: String {
         switch self {

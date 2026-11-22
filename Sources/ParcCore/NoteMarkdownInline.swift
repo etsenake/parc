@@ -8,8 +8,8 @@ package struct NoteMDInlineNode {
     package var destination = ""
     package var title: String?
     package var decoded = false
-    package var sourceStart = 0
-    package var sourceEnd = 0
+    var sourceStart = 0
+    var sourceEnd = 0
     package var parent = -1
     package var first = -1
     package var last = -1
@@ -60,7 +60,7 @@ package struct NoteMDInlineTree {
     }
 }
 
-package final class NoteMDInlineParser {
+final class NoteMDInlineParser {
     private struct Delimiter {
         var node: Int
         var character: UInt8
@@ -71,7 +71,7 @@ package final class NoteMDInlineParser {
         var previous: Int
         var next: Int
 
-        package init(node: Int, character: UInt8, count: Int, original: Int, canOpen: Bool, canClose: Bool, previous: Int, next: Int) {
+        init(node: Int, character: UInt8, count: Int, original: Int, canOpen: Bool, canClose: Bool, previous: Int, next: Int) {
             self.node = node
             self.character = character
             self.count = count
@@ -111,7 +111,7 @@ package final class NoteMDInlineParser {
     private var backtickRuns: [Int: [Int]]?
     private var backtickCursor: [Int: Int] = [:]
 
-    package init(_ bytes: [UInt8], references: [String: NoteMDLinkReference], footnotes: Set<String>, customEmoji: Set<String> = []) {
+    init(_ bytes: [UInt8], references: [String: NoteMDLinkReference], footnotes: Set<String>, customEmoji: Set<String> = []) {
         self.bytes = bytes
         end = bytes.count
         self.references = references
@@ -119,7 +119,7 @@ package final class NoteMDInlineParser {
         self.customEmoji = customEmoji
     }
 
-    package static func parse(_ bytes: [UInt8], references: [String: NoteMDLinkReference] = [:], footnotes: Set<String> = [],
+    static func parse(_ bytes: [UInt8], references: [String: NoteMDLinkReference] = [:], footnotes: Set<String> = [],
                       customEmoji: Set<String> = []) -> NoteMDInlineTree {
         var content = bytes[...]
         while let first = content.first, NoteMDByte.isWhitespace(first) { content = content.dropFirst() }
@@ -128,12 +128,12 @@ package final class NoteMDInlineParser {
         return parser.run()
     }
 
-    package static func parseVerbatim(_ bytes: [UInt8], references: [String: NoteMDLinkReference] = [:], footnotes: Set<String> = [],
+    static func parseVerbatim(_ bytes: [UInt8], references: [String: NoteMDLinkReference] = [:], footnotes: Set<String> = [],
                               customEmoji: Set<String> = []) -> NoteMDInlineTree {
         NoteMDInlineParser(bytes, references: references, footnotes: footnotes, customEmoji: customEmoji).run()
     }
 
-    package static func customEmojiEnd(_ bytes: [UInt8], at start: Int, upTo end: Int, names: Set<String>) -> Int? {
+    static func customEmojiEnd(_ bytes: [UInt8], at start: Int, upTo end: Int, names: Set<String>) -> Int? {
         guard !names.isEmpty, start < end, bytes[start] == 58 else { return nil }
         var index = start + 1
         while index < end, index - start <= NoteCustomEmojiName.maximumLength, NoteCustomEmojiName.isNameByte(bytes[index]) { index += 1 }
@@ -846,13 +846,13 @@ package final class NoteMDInlineParser {
         return index - start
     }
 
-    package func extendedAutolink(at start: Int) -> (String, Int)? {
+    func extendedAutolink(at start: Int) -> (String, Int)? {
         NoteMDAutolink.extended(bytes, at: start, upTo: end)
     }
 }
 
-package enum NoteMDAutolink {
-    package static func extended(_ bytes: [UInt8], at start: Int, upTo end: Int) -> (String, Int)? {
+enum NoteMDAutolink {
+    static func extended(_ bytes: [UInt8], at start: Int, upTo end: Int) -> (String, Int)? {
         var domainStart: Int
         var prefix = ""
         if NoteMDHTML.matches(bytes, at: start, upTo: end, ascii: "www.", caseInsensitive: true) {

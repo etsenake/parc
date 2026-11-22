@@ -1,7 +1,7 @@
 import Foundation
 
-package enum SpaceSharing {
-    package static let version = 1
+enum SpaceSharing {
+    static let version = 1
 }
 
 package enum SpaceDataSharing: Equatable {
@@ -22,7 +22,7 @@ package struct UnusedProfile: Equatable {
 package struct SpaceSharingChange: Equatable {
     package let spaceID: UUID
     package let profileID: UUID
-    package let previousProfileID: UUID
+    let previousProfileID: UUID
     package let unusedProfile: UnusedProfile?
 }
 
@@ -75,19 +75,19 @@ package enum SpaceSharingWarning: Equatable {
 }
 
 extension BrowserState {
-    package func resolvedAutoArchiveHours(forSpace id: UUID) -> Double {
+    func resolvedAutoArchiveHours(forSpace id: UUID) -> Double {
         guard let space = spaces.first(where: { $0.id == id }) else { return autoArchiveDefaultHours }
         return space.autoArchiveHours ?? profiles.first { $0.id == space.profileID }?.autoArchiveHours ?? autoArchiveDefaultHours
     }
 
-    package var profilesWithoutSpaces: [BrowserProfile] {
+    var profilesWithoutSpaces: [BrowserProfile] {
         profiles.filter { profile in
             !spaces.contains { $0.profileID == profile.id } && !profileRemovals.contains { $0.profileID == profile.id }
         }
     }
 
     @discardableResult
-    package mutating func upgradeSpaceSharing() -> Bool {
+    mutating func upgradeSpaceSharing() -> Bool {
         guard spaceSharingVersion < SpaceSharing.version, !spaces.isEmpty else { return false }
         let template = spaces.first { $0.id == activeSpaceID } ?? spaces[0]
         for profile in profilesWithoutSpaces {
@@ -157,15 +157,15 @@ extension BrowserStore {
                                           discardsOwnData: unusedProfile(ifSpace: spaceID, joins: sharing) != nil)
     }
 
-    package func wouldOrphanProfile(ifSpace spaceID: UUID, joins sharing: SpaceDataSharing) -> Bool {
+    func wouldOrphanProfile(ifSpace spaceID: UUID, joins sharing: SpaceDataSharing) -> Bool {
         unusedProfile(ifSpace: spaceID, joins: sharing) != nil
     }
 
     package func unusedProfile(ifDeletingSpace spaceID: UUID) -> UnusedProfile? { soleProfile(of: spaceID) }
 
-    package func wouldOrphanProfile(ifDeletingSpace spaceID: UUID) -> Bool { unusedProfile(ifDeletingSpace: spaceID) != nil }
+    func wouldOrphanProfile(ifDeletingSpace spaceID: UUID) -> Bool { unusedProfile(ifDeletingSpace: spaceID) != nil }
 
-    package func stageRemoval(of unused: UnusedProfile) throws -> ProfileRemovalRecord {
+    func stageRemoval(of unused: UnusedProfile) throws -> ProfileRemovalRecord {
         guard unusedProfile(unused.id) == unused else { throw ProfileRemovalError.unavailable }
         return try stageProfileRemoval(unused.id, expectedName: unused.name)
     }

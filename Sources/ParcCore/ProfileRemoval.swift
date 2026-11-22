@@ -14,10 +14,10 @@ package struct ProfileRemovalRecord: Codable, Equatable, Identifiable {
     }
 }
 
-package struct ProfileRemovalSummary: Equatable {
-    package let profile: BrowserProfile
-    package let savedTabCount: Int
-    package let historyEntryCount: Int
+struct ProfileRemovalSummary: Equatable {
+    let profile: BrowserProfile
+    let savedTabCount: Int
+    let historyEntryCount: Int
 }
 
 package enum ProfileRemovalError: LocalizedError, Equatable {
@@ -37,11 +37,11 @@ package enum ProfileRemovalError: LocalizedError, Equatable {
 }
 
 extension BrowserStore {
-    package var unusedProfilesForRemoval: [BrowserProfile] {
+    var unusedProfilesForRemoval: [BrowserProfile] {
         state.profiles.filter { (try? profileRemovalSummary($0.id)) != nil }
     }
 
-    package func validateUnusedProfileRemoval(_ profiles: [BrowserProfile]) throws {
+    func validateUnusedProfileRemoval(_ profiles: [BrowserProfile]) throws {
         guard !profiles.isEmpty, Set(profiles.map(\.id)).count == profiles.count else {
             throw ProfileRemovalError.invalidSelection
         }
@@ -51,13 +51,13 @@ extension BrowserStore {
         }
     }
 
-    package var defaultProfileID: UUID { state.settings.defaultProfileID ?? state.profiles[0].id }
+    var defaultProfileID: UUID { state.settings.defaultProfileID ?? state.profiles[0].id }
 
     package func fallbackProfileID(for record: ProfileRemovalRecord) -> UUID {
         record.fallbackProfileID ?? defaultProfileID
     }
 
-    package func survivingProfileID(excluding removed: Set<UUID>) -> UUID? {
+    func survivingProfileID(excluding removed: Set<UUID>) -> UUID? {
         let used = state.spaces.map(\.profileID).filter { !removed.contains($0) && !isProfileRemovalPending($0) }
         if let current = state.settings.defaultProfileID ?? state.profiles.first?.id, used.contains(current) { return current }
         if let active = state.spaces.first(where: { $0.id == state.activeSpaceID })?.profileID, used.contains(active) { return active }
@@ -68,7 +68,7 @@ extension BrowserStore {
         state.profileRemovals.contains { $0.profileID == profileID }
     }
 
-    package func profileRemovalSummary(_ profileID: UUID) throws -> ProfileRemovalSummary {
+    func profileRemovalSummary(_ profileID: UUID) throws -> ProfileRemovalSummary {
         guard let profile = state.profiles.first(where: { $0.id == profileID }) else {
             throw ProfileRemovalError.unavailable
         }
@@ -81,7 +81,7 @@ extension BrowserStore {
             historyEntryCount: state.history.filter { $0.profileID == profileID }.count)
     }
 
-    package func validateProfileRemoval(_ profileID: UUID, expectedName: String) throws -> ProfileRemovalSummary {
+    func validateProfileRemoval(_ profileID: UUID, expectedName: String) throws -> ProfileRemovalSummary {
         let summary = try profileRemovalSummary(profileID)
         guard summary.profile.name == expectedName else { throw ProfileRemovalError.nameChanged }
         return summary

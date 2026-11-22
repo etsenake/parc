@@ -19,7 +19,7 @@ package struct NoteUnsplashPhoto: Hashable, Decodable, Identifiable, Sendable {
 
     package struct Links: Hashable, Decodable, Sendable {
         package var html: String?
-        package var downloadLocation: String?
+        var downloadLocation: String?
 
         package init(html: String? = nil, downloadLocation: String? = nil) {
             self.html = html
@@ -37,7 +37,7 @@ package struct NoteUnsplashPhoto: Hashable, Decodable, Identifiable, Sendable {
         }
 
         package var name: String?
-        package var username: String
+        var username: String
         package var links: Links?
 
         package init(name: String? = nil, username: String, links: Links? = nil) {
@@ -52,7 +52,7 @@ package struct NoteUnsplashPhoto: Hashable, Decodable, Identifiable, Sendable {
     package var height: Int?
     package var color: String?
     package var description: String?
-    package var altDescription: String?
+    var altDescription: String?
     package var urls: URLs
     package var links: Links
     package var user: User
@@ -122,9 +122,9 @@ package enum NoteUnsplash {
         }
     }
 
-    package static let builtInAccessKey = ""
-    package static let accessKeyDefaultsKey = "NoteUnsplashAccessKey"
-    package static let apiBase = URL(string: "https://api.unsplash.com")!
+    static let builtInAccessKey = ""
+    static let accessKeyDefaultsKey = "NoteUnsplashAccessKey"
+    static let apiBase = URL(string: "https://api.unsplash.com")!
     package static let pageSize = 30
     package static let coverWidth = 2400
     package static let imageWidth = 2000
@@ -168,11 +168,11 @@ package enum NoteUnsplash {
         return request(url, key: key)
     }
 
-    package static func isUnsplashAPI(_ url: URL) -> Bool {
+    static func isUnsplashAPI(_ url: URL) -> Bool {
         url.scheme?.lowercased() == "https" && url.host?.lowercased() == "api.unsplash.com"
     }
 
-    package static func sizedURL(_ base: String?, width: Int, quality: Int) -> URL? {
+    static func sizedURL(_ base: String?, width: Int, quality: Int) -> URL? {
         guard let base, var components = URLComponents(string: base), components.scheme?.lowercased() == "https" else { return nil }
         let replaced: Set<String> = ["w", "h", "q", "fm", "fit", "crop", "dpr"]
         var items = (components.queryItems ?? []).filter { !replaced.contains($0.name) }
@@ -197,7 +197,7 @@ package enum NoteUnsplash {
         return NoteMediaCredit(name: photo.photographer, link: profile)
     }
 
-    package static func photoPageURL(for photo: NoteUnsplashPhoto) -> URL? {
+    static func photoPageURL(for photo: NoteUnsplashPhoto) -> URL? {
         let page = photo.links.html.flatMap(URL.init(string:)) ?? URL(string: "https://unsplash.com/photos/" + photo.id)
         return page.map(NoteMediaCredit.referral)
     }

@@ -4,8 +4,8 @@ package enum NotePageHTMLStyle {
     package struct Swatch {
         package var text: String
         package var background: String
-        package var darkText: String
-        package var darkBackground: String
+        var darkText: String
+        var darkBackground: String
 
         package init(text: String, background: String, darkText: String, darkBackground: String) {
             self.text = text
@@ -27,7 +27,7 @@ package enum NotePageHTMLStyle {
         .red: Swatch(text: "D44C47", background: "FDEBEC", darkText: "DF5452", darkBackground: "522E2A")
     ]
 
-    package static let mimeTypes: [String: String] = [
+    static let mimeTypes: [String: String] = [
         "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
         "svg": "image/svg+xml", "heic": "image/heic", "heif": "image/heif", "tif": "image/tiff", "tiff": "image/tiff",
         "bmp": "image/bmp", "avif": "image/avif", "ico": "image/x-icon"
@@ -50,7 +50,7 @@ package enum NotePageHTMLStyle {
         }.joined()
     }
 
-    package static func maskRules(for page: NotePage) -> String {
+    static func maskRules(for page: NotePage) -> String {
         let used = Set(page.allBlocks().compactMap { $0.kind == .image ? $0.props.mask : nil })
         return NoteImageMask.allCases.filter { used.contains($0) && $0.borderRadius(frameAspect: nil) == nil }.map { mask in
             let image = "url(\"" + mask.maskImageURL + "\") center/100% 100% no-repeat"

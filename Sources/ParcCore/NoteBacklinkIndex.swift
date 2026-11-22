@@ -9,7 +9,7 @@ package struct NoteBacklinkSnippet: Hashable, Sendable {
         self.highlight = highlight
     }
 
-    package static let leadingContext = 40
+    static let leadingContext = 40
     package static let maximumLength = 150
 
     package static func around(_ range: Range<Int>, in plain: String) -> NoteBacklinkSnippet {
@@ -74,14 +74,14 @@ package struct NoteBacklinkSnippet: Hashable, Sendable {
     }
 }
 
-package struct NoteOutgoingLink: Hashable, Sendable {
-    package enum Kind: Hashable, Sendable { case link, mention, pageLink }
+struct NoteOutgoingLink: Hashable, Sendable {
+    enum Kind: Hashable, Sendable { case link, mention, pageLink }
 
-    package var target: String
-    package var kind: Kind
-    package var snippet: NoteBacklinkSnippet
-    package var anchor: String?
-    package init(target: String, kind: Kind, snippet: NoteBacklinkSnippet, anchor: String? = nil) {
+    var target: String
+    var kind: Kind
+    var snippet: NoteBacklinkSnippet
+    var anchor: String?
+    init(target: String, kind: Kind, snippet: NoteBacklinkSnippet, anchor: String? = nil) {
         self.target = target
         self.kind = kind
         self.snippet = snippet
@@ -116,42 +116,42 @@ package struct NoteBacklink: Hashable, Identifiable, Sendable {
     }
 }
 
-package struct NoteBacklinkMove: Hashable, Sendable {
-    package var fromKey: String
-    package var from: URL
-    package var to: URL
-    package init(fromKey: String, from: URL, to: URL) {
+struct NoteBacklinkMove: Hashable, Sendable {
+    var fromKey: String
+    var from: URL
+    var to: URL
+    init(fromKey: String, from: URL, to: URL) {
         self.fromKey = fromKey
         self.from = from
         self.to = to
     }
 }
 
-package enum NoteBacklinkScanner {
-    package static let readLimit = 2 * 1024 * 1024
+enum NoteBacklinkScanner {
+    static let readLimit = 2 * 1024 * 1024
 
-    package struct Reference: Hashable {
-        package var target: String
-        package var kind: NoteOutgoingLink.Kind
-        package var range: Range<Int>
-        package init(target: String, kind: NoteOutgoingLink.Kind, range: Range<Int>) {
+    struct Reference: Hashable {
+        var target: String
+        var kind: NoteOutgoingLink.Kind
+        var range: Range<Int>
+        init(target: String, kind: NoteOutgoingLink.Kind, range: Range<Int>) {
             self.target = target
             self.kind = kind
             self.range = range
         }
     }
 
-    package static func mayLink(_ text: String) -> Bool {
+    static func mayLink(_ text: String) -> Bool {
         text.contains("](") || text.contains("[[") || text.contains("]:") || text.contains("href")
     }
 
-    package static func outgoing(fileAt url: URL) -> [NoteOutgoingLink] {
+    static func outgoing(fileAt url: URL) -> [NoteOutgoingLink] {
         guard NoteFileKind(url: url) == .markdown,
               let text = NoteFileSummary.readHead(url, kind: .markdown, upTo: readLimit), mayLink(text) else { return [] }
         return outgoing(in: NoteMarkdown.parse(text), folder: url.deletingLastPathComponent())
     }
 
-    package static func outgoing(in page: NotePage, folder: URL) -> [NoteOutgoingLink] {
+    static func outgoing(in page: NotePage, folder: URL) -> [NoteOutgoingLink] {
         var keys: [String: String] = [:]
         var misses: Set<String> = []
         func key(_ target: String) -> String? {
@@ -189,7 +189,7 @@ package enum NoteBacklinkScanner {
         return result
     }
 
-    package static func flatten(_ text: NoteText) -> (plain: String, references: [Reference]) {
+    static func flatten(_ text: NoteText) -> (plain: String, references: [Reference]) {
         var plain = ""
         var position = 0
         var references: [Reference] = []
@@ -231,7 +231,7 @@ package enum NoteBacklinkScanner {
         return (plain, references)
     }
 
-    package static func targetURL(_ raw: String, from folder: URL) -> URL? {
+    static func targetURL(_ raw: String, from folder: URL) -> URL? {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.count >= 2, value.hasPrefix("<"), value.hasSuffix(">") { value = String(value.dropFirst().dropLast()) }
         guard !value.isEmpty, !value.hasPrefix("#"), !value.hasPrefix("//") else { return nil }
@@ -256,11 +256,11 @@ package enum NoteBacklinkScanner {
         return file.standardizedFileURL
     }
 
-    package static func targetKey(_ raw: String, from folder: URL) -> String? {
+    static func targetKey(_ raw: String, from folder: URL) -> String? {
         targetURL(raw, from: folder).map { NoteFilePaths.key(for: $0) }
     }
 
-    package static func scheme(of value: String) -> String? {
+    static func scheme(of value: String) -> String? {
         guard let colon = value.firstIndex(of: ":") else { return nil }
         let candidate = value[..<colon]
         guard candidate.count >= 2, let first = candidate.unicodeScalars.first, first.isASCII, CharacterSet.letters.contains(first),
@@ -321,7 +321,7 @@ package final class NoteBacklinkIndex {
     }
 
     package static var shared: NoteBacklinkIndex { NoteFiles.shared.backlinks }
-    package static let chunkSize = 200
+    static let chunkSize = 200
 
     package unowned let files: NoteFiles
 

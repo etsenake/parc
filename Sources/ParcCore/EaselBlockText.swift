@@ -20,7 +20,7 @@ package enum EaselBlockText {
         }
     }
 
-    package static let maximumParagraphs = 5_000
+    static let maximumParagraphs = 5_000
 
     package static func paragraphs(from blocks: [NoteBlock]) -> [Paragraph] {
         var result: [Paragraph] = []
@@ -83,7 +83,7 @@ package enum EaselBlockText {
         return NoteText(label, marks: linkMarks(linkable ? source : nil))
     }
 
-    package static func linkMarks(_ link: String?) -> NoteMarks {
+    static func linkMarks(_ link: String?) -> NoteMarks {
         var marks = NoteMarks()
         marks.link = link
         return marks

@@ -1,12 +1,12 @@
 import Foundation
 
 package enum EaselMediaPlacement {
-    package static let mediaWidth = 480.0
+    static let mediaWidth = 480.0
     package static let placeholderHeight = 52.0
-    package static let embedSize = (width: 640.0, height: 420.0)
-    package static let audioHeight = 72.0
-    package static let fileHeight = 60.0
-    package static let bookmarkHeight = 120.0
+    static let embedSize = (width: 640.0, height: 420.0)
+    static let audioHeight = 72.0
+    static let fileHeight = 60.0
+    static let bookmarkHeight = 120.0
     package static let minimumSide = 24.0
 
     package static func placesEmpty(_ kind: EaselItemKind) -> Bool {

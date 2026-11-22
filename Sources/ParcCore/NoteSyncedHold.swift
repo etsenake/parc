@@ -29,7 +29,7 @@ package final class NoteSyncedHold {
         refresh()
     }
 
-    package var heldCount: Int { leases.count }
+    var heldCount: Int { leases.count }
 
     package func end() {
         guard !ended else { return }

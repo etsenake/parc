@@ -13,8 +13,8 @@ package struct SoftwareUpdateDownloadProgress {
         }
     }
 
-    package private(set) var receivedLength: UInt64 = 0
-    package private(set) var expectedLength: UInt64 = 0
+    private(set) var receivedLength: UInt64 = 0
+    private(set) var expectedLength: UInt64 = 0
 
     package init(receivedLength: UInt64 = 0, expectedLength: UInt64 = 0) {
         self.receivedLength = receivedLength

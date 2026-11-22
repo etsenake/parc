@@ -5,7 +5,7 @@ package struct CommandBarFolderAction: Equatable, Identifiable {
     package let reveal: SidebarItemReveal
     package let name: String
     package let path: [String]
-    package let ancestorIDs: [UUID]
+    let ancestorIDs: [UUID]
     package let spaceName: String
 
     package var spaceID: UUID { reveal.spaceID }

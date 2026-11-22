@@ -2,7 +2,7 @@ import Foundation
 
 package enum EaselObjectLink {
     package static let badgeSize = 18.0
-    package static let badgeOffset = 14.0
+    static let badgeOffset = 14.0
 
     package static func canLink(_ item: EaselItem) -> Bool { item.kind.holdsText }
 

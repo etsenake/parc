@@ -1,14 +1,14 @@
 import Foundation
 
-package enum EaselFeedbackSpring {
-    package static let pop = EaselObjectSpring(response: 0.4, damping: 0.7)
-    package static let settle = EaselObjectSpring(response: 0.34, damping: 0.86)
-    package static let highlight = EaselObjectSpring(response: 0.15, damping: 0.825)
+enum EaselFeedbackSpring {
+    static let pop = EaselObjectSpring(response: 0.4, damping: 0.7)
+    static let settle = EaselObjectSpring(response: 0.34, damping: 0.86)
+    static let highlight = EaselObjectSpring(response: 0.15, damping: 0.825)
 }
 
 package struct EaselGuideSnapKey: Hashable {
     package let anchor: Int
-    package let coordinate: Double
+    let coordinate: Double
 
     package init(anchor: EaselAnchor, coordinate: Double) {
         self.anchor = anchor.rawValue
@@ -21,19 +21,19 @@ package struct EaselGuideSnapKey: Hashable {
 package enum EaselFeedbackCurve {
     package static let guideFade: TimeInterval = 0.08
     package static let markPop: TimeInterval = 0.3
-    package static let markFrom = 0.35
+    static let markFrom = 0.35
     package static let reveal: TimeInterval = 0.25
-    package static let headPop: TimeInterval = 0.4
+    static let headPop: TimeInterval = 0.4
     package static let reducedFade: TimeInterval = 0.15
     package static let highlight: TimeInterval = 0.3
     package static let tray: TimeInterval = 0.1
     package static let flash: TimeInterval = 0.4
-    package static let flashRise: TimeInterval = 0.06
+    static let flashRise: TimeInterval = 0.06
     package static let page: TimeInterval = 0.22
     package static let pageSlide = 24.0
     package static let fold: TimeInterval = 0.2
-    package static let unfoldStagger: TimeInterval = 0.035
-    package static let unfoldSpread: TimeInterval = 0.16
+    static let unfoldStagger: TimeInterval = 0.035
+    static let unfoldSpread: TimeInterval = 0.16
     package static let grow: TimeInterval = 0.45
     package static let tableSlide: TimeInterval = 0.24
 
@@ -97,7 +97,7 @@ package enum EaselFeedbackCurve {
         return 1 - easeOut((elapsed - flashRise) / (flash - flashRise))
     }
 
-    package static func pageProgress(_ elapsed: Double) -> Double { easeOut(elapsed / page) }
+    static func pageProgress(_ elapsed: Double) -> Double { easeOut(elapsed / page) }
 
     package static func foldPresentation(_ elapsed: Double, toward offset: EaselPoint, reduced: Bool) -> EaselObjectPresentation {
         let linear = clamped(elapsed / (reduced ? reducedFade : fold))
@@ -151,7 +151,7 @@ package enum EaselConnectorReveal {
         pieces.reduce(0) { sum, piece in piece.reduce(sum) { $0 + length(of: $1) } }
     }
 
-    package static func parameter(_ segment: EaselConnectorRoute.Segment, at distance: Double) -> Double {
+    static func parameter(_ segment: EaselConnectorRoute.Segment, at distance: Double) -> Double {
         let points = segment.samples
         guard points.count > 1, distance > 0 else { return 0 }
         var walked = 0.0
@@ -220,7 +220,7 @@ package struct EaselSizeMatch: Equatable, Hashable {
 
 package enum EaselEqualSize {
     package static let tolerance = 6.0
-    package static let indicatorLimit = 3
+    static let indicatorLimit = 3
 
     package static func resizes(_ kind: EaselItemKind) -> Bool {
         switch kind {

@@ -43,7 +43,7 @@ extension EaselPages {
         return next
     }
 
-    package static func cleanName(_ raw: String) -> String? {
+    static func cleanName(_ raw: String) -> String? {
         let flattened = raw.components(separatedBy: .newlines).joined(separator: " ")
         var scalars = String.UnicodeScalarView()
         scalars.append(contentsOf: flattened.unicodeScalars.filter { $0.properties.generalCategory != .control })
@@ -74,14 +74,14 @@ extension EaselPages {
         return next
     }
 
-    package static func nextName(in document: EaselDocument) -> String {
+    static func nextName(in document: EaselDocument) -> String {
         let taken = Set(pages(in: document).map { $0.name.lowercased() })
         var number = max(1, contentPages(document).count + (document.pages == nil ? 1 : 0)) + 1
         while taken.contains("page \(number)") { number += 1 }
         return "Page \(number)"
     }
 
-    package static func copyName(_ name: String, in document: EaselDocument) -> String {
+    static func copyName(_ name: String, in document: EaselDocument) -> String {
         let taken = Set(pages(in: document).map { $0.name.lowercased() })
         let base = String(name.prefix(EaselPage.maximumNameLength - 8))
         var candidate = base + " copy", number = 2
@@ -205,7 +205,7 @@ extension EaselPages {
         return EaselArrange.dissolvingSingletonGroups(next)
     }
 
-    package static func moveSet(_ ids: Set<UUID>, in view: EaselDocument) -> Set<UUID> {
+    static func moveSet(_ ids: Set<UUID>, in view: EaselDocument) -> Set<UUID> {
         let present = Set(view.items.map(\.id))
         var moving = ids.intersection(present)
         guard !moving.isEmpty else { return [] }

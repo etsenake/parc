@@ -25,11 +25,11 @@ extension EaselVectorExport {
         return NoteMediaCredit(name: credit.name, link: credit.profileURL)
     }
 
-    package static func creditExtent(_ item: EaselItem) -> Double {
+    static func creditExtent(_ item: EaselItem) -> Double {
         mediaCredit(item) == nil ? 0 : creditGap + creditHeight
     }
 
-    package static func creditElement(_ item: EaselItem) -> String {
+    static func creditElement(_ item: EaselItem) -> String {
         guard let credit = mediaCredit(item) else { return "" }
         let f = item.frame
         var body = ""
@@ -102,7 +102,7 @@ extension EaselVectorExport {
         }
     }
 
-    package static func mediaCard(_ item: EaselItem, detail: String?) -> String {
+    static func mediaCard(_ item: EaselItem, detail: String?) -> String {
         let f = item.frame
         let layout = mediaCardLayout(f)
         var result = "<g class=\"easel-card\"><rect x=\"" + number(f.x) + "\" y=\"" + number(f.y) + "\" width=\"" + number(f.width)
@@ -125,7 +125,7 @@ extension EaselVectorExport {
         return linked(result + "</g></g>", item.url)
     }
 
-    package static func mediaElement(_ item: EaselItem, art: EaselVectorArt) -> String {
+    static func mediaElement(_ item: EaselItem, art: EaselVectorArt) -> String {
         switch item.kind {
         case .pdf:
             if let picture = art.images[item.id] { return poster(item, picture) }
@@ -137,7 +137,7 @@ extension EaselVectorExport {
         }
     }
 
-    package static func linkedVideoElement(_ item: EaselItem) -> String {
+    static func linkedVideoElement(_ item: EaselItem) -> String {
         guard item.poster == nil, item.assetID == nil, item.url != nil else { return "" }
         return mediaCard(item, detail: nil)
     }

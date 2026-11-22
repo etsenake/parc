@@ -3,7 +3,7 @@ import Foundation
 package enum NoteCustomEmojiName {
     package static let maximumLength = 48
 
-    package static func isNameByte(_ byte: UInt8) -> Bool {
+    static func isNameByte(_ byte: UInt8) -> Bool {
         (byte >= 97 && byte <= 122) || (byte >= 48 && byte <= 57) || byte == 95 || byte == 45 || byte == 43
     }
 

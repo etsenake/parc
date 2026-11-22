@@ -29,7 +29,7 @@ package enum EaselTextPlacement {
         item.kind == .rectangle || item.kind == .circle
     }
 
-    package static func retiresWhenEmpty(_ item: EaselItem) -> Bool { item.kind == .text }
+    static func retiresWhenEmpty(_ item: EaselItem) -> Bool { item.kind == .text }
 
     package static func fittedFrameHeight(_ item: EaselItem, textHeight: @autoclosure () -> Double) -> Double? {
         switch item.kind {

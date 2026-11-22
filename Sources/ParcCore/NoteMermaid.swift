@@ -5,7 +5,7 @@ package enum NoteMermaid {
     package static let typingDelay: TimeInterval = 0.3
     package static let renderTimeout: TimeInterval = 12
 
-    package static func isMermaid(_ language: String) -> Bool {
+    static func isMermaid(_ language: String) -> Bool {
         NoteCodeLanguage.named(language)?.id == languageID
     }
 
@@ -51,8 +51,8 @@ package struct NoteMermaidTheme: Hashable, Sendable {
     package var fontFamily: String
     package var fontSize: Double
     package var faces: [String]
-    package var variables: [String: String]
-    package var chartPalette: [String]
+    var variables: [String: String]
+    var chartPalette: [String]
 
     package static func note(dark: Bool, font: NotePageFont = .standard, small: Bool = false) -> NoteMermaidTheme {
         let type = NoteMermaidPalette.typeface(font, small: small)
@@ -102,8 +102,8 @@ package struct NoteMermaidTheme: Hashable, Sendable {
     }
 }
 
-package enum NoteMermaidPalette {
-    package static func typeface(_ font: NotePageFont, small: Bool) -> (family: String, size: Double, faces: [String]) {
+enum NoteMermaidPalette {
+    static func typeface(_ font: NotePageFont, small: Bool) -> (family: String, size: Double, faces: [String]) {
         switch font {
         case .standard:
             return ("\"Nunito\", ui-rounded, \"SF Pro Rounded\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif",
@@ -120,13 +120,13 @@ package enum NoteMermaidPalette {
         }
     }
 
-    package static func cssSize(_ size: Double) -> String {
+    static func cssSize(_ size: Double) -> String {
         size.rounded() == size ? String(Int(size)) + "px" : String(size) + "px"
     }
 
-    package static let lightChart = ["#7B66E0", "#3D8FC4", "#4F9A6E", "#E8B53A", "#E8892E", "#E05A52", "#D45A9A", "#9A6FC4",
+    static let lightChart = ["#7B66E0", "#3D8FC4", "#4F9A6E", "#E8B53A", "#E8892E", "#E05A52", "#D45A9A", "#9A6FC4",
                              "#A8765E", "#8C8B87", "#3FA39A", "#B59A4A"]
-    package static let darkChart = ["#9380E0", "#3D9CDB", "#52A877", "#D9A94A", "#D98A4E", "#E5605A", "#DB5C9F", "#A374DB",
+    static let darkChart = ["#9380E0", "#3D9CDB", "#52A877", "#D9A94A", "#D98A4E", "#E5605A", "#DB5C9F", "#A374DB",
                             "#BA856F", "#9B9B9B", "#4FB3A9", "#C2B07A"]
     private static let lightScale = ["#D9D2F7", "#CFE3F1", "#D3E8DA", "#F6E6B4", "#F6D6B8", "#F6CFCC", "#F1CFE1", "#E2D5EE",
                                      "#E6D6CE", "#E0DFDC", "#C9E7E3", "#E8E1C6"]
@@ -159,7 +159,7 @@ package enum NoteMermaidPalette {
         return result
     }
 
-    package static let light: [String: String] = {
+    static let light: [String: String] = {
         let ink = "#1F1B2E", card = "#F4F4F5", line = "#6E6880"
         var values: [String: String] = [
             "background": card, "textColor": ink, "titleColor": "#220C7F", "lineColor": line, "defaultLinkColor": line,
@@ -198,7 +198,7 @@ package enum NoteMermaidPalette {
         return values
     }()
 
-    package static let dark: [String: String] = {
+    static let dark: [String: String] = {
         let ink = "#EDEBFA", card = "#242230", line = "#A7A3B8"
         var values: [String: String] = [
             "background": card, "textColor": ink, "titleColor": "#E6E6FF", "lineColor": line, "defaultLinkColor": line,
@@ -335,7 +335,7 @@ package struct NoteMermaidProblem: Equatable, Sendable {
         NoteMermaid.normalizedSource(message).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    package static func lineNumber(in text: String) -> Int? {
+    static func lineNumber(in text: String) -> Int? {
         let lowered = text.lowercased()
         guard let marker = lowered.range(of: "on line ") else { return nil }
         let digits = lowered[marker.upperBound...].prefix(while: { $0.isASCII && $0.isNumber })
@@ -370,7 +370,7 @@ package struct NoteMermaidCache<Value> {
     package let costLimit: Int
     private var entries: [String: (value: Value, cost: Int, stamp: UInt64)] = [:]
     private var clock: UInt64 = 0
-    package private(set) var totalCost = 0
+    private(set) var totalCost = 0
 
     package init(capacity: Int, costLimit: Int) {
         self.capacity = max(1, capacity)
@@ -419,7 +419,7 @@ package struct NoteMermaidQueue {
     private var interest: [Int: String] = [:]
 
     package var isIdle: Bool { running == nil }
-    package var pendingKeys: [String] { pending.map(\.key) }
+    var pendingKeys: [String] { pending.map(\.key) }
 
     package init(running: NoteMermaidRequest? = nil, pending: [NoteMermaidRequest] = []) {
         self.running = running

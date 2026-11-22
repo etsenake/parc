@@ -24,7 +24,7 @@ package enum NoteFilePaths {
 
     package static func key(for url: URL) -> String { identityKey(ofCanonicalPath: canonical(url).path) }
 
-    package static func identityKey(ofCanonicalPath path: String) -> String {
+    static func identityKey(ofCanonicalPath path: String) -> String {
         isCaseSensitive(atPath: path) ? path : path.precomposedStringWithCanonicalMapping.folding(options: [.caseInsensitive], locale: nil)
     }
 
@@ -84,7 +84,7 @@ package enum NoteFilePaths {
         return a.st_dev == b.st_dev && a.st_ino == b.st_ino
     }
 
-    package static func isInTrash(_ url: URL) -> Bool {
+    static func isInTrash(_ url: URL) -> Bool {
         url.standardizedFileURL.pathComponents.contains { $0 == ".Trash" || $0 == ".Trashes" }
     }
 
@@ -96,7 +96,7 @@ package enum NoteFilePaths {
         return zip(base, inner).allSatisfy { sameComponent($0, $1, caseInsensitive: insensitive) }
     }
 
-    package static func relativePath(from directory: URL, to target: URL) -> String? {
+    static func relativePath(from directory: URL, to target: URL) -> String? {
         let base = canonical(directory).pathComponents
         let destination = canonical(target).pathComponents
         let insensitive = !isCaseSensitive(directory)
@@ -110,7 +110,7 @@ package enum NoteFilePaths {
         return parts.isEmpty ? "." : parts.joined(separator: "/")
     }
 
-    package static func encodedSegment(_ segment: String) -> String {
+    static func encodedSegment(_ segment: String) -> String {
         var result = ""
         for scalar in segment.unicodeScalars {
             if scalar.isASCII {
@@ -128,7 +128,7 @@ package enum NoteFilePaths {
         return result
     }
 
-    package static func encodedPath(_ components: [String]) -> String {
+    static func encodedPath(_ components: [String]) -> String {
         components.map(encodedSegment).joined(separator: "/")
     }
 
@@ -152,11 +152,11 @@ package enum NoteFilePaths {
     }
 }
 
-package struct NoteFileNode: Hashable, Sendable {
-    package var device: UInt64
-    package var inode: UInt64
+struct NoteFileNode: Hashable, Sendable {
+    var device: UInt64
+    var inode: UInt64
 
-    package init?(path: String) {
+    init?(path: String) {
         var info = stat()
         guard stat(path, &info) == 0 else { return nil }
         device = UInt64(info.st_dev)
@@ -164,18 +164,18 @@ package struct NoteFileNode: Hashable, Sendable {
     }
 }
 
-package struct NoteFileIdentity {
-    package let path: String
-    package let key: String
-    package let node: NoteFileNode?
+struct NoteFileIdentity {
+    let path: String
+    let key: String
+    let node: NoteFileNode?
 
-    package init(_ url: URL) {
+    init(_ url: URL) {
         path = url.standardizedFileURL.path
         node = NoteFileNode(path: path)
         key = NoteFilePaths.key(for: url)
     }
 
-    package func matches(_ url: URL) -> Bool {
+    func matches(_ url: URL) -> Bool {
         let other = url.standardizedFileURL.path
         if other == path { return true }
         let otherNode = NoteFileNode(path: other)

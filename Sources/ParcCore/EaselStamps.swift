@@ -31,10 +31,10 @@ extension EaselStampFace {
 
 package enum EaselStamps {
     package static let sizes: [Double] = [64, 96, 136, 184]
-    package static let growthStep = 0.3
-    package static let tiltRange = 3.0...10.0
-    package static let recentsLimit = 8
-    package static let hubCount = 3
+    static let growthStep = 0.3
+    static let tiltRange = 3.0...10.0
+    static let recentsLimit = 8
+    static let hubCount = 3
     package static let ring: [EaselStampDesign] = [.thumbsUp, .heart, .plusOne, .star, .smiley, .question, .dot, .thumbsDown]
     package static let emojiScale = 0.82
     package static let iconInset = 0.06
@@ -58,7 +58,7 @@ package enum EaselStamps {
         return (magnitude * sign * 10).rounded() / 10
     }
 
-    package static func carriesStamps(_ item: EaselItem) -> Bool { item.kind != .stamp && EaselDrawing.canHold(item) }
+    static func carriesStamps(_ item: EaselItem) -> Bool { item.kind != .stamp && EaselDrawing.canHold(item) }
 
     package static func centre(of item: EaselItem) -> EaselPoint {
         EaselPoint(x: item.frame.x + item.frame.width / 2, y: item.frame.y + item.frame.height / 2)
@@ -159,12 +159,12 @@ package enum EaselStamps {
         }
     }
 
-    package static func sentenceCased(_ text: String) -> String {
+    static func sentenceCased(_ text: String) -> String {
         guard let first = text.first else { return text }
         return first.uppercased() + text.dropFirst()
     }
 
-    package static func readableSymbolName(_ name: String) -> String {
+    static func readableSymbolName(_ name: String) -> String {
         let words = name.split(separator: ".").filter { !["fill", "circle", "square"].contains($0) }.map(String.init)
         return sentenceCased((words.isEmpty ? [name] : words).joined(separator: " "))
     }
@@ -432,7 +432,7 @@ package struct EaselStampPath: Equatable {
             .rotated(by: angle, around: centre)
     }
 
-    package static func roundedPolygon(_ corners: [EaselPoint], rounding: [Double]) -> EaselStampPath {
+    static func roundedPolygon(_ corners: [EaselPoint], rounding: [Double]) -> EaselStampPath {
         guard corners.count >= 3, rounding.count == corners.count else { return EaselStampPath() }
         var path = EaselStampPath()
         let count = corners.count
@@ -499,7 +499,7 @@ package struct EaselStampPath: Equatable {
         return elements
     }
 
-    package func svgData(in frame: EaselRect, box: Double = EaselStampArt.box) -> String {
+    func svgData(in frame: EaselRect, box: Double = EaselStampArt.box) -> String {
         let sx = frame.width / box, sy = frame.height / box
         let n = EaselVectorExport.number
         func point(_ p: EaselPoint) -> String { n(frame.x + p.x * sx) + " " + n(frame.y + p.y * sy) }
@@ -552,7 +552,7 @@ package struct EaselStampColors: Equatable {
 
 package enum EaselStampArt {
     package static let box = 100.0
-    package static let rim = "#FFFFFF"
+    static let rim = "#FFFFFF"
     package static let shadow = "#000000"
     package static let rimWidth = 9.0
     private static let centre = EaselPoint(x: 50, y: 50)

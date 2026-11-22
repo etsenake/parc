@@ -65,8 +65,8 @@ package enum EaselStyleFamily: String, CaseIterable, Codable {
         }
     }
 
-    package var takesFill: Bool { self == .shapes }
-    package var takesDash: Bool { self == .shapes || self == .lines }
+    var takesFill: Bool { self == .shapes }
+    var takesDash: Bool { self == .shapes || self == .lines }
 
     package var weights: [EaselStrokeWeight] {
         switch self {
@@ -239,7 +239,7 @@ package enum EaselStyle {
         return true
     }
 
-    package static func colorChoice(of item: EaselItem) -> EaselColorChoice? {
+    static func colorChoice(of item: EaselItem) -> EaselColorChoice? {
         guard let family = EaselStyleFamily.of(item) else { return nil }
         switch family {
         case .text:

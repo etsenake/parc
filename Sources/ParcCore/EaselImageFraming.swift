@@ -15,7 +15,7 @@ package enum EaselImageFraming {
         turns(value) % 2 == 0 ? natural : CGSize(width: natural.height, height: natural.width)
     }
 
-    package static func turnedCrop(_ crop: EaselRect?, turns value: Int) -> NoteImageCrop {
+    static func turnedCrop(_ crop: EaselRect?, turns value: Int) -> NoteImageCrop {
         guard let crop else { return .full }
         let x = crop.x, y = crop.y, w = crop.width, h = crop.height
         switch turns(value) {
@@ -26,7 +26,7 @@ package enum EaselImageFraming {
         }
     }
 
-    package static func sourceCrop(_ turned: NoteImageCrop, turns value: Int) -> EaselRect? {
+    static func sourceCrop(_ turned: NoteImageCrop, turns value: Int) -> EaselRect? {
         let crop = turned.normalized
         guard !crop.isFull else { return nil }
         let x = crop.x, y = crop.y, w = crop.width, h = crop.height
@@ -61,7 +61,7 @@ package enum EaselImageFraming {
 
     package static func isFramed(_ item: EaselItem) -> Bool { item.crop != nil || item.mask != nil || item.resolvedQuarterTurns != 0 }
 
-    package static func rotatedClockwise(_ rect: CGRect, around center: CGPoint) -> CGRect {
+    static func rotatedClockwise(_ rect: CGRect, around center: CGPoint) -> CGRect {
         CGRect(x: center.x - (rect.maxY - center.y), y: center.y + (rect.minX - center.x), width: rect.height, height: rect.width)
     }
 
@@ -119,7 +119,7 @@ package struct EaselImageCropDraft: Equatable {
         zoomLimit = max(Self.maximumZoom, cover > 0 && cover.isFinite ? 1 / cover : 1)
     }
 
-    package var turnedNatural: CGSize { EaselImageFraming.turnedSize(natural, turns: turns) }
+    var turnedNatural: CGSize { EaselImageFraming.turnedSize(natural, turns: turns) }
     package var ratio: CGFloat? { aspect.ratio(natural: turnedNatural) }
     package var crop: NoteImageCrop { NoteImageCrop(frame, in: picture) }
     package var isWhole: Bool { crop.isFull }
@@ -140,7 +140,7 @@ package struct EaselImageCropDraft: Equatable {
         picture.origin = CGPoint(x: x, y: y)
     }
 
-    package mutating func moveFrame(by delta: CGSize) {
+    mutating func moveFrame(by delta: CGSize) {
         frame = NoteImageCropGeometry.move(frame, by: delta, within: picture)
     }
 

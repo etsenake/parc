@@ -1,11 +1,11 @@
 import Foundation
 
-package final class EaselExportKeys: @unchecked Sendable {
-    package static let shared = EaselExportKeys()
+final class EaselExportKeys: @unchecked Sendable {
+    static let shared = EaselExportKeys()
     private let lock = NSLock()
     private var last = 0
 
-    package func next() -> Int {
+    func next() -> Int {
         lock.lock(); defer { lock.unlock() }
         last += 1
         return last
@@ -13,10 +13,10 @@ package final class EaselExportKeys: @unchecked Sendable {
 }
 
 extension EaselVectorExport {
-    package static let highlightBlend = "mix-blend-mode:var(--easel-highlight-blend,multiply)"
-    package static let highlightCSS = "@media screen and (prefers-color-scheme:dark){.easel-highlight{--easel-highlight-blend:normal}}"
+    static let highlightBlend = "mix-blend-mode:var(--easel-highlight-blend,multiply)"
+    static let highlightCSS = "@media screen and (prefers-color-scheme:dark){.easel-highlight{--easel-highlight-blend:normal}}"
 
-    package static func drawingStyles(_ items: [EaselItem]) -> String {
+    static func drawingStyles(_ items: [EaselItem]) -> String {
         items.contains(where: EaselPaintRules.isHighlighter) ? "<style>" + highlightCSS + "</style>" : ""
     }
 
@@ -27,7 +27,7 @@ extension EaselVectorExport {
         }
     }
 
-    package static func drawingPath(_ item: EaselItem) -> String? {
+    static func drawingPath(_ item: EaselItem) -> String? {
         let f = item.frame
         func point(_ p: EaselPoint) -> String { number(f.x + p.x) + " " + number(f.y + p.y) }
         let path = EaselDrawing.pathElements(item).map { element -> String in
@@ -40,14 +40,14 @@ extension EaselVectorExport {
         return path.isEmpty ? nil : path
     }
 
-    package static func brushStroke(_ item: EaselItem) -> String {
+    static func brushStroke(_ item: EaselItem) -> String {
         guard let path = drawingPath(item) else { return "" }
         let highlight = item.resolvedBrush == .highlighter
         return "<path" + (highlight ? " class=\"easel-highlight\"" : "") + " d=\"" + path + "\" style=\"fill:none;"
             + strokeStyle(item, dashed: !highlight, rounded: true) + (highlight ? ";" + highlightBlend : "") + "\"/>"
     }
 
-    package static func tape(_ item: EaselItem) -> String {
+    static func tape(_ item: EaselItem) -> String {
         guard let placement = EaselWashi.placement(item) else { return "" }
         let tile = EaselWashi.tile(EaselWashi.pattern(item), color: item.color)
         let key = String(EaselExportKeys.shared.next()) + "-" + item.id.uuidString.lowercased(), half = EaselWashi.width / 2
@@ -70,7 +70,7 @@ extension EaselVectorExport {
         return result + "</g></g>"
     }
 
-    package static func washiMark(_ mark: EaselWashiMark) -> String {
+    static func washiMark(_ mark: EaselWashiMark) -> String {
         let style = " style=\"fill:" + (color(mark.color) ?? "#FFFFFF") + ";fill-opacity:" + number(mark.opacity) + "\"/>"
         switch mark.shape {
         case .rect(let r):

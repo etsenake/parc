@@ -21,7 +21,7 @@ package struct AppVersion: Codable, Equatable {
 }
 
 package struct ReleaseNotesLaunch: Codable, Equatable {
-    package var lastLaunched: AppVersion
+    var lastLaunched: AppVersion
     package var pending: AppVersion?
     package var lastShown: AppVersion? = nil
     package var updatedFrom: AppVersion? = nil

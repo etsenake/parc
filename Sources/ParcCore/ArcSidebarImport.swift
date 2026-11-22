@@ -54,7 +54,7 @@ package struct ArcSidebarImport: Equatable {
     package let spaces: [Space]
     package let favorites: [ProfileKey: [Item]]
     package var autoArchiveHours: [ProfileKey: Double] = [:]
-    package let skippedItemCount: Int
+    let skippedItemCount: Int
 
     package var profiles: [ProfileKey] {
         let referenced = spaces.map(\.profile) + favoriteOrder
@@ -70,8 +70,8 @@ package struct ArcSidebarImport: Equatable {
         directory == "Default" ? .standard : .custom(directory: directory)
     }
 
-    package static let maximumDepth = 128
-    package static let maximumItems = 50_000
+    static let maximumDepth = 128
+    static let maximumItems = 50_000
 
     package init(data: Data) throws {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -402,7 +402,7 @@ extension ArcSidebarImport {
         }
     }
 
-    package func inserting(into state: BrowserState, profiles: [(key: ProfileKey, name: String)],
+    func inserting(into state: BrowserState, profiles: [(key: ProfileKey, name: String)],
                    standardProfileID: UUID, target: (key: ProfileKey, profileID: UUID)? = nil, at date: Date) throws -> Result {
         func live(_ id: UUID) -> Bool {
             state.profiles.contains { $0.id == id } && !state.profileRemovals.contains { $0.profileID == id }

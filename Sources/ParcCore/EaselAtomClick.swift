@@ -9,7 +9,7 @@ package enum EaselAtomClick {
         (item.rotation ?? 0) == 0 && item.flipHorizontal != true && item.flipVertical != true
     }
 
-    package static func carriesAtom(_ item: EaselItem) -> Bool {
+    static func carriesAtom(_ item: EaselItem) -> Bool {
         guard item.kind.holdsText || item.kind == .arrow, !item.text.isEmpty else { return false }
         return item.richText?.runs.contains { $0.attributes.inline.map { opens($0.kind) } == true } == true
     }

@@ -62,8 +62,8 @@ package final class NoteEmojiLibrary {
     }
 
     package nonisolated static let folderName = ".parc"
-    package nonisolated static let emojiFolderName = "emoji"
-    package nonisolated static let manifestName = "emoji.json"
+    nonisolated static let emojiFolderName = "emoji"
+    nonisolated static let manifestName = "emoji.json"
     package nonisolated static let imageExtensions: Set<String> = ["png", "gif", "jpg", "jpeg", "webp", "heic", "tif", "tiff"]
 
     package static var anyChange: PassthroughSubject<NoteEmojiLibrary, Never> { NoteFiles.shared.emojiChanges }
@@ -113,7 +113,7 @@ package final class NoteEmojiLibrary {
     }
 
     package var directory: URL { Self.directory(in: root) }
-    package var manifestURL: URL { directory.appendingPathComponent(Self.manifestName) }
+    var manifestURL: URL { directory.appendingPathComponent(Self.manifestName) }
     package var isEmpty: Bool { emoji.isEmpty }
 
     package var names: Set<String> { Set(byName.keys).union(byAlias.keys) }
@@ -339,7 +339,7 @@ package final class NoteEmojiLibrary {
 }
 
 extension NoteCustomEmojiName {
-    package static func upgrading(_ text: NoteText, names: Set<String>) -> NoteText {
+    static func upgrading(_ text: NoteText, names: Set<String>) -> NoteText {
         guard !names.isEmpty, text.string.contains(":") else { return text }
         var result = NoteText()
         var changed = false
@@ -371,7 +371,7 @@ extension NoteCustomEmojiName {
         return changed ? result : text
     }
 
-    package static func upgrading(_ page: NotePage, names: Set<String>) -> NotePage {
+    static func upgrading(_ page: NotePage, names: Set<String>) -> NotePage {
         guard !names.isEmpty else { return page }
         func map(_ blocks: [NoteBlock]) -> [NoteBlock] {
             blocks.map { block in

@@ -1,9 +1,9 @@
 import Foundation
 
 package enum EaselCodeBlock {
-    package static let defaultLanguage = "typescript"
+    static let defaultLanguage = "typescript"
     package static let starterLineCount = 4
-    package static let starterText = String(repeating: "\n", count: starterLineCount - 1)
+    static let starterText = String(repeating: "\n", count: starterLineCount - 1)
     package static let defaultWidth = 440.0
     package static let minimumWidth = 160.0
     package static let lineHeight = 22.0
@@ -12,8 +12,8 @@ package enum EaselCodeBlock {
     package static let sidePadding = 16.0
     package static let labelBaseline = 22.0
     package static let cornerRadius = 10.0
-    package static let stackGap = 24.0
-    package static let cascadeStep = 24.0
+    static let stackGap = 24.0
+    static let cascadeStep = 24.0
 
     package static func language(_ stored: String?) -> NoteCodeLanguage {
         stored.flatMap(NoteCodeLanguage.named) ?? .plainText
@@ -141,14 +141,14 @@ extension EaselVectorExport {
         return result + "</g></g></g>"
     }
 
-    package static func plainCodeRuns(_ item: EaselItem) -> [EaselVectorTextRun] {
+    static func plainCodeRuns(_ item: EaselItem) -> [EaselVectorTextRun] {
         item.text.components(separatedBy: "\n").enumerated().map { index, line in
             EaselVectorTextRun(x: EaselCodeBlock.sidePadding, y: EaselCodeBlock.headerHeight + Double(index) * EaselCodeBlock.lineHeight + 16,
                                text: line.replacingOccurrences(of: "\t", with: "    "), fontFamily: codeFontFamily, fontSize: 14)
         }
     }
 
-    package static func codeRun(_ run: EaselVectorTextRun) -> String {
+    static func codeRun(_ run: EaselVectorTextRun) -> String {
         var style = "font-family:" + run.fontFamily + ";font-size:" + number(run.fontSize) + "px"
         if run.weight != 400 { style += ";font-weight:" + String(run.weight) }
         if run.italic { style += ";font-style:italic" }
@@ -161,7 +161,7 @@ extension EaselVectorExport {
             + escape(run.text) + "</text>"
     }
 
-    package static func codeCSS(_ palette: EaselCodePalette) -> String {
+    static func codeCSS(_ palette: EaselCodePalette) -> String {
         func variables(_ swatch: EaselCodePalette.Swatch) -> String {
             var result = "--easel-code:" + swatch.fill + ";--easel-code-line:" + swatch.line + ";--easel-code-ink:" + swatch.ink + ";"
             for family in swatch.syntax.keys.sorted() {

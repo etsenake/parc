@@ -4,26 +4,26 @@ package struct NoteMDInlineStyle {
     package enum Shape { case paragraph, line, heading, cell, verbatim }
 
     package var shape: Shape
-    package var taskSensitive = false
-    package var insideLink = false
-    package var htmlSafe = false
-    package var trailingComment = false
-    package var calloutSensitive = false
+    var taskSensitive = false
+    var insideLink = false
+    var htmlSafe = false
+    var trailingComment = false
+    var calloutSensitive = false
 
     package static let paragraph = NoteMDInlineStyle(shape: .paragraph)
     package static let line = NoteMDInlineStyle(shape: .line)
     package static let heading = NoteMDInlineStyle(shape: .heading)
     package static let cell = NoteMDInlineStyle(shape: .cell)
-    package static let verbatim = NoteMDInlineStyle(shape: .verbatim)
+    static let verbatim = NoteMDInlineStyle(shape: .verbatim)
 
-    package var multiline: Bool { shape == .paragraph }
-    package var trimSensitive: Bool { shape != .verbatim }
+    var multiline: Bool { shape == .paragraph }
+    var trimSensitive: Bool { shape != .verbatim }
 }
 
 package struct NoteMDInlineWriter {
     package let reader: NoteMDReader
-    package let referenceLabels: [String: String]
-    package var portable = false
+    let referenceLabels: [String: String]
+    var portable = false
 
     private enum Mark: Equatable {
         case link(String), color(NoteColorStyle), underline, strike, bold, italic, code
@@ -421,7 +421,7 @@ package struct NoteMDInlineWriter {
         return result
     }
 
-    package static func opensCustomEmoji(_ scalars: [Unicode.Scalar], at index: Int, names: Set<String>) -> Bool {
+    static func opensCustomEmoji(_ scalars: [Unicode.Scalar], at index: Int, names: Set<String>) -> Bool {
         guard !names.isEmpty else { return false }
         var name = ""
         var probe = index + 1
@@ -434,7 +434,7 @@ package struct NoteMDInlineWriter {
         return names.contains(name)
     }
 
-    package static func entityLike(_ scalars: [Unicode.Scalar], at index: Int) -> Bool {
+    static func entityLike(_ scalars: [Unicode.Scalar], at index: Int) -> Bool {
         var probe = index + 1
         guard probe < scalars.count else { return false }
         if scalars[probe] == "#" {
@@ -499,7 +499,7 @@ package struct NoteMDInlineWriter {
         return ([lines[0]] + indented).joined(separator: "\n")
     }
 
-    package static func escapeLight(_ text: String) -> String {
+    static func escapeLight(_ text: String) -> String {
         var result = ""
         let scalars = Array(text.unicodeScalars)
         for (index, scalar) in scalars.enumerated() {
@@ -524,7 +524,7 @@ package struct NoteMDInlineWriter {
         return result
     }
 
-    package static func escapeAll(_ text: String) -> String {
+    static func escapeAll(_ text: String) -> String {
         var result = ""
         for scalar in text.unicodeScalars {
             if scalar == "\n" { result += "<br>"; continue }

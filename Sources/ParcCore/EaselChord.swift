@@ -99,7 +99,7 @@ package enum EaselChords {
         return stampArmed && found == .quickCreate ? .stampSelection : found
     }
 
-    package static func bareLayerMove(characters: String?, keyCode: UInt16) -> EaselLayerMove? {
+    static func bareLayerMove(characters: String?, keyCode: UInt16) -> EaselLayerMove? {
         switch EaselChord.character(characters: characters, keyCode: keyCode) {
         case "]": return .front
         case "[": return .back

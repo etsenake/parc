@@ -290,7 +290,7 @@ package struct WindowPresentation {
         return true
     }
 
-    package private(set) var awaitsCloseReplacement = false
+    private(set) var awaitsCloseReplacement = false
 
     package mutating func closePage(_ id: UUID) {
         if isReady, selectedTabIDs.contains(id) { awaitsCloseReplacement = true }
@@ -314,17 +314,17 @@ package struct WindowPresentation {
         for key in Array(selectionBySpace.keys) { selectionBySpace[key]?.removeAll { $0 == id } }
     }
 
-    package struct PagePlaceholders: Equatable {
-        package var tabIDs: [UUID]
-        package var placeholders: Set<UUID>
-        package var layout: BrowserSplitLayout?
-        package func holds(_ selection: [UUID]) -> Bool {
+    struct PagePlaceholders: Equatable {
+        var tabIDs: [UUID]
+        var placeholders: Set<UUID>
+        var layout: BrowserSplitLayout?
+        func holds(_ selection: [UUID]) -> Bool {
             var remaining = selection[...]
             for id in tabIDs where !placeholders.contains(id) && remaining.first == id { remaining = remaining.dropFirst() }
             return remaining.isEmpty
         }
     }
-    package private(set) var placeholdersBySpace: [UUID: PagePlaceholders] = [:]
+    private(set) var placeholdersBySpace: [UUID: PagePlaceholders] = [:]
 
     @discardableResult
     package mutating func leavePlaceholder(_ id: UUID, state: BrowserState) -> Bool {
@@ -457,7 +457,7 @@ package enum PageReparenting {
         case deselected
         case ownerClosing
     }
-    package static func returnDestination(_ candidates: [Candidate], trigger: Trigger) -> UUID? {
+    static func returnDestination(_ candidates: [Candidate], trigger: Trigger) -> UUID? {
         returnDestinations(candidates, trigger: trigger).first
     }
     package static func returnDestinations(_ candidates: [Candidate], trigger: Trigger) -> [UUID] {

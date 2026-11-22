@@ -5,7 +5,7 @@ package enum WindowFrameThickness {
     package static let range: ClosedRange<Int> = 3...13
     package static let standard = 10
     package static let windowCornerRadius: CGFloat = 16
-    package static let splitGripMinimum: CGFloat = 6
+    static let splitGripMinimum: CGFloat = 6
     private static let names = [3: "Hairline", 4: "Whisker", 5: "Pinstripe", 6: "Ribbon", 7: "Piping", 8: "Snug",
                                 9: "Comfy", 10: "Classic", 11: "Roomy", 12: "Salon", 13: "Gallery"]
 
@@ -29,14 +29,14 @@ package struct WindowFrameCrank: Equatable {
     package static let degreesPerPoint = 120.0
     package static let give = 0.35
     package static let giveSoftness = 0.6
-    package static let notchCapture = 0.12
-    package static let preciseScrollDegrees = 1.5
-    package static let lineScrollDegrees = 40.0
+    static let notchCapture = 0.12
+    static let preciseScrollDegrees = 1.5
+    static let lineScrollDegrees = 40.0
 
     package let initialValue: Int
     package private(set) var raw: Double
-    package private(set) var lastNotch: Int
-    package private(set) var endHeld: End?
+    private(set) var lastNotch: Int
+    private(set) var endHeld: End?
 
     package init(value: Int) {
         let start = WindowFrameThickness.clamped(value)
@@ -56,7 +56,7 @@ package struct WindowFrameCrank: Equatable {
         return min(1, excess / Self.giveSoftness)
     }
 
-    package static func rubber(_ raw: Double) -> Double {
+    static func rubber(_ raw: Double) -> Double {
         let low = Double(WindowFrameThickness.range.lowerBound), high = Double(WindowFrameThickness.range.upperBound)
         if raw > high { return high + give * tanh((raw - high) / giveSoftness) }
         if raw < low { return low - give * tanh((low - raw) / giveSoftness) }
@@ -129,7 +129,7 @@ package struct WindowFrameCrank: Equatable {
 }
 
 package enum WindowFrameCrankPlacement {
-    package static let hubInset: CGFloat = 125
+    static let hubInset: CGFloat = 125
     package static let swingRadius: CGFloat = 87
     package static let lightsRadius: CGFloat = 100
     package static let extent: CGFloat = 116

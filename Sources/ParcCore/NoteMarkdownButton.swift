@@ -2,9 +2,9 @@ import Foundation
 
 package enum NoteMDButtonFormat {
     package static let flag = "button"
-    package static let insertKey = "insert"
-    package static let confirmKey = "confirm"
-    package static let openKey = "open"
+    static let insertKey = "insert"
+    static let confirmKey = "confirm"
+    static let openKey = "open"
 
     package static func action(_ node: NoteMDBlock) -> NoteButtonAction? {
         guard node.kind == .html, let attributes = NoteMDAttributes.parse(NoteMDByte.string(node.content)) else { return nil }
@@ -31,7 +31,7 @@ package enum NoteMDButtonFormat {
         }
     }
 
-    package static func usesImplicitInsert(_ actions: [NoteButtonAction]) -> Bool {
+    static func usesImplicitInsert(_ actions: [NoteButtonAction]) -> Bool {
         guard actions.count == 1, case .insert(.below, let blocks) = actions[0] else { return false }
         return blocks.contains { !NoteMDWriter.isBareEmptyParagraph($0) }
     }

@@ -19,7 +19,7 @@ package final class NoteFolderPreferences {
         customFolder(for: profileID) ?? defaultFolder().standardizedFileURL
     }
 
-    package func customFolder(for profileID: UUID) -> URL? {
+    func customFolder(for profileID: UUID) -> URL? {
         guard let path = defaults.string(forKey: Self.key(profileID)), path.hasPrefix("/") else { return nil }
         return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
     }
@@ -64,7 +64,7 @@ extension NoteFolderPreferences {
     package static var changes: PassthroughSubject<UUID, Never> { shared.changes }
     package static var allFolders: [URL] { shared.allFolders }
     package static func folder(for profileID: UUID) -> URL { shared.folder(for: profileID) }
-    package static func customFolder(for profileID: UUID) -> URL? { shared.customFolder(for: profileID) }
+    static func customFolder(for profileID: UUID) -> URL? { shared.customFolder(for: profileID) }
     package static func library(for profileID: UUID) -> NoteLibrary { NoteFiles.shared.library(forProfile: profileID) }
     package static func setFolder(_ url: URL, for profileID: UUID) { shared.setFolder(url, for: profileID) }
     package static func removeProfile(_ profileID: UUID) { shared.removeProfile(profileID) }

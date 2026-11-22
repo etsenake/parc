@@ -1,26 +1,26 @@
 import Foundation
 
-package enum EaselBacklinkScanner {
-    package static let readLimit = 8 * 1024 * 1024
+enum EaselBacklinkScanner {
+    static let readLimit = 8 * 1024 * 1024
     private static let root = URL(fileURLWithPath: "/", isDirectory: true)
 
-    package static func mayLink(_ data: Data) -> Bool {
+    static func mayLink(_ data: Data) -> Bool {
         data.range(of: Data("file:".utf8)) != nil
     }
 
-    package static func read(fileAt url: URL) -> (title: String, links: [NoteOutgoingLink])? {
+    static func read(fileAt url: URL) -> (title: String, links: [NoteOutgoingLink])? {
         guard let data = try? Data(contentsOf: url, options: .mappedIfSafe), data.count <= readLimit,
               let document = try? JSONDecoder().decode(EaselDocument.self, from: data) else { return nil }
         return (document.title, mayLink(data) ? outgoing(in: document) : [])
     }
 
-    package static func outgoing(in document: EaselDocument) -> [NoteOutgoingLink] {
+    static func outgoing(in document: EaselDocument) -> [NoteOutgoingLink] {
         var result: [NoteOutgoingLink] = []
         for item in EaselFinder.readingOrder(document.items) { result += outgoing(of: item) }
         return result
     }
 
-    package static func outgoing(of item: EaselItem) -> [NoteOutgoingLink] {
+    static func outgoing(of item: EaselItem) -> [NoteOutgoingLink] {
         let anchor = item.id.uuidString.lowercased()
         var result: [NoteOutgoingLink] = []
         if item.kind.holdsText, let raw = item.url, let key = NoteBacklinkScanner.targetKey(raw, from: root) {
@@ -63,17 +63,17 @@ package enum EaselBacklinkScanner {
     }
 }
 
-package enum EaselBacklinkRewriter {
+enum EaselBacklinkRewriter {
     private static let root = URL(fileURLWithPath: "/", isDirectory: true)
 
-    package static func replacement(for raw: String, move: NoteBacklinkMove) -> String? {
+    static func replacement(for raw: String, move: NoteBacklinkMove) -> String? {
         guard NoteBacklinkScanner.targetKey(raw, from: root) == move.fromKey else { return nil }
         var fragment = ""
         if let hash = raw.firstIndex(of: "#") { fragment = String(raw[hash...]) }
         return URL(fileURLWithPath: move.to.path).absoluteString + fragment
     }
 
-    package static func rewrite(_ document: EaselDocument, move: NoteBacklinkMove) -> EaselDocument? {
+    static func rewrite(_ document: EaselDocument, move: NoteBacklinkMove) -> EaselDocument? {
         var next = document
         var changed = false
         for index in next.items.indices {

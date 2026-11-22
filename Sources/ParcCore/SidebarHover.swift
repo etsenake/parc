@@ -8,7 +8,7 @@ package enum SidebarHoverState: Int, Comparable {
 
 package enum SidebarHoverRegion: CaseIterable {
     case window, sidebar, innerLeftEdge, outerLeftEdge, innerTopLeftEdge, trafficLight
-    package var fidelity: SidebarHoverState {
+    var fidelity: SidebarHoverState {
         switch self {
         case .window: .inside
         case .sidebar: .hasLingered
@@ -71,15 +71,15 @@ package struct SidebarHoverTracking {
 
 package enum SidebarHoverZones {
     package enum Presentation { case locked, floating, hidden }
-    package static let contentInset = 10.0
-    package static let toolbarAllowance = 16.0
-    package static let outerEdgeWidth = 50.0
-    package static let expandedOuterEdgeWidth = 250.0
-    package static let topLeftWidth = 40.0
-    package static let trafficLightReach = 90.0
-    package static let floatingSidebarReach = 80.0
-    package static let trafficLightClearance = 50.0
-    package static let minimumTrafficLightHeight = 10.0
+    static let contentInset = 10.0
+    static let toolbarAllowance = 16.0
+    static let outerEdgeWidth = 50.0
+    static let expandedOuterEdgeWidth = 250.0
+    static let topLeftWidth = 40.0
+    static let trafficLightReach = 90.0
+    static let floatingSidebarReach = 80.0
+    static let trafficLightClearance = 50.0
+    static let minimumTrafficLightHeight = 10.0
 
     package static func rects(size: CGSize, presentation: Presentation, sidebarWidth: Double, showingToolbar: Bool,
                       trafficLightHeight: Double, info: SidebarHoverInfo) -> [SidebarHoverRegion: CGRect] {
@@ -112,8 +112,8 @@ package enum SidebarHoverZones {
     }
 }
 
-package enum SidebarHoverActivation {
-    package static func isActive(wasActive: Bool, info: SidebarHoverInfo, fullscreen: Bool, includesTopLeft: Bool) -> Bool {
+enum SidebarHoverActivation {
+    static func isActive(wasActive: Bool, info: SidebarHoverInfo, fullscreen: Bool, includesTopLeft: Bool) -> Bool {
         let threshold: SidebarHoverState = wasActive ? .inside : fullscreen ? .hasStopped : .hasLingered
         var zones: [SidebarHoverRegion] = [.sidebar, .outerLeftEdge, .innerLeftEdge]
         if includesTopLeft { zones += [.trafficLight, .innerTopLeftEdge] }

@@ -223,7 +223,7 @@ package struct EaselGeometryEdit {
         return !command && (intrinsic || (shift && originals.count > 1))
     }
 
-    package func movingEndpoint(_ endpoint: EaselArrowEndpoint, x: Double, y: Double) -> [EaselItem]? {
+    func movingEndpoint(_ endpoint: EaselArrowEndpoint, x: Double, y: Double) -> [EaselItem]? {
         guard originals.count == 1, let first = endpoint.point(in: originals[0]), x.isFinite, y.isFinite else { return nil }
         var next = originals[0]
         var absolute = next.points.map { EaselPoint(x: next.frame.x + $0.x, y: next.frame.y + $0.y) }
@@ -443,7 +443,7 @@ package struct EaselAlignmentGuides {
     }
     package struct Line: Equatable {
         package let anchor: EaselAnchor
-        package let coordinate: Double
+        let coordinate: Double
         package let targetSegments: [Segment]
         package let anchorSegments: [Segment]
         package init(anchor: EaselAnchor, coordinate: Double, targetSegments: [Segment], anchorSegments: [Segment]) {
@@ -465,7 +465,7 @@ package struct EaselAlignmentGuides {
     private let margin: Double
     private let canvasWidth: Double
     private let viewport: EaselRect
-    package let activeAtDragBegin: Set<EaselAnchor>
+    let activeAtDragBegin: Set<EaselAnchor>
     package private(set) var lines: [Line] = []
     package init(edit: EaselGeometryEdit, items: [EaselItem], viewport: EaselRect, canvasWidth: Double, scale: Double = 1) {
         self.canvasWidth = max(0, canvasWidth.isFinite ? canvasWidth : 0)

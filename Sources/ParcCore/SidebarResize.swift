@@ -3,11 +3,11 @@ import Foundation
 package struct SidebarResizeGesture {
     package static let minimumWidth = 164.0
     package static let maximumWidth = 500.0
-    package static let collapseThreshold = 82.0
+    static let collapseThreshold = 82.0
     package static let defaultWidth = 228.0
-    package static let snapBand = 14.0
-    package static let snapMaximumVelocity = 50.0
-    package static let releaseFeedbackHold: TimeInterval = 0.5
+    static let snapBand = 14.0
+    static let snapMaximumVelocity = 50.0
+    static let releaseFeedbackHold: TimeInterval = 0.5
 
     package enum Event: Equatable {
         case snapEngaged
@@ -35,10 +35,10 @@ package struct SidebarResizeGesture {
     package let widthOnBegin: Double
     package let locked: Bool
     private let breakpoints: [Double]
-    package private(set) var canSnap = false
-    package private(set) var timeOfSnap: TimeInterval?
+    private(set) var canSnap = false
+    private(set) var timeOfSnap: TimeInterval?
     package private(set) var effectiveWidth: Double
-    package private(set) var breakpointIndex: Int
+    private(set) var breakpointIndex: Int
     package var isSnapped: Bool { timeOfSnap != nil }
     package var isPreviewingHidden: Bool { effectiveWidth == 0 }
 
@@ -50,7 +50,7 @@ package struct SidebarResizeGesture {
     }
 
     package static func clamped(_ width: Double) -> Double { min(maximumWidth, max(minimumWidth, width)) }
-    package static func breakpointIndex(for width: Double, in breakpoints: [Double]) -> Int {
+    static func breakpointIndex(for width: Double, in breakpoints: [Double]) -> Int {
         breakpoints.firstIndex { width >= 0 && width < $0 } ?? breakpoints.count
     }
     private func proposedWidth(_ translationX: Double) -> Double {

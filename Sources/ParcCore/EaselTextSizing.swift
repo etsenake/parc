@@ -60,15 +60,15 @@ extension EaselRichText.Attributes {
 
 package enum EaselTextSizing {
     package static let minimumWidth = 24.0
-    package static let autoWidthEms = 36.0
-    package static let autoWidthFloor = 560.0
-    package static let autoWidthCeiling = 4000.0
+    static let autoWidthEms = 36.0
+    static let autoWidthFloor = 560.0
+    static let autoWidthCeiling = 4000.0
 
     package static func isAutoWidth(_ item: EaselItem) -> Bool { item.kind == .text && item.textStyle?.autoWidth == true }
 
-    package static func isTextOnly(_ items: [EaselItem]) -> Bool { !items.isEmpty && items.allSatisfy { $0.kind == .text } }
+    static func isTextOnly(_ items: [EaselItem]) -> Bool { !items.isEmpty && items.allSatisfy { $0.kind == .text } }
 
-    package static func maximumAutoWidth(pointSize: Double) -> Double {
+    static func maximumAutoWidth(pointSize: Double) -> Double {
         let size = pointSize.isFinite && pointSize > 0 ? pointSize : EaselTextStyle().pointSize
         return min(autoWidthCeiling, max(autoWidthFloor, (size * autoWidthEms).rounded(.up)))
     }
@@ -79,11 +79,11 @@ package enum EaselTextSizing {
         return min(limit, max(minimumWidth, natural.rounded(.up)))
     }
 
-    package static func defaultAlignment(for kind: EaselItemKind) -> EaselTextStyle.Alignment {
+    static func defaultAlignment(for kind: EaselItemKind) -> EaselTextStyle.Alignment {
         kind == .rectangle || kind == .circle ? .center : .left
     }
 
-    package static func resolvedAlignment(_ item: EaselItem) -> EaselTextStyle.Alignment {
+    static func resolvedAlignment(_ item: EaselItem) -> EaselTextStyle.Alignment {
         item.textStyle?.alignment ?? defaultAlignment(for: item.kind)
     }
 
@@ -108,7 +108,7 @@ package enum EaselTextSizing {
         return changed ? next : nil
     }
 
-    package static func anchoredX(_ x: Double, width: Double, to newWidth: Double, alignment: EaselTextStyle.Alignment) -> Double {
+    static func anchoredX(_ x: Double, width: Double, to newWidth: Double, alignment: EaselTextStyle.Alignment) -> Double {
         let shift: Double
         switch alignment {
         case .left: shift = 0
@@ -180,7 +180,7 @@ package enum EaselTextSizing {
 
     package static func setsTextWidth(_ handle: EaselResizeHandle?) -> Bool { handle == .left || handle == .right }
 
-    package static func scaledSize(base: Double, factor: Double) -> Double? {
+    static func scaledSize(base: Double, factor: Double) -> Double? {
         guard base.isFinite, base > 0, factor.isFinite, factor > 0 else { return nil }
         let limits = EaselTextStyle.customSizes
         return min(limits.upperBound, max(limits.lowerBound, (base * factor).rounded()))

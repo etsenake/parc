@@ -160,7 +160,7 @@ package struct NoteMarks: Hashable, Codable {
         value.atom = nil
         return value
     }
-    package var isPlain: Bool { self == .plain }
+    var isPlain: Bool { self == .plain }
 
     package init(bold: Bool = false, italic: Bool = false, underline: Bool = false, strikethrough: Bool = false, code: Bool = false, link: String? = nil, color: NoteColorStyle? = nil, atom: NoteAtom? = nil) {
         self.bold = bold
@@ -206,7 +206,7 @@ package struct NoteText: Hashable, Codable, ExpressibleByStringLiteral {
 
     package var length: Int { (string as NSString).length }
     package var isEmpty: Bool { string.isEmpty }
-    package var isPlain: Bool { spans.allSatisfy { $0.marks.isPlain } }
+    var isPlain: Bool { spans.allSatisfy { $0.marks.isPlain } }
 
     package var plainText: String {
         var result = ""
@@ -268,14 +268,14 @@ package struct NoteText: Hashable, Codable, ExpressibleByStringLiteral {
         return all[lower].range.lowerBound..<all[upper].range.upperBound
     }
 
-    package func composedRange(before offset: Int) -> Range<Int>? {
+    func composedRange(before offset: Int) -> Range<Int>? {
         let caret = min(max(0, offset), length)
         guard caret > 0 else { return nil }
         let range = (string as NSString).rangeOfComposedCharacterSequence(at: caret - 1)
         return range.location..<caret
     }
 
-    package func composedRange(after offset: Int) -> Range<Int>? {
+    func composedRange(after offset: Int) -> Range<Int>? {
         let caret = min(max(0, offset), length)
         guard caret < length else { return nil }
         let range = (string as NSString).rangeOfComposedCharacterSequence(at: caret)
@@ -347,12 +347,12 @@ package struct NoteText: Hashable, Codable, ExpressibleByStringLiteral {
         normalize()
     }
 
-    package func allHave(_ key: NoteMarkKey, in range: Range<Int>) -> Bool {
+    func allHave(_ key: NoteMarkKey, in range: Range<Int>) -> Bool {
         let selected = runs(in: range)
         return !selected.isEmpty && selected.allSatisfy { $0.marks[key] }
     }
 
-    package func trimmingTrailingNewlines() -> NoteText {
+    func trimmingTrailingNewlines() -> NoteText {
         var end = length
         let characters = string as NSString
         while end > 0, characters.character(at: end - 1) == 10 || characters.character(at: end - 1) == 13 { end -= 1 }
@@ -395,14 +395,14 @@ package enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
         default: return false
         }
     }
-    package var hasText: Bool { hasRichText || hasPlainText }
+    var hasText: Bool { hasRichText || hasPlainText }
     package var isMedia: Bool {
         switch self {
         case .image, .video, .audio, .file, .pdf: return true
         default: return false
         }
     }
-    package var isListItem: Bool { self == .bulletedItem || self == .numberedItem || self == .todo }
+    var isListItem: Bool { self == .bulletedItem || self == .numberedItem || self == .todo }
     package var isColumnStructure: Bool { self == .columns || self == .column }
     package var acceptsChildren: Bool { hasRichText || isColumnStructure || self == .synced }
     package var hasCaption: Bool {
@@ -411,7 +411,7 @@ package enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
         default: return false
         }
     }
-    package var supportsColor: Bool { hasRichText || self == .tableOfContents || self == .breadcrumb || self == .table || self == .button }
+    var supportsColor: Bool { hasRichText || self == .tableOfContents || self == .breadcrumb || self == .table || self == .button }
 }
 
 package enum NoteDiagramMode: String, Codable, CaseIterable, Hashable, Sendable {
@@ -510,13 +510,13 @@ package struct NoteTable: Hashable, Codable {
     }
 
     @discardableResult
-    package mutating func deleteRow(at index: Int) -> Bool {
+    mutating func deleteRow(at index: Int) -> Bool {
         guard rows.count > 1, rows.indices.contains(index) else { return false }
         return removeRows(index..<(index + 1))
     }
 
     @discardableResult
-    package mutating func duplicateRow(at index: Int) -> Bool {
+    mutating func duplicateRow(at index: Int) -> Bool {
         guard rows.indices.contains(index) else { return false }
         insertRows(at: index + 1, count: 1, copying: index)
         return true
@@ -534,14 +534,14 @@ package struct NoteTable: Hashable, Codable {
     }
 
     @discardableResult
-    package mutating func deleteColumn(at index: Int) -> Bool {
+    mutating func deleteColumn(at index: Int) -> Bool {
         normalize()
         guard columnCount > 1, index >= 0, index < columnCount else { return false }
         return removeColumns(index..<(index + 1))
     }
 
     @discardableResult
-    package mutating func duplicateColumn(at index: Int) -> Bool {
+    mutating func duplicateColumn(at index: Int) -> Bool {
         normalize()
         guard index >= 0, index < columnCount else { return false }
         insertColumns(at: index + 1, count: 1, copying: index)
@@ -557,7 +557,7 @@ package struct NoteTable: Hashable, Codable {
         return true
     }
 
-    package mutating func setColumnWidth(_ width: Double?, at index: Int) {
+    mutating func setColumnWidth(_ width: Double?, at index: Int) {
         normalize()
         guard columnWidths.indices.contains(index) else { return }
         columnWidths[index] = width.map { max(NoteTable.minimumColumnWidth, $0) }
@@ -571,7 +571,7 @@ package struct NoteTable: Hashable, Codable {
 
     package static let minimumColumnWidth = 32.0
 
-    package static func movedIndex(_ index: Int, from source: Int, to destination: Int) -> Int {
+    static func movedIndex(_ index: Int, from source: Int, to destination: Int) -> Int {
         if index == source { return destination }
         if source < destination, index > source, index <= destination { return index - 1 }
         if destination < source, index >= destination, index < source { return index + 1 }
@@ -587,12 +587,12 @@ package struct NoteBlockProps: Hashable, Codable {
     package var listStart: Int?
     package var bulletMarker: String?
     package var orderedDelimiter: String?
-    package var looseList = false
+    var looseList = false
     package var icon: String?
     package var alert: String?
     package var language = ""
     package var wrap = false
-    package var fence: String?
+    var fence: String?
     package var info: String?
     package var source: String?
     package var alt: String?
@@ -722,11 +722,11 @@ package struct NoteBlock: Hashable, Identifiable, Codable {
     }
 
     package var isToggle: Bool { kind == .toggle || (kind == .heading && props.toggleable) }
-    package var isSyncedOriginal: Bool { kind == .synced && props.target == nil }
+    var isSyncedOriginal: Bool { kind == .synced && props.target == nil }
     package var isSyncedCopy: Bool { kind == .synced && props.target != nil }
-    package var containsSynced: Bool { kind == .synced || children.contains { $0.containsSynced } }
+    var containsSynced: Bool { kind == .synced || children.contains { $0.containsSynced } }
 
-    package func referencingSyncedOriginals(_ target: (String) -> String) -> NoteBlock {
+    func referencingSyncedOriginals(_ target: (String) -> String) -> NoteBlock {
         var copy = self
         if isSyncedOriginal, let anchor = props.anchor, NoteAnchor.isValid(anchor) {
             copy.props.target = target(anchor)
@@ -741,7 +741,7 @@ package struct NoteBlock: Hashable, Identifiable, Codable {
     package var showsChildren: Bool { !isToggle || props.expanded }
     package var isCollapsed: Bool { isToggle && !props.expanded }
 
-    package func sameContent(as other: NoteBlock) -> Bool {
+    func sameContent(as other: NoteBlock) -> Bool {
         kind == other.kind && text == other.text && color == other.color
             && (propsStorage === other.propsStorage || props == other.props)
             && children.count == other.children.count
@@ -760,13 +760,13 @@ package struct NoteBlock: Hashable, Identifiable, Codable {
         return copy
     }
 
-    package func lastDescendant() -> NoteBlock {
+    func lastDescendant() -> NoteBlock {
         var current = self
         while let last = current.children.last { current = last }
         return current
     }
 
-    package func lastVisibleDescendant() -> NoteBlock {
+    func lastVisibleDescendant() -> NoteBlock {
         var current = self
         while current.showsChildren, let last = current.children.last { current = last }
         return current
@@ -828,7 +828,7 @@ package struct NotePageSettings: Hashable, Codable {
     package var locked = false
     package var backlinks: NoteBacklinksDisplay?
     package var properties: [NotePageProperty] = []
-    package var preservedFrontMatter: [String] = []
+    var preservedFrontMatter: [String] = []
 
     package var isDefault: Bool { self == NotePageSettings() }
 
@@ -893,7 +893,7 @@ package struct NotePageIndex {
         package var parent: NoteBlockID?
         package var depth: Int
         package var order: Int
-        package var visibleOrder: Int?
+        var visibleOrder: Int?
 
         package init(path: [Int], parent: NoteBlockID? = nil, depth: Int, order: Int, visibleOrder: Int? = nil) {
             self.path = path
@@ -908,7 +908,7 @@ package struct NotePageIndex {
     package private(set) var all: [NoteFlatBlock] = []
     package private(set) var visible: [NoteFlatBlock] = []
     package private(set) var allIDs: [NoteBlockID] = []
-    package private(set) var visibleIDs: [NoteBlockID] = []
+    private(set) var visibleIDs: [NoteBlockID] = []
     package private(set) var numbers: [NoteBlockID: NoteListNumber] = [:]
 
     package init(_ blocks: [NoteBlock]) {
@@ -994,7 +994,7 @@ package struct NotePage: Hashable, Codable {
 
     package var index: NotePageIndex { indexStorage.index(for: blocks) }
 
-    package var withoutIndex: NotePage {
+    var withoutIndex: NotePage {
         var copy = self
         copy.indexStorage = NotePageIndexStorage()
         return copy
@@ -1010,7 +1010,7 @@ package struct NoteFlatBlock: Hashable {
     package var id: NoteBlockID
     package var parent: NoteBlockID?
     package var depth: Int
-    package var indexInParent: Int
+    var indexInParent: Int
 }
 
 package enum NoteInsertion: Hashable {
@@ -1058,7 +1058,7 @@ extension NotePage {
         return blocks
     }
 
-    package func documentPosition(of id: NoteBlockID) -> Int? {
+    func documentPosition(of id: NoteBlockID) -> Int? {
         index.entries[id]?.order
     }
 
@@ -1088,7 +1088,7 @@ extension NotePage {
         return false
     }
 
-    package func containingColumn(of id: NoteBlockID) -> NoteBlockID? {
+    func containingColumn(of id: NoteBlockID) -> NoteBlockID? {
         var current = parent(of: id)
         while let value = current {
             if block(value)?.kind == .column { return value }
@@ -1133,7 +1133,7 @@ extension NotePage {
         return true
     }
 
-    package mutating func updateBlocks(_ ids: some Sequence<NoteBlockID>, _ transform: (inout NoteBlock) -> Void) {
+    mutating func updateBlocks(_ ids: some Sequence<NoteBlockID>, _ transform: (inout NoteBlock) -> Void) {
         let paths = Set(ids).compactMap { path(of: $0) }.sorted { $0.lexicographicallyPrecedes($1) }
         guard !paths.isEmpty else { return }
         keepingIndex { list in
@@ -1150,7 +1150,7 @@ extension NotePage {
         }
     }
 
-    package mutating func convertBlocks(_ ids: some Sequence<NoteBlockID>, _ convert: (NoteBlock) -> NoteBlock?) {
+    mutating func convertBlocks(_ ids: some Sequence<NoteBlockID>, _ convert: (NoteBlock) -> NoteBlock?) {
         let paths = Set(ids).compactMap { path(of: $0) }.sorted { $0.lexicographicallyPrecedes($1) }
         for location in paths.reversed() {
             guard let current = Self.block(at: location, in: blocks), let converted = convert(current) else { continue }
@@ -1178,7 +1178,7 @@ extension NotePage {
     }
 
     @discardableResult
-    package mutating func removeBlocks(_ ids: some Sequence<NoteBlockID>) -> [NoteBlock] {
+    mutating func removeBlocks(_ ids: some Sequence<NoteBlockID>) -> [NoteBlock] {
         let wanted = Set(ids).filter { contains($0) }
         guard !wanted.isEmpty else { return [] }
         let roots = wanted.filter { id in !ancestors(of: id).contains(where: wanted.contains) }
@@ -1237,7 +1237,7 @@ extension NotePage {
         return result
     }
 
-    package func allBlocksIncludingTemplates() -> [NoteBlock] {
+    func allBlocksIncludingTemplates() -> [NoteBlock] {
         var result: [NoteBlock] = []
         func walk(_ list: [NoteBlock]) {
             for block in list {
@@ -1259,7 +1259,7 @@ extension NotePage {
         }.joined(separator: "\n")
     }
 
-    package var wordCount: Int {
+    var wordCount: Int {
         var count = 0
         plainText.enumerateSubstrings(in: plainText.startIndex..., options: [.byWords, .substringNotRequired]) { _, _, _, _ in count += 1 }
         return count
@@ -1335,24 +1335,24 @@ package enum NotePageSelection: Hashable {
     }
 }
 
-package enum NoteAnchor {
-    package static let length = 6
+enum NoteAnchor {
+    static let length = 6
     private static let letters = Array("abcdefghijkmnpqrstuvwxyz")
     private static let alphabet = Array("abcdefghijkmnpqrstuvwxyz23456789")
 
-    package static func make<Generator: RandomNumberGenerator>(using generator: inout Generator) -> String {
+    static func make<Generator: RandomNumberGenerator>(using generator: inout Generator) -> String {
         var result = String(letters.randomElement(using: &generator)!)
         while result.count < length { result.append(alphabet.randomElement(using: &generator)!) }
         return result
     }
 
-    package static func isValid(_ value: String) -> Bool {
+    static func isValid(_ value: String) -> Bool {
         !value.isEmpty && value.count <= 64 && value.unicodeScalars.allSatisfy { scalar in
             scalar.isASCII && (CharacterSet.alphanumerics.contains(scalar) || scalar == "-" || scalar == "_")
         }
     }
 
-    package static func githubSlug(_ text: String) -> String {
+    static func githubSlug(_ text: String) -> String {
         var result = ""
         for scalar in text.lowercased().unicodeScalars {
             if scalar == " " { result.append("-"); continue }
@@ -1369,7 +1369,7 @@ package enum NoteAnchor {
         return result
     }
 
-    package static func fragment(_ value: String) -> String {
+    static func fragment(_ value: String) -> String {
         var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("#") { trimmed.removeFirst() }
         return trimmed.removingPercentEncoding ?? trimmed
@@ -1401,7 +1401,7 @@ extension NotePage {
         return ([id] + ancestors(of: id)).last { block($0)?.kind == .synced }
     }
 
-    package func syncedOriginals(within ids: some Sequence<NoteBlockID>) -> [NoteBlockID] {
+    func syncedOriginals(within ids: some Sequence<NoteBlockID>) -> [NoteBlockID] {
         var result: [NoteBlockID] = []
         func walk(_ block: NoteBlock) {
             if block.isSyncedOriginal { result.append(block.id); return }
@@ -1414,11 +1414,11 @@ extension NotePage {
         return result
     }
 
-    package var blockAnchors: Set<String> {
+    var blockAnchors: Set<String> {
         Set(allBlocks().compactMap(\.props.anchor))
     }
 
-    package var takenAnchorNames: Set<String> {
+    var takenAnchorNames: Set<String> {
         blockAnchors.union(headingSlugs().map(\.slug))
     }
 
@@ -1434,7 +1434,7 @@ extension NotePage {
         return slugs.first(where: { $0.slug == slugged })?.id
     }
 
-    package func uniqueAnchor<Generator: RandomNumberGenerator>(using generator: inout Generator, avoiding extra: Set<String> = []) -> String {
+    func uniqueAnchor<Generator: RandomNumberGenerator>(using generator: inout Generator, avoiding extra: Set<String> = []) -> String {
         let taken = takenAnchorNames.union(extra)
         var candidate = NoteAnchor.make(using: &generator)
         var attempts = 0
@@ -1448,7 +1448,7 @@ extension NotePage {
 }
 
 package enum NoteLinkPolicy {
-    package static let blockedSchemes: Set<String> = ["javascript", "vbscript", "data"]
+    static let blockedSchemes: Set<String> = ["javascript", "vbscript", "data"]
 
     package static func allowsOpening(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased() else { return true }
@@ -1493,7 +1493,7 @@ package struct NoteMediaCredit: Hashable, Codable {
         self.init(name: name, link: link)
     }
 
-    package static let referralSource = "parc"
+    static let referralSource = "parc"
 
     package var profileURL: URL? {
         guard let link, let url = URL(string: link), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
@@ -1525,7 +1525,7 @@ package struct NoteMediaCredit: Hashable, Codable {
         }.joined()
     }
 
-    package static func isUnsplash(_ host: String) -> Bool {
+    static func isUnsplash(_ host: String) -> Bool {
         host == "unsplash.com" || host.hasSuffix(".unsplash.com")
     }
 
@@ -1616,12 +1616,12 @@ package enum NoteButtonAction: Hashable, Codable {
 
 package struct NoteButton: Hashable, Codable {
     package static let placeholderName = "New button"
-    package static let maximumSuggestedName = 80
+    static let maximumSuggestedName = 80
 
     package var name = ""
     package var actions: [NoteButtonAction] = []
 
-    package static let starter = NoteButton(name: "", actions: [.blank(.insert)])
+    static let starter = NoteButton(name: "", actions: [.blank(.insert)])
 
     package var displayName: String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1630,7 +1630,7 @@ package struct NoteButton: Hashable, Codable {
 
     package var templateBlocks: [NoteBlock] { actions.flatMap(\.blocks) }
 
-    package var insertsBlocks: Bool { actions.contains { !$0.blocks.isEmpty } }
+    var insertsBlocks: Bool { actions.contains { !$0.blocks.isEmpty } }
 
     package init(name: String = "", actions: [NoteButtonAction] = []) {
         self.name = name
@@ -1672,16 +1672,16 @@ extension NoteBlock {
 
     package var buttonValue: NoteButton { props.button ?? NoteButton() }
 
-    package func sameTree(as other: NoteBlock) -> Bool {
+    func sameTree(as other: NoteBlock) -> Bool {
         kind == other.kind && text == other.text && color == other.color && props == other.props
             && NoteBlock.sameTrees(children, other.children)
     }
 
-    package static func sameTrees(_ lhs: [NoteBlock], _ rhs: [NoteBlock]) -> Bool {
+    static func sameTrees(_ lhs: [NoteBlock], _ rhs: [NoteBlock]) -> Bool {
         lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { $0.sameTree(as: $1) }
     }
 
-    package func convertedToButton() -> NoteBlock {
+    func convertedToButton() -> NoteBlock {
         guard kind != .button else { return self }
         var props = NoteBlockProps()
         props.icon = kind == .callout ? self.props.icon : nil
@@ -1692,7 +1692,7 @@ extension NoteBlock {
         return NoteBlock(.button, props: props, color: color, id: id)
     }
 
-    package func convertedFromButton(to kind: NoteBlockKind) -> NoteBlock {
+    func convertedFromButton(to kind: NoteBlockKind) -> NoteBlock {
         guard self.kind == .button else { return self }
         let button = buttonValue
         var source = NoteBlock(.paragraph, text: NoteText(button.name.trimmingCharacters(in: .whitespacesAndNewlines)), color: color,

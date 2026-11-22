@@ -5,7 +5,7 @@ package enum CommandBarHistoryScanSkip {
         package var query: String
         package var historyRevision: UInt64
         package var excludedURL: String
-        package var tabIdentityFingerprint: String
+        var tabIdentityFingerprint: String
 
         package init(query: String, historyRevision: UInt64, excludedURL: String, tabIdentityFingerprint: String) {
             self.query = query
@@ -44,7 +44,7 @@ package enum CommandBarHistoryScanSkip {
         )
     }
 
-    package static func tabIdentityFingerprint(urls: [String]) -> String {
+    static func tabIdentityFingerprint(urls: [String]) -> String {
         urls.joined(separator: "\u{1f}")
     }
 

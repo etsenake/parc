@@ -1,13 +1,13 @@
 import Foundation
 
-package struct NoteHTMLStyleSheet {
+struct NoteHTMLStyleSheet {
     private var rules: [String: [String: String]] = [:]
 
-    package init(_ document: NoteHTMLNode) {
+    init(_ document: NoteHTMLNode) {
         for style in document.all(where: { $0.name == "style" }) { parse(style.textContent) }
     }
 
-    package func declarations(for node: NoteHTMLNode) -> [String: String] {
+    func declarations(for node: NoteHTMLNode) -> [String: String] {
         var result: [String: String] = [:]
         if !rules.isEmpty {
             for name in node.classes {
@@ -19,7 +19,7 @@ package struct NoteHTMLStyleSheet {
         return result
     }
 
-    package static func declarations(_ text: String) -> [String: String] {
+    static func declarations(_ text: String) -> [String: String] {
         var result: [String: String] = [:]
         for piece in split(text, on: ";") {
             guard let colon = piece.firstIndex(of: ":") else { continue }
@@ -34,7 +34,7 @@ package struct NoteHTMLStyleSheet {
         return result
     }
 
-    package static func split(_ text: String, on separator: Character) -> [String] {
+    static func split(_ text: String, on separator: Character) -> [String] {
         var pieces: [String] = []
         var current = ""
         var depth = 0
@@ -107,13 +107,13 @@ package struct NoteHTMLStyleSheet {
     }
 }
 
-package struct NoteHTMLFont {
-    package var bold: Bool?
-    package var italic: Bool?
-    package var family: String?
-    package var size: Double?
+struct NoteHTMLFont {
+    var bold: Bool?
+    var italic: Bool?
+    var family: String?
+    var size: Double?
 
-    package init(_ css: [String: String]) {
+    init(_ css: [String: String]) {
         if let shorthand = css["font"] { parseShorthand(shorthand) }
         if let weight = css["font-weight"] { bold = Self.weight(weight) ?? bold }
         if let style = css["font-style"]?.lowercased() {
@@ -124,7 +124,7 @@ package struct NoteHTMLFont {
         if let value = css["font-size"], let points = Self.points(value) { size = points }
     }
 
-    package static func weight(_ value: String) -> Bool? {
+    static func weight(_ value: String) -> Bool? {
         let lowered = value.lowercased().trimmingCharacters(in: .whitespaces)
         if lowered == "bold" || lowered == "bolder" { return true }
         if lowered == "normal" || lowered == "lighter" { return false }
@@ -132,7 +132,7 @@ package struct NoteHTMLFont {
         return nil
     }
 
-    package static func points(_ value: String) -> Double? {
+    static func points(_ value: String) -> Double? {
         let lowered = value.lowercased().trimmingCharacters(in: .whitespaces)
         for (unit, scale) in [("px", 0.75), ("pt", 1.0)] where lowered.hasSuffix(unit) {
             if let number = Double(lowered.dropLast(unit.count)) { return number * scale }
@@ -177,7 +177,7 @@ package struct NoteHTMLFont {
         return tokens
     }
 
-    package var isMonospace: Bool {
+    var isMonospace: Bool {
         guard let family else { return false }
         let primary = family.split(separator: ",").first.map {
             $0.trimmingCharacters(in: CharacterSet(charactersIn: " \"'")).lowercased()
@@ -189,14 +189,14 @@ package struct NoteHTMLFont {
     }
 }
 
-package enum NoteHTMLColor {
-    package struct RGBA: Hashable {
-        package var red: Double
-        package var green: Double
-        package var blue: Double
-        package var alpha = 1.0
+enum NoteHTMLColor {
+    struct RGBA: Hashable {
+        var red: Double
+        var green: Double
+        var blue: Double
+        var alpha = 1.0
 
-        package init(red: Double, green: Double, blue: Double, alpha: Double = 1.0) {
+        init(red: Double, green: Double, blue: Double, alpha: Double = 1.0) {
             self.red = red
             self.green = green
             self.blue = blue
@@ -204,7 +204,7 @@ package enum NoteHTMLColor {
         }
     }
 
-    package static func parse(_ value: String) -> RGBA? {
+    static func parse(_ value: String) -> RGBA? {
         let lowered = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if lowered.hasPrefix("#") { return hex(String(lowered.dropFirst())) }
         if lowered.hasPrefix("rgb") || lowered.hasPrefix("hsl") {
@@ -226,7 +226,7 @@ package enum NoteHTMLColor {
         return nil
     }
 
-    package static func firstColor(in value: String) -> RGBA? {
+    static func firstColor(in value: String) -> RGBA? {
         if let direct = parse(value) { return direct }
         for token in NoteHTMLStyleSheet.split(value, on: " ") {
             if let color = parse(token) { return color }
@@ -267,7 +267,7 @@ package enum NoteHTMLColor {
         return RGBA(red: red + offset, green: green + offset, blue: blue + offset, alpha: alpha)
     }
 
-    package static func lab(_ color: RGBA) -> (l: Double, a: Double, b: Double) {
+    static func lab(_ color: RGBA) -> (l: Double, a: Double, b: Double) {
         func linear(_ value: Double) -> Double {
             value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
         }
@@ -282,13 +282,13 @@ package enum NoteHTMLColor {
         return (116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz))
     }
 
-    package enum Reading: Equatable {
+    enum Reading: Equatable {
         case transparent
         case neutral
         case color(NoteColor)
     }
 
-    package static func read(_ value: String, background: Bool = false) -> Reading? {
+    static func read(_ value: String, background: Bool = false) -> Reading? {
         let lowered = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if lowered == "transparent" || lowered == "none" { return .transparent }
         guard let rgba = background ? firstColor(in: lowered) : parse(lowered) else { return nil }
@@ -297,7 +297,7 @@ package enum NoteHTMLColor {
         return .color(color)
     }
 
-    package static func nearest(_ color: RGBA) -> NoteColor? {
+    static func nearest(_ color: RGBA) -> NoteColor? {
         let value = lab(color)
         let chroma = (value.a * value.a + value.b * value.b).squareRoot()
         if chroma < 14 { return nil }
@@ -354,7 +354,7 @@ package enum NoteHTMLColor {
         "ivory": "fffff0", "snow": "fffafa", "linen": "faf0e6", "windowtext": "000000"
     ]
 
-    package static func style(token: String) -> NoteColorStyle? {
+    static func style(token: String) -> NoteColorStyle? {
         var name = token.lowercased()
         var background = false
         for suffix in ["_background", "-background", "_bg", "-bg"] where name.hasSuffix(suffix) {
@@ -366,7 +366,7 @@ package enum NoteHTMLColor {
         return background ? .background(color) : .text(color)
     }
 
-    package static func token(_ style: NoteColorStyle) -> String {
+    static func token(_ style: NoteColorStyle) -> String {
         style.isBackground ? style.color.rawValue + "_background" : style.color.rawValue
     }
 }

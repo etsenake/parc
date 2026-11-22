@@ -1,7 +1,7 @@
 import Foundation
 
 package enum EaselShapeStyle {
-    package static let defaultHue = NoteColor.blue
+    static let defaultHue = NoteColor.blue
 
     package static func newItem(_ shape: EaselShape, frame: EaselRect, ink: String, zIndex: Int) -> EaselItem {
         let stroke: String, fill: String?

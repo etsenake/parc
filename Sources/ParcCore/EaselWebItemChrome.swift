@@ -8,12 +8,12 @@ package enum EaselWebItemChrome {
     }
 
     package static let headerHeight: Double = 38
-    package static let minimumHeaderWidth: Double = 320
+    static let minimumHeaderWidth: Double = 320
     package static let makeLiveTitle = "Make live"
     package static let backToSnapshotTitle = "Back to snapshot"
     package static let makeLiveHelp = "Show this captured region from the live webpage"
     package static let backToSnapshotHelp = "Return to the original captured image"
-    package static let snapshotOnlyHelp = "Only a captured visible region can go live. Full-page, cropped, marked-up and Portrait-framed captures, and older cards, keep just their image."
+    static let snapshotOnlyHelp = "Only a captured visible region can go live. Full-page, cropped, marked-up and Portrait-framed captures, and older cards, keep just their image."
     package static let liveHelp = "Showing the live webpage. The original captured image is kept."
 
     package static func canMakeLive(_ item: EaselItem) -> Bool {
@@ -55,7 +55,7 @@ package enum EaselWebItemChrome {
         }
     }
 
-    package static func capturedPhrase(_ date: Date, now: Date, calendar: Calendar, locale: Locale) -> String {
+    static func capturedPhrase(_ date: Date, now: Date, calendar: Calendar, locale: Locale) -> String {
         if calendar.isDate(date, inSameDayAs: now) { return "today" }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
             return "yesterday"

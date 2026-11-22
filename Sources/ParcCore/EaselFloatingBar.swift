@@ -8,7 +8,7 @@ package enum EaselFloatingBar {
     package static let entranceRise = 12.0
     package static let dimmedOpacity = 0.35
     package static let hoverLift = 1.5
-    package static let maximumCoverFraction = 0.5
+    static let maximumCoverFraction = 0.5
 
     package static func frame(containerWidth: Double, containerHeight: Double, preferredWidth: Double, height: Double,
                       top: Double) -> EaselRect {
@@ -77,7 +77,7 @@ package enum EaselToolFlourish: Equatable {
 
         package static let rest = Frame()
 
-        package var isRest: Bool {
+        var isRest: Bool {
             abs(dx) < 1e-9 && abs(dy) < 1e-9 && abs(rotation) < 1e-9 && abs(scaleX - 1) < 1e-9 && abs(scaleY - 1) < 1e-9
         }
     }
@@ -114,7 +114,7 @@ package enum EaselToolFlourish: Equatable {
         }
     }
 
-    package static func kick(at time: Double, response: Double, damping: Double) -> Double {
+    static func kick(at time: Double, response: Double, damping: Double) -> Double {
         guard time > 0, response > 0, damping > 0, damping < 1 else { return 0 }
         let omega = 2 * Double.pi / response
         let damped = omega * (1 - damping * damping).squareRoot()

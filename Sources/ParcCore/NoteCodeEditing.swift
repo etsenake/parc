@@ -119,7 +119,7 @@ package enum NoteCodeEditing {
         return NoteCodeEdit(range: range, replacement: insertion, selection: caret..<caret)
     }
 
-    package static func indentLines(in text: String, selection: Range<Int>, indent: NoteCodeIndent) -> NoteCodeEdit {
+    static func indentLines(in text: String, selection: Range<Int>, indent: NoteCodeIndent) -> NoteCodeEdit {
         let characters = text as NSString
         let range = clamp(selection, characters.length)
         let lines = touchedLines(range, in: characters)

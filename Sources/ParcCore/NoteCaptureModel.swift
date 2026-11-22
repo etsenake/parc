@@ -1,15 +1,15 @@
 import Foundation
 
 package struct NoteCaptureGeometry: Hashable, Codable {
-    package var viewportWidth: Double
+    var viewportWidth: Double
     package var viewportHeight: Double
-    package var scrollX: Double
-    package var scrollY: Double
-    package var regionX: Double
-    package var regionY: Double
-    package var regionWidth: Double
+    var scrollX: Double
+    var scrollY: Double
+    var regionX: Double
+    var regionY: Double
+    var regionWidth: Double
     package var regionHeight: Double
-    package var scrollers: String?
+    var scrollers: String?
 
     package var isValid: Bool {
         [viewportWidth, viewportHeight, scrollX, scrollY, regionX, regionY, regionWidth, regionHeight]
@@ -63,8 +63,8 @@ package struct NoteCapture: Hashable, Codable {
     package var live = false
 
     package static let sourceKey = "capture", dateKey = "captured", viewportKey = "viewport", scrollKey = "scroll", regionKey = "region"
-    package static let scrollersKey = "scrollers"
-    package static let liveFlag = "live"
+    static let scrollersKey = "scrollers"
+    static let liveFlag = "live"
 
     package var sourceAddress: URL? {
         guard let url = URL(string: sourceURL), let scheme = url.scheme?.lowercased(),
@@ -121,13 +121,13 @@ package struct NoteCapture: Hashable, Codable {
     }()
 }
 
-package enum NoteCaptureInsertion {
-    package static func placement(in page: NotePage, caret: NoteBlockID?) -> NoteInsertion {
+enum NoteCaptureInsertion {
+    static func placement(in page: NotePage, caret: NoteBlockID?) -> NoteInsertion {
         if let caret, page.block(caret) != nil { return .after(caret) }
         return .top(page.blocks.count)
     }
 
-    package static func replacesEmptyParagraph(_ id: NoteBlockID?, in page: NotePage) -> Bool {
+    static func replacesEmptyParagraph(_ id: NoteBlockID?, in page: NotePage) -> Bool {
         guard let id, let block = page.block(id) else { return false }
         return block.kind == .paragraph && block.text.isEmpty && block.children.isEmpty
     }

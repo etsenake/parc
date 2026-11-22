@@ -1,10 +1,10 @@
 import Foundation
 
-package enum SafariBookmarksHTML {
-    package static let depthLimit = 128
-    package static let nodeLimit = 50_000
+enum SafariBookmarksHTML {
+    static let depthLimit = 128
+    static let nodeLimit = 50_000
 
-    package static func parse(_ data: Data) throws -> [BrowserImportBookmark] {
+    static func parse(_ data: Data) throws -> [BrowserImportBookmark] {
         let bytes: [UInt8]
         if String(decoding: data, as: UTF8.self).utf8.elementsEqual(data) {
             bytes = Array(data)
@@ -41,7 +41,7 @@ package enum SafariBookmarksHTML {
         let href: ArraySlice<UInt8>?
         let end: Int
 
-        package init(name: String, closing: Bool, href: ArraySlice<UInt8>?, end: Int) {
+        init(name: String, closing: Bool, href: ArraySlice<UInt8>?, end: Int) {
             self.name = name
             self.closing = closing
             self.href = href

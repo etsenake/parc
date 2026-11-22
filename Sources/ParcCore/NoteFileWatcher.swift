@@ -7,16 +7,16 @@ package enum NoteFileWatchEvent: Sendable, Equatable {
     case deleted
 }
 
-package final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
+final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
     private struct WatchedIdentity: Equatable {
         var device: UInt64
         var inode: UInt64
         var isFolder: Bool
     }
 
-    package typealias SaveRequest = @Sendable (@escaping @Sendable (Error?) -> Void) -> Void
+    typealias SaveRequest = @Sendable (@escaping @Sendable (Error?) -> Void) -> Void
 
-    package let presentedItemOperationQueue: OperationQueue
+    let presentedItemOperationQueue: OperationQueue
     private let lock = NSLock()
     private var url: URL
     private var isPresenting = false
@@ -28,7 +28,7 @@ package final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Senda
     private let events: @Sendable (NoteFileWatchEvent) -> Void
     private let saveRequest: SaveRequest
 
-    package init(url: URL, events: @escaping @Sendable (NoteFileWatchEvent) -> Void, saveRequest: @escaping SaveRequest) {
+    init(url: URL, events: @escaping @Sendable (NoteFileWatchEvent) -> Void, saveRequest: @escaping SaveRequest) {
         self.url = url
         self.events = events
         self.saveRequest = saveRequest
@@ -38,9 +38,9 @@ package final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Senda
         super.init()
     }
 
-    package var presentedItemURL: URL? { lock.withLock { url } }
+    var presentedItemURL: URL? { lock.withLock { url } }
 
-    package func start(seen: NoteFileSighting? = nil) {
+    func start(seen: NoteFileSighting? = nil) {
         let shouldPresent = lock.withLock { () -> Bool in
             defer { isPresenting = true }
             return !isPresenting
@@ -49,7 +49,7 @@ package final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Senda
         sourceQueue.sync { arm(seen: seen) }
     }
 
-    package func stop() {
+    func stop() {
         let wasPresenting = lock.withLock { () -> Bool in
             defer { isPresenting = false }
             return isPresenting
@@ -58,16 +58,16 @@ package final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Senda
         sourceQueue.async { [self] in disarm() }
     }
 
-    package func update(url next: URL) {
+    func update(url next: URL) {
         lock.withLock { url = next }
         rearm()
     }
 
-    package func rearm(seen: NoteFileSighting? = nil) {
+    func rearm(seen: NoteFileSighting? = nil) {
         sourceQueue.async { [self] in arm(seen: seen) }
     }
 
-    package func movedPath() -> String? {
+    func movedPath() -> String? {
         sourceQueue.sync { relocatedPath ?? watchedFile.flatMap(Self.currentPath(of:)) }
     }
 
@@ -154,33 +154,33 @@ package final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Senda
         return buffer.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
     }
 
-    package func presentedItemDidChange() { events(.changed) }
+    func presentedItemDidChange() { events(.changed) }
 
-    package func presentedItemDidMove(to newURL: URL) {
+    func presentedItemDidMove(to newURL: URL) {
         lock.withLock { url = newURL }
         events(.moved(newURL))
     }
 
-    package func accommodatePresentedItemDeletion(completionHandler: @escaping @Sendable (Error?) -> Void) {
+    func accommodatePresentedItemDeletion(completionHandler: @escaping @Sendable (Error?) -> Void) {
         events(.deleted)
         completionHandler(nil)
     }
 
-    package func savePresentedItemChanges(completionHandler: @escaping @Sendable (Error?) -> Void) {
+    func savePresentedItemChanges(completionHandler: @escaping @Sendable (Error?) -> Void) {
         saveRequest(completionHandler)
     }
 }
 
-package struct NoteFolderEvent: Hashable, Sendable {
-    package var path: String
-    package var isFile: Bool
+struct NoteFolderEvent: Hashable, Sendable {
+    var path: String
+    var isFile: Bool
 
-    package init(path: String, isFile: Bool = true) {
+    init(path: String, isFile: Bool = true) {
         self.path = path
         self.isFile = isFile
     }
 
-    package init(path: String, flags: FSEventStreamEventFlags) {
+    init(path: String, flags: FSEventStreamEventFlags) {
         self.path = path
         let file = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsFile | kFSEventStreamEventFlagItemIsSymlink
             | kFSEventStreamEventFlagItemIsHardlink | kFSEventStreamEventFlagItemIsLastHardlink)
@@ -189,7 +189,7 @@ package struct NoteFolderEvent: Hashable, Sendable {
     }
 }
 
-package final class NoteFileFolderWatcher {
+final class NoteFileFolderWatcher {
     private final class Sink: @unchecked Sendable {
         let handler: @Sendable ([NoteFolderEvent], Bool) -> Void
         init(handler: @escaping @Sendable ([NoteFolderEvent], Bool) -> Void) { self.handler = handler }
@@ -197,7 +197,7 @@ package final class NoteFileFolderWatcher {
 
     private let stream: FSEventStreamRef
 
-    package init?(folder: URL, latency: TimeInterval = 0.25, handler: @escaping @Sendable ([NoteFolderEvent], Bool) -> Void) {
+    init?(folder: URL, latency: TimeInterval = 0.25, handler: @escaping @Sendable ([NoteFolderEvent], Bool) -> Void) {
         let sink = Sink(handler: handler)
         var context = FSEventStreamContext(
             version: 0, info: Unmanaged.passUnretained(sink).toOpaque(),

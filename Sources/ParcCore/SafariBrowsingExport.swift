@@ -16,9 +16,9 @@ package struct SafariBrowsingExport {
     package let profiles: [Profile]
     package let bookmarks: [BrowserImportBookmark]
     package let passwordsFile: URL?
-    package let paymentCardsFile: URL?
-    package let includesPaymentCards: Bool
-    package let includesExtensions: Bool
+    let paymentCardsFile: URL?
+    let includesPaymentCards: Bool
+    let includesExtensions: Bool
     package let skippedParts: Int
 
     package init(directory: URL, profiles: [Profile], bookmarks: [BrowserImportBookmark], passwordsFile: URL?, paymentCardsFile: URL?, includesPaymentCards: Bool, includesExtensions: Bool, skippedParts: Int) {

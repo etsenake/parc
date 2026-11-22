@@ -20,10 +20,10 @@ package struct NoteCaptureInput {
     }
 }
 
-package enum NoteCaptureDeliveryError: Error, LocalizedError, Equatable {
+enum NoteCaptureDeliveryError: Error, LocalizedError, Equatable {
     case plainText(String), locked(String), empty
 
-    package var errorDescription: String? {
+    var errorDescription: String? {
         switch self {
         case .plainText(let name): return "“\(name)” is a plain-text note, so it can’t hold images."
         case .locked(let name): return "“\(name)” is locked or read-only, so the capture wasn’t added."

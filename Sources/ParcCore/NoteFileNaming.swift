@@ -2,11 +2,11 @@ import Foundation
 
 package enum NoteFileNaming {
     package static let untitled = "Untitled"
-    package static let maximumComponentBytes = 255
+    static let maximumComponentBytes = 255
     package static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "heif", "tif", "tiff", "webp", "bmp", "svg", "avif"]
     private static let suffixAllowance = 6
 
-    package static func sanitizedTitle(_ title: String) -> String {
+    static func sanitizedTitle(_ title: String) -> String {
         var scalars = String.UnicodeScalarView()
         for scalar in title.unicodeScalars {
             switch scalar {
@@ -29,7 +29,7 @@ package enum NoteFileNaming {
         return result
     }
 
-    package static func sanitizedExtension(_ value: String) -> String {
+    static func sanitizedExtension(_ value: String) -> String {
         let trimmed = value.hasPrefix(".") ? String(value.dropFirst()) : value
         return String(trimmed.unicodeScalars.filter { $0.isASCII && CharacterSet.alphanumerics.contains($0) }.map(Character.init))
             .lowercased()
@@ -42,7 +42,7 @@ package enum NoteFileNaming {
         return pathExtension.isEmpty ? stem : stem + "." + pathExtension
     }
 
-    package static func truncated(_ value: String, toBytes limit: Int) -> String {
+    static func truncated(_ value: String, toBytes limit: Int) -> String {
         guard value.utf8.count > limit else { return value }
         var result = ""
         var bytes = 0
@@ -63,7 +63,7 @@ package enum NoteFileNaming {
         })
     }
 
-    package static func uniqueURL(in folder: URL, base: String, pathExtension: String,
+    static func uniqueURL(in folder: URL, base: String, pathExtension: String,
                           isTaken: (URL) -> Bool = NoteFilePaths.itemExists) -> URL {
         for candidate in candidates(in: folder, base: base, pathExtension: pathExtension) where !isTaken(candidate) {
             return candidate
@@ -71,7 +71,7 @@ package enum NoteFileNaming {
         return folder.appendingPathComponent(fileName(base: base + " " + UUID().uuidString, pathExtension: pathExtension))
     }
 
-    package static func renameTarget(for url: URL, to proposed: String) throws -> URL? {
+    static func renameTarget(for url: URL, to proposed: String) throws -> URL? {
         let folder = url.deletingLastPathComponent()
         let pathExtension = url.pathExtension
         let base = sanitizedTitle(proposed)
@@ -91,7 +91,7 @@ package enum NoteFileNaming {
         return target
     }
 
-    package static func isUntitled(_ title: String) -> Bool {
+    static func isUntitled(_ title: String) -> Bool {
         guard title.hasPrefix(untitled) else { return false }
         let rest = title.dropFirst(untitled.count)
         if rest.isEmpty { return true }

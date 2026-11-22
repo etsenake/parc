@@ -1,7 +1,7 @@
 import Foundation
 
-package enum NoteHTMLEntities {
-    package static func decode(_ scalars: ArraySlice<Unicode.Scalar>, attribute: Bool = false) -> String {
+enum NoteHTMLEntities {
+    static func decode(_ scalars: ArraySlice<Unicode.Scalar>, attribute: Bool = false) -> String {
         var result = String.UnicodeScalarView()
         guard scalars.contains("&") else {
             result.append(contentsOf: scalars)
@@ -21,7 +21,7 @@ package enum NoteHTMLEntities {
         return String(result)
     }
 
-    package static func decode(_ string: String) -> String {
+    static func decode(_ string: String) -> String {
         decode(ArraySlice(Array(string.unicodeScalars)))
     }
 
@@ -133,7 +133,7 @@ package enum NoteHTMLEntities {
     PlusMinus 177 div 247
     """.split(separator: " ").map(String.init)
 
-    package static let named: [String: String] = {
+    static let named: [String: String] = {
         var table: [String: String] = [:]
         for (offset, name) in latin1Names.enumerated() {
             table[name] = String(Character(Unicode.Scalar(UInt32(160 + offset))!))
@@ -150,5 +150,5 @@ package enum NoteHTMLEntities {
 
     private static let legacy: Set<String> = Set(latin1Names).union(["amp", "lt", "gt", "quot", "AMP", "LT", "GT", "QUOT", "COPY", "REG"])
 
-    package static var latin1Count: Int { latin1Names.count }
+    static var latin1Count: Int { latin1Names.count }
 }

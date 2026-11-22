@@ -30,7 +30,7 @@ package struct InterProfileMovePrompt: Equatable {
     package static let suppressionTitle = "Don’t ask again"
     package static let dialogWidth: Double = 455
 
-    package let destinationName: String
+    let destinationName: String
     package let tabCount: Int
 
     package init(tabCount: Int, spaceName: String) {
@@ -79,7 +79,7 @@ package struct InterProfileDocumentBlock: Equatable {
     package let document: InternalPage
     package let subject: String
     package let sourceSpace: String
-    package let destinationSpace: String
+    let destinationSpace: String
     package let places: [Place]
     package let others: [InternalPage]
     package let change: Change

@@ -54,7 +54,7 @@ package struct FavoriteSplitRequest {
 
     package var targetID: UUID { favorite.id == focusedID ? newID : favorite.id }
 
-    package var paneIDs: [UUID] {
+    var paneIDs: [UUID] {
         var ids = selection
         if !ids.contains(targetID), let index = ids.firstIndex(of: focusedID) {
             ids.insert(targetID, at: layout?.mainRowInsertionIndex(after: focusedID) ?? index + 1)

@@ -2,12 +2,12 @@ import Foundation
 
 private typealias Ch = NoteSyntaxChar
 
-package enum NoteSyntaxStyleMode {
+enum NoteSyntaxStyleMode {
     case statementStart, selector, atRule, property, value
 }
 
 extension NoteSyntaxScanner {
-    package mutating func lexStyles(scss: Bool) {
+    mutating func lexStyles(scss: Bool) {
         var mode = NoteSyntaxStyleMode.statementStart
         var atRuleName = ""
         while pos < end {

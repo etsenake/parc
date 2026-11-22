@@ -155,13 +155,13 @@ package struct CapturePaletteContext: Equatable {
         self.busy = busy
     }
 
-    package var offersEasels: Bool { libraryAvailable && easelsAvailable }
-    package var offersNotes: Bool { notesAvailable }
+    var offersEasels: Bool { libraryAvailable && easelsAvailable }
+    var offersNotes: Bool { notesAvailable }
 }
 
 package enum CapturePaletteMenu {
-    package static let sendToTitle = "Send To"
-    package static let recentTitle = "Recent"
+    static let sendToTitle = "Send To"
+    static let recentTitle = "Recent"
 
     package static func isEnabled(_ action: CapturePaletteAction, in context: CapturePaletteContext) -> Bool {
         !context.busy && (action != .message || context.messageAvailable)
@@ -222,12 +222,12 @@ package enum CapturePaletteMenu {
             + (context.offersNotes ? CaptureNoteDestination.ranked(context.notes).map(CapturePaletteDocument.init) : [])
     }
 
-    package static func retainedHighlight(_ previousID: String?, in rows: [CapturePaletteRow]) -> String? {
+    static func retainedHighlight(_ previousID: String?, in rows: [CapturePaletteRow]) -> String? {
         guard let previousID, let row = rows.first(where: { $0.id == previousID }), row.isEnabled else { return nil }
         return row.id
     }
 
-    package static func firstAvailable(in rows: [CapturePaletteRow]) -> String? {
+    static func firstAvailable(in rows: [CapturePaletteRow]) -> String? {
         rows.first(where: \.isEnabled)?.id
     }
 
@@ -295,7 +295,7 @@ package enum CapturePaletteKeys {
 
 package struct CaptureFrameSettings: Equatable {
     package enum Background: Int, CaseIterable { case color, page, desktop }
-    package static let fractionTolerance = 0.001
+    static let fractionTolerance = 0.001
 
     package var background: Background
     package var fraction: Double
@@ -306,7 +306,7 @@ package struct CaptureFrameSettings: Equatable {
         self.watermark = watermark
     }
 
-    package func rendersLike(_ other: Self) -> Bool {
+    func rendersLike(_ other: Self) -> Bool {
         background == other.background && watermark == other.watermark
             && (background != .color || abs(fraction - other.fraction) < Self.fractionTolerance)
     }

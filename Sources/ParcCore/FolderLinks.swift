@@ -89,7 +89,7 @@ package enum FolderLinks {
         }.joined(separator: "\n")
     }
 
-    package static func markdownLabel(_ text: String) -> String {
+    static func markdownLabel(_ text: String) -> String {
         let scalars = text.unicodeScalars.map { $0 == "\r" || $0 == "\n" ? " " : $0 }
         func at(_ index: Int) -> Unicode.Scalar { index < 0 ? "[" : index >= scalars.count ? "]" : scalars[index] }
         func isSpace(_ scalar: Unicode.Scalar) -> Bool { CharacterSet.whitespaces.contains(scalar) }

@@ -178,10 +178,10 @@ package struct NoteMathLabel: Equatable {
 }
 
 package struct NoteMathNumberingContext: Equatable {
-    package var firstNumber = 0
+    var firstNumber = 0
     package var references: [String: [NoteMathNode]] = [:]
-    package var takenLabels: Set<String> = []
-    package var referenceDigest = ""
+    var takenLabels: Set<String> = []
+    var referenceDigest = ""
 
     package init(firstNumber: Int = 0, references: [String: [NoteMathNode]] = [:], takenLabels: Set<String> = [], referenceDigest: String = "") {
         self.firstNumber = firstNumber
@@ -198,7 +198,7 @@ package struct NoteMathNumberingContext: Equatable {
         return parts.joined(separator: ";")
     }
 
-    package static func digest(_ references: [String: [NoteMathNode]]) -> String {
+    static func digest(_ references: [String: [NoteMathNode]]) -> String {
         references.keys.sorted().map { "\($0)=\(String(describing: references[$0]!))" }.joined(separator: "|")
     }
 }
@@ -207,7 +207,7 @@ package struct NoteMathEquation: Equatable {
     package var nodes: [NoteMathNode]
     package var tag: [NoteMathNode]?
     package var labels: [NoteMathLabel] = []
-    package var automaticNumbers = 0
+    var automaticNumbers = 0
 
     package init(nodes: [NoteMathNode], tag: [NoteMathNode]? = nil, labels: [NoteMathLabel] = [], automaticNumbers: Int = 0) {
         self.nodes = nodes
@@ -325,7 +325,7 @@ package struct NoteMathParser {
         return .reference(raw.text, parenthesized: name == "eqref", label: numbering.references[raw.text])
     }
 
-    package static func isBuiltIn(_ name: String) -> Bool {
+    static func isBuiltIn(_ name: String) -> Bool {
         NoteMathSymbols.symbols[name] != nil || NoteMathSymbols.italicCapitals[name] != nil
             || NoteMathSymbols.largeOperators[name] != nil || NoteMathSymbols.functions[name] != nil
             || NoteMathSymbols.spaces[name] != nil || fontCommands[name] != nil || textCommands[name] != nil
@@ -1231,7 +1231,7 @@ package struct NoteMathParser {
         return value
     }
 
-    package static func dimension(_ text: String) -> Double? {
+    static func dimension(_ text: String) -> Double? {
         let trimmed = text.replacingOccurrences(of: " ", with: "")
         var numberEnd = trimmed.startIndex
         while numberEnd < trimmed.endIndex, "+-.0123456789".contains(trimmed[numberEnd]) {
@@ -1822,8 +1822,8 @@ package struct NoteMathParser {
     ]
 }
 
-package enum NoteMathSymbols {
-    package static let symbols: [String: (String, NoteMathAtomKind)] = {
+enum NoteMathSymbols {
+    static let symbols: [String: (String, NoteMathAtomKind)] = {
         var table: [String: (String, NoteMathAtomKind)] = [:]
         for (name, symbol) in greek { table[name] = (symbol, .ord) }
         for (name, symbol) in ordinary { table[name] = (symbol, .ord) }
@@ -1837,7 +1837,7 @@ package enum NoteMathSymbols {
         return table
     }()
 
-    package static let kindsByCharacter: [String: NoteMathAtomKind] = {
+    static let kindsByCharacter: [String: NoteMathAtomKind] = {
         var table: [String: NoteMathAtomKind] = [:]
         for (_, entry) in symbols where table[entry.0] == nil && entry.0.unicodeScalars.count == 1 {
             table[entry.0] = entry.1
@@ -1848,13 +1848,13 @@ package enum NoteMathSymbols {
         return table
     }()
 
-    package static let largeOperatorsByCharacter: [String: Bool] = {
+    static let largeOperatorsByCharacter: [String: Bool] = {
         var table: [String: Bool] = [:]
         for (_, entry) in largeOperators { table[entry.0] = entry.1 }
         return table
     }()
 
-    package static let greek: [(String, String)] = [
+    static let greek: [(String, String)] = [
         ("alpha", "α"), ("beta", "β"), ("gamma", "γ"), ("delta", "δ"), ("epsilon", "ϵ"), ("varepsilon", "ε"),
         ("zeta", "ζ"), ("eta", "η"), ("theta", "θ"), ("vartheta", "ϑ"), ("iota", "ι"), ("kappa", "κ"),
         ("varkappa", "ϰ"), ("lambda", "λ"), ("mu", "μ"), ("nu", "ν"), ("xi", "ξ"), ("omicron", "ο"), ("pi", "π"),
@@ -1866,12 +1866,12 @@ package enum NoteMathSymbols {
         ("Kappa", "Κ"), ("Mu", "Μ"), ("Nu", "Ν"), ("Omicron", "Ο"), ("Rho", "Ρ"), ("Tau", "Τ"), ("Chi", "Χ"),
     ]
 
-    package static let italicCapitals: [String: String] = [
+    static let italicCapitals: [String: String] = [
         "varGamma": "Γ", "varDelta": "Δ", "varTheta": "Θ", "varLambda": "Λ", "varXi": "Ξ", "varPi": "Π",
         "varSigma": "Σ", "varUpsilon": "Υ", "varPhi": "Φ", "varPsi": "Ψ", "varOmega": "Ω",
     ]
 
-    package static let ordinary: [(String, String)] = [
+    static let ordinary: [(String, String)] = [
         ("infty", "∞"), ("partial", "∂"), ("nabla", "∇"), ("forall", "∀"), ("exists", "∃"), ("nexists", "∄"),
         ("emptyset", "∅"), ("varnothing", "∅"), ("neg", "¬"), ("lnot", "¬"), ("top", "⊤"), ("bot", "⊥"),
         ("angle", "∠"), ("measuredangle", "∡"), ("sphericalangle", "∢"), ("triangle", "△"), ("square", "□"),
@@ -1892,7 +1892,7 @@ package enum NoteMathSymbols {
         ("real", "ℜ"), ("sect", "§"), ("spades", "♠"), ("thetasym", "ϑ"), ("weierp", "℘"),
     ]
 
-    package static let binary: [(String, String)] = [
+    static let binary: [(String, String)] = [
         ("pm", "±"), ("mp", "∓"), ("times", "×"), ("div", "÷"), ("cdot", "⋅"), ("ast", "∗"), ("star", "⋆"),
         ("circ", "∘"), ("bullet", "∙"), ("oplus", "⊕"), ("ominus", "⊖"), ("otimes", "⊗"), ("oslash", "⊘"),
         ("odot", "⊙"), ("cup", "∪"), ("cap", "∩"), ("uplus", "⊎"), ("sqcup", "⊔"), ("sqcap", "⊓"),
@@ -1908,7 +1908,7 @@ package enum NoteMathSymbols {
         ("And", "&"), ("plusmn", "±"), ("sdot", "⋅"), ("bull", "∙"), ("Dagger", "‡"), ("minuso", "⦵"),
     ]
 
-    package static let relations: [(String, String)] = [
+    static let relations: [(String, String)] = [
         ("leq", "≤"), ("le", "≤"), ("geq", "≥"), ("ge", "≥"), ("neq", "≠"), ("ne", "≠"), ("approx", "≈"),
         ("equiv", "≡"), ("sim", "∼"), ("simeq", "≃"), ("cong", "≅"), ("propto", "∝"), ("in", "∈"),
         ("notin", "∉"), ("ni", "∋"), ("owns", "∋"), ("subset", "⊂"), ("supset", "⊃"), ("subseteq", "⊆"),
@@ -1945,7 +1945,7 @@ package enum NoteMathSymbols {
         ("vcentcolon", "∶"), ("ratio", "∶"), ("dblcolon", "∷"), ("Coloneqq", "⩴"), ("eqcolon", "∹"),
     ]
 
-    package static let arrows: [(String, String)] = [
+    static let arrows: [(String, String)] = [
         ("leftarrow", "←"), ("gets", "←"), ("rightarrow", "→"), ("to", "→"), ("leftrightarrow", "↔"),
         ("Leftarrow", "⇐"), ("Rightarrow", "⇒"), ("Leftrightarrow", "⇔"), ("longleftarrow", "⟵"),
         ("longrightarrow", "⟶"), ("longleftrightarrow", "⟷"), ("Longleftarrow", "⟸"), ("Longrightarrow", "⟹"),
@@ -1968,28 +1968,28 @@ package enum NoteMathSymbols {
         ("restriction", "↾"), ("Lleftarrow", "⇚"), ("Rrightarrow", "⇛"),
     ]
 
-    package static let opening: [(String, String)] = [
+    static let opening: [(String, String)] = [
         ("{", "{"), ("lbrace", "{"), ("langle", "⟨"), ("lceil", "⌈"), ("lfloor", "⌊"), ("lvert", "|"),
         ("lVert", "‖"), ("lgroup", "⟮"), ("lbrack", "["), ("ulcorner", "⌜"), ("llcorner", "⌞"),
         ("llbracket", "⟦"), ("lmoustache", "⎰"), ("lparen", "("), ("lang", "⟨"),
     ]
 
-    package static let closing: [(String, String)] = [
+    static let closing: [(String, String)] = [
         ("}", "}"), ("rbrace", "}"), ("rangle", "⟩"), ("rceil", "⌉"), ("rfloor", "⌋"), ("rvert", "|"),
         ("rVert", "‖"), ("rgroup", "⟯"), ("rbrack", "]"), ("urcorner", "⌝"), ("lrcorner", "⌟"),
         ("rrbracket", "⟧"), ("rmoustache", "⎱"), ("rparen", ")"), ("rang", "⟩"),
     ]
 
-    package static let punctuation: [(String, String)] = [
+    static let punctuation: [(String, String)] = [
         ("ldotp", "."), ("cdotp", "⋅"),
     ]
 
-    package static let inner: [(String, String)] = [
+    static let inner: [(String, String)] = [
         ("ldots", "…"), ("dots", "…"), ("dotsc", "…"), ("dotso", "…"), ("cdots", "⋯"), ("dotsb", "⋯"),
         ("dotsm", "⋯"), ("dotsi", "⋯"), ("ddots", "⋱"), ("iddots", "⋰"), ("mathellipsis", "…"),
     ]
 
-    package static let largeOperators: [String: (String, Bool)] = [
+    static let largeOperators: [String: (String, Bool)] = [
         "sum": ("∑", false), "prod": ("∏", false), "coprod": ("∐", false), "bigcup": ("⋃", false),
         "bigcap": ("⋂", false), "bigvee": ("⋁", false), "bigwedge": ("⋀", false), "bigoplus": ("⨁", false),
         "bigotimes": ("⨂", false), "bigodot": ("⨀", false), "biguplus": ("⨄", false), "bigsqcup": ("⨆", false),
@@ -1998,7 +1998,7 @@ package enum NoteMathSymbols {
         "smallint": ("∫", true),
     ]
 
-    package static let functions: [String: (String, Bool)] = [
+    static let functions: [String: (String, Bool)] = [
         "arccos": ("arccos", false), "arcsin": ("arcsin", false), "arctan": ("arctan", false),
         "arg": ("arg", false), "cos": ("cos", false), "cosh": ("cosh", false), "cot": ("cot", false),
         "coth": ("coth", false), "csc": ("csc", false), "deg": ("deg", false), "dim": ("dim", false),
@@ -2014,19 +2014,19 @@ package enum NoteMathSymbols {
         "th": ("th", false),
     ]
 
-    package static let spaces: [String: Double] = [
+    static let spaces: [String: Double] = [
         ",": 3.0 / 18, "thinspace": 3.0 / 18, ":": 4.0 / 18, ">": 4.0 / 18, "medspace": 4.0 / 18,
         ";": 5.0 / 18, "thickspace": 5.0 / 18, "!": -3.0 / 18, "negthinspace": -3.0 / 18,
         "negmedspace": -4.0 / 18, "negthickspace": -5.0 / 18, "quad": 1, "qquad": 2, " ": 1.0 / 3,
         "\n": 1.0 / 3, "\t": 1.0 / 3, "enspace": 0.5, "space": 1.0 / 3, "nobreakspace": 1.0 / 3,
     ]
 
-    package static let delimiterCharacters: [Character: String] = [
+    static let delimiterCharacters: [Character: String] = [
         "(": "(", ")": ")", "[": "[", "]": "]", "|": "|", "/": "/", "<": "⟨", ">": "⟩",
         "⟨": "⟨", "⟩": "⟩", "‖": "‖", "⌊": "⌊", "⌋": "⌋", "⌈": "⌈", "⌉": "⌉",
     ]
 
-    package static let delimiterCommands: [String: String] = [
+    static let delimiterCommands: [String: String] = [
         "{": "{", "}": "}", "lbrace": "{", "rbrace": "}", "|": "‖", "Vert": "‖", "lVert": "‖", "rVert": "‖",
         "vert": "|", "lvert": "|", "rvert": "|", "langle": "⟨", "rangle": "⟩", "lfloor": "⌊", "rfloor": "⌋",
         "lceil": "⌈", "rceil": "⌉", "backslash": "\\", "uparrow": "↑", "downarrow": "↓", "updownarrow": "↕",
@@ -2036,13 +2036,13 @@ package enum NoteMathSymbols {
         "lparen": "(", "rparen": ")", "lang": "⟨", "rang": "⟩", "lt": "⟨", "gt": "⟩",
     ]
 
-    package static let negations: [String: String] = [
+    static let negations: [String: String] = [
         "=": "≠", "∈": "∉", "≡": "≢", "⊂": "⊄", "⊃": "⊅", "⊆": "⊈", "⊇": "⊉", "<": "≮", ">": "≯",
         "≤": "≰", "≥": "≱", "∼": "≁", "≈": "≉", "≅": "≇", "∋": "∌", "∃": "∄", "∣": "∤", "∥": "∦",
         "≃": "≄", "≺": "⊀", "≻": "⊁", "⊢": "⊬", "⊨": "⊭", "≍": "≭", "⊑": "⋢", "⊒": "⋣",
     ]
 
-    package static let namedColors: [String: UInt32] = [
+    static let namedColors: [String: UInt32] = [
         "black": 0x000000, "white": 0xFFFFFF, "red": 0xFF0000, "green": 0x008000, "blue": 0x0000FF,
         "cyan": 0x00FFFF, "magenta": 0xFF00FF, "yellow": 0xFFFF00, "gray": 0x808080, "grey": 0x808080,
         "orange": 0xFFA500, "purple": 0x800080, "brown": 0xA52A2A, "pink": 0xFFC0CB, "lime": 0x00FF00,
@@ -2055,7 +2055,7 @@ package enum NoteMathSymbols {
         "fuchsia": 0xFF00FF, "plum": 0xDDA0DD, "orchid": 0xDA70D6, "tan": 0xD2B48C, "khaki": 0xF0E68C,
     ]
 
-    package static func color(named raw: String) -> NoteMathColor? {
+    static func color(named raw: String) -> NoteMathColor? {
         let name = raw.lowercased()
         if let value = namedColors[name] { return color(hex: value) }
         let digits = name.hasPrefix("#") ? String(name.dropFirst()) : name

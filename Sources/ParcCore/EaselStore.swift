@@ -9,7 +9,7 @@ package enum EaselItemKind: String, Codable, CaseIterable {
     package var holdsText: Bool { self == .text || self == .sticky || self == .rectangle || self == .circle }
     package var isMedia: Bool { self == .image || self == .video || self == .audio || self == .file || self == .pdf }
     package var takesFileName: Bool { self == .video || self == .audio || self == .file || self == .pdf }
-    package var takesMediaLink: Bool { self == .video || self == .audio }
+    var takesMediaLink: Bool { self == .video || self == .audio }
 }
 
 package enum EaselShape: String, Codable, CaseIterable {
@@ -35,11 +35,11 @@ package enum EaselImageMask: String, Codable, CaseIterable { case rounded, circl
 package enum EaselAssetType: String, CaseIterable {
     case png, gif, mp4, mov, m4a, mp3, wav, aac, aiff, pdf, file
 
-    package static let maximumExtensionLength = 16
+    static let maximumExtensionLength = 16
 
     package var isVideo: Bool { self == .mp4 || self == .mov }
-    package var isAudio: Bool { self == .m4a || self == .mp3 || self == .wav || self == .aac || self == .aiff }
-    package var isPicture: Bool { self == .png || self == .gif }
+    var isAudio: Bool { self == .m4a || self == .mp3 || self == .wav || self == .aac || self == .aiff }
+    var isPicture: Bool { self == .png || self == .gif }
 
     package var kind: EaselItemKind? {
         if isVideo { return .video }
@@ -59,14 +59,14 @@ package enum EaselAssetType: String, CaseIterable {
         return EaselAssetType(rawValue: last)
     }
 
-    package static func isSafeAssetID(_ id: String) -> Bool { assetParts(id) != nil }
+    static func isSafeAssetID(_ id: String) -> Bool { assetParts(id) != nil }
 
     package static func fileExtension(of assetID: String) -> String? {
         guard let parts = assetParts(assetID) else { return nil }
         return parts.type == .file ? parts.fileExtension : parts.type.rawValue
     }
 
-    package static func isSafeExtension(_ value: String) -> Bool {
+    static func isSafeExtension(_ value: String) -> Bool {
         (1...maximumExtensionLength).contains(value.utf8.count)
             && value.utf8.allSatisfy { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) }
     }
@@ -95,7 +95,7 @@ package enum EaselAssetType: String, CaseIterable {
         return (type, pieces[1])
     }
 
-    package static func audioType(forExtension raw: String?) -> EaselAssetType? {
+    static func audioType(forExtension raw: String?) -> EaselAssetType? {
         switch raw?.lowercased() {
         case "m4a", "m4b", "mp4a": return .m4a
         case "mp3": return .mp3
@@ -148,8 +148,8 @@ package enum EaselAssetType: String, CaseIterable {
 }
 
 package struct EaselLinkPreviewData: Codable, Equatable {
-    package static let maximumTextBytes = 2048
-    package static let maximumAddressBytes = 4096
+    static let maximumTextBytes = 2048
+    static let maximumAddressBytes = 4096
     package var title: String?
     package var summary: String?
     package var siteName: String?
@@ -169,7 +169,7 @@ package struct EaselLinkPreviewData: Codable, Equatable {
         [image, icon].compactMap { $0 }.filter(Self.isAssetID)
     }
 
-    package static func isAssetID(_ value: String) -> Bool {
+    static func isAssetID(_ value: String) -> Bool {
         EaselAssetType.isSafeAssetID(value) && EaselAssetType.of(assetID: value) == .png
     }
 
@@ -204,15 +204,15 @@ package struct EaselMediaCredit: Codable, Equatable {
     }
 }
 
-package enum EaselMediaText {
-    package static let maximumBytes = 2048
+enum EaselMediaText {
+    static let maximumBytes = 2048
 
-    package static func isValid(_ text: String) -> Bool {
+    static func isValid(_ text: String) -> Bool {
         text.utf8.count <= maximumBytes
             && !text.unicodeScalars.contains { $0.properties.generalCategory == .control && $0 != "\n" && $0 != "\t" }
     }
 
-    package static func isValidFileName(_ name: String) -> Bool {
+    static func isValidFileName(_ name: String) -> Bool {
         isValid(name) && !name.contains("\n") && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.utf8.count <= 1024
     }
 }
@@ -224,9 +224,9 @@ package enum EaselStampFace: Hashable {
     case emoji(String)
     case icon(String)
 
-    package static let iconPrefix = "icon:"
-    package static let maximumEmojiBytes = 64
-    package static let maximumSymbolLength = 96
+    static let iconPrefix = "icon:"
+    static let maximumEmojiBytes = 64
+    static let maximumSymbolLength = 96
 
     package init?(item: EaselItem) {
         guard item.kind == .stamp else { return nil }
@@ -289,7 +289,7 @@ package enum EaselStampFace: Hashable {
         }
     }
 
-    package var isIcon: Bool {
+    var isIcon: Bool {
         if case .icon = self { return true }
         return false
     }
@@ -344,13 +344,13 @@ package enum EaselStampFace: Hashable {
         return first.properties.isEmoji && scalars.count > 1 && qualifies(scalars[1])
     }
 
-    package static func isSymbolName(_ name: String) -> Bool {
+    static func isSymbolName(_ name: String) -> Bool {
         guard !name.isEmpty, name.utf8.count <= maximumSymbolLength, !name.hasPrefix("."), !name.hasSuffix("."),
               !name.contains("..") else { return false }
         return name.utf8.allSatisfy { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) || $0 == 46 }
     }
 
-    package static func validationProblem(_ item: EaselItem) -> String? {
+    static func validationProblem(_ item: EaselItem) -> String? {
         guard item.kind == .stamp else { return item.stamp == nil ? nil : "stamp face on a non-stamp object" }
         guard EaselStampFace(item: item) != nil else { return "stamp face" }
         guard item.points.isEmpty, item.url == nil, item.assetID == nil, item.richText == nil, item.textStyle == nil else {
@@ -414,7 +414,7 @@ package struct EaselScrollContainer: Codable, Equatable {
             && frame.width >= 0 && frame.height >= 0 && (anchorID.map(Self.isValidAnchor) ?? true) && Self.isValidPath(path)
     }
 
-    package static func isValidAnchor(_ id: String) -> Bool {
+    static func isValidAnchor(_ id: String) -> Bool {
         guard let first = id.unicodeScalars.first, id.utf8.count <= 128, first.isASCII, CharacterSet.letters.contains(first) else { return false }
         var digits = 0
         for scalar in id.unicodeScalars {
@@ -425,7 +425,7 @@ package struct EaselScrollContainer: Codable, Equatable {
         return true
     }
 
-    package static func isValidPath(_ path: String) -> Bool {
+    static func isValidPath(_ path: String) -> Bool {
         if path.isEmpty { return true }
         let steps = path.split(separator: ">", omittingEmptySubsequences: false)
         guard path.utf8.count <= 2048, steps.count <= 128 else { return false }
@@ -528,7 +528,7 @@ package struct EaselTextStyle: Codable, Equatable {
         self.customSize = customSize
         self.autoWidth = autoWidth
     }
-    package var presetPointSize: Double {
+    var presetPointSize: Double {
         switch family {
         case .mono, .clean: return [15, 24, 44, 60, 80][size.index]
         case .fancy: return [16, 28, 48, 60, 80][size.index]
@@ -549,11 +549,11 @@ package struct EaselMindMapLink: Codable, Equatable {
         self.collapsed = collapsed
     }
 
-    package static func holdsNode(_ kind: EaselItemKind) -> Bool {
+    static func holdsNode(_ kind: EaselItemKind) -> Bool {
         kind == .text || kind == .sticky || kind == .rectangle || kind == .circle
     }
 
-    package static func validationProblem(_ item: EaselItem) -> String? {
+    static func validationProblem(_ item: EaselItem) -> String? {
         guard let link = item.mindMap else { return nil }
         if item.kind == .arrow {
             return link.parent != nil && link.side == nil && link.collapsed == nil ? nil : "mind map branch"
@@ -605,7 +605,7 @@ package struct EaselItem: Codable, Identifiable, Equatable {
     package var crop: EaselRect?
     package var mask: EaselImageMask?
     package var altText: String?
-    package var quarterTurns: Int?
+    var quarterTurns: Int?
     package var table: EaselTable?
     package var language: String?
     package var stamp: String?
@@ -675,7 +675,7 @@ package struct EaselItem: Codable, Identifiable, Equatable {
         default: return false
         }
     }
-    package var assetReferences: [String] {
+    var assetReferences: [String] {
         [assetID, poster].compactMap { $0 } + (preview?.assetIDs ?? [])
     }
     package var resolvedShape: EaselShape? {
@@ -686,14 +686,14 @@ package struct EaselItem: Codable, Identifiable, Equatable {
         }
     }
     package var isLocked: Bool { locked == true }
-    package var resolvedRotation: Double { rotation ?? 0 }
+    var resolvedRotation: Double { rotation ?? 0 }
     package var resolvedStartHead: EaselArrowHead { startHead ?? .none }
     package var resolvedEndHead: EaselArrowHead { endHead ?? .arrow }
     package var resolvedRouting: EaselConnectorRouting { routing ?? .straight }
     package var resolvedBrush: EaselBrush { brush ?? .marker }
     package var resolvedLabelPosition: Double { labelPosition ?? 0.5 }
     package var resolvedQuarterTurns: Int { quarterTurns ?? 0 }
-    package static func isValidLanguage(_ value: String) -> Bool {
+    static func isValidLanguage(_ value: String) -> Bool {
         (1...32).contains(value.utf8.count)
             && value.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.lowercaseLetters.contains($0) || CharacterSet.decimalDigits.contains($0) || $0 == "-") }
     }
@@ -702,7 +702,7 @@ package struct EaselItem: Codable, Identifiable, Equatable {
 package struct EaselPageIcon: Codable, Hashable, Sendable {
     package enum Kind: String, Codable, Sendable { case emoji, custom, image }
 
-    package static let maximumEmojiBytes = 64
+    static let maximumEmojiBytes = 64
     package static let maximumNameLength = 48
 
     package var kind: Kind
@@ -731,7 +731,7 @@ package struct EaselPageIcon: Codable, Hashable, Sendable {
         return first.properties.isEmojiPresentation || value.unicodeScalars.count > 1
     }
 
-    package static func isCustomName(_ name: String) -> Bool {
+    static func isCustomName(_ name: String) -> Bool {
         let bytes = Array(name.utf8)
         guard !bytes.isEmpty, bytes.count <= maximumNameLength else { return false }
         let letterOrDigit: (UInt8) -> Bool = { ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) }
@@ -750,7 +750,7 @@ package struct EaselPageIcon: Codable, Hashable, Sendable {
 }
 
 package struct EaselDocument: Codable, Identifiable, Equatable {
-    package static let currentVersion = 1
+    static let currentVersion = 1
     package var version: Int = currentVersion
     package var id: UUID
     package var title: String
@@ -830,22 +830,22 @@ package enum EaselStoreError: Error, LocalizedError {
 
 extension EaselStoreError {
     package static var assetImageTooLarge: EaselStoreError { .imageTooLarge(megabytes: EaselStore.maximumAssetBytes / 1_048_576) }
-    package static var documentTooLarge: EaselStoreError { .easelTooLarge(megabytes: EaselStore.maximumDocumentBytes / 1_048_576) }
-    package static var memoryTooLarge: EaselStoreError { .easelTooLarge(megabytes: 256) }
+    static var documentTooLarge: EaselStoreError { .easelTooLarge(megabytes: EaselStore.maximumDocumentBytes / 1_048_576) }
+    static var memoryTooLarge: EaselStoreError { .easelTooLarge(megabytes: 256) }
     package static var textPictureTooLarge: EaselStoreError { .imageTooLarge(megabytes: 4) }
-    package static let tableTooLarge = EaselStoreError.tooMuch("That table has a lot of text. Tables hold up to 1 MB of it.")
+    static let tableTooLarge = EaselStoreError.tooMuch("That table has a lot of text. Tables hold up to 1 MB of it.")
     package static let cellTooLarge = EaselStoreError.tooMuch("That's a lot of text for one cell. Cells hold up to 64 KB.")
-    package static let textTooLarge = EaselStoreError.tooMuch("That's a lot of text for one object. About a million characters fit.")
+    static let textTooLarge = EaselStoreError.tooMuch("That's a lot of text for one object. About a million characters fit.")
     package static let pasteTooLarge = EaselStoreError.tooMuch("That's a bit much to copy or paste at once. Text up to 1 MB fits, or 8 MB with pictures.")
-    package static let objectsTooLarge = EaselStoreError.tooMuch("That's a lot of objects to copy or paste at once. Up to 128 MB fits.")
+    static let objectsTooLarge = EaselStoreError.tooMuch("That's a lot of objects to copy or paste at once. Up to 128 MB fits.")
     package static let templateTooLarge = EaselStoreError.tooMuch("That doesn't fit on this Easel. Easels hold up to 10,000 objects.")
     package static let exportTooLarge = EaselStoreError.tooMuch("That image is too big to export. Up to 32,768 pixels a side and 128 million in all fit.")
 }
 
 extension Notification.Name {
     package static let easelDocumentRemoved = Notification.Name("ParcEaselDocumentRemoved")
-    package static let easelDocumentChanged = Notification.Name("ParcEaselDocumentChanged")
-    package static let easelAssetsRemoved = Notification.Name("ParcEaselAssetsRemoved")
+    static let easelDocumentChanged = Notification.Name("ParcEaselDocumentChanged")
+    static let easelAssetsRemoved = Notification.Name("ParcEaselAssetsRemoved")
 }
 
 @MainActor
@@ -913,11 +913,11 @@ package final class EaselStore {
         return session(try read(id))
     }
 
-    package func existingSession(_ id: UUID) -> EaselSession? { sessions[id]?.value }
+    func existingSession(_ id: UUID) -> EaselSession? { sessions[id]?.value }
 
-    package func assetFileURL(_ assetID: String) -> URL? { try? assetURL(assetID) }
+    func assetFileURL(_ assetID: String) -> URL? { try? assetURL(assetID) }
 
-    package nonisolated static func readIcon(directory: URL, id: UUID) -> EaselPageIcon? {
+    nonisolated static func readIcon(directory: URL, id: UUID) -> EaselPageIcon? {
         struct Head: Decodable { var icon: EaselPageIcon? }
         let url = directory.appendingPathComponent("documents", isDirectory: true)
             .appendingPathComponent(id.uuidString.lowercased() + ".json")
@@ -1067,7 +1067,7 @@ package final class EaselStore {
         return document
     }
 
-    package static func repairingDuplicateIDs(_ document: EaselDocument) -> EaselDocument {
+    static func repairingDuplicateIDs(_ document: EaselDocument) -> EaselDocument {
         let taken = Set(document.items.map(\.id))
         guard taken.count != document.items.count else { return document }
         var next = document, seen = Set<UUID>()
@@ -1088,9 +1088,9 @@ package final class EaselStore {
         return next
     }
 
-    package static let maximumStackIndex = 1_000_000_000
+    static let maximumStackIndex = 1_000_000_000
 
-    package static func repairingStackOrder(_ document: EaselDocument) -> EaselDocument {
+    static func repairingStackOrder(_ document: EaselDocument) -> EaselDocument {
         guard document.items.contains(where: { $0.zIndex > maximumStackIndex || $0.zIndex < -maximumStackIndex }) else { return document }
         var next = document
         let order = document.items.indices.sorted { (document.items[$0].zIndex, $0) < (document.items[$1].zIndex, $1) }
@@ -1496,7 +1496,7 @@ package final class EaselSession: ObservableObject {
         return true
     }
 
-    package func updateLinks(_ rewrite: (EaselDocument) -> EaselDocument?) throws {
+    func updateLinks(_ rewrite: (EaselDocument) -> EaselDocument?) throws {
         try requireWritable()
         func relinked(_ snapshot: EaselDocument) -> EaselDocument? {
             guard let rewritten = rewrite(snapshot), rewritten.items != snapshot.items else { return nil }
@@ -1566,7 +1566,7 @@ package final class EaselSession: ObservableObject {
         return id
     }
 
-    package func hasAsset(_ id: String) -> Bool {
+    func hasAsset(_ id: String) -> Bool {
         if let store { return (try? store.assetURL(id)) != nil }
         return memoryAssets[id] != nil
     }

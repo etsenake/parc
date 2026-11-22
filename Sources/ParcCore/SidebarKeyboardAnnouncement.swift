@@ -1,10 +1,10 @@
 import Foundation
 
 package enum SidebarKeyboardAnnouncement {
-    package static let endOfList = "End of list"
-    package static let topOfList = "Top of list"
-    package static let emptyList = "Sidebar is empty"
-    package static let unnamedItem = "Sidebar item"
+    static let endOfList = "End of list"
+    static let topOfList = "Top of list"
+    static let emptyList = "Sidebar is empty"
+    static let unnamedItem = "Sidebar item"
 
     package static func highlight(_ cursor: SidebarKeyboardCursor?, in items: [SidebarKeyboardNavigation.Item],
                           state: BrowserState) -> String? {

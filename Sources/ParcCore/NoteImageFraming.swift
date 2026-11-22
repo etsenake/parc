@@ -93,9 +93,9 @@ package enum NoteImageMask: String, Hashable, Codable, CaseIterable {
 
     package var isSquare: Bool { self != .rounded && self != .arch }
 
-    package static func roundedRadius(for size: CGSize) -> CGFloat { max(0, min(size.width, size.height)) * 0.1 }
+    static func roundedRadius(for size: CGSize) -> CGFloat { max(0, min(size.width, size.height)) * 0.1 }
 
-    package static func archRadius(for size: CGSize) -> CGFloat { max(0, min(size.width / 2, size.height)) }
+    static func archRadius(for size: CGSize) -> CGFloat { max(0, min(size.width / 2, size.height)) }
 
     package func path(in rect: CGRect) -> CGPath {
         guard rect.width > 0, rect.height > 0 else { return CGPath(rect: rect, transform: nil) }
@@ -122,7 +122,7 @@ package enum NoteImageMask: String, Hashable, Codable, CaseIterable {
         }
     }
 
-    package var unitPath: CGPath {
+    var unitPath: CGPath {
         switch self {
         case .rounded, .circle, .arch: return path(in: CGRect(x: 0, y: 0, width: 1, height: 1))
         case .squircle: return Self.squirclePath
@@ -202,9 +202,9 @@ package enum NoteImageMask: String, Hashable, Codable, CaseIterable {
         return path
     }()
 
-    package var svgPathData: String { Self.svgData(unitPath) }
+    var svgPathData: String { Self.svgData(unitPath) }
 
-    package static func svgData(_ path: CGPath) -> String {
+    static func svgData(_ path: CGPath) -> String {
         var parts: [String] = []
         func point(_ value: CGPoint) -> String { NoteImageCrop.format(Double(value.x)) + " " + NoteImageCrop.format(Double(value.y)) }
         path.applyWithBlock { element in
@@ -221,12 +221,12 @@ package enum NoteImageMask: String, Hashable, Codable, CaseIterable {
         return parts.joined()
     }
 
-    package var maskImageURL: String {
+    var maskImageURL: String {
         let svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1' preserveAspectRatio='none'><path d='" + svgPathData + "'/></svg>"
         return "data:image/svg+xml," + svg.replacingOccurrences(of: "<", with: "%3C").replacingOccurrences(of: ">", with: "%3E")
     }
 
-    package func borderRadius(frameAspect: Double?) -> String? {
+    func borderRadius(frameAspect: Double?) -> String? {
         switch self {
         case .circle: return "50%"
         case .arch: return "9999px 9999px 0 0"
@@ -374,7 +374,7 @@ package enum NoteImageCropGeometry {
 }
 
 package enum NoteImageFraming {
-    package static func squareCrop(_ crop: NoteImageCrop?, natural: CGSize?) -> NoteImageCrop? {
+    static func squareCrop(_ crop: NoteImageCrop?, natural: CGSize?) -> NoteImageCrop? {
         guard let natural, natural.width > 0, natural.height > 0 else { return crop }
         let bounds = CGRect(origin: .zero, size: natural)
         let current = (crop ?? .full).rect(in: bounds)
@@ -392,7 +392,7 @@ package enum NoteImageFraming {
         return next
     }
 
-    package static func frameAspect(crop: NoteImageCrop?, natural: CGSize?) -> Double? {
+    static func frameAspect(crop: NoteImageCrop?, natural: CGSize?) -> Double? {
         guard let natural, natural.width > 0, natural.height > 0 else { return nil }
         let size = (crop ?? .full).croppedSize(of: natural)
         guard size.width > 0 else { return nil }

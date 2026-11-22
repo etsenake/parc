@@ -114,7 +114,7 @@ package struct HistorySwipeTrackingRequest: Equatable {
 
 package struct HistorySwipeStep: Equatable {
     package var consumesEvent = false
-    package var outputs: [HistorySwipeOutput] = []
+    var outputs: [HistorySwipeOutput] = []
     package var startsTracking: HistorySwipeTrackingRequest?
     package var stopsTracking = false
     package var preloadsBack = false

@@ -1,33 +1,33 @@
 import Foundation
 
-package final class NoteHTMLNode {
-    package let name: String
-    package var attributes: [String: String]
-    package var text: String
-    package private(set) var children: [NoteHTMLNode] = []
-    package private(set) weak var parent: NoteHTMLNode?
+final class NoteHTMLNode {
+    let name: String
+    var attributes: [String: String]
+    var text: String
+    private(set) var children: [NoteHTMLNode] = []
+    private(set) weak var parent: NoteHTMLNode?
 
-    package static let textName = "#text"
-    package static let markerName = "#mso-marker"
+    static let textName = "#text"
+    static let markerName = "#mso-marker"
 
-    package init(element name: String, attributes: [String: String] = [:]) {
+    init(element name: String, attributes: [String: String] = [:]) {
         self.name = name
         self.attributes = attributes
         text = ""
     }
 
-    package init(text: String) {
+    init(text: String) {
         name = Self.textName
         attributes = [:]
         self.text = text
     }
 
-    package var isText: Bool { name == Self.textName }
-    package var isElement: Bool { !isText }
+    var isText: Bool { name == Self.textName }
+    var isElement: Bool { !isText }
 
-    package subscript(_ key: String) -> String? { attributes[key] }
+    subscript(_ key: String) -> String? { attributes[key] }
 
-    package func append(_ child: NoteHTMLNode) {
+    func append(_ child: NoteHTMLNode) {
         if child.isText, let last = children.last, last.isText {
             last.text += child.text
             return
@@ -36,25 +36,25 @@ package final class NoteHTMLNode {
         children.append(child)
     }
 
-    package var classes: [String] {
+    var classes: [String] {
         guard let value = attributes["class"], !value.isEmpty else { return [] }
         return value.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\u{0C}" }).map(String.init)
     }
 
-    package func hasClass(_ name: String) -> Bool { classes.contains(name) }
+    func hasClass(_ name: String) -> Bool { classes.contains(name) }
 
-    package var textContent: String {
+    var textContent: String {
         if isText { return text }
         var result = ""
         for child in children { result += child.textContent }
         return result
     }
 
-    package var isWhitespace: Bool {
+    var isWhitespace: Bool {
         isText && text.unicodeScalars.allSatisfy { NoteHTMLNode.isSpace($0) }
     }
 
-    package func first(where predicate: (NoteHTMLNode) -> Bool) -> NoteHTMLNode? {
+    func first(where predicate: (NoteHTMLNode) -> Bool) -> NoteHTMLNode? {
         for child in children {
             if predicate(child) { return child }
             if let found = child.first(where: predicate) { return found }
@@ -62,7 +62,7 @@ package final class NoteHTMLNode {
         return nil
     }
 
-    package func all(where predicate: (NoteHTMLNode) -> Bool) -> [NoteHTMLNode] {
+    func all(where predicate: (NoteHTMLNode) -> Bool) -> [NoteHTMLNode] {
         var result: [NoteHTMLNode] = []
         func walk(_ node: NoteHTMLNode) {
             for child in node.children {
@@ -74,7 +74,7 @@ package final class NoteHTMLNode {
         return result
     }
 
-    package func hasAncestor(_ predicate: (NoteHTMLNode) -> Bool) -> Bool {
+    func hasAncestor(_ predicate: (NoteHTMLNode) -> Bool) -> Bool {
         var current = parent
         while let node = current {
             if predicate(node) { return true }
@@ -83,13 +83,13 @@ package final class NoteHTMLNode {
         return false
     }
 
-    package static func isSpace(_ scalar: Unicode.Scalar) -> Bool {
+    static func isSpace(_ scalar: Unicode.Scalar) -> Bool {
         scalar == " " || scalar == "\n" || scalar == "\t" || scalar == "\r" || scalar == "\u{0C}"
     }
 }
 
-package enum NoteHTMLParser {
-    package static func parse(_ html: String) -> NoteHTMLNode {
+enum NoteHTMLParser {
+    static func parse(_ html: String) -> NoteHTMLNode {
         var builder = NoteHTMLTreeBuilder()
         var scanner = NoteHTMLScanner(html)
         scanner.run { builder.handle($0) }
@@ -97,7 +97,7 @@ package enum NoteHTMLParser {
     }
 }
 
-package enum NoteHTMLToken {
+enum NoteHTMLToken {
     case start(String, [String: String], selfClosing: Bool)
     case end(String)
     case comment(String)
@@ -105,14 +105,14 @@ package enum NoteHTMLToken {
     case cdata(String)
 }
 
-package struct NoteHTMLScanner {
+struct NoteHTMLScanner {
     private let input: [Unicode.Scalar]
     private var index = 0
 
     private static let rawText: Set<String> = ["script", "style", "xmp", "iframe", "noembed", "noframes", "noscript"]
     private static let escapableRawText: Set<String> = ["textarea", "title"]
 
-    package init(_ html: String) {
+    init(_ html: String) {
         var scalars: [Unicode.Scalar] = []
         scalars.reserveCapacity(html.unicodeScalars.count)
         var previousCR = false
@@ -126,7 +126,7 @@ package struct NoteHTMLScanner {
         input = scalars
     }
 
-    package mutating func run(_ emit: (NoteHTMLToken) -> Void) {
+    mutating func run(_ emit: (NoteHTMLToken) -> Void) {
         var textStart = 0
         while index < input.count {
             guard input[index] == "<" else { index += 1; continue }
@@ -325,29 +325,29 @@ package struct NoteHTMLScanner {
     }
 }
 
-package struct NoteHTMLTreeBuilder {
-    package let root = NoteHTMLNode(element: "#document")
+struct NoteHTMLTreeBuilder {
+    let root = NoteHTMLNode(element: "#document")
     private var stack: [NoteHTMLNode]
 
-    package init() { stack = [root] }
+    init() { stack = [root] }
 
     private var current: NoteHTMLNode { stack[stack.count - 1] }
 
-    package static let void: Set<String> = ["area", "base", "basefont", "bgsound", "br", "col", "embed", "frame", "hr", "img",
+    static let void: Set<String> = ["area", "base", "basefont", "bgsound", "br", "col", "embed", "frame", "hr", "img",
                                     "input", "keygen", "link", "meta", "param", "source", "track", "wbr"]
-    package static let closesParagraph: Set<String> = [
+    static let closesParagraph: Set<String> = [
         "address", "article", "aside", "blockquote", "center", "details", "dialog", "dir", "div", "dl", "fieldset",
         "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hgroup", "hr", "li",
         "listing", "main", "menu", "nav", "ol", "p", "pre", "section", "summary", "table", "ul", "dd", "dt", "xmp", "search"
     ]
-    package static let scopeBoundary: Set<String> = ["#document", "table", "td", "th", "caption", "button", "object", "marquee",
+    static let scopeBoundary: Set<String> = ["#document", "table", "td", "th", "caption", "button", "object", "marquee",
                                              "template", "applet"]
-    package static let special: Set<String> = closesParagraph.union(["body", "html", "tbody", "thead", "tfoot", "tr", "td", "th",
+    static let special: Set<String> = closesParagraph.union(["body", "html", "tbody", "thead", "tfoot", "tr", "td", "th",
                                                              "caption", "colgroup", "iframe", "img", "br", "frameset",
                                                              "select", "textarea", "#document", "#mso-marker"])
-    package static let headings: Set<String> = ["h1", "h2", "h3", "h4", "h5", "h6"]
+    static let headings: Set<String> = ["h1", "h2", "h3", "h4", "h5", "h6"]
 
-    package mutating func handle(_ token: NoteHTMLToken) {
+    mutating func handle(_ token: NoteHTMLToken) {
         switch token {
         case .text(let value):
             guard !value.isEmpty else { return }

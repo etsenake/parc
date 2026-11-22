@@ -32,7 +32,7 @@ package struct EaselTransform: Equatable {
         EaselPoint(x: a * point.x + c * point.y + tx, y: b * point.x + d * point.y + ty)
     }
 
-    package func applyVector(_ vector: EaselPoint) -> EaselPoint {
+    func applyVector(_ vector: EaselPoint) -> EaselPoint {
         EaselPoint(x: a * vector.x + c * vector.y, y: b * vector.x + d * vector.y)
     }
 
@@ -65,18 +65,18 @@ package struct EaselTransform: Equatable {
 }
 
 package enum EaselRotation {
-    package static let dragStep = 15.0
+    static let dragStep = 15.0
     package static let keyStep = 1.0
     package static let largeKeyStep = 15.0
 
-    package static func isRotatable(_ kind: EaselItemKind) -> Bool {
+    static func isRotatable(_ kind: EaselItemKind) -> Bool {
         switch kind {
         case .text, .image, .rectangle, .circle, .freehand, .stamp, .equation: return true
         default: return false
         }
     }
 
-    package static func isFlippable(_ kind: EaselItemKind) -> Bool {
+    static func isFlippable(_ kind: EaselItemKind) -> Bool {
         switch kind {
         case .image, .rectangle, .circle, .freehand, .stamp: return true
         default: return false
@@ -110,7 +110,7 @@ package enum EaselRotation {
     package static func mirrorsVertically(_ item: EaselItem) -> Bool { isFlippable(item.kind) && item.flipVertical == true }
     package static func isRotated(_ item: EaselItem) -> Bool { degrees(of: item) != 0 }
 
-    package static func isTransformed(_ item: EaselItem) -> Bool {
+    static func isTransformed(_ item: EaselItem) -> Bool {
         isRotated(item) || mirrorsHorizontally(item) || mirrorsVertically(item)
     }
 
@@ -122,13 +122,13 @@ package enum EaselRotation {
             .concatenating(.rotation(degrees: degrees(of: item), around: middle))
     }
 
-    package static func readableTransform(for item: EaselItem, in rect: EaselRect) -> EaselTransform {
+    static func readableTransform(for item: EaselItem, in rect: EaselRect) -> EaselTransform {
         .mirror(horizontally: mirrorsHorizontally(item), vertically: mirrorsVertically(item), around: center(of: rect))
     }
 
     package static func canvasPoint(_ point: EaselPoint, in item: EaselItem) -> EaselPoint { transform(for: item).apply(point) }
 
-    package static func localPoint(_ point: EaselPoint, in item: EaselItem) -> EaselPoint {
+    static func localPoint(_ point: EaselPoint, in item: EaselItem) -> EaselPoint {
         let forward = transform(for: item)
         guard !forward.isIdentity, let inverse = forward.inverted else { return point }
         return inverse.apply(point)
@@ -162,13 +162,13 @@ package enum EaselRotation {
         return EaselRect(x: left, y: top, width: right - left, height: bottom - top)
     }
 
-    package static func upright(_ item: EaselItem) -> EaselItem {
+    static func upright(_ item: EaselItem) -> EaselItem {
         var next = item
         next.rotation = nil; next.flipHorizontal = nil; next.flipVertical = nil
         return next
     }
 
-    package static func uprightHit(_ point: EaselPoint, item: EaselItem) -> (point: EaselPoint, item: EaselItem)? {
+    static func uprightHit(_ point: EaselPoint, item: EaselItem) -> (point: EaselPoint, item: EaselItem)? {
         guard isTransformed(item), let inverse = transform(for: item).inverted else { return nil }
         return (inverse.apply(point), upright(item))
     }
@@ -198,7 +198,7 @@ package enum EaselRotation {
         return inside
     }
 
-    package static func polygonsOverlap(_ first: [EaselPoint], _ second: [EaselPoint]) -> Bool {
+    static func polygonsOverlap(_ first: [EaselPoint], _ second: [EaselPoint]) -> Bool {
         guard first.count >= 3, second.count >= 3 else { return false }
         for polygon in [first, second] {
             for index in polygon.indices {
@@ -251,7 +251,7 @@ package enum EaselRotation {
                          width: placed.width, height: placed.height)
     }
 
-    package static func scaledSize(_ item: EaselItem, scaleX: Double, scaleY: Double) -> (width: Double, height: Double) {
+    static func scaledSize(_ item: EaselItem, scaleX: Double, scaleY: Double) -> (width: Double, height: Double) {
         let radians = degrees(of: item) * .pi / 180, cosine = cos(radians), sine = sin(radians)
         return (item.frame.width * hypot(scaleX * cosine, scaleY * sine),
                 item.frame.height * hypot(scaleX * sine, scaleY * cosine))

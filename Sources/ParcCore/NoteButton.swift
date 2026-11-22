@@ -25,7 +25,7 @@ extension NoteButton {
 }
 
 extension NotePage {
-    package func buttonInsertion(for id: NoteBlockID, placement: NoteButtonPlacement, carrying blocks: [NoteBlock]) -> NoteInsertion? {
+    func buttonInsertion(for id: NoteBlockID, placement: NoteButtonPlacement, carrying blocks: [NoteBlock]) -> NoteInsertion? {
         guard contains(id) else { return nil }
         switch placement {
         case .top: return .top(0)
@@ -42,10 +42,10 @@ extension NotePage {
 }
 
 extension NotePageSession {
-    package static let buttonPressName = "Press Button"
+    static let buttonPressName = "Press Button"
 
     @discardableResult
-    package func insertFromButton(_ id: NoteBlockID, blocks template: [NoteBlock], placement: NoteButtonPlacement, press token: UUID) -> [NoteBlockID] {
+    func insertFromButton(_ id: NoteBlockID, blocks template: [NoteBlock], placement: NoteButtonPlacement, press token: UUID) -> [NoteBlockID] {
         guard !template.isEmpty, let position = page.buttonInsertion(for: id, placement: placement, carrying: template) else { return [] }
         let copies = template.map { $0.withFreshIDs() }
         edit(Self.buttonPressName, coalescing: .lasting(id, token), selecting: { $0.clamped(self.selection) }) { page in

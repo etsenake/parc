@@ -3,8 +3,8 @@ import Foundation
 package struct EaselPage: Codable, Equatable, Identifiable {
     package static let maximumCount = 100
     package static let maximumNameLength = 100
-    package static let maximumNameBytes = 4096
-    package static let dividerName = "-"
+    static let maximumNameBytes = 4096
+    static let dividerName = "-"
 
     package var id: UUID
     package var name: String
@@ -26,11 +26,11 @@ package enum EaselPages {
 
     package static func pages(in document: EaselDocument) -> [EaselPage] { document.pages ?? [] }
 
-    package static func firstPageID(_ document: EaselDocument) -> UUID? { document.pages?.first?.id }
+    static func firstPageID(_ document: EaselDocument) -> UUID? { document.pages?.first?.id }
 
     package static func pageID(of item: EaselItem, in document: EaselDocument) -> UUID? { item.page ?? firstPageID(document) }
 
-    package static func isOnPage(_ item: EaselItem, _ page: UUID?, first: UUID?) -> Bool {
+    static func isOnPage(_ item: EaselItem, _ page: UUID?, first: UUID?) -> Bool {
         guard let page, page != first else { return item.page == nil || item.page == first }
         return item.page == page
     }
@@ -73,13 +73,13 @@ package enum EaselPages {
         return view
     }
 
-    package static func isValidName(_ name: String) -> Bool {
+    static func isValidName(_ name: String) -> Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.count <= EaselPage.maximumNameLength
             && name.utf8.count <= EaselPage.maximumNameBytes
             && !name.unicodeScalars.contains { $0.properties.generalCategory == .control || CharacterSet.newlines.contains($0) }
     }
 
-    package static func validationProblem(_ document: EaselDocument) -> String? {
+    static func validationProblem(_ document: EaselDocument) -> String? {
         var ids = Set<UUID>()
         if let pages = document.pages {
             guard !pages.isEmpty, pages.count <= EaselPage.maximumCount else { return "page count" }

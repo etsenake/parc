@@ -118,10 +118,10 @@ package final class NoteFileSession {
     @Published package private(set) var state: NoteFileSaveState = .saved
     package let urlChanges = PassthroughSubject<URL, Never>()
     package private(set) var format: NoteFileFormat
-    package private(set) var hasUnsavedChanges = false
-    package private(set) var editorCount = 0
-    package private(set) var lastSaveError: String?
-    package private(set) var readProblem: String?
+    private(set) var hasUnsavedChanges = false
+    private(set) var editorCount = 0
+    private(set) var lastSaveError: String?
+    private(set) var readProblem: String?
     package private(set) var customEmoji: Set<String> = []
     private var emojiLibrary: NoteEmojiLibrary?
     private var emojiSubscription: AnyCancellable?
@@ -191,7 +191,7 @@ package final class NoteFileSession {
 
     package var title: String { url.deletingPathExtension().lastPathComponent }
 
-    package var conflictingText: String? { conflict.map { NoteFileText.editableText($0, kind: kind) } }
+    var conflictingText: String? { conflict.map { NoteFileText.editableText($0, kind: kind) } }
 
     package var isMissing: Bool { diskText == nil }
 
@@ -284,7 +284,7 @@ package final class NoteFileSession {
         return url
     }
 
-    package func saveMarkdownCopy() throws -> URL {
+    func saveMarkdownCopy() throws -> URL {
         let folder = url.deletingLastPathComponent()
         let base = NoteFileNaming.sanitizedTitle(title)
         let target = NoteFileNaming.uniqueURL(in: folder, base: base.isEmpty ? NoteFileNaming.untitled : base, pathExtension: "md")
@@ -293,7 +293,7 @@ package final class NoteFileSession {
         return NoteFilePaths.canonical(target)
     }
 
-    package func checkDisk() {
+    func checkDisk() {
         diskCheckTimer?.cancel()
         diskCheckTimer = nil
         guard !isClosed else { return }
@@ -305,7 +305,7 @@ package final class NoteFileSession {
         }
     }
 
-    package func noteWasTrashed() {
+    func noteWasTrashed() {
         handleDeletion()
         refreshState()
     }

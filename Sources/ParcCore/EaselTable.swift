@@ -112,7 +112,7 @@ package struct EaselTable: Codable, Equatable {
     package static let maximumCells = 10_000
     package static let maximumPastedCells = 500
     package static let maximumCellBytes = 65_536
-    package static let maximumTextBytes = 1_048_576
+    static let maximumTextBytes = 1_048_576
     package static let minimumColumnWidth = 48.0
     package static let minimumRowHeight = 24.0
     package static let maximumLength = 8_000.0
@@ -385,7 +385,7 @@ package struct EaselTable: Codable, Equatable {
         axis == .rows ? merge.range.rows : merge.range.columns
     }
 
-    package func keepsMerges(moving block: ClosedRange<Int>, to destination: Int, along axis: EaselTableAxis) -> Bool {
+    func keepsMerges(moving block: ClosedRange<Int>, to destination: Int, along axis: EaselTableAxis) -> Bool {
         let count = axis == .rows ? rowCount : columnCount
         guard let order = Self.order(count: count, moving: block, to: destination) else { return false }
         var position = [Int](repeating: 0, count: count)

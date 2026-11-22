@@ -14,9 +14,9 @@ package struct EaselVersion: Identifiable, Hashable {
 }
 
 package struct EaselHistoryPolicy: Equatable {
-    package var minimumInterval: TimeInterval = 300
+    var minimumInterval: TimeInterval = 300
     package var idleDelay: TimeInterval = 120
-    package var maximumVersions = 40
+    var maximumVersions = 40
     package var maximumBytes = 96 * 1024 * 1024
     package init(minimumInterval: TimeInterval = 300, idleDelay: TimeInterval = 120, maximumVersions: Int = 40, maximumBytes: Int = 96 * 1024 * 1024) {
         self.minimumInterval = minimumInterval
@@ -65,7 +65,7 @@ package final class EaselHistory {
         directory.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
     }
 
-    package nonisolated static let maximumSavedSeconds = 1e13
+    nonisolated static let maximumSavedSeconds = 1e13
 
     package nonisolated static func fileName(savedAt: Date, itemCount: Int) -> String {
         let millis = Int64((min(max(0, savedAt.timeIntervalSince1970), maximumSavedSeconds) * 1000).rounded())

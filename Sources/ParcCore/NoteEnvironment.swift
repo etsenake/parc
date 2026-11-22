@@ -43,31 +43,31 @@ extension NoteEnvironment {
 }
 
 @MainActor
-package final class NoteDetachedEnvironment: NoteEnvironment {
-    package let documentURL: URL?
-    package let isPlainText: Bool
+final class NoteDetachedEnvironment: NoteEnvironment {
+    let documentURL: URL?
+    let isPlainText: Bool
 
-    package init(documentURL: URL? = nil, isPlainText: Bool = false) {
+    init(documentURL: URL? = nil, isPlainText: Bool = false) {
         self.documentURL = documentURL
         self.isPlainText = isPlainText
     }
 
-    package func resolve(_ source: String) -> URL? {
+    func resolve(_ source: String) -> URL? {
         if let url = URL(string: source), url.scheme != nil { return url }
         guard let base = documentURL?.deletingLastPathComponent() else { return nil }
         let decoded = source.removingPercentEncoding ?? source
         return URL(fileURLWithPath: decoded, relativeTo: base).standardizedFileURL
     }
 
-    package func importAsset(from url: URL) throws -> String { url.absoluteString }
+    func importAsset(from url: URL) throws -> String { url.absoluteString }
 
-    package func importAsset(data: Data, fileExtension: String, suggestedName: String?) throws -> String {
+    func importAsset(data: Data, fileExtension: String, suggestedName: String?) throws -> String {
         throw CocoaError(.fileWriteNoPermission)
     }
 
-    package func searchNotes(_ query: String, limit: Int) -> [NoteReference] { [] }
+    func searchNotes(_ query: String, limit: Int) -> [NoteReference] { [] }
 
-    package func linkTarget(for note: URL) -> String { note.absoluteString }
+    func linkTarget(for note: URL) -> String { note.absoluteString }
 
-    package func resolveNoteLink(_ target: String) -> URL? { resolve(target) }
+    func resolveNoteLink(_ target: String) -> URL? { resolve(target) }
 }

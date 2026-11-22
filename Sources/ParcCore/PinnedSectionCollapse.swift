@@ -42,7 +42,7 @@ package enum PinnedSectionCollapse {
     }
 
     package struct Summary: Equatable {
-        package static let shownIcons = 4
+        static let shownIcons = 4
         package var tabs: [BrowserTab]
         package var count: Int
         package var hidden: Int { max(0, count - tabs.count) }
