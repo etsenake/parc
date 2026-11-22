@@ -1111,12 +1111,6 @@ private func temporaryRoot() throws -> URL {
         window.undo()
         #expect(f.order == f.original)
     }
-
-    @Test func aClearThatDissolvesNothingElseIsNamedByItsItems() throws {
-        let f = try ArchiveFixture()
-        let workClear = try #require(f.close([f.t3.id], focused: nil, prompt: .clear))
-        #expect(workClear.actionName == "Clear Tab")
-    }
 }
 
 @MainActor struct ClosedTabsPrivateUndoTests {

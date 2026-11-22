@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import Parc
+@testable import ParcCore
 
 @MainActor private struct Scene {
     var state: BrowserState

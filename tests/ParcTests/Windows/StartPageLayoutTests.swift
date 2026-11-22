@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcCore
 
 struct StartPageLayoutTests {
     typealias Layout = StartPageLayout

@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import Testing
 @testable import Parc
+@testable import ParcCore
 
 private struct Pointer {
     var recognizer = StartPageMarkGestureRecognizer(clickInterval: 0.5)

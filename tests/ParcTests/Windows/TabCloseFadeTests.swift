@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcCore
 
 @MainActor private final class FadeHarness {
     var time: TimeInterval = 100

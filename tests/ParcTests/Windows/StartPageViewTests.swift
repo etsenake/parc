@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcCore
 
 @MainActor private struct Hierarchy {
     let root = ThemeRendererView(frame: NSRect(x: 0, y: 0, width: 1240, height: 840))

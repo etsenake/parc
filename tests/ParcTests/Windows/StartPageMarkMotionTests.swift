@@ -3,6 +3,7 @@ import Foundation
 import QuartzCore
 import Testing
 @testable import Parc
+@testable import ParcCore
 
 private struct SeededGenerator: RandomNumberGenerator {
     var state: UInt64

@@ -2,6 +2,7 @@ import AppKit
 import QuartzCore
 import Testing
 @testable import Parc
+@testable import ParcCore
 
 private struct Layers {
     let body: CALayer, shimmer: CALayer, host: CALayer, page: CALayer
