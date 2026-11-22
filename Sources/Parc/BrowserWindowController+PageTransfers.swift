@@ -104,7 +104,7 @@ extension BrowserWindowController {
     func scheduleUntargetedReturns() {
         guard !untargetedReturnScheduled, onUntargetedReturn != nil else { return }
         untargetedReturnScheduled = true
-        DispatchQueue.main.async { [weak self] in
+        enqueueUntargetedReturns { [weak self] in
             guard let self else { return }
             self.untargetedReturnScheduled = false
             guard self.presentation.isReady, !self.isClosing, !self.wholeWindowClose, !self.windowClosePending,

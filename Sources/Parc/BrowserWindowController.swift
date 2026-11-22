@@ -371,6 +371,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var untargetedReturnScheduled = false
     var shownSinceArrival = Set<UUID>()
     var heldReturns = Set<UUID>()
+    var enqueueUntargetedReturns: (@escaping @MainActor () -> Void) -> Void = { work in
+        DispatchQueue.main.async { work() }
+    }
     var failedReturns = Set<UUID>()
     var failedDuringReturn: UUID?
     var returnGateWasOpen = true
