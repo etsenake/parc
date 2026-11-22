@@ -58,7 +58,6 @@ let package = Package(
         .target(
             name: "Parc",
             dependencies: ["ParcCore", "ParcEngine", .product(name: "Sparkle", package: "Sparkle")],
-            path: "Sources/ParcApp",
             swiftSettings: strict + engineImport,
             linkerSettings: [
                 .linkedFramework("Cocoa"),

@@ -42,7 +42,7 @@ non-component releases carry the engine inside `Parc.app` and install on their o
 
 ## Repository
 
-- `Sources/ParcApp`: native windows and interface.
+- `Sources/Parc`: native windows and interface.
 - `Sources/ParcCore`: browser state, persistence and application behavior.
 - `Sources/ParcEngine`, `Engine/ParcNative`: app bridge and Chromium integration.
 - `Engine/ParcHost`: source overlays for the pinned engine.

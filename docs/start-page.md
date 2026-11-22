@@ -187,16 +187,16 @@ images live in ignored `work/start-page/`.
 
 ## Source and checks
 
-- `Sources/ParcApp/StartPageView.swift`: layout, background, chrome, dragging.
-- `Sources/ParcApp/StartPageMarkView.swift` and `StartPageMarkStage.swift`: the
+- `Sources/Parc/StartPageView.swift`: layout, background, chrome, dragging.
+- `Sources/Parc/StartPageMarkView.swift` and `StartPageMarkStage.swift`: the
   mark, its layers and cleanup; `StartPageMarkGesture.swift`,
   `StartPageMarkEasterEgg.swift`, `StartPageMarkMotion.swift`,
   `StartPageMarkTaffy.swift`, `StartPageMarkSwoop.swift` and
   `StartPageMarkCharge.swift`: the Easter eggs.
-- `Sources/ParcApp/StartPagePaper.swift`: the tinted paper and its glows.
-- `Sources/ParcApp/CommandBarResidentLayout.swift` and
+- `Sources/Parc/StartPagePaper.swift`: the tinted paper and its glows.
+- `Sources/Parc/CommandBarResidentLayout.swift` and
   `CommandBarResidentLifetime.swift`: the resident bar.
-- `Sources/ParcApp/TabCloseFade.swift` and
+- `Sources/Parc/TabCloseFade.swift` and
   `BrowserWindowController+CloseFade.swift`: the close fade.
 
 `StartPageViewTests`, `StartPageLayoutTests` and `TabCloseFadeTests` check the paper's tint, glows, appearance and swipe hand-off,

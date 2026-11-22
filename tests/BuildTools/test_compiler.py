@@ -23,7 +23,7 @@ def load(name: str, file: str):
 
 
 compiler = load("parc_compiler_test", "compiler.py")
-SENDABLE = ("/Users/me/Parc checkout/Sources/ParcApp/Peek.swift:418:47: warning: passing non-Sendable "
+SENDABLE = ("/Users/me/Parc checkout/Sources/Parc/Peek.swift:418:47: warning: passing non-Sendable "
             "parameter 'open' to function expecting a '@Sendable' closure")
 
 
@@ -48,7 +48,7 @@ class CompilerWarningTests(unittest.TestCase):
             "ld: warning: duplicate -rpath '/a' ignored",
             "/repo/Package.swift: Parc-product: ld: warning: duplicate -rpath '/a' ignored",
             "ld: fatal warning(s) induced error (-fatal_warnings)",
-            "Sources/ParcApp/App.swift:3:1: error: cannot find 'x' in scope",
+            "Sources/Parc/App.swift:3:1: error: cannot find 'x' in scope",
             "1 warning generated.",
         ])
         self.assertEqual(compiler.warnings(output), [

@@ -8,7 +8,7 @@ and scope; [the backlog](backlog.md) carries unfinished work.
 
 ## Site Control Center — WEB14
 
-`Sources/ParcApp/SiteControlCenter.swift` and its browser-window presenter own one
+`Sources/Parc/SiteControlCenter.swift` and its browser-window presenter own one
 card used by the sidebar URL bar, toolbar, split-pane bars, popup chrome,
 Developer Mode and the hidden Command–E extension picker. Pinned extension
 strips remain separate controls. A committed navigation/document change closes

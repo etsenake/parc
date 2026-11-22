@@ -701,7 +701,7 @@ class PreCommitChecks(RepositoryFixture):
     def setUp(self):
         super().setUp()
         self.hook = self.root / 'Engine/ParcNative/hook.cc'
-        self.write({'Engine/ParcNative/hook.cc': 'int hook = 1;\n', 'Sources/ParcApp/App.swift': 'let app = 1\n',
+        self.write({'Engine/ParcNative/hook.cc': 'int hook = 1;\n', 'Sources/Parc/App.swift': 'let app = 1\n',
                     'scripts/check-swift.py': 'raise SystemExit(0)\n',
                     release.LOCK: json.dumps({'chromium': {'commit': 'a' * 40}}) + '\n'})
         self.manifest(1)
@@ -748,7 +748,7 @@ class PreCommitChecks(RepositoryFixture):
             args = [str(arg) for arg in args]
             if kwargs.get('name') == 'swift-check':
                 source = Path(args[args.index('--repo') + 1])
-                self.events.append(('swift', source.parent.name, sorted(path.name for path in (source / 'Sources/ParcApp').iterdir())))
+                self.events.append(('swift', source.parent.name, sorted(path.name for path in (source / 'Sources/Parc').iterdir())))
                 receipt = Path(args[args.index('--output-dir') + 1]) / args[args.index('--label') + 1]
                 receipt.mkdir(parents=True); (receipt / 'compiler.log').write_text('App.swift:1:1: warning: fixture\n')
                 if during:
@@ -788,7 +788,7 @@ class PreCommitChecks(RepositoryFixture):
 
     def test_release_compile_checks_the_fetched_main_before_the_version_commit(self):
         head = self.land('fix(engine): Tweak the hook', {'Engine/ParcNative/hook.cc': 'int hook = 2;\n'}, manifest=2)
-        (self.root / 'Sources/ParcApp/Peer.swift').write_text('let peer = 1\n')
+        (self.root / 'Sources/Parc/Peer.swift').write_text('let peer = 1\n')
         runner = self.runner()
         with self.watched(runner):
             runner.prepare()
@@ -809,7 +809,7 @@ class PreCommitChecks(RepositoryFixture):
         self.assertEqual(self.kinds(), ['swift'])
         self.assertEqual(self.git('rev-parse', 'origin/main'), head)
         self.assertNotIn('version', runner.state)
-        fixed = self.land('fix(app): Silence the warning', {'Sources/ParcApp/App.swift': 'let app = 2\n'})
+        fixed = self.land('fix(app): Silence the warning', {'Sources/Parc/App.swift': 'let app = 2\n'})
         self.failing = False; self.events.clear()
         with self.watched(runner):
             runner.prepare()
@@ -839,7 +839,7 @@ class PreCommitChecks(RepositoryFixture):
         self.commit('fix: Keep tabs')
         landed = []
         runner = self.runner()
-        with self.watched(runner, during=[lambda: landed.append(self.peer({'Sources/ParcApp/App.swift': 'let app = 4\n'},
+        with self.watched(runner, during=[lambda: landed.append(self.peer({'Sources/Parc/App.swift': 'let app = 4\n'},
                                                                           'fix(app): Land late'))]):
             runner.prepare()
         self.assertEqual(self.kinds(), ['swift', 'swift', 'commit-tree', 'update-ref', 'push'])
@@ -859,11 +859,11 @@ class PreCommitChecks(RepositoryFixture):
     def test_peer_edit_appearing_during_the_compile_stops_before_any_version_state(self):
         self.commit('fix: Keep tabs')
         runner = self.runner()
-        with self.watched(runner, during=[lambda: self.write({'Sources/ParcApp/App.swift': 'let app = 8\n'})]), \
-                self.assertRaisesRegex(release.Failure, '^Start on clean main.*: Sources/ParcApp/App.swift$'):
+        with self.watched(runner, during=[lambda: self.write({'Sources/Parc/App.swift': 'let app = 8\n'})]), \
+                self.assertRaisesRegex(release.Failure, '^Start on clean main.*: Sources/Parc/App.swift$'):
             runner.prepare()
         self.assertNotIn('version', runner.state)
-        self.write({'Sources/ParcApp/App.swift': 'let app = 1\n'})
+        self.write({'Sources/Parc/App.swift': 'let app = 1\n'})
         with self.watched(runner):
             runner.prepare()
         self.assertEqual(self.kinds(), ['swift', 'commit-tree', 'update-ref', 'push'])
@@ -903,7 +903,7 @@ class PreCommitChecks(RepositoryFixture):
         runner.checkpoint(status='stopped', stage='engine', completed=['source'], command_pid=None, error='compiler error',
                           engine_seal_path=str(Path(runner.state['run']) / 'engine-artifacts.json'))
         for item in runner.locks: item.close()
-        fixed = self.land('fix(app): Fix the build', {'Sources/ParcApp/App.swift': 'let app = 7\n'})
+        fixed = self.land('fix(app): Fix the build', {'Sources/Parc/App.swift': 'let app = 7\n'})
         refreshed = release.Release(self.root, refresh_source=True); refreshed.start()
         self.addCleanup(lambda: [item.close() for item in refreshed.locks])
         frozen = (refreshed.state['commit'], refreshed.state['source'])
@@ -924,7 +924,7 @@ class PreCommitChecks(RepositoryFixture):
         landed, runner = [], self.runner()
         def land_once():
             if not landed:
-                landed.append(self.peer({'Sources/ParcApp/App.swift': 'let app = 5\n'}, 'fix(app): Land at the push'))
+                landed.append(self.peer({'Sources/Parc/App.swift': 'let app = 5\n'}, 'fix(app): Land at the push'))
         with self.watched(runner, before_push=land_once):
             runner.prepare()
         self.assertEqual(self.kinds(), ['swift', 'commit-tree', 'update-ref', 'push', 'swift', 'commit-tree', 'push'])
@@ -936,7 +936,7 @@ class PreCommitChecks(RepositoryFixture):
         landed, runner = [], self.runner()
         def land_once():
             if not landed:
-                landed.append(self.peer({'Sources/ParcApp/App.swift': 'let app = 6\n'}, 'fix(app): Land broken'))
+                landed.append(self.peer({'Sources/Parc/App.swift': 'let app = 6\n'}, 'fix(app): Land broken'))
                 self.failing = True
         with self.watched(runner, before_push=land_once), self.assertRaisesRegex(
                 release.Failure, 'The release-mode Swift compile of ' + '[0-9a-f]{40}' + ' failed; .*The version commit was not pushed.$'):

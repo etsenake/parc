@@ -51,7 +51,7 @@ class CheckSwiftTests(unittest.TestCase):
         self.output = root / "check receipts"
         for name, content in {
             "Sources/ParcCore/Model.swift": "struct Model {}\n",
-            "Sources/ParcApp/App.swift": "struct App {}\n",
+            "Sources/Parc/App.swift": "struct App {}\n",
             "Sources/ParcMain/main.swift": "print(1)\n",
             "Sources/ParcEngine/ParcEngine.h": "#import <Cocoa/Cocoa.h>\n",
             "Package.swift": "// swift-tools-version: 6.2\n",
@@ -158,7 +158,7 @@ class CheckSwiftTests(unittest.TestCase):
                          ["compiler.log", "result.json", "start.json"])
 
     def test_warning_left_by_compiler_fails_the_check(self):
-        warning = (f"{self.repo}/Sources/ParcApp/App.swift:3:47: warning: passing non-Sendable parameter "
+        warning = (f"{self.repo}/Sources/Parc/App.swift:3:47: warning: passing non-Sendable parameter "
                    "'open' to function expecting a '@Sendable' closure")
         self.env["FAKE_COMPILER_WARNING"] = warning
         for mode in ("typecheck", "sil", "release"):
@@ -218,13 +218,13 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertFalse(self.receipt()["inputs_unchanged"])
 
     def test_added_source_invalidates_successful_compiler(self):
-        self.env["FAKE_ADD_SOURCE"] = str(self.repo / "Sources/ParcApp/Added.swift")
+        self.env["FAKE_ADD_SOURCE"] = str(self.repo / "Sources/Parc/Added.swift")
         result = self.run_check()
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertFalse(self.receipt()["inputs_unchanged"])
 
     def test_added_source_before_compiler_cannot_silently_enter_receipt(self):
-        added = self.repo / "Sources/ParcApp/Added.swift"
+        added = self.repo / "Sources/Parc/Added.swift"
         self.env["FAKE_ADD_BEFORE_COMPILER"] = str(added)
         result = self.run_check()
         self.assertEqual(result.returncode, 2, result.stderr)
@@ -244,8 +244,8 @@ class CheckSwiftTests(unittest.TestCase):
         receipt = self.receipt()
         self.assertTrue(receipt["passed"])
         self.assertIsNone(receipt["git_before"])
-        self.assertIn(str(archive / "Sources/ParcApp/App.swift"), receipt["inputs"])
-        self.env["FAKE_MUTATE_INPUT"] = str(archive / "Sources/ParcApp/App.swift")
+        self.assertIn(str(archive / "Sources/Parc/App.swift"), receipt["inputs"])
+        self.env["FAKE_MUTATE_INPUT"] = str(archive / "Sources/Parc/App.swift")
         changed = self.run_check("--mode", "release", "--source-archive", "--label", "changed")
         self.assertEqual(changed.returncode, 2, changed.stderr)
 

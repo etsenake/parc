@@ -31,7 +31,7 @@ that's quick to appear doesn't hop at all. When the popup appears the icon
 finishes its current hop and lands; a failure brings it straight down in 0.14
 seconds. A pinned badge hops with its icon. Reduce Motion drops the hop and
 keeps the light. VoiceOver hears the button as expanded while it's lit. The
-rules live in [`ExtensionPopupActivity`](../Sources/ParcApp/ExtensionPopupActivity.swift).
+rules live in [`ExtensionPopupActivity`](../Sources/Parc/ExtensionPopupActivity.swift).
 
 A disabled primary action can still open its genuine context menu. Pin/Unpin
 availability comes from `canChangePin`; the engine builds the menu and executes

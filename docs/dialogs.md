@@ -1,7 +1,7 @@
 # Dialogs
 
 Every alert, confirmation and name prompt a person sees in Parc's own windows is
-a `ParcDialog` (`Sources/ParcApp/ParcDialog.swift`): the popover background, an
+a `ParcDialog` (`Sources/Parc/ParcDialog.swift`): the popover background, an
 18-point title, 14-point message, 36-point buttons with Escape and return hints,
 and a red Delete for destructive confirmations. The engine draws its own sheets in
 the same style with the same checkbox and field card

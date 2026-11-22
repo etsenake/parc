@@ -13,8 +13,8 @@ is a thin forwarder: it hands Parc's recognizer what Chromium's public delegate
 protocol provides (touches, every scroll event, the page's answer to the first
 scroll and its overscroll behavior) and cancels the gesture when the page's
 renderer view goes away. The Swift half,
-[HistorySwipeForwarder.swift](../Sources/ParcApp/HistorySwipeForwarder.swift)
-and [HistorySwipeDriver.swift](../Sources/ParcApp/HistorySwipeDriver.swift),
+[HistorySwipeForwarder.swift](../Sources/Parc/HistorySwipeForwarder.swift)
+and [HistorySwipeDriver.swift](../Sources/Parc/HistorySwipeDriver.swift),
 runs one recognizer per renderer view and applies each answer: consume the
 scroll event, start or stop AppKit's tracked swipe, warm a likely Back
 navigation and schedule the next clock tick. Chromium's history swiper and grey
@@ -54,7 +54,7 @@ one, with keyboard focus in the address field, the sidebar or another control,
 and over any visible split pane.
 
 - `nativeBrowser(_:allowsHistorySwipeFor:)` in
-  [BrowserWindowController.swift](../Sources/ParcApp/BrowserWindowController.swift)
+  [BrowserWindowController.swift](../Sources/Parc/BrowserWindowController.swift)
   accepts any visible split pane, an Easel's selected page or the active Peek.
   An open Peek covers every pane, so only the Peek swipes then. It refuses
   while a sheet is attached, a menu is tracking, the command bar, Library, tab
@@ -169,10 +169,10 @@ the zone, so tremor at the zone's boundary neither starts nor stops it.
 
 ## The indicator
 
-[HistorySwipeOverlayView.swift](../Sources/ParcApp/HistorySwipeOverlayView.swift)
+[HistorySwipeOverlayView.swift](../Sources/Parc/HistorySwipeOverlayView.swift)
 draws the indicator and the list to Dia's values, with the geometry and motion
 as pure functions in
-[HistorySwipeOverlayMotion.swift](../Sources/ParcApp/HistorySwipeOverlayMotion.swift).
+[HistorySwipeOverlayMotion.swift](../Sources/Parc/HistorySwipeOverlayMotion.swift).
 The forwarder places it over the swiping pane's page and feeds it every
 recognizer output. It is click-through, hidden from accessibility and
 clipped to that pane, so Split and Peek stay correct.

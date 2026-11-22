@@ -13,14 +13,14 @@ Related contracts: [motion](sidebar-motion.md),
 | Responsibility | Source |
 |---|---|
 | Width gesture and persistence policy | `Sources/ParcCore/SidebarResize.swift` |
-| Edge hit testing, cursor, indicator and haptics | `Sources/ParcApp/SidebarResizeRegion.swift` |
-| Header, list and dock geometry | `Sources/ParcApp/SidebarChromeLayout.swift` |
-| Window integration and final layout | `Sources/ParcApp/BrowserWindowController+Sidebar.swift`, `Sources/ParcApp/BrowserWindowController+ChromeLayout.swift` |
-| Renderer-paced page sizing | `Sources/ParcCore/PageContentResize.swift`, `Sources/ParcApp/PageContentResizer.swift` |
-| Renderer reports and observation leases | `Sources/ParcApp/PageRenderFrames.swift`, `Engine/ParcNative/native_appkit_page.mm` |
-| Space header and menus | `Sources/ParcApp/SidebarSpaceHeader.swift`, `Sources/ParcApp/SidebarSpaceMenu.swift` |
-| Pinned header and fold state | `Sources/ParcApp/SidebarPinnedHeader.swift`, `Sources/ParcCore/PinnedSectionCollapse.swift`, `Sources/ParcApp/BrowserWindowController+PinnedSection.swift` |
-| Favorites empty state and dock | `Sources/ParcApp/SidebarFavoritesEmptyState.swift`, `Sources/ParcApp/SidebarDockStrip.swift` |
+| Edge hit testing, cursor, indicator and haptics | `Sources/Parc/SidebarResizeRegion.swift` |
+| Header, list and dock geometry | `Sources/Parc/SidebarChromeLayout.swift` |
+| Window integration and final layout | `Sources/Parc/BrowserWindowController+Sidebar.swift`, `Sources/Parc/BrowserWindowController+ChromeLayout.swift` |
+| Renderer-paced page sizing | `Sources/ParcCore/PageContentResize.swift`, `Sources/Parc/PageContentResizer.swift` |
+| Renderer reports and observation leases | `Sources/Parc/PageRenderFrames.swift`, `Engine/ParcNative/native_appkit_page.mm` |
+| Space header and menus | `Sources/Parc/SidebarSpaceHeader.swift`, `Sources/Parc/SidebarSpaceMenu.swift` |
+| Pinned header and fold state | `Sources/Parc/SidebarPinnedHeader.swift`, `Sources/ParcCore/PinnedSectionCollapse.swift`, `Sources/Parc/BrowserWindowController+PinnedSection.swift` |
+| Favorites empty state and dock | `Sources/Parc/SidebarFavoritesEmptyState.swift`, `Sources/Parc/SidebarDockStrip.swift` |
 
 ## Width gesture
 

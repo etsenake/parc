@@ -7,7 +7,7 @@ click-to-dismiss backdrops keep the arrow.
 ## How controls get it
 
 AppKit controls subclass the `PointingHand…` classes in
-[PointingHand.swift](../../Sources/ParcApp/PointingHand.swift). Each one asks
+[PointingHand.swift](../../Sources/Parc/PointingHand.swift). Each one asks
 for cursor updates over itself and sets the hand while it is enabled.
 
 SwiftUI controls use `.pointingHandCursor()`, inside their button style or on

@@ -40,7 +40,7 @@ A popup opens just below the control that opened it and never covers that
 control or the bar it sits in. Each time the presenter places or resizes a
 popup it asks the browser window's controller for an origin, passing the
 extension, the popup window and its full frame size; the controller answers in
-screen coordinates ([`ExtensionPopupPlacement`](../Sources/ParcApp/ExtensionPopupPlacement.swift)).
+screen coordinates ([`ExtensionPopupPlacement`](../Sources/Parc/ExtensionPopupPlacement.swift)).
 The presenter's own sidebar, focused-view and window anchors remain for windows
 whose controller gives no answer.
 
