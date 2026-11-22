@@ -1,5 +1,5 @@
 import Foundation
-import ParcCore
+@testable import ParcCore
 import Testing
 @testable import Parc
 
