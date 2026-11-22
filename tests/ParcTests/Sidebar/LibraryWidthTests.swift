@@ -115,7 +115,7 @@ struct LibraryWidthTests {
     func everyOtherPageKeepsTheFourHundredSeventeenLibrary(kind: LibraryView.Kind) throws {
         let l = try Library()
         let page = l.page(kind)
-        #expect(page.contentWidth == SidebarChromeFrames.libraryMinimumWidth)
+        #expect(page.contentWidth == LibraryView.minimumWidth)
         #expect(Self.frames(page.contentWidth).library.width == 417)
     }
 

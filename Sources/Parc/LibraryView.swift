@@ -12,6 +12,7 @@ protocol LibrarySpacesPage: NSView {
 
 @MainActor
 final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
+    nonisolated static let minimumWidth: CGFloat = 417
     enum Kind: Equatable { case archive, captures, downloads, documents, spaces }
     struct PrivateMediaContext {
         let store: BrowserStore
@@ -51,7 +52,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     var onLoadDownloads: (() -> Void)?
     var onShowKind: ((Kind) -> Void)?
     var onLeaveSpaces: (() -> Void)?
-    private(set) var contentWidth = SidebarChromeFrames.libraryMinimumWidth
+    private(set) var contentWidth = LibraryView.minimumWidth
     var onContentWidthChange: (() -> Void)?
     var requestIcon: ((URL, UUID, @escaping (NSImage?) -> Void) -> Void)? { didSet { table.reloadData() } }
     var palette: ThemeChromePalette? { didSet { applyPalette() } }
@@ -380,7 +381,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         guard store.state.profiles.contains(where: { $0.id == profileID }) else { onClose?(); return }
         if shouldSkipCatalogReload() { return }
         defer {
-            let width = kind == .spaces ? SpaceManagementLayout.libraryWidth(count: store.state.spaces.count) : SidebarChromeFrames.libraryMinimumWidth
+            let width = kind == .spaces ? SpaceManagementLayout.libraryWidth(count: store.state.spaces.count) : Self.minimumWidth
             if contentWidth != width { contentWidth = width; onContentWidthChange?() }
         }
         if store.isEphemeral {

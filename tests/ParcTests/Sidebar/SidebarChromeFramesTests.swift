@@ -54,7 +54,7 @@ struct SidebarChromeFramesTests {
 
     @Test func aDefaultWidthLibraryInsetsItsPageVertically() {
         let frames = SidebarChromeFrames(bounds: libraryWindow, sidebarWidth: 228, presentation: .locked, placement: .locked,
-                                         library: true, libraryContentWidth: SidebarChromeFrames.libraryMinimumWidth)
+                                         library: true, libraryContentWidth: LibraryView.minimumWidth)
         #expect(frames.library == NSRect(x: 0, y: 0, width: 417, height: 832))
         #expect(frames.pageHost == NSRect(x: 417, y: 10, width: 853, height: 812))
     }

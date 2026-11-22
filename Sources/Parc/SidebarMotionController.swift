@@ -230,7 +230,6 @@ struct SidebarTransition {
 
 struct SidebarChromeFrames {
     static let pageInset: CGFloat = 10
-    static let libraryMinimumWidth: CGFloat = 417
     let sidebar, library, popupChrome, pageHost, sidePanel: NSRect
     let showsSidePanel: Bool
 
@@ -241,7 +240,7 @@ struct SidebarChromeFrames {
         if previewingHidden { sidebar.origin.x = -width }
         self.sidebar = sidebar
         let libraryWidth: CGFloat = !library || fullscreen ? 0
-            : max(Self.libraryMinimumWidth, min(bounds.width - 56, libraryContentWidth))
+            : max(LibraryView.minimumWidth, min(bounds.width - 56, libraryContentWidth))
         self.library = NSRect(x: 0, y: 0, width: libraryWidth, height: bounds.height)
         let left: CGFloat = fullscreen ? 0 : libraryWidth > 0 ? libraryWidth
             : (!popup && presentation == .locked && !previewingHidden ? width : popup ? 8 : thickness)

@@ -59,13 +59,6 @@ private struct OnboardingSetupProgressionButton: View {
     }
 }
 
-struct ParcButtonSpinner: View {
-    var body: some View {
-        ProgressView().progressViewStyle(.circular).scaleEffect(0.5).frame(width: 10, height: 10)
-            .accessibilityHidden(true)
-    }
-}
-
 extension NSColor {
     var isLightInk: Bool {
         guard let rgb = usingColorSpace(.sRGB) else { return false }
