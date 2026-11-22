@@ -17,7 +17,8 @@ package final class EaselTabIcons {
     }
 
     package static let shared = EaselTabIcons()
-    package static var worker = NoteFileWorker(label: "org.parc.easels.tab-icons", qos: .utility)
+    private static let sharedWorker = NoteFileWorker(label: "org.parc.easels.tab-icons", qos: .utility)
+    package var worker = EaselTabIcons.sharedWorker
 
     package let changes = PassthroughSubject<Set<String>?, Never>()
     package var directory: (UUID) -> URL? = { _ in nil }
@@ -118,7 +119,7 @@ package final class EaselTabIcons {
     private func read(directory: URL, id: UUID, key: String) {
         guard reading.insert(key).inserted else { return }
         let reader = readIcon
-        Self.worker.perform({ reader(directory, id) }) { [weak self] icon in
+        worker.perform({ reader(directory, id) }) { [weak self] icon in
             guard let self else { return }
             self.reading.remove(key)
             guard self.known[key] == nil else { return }
