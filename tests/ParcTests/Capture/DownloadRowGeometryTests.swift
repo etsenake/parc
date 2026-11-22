@@ -7,14 +7,14 @@ struct DownloadRowGeometryTests {
     typealias Fixture = DownloadListPresentationTests.Fixture
 
     @MainActor private func favicon() throws -> NSImage {
-        try #require(LibraryArtwork.image("EmptyFavicon", vector: "svg", in: LibraryArtwork.directory(in: .module)))
+        try #require(LibraryArtwork(folder: LibraryArtwork.directory(in: .module)).emptyFavicon)
     }
 
-    @MainActor private func placeholder() throws -> CALayer {
-        let artwork = DownloadArtworkView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
-        let image = try favicon()
-        artwork.emptyFavicon = { image }
-        artwork.kind = .emptyFavicon
+    @MainActor private func placeholder(in fixture: Fixture) throws -> CALayer {
+        let cell = try fixture.cell(4)
+        let artwork = try #require(cell.subviews.compactMap { $0 as? DownloadArtworkView }.first)
+        artwork.artwork = LibraryArtwork(folder: LibraryArtwork.directory(in: .module))
+        cell.layoutSubtreeIfNeeded()
         artwork.layout()
         return try #require(artwork.layer?.sublayers?.first)
     }
@@ -30,14 +30,18 @@ struct DownloadRowGeometryTests {
     }
 
     @MainActor @Test func theEmptyFaviconIsCenteredAndMasksTheSemanticPrimaryTint() throws {
-        let layer = try placeholder()
+        let fixture = try Fixture()
+        defer { fixture.teardown() }
+        let layer = try placeholder(in: fixture)
         #expect(!layer.isHidden && layer.frame == NSRect(x: 9, y: 9, width: 14, height: 14))
         #expect(layer.mask?.frame == layer.bounds)
         #expect(layer.backgroundColor == NSColor.labelColor.cgColor)
     }
 
     @MainActor @Test func theEmptyFaviconHasClearCornersAndTranslucentInk() throws {
-        let layer = try placeholder()
+        let fixture = try Fixture()
+        defer { fixture.teardown() }
+        let layer = try placeholder(in: fixture)
         let side = 28
         let context = try #require(CGContext(data: nil, width: side, height: side, bitsPerComponent: 8,
             bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
