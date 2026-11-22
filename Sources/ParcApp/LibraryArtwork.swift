@@ -1,14 +1,18 @@
 import AppKit
 
-@MainActor enum LibraryArtwork {
+@MainActor final class LibraryArtwork {
     static let directory = directory(in: .main)
     static func directory(in bundle: Bundle) -> URL? {
         bundle.resourceURL?.appendingPathComponent("Library", isDirectory: true)
     }
-    private static var cache: [String: NSImage] = [:]
+    static let shared = LibraryArtwork(folder: directory)
+    private let folder: URL?
+    init(folder: URL?) { self.folder = folder }
 
-    static func boxOfThings(_ name: String) -> NSImage? { image(name, vector: "pdf") }
-    static var emptyFavicon: NSImage? { image("EmptyFavicon", vector: "svg") }
+    private var cache: [String: NSImage] = [:]
+
+    static func boxOfThings(_ name: String) -> NSImage? { shared.image(name, vector: "pdf") }
+    var emptyFavicon: NSImage? { image("EmptyFavicon", vector: "svg") }
 
     static func card(_ name: String, dark: Bool, side: CGFloat) -> NSImage? {
         let file = name + (dark ? "-dark" : "")
@@ -22,15 +26,9 @@ import AppKit
         return base
     }
 
-    static func image(_ name: String, vector: String) -> NSImage? {
+    private func image(_ name: String, vector: String) -> NSImage? {
         if let image = cache[name] { return image }
-        guard let image = image(name, vector: vector, in: directory) else { return nil }
-        cache[name] = image
-        return image
-    }
-
-    static func image(_ name: String, vector: String, in directory: URL?) -> NSImage? {
-        guard let directory,
+        guard let directory = folder,
               let data = try? Data(contentsOf: directory.appendingPathComponent(name + ".png")),
               let base = NSBitmapImageRep(data: data) else { return nil }
         let size = NSSize(width: base.pixelsWide, height: base.pixelsHigh)
@@ -46,6 +44,7 @@ import AppKit
             for representation in vectorImage.representations { image.addRepresentation(representation) }
         }
         image.isTemplate = true
+        cache[name] = image
         return image
     }
 }
