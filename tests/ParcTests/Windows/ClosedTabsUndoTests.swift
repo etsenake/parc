@@ -932,7 +932,7 @@ private func temporaryRoot() throws -> URL {
 
     func register(_ record: ClosedTabsUndo, in existing: FolderUndoManager? = nil) -> FolderUndoManager {
         let manager = existing ?? FolderUndoManager()
-        #expect(consent.register(record, in: manager, on: store) || consent.lastOperation == nil)
+        #expect(consent.register(record, in: manager, on: store))
         return manager
     }
 
