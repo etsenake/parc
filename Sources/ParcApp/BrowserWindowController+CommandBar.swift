@@ -119,11 +119,9 @@ extension BrowserWindowController {
     }
     private func commandBarTabs(profileID: UUID, excluding currentID: UUID?) -> [BrowserTab] {
         guard !isPopupWindow else { return [] }
-        return store.state.tabs.filter {
-            $0.profileID == profileID && $0.id != currentID && $0.archivedAt == nil
-                && !closingTabIDs.contains($0.id) && !modelRetirementIDs.contains($0.id)
-                && !store.retiringTabIDs.contains($0.id) && !transferringTabIDs.contains($0.id)
-        }
+        return CommandBarTabEligibility.tabs(
+            store.state.tabs, profileID: profileID, excluding: currentID,
+            unavailable: closingTabIDs.union(modelRetirementIDs).union(store.retiringTabIDs).union(transferringTabIDs))
     }
     func commandBarTabCaption(_ tab: BrowserTab) -> CommandBarResultText.TabCaption {
         CommandBarResultText.tabCaption(isFavorite: tab.kind == .favorite, isInActiveSpace: tab.spaceID == activeSpaceID,

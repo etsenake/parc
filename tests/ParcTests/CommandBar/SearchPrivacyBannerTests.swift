@@ -81,3 +81,106 @@ struct SearchPrivacyBannerTests {
             y: y, lastRowMaxY: lastRow.map { CGFloat($0) }) == expected)
     }
 }
+
+extension SearchPrivacyBannerTests {
+    @Test func aFreshProfileHasNotDismissedTheBannerAndDismissalIsStoredUnderItsKey() throws {
+        let suite = "Parc.SearchPrivacyBannerTests." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let policy = CommandBarSearchPrivacyPolicy(defaults: defaults)
+        #expect(!policy.hasBeenExplicitlyDismissed)
+        policy.dismiss()
+        #expect(defaults.bool(forKey: "commandBarSearchSuggestionsPrivacyHasBeenExplicitlyDismissed"))
+    }
+
+    @Test @MainActor func theInfoButtonIsTheSymbolAloneWithAShadow() {
+        _ = NSApplication.shared
+        let button = CommandBarPrivacyInfoButton(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+        #expect(button.image != nil)
+        #expect(button.imagePosition == .imageOnly)
+        #expect(button.shadow?.shadowBlurRadius == 8)
+    }
+
+    @Test @MainActor func theBannerNamesItselfAndItsButtons() {
+        let banner = banner(width: 765)
+        #expect(banner.title.stringValue == "We talk to your search engine to help us suggest results.")
+        #expect(banner.title.font == NSFont.boldSystemFont(ofSize: 13))
+        #expect(banner.settingsButton.title == "Search Settings…")
+        #expect(banner.dismissButton.title == "Dismiss")
+        #expect(banner.icon.image != nil)
+        #expect(banner.accessibilityLabel() == "Search suggestions privacy")
+        #expect(banner.dismissButton.accessibilityLabel() == "Dismiss")
+        #expect(banner.settingsButton.refusesFirstResponder)
+        #expect(banner.dismissButton.refusesFirstResponder)
+    }
+
+    @Test @MainActor func aFullWidthBannerLaysItsRowOutFromTheEdges() {
+        let banner = banner(width: 765)
+        #expect(!banner.isCondensed(forWidth: 765))
+        #expect(banner.preferredHeight(forWidth: 765) == 60)
+        #expect(banner.icon.frame.minX == 16)
+        #expect(abs(banner.dismissButton.frame.maxX - (765 - 10)) < 0.5)
+        #expect(abs(banner.settingsButton.frame.maxX + 10 - banner.dismissButton.frame.minX) < 0.5)
+        #expect(abs(banner.title.frame.minX - (banner.icon.frame.maxX + 14)) < 0.5)
+        #expect(banner.title.frame.maxX <= banner.settingsButton.frame.minX - 14 + 0.5)
+    }
+
+    @Test @MainActor func theIconAndButtonBodiesShareTheRowsCentre() {
+        let banner = banner(width: 765)
+        #expect(abs(banner.icon.frame.midY - 30) < 0.5)
+        #expect(abs(banner.dismissButton.frame.minY + 18 - 30) < 0.5)
+        #expect(banner.dismissButton.intrinsicContentSize.height == 39)
+    }
+
+    @Test @MainActor func theNarrowestSingleRowBannerKeepsItsWholeTitle() throws {
+        _ = NSApplication.shared
+        let banner = CommandBarSearchPrivacyBanner(frame: .zero)
+        let width = try #require((300...1000).map(CGFloat.init).first { !banner.isCondensed(forWidth: $0) })
+        banner.frame = NSRect(x: 0, y: 0, width: width, height: 60)
+        banner.layout()
+        let line = try #require(banner.title.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: 10_000, height: 100)).width)
+        #expect(line <= banner.title.frame.width)
+    }
+
+    @Test(arguments: [
+        (NSAppearance.Name.darkAqua, 0.93, 0.494), (NSAppearance.Name.aqua, 0.09, 0.523),
+    ])
+    @MainActor func theTitleAndIconColoursFollowTheAppearance(name: NSAppearance.Name, title: Double, icon: Double) throws {
+        _ = NSApplication.shared
+        let appearance = try #require(NSAppearance(named: name))
+        var resolved: (title: NSColor, icon: NSColor)?
+        appearance.performAsCurrentDrawingAppearance {
+            resolved = (CommandBarSearchPrivacyBanner.titleColor.usingColorSpace(.sRGB)!,
+                        CommandBarSearchPrivacyBanner.iconColor.usingColorSpace(.sRGB)!)
+        }
+        let colors = try #require(resolved)
+        #expect(abs(colors.title.redComponent - title) < 0.005)
+        #expect(abs(colors.icon.redComponent - icon) < 0.005)
+    }
+
+    @Test @MainActor func aNarrowBannerStacksItsButtonsUnderTheText() {
+        let banner = banner(width: 300)
+        #expect(banner.isCondensed(forWidth: 300))
+        #expect(banner.preferredHeight(forWidth: 300) == 133)
+        #expect(banner.settingsButton.frame.minY >= banner.title.frame.maxY + 14 - 0.5)
+        #expect(banner.dismissButton.frame.maxX <= 300 - 10 + 0.5)
+    }
+
+    @Test @MainActor func theNarrowestBannerStartsItsButtonsAtTheLeadingInset() {
+        let banner = banner(width: 260)
+        #expect(banner.settingsButton.frame.minX == 16)
+        #expect(banner.dismissButton.frame.maxX <= 260 - 10 + 0.5)
+    }
+
+    @Test(arguments: [
+        (1, NSEvent.ModifierFlags([.command, .option, .shift]), SidebarTablistBackground.Press.dragWindow),
+        (1, NSEvent.ModifierFlags([.shift]), .dragWindow),
+    ])
+    func otherModifiersStillDragTheWindow(clicks: Int, modifiers: NSEvent.ModifierFlags, expected: SidebarTablistBackground.Press) {
+        #expect(SidebarTablistBackground.press(clickCount: clicks, modifiers: modifiers) == expected)
+    }
+
+    @Test func otherModifiersDoNotStopAnEmptyListDoubleClick() {
+        #expect(SidebarTablistBackground.opensCommandBar(clickCount: 2, modifiers: [.command], y: 0, lastRowMaxY: nil))
+    }
+}
