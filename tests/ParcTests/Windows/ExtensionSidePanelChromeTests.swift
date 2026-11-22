@@ -21,7 +21,7 @@ import Testing
         nativePage.frame = panel.content.bounds
         nativePage.autoresizingMask = [.width, .height]
         panel.content.addSubview(nativePage)
-        panel.onClose = { [unowned self] in closes += 1; return true }
+        panel.onClose = { [weak self] in self?.closes += 1; return true }
     }
 
     func resize(to size: NSSize) {
