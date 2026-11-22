@@ -66,11 +66,7 @@ struct ArchivePreviewBackdropFocusTests {
         let fixture = try Fixture()
         let url = fixture.directory.appendingPathComponent("Journal.md")
         try Data("# Journal\n\nFirst entry.\n".utf8).write(to: url)
-        var settings = NoteFileSettings.production()
-        settings.defaults = fixture.defaults
-        let directory = fixture.directory
-        settings.notesFolders = { [directory] in [directory] }
-        let files = NoteFiles(settings: settings)
+        let files = IsolatedNoteFiles.make()
         let editor = NotePageViewController(file: try files.open(url))
         let (pane, tab) = try fixture.pane(for: .note(url))
         fixture.owner.noteEditors[tab.id] = .init(profileID: tab.profileID, editor: editor, originalTab: tab)
@@ -88,7 +84,8 @@ struct ArchivePreviewBackdropFocusTests {
         let store = try EaselEditorViewController.sharedStore(directory: directory)
         let session = try store.create(title: "Board")
         let id = session.document.id
-        let editor = try EaselEditorViewController(directory: directory, documentID: id)
+        let easelIcons = EaselTabIcons(files: IsolatedNoteFiles.make())
+        let editor = try EaselEditorViewController(directory: directory, documentID: id, easelIcons: easelIcons)
         let (pane, tab) = try fixture.pane(for: .easel(id))
         fixture.owner.easelEditors[tab.id] = .init(documentID: id, profileID: tab.profileID, editor: editor, originalTab: tab)
         pane.showNativeContent(editor.view)
