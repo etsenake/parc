@@ -27,8 +27,10 @@ struct SidebarEmojiModel {
         emojis = flat; categoryStarts = starts
     }
 
-    static let shared: SidebarEmojiModel = {
-        guard let url = SidebarIconCatalog.resourceDirectory?.appendingPathComponent("emojis.json"),
+    static let shared = load(from: SidebarIconCatalog.resourceDirectory)
+
+    static func load(from directory: URL?) -> SidebarEmojiModel {
+        guard let url = directory?.appendingPathComponent("emojis.json"),
               let data = try? Data(contentsOf: url),
               let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return SidebarEmojiModel([]) }
         let font = CTFontCreateWithName("AppleColorEmoji" as CFString, 0, nil)
@@ -44,7 +46,7 @@ struct SidebarEmojiModel {
                                  category: category, supportsSkinTones: item["skin_tones"] as? Bool ?? false))
         }
         return SidebarEmojiModel(entries)
-    }()
+    }
 
     func filtered(_ query: String) -> SidebarEmojiModel {
         guard !query.isEmpty else { return self }
@@ -92,15 +94,17 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
     let collectionView = NSCollectionView()
     let categoryBar = SidebarEmojiCategoryBar()
     private(set) var skinTonePopover: (popover: NSPopover, anchorIndex: Int)?
+    private let source: SidebarEmojiModel
     private var currentIndex: Int?
     private var pendingQuery: String?
     private var lastQuery = ""
     private var debounce: Timer?
     private var liveScrollObserver: NSObjectProtocol?
 
-    init(selectedEmoji: String?) {
+    init(selectedEmoji: String?, source: SidebarEmojiModel = .shared) {
         self.selectedEmoji = selectedEmoji
-        model = .shared
+        self.source = source
+        model = source
         super.init(frame: .zero)
         currentIndex = model.index(containing: selectedEmoji)
         searchField.font = .systemFont(ofSize: 13)
@@ -170,7 +174,7 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
         debounce?.invalidate(); debounce = nil
         guard let query = pendingQuery else { return }
         pendingQuery = nil; lastQuery = query
-        model = SidebarEmojiModel.shared.filtered(query)
+        model = source.filtered(query)
     }
 
     func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int { model.emojis.count }

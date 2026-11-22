@@ -18,7 +18,7 @@ enum SidebarIconCatalog {
         return CTFontCreateWithFontDescriptor(descriptor, size, nil) as NSFont
     }
 
-    static func font(_ font: Font, size: CGFloat, in directory: URL) -> NSFont {
+    static func font(_ font: Font, size: CGFloat, in directory: URL?) -> NSFont {
         guard let descriptor = descriptor(font, in: directory) else { return .systemFont(ofSize: size) }
         return CTFontCreateWithFontDescriptor(descriptor, size, nil) as NSFont
     }

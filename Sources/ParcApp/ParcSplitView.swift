@@ -1342,6 +1342,11 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     private var retiredDividerElements: [DividerAccessibilityElement] = []
     private var announcedDividerBasis: DividerAnnouncementBasis?
     private var dividerSettleTimer: Timer?
+    var scheduleDividerSettle: (@escaping @MainActor () -> Void) -> Timer = { settle in
+        let timer = Timer(timeInterval: 0.3, repeats: false) { _ in MainActor.assumeIsolated { settle() } }
+        RunLoop.main.add(timer, forMode: .default)
+        return timer
+    }
     private var dividerAnnouncementBasis: DividerAnnouncementBasis {
         DividerAnnouncementBasis(orientation: savedOrientation, factors: savedFactors, stacks: activeStacks,
                                  panes: arrangedSubviews.map(ObjectIdentifier.init))
@@ -1355,11 +1360,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
               retiredDividerElements.isEmpty else { announceDividerChanges(); return }
         guard recordDividerValues(announcing: false) else { return }
         dividerSettleTimer?.invalidate()
-        let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.announceDividerChanges() }
-        }
-        RunLoop.main.add(timer, forMode: .default)
-        dividerSettleTimer = timer
+        dividerSettleTimer = scheduleDividerSettle { [weak self] in self?.announceDividerChanges() }
     }
     private func announceDividerChanges(endingLiveResize: Bool = false) {
         guard canAnnounceDividers(endingLiveResize: endingLiveResize) else { return }

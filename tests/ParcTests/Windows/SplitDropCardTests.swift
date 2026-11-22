@@ -279,7 +279,8 @@ struct SplitDropCardTests {
     }
 
     private static func featherLink() throws -> NSImage {
-        let fonts = try #require(Bundle.module.url(forResource: "IconFonts", withExtension: nil))
+        let fonts = try #require(Bundle.module.url(forResource: "SplitViews", withExtension: nil))
+            .appendingPathComponent("CustomInfoPicker", isDirectory: true)
         let font = SidebarIconCatalog.font(.feather, size: 22, in: fonts)
         try #require(font.fontName != NSFont.systemFont(ofSize: 22).fontName)
         return SidebarIconCatalog.emojiImage(String(Character(Unicode.Scalar(0xE98A)!)), font: font)
