@@ -9,6 +9,14 @@ struct ShortcutRecorderPresentationTests {
         override var isVisible: Bool { true }
     }
 
+    @MainActor private final class Host: NSObject, AppearanceHost {
+        @objc dynamic var appearance: NSAppearance?
+
+        func observeAppearance(_ change: @escaping @MainActor () -> Void) -> NSKeyValueObservation {
+            observe(\.appearance, options: [.new]) { _, _ in MainActor.assumeIsolated { change() } }
+        }
+    }
+
     @MainActor private final class Fixture {
         let window: Window
         let field: ShortcutRecorderView
@@ -17,12 +25,14 @@ struct ShortcutRecorderPresentationTests {
         let label: NSTextField
 
         init(shortcut: KeyboardShortcut = KeyboardShortcut(key: "=", flags: [.control, .shift]),
-             appearance: NSAppearance.Name = .aqua) throws {
+             appearance: NSAppearance.Name = .aqua, applicationAppearance: NSAppearance.Name? = nil) throws {
             _ = NSApplication.shared
             window = Window(contentRect: NSRect(x: 0, y: 0, width: 300, height: 100), styleMask: [.titled],
                             backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
-            field = ShortcutRecorderView(frame: NSRect(x: 20, y: 20, width: 66, height: 24))
+            let host = Host()
+            host.appearance = applicationAppearance.flatMap { NSAppearance(named: $0) }
+            field = ShortcutRecorderView(frame: NSRect(x: 20, y: 20, width: 66, height: 24), appearanceHost: host)
             window.contentView?.addSubview(field)
             field.shortcut = shortcut
             field.appearance = NSAppearance(named: appearance)
@@ -69,6 +79,20 @@ struct ShortcutRecorderPresentationTests {
     @Test @MainActor func aLightUnfocusedFieldIsWhite() throws {
         let fixture = try Fixture()
         #expect(fixture.matches(fixture.border.backgroundColor, .white))
+    }
+
+    @Test @MainActor func explicitlyDarkAppearanceUsesATranslucentWhiteFill() throws {
+        let fixture = try Fixture(appearance: .darkAqua, applicationAppearance: .darkAqua)
+        #expect(fixture.matches(fixture.border.backgroundColor, NSColor.white.withAlphaComponent(0.1)))
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func explicitlyDarkAppearanceChangesTheOutlineWithRowSelection(selected: Bool) throws {
+        let fixture = try Fixture(appearance: .darkAqua, applicationAppearance: .darkAqua)
+        fixture.field.rowSelected = selected
+        fixture.field.refreshPresentation(reduceMotion: false)
+        let outline = selected ? NSColor.white.withAlphaComponent(0.1) : Fixture.gray(0.243)
+        #expect(fixture.matches(fixture.border.borderColor, outline))
     }
 
     @Test @MainActor func theLabelIsCenteredPassiveContent() throws {
