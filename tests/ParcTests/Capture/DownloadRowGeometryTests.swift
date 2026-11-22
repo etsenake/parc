@@ -6,6 +6,49 @@ import Testing
 struct DownloadRowGeometryTests {
     typealias Fixture = DownloadListPresentationTests.Fixture
 
+    @MainActor private func favicon() throws -> NSImage {
+        try #require(LibraryArtwork.image("EmptyFavicon", vector: "svg", in: LibraryArtwork.directory(in: .module)))
+    }
+
+    @MainActor private func placeholder() throws -> CALayer {
+        let artwork = DownloadArtworkView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
+        let image = try favicon()
+        artwork.emptyFavicon = { image }
+        artwork.kind = .emptyFavicon
+        artwork.layout()
+        return try #require(artwork.layer?.sublayers?.first)
+    }
+
+    @MainActor @Test func theLibraryUsesItsBundlesArtworkDirectory() {
+        #expect(LibraryArtwork.directory == Bundle.main.resourceURL?.appendingPathComponent("Library", isDirectory: true))
+    }
+
+    @MainActor @Test func theEmptyFaviconKeepsItsOriginalRetinaAndStandardRenditions() throws {
+        let image = try favicon()
+        #expect(image.isTemplate && image.size == NSSize(width: 14, height: 14))
+        #expect(image.representations.compactMap { ($0 as? NSBitmapImageRep)?.pixelsWide }.sorted() == [14, 28])
+    }
+
+    @MainActor @Test func theEmptyFaviconIsCenteredAndMasksTheSemanticPrimaryTint() throws {
+        let layer = try placeholder()
+        #expect(!layer.isHidden && layer.frame == NSRect(x: 9, y: 9, width: 14, height: 14))
+        #expect(layer.mask?.frame == layer.bounds)
+        #expect(layer.backgroundColor == NSColor.labelColor.cgColor)
+    }
+
+    @MainActor @Test func theEmptyFaviconHasClearCornersAndTranslucentInk() throws {
+        let layer = try placeholder()
+        let side = 28
+        let context = try #require(CGContext(data: nil, width: side, height: side, bitsPerComponent: 8,
+            bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.scaleBy(x: 2, y: 2)
+        layer.render(in: context)
+        let bytes = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+        func alpha(_ x: Int, _ y: Int) -> Int { Int(bytes[(y * side + x) * 4 + 3]) }
+        #expect(abs(Double(alpha(14, 14)) - NSColor.labelColor.alphaComponent * 72) < 2)
+        #expect(alpha(0, 0) == 0 && alpha(27, 27) == 0)
+    }
+
     struct Slot: Sendable, CustomTestStringConvertible {
         let width: CGFloat
         let row: Int

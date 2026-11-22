@@ -4,6 +4,11 @@ import Testing
 @testable import ParcCore
 
 struct LibraryRailLayoutTests {
+    @MainActor @Test(arguments: [LibraryRailAnimation.Name.archive, .easels])
+    func theNamedRailCompositionLoadsFromTheLibrary(_ name: LibraryRailAnimation.Name) {
+        #expect(LibraryRailAnimation.named(name, in: LibraryArtwork.directory(in: .module)) != nil)
+    }
+
     @MainActor private final class Fixture {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let store: BrowserStore
