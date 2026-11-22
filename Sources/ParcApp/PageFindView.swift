@@ -37,6 +37,11 @@ enum PageFindResultPresentation: Equatable {
         let width = min(300, max(0, page.width - 20))
         return NSRect(x: page.maxX - 10 - width, y: page.minY + 10, width: width, height: min(32, max(0, page.height - 20)))
     }
+    func place(over pane: NSView, in root: NSView, window: NSWindow?) {
+        guard pane.window === window, !pane.isHiddenOrHasHiddenAncestor else { return }
+        let paneFrame = pane.convert(pane.bounds, to: root)
+        frame = Self.frame(in: paneFrame.intersection(root.bounds))
+    }
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true; layer?.cornerRadius = 5
