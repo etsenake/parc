@@ -5,16 +5,18 @@ import Foundation
 package final class NoteFolderPreferences {
     package let defaults: UserDefaults
     package let changes = PassthroughSubject<UUID, Never>()
+    private let defaultFolder: @Sendable () -> URL
 
     private static let keyPrefix = "Parc.Notes.Folder."
     private static func key(_ profileID: UUID) -> String { keyPrefix + profileID.uuidString }
 
-    package init(defaults: UserDefaults) {
+    package init(defaults: UserDefaults, defaultFolder: @escaping @Sendable () -> URL = { NoteLibrary.defaultFolder }) {
         self.defaults = defaults
+        self.defaultFolder = defaultFolder
     }
 
     package func folder(for profileID: UUID) -> URL {
-        customFolder(for: profileID) ?? NoteLibrary.defaultFolder.standardizedFileURL
+        customFolder(for: profileID) ?? defaultFolder().standardizedFileURL
     }
 
     package func customFolder(for profileID: UUID) -> URL? {
@@ -23,7 +25,7 @@ package final class NoteFolderPreferences {
     }
 
     package var allFolders: [URL] {
-        var folders = [NoteLibrary.defaultFolder.standardizedFileURL]
+        var folders = [defaultFolder().standardizedFileURL]
         for (key, value) in defaults.dictionaryRepresentation() where key.hasPrefix(Self.keyPrefix) {
             guard let path = value as? String, path.hasPrefix("/") else { continue }
             folders.append(URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL)
@@ -34,7 +36,7 @@ package final class NoteFolderPreferences {
     package func setFolder(_ url: URL, for profileID: UUID) {
         guard url.isFileURL else { return }
         let chosen = URL(fileURLWithPath: url.standardizedFileURL.path, isDirectory: true).standardizedFileURL
-        if chosen.path == NoteLibrary.defaultFolder.standardizedFileURL.path {
+        if chosen.path == defaultFolder().standardizedFileURL.path {
             guard defaults.object(forKey: Self.key(profileID)) != nil else { return }
             defaults.removeObject(forKey: Self.key(profileID))
         } else {

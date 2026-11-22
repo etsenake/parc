@@ -23,6 +23,7 @@ package struct NoteFileSettings {
     package var backlinkFollowDelay: TimeInterval = 1.5
     package var backlinkDepartureWindow: TimeInterval = 10
     package var easelListingDelay: TimeInterval = 1
+    package var defaultFolder: @Sendable () -> URL = { NoteLibrary.defaultFolder }
 
     package nonisolated static let mainQueueHop: MainHop = { DispatchQueue.main.async(execute: $0) }
 
@@ -75,7 +76,7 @@ package final class NoteFiles {
     package init(settings: NoteFileSettings, syncedBlocks: NoteSyncedBlocks) {
         self.settings = settings
         self.syncedBlocks = syncedBlocks
-        folders = NoteFolderPreferences(defaults: settings.defaults)
+        folders = NoteFolderPreferences(defaults: settings.defaults, defaultFolder: settings.defaultFolder)
     }
 
     package var clock: NoteFileClock { settings.clock }
