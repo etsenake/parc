@@ -2,6 +2,9 @@ import AppKit
 import Combine
 import ParcCore
 import ParcEngine
+import ParcNotes
+import ParcEasels
+import ParcSidebar
 
 extension BrowserWindowController {
     func releaseClosedTab(_ id: UUID, updateSavedTab: Bool) {

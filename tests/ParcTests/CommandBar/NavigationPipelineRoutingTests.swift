@@ -3,6 +3,7 @@ import ParcEngine
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcCommandBar
 
 extension NavigationPipelineTests.Fixture {
     func input() throws -> CommandBarInputField {

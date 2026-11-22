@@ -2,6 +2,7 @@ import CoreServices
 import Foundation
 import Testing
 @testable import Parc
+@testable import ParcLibrary
 
 struct ExternalMediaWatchEventTests {
     private final class Batches: @unchecked Sendable {

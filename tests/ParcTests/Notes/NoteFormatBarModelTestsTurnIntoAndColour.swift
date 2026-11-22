@@ -3,6 +3,7 @@ import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcNotes
 
 @MainActor
 struct NoteFormatBarModelTestsTurnIntoAndColour {

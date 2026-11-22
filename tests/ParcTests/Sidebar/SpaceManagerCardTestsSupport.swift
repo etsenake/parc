@@ -1,6 +1,9 @@
 import AppKit
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcLibrary
+@testable import ParcSidebar
 
 @MainActor
 enum SpaceManagerCardTestsSupport {

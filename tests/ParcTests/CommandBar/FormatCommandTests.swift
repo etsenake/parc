@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct FormatCommandTests {
     @MainActor private final class Editor: NSView, NSMenuItemValidation {

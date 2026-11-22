@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcCommandBar
 
 struct FieldAnchorTests {
     private static let address = "example.test/projects/archive?query=long-project-name&sort=updated&view=all"

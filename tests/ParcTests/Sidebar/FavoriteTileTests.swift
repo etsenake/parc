@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcSidebar
 
 private final class HoverKeyWindow: NSWindow {
     var key = true

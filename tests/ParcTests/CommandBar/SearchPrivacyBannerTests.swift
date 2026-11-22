@@ -2,6 +2,8 @@ import AppKit
 import ParcTestSupport
 import Testing
 @testable import Parc
+@testable import ParcCommandBar
+@testable import ParcSidebar
 
 struct SearchPrivacyBannerTests {
     @Test func dismissalIsRememberedAcrossSessions() throws {

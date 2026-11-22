@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcLibrary
 
 struct CapturePresentationTests {
     private static let bounds = NSRect(x: 0, y: 0, width: 1000, height: 700)

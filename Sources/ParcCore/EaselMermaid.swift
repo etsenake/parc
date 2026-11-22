@@ -116,7 +116,7 @@ struct EaselMermaidGroup: Equatable {
 }
 
 package struct EaselMermaidDiagram: Equatable {
-    enum Kind: String, Equatable { case flowchart, entityRelationship }
+    package enum Kind: String, Equatable { case flowchart, entityRelationship }
 
     var kind: Kind
     var direction: EaselMermaidDirection = .down
@@ -278,7 +278,7 @@ package enum EaselMermaid {
 }
 
 enum EaselMermaidSource {
-    struct Line: Equatable {
+    package struct Line: Equatable {
         var number: Int
         var text: String
 

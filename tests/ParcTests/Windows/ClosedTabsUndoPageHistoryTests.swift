@@ -3,6 +3,7 @@ import Foundation
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcSidebar
 
 struct ClosedTabsUndoPageHistoryTests {
     private let pageA = UUID(), pageB = UUID(), pageC = UUID()

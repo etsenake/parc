@@ -2,6 +2,7 @@ import AppKit
 import ParcCore
 import ParcEngine
 @testable import Parc
+@testable import ParcKit
 
 @MainActor final class SplitDropDragInfo: NSObject, NSDraggingInfo {
     var draggingDestinationWindow: NSWindow?

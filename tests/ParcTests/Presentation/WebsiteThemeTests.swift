@@ -4,6 +4,8 @@ import ParcTestSupport
 import Testing
 import ParcCore
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSettings
 
 struct WebsiteThemeTests {
     private let key = "parc.websiteTheme.v1"

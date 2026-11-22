@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import Parc
+@testable import ParcSidebar
 
 struct BlockedPopupsTests {
     private static let page = "https://canvas.school.edu/courses/4821"

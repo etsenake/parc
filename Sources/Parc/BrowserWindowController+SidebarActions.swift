@@ -2,6 +2,9 @@ import AppKit
 import Combine
 import ParcCore
 import ParcEngine
+import ParcKit
+import ParcCommandBar
+import ParcSidebar
 
 extension BrowserWindowController {
     func prepareSidebarTabMute(_ expected: BrowserTab, audio: SidebarTabAudio) -> (() -> Bool)? {

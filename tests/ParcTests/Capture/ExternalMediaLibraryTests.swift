@@ -3,6 +3,7 @@ import Combine
 import Darwin
 import Testing
 @testable import Parc
+@testable import ParcLibrary
 
 struct ExternalMediaLibraryTests {
     private struct DiskFixture {

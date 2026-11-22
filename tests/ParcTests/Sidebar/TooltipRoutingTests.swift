@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 @MainActor
 final class TooltipTestClock {
@@ -10,7 +11,7 @@ final class TooltipTestClock {
     private var fades: [(at: Date, order: Int, body: @MainActor () -> Void)] = []
     private var order = 0
     var modifiers: NSEvent.ModifierFlags = []
-    var commandShortcut: (String) -> Parc.KeyboardShortcut? = { _ in nil }
+    var commandShortcut: (String) -> ParcKit.KeyboardShortcut? = { _ in nil }
 
     func install(on window: NSWindow) {
         let controller = TooltipController.controller(for: window)
@@ -104,7 +105,7 @@ struct TooltipRoutingTests {
         }
     }
 
-    private static let hide = TooltipConfiguration("Hide sidebar", shortcut: .fixed(Parc.KeyboardShortcut(key: "s", flags: .command)))
+    private static let hide = TooltipConfiguration("Hide sidebar", shortcut: .fixed(ParcKit.KeyboardShortcut(key: "s", flags: .command)))
     private static let centre = NSPoint(x: 40, y: 140)
 
     private func control(_ scene: Scene, _ configuration: TooltipConfiguration? = nil) -> (NSView, NSResponder) {
@@ -196,7 +197,7 @@ struct TooltipRoutingTests {
 
     @Test func aBindingShowsTheResetTabTooltip() {
         let scene = Scene()
-        scene.clock.commandShortcut = { $0 == "resetTab:" ? Parc.KeyboardShortcut(key: "r", flags: [.command, .option]) : nil }
+        scene.clock.commandShortcut = { $0 == "resetTab:" ? ParcKit.KeyboardShortcut(key: "r", flags: [.command, .option]) : nil }
         let (_, owner) = control(scene, Self.resetTab)
         owner.mouseEntered(with: scene.entered(at: Self.centre))
         scene.clock.advance(0.55)
@@ -379,7 +380,7 @@ struct TooltipRoutingTests {
             host = NSHostingView(rootView: AnyView(EmptyView()))
             host.rootView = AnyView(SwiftUI.Button("Copy") { [weak self] in guard let self else { return }; clicks += 1 }
                 .frame(width: 48, height: 32)
-                .parcTooltip(TooltipConfiguration("Copy URL", shortcut: .fixed(Parc.KeyboardShortcut(key: "c", flags: [.command, .shift])))))
+                .parcTooltip(TooltipConfiguration("Copy URL", shortcut: .fixed(ParcKit.KeyboardShortcut(key: "c", flags: [.command, .shift])))))
             host.frame = scene.window.contentView!.bounds
             scene.window.contentView!.addSubview(host)
             host.layoutSubtreeIfNeeded()

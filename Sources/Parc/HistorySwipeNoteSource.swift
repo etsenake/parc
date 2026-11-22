@@ -1,5 +1,6 @@
 import AppKit
 import ParcCore
+import ParcKit
 
 @MainActor
 final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget, @preconcurrency HistorySwipePresenter {

@@ -16,13 +16,13 @@ or, with Reduce Motion on, only fade.
 
 | Responsibility | Source |
 |---|---|
-| Transitions, frames and redraw policy | `Sources/Parc/SidebarMotionController.swift` |
+| Transitions, frames and redraw policy | `Sources/ParcSidebar/SidebarMotionController.swift` |
 | Window integration | `Sources/Parc/BrowserWindowController+Sidebar.swift` |
-| Hover model and event ownership | `Sources/ParcCore/SidebarHover.swift`, `Sources/Parc/SidebarHoverTracker.swift` |
-| Floating material and theme canvas | `Sources/Parc/ThemeRenderer.swift` |
-| Space paging | `Sources/Parc/SidebarSpacePaging.swift`, `Sources/Parc/SidebarView.swift` |
-| Traffic lights | `Sources/Parc/WindowStandardButtons.swift` |
-| Dock menu and plus face | `Sources/Parc/SidebarPlusMenu.swift`, `Sources/Parc/SidebarPlusButtonFace.swift` |
+| Hover model and event ownership | `Sources/ParcCore/SidebarHover.swift`, `Sources/ParcSidebar/SidebarHoverTracker.swift` |
+| Floating material and theme canvas | `Sources/ParcKit/ThemeRenderer.swift` |
+| Space paging | `Sources/ParcSidebar/SidebarSpacePaging.swift`, `Sources/ParcSidebar/SidebarView.swift` |
+| Traffic lights | `Sources/ParcKit/WindowStandardButtons.swift` |
+| Dock menu and plus face | `Sources/ParcSidebar/SidebarPlusMenu.swift`, `Sources/ParcSidebar/SidebarPlusButtonFace.swift` |
 
 ## Presentation transitions
 

@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import ParcKit
+import ParcSidebar
 
 @MainActor
 final class DeveloperModePreferences: ObservableObject {

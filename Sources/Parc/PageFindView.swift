@@ -1,4 +1,5 @@
 import AppKit
+import ParcKit
 
 enum PageFindResultPresentation: Equatable {
     case pending, notFound, matches(ordinal: Int, total: Int)

@@ -2,6 +2,10 @@ import AppKit
 import Combine
 import ParcCore
 import ParcEngine
+import ParcKit
+import ParcEasels
+import ParcLibrary
+import ParcSidebar
 
 extension BrowserWindowController {
     private func privateDownloadContext(_ item: BrowserDownload) -> PCNativePrivateDownloadContext? {

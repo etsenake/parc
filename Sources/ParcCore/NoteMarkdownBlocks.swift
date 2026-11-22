@@ -1,7 +1,7 @@
 import Foundation
 
 final class NoteMDBlock {
-    enum Kind { case document, quote, list, item, paragraph, heading, thematicBreak, code, html, table, math, directive, footnote, definitions }
+    package enum Kind { case document, quote, list, item, paragraph, heading, thematicBreak, code, html, table, math, directive, footnote, definitions }
 
     let kind: Kind
     weak var parent: NoteMDBlock?

@@ -2,6 +2,11 @@ import AppKit
 import Combine
 import ParcCore
 import ParcEngine
+import ParcKit
+import ParcNotes
+import ParcEasels
+import ParcLibrary
+import ParcSidebar
 
 extension BrowserWindowController: EaselWindowActions {
     func showDocumentToast(_ content: ParcToastContent) { showToast(content) }

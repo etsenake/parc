@@ -2,6 +2,9 @@ import AppKit
 import ParcTestSupport
 import Testing
 @testable import Parc
+@testable import ParcKit
+@testable import ParcCommandBar
+@testable import ParcSidebar
 
 struct CompactLayoutTests {
     private typealias Layout = CommandBarCompactLayout

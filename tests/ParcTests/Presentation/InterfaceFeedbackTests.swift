@@ -3,6 +3,7 @@ import Combine
 import ParcTestSupport
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct InterfaceFeedbackTests {
     @MainActor private final class Sound: InterfaceCaptureSound {

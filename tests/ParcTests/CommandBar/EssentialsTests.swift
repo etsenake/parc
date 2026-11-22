@@ -1,6 +1,8 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcKit
+@testable import ParcCommandBar
 
 struct EssentialsTests {
     @MainActor private final class Owner: NSWindow {

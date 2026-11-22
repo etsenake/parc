@@ -2,6 +2,8 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcNotes
+@testable import ParcLibrary
 
 struct CaptureLensMotionTests {
     private let first = CGRect(x: 10, y: 20, width: 200, height: 100)

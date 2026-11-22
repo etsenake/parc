@@ -1,6 +1,7 @@
 import AppKit
 import CoreImage
 @testable import Parc
+@testable import ParcSettings
 import ParcCore
 
 struct SplitMix: RandomNumberGenerator {

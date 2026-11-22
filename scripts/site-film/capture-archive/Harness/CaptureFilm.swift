@@ -1,5 +1,8 @@
 import AppKit
 @testable import Parc
+@testable import ParcNotes
+@testable import ParcLibrary
+@testable import ParcSidebar
 
 private extension PageCaptureOverlay {
     var harnessActionTitles: [String] { palette.rows.map(\.title) }

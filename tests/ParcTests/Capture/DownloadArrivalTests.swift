@@ -2,6 +2,8 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcLibrary
 
 struct DownloadArrivalFlightTests {
     private func flight(bin: Bool, source: CGPoint = CGPoint(x: 615, y: 485),

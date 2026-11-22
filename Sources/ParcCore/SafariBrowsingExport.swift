@@ -234,7 +234,7 @@ private enum SafariExportFailure {
 }
 
 private final class SafariExportZip {
-    struct Entry {
+    package struct Entry {
         let name: String
         let flags: UInt16
         let method: UInt16

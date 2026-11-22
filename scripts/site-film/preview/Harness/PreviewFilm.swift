@@ -1,5 +1,7 @@
 import AppKit
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSidebar
 
 @MainActor final class FlippedHost: NSView {
     override var isFlipped: Bool { true }

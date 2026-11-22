@@ -2,6 +2,7 @@ import AppKit
 import ParcCore
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 @MainActor
 struct ExternalSplitDropHandoffReceiversTests {

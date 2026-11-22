@@ -2,6 +2,7 @@ import AppKit
 @testable import ParcCore
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct HistorySwipeOverlayViewTests {
     @Test @MainActor

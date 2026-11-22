@@ -2,6 +2,8 @@ import AppKit
 import ParcEngine
 import SiteFilmMedia
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSidebar
 import ParcCore
 
 func springProgress(_ t: Double, response: Double, damping: Double) -> Double {

@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct BrowserCommandAdmissionTests {
     enum Command: CaseIterable { case clearToday, closeWindow, exit, find, fullscreen }

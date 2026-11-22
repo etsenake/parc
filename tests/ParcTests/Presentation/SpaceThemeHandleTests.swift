@@ -2,6 +2,7 @@ import AppKit
 import Testing
 import ParcCore
 @testable import Parc
+@testable import ParcSidebar
 
 extension SpaceThemeControlTests {
     @Test func theSliderThumbAndDialMarkerSwellWithTheButtonsHoverScale() {

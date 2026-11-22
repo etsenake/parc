@@ -194,7 +194,7 @@ images live in ignored `work/start-page/`.
   `StartPageMarkTaffy.swift`, `StartPageMarkSwoop.swift` and
   `StartPageMarkCharge.swift`: the Easter eggs.
 - `Sources/Parc/StartPagePaper.swift`: the tinted paper and its glows.
-- `Sources/Parc/CommandBarResidentLayout.swift` and
+- `Sources/ParcCommandBar/CommandBarResidentLayout.swift` and
   `CommandBarResidentLifetime.swift`: the resident bar.
 - `Sources/Parc/TabCloseFade.swift` and
   `BrowserWindowController+CloseFade.swift`: the close fade.

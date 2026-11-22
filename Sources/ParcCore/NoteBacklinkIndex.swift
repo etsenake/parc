@@ -75,7 +75,7 @@ package struct NoteBacklinkSnippet: Hashable, Sendable {
 }
 
 struct NoteOutgoingLink: Hashable, Sendable {
-    enum Kind: Hashable, Sendable { case link, mention, pageLink }
+    package enum Kind: Hashable, Sendable { case link, mention, pageLink }
 
     var target: String
     var kind: Kind

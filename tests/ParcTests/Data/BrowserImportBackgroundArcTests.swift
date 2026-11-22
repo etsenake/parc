@@ -3,6 +3,7 @@ import AppKit
 import ParcEngine
 import Testing
 @testable import Parc
+@testable import ParcOnboarding
 
 @MainActor
 @Suite(.serialized)

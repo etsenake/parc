@@ -1,7 +1,7 @@
 import Foundation
 
 struct NoteMDInlineStyle {
-    enum Shape { case paragraph, line, heading, cell, verbatim }
+    package enum Shape { case paragraph, line, heading, cell, verbatim }
 
     var shape: Shape
     var taskSensitive = false

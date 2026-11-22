@@ -1,7 +1,7 @@
 import Foundation
 
 package enum EaselWebItemChrome {
-    enum State: Equatable {
+    package enum State: Equatable {
         case snapshot(canGoLive: Bool)
         case live
         case page

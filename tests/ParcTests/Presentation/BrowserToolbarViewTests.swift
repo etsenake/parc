@@ -2,6 +2,8 @@ import AppKit
 import Testing
 import ParcCore
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSidebar
 
 @MainActor struct BrowserToolbarViewTests {
     private let url = URL(string: "https://sub.example.test:8443/a%20b?q=%2F#part")!

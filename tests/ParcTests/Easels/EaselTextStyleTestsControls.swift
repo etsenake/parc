@@ -3,6 +3,8 @@ import CoreText
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcNotes
+@testable import ParcEasels
 
 struct EaselTextStyleTestsControls {
     @MainActor @Test

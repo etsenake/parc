@@ -1,6 +1,7 @@
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcSidebar
 
 struct PendingSplitPaneSidebarTests {
     typealias Rule = PendingSplitPaneSidebarRule

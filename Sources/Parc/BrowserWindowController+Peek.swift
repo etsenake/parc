@@ -2,6 +2,11 @@ import AppKit
 import Combine
 import ParcCore
 import ParcEngine
+import ParcKit
+import ParcNotes
+import ParcLibrary
+import ParcCommandBar
+import ParcSidebar
 
 extension BrowserWindowController {
     func canHostPeek(_ browser: PCNativeBrowserWindow, over page: PCNativePage, overLibrary: Bool = false,

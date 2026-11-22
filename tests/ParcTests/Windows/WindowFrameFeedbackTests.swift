@@ -4,6 +4,8 @@ import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcSettings
 
 struct WindowFrameFeedbackTests {
     private typealias Sound = WindowFrameCrankSound

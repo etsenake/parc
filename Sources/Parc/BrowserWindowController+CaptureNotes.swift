@@ -1,5 +1,6 @@
 import AppKit
 import ParcCore
+import ParcEasels
 
 extension BrowserWindowController {
     var allowsCaptureNoteDestinations: Bool { !isPrivateBrowsing && !isPopupWindow }

@@ -3,6 +3,7 @@ import Combine
 import Testing
 import ParcCore
 @testable import Parc
+@testable import ParcSidebar
 
 @MainActor
 struct SpaceThemeControlTests {

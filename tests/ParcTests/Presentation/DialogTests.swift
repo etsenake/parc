@@ -4,6 +4,8 @@ import ParcTestSupport
 import Testing
 @testable import ParcCore
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSettings
 
 @MainActor
 private final class DetachedSheetHost: NSWindow {

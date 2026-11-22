@@ -3,6 +3,7 @@ import CoreText
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcEasels
 
 struct EaselTextStyleTestsEmphasis {
     @MainActor @Test(arguments: [EaselStyledTextView.Emphasis.bold, .italic])

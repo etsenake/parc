@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import Parc
+@testable import ParcOnboarding
 
 struct BrowserImportAccessTests {
     private func withBrowserBundle(_ bundleIdentifier: String, _ check: (URL) throws -> Void) throws {

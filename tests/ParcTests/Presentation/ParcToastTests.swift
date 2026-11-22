@@ -2,6 +2,7 @@ import AppKit
 import Testing
 import ParcCore
 @testable import Parc
+@testable import ParcKit
 
 struct ParcToastTests {
     @MainActor private final class Clock {

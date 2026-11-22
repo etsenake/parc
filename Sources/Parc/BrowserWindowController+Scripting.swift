@@ -2,6 +2,8 @@ import AppKit
 import Combine
 import ParcCore
 import ParcEngine
+import ParcCommandBar
+import ParcSidebar
 
 extension BrowserWindowController: BrowserScriptOwner {
     var scriptingID: UUID { presentationID }

@@ -3,6 +3,7 @@ import CoreText
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcEasels
 
 struct EaselTextStyleTestsClipboard {
     @MainActor @Test(arguments: EaselTextStyle.Family.allCases, EaselTextStyle.Size.allCases)

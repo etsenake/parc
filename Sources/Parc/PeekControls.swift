@@ -1,6 +1,7 @@
 import AppKit
 import ParcCore
 import QuartzCore
+import ParcKit
 
 struct PeekControlColors: Equatable {
     let fill: NSColor

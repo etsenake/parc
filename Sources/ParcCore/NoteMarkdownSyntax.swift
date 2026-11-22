@@ -222,7 +222,7 @@ enum NoteMDScan {
     }
 }
 
-struct NoteMDTag {
+package struct NoteMDTag {
     var name: String
     var closing: Bool
     var selfClosing: Bool

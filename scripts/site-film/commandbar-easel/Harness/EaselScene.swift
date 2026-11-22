@@ -1,5 +1,7 @@
 import AppKit
 @testable import Parc
+@testable import ParcNotes
+@testable import ParcEasels
 import ParcCore
 
 @MainActor final class StandInPageSurface: NSView {

@@ -2,6 +2,7 @@ import Foundation
 import ParcTestSupport
 import Testing
 @testable import Parc
+@testable import ParcSettings
 
 @MainActor private final class Store {
     let defaults: UserDefaults

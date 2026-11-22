@@ -2,6 +2,7 @@ import AppKit
 import QuartzCore
 import Testing
 @testable import Parc
+@testable import ParcLibrary
 
 struct LibraryRailMotionTests {
     struct Composition: Sendable, CustomTestStringConvertible {

@@ -3,7 +3,7 @@ import Foundation
 package struct ArcSidebarImport: Equatable {
     package enum ProfileKey: Hashable { case standard; case custom(directory: String) }
 
-    struct Tab: Equatable {
+    package struct Tab: Equatable {
         let title: String
         let url: String
         var customTitle: String? = nil
@@ -17,7 +17,7 @@ package struct ArcSidebarImport: Equatable {
         }
     }
 
-    indirect enum Item: Equatable {
+    package indirect enum Item: Equatable {
         case tab(Tab)
         case folder(title: String, icon: SidebarGroupIcon?, children: [Item])
         case split(title: String?, icon: SidebarGroupIcon?, tabs: [Tab], orientation: SplitOrientation, widthFactors: [Double])
@@ -392,7 +392,7 @@ package struct ArcSidebarImport: Equatable {
 }
 
 extension ArcSidebarImport {
-    struct Result {
+    package struct Result {
         var state: BrowserState
         var destinations: [ProfileKey: BrowserImportDestination]
 

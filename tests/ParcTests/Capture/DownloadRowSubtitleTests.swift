@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcLibrary
 
 struct DownloadRowSubtitleTests {
     private func item(_ name: String = "photo.png", status: BrowserDownloadStatus = .completed) -> BrowserDownload {

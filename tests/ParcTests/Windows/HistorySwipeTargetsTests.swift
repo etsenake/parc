@@ -1,5 +1,6 @@
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct HistorySwipeTargetsTests {
     final class Page {}

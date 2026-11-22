@@ -3,6 +3,8 @@ import ParcEngine
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcCommandBar
 
 struct ShortcutCueTests {
     enum Ownership: CaseIterable { case original, detached, replaced, revised }

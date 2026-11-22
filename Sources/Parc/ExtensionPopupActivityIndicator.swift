@@ -1,5 +1,7 @@
 import AppKit
 import QuartzCore
+import ParcKit
+import ParcSidebar
 
 @MainActor protocol ExtensionPopupActivityDrawing: NSView {
     var activityFill: CGFloat { get set }

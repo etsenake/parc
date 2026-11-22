@@ -14,7 +14,7 @@ package struct NoteNewCover: Sendable {
 
 @MainActor
 package final class NoteLibrary {
-    struct Entry: Hashable, Sendable {
+    package struct Entry: Hashable, Sendable {
         var url: URL
         var title: String
         var icon: String?

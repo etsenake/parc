@@ -26,7 +26,7 @@ struct NoteMathSource {
 }
 
 struct NoteMathExpander {
-    enum Kind: Equatable {
+    package enum Kind: Equatable {
         case control(String)
         case character(Character)
         case hash
@@ -34,7 +34,7 @@ struct NoteMathExpander {
         case marker
     }
 
-    struct Token {
+    package struct Token {
         var kind: Kind
         var raw: String
         var start: Int
@@ -69,7 +69,7 @@ struct NoteMathExpander {
     }
 
     private struct Frame {
-        enum Kind { case root, brace, cell }
+        package enum Kind { case root, brace, cell }
         var kind: Kind
         var macros: [String: Macro] = [:]
 

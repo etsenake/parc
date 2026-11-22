@@ -1,6 +1,7 @@
 import AppKit
 @testable import Parc
 @testable import ParcCore
+@testable import ParcSidebar
 
 @MainActor
 enum SidebarSpaceHeaderTestsSupport {

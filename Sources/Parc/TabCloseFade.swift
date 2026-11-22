@@ -1,4 +1,5 @@
 import AppKit
+import ParcKit
 
 @MainActor
 final class TabCloseFade {

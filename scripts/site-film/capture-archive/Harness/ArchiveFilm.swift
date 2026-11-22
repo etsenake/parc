@@ -1,5 +1,8 @@
 import AppKit
 @testable import Parc
+@testable import ParcKit
+@testable import ParcLibrary
+@testable import ParcSidebar
 @testable import ParcCore
 
 @MainActor final class PeekStandIn: NSView {
@@ -147,7 +150,7 @@ import AppKit
         education.isHidden = true
         let bounds = NSRect(origin: .zero, size: scene.windowRect.size)
         let frames = SidebarChromeFrames(bounds: bounds, sidebarWidth: CGFloat(scene.scenario.state.settings.sidebarWidth), presentation: .locked,
-                                         placement: .locked, library: true, libraryContentWidth: SidebarChromeFrames.libraryMinimumWidth,
+                                         placement: .locked, library: true, libraryContentWidth: LibraryView.minimumWidth,
                                          thickness: frameThickness)
         print("library frames: library", frames.library, "page", frames.pageHost)
         layout = PeekWindowLayout(bounds: bounds, page: frames.pageHost, stepsBack: true)

@@ -2,6 +2,7 @@ import AppKit
 import ParcEngine
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct ShortcutChordTests {
     @MainActor private final class Target: NSObject, NSMenuItemValidation {

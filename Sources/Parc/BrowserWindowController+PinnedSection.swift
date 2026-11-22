@@ -1,6 +1,8 @@
 import AppKit
 import Combine
 import ParcCore
+import ParcSidebar
+import ParcSettings
 
 extension BrowserWindowController {
     func wirePinnedSection() -> AnyCancellable {

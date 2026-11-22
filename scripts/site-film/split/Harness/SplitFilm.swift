@@ -1,5 +1,7 @@
 import AppKit
 @testable import Parc
+@testable import ParcKit
+@testable import ParcNotes
 import ParcCore
 
 @MainActor final class SplitFilm {

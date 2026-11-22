@@ -1,6 +1,7 @@
 import AppKit
 import MetalKit
 @testable import Parc
+@testable import ParcKit
 
 @MainActor enum ThemeReadback {
     static func image(of surface: ThemeRendererView, scale: CGFloat) -> CGImage? {

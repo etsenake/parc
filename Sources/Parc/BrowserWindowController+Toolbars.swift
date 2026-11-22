@@ -2,6 +2,11 @@ import AppKit
 import Combine
 import ParcCore
 import ParcEngine
+import ParcKit
+import ParcEasels
+import ParcCommandBar
+import ParcSidebar
+import ParcSettings
 
 extension BrowserWindowController {
     func applySidebarToolbarOwnership() {

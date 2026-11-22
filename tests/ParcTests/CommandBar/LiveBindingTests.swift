@@ -3,6 +3,8 @@ import ParcCore
 import ParcTestSupport
 import Testing
 @testable import Parc
+@testable import ParcKit
+@testable import ParcCommandBar
 
 struct LiveBindingTests {
     @MainActor private final class Fixture {

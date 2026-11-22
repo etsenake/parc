@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-package struct NoteImageCrop: Hashable, Codable {
+public struct NoteImageCrop: Hashable, Codable, Sendable {
     package var x: Double
     package var y: Double
     package var width: Double
@@ -73,7 +73,7 @@ package struct NoteImageCrop: Hashable, Codable {
     }
 }
 
-package enum NoteImageMask: String, Hashable, Codable, CaseIterable {
+public enum NoteImageMask: String, Hashable, Codable, CaseIterable, Sendable {
     case rounded, circle, squircle, arch, diamond, hexagon, star, heart
 
     package var title: String {

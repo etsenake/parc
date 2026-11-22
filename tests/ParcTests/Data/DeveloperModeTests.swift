@@ -2,6 +2,7 @@ import AppKit
 import ParcTestSupport
 import Testing
 @testable import Parc
+@testable import ParcSidebar
 
 struct DeveloperModeTests {
     private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {

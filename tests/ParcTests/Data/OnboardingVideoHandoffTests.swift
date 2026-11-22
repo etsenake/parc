@@ -1,6 +1,7 @@
 import QuartzCore
 import Testing
 @testable import Parc
+@testable import ParcOnboarding
 
 struct OnboardingVideoHandoffTests {
     private static let now: TimeInterval = 1_000

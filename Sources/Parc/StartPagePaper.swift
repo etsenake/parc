@@ -1,5 +1,6 @@
 import AppKit
 import ParcCore
+import ParcKit
 
 struct StartPagePaperStyle: Equatable {
     struct Glow: Equatable {

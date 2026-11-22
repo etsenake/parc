@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import ParcEngine
+import ParcSettings
 
 @MainActor
 final class SharedQuoteController {

@@ -1,6 +1,6 @@
 import Foundation
 
-package struct EmbeddedPageFingerprint: Equatable {
+public struct EmbeddedPageFingerprint: Equatable {
     private let value: Any
     private let matches: (Any) -> Bool
 
@@ -11,7 +11,7 @@ package struct EmbeddedPageFingerprint: Equatable {
 
     func unwrap<Value>(_ type: Value.Type) -> Value? { value as? Value }
 
-    package static func == (lhs: EmbeddedPageFingerprint, rhs: EmbeddedPageFingerprint) -> Bool { lhs.matches(rhs.value) }
+    public static func == (lhs: EmbeddedPageFingerprint, rhs: EmbeddedPageFingerprint) -> Bool { lhs.matches(rhs.value) }
 }
 
 package struct EmbeddedPageOwnerGate: Equatable {

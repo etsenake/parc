@@ -2,6 +2,7 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcEasels
 
 struct EaselArrangeCanvasTests {
     private func box(_ x: Double, z: Int, locked: Bool = false, group: UUID? = nil) -> EaselItem {

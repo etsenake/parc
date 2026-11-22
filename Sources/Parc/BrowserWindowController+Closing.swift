@@ -2,6 +2,11 @@ import AppKit
 import Combine
 import ParcCore
 import ParcEngine
+import ParcKit
+import ParcNotes
+import ParcEasels
+import ParcCommandBar
+import ParcSidebar
 
 extension BrowserWindowController {
     func archiveTodayTabs(anchor: BrowserTab, order: [UUID], ids: Set<UUID>) {

@@ -2,6 +2,8 @@ import AppKit
 import Testing
 @testable import Parc
 import ParcCore
+@testable import ParcKit
+@testable import ParcSidebar
 
 struct SidebarPlusMenuModelTests {
     private static func liveShortcut(_ id: String) -> String {

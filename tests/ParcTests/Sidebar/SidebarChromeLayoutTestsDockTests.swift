@@ -1,6 +1,7 @@
 import CoreGraphics
 import Testing
 @testable import Parc
+@testable import ParcSidebar
 
 struct SidebarChromeLayoutTestsDockTests {
     private typealias L = SidebarChromeLayoutTestsSupport.L

@@ -2,6 +2,7 @@ import AppKit
 import ObjectiveC
 import QuartzCore
 @testable import Parc
+@testable import ParcNotes
 
 @MainActor final class FilmMotion {
     static let shared = FilmMotion()

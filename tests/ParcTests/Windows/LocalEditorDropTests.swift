@@ -2,6 +2,7 @@ import AppKit
 import ParcCore
 import Testing
 @testable import Parc
+@testable import ParcEasels
 
 @MainActor private final class Scene {
     let root: URL

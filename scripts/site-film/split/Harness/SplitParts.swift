@@ -1,6 +1,8 @@
 import AppKit
 import SwiftUI
 @testable import Parc
+@testable import ParcKit
+@testable import ParcNotes
 import ParcCore
 
 func bezier(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double, _ t: Double) -> Double {

@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 import Testing
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSidebar
 
 private final class PointerWindow: NSWindow, ApplicationActivityReporting {
     var pointer = NSPoint(x: -1, y: -1)

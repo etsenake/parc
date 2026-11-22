@@ -1,6 +1,7 @@
 import AppKit
 import ParcCore
 import Sparkle
+import ParcKit
 
 @MainActor final class SoftwareUpdater: NSObject {
     typealias Phase = SoftwareUpdateSession.Phase

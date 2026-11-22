@@ -2,6 +2,8 @@ import AppKit
 import QuartzCore
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcSidebar
 
 @MainActor final class SidebarPacingTally {
     var layouts: [String: Int] = [:]

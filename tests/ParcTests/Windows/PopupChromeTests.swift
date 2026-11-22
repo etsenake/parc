@@ -1,6 +1,8 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSidebar
 
 @MainActor private final class Chrome {
     let view = PopupChromeView(frame: NSRect(x: 0, y: 0, width: 400, height: 47))

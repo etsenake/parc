@@ -3,6 +3,7 @@ import Combine
 import QuartzCore
 @testable import Parc
 @testable import ParcCore
+@testable import ParcSidebar
 
 @MainActor
 enum SidebarResizeRegionTestsSupport {

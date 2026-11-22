@@ -1,5 +1,6 @@
 import AppKit
 import ParcEngine
+import ParcKit
 
 @objc(ParcApplication)
 final class ParcApplication: PCNativeApplication, CrAppControlProtocol {

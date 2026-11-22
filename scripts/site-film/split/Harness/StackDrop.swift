@@ -1,5 +1,6 @@
 import AppKit
 @testable import Parc
+@testable import ParcNotes
 import ParcCore
 
 @MainActor final class StackDrop {

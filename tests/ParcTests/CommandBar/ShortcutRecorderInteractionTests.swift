@@ -1,6 +1,8 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcKit
+@testable import ParcCommandBar
 
 struct ShortcutRecorderInteractionTests {
     @MainActor private final class Window: NSWindow {

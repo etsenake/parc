@@ -1,7 +1,7 @@
 import Foundation
 
 struct NoteMDInlineNode {
-    enum Kind { case root, text, softBreak, hardBreak, code, emphasis, strong, strike, highlight, link, image, html, math, rawSource, wiki, autolink, customEmoji }
+    package enum Kind { case root, text, softBreak, hardBreak, code, emphasis, strong, strike, highlight, link, image, html, math, rawSource, wiki, autolink, customEmoji }
 
     var kind: Kind
     var literal = ""

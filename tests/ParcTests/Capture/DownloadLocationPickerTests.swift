@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct DownloadLocationPickerTests {
     private let downloads = URL(fileURLWithPath: "/Users/parc-sample/Downloads", isDirectory: true)

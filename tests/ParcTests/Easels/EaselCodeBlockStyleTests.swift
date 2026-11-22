@@ -2,6 +2,8 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcNotes
+@testable import ParcEasels
 
 struct EaselCodeBlockStyleTests {
     @MainActor private func oblique(_ attributes: [NSAttributedString.Key: Any]) -> Bool {

@@ -13,14 +13,14 @@ Related contracts: [motion](sidebar-motion.md),
 | Responsibility | Source |
 |---|---|
 | Width gesture and persistence policy | `Sources/ParcCore/SidebarResize.swift` |
-| Edge hit testing, cursor, indicator and haptics | `Sources/Parc/SidebarResizeRegion.swift` |
-| Header, list and dock geometry | `Sources/Parc/SidebarChromeLayout.swift` |
+| Edge hit testing, cursor, indicator and haptics | `Sources/ParcSidebar/SidebarResizeRegion.swift` |
+| Header, list and dock geometry | `Sources/ParcSidebar/SidebarChromeLayout.swift` |
 | Window integration and final layout | `Sources/Parc/BrowserWindowController+Sidebar.swift`, `Sources/Parc/BrowserWindowController+ChromeLayout.swift` |
 | Renderer-paced page sizing | `Sources/ParcCore/PageContentResize.swift`, `Sources/Parc/PageContentResizer.swift` |
 | Renderer reports and observation leases | `Sources/Parc/PageRenderFrames.swift`, `Engine/ParcNative/native_appkit_page.mm` |
-| Space header and menus | `Sources/Parc/SidebarSpaceHeader.swift`, `Sources/Parc/SidebarSpaceMenu.swift` |
-| Pinned header and fold state | `Sources/Parc/SidebarPinnedHeader.swift`, `Sources/ParcCore/PinnedSectionCollapse.swift`, `Sources/Parc/BrowserWindowController+PinnedSection.swift` |
-| Favorites empty state and dock | `Sources/Parc/SidebarFavoritesEmptyState.swift`, `Sources/Parc/SidebarDockStrip.swift` |
+| Space header and menus | `Sources/ParcSidebar/SidebarSpaceHeader.swift`, `Sources/ParcSidebar/SidebarSpaceMenu.swift` |
+| Pinned header and fold state | `Sources/ParcSidebar/SidebarPinnedHeader.swift`, `Sources/ParcCore/PinnedSectionCollapse.swift`, `Sources/Parc/BrowserWindowController+PinnedSection.swift` |
+| Favorites empty state and dock | `Sources/ParcSidebar/SidebarFavoritesEmptyState.swift`, `Sources/ParcSidebar/SidebarDockStrip.swift` |
 
 ## Width gesture
 

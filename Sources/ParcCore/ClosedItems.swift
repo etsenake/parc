@@ -1,7 +1,7 @@
 import Foundation
 
 package struct ClosedItemRecord: Equatable {
-    enum Kind { case saved, archived }
+    package enum Kind { case saved, archived }
     let id: UUID
     let kind: Kind
     let spaceID: UUID

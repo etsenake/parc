@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import ParcKit
 
 enum SplitPaneControlLayoutSkip {
     static func surfaceFrame(bounds: NSRect, surfaceSize: NSSize) -> NSRect {

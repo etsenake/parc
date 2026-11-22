@@ -1,5 +1,6 @@
 import AppKit
 import ParcCore
+import ParcKit
 
 @MainActor final class PeekOpenCommand {
     private weak var window: NSWindow?

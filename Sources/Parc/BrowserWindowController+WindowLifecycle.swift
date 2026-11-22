@@ -2,6 +2,14 @@ import AppKit
 import Combine
 import ParcCore
 import ParcEngine
+import ParcKit
+import ParcNotes
+import ParcEasels
+import ParcLibrary
+import ParcCommandBar
+import ParcSidebar
+import ParcSettings
+import ParcOnboarding
 
 extension BrowserWindowController {
     func scheduleMediaRefresh() {

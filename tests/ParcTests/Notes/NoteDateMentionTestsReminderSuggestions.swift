@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcNotes
 
 struct NoteDateMentionTestsReminderSuggestions {
     private struct SuggestionRowCase: Sendable, CustomTestStringConvertible {

@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import ParcKit
 
 @MainActor
 final class PeekDismissalAnimator {

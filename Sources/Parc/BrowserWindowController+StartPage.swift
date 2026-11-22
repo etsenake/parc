@@ -1,5 +1,8 @@
 import AppKit
 import Combine
+import ParcKit
+import ParcCommandBar
+import ParcSidebar
 
 extension BrowserWindowController {
     func loadStartPage() -> StartPageView {

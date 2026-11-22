@@ -93,9 +93,9 @@ canvas drawing; HTML and SVG export use `EaselVectorExport`.
 
 - Model and pure logic: `Sources/ParcCore/EaselStamps.swift` and the face in
   `EaselStore.swift`.
-- Artwork: `Sources/Parc/EaselStampArtwork.swift`.
-- Tool, press and ⌘Return: `Sources/Parc/EaselCanvasView+Stamps.swift`.
-- Wheel and picker: `Sources/Parc/EaselStampPanels.swift`, installed through
+- Artwork: `Sources/ParcEasels/EaselStampArtwork.swift`.
+- Tool, press and ⌘Return: `Sources/ParcEasels/EaselCanvasView+Stamps.swift`.
+- Wheel and picker: `Sources/ParcEasels/EaselStampPanels.swift`, installed through
   `EaselCanvasView.stampPanelsFactory`.
 - Tests: `swift test --filter EaselStampTests` and
   `swift test --filter EaselStampArtworkTests`, both windowless. Wheel and picker code is

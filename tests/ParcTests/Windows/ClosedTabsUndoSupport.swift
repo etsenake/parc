@@ -3,6 +3,7 @@ import Foundation
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcSidebar
 
 enum ClosedTabsUndoSupport {
     @MainActor final class Consent {

@@ -4,6 +4,7 @@ import ParcTestSupport
 import Testing
 import UniformTypeIdentifiers
 @testable import Parc
+@testable import ParcLibrary
 
 extension CapturePortraitTestsSupport {
     struct CapturePortraitOptionsTests {

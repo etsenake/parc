@@ -131,7 +131,7 @@ All three are optional.
   `EaselDependents`.
 - `Sources/ParcCore/EaselWashi.swift`: tape designs, torn outlines and placement.
 - `Sources/ParcCore/EaselDrawingExport.swift`: SVG and HTML for every brush.
-- `Sources/Parc/EaselCanvasView+Brushes.swift`: drawing, strokes, the eraser
+- `Sources/ParcEasels/EaselCanvasView+Brushes.swift`: drawing, strokes, the eraser
   and the pattern command.
 - `swift test --filter EaselFreehandDrawingTests` runs the windowless
   suite.

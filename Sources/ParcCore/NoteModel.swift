@@ -1,10 +1,10 @@
 import Foundation
 
-package struct NoteBlockID: Hashable, Codable, CustomStringConvertible {
+public struct NoteBlockID: Hashable, Codable, CustomStringConvertible, Sendable {
     package let raw: UUID
     package init() { raw = UUID() }
     package init(_ raw: UUID) { self.raw = raw }
-    package var description: String { raw.uuidString }
+    public var description: String { raw.uuidString }
 }
 
 package enum NoteColor: String, CaseIterable, Codable, Hashable {
@@ -378,7 +378,7 @@ package struct NoteText: Hashable, Codable, ExpressibleByStringLiteral {
     }
 }
 
-package enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
+public enum NoteBlockKind: String, Hashable, Codable, CaseIterable, Sendable {
     case paragraph, heading, bulletedItem, numberedItem, todo, toggle, quote, callout, divider
     case code, equation, image, video, audio, file, pdf, bookmark, embed, easel, table, tableOfContents, breadcrumb
     case columns, column, pageLink, html, raw, synced, button
@@ -429,7 +429,7 @@ package enum NoteDiagramMode: String, Codable, CaseIterable, Hashable, Sendable 
     package var showsDiagram: Bool { self != .code }
 }
 
-package enum NoteAlignment: String, Hashable, Codable, CaseIterable {
+public enum NoteAlignment: String, Hashable, Codable, CaseIterable, Sendable {
     case left, center, right
 }
 
@@ -650,8 +650,8 @@ private final class NoteBlockPropsStorage {
     init(_ value: NoteBlockProps) { self.value = value }
 }
 
-package struct NoteBlock: Hashable, Identifiable, Codable {
-    package var id = NoteBlockID()
+public struct NoteBlock: Hashable, Identifiable, Codable {
+    public var id = NoteBlockID()
     package var kind: NoteBlockKind
     package var text = NoteText()
     package var color: NoteColorStyle?
@@ -678,7 +678,7 @@ package struct NoteBlock: Hashable, Identifiable, Codable {
 
     private enum CodingKeys: String, CodingKey { case id, kind, text, props, color, children }
 
-    package init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(NoteBlockID.self, forKey: .id) ?? NoteBlockID()
         kind = try container.decode(NoteBlockKind.self, forKey: .kind)
@@ -688,7 +688,7 @@ package struct NoteBlock: Hashable, Identifiable, Codable {
         children = try container.decodeIfPresent([NoteBlock].self, forKey: .children) ?? []
     }
 
-    package func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(kind, forKey: .kind)
@@ -698,13 +698,13 @@ package struct NoteBlock: Hashable, Identifiable, Codable {
         try container.encode(children, forKey: .children)
     }
 
-    package static func == (lhs: NoteBlock, rhs: NoteBlock) -> Bool {
+    public static func == (lhs: NoteBlock, rhs: NoteBlock) -> Bool {
         lhs.id == rhs.id && lhs.kind == rhs.kind && lhs.color == rhs.color && lhs.text == rhs.text
             && (lhs.propsStorage === rhs.propsStorage || lhs.propsStorage.value == rhs.propsStorage.value)
             && lhs.children == rhs.children
     }
 
-    package func hash(into hasher: inout Hasher) {
+    public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
         hasher.combine(kind)
         hasher.combine(text)
@@ -888,7 +888,7 @@ package struct NoteListNumber: Hashable {
 }
 
 struct NotePageIndex {
-    struct Entry {
+    package struct Entry {
         var path: [Int]
         var parent: NoteBlockID?
         var depth: Int
@@ -1289,7 +1289,7 @@ extension NotePage {
     }
 }
 
-package enum NoteTextField: Hashable, Codable {
+public enum NoteTextField: Hashable, Codable, Sendable {
     case body
     case caption
     case cell(row: Int, column: Int)

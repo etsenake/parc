@@ -1,6 +1,8 @@
 import AppKit
 import ParcEngine
 import QuartzCore
+import ParcKit
+import ParcSidebar
 
 @MainActor
 final class DebuggerWarningStrip: NSView {

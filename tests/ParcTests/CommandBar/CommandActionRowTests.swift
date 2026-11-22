@@ -2,6 +2,7 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcCommandBar
 
 struct CommandActionRowTests {
     enum Kind: CaseIterable { case favorite, folder, move, space }

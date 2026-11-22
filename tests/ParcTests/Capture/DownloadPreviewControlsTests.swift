@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcLibrary
 
 struct DownloadPreviewControlsTests {
     @MainActor final class Fixture {

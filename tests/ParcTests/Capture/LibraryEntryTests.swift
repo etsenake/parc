@@ -3,6 +3,8 @@ import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcLibrary
+@testable import ParcSidebar
 
 @MainActor private final class LibraryTestSchedule {
     private(set) var jobs: [(delay: TimeInterval, job: @MainActor () -> Void)] = []

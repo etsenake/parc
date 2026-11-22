@@ -2,6 +2,10 @@ import AppKit
 import ParcCore
 import ParcEngine
 import UniformTypeIdentifiers
+import ParcKit
+import ParcNotes
+import ParcEasels
+import ParcLibrary
 
 @MainActor
 final class PageCaptureController: NSObject {

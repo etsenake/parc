@@ -2,6 +2,7 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
 
 struct CommandMenuIconTests {
     @Test @MainActor func eachRegisteredMenuCommandHasDrawableArtwork() {

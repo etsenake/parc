@@ -67,7 +67,7 @@ enum NoteSyntaxWordRole: Sendable {
 }
 
 struct NoteSyntaxWords: Sendable {
-    struct Entry: Sendable {
+    package struct Entry: Sendable {
         let word: [UInt16]
         let kind: NoteSyntaxKind
         let role: NoteSyntaxWordRole

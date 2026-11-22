@@ -1,4 +1,5 @@
 import AppKit
+import ParcSidebar
 
 extension BrowserWindowController {
     @objc(parcExtensionPopupOriginForExtension:popup:size:)

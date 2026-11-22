@@ -1,5 +1,6 @@
 import AppKit
 import ParcCore
+import ParcKit
 
 final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     private(set) var arrangedSubviews: [NSView] = []

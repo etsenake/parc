@@ -2,6 +2,7 @@ import AppKit
 import ParcCore
 import ParcEngine
 import QuartzCore
+import ParcKit
 
 @MainActor
 class PeekCard: NSObject {

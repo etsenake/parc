@@ -18,7 +18,8 @@ the site.
 - Each scene's `Harness/` builds as a `parc-film-<folder>` SwiftPM executable,
   including `parc-film-base`. The package declares these targets only when
   `PARC_SITE_FILM=1` is set, so ordinary builds and test runs skip them. Each
-  links the Parc, ParcCore and ParcEngineDoubles targets. The engine doubles live in
+  links ParcCore, the nine app libraries and ParcEngineDoubles, and imports the
+  app libraries whose views it renders. The engine doubles live in
   [tests/ParcEngineDoubles](../../tests/ParcEngineDoubles)
   and supply the class names needed to load Parc without Chromium.
 - `canon/Model.swift`: the shared Spaces, tabs and themes every scene uses. Each

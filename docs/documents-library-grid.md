@@ -22,7 +22,7 @@ Search matches titles, note text and "Easel". Every word has to match somewhere,
 cards whose title matches come first, and each group stays newest first. An empty
 search reads "Nothing matches that. Try fewer words?"; an empty Library reads
 "Your local Easels and Notes will appear here."
-[`DocumentsLibraryCatalog`](../Sources/Parc/DocumentsLibraryCatalog.swift)
+[`DocumentsLibraryCatalog`](../Sources/ParcLibrary/DocumentsLibraryCatalog.swift)
 holds this logic and has windowless tests.
 
 ## Actions

@@ -1,5 +1,8 @@
 import AppKit
 import QuartzCore
+import ParcKit
+import ParcSidebar
+import ParcSettings
 
 @MainActor final class PaneTitleControl: PointingHandButton {
     var actionBlock: (() -> Void)?

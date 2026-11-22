@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcSettings
 
 @MainActor
 private final class HoverWindow: NSWindow {

@@ -1,6 +1,7 @@
 import AppKit
 import QuartzCore
 @testable import Parc
+@testable import ParcSidebar
 
 @MainActor
 enum FavoriteTileSelectionTestsSupport {

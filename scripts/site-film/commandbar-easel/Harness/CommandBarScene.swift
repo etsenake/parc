@@ -1,5 +1,7 @@
 import AppKit
 @testable import Parc
+@testable import ParcKit
+@testable import ParcCommandBar
 import ParcCore
 
 struct BarRow {

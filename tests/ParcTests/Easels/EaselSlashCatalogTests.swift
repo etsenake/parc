@@ -2,6 +2,8 @@ import Foundation
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcNotes
+@testable import ParcEasels
 
 struct EaselSlashCatalogTests {
     private static let everything = EaselSlashContext(checklist: true, divider: true, mention: true, date: true, inlineEquation: true)

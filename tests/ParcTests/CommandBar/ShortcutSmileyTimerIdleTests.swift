@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcCommandBar
 
 struct ShortcutSmileyTimerIdleTests {
     private static let drawing = Data("""

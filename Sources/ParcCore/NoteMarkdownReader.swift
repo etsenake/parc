@@ -173,7 +173,7 @@ struct NoteMDReader {
     var customEmoji: Set<String> = []
 
     private struct Event {
-        enum Content {
+        package enum Content {
             case text(String)
             case atom(NoteAtom)
             case tag(NoteMDTag, String)

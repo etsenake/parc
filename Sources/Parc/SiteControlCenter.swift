@@ -2,6 +2,9 @@ import AppKit
 import Combine
 import ParcCore
 import SwiftUI
+import ParcKit
+import ParcLibrary
+import ParcSidebar
 
 enum SiteControlCenterMetrics {
     static let padding = SidebarPlusMenuView.inset

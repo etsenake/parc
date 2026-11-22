@@ -2,6 +2,7 @@ import AppKit
 import CoreImage
 import SwiftUI
 @testable import Parc
+@testable import ParcKit
 import ParcCore
 
 @MainActor enum PageArt {

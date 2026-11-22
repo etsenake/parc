@@ -4,6 +4,7 @@ import SceneKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcSettings
 
 struct WindowFrameViewTestsPresentation {
     private typealias Support = WindowFrameViewTestsSupport

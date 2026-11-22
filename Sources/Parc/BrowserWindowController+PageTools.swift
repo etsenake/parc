@@ -2,6 +2,12 @@ import AppKit
 import Combine
 import ParcCore
 import ParcEngine
+import ParcKit
+import ParcNotes
+import ParcLibrary
+import ParcCommandBar
+import ParcSettings
+import ParcOnboarding
 
 extension BrowserWindowController {
     func preparePopupCopyURL() -> (() -> Bool)? {

@@ -1,6 +1,7 @@
 import AppKit
 import CoreImage
 import ParcCore
+import ParcKit
 
 struct HistorySwipeOverlayRow: Equatable {
     var title: String

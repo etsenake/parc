@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct NumberRowTests {
     private static let digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]

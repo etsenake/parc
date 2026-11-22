@@ -4,6 +4,8 @@ import ParcEngineDoubles
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcNotes
+@testable import ParcEasels
 
 struct EaselPagePoolTestsTransfer {
     typealias Kind = EaselPagePoolTestsSupport.Kind

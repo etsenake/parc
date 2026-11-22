@@ -2,6 +2,8 @@ import AppKit
 import QuartzCore
 import Testing
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSidebar
 
 @MainActor
 struct SidebarMotionSurfaceTests {

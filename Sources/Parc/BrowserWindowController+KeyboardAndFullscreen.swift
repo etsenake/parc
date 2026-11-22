@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import ParcEngine
+import ParcCommandBar
 
 extension BrowserWindowController {
     func retireShortcutHint() {

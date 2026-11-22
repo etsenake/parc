@@ -1,5 +1,7 @@
 import AppKit
 import ParcCore
+import ParcKit
+import ParcSidebar
 
 @MainActor
 final class SplitDropView: NSView {

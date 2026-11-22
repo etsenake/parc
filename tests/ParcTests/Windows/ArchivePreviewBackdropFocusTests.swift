@@ -3,6 +3,10 @@ import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcNotes
+@testable import ParcEasels
+@testable import ParcCommandBar
 
 @MainActor
 struct ArchivePreviewBackdropFocusTests {

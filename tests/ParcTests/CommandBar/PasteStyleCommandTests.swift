@@ -1,6 +1,8 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcKit
+@testable import ParcNotes
 
 struct PasteStyleCommandTests {
     @MainActor private final class Page: NSView {

@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcNotes
 
 struct NoteHandlesModelTestsHandleGeometryAndScrolling {
     private let frame = CGRect(x: 200, y: 100, width: 400, height: 60)

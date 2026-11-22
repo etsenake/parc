@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct SidebarAddressTextTests {
     @Test func noTabShowsTheSearchPlaceholder() {

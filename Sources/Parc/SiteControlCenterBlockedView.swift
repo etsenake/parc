@@ -1,5 +1,8 @@
 import AppKit
 import SwiftUI
+import ParcKit
+import ParcLibrary
+import ParcSidebar
 
 enum SiteControlCenterBlockedMetrics {
     static let visibleRows = 3

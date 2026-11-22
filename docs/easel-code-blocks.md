@@ -100,9 +100,9 @@ height is the header, one 22-point line per visual line and the bottom padding.
 
 - `Sources/ParcCore/EaselCodeBlock.swift`: defaults, language rules, sizing,
   placement, the width-only settle and the SVG card.
-- `Sources/Parc/EaselCanvasCodeBlockViews.swift`: style, text layout and
+- `Sources/ParcEasels/EaselCanvasCodeBlockViews.swift`: style, text layout and
   export runs, the editor and the header bar.
-- `Sources/Parc/EaselCanvasView+CodeBlocks.swift`: drawing, creation,
+- `Sources/ParcEasels/EaselCanvasView+CodeBlocks.swift`: drawing, creation,
   editing, language, copy and resize on the canvas.
 - `tests/ParcCoreTests/Easels/EaselCodeBlockTests.swift`: model, validation,
   geometry and SVG checks, run by `swift test`.

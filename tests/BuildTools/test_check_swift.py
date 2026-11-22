@@ -51,6 +51,14 @@ class CheckSwiftTests(unittest.TestCase):
         self.output = root / "check receipts"
         for name, content in {
             "Sources/ParcCore/Model.swift": "struct Model {}\n",
+            "Sources/ParcKit/Kit.swift": "struct Kit {}\n",
+            "Sources/ParcNotes/Notes.swift": "struct Notes {}\n",
+            "Sources/ParcEasels/Easels.swift": "struct Easels {}\n",
+            "Sources/ParcLibrary/Library.swift": "struct Library {}\n",
+            "Sources/ParcCommandBar/CommandBar.swift": "struct CommandBar {}\n",
+            "Sources/ParcSidebar/Sidebar.swift": "struct Sidebar {}\n",
+            "Sources/ParcSettings/Settings.swift": "struct Settings {}\n",
+            "Sources/ParcOnboarding/Onboarding.swift": "struct Onboarding {}\n",
             "Sources/Parc/App.swift": "struct App {}\n",
             "Sources/ParcMain/main.swift": "print(1)\n",
             "Sources/ParcEngine/ParcEngine.h": "#import <Cocoa/Cocoa.h>\n",
@@ -100,7 +108,7 @@ class CheckSwiftTests(unittest.TestCase):
         plan = json.loads(result.stdout)
         self.assertFalse(self.output.exists())
         self.assertFalse(plan["executed"])
-        self.assertEqual(plan["source_count"], 3)
+        self.assertEqual(plan["source_count"], 11)
         command = plan["command"]
         self.assertEqual(command[:3], ["xcrun", "swift", "build"])
         self.assertEqual(command[command.index("--package-path") + 1], str(self.repo))
@@ -232,7 +240,7 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertFalse(receipt["inputs_unchanged"])
         self.assertNotIn(str(added), receipt["inputs"])
         self.assertNotIn(str(added), receipt["command"])
-        self.assertEqual(receipt["source_count"], 3)
+        self.assertEqual(receipt["source_count"], 11)
 
     def test_release_archive_without_git_compiles_by_input_hashes(self):
         archive = Path(self.temp.name).resolve() / "release archive"

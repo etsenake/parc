@@ -1,6 +1,7 @@
 import AppKit
 import QuartzCore
 @testable import Parc
+@testable import ParcSidebar
 
 final class SidebarMotionCompletions {
     private var pending: [() -> Void] = []

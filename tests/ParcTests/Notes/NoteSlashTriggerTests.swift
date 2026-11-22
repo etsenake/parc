@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcNotes
 
 struct NoteSlashTriggerTests {
     func trigger(_ old: String, _ new: String, _ caret: Int? = nil) -> (NoteInlineTrigger, Int)? {

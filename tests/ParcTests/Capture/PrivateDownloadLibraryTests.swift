@@ -2,6 +2,8 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcLibrary
+@testable import ParcSidebar
 
 struct PrivateDownloadLibraryTests {
     @MainActor private struct Fixture {

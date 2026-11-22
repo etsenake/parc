@@ -1,6 +1,8 @@
 import AppKit
 import QuartzCore
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSidebar
 import ParcCore
 
 enum AnchoredCurve {

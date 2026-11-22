@@ -2,6 +2,9 @@ import AppKit
 import Metal
 import SceneKit
 @testable import Parc
+@testable import ParcSidebar
+@testable import ParcSettings
+@testable import ParcOnboarding
 import ParcCore
 
 @MainActor final class SilentCrankOutput: WindowFrameCrankSoundOutput {

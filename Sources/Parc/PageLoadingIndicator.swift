@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import ParcKit
 
 struct PageLoadingPresentation: Equatable {
     var scale: Float

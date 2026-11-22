@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import Testing
 @testable import Parc
+@testable import ParcSidebar
 
 struct LayoutChromeGeometrySkipTests {
     private static func fingerprint(

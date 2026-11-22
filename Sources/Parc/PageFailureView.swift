@@ -1,4 +1,6 @@
 import AppKit
+import ParcKit
+import ParcSidebar
 
 struct RendererCrashPresentation: Equatable {
     let pageIdentifier: String

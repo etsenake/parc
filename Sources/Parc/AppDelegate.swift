@@ -5,6 +5,14 @@ import IOKit.pwr_mgt
 import ParcCore
 import ParcEngine
 import UserNotifications
+import ParcKit
+import ParcNotes
+import ParcEasels
+import ParcLibrary
+import ParcCommandBar
+import ParcSidebar
+import ParcSettings
+import ParcOnboarding
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation, PCNativeBrowserApplicationClient {

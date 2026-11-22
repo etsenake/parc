@@ -4,6 +4,8 @@ import Testing
 import WebKit
 @testable import ParcCore
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSidebar
 
 struct SoftwareUpdateBannerTests {
     private let old = AppVersion(version: "1.8.2", build: "22")

@@ -2,6 +2,8 @@ import AppKit
 import ParcTestSupport
 @testable import Parc
 @testable import ParcCore
+@testable import ParcLibrary
+@testable import ParcSidebar
 
 @MainActor
 enum IsolatedNoteFiles {

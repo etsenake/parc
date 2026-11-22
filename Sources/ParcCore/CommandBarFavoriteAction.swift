@@ -1,11 +1,11 @@
 import Foundation
 
 package struct CommandBarFavoriteAction: Equatable, Identifiable {
-    enum Operation: String {
+    package enum Operation: String {
         case favorite, unfavorite
         var title: String { self == .favorite ? "Favorite Tab" : "Unfavorite Tab" }
     }
-    struct Target: Equatable {
+    package struct Target: Equatable {
         let id: UUID
         let createdAt: Date
         let spaceID: UUID

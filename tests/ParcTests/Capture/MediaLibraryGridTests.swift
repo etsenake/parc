@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcLibrary
 
 struct MediaLibraryGridTests {
     @MainActor private final class Tile: NSCollectionViewItem {

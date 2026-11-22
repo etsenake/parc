@@ -2,6 +2,8 @@ import AppKit
 import Testing
 import ParcCore
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSidebar
 
 struct ThemeAppearanceTimerIdleTests {
     @MainActor private final class Frames {

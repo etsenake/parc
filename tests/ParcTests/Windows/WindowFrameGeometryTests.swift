@@ -2,6 +2,7 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcSidebar
 
 struct WindowFrameGeometryTests {
     private static func frames(_ presentation: SidebarPresentation, thickness: CGFloat, popup: Bool = false, fullscreen: Bool = false,

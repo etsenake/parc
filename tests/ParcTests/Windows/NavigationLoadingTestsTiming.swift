@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct NavigationLoadingTestsTiming {
     @MainActor private static func stroke(_ t: Double) -> (CGFloat, CGFloat) {

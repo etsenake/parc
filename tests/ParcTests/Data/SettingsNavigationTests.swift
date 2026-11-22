@@ -1,5 +1,6 @@
 import Testing
 @testable import Parc
+@testable import ParcSettings
 
 struct SettingsNavigationTests {
     enum Place: Equatable { case general, profiles, links, profile(Int) }

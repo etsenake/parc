@@ -46,7 +46,7 @@ its card the slot passes the mouse through, so the page still drags the window.
 `CommandBarResidentLayout.swift` holds its geometry and
 `CommandBarResidentLifetime.swift` the lifetime rules it shares with the palette.
 
-`Sources/Parc/CommandBar.swift` owns the surface/session;
+`Sources/ParcCommandBar/CommandBar.swift` owns the surface/session;
 `CommandBarEditState.swift`, `CommandBarScopeEditing.swift` and
 `CommandBarSubmission.swift` separate editing, scope and submission state.
 `CommandBarRanking.swift`, `CommandBarTitleSearch.swift`, `CommandBarNativeHold.swift`
@@ -81,7 +81,7 @@ Every hover-reactive control the bar can cover, in the sidebar, page and pane
 toolbars, Peek, split views, the Library, Notes and Easels, lights up only while
 it is the topmost view under the pointer. It checks on entry and on every move,
 because the bar may cover only part of it. Most use the shared check in
-[PointerCover.swift](../Sources/Parc/PointerCover.swift); Favorites, tooltips,
+[PointerCover.swift](../Sources/ParcKit/PointerCover.swift); Favorites, tooltips,
 the developer toolbar, Find and the Downloads search field run the same hit test
 themselves, and the sidebar's resize edge also counts child windows. A view that
 lets clicks through, such as a see-through overlay, never hides hover beneath

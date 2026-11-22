@@ -1,6 +1,8 @@
 import AppKit
 import ParcCore
 import ParcEngine
+import ParcKit
+import ParcSidebar
 
 @MainActor
 final class ExternalSplitDropHost: LayoutView, PCNativeContentDropDestination, LocalContentDropHosting {

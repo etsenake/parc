@@ -36,7 +36,7 @@ package enum NoteEmojiLibraryError: Error, LocalizedError, Equatable {
 @MainActor
 package final class NoteEmojiLibrary {
     private struct Manifest: Codable {
-        struct Entry: Codable {
+        package struct Entry: Codable {
             var name: String
             var file: String
             var aliases: [String]?

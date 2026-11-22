@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcOnboarding
 
 struct PasswordHelpPanelTests {
     enum Host: CaseIterable { case setup, menu }

@@ -257,12 +257,34 @@ in `.build`, so a run after a small edit recompiles only that file and what
 depends on it.
 
 `ParcCoreTests` (in `tests/ParcCoreTests`) tests the `ParcCore` library, which has
-no AppKit or engine dependency. `ParcTests` (in `tests/ParcTests`) tests the `Parc`
-app library with `@testable import Parc`. The app's code is the `Parc` library; the `ParcMain` executable only calls its launch function, so tests load the app's code without starting the app. Put a test in the lowest target that
-can reach the code under test, in a folder named for its feature area.
-`ParcCore` declarations are `internal` unless `Parc` or `ParcMain` uses them;
-mark one `package` only when app code needs it. Tests reach internal
-declarations through `@testable import`, so a test never needs `package`.
+no AppKit or engine dependency. The app itself is nine libraries, layered from
+the bottom up: `ParcKit` (shared controls, dialogs, tooltips, toasts, theme
+colours, animation and the keyboard shortcut model), `ParcNotes` (the Notes
+editor and embedded web pages), `ParcEasels` (boards, built on Notes),
+`ParcLibrary` (downloads, captures, media and archive pages), `ParcCommandBar`,
+`ParcSidebar` (the sidebar and the toolbar controls it hosts), `ParcSettings`
+(the settings window and app preference stores), `ParcOnboarding` (setup,
+import and membership) and `Parc` (the app delegate, the browser window and its
+splits, Peek, the start page and popups). A library imports only the libraries
+below it. When a lower library needs something from a higher one, it declares
+a protocol or an injected closure and the higher library supplies it: the
+Notes board provider that `Parc` registers at launch so Easel blocks render in
+notes, the window actions Notes and Easels call, the Library's Spaces page, the
+sidebar's drag owner and the Settings app actions. The `ParcMain` executable
+only calls the launch function, so tests load the app's code without starting
+the app. `ParcTests` (in `tests/ParcTests`) tests the app libraries, with a
+`@testable import` of each library a test uses. Put a test in the lowest target
+that can reach the code under test, in a folder named for its feature area.
+
+Declarations are `internal` unless another library uses them; mark one
+`package` only then. Swift requires `open` for a class that another library
+subclasses, and `public` for the members it overrides, its designated
+initializers and the types they name, so use `open` and `public` only there.
+A public view or window class also declares `Sendable`: Swift infers that for
+main-actor classes only inside their own library, and subclasses elsewhere
+capture `self` in timer and notification closures.
+Tests reach internal declarations through `@testable import`, so a test never
+needs `package`.
 
 Sparkle is a package dependency on the official `sparkle-project/Sparkle`
 package, pinned to the exact version in `Package.resolved`, so a fresh clone

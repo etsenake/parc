@@ -52,7 +52,7 @@ enum EaselMermaidLayoutEngine {
     static let minimumSection = EaselMermaidSize(width: 200, height: 120)
     static let dummyBudget = 12_000
 
-    struct Edge: Equatable {
+    package struct Edge: Equatable {
         var from: Int
         var to: Int
         var length = 1

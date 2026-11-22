@@ -50,7 +50,7 @@ package struct NoteMDWriter {
         return output
     }
 
-    enum Frame {
+    package enum Frame {
         case document, documentAfterFrontMatter, container(leading: Int, trailing: Int), listItem(leading: Int)
     }
 

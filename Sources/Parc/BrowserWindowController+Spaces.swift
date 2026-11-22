@@ -2,6 +2,10 @@ import AppKit
 import Combine
 import ParcCore
 import ParcEngine
+import ParcKit
+import ParcLibrary
+import ParcCommandBar
+import ParcSidebar
 
 extension BrowserWindowController {
     var librarySpaceManager: SpaceManagerView? { libraryView?.spaceManager as? SpaceManagerView }

@@ -2,6 +2,7 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcEasels
 
 struct EaselCanvasTestsTextPaste {
     private typealias ManualQueue = EaselCanvasTestsSupport.ManualQueue

@@ -27,7 +27,7 @@ package struct HistorySwipeParameters: Equatable {
 }
 
 struct HistorySwipeRecognizer {
-    enum State: Equatable {
+    package enum State: Equatable {
         case waitingForPage
         case possible
         case tracking
@@ -37,7 +37,7 @@ struct HistorySwipeRecognizer {
         case cancelled
     }
 
-    enum Source: Equatable {
+    package enum Source: Equatable {
         case touches
         case trackedSwipe
     }

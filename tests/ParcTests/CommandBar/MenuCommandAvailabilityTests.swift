@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct MenuCommandAvailabilityTests {
     @MainActor private final class Owner: NSWindow {

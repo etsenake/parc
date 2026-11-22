@@ -1,7 +1,7 @@
 import Foundation
 
 struct EaselChord: Hashable {
-    enum Key: Hashable {
+    package enum Key: Hashable {
         case character(Character)
         case delete
         case returnKey

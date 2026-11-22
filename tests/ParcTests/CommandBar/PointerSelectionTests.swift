@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcCommandBar
 
 struct PointerSelectionTests {
     @MainActor private final class Window: NSWindow {

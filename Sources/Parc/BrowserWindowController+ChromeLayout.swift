@@ -1,6 +1,13 @@
 import AppKit
 import Combine
 import ParcCore
+import ParcKit
+import ParcNotes
+import ParcEasels
+import ParcLibrary
+import ParcCommandBar
+import ParcSidebar
+import ParcSettings
 
 @MainActor
 enum CommandBarAddressSource {

@@ -1,5 +1,8 @@
 import AppKit
 @testable import Parc
+@testable import ParcKit
+@testable import ParcNotes
+@testable import ParcSidebar
 import ParcCore
 
 @MainActor final class DragLayer: NSView {

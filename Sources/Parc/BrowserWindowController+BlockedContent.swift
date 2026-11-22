@@ -1,5 +1,6 @@
 import AppKit
 import ParcEngine
+import ParcSidebar
 
 extension BrowserWindowController {
     func setupBlockedContent() {

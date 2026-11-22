@@ -2,6 +2,7 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcEasels
 
 struct EaselCanvasHoverTests {
     @MainActor private func quickDots(_ canvas: EaselCanvasView, for id: UUID) -> [EaselConnection.Side] {

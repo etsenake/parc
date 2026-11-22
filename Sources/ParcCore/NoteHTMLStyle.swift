@@ -282,7 +282,7 @@ enum NoteHTMLColor {
         return (116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz))
     }
 
-    enum Reading: Equatable {
+    package enum Reading: Equatable {
         case transparent
         case neutral
         case color(NoteColor)

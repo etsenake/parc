@@ -68,13 +68,13 @@ package struct InterProfileMovePrompt: Equatable {
 }
 
 package struct InterProfileDocumentBlock: Equatable {
-    enum Section: Equatable { case pinned, today, favorites, folder(String) }
-    enum Place: Equatable {
+    package enum Section: Equatable { case pinned, today, favorites, folder(String) }
+    package enum Place: Equatable {
         case sidebar(Section, split: Bool, otherSpace: String?)
         case leftBehind(Section, split: Bool)
         case archive
     }
-    enum Change: Equatable { case move, share(target: String), keepSeparate }
+    package enum Change: Equatable { case move, share(target: String), keepSeparate }
 
     let document: InternalPage
     let subject: String

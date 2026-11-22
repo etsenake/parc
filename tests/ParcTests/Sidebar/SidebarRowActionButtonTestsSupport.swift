@@ -1,5 +1,6 @@
 import AppKit
 @testable import Parc
+@testable import ParcSidebar
 
 @MainActor
 enum SidebarRowActionButtonTestsSupport {

@@ -2,6 +2,7 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcLibrary
 
 struct LibraryArchiveRowsTests {
     @MainActor private final class KeyedWindow: NSWindow {

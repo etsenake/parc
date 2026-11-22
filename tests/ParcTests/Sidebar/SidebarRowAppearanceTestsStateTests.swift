@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct SidebarRowAppearanceTestsStateTests {
     private typealias Support = SidebarRowAppearanceTestsSupport

@@ -2,6 +2,8 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcLibrary
 
 struct LibraryArchiveHeaderTests {
     @MainActor private final class Fixture {

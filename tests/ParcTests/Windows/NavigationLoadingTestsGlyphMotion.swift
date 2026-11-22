@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct NavigationLoadingTestsGlyphMotion {
     private typealias GlyphScene = NavigationLoadingTestsSupport.GlyphScene

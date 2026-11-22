@@ -2,6 +2,7 @@ import AppKit
 import QuartzCore
 import Testing
 @testable import Parc
+@testable import ParcSidebar
 
 enum ExtensionControlsSupport {
     @MainActor static func controlItem(_ id: String, pin: Int? = nil,

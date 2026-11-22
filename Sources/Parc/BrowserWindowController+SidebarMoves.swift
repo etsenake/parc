@@ -2,6 +2,10 @@ import AppKit
 import Combine
 import ParcCore
 import ParcEngine
+import ParcKit
+import ParcLibrary
+import ParcCommandBar
+import ParcSidebar
 
 private extension SidebarMoveSession {
     var sourceController: BrowserWindowController? { owner as? BrowserWindowController }

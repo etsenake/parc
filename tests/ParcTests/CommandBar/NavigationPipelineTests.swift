@@ -4,6 +4,9 @@ import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcNotes
+@testable import ParcCommandBar
 
 struct NavigationPipelineTests {
     @MainActor final class Window: NSWindow {

@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcCommandBar
 
 struct TitleSearchTests {
     private typealias Match = CommandBarTitleMatch

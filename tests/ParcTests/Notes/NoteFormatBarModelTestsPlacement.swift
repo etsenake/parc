@@ -2,6 +2,7 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcNotes
 
 struct NoteFormatBarModelTestsPlacement {
     private let visible = NSRect(x: 0, y: 100, width: 800, height: 600)

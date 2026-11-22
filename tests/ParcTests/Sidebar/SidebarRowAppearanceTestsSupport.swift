@@ -1,5 +1,6 @@
 import AppKit
 @testable import Parc
+@testable import ParcKit
 
 enum SidebarRowAppearanceTestsSupport {
     final class FlippedHost: NSView {

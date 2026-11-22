@@ -1,6 +1,8 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSidebar
 
 @MainActor
 struct SidebarAccessibilityTestsKeyChainTests {

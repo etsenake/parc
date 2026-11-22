@@ -1,4 +1,5 @@
 import AppKit
+import ParcKit
 
 @MainActor final class ExtensionSidePanelView: NSView {
     static let headerHeight: CGFloat = PaneTopBarLayout.height

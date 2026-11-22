@@ -2,6 +2,7 @@ import AppKit
 import QuartzCore
 import Testing
 @testable import Parc
+@testable import ParcSidebar
 
 @MainActor
 struct FavoriteTileSelectionTestsHighlightTests {

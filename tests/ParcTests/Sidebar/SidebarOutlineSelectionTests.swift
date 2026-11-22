@@ -2,6 +2,7 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcSidebar
 
 private final class Item: NSView {
     init(_ title: String) {

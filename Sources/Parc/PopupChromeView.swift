@@ -1,4 +1,6 @@
 import AppKit
+import ParcKit
+import ParcSidebar
 
 final class PopupChromeView: NSView {
     var onNavigation: ((NavigationControlKind) -> NavigationControlInteraction?)?

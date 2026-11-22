@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 @testable import Parc
+@testable import ParcKit
 
 @MainActor
 enum SidebarHeaderGlyphTestsSupport {

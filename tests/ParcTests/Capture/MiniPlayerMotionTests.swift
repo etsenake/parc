@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcSidebar
 
 struct MiniPlayerMotionTests {
     @MainActor private struct Fixture {

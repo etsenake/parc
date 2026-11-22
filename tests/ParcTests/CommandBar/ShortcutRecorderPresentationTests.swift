@@ -2,6 +2,8 @@ import AppKit
 import QuartzCore
 import Testing
 @testable import Parc
+@testable import ParcKit
+@testable import ParcCommandBar
 
 struct ShortcutRecorderPresentationTests {
     @MainActor private final class Window: NSWindow {

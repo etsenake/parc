@@ -2,6 +2,8 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcCommandBar
 
 struct ShortcutHintPresentationTests {
     @MainActor private final class Window: NSWindow {

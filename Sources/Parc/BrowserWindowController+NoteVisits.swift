@@ -1,6 +1,10 @@
 import AppKit
 import ParcCore
 import ParcEngine
+import ParcKit
+import ParcNotes
+import ParcCommandBar
+import ParcSidebar
 
 @MainActor
 final class CoveredPage {

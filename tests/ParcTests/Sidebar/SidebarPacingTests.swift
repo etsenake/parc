@@ -3,6 +3,8 @@ import QuartzCore
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcSidebar
 
 @MainActor
 struct SidebarPacingTests {

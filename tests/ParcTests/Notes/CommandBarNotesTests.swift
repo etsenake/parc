@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcCommandBar
 
 struct CommandBarNoteDocumentTests {
     let sampleURL = URL(fileURLWithPath: "/Users/parc-sample/Documents/Parc Notes/Trip ideas.md")

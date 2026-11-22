@@ -2,6 +2,8 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcSidebar
 
 @MainActor private final class Surface {
     let size = NSRect(x: 0, y: 0, width: 400, height: 300)

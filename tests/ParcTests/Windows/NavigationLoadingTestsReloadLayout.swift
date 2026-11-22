@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcSidebar
 
 struct NavigationLoadingTestsReloadLayout {
     private static let lights = CGSize(width: 60, height: 14)

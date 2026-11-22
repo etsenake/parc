@@ -1,4 +1,5 @@
 import AppKit
+import ParcSettings
 
 @MainActor
 protocol TerminatingWindow: AnyObject {

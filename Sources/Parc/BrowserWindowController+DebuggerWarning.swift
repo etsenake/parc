@@ -1,5 +1,6 @@
 import AppKit
 import ParcEngine
+import ParcKit
 
 extension BrowserWindowController {
     private static let debuggerWarningAnnouncements = DebuggerWarningAnnouncements<PCNativeDebuggerWarning>()

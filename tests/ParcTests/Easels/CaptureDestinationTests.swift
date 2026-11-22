@@ -2,6 +2,8 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcEasels
+@testable import ParcLibrary
 
 struct CaptureDestinationTests {
     private let url = URL(string: "https://example.com/original/page")!

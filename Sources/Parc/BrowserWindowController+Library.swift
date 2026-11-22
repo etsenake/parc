@@ -1,6 +1,10 @@
 import AppKit
 import Combine
 import ParcCore
+import ParcKit
+import ParcLibrary
+import ParcCommandBar
+import ParcSidebar
 
 extension BrowserWindowController {
     func performLibraryFlyout(_ action: LibraryFlyoutAction) -> Bool {

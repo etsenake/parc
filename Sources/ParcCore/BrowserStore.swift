@@ -1374,7 +1374,7 @@ package struct SidebarContainerLocation: Equatable {
 }
 
 package struct SidebarHierarchySnapshot: Equatable {
-    struct Placement: Equatable {
+    package struct Placement: Equatable {
         let id: UUID, profileID: UUID, spaceID: UUID
         let kind: TabKind
         let folderID: UUID?

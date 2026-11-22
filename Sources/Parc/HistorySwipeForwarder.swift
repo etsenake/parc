@@ -1,6 +1,7 @@
 import AppKit
 import ParcCore
 import ParcEngine
+import ParcNotes
 
 @MainActor
 final class HistorySwipeForwarding: NSObject, PCNativeHistorySwipeClient {

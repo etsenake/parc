@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcSidebar
 
 struct FavoriteTileLayoutTests {
     private func rowCounts(_ frames: [CGRect]) -> [Int] {

@@ -103,11 +103,11 @@ package enum ICloudPasswordsSupport {
     }
 
     struct LaunchConstraint {
-        struct Term {
+        package struct Term {
             let key: String
             let value: Value
         }
-        enum Value {
+        package enum Value {
             case integer(Int)
             case boolean(Bool)
             case string(String)

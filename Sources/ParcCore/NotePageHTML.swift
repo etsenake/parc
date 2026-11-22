@@ -86,7 +86,7 @@ package enum NotePageHTML {
 }
 
 struct NotePageHTMLWriter {
-    enum Mode { case fragment, document }
+    package enum Mode { case fragment, document }
 
     let mode: Mode
     let assets: (String) -> URL?

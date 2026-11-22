@@ -3,6 +3,7 @@ import Foundation
 import ImageIO
 import Testing
 @testable import Parc
+@testable import ParcNotes
 
 struct NotePageCoverGalleryTests {
     static let styleIDs = NoteCoverGallery.styles.map(\.id)

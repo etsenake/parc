@@ -1,6 +1,7 @@
 import ParcTestSupport
 @testable import Parc
 @testable import ParcCore
+@testable import ParcEasels
 
 @MainActor
 func makeTestEaselCanvas(session: EaselSession) -> EaselCanvasView {

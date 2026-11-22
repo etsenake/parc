@@ -2,6 +2,8 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcSidebar
+@testable import ParcOnboarding
 
 struct OnboardingKeyboardTests {
     @MainActor private final class Window: NSWindow {

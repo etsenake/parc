@@ -1,0 +1,512 @@
+import AppKit
+import ParcCore
+import ParcKit
+
+enum SidebarPlusAction: Equatable {
+    case space, folder, easel, note, split, tab
+}
+
+struct SidebarPlusRow: Equatable {
+    let action: SidebarPlusAction
+    let title: String
+    let symbol: String
+    let commandID: String?
+    let enabled: Bool
+    let shortcut: String
+}
+
+enum SidebarPlusMenuModel {
+    static let groupBreaks: Set<Int> = [2, 4]
+
+    static func rows(privateBrowsing: Bool, canCreateEasel: Bool, canCreateNote: Bool, canSplit: Bool,
+                     shortcut: (String) -> String = { _ in "" }) -> [SidebarPlusRow] {
+        [
+            row(.space, "New Space", "add-space", nil, !privateBrowsing, shortcut),
+            row(.folder, "New Folder", "folder", "createFolder:", !privateBrowsing, shortcut),
+            row(.easel, "New Easel", "scribble", "createEasel:", canCreateEasel, shortcut),
+            row(.note, "New Note", "doc.text", "createNote:", canCreateNote, shortcut),
+            row(.split, "New Split", "split-add-right", "split:", canSplit, shortcut),
+            row(.tab, "New Tab", "add-tab", "newTab:", true, shortcut),
+        ]
+    }
+
+    private static func row(_ action: SidebarPlusAction, _ title: String, _ symbol: String,
+                            _ commandID: String?, _ enabled: Bool, _ shortcut: (String) -> String) -> SidebarPlusRow {
+        SidebarPlusRow(action: action, title: title, symbol: symbol, commandID: commandID,
+                       enabled: enabled, shortcut: commandID.map(shortcut) ?? "")
+    }
+}
+
+@MainActor
+package enum SidebarPlusMenuPlacement {
+    package static let tailBase: CGFloat = 11
+    package static let tailHeight: CGFloat = 6
+    static let tailLead: CGFloat = 3.25
+    static let gap: CGFloat = 16
+    package static let cornerRadius: CGFloat = 12
+
+    static func windowFrame(anchor: CGRect, menu: CGSize, parentMinX: CGFloat) -> (frame: CGRect, tailX: CGFloat) {
+        var x = anchor.maxX - menu.width
+        if x < parentMinX { x = parentMinX }
+        let frame = CGRect(x: x, y: anchor.maxY + gap - tailHeight, width: menu.width, height: menu.height + tailHeight)
+        let edge = cornerRadius + tailBase / 2
+        let tailX = min(menu.width - edge, max(edge, anchor.midX - tailLead - x))
+        return (frame, tailX)
+    }
+}
+
+@MainActor
+public class ParcMenuChrome: NSView, Sendable {
+    let content: NSView
+    package let tailX: CGFloat
+    package let tailOnTop: Bool
+    package var colors: ParcMenuColors { didSet { needsDisplay = true } }
+
+    public init(content: NSView, size: NSSize, colors: ParcMenuColors, tailX: CGFloat, tailOnTop: Bool = false) {
+        self.content = content
+        self.tailX = tailX
+        self.tailOnTop = tailOnTop
+        self.colors = colors
+        super.init(frame: NSRect(x: 0, y: 0, width: size.width, height: size.height + SidebarPlusMenuPlacement.tailHeight))
+        wantsLayer = true
+        content.frame = NSRect(x: 0, y: tailOnTop ? 0 : SidebarPlusMenuPlacement.tailHeight,
+                               width: size.width, height: size.height)
+        content.autoresizingMask = [.width, .height]
+        addSubview(content)
+    }
+
+    public required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    package var tailTip: NSPoint { NSPoint(x: tailX, y: tailOnTop ? bounds.height : 0) }
+
+    public override func draw(_ dirtyRect: NSRect) {
+        let base = SidebarPlusMenuPlacement.tailBase / 2
+        let edge = tailOnTop ? bounds.height - SidebarPlusMenuPlacement.tailHeight : SidebarPlusMenuPlacement.tailHeight
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: tailX - base, y: edge))
+        path.line(to: tailTip)
+        path.line(to: NSPoint(x: tailX + base, y: edge))
+        path.close()
+        colors.fillBackground(path)
+    }
+}
+
+@MainActor
+final class SidebarPlusMenuChrome: ParcMenuChrome {
+    let card: SidebarPlusMenuView
+    override var colors: ParcMenuColors { didSet { card.colors = colors } }
+
+    init(card: SidebarPlusMenuView, tailX: CGFloat) {
+        self.card = card
+        super.init(content: card, size: card.menuSize, colors: card.colors, tailX: tailX)
+        card.autoresizingMask = []
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+}
+
+@MainActor
+package enum SidebarPlusMenuMotion {
+    static let hiddenScale: CGFloat = 0.95
+    static let openTransformDuration: CFTimeInterval = 0.1
+    static let openOpacityDuration: CFTimeInterval = 0.05
+    static let closeDuration: CFTimeInterval = 0.07
+    static var timing: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.215, 0.61, 0.355, 1) }
+
+    static func scaled(_ scale: CGFloat, about point: NSPoint) -> CATransform3D {
+        var transform = CATransform3DMakeTranslation(point.x, point.y, 0)
+        transform = CATransform3DScale(transform, scale, scale, 1)
+        return CATransform3DTranslate(transform, -point.x, -point.y, 0)
+    }
+
+    package static func animateOpen(_ view: NSView, about point: NSPoint) {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let layer = view.layer else { return }
+        let transform = CABasicAnimation(keyPath: "transform")
+        transform.fromValue = NSValue(caTransform3D: scaled(hiddenScale, about: point))
+        transform.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+        transform.duration = openTransformDuration
+        transform.timingFunction = timing
+        layer.add(transform, forKey: "transform_animation")
+        let opacity = CABasicAnimation(keyPath: "opacity")
+        opacity.fromValue = 0
+        opacity.toValue = 1
+        opacity.duration = openOpacityDuration
+        opacity.timingFunction = timing
+        layer.add(opacity, forKey: "opacity_animation")
+    }
+
+    package static func animateClose(_ view: NSView, about point: NSPoint, completion: @escaping () -> Void) -> Bool {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let layer = view.layer else { return false }
+        let current = layer.presentation()
+        CATransaction.begin()
+        CATransaction.setCompletionBlock(completion)
+        let transform = CABasicAnimation(keyPath: "transform")
+        transform.fromValue = NSValue(caTransform3D: current?.transform ?? CATransform3DIdentity)
+        transform.toValue = NSValue(caTransform3D: scaled(hiddenScale, about: point))
+        let opacity = CABasicAnimation(keyPath: "opacity")
+        opacity.fromValue = current?.opacity ?? 1
+        opacity.toValue = 0
+        for animation in [transform, opacity] {
+            animation.duration = closeDuration
+            animation.timingFunction = timing
+            animation.fillMode = .forwards
+            animation.isRemovedOnCompletion = false
+        }
+        layer.add(transform, forKey: "transform_animation")
+        layer.add(opacity, forKey: "opacity_animation")
+        CATransaction.commit()
+        return true
+    }
+}
+
+open class SidebarPlusMenuWindow: NSWindow, Sendable {
+    package var onResignKey: (() -> Void)?
+    public override var canBecomeKey: Bool { true }
+    public override var canBecomeMain: Bool { false }
+    public override func resignKey() { super.resignKey(); onResignKey?() }
+}
+
+@MainActor
+package final class SidebarPlusMenuController: NSObject {
+    package static let visibilityDidChange = Notification.Name("SidebarPlusMenuVisibilityDidChange")
+    private static var shown: [ObjectIdentifier: SidebarPlusMenuController] = [:]
+    package static func isShown(in window: NSWindow?) -> Bool {
+        window.map { shown[ObjectIdentifier($0)] != nil } ?? false
+    }
+    package static func dismiss(in window: NSWindow?) {
+        window.flatMap { shown[ObjectIdentifier($0)] }?.dismiss()
+    }
+
+    var onVisibilityChange: ((Bool) -> Void)?
+    var present: (NSWindow, SidebarPlusMenuWindow) -> Void = { parent, panel in
+        parent.addChildWindow(panel, ordered: .above)
+        panel.makeKeyAndOrderFront(nil)
+    }
+    var theme = SpaceTheme() {
+        didSet { if theme != oldValue { chrome?.colors = ParcMenuColors(theme: theme) } }
+    }
+    private var panel: SidebarPlusMenuWindow?
+    private var chrome: SidebarPlusMenuChrome?
+    private weak var parent: NSWindow?
+    private weak var anchor: NSView?
+    nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
+    private var closing = false
+    private var closingPress: Int?
+
+    func toggle(from button: NSView, rows: [SidebarPlusRow], perform: @escaping (SidebarPlusAction) -> Void) {
+        if let press = closingPress {
+            closingPress = nil
+            if NSApp.currentEvent.map({ Self.isMouse($0) && $0.eventNumber == press }) == true { return }
+        }
+        if panel != nil {
+            dismiss()
+            return
+        }
+        guard let parent = button.window else { return }
+        let menu = SidebarPlusMenuView(rows: rows, colors: ParcMenuColors(theme: theme), dismiss: { [weak self] in
+            self?.dismiss()
+        }) { [weak self] action in
+            self?.dismiss()
+            DispatchQueue.main.async { perform(action) }
+        }
+        let anchorRect = parent.convertToScreen(button.convert(button.bounds, to: nil))
+        let placed = SidebarPlusMenuPlacement.windowFrame(anchor: anchorRect, menu: menu.menuSize,
+                                                           parentMinX: parent.frame.minX)
+        let chrome = SidebarPlusMenuChrome(card: menu, tailX: placed.tailX)
+        let panel = SidebarPlusMenuWindow(contentRect: placed.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.isMovableByWindowBackground = false
+        panel.acceptsMouseMovedEvents = true
+        panel.setAccessibilityLabel("New Tab, Folder, or Space")
+        panel.contentView = chrome
+        panel.onResignKey = { [weak self] in self?.lostFocus() }
+        self.panel = panel
+        self.chrome = chrome
+        self.parent = parent
+        self.anchor = button
+        Self.shown[ObjectIdentifier(parent)] = self
+        announce(true)
+        present(parent, panel)
+        panel.makeFirstResponder(menu)
+        observe(parent)
+        SidebarPlusMenuMotion.animateOpen(chrome, about: chrome.tailTip)
+    }
+
+    func dismiss() { close(animated: true) }
+
+    private func observe(_ parent: NSWindow) {
+        let center = NotificationCenter.default
+        for name in [NSWindow.willCloseNotification, NSWindow.willMiniaturizeNotification,
+                     NSWindow.willBeginSheetNotification] {
+            observers.append(center.addObserver(forName: name, object: parent, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.close(animated: false) }
+            })
+        }
+        for (name, object) in [(NSWindow.didResizeNotification, parent as AnyObject?),
+                               (NSMenu.didSendActionNotification, nil),
+                               (NSApplication.didResignActiveNotification, nil)] {
+            observers.append(center.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.dismiss() }
+            })
+        }
+    }
+
+    private func lostFocus() {
+        guard panel != nil, !closing else { return }
+        if let event = NSApp.currentEvent, event.type == .leftMouseDown, let anchor, let window = anchor.window,
+           event.window === window, anchor.bounds.contains(anchor.convert(event.locationInWindow, from: nil)) {
+            closingPress = event.eventNumber
+        }
+        dismiss()
+    }
+
+    private static func isMouse(_ event: NSEvent) -> Bool {
+        [.leftMouseDown, .leftMouseUp, .leftMouseDragged].contains(event.type)
+    }
+
+    private func announce(_ shown: Bool) {
+        onVisibilityChange?(shown)
+        if let parent {
+            NotificationCenter.default.post(name: Self.visibilityDidChange, object: parent, userInfo: ["shown": shown])
+        }
+    }
+
+    private func close(animated: Bool) {
+        guard let panel, !closing else { return }
+        closing = true
+        chrome?.card.acceptsActions = false
+        panel.ignoresMouseEvents = true
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers.removeAll()
+        let parent = self.parent
+        if let parent {
+            Self.shown[ObjectIdentifier(parent)] = nil
+            if panel.isKeyWindow, parent.isVisible, NSApp.isActive { parent.makeKey() }
+        }
+        announce(false)
+        let remove = { [weak self, weak parent] in
+            parent?.removeChildWindow(panel)
+            panel.orderOut(nil)
+            guard let self, self.panel === panel else { return }
+            self.panel = nil
+            self.chrome = nil
+            self.anchor = nil
+            self.closing = false
+        }
+        guard animated, let chrome, panel.isVisible, SidebarPlusMenuMotion.animateClose(chrome, about: chrome.tailTip, completion: remove) else {
+            remove()
+            return
+        }
+    }
+
+    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+}
+
+@MainActor
+package final class SidebarPlusMenuView: NSView {
+    let menuSize: NSSize
+    private let rows: [SidebarPlusRow]
+    private let dismiss: () -> Void
+    private let perform: (SidebarPlusAction) -> Void
+    private var buttons: [SidebarPlusRowButton] = []
+    private var separators: [NSRect] = []
+    private var highlighted = 0
+    var acceptsActions = true
+    var colors: ParcMenuColors {
+        didSet {
+            needsDisplay = true
+            for button in buttons { button.colors = colors }
+        }
+    }
+    static let width: CGFloat = 210
+    package static let rowHeight: CGFloat = 40
+    package nonisolated static let inset: CGFloat = 8
+    package static let separatorInsets = NSEdgeInsets(top: 8, left: 4, bottom: 8, right: 4)
+    package static let divider = separatorInsets.top + 1 + separatorInsets.bottom
+
+    package static func shapeCard(_ view: NSView) {
+        view.wantsLayer = true
+        view.layer?.cornerRadius = SidebarPlusMenuPlacement.cornerRadius
+        view.layer?.cornerCurve = .continuous
+        view.layer?.masksToBounds = true
+    }
+
+    init(rows: [SidebarPlusRow], colors: ParcMenuColors, dismiss: @escaping () -> Void = {},
+         perform: @escaping (SidebarPlusAction) -> Void) {
+        self.rows = rows
+        self.colors = colors
+        self.dismiss = dismiss
+        self.perform = perform
+        let breaks = rows.indices.filter { SidebarPlusMenuModel.groupBreaks.contains($0) }.count
+        menuSize = NSSize(
+            width: Self.width,
+            height: Self.inset * 2 + CGFloat(rows.count) * Self.rowHeight + CGFloat(breaks) * Self.divider
+        )
+        super.init(frame: NSRect(x: 0, y: 0, width: menuSize.width, height: menuSize.height))
+        Self.shapeCard(self)
+        var y = Self.inset
+        for (index, row) in rows.enumerated() {
+            if SidebarPlusMenuModel.groupBreaks.contains(index) {
+                let edge = Self.inset + Self.separatorInsets.left
+                separators.append(NSRect(x: edge, y: y + Self.separatorInsets.top,
+                                         width: Self.width - edge - Self.inset - Self.separatorInsets.right, height: 1))
+                y += Self.divider
+            }
+            let button = SidebarPlusRowButton(row: row, colors: colors)
+            button.target = self
+            button.action = #selector(choose(_:))
+            button.tag = index
+            addSubview(button)
+            button.frame = NSRect(x: Self.inset, y: y, width: Self.width - Self.inset * 2, height: Self.rowHeight)
+            buttons.append(button)
+            y += Self.rowHeight
+        }
+        highlighted = rows.lastIndex(where: { $0.action == .tab && $0.enabled }) ?? rows.indices.last ?? 0
+        refreshHighlight()
+        setAccessibilityRole(.menu)
+        setAccessibilityLabel("New Tab, Folder, or Space")
+    }
+
+    package required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    package override var isFlipped: Bool { true }
+    package override var acceptsFirstResponder: Bool { true }
+
+    package override func draw(_ dirtyRect: NSRect) {
+        colors.fillBackground(NSBezierPath(rect: bounds))
+        colors.hover.setFill()
+        for line in separators { NSBezierPath(roundedRect: line, xRadius: 0.5, yRadius: 0.5).fill() }
+    }
+
+    package override func keyDown(with event: NSEvent) {
+        guard acceptsActions else { return }
+        if event.keyCode == 126 { moveHighlight(-1) }
+        else if event.keyCode == 125 { moveHighlight(1) }
+        else if event.keyCode == 36 || event.keyCode == 76 { activateHighlighted() }
+        else if event.keyCode == 53 { dismiss() }
+        else { super.keyDown(with: event) }
+    }
+
+    @objc private func choose(_ sender: SidebarPlusRowButton) {
+        guard acceptsActions, sender.row.enabled else { return }
+        perform(sender.row.action)
+    }
+
+    private func moveHighlight(_ delta: Int) {
+        guard !buttons.isEmpty else { return }
+        var index = highlighted
+        for _ in buttons.indices {
+            index = (index + delta + buttons.count) % buttons.count
+            if rows[index].enabled { highlighted = index; refreshHighlight(); return }
+        }
+    }
+
+    private func activateHighlighted() {
+        guard acceptsActions, rows.indices.contains(highlighted), rows[highlighted].enabled else { return }
+        perform(rows[highlighted].action)
+    }
+
+    private func refreshHighlight() {
+        for (index, button) in buttons.enumerated() { button.emphasized = index == highlighted }
+    }
+
+    package override func updateTrackingAreas() {
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil))
+        super.updateTrackingAreas()
+    }
+
+    package override func mouseMoved(with event: NSEvent) {
+        guard acceptsActions else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        if let index = buttons.firstIndex(where: { $0.frame.contains(point) }), rows[index].enabled {
+            highlighted = index
+            refreshHighlight()
+        }
+    }
+}
+
+@MainActor
+package final class SidebarPlusRowButton: NSButton {
+    let row: SidebarPlusRow
+    var emphasized = false { didSet { if emphasized != oldValue { needsDisplay = true } } }
+    var colors: ParcMenuColors { didSet { needsDisplay = true } }
+    private let icon: NSImage?
+    private let iconIsArtwork: Bool
+    package static let titleFont = NSFont.systemFont(ofSize: 13, weight: .medium)
+    package static let shortcutFont = NSFont.systemFont(ofSize: 13, weight: .regular)
+    private static let shortcutKern: CGFloat = 2
+    private static let iconConfiguration = NSImage.SymbolConfiguration(pointSize: 18, weight: .medium)
+    package static let iconCenter = NSPoint(x: 20, y: 20)
+    private static let artworkSize = NSSize(width: 24, height: 24)
+    package static let titleOrigin = NSPoint(x: 42, y: 12)
+    package static let plateRadius: CGFloat = 8
+    private static let shortcutRightInset: CGFloat = 10
+
+    init(row: SidebarPlusRow, colors: ParcMenuColors) {
+        self.row = row
+        self.colors = colors
+        let artwork = SidebarPlusMenuArtwork.image(row.symbol)
+        iconIsArtwork = artwork != nil
+        icon = artwork ?? NSImage(systemSymbolName: row.symbol, accessibilityDescription: row.title)?
+            .withSymbolConfiguration(Self.iconConfiguration)
+        super.init(frame: .zero)
+        isBordered = false
+        bezelStyle = .regularSquare
+        title = ""
+        image = nil
+        imagePosition = .noImage
+        isEnabled = row.enabled
+        setAccessibilityLabel(row.title)
+        setAccessibilityEnabled(row.enabled)
+        focusRingType = .none
+        wantsLayer = true
+        layer?.cornerRadius = Self.plateRadius
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+    }
+
+    package required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    package override var isFlipped: Bool { true }
+
+    package override func draw(_ dirtyRect: NSRect) {
+        if emphasized, isEnabled {
+            colors.hover.setFill()
+            NSBezierPath(rect: bounds).fill()
+        }
+        let titleColor = row.enabled ? colors.title : colors.disabledTitle
+        if let icon {
+            let tinted = NSImage(size: icon.size, flipped: false) { rect in
+                icon.draw(in: rect)
+                titleColor.setFill()
+                rect.fill(using: .sourceAtop)
+                return true
+            }
+            let size = iconIsArtwork ? Self.artworkSize : icon.size
+            let iconRect = NSRect(x: Self.iconCenter.x - size.width / 2, y: Self.iconCenter.y - size.height / 2,
+                                  width: size.width, height: size.height)
+            tinted.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1,
+                        respectFlipped: true, hints: nil)
+        }
+        let title = NSAttributedString(string: row.title, attributes: [
+            .font: Self.titleFont, .foregroundColor: titleColor
+        ])
+        title.draw(at: Self.titleOrigin)
+        let shortcut = Self.shortcutText(row.shortcut, color: row.enabled ? colors.subtitle : colors.disabledSubtitle)
+        let shortcutWidth = shortcut.size().width
+        shortcut.draw(at: NSPoint(x: bounds.width - Self.shortcutRightInset - shortcutWidth, y: 12))
+    }
+
+    static func shortcutText(_ text: String, color: NSColor) -> NSAttributedString {
+        let result = NSMutableAttributedString(string: text, attributes: [
+            .font: Self.shortcutFont, .kern: Self.shortcutKern, .foregroundColor: color
+        ])
+        guard let space = text.lastIndex(of: " ") else { return result }
+        var start = space
+        while start > text.startIndex, text[text.index(before: start)].isLetter { start = text.index(before: start) }
+        result.removeAttribute(.kern, range: NSRange(start...space, in: text))
+        return result
+    }
+}

@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcCommandBar
 
 struct RowDiffTests {
     typealias Row = CommandBarRowDiff.Row

@@ -1,6 +1,11 @@
 import AppKit
 import ParcCore
 import ParcEngine
+import ParcKit
+import ParcNotes
+import ParcEasels
+import ParcCommandBar
+import ParcSidebar
 
 @MainActor
 final class TabPeekSlot {

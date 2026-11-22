@@ -2,6 +2,8 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcNotes
 
 struct NoteKeyCommandsTests {
     struct Chord: @unchecked Sendable, CustomTestStringConvertible {

@@ -2,6 +2,7 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
 
 @MainActor private struct MarkRig {
     let mark = StartPageMarkView(frame: NSRect(x: 0, y: 0, width: 65, height: 96))

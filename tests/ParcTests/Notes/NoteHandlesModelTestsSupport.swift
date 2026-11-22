@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcNotes
 
 enum NoteHandlesModelTestsSupport {
     static func ids(_ entries: [NoteBlockMenuEntry]) -> [String] { entries.map(\.id) }

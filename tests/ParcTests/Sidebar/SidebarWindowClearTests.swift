@@ -2,6 +2,8 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcSidebar
 
 private final class DragSource: NSView, SidebarItemDragSource {
     var sidebarDrag: SidebarMoveSession?

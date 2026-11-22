@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import Testing
 @testable import Parc
+@testable import ParcKit
 
 struct KeyLabelTests {
 

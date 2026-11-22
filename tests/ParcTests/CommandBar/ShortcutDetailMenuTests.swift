@@ -3,6 +3,8 @@ import Carbon.HIToolbox
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcCommandBar
 
 extension ShortcutDetailTestsSupport {
     struct ShortcutDetailMenuTests {

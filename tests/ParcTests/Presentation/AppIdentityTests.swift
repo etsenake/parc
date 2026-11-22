@@ -1,6 +1,8 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSettings
 
 struct AppIconControllerTests {
     static let icons = ["Original", "Sorbet", "AfterHours", "RainGlass", "Recess", "Twilight",

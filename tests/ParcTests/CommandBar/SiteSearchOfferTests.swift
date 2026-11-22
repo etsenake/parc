@@ -4,6 +4,8 @@ import ParcTestSupport
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcCommandBar
 
 struct SiteSearchOfferTests {
     @MainActor private final class Window: NSWindow {

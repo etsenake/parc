@@ -1,4 +1,5 @@
 import AppKit
+import ParcSidebar
 
 @MainActor
 protocol SidebarKeyViewEnds: AnyObject {

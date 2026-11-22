@@ -2,6 +2,7 @@ import AppKit
 import ParcTestSupport
 import Testing
 @testable import Parc
+@testable import ParcSidebar
 
 struct NavigationLoadingTestsReloadOptions {
     @MainActor private static func reloadMenu(_ chosen: @escaping (ReloadOptionsMenu.Choice) -> Void) -> NSMenu {

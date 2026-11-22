@@ -2,6 +2,7 @@ import AppKit
 import Testing
 import ParcCore
 @testable import Parc
+@testable import ParcSidebar
 
 extension SpaceThemeControlTests {
     private func padPoint(_ f: Fixture) -> NSPoint { NSPoint(x: f.pad.bounds.width * 0.8, y: f.pad.bounds.midY) }

@@ -4,7 +4,7 @@ The sidebar exposes controls, a structured item outline and a linked keyboard
 path. Hiding it moves its existing views offscreen, so presentation, keyboard
 focus and accessibility visibility are separate concerns.
 
-The primary implementation is in `Sources/Parc/SidebarAccessibility.swift`,
+The primary implementation is in `Sources/ParcSidebar/SidebarAccessibility.swift`,
 `SidebarOutline.swift`, `WindowKeyViewLoop.swift`, `SavedFocus.swift` and
 `SidebarView.swift`. See [layout](sidebar-resize.md),
 [motion](sidebar-motion.md), [keyboard navigation](keyboard-navigation.md),

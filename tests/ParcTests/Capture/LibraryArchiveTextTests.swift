@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import Parc
+@testable import ParcLibrary
 
 struct LibraryArchiveTextTests {
     @MainActor @Test(arguments: [

@@ -264,7 +264,7 @@ indent, so text and Undo match. Checkmarks show the selection's emphasis and
 paragraph style, and Add Link becomes Edit Link on linked text.
 
 One responder-chain action reaches the Note editor or Easel canvas
-([menu](../Sources/Parc/TextFormatMenu.swift)). Items are enabled only while
+([menu](../Sources/ParcKit/TextFormatMenu.swift)). Items are enabled only while
 that body, edited text box or its style bar has focus in the key window without
 composition. Notes format every selected range, like their selection bar; Easels
 use the first, like their style bar. Bigger and Smaller step Easel sizes, also for

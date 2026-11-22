@@ -5,6 +5,9 @@ import ParcCore
 import ParcEngine
 import ParcEngineDoubles
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSidebar
+@testable import ParcSettings
 
 @MainActor struct PaneTopBarColorTests {
     @MainActor private struct Fixture {

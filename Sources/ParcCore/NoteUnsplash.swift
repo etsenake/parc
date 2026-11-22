@@ -28,7 +28,7 @@ package struct NoteUnsplashPhoto: Hashable, Decodable, Identifiable, Sendable {
     }
 
     struct User: Hashable, Decodable, Sendable {
-        struct Links: Hashable, Decodable, Sendable {
+        package struct Links: Hashable, Decodable, Sendable {
             var html: String?
 
             init(html: String? = nil) {

@@ -4,6 +4,11 @@ import ParcTestSupport
 import Testing
 @testable import ParcCore
 @testable import Parc
+@testable import ParcKit
+@testable import ParcNotes
+@testable import ParcEasels
+@testable import ParcSidebar
+@testable import ParcSettings
 
 struct BrowserToolbarTests {
     private let key = "parc.browserToolbar.v1"

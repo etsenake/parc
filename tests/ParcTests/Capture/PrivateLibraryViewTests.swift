@@ -2,6 +2,9 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
+@testable import ParcLibrary
+@testable import ParcSidebar
 
 struct PrivateLibraryViewTests {
     @MainActor private final class Fixture {

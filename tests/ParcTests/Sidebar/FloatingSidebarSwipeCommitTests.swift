@@ -3,6 +3,7 @@ import MetalKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcKit
 
 @MainActor
 struct FloatingSidebarSwipeCommitTests {

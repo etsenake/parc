@@ -2,6 +2,7 @@ import AppKit
 import Testing
 @testable import ParcCore
 @testable import Parc
+@testable import ParcSettings
 
 struct MembershipCardTests {
     private let specimen = MembershipCardState(name: "Ada Lovelace", createdAt: Date(timeIntervalSince1970: 1_800_000_000),

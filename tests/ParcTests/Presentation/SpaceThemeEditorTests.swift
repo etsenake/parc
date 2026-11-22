@@ -4,6 +4,8 @@ import ParcTestSupport
 import Testing
 @testable import ParcCore
 @testable import Parc
+@testable import ParcKit
+@testable import ParcSidebar
 
 @MainActor
 private func editorControl(_ label: String, in view: NSView) throws -> NSView {

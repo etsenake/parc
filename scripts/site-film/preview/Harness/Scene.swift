@@ -1,5 +1,8 @@
 import AppKit
 @testable import Parc
+@testable import ParcKit
+@testable import ParcEasels
+@testable import ParcSidebar
 import ParcCore
 
 let windowCornerRadius = WindowFrameThickness.windowCornerRadius

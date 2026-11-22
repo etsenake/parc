@@ -285,7 +285,7 @@ private struct NoteEmojiFile: Decodable {
             self.emoji = emoji
         }
     }
-    struct Entry: Decodable {
+    package struct Entry: Decodable {
         let e: String
         let n: String
         let k: [String]?

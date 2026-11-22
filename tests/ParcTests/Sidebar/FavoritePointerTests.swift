@@ -2,6 +2,7 @@ import AppKit
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcSidebar
 
 private final class ComponentWindow: NSWindow {
     var keyForComponent = true

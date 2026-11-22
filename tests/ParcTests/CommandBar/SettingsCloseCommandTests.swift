@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcSettings
 
 struct SettingsCloseCommandTests {
     @MainActor private final class Window: NSWindow {

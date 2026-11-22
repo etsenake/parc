@@ -1,5 +1,7 @@
 import AppKit
 import ParcEngine
+import ParcKit
+import ParcSidebar
 
 @MainActor
 enum ParcContextMenuMetrics {

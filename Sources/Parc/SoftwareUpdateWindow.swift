@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import ParcKit
 
 private enum UpdaterColors {
     static func dynamic(dark: NSColor, light: NSColor) -> NSColor {

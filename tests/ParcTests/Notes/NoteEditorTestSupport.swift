@@ -3,6 +3,8 @@ import Foundation
 import Testing
 @testable import Parc
 @testable import ParcCore
+@testable import ParcNotes
+@testable import ParcEasels
 
 struct NoteEditorRealTrashRefused: Error {}
 

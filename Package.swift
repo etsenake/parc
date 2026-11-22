@@ -55,9 +55,17 @@ let package = Package(
                 .unsafeFlags(["-F", engineStubs, "-Xlinker", "-weak_framework", "-Xlinker", "Chromium Embedded Framework"]),
             ]
         ),
+        .target(name: "ParcKit", dependencies: ["ParcCore", "ParcEngine"], swiftSettings: strict + engineImport),
+        .target(name: "ParcNotes", dependencies: ["ParcCore", "ParcEngine", "ParcKit"], swiftSettings: strict + engineImport),
+        .target(name: "ParcEasels", dependencies: ["ParcCore", "ParcEngine", "ParcKit", "ParcNotes"], swiftSettings: strict + engineImport),
+        .target(name: "ParcLibrary", dependencies: ["ParcCore", "ParcEngine", "ParcKit", "ParcNotes", "ParcEasels"], swiftSettings: strict + engineImport),
+        .target(name: "ParcCommandBar", dependencies: ["ParcCore", "ParcEngine", "ParcKit", "ParcNotes"], swiftSettings: strict + engineImport),
+        .target(name: "ParcSidebar", dependencies: ["ParcCore", "ParcEngine", "ParcKit", "ParcNotes", "ParcEasels", "ParcLibrary", "ParcCommandBar"], swiftSettings: strict + engineImport),
+        .target(name: "ParcSettings", dependencies: ["ParcCore", "ParcEngine", "ParcKit", "ParcNotes", "ParcCommandBar", "ParcSidebar"], swiftSettings: strict + engineImport),
+        .target(name: "ParcOnboarding", dependencies: ["ParcCore", "ParcEngine", "ParcKit", "ParcSidebar", "ParcSettings"], swiftSettings: strict + engineImport),
         .target(
             name: "Parc",
-            dependencies: ["ParcCore", "ParcEngine", .product(name: "Sparkle", package: "Sparkle")],
+            dependencies: ["ParcCore", "ParcEngine", "ParcKit", "ParcNotes", "ParcEasels", "ParcLibrary", "ParcCommandBar", "ParcSidebar", "ParcSettings", "ParcOnboarding", .product(name: "Sparkle", package: "Sparkle")],
             swiftSettings: strict + engineImport,
             linkerSettings: [
                 .linkedFramework("Cocoa"),
@@ -109,7 +117,7 @@ let package = Package(
         ),
         .target(name: "ParcEngineDoubles", path: "tests/ParcEngineDoubles", publicHeadersPath: ".",
                 cSettings: [.headerSearchPath("../../Engine/ParcNative"), .headerSearchPath("../../Sources/ParcEngine")]),
-        .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcEngineDoubles", "ParcTestSupport"], path: "tests/ParcTests",
+        .testTarget(name: "ParcTests", dependencies: ["Parc", "ParcKit", "ParcNotes", "ParcEasels", "ParcLibrary", "ParcCommandBar", "ParcSidebar", "ParcSettings", "ParcOnboarding", "ParcEngineDoubles", "ParcTestSupport"], path: "tests/ParcTests",
                     resources: [.copy("Notes/Fixtures"), .process("Notes/emoji.json"), .copy("Presentation/Fixtures/AppIcons"), .copy("Presentation/Fixtures/NativeIcon.icns"),
                                 .copy("Presentation/Fixtures/MembershipCard"), .copy("Presentation/Fixtures/ThemeEditor"),
                                 .process("Easels/Fixtures/EaselFonts"),
@@ -134,7 +142,9 @@ let package = Package(
             cSettings: nativeFlags + [.headerSearchPath("../../../../Engine/ParcNative")]
         ),
     ]) + siteFilmScenes.map { scene in
-        let dependencies: [Target.Dependency] = ["Parc", "ParcCore", "ParcEngineDoubles"]
+        let dependencies: [Target.Dependency] = ["Parc", "ParcCore", "ParcKit", "ParcNotes", "ParcEasels", "ParcLibrary",
+                                                   "ParcCommandBar", "ParcSidebar", "ParcSettings", "ParcOnboarding",
+                                                   "ParcEngineDoubles"]
         return .executableTarget(
             name: "parc-film-\(scene)",
             dependencies: scene == "mini-card" ? dependencies + ["SiteFilmMedia"] : dependencies,

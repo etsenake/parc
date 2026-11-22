@@ -1,6 +1,8 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcLibrary
+@testable import ParcSidebar
 
 struct SidebarChromeFramesTests {
     private let root = NSRect(x: 0, y: 0, width: 1470, height: 831)

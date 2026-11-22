@@ -1,6 +1,7 @@
 import AppKit
 import Testing
 @testable import Parc
+@testable import ParcLibrary
 
 struct CaptureLibraryTileTests {
     @MainActor private final class KeyedWindow: NSWindow {

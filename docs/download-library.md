@@ -10,14 +10,14 @@ includes; remaining work belongs in the [backlog](backlog.md).
 | Responsibility | Source |
 | --- | --- |
 | Download records, persistence and private projection | `Sources/ParcCore/BrowserStore.swift` |
-| Library presentation and filtering | `Sources/Parc/DownloadLibraryView.swift`, `LibraryView.swift` |
+| Library presentation and filtering | `Sources/ParcLibrary/DownloadLibraryView.swift`, `LibraryView.swift` |
 | Table selection and original-item commands | `DownloadLibraryTable.swift`, `DownloadLibrarySelection.swift` |
 | Approved thumbnails, preview and drag | `DownloadThumbnailProvider.swift`, `DownloadLibraryPreview.swift`, `DownloadFileDrag.swift` |
 | Entry, flyout, progress and arrival | `SidebarLibraryEntry.swift`, `LibraryFlyout.swift`, `DownloadActivityBadge.swift`, `DownloadArrival.swift` |
 | Location preferences and review | `DownloadLocationPicker.swift`, `DownloadReviewController.swift` |
 | Engine manager and creation notification | `Engine/ParcNative/downloads.cc`, `native_download_arrival.mm` |
 
-App filenames without a directory are under `Sources/Parc`.
+App filenames without a directory are under `Sources/ParcLibrary`, except `DownloadLocationPicker.swift` (`Sources/ParcKit`) and `SidebarLibraryEntry.swift` (`Sources/ParcSidebar`).
 
 ## Catalog and identity
 

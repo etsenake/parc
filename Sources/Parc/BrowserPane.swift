@@ -1,5 +1,9 @@
 import AppKit
 import ParcEngine
+import ParcKit
+import ParcNotes
+import ParcEasels
+import ParcSettings
 
 final class PendingArrival {
     var ran = false
