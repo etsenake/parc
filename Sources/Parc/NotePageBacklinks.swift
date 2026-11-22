@@ -18,6 +18,9 @@ final class NoteBacklinksListView: NSView, NoteFloatingPanelContent {
     var items: [NoteBacklink] = [] {
         didSet {
             guard items != oldValue else { return }
+            if artSubscription == nil && !items.isEmpty {
+                artSubscription = NoteTabIconArt.shared.changes.sink { [weak self] _ in self?.rows.needsDisplay = true }
+            }
             if let highlighted, highlighted >= items.count { setHighlight(nil, animated: false) }
             relayout()
         }
@@ -62,7 +65,6 @@ final class NoteBacklinksListView: NSView, NoteFloatingPanelContent {
         setAccessibilityElement(true)
         setAccessibilityRole(.list)
         setAccessibilityLabel("Backlinks")
-        artSubscription = NoteTabIconArt.shared.changes.sink { [weak self] _ in self?.rows.needsDisplay = true }
         NoteAnimation.observeReduceMotion(self) { [weak self] in
             guard let self, let layer = self.plate.layer else { return }
             NoteAnimation.settle(layer)
