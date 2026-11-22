@@ -70,6 +70,7 @@ struct SidebarPreviewCardKindsTests {
 
     @Test func recentRowsHaveNoIconAndRequestNoFavicon() throws {
         let r = Recents(provider: provider)
+        r.card.now = { [now] in now }
         r.card.setRows(notionPages)
         let table = try #require(all(r.card, NSTableView.self).first)
         let cell = try #require(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? SidebarPreviewItemView)

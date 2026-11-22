@@ -11,6 +11,7 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     var onHeightChange: (() -> Void)?
     var requestFavicon: ((URL, @escaping (NSImage?) -> Void) -> Void)? { didSet { loadProviderIcon() } }
     var modifierFlags: () -> NSEvent.ModifierFlags = { NSEvent.modifierFlags }
+    var now: () -> Date = Date.init
     private let domain: SidebarRecentDomain?
     private let providerURL: URL?
     private let icon = NSImageView()
@@ -318,7 +319,7 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
         guard filtered.indices.contains(row) else { return nil }
         let value = filtered[row]
         let cell = SidebarPreviewItemView(row: value, title: SidebarPreviewColors.primary(1),
-                                          secondary: SidebarPreviewColors.primary(0.5))
+                                          secondary: SidebarPreviewColors.primary(0.5), now: now())
         cell.image = icons[value.url]
         if value.hasIcon, !requestedIcons.contains(value.url) {
             requestedIcons.insert(value.url)
