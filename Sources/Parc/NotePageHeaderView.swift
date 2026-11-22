@@ -362,13 +362,15 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         backlinks.onOpen = { [weak self] url in self?.editor.open(url) }
         backlinks.onHeightChange = { [weak self] in self?.relayoutIfHeightChanged() }
         backlinks.overlayHost = { [weak self] in self?.editor.canvas.overlayView }
-        subscriptions.insert(NoteBacklinkIndex.shared.changes.sink { [weak self] in self?.refreshBacklinks() })
+        if let file {
+            subscriptions.insert(file.files.backlinks.changes.sink { [weak self] in self?.refreshBacklinks() })
+        }
     }
 
     func refreshBacklinks() {
         let display = isPlainText ? NoteBacklinksDisplay.popup : settings.backlinksDisplay
         let found: [NoteBacklink]
-        if isPrinting || display == .off { found = [] } else { found = file.map { NoteBacklinkIndex.shared.backlinks(to: $0.url) } ?? [] }
+        if isPrinting || display == .off { found = [] } else { found = file.map { $0.files.backlinks.backlinks(to: $0.url) } ?? [] }
         backlinks.update(found, display: display)
     }
 
