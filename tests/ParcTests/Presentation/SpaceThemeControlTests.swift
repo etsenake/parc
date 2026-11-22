@@ -78,7 +78,7 @@ struct SpaceThemeControlTests {
             self.cursor = cursor
             self.delivery = delivery
             view = SpaceThemeEditorView(theme: theme, scrollPublisher: delivery.hold, scrollTime: { 30 },
-                                        performHapticFeedback: {}, cursor: cursor.cursor, resources: .module)
+                                        performHapticFeedback: {}, cursor: cursor.cursor, resources: ThemeEditorResources(bundle: .module))
             view.layoutSubtreeIfNeeded()
             pad = try SpaceThemeControlTests.control("Theme color pad", in: view)
             intensity = try SpaceThemeControlTests.control("Theme intensity", in: view)

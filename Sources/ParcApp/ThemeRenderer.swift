@@ -538,7 +538,11 @@ final class ThemeRendererView: NSView {
         return contextMenu(hitTest(point)) ?? super.menu(for: event)
     }
 
-    override init(frame frameRect: NSRect) {
+    override convenience init(frame frameRect: NSRect) {
+        self.init(frame: frameRect, makeCanvas: { ThemeMetalCanvas(frame: $0, device: $1) })
+    }
+
+    init(frame frameRect: NSRect, makeCanvas: (NSRect, MTLDevice) -> ThemeMetalCanvas) {
         super.init(frame: frameRect)
         wantsLayer = true
         material.blendingMode = .behindWindow
@@ -547,7 +551,7 @@ final class ThemeRendererView: NSView {
         addSubview(material)
         do {
             let renderer = try ThemeMetalRenderer()
-            let canvas = ThemeMetalCanvas(frame: bounds, device: renderer.device)
+            let canvas = makeCanvas(bounds, renderer.device)
             canvas.isPaused = true; canvas.enableSetNeedsDisplay = true
             canvas.colorPixelFormat = .bgra8Unorm
             canvas.clearColor = MTLClearColorMake(0, 0, 0, 0)
@@ -862,7 +866,7 @@ private final class ThemeMaterialView: NSVisualEffectView {
 }
 
 @MainActor
-private final class ThemeMetalCanvas: MTKView {
+class ThemeMetalCanvas: MTKView {
     var render: ((MTKView) -> Void)?
     override func draw(_ dirtyRect: NSRect) { render?(self) }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -988,9 +992,10 @@ struct ThemeOutputUniforms {
 }
 
 @MainActor
-private final class ThemeMetalRenderer {
+final class ThemeMetalRenderer {
     let device: MTLDevice
     private let queue: MTLCommandQueue
+    private let textureDirectory: URL?
     private let gradientPipeline: MTLRenderPipelineState
     private let outputPipeline: MTLRenderPipelineState
     private let library: MTLLibrary
@@ -1014,7 +1019,8 @@ private final class ThemeMetalRenderer {
         return value
     }
 
-    init() throws {
+    init(textureDirectory: URL? = Bundle.main.resourceURL?.appendingPathComponent("ThemeTextures")) throws {
+        self.textureDirectory = textureDirectory
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
             throw NSError(domain: "Parc.Theme", code: 1, userInfo: [NSLocalizedDescriptionKey: "Metal is unavailable."])
         }
@@ -1046,7 +1052,7 @@ private final class ThemeMetalRenderer {
     private func texture(_ type: SpaceTheme.Texture) -> MTLTexture? {
         if let cached = textures[type] { return cached }
         guard !missingTextures.contains(type) else { return nil }
-        guard let url = Bundle.main.resourceURL?.appendingPathComponent("ThemeTextures").appendingPathComponent(type.rawValue + ".png"),
+        guard let url = textureDirectory?.appendingPathComponent(type.rawValue + ".png"),
               let image = NSImage(contentsOf: url),
               let decoded = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
               let cgImage = Self.premultiplied(decoded) else {
@@ -1080,19 +1086,27 @@ private final class ThemeMetalRenderer {
     @discardableResult
     func draw(in view: MTKView, theme: SpaceTheme, isDark: Bool, next requested: (theme: SpaceTheme, isDark: Bool, progress: Float)? = nil,
               isActive: Bool, pointSize: NSSize, sampleRect: SIMD4<Float>) -> MTLCommandBuffer? {
+        guard pointSize.width > 0, pointSize.height > 0,
+              let drawable = view.currentDrawable, let outputPass = view.currentRenderPassDescriptor,
+              let command = queue.makeCommandBuffer(),
+              encode(into: command, target: outputPass, theme: theme, isDark: isDark, next: requested,
+                     isActive: isActive, pointSize: pointSize, sampleRect: sampleRect) else { return nil }
+        command.present(drawable); command.commit()
+        return command
+    }
+
+    func encode(into command: MTLCommandBuffer, target outputPass: MTLRenderPassDescriptor, theme: SpaceTheme, isDark: Bool,
+                next requested: (theme: SpaceTheme, isDark: Bool, progress: Float)? = nil,
+                isActive: Bool, pointSize: NSSize, sampleRect: SIMD4<Float>) -> Bool {
         let transition = requested == nil ? nil : self.transition
         let next = transition == nil ? nil : requested
         let incoming = next?.theme.rendersColor == true
-        guard pointSize.width > 0, pointSize.height > 0,
-              let drawable = view.currentDrawable, let outputPass = view.currentRenderPassDescriptor,
-              let command = queue.makeCommandBuffer() else { return nil }
         outputPass.colorAttachments[0].loadAction = .clear
         outputPass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
         let progress = next?.progress ?? 0
         guard (theme.rendersColor && progress < 1) || (incoming && progress > 0) else {
             command.makeRenderCommandEncoder(descriptor: outputPass)?.endEncoding()
-            command.present(drawable); command.commit()
-            return command
+            return true
         }
         var uniforms = ThemeGradientUniforms(theme: theme, backgroundIsDark: isDark, pointSize: pointSize,
                                              underlay: underlay(theme, isDark: isDark))
@@ -1103,7 +1117,7 @@ private final class ThemeMetalRenderer {
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = gradient
         pass.colorAttachments[0].loadAction = .dontCare; pass.colorAttachments[0].storeAction = .store
-        guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { return nil }
+        guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { return false }
         encoder.setRenderPipelineState(transition?.gradient ?? gradientPipeline)
         encoder.setVertexBytes(&line, length: MemoryLayout<ThemeGradientUniforms>.stride, index: 0)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<ThemeGradientUniforms>.stride, index: 0)
@@ -1118,7 +1132,7 @@ private final class ThemeMetalRenderer {
             return (ThemeOutputUniforms(theme: theme, isActive: isActive, pointSize: pointSize,
                                         sampleRect: sampleRect, hasTexture: overlay != nil), overlay)
         }
-        guard let display = command.makeRenderCommandEncoder(descriptor: outputPass) else { return nil }
+        guard let display = command.makeRenderCommandEncoder(descriptor: outputPass) else { return false }
         let current = output(theme)
         var currentUniforms = current.0
         display.setFragmentTexture(gradient, index: 0); display.setFragmentTexture(current.1, index: 1)
@@ -1134,8 +1148,8 @@ private final class ThemeMetalRenderer {
             display.setRenderPipelineState(outputPipeline)
         }
         display.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-        display.endEncoding(); command.present(drawable); command.commit()
-        return command
+        display.endEncoding()
+        return true
     }
 
     private static let shader = #"""

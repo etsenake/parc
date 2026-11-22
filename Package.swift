@@ -112,7 +112,8 @@ let package = Package(
                                 .copy("Sidebar/Fixtures/SidebarPlusMenu"),
                                 .copy("Data/Fixtures/ArcSidebar"),
                                 .copy("Data/Fixtures/Scripting"),
-                                .copy("Data/Fixtures/SiteControlCenter")],
+                                .copy("Data/Fixtures/SiteControlCenter"),
+                                .copy("Presentation/Fixtures/ThemeTextures")],
                     swiftSettings: strict + engineImport),
     ] + (siteFilmScenes.isEmpty ? [] : [
         .target(

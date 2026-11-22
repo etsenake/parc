@@ -344,7 +344,7 @@ extension SpaceThemeControlTests {
         try autoreleasepool {
             _ = NSApplication.shared
             let editor = SpaceThemeEditorView(theme: SpaceTheme(), performHapticFeedback: {}, cursor: CursorLog().cursor,
-                                              resources: .module)
+                                              resources: ThemeEditorResources(bundle: .module))
             editor.layoutSubtreeIfNeeded()
             released = editor
             let noise = try Self.control("Theme texture and noise", in: editor)
