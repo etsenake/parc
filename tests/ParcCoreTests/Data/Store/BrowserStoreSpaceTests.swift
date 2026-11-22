@@ -3,43 +3,73 @@ import Foundation
 import Testing
 @testable import ParcCore
 
-extension BrowserStoreTests {
-    @Test static func spacesAndProfiles() throws {
-        try withDirectory { directory in
+struct BrowserStoreSpaceTests {
+    @Test @MainActor static func spacesShareOnlyFavoritesWithinAProfile() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let favorite = store.open("https://favorite.example.org", kind: .favorite)
+            _ = store.open("https://pinned.example.org", kind: .pinned)
+            _ = store.open("https://today.example.org")
+            _ = store.createSpace(name: "Second")
+            #expect(store.visibleTabs.map(\.id) == [favorite], "Favorites are shared by Spaces using a profile; pinned and Today tabs are Space-local")
+        }
+    }
+
+    @Test @MainActor static func switchingSpacesRestoresEachSelection() throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let firstSpace = store.activeSpaceID
-            let favorite = store.open("https://favorite.example.org", kind: .favorite)
-            let pinned = store.open("https://pinned.example.org", kind: .pinned)
             let today = store.open("https://today.example.org")
             let secondSpace = store.createSpace(name: "Second")
-            #expect(store.visibleTabs.map(\.id) == [favorite], "Favorites are shared by Spaces using a profile; pinned and Today tabs are Space-local")
             let second = store.open("https://second.example.org")
             store.selectSpace(firstSpace)
             #expect(store.selectedTabID == today, "Returning to a Space must restore its own selection")
             store.selectSpace(secondSpace)
             #expect(store.selectedTabID == second, "Each Space must retain its own selection")
+        }
+    }
 
+    @Test @MainActor static func assigningAProfileIsolatesFavoritesAndEngineStorage() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let favorite = store.open("https://favorite.example.org", kind: .favorite)
+            let pinned = store.open("https://pinned.example.org", kind: .pinned)
+            let secondSpace = store.createSpace(name: "Second")
+            let second = store.open("https://second.example.org")
             let profile = store.createProfile(name: "Independent")
             store.assignProfile(profile, toSpace: secondSpace)
             #expect(!store.visibleTabs.contains { $0.id == favorite }, "A favorite must not leak into a different profile")
-            let firstTab = try tab(pinned, in: store)
-            let secondTab = try tab(second, in: store)
+            let firstTab = try BrowserStoreTests.tab(pinned, in: store)
+            let secondTab = try BrowserStoreTests.tab(second, in: store)
             #expect(secondTab.profileID == profile, "Assigning a Space profile must update its ordinary tabs")
             #expect(store.profilePath(for: firstTab) != store.profilePath(for: secondTab), "Independent profiles must use separate engine storage directories")
             #expect(store.profilePath(for: secondTab).hasPrefix(directory.path + "/Profiles/"), "Engine profile storage must remain beneath the isolated application directory")
-            try expectValidSelection(store)
+            try BrowserStoreTests.expectValidSelection(store)
+        }
+    }
 
+    @Test @MainActor static func movingASelectedTabAcrossProfilesClearsTheSourceSelection() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let firstSpace = store.activeSpaceID
+            let today = store.open("https://today.example.org")
+            let secondSpace = store.createSpace(name: "Second")
+            let profile = store.createProfile(name: "Independent")
+            store.assignProfile(profile, toSpace: secondSpace)
             store.selectSpace(firstSpace)
             store.selectTab(today)
             store.moveTab(today, toSpace: secondSpace)
             #expect(!store.state.selectedTabIDs.contains(today), "Moving the selected tab out of a Space must remove it from that Space's selection")
-            #expect(try tab(today, in: store).profileID == profile, "A cross-Space move must adopt the destination profile")
-            try expectValidSelection(store)
+            #expect(try BrowserStoreTests.tab(today, in: store).profileID == profile, "A cross-Space move must adopt the destination profile")
+            try BrowserStoreTests.expectValidSelection(store)
         }
     }
 
-    @Test static func freshSessionWhenRestoreDisabled() throws {
-        try withDirectory { directory in
+    @MainActor
+    private static func withFreshSession(
+        _ body: (BrowserStore, BrowserState, Date) throws -> Void
+    ) throws {
+        try BrowserStoreTests.withDirectory { directory in
             var now = Date(timeIntervalSince1970: 1_800_000_000)
             let store = try BrowserStore(directory: directory, now: { now })
             let firstSpace = store.activeSpaceID
@@ -49,10 +79,9 @@ extension BrowserStoreTests {
             store.updateTab(pinned, title: "Navigated pin", url: "https://saved.example.org/other")
             let favorite = store.open("https://favorite.example.org", kind: .favorite)
             store.updateTab(favorite, title: "Navigated favorite", url: "https://favorite.example.org/other")
-            let firstToday = store.open("https://first.example.org")
+            _ = store.open("https://first.example.org")
             let alreadyArchived = store.open("https://archived.example.org")
             store.closeTab(alreadyArchived)
-            let oldArchive = try tab(alreadyArchived, in: store)
             let otherSpace = store.createSpace(name: "Work")
             let otherProfile = store.createProfile(name: "Work")
             store.assignProfile(otherProfile, toSpace: otherSpace)
@@ -60,8 +89,6 @@ extension BrowserStoreTests {
             let otherPin = store.open("https://work-saved.example.org", kind: .pinned)
             store.updateTab(otherPin, title: "Work article", url: "https://work-saved.example.org/article")
             store.setSplit([otherToday, otherPin])
-            let otherHome = store.state.tabs.first { $0.kind == .pinned && $0.spaceID == otherSpace && $0.id != otherPin }!.id
-            #expect(try tab(otherPin, in: store).kind == .today, "The pinned original joins the new Today split")
             store.recordDownload(["id": "existing-download", "name": "notes.pdf", "isComplete": true])
             store.updateSettings { $0.restoreSession = false; $0.onboardingComplete = true }
             try store.save()
@@ -69,47 +96,99 @@ extension BrowserStoreTests {
 
             now.addTimeInterval(3600)
             let reopened = try BrowserStore(directory: directory, now: { now })
+            try body(reopened, saved, now)
+        }
+    }
+
+    @Test @MainActor static func aFreshSessionClearsAllSelectionsAndSplitLayouts() throws {
+        try withFreshSession { reopened, _, _ in
             #expect(reopened.state.selectedTabIDs.isEmpty && reopened.state.selectionBySpace.isEmpty, "Disabling session restore must start with no selected page or remembered split in any Space")
             #expect(reopened.state.splitLayouts.isEmpty, "A fresh session must discard its prior split layout")
+        }
+    }
+
+    @Test @MainActor static func aFreshSessionArchivesLiveTodayTabsAndPreservesExistingArchiveEntries() throws {
+        try withFreshSession { reopened, saved, now in
+            let liveToday = saved.tabs.filter { $0.kind == .today && $0.archivedAt == nil }
+            try #require(liveToday.count == 3)
             #expect(reopened.state.tabs.filter { $0.kind == .today && $0.archivedAt == nil }.isEmpty, "A fresh launch must archive Today tabs across all Spaces and profiles")
-            for id in [firstToday, otherToday, otherPin] {
-                #expect(try tab(id, in: reopened).archivedAt == now, "Live Today tabs must be recoverably archived at the fresh launch time")
-            }
-            #expect(try tab(alreadyArchived, in: reopened) == oldArchive, "Previously archived tabs must retain their original contents and archive date")
-            for id in [pinned, favorite, otherHome] {
-                let value = try tab(id, in: reopened)
-                #expect(value.archivedAt == nil && value.url == value.savedURL && value.title == value.savedTitle, "Saved destinations must remain available and reset to their saved page and title")
-            }
+            let archivedAtLaunch = try liveToday.map { try BrowserStoreTests.tab($0.id, in: reopened).archivedAt }
+            #expect(archivedAtLaunch == Array(repeating: now, count: liveToday.count))
+            let oldArchive = try #require(saved.tabs.first { $0.archivedAt != nil })
+            #expect(try BrowserStoreTests.tab(oldArchive.id, in: reopened) == oldArchive)
+            #expect(Set(reopened.state.recentlyClosedIDs).count == reopened.state.recentlyClosedIDs.count, "Fresh-launch archiving must not duplicate recovery entries")
+        }
+    }
+
+    @Test @MainActor static func aFreshSessionResetsSavedDestinationsWithoutRemovingThem() throws {
+        try withFreshSession { reopened, saved, _ in
+            let savedTabs = saved.tabs.filter { $0.kind == .pinned || $0.kind == .favorite }
+            try #require(savedTabs.count == 3)
+            let reopenedTabs = try savedTabs.map { try BrowserStoreTests.tab($0.id, in: reopened) }
+            #expect(reopenedTabs.allSatisfy { $0.archivedAt == nil && $0.url == $0.savedURL && $0.title == $0.savedTitle })
+        }
+    }
+
+    @Test @MainActor static func startingFreshPreservesSpacesProfilesHistoryAndPreferences() throws {
+        try withFreshSession { reopened, saved, _ in
             #expect(reopened.state.profiles == saved.profiles && reopened.state.spaces == saved.spaces
-                       && reopened.state.folders == saved.folders && reopened.activeSpaceID == otherSpace, "A fresh launch must preserve the user's profiles, Spaces, folders, and active Space")
+                       && reopened.state.folders == saved.folders && reopened.activeSpaceID == saved.activeSpaceID, "A fresh launch must preserve the user's profiles, Spaces, folders, and active Space")
             #expect(reopened.state.history == saved.history && reopened.state.downloads == saved.downloads
                        && reopened.state.settings == saved.settings, "Starting fresh must not clear history, download records, or preferences")
-            #expect(Set(reopened.state.recentlyClosedIDs).count == reopened.state.recentlyClosedIDs.count, "Fresh-launch archiving must not duplicate recovery entries")
+        }
+    }
 
+    @Test @MainActor static func relaunchingAnAlreadyNormalizedSessionDoesNotRewriteIt() throws {
+        try withFreshSession { reopened, _, now in
             let fresh = reopened.state
-            let file = directory.appendingPathComponent("session.json")
+            let file = reopened.directory.appendingPathComponent("session.json")
             let data = try Data(contentsOf: file)
             let oldModificationDate = Date(timeIntervalSince1970: 1_700_000_000)
             try FileManager.default.setAttributes([.modificationDate: oldModificationDate], ofItemAtPath: file.path)
-            now.addTimeInterval(3600)
-            let openedAgain = try BrowserStore(directory: directory, now: { now })
+
+            let openedAgain = try BrowserStore(directory: reopened.directory, now: { now.addingTimeInterval(3_600) })
             #expect(openedAgain.state == fresh, "A second fresh launch must be idempotent")
             #expect(try Data(contentsOf: file) == data, "Fresh-launch normalization must be persisted before another store reads it")
             let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
             #expect(attributes[.modificationDate] as? Date == oldModificationDate, "An already normalized fresh session must not rewrite its state file")
-            openedAgain.restoreArchivedTab(otherToday, destination: .previousSpace(fallbackSpaceID: openedAgain.activeSpaceID))
-            #expect(try openedAgain.selectedTabID == otherToday && (try tab(otherToday, in: openedAgain)).archivedAt == nil, "Archive restoration recovers a tab archived by the fresh-launch preference")
-            try expectValidSelection(openedAgain)
         }
     }
 
-    @Test static func changingRestorePreferenceDoesNotCloseCurrentTabs() throws {
-        try withDirectory { directory in
+    @Test @MainActor static func putBackRecoversATabArchivedAtFreshLaunch() throws {
+        try withFreshSession { reopened, saved, _ in
+            let otherToday = try #require(saved.tabs.first { $0.url == "https://work.example.org" }?.id)
+            reopened.restoreArchivedTab(otherToday, destination: .previousSpace(fallbackSpaceID: reopened.activeSpaceID))
+            #expect(try reopened.selectedTabID == otherToday && (try BrowserStoreTests.tab(otherToday, in: reopened)).archivedAt == nil, "Archive restoration recovers a tab archived by the fresh-launch preference")
+            try BrowserStoreTests.expectValidSelection(reopened)
+        }
+    }
+
+    @Test @MainActor static func aPinnedOriginalJoinsANewTodaySplit() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let today = store.open("https://work.example.org")
+            let pinned = store.open("https://work-saved.example.org", kind: .pinned)
+            store.setSplit([today, pinned])
+            #expect(try BrowserStoreTests.tab(pinned, in: store).kind == .today)
+        }
+    }
+
+    @Test @MainActor static func changingRestorePreferenceDoesNotCloseCurrentTabs() throws {
+        try BrowserStoreTests.withDirectory { directory in
             let date = Date(timeIntervalSince1970: 1_800_000_000)
             let store = try BrowserStore(directory: directory, now: { date })
             let tabID = store.open("https://current.example.org")
             store.updateSettings { $0.restoreSession = false }
-            #expect(try store.selectedTabID == tabID && (try tab(tabID, in: store)).archivedAt == nil, "Changing the startup preference must not close tabs during the current session")
+            #expect(try store.selectedTabID == tabID && (try BrowserStoreTests.tab(tabID, in: store)).archivedAt == nil, "Changing the startup preference must not close tabs during the current session")
+        }
+    }
+
+    @Test @MainActor static func reenablingRestoreKeepsCurrentTabsOnLaunch() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let date = Date(timeIntervalSince1970: 1_800_000_000)
+            let store = try BrowserStore(directory: directory, now: { date })
+            _ = store.open("https://current.example.org")
+            store.updateSettings { $0.restoreSession = false }
             store.updateSettings { $0.restoreSession = true }
             try store.save()
             let expected = store.state
@@ -118,81 +197,141 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func archivePolicyAndRestore() throws {
-        try withDirectory { directory in
+    @Test(arguments: [TabKind.today, .pinned, .favorite], [true, false])
+    @MainActor static func autoArchiveOnlyExpiresUnselectedTodayTabs(_ kind: TabKind, _ selected: Bool) throws {
+        try BrowserStoreTests.withDirectory { directory in
             var now = Date(timeIntervalSince1970: 1_800_000_000)
             let store = try BrowserStore(directory: directory, now: { now })
             store.setAutoArchiveInterval(.oneHour, for: store.activeSpace.profileID)
             store.archiveExpiredTabs()
-            let expired = store.open("https://expired.example.org")
-            let pinned = store.open("https://pinned.example.org", kind: .pinned)
-            let favorite = store.open("https://favorite.example.org", kind: .favorite)
-            let selected = store.open("https://selected.example.org")
+            let candidate = store.open("https://candidate.example.org", kind: kind)
+            if !selected { _ = store.open("https://active.example.org") }
             now.addTimeInterval(2 * 3600)
             store.archiveExpiredTabs()
-            #expect(try tab(expired, in: store).archivedAt == now, "Inactive Today tabs must expire at the configured threshold")
-            #expect(try tab(pinned, in: store).archivedAt == nil, "Pinned destinations must never auto-archive")
-            #expect(try tab(favorite, in: store).archivedAt == nil, "Favorites must never auto-archive")
-            #expect(try tab(selected, in: store).archivedAt == nil, "A visible selected tab must not auto-archive")
+            #expect(try BrowserStoreTests.tab(candidate, in: store).archivedAt == (kind == .today && !selected ? now : nil))
+        }
+    }
 
+    @Test @MainActor static func closingAndReopeningTodayRestoresItsIdentityAndSelection() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let selected = store.open("https://selected.example.org")
             store.closeTab(selected)
-            #expect(try tab(selected, in: store).archivedAt != nil, "Closing Today must archive it")
+            #expect(try BrowserStoreTests.tab(selected, in: store).archivedAt != nil, "Closing Today must archive it")
             store.restoreArchivedTab(selected, destination: .previousSpace(fallbackSpaceID: store.activeSpaceID))
-            #expect(try store.selectedTabID == selected && (try tab(selected, in: store)).archivedAt == nil, "Reopen closed tab must restore the same identity and select it")
+            #expect(try store.selectedTabID == selected && (try BrowserStoreTests.tab(selected, in: store)).archivedAt == nil, "Reopen closed tab must restore the same identity and select it")
+            try BrowserStoreTests.expectValidSelection(store)
+        }
+    }
+
+    @Test @MainActor static func neverDisablesAutomaticArchiving() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            var now = Date(timeIntervalSince1970: 1_800_000_000)
+            let store = try BrowserStore(directory: directory, now: { now })
             store.setAutoArchiveInterval(.never, for: store.activeSpace.profileID)
             let keep = store.open("https://never.example.org")
             _ = store.open("https://active.example.org")
             now.addTimeInterval(40 * 24 * 3600)
             store.archiveExpiredTabs()
-            #expect(try tab(keep, in: store).archivedAt == nil, "Never must disable automatic archiving")
-            try expectValidSelection(store)
+            #expect(try BrowserStoreTests.tab(keep, in: store).archivedAt == nil, "Never must disable automatic archiving")
         }
     }
 
-    @Test static func savedDestinationsAndSplitLifecycle() throws {
-        try withDirectory { directory in
+    @Test @MainActor static func formingASplitFiltersUnknownAndDuplicateMembers() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let pinned = store.open("https://example.org/home", kind: .pinned)
+            let today = store.open("https://example.org/today")
+            store.setSplit([pinned, today, today, UUID()])
+            #expect(store.state.selectedTabIDs == [pinned, today], "Splits must reject unknown or duplicate members")
+        }
+    }
+
+    @Test @MainActor static func splittingANavigatedPinKeepsItsLivePageAndRestoresItsSavedHome() throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let pinned = store.open("https://example.org/home", kind: .pinned)
             let today = store.open("https://example.org/today")
             store.updateTab(pinned, title: "A different page", url: "https://example.org/other")
             store.setSplit([pinned, today, today, UUID()])
-            #expect(store.state.selectedTabIDs == [pinned, today], "Splits must reject unknown or duplicate members")
-            let home = try expectHome(of: pinned, in: store, savedURL: "https://example.org/home")
+            let home = try BrowserStoreTests.expectHome(of: pinned, in: store, savedURL: "https://example.org/home")
             #expect(home.url == home.savedURL && home.title == home.savedTitle, "The pinned slot keeps a fresh home at its saved page and title")
-            #expect(try tab(pinned, in: store).kind == .today && (try tab(pinned, in: store)).url == "https://example.org/other", "The original live page joins the Today split unchanged")
+            #expect(try BrowserStoreTests.tab(pinned, in: store).kind == .today && (try BrowserStoreTests.tab(pinned, in: store)).url == "https://example.org/other", "The original live page joins the Today split unchanged")
+        }
+    }
+
+    @Test @MainActor static func closingASplitPaneSelectsTheSurvivingPane() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let pinned = store.open("https://example.org/home", kind: .pinned)
+            let today = store.open("https://example.org/today")
+            store.setSplit([pinned, today, today, UUID()])
             store.closeTab(today)
             #expect(store.state.selectedTabIDs == [pinned], "Closing a split member must retain the surviving pane")
+        }
+    }
+
+    @Test @MainActor static func closingAPreviouslyPinnedSplitPaneArchivesOnlyTheLiveOriginal() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let pinned = store.open("https://example.org/home", kind: .pinned)
+            let today = store.open("https://example.org/today")
+            store.updateTab(pinned, title: "A different page", url: "https://example.org/other")
+            store.setSplit([pinned, today, today, UUID()])
+            let home = try BrowserStoreTests.expectHome(of: pinned, in: store, savedURL: "https://example.org/home")
+            store.closeTab(today)
             store.closeTab(pinned)
-            let kept = try tab(home.id, in: store)
-            #expect(try tab(pinned, in: store).archivedAt != nil && kept.archivedAt == nil && kept.kind == .pinned
+            let kept = try BrowserStoreTests.tab(home.id, in: store)
+            #expect(try BrowserStoreTests.tab(pinned, in: store).archivedAt != nil && kept.archivedAt == nil && kept.kind == .pinned
                        && kept.savedURL == home.savedURL && kept.folderID == home.folderID, "Closing the joined original archives it while its saved home stays pinned")
-            store.restoreArchivedTab(today, destination: .previousSpace(fallbackSpaceID: store.activeSpaceID))
-            store.restoreArchivedTab(pinned, destination: .previousSpace(fallbackSpaceID: store.activeSpaceID))
+        }
+    }
+
+    @Test @MainActor static func closingASplitLayoutKeepsThePrimarySelectedAndDoesNotArchiveOtherPanes() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let pinned = store.open("https://example.org/home", kind: .pinned)
+            let today = store.open("https://example.org/today")
             store.setSplit([pinned, today])
             store.closeSplit()
             #expect(store.state.selectedTabIDs == [pinned], "Close Split must retain its primary tab")
-            #expect(try tab(today, in: store).archivedAt == nil, "Closing a split layout must not archive its other tab")
+            #expect(try BrowserStoreTests.tab(today, in: store).archivedAt == nil, "Closing a split layout must not archive its other tab")
+        }
+    }
+
+    @Test @MainActor static func separatingTheFocusedPaneSelectsItWithoutArchivingItsSibling() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let pinned = store.open("https://example.org/home", kind: .pinned)
+            let today = store.open("https://example.org/today")
             store.setSplit([pinned, today])
             store.separateSplitPane(today)
-            #expect(try store.state.selectedTabIDs == [today] && (try tab(pinned, in: store)).archivedAt == nil, "Separating the focused pane keeps that original selected and preserves its sibling")
-            try expectValidSelection(store)
+            #expect(try store.state.selectedTabIDs == [today] && (try BrowserStoreTests.tab(pinned, in: store)).archivedAt == nil, "Separating the focused pane keeps that original selected and preserves its sibling")
+            try BrowserStoreTests.expectValidSelection(store)
         }
     }
 
     @Test(arguments: [TabKind.pinned, .favorite])
-    static func closingLastSavedTabDoesNotReselectIt(kind: TabKind) throws {
-        try withDirectory { directory in
+    @MainActor static func closingLastSavedTabDoesNotReselectIt(kind: TabKind) throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let saved = store.open("https://saved.example.org", kind: kind)
             store.updateTab(saved, title: "Current article", url: "https://saved.example.org/article")
             store.closeTab(saved)
             #expect(store.state.selectedTabIDs.isEmpty, "Closing the only \(kind.rawValue) must leave the start view instead of selecting it again")
             #expect(store.visibleTabs.map(\.id) == [saved], "Closing a saved tab must keep its destination in the sidebar")
-            let destination = try tab(saved, in: store)
+            let destination = try BrowserStoreTests.tab(saved, in: store)
             #expect(destination.archivedAt == nil && destination.url == destination.savedURL
                        && destination.title == destination.savedTitle, "Closing the last saved tab must reset its page without archiving or deleting it")
             store.selectTab(saved)
             #expect(store.selectedTabID == saved, "The saved destination must remain explicitly selectable after closing")
+        }
+    }
+
+    @Test(arguments: [TabKind.pinned, .favorite]) @MainActor static func closingASavedTabSelectsAnAvailableNeighbor(kind: TabKind) throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let saved = store.open("https://saved.example.org", kind: kind)
             let other = store.open("https://other.example.org")
             store.selectTab(saved)
             store.closeTab(saved)
@@ -200,8 +339,8 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func foldersAndOrdering() throws {
-        try withDirectory { directory in
+    @Test @MainActor static func placingATabInAFolderPinsItAndSiblingsCanBeReordered() throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let firstSpace = store.activeSpaceID
             let parent = store.createFolder(name: "Parent")
@@ -210,39 +349,85 @@ extension BrowserStoreTests {
             let second = store.open("https://two.example.org")
             store.moveTab(first, toSpace: firstSpace, folderID: child)
             store.moveTab(second, toSpace: firstSpace, folderID: child)
-            #expect(try tab(first, in: store).kind == .pinned, "Placing a tab in a folder must pin it")
+            #expect(try BrowserStoreTests.tab(first, in: store).kind == .pinned, "Placing a tab in a folder must pin it")
             store.reorderTab(second, before: first)
             #expect(store.pinnedTabs.map(\.id) == [second, first], "Reordering folder siblings must preserve the requested order")
+        }
+    }
+
+    @Test @MainActor static func putBackRebuildsADeletedNestedFolderUnderItsOriginalParent() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let firstSpace = store.activeSpaceID
+            let parent = store.createFolder(name: "Parent")
+            let child = store.createFolder(name: "Child", parentID: parent)
+            let first = store.open("https://one.example.org")
+            store.moveTab(first, toSpace: firstSpace, folderID: child)
             let deletion = FolderRemovalTarget(folderID: child, spaceID: firstSpace, profileID: store.activeSpace.profileID, state: store.state)!
             var deleted = false
             store.deleteFolder(deletion, shouldCommit: { true }) { deleted = (try? $0.get()) == true }
-            #expect(try deleted && (try tab(first, in: store)).archivedAt != nil && !store.state.folders.contains { $0.id == child }, "Deleting a nested folder archives its tabs instead of reparenting live pages")
+            #expect(try deleted && (try BrowserStoreTests.tab(first, in: store)).archivedAt != nil && !store.state.folders.contains { $0.id == child }, "Deleting a nested folder archives its tabs instead of reparenting live pages")
             _ = store.restoreArchivedTab(first, profileID: store.activeSpace.profileID, destination: .previousSpace(fallbackSpaceID: firstSpace))
-            #expect(try tab(first, in: store).folderID == child && store.state.folders.first { $0.id == child }?.parentID == parent, "Put Back rebuilds a deleted nested folder inside its surviving parent")
+            #expect(try BrowserStoreTests.tab(first, in: store).folderID == child && store.state.folders.first { $0.id == child }?.parentID == parent, "Put Back rebuilds a deleted nested folder inside its surviving parent")
+        }
+    }
+
+    @Test @MainActor static func putBackReturnsATabToItsSurvivingFolder() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let firstSpace = store.activeSpaceID
+            let parent = store.createFolder(name: "Parent")
             let kept = store.open("https://kept.example.org")
             store.moveTab(kept, toSpace: firstSpace, folderID: parent)
             let archiveKept = FolderRemovalTarget(items: [.tab(kept)], spaceID: firstSpace, profileID: store.activeSpace.profileID, state: store.state)!
             store.deleteFolder(archiveKept, shouldCommit: { true }) { _ in }
-            #expect(try tab(kept, in: store).archivedAt != nil && store.state.folders.contains { $0.id == parent }, "Archiving a tab leaves its folder in place")
+            #expect(try BrowserStoreTests.tab(kept, in: store).archivedAt != nil && store.state.folders.contains { $0.id == parent }, "Archiving a tab leaves its folder in place")
             _ = store.restoreArchivedTab(kept, profileID: store.activeSpace.profileID, destination: .previousSpace(fallbackSpaceID: firstSpace))
-            #expect(try tab(kept, in: store).archivedAt == nil && (try tab(kept, in: store)).folderID == parent, "Put Back returns a tab archived from a folder to that folder")
-            let otherSpace = store.createSpace(name: "Other")
-            let foreignFolder = store.createFolder(name: "Other folder")
-            let before = try tab(first, in: store)
-            store.moveTab(first, toSpace: firstSpace, folderID: foreignFolder)
-            #expect(try tab(first, in: store) == before, "A tab must reject a folder belonging to another Space")
-            let foreignParent = store.createFolder(name: "Invalid parent", parentID: parent)
-            #expect(store.folders.first { $0.id == foreignParent }?.parentID == nil, "Folder creation must not retain a parent from a different Space")
-            store.moveTab(first, toSpace: otherSpace, folderID: foreignFolder)
-            #expect(try tab(first, in: store).folderID == foreignFolder, "A valid cross-Space folder move must succeed")
-            store.setKind(first, .today)
-            #expect(try tab(first, in: store).folderID == nil, "Unpinning must detach the tab from its folder")
-            try expectValidSelection(store)
+            #expect(try BrowserStoreTests.tab(kept, in: store).archivedAt == nil && (try BrowserStoreTests.tab(kept, in: store)).folderID == parent, "Put Back returns a tab archived from a folder to that folder")
         }
     }
 
-    @Test static func sidebarHierarchyMoves() throws {
-        try withDirectory { directory in
+    @Test @MainActor static func movingATabRejectsAForeignFolderButAcceptsTheDestinationSpacesFolder() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let firstSpace = store.activeSpaceID
+            let first = store.open("https://one.example.org")
+            let otherSpace = store.createSpace(name: "Other")
+            let foreignFolder = store.createFolder(name: "Other folder")
+            let before = try BrowserStoreTests.tab(first, in: store)
+            store.moveTab(first, toSpace: firstSpace, folderID: foreignFolder)
+            #expect(try BrowserStoreTests.tab(first, in: store) == before, "A tab must reject a folder belonging to another Space")
+            store.moveTab(first, toSpace: otherSpace, folderID: foreignFolder)
+            #expect(try BrowserStoreTests.tab(first, in: store).folderID == foreignFolder, "A valid cross-Space folder move must succeed")
+        }
+    }
+
+    @Test @MainActor static func aNewFolderCannotHaveAParentFromAnotherSpace() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let parent = store.createFolder(name: "Parent")
+            _ = store.createSpace(name: "Other")
+            let foreignParent = store.createFolder(name: "Invalid parent", parentID: parent)
+            #expect(store.folders.first { $0.id == foreignParent }?.parentID == nil, "Folder creation must not retain a parent from a different Space")
+        }
+    }
+
+    @Test @MainActor static func unpinningATabDetachesItFromItsFolder() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let firstSpace = store.activeSpaceID
+            let parent = store.createFolder(name: "Parent")
+            let child = store.createFolder(name: "Child", parentID: parent)
+            let first = store.open("https://one.example.org")
+            store.moveTab(first, toSpace: firstSpace, folderID: child)
+            store.setKind(first, .today)
+            #expect(try BrowserStoreTests.tab(first, in: store).folderID == nil, "Unpinning must detach the tab from its folder")
+            try BrowserStoreTests.expectValidSelection(store)
+        }
+    }
+
+    @Test @MainActor static func sidebarMovesPreserveMixedOrderingAndSplitMembership() throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let space = store.activeSpaceID, profile = store.activeSpace.profileID
             let root = SidebarContainerLocation(spaceID: space, folderID: nil, section: .pinned)
@@ -276,28 +461,19 @@ extension BrowserStoreTests {
             #expect(try store.moveSidebarItem(.tab(first), to: inside, before: .folder(nested), expected: snapshot()), "A tab nests before a folder without replacing either")
             #expect(store.state.folders.first { $0.id == parent }?.isExpanded == true, "A committed drop reveals its destination")
             #expect(SidebarHierarchy.children(in: inside, state: store.state) == [.tab(first), .folder(nested)], "Nested mixed order is durable")
-            let beforeCycle = store.state
-            #expect(!(try store.moveSidebarItem(.folder(parent), to: .init(spaceID: space, folderID: nested, section: .pinned), before: nil, expected: snapshot())), "A parent cannot move into its descendant")
-            #expect(!(try store.moveSidebarItem(.folder(parent), to: inside, before: nil, expected: snapshot())), "A folder cannot become its own parent")
-            #expect(store.state == beforeCycle, "Cycle refusal is nonmutating")
-            #expect(!(try store.moveSidebarItem(.folder(peer), to: root, before: .folder(peer), expected: snapshot())), "Self-relative insertion is rejected")
-            #expect(!(try store.moveSidebarItem(.folder(peer), to: root, before: .tab(UUID()), expected: snapshot())), "A missing destination never becomes append")
-            #expect(!(try store.moveSidebarItem(.folder(peer), to: .init(spaceID: space, folderID: nil, section: .today), before: nil, expected: snapshot())), "Folders remain in the pinned hierarchy")
-            #expect(!(try store.moveSidebarItem(.tab(second), to: .init(spaceID: UUID(), folderID: nil, section: .pinned), before: nil, expected: snapshot())), "Another Space cannot acquire the source")
-            #expect(!(try store.moveSidebarItem(.tab(second), to: .init(spaceID: space, folderID: UUID(), section: .pinned), before: nil, expected: snapshot())), "An expired folder cannot become the root")
             #expect(try store.moveSidebarItem(.tab(today), to: inside, before: .tab(first), expected: snapshot()), "Today can move into a genuine pinned folder")
-            #expect(try tab(today, in: store).kind == .pinned && (try tab(today, in: store)).savedURL == "https://today.example.org", "Pinning retains the original live destination")
+            #expect(try BrowserStoreTests.tab(today, in: store).kind == .pinned && (try BrowserStoreTests.tab(today, in: store)).savedURL == "https://today.example.org", "Pinning retains the original live destination")
             #expect(try store.moveSidebarItem(.folder(nested), to: root, before: .folder(peer), expected: snapshot()), "A nested folder can move out to the root")
             #expect(store.state.folders.first { $0.id == nested }?.parentID == nil, "Outdent preserves folder identity")
             store.selectTab(first); store.selectTab(second, extendingSplit: true)
             let group = store.activeSplitLayout!
             let originalGroup = group
-            let firstHome = try expectHome(of: first, in: store, savedURL: "https://one.example.org")
+            let firstHome = try BrowserStoreTests.expectHome(of: first, in: store, savedURL: "https://one.example.org")
             #expect(SidebarHierarchy.children(in: inside, state: store.state) == [.tab(today), .tab(firstHome.id)], "The new Today split leaves the pinned child's fresh home in its folder slot")
             #expect(!(try store.moveSidebarItem(.tab(first), to: root, before: nil, expected: snapshot())), "A split child cannot silently detach through folder drag")
             #expect(try store.moveSidebarItem(.split(group.id), to: inside, before: .tab(today), expected: snapshot()), "The whole split is one movable sidebar item")
             #expect(store.activeSplitLayout == originalGroup && store.state.selectedTabIDs == originalGroup.tabIDs, "Moving preserves container identity, geometry and selected original pages")
-            #expect(try tab(first, in: store).folderID == parent && (try tab(second, in: store)).folderID == parent, "All original split children move together")
+            #expect(try BrowserStoreTests.tab(first, in: store).folderID == parent && (try BrowserStoreTests.tab(second, in: store)).folderID == parent, "All original split children move together")
             #expect(SidebarHierarchy.children(in: inside, state: store.state) == [.split(group.id), .tab(today), .tab(firstHome.id)], "Only the split container appears in the destination order")
             let groupState = store.state
             #expect(try store.moveSidebarItem(.folder(parent), to: .init(spaceID: space, folderID: peer, section: .pinned), before: nil, expected: snapshot()), "A folder subtree containing a split can nest")
@@ -305,6 +481,71 @@ extension BrowserStoreTests {
             #expect(batchedMatches(), "Every container's children match in one pass, with stored order, nesting and a split")
             let loaded = try BrowserStore(directory: directory)
             #expect(loaded.state.sidebarItemOrder == store.state.sidebarItemOrder && loaded.state.folders == store.state.folders, "Hierarchy ordering and nesting survive reopening the model")
+            observation.cancel()
+        }
+    }
+
+    enum SidebarMoveDamage: CaseIterable {
+        case ancestorCycle, selfParent, selfRelative, missingSibling, todayFolder, foreignSpace, missingFolder
+    }
+
+
+    @Test(arguments: SidebarMoveDamage.allCases) @MainActor static func invalidSidebarMovesLeaveTheHierarchyUnchanged(_ damage: SidebarMoveDamage) throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let space = store.activeSpaceID
+            let parent = store.createFolder(name: "Parent")
+            let child = store.createFolder(name: "Child", parentID: parent)
+            let pinned = store.open("https://pin.example.org", kind: .pinned)
+            let root = SidebarContainerLocation(spaceID: space, folderID: nil, section: .pinned)
+            let move: (item: SidebarItemReference, destination: SidebarContainerLocation, before: SidebarItemReference?)
+            switch damage {
+            case .ancestorCycle:
+                move = (.folder(parent), .init(spaceID: space, folderID: child, section: .pinned), nil)
+            case .selfParent:
+                move = (.folder(parent), .init(spaceID: space, folderID: parent, section: .pinned), nil)
+            case .selfRelative:
+                move = (.folder(parent), root, .folder(parent))
+            case .missingSibling:
+                move = (.folder(parent), root, .tab(UUID()))
+            case .todayFolder:
+                move = (.folder(parent), .init(spaceID: space, folderID: nil, section: .today), nil)
+            case .foreignSpace:
+                move = (.tab(pinned), .init(spaceID: UUID(), folderID: nil, section: .pinned), nil)
+            case .missingFolder:
+                move = (.tab(pinned), .init(spaceID: space, folderID: UUID(), section: .pinned), nil)
+            }
+            let original = store.state
+            let snapshot = try #require(SidebarHierarchySnapshot(state: original, spaceID: space,
+                profileID: store.activeSpace.profileID))
+            #expect(!(try store.moveSidebarItem(move.item, to: move.destination, before: move.before, expected: snapshot)))
+            #expect(store.state == original)
+        }
+    }
+
+    @Test @MainActor static func hierarchySnapshotsRequireValidRelationshipsAndProfileOwnership() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let space = store.activeSpaceID, profile = store.activeSpace.profileID
+            let parent = store.createFolder(name: "Parent")
+            var corrupted = store.state
+            let index = corrupted.folders.firstIndex { $0.id == parent }!
+            corrupted.folders[index].parentID = parent
+            #expect(SidebarHierarchySnapshot(state: corrupted, spaceID: space, profileID: profile) == nil, "A malformed hierarchy cannot mint a capability")
+            #expect(SidebarHierarchySnapshot(state: store.state, spaceID: space, profileID: UUID()) == nil, "Wrong-profile snapshots fail before preparing a move")
+        }
+    }
+
+    @Test @MainActor static func aFailedSidebarMoveSaveDoesNotPublish() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let space = store.activeSpaceID, profile = store.activeSpace.profileID
+            let root = SidebarContainerLocation(spaceID: space, folderID: nil, section: .pinned)
+            let parent = store.createFolder(name: "Parent")
+            let nested = store.createFolder(name: "Nested", parentID: parent)
+            let peer = store.createFolder(name: "Peer")
+            @MainActor func snapshot() -> SidebarHierarchySnapshot { SidebarHierarchySnapshot(state: store.state, spaceID: space, profileID: profile)! }
+            _ = try store.moveSidebarItem(.folder(nested), to: root, before: .folder(peer), expected: snapshot())
             let stable = store.state, snap = snapshot()
             let session = directory.appendingPathComponent("session.json"), backup = directory.appendingPathComponent("saved.json")
             try FileManager.default.moveItem(at: session, to: backup)
@@ -313,13 +554,17 @@ extension BrowserStoreTests {
             do { _ = try store.moveSidebarItem(.folder(peer), to: root, before: .folder(nested), expected: snap) } catch { failed = true }
             #expect(failed && store.state == stable, "A failed disk commit cannot publish the move")
             try FileManager.default.removeItem(at: session); try FileManager.default.moveItem(at: backup, to: session)
-            observation.cancel()
-            var corrupted = store.state
-            let index = corrupted.folders.firstIndex { $0.id == parent }!
-            corrupted.folders[index].parentID = parent
-            #expect(SidebarHierarchySnapshot(state: corrupted, spaceID: space, profileID: profile) == nil, "A malformed hierarchy cannot mint a capability")
-            #expect(SidebarHierarchySnapshot(state: store.state, spaceID: space, profileID: UUID()) == nil, "Wrong-profile snapshots fail before preparing a move")
+        }
+    }
 
+    @Test @MainActor static func movingAnOrdinarySplitToTodayAppliesToEveryOriginalMember() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let space = store.activeSpaceID, profile = store.activeSpace.profileID
+            let first = store.open("https://one.example.org")
+            let second = store.open("https://two.example.org")
+            try BrowserStoreTests.savedSplit(store, [first, second], in: .init(spaceID: space, folderID: nil, section: .pinned))
+            @MainActor func snapshot() -> SidebarHierarchySnapshot { SidebarHierarchySnapshot(state: store.state, spaceID: space, profileID: profile)! }
             let unsaved = store.open("https://split-today.example.org")
             store.selectTab(first); store.selectTab(unsaved, extendingSplit: true)
             let mixedGroup = store.activeSplitLayout!
@@ -334,8 +579,8 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func folderDisclosureOwnership() throws {
-        try withDirectory { directory in
+    @Test @MainActor static func folderDisclosureOwnership() throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let space = store.activeSpaceID, profile = store.activeSpace.profileID
             let parent = store.createFolder(name: "Parent")
@@ -377,7 +622,21 @@ extension BrowserStoreTests {
             observation.cancel()
             let reopened = try BrowserStore(directory: directory)
             #expect(reopened.state.folders == expected.folders, "Bulk disclosure is durably saved before success")
+        }
+    }
 
+    @Test @MainActor static func failedFolderDisclosureSaveLeavesEveryFolderUntouched() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let space = store.activeSpaceID, profile = store.activeSpace.profileID
+            let parent = store.createFolder(name: "Parent")
+            let child = store.createFolder(name: "Child", parentID: parent)
+            let saved = store.open("https://folder.example.org/selected")
+            store.moveTab(saved, toSpace: space, folderID: child)
+            store.toggleFolder(parent)
+            let origin = store.state.folders.filter { $0.spaceID == space }
+            let expected = store.state
+            try store.save()
             let session = directory.appendingPathComponent("session.json")
             let backup = directory.appendingPathComponent("saved-session.json")
             try FileManager.default.moveItem(at: session, to: backup)
@@ -385,7 +644,7 @@ extension BrowserStoreTests {
             var writeFailed = false
             do {
                 _ = try store.setFoldersExpanded(false, in: space, profileID: profile,
-                    expectedFolders: expected.folders.filter { $0.spaceID == space })
+                    expectedFolders: origin)
             } catch { writeFailed = true }
             #expect(writeFailed && store.persistenceError != nil, "A refused atomic save reports the real failure")
             #expect(store.state == expected, "Failed persistence never publishes a folder change")
@@ -394,8 +653,8 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func favoriteSelectionAfterProfileReassignment() throws {
-        try withDirectory { directory in
+    @Test @MainActor static func favoriteSelectionAfterProfileReassignment() throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let originalSpace = store.activeSpaceID
             let favorite = store.open("https://favorite.example.org", kind: .favorite)
@@ -405,12 +664,15 @@ extension BrowserStoreTests {
             store.selectSpace(originalSpace)
             store.selectTab(favorite)
             #expect(store.activeSpaceID == sameProfileSpace, "Selecting a favorite after its origin Space changes profile must choose a Space using the favorite's profile")
-            try expectValidSelection(store)
+            try BrowserStoreTests.expectValidSelection(store)
         }
     }
 
-    @Test static func invalidRelationshipsAreRejected() throws {
-        try withDirectory { directory in
+    enum RelationshipDamage: CaseIterable { case cycle, missingFolder, wrongProfile }
+
+    @Test(arguments: RelationshipDamage.allCases)
+    @MainActor static func invalidRelationshipsAreRejectedWithoutRewritingTheSession(_ damage: RelationshipDamage) throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             _ = store.open("https://example.org")
             let folder = store.createFolder(name: "Folder")
@@ -420,67 +682,78 @@ extension BrowserStoreTests {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let file = directory.appendingPathComponent("session.json")
-            @MainActor func reject(_ state: BrowserState, _ message: String) throws {
-                let data = try encoder.encode(state)
-                try data.write(to: file)
-                var rejected = false
-                do { _ = try BrowserStore(directory: directory) }
-                catch { rejected = true }
-                #expect(rejected, Comment(rawValue: message))
-                #expect(try Data(contentsOf: file) == data, "Invalid relational state must not be overwritten")
+            switch damage {
+            case .cycle: valid.folders[0].parentID = folder
+            case .missingFolder: valid.tabs[0].folderID = UUID()
+            case .wrongProfile: valid.tabs[0].profileID = otherProfile
             }
-            var cycle = valid
-            cycle.folders[0].parentID = folder
-            try reject(cycle, "A persisted folder cycle must be rejected")
-            var orphan = valid
-            orphan.tabs[0].folderID = UUID()
-            try reject(orphan, "A persisted missing folder reference must be rejected")
-            var profileMismatch = valid
-            profileMismatch.tabs[0].profileID = otherProfile
-            try reject(profileMismatch, "A non-favorite tab must use the profile assigned to its Space")
+            let data = try encoder.encode(valid)
+            try data.write(to: file)
+            #expect(throws: (any Error).self) { try BrowserStore(directory: directory) }
+            #expect(try Data(contentsOf: file) == data)
         }
     }
 
-    @Test static func bookmarkImportDoesNotNavigate() throws {
-        try withDirectory { directory in
+    private static let bookmarks: [(title: String, url: String)] = [
+        ("Already saved", "https://saved.example.org/start"),
+        ("Research & notes", "https://new.example.org/research?q=stars#notes"),
+        ("Duplicate in the same import", "https://new.example.org/research?q=stars#notes"),
+        ("", "http://plain.example.org/reference"),
+        ("Script", "javascript:alert(1)"),
+        ("Data", "data:text/html,hello"),
+        ("Local file", "file:///tmp/private.html"),
+        ("Mail", "mailto:someone@example.org"),
+        ("Internal", "about:blank"),
+        ("Relative", "/not-an-absolute-web-address")
+    ]
+
+    @MainActor
+    private static func withExistingSplit(_ body: (BrowserStore, BrowserState) throws -> Void) throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let existing = store.open("https://saved.example.org/start", kind: .pinned)
             store.updateTab(existing, title: "Current page", url: "https://saved.example.org/other")
             let current = store.open("https://current.example.org")
             store.updateTab(current, title: "Current", url: "https://current.example.org/article")
             store.setSplit([existing, current])
-            let originalTabs = store.state.tabs
-            let originalSelection = store.state.selectedTabIDs
-            let originalHistory = store.state.history
-            let items: [(title: String, url: String)] = [
-                ("Already saved", "https://saved.example.org/start"),
-                ("Research & notes", "https://new.example.org/research?q=stars#notes"),
-                ("Duplicate in the same import", "https://new.example.org/research?q=stars#notes"),
-                ("", "http://plain.example.org/reference"),
-                ("Script", "javascript:alert(1)"),
-                ("Data", "data:text/html,hello"),
-                ("Local file", "file:///tmp/private.html"),
-                ("Mail", "mailto:someone@example.org"),
-                ("Internal", "about:blank"),
-                ("Relative", "/not-an-absolute-web-address")
-            ]
-            store.importBookmarks(items)
-            let imported = store.state.tabs.filter { candidate in !originalTabs.contains { $0.id == candidate.id } }
+            try body(store, store.state)
+        }
+    }
+
+    @Test @MainActor static func bookmarkImportCreatesOnlyDistinctWebDestinationsInTheActiveSpace() throws {
+        try withExistingSplit { store, original in
+            store.importBookmarks(bookmarks)
+            let imported = store.state.tabs.filter { candidate in !original.tabs.contains { $0.id == candidate.id } }
             #expect(imported.count == 2, "Import must deduplicate saved destinations and batch duplicates, admitting only HTTP(S) bookmarks")
             #expect(imported.allSatisfy { $0.kind == .pinned && $0.archivedAt == nil && $0.folderID == nil }, "Imported bookmarks must become live saved destinations in the pinned section")
             #expect(imported.allSatisfy { $0.spaceID == store.activeSpaceID && $0.profileID == store.activeSpace.profileID }, "Imported bookmarks must belong to the active Space and its profile")
             #expect(imported.first?.savedTitle == "Research & notes"
                        && imported.first?.savedURL == "https://new.example.org/research?q=stars#notes", "Import must preserve supplied bookmark titles, query strings, and fragments")
             #expect(imported.last?.savedTitle == "plain.example.org", "An empty bookmark title must fall back to its host")
-            #expect(store.state.selectedTabIDs == originalSelection, "Import must preserve the current tab and split selection")
-            #expect(store.state.history == originalHistory, "Importing bookmarks must not create navigation history")
-            #expect(Array(store.state.tabs.prefix(originalTabs.count)) == originalTabs, "Import must not navigate, retitle, or otherwise mutate existing tabs")
-            let firstImport = store.state.tabs
-            store.importBookmarks(items)
-            #expect(store.state.tabs == firstImport, "Importing the same bookmark file again must be idempotent")
-            #expect(store.state.history == originalHistory && store.state.selectedTabIDs == originalSelection, "A repeated import must also preserve history and selection")
         }
-        try withDirectory { directory in
+    }
+
+    @Test @MainActor static func bookmarkImportLeavesExistingTabsSelectionAndHistoryUntouched() throws {
+        try withExistingSplit { store, original in
+            store.importBookmarks(bookmarks)
+            #expect(store.state.selectedTabIDs == original.selectedTabIDs, "Import must preserve the current tab and split selection")
+            #expect(store.state.history == original.history, "Importing bookmarks must not create navigation history")
+            #expect(Array(store.state.tabs.prefix(original.tabs.count)) == original.tabs, "Import must not navigate, retitle, or otherwise mutate existing tabs")
+        }
+    }
+
+    @Test @MainActor static func importingTheSameBookmarksAgainIsIdempotent() throws {
+        try withExistingSplit { store, original in
+            store.importBookmarks(bookmarks)
+            let firstImport = store.state.tabs
+            store.importBookmarks(bookmarks)
+            #expect(store.state.tabs == firstImport, "Importing the same bookmark file again must be idempotent")
+            #expect(store.state.history == original.history && store.state.selectedTabIDs == original.selectedTabIDs, "A repeated import must also preserve history and selection")
+        }
+    }
+
+    @Test @MainActor static func bookmarkImportIntoAnEmptySessionDoesNotNavigate() throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             store.importBookmarks([("First bookmark", "https://first.example.org")])
             #expect(store.state.selectedTabIDs.isEmpty, "Import into an empty session must not select or open the imported bookmark")
@@ -488,8 +761,8 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func namesColorsAndPreferencesRoundTrip() throws {
-        try withDirectory { directory in
+    @Test @MainActor static func namesColorsAndPreferencesRoundTrip() throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let originalSpace = store.activeSpaceID
             let originalProfile = store.activeSpace.profileID
@@ -518,52 +791,83 @@ extension BrowserStoreTests {
     }
 
     @Test(arguments: ["", "123", "1234567", "#112233", "GG1122", "ＡＡ0000"])
-    nonisolated static func invalidHexCannotEnterTheThemeModel(_ invalid: String) {
+    static func invalidHexCannotEnterTheThemeModel(_ invalid: String) {
         #expect(ThemeColor(hex: invalid) == nil)
     }
 
     @Test(arguments: ["000000", "FFFFFF", "808080", "0123AB", "F20B85", "B9B5D4"])
-    nonisolated static func hslConversionPreservesTheOriginalColor(_ value: String) throws {
+    static func hslConversionPreservesTheOriginalColor(_ value: String) throws {
         let color = try #require(ThemeColor(hex: value))
         let hsl = color.hsl
         #expect(ThemeColor.hsl(hue: hsl.hue, saturation: hsl.saturation, lightness: hsl.lightness)?.hex == value)
     }
 
-    @Test nonisolated static func themeColorsAndLinkedPalettes() throws {
-        func close(_ actual: ThemeColor?, _ expected: (Double, Double, Double), _ message: String) throws {
-            guard let actual else { throw Failure(description: message + " (no color)") }
-            #expect(abs(actual.red - expected.0) < 1e-9 && abs(actual.green - expected.1) < 1e-9
-                       && abs(actual.blue - expected.2) < 1e-9, Comment(rawValue: message))
-        }
-        try close(.hsl(hue: 0, saturation: 1, lightness: 0.5), (1, 0, 0), "HSL red reference")
-        try close(.hsl(hue: 1.0 / 3, saturation: 1, lightness: 0.5), (0, 1, 0), "HSL green reference")
-        try close(.hsl(hue: -1.0 / 3, saturation: 1, lightness: 0.5), (0, 0, 1), "Hue wraps across zero")
-        try close(.hsl(hue: 2, saturation: 0.5, lightness: 0.25), (0.375, 0.125, 0.125), "Low-lightness HSL is not HSB")
-        try close(.hsl(hue: 0, saturation: 0.5, lightness: 0.75), (0.875, 0.625, 0.625), "High-lightness HSL branch")
+    private static func expectColor(_ actual: ThemeColor?, _ expected: (Double, Double, Double), _ message: String) throws {
+        guard let actual else { throw BrowserStoreTests.Failure(description: message + " (no color)") }
+        #expect(abs(actual.red - expected.0) < 1e-9 && abs(actual.green - expected.1) < 1e-9
+                   && abs(actual.blue - expected.2) < 1e-9, Comment(rawValue: message))
+    }
+
+    @Test(arguments: [
+        (0.0, 1.0, 0.5, [1.0, 0, 0]),
+        (1.0 / 3, 1.0, 0.5, [0.0, 1, 0]),
+        (-1.0 / 3, 1.0, 0.5, [0.0, 0, 1]),
+        (2.0, 0.5, 0.25, [0.375, 0.125, 0.125]),
+        (0.0, 0.5, 0.75, [0.875, 0.625, 0.625]),
+    ])
+    static func hslMatchesReferenceRGB(_ hue: Double, _ saturation: Double, _ lightness: Double, _ expected: [Double]) throws {
+        try expectColor(.hsl(hue: hue, saturation: saturation, lightness: lightness),
+                        (expected[0], expected[1], expected[2]), "HSL reference")
+    }
+
+    @Test
+    static func nonfiniteHueIsRejected() {
         #expect(ThemeColor.hsl(hue: .nan, saturation: 1, lightness: 0.5) == nil, "Nonfinite hue is rejected")
+    }
+
+    @Test
+    static func outOfRangeRGBIsRejected() {
         #expect(ThemeColor(red: 1.1, green: 0, blue: 0) == nil, "Out-of-range components are rejected")
-        #expect(ThemeColor(hex: "ＡＡ0000") == nil, "Hex input is ASCII, not visually similar Unicode")
+    }
+
+    @Test
+    static func linkedPalettesKeepNearBlackCompanions() {
         let nearBlack = SpaceTheme(primaryColor: ThemeColor(red: 0.0001, green: 0, blue: 0), colorCount: 3)
         #expect(nearBlack.colors.count == 3, "Floating-point saturation at near-black must not drop linked colors")
+    }
+
+    @Test
+    static func colorWheelSelectsItsCompanionHues() throws {
         var theme = SpaceTheme(primaryColor: ThemeColor(hex: "FF0000"), colorCount: 2)
-        try close(theme.colors.last, (0, 1, 1), "Two complementary colors are red/cyan")
+        try expectColor(theme.colors.last, (0, 1, 1), "Two complementary colors are red/cyan")
         theme.colorCount = 3
-        try close(theme.colors[1], (0, 1, 0.5), "Three-color first companion is 150 degrees")
-        try close(theme.colors[2], (0, 0.5, 1), "Three-color second companion is 210 degrees")
+        try expectColor(theme.colors[1], (0, 1, 0.5), "Three-color first companion is 150 degrees")
+        try expectColor(theme.colors[2], (0, 0.5, 1), "Three-color second companion is 210 degrees")
         theme.wheel = .analogous
-        try close(theme.colors[1], (1, 2.0 / 3, 0), "First analogous companion is 40 degrees")
-        try close(theme.colors[2], (1, 0, 2.0 / 3), "Second analogous companion is minus 40 degrees")
+        try expectColor(theme.colors[1], (1, 2.0 / 3, 0), "First analogous companion is 40 degrees")
+        try expectColor(theme.colors[2], (1, 0, 2.0 / 3), "Second analogous companion is minus 40 degrees")
+    }
+
+    @Test
+    static func linkedPalettesPreserveTheOriginalColorSpaceAndPrecision() {
         let wide = ThemeColor(red: 0.83, green: 0.17, blue: 0.29, colorSpace: .displayP3)!
-        theme.primaryColor = wide
+        let theme = SpaceTheme(primaryColor: wide, colorCount: 3, wheel: .analogous)
         #expect(theme.colors.first == wide && theme.colors.allSatisfy { $0.colorSpace == .displayP3 }, "Linked colors must preserve the primary color space and original component precision")
-        theme.setNoise(0.127)
-        #expect(theme.noise == 0.15, "Linear noise input uses twenty steps")
+    }
+
+    @Test(arguments: [(0.127, false, 0.15), (0.127, true, 0.127), (Double.infinity, false, 0.127), (3.0, false, 1.0)])
+    static func noiseGesturesRespectQuantizationAndBounds(_ input: Double, _ rotating: Bool, _ expected: Double) {
+        var theme = SpaceTheme(primaryColor: ThemeColor(hex: "FF0000"), colorCount: 3)
         theme.setNoise(0.127, rotating: true)
-        #expect(theme.noise == 0.127, "Rotating noise input keeps continuous precision")
-        theme.setNoise(.infinity)
-        #expect(theme.noise == 0.127, "Invalid gesture values do not corrupt saved modifiers")
-        theme.setNoise(3)
-        #expect(theme.noise == 1, "Gesture noise clamps to its upper bound")
+        theme.setNoise(input, rotating: rotating)
+        #expect(theme.noise == expected)
+    }
+
+    @Test
+    static func removingThemeColorsResetsModifiersOnlyAfterTheLastColor() {
+        let wide = ThemeColor(red: 0.83, green: 0.17, blue: 0.29, colorSpace: .displayP3)!
+        var theme = SpaceTheme(primaryColor: wide, colorCount: 3, wheel: .analogous)
+        theme.setNoise(1)
         theme.appearance = .dark; theme.texture = .denim; theme.intensity = 0.2
         theme.removeColor(); theme.removeColor()
         #expect(theme.colorCount == 1 && theme.primaryColor == wide, "Removing companions retains primary color")
@@ -572,8 +876,8 @@ extension BrowserStoreTests {
                    && theme.texture == .grain && theme.appearance == .dark, "Removing the final color resets modifiers but preserves appearance")
     }
 
-    @Test static func themeMigrationPersistenceAndValidation() throws {
-        try withDirectory { directory in
+    @Test @MainActor static func legacySpaceColorMigratesToTheOnlyPersistedThemeWithoutChangingIdentity() throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let originalID = store.activeSpaceID
             try store.save()
@@ -586,27 +890,64 @@ extension BrowserStoreTests {
             let migrated = try BrowserStore(directory: directory)
             #expect(migrated.activeSpaceID == originalID && migrated.activeSpace.theme.primaryColor?.hex == "A1B2C3"
                        && migrated.activeSpace.theme.colorCount == 1, "Legacy Space color migrates without changing identity or RGB values")
-            let target = migrated.activeSpaceID
-            let other = migrated.createSpace(name: "Other", color: "aabbcc")
-            let untouched = migrated.activeSpace.theme
-            let theme = SpaceTheme(primaryColor: ThemeColor(red: 0.9, green: 0.3, blue: 0.4, colorSpace: .displayP3),
-                                   colorCount: 3, wheel: .analogous, appearance: .dark,
-                                   noise: 0.35, intensity: 0.63, texture: .tweed)
-            #expect(migrated.setSpaceTheme(target, theme: theme), "Valid theme update targets the captured Space")
-            #expect(migrated.activeSpaceID == other && migrated.activeSpace.theme == untouched, "Editing another Space must not switch or recolor the active Space")
-            var invalid = theme; invalid.colorCount = 4
-            #expect(!migrated.setSpaceTheme(target, theme: invalid), "Unsupported color count is rejected")
-            invalid = theme; invalid.noise = .nan
-            #expect(!migrated.setSpaceTheme(target, theme: invalid), "Nonfinite modifiers are rejected")
-            invalid = theme; invalid.primaryColor = nil
-            #expect(!migrated.setSpaceTheme(target, theme: invalid), "Missing primary color is invalid when count is positive")
-            #expect(!migrated.setSpaceTheme(UUID(), theme: theme), "Unknown Space is not implicitly created")
             try migrated.save()
-            let reopened = try BrowserStore(directory: directory)
-            #expect(reopened.state == migrated.state, "All theme components and other Space state survive restart")
             let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
             let savedSpaces = saved["spaces"] as! [[String: Any]]
             #expect(savedSpaces.allSatisfy { $0["color"] == nil && $0["theme"] != nil }, "Theme is the only persisted source of color state after migration")
+        }
+    }
+
+    private static let detailedTheme = SpaceTheme(primaryColor: ThemeColor(red: 0.9, green: 0.3, blue: 0.4, colorSpace: .displayP3),
+        colorCount: 3, wheel: .analogous, appearance: .dark, noise: 0.35, intensity: 0.63, texture: .tweed)
+
+    @Test @MainActor static func editingAnInactiveSpaceThemeDoesNotSwitchOrRecolorTheActiveSpace() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let migrated = try BrowserStore(directory: directory)
+            let target = migrated.activeSpaceID
+            let other = migrated.createSpace(name: "Other", color: "aabbcc")
+            let untouched = migrated.activeSpace.theme
+            #expect(migrated.setSpaceTheme(target, theme: detailedTheme), "Valid theme update targets the captured Space")
+            #expect(migrated.activeSpaceID == other && migrated.activeSpace.theme == untouched, "Editing another Space must not switch or recolor the active Space")
+        }
+    }
+
+    @Test @MainActor static func allThemeComponentsSurviveRestart() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let migrated = try BrowserStore(directory: directory)
+            try #require(migrated.setSpaceTheme(migrated.activeSpaceID, theme: detailedTheme))
+            try migrated.save()
+            let reopened = try BrowserStore(directory: directory)
+            #expect(reopened.state == migrated.state, "All theme components and other Space state survive restart")
+        }
+    }
+
+    enum ThemeDamage: CaseIterable { case tooManyColors, nonfiniteNoise, missingPrimaryColor, unknownSpace }
+
+    @Test(arguments: ThemeDamage.allCases) @MainActor static func invalidThemeUpdatesDoNotChangeTheSession(_ damage: ThemeDamage) throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let original = store.state
+            var space = store.activeSpaceID
+            var theme = detailedTheme
+            switch damage {
+            case .tooManyColors: theme.colorCount = 4
+            case .nonfiniteNoise: theme.noise = .nan
+            case .missingPrimaryColor: theme.primaryColor = nil
+            case .unknownSpace: space = UUID()
+            }
+            #expect(!store.setSpaceTheme(space, theme: theme))
+            #expect(store.state == original)
+        }
+    }
+
+    @Test @MainActor static func invalidPersistedThemesAreRejectedWithoutRewritingTheFile() throws {
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            try #require(store.setSpaceTheme(store.activeSpaceID, theme: detailedTheme))
+            try store.save()
+            let file = directory.appendingPathComponent("session.json")
+            let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+            let savedSpaces = saved["spaces"] as! [[String: Any]]
             var broken = saved, brokenSpaces = savedSpaces
             var badTheme = brokenSpaces[0]["theme"] as! [String: Any]
             badTheme["intensity"] = 1.1; brokenSpaces[0]["theme"] = badTheme
@@ -619,27 +960,34 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func downloadLifecycleAndPersistence() throws {
-        try withDirectory { directory in
+    @Test(arguments: [
+        ("pending", Int64(0)), ("downloading", Int64(25)), ("paused", Int64(25)),
+        ("downloading", Int64(50)), ("failed", Int64(50)), ("downloading", Int64(75)), ("completed", Int64(100)),
+    ])
+    @MainActor static func aDownloadSnapshotUpdatesAndPersistsItsExistingRecord(_ state: String, _ received: Int64) throws {
+        let status = try #require(BrowserDownloadStatus(rawValue: state))
+        try BrowserStoreTests.withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            store.recordDownload(["id": "transfer-1", "status": "pending"])
+            store.recordDownload(["id": "transfer-1", "name": "notes.pdf", "path": "/isolated/notes.pdf",
+                                  "receivedBytes": NSNumber(value: received), "totalBytes": 100,
+                                  "status": status.rawValue])
+            #expect(store.state.downloads.count == 1, "A lifecycle update must replace the existing download rather than append a duplicate")
+            let item = store.state.downloads[0]
+            #expect(item.status == status && item.receivedBytes == received && item.totalBytes == 100, "Download state and byte progress must track the latest native snapshot: \(status)")
+            #expect(item.isComplete == (status == .completed) && !item.isCancelled, "Paused or failed downloads must never be described as completed or cancelled")
+            try store.save()
+            let reopened = try BrowserStore(directory: directory)
+            #expect(reopened.state.downloads == store.state.downloads, "Every download lifecycle state must persist across a restart: \(status)")
+        }
+    }
+
+    @Test @MainActor static func cancellationPersistsAlongsideACompletedTransferWithoutNavigating() throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let originalSelection = store.state.selectedTabIDs
             let originalHistory = store.state.history
-            let transitions: [(BrowserDownloadStatus, Int64)] = [
-                (.pending, 0), (.downloading, 25), (.paused, 25), (.downloading, 50),
-                (.failed, 50), (.downloading, 75), (.completed, 100)
-            ]
-            for (status, received) in transitions {
-                store.recordDownload(["id": "transfer-1", "name": "notes.pdf", "path": "/isolated/notes.pdf",
-                                      "receivedBytes": NSNumber(value: received), "totalBytes": 100,
-                                      "status": status.rawValue])
-                #expect(store.state.downloads.count == 1, "A lifecycle update must replace the existing download rather than append a duplicate")
-                let item = store.state.downloads[0]
-                #expect(item.status == status && item.receivedBytes == received && item.totalBytes == 100, "Download state and byte progress must track the latest native snapshot: \(status)")
-                #expect(item.isComplete == (status == .completed) && !item.isCancelled, "Paused or failed downloads must never be described as completed or cancelled")
-                try store.save()
-                let reopened = try BrowserStore(directory: directory)
-                #expect(reopened.state.downloads == store.state.downloads, "Every download lifecycle state must persist across a restart: \(status)")
-            }
+            store.recordDownload(["id": "transfer-1", "status": "completed", "receivedBytes": 100, "totalBytes": 100])
             store.recordDownload(["id": "transfer-2", "name": "cancelled.zip", "receivedBytes": 12,
                                   "totalBytes": 200, "status": "cancelled"])
             #expect(store.state.downloads.count == 2 && store.state.downloads[1].isCancelled
@@ -651,46 +999,85 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func downloadLibraryIdentityAndMetadata() throws {
-        try withDirectory { directory in
+    @MainActor
+    private static func withNativeDownload(
+        _ body: (BrowserStore, [String: Any]) throws -> Void
+    ) throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             let profile = store.activeSpace.profileID
             let path = store.independentEngineProfilePath(for: profile)
-            let selection = store.state.selectedTabIDs
-            var snapshot: [String: Any] = ["id": "same-guid", "profilePath": path,
+            let snapshot: [String: Any] = ["id": "same-guid", "profilePath": path,
                 "name": "report.pdf", "path": "/isolated/report.pdf", "status": "completed",
                 "sourceURL": "https://example.test/report.pdf", "startedAt": 1_700_000_000.0,
                 "available": true, "itemIdentity": "incarnation-one", "canOpen": true,
                 "canReveal": true, "canRemove": true, "canCopyFile": true]
             store.recordDownload(snapshot)
+            try body(store, snapshot)
+        }
+    }
+
+    @Test @MainActor static func nativeDownloadMetadataKeepsTheProfileAndLiveFileActions() throws {
+        try withNativeDownload { store, _ in
+            let profile = store.activeSpace.profileID
             let original = store.state.downloads[0]
             #expect(original.profileID == profile && original.nativeIdentity == "incarnation-one"
                        && original.canOpen && original.canReveal && original.canRemove && original.canCopyFile, "Library controls must retain the real profile and live item incarnation")
             #expect(original.sourceURL == "https://example.test/report.pdf"
                        && original.startedAt == Date(timeIntervalSince1970: 1_700_000_000), "Source URL and native start time must survive the bridge without a fabricated date")
+        }
+    }
+
+    @Test @MainActor static func reopenedDownloadsKeepMetadataButNotLiveFileActions() throws {
+        try withNativeDownload { store, _ in
+            let original = store.state.downloads[0]
             try store.save()
-            let restored = try BrowserStore(directory: directory).state.downloads[0]
+            let restored = try BrowserStore(directory: store.directory).state.downloads[0]
             #expect(restored.sourceURL == original.sourceURL && restored.startedAt == original.startedAt, "Library metadata survives session persistence")
             #expect(restored.nativeIdentity == nil && !restored.canOpen && !restored.canReveal
                        && !restored.canRemove && !restored.canCopyFile, "Restored metadata never grants live file actions")
+        }
+    }
+
+    @Test @MainActor static func aNewDownloadIncarnationReplacesThePreviousOneForTheSameGUID() throws {
+        try withNativeDownload { store, initial in
+            var snapshot = initial
             snapshot["itemIdentity"] = "incarnation-two"
             store.recordDownload(snapshot)
             #expect(store.state.downloads.count == 1 && store.state.downloads[0].nativeIdentity == "incarnation-two", "The same GUID can receive a new incarnation without making an old row current")
+        }
+    }
+
+    @Test @MainActor static func retiringADownloadManagerRevokesFileActions() throws {
+        try withNativeDownload { store, initial in
+            var snapshot = initial
             snapshot["available"] = false
             store.recordDownload(snapshot)
             #expect(store.state.downloads[0].nativeIdentity == nil && !store.state.downloads[0].canCopyFile, "Manager retirement revokes file actions without erasing truthful completion")
-            snapshot["profilePath"] = directory.appendingPathComponent("unowned").path
+        }
+    }
+
+    @Test @MainActor static func downloadsFromUnknownProfilesCannotChangeTheSession() throws {
+        try withNativeDownload { store, initial in
+            let selection = store.state.selectedTabIDs
+            var snapshot = initial
+            snapshot["profilePath"] = store.directory.appendingPathComponent("unowned").path
             snapshot["id"] = "unowned"
             store.recordDownload(snapshot)
             #expect(store.state.downloads.count == 1 && store.state.selectedTabIDs == selection, "Unknown profiles are discarded; download updates do not switch pages")
+        }
+    }
+
+    @Test @MainActor static func reconcilingDownloadHistoryRemovesOnlyStaleRecordsForThatProfile() throws {
+        try withNativeDownload { store, _ in
             store.recordDownload(["id": "legacy", "name": "old.pdf", "status": "completed"])
-            store.reconcileDownloads(profileID: profile, nativeIDs: [])
+            store.reconcileDownloads(profileID: store.activeSpace.profileID, nativeIDs: [])
             #expect(store.state.downloads.map(\.id) == ["legacy"], "Ready manager history removes only stale records assigned to its original profile")
         }
     }
 
-    @Test static func legacyDownloadSessionMigration() throws {
-        try withDirectory { directory in
+    @Test @MainActor static func legacyDownloadSessionMigration() throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
             try store.save()
             let file = directory.appendingPathComponent("session.json")
@@ -722,16 +1109,17 @@ extension BrowserStoreTests {
         }
     }
 
-    @Test static func downloadFlagsAndExplicitState() throws {
-        try withDirectory { directory in
+    @Test(arguments: [
+        ("isPaused", "", "paused"), ("isFailed", "", "failed"),
+        ("isFailed", "downloading", "downloading"), ("isFailed", "unknown", "failed"),
+    ])
+    @MainActor static func explicitDownloadStatusTakesPrecedenceOverCompatibilityFlags(_ flag: String, _ status: String, _ expected: String) throws {
+        try BrowserStoreTests.withDirectory { directory in
             let store = try BrowserStore(directory: directory)
-            store.recordDownload(["id": "paused", "isPaused": true, "receivedBytes": 4])
-            store.recordDownload(["id": "failed", "isFailed": true, "receivedBytes": 4])
-            #expect(store.state.downloads.map(\.status) == [.paused, .failed], "Callback flags must retain pause and failure when the string status is absent")
-            store.recordDownload(["id": "failed", "status": "downloading", "isFailed": true, "receivedBytes": 8])
-            #expect(store.state.downloads[1].status == .downloading, "The exact native string state must take precedence over a stale compatibility flag")
-            store.recordDownload(["id": "failed", "status": "unknown", "isFailed": true, "receivedBytes": 8])
-            #expect(store.state.downloads[1].status == .failed, "An unrecognized callback state must fall back to known failure evidence")
+            var snapshot: [String: Any] = ["id": "transfer", flag: true, "receivedBytes": 4]
+            if !status.isEmpty { snapshot["status"] = status }
+            store.recordDownload(snapshot)
+            #expect(store.state.downloads.map(\.status.rawValue) == [expected])
         }
     }
 }
