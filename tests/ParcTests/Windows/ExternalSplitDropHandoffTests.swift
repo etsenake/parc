@@ -190,6 +190,22 @@ import Testing
         #expect(scene.split.isInteractivePaneEditing)
     }
 
+    @Test func leavingTheLastReceiverArmsTheRepeatingDragFallback() throws {
+        let scene = Scene()
+        try #require(scene.enterLeftEdge())
+        let edit = try #require(scene.split.interactivePaneEdit)
+        defer { scene.router.end() }
+        var timers: [Timer] = []
+        edit.scheduleFallbackTimer = { timers.append($0) }
+
+        scene.leaveThePage()
+
+        let timer = try #require(timers.first)
+        #expect(timers.count == 1)
+        #expect(timer.isValid)
+        #expect(timer.timeInterval == 0.05)
+    }
+
     @Test func enteringTheOtherPageBeforeReleaseContinuesTheSameEdit() {
         let scene = Scene()
         #expect(scene.enterLeftEdge())
