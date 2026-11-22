@@ -423,6 +423,9 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     private let regionAnimationKey = "Split drop region"
     private var retiringDropRegion: DropRegionView?
     private var regionTransition = UUID()
+    var registerDropRegionCompletion: (@escaping @MainActor () -> Void) -> Void = { completion in
+        CATransaction.setCompletionBlock { MainActor.assumeIsolated { completion() } }
+    }
     private struct RegionPosition {
         let parent: CALayer?
         let position: CGPoint
@@ -467,12 +470,10 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
         CATransaction.begin()
         if removing {
-            CATransaction.setCompletionBlock { [weak self, weak region] in
-                MainActor.assumeIsolated {
-                    guard let self, let region, self.regionTransition == token,
-                          self.retiringDropRegion === region else { return }
-                    self.clearRetiringDropRegion()
-                }
+            registerDropRegionCompletion { [weak self, weak region] in
+                guard let self, let region, self.regionTransition == token,
+                      self.retiringDropRegion === region else { return }
+                self.clearRetiringDropRegion()
             }
         }
         layer.add(animation, forKey: regionAnimationKey)
