@@ -183,3 +183,179 @@ extension FindPresentationTests {
         #expect(view.field.currentEditor() === window.firstResponder)
     }
 }
+
+extension FindPresentationTests {
+    @Test func unknownAndZeroResultsDoNotAdvance() {
+        #expect(!PageFindResultPresentation.pending.canAdvance)
+        #expect(!PageFindResultPresentation.notFound.canAdvance)
+        #expect(PageFindResultPresentation.matches(ordinal: 2, total: 4).canAdvance)
+    }
+
+    @Test func placingTheBarDoesNotMoveThePageItSitsOver() {
+        let page = NSRect(x: 228, y: 9, width: 1000, height: 700)
+        var copy = page
+        #expect(PageFindView.frame(in: page) == NSRect(x: 918, y: 19, width: 300, height: 32))
+        #expect(copy == page)
+        copy.size.width = 250
+        #expect(PageFindView.frame(in: copy).maxX == copy.maxX - 10)
+    }
+
+    @Test @MainActor func theEmptyBarKeepsTheOriginalMetricsAndNames() {
+        _ = NSApplication.shared
+        let view = PageFindView(frame: NSRect(x: 0, y: 0, width: 300, height: 32))
+        view.appearance = CommandBarTestSupport.dark
+        view.layoutSubtreeIfNeeded()
+        #expect(view.field.font?.pointSize == 13)
+        #expect(view.resultLabel.font?.pointSize == 12)
+        #expect(view.layer?.cornerRadius == 5)
+        #expect(view.shadow?.shadowBlurRadius == 5)
+        #expect(view.shadow?.shadowOffset == NSSize(width: 0, height: -3))
+        #expect(view.previous.isHidden && view.next.isHidden && view.resultLabel.isHidden)
+        #expect(view.field.nextKeyView == nil)
+        #expect(view.field.accessibilityLabel() == "Find in page")
+        #expect(view.close.accessibilityLabel() == "Close Find")
+    }
+
+    @Test @MainActor func aMatchedResultIsTheAccessibilityValueAndKeepsTheControlsAccessible() {
+        _ = NSApplication.shared
+        let view = PageFindView(frame: NSRect(x: 0, y: 0, width: 300, height: 32))
+        view.update(result: .matches(ordinal: 2, total: 4), available: true)
+        view.layoutSubtreeIfNeeded()
+        #expect(view.resultLabel.stringValue == "2/4")
+        #expect(view.resultLabel.accessibilityValue() == "2/4")
+        #expect(!view.previous.isAccessibilityHidden() && !view.next.isAccessibilityHidden())
+    }
+
+    @Test @MainActor func aZeroResultIsTheAccessibilityValueAndHidesTheMatchControls() {
+        _ = NSApplication.shared
+        let view = PageFindView(frame: NSRect(x: 0, y: 0, width: 300, height: 32))
+        view.update(result: .matches(ordinal: 2, total: 4), available: true)
+        view.update(result: .notFound, available: true)
+        view.layoutSubtreeIfNeeded()
+        #expect(view.resultLabel.stringValue == "Not Found")
+        #expect(view.resultLabel.accessibilityValue() == "Not Found")
+        #expect(view.previous.isHidden && view.next.isHidden)
+        #expect(view.previous.isAccessibilityHidden() && view.next.isAccessibilityHidden())
+    }
+
+    @Test @MainActor func aPendingResultHidesTheStaleCountFromAccessibility() {
+        _ = NSApplication.shared
+        let view = PageFindView(frame: NSRect(x: 0, y: 0, width: 300, height: 32))
+        view.field.stringValue = "find"
+        view.update(result: .matches(ordinal: 2, total: 4), available: true)
+        view.update(result: .pending, available: true)
+        #expect(view.resultLabel.isHidden && view.field.stringValue == "find")
+        #expect(view.resultLabel.isAccessibilityHidden())
+        #expect((view.resultLabel.accessibilityValue() ?? "") == "")
+    }
+
+    @Test @MainActor func theCounterNeitherInterceptsInputNorChangesItsRole() {
+        _ = NSApplication.shared
+        let view = PageFindView(frame: NSRect(x: 0, y: 0, width: 300, height: 32))
+        #expect(view.resultLabel.hitTest(.zero) == nil)
+        #expect(view.resultLabel.accessibilityRole() == NSTextField(labelWithString: "2/4").accessibilityRole())
+    }
+
+    @Test @MainActor func theNativeButtonsDispatchPreviousNextAndClose() {
+        _ = NSApplication.shared
+        let view = PageFindView(frame: NSRect(x: 0, y: 0, width: 300, height: 32))
+        var previous = 0, next = 0, close = 0
+        view.onPrevious = { previous += 1 }
+        view.onNext = { next += 1 }
+        view.onClose = { close += 1 }
+        view.update(result: .matches(ordinal: 2, total: 4), available: true)
+        view.previous.sendClick()
+        view.next.sendClick()
+        view.close.sendClick()
+        #expect(previous == 1 && next == 1 && close == 1)
+    }
+
+    @Test @MainActor func unavailableButtonsDispatchNothing() {
+        _ = NSApplication.shared
+        let view = PageFindView(frame: NSRect(x: 0, y: 0, width: 300, height: 32))
+        var calls = 0
+        view.onPrevious = { calls += 1 }
+        view.onNext = { calls += 1 }
+        view.onClose = { calls += 1 }
+        view.update(result: .matches(ordinal: 3, total: 4), available: false)
+        view.previous.sendClick()
+        view.next.sendClick()
+        view.close.sendClick()
+        #expect(calls == 0)
+    }
+
+    @Test @MainActor func escapeClosesAfterNativeCompositionEnds() throws {
+        let window = CommandBarTestSupport.borderlessWindow()
+        let view = PageFindView(frame: NSRect(x: 0, y: 0, width: 300, height: 32))
+        window.contentView = view
+        var closes = 0
+        view.onClose = { closes += 1 }
+        try #require(window.makeFirstResponder(view.field))
+        let editor = try #require(view.field.currentEditor() as? NSTextView)
+        editor.setMarkedText("compose", selectedRange: NSRange(location: 7, length: 0),
+                             replacementRange: NSRange(location: NSNotFound, length: 0))
+        view.cancelOperation(nil)
+        #expect(closes == 0)
+        editor.unmarkText()
+        view.cancelOperation(nil)
+        #expect(closes == 1)
+    }
+
+    @Test @MainActor func theFindButtonKeepsItsNativePressAndFocusGeometry() {
+        let fixture = HoverFixture()
+        fixture.control.updateTrackingAreas()
+        let areas = fixture.control.trackingAreas.filter { !$0.options.contains(.cursorUpdate) }
+        #expect(areas.first?.options.rawValue == 0x223)
+        #expect(fixture.control.focusRingMaskBounds == fixture.control.bounds)
+        #expect((fixture.control.cell as? NSButtonCell)?.highlightsBy == .contentsCellMask)
+    }
+
+    @Test @MainActor func theHoverDecorationKeepsItsRadiusAndReturnsWhenReenabled() throws {
+        let fixture = HoverFixture()
+        try fixture.movePointer()
+        fixture.control.appearance = CommandBarTestSupport.light
+        fixture.control.updateLayer()
+        #expect(fixture.control.layer?.cornerRadius == 6)
+        #expect(fixture.control.layer?.cornerCurve == .continuous)
+        fixture.control.isEnabled = false
+        fixture.control.updateLayer()
+        fixture.control.isEnabled = true
+        fixture.control.updateLayer()
+        #expect((fixture.control.layer?.backgroundColor?.alpha ?? 0) > 0)
+    }
+
+    @Test @MainActor func anUncoveredFindControlCanHoverAgain() throws {
+        let fixture = HoverFixture()
+        let cover = NSView(frame: fixture.control.frame)
+        fixture.surface.addSubview(cover, positioned: .above, relativeTo: fixture.control)
+        try fixture.movePointer()
+        #expect(!fixture.control.isHovered)
+        cover.removeFromSuperview()
+        try fixture.movePointer()
+        #expect(fixture.control.isHovered)
+    }
+
+    @Test @MainActor func anotherWindowsKeyLossDoesNotClearHover() throws {
+        let fixture = HoverFixture()
+        try fixture.movePointer()
+        let other = NSWindow(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false)
+        other.isReleasedWhenClosed = false
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: other)
+        #expect(fixture.control.isHovered)
+    }
+
+    @Test @MainActor func aDetachedFindControlCannotRegainHover() throws {
+        let fixture = HoverFixture()
+        try fixture.movePointer()
+        fixture.control.removeFromSuperview()
+        try fixture.movePointer()
+        #expect(!fixture.control.isHovered)
+    }
+
+    @Test @MainActor func aHiddenLifecycleRetiresHover() throws {
+        let fixture = HoverFixture()
+        try fixture.movePointer()
+        fixture.control.viewDidHide()
+        #expect(!fixture.control.isHovered)
+    }
+}
