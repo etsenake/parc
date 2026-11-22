@@ -330,7 +330,11 @@ scheduler, and advance it in the test instead of sleeping or polling. End-to-end
 checks of the running app are UI tests, which this suite doesn't contain.
 
 Tests run in parallel by default, so they share no mutable state: give each test
-its own temporary directory and `UserDefaults(suiteName:)`. Mark a suite
+its own temporary directory and `UserDefaults(suiteName:)`. Never let a test
+fall back to the app's production singletons, which read your real data: anything
+built without a `files:` argument uses `NoteFiles.shared` and the real Parc Notes
+folder in Documents, so pass `IsolatedNoteFiles.make()` from
+`tests/ParcTests/Support` instead. Mark a suite
 `.serialized` only when the code under test touches process-wide state that
 can't be injected, and mark a test `@MainActor` only when the code needs the
 main actor. Test fixtures are resources on the test target (`resources:` in the
