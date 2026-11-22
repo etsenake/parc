@@ -103,7 +103,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     var onDeleteDocument: ((InternalPage, @escaping (Error?) -> Void) -> Void)?
     private lazy var documentsButton = LibraryRailTile("Easels & Notes", animation: .easels)
     private lazy var documentsView: DocumentsLibraryView = {
-        let view = DocumentsLibraryView(store: store, profileID: profileID)
+        let view = DocumentsLibraryView(store: store, profileID: profileID, files: files)
         view.ownerValid = { [weak self] in
             guard let self else { return false }
             return self.kind == .documents && self.window != nil && self.store.state.profiles.contains { $0.id == self.profileID }
@@ -154,12 +154,14 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     private var observedSettings = BrowserSettings()
     private var observedProfileRemovalPending = false
     private let reduceMotion: @MainActor () -> Bool
+    private let files: NoteFiles
     override var isFlipped: Bool { true }
 
     init(store: BrowserStore, kind: Kind, profileID: UUID, downloadStore: BrowserStore? = nil,
-         privateMediaContext: PrivateMediaContext? = nil,
+         privateMediaContext: PrivateMediaContext? = nil, files: NoteFiles? = nil,
          reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
         self.reduceMotion = reduceMotion
+        self.files = files ?? .shared
         self.downloadStore = downloadStore ?? store
         self.privateMediaContext = store.isEphemeral ? privateMediaContext : nil
         self.store = store
