@@ -45,8 +45,10 @@ private func same(_ a: CGColor?, _ b: CGColor?) -> Bool {
 
 @MainActor private func tint(_ theme: SpaceTheme) -> CGColor {
     let palette = ThemeChromePalette(theme: theme, isDark: false)
-    guard theme.isValid, theme.colorCount > 0 else { return palette.foregroundSecondary.cgColor }
-    return palette.maxContrastColor.cgColor.copy(alpha: StartPageMarkView.tintAlpha)!
+    let content = palette.contentAppearance
+    guard theme.isValid, theme.colorCount > 0 else { return palette.foregroundSecondary.cgColor(in: content) }
+    let color = palette.maxContrastColor.cgColor(in: content)
+    return color.copy(alpha: StartPageMarkView.tintAlpha) ?? color
 }
 
 @MainActor struct StartPageMarkViewTests {

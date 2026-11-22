@@ -118,7 +118,8 @@ private func stop(_ layer: CALayer, _ key: String, sourceLocation: SourceLocatio
     private final class Box { var value = 0 }
 
     @Test func theRibbonLivesInOneEffectsLayerWithOneStripePerThemeColour() {
-        let (layers, _, _, _) = started()
+        let (layers, stage, _, _) = started()
+        defer { withExtendedLifetime(stage) {} }
         #expect(layers.host.sublayers?.count == 1)
         let ribbon = layers.host.sublayers?.first
         #expect(ribbon?.sublayers?.count == 3 && ribbon?.sublayers?.allSatisfy { $0 is CAShapeLayer } == true)
@@ -126,7 +127,8 @@ private func stop(_ layer: CALayer, _ key: String, sourceLocation: SourceLocatio
     }
 
     @Test func theMarkFliesForTheMockupsDurationUpTheArcInThePagesDownwardSpace() {
-        let (layers, _, _, _) = started()
+        let (layers, stage, _, _) = started()
+        defer { withExtendedLifetime(stage) {} }
         let flight = layers.body.animation(forKey: StartPageMarkStage.swoopKey) as? CAKeyframeAnimation
         #expect(flight?.duration == StartPageMarkSwoop.duration)
         let peak = (flight?.values as? [NSValue])?.map(\.caTransform3DValue).map { apply($0, CGPoint(x: 32.5, y: 48)).y }.min() ?? 0
@@ -135,12 +137,14 @@ private func stop(_ layer: CALayer, _ key: String, sourceLocation: SourceLocatio
     }
 
     @Test func noLandingTickComesBeforeTheMarkLands() {
-        let (_, _, landed, _) = started()
+        let (_, stage, landed, _) = started()
+        defer { withExtendedLifetime(stage) {} }
         #expect(landed.value == 0)
     }
 
     @Test func theMarkLandsWithASquashAndATick() {
-        let (layers, _, landed, _) = started()
+        let (layers, stage, landed, _) = started()
+        defer { withExtendedLifetime(stage) {} }
         stop(layers.body, StartPageMarkStage.swoopKey)
         #expect(landed.value == 1 && layers.body.animation(forKey: StartPageMarkStage.landingKey) != nil)
     }

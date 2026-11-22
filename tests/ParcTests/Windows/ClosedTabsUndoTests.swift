@@ -836,6 +836,7 @@ private func temporaryRoot() throws -> URL {
     @Test func withTheOtherPanesBusyElsewhereThePaneComesBackAloneBesideTheSplit() throws {
         let f = try SideFixture()
         f.consent.autoApprove = true
+        _ = try #require(f.clear([f.d.id, f.e.id]))
         f.consent.refused = [f.b.id, f.c.id]
         let foreign = try #require(f.clear([f.a.id]))
         f.register(foreign).undo()
@@ -1133,6 +1134,7 @@ private func temporaryRoot() throws -> URL {
             store = BrowserStore(privateParentProfileID: parent.id, engineProfilePath: root.appendingPathComponent("otr").path,
                                  directory: root, settings: BrowserState.initial().settings)
             consent.attach(store)
+            consent.autoApprove = true
             p3 = store.openResolvedURL(URL(string: "https://three.invalid/")!)
             p2 = store.openResolvedURL(URL(string: "https://two.invalid/")!)
             p1 = store.openResolvedURL(URL(string: "https://one.invalid/")!)
