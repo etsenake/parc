@@ -16,6 +16,9 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private let search: NSTextField
     private let searchBackdrop: DownloadSearchBackdrop?
     private let collection = CaptureCollectionView()
+    var updateGrid: (NSCollectionView, @escaping () -> Void, @escaping (Bool) -> Void) -> Void = {
+        $0.performBatchUpdates($1, completionHandler: $2)
+    }
     private let scroll = NSScrollView()
     private let message = CaptureEmptyMessage(wrappingLabelWithString: "")
     enum CacheKey: Hashable, Sendable { case capture(UUID), file(URL, ExternalMediaFile.Revision) }
@@ -294,11 +297,11 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         } else if plan.removed.isEmpty && plan.inserted.isEmpty {
             items = plan.items
         } else {
-            collection.performBatchUpdates({
+            updateGrid(collection, {
                 self.items = plan.items
                 self.collection.deleteItems(at: plan.removed)
                 self.collection.insertItems(at: plan.inserted)
-            }, completionHandler: { [weak self] _ in self?.resampleTiles() })
+            }, { [weak self] _ in self?.resampleTiles() })
         }
         let selection: Set<IndexPath> = selected.flatMap { plan.positions[$0] }.map { [IndexPath(item: $0, section: 0)] } ?? []
         if collection.selectionIndexPaths != selection { collection.selectionIndexPaths = selection }
