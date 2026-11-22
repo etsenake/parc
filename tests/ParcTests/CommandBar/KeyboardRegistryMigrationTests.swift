@@ -241,6 +241,8 @@ extension KeyboardRegistryMigrationTests {
         let custom = KeyboardShortcut(key: "j", flags: [.command, .option])
         try fixture.legacy(1, overrides: ["nextTab:": fixture.encoded(custom), "someOtherAction:": fixture.encoded(original)],
                            priorities: ["nextTab:": "useBoth"])
+        let other = NSMenuItem(title: "Other", action: NSSelectorFromString("someOtherAction:"), keyEquivalent: "")
+        fixture.registry.register(other, group: "Test")
         try fixture.registry.reset("nextTab:")
         #expect(fixture.registry.isConflicting("nextTab:"))
         #expect(fixture.registry.activeShortcut(for: "nextTab:") == nil)

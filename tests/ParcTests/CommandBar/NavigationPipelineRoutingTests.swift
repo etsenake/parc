@@ -71,6 +71,7 @@ extension NavigationPipelineTests {
         let fixture = try Fixture(query: "example", compact: compact, tabs: [tab("https://example.com/", title: "Example")])
         defer { fixture.bar.dismiss(restoreFocus: false) }
         fixture.publish("example", results: [search("example")], scopes: [["host": "example.com"]])
+        try fixture.choose("Example")
         let offer = try #require(try fixture.scopeOffer())
         #expect(!offer.isHidden)
         #expect(offer.accessibilityLabel() == "Search example.com")

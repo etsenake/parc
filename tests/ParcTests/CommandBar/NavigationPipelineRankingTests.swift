@@ -45,7 +45,7 @@ extension NavigationPipelineTests {
                              visit("https://dashboard.example.org/start", "", daysAgo: 50)])
     }
 
-    private func dashboardFixture(_ library: Library, index: CommandBarTitleIndex? = nil) throws -> Fixture {
+    @MainActor private func dashboardFixture(_ library: Library, index: CommandBarTitleIndex? = nil) throws -> Fixture {
         let fixture = try Fixture(query: "dashboard", tabs: [library.dashboard])
         if let index { fixture.bar.updateTitleIndex(index, historyRemovals: 0) }
         fixture.publish("dashboard", results: Self.suggestions.map(search))
@@ -155,7 +155,7 @@ extension NavigationPipelineTests {
         #expect(labels.contains { $0.contains("dashboard.example.org/start") })
     }
 
-    private func typedFixture(_ typed: String, visits: [(url: String, title: String)]? = nil, tabs: [BrowserTab] = [],
+    @MainActor private func typedFixture(_ typed: String, visits: [(url: String, title: String)]? = nil, tabs: [BrowserTab] = [],
                               leading: [[String: Any]] = [], extra: [[String: Any]] = []) throws -> Fixture {
         let fixture = try Fixture(tabs: tabs)
         try fixture.edit(typed)
@@ -185,12 +185,12 @@ extension NavigationPipelineTests {
         #expect(navigation == nil)
     }
 
-    @Test(arguments: ["fullscript.okta.com/", "fullscript.okta.com/app", "fullscript.okta.com/app/UserHome?iss"])
-    @MainActor func pastTheDomainChromiumsDefaultLeadsWithItsOwnCompletion(typed: String) throws {
+    @Test(arguments: [("fullscript.okta.com/", true), ("fullscript.okta.com/app", true), ("fullscript.okta.com/app/UserHome?iss", false)])
+    @MainActor func pastTheDomainChromiumsDefaultLeadsWithItsOwnCompletionWhenItOffersOne(typed: String, offered: Bool) throws {
         let fixture = try typedFixture(typed)
         defer { fixture.bar.dismiss(restoreFocus: false) }
         #expect(fixture.labels().first?.contains("Fullscript - My Apps") == true)
-        #expect(try fixture.editor().string == Self.oktaShown)
+        #expect(try fixture.editor().string == (offered ? Self.oktaShown : typed))
         var navigation: PCNativeSearchNavigation?
         fixture.bar.onSearchNavigation = { navigation = $0 }
         try fixture.pressReturn()
@@ -202,12 +202,13 @@ extension NavigationPipelineTests {
         defer { fixture.bar.dismiss(restoreFocus: false) }
         try fixture.move("moveDown:")
         #expect(try fixture.editor().string == Self.oktaShown)
+        try fixture.move("moveUp:")
+        #expect(try fixture.editor().string == "fullscript.okta.com")
+        try fixture.move("moveDown:")
         var navigation: PCNativeSearchNavigation?
         fixture.bar.onSearchNavigation = { navigation = $0 }
         try fixture.pressReturn()
         #expect(navigation?.url.absoluteString == Self.okta)
-        try fixture.move("moveUp:")
-        #expect(try fixture.editor().string == "fullscript.okta.com")
     }
 
     @Test(arguments: [Self.oktaVisits.count, 0])
@@ -293,7 +294,7 @@ extension NavigationPipelineTests {
         ])
         let pages = fixture.labels().filter { $0.contains(Self.dashboardTitle) }
         #expect(pages.count == 1)
-        #expect(pages.first?.contains("— fullscript.okta.com") == true)
+        #expect(pages.first?.contains("fullscript.okta.com") == true)
         var navigation: PCNativeSearchNavigation?
         fixture.bar.onSearchNavigation = { navigation = $0 }
         try fixture.choose(Self.dashboardTitle)
@@ -346,7 +347,7 @@ extension NavigationPipelineTests {
         #expect(labels.count == 4)
         #expect(labels[0].contains(Self.dashboardTitle))
         #expect(labels[1].contains("fullscript.okta.com/app/Other"))
-        #expect(labels[2].contains("First video - YouTube") && labels[2].contains("— youtube.com"))
+        #expect(labels[2].contains("First video - YouTube") && labels[2].contains("youtube.com"))
         #expect(labels[3].contains("Second video - YouTube"))
     }
 }

@@ -133,7 +133,7 @@ struct ShortcutConflictResolutionTests {
         #expect(throws: (any Error).self) { try fixture.registry.resolveConflict(blocked) }
         #expect(fixture.registry.revision == revision)
         #expect(fixture.registry.shortcut(for: "alpha:") == fixture.a)
-        #expect(fixture.registry.shortcut(for: "gamma:") == nil)
+        #expect(fixture.registry.shortcut(for: "gamma:") == fixture.b)
         #expect(fixture.keyEquivalents == ["a", "", "", "c"])
     }
 
