@@ -1,6 +1,7 @@
 #import "ParcNativePointer.h"
 #import <QuartzCore/QuartzCore.h>
 #import <dlfcn.h>
+#import <objc/runtime.h>
 
 static NSCursor* selectedCursor;
 static BOOL backgroundCursor;
@@ -37,6 +38,23 @@ static void* PointerSymbol(void* handle, const char* name) {
   return NULL;
 }
 
+static char liveResizeKey;
+
+void VideoPiPWindowTestsSetLiveResize(NSWindow* window, BOOL liveResize) {
+  objc_setAssociatedObject(window, &liveResizeKey, @(liveResize), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+@interface NSWindow (VideoPiPWindowTestsLiveResize)
+- (BOOL)videoPiPWindowTestsInLiveResize;
+@end
+
+@implementation NSWindow (VideoPiPWindowTestsLiveResize)
+- (BOOL)videoPiPWindowTestsInLiveResize {
+  return [objc_getAssociatedObject(self, &liveResizeKey) boolValue];
+}
+@end
+
+#define inLiveResize videoPiPWindowTestsInLiveResize
 #define set parcSetCursor
 #define mouseLocation parcPointerLocation
 #define dlsym PointerSymbol
