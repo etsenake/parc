@@ -1133,6 +1133,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     var isPrivateBrowsing = false { didSet { addressBackground.incognito = isPrivateBrowsing } }
     var prepareWindowDrop: ((SidebarMoveSession, SidebarContainerLocation, SidebarItemReference?) -> (() -> Bool)?)?
     var prepareCopyDrop: ((SidebarMoveSession, [SidebarItemReference], SidebarContainerLocation, SidebarItemReference?) -> (() -> Bool)?)?
+    var dragModifierFlags: () -> NSEvent.ModifierFlags = { NSEvent.modifierFlags }
     var prepareDockDrop: ((SidebarMoveSession, [SidebarItemReference], SidebarContainerLocation, SidebarItemReference?) -> (() -> Bool)?)?
     var prepareSidebarMoves: (([SidebarItemReference]) -> SidebarMoveSession?)?
     var prepareSidebarCopy: (([SidebarItemReference], FolderLinkFormat) -> (() -> Bool)?)?
@@ -4958,7 +4959,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         clearDrop()
         guard creationView == nil else { return [] }
         guard let session = dragSession(sender), let state = hierarchyState, let spaceID = activeSpaceID else { return [] }
-        let mask = sender.draggingSourceOperationMask, option = NSEvent.modifierFlags.contains(.option)
+        let mask = sender.draggingSourceOperationMask, option = dragModifierFlags().contains(.option)
         let copying = mask.contains(.copy) && option
         guard !option || copying else { return [] }
         let operation: NSDragOperation = copying ? .copy : .move
