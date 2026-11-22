@@ -83,9 +83,9 @@ declarations through `@testable import`, so a test never needs `package`.
 ## Imports and rebuild time
 
 Each file imports exactly the libraries it uses. This keeps rebuilds fast as
-well as tidy. SwiftPM's build engine recompiles every file that directly imports
-a library whenever that library gains or changes a declaration, even a private
-one no other file can see. Changing code inside an existing function body
+well as tidy. A Swift build recompiles every file that directly imports a
+library whenever that library gains or changes a declaration, even a private one
+no other file can see; both of SwiftPM's build engines do this. Changing code inside an existing function body
 recompiles only that file. Files that reach the library only through another
 library are left alone. So an unused import makes the file recompile for every
 declaration edit in that library, and an unused import of `Parc` in a test makes
