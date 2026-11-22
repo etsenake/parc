@@ -14,13 +14,15 @@ struct LibrarySpacesHostTests {
         init() throws {
             _ = NSApplication.shared
             store = try BrowserStore(directory: directory)
-            view = LibraryView(isolatingNotesIn: store, kind: .spaces, profileID: store.activeSpace.profileID, reduceMotion: { true })
+            let suppliedManager = SpaceManagerView(frame: .zero)
+            view = LibraryView(isolatingNotesIn: store, kind: .spaces, profileID: store.activeSpace.profileID,
+                               spaceManager: suppliedManager, reduceMotion: { true })
             view.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
             window = NSWindow(contentRect: view.frame, styleMask: .titled, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.contentView = view
             view.layoutSubtreeIfNeeded()
-            manager = try #require(Self.descendants(view).compactMap { $0 as? SpaceManagerView }.first)
+            manager = try #require(Self.descendants(view).compactMap { $0 as? SpaceManagerView }.first { $0 === suppliedManager })
         }
 
         func teardown() {

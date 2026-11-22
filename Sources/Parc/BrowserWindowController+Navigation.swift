@@ -258,7 +258,8 @@ extension BrowserWindowController {
                     && self.activeProfileID == profileID && self.canShowMedia
             })
         } else { privateMedia = nil }
-        let view = LibraryView(store: store, kind: kind, profileID: profileID, downloadStore: downloadStore,
+        let spaceManager = SpaceManagerView(frame: .zero)
+        let view = LibraryView(store: store, kind: kind, profileID: profileID, spaceManager: spaceManager, downloadStore: downloadStore,
                                privateMediaContext: privateMedia)
         view.onCreateNote = { [weak self] in self?.createNote() }
         view.onOpenDocument = { [weak self] page, title in
@@ -346,7 +347,7 @@ extension BrowserWindowController {
             guard let self, let view, self.libraryView === view else { return }
             self.setLibraryContentWidth(view.contentWidth)
         }
-        configureSpaceManager(view)
+        configureSpaceManager(spaceManager, in: view)
         view.onShowKind = { [weak self] kind in self?.recordLibraryPage(kind) }
         recordLibraryPage(view.kind)
         sidebar.libraryDidOpen()

@@ -174,7 +174,7 @@ import AppKit
     }
 
     func openLibrary() {
-        let view = LibraryView(store: store, kind: .archive, profileID: profileID)
+        let view = LibraryView(store: store, kind: .archive, profileID: profileID, spaceManager: SpaceManagerView(frame: .zero))
         view.appearance = NSAppearance(named: .aqua)
         view.palette = scene.themeSurface.palette
         view.archiveOwnerValid = { true }

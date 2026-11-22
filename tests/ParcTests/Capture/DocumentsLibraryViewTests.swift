@@ -281,7 +281,7 @@ struct DocumentsLibraryViewTests {
 
     @MainActor private func hosted(_ fixture: Fixture) throws -> (LibraryView, NSWindow, NSTableView) {
         let library = LibraryView(store: fixture.store, kind: .documents, profileID: fixture.profile,
-                                  files: fixture.files, easelIcons: fixture.easelIcons,
+                                  spaceManager: SpaceManagerView(frame: .zero), files: fixture.files, easelIcons: fixture.easelIcons,
                                   easelStore: { _ in fixture.easelStore },
                                   reduceMotion: { true })
         library.frame = NSRect(x: 0, y: 0, width: 416, height: 600)

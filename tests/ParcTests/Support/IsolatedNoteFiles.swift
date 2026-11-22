@@ -20,12 +20,14 @@ enum IsolatedNoteFiles {
 
 extension LibraryView {
     convenience init(isolatingNotesIn store: BrowserStore, kind: Kind, profileID: UUID,
+                     spaceManager: (any LibrarySpacesPage)? = nil,
                      reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
                      scheduleReload: (@MainActor (@escaping @MainActor () -> Void) -> Void)? = nil) {
         let files = IsolatedNoteFiles.make()
         let easelIcons = EaselTabIcons(files: files)
         easelIcons.worker = .inline
-        self.init(store: store, kind: kind, profileID: profileID, files: files,
+        self.init(store: store, kind: kind, profileID: profileID,
+                  spaceManager: spaceManager ?? SpaceManagerView(frame: .zero), files: files,
                   easelIcons: easelIcons, easelStore: { try EaselStore(directory: $0) },
                   reduceMotion: reduceMotion, scheduleReload: scheduleReload)
     }

@@ -4,8 +4,9 @@ import ParcCore
 import ParcEngine
 
 extension BrowserWindowController {
-    func configureSpaceManager(_ library: LibraryView) {
-        let manager = library.spaceManager
+    var librarySpaceManager: SpaceManagerView? { libraryView?.spaceManager as? SpaceManagerView }
+
+    func configureSpaceManager(_ manager: SpaceManagerView, in library: LibraryView) {
         let valid: () -> Bool = { [weak self, weak library] in
             guard let self, let library else { return false }
             return self.libraryView === library && library.kind == .spaces && self.spaceCommandsAvailable
@@ -789,7 +790,7 @@ extension BrowserWindowController {
         guard let expected = managementSpace(id), spaceCommandsAvailable, let window else { return }
         commandBar?.dismiss()
         guard spaceCommandsAvailable else { return }
-        let managerSidebar = libraryView?.kind == .spaces ? libraryView?.spaceManager.sidebar(for: id) : nil
+        let managerSidebar = libraryView?.kind == .spaces ? librarySpaceManager?.sidebar(for: id) : nil
         if id != activeSpaceID && managerSidebar == nil {
             let dialog = ParcDialog(.init(title: [("Rename Space", false)], confirm: "Save", cancel: "Cancel",
                 field: .init(value: expected.title ?? "", placeholder: expected.name, required: false)))
@@ -810,7 +811,7 @@ extension BrowserWindowController {
         _ = editingSidebar.beginSpaceNameEditing(expected) { [weak self, weak window, weak editingSidebar] value in
             guard let self, let window, self.window === window else { return }
             if let value, self.managementSpace(id, profileID: expected.profileID) != nil,
-               (self.activeSpaceID == id || self.libraryView?.spaceManager.sidebar(for: id) === editingSidebar) {
+               (self.activeSpaceID == id || self.librarySpaceManager?.sidebar(for: id) === editingSidebar) {
                 do { try self.store.saveSpaceTitle(expected, title: value.trimmingCharacters(in: .whitespacesAndNewlines)) }
                 catch { if (error as NSError).code != CocoaError.userCancelled.rawValue { showError(error) } }
             }
@@ -822,7 +823,7 @@ extension BrowserWindowController {
         guard spaceIconPicker == nil, let expected = managementSpace(id),
               spaceCommandsAvailable, let window else { return }
         commandBar?.dismiss(); sidebar.cancelSpaceNameEditing()
-        let manager = libraryView?.kind == .spaces ? libraryView?.spaceManager : nil
+        let manager = libraryView?.kind == .spaces ? librarySpaceManager : nil
         if manager == nil { closeLibrary(restoreFocus: false); revealSidebarForEditing() }
         guard self.window === window, spaceCommandsAvailable,
               let actual = managementSpace(id, profileID: expected.profileID), actual.customIcon == expected.customIcon,

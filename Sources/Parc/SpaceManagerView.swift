@@ -90,7 +90,7 @@ enum SpaceManagementLayout {
     static let cornerRadius: CGFloat = 12
 }
 
-@MainActor final class SpaceManagerView: NSView {
+@MainActor final class SpaceManagerView: NSView, LibrarySpacesPage {
     static let dragType = NSPasteboard.PasteboardType("org.parc.space-manager")
     var configureSidebar: ((UUID, SidebarView) -> Void)? {
         didSet { for (id, card) in cards { configureSidebar?(id, card.sidebar) } }

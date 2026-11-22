@@ -467,7 +467,7 @@ extension BrowserWindowController {
                 && session.view.themeAnchor.window === window
         }
         guard managementSpace(activeSpaceID) != nil else { return false }
-        let manager = libraryView?.kind == .spaces ? libraryView?.spaceManager : nil
+        let manager = libraryView?.kind == .spaces ? librarySpaceManager : nil
         return (manager?.anchor(for: activeSpaceID) ?? sidebar.spaceAppearanceAnchor(activeSpaceID))?.window === window
     }
 
@@ -480,7 +480,7 @@ extension BrowserWindowController {
         themePopover?.performClose(nil)
         guard !isClosing, let window, let original = managementSpace(spaceID) else { return }
         let profileID = original.profileID
-        let manager = libraryView?.kind == .spaces ? libraryView?.spaceManager : nil
+        let manager = libraryView?.kind == .spaces ? librarySpaceManager : nil
         if manager == nil { revealSidebarForEditing() }
         guard let anchor = manager?.anchor(for: spaceID) ?? sidebar.spaceAppearanceAnchor(spaceID), anchor.window === window else { return }
         let editor = makeThemeEditor(theme: original.theme)
@@ -488,7 +488,7 @@ extension BrowserWindowController {
         editor.onPreview = { [weak self, weak editor] theme in
             guard let self, let editor, self.themeEditor === editor,
                   self.store.state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }) else { return }
-            self.libraryView?.spaceManager.previewTheme(theme, spaceID: spaceID)
+            self.librarySpaceManager?.previewTheme(theme, spaceID: spaceID)
             guard self.activeSpaceID == spaceID, self.activeProfileID == profileID else { return }
             self.themePreview = (spaceID, theme)
             self.applyChromeTheme(theme)

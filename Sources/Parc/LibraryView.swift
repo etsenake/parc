@@ -4,6 +4,13 @@ import ParcCore
 import QuartzCore
 
 @MainActor
+protocol LibrarySpacesPage: NSView {
+    func cancelEditing()
+    func focusFirst()
+    func reload(_ state: BrowserState)
+}
+
+@MainActor
 final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
     enum Kind: Equatable { case archive, captures, downloads, documents, spaces }
     struct PrivateMediaContext {
@@ -117,7 +124,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         view.onClose = { [weak self] in self?.onClose?() }
         return view
     }()
-    let spaceManager = SpaceManagerView(frame: .zero)
+    let spaceManager: any LibrarySpacesPage
     private lazy var spacesButton = LibraryRailTile("Spaces", animation: .spaces)
     private var categoryButtons: [LibraryRailTile] { [capturesButton, downloadsButton, documentsButton, spacesButton, archiveButton] }
     private let back = ActionButton("Back", symbol: "arrow.left")
@@ -160,7 +167,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     private let easelStore: ((URL) throws -> EaselStore)?
     override var isFlipped: Bool { true }
 
-    init(store: BrowserStore, kind: Kind, profileID: UUID, downloadStore: BrowserStore? = nil,
+    init(store: BrowserStore, kind: Kind, profileID: UUID, spaceManager: any LibrarySpacesPage, downloadStore: BrowserStore? = nil,
          privateMediaContext: PrivateMediaContext? = nil, files: NoteFiles? = nil, easelIcons: EaselTabIcons? = nil,
          easelStore: ((URL) throws -> EaselStore)? = nil,
          reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
@@ -174,6 +181,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         self.store = store
         self.kind = store.isEphemeral && !(kind == .captures && privateMediaContext?.isValid() == true) ? .downloads : kind
         self.profileID = profileID
+        self.spaceManager = spaceManager
         super.init(frame: .zero)
         wantsLayer = true
         setAccessibilityRole(.group)
