@@ -141,6 +141,17 @@ struct EaselPagePoolTests {
                 validOwner: { true }, activeOwner: { true }, selectionChanged: {}, metadataChanged: metadata)
         }
 
+        func transfer(_ surface: NoteEmbedSurface, engine: EaselTestEnginePage, to destination: Window) throws {
+            let snapshot = try #require(pool.snapshotForWindowTransfer())
+            try #require(pool.beginWindowTransfer(snapshot))
+            destination.window.contentView = canvas
+            engine.owner = destination.engine
+            try #require(rebind(snapshot, to: destination))
+            try #require(pool.finishWindowTransfer(snapshot))
+            pool.refreshVisibility()
+            surface.layoutSubtreeIfNeeded()
+        }
+
         func close() {
             for page in pages {
                 page.isClosed = true
@@ -463,6 +474,33 @@ struct EaselPagePoolTests {
     }
 
     @MainActor @Test
+    func theDestinationShowsItsOwnPendingCaptureStatus() throws {
+        let board = try Board(.capture)
+        defer { board.close() }
+        let destination = try Window()
+        defer { destination.close() }
+        let (surface, engine, _) = try board.open()
+        board.select()
+        surface.needsLayout = true
+        surface.layoutSubtreeIfNeeded()
+        let sourceRequests = engine.positionRequests
+        try #require(sourceRequests > 0)
+
+        try board.transfer(surface, engine: engine, to: destination)
+
+        #expect(surface.window === destination.window)
+        #expect(engine.positionRequests == sourceRequests + 1)
+        let status = try #require(captureStatus(in: surface))
+        #expect(!status.isHiddenOrHasHiddenAncestor)
+        #expect(status.stringValue == EmbeddedPageStatusText.friendly("Positioning live capture…", document: "Easel"))
+    }
+
+    @MainActor private func captureStatus(in surface: NoteEmbedSurface) -> NSTextField? {
+        let fallback = surface.subviews.lazy.flatMap(\.subviews).compactMap { $0 as? NoteEmbedFallbackView }.first
+        return fallback?.subviews.compactMap { $0 as? NSTextField }.first
+    }
+
+    @MainActor @Test
     func aLateSourcePositioningReplyCannotReplaceDestinationWork() throws {
         let board = try Board(.capture)
         defer { board.close() }
@@ -474,22 +512,21 @@ struct EaselPagePoolTests {
         surface.layoutSubtreeIfNeeded()
         try #require(engine.positionRequests > 0)
         let sourcePosition = engine.positionRequests - 1
-        let snapshot = try #require(board.pool.snapshotForWindowTransfer())
-        try #require(board.pool.beginWindowTransfer(snapshot))
+        try board.transfer(surface, engine: engine, to: destination)
         #expect(engine.positionWasCancelled(at: sourcePosition))
-        destination.window.contentView = board.canvas
-        engine.owner = destination.engine
-        try #require(board.rebind(snapshot, to: destination))
-        try #require(board.pool.finishWindowTransfer(snapshot))
-        board.pool.refreshVisibility()
-        surface.layoutSubtreeIfNeeded()
         try #require(engine.positionRequests > sourcePosition + 1)
         let destinationPosition = engine.positionRequests - 1
+        let status = try #require(captureStatus(in: surface))
         engine.reply(atPosition: sourcePosition, success: false)
         #expect(surface.showsRecovery)
+        #expect(engine.positionRequests == destinationPosition + 1)
+        #expect(!status.isHiddenOrHasHiddenAncestor)
+        #expect(status.stringValue == EmbeddedPageStatusText.friendly("Positioning live capture…", document: "Easel"))
         #expect(board.session.document.items[0].liveCapture == true)
         engine.reply(atPosition: destinationPosition, success: true)
         #expect(!surface.showsRecovery)
+        #expect(status.isHiddenOrHasHiddenAncestor)
+        #expect(status.stringValue.isEmpty)
     }
 
     @MainActor @Test(arguments: [false, true])
