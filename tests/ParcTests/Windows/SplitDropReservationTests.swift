@@ -678,6 +678,37 @@ import Testing
         #expect(rig.lease.hoverIntent.deadline == rig.now + 0.05)
     }
 
+    @Test func externalDropIntentRechecksTheStationaryPointerAtItsDeadline() throws {
+        let scene = Scene()
+        let lease = try #require(scene.split.prepareDropReservation(in: scene.host, contents: scene.panes.map(\.body)))
+        let edge = scene.host.convert(NSPoint(x: 1, y: 200), to: nil)
+        let drag = SplitDropDragInfo(window: scene.window, location: edge)
+        drag.writeURL("https://intent.invalid")
+        var now: TimeInterval = 100
+        var timers: [Timer] = []
+        lease.clock = { now }
+        lease.intentFireDate = { Date(timeIntervalSinceReferenceDate: now + $0) }
+        lease.scheduleIntentTimer = { timers.append($0) }
+        let session = try #require(ExternalSplitDropSession(host: scene.host, info: drag, frames: scene.originalFrames,
+            orientation: .horizontal, reservation: lease, validate: { lease.isCurrent }, insertionColor: { .black },
+            canPropose: scene.allowAll, commit: { _, _ in false }))
+        session.targets.performFeedback = {}
+        var targets: [SplitDropTarget?] = []
+        session.targets.onChange = { targets.append($0) }
+
+        #expect(session.update(drag) == .copy)
+        #expect(targets.isEmpty)
+        let deadline = now + 0.05
+        let timer = try #require(timers.first)
+        #expect(timer.fireDate == Date(timeIntervalSinceReferenceDate: deadline))
+        now = deadline
+        timer.fire()
+
+        #expect(targets == [.insert(0)])
+        #expect(timers.count == 1)
+        #expect(!timer.isValid)
+    }
+
     @Test func aReleaseBeforeTheSeatAppearsDropsIntoTheSeatAndMovesNothingFirst() {
         let rig = IntentRig()
         rig.sweep(from: NSPoint(x: 1, y: 200), to: rig.seat)
