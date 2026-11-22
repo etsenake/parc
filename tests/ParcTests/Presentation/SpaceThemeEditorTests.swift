@@ -227,64 +227,66 @@ struct SpaceThemeInputTests {
     }
 }
 
-@Suite(.serialized)
 struct SpaceThemeAppearanceTests {
-    @MainActor private func withAppearance(_ body: (UserDefaults) throws -> Void) throws {
+    @MainActor final class Host: NSObject, AppearanceHost {
+        @objc dynamic var appearance: NSAppearance?
+        func observeAppearance(_ change: @escaping @MainActor () -> Void) -> NSKeyValueObservation {
+            observe(\.appearance, options: [.new]) { _, _ in MainActor.assumeIsolated { change() } }
+        }
+    }
+
+    @MainActor private func withAppearance(_ body: (UserDefaults, Host) throws -> Void) throws {
         _ = NSApplication.shared
-        let initial = NSApp.appearance
         let name = "parc.appearance.\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: name))
-        defer {
-            NSApp.appearance = initial
-            defaults.removePersistentDomain(forName: name)
-        }
-        try body(defaults)
+        defer { defaults.removePersistentDomain(forName: name) }
+        try body(defaults, Host())
     }
 
     @Test(arguments: ["automatic", "light", "dark"])
     @MainActor func editorAppearanceControlsDelegateWithoutEditingTheSpace(value: String) throws {
-        try withAppearance { defaults in
+        try withAppearance { defaults, host in
             let choice = try #require(AppAppearance(rawValue: value))
-            AppAppearance.apply(choice == .dark ? .light : .dark, defaults: defaults)
+            AppAppearance.apply(choice == .dark ? .light : .dark, defaults: defaults, host: host)
             let theme = SpaceTheme.singleColor(try #require(ThemeColor(hex: "4C6688")))
-            let editor = SpaceThemeEditorView(theme: theme, performHapticFeedback: {})
+            let editor = SpaceThemeEditorView(theme: theme, performHapticFeedback: {}, appearanceHost: host)
             var requested: AppAppearance?
-            editor.onSetAppearance = { requested = $0; AppAppearance.apply($0, defaults: defaults) }
+            editor.onSetAppearance = { requested = $0; AppAppearance.apply($0, defaults: defaults, host: host) }
             editor.onCommit = { _ in Issue.record("Changing app appearance committed a theme") }
             editor.onPreview = { _ in Issue.record("Changing app appearance previewed a theme") }
             let button = try themeButton("\(choice.title) appearance", in: editor)
             _ = NSApp.sendAction(try #require(button.action), to: button.target, from: button)
-            #expect(requested == choice && AppAppearance.current == choice)
+            #expect(requested == choice && AppAppearance.current(in: host) == choice)
             #expect(editor.theme == theme)
             #expect(button.accessibilityValue() as? Int == 1)
         }
     }
 
     @Test @MainActor func automaticAppearanceClearsAStaleSavedOverride() throws {
-        try withAppearance { defaults in
-            AppAppearance.apply(.dark, defaults: defaults)
-            NSApp.appearance = nil
-            #expect(!AppAppearance.apply(.automatic, defaults: defaults))
+        try withAppearance { defaults, host in
+            AppAppearance.apply(.dark, defaults: defaults, host: host)
+            host.appearance = nil
+            #expect(!AppAppearance.apply(.automatic, defaults: defaults, host: host))
             #expect(defaults.string(forKey: "parc.appAppearance.v1") == nil)
         }
     }
 
     @Test @MainActor func cancellingReplayAppearanceRestoresTheSavedChoice() throws {
-        try withAppearance { defaults in
-            AppAppearance.apply(.dark, defaults: defaults)
-            AppAppearance.preview(.light)
-            #expect(AppAppearance.endPreview(.light, defaults: defaults))
-            #expect(AppAppearance.current == .dark)
+        try withAppearance { defaults, host in
+            AppAppearance.apply(.dark, defaults: defaults, host: host)
+            AppAppearance.preview(.light, host: host)
+            #expect(AppAppearance.endPreview(.light, defaults: defaults, host: host))
+            #expect(AppAppearance.current(in: host) == .dark)
         }
     }
 
     @Test @MainActor func cancellingReplayAppearanceKeepsAnExternalChoice() throws {
-        try withAppearance { defaults in
-            AppAppearance.apply(.dark, defaults: defaults)
-            AppAppearance.preview(.light)
-            AppAppearance.apply(.automatic, defaults: defaults)
-            #expect(!AppAppearance.endPreview(.light, defaults: defaults))
-            #expect(AppAppearance.current == .automatic)
+        try withAppearance { defaults, host in
+            AppAppearance.apply(.dark, defaults: defaults, host: host)
+            AppAppearance.preview(.light, host: host)
+            AppAppearance.apply(.automatic, defaults: defaults, host: host)
+            #expect(!AppAppearance.endPreview(.light, defaults: defaults, host: host))
+            #expect(AppAppearance.current(in: host) == .automatic)
         }
     }
 }
@@ -375,11 +377,11 @@ extension SpaceThemeInputTests {
 
 extension SpaceThemeAppearanceTests {
     @Test @MainActor func explicitAppearanceUpdatesEveryOpenEditor() throws {
-        try withAppearance { defaults in
-            AppAppearance.apply(.light, defaults: defaults)
-            let first = SpaceThemeEditorView(theme: SpaceTheme(), performHapticFeedback: {})
-            let second = SpaceThemeEditorView(theme: SpaceTheme(), performHapticFeedback: {})
-            AppAppearance.apply(.dark, defaults: defaults)
+        try withAppearance { defaults, host in
+            AppAppearance.apply(.light, defaults: defaults, host: host)
+            let first = SpaceThemeEditorView(theme: SpaceTheme(), performHapticFeedback: {}, appearanceHost: host)
+            let second = SpaceThemeEditorView(theme: SpaceTheme(), performHapticFeedback: {}, appearanceHost: host)
+            AppAppearance.apply(.dark, defaults: defaults, host: host)
             let firstDark = try themeButton("Dark appearance", in: first)
             let secondDark = try themeButton("Dark appearance", in: second)
             #expect(firstDark.accessibilityValue() as? Int == 1)
@@ -388,10 +390,10 @@ extension SpaceThemeAppearanceTests {
     }
 
     @Test @MainActor func aRetiredEditorIsNotKeptAliveByItsAppearanceObservation() throws {
-        try withAppearance { _ in
+        try withAppearance { _, host in
             weak var retired: SpaceThemeEditorView?
             autoreleasepool {
-                let editor = SpaceThemeEditorView(theme: SpaceTheme(), performHapticFeedback: {})
+                let editor = SpaceThemeEditorView(theme: SpaceTheme(), performHapticFeedback: {}, appearanceHost: host)
                 retired = editor
             }
             #expect(retired == nil)
@@ -399,15 +401,15 @@ extension SpaceThemeAppearanceTests {
     }
 
     @Test @MainActor func undoInTheThemeEditorKeepsTheParentAppearance() throws {
-        try withAppearance { defaults in
+        try withAppearance { defaults, host in
             let theme = SpaceTheme.singleColor(try #require(ThemeColor(hex: "4C6688")))
-            let editor = SpaceThemeEditorView(theme: theme, performHapticFeedback: {})
+            let editor = SpaceThemeEditorView(theme: theme, performHapticFeedback: {}, appearanceHost: host)
             let add = try themeButton("Add color", in: editor)
             _ = NSApp.sendAction(try #require(add.action), to: add.target, from: add)
-            AppAppearance.apply(.dark, defaults: defaults)
+            AppAppearance.apply(.dark, defaults: defaults, host: host)
             editor.undo(nil)
             #expect(editor.theme == theme)
-            #expect(AppAppearance.current == .dark)
+            #expect(AppAppearance.current(in: host) == .dark)
         }
     }
 }
