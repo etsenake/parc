@@ -7,14 +7,14 @@ final class WindowRestoreWaits {
     }
     private var waits: [Wait] = []
     private let timeout: TimeInterval
-    private let schedule: (TimeInterval, @escaping () -> Void) -> Void
+    private let schedule: (TimeInterval, @escaping @MainActor () -> Void) -> Void
     var count: Int { waits.count }
 
-    init(timeout: TimeInterval, schedule: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, work in
+    init(timeout: TimeInterval, schedule: @escaping (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, work in
         if delay == 0 {
-            DispatchQueue.main.async(execute: work)
+            DispatchQueue.main.async { MainActor.assumeIsolated { work() } }
         } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { work() } }
         }
     }) {
         self.timeout = timeout

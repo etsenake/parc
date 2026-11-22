@@ -3,10 +3,10 @@ import Testing
 @testable import Parc
 
 @MainActor private final class Timers {
-    var scheduled: [(delay: TimeInterval, work: () -> Void)] = []
+    var scheduled: [(delay: TimeInterval, work: @MainActor () -> Void)] = []
     var consumed = 0
 
-    func schedule(_ delay: TimeInterval, _ work: @escaping () -> Void) { scheduled.append((delay, work)) }
+    func schedule(_ delay: TimeInterval, _ work: @escaping @MainActor () -> Void) { scheduled.append((delay, work)) }
 
     func runDeferred() {
         while consumed < scheduled.count {
