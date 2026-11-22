@@ -158,7 +158,7 @@ extension NavigationPipelineTests {
         let closing = tab(), retiring = tab(), transferring = tab()
         let eligible = CommandBarTabEligibility.tabs([current, other, foreign, archived, closing, retiring, transferring],
                                                      profileID: profile, excluding: current.id,
-                                                     unavailable: [closing.id, retiring.id, transferring.id])
+                                                     unavailable: [closing.id, retiring.id, transferring.id], isPopupWindow: false)
         #expect(eligible.map(\.id) == [other.id])
     }
 }

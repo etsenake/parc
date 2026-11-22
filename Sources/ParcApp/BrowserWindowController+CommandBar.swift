@@ -118,10 +118,10 @@ extension BrowserWindowController {
         commandBarRecentPages = (query, profileID, store.historyRevision)
     }
     private func commandBarTabs(profileID: UUID, excluding currentID: UUID?) -> [BrowserTab] {
-        guard !isPopupWindow else { return [] }
-        return CommandBarTabEligibility.tabs(
+        CommandBarTabEligibility.tabs(
             store.state.tabs, profileID: profileID, excluding: currentID,
-            unavailable: closingTabIDs.union(modelRetirementIDs).union(store.retiringTabIDs).union(transferringTabIDs))
+            unavailable: closingTabIDs.union(modelRetirementIDs).union(store.retiringTabIDs).union(transferringTabIDs),
+            isPopupWindow: isPopupWindow)
     }
     func commandBarTabCaption(_ tab: BrowserTab) -> CommandBarResultText.TabCaption {
         CommandBarResultText.tabCaption(isFavorite: tab.kind == .favorite, isInActiveSpace: tab.spaceID == activeSpaceID,
