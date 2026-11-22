@@ -18,6 +18,7 @@ final class ShortcutRecorderView: NSView {
     private let borderLayer = CALayer()
     private let focusBorderLayer = CALayer()
     private let label = NSTextField(labelWithString: "---")
+    private let appearanceHost: AppearanceHost?
     private var appearanceObserver: NSObjectProtocol?
     private var animatedSize: NSSize?
     override var wantsUpdateLayer: Bool { true }
@@ -26,7 +27,11 @@ final class ShortcutRecorderView: NSView {
     private var pendingSymbols: [String] = []
     override var acceptsFirstResponder: Bool { isEnabled }
     override var focusRingType: NSFocusRingType { get { .none } set {} }
-    override init(frame: NSRect) {
+    override convenience init(frame: NSRect) {
+        self.init(frame: frame, appearanceHost: nil)
+    }
+    init(frame: NSRect, appearanceHost: AppearanceHost?) {
+        self.appearanceHost = appearanceHost
         super.init(frame: frame); setAccessibilityElement(true); setAccessibilityRole(.button); setAccessibilityChildren([])
         setAccessibilityHelp("Press to record a shortcut. Escape cancels; Delete removes the shortcut.")
         wantsLayer = true; layer?.masksToBounds = false
@@ -121,7 +126,8 @@ final class ShortcutRecorderView: NSView {
     override func updateLayer() { refreshPresentation(reduceMotion: reducesMotion) }
     func refreshPresentation(reduceMotion: Bool) {
         let focused = isRecording && window?.firstResponder === self
-        let explicitDark = NSApp.appearance?.name == .darkAqua
+        let applicationAppearance = appearanceHost ?? NSApp!
+        let explicitDark = applicationAppearance.appearance?.name == .darkAqua
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let tint: NSColor? = isConflicting ? .systemRed :
             (focused || rowSelected || hovered ? .controlAccentColor : nil)
