@@ -20,7 +20,6 @@ import Testing
 
     var panes: [SplitDropReservedPane] { [first, second] + (third.map { [$0] } ?? []) }
     var allowAll: (SplitDropTarget, SplitOrientation) -> Bool { { _, _ in true } }
-    var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     init() {
         window.isReleasedWhenClosed = false
@@ -48,6 +47,7 @@ import Testing
     func lease() -> ParcSplitView.DropReservation {
         let lease = immediate(split.prepareDropReservation(in: host, contents: panes.map(\.body))!)
         lease.setInsertionColor { [ink] in ink }
+        lease.clock = { 0 }
         return lease
     }
 
@@ -96,9 +96,7 @@ import Testing
     @Test func thePaneHighlightFollowsFromTheLayersPreviousBoundsOverTwoTenths() {
         let scene = Scene()
         _ = scene.leftEdge(scene.lease())
-        if !scene.reduceMotion {
-            #expect(scene.first.followed.contains { $0.duration == 0.2 && $0.previous != scene.first.layer?.bounds })
-        }
+        #expect(scene.first.followed.contains { $0.duration == 0.2 && $0.previous != scene.first.layer?.bounds })
     }
 
     @Test func presentationNeverInsertsAPageIntoTheOriginalArrangedOwners() {
@@ -279,15 +277,21 @@ import Testing
         #expect(!lease.reusedRegion)
     }
 
-    @Test func returningToTheCollapsingRegionAtTheSameSlotReusesItWithoutFeedback() {
+    @Test(arguments: [false, true])
+    func returningToTheSameSlotOnlyAsksForFeedbackAfterCollapseCompletes(collapseCompleted: Bool) throws {
         let scene = Scene()
+        var complete: (@MainActor () -> Void)?
+        scene.split.registerDropRegionCompletion = { complete = $0 }
         let lease = scene.lease()
         _ = scene.leftEdge(lease)
         _ = scene.leave(lease)
         _ = scene.leftEdge(lease)
         _ = scene.leave(lease)
+        let finishCollapse = try #require(complete)
+        if collapseCompleted { finishCollapse() }
         _ = scene.leftEdge(lease)
-        #expect(lease.reusedRegion == !scene.reduceMotion)
+        #expect(lease.reusedRegion == !collapseCompleted)
+        #expect(lease.appeared == collapseCompleted)
     }
 
     @Test func aReenteredRegionSurvivesItsOldCollapseCompletion() throws {
@@ -515,11 +519,17 @@ import Testing
         #expect(stack.lease.incomingPaneSize == NSSize(width: stack.scene.split.bounds.width / 3, height: stack.scene.split.bounds.height))
     }
 
-    @Test func returningToTheCollapsingStackRegionReusesItWithoutFeedback() {
+    @Test(arguments: [false, true])
+    func returningToTheSameStackOnlyAsksForFeedbackAfterCollapseCompletes(collapseCompleted: Bool) throws {
         let stack = Stack()
+        var complete: (@MainActor () -> Void)?
+        stack.scene.split.registerDropRegionCompletion = { complete = $0 }
         _ = stack.scene.leave(stack.lease)
+        let finishCollapse = try #require(complete)
+        if collapseCompleted { finishCollapse() }
         _ = stack.lease.proposal(at: stack.point, canPropose: stack.scene.allowAll)
-        #expect(stack.lease.reusedRegion == !stack.scene.reduceMotion)
+        #expect(stack.lease.reusedRegion == !collapseCompleted)
+        #expect(stack.lease.appeared == collapseCompleted)
     }
 
     @Test func endingAStackReservationRestoresTheFlatSplit() {

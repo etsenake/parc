@@ -12,17 +12,33 @@ struct LibraryWidthTests {
         SidebarChromeFrames(bounds: bounds, sidebarWidth: 228, presentation: .locked, placement: .locked, library: true, libraryContentWidth: content)
     }
 
+    @MainActor private final class Reloads {
+        private var pending: [@MainActor () -> Void] = []
+
+        func schedule(_ reload: @escaping @MainActor () -> Void) {
+            pending.append(reload)
+        }
+
+        func deliver() {
+            let reloads = pending
+            pending.removeAll()
+            reloads.forEach { $0() }
+        }
+    }
+
     @MainActor private final class Library {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let store: BrowserStore
         let profile: UUID
         let library: LibraryView
+        let reloads = Reloads()
         var reports: [CGFloat] = []
 
         init() throws {
             store = try BrowserStore(directory: directory)
             profile = store.state.profiles[0].id
-            library = LibraryView(store: store, kind: .archive, profileID: profile)
+            library = LibraryView(store: store, kind: .archive, profileID: profile, scheduleReload: reloads.schedule)
+            reloads.deliver()
             library.onContentWidthChange = { [weak self] in
                 guard let self else { return }
                 reports.append(library.contentWidth)
@@ -42,8 +58,10 @@ struct LibraryWidthTests {
             return self
         }
 
-        func drain() {
-            for _ in 0..<3 { _ = RunLoop.main.run(mode: .default, before: .distantPast) }
+        func page(_ kind: LibraryView.Kind) -> LibraryView {
+            let page = LibraryView(store: store, kind: kind, profileID: profile, scheduleReload: reloads.schedule)
+            reloads.deliver()
+            return page
         }
 
         func fits(_ count: Int) -> Bool {
@@ -56,7 +74,7 @@ struct LibraryWidthTests {
 
         func created(_ name: String = "Work") -> UUID {
             let id = store.createSpace(name: name)
-            drain()
+            reloads.deliver()
             return id
         }
 
@@ -64,7 +82,7 @@ struct LibraryWidthTests {
             store.requestPageRetirement = { _, valid, done in done(valid()) }
             var deletion: SpaceDeletionUndo?
             store.deleteSpace(target, documents: [:], shouldCommit: { true }, didCommit: { deletion = $0 }) { _ in }
-            drain()
+            reloads.deliver()
             return deletion
         }
     }
@@ -96,7 +114,7 @@ struct LibraryWidthTests {
     @Test(arguments: [LibraryView.Kind.archive, .downloads, .captures, .documents])
     func everyOtherPageKeepsTheFourHundredSeventeenLibrary(kind: LibraryView.Kind) throws {
         let l = try Library()
-        let page = LibraryView(store: l.store, kind: kind, profileID: l.profile)
+        let page = l.page(kind)
         #expect(page.contentWidth == SidebarChromeFrames.libraryMinimumWidth)
         #expect(Self.frames(page.contentWidth).library.width == 417)
     }
@@ -121,7 +139,9 @@ struct LibraryWidthTests {
 
     @Test func aSpaceCreatedElsewhereWhileSpacesIsShownReMeasures() throws {
         let l = try Library().showSpaces()
-        _ = l.created()
+        _ = l.store.createSpace(name: "Work")
+        #expect(l.reports == [480])
+        l.reloads.deliver()
         #expect(l.reports.suffix(2) == [480, 744])
         #expect(l.fits(2))
     }
@@ -131,7 +151,7 @@ struct LibraryWidthTests {
         _ = l.created()
         let reported = l.reports.count
         _ = l.store.setSpaceTheme(l.store.state.spaces[0].id, theme: SpaceTheme(primaryColor: ThemeColor(red: 0.5, green: 0.4, blue: 0.9), colorCount: 1, appearance: .dark))
-        l.drain()
+        l.reloads.deliver()
         #expect(l.reports.count == reported)
     }
 
@@ -141,7 +161,7 @@ struct LibraryWidthTests {
         let reported = l.reports.count
         let order = l.store.state.spaces.map(\.id)
         #expect(try l.store.reorderSpace(work, before: order[0], expectedOrder: order))
-        l.drain()
+        l.reloads.deliver()
         #expect(l.reports.count == reported)
         #expect(l.library.contentWidth == 744)
     }
@@ -163,7 +183,7 @@ struct LibraryWidthTests {
         let deletion = try #require(l.delete(SpaceDeletionTarget(spaceID: work, state: l.store.state)!))
         let reported = l.reports.count
         let restored = try l.store.undoSpaceDeletion(deletion, shouldCommit: { true })
-        l.drain()
+        l.reloads.deliver()
         #expect(restored)
         #expect(l.reports.count == reported + 1)
         #expect(l.reports.last == 744)
@@ -175,7 +195,7 @@ struct LibraryWidthTests {
         let work = l.created()
         let deletion = try #require(l.delete(SpaceDeletionTarget(spaceID: work, state: l.store.state)!))
         _ = try l.store.undoSpaceDeletion(deletion, shouldCommit: { true })
-        l.drain()
+        l.reloads.deliver()
         _ = l.fits(2)
         let card = l.strip.documentView!.subviews.first { $0.accessibilityLabel() == "Work" }
         #expect(card.map { l.strip.documentVisibleRect.contains($0.frame) } == true)
@@ -186,7 +206,7 @@ struct LibraryWidthTests {
         let work = l.created()
         let deletion = try #require(l.delete(SpaceDeletionTarget(spaceID: work, state: l.store.state)!))
         _ = try l.store.undoSpaceDeletion(deletion, shouldCommit: { true })
-        l.drain()
+        l.reloads.deliver()
         let reported = l.reports.count
         _ = l.delete(deletion.redoTarget(in: l.store.state)!)
         #expect(l.reports.count == reported + 1)
@@ -198,7 +218,7 @@ struct LibraryWidthTests {
         let later = l.created("Later")
         let conversion = SpaceFolderConversion(source: later, destination: l.store.state.spaces[0].id, state: l.store.state, documents: [:])!
         let folding = try #require(try l.store.convertSpaceToFolder(conversion))
-        l.drain()
+        l.reloads.deliver()
         return folding
     }
 
@@ -210,7 +230,7 @@ struct LibraryWidthTests {
         _ = try {
             let conversion = SpaceFolderConversion(source: l.store.state.spaces[1].id, destination: l.store.state.spaces[0].id, state: l.store.state, documents: [:])!
             _ = try l.store.convertSpaceToFolder(conversion)
-            l.drain()
+            l.reloads.deliver()
         }()
         #expect(l.reports.count == reported + 1)
         #expect(l.reports.last == 480)
@@ -222,7 +242,7 @@ struct LibraryWidthTests {
         let folding = try converted(l)
         let reported = l.reports.count
         let unfolded = try l.store.undoSpaceFolderConversion(folding)
-        l.drain()
+        l.reloads.deliver()
         #expect(unfolded)
         #expect(l.reports.count == reported + 1)
         #expect(l.reports.last == 744)
@@ -233,10 +253,10 @@ struct LibraryWidthTests {
         let l = try Library().showSpaces()
         let folding = try converted(l)
         _ = try l.store.undoSpaceFolderConversion(folding)
-        l.drain()
+        l.reloads.deliver()
         let reported = l.reports.count
         _ = try l.store.convertSpaceToFolder(folding.redo(in: l.store.state)!)
-        l.drain()
+        l.reloads.deliver()
         #expect(l.reports.count == reported + 1)
         #expect(l.reports.last == 480)
         #expect(l.fits(1))
@@ -244,12 +264,12 @@ struct LibraryWidthTests {
 
     @Test func anotherWindowsSpacesPageOpensAtOneSpacesWidth() throws {
         let l = try Library()
-        #expect(LibraryView(store: l.store, kind: .spaces, profileID: l.profile).contentWidth == 480)
+        #expect(l.page(.spaces).contentWidth == 480)
     }
 
     @Test func bothWindowsSpacesPagesFollowASpaceCreatedInOne() throws {
         let l = try Library().showSpaces()
-        let other = LibraryView(store: l.store, kind: .spaces, profileID: l.profile)
+        let other = l.page(.spaces)
         var otherReports: [CGFloat] = []
         other.onContentWidthChange = { [unowned other] in otherReports.append(other.contentWidth) }
         _ = l.created("Shared")
@@ -261,7 +281,7 @@ struct LibraryWidthTests {
 
     @Test func bothWindowsSpacesPagesFollowASpaceDeletedInOne() throws {
         let l = try Library().showSpaces()
-        let other = LibraryView(store: l.store, kind: .spaces, profileID: l.profile)
+        let other = l.page(.spaces)
         var otherReports: [CGFloat] = []
         other.onContentWidthChange = { [unowned other] in otherReports.append(other.contentWidth) }
         let shared = l.created("Shared")

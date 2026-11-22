@@ -151,15 +151,15 @@ struct EaselMotionTests {
         #expect(pinch.settles > previousSettles)
     }
 
-    @MainActor @Test
-    func annotationVisibilityChangesSynchronously() {
-        let annotation = MotionAnnotation(); annotation.wantsLayer = true
-        EaselCanvasMotion.setAnnotationHidden(true, view: annotation, animated: true)
+    @MainActor @Test(arguments: [false, true])
+    func annotationVisibilityChangesSynchronously(reduceMotion: Bool) {
+        let annotation = MotionAnnotation()
+        annotation.wantsLayer = true
+        EaselCanvasMotion.setAnnotationHidden(true, view: annotation, animated: true, reduceMotion: reduceMotion)
         #expect(annotation.isHidden, "Hide updates input visibility synchronously")
-        let reducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        #expect(annotation.duration == (reducesMotion ? 0 : 0.1) && annotation.implicit == !reducesMotion,
-               "The real native hidden setter receives the recovered group and current motion preference")
-        EaselCanvasMotion.setAnnotationHidden(false, view: annotation, animated: true)
+        #expect(annotation.duration == (reduceMotion ? 0 : 0.1))
+        #expect(annotation.implicit == !reduceMotion)
+        EaselCanvasMotion.setAnnotationHidden(false, view: annotation, animated: true, reduceMotion: reduceMotion)
         #expect(!annotation.isHidden, "Immediate reversal cannot be undone by a delayed completion")
     }
 

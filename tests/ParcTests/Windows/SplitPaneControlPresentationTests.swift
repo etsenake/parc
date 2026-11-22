@@ -31,13 +31,14 @@ private final class SeeThroughView: NSView { override func hitTest(_ point: NSPo
     let glyph: NSImageView
     var actions = 0
 
-    init(kind: SplitPaneControl.Kind = .menu, frame: NSRect = NSRect(x: 20, y: 20, width: 32, height: 24)) {
+    init(kind: SplitPaneControl.Kind = .menu, frame: NSRect = NSRect(x: 20, y: 20, width: 32, height: 24),
+         reduceMotion: Bool = false) {
         _ = NSApplication.shared
         window = ControlWindow(contentRect: NSRect(x: 0, y: 0, width: 160, height: 80), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         host = NSView(frame: window.contentView!.bounds)
         window.contentView = host
-        control = SplitPaneControl(kind)
+        control = SplitPaneControl(kind, reduceMotion: { reduceMotion })
         control.frame = frame
         host.addSubview(control)
         control.layoutSubtreeIfNeeded()
@@ -67,8 +68,6 @@ private final class SeeThroughView: NSView { override func hitTest(_ point: NSPo
     }
 
     func press(_ pressed: Bool) { control.cell!.highlight(pressed, withFrame: control.bounds, in: control) }
-
-    static var reducesMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 }
 
 @MainActor
@@ -155,11 +154,11 @@ struct SplitPaneControlPresentationTests {
         #expect(Self.near(fixture.background.opacity, 0.05))
     }
 
-    @Test func hoverUsesTheOriginalTiming() {
-        guard !ControlFixture.reducesMotion else { return }
-        let fixture = ControlFixture()
+    @Test(arguments: [false, true])
+    func hoverFadesOnlyWhenMotionIsAllowed(reduceMotion: Bool) {
+        let fixture = ControlFixture(reduceMotion: reduceMotion)
         fixture.control.mouseEntered(with: fixture.hoverEvent)
-        #expect(Self.near(fixture.background.animation(forKey: "split-control-opacity")?.duration.asCGFloat, 0.18))
+        #expect(fixture.background.animation(forKey: "split-control-opacity")?.duration == (reduceMotion ? nil : 0.18))
     }
 
     @Test func aNativePressTakesPrecedenceOverHover() {
@@ -170,12 +169,12 @@ struct SplitPaneControlPresentationTests {
         #expect(Self.near(fixture.background.opacity, 0.09))
     }
 
-    @Test func pressUsesTheOriginalTiming() {
-        guard !ControlFixture.reducesMotion else { return }
-        let fixture = ControlFixture()
+    @Test(arguments: [false, true])
+    func pressingFadesOnlyWhenMotionIsAllowed(reduceMotion: Bool) {
+        let fixture = ControlFixture(reduceMotion: reduceMotion)
         fixture.control.mouseEntered(with: fixture.hoverEvent)
         fixture.press(true)
-        #expect(Self.near(fixture.background.animation(forKey: "split-control-opacity")?.duration.asCGFloat, 0.16))
+        #expect(fixture.background.animation(forKey: "split-control-opacity")?.duration == (reduceMotion ? nil : 0.16))
     }
 
     @Test func darkEnabledPressRaisesInkAndSurface() {
@@ -343,10 +342,6 @@ struct SplitPaneControlPresentationTests {
         }
         #expect(retired == nil)
     }
-}
-
-extension TimeInterval {
-    fileprivate var asCGFloat: CGFloat { CGFloat(self) }
 }
 
 @MainActor
