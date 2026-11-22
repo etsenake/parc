@@ -7,7 +7,22 @@
 
 NS_ASSUME_NONNULL_BEGIN
 @protocol PCNativePresentation, PCNativeScheduling;
+@interface PCVideoPiPEnvironment : NSObject
+@property(class, nonatomic, readonly) PCVideoPiPEnvironment* system;
+- (void)setCursor:(NSCursor*)cursor;
+- (NSPoint)mouseLocation;
+- (id)addLocalMonitorForMask:(NSEventMask)mask
+                     handler:(NSEvent* _Nullable (^)(NSEvent*))handler;
+- (id)addGlobalMonitorForMask:(NSEventMask)mask
+                      handler:(void (^)(NSEvent*))handler;
+- (void)removeMonitor:(id)monitor;
+- (nullable void*)symbolNamed:(const char*)name;
+- (BOOL)isWindowInLiveResize:(NSWindow*)window;
+- (void)setSetsCursorInBackground:(BOOL)on;
+@end
 void PCPictureInPicturePointAtControl(BOOL control);
+void PCPictureInPicturePointAtControlInEnvironment(
+    BOOL control, PCVideoPiPEnvironment* environment);
 
 NS_SWIFT_UI_ACTOR
 @interface PCVideoPiPPresenter
@@ -16,6 +31,11 @@ NS_SWIFT_UI_ACTOR
                       sourceFrame:(NSRect)sourceFrame
                            action:(void (^)(PCVideoPiPAction, double))action
                           changed:(dispatch_block_t)changed;
+- (instancetype)initWithVideoView:(NSView*)videoView
+                      sourceFrame:(NSRect)sourceFrame
+                           action:(void (^)(PCVideoPiPAction, double))action
+                          changed:(dispatch_block_t)changed
+                      environment:(PCVideoPiPEnvironment*)environment;
 @property(nonatomic, readonly) NSPanel* panel;
 @property(nonatomic, readonly) NSView* videoView;
 @property(nonatomic, readonly, getter=isInvalidated) BOOL invalidated;

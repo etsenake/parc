@@ -209,32 +209,75 @@ static NSRect PCVideoPiPVideoRect(NSRect bounds, NSSize natural) {
 }
 
 typedef int PCCGSConnection;
-static void PCSetsCursorInBackground(BOOL on) {
-  static PCCGSConnection (*connection)(void);
-  static int (*set)(PCCGSConnection, PCCGSConnection, CFStringRef, CFTypeRef);
+@implementation PCVideoPiPEnvironment {
+  PCCGSConnection (*_connection)(void);
+  int (*_setProperty)(PCCGSConnection, PCCGSConnection, CFStringRef, CFTypeRef);
+  BOOL _resolved;
+}
++ (PCVideoPiPEnvironment*)system {
+  static PCVideoPiPEnvironment* shared;
   static dispatch_once_t once;
   dispatch_once(&once, ^{
-    connection = (PCCGSConnection(*)(void))dlsym(RTLD_DEFAULT,
-                                                 "CGSMainConnectionID");
-    set = (int (*)(PCCGSConnection, PCCGSConnection, CFStringRef,
-                   CFTypeRef))dlsym(RTLD_DEFAULT, "CGSSetConnectionProperty");
+    shared = [[PCVideoPiPEnvironment alloc] init];
   });
-  if (connection && set) {
-    set(connection(), connection(), CFSTR("SetsCursorInBackground"),
-        on ? kCFBooleanTrue : kCFBooleanFalse);
+  return shared;
+}
+- (void)setCursor:(NSCursor*)cursor {
+  [cursor set];
+}
+- (NSPoint)mouseLocation {
+  return NSEvent.mouseLocation;
+}
+- (id)addLocalMonitorForMask:(NSEventMask)mask
+                     handler:(NSEvent* (^)(NSEvent*))handler {
+  return [NSEvent addLocalMonitorForEventsMatchingMask:mask handler:handler];
+}
+- (id)addGlobalMonitorForMask:(NSEventMask)mask
+                      handler:(void (^)(NSEvent*))handler {
+  return [NSEvent addGlobalMonitorForEventsMatchingMask:mask handler:handler];
+}
+- (void)removeMonitor:(id)monitor {
+  [NSEvent removeMonitor:monitor];
+}
+- (void*)symbolNamed:(const char*)name {
+  return dlsym(RTLD_DEFAULT, name);
+}
+- (BOOL)isWindowInLiveResize:(NSWindow*)window {
+  return window.inLiveResize;
+}
+- (void)setSetsCursorInBackground:(BOOL)on {
+  @synchronized(self) {
+    if (!_resolved) {
+      _resolved = YES;
+      _connection =
+          (PCCGSConnection(*)(void))[self symbolNamed:"CGSMainConnectionID"];
+      _setProperty = (int (*)(PCCGSConnection, PCCGSConnection, CFStringRef,
+                              CFTypeRef))
+          [self symbolNamed:"CGSSetConnectionProperty"];
+    }
+  }
+  if (_connection && _setProperty) {
+    _setProperty(_connection(), _connection(), CFSTR("SetsCursorInBackground"),
+                 on ? kCFBooleanTrue : kCFBooleanFalse);
   }
 }
-void PCPictureInPicturePointAtControl(BOOL control) {
+@end
+void PCPictureInPicturePointAtControlInEnvironment(
+    BOOL control, PCVideoPiPEnvironment* environment) {
   static NSInteger pointing;
   if (control) {
     if (pointing++ == 0) {
-      PCSetsCursorInBackground(YES);
+      [environment setSetsCursorInBackground:YES];
     }
-    [NSCursor.pointingHandCursor set];
+    [environment setCursor:NSCursor.pointingHandCursor];
   } else if (pointing > 0 && --pointing == 0) {
-    [NSCursor.arrowCursor set];
-    PCSetsCursorInBackground(NO);
+    [environment setCursor:NSCursor.arrowCursor];
+    [environment setSetsCursorInBackground:NO];
   }
+}
+void PCPictureInPicturePointAtControl(BOOL control) {
+  PCPictureInPicturePointAtControlInEnvironment(
+      control, PCVideoPiPEnvironment.system);
 }
 
 static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
@@ -373,10 +416,12 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 @property(nonatomic, copy) dispatch_block_t changed;
 @property(nonatomic, copy) void (^hoverChanged)(BOOL hovering);
 @property(nonatomic, strong) id<PCNativePresentation> presentation;
+@property(nonatomic, strong) PCVideoPiPEnvironment* environment;
 @end
 @implementation PCVideoPiPContent {
   NSTrackingArea* _tracking;
 }
+@synthesize environment = _environment;
 @synthesize changed = _changed;
 @synthesize hoverChanged = _hoverChanged;
 @synthesize presentation = _presentation;
@@ -405,7 +450,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   (void)event;
   NSWindow* window = self.window;
   if (window && [_presentation isWindowVisible:window] &&
-      NSPointInRect(NSEvent.mouseLocation, window.frame)) {
+      NSPointInRect([_environment mouseLocation], window.frame)) {
     return;
   }
   void (^callback)(BOOL) = self.hoverChanged;
@@ -465,6 +510,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   __weak PCVideoPiPChromeButton* _pointed;
   NSSize _pendingNaturalSize;
   id<PCNativePresentation> _presentation;
+  PCVideoPiPEnvironment* _environment;
 }
 @synthesize scheduler = _scheduler;
 - (id<PCNativePresentation>)presentation {
@@ -501,10 +547,23 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
                       sourceFrame:(NSRect)sourceFrame
                            action:(void (^)(PCVideoPiPAction, double))action
                           changed:(dispatch_block_t)changed {
+  return [self initWithVideoView:videoView
+                     sourceFrame:sourceFrame
+                          action:action
+                         changed:changed
+                     environment:PCVideoPiPEnvironment.system];
+}
+
+- (instancetype)initWithVideoView:(NSView*)videoView
+                      sourceFrame:(NSRect)sourceFrame
+                           action:(void (^)(PCVideoPiPAction, double))action
+                          changed:(dispatch_block_t)changed
+                      environment:(PCVideoPiPEnvironment*)environment {
   if (!(self = [super init])) {
     return nil;
   }
   (void)sourceFrame;
+  _environment = environment;
   _videoView = videoView;
   _action = [action copy];
   _changed = [changed copy];
@@ -542,6 +601,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   content.layer.cornerCurve = kCACornerCurveContinuous;
   content.layer.masksToBounds = YES;
   content.presentation = _presentation;
+  content.environment = _environment;
   _panel.contentView = content;
 
   _videoView.frame = content.bounds;
@@ -700,27 +760,26 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   NSEventMask mask = NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged |
                      NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDown;
   _localMonitor =
-      [NSEvent addLocalMonitorForEventsMatchingMask:mask
-                                            handler:^NSEvent*(NSEvent* event) {
-                                              [weakSelf refreshHoverFromMouse];
-                                              return event;
-                                            }];
-  _globalMonitor = [NSEvent
-      addGlobalMonitorForEventsMatchingMask:NSEventMaskMouseMoved |
-                                            NSEventMaskLeftMouseDragged
-                                    handler:^(NSEvent* event) {
-                                      (void)event;
+      [_environment addLocalMonitorForMask:mask
+                                    handler:^NSEvent*(NSEvent* event) {
                                       [weakSelf refreshHoverFromMouse];
+                                      return event;
                                     }];
+  _globalMonitor = [_environment
+      addGlobalMonitorForMask:NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged
+                      handler:^(NSEvent* event) {
+                        (void)event;
+                        [weakSelf refreshHoverFromMouse];
+                      }];
 }
 
 - (void)removeMouseMonitors {
   if (_localMonitor) {
-    [NSEvent removeMonitor:_localMonitor];
+    [_environment removeMonitor:_localMonitor];
     _localMonitor = nil;
   }
   if (_globalMonitor) {
-    [NSEvent removeMonitor:_globalMonitor];
+    [_environment removeMonitor:_globalMonitor];
     _globalMonitor = nil;
   }
 }
@@ -733,7 +792,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   if (![_presentation isWindowVisible:_panel]) {
     return;
   }
-  NSPoint screenPoint = [NSEvent mouseLocation];
+  NSPoint screenPoint = [_environment mouseLocation];
   const BOOL inside = NSPointInRect(screenPoint, _panel.frame);
   [self setHovering:inside];
   [self refreshPointer];
@@ -745,7 +804,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
     NSView* content = _panel.contentView;
     const NSPoint point =
         [content.superview convertPoint:[_panel convertPointFromScreen:
-                                                    NSEvent.mouseLocation]
+                                                    [_environment mouseLocation]]
                                fromView:nil];
     for (NSView* view = [content hitTest:point]; view && view != content;
          view = view.superview) {
@@ -764,12 +823,12 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   PCVideoPiPChromeButton* previous = _pointed;
   if (button) {
     if (previous) {
-      [NSCursor.pointingHandCursor set];
+      [_environment setCursor:NSCursor.pointingHandCursor];
     } else {
-      PCPictureInPicturePointAtControl(YES);
+      PCPictureInPicturePointAtControlInEnvironment(YES, _environment);
     }
   } else if (previous) {
-    PCPictureInPicturePointAtControl(NO);
+    PCPictureInPicturePointAtControlInEnvironment(NO, _environment);
   }
   if (button == previous) {
     return;
@@ -938,7 +997,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   if (_invalidated || !PCVideoPiPValidSize(size)) {
     return;
   }
-  if (_panel.inLiveResize) {
+  if ([_environment isWindowInLiveResize:_panel]) {
     _pendingNaturalSize = size;
     return;
   }
