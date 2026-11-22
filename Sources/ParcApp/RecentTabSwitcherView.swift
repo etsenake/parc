@@ -69,10 +69,11 @@ final class RecentTabSwitcherView: NSView {
         self.init(frame: frame, schedulePublication: { DispatchQueue.main.async(execute: $0) })
     }
 
-    init(frame: NSRect, schedulePublication: @escaping (DispatchWorkItem) -> Void) {
+    init(frame: NSRect, schedulePublication: @escaping (DispatchWorkItem) -> Void,
+         reduceMotion: @escaping @MainActor () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
         self.schedulePublication = schedulePublication
         super.init(frame: frame)
-        catalog.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        catalog.reduceMotion = reduceMotion()
         host = RecentSwitcherHost(rootView: RecentSwitcherContent(catalog: catalog, focus: focusState,
             hover: { [weak self] id in self?.hover(id) },
             choose: { [weak self] id in self?.choose(id) },
@@ -84,7 +85,7 @@ final class RecentTabSwitcherView: NSView {
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, !self.retired else { return }
-                    let next = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                    let next = reduceMotion()
                     if self.catalog.reduceMotion != next { self.catalog.reduceMotion = next }
                 }
             }
@@ -585,13 +586,20 @@ private struct RecentSwitcherRecordingDot: View {
     }
 }
 
-@MainActor enum RecentSwitcherArtwork {
-    static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("RecentSwitcher", isDirectory: true)
-    private static var cache: [String: NSImage] = [:]
-    static var note: NSImage? { template("NotePreviewThumbnail") }
-    static var easel: NSImage? { template("EaselPreviewThumbnail") }
-    static var incognito: NSImage? { template("IncognitoTabPreviewThumbnail") }
-    private static func template(_ name: String) -> NSImage? {
+@MainActor final class RecentSwitcherArtwork {
+    static let bundled = RecentSwitcherArtwork(resources: Bundle.main.resourceURL)
+    let directory: URL?
+    private var cache: [String: NSImage] = [:]
+
+    init(resources: URL?) {
+        directory = resources?.appendingPathComponent("RecentSwitcher", isDirectory: true)
+    }
+
+    var note: NSImage? { template("NotePreviewThumbnail") }
+    var easel: NSImage? { template("EaselPreviewThumbnail") }
+    var incognito: NSImage? { template("IncognitoTabPreviewThumbnail") }
+
+    private func template(_ name: String) -> NSImage? {
         if let image = cache[name] { return image }
         guard let url = directory?.appendingPathComponent(name + ".pdf"),
               let image = NSImage(contentsOf: url) else { return nil }
