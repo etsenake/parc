@@ -16,8 +16,9 @@ struct SidebarPreviewCardKindsTests {
     @MainActor final class Recents {
         let card: SidebarPreviewCard
         var requested: [URL] = [], created: [URL] = [], settings = 0
-        init(provider: URL) {
+        init(provider: URL, now: Date) {
             card = SidebarPreviewCard(title: "Notion", domain: .notion, providerURL: provider)
+            card.now = { now }
             card.requestFavicon = { [weak self] url, done in self?.requested.append(url); done(nil) }
             card.modifierFlags = { [.option] }
             card.onAction = { [weak self] row, action in if action == .create(.option) { self?.created.append(row.url) } }
@@ -27,20 +28,20 @@ struct SidebarPreviewCardKindsTests {
     }
 
     @Test func theRecentsHeaderUsesTheProviderFaviconAndTitle() {
-        let r = Recents(provider: provider)
+        let r = Recents(provider: provider, now: now)
         #expect(r.requested == [provider])
         #expect(all(r.card, NSTextField.self).contains { $0.stringValue == "Recents" })
     }
 
     @Test func emptyRecentsShowTheProviderEmptyStateWithoutSearch() {
-        let r = Recents(provider: provider)
+        let r = Recents(provider: provider, now: now)
         #expect(all(r.card, NSTextField.self).contains { $0.stringValue == "Recent Notion docs appear here." && !$0.isHidden })
         #expect(!all(r.card, NSTextField.self).contains { $0.isEditable })
         #expect(all(r.card, SidebarPreviewDivider.self).isEmpty)
     }
 
     @Test func recentsOfferOnlyTheCreateButtonAndTheGear() {
-        let r = Recents(provider: provider)
+        let r = Recents(provider: provider, now: now)
         let buttons = all(r.card, NSButton.self)
         #expect(buttons.map { $0.accessibilityLabel() ?? "" } == ["New Page", "Previews Settings"])
         buttons.forEach { $0.sendClick() }
@@ -48,7 +49,7 @@ struct SidebarPreviewCardKindsTests {
     }
 
     @Test func darkRecentsFillIsThePreviewBackgroundColor() {
-        let r = Recents(provider: provider)
+        let r = Recents(provider: provider, now: now)
         var fill: NSColor?
         NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { fill = r.card.fill?.usingColorSpace(.sRGB) }
         #expect(fill.map { near($0.redComponent, 0.129) && near($0.blueComponent, 0.133) } == true)
@@ -69,7 +70,7 @@ struct SidebarPreviewCardKindsTests {
     }
 
     @Test func recentRowsHaveNoIconAndRequestNoFavicon() throws {
-        let r = Recents(provider: provider)
+        let r = Recents(provider: provider, now: now)
         r.card.setRows(notionPages)
         let table = try #require(all(r.card, NSTableView.self).first)
         let cell = try #require(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? SidebarPreviewItemView)
@@ -81,7 +82,7 @@ struct SidebarPreviewCardKindsTests {
     @Test func recentReturnCarriesTheHeldModifiers() throws {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        let r = Recents(provider: provider)
+        let r = Recents(provider: provider, now: now)
         let pages = notionPages
         r.card.setRows(pages)
         window.contentView = r.card
