@@ -338,6 +338,11 @@ manifest), loaded through `Bundle.module`, never paths built from `#filePath`.
 Nest helpers in the suite or make them `private`, because each target is one
 module.
 
+Keep test files small: one suite per file, named after the suite, usually 150
+to 300 lines and never more than 500. When a suite grows past that, split it by
+behaviour group into sibling suites that share the original name as a prefix,
+and move helpers they share into a `<Name>Support.swift` file beside them.
+
 Never drive AppKit's simulated clicks. `performClick(_:)` on a control and
 `performClose(_:)` on a window spin a nested event-tracking run loop; with tests
 running in parallel that loop can stop the main run loop, which ends the test
