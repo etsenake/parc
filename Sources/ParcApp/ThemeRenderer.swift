@@ -542,7 +542,8 @@ final class ThemeRendererView: NSView {
         self.init(frame: frameRect, makeCanvas: { ThemeMetalCanvas(frame: $0, device: $1) })
     }
 
-    init(frame frameRect: NSRect, makeCanvas: (NSRect, MTLDevice) -> ThemeMetalCanvas) {
+    init(frame frameRect: NSRect, makeRenderer: () throws -> ThemeMetalRenderer = { try ThemeMetalRenderer() },
+         makeCanvas: (NSRect, MTLDevice) -> ThemeMetalCanvas) {
         super.init(frame: frameRect)
         wantsLayer = true
         material.blendingMode = .behindWindow
@@ -550,7 +551,7 @@ final class ThemeRendererView: NSView {
         material.isEmphasized = true
         addSubview(material)
         do {
-            let renderer = try ThemeMetalRenderer()
+            let renderer = try makeRenderer()
             let canvas = makeCanvas(bounds, renderer.device)
             canvas.isPaused = true; canvas.enableSetNeedsDisplay = true
             canvas.colorPixelFormat = .bgra8Unorm
@@ -880,13 +881,20 @@ class ThemeMetalCanvas: MTKView {
     static let shadowOutset: CGFloat = 10
     static let pagingOpaqueProgress: CGFloat = 0.9
     static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("FloatingSidebar", isDirectory: true)
-    private static var cachedShadow: NSImage?
+    @MainActor final class ShadowArtwork {
+        private let directory: URL?
+        private var cached: NSImage?
+        init(in directory: URL?) { self.directory = directory }
 
-    static var shadowImage: NSImage? {
-        if let cachedShadow { return cachedShadow }
-        cachedShadow = shadowImage(in: directory)
-        return cachedShadow
+        var image: NSImage? {
+            if let cached { return cached }
+            cached = FloatingSidebarSurface.shadowImage(in: directory)
+            return cached
+        }
     }
+
+    private static let shadow = ShadowArtwork(in: directory)
+    static var shadowImage: NSImage? { shadow.image }
 
     static func shadowImage(in directory: URL?) -> NSImage? {
         guard let directory,
