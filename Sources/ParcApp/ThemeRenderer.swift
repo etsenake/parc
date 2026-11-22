@@ -542,7 +542,7 @@ final class ThemeRendererView: NSView {
         self.init(frame: frameRect, makeCanvas: { ThemeMetalCanvas(frame: $0, device: $1) })
     }
 
-    init(frame frameRect: NSRect, makeRenderer: () throws -> ThemeMetalRenderer = { try ThemeMetalRenderer() },
+    init(frame frameRect: NSRect, makeRenderer: @MainActor () throws -> ThemeMetalRenderer = { try ThemeMetalRenderer() },
          makeCanvas: (NSRect, MTLDevice) -> ThemeMetalCanvas) {
         super.init(frame: frameRect)
         wantsLayer = true
