@@ -297,6 +297,7 @@ struct Action {
         scene = BrowserScene(size: NSSize(width: 1440, height: 900), windowRect: NSRect(x: 80, y: 18, width: 1280, height: 840),
                              scale: 2, pagePath: "", scenario: Self.scenario(file: url))
         file = try! NoteFileSession.open(url)
+        NoteBlockViewFactory.boards = NoteEaselProvider()
         controller = NotePageViewController(file: file)
         root = controller.view
         editor = controller.editor

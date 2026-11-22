@@ -1079,29 +1079,11 @@ extension EaselEditorViewController {
         board.clearContents()
         board.writeObjects([url as NSURL])
         board.setString(url.absoluteString, forType: .string)
-        (view.window?.windowController as? BrowserWindowController)?.showToast(.copiedLinks([url]))
+        (view.window?.windowController as? EaselWindowActions)?.showDocumentToast(.copiedLinks([url]))
     }
 }
 
 @MainActor
 extension EaselCanvasView {
     var pageRows: [EaselPageSwitcher.Row] { EaselPageSwitcher.rows(for: session.fullDocument, current: session.page) }
-}
-
-@MainActor
-extension BrowserWindowController {
-    func revealEaselPage(_ page: UUID, in easel: UUID, attempt: Int = 0) {
-        if let editor = currentEaselEditor, editor.session.document.id == easel, editor.isViewLoaded, editor.view.window != nil {
-            if editor.session.document.pages?.contains(where: { $0.id == page }) == true {
-                editor.canvas.showPage(page)
-            } else {
-                editor.showExportToast(.standard("That page isn’t on this Easel anymore"))
-            }
-            return
-        }
-        guard attempt < 12 else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            MainActor.assumeIsolated { self?.revealEaselPage(page, in: easel, attempt: attempt + 1) }
-        }
-    }
 }

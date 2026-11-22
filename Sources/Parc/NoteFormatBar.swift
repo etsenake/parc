@@ -3,6 +3,11 @@ import Combine
 import ParcCore
 
 @MainActor
+protocol NoteWindowActions: AnyObject {
+    func showDocumentToast(_ content: ParcToastContent)
+}
+
+@MainActor
 final class NoteFormatBarController {
     unowned let editor: NotePageEditor
     var onToast: ((ParcToastContent) -> Void)?
@@ -628,7 +633,7 @@ final class NoteFormatBarController {
 
     func showToast(_ content: ParcToastContent) {
         if let onToast { onToast(content); return }
-        (editor.canvas.window?.windowController as? BrowserWindowController)?.showToast(content)
+        (editor.canvas.window?.windowController as? NoteWindowActions)?.showDocumentToast(content)
     }
 
     func editLink(_ target: NoteLinkHoverController.Target) {

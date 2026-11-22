@@ -282,6 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             TooltipController.commandShortcut = { KeyboardShortcuts.shared.activeShortcut(for: $0) }
             TooltipController.eventChord = { KeyboardShortcuts.shared.chord(for: $0) }
             TooltipController.symbolicChord = { KeyboardShortcuts.shared.symbolicChord(for: $0) }
+            NoteBlockViewFactory.boards = NoteEaselProvider()
             EaselCanvasView.selectionToolbarFactory = { EaselSelectionToolbar() }
             EaselCanvasView.textCompletionFactory = { EaselTextCompletions([EaselSlashCompletion(), EaselMentionCompletion(), EaselEmojiCompletion()]) }
             EaselCanvasView.highlightRecorder = { NoteColorRecents.record(.background($0)) }

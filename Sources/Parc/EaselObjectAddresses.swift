@@ -21,7 +21,7 @@ extension EaselCanvasView {
         board.clearContents()
         board.writeObjects([url as NSURL])
         board.setString(url.absoluteString, forType: .string)
-        (window?.windowController as? BrowserWindowController)?.showToast(.copiedLinks([url]))
+        (window?.windowController as? EaselWindowActions)?.showDocumentToast(.copiedLinks([url]))
     }
 }
 
@@ -41,26 +41,5 @@ extension EaselEditorViewController {
         let frame = NSRect(x: item.frame.x, y: item.frame.y, width: item.frame.width, height: item.frame.height)
         if let plan = EaselViewportMover.plan(for: frame, in: scroll, mode: .focus) { EaselViewportMover().move(scroll, to: plan) }
         return .shown
-    }
-}
-
-@MainActor
-extension BrowserWindowController {
-    func revealEaselObject(_ object: UUID, in easel: UUID, attempt: Int = 0) {
-        if let editor = currentEaselEditor, editor.session.document.id == easel {
-            switch editor.revealObject(object) {
-            case .shown:
-                return
-            case .missing:
-                editor.showExportToast(.standard("That object isn’t on this Easel anymore"))
-                return
-            case .notReady:
-                break
-            }
-        }
-        guard attempt < 12 else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            MainActor.assumeIsolated { self?.revealEaselObject(object, in: easel, attempt: attempt + 1) }
-        }
     }
 }

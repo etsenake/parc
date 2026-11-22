@@ -6,6 +6,15 @@ import UniformTypeIdentifiers
 import ImageIO
 
 @MainActor
+protocol EaselWindowActions: NoteWindowActions {
+    var isPopupWindow: Bool { get }
+    var isPrivateBrowsing: Bool { get }
+    var activeProfileID: UUID { get }
+    var window: NSWindow? { get }
+    func openEasel(id: UUID, title: String, inSplit: Bool)
+}
+
+@MainActor
 final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private static var stores: [String: EaselStore] = [:]
     static func sharedStore(directory: URL) throws -> EaselStore {
@@ -148,7 +157,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         })
         panels.follow = { [weak self] link in self?.canvas.followLink(link) }
         panels.copy = { [weak self] link in self?.canvas.copyLink(link) }
-        panels.toast = { [weak self] content in (self?.view.window?.windowController as? BrowserWindowController)?.showToast(content) }
+        panels.toast = { [weak self] content in (self?.view.window?.windowController as? EaselWindowActions)?.showDocumentToast(content) }
         canvas.panels = panels
         canvas.onOpenNote = { [weak self] url in self?.onOpenNote?(url) }
         canvas.notesFolder = { [weak self] in self?.notesFolder?() }

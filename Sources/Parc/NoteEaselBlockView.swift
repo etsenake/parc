@@ -3,7 +3,18 @@ import Combine
 import ParcCore
 
 @MainActor
-final class NoteEaselHost {
+struct NoteEaselProvider: NoteBoardProviding {
+    func makeBlock(_ block: NoteBlock, editor: NotePageEditor) -> NoteBlockView {
+        NoteEaselBlockView(block: block, editor: editor)
+    }
+
+    func host(for editor: NotePageEditor) -> NoteBoardHost? { NoteEaselHost.host(for: editor) }
+
+    func pages(for editor: NotePageEditor) -> NoteBoardPages? { NoteEaselPageRegistry.existing(for: editor) }
+}
+
+@MainActor
+final class NoteEaselHost: NoteBoardHost {
     enum Absence: Error, Equatable { case deleted, otherProfile, unavailable(String) }
 
     private static var hosts: [ObjectIdentifier: NoteEaselHost] = [:]
@@ -36,10 +47,9 @@ final class NoteEaselHost {
         if previous?.directory != directory.standardizedFileURL { notifyBlocks(of: editor) }
     }
 
-    static func adopt(_ host: NoteEaselHost?, for editor: NotePageEditor) {
-        guard let host else { return }
-        hosts[ObjectIdentifier(editor)] = NoteEaselHost(editor: editor, directory: host.directory, open: host.open, elsewhere: host.elsewhere,
-                                                        keyLoopChanged: host.keyLoopChanged)
+    func adopt(for editor: NotePageEditor) {
+        Self.hosts[ObjectIdentifier(editor)] = NoteEaselHost(editor: editor, directory: directory, open: open, elsewhere: elsewhere,
+                                                             keyLoopChanged: keyLoopChanged)
     }
 
     static func retire(_ editor: NotePageEditor) {
@@ -61,6 +71,11 @@ final class NoteEaselHost {
         } catch {
             return .failure(.unavailable(error.localizedDescription))
         }
+    }
+
+    func canOpen(_ id: UUID) -> Bool {
+        if case .success = session(id) { return true }
+        return false
     }
 
     func candidates() -> [NoteEaselPicker.Candidate] {
@@ -87,7 +102,7 @@ final class NoteEaselHost {
 }
 
 @MainActor
-final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
+final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing, NotePageHostObserving {
     private static let inset: CGFloat = 4
     private static let handleRoom: CGFloat = 8
     private var picker: NoteEaselPickerView?
@@ -250,7 +265,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
                                      search: { [weak self] query, limit in self?.editor?.environment.searchNotes(query, limit: limit) ?? [] })
             panels.follow = { [weak canvas] link in canvas?.followLink(link) }
             panels.copy = { [weak canvas] link in canvas?.copyLink(link) }
-            panels.toast = { [weak self] content in (self?.window?.windowController as? BrowserWindowController)?.showToast(content) }
+            panels.toast = { [weak self] content in (self?.window?.windowController as? EaselWindowActions)?.showDocumentToast(content) }
             canvas.panels = panels
             canvas.onOpenNote = { [weak self] url in self?.editor?.open(url) }
             canvas.notesFolder = { [weak self] in self?.editor?.environment.documentURL?.deletingLastPathComponent() }
@@ -551,7 +566,7 @@ final class NoteEaselBlockView: NoteCaptionedBlockView, NoteMediaResizing {
 }
 
 @MainActor
-final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary {
+final class NoteEaselSurface: NSView, NoteKeyEquivalentBoundary, NoteBoardSurface {
     static let headerHeight: CGFloat = 38
     var onOpen: (() -> Void)?
     var onDone: (() -> Void)?

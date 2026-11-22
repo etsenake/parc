@@ -452,7 +452,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         guard isViewLoaded, view.window?.attachedSheet == nil, !isPreparingPrint else { return }
         isPreparingPrint = true
         NotePagePrintView.prepare(page: editor.session.page, title: file.title, environment: editor.environment,
-                                  easels: NoteEaselHost.host(for: editor)) { [weak self] printView in
+                                  easels: NoteBlockViewFactory.boards?.host(for: editor)) { [weak self] printView in
             guard let self else { return }
             self.isPreparingPrint = false
             guard !self.isTornDown, let window = self.view.window, window.attachedSheet == nil else { return }

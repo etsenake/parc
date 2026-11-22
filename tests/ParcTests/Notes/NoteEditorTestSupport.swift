@@ -67,6 +67,11 @@ enum NoteEditorFixtures {
     static let fontNames = ["Nunito-ExtraBold", "Nunito-Regular", "Nunito-Bold", "Nunito-Italic", "Nunito-BoldItalic",
                             "EBGaramond-VariableFont_wght", "SpaceMono-Regular", "SpaceMono-Bold"]
 
+    static func makeController(file: NoteFileSession) -> NotePageViewController {
+        NoteBlockViewFactory.boards = NoteEaselProvider()
+        return NotePageViewController(file: file)
+    }
+
     static func registerFonts() {
         for name in fontNames {
             let subdirectory = name == "EBGaramond-VariableFont_wght" ? nil : "Fixtures"

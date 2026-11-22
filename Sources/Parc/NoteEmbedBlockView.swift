@@ -2,7 +2,7 @@ import AppKit
 import ParcCore
 
 @MainActor
-final class NoteEmbedBlockView: NoteCaptionedBlockView {
+final class NoteEmbedBlockView: NoteCaptionedBlockView, NotePageHostObserving {
     private static let inset: CGFloat = 4
     private static let handleRoom: CGFloat = 8
     private var entry: NoteLinkEntryView?

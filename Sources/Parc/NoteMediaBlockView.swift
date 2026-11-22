@@ -9,7 +9,7 @@ enum NoteMediaProblem: Equatable {
 }
 
 @MainActor
-final class NoteMediaBlockView: NoteCaptionedBlockView {
+final class NoteMediaBlockView: NoteCaptionedBlockView, NotePageHostObserving {
     private typealias Mode = NoteMediaMode
 
     private var mode: Mode?

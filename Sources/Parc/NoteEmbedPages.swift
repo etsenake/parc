@@ -3,11 +3,16 @@ import Combine
 import ParcCore
 import ParcEngine
 
+@MainActor
+protocol NotePageHostObserving: AnyObject {
+    func pageHostDidChange()
+}
+
 extension NotePageEditor: EmbeddedPageOwner {
     var embeddedPagesOpen: Bool { true }
 
     func embeddedPage(_ id: UUID, wants url: String, variant: EmbeddedPageFingerprint?) -> Bool {
-        if let easel = NoteEaselPageRegistry.existing(for: self)?.wants(id, url: url, variant: variant) { return easel }
+        if let easel = NoteBlockViewFactory.boards?.pages(for: self)?.wants(id, url: url, variant: variant) { return easel }
         guard let block = session.page.block(NoteBlockID(id)) else { return false }
         if let capture = NoteEmbeddedPages.liveCapture(of: block) {
             return variant == EmbeddedPageFingerprint(capture.layout) && capture.address.absoluteString == url
@@ -17,15 +22,14 @@ extension NotePageEditor: EmbeddedPageOwner {
     }
 
     func embeddedPageFingerprint(for ids: Set<UUID>) -> EmbeddedPageFingerprint {
-        let easels = NoteEaselPageRegistry.existing(for: self)
+        let easels = NoteBlockViewFactory.boards?.pages(for: self)
         return EmbeddedPageFingerprint(Dictionary(uniqueKeysWithValues: ids.compactMap { id in
             (easels?.fingerprint(id) ?? session.page.block(NoteBlockID(id)).flatMap(NoteEmbeddedPages.pageKey(of:))).map { (id, $0) }
         }))
     }
 
     func recordEmbeddedPageNavigation(_ url: URL, for id: UUID, expectedURL: String) throws {
-        guard let page = NoteEaselPageRegistry.existing(for: self)?.page(id) else { return }
-        try page.session.recordEmbeddedPageNavigation(url, for: page.item, expectedURL: expectedURL)
+        try NoteBlockViewFactory.boards?.pages(for: self)?.recordNavigation(url, for: id, expectedURL: expectedURL)
     }
 }
 
@@ -130,9 +134,7 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
 
     private static func notifyBlocks(of editor: NotePageEditor) {
         for view in editor.canvas.materializedViews {
-            (view as? NoteEmbedBlockView)?.pageHostDidChange()
-            (view as? NoteMediaBlockView)?.pageHostDidChange()
-            (view as? NoteEaselBlockView)?.pageHostDidChange()
+            (view as? NotePageHostObserving)?.pageHostDidChange()
         }
     }
 
@@ -245,7 +247,7 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
     }
 
     override func revealEntry(_ id: UUID) {
-        let block = NoteEaselPageRegistry.existing(for: editor)?.page(id)?.block ?? NoteBlockID(id)
+        let block = NoteBlockViewFactory.boards?.pages(for: editor)?.block(for: id) ?? NoteBlockID(id)
         editor.canvas.revealBlock(block)
         if let entry = entries[id], wants(id, entry) {
             synchronize(wanted: { [unowned self] in self.wants($0, $1) }, selection: id, interacting: true)

@@ -64,7 +64,7 @@ final class NotePageMenu {
 
     func showToast(_ content: ParcToastContent) {
         if let onToast { onToast(content); return }
-        (editor.canvas.window?.windowController as? BrowserWindowController)?.showToast(content)
+        (editor.canvas.window?.windowController as? NoteWindowActions)?.showDocumentToast(content)
     }
 
     func makeButton() -> NotePageMenuButton {
@@ -360,7 +360,7 @@ final class NotePageMenu {
         return NotePageHTML.document(editor.session.page, title: title, assets: { environment.resolve($0) }, embedImages: true,
                                      equationArt: { tex, display, numbering in NotePageEquationArtwork.art(tex, display: display, numbering: numbering) },
                                      diagramArt: diagrams,
-                                     easelArt: NoteEaselHost.host(for: editor).map { host in { host.snapshot($0) } },
+                                     easelArt: NoteBlockViewFactory.boards?.host(for: editor).map { host in { host.snapshot($0) } },
                                      imageSize: { source in environment.resolve(source).flatMap { NoteMediaImageLoader.shared.naturalSize(of: $0) } },
                                      breadcrumb: editor.breadcrumbTrail)
     }
@@ -429,7 +429,7 @@ final class NotePageMenu {
     private func writePDF(to destination: URL) {
         let name = title
         NotePagePrintView.prepare(page: editor.session.page, title: name, environment: editor.environment,
-                                  easels: NoteEaselHost.host(for: editor)) { [weak self] view in
+                                  easels: NoteBlockViewFactory.boards?.host(for: editor)) { [weak self] view in
             guard let self else { return }
             do {
                 try view.writePDF(to: destination)
@@ -496,14 +496,14 @@ final class NotePagePrintView: NSView {
     let header: NotePageHeaderView
     let title: String
 
-    init(page: NotePage, title: String, environment: NoteEnvironment, easels: NoteEaselHost? = nil,
+    init(page: NotePage, title: String, environment: NoteEnvironment, easels: NoteBoardHost? = nil,
          appearance: NSAppearance? = NSAppearance(named: .aqua)) {
         var copy = page
         copy.settings.fullWidth = false
         let session = NotePageSession(page: copy)
         session.isReadOnly = true
         editor = NotePageEditor(session: session, environment: environment)
-        NoteEaselHost.adopt(easels, for: editor)
+        easels?.adopt(for: editor)
         header = NotePageHeaderView(editor: editor, file: nil, title: title)
         self.title = title
         super.init(frame: NSRect(x: 0, y: 0, width: Self.canvasWidth, height: 1200))
@@ -521,7 +521,7 @@ final class NotePagePrintView: NSView {
 
     override var isFlipped: Bool { true }
 
-    static func prepare(page: NotePage, title: String, environment: NoteEnvironment, easels: NoteEaselHost? = nil,
+    static func prepare(page: NotePage, title: String, environment: NoteEnvironment, easels: NoteBoardHost? = nil,
                         appearance: NSAppearance? = NSAppearance(named: .aqua),
                         completion: @escaping (NotePagePrintView) -> Void) {
         var pending = 0

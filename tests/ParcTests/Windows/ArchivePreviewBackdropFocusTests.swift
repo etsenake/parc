@@ -66,7 +66,7 @@ struct ArchivePreviewBackdropFocusTests {
         let url = fixture.directory.appendingPathComponent("Journal.md")
         try Data("# Journal\n\nFirst entry.\n".utf8).write(to: url)
         let files = IsolatedNoteFiles.make()
-        let editor = NotePageViewController(file: try files.open(url))
+        let editor = NoteEditorFixtures.makeController(file: try files.open(url))
         let (pane, tab) = try fixture.pane(for: .note(url))
         fixture.owner.noteEditors[tab.id] = .init(profileID: tab.profileID, editor: editor, originalTab: tab)
         pane.showNote(editor)

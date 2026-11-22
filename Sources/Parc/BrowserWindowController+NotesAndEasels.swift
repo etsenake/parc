@@ -3,7 +3,9 @@ import Combine
 import ParcCore
 import ParcEngine
 
-extension BrowserWindowController {
+extension BrowserWindowController: EaselWindowActions {
+    func showDocumentToast(_ content: ParcToastContent) { showToast(content) }
+
     func openLocalNoteAddress(_ input: String, inPane tabID: UUID? = nil) -> Bool {
         let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if InternalPage.isRetiredNoteAddress(value) {

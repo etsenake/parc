@@ -88,12 +88,12 @@ final class EaselInlineDates {
         return watches.values.flatMap { $0.session?.document.dateMentions ?? [] }
     }
 
-    static func open(_ owner: EaselReminderOwner, in windows: [BrowserWindowController], front: BrowserWindowController?) {
+    static func open(_ owner: EaselReminderOwner, in windows: [EaselWindowActions], front: EaselWindowActions?) {
         let usable = windows.filter { !$0.isPopupWindow && !$0.isPrivateBrowsing }
         guard let target = usable.first(where: { $0.activeProfileID == owner.profile }) ?? front ?? usable.first else { return }
         let title = NoteReminderCenter.shared.book.records.values.first { $0.path == owner.file.path }?.title ?? ""
         target.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        target.openEasel(id: owner.id, title: title)
+        target.openEasel(id: owner.id, title: title, inSplit: false)
     }
 }

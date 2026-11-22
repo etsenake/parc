@@ -3,7 +3,7 @@ import Combine
 import ParcCore
 
 @MainActor
-final class NoteEaselPageRegistry {
+final class NoteEaselPageRegistry: NoteBoardPages {
     struct Page {
         let block: NoteBlockID
         let session: EaselSession
@@ -32,6 +32,13 @@ final class NoteEaselPageRegistry {
     }
 
     func page(_ key: UUID) -> Page? { pages[key] }
+
+    func block(for key: UUID) -> NoteBlockID? { page(key)?.block }
+
+    func recordNavigation(_ url: URL, for key: UUID, expectedURL: String) throws {
+        guard let page = page(key) else { return }
+        try page.session.recordEmbeddedPageNavigation(url, for: page.item, expectedURL: expectedURL)
+    }
 
     func keys(of block: NoteBlockID) -> [UUID: UUID] {
         pages.filter { $0.value.block == block }.mapValues(\.item)

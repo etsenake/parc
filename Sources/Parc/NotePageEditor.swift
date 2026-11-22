@@ -114,7 +114,7 @@ final class NotePageEditor {
         guard responder === canvas || responder.isDescendant(of: canvas) else { return false }
         if let header = canvas.headerView, responder.isDescendant(of: header) { return false }
         if (responder as? NSTextView)?.isFieldEditor == true { return false }
-        if embeddedPageHasFocus || sequence(first: responder, next: \.superview).contains(where: { $0 is NoteEaselSurface }) { return false }
+        if embeddedPageHasFocus || sequence(first: responder, next: \.superview).contains(where: { $0 is NoteBoardSurface }) { return false }
         return !responder.isDescendant(of: canvas.overlayView)
     }
 
@@ -1161,7 +1161,7 @@ final class NotePageEditor {
         let embeddable = NoteClipboard.isEmbeddable(link.url)
         let media = NoteClipboard.linkedMediaKind(link.url)
         let easelIcon = NoteEaselAddress.id(from: link.url).flatMap { id in
-            NoteEaselHost.host(for: self).map { NoteIcon.easel(id, directory: $0.directory) }
+            NoteBlockViewFactory.boards?.host(for: self).map { NoteIcon.easel(id, directory: $0.directory) }
         } ?? NoteIcon.easelMark
         let menu = NotePasteLinkMenu(url: link.url, leading: [.dismiss, .mention, .bookmark], embeddable: embeddable, media: media,
                                      easelIcon: easelIcon) { [weak self] choice in
@@ -1235,7 +1235,7 @@ final class NotePageEditor {
     private static let documentDropGutter: CGFloat = 48
 
     private func draggedEasel(_ pasteboard: NSPasteboard) -> NoteBlock? {
-        guard !isPlainText, NoteEaselHost.host(for: self) != nil,
+        guard !isPlainText, NoteBlockViewFactory.boards?.host(for: self) != nil,
               let raw = pasteboard.string(forType: Self.documentDragType) else { return nil }
         return NoteDocumentDrag(encoded: raw)?.easelBlock
     }
@@ -1268,8 +1268,8 @@ final class NotePageEditor {
         guard !isReadOnly else { return false }
         let target = canvas.dropTarget(at: point, dragging: [])
         if let easel = draggedEasel(info.draggingPasteboard) {
-            guard let id = NoteEaselAddress.id(of: easel), let host = NoteEaselHost.host(for: self),
-                  case .success = host.session(id) else { return false }
+            guard let id = NoteEaselAddress.id(of: easel), let host = NoteBlockViewFactory.boards?.host(for: self),
+                  host.canOpen(id) else { return false }
             return insertDropped([easel], at: target)
         }
         let reading = NoteClipboard.read(info.draggingPasteboard)
