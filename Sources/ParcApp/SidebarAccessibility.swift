@@ -18,7 +18,10 @@ enum SidebarAccessibility {
     static func label(_ button: NSButton, _ text: String) {
         button.setAccessibilityLabel(text)
         button.cell?.setAccessibilityLabel(text)
-        button.image?.accessibilityDescription = text
+        guard let image = button.image, image.size.width > 1 || image.size.height > 1,
+              image.accessibilityDescription != text, let own = image.copy() as? NSImage else { return }
+        own.accessibilityDescription = text
+        button.image = own
     }
 
     static func laidOut(_ views: [NSView]) -> [NSView] {

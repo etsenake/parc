@@ -117,6 +117,28 @@ struct SidebarAccessibilityTests {
         #expect(labelled.image?.accessibilityDescription == "Lock sidebar")
     }
 
+    @Test func labellingATitledButtonLeavesOtherButtonsLabelsAlone() {
+        func titled(_ title: String) -> NSButton {
+            let button = NSButton(frame: .zero)
+            button.setButtonType(.momentaryChange); button.isBordered = false
+            button.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "")
+            button.image = nil; button.title = title
+            return button
+        }
+        let labelled = titled("Stop"), other = titled("Done")
+        SidebarAccessibility.label(labelled, SidebarAccessibility.reload)
+        #expect(other.cell?.accessibilityLabel() == "Done")
+    }
+
+    @Test func labellingAButtonLeavesItsSharedArtworkAlone() throws {
+        let shared = try #require(NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "Hide sidebar"))
+        let button = ActionButton("Hide sidebar", symbol: "sidebar.left")
+        button.image = shared
+        SidebarAccessibility.label(button, SidebarAccessibility.lockSidebar)
+        #expect(shared.accessibilityDescription == "Hide sidebar")
+        #expect(button.image?.accessibilityDescription == "Lock sidebar")
+    }
+
     @Test func anEmptyNameFallsBackToUntitledSpace() {
         let untitled = ActionButton("", symbol: "house")
         SidebarAccessibility.configureSpace(untitled, name: "")
