@@ -25,14 +25,16 @@ enum SplitPaneControlLayoutSkip {
     var actionBlock: (() -> Void)?
     private let glyph = SplitControlGlyph()
     private let surface = CALayer()
+    private let reduceMotion: () -> Bool
     var writeSurfaceFrame: (CALayer, CGRect) -> Void = { $0.frame = $1 }
     private var hoverArea: NSTrackingArea?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private(set) var isHovered = false
     private(set) var isPressed = false
 
-    init(_ kind: Kind) {
+    init(_ kind: Kind, reduceMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }) {
         self.kind = kind
+        self.reduceMotion = reduceMotion
         super.init(frame: .zero)
         let nativeCell = SplitControlCell()
         cell = nativeCell
@@ -120,7 +122,7 @@ enum SplitPaneControlLayoutSkip {
         surface.removeAnimation(forKey: "split-control-opacity")
         CATransaction.commit()
         guard animated, window?.isKeyWindow == true, !isHiddenOrHasHiddenAncestor,
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, old != opacity else { return }
+              !reduceMotion(), old != opacity else { return }
         let animation = CABasicAnimation(keyPath: "opacity")
         animation.fromValue = old; animation.toValue = opacity
         animation.duration = pressed ? 0.16 : 0.18
