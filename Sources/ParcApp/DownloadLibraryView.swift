@@ -1084,7 +1084,8 @@ enum LibraryPageHeader {
     }
 }
 
-@MainActor private final class DownloadArtworkView: NSImageView {
+@MainActor final class DownloadArtworkView: NSImageView {
+    var artwork = LibraryArtwork.shared
     var kind = DownloadRowArtwork.Kind.none { didSet { refreshPlaceholder() } }
     private let placeholder = CALayer()
     private let emptyFaviconMask = CALayer()
@@ -1102,7 +1103,7 @@ enum LibraryPageHeader {
     override func layout() { super.layout(); refreshPlaceholder() }
     private func refreshPlaceholder() {
         let isFile = kind == .file, isEmpty = kind == .emptyFavicon
-        let favicon = isEmpty ? LibraryArtwork.emptyFavicon : nil
+        let favicon = isEmpty ? artwork.emptyFavicon : nil
         CATransaction.begin(); CATransaction.setDisableActions(true)
         placeholder.isHidden = image != nil || (!isFile && !isEmpty) || (isEmpty && favicon == nil)
         let size: CGFloat = isFile ? 24 : 14

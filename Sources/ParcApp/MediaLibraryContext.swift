@@ -62,6 +62,8 @@ final class MediaLibraryThumbnailOperation: @unchecked Sendable {
     }
 }
 
+typealias MediaLibraryStartTask = @MainActor (@escaping @MainActor @Sendable () async -> Void) -> Task<Void, Never>
+
 @MainActor
 final class MediaLibraryLatestWork<Value: Sendable> {
     typealias Work = @Sendable () throws -> Value
@@ -69,6 +71,7 @@ final class MediaLibraryLatestWork<Value: Sendable> {
     typealias Finish = @MainActor (Value) -> Void
     typealias Request = @MainActor () -> (work: Work, finish: Finish)?
     private let replacementsBeforeFinishing = 2
+    private let startTask: MediaLibraryStartTask
     private let startWorker: StartWorker
     private var task: Task<Void, Never>?
     private var ticket: UInt64 = 0
@@ -77,7 +80,8 @@ final class MediaLibraryLatestWork<Value: Sendable> {
     var isRunning: Bool { task != nil }
     init(startWorker: @escaping StartWorker = { work in
         Task.detached(priority: .userInitiated) { try work() }
-    }) {
+    }, startTask: @escaping MediaLibraryStartTask = { Task(operation: $0) }) {
+        self.startTask = startTask
         self.startWorker = startWorker
     }
 
@@ -91,7 +95,7 @@ final class MediaLibraryLatestWork<Value: Sendable> {
         guard let next = request() else { return nil }
         let current = ticket, work = next.work, finish = next.finish
         let worker = startWorker(work)
-        task = Task { [weak self] in
+        task = startTask { [weak self] in
             let value = await withTaskCancellationHandler { try? await worker.value } onCancel: { worker.cancel() }
             guard let self, self.ticket == current else { return }
             self.task = nil; self.replaced = 0

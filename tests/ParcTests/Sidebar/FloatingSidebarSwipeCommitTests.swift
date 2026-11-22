@@ -10,13 +10,17 @@ struct FloatingSidebarSwipeCommitTests {
         static let width = 128, height = 96
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.borderless],
                               backing: .buffered, defer: true)
-        let surface = ThemeRendererView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        let surface: ThemeRendererView
         let canvas: MTKView
         let device: MTLDevice
         let queue: MTLCommandQueue
         private var committed: MTLCommandBuffer?
 
         init?(floating: Bool) {
+            guard let textures = Bundle.module.url(forResource: "ThemeTextures", withExtension: nil) else { return nil }
+            surface = ThemeRendererView(frame: NSRect(x: 0, y: 0, width: Self.width, height: Self.height),
+                makeRenderer: { try ThemeMetalRenderer(textureDirectory: textures) },
+                makeCanvas: { ThemeMetalCanvas(frame: $0, device: $1) })
             window.isReleasedWhenClosed = false
             window.appearance = NSAppearance(named: .aqua)
             window.contentView = surface

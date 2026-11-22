@@ -52,6 +52,21 @@ private func same(_ a: CGColor?, _ b: CGColor?) -> Bool {
 }
 
 @MainActor struct StartPageMarkViewTests {
+    @Test func changingSpacesLeavesTheRestingMarkSilent() {
+        var ticks = 0
+        let mark = StartPageMarkView(frame: NSRect(x: 0, y: 0, width: 65, height: 96)) { ticks += 1 }
+        let red = theme(1, 0, 0, noise: 0.4), blue = theme(0, 0, 1, noise: 0.7)
+        let host = NSView()
+        mark.effectsHost = host
+        mark.style = .monochrome
+        mark.theme = red
+        mark.pagingTransition = ThemePagingTransition(from: red, theme: blue, progress: 0.5)
+        mark.theme = blue
+        mark.pagingTransition = nil
+        mark.layoutSubtreeIfNeeded()
+        #expect(ticks == 0)
+    }
+
     @Test func draggingTheMarkNeverMovesTheWindow() {
         #expect(!MarkRig().mark.mouseDownCanMoveWindow)
     }

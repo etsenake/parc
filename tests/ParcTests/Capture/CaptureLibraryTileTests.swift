@@ -85,6 +85,78 @@ struct CaptureLibraryTileTests {
         func lit(_ lit: Bool) { if lit { hoverIn() } }
     }
 
+    @MainActor @Test(arguments: [(0, CGFloat(1)), (1, CGFloat(2)), (2, CGFloat(0.5))])
+    func theLiveGridDrawsCaptureAndFileThumbnailsAtTheirOwnAspectRatios(index: Int, aspect: CGFloat) async throws {
+        let fixture = try await CaptureLibraryViewTests.Fixture(files: 2, captures: 1)
+        defer { fixture.teardown() }
+        let tile = try #require(fixture.tile(index))
+        let image = try #require(tile.image)
+        let drawn = try #require(tile.artworkRect)
+        #expect(image.size.width / image.size.height == aspect)
+        #expect(abs(drawn.width / drawn.height - aspect) < 0.001)
+    }
+
+    @MainActor @Test func aTileCreatedDuringLiveScrollingRefusesHoverUntilScrollingEnds() async throws {
+        let fixture = try await CaptureLibraryViewTests.Fixture(files: 2)
+        defer { fixture.teardown() }
+        let scroll = try #require(fixture.grid.enclosingScrollView)
+        let original = Set(fixture.grid.visibleItems().map { ObjectIdentifier($0.view) })
+        NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+        let late = fixture.folder.appendingPathComponent("late.png")
+        try CaptureLibraryViewTests.Fixture.png().write(to: late)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_600_000_000)], ofItemAtPath: late.path)
+        try await fixture.changes(late)
+        let tile = try #require(fixture.tile(2))
+        try #require(fixture.title(2) == "late.png" && !original.contains(ObjectIdentifier(tile)))
+        fixture.window.pointer = tile.convert(NSPoint(x: tile.bounds.midX, y: tile.bounds.midY), to: nil)
+        tile.mouseEntered(with: try #require(NSEvent.enterExitEvent(with: .mouseEntered, location: fixture.window.pointer,
+            modifierFlags: [], timestamp: 0, windowNumber: fixture.window.windowNumber, context: nil,
+            eventNumber: 0, trackingNumber: 0, userData: nil)))
+        let plate = try #require(tile.layer?.sublayers?.first)
+        #expect(plate.frame == tile.bounds.insetBy(dx: 4, dy: 4))
+        NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: scroll)
+        #expect(plate.frame == tile.bounds)
+    }
+
+    @MainActor @Test(arguments: [0, 1])
+    func replacingAFileRefreshesItsThumbnailAndKeepsItsHighlight(_ index: Int) async throws {
+        let fixture = try await CaptureLibraryViewTests.Fixture(files: 2)
+        defer { fixture.teardown() }
+        fixture.select(1)
+        let hovered = try #require(fixture.tile(0))
+        fixture.window.pointer = hovered.convert(NSPoint(x: hovered.bounds.midX, y: hovered.bounds.midY), to: nil)
+        hovered.resamplePointer()
+        let file = fixture.file(index)
+        let expected = index == 0 ? CGFloat(3) : 1 / CGFloat(3)
+        try CaptureLibraryViewTests.Fixture.png(index == 0 ? 30 : 10, index == 0 ? 10 : 30).write(to: file)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_700_000_000 - Double(index) * 60)],
+                                              ofItemAtPath: file.path)
+        try await fixture.changes(file)
+        let tile = try #require(fixture.tile(index))
+        let drawn = try #require(tile.artworkRect)
+        #expect(abs(drawn.width / drawn.height - expected) < 0.001)
+        #expect(tile.layer?.sublayers?.first?.frame == tile.bounds)
+        #expect(fixture.grid.selectionIndexPaths == [IndexPath(item: 1, section: 0)])
+    }
+
+    @MainActor @Test func previewUsesTheSelectedTilesDrawnThumbnailAndRetiresWithMedia() async throws {
+        let fixture = try await CaptureLibraryViewTests.Fixture(files: 2)
+        defer { fixture.teardown() }
+        var parent: NSWindow?
+        let preview = DownloadLibraryPreview(itemName: "media file", reduceMotion: { true },
+            presentWindow: { _, owner in parent = owner }, isPresented: { _ in true })
+        fixture.view.makeFilePreview = { preview }
+        fixture.select(1)
+        fixture.grid.onActivate?()
+        await fixture.finish()
+        let tile = try #require(fixture.tile(1))
+        let drawn = try #require(tile.artworkRect)
+        #expect(parent === fixture.window && preview.sourceImage === tile.image)
+        #expect(preview.sourceRect?() == tile.convert(drawn, to: nil))
+        fixture.view.invalidate()
+        #expect(preview.sourceRect == nil)
+    }
+
     @MainActor @Test(arguments: Scene.files + [Scene.capture], [false, true])
     func thePlateFillsTheCellWhenLitAndSitsFourPointsInsideAtRestWithAContinuousRadiusOfTwelve(_ scene: Scene, _ lit: Bool) {
         let fixture = Fixture(scene)
