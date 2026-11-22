@@ -18,8 +18,8 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private let collection = CaptureCollectionView()
     private let scroll = NSScrollView()
     private let message = CaptureEmptyMessage(wrappingLabelWithString: "")
-    fileprivate enum CacheKey: Hashable, Sendable { case capture(UUID), file(URL, ExternalMediaFile.Revision) }
-    private enum Item: Equatable, Sendable {
+    enum CacheKey: Hashable, Sendable { case capture(UUID), file(URL, ExternalMediaFile.Revision) }
+    enum Item: Equatable, Sendable {
         case capture(SavedCapture), file(ExternalMediaFile)
         var id: String { switch self { case .capture(let item): return "capture:" + item.id.uuidString; case .file(let item): return "file:" + item.id } }
         var title: String { switch self { case .capture(let item): return item.title; case .file(let item): return item.title } }
@@ -28,7 +28,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         var cacheKey: CacheKey { switch self { case .capture(let item): return .capture(item.revision); case .file(let item): return .file(item.url, item.revision) } }
         static func precedes(_ a: Item, _ b: Item) -> Bool { a.date == b.date ? a.id < b.id : a.date > b.date }
     }
-    private struct ListPlan: Sendable {
+    struct ListPlan: Sendable {
         let items: [Item]; let positions: [String: Int]; let query: String
         let removed: Set<IndexPath>; let inserted: Set<IndexPath>; let reload: Bool; let evicted: Set<CacheKey>
     }
@@ -252,7 +252,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         return next
     }
 
-    nonisolated private static func plan(from base: [Item], captures: [SavedCapture], files: [ExternalMediaFile], query: String) throws -> ListPlan {
+    nonisolated static func plan(from base: [Item], captures: [SavedCapture], files: [ExternalMediaFile], query: String) throws -> ListPlan {
         let next = try sortedItems(captures: captures, files: files, query: query, check: { try Task.checkCancellation() })
         try Task.checkCancellation()
         var removed: [Int] = [], inserted: [Int] = [], old = 0, new = 0, steps = 0
@@ -838,8 +838,9 @@ private final class CaptureLibraryCell: NSCollectionViewItem {
 }
 
 @MainActor
-private final class CaptureLibraryTile: NSView {
+final class CaptureLibraryTile: NSView {
     enum Kind { case capture, image, video }
+    var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     var isSelected = false { didSet { apply(animated: true) } }
     private(set) var artworkRect: NSRect?
     private var kind = Kind.image
@@ -964,8 +965,7 @@ private final class CaptureLibraryTile: NSView {
     private func apply(animated: Bool) {
         let lit = shouldHighlight || isSelected
         let changed = applied != lit
-        let animate = animated && changed && applied != nil && window != nil
-            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let animate = animated && changed && applied != nil && window != nil && !reduceMotion()
         applied = lit
         func set(_ layer: CALayer, _ key: String, _ value: Any) {
             let from = animate && !layer.isHidden ? (layer.presentation() ?? layer).value(forKey: key) : nil

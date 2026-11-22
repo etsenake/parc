@@ -35,6 +35,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private static let searchLimit = 10_000
     private let store: BrowserStore
     private let profileID: UUID
+    private let files: NoteFiles
     private let searchBackdrop = DownloadSearchBackdrop()
     private let search = DownloadSearchField(frame: .zero)
     private let createButton = ActionButton("", symbol: "square.and.pencil")
@@ -66,8 +67,8 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         }
     }
     override var isFlipped: Bool { true }
-    init(store: BrowserStore, profileID: UUID) {
-        self.store = store; self.profileID = profileID
+    init(store: BrowserStore, profileID: UUID, files: NoteFiles? = nil) {
+        self.store = store; self.profileID = profileID; self.files = files ?? .shared
         super.init(frame: .zero)
         search.placeholderString = "Search Easels & Notes…"; search.delegate = self
         search.setAccessibilityLabel("Search Easels and Notes")
@@ -99,7 +100,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         scopeBar.onClear = { [weak self] in self?.scope(to: nil) }
         for view in [searchBackdrop, createButton, scopeBar, scroll, empty] { addSubview(view) }
         if !store.isEphemeral {
-            folderSubscription = NoteFolderPreferences.changes.filter { $0 == profileID }.sink { [weak self] _ in
+            folderSubscription = self.files.folders.changes.filter { $0 == profileID }.sink { [weak self] _ in
                 self?.bindLibrary(); self?.reload(force: true)
             }
             bindLibrary()
@@ -113,7 +114,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     }
     func scope(to folder: URL?) {
         var next = folder.map { URL(fileURLWithPath: NoteFilePaths.canonical($0).path, isDirectory: true) }
-        if let chosen = next, !store.isEphemeral, chosen.path == NoteFolderPreferences.library(for: profileID).folder.path { next = nil }
+        if let chosen = next, !store.isEphemeral, chosen.path == files.library(forProfile: profileID).folder.path { next = nil }
         guard next?.path != folderScope?.path else { return }
         folderScope = next
         scopeBar.isHidden = next == nil
@@ -128,10 +129,10 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         needsLayout = true
     }
     private func bindLibrary() {
-        let space = NoteFolderPreferences.library(for: profileID)
+        let space = files.library(forProfile: profileID)
         let next: NoteLibrary
         if let folderScope, folderScope.path != space.folder.path, !space.contains(folderScope) {
-            next = NoteLibrary.browsing(folderScope)
+            next = files.browsing(folderScope)
         } else {
             next = space
         }
@@ -142,7 +143,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     func focusSearch() { window?.makeFirstResponder(search); search.selectText(nil) }
     func revealItem(_ target: DocumentsLibraryReveal.Target) {
         guard !store.isEphemeral else { return }
-        scope(to: DocumentsLibraryReveal.folder(for: target, library: NoteFolderPreferences.library(for: profileID).folder))
+        scope(to: DocumentsLibraryReveal.folder(for: target, library: files.library(forProfile: profileID).folder))
         reload(force: true)
         if DocumentsLibraryReveal.clearsQuery(search.stringValue, target: target, visible: rows.map(Self.target)) {
             search.stringValue = ""
@@ -294,7 +295,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         guard valid else { return }
         guard let folderScope else { onCreate?(); return }
         do {
-            let url = try NoteLibrary.createNote(in: folderScope, title: nil)
+            let url = try files.createNote(in: folderScope, title: nil)
             onOpen?(.note(url), url.deletingPathExtension().lastPathComponent)
         } catch { report(error) }
     }
@@ -312,7 +313,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
             guard let self, result == .confirm, self.valid else { return }
             do {
                 if let url = row.item.noteURL {
-                    let renamed = try NoteLibrary.rename(url, to: field.stringValue)
+                    let renamed = try files.rename(url, to: field.stringValue)
                     let title = renamed.deletingPathExtension().lastPathComponent
                     self.store.updateNoteFile(from: url, to: renamed, title: title)
                     if self.selectedPage == row.page { self.selectedPage = .note(renamed) }

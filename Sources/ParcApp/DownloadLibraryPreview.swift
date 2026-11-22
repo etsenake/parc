@@ -31,6 +31,7 @@ import Quartz
     private var motionObservation: NSObjectProtocol?
     private let reduceMotion: () -> Bool
     private let presentWindow: @MainActor (NSWindow, NSWindow) -> Void
+    private let isPresented: @MainActor (NSWindow) -> Bool
     private var finishing: DownloadLibraryPreview?
 
     init(itemName: String = "download",
@@ -38,8 +39,10 @@ import Quartz
          presentWindow: @escaping @MainActor (NSWindow, NSWindow) -> Void = { window, parent in
              parent.addChildWindow(window, ordered: .above)
              window.makeKeyAndOrderFront(nil)
-         }) {
+         },
+         isPresented: @escaping @MainActor (NSWindow) -> Bool = { $0.isVisible }) {
         self.presentWindow = presentWindow
+        self.isPresented = isPresented
         self.reduceMotion = reduceMotion
         let panel = DownloadPreviewPanel(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
                                          styleMask: .borderless, backing: .buffered, defer: false)
@@ -205,9 +208,10 @@ import Quartz
         let animation = DownloadPreviewGeometry.spring(keyPath: key, ratio: ratio, response: response)
         animation.fromValue = from; animation.toValue = to; layer.add(animation, forKey: key)
     }
+    var isShown: Bool { window.map(isPresented) ?? false }
     func dismiss() {
         guard !closing else { return }
-        guard window?.isVisible == true, !reduceMotion(), let source = localSourceRect(), let layer = modal.layer else { close(); return }
+        guard isShown, !reduceMotion(), let source = localSourceRect(), let layer = modal.layer else { close(); return }
         closing = true; finishing = self; transition &+= 1
         let token = transition
         let target = DownloadPreviewGeometry.transform(from: modal.frame, to: source)
