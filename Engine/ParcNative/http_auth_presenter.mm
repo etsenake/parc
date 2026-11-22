@@ -56,6 +56,8 @@ using namespace parc_dialog;
 @end
 
 @implementation PCHTTPAuthPresenter
+@synthesize presentation = _presentation;
+@synthesize scheduler = _scheduler;
 - (instancetype)initWithPage:(NSView*)page
                       window:(NSWindow*)window
                    authority:(NSString*)authority
@@ -71,6 +73,8 @@ using namespace parc_dialog;
     _window = window;
     _validate = [validate copy];
     _result = [result copy];
+    _presentation = PCNativeSystemPresentation.sharedPresentation;
+    _scheduler = PCNativeSystemScheduling.sharedScheduling;
     PCHTTPAuthSheet* sheet = [[PCHTTPAuthSheet alloc]
         initWithContentRect:NSMakeRect(0, 0, kWidth, 400)
                   styleMask:NSWindowStyleMaskTitled
@@ -166,13 +170,13 @@ using namespace parc_dialog;
   NSView* page = _page;
   NSWindow* window = _window;
   if (_invalidated || !page || !window || page.window != window ||
-      !window.visible || window.miniaturized ||
+      ![_presentation isWindowVisible:window] || window.miniaturized ||
       page.hiddenOrHasHiddenAncestor) {
     return NO;
   }
   BOOL valid = _validate && _validate();
   return valid && !_invalidated && _page == page && _window == window &&
-         page.window == window && window.visible && !window.miniaturized &&
+         page.window == window && [_presentation isWindowVisible:window] && !window.miniaturized &&
          !page.hiddenOrHasHiddenAncestor;
 }
 - (void)show {
@@ -180,7 +184,7 @@ using namespace parc_dialog;
     return;
   }
   _started = YES;
-  [NSRunLoop.mainRunLoop
+  [_scheduler
       performInModes:@[ NSRunLoopCommonModes, NSModalPanelRunLoopMode ]
                block:^{
                  __attribute__((objc_precise_lifetime)) NSWindow* window =
@@ -191,18 +195,18 @@ using namespace parc_dialog;
                  if (self->_terminal) {
                    return;
                  }
-                 if (![self valid] || !window || window.attachedSheet) {
+                 if (![self valid] || !window || [self->_presentation attachedSheetOfWindow:window]) {
                    [self finish:PCHTTPAuthInterrupted];
                    return;
                  }
-                 [window beginSheet:self->_sheet
+                 [self->_presentation window:window beginSheet:self->_sheet
                      completionHandler:^(NSModalResponse) {
                        [self finish:PCHTTPAuthInterrupted];
                      }];
                  if (self->_terminal || ![self valid] ||
-                     window.attachedSheet != self->_sheet ||
-                     self->_sheet.sheetParent != window ||
-                     !self->_sheet.visible) {
+                     [self->_presentation attachedSheetOfWindow:window] != self->_sheet ||
+                     [self->_presentation sheetParentOfWindow:self->_sheet] != window ||
+                     ![self->_presentation isWindowVisible:self->_sheet]) {
                    [self finish:PCHTTPAuthInterrupted];
                    return;
                  }
@@ -210,16 +214,16 @@ using namespace parc_dialog;
                }];
 }
 - (void)focus {
-  if (!_terminal && _sheet.visible && _sheet.sheetParent == _window &&
+  if (!_terminal && [_presentation isWindowVisible:_sheet] && [_presentation sheetParentOfWindow:_sheet] == _window &&
       [self valid]) {
-    [_sheet makeKeyWindow];
+    [_presentation makeKeyWindow:_sheet];
   }
 }
 - (void)autofillUsername:(NSString*)username password:(NSString*)password {
   if (!_terminal && !_username.stringValue.length) {
     _username.stringValue = username;
     _password.stringValue = password;
-    if (_sheet.visible) {
+    if ([_presentation isWindowVisible:_sheet]) {
       [_username selectText:nil];
     }
   }
@@ -249,8 +253,8 @@ using namespace parc_dialog;
   return NO;
 }
 - (void)accept:(NSButton*)sender {
-  if (sender.window == _sheet && sender.enabled && _sheet.visible &&
-      _sheet.sheetParent == _window && [self valid]) {
+  if (sender.window == _sheet && sender.enabled && [_presentation isWindowVisible:_sheet] &&
+      [_presentation sheetParentOfWindow:_sheet] == _window && [self valid]) {
     [self finish:PCHTTPAuthAccept];
   }
 }
@@ -270,10 +274,10 @@ using namespace parc_dialog;
       choice == PCHTTPAuthAccept ? [_password.stringValue copy] : @"";
   _username.stringValue = @"";
   _password.stringValue = @"";
-  if (_sheet.sheetParent) {
-    [_sheet.sheetParent endSheet:_sheet];
+  if ([_presentation sheetParentOfWindow:_sheet]) {
+    [_presentation window:[_presentation sheetParentOfWindow:_sheet] endSheet:_sheet];
   }
-  [_sheet orderOut:nil];
+  [_presentation orderOutWindow:_sheet];
   auto result = _result;
   _result = nil;
   // The controller defers the Chromium continuation non-nestably. No native

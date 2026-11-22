@@ -49,6 +49,8 @@ static NSView* Page(NSWindow* window) {
 static PCNativeStatusTextController* Controller(NSView* page) {
   auto controller = [[PCNativeStatusTextController alloc]
       initWithPage:page validate:^BOOL { return YES; }];
+  controller.presentation = ParcNativePresentation();
+  controller.scheduler = ParcNativeScheduler();
   [controller setAttached:YES];
   return controller;
 }
@@ -93,7 +95,7 @@ static NSString* LongText() {
 
 - (void)tearDown {
   [controller invalidate];
-  [window close];
+  ParcNativeClose(window);
   [super tearDown];
 }
 
@@ -196,7 +198,7 @@ static NSString* LongText() {
   Check([static_cast<NSTextField*>(Find(second, @"parc-status-label")).stringValue
       isEqual:@"b.test"], "second window retains its own source");
   [b invalidate];
-  [two close];
+  ParcNativeClose(two);
 }
 
 - (void)testAReparentedPageNeedsAnExplicitAttachment {
@@ -211,7 +213,7 @@ static NSString* LongText() {
   [controller updateText:@"https://attached.test"];
   Pump(.85);
   Check(!pill.hidden, "explicit matching attachment permits new status");
-  [other close];
+  ParcNativeClose(other);
 }
 
 - (void)testUnhidingAPageDoesNotReplayItsPreviousLink {
@@ -233,7 +235,7 @@ static NSString* LongText() {
   [controller updateText:@"https://not-reattached.test"];
   Pump(.6);
   Check(pill.hidden, "unexpected reparent closes the attachment gate");
-  [other close];
+  ParcNativeClose(other);
 }
 
 - (void)testInvalidatedControllersIgnoreLaterLinks {
@@ -249,6 +251,8 @@ static NSString* LongText() {
   __block BOOL allowed = YES;
   controller = [[PCNativeStatusTextController alloc]
       initWithPage:page validate:^BOOL { return allowed; }];
+  controller.presentation = ParcNativePresentation();
+  controller.scheduler = ParcNativeScheduler();
   [controller setAttached:YES];
   [controller updateText:@"https://stale-document.test"];
   allowed = NO;
@@ -440,7 +444,7 @@ static NSString* LongText() {
   [NSNotificationCenter.defaultCenter postNotificationName:name object:other];
   Check([[background valueForKey:@"overlayColor"] isEqual:NSColor.systemRedColor],
         "another window's theme change leaves this pill alone");
-  [other close];
+  ParcNativeClose(other);
 }
 
 - (void)testAVisibleThemeChangePreservesGeometryAndText {
@@ -514,7 +518,7 @@ static NSString* LongText() {
   Pump(.05);
   Check([label.stringValue isEqual:@"Open https://split.test/page in Split View"],
         "another window's state change leaves this pill alone");
-  [other close];
+  ParcNativeClose(other);
 }
 
 - (void)testRepeatedLinkOutcomeChangesAskOnceAtTheEndOfTheTurn {

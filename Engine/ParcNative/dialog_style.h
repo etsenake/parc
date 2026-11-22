@@ -1,5 +1,8 @@
 #pragma once
 #import <AppKit/AppKit.h>
+
+#import "page_host.h"
+
 NS_ASSUME_NONNULL_BEGIN
 namespace parc_dialog {
 inline constexpr CGFloat kWidth = 450;
@@ -29,6 +32,14 @@ CGFloat AddHeading(NSView* root, NSString* title, NSString* _Nullable message,
 CGFloat PlaceFooter(NSView* root, CGFloat y, NSButton* _Nullable checkbox,
                     NSArray<NSButton*>* buttons);
 }  // namespace parc_dialog
+
+@interface PCNativeSystemPresentation : NSObject <PCNativePresentation>
+@property(class, nonatomic, readonly) PCNativeSystemPresentation* sharedPresentation;
+@end
+
+@interface PCNativeSystemScheduling : NSObject <PCNativeScheduling>
+@property(class, nonatomic, readonly) PCNativeSystemScheduling* sharedScheduling;
+@end
 
 @interface PCDialogFlippedView : NSView
 @end
@@ -98,6 +109,7 @@ typedef NS_ENUM(NSInteger, PCDialogPromptRole) {
 @property(nonatomic, weak, nullable) NSButton* escapeButton;
 // Laid out on first access; add buttons before.
 @property(nonatomic, readonly) NSWindow* window;
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
 - (void)beginSheetModalForWindow:(NSWindow*)parent
                completionHandler:(nullable void (^)(NSModalResponse))handler;
 @end

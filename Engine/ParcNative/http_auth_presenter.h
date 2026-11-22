@@ -3,6 +3,7 @@
 #import <AppKit/AppKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
+@protocol PCNativePresentation, PCNativeScheduling;
 typedef NS_ENUM(NSInteger, PCHTTPAuthChoice) {
   PCHTTPAuthAccept,
   PCHTTPAuthCancel,
@@ -21,6 +22,8 @@ typedef NS_ENUM(NSInteger, PCHTTPAuthChoice) {
                                  result;
 // The window exists before presentation for the real web-modal manager.
 @property(nonatomic, readonly) NSWindow* sheet;
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
+@property(nonatomic, strong) id<PCNativeScheduling> scheduler;
 - (void)show;
 - (void)focus;
 - (void)autofillUsername:(NSString*)username password:(NSString*)password;

@@ -43,7 +43,7 @@ static PCAutofillSavePresenter* Request(NSView* page,
                                         NSWindow* window,
                                         BOOL (^valid)(void),
                                         void (^result)(PCAutofillSaveOutcome)) {
-  return [[PCAutofillSavePresenter alloc]
+  PCAutofillSavePresenter* request = [[PCAutofillSavePresenter alloc]
       initWithPageView:page
                 window:window
                  title:@"Save this card?"
@@ -52,6 +52,9 @@ static PCAutofillSavePresenter* Request(NSView* page,
           declineLabel:@"Not Now"
        validateContext:valid
             completion:result];
+  request.presentation = ParcNativePresentation();
+  request.scheduler = ParcNativeScheduler();
+  return request;
 }
 static void Click(PCAutofillSavePresenter* request, NSString* title) {
   NSButton* button = Button(request.sheet.contentView, title);
@@ -59,19 +62,6 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
         "real sheet button exists and is enabled");
   [button performClick:nil];
 }
-
-@interface AttachmentTrackingWindow : NSWindow
-@property(nonatomic, copy) void (^willBeginSheet)(NSWindow*);
-@end
-@implementation AttachmentTrackingWindow
-- (void)beginSheet:(NSWindow*)sheet
-    completionHandler:(void (^)(NSModalResponse))handler {
-  if (self.willBeginSheet) {
-    self.willBeginSheet(self);
-  }
-  [super beginSheet:sheet completionHandler:handler];
-}
-@end
 
 @interface ParcNativeTests_AutofillSaveTests : ParcNativeTestCase
 @end
@@ -99,7 +89,7 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
 - (void)tearDown {
   [_request invalidate];
   ParcNativeSettle();
-  [_window close];
+  ParcNativeClose(_window);
   [super tearDown];
 }
 
@@ -116,7 +106,7 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
 - (void)testRepeatedStartAttachesOneSheetToItsOwnWindow {
   [_request start];
   [self present];
-  PARC_CHECK(_request.isPresenting && _request.sheet.sheetParent == _window && !NSApp.modalWindow);
+  PARC_CHECK(_request.isPresenting && ParcNativeSheetParent(_request.sheet) == _window && !NSApp.modalWindow);
 }
 
 - (void)testHoverReflectsThePointerInsideTheSheet {
@@ -128,7 +118,7 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
 - (void)testClickDetachesTheSheetBeforeDelivery {
   [self present];
   Click(_request, @"Save");
-  PARC_CHECK(!_request.sheet && !_window.attachedSheet && !_results);
+  PARC_CHECK(!_request.sheet && !ParcNativeAttachedSheet(_window) && !_results);
 }
 
 - (void)testSaveAccepts {
@@ -161,14 +151,14 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
 
 - (void)testEndingTheSheetInterrupts {
   [self present];
-  [_window endSheet:_request.sheet];
+  ParcNativeEndSheet(_window, _request.sheet);
   ParcNativeSettle();
   PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted);
 }
 
 - (void)testClosingTheParentInterrupts {
   [self present];
-  [_window close];
+  ParcNativeClose(_window);
   ParcNativeSettle();
   PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted);
 }
@@ -217,7 +207,7 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
 
 - (void)testClosingAQueuedParentDeliversAnInterruptionLater {
   [_request start];
-  [_window close];
+  ParcNativeClose(_window);
   PARC_CHECK(!_results);
   ParcNativeSettle();
   PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_request.sheet);
@@ -228,7 +218,7 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
   Click(_request, @"Save");
   [_request invalidate];
   ParcNativeSettle();
-  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_window.attachedSheet);
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !ParcNativeAttachedSheet(_window));
 }
 
 - (void)testAQueuedSaveRechecksItsContext {
@@ -236,7 +226,7 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
   Click(_request, @"Save");
   _valid = NO;
   ParcNativeSettle();
-  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_window.attachedSheet);
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !ParcNativeAttachedSheet(_window));
 }
 
 - (void)testReattachingCannotReviveAnInvalidatedRequest {
@@ -245,7 +235,7 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
   [_page removeFromSuperview];
   [_window.contentView addSubview:_page];
   ParcNativeSettle();
-  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_window.attachedSheet);
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !ParcNativeAttachedSheet(_window));
 }
 
 - (void)testMovingAPageCannotTransferItsSave {
@@ -254,21 +244,21 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
   [other.contentView addSubview:_page];
   Click(_request, @"Save");
   ParcNativeSettle();
-  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !_window.attachedSheet && !other.attachedSheet);
-  [other close];
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && !ParcNativeAttachedSheet(_window) && !ParcNativeAttachedSheet(other));
+  ParcNativeClose(other);
 }
 
 - (void)testAnExistingSheetKeepsItsPlace {
   NSWindow* other = ParcNativeOffscreenWindow(NSMakeRect(0, 0, 200, 100), NSWindowStyleMaskBorderless);
-  [_window beginSheet:other completionHandler:nil];
+  ParcNativeBeginSheet(_window, other, nil);
   [self present];
-  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && _window.attachedSheet == other);
-  [_window endSheet:other];
+  PARC_CHECK(_results == 1 && _outcome == PCAutofillSaveInterrupted && ParcNativeAttachedSheet(_window) == other);
+  ParcNativeEndSheet(_window, other);
 }
 
 - (void)testClosingAnUnrelatedWindowKeepsTheRequestPending {
   [self present];
-  [Window() close];
+  ParcNativeClose(Window());
   ParcNativeSettle();
   PARC_CHECK(_request.isPresenting && !_results);
 }
@@ -337,11 +327,11 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
   Click(next, @"Not Now");
   Drain();
   Check(count == 2, "both independent requests resolve exactly once");
-  [window close];
+  ParcNativeClose(window);
 }
 
 - (void)testAttachmentRetainsTheValidatedWindowUntilTheSheetBegins {
-  __block AttachmentTrackingWindow* owner = [[AttachmentTrackingWindow alloc]
+  __block NSWindow* owner = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(-2000, -2000, 600, 400)
                 styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered
@@ -352,7 +342,7 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
   __weak NSWindow* original = owner;
   __block int attached = 0;
   __block int count = 0;
-  owner.willBeginSheet = ^(NSWindow* actual) {
+  ParcNativePresentation().willBeginSheet = ^(NSWindow* actual, NSWindow*) {
     ++attached;
     Check(owner == nil, "validator released the external native owner");
     Check(actual == original && page.window == actual,
@@ -377,7 +367,7 @@ static void Click(PCAutofillSavePresenter* request, NSString* title) {
   [request invalidate];
   Drain();
   Check(count == 1 && !request.sheet, "owner-release request resolves once");
-  [original close];
+  ParcNativeClose(original);
 }
 
 @end

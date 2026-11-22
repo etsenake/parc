@@ -2,6 +2,7 @@
 #import <AppKit/AppKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
+@protocol PCNativePresentation, PCNativeScheduling;
 typedef NS_ENUM(NSInteger, PCAutofillSaveOutcome) {
   PCAutofillSaveAccepted,
   PCAutofillSaveDeclined,
@@ -30,6 +31,8 @@ typedef NS_ENUM(NSInteger, PCAutofillSaveOutcome) {
 // Cleared before delivery; callback may synchronously invalidate this request.
 @property(nonatomic, copy, nullable) void (^onPresented)(void);
 @property(nonatomic, copy, nullable) NSString* neverLabel;
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
+@property(nonatomic, strong) id<PCNativeScheduling> scheduler;
 - (void)start;
 // Terminal. Call BEFORE page detach, navigation replacement or host teardown.
 // Also downgrades an accepted result queued but not yet delivered.

@@ -4,7 +4,7 @@
 
 #import <objc/runtime.h>
 
-static XCTestCase* currentTest;
+static ParcNativeTestCase* currentTest;
 
 void ParcNativeCheck(BOOL passed, const char* expression, const char* file, int line) {
   if (passed) return;
@@ -26,24 +26,46 @@ void ParcNativeCheckMessage(const char* file, int line, bool passed, const char*
   ParcNativeCheck(passed ? YES : NO, message, file, line);
 }
 
-@implementation ParcNativeTestCase
+ParcNativeTestPresentation* ParcNativePresentation(void) {
+  NSCAssert(currentTest, @"Offscreen presentation belongs to a running test");
+  return currentTest.presentation;
+}
+
+ParcNativeTestScheduler* ParcNativeScheduler(void) {
+  NSCAssert(currentTest, @"The test scheduler belongs to a running test");
+  return currentTest.scheduler;
+}
+
+@implementation ParcNativeTestCase {
+  ParcNativeTestPresentation* _presentation;
+  ParcNativeTestScheduler* _scheduler;
+}
+
+- (ParcNativeTestPresentation*)presentation {
+  return _presentation;
+}
+
+- (ParcNativeTestScheduler*)scheduler {
+  return _scheduler;
+}
+
++ (Class)presentationClass {
+  return ParcNativeTestPresentation.class;
+}
 
 - (void)setUp {
   [super setUp];
   self.continueAfterFailure = NO;
+  _presentation = [[self.class presentationClass] new];
+  _scheduler = [ParcNativeTestScheduler new];
   currentTest = self;
-#ifdef PARC_NATIVE_OFFSCREEN
-  ParcNativeResetClock();
-#endif
   [NSApplication sharedApplication];
   [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
 }
 
 - (void)tearDown {
   BOOL onScreen = NO;
-#ifdef PARC_NATIVE_OFFSCREEN
-  for (NSWindow* window in NSApp.windows) onScreen |= ParcNativeWindowOrderedForReal(window);
-#endif
+  for (NSWindow* window in NSApp.windows) onScreen |= window.visible;
   for (Class cls = self.class; cls != ParcNativeTestCase.class; cls = class_getSuperclass(cls)) {
     unsigned count = 0;
     Ivar* ivars = class_copyIvarList(cls, &count);
@@ -53,11 +75,11 @@ void ParcNativeCheckMessage(const char* file, int line, bool passed, const char*
     }
     free(ivars);
   }
-#ifdef PARC_NATIVE_OFFSCREEN
-  ParcNativeResetClock();
-#endif
+  [_scheduler invalidate];
   XCTestCase* test = currentTest;
   currentTest = nil;
+  _scheduler = nil;
+  _presentation = nil;
   [super tearDown];
   if (onScreen) {
     [test recordIssue:[[XCTIssue alloc] initWithType:XCTIssueTypeAssertionFailure

@@ -57,7 +57,7 @@ static PCHTTPAuthPresenter* Make(NSView* p,
                                  void (^result)(PCHTTPAuthChoice,
                                                 NSString*,
                                                 NSString*)) {
-  return [[PCHTTPAuthPresenter alloc]
+  PCHTTPAuthPresenter* presenter = [[PCHTTPAuthPresenter alloc]
       initWithPage:p
             window:w
          authority:proxy ? @"The proxy http://proxy.example:8080 requires a "
@@ -67,6 +67,9 @@ static PCHTTPAuthPresenter* Make(NSView* p,
              proxy:proxy
           validate:valid
             result:result];
+  presenter.presentation = ParcNativePresentation();
+  presenter.scheduler = ParcNativeScheduler();
+  return presenter;
 }
 @interface AuthState : NSObject
 @property int count;
@@ -87,7 +90,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
   return [NSEvent keyEventWithType:NSEventTypeKeyDown
                           location:NSZeroPoint
                      modifierFlags:0
-                         timestamp:NSProcessInfo.processInfo.systemUptime
+                         timestamp:ParcNativeNow()
                       windowNumber:sheet.windowNumber
                            context:nil
                         characters:characters
@@ -114,7 +117,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
 }
 
 - (void)tearDown {
-  [_window close];
+  ParcNativeClose(_window);
   [super tearDown];
 }
 
@@ -131,7 +134,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
         state.outcome = choice;
         state.user = user;
         state.secret = secret;
-        Check(!window.attachedSheet, "sheet removed before controller decision");
+        Check(!ParcNativeAttachedSheet(window), "sheet removed before controller decision");
       });
 }
 
@@ -151,7 +154,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
 
 - (void)testAnUnpresentedPresenterOwnsAWindowThatIsNotFalselyPresented {
   PCHTTPAuthPresenter* r = [self presenterForProxy:false];
-  Check(r.sheet && !r.sheet.visible, "real window exists but is not falsely presented");
+  Check(r.sheet && !ParcNativeVisible(r.sheet), "real window exists but is not falsely presented");
 }
 
 - (void)testShowIsDeferredEvenWhenCalledTwice {
@@ -163,7 +166,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
 
 - (void)testTheExactNativeSheetAttachesToTheOriginatingWindow {
   PCHTTPAuthPresenter* r = [self shownPresenterForProxy:false];
-  Check(r.sheet.visible && r.sheet.sheetParent == _window, "exact native sheet attached");
+  Check(ParcNativeVisible(r.sheet) && ParcNativeSheetParent(r.sheet) == _window, "exact native sheet attached");
 }
 
 - (void)testThePasswordControlIsSecure {
@@ -311,7 +314,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
 }
 
 - (void)tearDown {
-  [_window close];
+  ParcNativeClose(_window);
   [super tearDown];
 }
 
@@ -398,7 +401,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
 }
 
 - (void)tearDown {
-  [_window close];
+  ParcNativeClose(_window);
   [super tearDown];
 }
 
@@ -423,7 +426,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
   Pump();
   Check(_state.count == 1 && _state.outcome == PCHTTPAuthInterrupted,
         "invalid owner cannot present or supply credentials");
-  Check(!_window.attachedSheet, "interrupted sheet absent");
+  Check(!ParcNativeAttachedSheet(_window), "interrupted sheet absent");
   [_presenter invalidate];
   Pump();
   Check(_state.count == 1, "interruption remains once-only");
@@ -453,7 +456,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
 
 - (void)testAClosedWindowInterruptsTheRequest {
   [self showInWindowVisible:YES valid:YES];
-  [_window close];
+  ParcNativeClose(_window);
   [self expectInterruptedOnce];
 }
 
@@ -484,7 +487,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
 }
 
 - (void)tearDown {
-  [_window close];
+  ParcNativeClose(_window);
   [super tearDown];
 }
 
@@ -507,7 +510,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
   reenter = true;
   [r show];
   Pump();
-  Check(state.count == 1 && !_window.attachedSheet, "validation callback cannot resurrect presentation");
+  Check(state.count == 1 && !ParcNativeAttachedSheet(_window), "validation callback cannot resurrect presentation");
   r = nil;
 }
 
@@ -546,7 +549,7 @@ static NSEvent* KeyDown(NSWindow* sheet, NSString* characters, unsigned short co
 
 - (void)testTheOwnerCanBeReleasedAndReplacedDuringTheNativeCallback {
   [self cancelWhileReplacingTheOwner];
-  Check(_state.count == 1 && _replacement.sheet.sheetParent == _window,
+  Check(_state.count == 1 && ParcNativeSheetParent(_replacement.sheet) == _window,
         "owner release and replacement during native callback");
 }
 

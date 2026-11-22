@@ -6,6 +6,7 @@
 #import "native_appkit_bridge.h"
 
 NS_ASSUME_NONNULL_BEGIN
+@protocol PCNativePresentation, PCNativeScheduling;
 void PCPictureInPicturePointAtControl(BOOL control);
 
 NS_SWIFT_UI_ACTOR
@@ -18,6 +19,8 @@ NS_SWIFT_UI_ACTOR
 @property(nonatomic, readonly) NSPanel* panel;
 @property(nonatomic, readonly) NSView* videoView;
 @property(nonatomic, readonly, getter=isInvalidated) BOOL invalidated;
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
+@property(nonatomic, strong) id<PCNativeScheduling> scheduler;
 - (void)showInactive;
 - (void)hide;
 - (void)invalidate;

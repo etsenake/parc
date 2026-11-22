@@ -3,6 +3,8 @@
 
 #import <QuartzCore/QuartzCore.h>
 
+#import "dialog_style.h"
+
 @class PCStatusOverlay;
 @interface PCNativeStatusTextController ()
 - (void)layoutOverlay;
@@ -246,6 +248,8 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   BOOL _avoidanceFingerprintValid;
 }
 @synthesize linkOutcome = _linkOutcome;
+@synthesize presentation = _presentation;
+@synthesize scheduler = _scheduler;
 - (instancetype)initWithPage:(NSView*)page validate:(BOOL (^)(void))validate {
   NSAssert(NSThread.isMainThread, @"Status text requires the main thread");
   NSParameterAssert(page);
@@ -253,6 +257,8 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   if ((self = [super init])) {
     _page = page;
     _validate = [validate copy];
+    _presentation = PCNativeSystemPresentation.sharedPresentation;
+    _scheduler = PCNativeSystemScheduling.sharedScheduling;
     _text = @"";
     _overlay = [[PCStatusOverlay alloc] initWithFrame:page.bounds];
     _overlay.identifier = @"parc-status-overlay";
@@ -301,7 +307,7 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   return !_invalidated && _attached && _page && _attachedWindow &&
          _page.window == _attachedWindow &&
          _overlay.superview == _page && _overlay.window == _attachedWindow &&
-         _attachedWindow.visible && !_attachedWindow.miniaturized &&
+         [_presentation isWindowVisible:_attachedWindow] && !_attachedWindow.miniaturized &&
          !_page.hiddenOrHasHiddenAncestor && _validate && _validate();
 }
 - (void)setAttached:(BOOL)attached {
@@ -405,7 +411,7 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
     [self rebuildContent];
   }
   __weak PCNativeStatusTextController* weak = self;
-  _visibilityTimer = [NSTimer scheduledTimerWithTimeInterval:.5 repeats:NO
+  _visibilityTimer = [_scheduler scheduledTimerWithTimeInterval:.5 repeats:NO
       block:^(NSTimer*) {
         PCNativeStatusTextController* owner = weak;
         if (!owner || generation != owner->_generation) { return; }
@@ -414,7 +420,7 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
         [owner setVisible:owner->_text.length != 0];
       }];
   if (_text.length && !_explained) {
-    _expansionTimer = [NSTimer scheduledTimerWithTimeInterval:1.5 repeats:NO
+    _expansionTimer = [_scheduler scheduledTimerWithTimeInterval:1.5 repeats:NO
         block:^(NSTimer*) {
           PCNativeStatusTextController* owner = weak;
           if (!owner || generation != owner->_generation) { return; }
@@ -435,7 +441,7 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
     [self startMouseMonitor];
   }
   __weak PCNativeStatusTextController* weak = self;
-  [NSAnimationContext runAnimationGroup:^(NSAnimationContext* context) {
+  [_scheduler runAnimationGroup:^(NSAnimationContext* context) {
     context.allowsImplicitAnimation = YES;
     self->_pill.animator.alphaValue = visible ? 1 : 0;
   } completionHandler:^{
@@ -586,12 +592,12 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   if (_invalidated || _refreshPending || !_text.length) { return; }
   _refreshPending = YES;
   __weak PCNativeStatusTextController* weak = self;
-  dispatch_async(dispatch_get_main_queue(), ^{
+  [_scheduler dispatchToMainQueue:^{
     PCNativeStatusTextController* owner = weak;
     if (!owner) { return; }
     owner->_refreshPending = NO;
     [owner refreshLinkOutcome];
-  });
+  }];
 }
 - (void)refreshLinkOutcome {
   if (_invalidated || !_text.length) { return; }

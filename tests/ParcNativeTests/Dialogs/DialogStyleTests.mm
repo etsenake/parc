@@ -20,7 +20,7 @@ static NSEvent* KeyEvent(NSWindow* window, NSString* characters, unsigned short 
   return [NSEvent keyEventWithType:NSEventTypeKeyDown
                           location:NSZeroPoint
                      modifierFlags:flags
-                         timestamp:NSProcessInfo.processInfo.systemUptime
+                         timestamp:ParcNativeNow()
                       windowNumber:window.windowNumber
                            context:nil
                         characters:characters
@@ -66,7 +66,7 @@ static BOOL Inside(NSView* view) {
 }
 
 - (void)tearDown {
-  [_window close];
+  ParcNativeClose(_window);
   [super tearDown];
 }
 
@@ -74,6 +74,7 @@ static BOOL Inside(NSView* view) {
   PromptOutcome* outcome = _outcome;
   PCDialogPrompt* prompt = [[PCDialogPrompt alloc] initWithTitle:@"Page Unresponsive"
                                                          message:@"Example\nSecond line"];
+  prompt.presentation = ParcNativePresentation();
   [prompt addButtonWithTitle:@"Wait" role:PCDialogPromptPrimary response:NSAlertFirstButtonReturn];
   [prompt addButtonWithTitle:cancelRole ? @"Never Mind" : @"Exit Page"
                         role:cancelRole ? PCDialogPromptCancel : PCDialogPromptAuxiliary
@@ -88,7 +89,7 @@ static BOOL Inside(NSView* view) {
 
 - (void)testThePromptIsAPageWindowSheetAndNotAppModal {
   PCDialogPrompt* prompt = [self present:NO];
-  Check(_window.attachedSheet == prompt.window, "the prompt is attached to the page window");
+  Check(ParcNativeAttachedSheet(_window) == prompt.window, "the prompt is attached to the page window");
   Check(NSApp.modalWindow == nil, "the prompt is not app-modal");
 }
 
@@ -115,7 +116,7 @@ static BOOL Inside(NSView* view) {
   NSWindow* sheet = [self present:NO].window;
   [sheet cancelOperation:nil];
   Drain();
-  Check(_outcome.count == 0 && _window.attachedSheet == sheet,
+  Check(_outcome.count == 0 && ParcNativeAttachedSheet(_window) == sheet,
         "Escape does nothing without a Cancel or chosen Escape button");
 }
 
@@ -132,7 +133,7 @@ static BOOL Inside(NSView* view) {
   PCDialogPrompt* prompt = [self present:NO];
   [Button(prompt.window.contentView, @"Exit Page") performClick:nil];
   Drain();
-  Check(_outcome.count == 1 && _outcome.response == NSAlertSecondButtonReturn && !_window.attachedSheet,
+  Check(_outcome.count == 1 && _outcome.response == NSAlertSecondButtonReturn && !ParcNativeAttachedSheet(_window),
         "auxiliary click ends the sheet with its response");
 }
 
@@ -180,7 +181,7 @@ static BOOL Inside(NSView* view) {
 
 - (void)testAnotherOwnerEndingTheSheetReportsItsCodeOnce {
   PCDialogPrompt* prompt = [self present:YES];
-  [_window endSheet:prompt.window returnCode:NSModalResponseCancel];
+  ParcNativeEndSheetWithCode(_window, prompt.window, NSModalResponseCancel);
   Drain();
   Check(_outcome.count == 1 && _outcome.response == NSModalResponseCancel,
         "another owner ending the sheet reports its code once");
@@ -205,12 +206,13 @@ static BOOL Inside(NSView* view) {
 }
 
 - (void)tearDown {
-  [_window close];
+  ParcNativeClose(_window);
   [super tearDown];
 }
 
 - (void)presentThreeButtons {
   _prompt = [[PCDialogPrompt alloc] initWithTitle:@"Open in app?" message:nil];
+  _prompt.presentation = ParcNativePresentation();
   _open = [_prompt addButtonWithTitle:@"Open “Long Application”"
                                  role:PCDialogPromptPrimary
                              response:NSAlertFirstButtonReturn];
@@ -234,6 +236,7 @@ static BOOL Inside(NSView* view) {
 
 - (void)testAnOverLongButtonIsCappedInsideTheSheetAndKeepsItsFullTitle {
   PCDialogPrompt* huge = [[PCDialogPrompt alloc] initWithTitle:@"Long" message:nil];
+  huge.presentation = ParcNativePresentation();
   NSMutableString* title = [NSMutableString stringWithString:@"Open"];
   for (int i = 0; i < 20; ++i) [title appendString:@" Application"];
   NSButton* wide = [huge addButtonWithTitle:title role:PCDialogPromptPrimary response:NSAlertFirstButtonReturn];
@@ -294,14 +297,14 @@ static BOOL Inside(NSView* view) {
   ok.action = @selector(main);
   cancel.target = fixture.cancelTarget;
   cancel.action = @selector(main);
-  [fixture.window beginSheet:fixture.panel completionHandler:nil];
+  ParcNativeBeginSheet(fixture.window, fixture.panel, nil);
   Drain();
   _fixture = fixture;
 }
 
 - (void)tearDown {
-  [_fixture.window endSheet:_fixture.panel];
-  [_fixture.window close];
+  ParcNativeEndSheet(_fixture.window, _fixture.panel);
+  ParcNativeClose(_fixture.window);
   [super tearDown];
 }
 
@@ -409,7 +412,7 @@ static BOOL Inside(NSView* view) {
 }
 
 - (void)tearDown {
-  [_fixture.window close];
+  ParcNativeClose(_fixture.window);
   [super tearDown];
 }
 

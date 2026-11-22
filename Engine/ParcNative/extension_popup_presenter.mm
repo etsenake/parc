@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstring>
 
+#import "dialog_style.h"
 #import "page_host.h"
 
 namespace {
@@ -23,9 +24,6 @@ CGFloat EaseOut(NSTimeInterval elapsed, NSTimeInterval duration) {
                  CGFloat(1));
   const CGFloat remaining = 1 - progress;
   return 1 - remaining * remaining * remaining;
-}
-NSTimeInterval Now() {
-  return NSProcessInfo.processInfo.systemUptime;
 }
 CGFloat Glide(CGFloat from, CGFloat to, CGFloat eased) {
   if (from == to) {
@@ -194,6 +192,8 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
 @implementation PCExtensionPopupPresenter
 @synthesize extensionIdentifier = _extensionIdentifier;
 @synthesize backdropColor = _backdropColor;
+@synthesize presentation = _presentation;
+@synthesize scheduler = _scheduler;
 - (instancetype)initWithParentWindow:(NSWindow*)parent
                             pageHost:(PCNativePageHost*)page
                               anchor:(PCExtensionPopupAnchor* (^)(void))anchor
@@ -211,8 +211,13 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
     _paintedAt = NAN;
     _resizedAt = NAN;
     _resize = {NSZeroRect, NSZeroRect, NAN};
+    _presentation = PCNativeSystemPresentation.sharedPresentation;
+    _scheduler = PCNativeSystemScheduling.sharedScheduling;
   }
   return self;
+}
+- (NSTimeInterval)now {
+  return _scheduler.systemUptime;
 }
 - (NSWindow*)popupWindow {
   return _popupWindow;
@@ -387,25 +392,26 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
     return NO;
   }
   if (_retiring ||
-      (_popupWindow.parentWindow && _popupWindow.parentWindow != _parent)) {
+      ([_presentation parentWindowOfWindow:_popupWindow] &&
+       [_presentation parentWindowOfWindow:_popupWindow] != _parent)) {
     return NO;
   }
-  if (!_popupWindow.parentWindow) {
+  if (![_presentation parentWindowOfWindow:_popupWindow]) {
     if (!_revealed) {
       _popupWindow.alphaValue = 0;
     }
-    [_parent addChildWindow:_popupWindow ordered:NSWindowAbove];
+    [_presentation window:_parent addChildWindow:_popupWindow ordered:NSWindowAbove];
   }
-  if (_invalidated || !_parent || _popupWindow.parentWindow != _parent) {
+  if (_invalidated || !_parent || [_presentation parentWindowOfWindow:_popupWindow] != _parent) {
     return NO;
   }
   _presenting = YES;
-  [_popupWindow makeKeyAndOrderFront:nil];
+  [_presentation makeKeyAndOrderFrontWindow:_popupWindow];
   if (!_invalidated && !_revealed && std::isnan(_shownAt)) {
-    _shownAt = Now();
+    _shownAt = [self now];
     [self scheduleReveal];
   }
-  return !_invalidated && _popupWindow.isVisible;
+  return !_invalidated && [_presentation isWindowVisible:_popupWindow];
 }
 - (BOOL)resizeContent:(NSSize)size {
   __attribute__((objc_precise_lifetime)) PCExtensionPopupPresenter* keepAlive =
@@ -419,7 +425,7 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
   NSRect resized = [popup
       frameRectForContentRect:NSMakeRect(0, 0, size.width, size.height)];
   if ([self mayGlideResize]) {
-    _resizedAt = Now();
+    _resizedAt = [self now];
     return [self glideToFrameSize:resized.size content:size];
   }
   _resize.start = NAN;
@@ -432,7 +438,7 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
     return NO;
   }
   [self fillPage];
-  _resizedAt = Now();
+  _resizedAt = [self now];
   if (!_revealed) {
     [self scheduleReveal];
   }
@@ -441,10 +447,13 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
 - (BOOL)mayGlideResize {
   NSWindow* popup = _popupWindow;
   NSWindow* parent = _parent;
-  return _revealed && _presenting && !_retiring && parent && parent.visible &&
-         !parent.miniaturized && popup.visible &&
-         popup.parentWindow == parent && _page.window == popup &&
-         !popup.attachedSheet && !popup.childWindows.count;
+  id<PCNativePresentation> presentation = _presentation;
+  return _revealed && _presenting && !_retiring && parent &&
+         [presentation isWindowVisible:parent] && !parent.miniaturized &&
+         [presentation isWindowVisible:popup] &&
+         [presentation parentWindowOfWindow:popup] == parent && _page.window == popup &&
+         ![presentation attachedSheetOfWindow:popup] &&
+         ![presentation childWindowsOfWindow:popup].count;
 }
 - (BOOL)glideToFrameSize:(NSSize)frameSize content:(NSSize)content {
   __attribute__((objc_precise_lifetime)) PCExtensionPopupPresenter* keepAlive =
@@ -465,7 +474,7 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
     target.origin = NSMakePoint(origin.x - parent.x, origin.y - parent.y);
   }
   _resize = PCExtensionPopupRetargetResize(
-      _resize, resting, target, Now(),
+      _resize, resting, target, [self now],
       NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion);
   [self pinPage:content];
   if (![self resizing]) {
@@ -531,7 +540,7 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
   if (_invalidated || !std::isnan(_paintedAt)) {
     return;
   }
-  _paintedAt = Now();
+  _paintedAt = [self now];
   [self scheduleReveal];
 }
 - (void)scheduleReveal {
@@ -541,14 +550,14 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
     return;
   }
   const NSTimeInterval delay = std::max(
-      0.0, PCExtensionPopupRevealTime(_shownAt, _paintedAt, _resizedAt) - Now());
+      0.0, PCExtensionPopupRevealTime(_shownAt, _paintedAt, _resizedAt) - [self now]);
   __weak PCExtensionPopupPresenter* weakSelf = self;
-  _revealTimer = [NSTimer timerWithTimeInterval:delay
-                                        repeats:NO
-                                          block:^(NSTimer* timer) {
-                                            [weakSelf reveal];
-                                          }];
-  [NSRunLoop.mainRunLoop addTimer:_revealTimer forMode:NSRunLoopCommonModes];
+  _revealTimer = [_scheduler timerWithTimeInterval:delay
+                                           repeats:NO
+                                             block:^(NSTimer* timer) {
+                                               [weakSelf reveal];
+                                             }];
+  [_scheduler addTimer:_revealTimer forMode:NSRunLoopCommonModes];
 }
 - (void)reveal {
   __attribute__((objc_precise_lifetime)) PCExtensionPopupPresenter* keepAlive =
@@ -585,7 +594,7 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
 }
 - (void)beginMotion:(Motion)motion {
   _motion = motion;
-  _motionStart = Now();
+  _motionStart = [self now];
   _reduceMotion =
       NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
   _fromAlpha = _popupWindow.alphaValue;
@@ -604,12 +613,12 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
     return;
   }
   __weak PCExtensionPopupPresenter* weakSelf = self;
-  _motionTimer = [NSTimer timerWithTimeInterval:kMotionInterval
-                                        repeats:YES
-                                          block:^(NSTimer* timer) {
-                                            [weakSelf stepMotion];
-                                          }];
-  [NSRunLoop.mainRunLoop addTimer:_motionTimer forMode:NSRunLoopCommonModes];
+  _motionTimer = [_scheduler timerWithTimeInterval:kMotionInterval
+                                           repeats:YES
+                                             block:^(NSTimer* timer) {
+                                               [weakSelf stepMotion];
+                                             }];
+  [_scheduler addTimer:_motionTimer forMode:NSRunLoopCommonModes];
 }
 - (void)stopMotionTimer {
   [_motionTimer invalidate];
@@ -625,10 +634,11 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
     [self stopMotionTimer];
     return;
   }
-  const NSTimeInterval now = Now();
+  const NSTimeInterval now = [self now];
   const Motion motion = _motion;
   if (motion == Motion::kClosing &&
-      (popup.attachedSheet || popup.childWindows.count)) {
+      ([_presentation attachedSheetOfWindow:popup] ||
+       [_presentation childWindowsOfWindow:popup].count)) {
     [self invalidate];
     return;
   }
@@ -640,7 +650,8 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
                                          _fromLift, _reduceMotion);
   }
   const NSTimeInterval resizeStart = _resize.start;
-  const BOOL covered = popup.attachedSheet || popup.childWindows.count;
+  const BOOL covered = [_presentation attachedSheetOfWindow:popup] ||
+                       [_presentation childWindowsOfWindow:popup].count;
   const PCExtensionPopupResizeFrame size =
       resizing && !covered
           ? PCExtensionPopupResizeMotion(now - resizeStart, _resize.from,
@@ -687,10 +698,13 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
   }
   NSWindow* popup = _popupWindow;
   NSWindow* parent = _parent;
-  if (!_presenting || !_revealed || !popup || !parent || !popup.visible ||
-      popup.alphaValue <= 0 || !parent.visible || parent.miniaturized ||
-      popup.parentWindow != parent || _page.window != popup ||
-      popup.attachedSheet || popup.childWindows.count) {
+  id<PCNativePresentation> presentation = _presentation;
+  if (!_presenting || !_revealed || !popup || !parent ||
+      ![presentation isWindowVisible:popup] || popup.alphaValue <= 0 ||
+      ![presentation isWindowVisible:parent] || parent.miniaturized ||
+      [presentation parentWindowOfWindow:popup] != parent || _page.window != popup ||
+      [presentation attachedSheetOfWindow:popup] ||
+      [presentation childWindowsOfWindow:popup].count) {
     return NO;
   }
   _retiring = YES;
@@ -703,7 +717,7 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
   }
   popup.ignoresMouseEvents = YES;
   if (popup.keyWindow && parent.canBecomeKeyWindow) {
-    [parent makeKeyWindow];
+    [_presentation makeKeyWindow:parent];
   }
   if (!_invalidated) {
     [self beginMotion:Motion::kClosing];
@@ -790,11 +804,11 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
   NSWindow* popup = _popupWindow;
   _popupWindow = nil;
   popup.delegate = nil;
-  [popup.parentWindow removeChildWindow:popup];
+  [_presentation window:[_presentation parentWindowOfWindow:popup] removeChildWindow:popup];
   [_page removeFromSuperview];
   popup.contentViewController = nil;
-  [popup orderOut:nil];
-  [popup close];
+  [_presentation orderOutWindow:popup];
+  [_presentation closeWindow:popup];
   [self reportPhase:PCExtensionPopupPhaseClosed popup:popup parent:parent];
   NSArray<void (^)(void)>* completions = _dismissCompletions;
   _dismissCompletions = nil;

@@ -96,7 +96,7 @@ static BOOL Fill(NSWindow* sheet, CGFloat x, CGFloat y, int r, int g, int b) {
          std::abs(c.blueComponent - expected.blueComponent) < 1.5 / 255;
 }
 static NSTimeInterval Uptime() {
-  return NSProcessInfo.processInfo.systemUptime;
+  return ParcNativeNow();
 }
 static BOOL Key(NSWindow* sheet, NSString* key, unsigned short code,
                 NSTimeInterval timestamp, BOOL repeat = NO) {
@@ -116,7 +116,7 @@ static PCExtensionInstallPresenter* Make(
     BOOL (^valid)(),
     BOOL (^input)(NSWindow*),
     void (^result)(PCExtensionInstallChoice, BOOL)) {
-  return [[PCExtensionInstallPresenter alloc]
+  PCExtensionInstallPresenter* presenter = [[PCExtensionInstallPresenter alloc]
       initWithWindow:w
                title:@"Add example?"
                 icon:nil
@@ -131,6 +131,9 @@ static PCExtensionInstallPresenter* Make(
             validate:valid
         inputAllowed:input
               result:result];
+  presenter.presentation = ParcNativePresentation();
+  presenter.scheduler = ParcNativeScheduler();
+  return presenter;
 }
 @interface ParcNativeTests_ExtensionInstallTests : ParcNativeTestCase
 @end
@@ -151,7 +154,7 @@ static PCExtensionInstallPresenter* Make(
 }
 
 - (void)tearDown {
-  [_w close];
+  ParcNativeClose(_w);
   Pump();
   [super tearDown];
 }
@@ -192,7 +195,7 @@ static PCExtensionInstallPresenter* Make(
 }
 
 - (PCExtensionInstallPresenter*)upstreamPresenterWithPermissions:(NSArray*)permissions details:(NSArray*)details {
-  return [[PCExtensionInstallPresenter alloc] initWithWindow:_w
+  PCExtensionInstallPresenter* presenter = [[PCExtensionInstallPresenter alloc] initWithWindow:_w
                                                        title:@"Upstream install"
                                                         icon:nil
                                                      heading:@"Upstream permissions"
@@ -206,6 +209,9 @@ static PCExtensionInstallPresenter* Make(
                                                     }
                                                 inputAllowed:self.inputAllowed
                                                       result:self.result];
+  presenter.presentation = ParcNativePresentation();
+  presenter.scheduler = ParcNativeScheduler();
+  return presenter;
 }
 
 - (PCExtensionInstallPresenter*)shownEducation {
@@ -247,7 +253,7 @@ static PCExtensionInstallPresenter* Make(
   auto* closing = Window();
   auto* first = [PCNativeWindowSecurityReservation acquireForWindow:closing];
   EXPECT(first.isOnlyReservation);
-  [closing close];
+  ParcNativeClose(closing);
   EXPECT(!first.active && !first.isOnlyReservation);
 }
 
@@ -256,7 +262,7 @@ static PCExtensionInstallPresenter* Make(
   [p start];
   EXPECT(!p.sheet);
   Pump();
-  EXPECT(p.sheet && _w.attachedSheet == p.sheet && p.sheet.visible);
+  EXPECT(p.sheet && ParcNativeAttachedSheet(_w) == p.sheet && ParcNativeVisible(p.sheet));
   NSButton* add = Button(p.sheet.contentView, @"Add");
   NSButton* cancel = Button(p.sheet.contentView, @"Cancel");
   EXPECT(add && cancel);
@@ -288,7 +294,7 @@ static PCExtensionInstallPresenter* Make(
   EXPECT(_results == 0);
   Pump();
   EXPECT(_results == 1 && _choice == PCExtensionInstallAccept && _grants);
-  EXPECT(!p.sheet && !_w.attachedSheet);
+  EXPECT(!p.sheet && !ParcNativeAttachedSheet(_w));
   [p invalidate];
   Pump();
   EXPECT(_results == 1);
@@ -318,7 +324,7 @@ static PCExtensionInstallPresenter* Make(
 }
 
 - (void)testAHiddenWindowInterrupts {
-  [_w orderOut:nil];
+  ParcNativeOrderOut(_w);
   PCExtensionInstallPresenter* p = [self make];
   [p start];
   Pump();
@@ -327,7 +333,7 @@ static PCExtensionInstallPresenter* Make(
 
 - (void)testClosingTheWindowInterrupts {
   [self shownPresenter];
-  [_w close];
+  ParcNativeClose(_w);
   Pump();
   EXPECT(_results == 1 && _choice == PCExtensionInstallInterrupted);
 }
@@ -358,7 +364,7 @@ static PCExtensionInstallPresenter* Make(
   [p invalidate];
   [p invalidate];
   Pump();
-  EXPECT(_results == 1 && _choice == PCExtensionInstallInterrupted && !_w.attachedSheet);
+  EXPECT(_results == 1 && _choice == PCExtensionInstallInterrupted && !ParcNativeAttachedSheet(_w));
 }
 
 - (void)testAValidationThatInvalidatesThePresenterInterrupts {
@@ -369,7 +375,7 @@ static PCExtensionInstallPresenter* Make(
   }];
   [reentrant start];
   Pump();
-  EXPECT(_results == 1 && !reentrant.sheet && !_w.attachedSheet);
+  EXPECT(_results == 1 && !reentrant.sheet && !ParcNativeAttachedSheet(_w));
   reentrant = nil;
 }
 
@@ -378,13 +384,13 @@ static PCExtensionInstallPresenter* Make(
                                                 styleMask:NSWindowStyleMaskBorderless
                                                   backing:NSBackingStoreBuffered
                                                     defer:NO];
-  [_w beginSheet:other completionHandler:nil];
+  ParcNativeBeginSheet(_w, other, nil);
   PCExtensionInstallPresenter* p = [self make];
   [p start];
   Pump();
-  EXPECT(_results == 1 && _choice == PCExtensionInstallInterrupted && _w.attachedSheet == other);
-  [_w endSheet:other];
-  [other orderOut:nil];
+  EXPECT(_results == 1 && _choice == PCExtensionInstallInterrupted && ParcNativeAttachedSheet(_w) == other);
+  ParcNativeEndSheet(_w, other);
+  ParcNativeOrderOut(other);
 }
 
 - (void)testEducationWithoutPermissionsSaysItNeedsNone {
@@ -480,6 +486,8 @@ static PCExtensionInstallPresenter* Make(
                                                                               }
                                                                           inputAllowed:self.inputAllowed
                                                                                 result:self.result];
+  p.presentation = ParcNativePresentation();
+  p.scheduler = ParcNativeScheduler();
   [p configureInstallationEducationWithName:@"Example with detailed permissions"];
   [p start];
   Pump();
@@ -520,6 +528,8 @@ static PCExtensionInstallPresenter* Make(
                                                                               }
                                                                           inputAllowed:self.inputAllowed
                                                                                 result:self.result];
+  p.presentation = ParcNativePresentation();
+  p.scheduler = ParcNativeScheduler();
   [p configureJustificationLabel:@"Why do you need it?"
                      placeholder:@"Reason"
                      counterText:^NSString*(NSUInteger length) {
@@ -581,7 +591,7 @@ static PCExtensionInstallPresenter* Make(
   NSEvent* escape = [NSEvent keyEventWithType:NSEventTypeKeyDown
                                      location:NSZeroPoint
                                 modifierFlags:0
-                                    timestamp:NSProcessInfo.processInfo.systemUptime
+                                    timestamp:ParcNativeNow()
                                  windowNumber:p.sheet.windowNumber
                                       context:nil
                                    characters:@"\033"

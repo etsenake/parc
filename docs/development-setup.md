@@ -284,21 +284,31 @@ regenerate both files from the headers:
 swift package --allow-writing-to-package-directory generate-engine-stub
 ```
 
-Engine components that build without Chromium are in the `ParcNative` library.
-`tests/ParcNativeLibrary` holds a symlink to each `Engine/ParcNative` source it
-compiles, so adding a Chromium-free source means adding a symlink. Its
-`include` folder holds the header shims for Chromium include paths.
+Engine components that build without Chromium are in the `ParcNative` library,
+which compiles the `Engine/ParcNative` sources named in the manifest's
+`nativeLibrarySources`, so adding a Chromium-free source means adding its name
+there. Its public headers folder, `tests/ParcNativeShims`, holds the shims for
+Chromium include paths.
 `ParcNativeTests` (in `tests/ParcNativeTests`) tests the library with
 Objective-C XCTest cases built on `ParcNativeTestCase`. Check with `PARC_CHECK`
 or the suite's `Check(condition, message)`; both stop the test at the first
 failure. Name the classes with a `Tests` suffix and filter by class, for example
 `swift test --filter PageHostTests`. Never edit an engine input for a test.
 
+Parc's native presenters reach windows and time through two protocols in
+`page_host.h`. `PCNativePresentation` covers sheets, child windows, ordering,
+visibility and popovers; `PCNativeScheduling` covers uptime, dates, timers,
+run-loop and main-queue hops and animation groups. Each presenter starts with
+the system implementation, which makes exactly the AppKit, Foundation and GCD
+calls. A test hands it the test case's offscreen doubles, `ParcNativePresentation()`
+and `ParcNativeScheduler()`, which keep sheets, children and visibility as state
+and never order a window on screen. Check that state with the `ParcNative…`
+helpers in `ParcNativeWindows.h`, such as `ParcNativeAttachedSheet`.
+
 Native tests never wait in real time. `ParcNativeAdvance(seconds)` moves the test
-clock, fires the engine timers that fall due and then settles the run loop.
-`ParcNativeSettle()` handles only the work that is already pending. The clock
-covers `systemUptime`, `NSDate` and `NSTimer` when Parc code calls them. Parc's
-own `NSAnimationContext` animations and AppKit sheet moves run at zero duration.
+clock, fires the timers that fall due and then settles pending work.
+`ParcNativeSettle()` handles only the work that is already pending. Animation
+groups run at zero duration.
 
 The `EngineFacade*Tests` targets compile the app's engine facade against test
 doubles of the native classes. Each set of doubles gets its own target, so the

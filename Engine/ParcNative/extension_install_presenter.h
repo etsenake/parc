@@ -2,6 +2,7 @@
 #pragma once
 #import <AppKit/AppKit.h>
 NS_ASSUME_NONNULL_BEGIN
+@protocol PCNativePresentation, PCNativeScheduling;
 typedef NS_ENUM(NSInteger, PCExtensionInstallChoice) {
   PCExtensionInstallAccept,
   PCExtensionInstallCancel,
@@ -40,5 +41,7 @@ typedef NS_ENUM(NSInteger, PCExtensionInstallChoice) {
                        counterText:(NSString* (^)(NSUInteger length))counter;
 @property(nonatomic, readonly, copy) NSString* justification;
 @property(nonatomic, readonly, nullable) NSWindow* sheet;
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
+@property(nonatomic, strong) id<PCNativeScheduling> scheduler;
 @end
 NS_ASSUME_NONNULL_END

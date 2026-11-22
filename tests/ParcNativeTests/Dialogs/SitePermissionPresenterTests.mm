@@ -68,6 +68,8 @@ static PCSitePermissionPresenter* Request(
       result:^(PCSitePermissionChoice choice, BOOL) {
         result(choice);
       }];
+  r.presentation = ParcNativePresentation();
+  r.scheduler = ParcNativeScheduler();
   [r configureSymbol:@"camera.fill" pointSize:14 bold:NO offsetY:-1];
   return r;
 }
@@ -116,7 +118,7 @@ static double DrawnAlpha(NSButton* button) {
 - (void)tearDown {
   [_request invalidate];
   Drain();
-  [_window close];
+  ParcNativeClose(_window);
   [super tearDown];
 }
 
@@ -130,6 +132,8 @@ static double DrawnAlpha(NSButton* button) {
         self->_precise = precise;
         ++self->_results;
       }];
+  _request.presentation = ParcNativePresentation();
+  _request.scheduler = ParcNativeScheduler();
   [_request configureSymbol:@"camera.fill" pointSize:14 bold:NO offsetY:-1];
 }
 
@@ -165,7 +169,7 @@ static double DrawnAlpha(NSButton* button) {
 
 - (void)testThePromptLeavesTheParentsSheetSlotAvailable {
   [self show];
-  PARC_CHECK(_request.shown && _request.sheet != _window && !_window.attachedSheet);
+  PARC_CHECK(_request.shown && _request.sheet != _window && !ParcNativeAttachedSheet(_window));
 }
 
 - (void)testTheTitleNamesTheRequestingSiteAndItsPermissions {
@@ -217,7 +221,7 @@ static double DrawnAlpha(NSButton* button) {
 }
 
 - (void)testAHiddenParentInterruptsWithoutAcknowledging {
-  [_window orderOut:nil];
+  ParcNativeOrderOut(_window);
   [self show];
   Drain();
   PARC_CHECK(_results == 1 && _choice == PCSitePermissionInterrupted && !_presentations);
@@ -256,7 +260,7 @@ static double DrawnAlpha(NSButton* button) {
 
 - (void)testClosingTheParentInterruptsThePrompt {
   [self show];
-  [_window close];
+  ParcNativeClose(_window);
   Drain();
   PARC_CHECK(_results == 1 && _choice == PCSitePermissionInterrupted);
 }
@@ -267,8 +271,8 @@ static double DrawnAlpha(NSButton* button) {
   NSWindow* other = Window();
   [other.contentView addSubview:_page];
   Drain();
-  PARC_CHECK(_results == 1 && _choice == PCSitePermissionInterrupted && !_window.attachedSheet && !other.attachedSheet);
-  [other close];
+  PARC_CHECK(_results == 1 && _choice == PCSitePermissionInterrupted && !ParcNativeAttachedSheet(_window) && !ParcNativeAttachedSheet(other));
+  ParcNativeClose(other);
 }
 
 - (void)testASecondPromptIsRejectedWithoutDismissingTheFirst {
@@ -353,10 +357,10 @@ static double DrawnAlpha(NSButton* button) {
 - (void)testAnotherSheetInterruptsTheOpenPrompt {
   [self show];
   NSWindow* sheet = ParcNativeOffscreenWindow(NSMakeRect(0, 0, 200, 100), NSWindowStyleMaskBorderless);
-  [_window beginSheet:sheet completionHandler:nil];
+  ParcNativeBeginSheet(_window, sheet, nil);
   Drain();
   PARC_CHECK(_results == 1 && _choice == PCSitePermissionInterrupted && !_request.shown);
-  [_window endSheet:sheet];
+  ParcNativeEndSheet(_window, sheet);
 }
 
 - (void)testTheFallbackAnchorIsTheTopCornerOfThePage {

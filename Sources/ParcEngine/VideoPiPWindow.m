@@ -1,9 +1,112 @@
 // Copyright 2026 Parc contributors.
 #import "VideoPiPWindow.h"
 
+#import "page_host.h"
+
 #import <QuartzCore/QuartzCore.h>
 #include <dlfcn.h>
 #include <math.h>
+
+@interface PCVideoPiPSystemSeams : NSObject <PCNativePresentation, PCNativeScheduling>
+@property(class, nonatomic, readonly) PCVideoPiPSystemSeams* sharedSeams;
+@end
+@implementation PCVideoPiPSystemSeams
++ (PCVideoPiPSystemSeams*)sharedSeams {
+  static PCVideoPiPSystemSeams* shared;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    shared = [[PCVideoPiPSystemSeams alloc] init];
+  });
+  return shared;
+}
+- (NSWindow*)attachedSheetOfWindow:(NSWindow*)window {
+  return window.attachedSheet;
+}
+- (NSWindow*)sheetParentOfWindow:(NSWindow*)window {
+  return window.sheetParent;
+}
+- (NSWindow*)parentWindowOfWindow:(NSWindow*)window {
+  return window.parentWindow;
+}
+- (NSArray<NSWindow*>*)childWindowsOfWindow:(NSWindow*)window {
+  return window.childWindows;
+}
+- (BOOL)isWindowVisible:(NSWindow*)window {
+  return window.visible;
+}
+- (void)window:(NSWindow*)window
+           beginSheet:(NSWindow*)sheet
+    completionHandler:(void (^)(NSModalResponse))handler {
+  [window beginSheet:sheet completionHandler:handler];
+}
+- (void)window:(NSWindow*)window endSheet:(NSWindow*)sheet {
+  [window endSheet:sheet];
+}
+- (void)window:(NSWindow*)window endSheet:(NSWindow*)sheet returnCode:(NSModalResponse)code {
+  [window endSheet:sheet returnCode:code];
+}
+- (void)endApplicationSheet:(NSWindow*)sheet {
+  [NSApp endSheet:sheet];
+}
+- (void)window:(NSWindow*)window
+    addChildWindow:(NSWindow*)child
+           ordered:(NSWindowOrderingMode)place {
+  [window addChildWindow:child ordered:place];
+}
+- (void)window:(NSWindow*)window removeChildWindow:(NSWindow*)child {
+  [window removeChildWindow:child];
+}
+- (void)orderFrontWindow:(NSWindow*)window {
+  [window orderFront:nil];
+}
+- (void)makeKeyAndOrderFrontWindow:(NSWindow*)window {
+  [window makeKeyAndOrderFront:nil];
+}
+- (void)makeKeyWindow:(NSWindow*)window {
+  [window makeKeyWindow];
+}
+- (void)orderOutWindow:(NSWindow*)window {
+  [window orderOut:nil];
+}
+- (void)closeWindow:(NSWindow*)window {
+  [window close];
+}
+- (NSPopover*)makePopover {
+  return [NSPopover new];
+}
+- (NSTimeInterval)systemUptime {
+  return NSProcessInfo.processInfo.systemUptime;
+}
+- (NSDate*)currentDate {
+  return [NSDate date];
+}
+- (NSTimeInterval)timeIntervalSinceNowForDate:(NSDate*)date {
+  return [date timeIntervalSinceNow];
+}
+- (NSTimer*)timerWithTimeInterval:(NSTimeInterval)interval
+                          repeats:(BOOL)repeats
+                            block:(void (^)(NSTimer*))block {
+  return [NSTimer timerWithTimeInterval:interval repeats:repeats block:block];
+}
+- (NSTimer*)scheduledTimerWithTimeInterval:(NSTimeInterval)interval
+                                   repeats:(BOOL)repeats
+                                     block:(void (^)(NSTimer*))block {
+  return [NSTimer scheduledTimerWithTimeInterval:interval repeats:repeats block:block];
+}
+- (void)addTimer:(NSTimer*)timer forMode:(NSRunLoopMode)mode {
+  [[NSRunLoop mainRunLoop] addTimer:timer forMode:mode];
+}
+- (void)performInModes:(NSArray<NSRunLoopMode>*)modes block:(void (^)(void))block {
+  [[NSRunLoop mainRunLoop] performInModes:modes block:block];
+}
+- (void)dispatchToMainQueue:(dispatch_block_t)block {
+  dispatch_async(dispatch_get_main_queue(), block);
+}
+- (void)runAnimationGroup:(void (^)(NSAnimationContext*))changes
+        completionHandler:(void (^)(void))completion {
+  [NSAnimationContext runAnimationGroup:changes completionHandler:completion];
+}
+@end
 
 @interface PCVideoPiPSlider : NSSlider
 @property(nonatomic, copy) void (^scrubbingChanged)(BOOL);
@@ -269,12 +372,14 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 @interface PCVideoPiPContent : NSView
 @property(nonatomic, copy) dispatch_block_t changed;
 @property(nonatomic, copy) void (^hoverChanged)(BOOL hovering);
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
 @end
 @implementation PCVideoPiPContent {
   NSTrackingArea* _tracking;
 }
 @synthesize changed = _changed;
 @synthesize hoverChanged = _hoverChanged;
+@synthesize presentation = _presentation;
 - (void)updateTrackingAreas {
   [super updateTrackingAreas];
   if (_tracking) {
@@ -299,7 +404,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 - (void)mouseExited:(NSEvent*)event {
   (void)event;
   NSWindow* window = self.window;
-  if (window && window.visible &&
+  if (window && [_presentation isWindowVisible:window] &&
       NSPointInRect(NSEvent.mouseLocation, window.frame)) {
     return;
   }
@@ -359,6 +464,15 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   NSTimer* _progressTimer;
   __weak PCVideoPiPChromeButton* _pointed;
   NSSize _pendingNaturalSize;
+  id<PCNativePresentation> _presentation;
+}
+@synthesize scheduler = _scheduler;
+- (id<PCNativePresentation>)presentation {
+  return _presentation;
+}
+- (void)setPresentation:(id<PCNativePresentation>)presentation {
+  _presentation = presentation;
+  ((PCVideoPiPContent*)_panel.contentView).presentation = presentation;
 }
 
 - (NSButton*)makeChromeButton:(NSString*)symbol
@@ -396,6 +510,8 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   _changed = [changed copy];
   _controlsEnabled = YES;
   _buttons = [NSMutableDictionary new];
+  _presentation = PCVideoPiPSystemSeams.sharedSeams;
+  _scheduler = PCVideoPiPSystemSeams.sharedSeams;
   NSRect frame = PCVideoPiPFrameForNaturalSize(NSZeroSize);
   _panel = [[PCVideoPiPPanel alloc]
       initWithContentRect:frame
@@ -425,6 +541,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   content.layer.cornerRadius = kPCVideoPiPCornerRadius;
   content.layer.cornerCurve = kCACornerCurveContinuous;
   content.layer.masksToBounds = YES;
+  content.presentation = _presentation;
   _panel.contentView = content;
 
   _videoView.frame = content.bounds;
@@ -613,7 +730,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
     [self setHovering:NO];
     return;
   }
-  if (!_panel.isVisible) {
+  if (![_presentation isWindowVisible:_panel]) {
     return;
   }
   NSPoint screenPoint = [NSEvent mouseLocation];
@@ -624,7 +741,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 
 - (void)refreshPointer {
   PCVideoPiPChromeButton* button = nil;
-  if (!_invalidated && _panel.visible && !_chrome.hidden) {
+  if (!_invalidated && [_presentation isWindowVisible:_panel] && !_chrome.hidden) {
     NSView* content = _panel.contentView;
     const NSPoint point =
         [content.superview convertPoint:[_panel convertPointFromScreen:
@@ -717,7 +834,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   }
   double position = _mediaPosition;
   if (_playbackRate != 0 && _positionSampleAt) {
-    position += (-[_positionSampleAt timeIntervalSinceNow]) * _playbackRate;
+    position += (-[_scheduler timeIntervalSinceNowForDate:_positionSampleAt]) * _playbackRate;
   }
   return fmax(0, fmin(position, _mediaDuration));
 }
@@ -738,15 +855,14 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   if (need) {
     if (!_progressTimer) {
       __weak PCVideoPiPPresenter* weakSelf = self;
-      _progressTimer = [NSTimer
+      _progressTimer = [_scheduler
           scheduledTimerWithTimeInterval:kPCVideoPiPProgressInterval
                                 repeats:YES
                                   block:^(NSTimer* timer) {
                                     (void)timer;
                                     [weakSelf refreshSliderValue];
                                   }];
-      [[NSRunLoop mainRunLoop] addTimer:_progressTimer
-                                forMode:NSRunLoopCommonModes];
+      [_scheduler addTimer:_progressTimer forMode:NSRunLoopCommonModes];
     }
   } else if (_progressTimer) {
     [_progressTimer invalidate];
@@ -769,7 +885,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
     return;
   }
   _mediaPosition = sender.doubleValue;
-  _positionSampleAt = [NSDate date];
+  _positionSampleAt = _scheduler.currentDate;
   void (^callback)(PCVideoPiPAction, double) = [_action copy];
   if (callback) {
     callback(PCVideoPiPSeek, sender.doubleValue);
@@ -780,7 +896,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
     return;
   }
   __attribute__((objc_precise_lifetime)) PCVideoPiPPresenter* keep = self;
-  [_panel orderFront:nil];
+  [_presentation orderFrontWindow:_panel];
   keep->_shown = YES;
   [keep->_panel.contentView updateTrackingAreas];
   [keep refreshSliderValue];
@@ -793,7 +909,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
     return;
   }
   __attribute__((objc_precise_lifetime)) PCVideoPiPPresenter* keep = self;
-  [_panel orderOut:nil];
+  [_presentation orderOutWindow:_panel];
   keep->_shown = NO;
   [keep pointAt:nil];
   [keep syncProgressTimer];
@@ -814,8 +930,8 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   ((PCVideoPiPContent*)_panel.contentView).changed = nil;
   ((PCVideoPiPContent*)_panel.contentView).hoverChanged = nil;
   _panel.delegate = nil;
-  [_panel orderOut:nil];
-  [_panel close];
+  [_presentation orderOutWindow:_panel];
+  [_presentation closeWindow:_panel];
   [_videoView removeFromSuperview];
 }
 - (void)setNaturalSize:(NSSize)size {
@@ -889,7 +1005,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
     button.accessibilityLabel = title;
     if (playing != _playing) {
       _mediaPosition = [self currentMediaPosition];
-      _positionSampleAt = [NSDate date];
+      _positionSampleAt = _scheduler.currentDate;
       _playing = playing;
       if (_playbackRate == 0 || _playbackRate == 1) {
         _playbackRate = playing ? 1.0 : 0.0;
@@ -957,7 +1073,7 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   _mediaDuration = valid ? duration : 0;
   _mediaPosition = valid ? fmax(0, fmin(position, duration)) : 0;
   _playbackRate = valid ? playbackRate : 0;
-  _positionSampleAt = [NSDate date];
+  _positionSampleAt = _scheduler.currentDate;
   if (_playbackRate != 0) {
     _playing = YES;
   } else if (valid) {

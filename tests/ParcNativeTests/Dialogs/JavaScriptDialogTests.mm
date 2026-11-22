@@ -9,6 +9,11 @@
 #import "javascript_dialog_presenter.h"
 
 #define Check(...) ParcNativeCheckMessage(__FILE__, __LINE__, __VA_ARGS__)
+static PCJavaScriptDialogPresenter* Offscreen(PCJavaScriptDialogPresenter* presenter) NS_RETURNS_RETAINED {
+  presenter.presentation = ParcNativePresentation();
+  presenter.scheduler = ParcNativeScheduler();
+  return presenter;
+}
 static void Drain(void) {
   ParcNativeAdvance(0.12);
 }
@@ -77,7 +82,7 @@ static NSEvent* Key(NSWindow* window, NSString* characters, unsigned short code,
                            keyCode:code];
 }
 static NSTimeInterval Now(void) {
-  return NSProcessInfo.processInfo.systemUptime;
+  return ParcNativeNow();
 }
 static void Present(PCJavaScriptDialogPresenter* presenter,
                     PCJavaScriptDialogKind kind,
@@ -121,12 +126,12 @@ static NSTextField* Label(NSView* view, NSString* text) {
   [super setUp];
   _window = Window();
   _page = Page(_window);
-  _presenter = [[PCJavaScriptDialogPresenter alloc] initWithPageView:_page];
+  _presenter = Offscreen([[PCJavaScriptDialogPresenter alloc] initWithPageView:_page]);
 }
 
 - (void)tearDown {
   [_presenter invalidate];
-  [_window close];
+  ParcNativeClose(_window);
   [super tearDown];
 }
 
@@ -150,7 +155,7 @@ static NSTextField* Label(NSView* view, NSString* text) {
 
 - (void)testAnAlertBelongsToItsPageWindow {
   NSWindow* sheet = [self present:PCJavaScriptDialogAlert];
-  PARC_CHECK(_presenter.isPresenting && sheet.sheetParent == _window && !NSApp.modalWindow);
+  PARC_CHECK(_presenter.isPresenting && ParcNativeSheetParent(sheet) == _window && !NSApp.modalWindow);
 }
 
 - (void)testAlertAcknowledges {
@@ -193,7 +198,7 @@ static NSTextField* Label(NSView* view, NSString* text) {
 
 - (void)testTheSheetIsDetachedBeforeCompletion {
   Present(_presenter, PCJavaScriptDialogConfirm, ^(BOOL, NSString*, BOOL) {
-    PARC_CHECK(!self->_presenter.isPresenting && !self->_window.attachedSheet);
+    PARC_CHECK(!self->_presenter.isPresenting && !ParcNativeAttachedSheet(self->_window));
     ++self->_results;
   });
   Click(_presenter, @"OK");
@@ -268,7 +273,7 @@ static NSTextField* Label(NSView* view, NSString* text) {
 
 - (void)testAnotherPageInTheWindowCannotStackAConfirmation {
   [self present:PCJavaScriptDialogConfirm];
-  PCJavaScriptDialogPresenter* other = [[PCJavaScriptDialogPresenter alloc] initWithPageView:Page(_window)];
+  PCJavaScriptDialogPresenter* other = Offscreen([[PCJavaScriptDialogPresenter alloc] initWithPageView:Page(_window)]);
   __block BOOL rejected = NO;
   Present(other, PCJavaScriptDialogConfirm, ^(BOOL accepted, NSString*, BOOL) { rejected = !accepted; });
   PARC_CHECK(rejected && _presenter.isPresenting && _results == 0);
@@ -279,15 +284,15 @@ static NSTextField* Label(NSView* view, NSString* text) {
   NSWindow* other = Window();
   [other.contentView addSubview:_page];
   [_presenter handleAccepted:YES promptOverride:nil];
-  [other close];
+  ParcNativeClose(other);
   PARC_CHECK(_results == 1 && !_accepted);
 }
 
 - (void)testANewRequestBindsToTheNewWindow {
   NSWindow* other = Window();
   [other.contentView addSubview:_page];
-  PARC_CHECK([self present:PCJavaScriptDialogConfirm].sheetParent == other);
-  [other close];
+  PARC_CHECK(ParcNativeSheetParent([self present:PCJavaScriptDialogConfirm]) == other);
+  ParcNativeClose(other);
 }
 
 - (void)testDetachingRejectsThePendingRequestImmediately {
@@ -299,18 +304,18 @@ static NSTextField* Label(NSView* view, NSString* text) {
 - (void)testADetachedPageCannotShowBeforeUnload {
   [_page removeFromSuperview];
   [self present:PCJavaScriptDialogBeforeUnload];
-  PARC_CHECK(_results == 1 && !_accepted && !_window.attachedSheet);
+  PARC_CHECK(_results == 1 && !_accepted && !ParcNativeAttachedSheet(_window));
 }
 
 - (void)testClosingTheParentRejectsThePendingRequest {
   [self present:PCJavaScriptDialogConfirm];
-  [_window close];
+  ParcNativeClose(_window);
   PARC_CHECK(_results == 1 && !_accepted);
 }
 
 - (void)testAClosedWindowCannotReceiveANewRequest {
   [self present:PCJavaScriptDialogConfirm];
-  [_window close];
+  ParcNativeClose(_window);
   [self present:PCJavaScriptDialogConfirm];
   PARC_CHECK(_results == 2 && !_accepted && !_presenter.isPresenting);
 }
@@ -331,7 +336,7 @@ static NSTextField* Label(NSView* view, NSString* text) {
     [self present:PCJavaScriptDialogConfirm];
     _presenter = nil;
   }
-  PARC_CHECK(!weak && _results == 1 && !_accepted && !_window.attachedSheet);
+  PARC_CHECK(!weak && _results == 1 && !_accepted && !ParcNativeAttachedSheet(_window));
 }
 
 - (void)testAButtonCompletionCanReleaseThePresenter {
@@ -352,7 +357,7 @@ static NSTextField* Label(NSView* view, NSString* text) {
   @autoreleasepool {
     NSView* detached = [NSView new];
     weak = detached;
-    _presenter = [[PCJavaScriptDialogPresenter alloc] initWithPageView:detached];
+    _presenter = Offscreen([[PCJavaScriptDialogPresenter alloc] initWithPageView:detached]);
   }
   [self present:PCJavaScriptDialogAlert];
   PARC_CHECK(!weak && _results == 1 && !_accepted);
@@ -410,12 +415,12 @@ static NSTextField* Label(NSView* view, NSString* text) {
 - (void)testEndingOneWindowsSheetLeavesTheOtherPending {
   [self present:PCJavaScriptDialogConfirm];
   NSWindow* other = Window();
-  PCJavaScriptDialogPresenter* second = [[PCJavaScriptDialogPresenter alloc] initWithPageView:Page(other)];
+  PCJavaScriptDialogPresenter* second = Offscreen([[PCJavaScriptDialogPresenter alloc] initWithPageView:Page(other)]);
   Present(second, PCJavaScriptDialogConfirm, ^(BOOL, NSString*, BOOL) {});
-  [_window endSheet:_presenter.presentedSheet returnCode:NSModalResponseAbort];
-  PARC_CHECK(_results == 1 && !_accepted && second.isPresenting && second.presentedSheet.sheetParent == other);
+  ParcNativeEndSheetWithCode(_window, _presenter.presentedSheet, NSModalResponseAbort);
+  PARC_CHECK(_results == 1 && !_accepted && second.isPresenting && ParcNativeSheetParent(second.presentedSheet) == other);
   [second invalidate];
-  [other close];
+  ParcNativeClose(other);
 }
 
 - (void)testADecisionReleasesTheCompletionCapture {
@@ -568,7 +573,7 @@ static NSTextField* Label(NSView* view, NSString* text) {
 - (void)testAnExternalSheetEndIgnoresTheCheckbox {
   NSButton* box = Button([self present:PCJavaScriptDialogConfirm suppression:YES].contentView, @"Don't show this again");
   box.state = NSControlStateValueOn;
-  [_window endSheet:_presenter.presentedSheet returnCode:NSModalResponseAbort];
+  ParcNativeEndSheetWithCode(_window, _presenter.presentedSheet, NSModalResponseAbort);
   PARC_CHECK(_results == 1 && !_accepted && !_suppressed);
 }
 

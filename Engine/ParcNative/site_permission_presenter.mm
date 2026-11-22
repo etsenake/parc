@@ -1,5 +1,7 @@
 #import "site_permission_presenter.h"
 
+#import "dialog_style.h"
+
 static BOOL PCPromptDark(NSView* view) {
   NSAppearanceName match = [view.effectiveAppearance
       bestMatchFromAppearancesWithNames:@[
@@ -226,13 +228,9 @@ static NSHashTable<PCSitePermissionPresenter*>* PCShownPrompts(void) {
   return table;
 }
 
-static void Later(void (^block)(void)) {
-  [NSRunLoop.mainRunLoop
-      performInModes:@[ NSRunLoopCommonModes, NSModalPanelRunLoopMode ]
-               block:block];
-}
-
 @implementation PCSitePermissionPresenter
+@synthesize presentation = _presentation;
+@synthesize scheduler = _scheduler;
 - (instancetype)initWithPage:(NSView*)page
                       window:(NSWindow*)window
                        title:(NSString*)title
@@ -257,6 +255,8 @@ static void Later(void (^block)(void)) {
     _validate = [validate copy];
     _presented = [presented copy];
     _result = [result copy];
+    _presentation = PCNativeSystemPresentation.sharedPresentation;
+    _scheduler = PCNativeSystemScheduling.sharedScheduling;
     __weak PCSitePermissionPresenter* weak = self;
     _closeObserver = [NSNotificationCenter.defaultCenter
         addObserverForName:NSWindowWillCloseNotification
@@ -312,13 +312,14 @@ static void Later(void (^block)(void)) {
   NSView* page = _page;
   NSWindow* window = _window;
   if (_invalidated || !page || !window || page.window != window ||
-      !window.visible || window.miniaturized ||
+      ![_presentation isWindowVisible:window] || window.miniaturized ||
       page.hiddenOrHasHiddenAncestor) {
     return NO;
   }
   BOOL valid = _validate && _validate();
   return valid && !_invalidated && _page == page && _window == window &&
-         page.window == window && window.visible && !window.miniaturized &&
+         page.window == window && [_presentation isWindowVisible:window] &&
+         !window.miniaturized &&
          !page.hiddenOrHasHiddenAncestor;
 }
 - (NSView*)buildCard {
@@ -432,6 +433,10 @@ static void Later(void (^block)(void)) {
   [NSLayoutConstraint activateConstraints:constraints];
   return card;
 }
+- (void)later:(void (^)(void))block {
+  [_scheduler performInModes:@[ NSRunLoopCommonModes, NSModalPanelRunLoopMode ]
+                       block:block];
+}
 - (BOOL)showPopover:(NSPopover*)popover {
   NSView* page = _page;
   NSWindow* window = _window;
@@ -466,7 +471,7 @@ static void Later(void (^block)(void)) {
     return;
   }
   _started = YES;
-  Later(^{
+  [self later:^{
     if (self->_finished) {
       return;
     }
@@ -476,7 +481,9 @@ static void Later(void (^block)(void)) {
     for (PCSitePermissionPresenter* other in PCShownPrompts()) {
       busy |= other != self && !other->_finished && other->_window == window;
     }
-    if (![self valid] || !window || !page || window.attachedSheet || busy) {
+    id<PCNativePresentation> presentation = self->_presentation;
+    if (![self valid] || !window || !page || [presentation attachedSheetOfWindow:window] ||
+        busy) {
       [self finish:PCSitePermissionInterrupted];
       return;
     }
@@ -484,7 +491,7 @@ static void Later(void (^block)(void)) {
     self->_card = card;
     NSViewController* content = [NSViewController new];
     content.view = card;
-    NSPopover* popover = [NSPopover new];
+    NSPopover* popover = [presentation makePopover];
     const BOOL system =
         [self->_followUpChoices containsObject:@(PCSitePermissionRequestSystem)] ||
         [self->_followUpChoices
@@ -495,7 +502,7 @@ static void Later(void (^block)(void)) {
     popover.delegate = self;
     self->_popover = popover;
     [self resizePopover];
-    if (self->_finished || ![self valid] || window.attachedSheet) {
+    if (self->_finished || ![self valid] || [presentation attachedSheetOfWindow:window]) {
       [self finish:PCSitePermissionInterrupted];
       return;
     }
@@ -519,7 +526,7 @@ static void Later(void (^block)(void)) {
     if (presented) {
       presented();
     }
-  });
+  }];
 }
 - (void)choose:(NSButton*)sender {
   if (_finished || !_popover.shown || sender.window != _card.window ||
@@ -564,7 +571,7 @@ static void Later(void (^block)(void)) {
   if (popover.shown) {
     [popover close];
   }
-  Later(^{
+  [self later:^{
     if (!self->_result) {
       return;
     }
@@ -577,7 +584,7 @@ static void Later(void (^block)(void)) {
       self->_closeObserver = nil;
     }
     result(valid ? choice : PCSitePermissionInterrupted, self->_precise);
-  });
+  }];
 }
 - (void)invalidate {
   _invalidated = YES;
@@ -587,7 +594,8 @@ static void Later(void (^block)(void)) {
   return _popover.shown ? _card.window : nil;
 }
 - (BOOL)isShown {
-  return !_finished && _popover.shown && _card.window.visible && [self valid];
+  return !_finished && _popover.shown && [_presentation isWindowVisible:_card.window] &&
+         [self valid];
 }
 - (void)dealloc {
   if (_closeObserver) {

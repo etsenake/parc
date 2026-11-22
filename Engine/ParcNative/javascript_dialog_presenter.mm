@@ -33,6 +33,7 @@ using namespace parc_dialog;
 @property(nonatomic) NSTimeInterval allowAfter;
 @property(nonatomic, strong) id closeObserver;
 @property(nonatomic, copy) PCJavaScriptDialogCompletion completion;
+@property(nonatomic, strong) id<PCNativePresentation> presentation;
 // fromUser is NO for programmatic handling, cancellation, teardown and another
 // owner ending the sheet; only a button or key reports the suppression checkbox.
 - (void)finishAccepted:(BOOL)accepted
@@ -101,6 +102,7 @@ static BOOL IsEnter(NSEvent* event) {
 @synthesize allowAfter = _allowAfter;
 @synthesize closeObserver = _closeObserver;
 @synthesize completion = _completion;
+@synthesize presentation = _presentation;
 - (BOOL)composing {
   NSText* editor = self.input.currentEditor;
   return [editor isKindOfClass:NSTextView.class] && ((NSTextView*)editor).hasMarkedText;
@@ -184,22 +186,28 @@ static BOOL IsEnter(NSEvent* event) {
   }
   [self.owner requestFinished:self];
   self.owner = nil;
-  if (sheet.sheetParent) {
-    [sheet.sheetParent endSheet:sheet
-                     returnCode:accepted ? NSModalResponseOK : NSModalResponseCancel];
+  id<PCNativePresentation> presentation = self.presentation;
+  if ([presentation sheetParentOfWindow:sheet]) {
+    [presentation window:[presentation sheetParentOfWindow:sheet]
+                endSheet:sheet
+              returnCode:accepted ? NSModalResponseOK : NSModalResponseCancel];
   }
-  [sheet orderOut:nil];
+  [presentation orderOutWindow:sheet];
   completion(accepted, result, suppress);
 }
 @end
 
 @implementation PCJavaScriptDialogPresenter
+@synthesize presentation = _presentation;
+@synthesize scheduler = _scheduler;
 - (instancetype)initWithPageView:(NSView*)pageView {
   NSParameterAssert(pageView);
   NSCAssert(NSThread.isMainThread,
             @"JavaScript dialogs require the main thread");
   if ((self = [super init])) {
     _pageView = pageView;
+    _presentation = PCNativeSystemPresentation.sharedPresentation;
+    _scheduler = PCNativeSystemScheduling.sharedScheduling;
   }
   return self;
 }
@@ -223,7 +231,7 @@ static BOOL IsEnter(NSEvent* event) {
   NSView* page = _pageView;
   NSWindow* window = page.window;
   if (_invalidated || _detaching || _request || !window ||
-      window == _closingWindow || window.attachedSheet) {
+      window == _closingWindow || [_presentation attachedSheetOfWindow:window]) {
     completion(NO, @"", NO);
     return;
   }
@@ -232,6 +240,7 @@ static BOOL IsEnter(NSEvent* event) {
   request.page = page;
   request.parent = window;
   request.completion = completion;
+  request.presentation = _presentation;
   // The title is the engine's ("<origin> says", "Leave site?"); the page text
   // is the message. Parc's mark stands where NSAlert showed the app icon.
   NSString* heading = title.length ? title : @"This page says";
@@ -306,9 +315,8 @@ static BOOL IsEnter(NSEvent* event) {
                 [current.owner parentWindowWillClose:notification.object];
                 [current finishAccepted:NO override:nil fromUser:NO];
               }];
-  // Never app-modal: this is a page-bound sheet. Another owner ending it
-  // answers Cancel without reporting the checkbox.
-  [window beginSheet:sheet
+  [_presentation window:window
+             beginSheet:sheet
       completionHandler:^(NSModalResponse) {
         [request finishAccepted:NO override:nil fromUser:NO];
       }];
@@ -318,17 +326,17 @@ static BOOL IsEnter(NSEvent* event) {
   if (request.input) {
     [sheet makeFirstResponder:request.input];
   }
-  request.allowAfter = NSProcessInfo.processInfo.systemUptime + .5;
-  request.inputTimer = [NSTimer timerWithTimeInterval:.5
-                                              repeats:NO
-                                                block:^(NSTimer*) {
-                                                  PCJavaScriptDialogRequest* current = weakRequest;
-                                                  if (current.completion) {
-                                                    current.accept.enabled = YES;
-                                                  }
-                                                }];
-  [NSRunLoop.mainRunLoop addTimer:request.inputTimer forMode:NSRunLoopCommonModes];
-  [NSRunLoop.mainRunLoop addTimer:request.inputTimer forMode:NSModalPanelRunLoopMode];
+  request.allowAfter = _scheduler.systemUptime + .5;
+  request.inputTimer = [_scheduler timerWithTimeInterval:.5
+                                                 repeats:NO
+                                                   block:^(NSTimer*) {
+                                                     PCJavaScriptDialogRequest* current = weakRequest;
+                                                     if (current.completion) {
+                                                       current.accept.enabled = YES;
+                                                     }
+                                                   }];
+  [_scheduler addTimer:request.inputTimer forMode:NSRunLoopCommonModes];
+  [_scheduler addTimer:request.inputTimer forMode:NSModalPanelRunLoopMode];
 }
 
 - (void)requestFinished:(PCJavaScriptDialogRequest*)request {

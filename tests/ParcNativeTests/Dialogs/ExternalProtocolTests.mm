@@ -44,7 +44,7 @@ static PCExternalProtocolPresenter* Make(NSView* p,
                                          BOOL (^valid)(void),
                                          BOOL (^input)(NSEvent*),
                                          void (^result)(BOOL, BOOL)) {
-  return [[PCExternalProtocolPresenter alloc]
+  PCExternalProtocolPresenter* presenter = [[PCExternalProtocolPresenter alloc]
        initWithPage:p
              window:w
               title:@"“example.test” wants to open “Example”."
@@ -58,6 +58,9 @@ static PCExternalProtocolPresenter* Make(NSView* p,
        stateChanged:^{
        }
              result:result];
+  presenter.presentation = ParcNativePresentation();
+  presenter.scheduler = ParcNativeScheduler();
+  return presenter;
 }
 @interface ProtocolState : NSObject
 @property int results;
@@ -78,7 +81,7 @@ static NSEvent* KeypadEnter(NSWindow* window) {
   return [NSEvent keyEventWithType:NSEventTypeKeyDown
                           location:NSZeroPoint
                      modifierFlags:0
-                         timestamp:NSProcessInfo.processInfo.systemUptime
+                         timestamp:ParcNativeNow()
                       windowNumber:window.windowNumber
                            context:nil
                         characters:@"\003"
@@ -105,7 +108,7 @@ static NSEvent* KeypadEnter(NSWindow* window) {
 }
 
 - (void)tearDown {
-  [_window close];
+  ParcNativeClose(_window);
   [super tearDown];
 }
 
@@ -124,7 +127,7 @@ static NSEvent* KeypadEnter(NSWindow* window) {
         ++state.results;
         state.accepted = accepted;
         state.remembered = remembered;
-        Check(!window.attachedSheet, "presentation ends before decision");
+        Check(!ParcNativeAttachedSheet(window), "presentation ends before decision");
       });
 }
 
@@ -137,7 +140,7 @@ static NSEvent* KeypadEnter(NSWindow* window) {
 
 - (void)testAnUnpresentedPresenterAlreadyOwnsAnInvisibleNativeSheet {
   PCExternalProtocolPresenter* r = [self presenterRemembering:kRemember];
-  Check(r.sheet && !r.sheet.visible, "unpresented native sheet exists");
+  Check(r.sheet && !ParcNativeVisible(r.sheet), "unpresented native sheet exists");
 }
 
 - (void)testShowIsDeferredEvenWhenCalledTwice {
@@ -149,7 +152,7 @@ static NSEvent* KeypadEnter(NSWindow* window) {
 
 - (void)testTheOriginatingWindowOwnsThePresentedSheet {
   PCExternalProtocolPresenter* r = [self shownPresenter];
-  Check(r.sheet.visible && r.sheet.sheetParent == _window, "actual originating window owns sheet");
+  Check(ParcNativeVisible(r.sheet) && ParcNativeSheetParent(r.sheet) == _window, "actual originating window owns sheet");
 }
 
 - (void)testOpenIsTheDefaultAndCancelAnswersEscape {
@@ -192,13 +195,13 @@ static NSEvent* KeypadEnter(NSWindow* window) {
   PCExternalProtocolPresenter* r = [self shownPresenter];
   _state.inputAllowed = NO;
   [Control(r, @"external-protocol-remember") performClick:nil];
-  Check(_state.results == 0 && r.sheet.visible, "input protection refusal keeps request pending");
+  Check(_state.results == 0 && ParcNativeVisible(r.sheet), "input protection refusal keeps request pending");
 }
 
 - (void)testKeypadEnterIsHeldByTheSameInputProtection {
   PCExternalProtocolPresenter* r = [self shownPresenter];
   _state.inputAllowed = NO;
-  Check([r.sheet performKeyEquivalent:KeypadEnter(r.sheet)] && _state.results == 0 && r.sheet.visible,
+  Check([r.sheet performKeyEquivalent:KeypadEnter(r.sheet)] && _state.results == 0 && ParcNativeVisible(r.sheet),
         "keypad Enter is held by the same input protection");
 }
 
@@ -258,7 +261,7 @@ static NSEvent* KeypadEnter(NSWindow* window) {
 }
 
 - (void)tearDown {
-  [_window close];
+  ParcNativeClose(_window);
   [super tearDown];
 }
 
@@ -284,7 +287,7 @@ static NSEvent* KeypadEnter(NSWindow* window) {
 
 - (void)expectInterruptedOnce {
   Pump();
-  Check(_state.results == 1 && !_window.attachedSheet, "invalid owner interrupts actual sheet");
+  Check(_state.results == 1 && !ParcNativeAttachedSheet(_window), "invalid owner interrupts actual sheet");
   [_presenter invalidate];
   Pump();
   Check(_state.results == 1, "interruption remains once only");
@@ -314,7 +317,7 @@ static NSEvent* KeypadEnter(NSWindow* window) {
 
 - (void)testAClosedWindowInterruptsTheRequest {
   [self showInWindowVisible:YES valid:YES];
-  [_window close];
+  ParcNativeClose(_window);
   [self expectInterruptedOnce];
 }
 
@@ -345,7 +348,7 @@ static NSEvent* KeypadEnter(NSWindow* window) {
 }
 
 - (void)tearDown {
-  [_window close];
+  ParcNativeClose(_window);
   [super tearDown];
 }
 
@@ -371,7 +374,7 @@ static NSEvent* KeypadEnter(NSWindow* window) {
   reenter = YES;
   [r show];
   Pump();
-  Check(state.results == 1 && !_window.attachedSheet, "no resurrection after validation");
+  Check(state.results == 1 && !ParcNativeAttachedSheet(_window), "no resurrection after validation");
   r = nil;
 }
 
@@ -417,7 +420,7 @@ static NSEvent* KeypadEnter(NSWindow* window) {
 
 - (void)testAnInputReentryPreservesTheReplacementSheet {
   [self showWithInputReentry];
-  Check(_state.results == 1 && _window.attachedSheet == _replacement.sheet, "old input frame preserves replacement");
+  Check(_state.results == 1 && ParcNativeAttachedSheet(_window) == _replacement.sheet, "old input frame preserves replacement");
 }
 
 - (void)testAReplacementOwnsItsOwnResult {

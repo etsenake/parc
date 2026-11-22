@@ -85,11 +85,6 @@
   return [super performKeyEquivalent:event];
 }
 @end
-static void Later(void (^block)(void)) {
-  [NSRunLoop.mainRunLoop
-      performInModes:@[ NSRunLoopCommonModes, NSModalPanelRunLoopMode ]
-               block:block];
-}
 using namespace parc_dialog;
 // Dialogs.ExplainerScroll: a 26-point background fade until scrolled to the end.
 @interface PCDialogFade : NSView
@@ -188,6 +183,8 @@ using namespace parc_dialog;
 }
 @end
 @implementation PCExtensionInstallPresenter
+@synthesize presentation = _presentation;
+@synthesize scheduler = _scheduler;
 - (instancetype)initWithWindow:(NSWindow*)window
                          title:(NSString*)title
                           icon:(NSImage*)icon
@@ -217,6 +214,8 @@ using namespace parc_dialog;
     _validate = [validate copy];
     _inputAllowed = [inputAllowed copy];
     _result = [result copy];
+    _presentation = PCNativeSystemPresentation.sharedPresentation;
+    _scheduler = PCNativeSystemScheduling.sharedScheduling;
     __weak PCExtensionInstallPresenter* weak = self;
     _closeObserver = [NSNotificationCenter.defaultCenter
         addObserverForName:NSWindowWillCloseNotification
@@ -296,15 +295,20 @@ using namespace parc_dialog;
       self;
   (void)keep;
   NSWindow* window = _window;
-  if (_invalidated || !window || !window.visible || window.miniaturized) {
+  if (_invalidated || !window || ![_presentation isWindowVisible:window] ||
+      window.miniaturized) {
     return NO;
   }
   BOOL valid = _validate && _validate();
-  return valid && !_invalidated && _window == window && window.visible &&
-         !window.miniaturized;
+  return valid && !_invalidated && _window == window &&
+         [_presentation isWindowVisible:window] && !window.miniaturized;
+}
+- (void)later:(void (^)(void))block {
+  [_scheduler performInModes:@[ NSRunLoopCommonModes, NSModalPanelRunLoopMode ]
+                       block:block];
 }
 - (BOOL)acceptAllowed {
-  if (_finished || !_accept || !_sheet.visible || ![self valid] ||
+  if (_finished || !_accept || ![_presentation isWindowVisible:_sheet] || ![self valid] ||
       _justificationInput.string.length > 280 || _parentPending ||
       (_parentAccounts && !_parentPassword.stringValue.length)) {
     return NO;
@@ -317,9 +321,9 @@ using namespace parc_dialog;
     _wasObstructed = YES;
   } else if (_wasObstructed) {
     _wasObstructed = NO;
-    _allowAfter = NSProcessInfo.processInfo.systemUptime + .5;
+    _allowAfter = _scheduler.systemUptime + .5;
   }
-  return unobstructed && NSProcessInfo.processInfo.systemUptime >= _allowAfter;
+  return unobstructed && _scheduler.systemUptime >= _allowAfter;
 }
 - (void)layOutPromptInSheet:(NSWindow*)sheet {
   PrepareSheet(sheet);
@@ -592,12 +596,14 @@ using namespace parc_dialog;
     return;
   }
   _started = YES;
-  Later(^{
+  [self later:^{
     if (self->_finished) {
       return;
     }
     __attribute__((objc_precise_lifetime)) NSWindow* window = self->_window;
-    if (![self valid] || !window || window.attachedSheet) {
+    id<PCNativePresentation> presentation = self->_presentation;
+    id<PCNativeScheduling> scheduler = self->_scheduler;
+    if (![self valid] || !window || [presentation attachedSheetOfWindow:window]) {
       [self finish:PCExtensionInstallInterrupted];
       return;
     }
@@ -614,25 +620,26 @@ using namespace parc_dialog;
     } else {
       [self layOutStandardInSheet:sheet];
     }
-    if (self->_finished || ![self valid] || window.attachedSheet) {
+    if (self->_finished || ![self valid] || [presentation attachedSheetOfWindow:window]) {
       [self finish:PCExtensionInstallInterrupted];
       return;
     }
     self->_sheet = sheet;
-    [window beginSheet:sheet
+    [presentation window:window
+               beginSheet:sheet
         completionHandler:^(NSModalResponse) {
           [self finish:PCExtensionInstallInterrupted];
         }];
-    if (self->_finished || ![self valid] || sheet.sheetParent != window ||
-        window.attachedSheet != sheet || !sheet.visible) {
+    if (self->_finished || ![self valid] || [presentation sheetParentOfWindow:sheet] != window ||
+        [presentation attachedSheetOfWindow:window] != sheet ||
+        ![presentation isWindowVisible:sheet]) {
       [self finish:PCExtensionInstallInterrupted];
       return;
     }
     if (self->_parentPassword) [sheet makeFirstResponder:self->_parentPassword];
-    // Current Chromium starts its 500ms protection at actual first visibility.
-    self->_allowAfter = NSProcessInfo.processInfo.systemUptime + .5;
+    self->_allowAfter = scheduler.systemUptime + .5;
     __weak PCExtensionInstallPresenter* weak = self;
-    self->_timer = [NSTimer
+    self->_timer = [scheduler
         timerWithTimeInterval:.05
                       repeats:YES
                         block:^(NSTimer*) {
@@ -646,10 +653,9 @@ using namespace parc_dialog;
                           }
                           strong->_accept.enabled = [strong acceptAllowed];
                         }];
-    [NSRunLoop.mainRunLoop addTimer:self->_timer forMode:NSRunLoopCommonModes];
-    [NSRunLoop.mainRunLoop addTimer:self->_timer
-                            forMode:NSModalPanelRunLoopMode];
-  });
+    [scheduler addTimer:self->_timer forMode:NSRunLoopCommonModes];
+    [scheduler addTimer:self->_timer forMode:NSModalPanelRunLoopMode];
+  }];
 }
 - (void)accept:(NSButton*)sender {
   if (sender != _accept || sender.window != _sheet || ![self acceptAllowed]) {
@@ -691,11 +697,11 @@ using namespace parc_dialog;
   BOOL checked = _checkbox && _checkbox.state == NSControlStateValueOn;
   NSWindow* sheet = _sheet;
   _sheet = nil;
-  if (sheet.sheetParent) {
-    [sheet.sheetParent endSheet:sheet];
+  if ([_presentation sheetParentOfWindow:sheet]) {
+    [_presentation window:[_presentation sheetParentOfWindow:sheet] endSheet:sheet];
   }
-  [sheet orderOut:nil];
-  Later(^{
+  [_presentation orderOutWindow:sheet];
+  [self later:^{
     if (!self->_result) {
       return;
     }
@@ -709,7 +715,7 @@ using namespace parc_dialog;
     self->_validate = nil;
     self->_inputAllowed = nil;
     result(valid ? choice : PCExtensionInstallInterrupted, checked);
-  });
+  }];
 }
 - (void)invalidate {
   _invalidated = YES;

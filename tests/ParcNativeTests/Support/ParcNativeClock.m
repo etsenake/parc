@@ -1,9 +1,6 @@
 #import "ParcNativeClock.h"
-#import "ParcNativeScheduling.h"
 
-#undef dispatch_async
-#undef timerWithTimeInterval
-#undef runAnimationGroup
+#import <AppKit/AppKit.h>
 
 @interface ParcScheduledTimer : NSObject
 @property(strong) NSTimer* timer;
@@ -14,102 +11,129 @@
 @implementation ParcScheduledTimer
 @end
 
-static NSTimeInterval now;
-static NSMutableArray<dispatch_block_t>* pending;
-static NSMutableArray<ParcScheduledTimer*>* timers;
-static NSMapTable<NSTimer*, ParcScheduledTimer*>* unscheduled;
-
-void ParcNativeResetClock(void) {
-  for (ParcScheduledTimer* entry in timers) [entry.timer invalidate];
-  now = 0;
-  pending = [NSMutableArray array];
-  timers = [NSMutableArray array];
-  unscheduled = [NSMapTable weakToStrongObjectsMapTable];
+@implementation ParcNativeTestScheduler {
+  NSTimeInterval _now;
+  NSMutableArray<dispatch_block_t>* _pending;
+  NSMutableArray<ParcScheduledTimer*>* _timers;
+  NSMapTable<NSTimer*, ParcScheduledTimer*>* _unscheduled;
 }
 
-NSTimeInterval ParcNativeNow(void) { return now; }
+- (instancetype)init {
+  if ((self = [super init])) {
+    _pending = [NSMutableArray array];
+    _timers = [NSMutableArray array];
+    _unscheduled = [NSMapTable weakToStrongObjectsMapTable];
+  }
+  return self;
+}
 
-@implementation NSProcessInfo (ParcNativeClock)
-- (NSTimeInterval)parcSystemUptime { return now; }
-@end
-@implementation NSDate (ParcNativeClock)
-+ (NSDate*)parcDate { return [NSDate dateWithTimeIntervalSinceReferenceDate:now]; }
-- (NSTimeInterval)parcTimeIntervalSinceNow { return self.timeIntervalSinceReferenceDate - now; }
-@end
-@implementation NSTimer (ParcNativeClock)
-+ (NSTimer*)parcTimerWithTimeInterval:(NSTimeInterval)interval repeats:(BOOL)repeats block:(void (^)(NSTimer*))block {
+- (NSTimeInterval)now {
+  return _now;
+}
+
+- (NSTimeInterval)systemUptime {
+  return _now;
+}
+
+- (NSDate*)currentDate {
+  return [NSDate dateWithTimeIntervalSinceReferenceDate:_now];
+}
+
+- (NSTimeInterval)timeIntervalSinceNowForDate:(NSDate*)date {
+  return date ? date.timeIntervalSinceReferenceDate - _now : 0;
+}
+
+- (NSTimer*)timerWithTimeInterval:(NSTimeInterval)interval
+                          repeats:(BOOL)repeats
+                            block:(void (^)(NSTimer*))block {
   NSTimer* timer = [NSTimer timerWithTimeInterval:interval repeats:repeats block:block];
   ParcScheduledTimer* entry = [ParcScheduledTimer new];
   entry.interval = interval;
-  entry.due = now + interval;
+  entry.due = _now + interval;
   entry.repeats = repeats;
-  [unscheduled setObject:entry forKey:timer];
+  [_unscheduled setObject:entry forKey:timer];
   return timer;
 }
-+ (NSTimer*)parcScheduledTimerWithTimeInterval:(NSTimeInterval)interval repeats:(BOOL)repeats block:(void (^)(NSTimer*))block {
-  NSTimer* timer = [self parcTimerWithTimeInterval:interval repeats:repeats block:block];
-  [NSRunLoop.mainRunLoop parcAddTimer:timer forMode:NSDefaultRunLoopMode];
+
+- (NSTimer*)scheduledTimerWithTimeInterval:(NSTimeInterval)interval
+                                   repeats:(BOOL)repeats
+                                     block:(void (^)(NSTimer*))block {
+  NSTimer* timer = [self timerWithTimeInterval:interval repeats:repeats block:block];
+  [self addTimer:timer forMode:NSDefaultRunLoopMode];
   return timer;
 }
-@end
 
-void ParcNativeDispatch(dispatch_queue_t queue, dispatch_block_t block) {
-  if (queue == dispatch_get_main_queue()) {
-    [pending addObject:[block copy]];
-  } else {
-    dispatch_async(queue, block);
-  }
-}
-
-@implementation NSRunLoop (ParcNativeClock)
-- (void)parcAddTimer:(NSTimer*)timer forMode:(NSRunLoopMode)mode {
-  ParcScheduledTimer* entry = [unscheduled objectForKey:timer];
+- (void)addTimer:(NSTimer*)timer forMode:(NSRunLoopMode)mode {
+  ParcScheduledTimer* entry = [_unscheduled objectForKey:timer];
   if (!entry) return;
-  [unscheduled removeObjectForKey:timer];
+  [_unscheduled removeObjectForKey:timer];
   entry.timer = timer;
-  [timers addObject:entry];
+  [_timers addObject:entry];
 }
-- (void)parcPerformInModes:(NSArray<NSRunLoopMode>*)modes block:(dispatch_block_t)block {
-  [pending addObject:[block copy]];
-}
-@end
 
-@implementation NSAnimationContext (ParcNativeClock)
-+ (void)parcRunAnimationGroup:(void (^)(NSAnimationContext*))changes completionHandler:(dispatch_block_t)completion {
-  [self runAnimationGroup:^(NSAnimationContext* context) {
+- (void)performInModes:(NSArray<NSRunLoopMode>*)modes block:(void (^)(void))block {
+  [_pending addObject:[block copy]];
+}
+
+- (void)dispatchToMainQueue:(dispatch_block_t)block {
+  [_pending addObject:[block copy]];
+}
+
+- (void)runAnimationGroup:(void (^)(NSAnimationContext*))changes
+        completionHandler:(void (^)(void))completion {
+  [NSAnimationContext runAnimationGroup:^(NSAnimationContext* context) {
     context.duration = 0;
     changes(context);
   } completionHandler:nil];
-  if (completion) [pending addObject:[completion copy]];
+  if (completion) [_pending addObject:[completion copy]];
 }
-@end
 
-void ParcNativeSettle(void) {
-  while (pending.count) {
-    dispatch_block_t block = pending.firstObject;
-    [pending removeObjectAtIndex:0];
+- (void)settle {
+  while (_pending.count) {
+    dispatch_block_t block = _pending.firstObject;
+    [_pending removeObjectAtIndex:0];
     block();
   }
 }
 
-void ParcNativeAdvance(NSTimeInterval seconds) {
-  ParcNativeSettle();
-  NSTimeInterval target = now + seconds;
+- (void)advance:(NSTimeInterval)seconds {
+  [self settle];
+  NSTimeInterval target = _now + seconds;
   for (;;) {
     ParcScheduledTimer* next = nil;
-    for (ParcScheduledTimer* entry in timers) {
+    for (ParcScheduledTimer* entry in _timers) {
       if (entry.timer.valid && entry.due <= target && (!next || entry.due < next.due)) next = entry;
     }
     if (!next) break;
-    now = next.due;
+    _now = next.due;
     if (next.repeats) {
-      NSCAssert(next.interval > 0, @"A repeating timer must advance the clock");
+      NSAssert(next.interval > 0, @"A repeating timer must advance the clock");
       next.due += next.interval;
     } else {
-      [timers removeObject:next];
+      [_timers removeObject:next];
     }
     [next.timer fire];
-    ParcNativeSettle();
+    [self settle];
   }
-  now = target;
+  _now = target;
+}
+
+- (void)invalidate {
+  for (ParcScheduledTimer* entry in _timers) [entry.timer invalidate];
+  [_timers removeAllObjects];
+  [_pending removeAllObjects];
+}
+
+@end
+
+void ParcNativeSettle(void) {
+  [ParcNativeScheduler() settle];
+}
+
+void ParcNativeAdvance(NSTimeInterval seconds) {
+  [ParcNativeScheduler() advance:seconds];
+}
+
+NSTimeInterval ParcNativeNow(void) {
+  return ParcNativeScheduler().now;
 }

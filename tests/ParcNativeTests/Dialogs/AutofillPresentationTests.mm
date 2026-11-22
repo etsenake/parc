@@ -12,21 +12,8 @@
 static void Drain() {
   ParcNativeAdvance(0.2);
 }
-@interface PresentationWindow : NSWindow
-@property(nonatomic, copy) void (^afterAttach)(void);
-@end
-@implementation PresentationWindow
-@synthesize afterAttach = _afterAttach;
-- (void)beginSheet:(NSWindow*)sheet
-    completionHandler:(void (^)(NSModalResponse))completion {
-  [super beginSheet:sheet completionHandler:completion];
-  if (self.afterAttach) {
-    self.afterAttach();
-  }
-}
-@end
-static PresentationWindow* Window() {
-  auto* window = [[PresentationWindow alloc]
+static NSWindow* Window() {
+  auto* window = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(-2200, -2200, 600, 400)
                 styleMask:NSWindowStyleMaskBorderless
                   backing:NSBackingStoreBuffered
@@ -65,11 +52,13 @@ static void TestVisibleDecision(BOOL accepted) {
         ++completed;
         outcome = result;
       }];
+  request.presentation = ParcNativePresentation();
+  request.scheduler = ParcNativeScheduler();
   request.onPresented = ^{
     ++presented;
-    Check(window.visible && window.attachedSheet.visible,
+    Check(ParcNativeVisible(window) && ParcNativeVisible(ParcNativeAttachedSheet(window)),
           "true event requires actual visible sheet and parent");
-    Check(window.attachedSheet.sheetParent == window,
+    Check(ParcNativeSheetParent(ParcNativeAttachedSheet(window)) == window,
           "true event preserves exact parent");
   };
   [request start];
@@ -91,7 +80,7 @@ static void TestVisibleDecision(BOOL accepted) {
   Drain();
   Check(presented == 1 && completed == 1,
         "terminal request cannot replay either event");
-  [window close];
+  ParcNativeClose(window);
 }
 static void TestUnavailable(int mode) {
   auto* window = Window();
@@ -111,16 +100,18 @@ static void TestUnavailable(int mode) {
         ++completed;
         outcome = result;
       }];
+  request.presentation = ParcNativePresentation();
+  request.scheduler = ParcNativeScheduler();
   request.onPresented = ^{
     ++presented;
   };
   if (mode == 0) {
-    [window orderOut:nil];
+    ParcNativeOrderOut(window);
   }
   if (mode == 1) {
     __weak NSWindow* weak = window;
-    window.afterAttach = ^{
-      [weak orderOut:nil];
+    ParcNativePresentation().didBeginSheet = ^(NSWindow*, NSWindow*) {
+      ParcNativeOrderOut(weak);
     };
   }
   [request start];
@@ -128,19 +119,19 @@ static void TestUnavailable(int mode) {
     [request invalidate];
   }
   if (mode == 3) {
-    [window close];
+    ParcNativeClose(window);
   }
   Drain();
   Check(presented == 0,
         "hidden/lost parent and cancelled queue never report presentation");
   Check(completed == 1 && outcome == PCAutofillSaveInterrupted,
         "unavailable sheet resolves interruption exactly once");
-  Check(!request.sheet && !window.attachedSheet,
+  Check(!request.sheet && !ParcNativeAttachedSheet(window),
         "unavailable request leaves no sheet");
   [request invalidate];
   Drain();
   Check(completed == 1, "repeat invalidation cannot add a result");
-  [window close];
+  ParcNativeClose(window);
 }
 static void TestPresentedReentry() {
   auto* window = Window();
@@ -160,6 +151,8 @@ static void TestPresentedReentry() {
             Check(outcome == PCAutofillSaveInterrupted,
                   "presented callback cancellation is not consent");
           }];
+  owner.presentation = ParcNativePresentation();
+  owner.scheduler = ParcNativeScheduler();
   __weak PCAutofillSavePresenter* weak = owner;
   owner.onPresented = ^{
     ++presented;
@@ -171,8 +164,8 @@ static void TestPresentedReentry() {
   Drain();
   Check(presented == 1 && completed == 1,
         "callback reentry and final owner release settle once");
-  Check(!window.attachedSheet, "reentrant close detaches native sheet");
-  [window close];
+  Check(!ParcNativeAttachedSheet(window), "reentrant close detaches native sheet");
+  ParcNativeClose(window);
 }
 @interface ParcNativeTests_AutofillPresentationTests : ParcNativeTestCase
 @end

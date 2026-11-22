@@ -1,5 +1,6 @@
 #import "page_host.h"
 
+#import "dialog_style.h"
 #import "pane_compositor_view.h"
 
 @interface PCNativeHistoryOverlayContainerView : NSView
@@ -33,6 +34,8 @@
 @end
 
 @implementation PCNativePageHost
+@synthesize presentation = _presentation;
+@synthesize scheduler = _scheduler;
 
 + (instancetype)hostWithContentView:(NSView *)contentView
                           observer:(id<PCNativePageHostObserver>)observer {
@@ -53,6 +56,8 @@
   self = [super initWithFrame:contentView.frame];
   if (self) {
     _observer = observer;
+    _presentation = PCNativeSystemPresentation.sharedPresentation;
+    _scheduler = PCNativeSystemScheduling.sharedScheduling;
     _contentView = contentView;
     [self addSubview:contentView];
     [self pinContentView:contentView];
@@ -277,22 +282,18 @@
       self.rendererResponder.hiddenOrHasHiddenAncestor) {
     return NO;
   }
-  // Retain the wrapper until the queued operation completes, as the recovered
-  // self-capturing block does. The original renderer/window stay weak; another
-  // control, replacement renderer or physical owner supersedes this request.
   NSWindow* __weak originalWindow = self.window;
   NSView* __weak originalRenderer = self.rendererResponder;
-  dispatch_async(dispatch_get_main_queue(), ^{
+  [_scheduler dispatchToMainQueue:^{
     if (self->_invalidated) {
       return;
     }
     NSView *renderer = originalRenderer;
     NSWindow *window = originalWindow;
-    // A native crash sibling may hide this page after focus was queued. A
-    // different first responder must retain its native selection and IME.
     if (window && renderer && self.window == window &&
         self.rendererResponder == renderer && renderer.window == window &&
-        window.firstResponder == self && !window.attachedSheet &&
+        window.firstResponder == self &&
+        ![self->_presentation attachedSheetOfWindow:window] &&
         !self.hiddenOrHasHiddenAncestor &&
         !renderer.hiddenOrHasHiddenAncestor) {
       [window makeFirstResponder:renderer];
@@ -300,7 +301,7 @@
     if (!self->_invalidated) {
       [self->_observer pageHostDidAttemptDeferredFocus:self];
     }
-  });
+  }];
   return YES;
 }
 
