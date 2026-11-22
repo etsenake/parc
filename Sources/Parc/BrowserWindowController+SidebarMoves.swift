@@ -707,13 +707,8 @@ extension BrowserWindowController {
     }
 
     var folderDuplicateContextAvailable: Bool {
-        guard !store.isEphemeral, nativeWindowRequest?.isOffTheRecord != true,
-              let binding = nativeBinding, !binding.isPrivateBrowsing else { return false }
-        switch binding.browsingContextKind {
-        case .regular, .unavailable: return true
-        case .offTheRecord, .mixed: return false
-        @unknown default: return false
-        }
+        !store.isEphemeral && nativeWindowRequest?.isOffTheRecord != true
+            && nativeFolderDuplicateContextAvailable(nativeBinding)
     }
 
     func prepareFolderDuplicate(_ folderID: UUID) -> (() -> Bool)? {

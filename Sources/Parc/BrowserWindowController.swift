@@ -355,6 +355,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var nativeSidebarTransferAvailable: (PCNativeBrowserWindow?) -> Bool = {
         $0?.canParticipateInPageTransfer == true
     }
+    var nativeFolderDuplicateContextAvailable: (PCNativeBrowserWindow?) -> Bool = { binding in
+        guard let binding, !binding.isPrivateBrowsing else { return false }
+        switch binding.browsingContextKind {
+        case .regular, .unavailable: return true
+        case .offTheRecord, .mixed: return false
+        @unknown default: return false
+        }
+    }
     var isSpaceCommandApplicationActive: () -> Bool = { NSApp.isActive }
     var canPresentSplitInteraction: (NSWindow) -> Bool = { PCNativeBrowserApplication.canPresentTabSwitcher(in: $0) }
     var presentSplitPaneMenu: (NSMenu, NSView) -> Void = { menu, anchor in
