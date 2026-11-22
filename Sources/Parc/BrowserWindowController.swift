@@ -690,7 +690,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     init(store: BrowserStore, ownership: NativePageOwnership, renderInitialSelection: Bool = true,
          preferredProfileID: UUID? = nil, nativeWindowRequest: PCNativeWindowRequest? = nil,
-         restoredRecord: BrowserWindowRecord? = nil, restoresSavedFrame: Bool = false) throws {
+         restoredRecord: BrowserWindowRecord? = nil, restoresSavedFrame: Bool = false,
+         windowHost: NSWindow? = nil) throws {
         self.nativeWindowRequest = nativeWindowRequest
         self.store = store
         self.ownership = ownership
@@ -708,11 +709,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         var style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
         if nativeWindowRequest?.canResize != false { style.insert(.resizable) }
         let initialRect = NSRect(x: 0, y: 0, width: popup ? 900 : 1280, height: popup ? 680 : 840)
-        let window: NSWindow = popup
+        let window: NSWindow = windowHost ?? (popup
             ? BrowserPopupWindow(contentRect: initialRect, styleMask: style, backing: .buffered, defer: false)
-            : NSWindow(contentRect: initialRect, styleMask: style, backing: .buffered, defer: false)
+            : NSWindow(contentRect: initialRect, styleMask: style, backing: .buffered, defer: false))
         originalWindowLevel = window.level
         stayOnTop = !popup && (restoredRecord?.stayOnTop ?? false)
+        if windowHost != nil {
+            super.init(window: window)
+            connectSplitResize()
+            return
+        }
         window.title = "Parc"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
@@ -867,8 +873,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         pageHost.layer?.masksToBounds = true
         pageHost.layer?.backgroundColor = NSColor.white.cgColor
         pageHost.addSubview(splitView)
-        splitView.prepareDividerResize = { [weak self] in self?.prepareSplitResize() }
-        splitView.prepareStackedResize = { [weak self] in self?.prepareStackedSplitResize() }
+        connectSplitResize()
         splitView.onDividerPanActivity = { [weak self] in self?.setContentResizeReason(.splitDividerResize, active: $0) }
         splitView.onInteractivePaneEditing = { [weak self] active in
             self?.setContentResizeReason(.splitInteractiveEditing, active: active)
@@ -1026,6 +1031,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private func connectSplitResize() {
+        splitView.prepareDividerResize = { [weak self] in self?.prepareSplitResize() }
+        splitView.prepareStackedResize = { [weak self] in self?.prepareStackedSplitResize() }
+    }
 
     var pendingSearchNavigations: [UUID: PCNativeSearchNavigation] = [:]
     var inputRevisions: [UUID: UUID] = [:]
