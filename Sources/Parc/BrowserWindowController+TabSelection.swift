@@ -56,7 +56,7 @@ extension BrowserWindowController {
     }
 
     var ownsSpaceCommandFocus: Bool {
-        guard let window, NSApp.isActive, window.isVisible, !window.isMiniaturized else { return false }
+        guard let window, isSpaceCommandApplicationActive(), window.isVisible, !window.isMiniaturized else { return false }
         return window.isKeyWindow
     }
 

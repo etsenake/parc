@@ -352,6 +352,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var blockedContentAnnouncements: [String: UInt] = [:]
     var isClosing = false
     var nativeBinding: PCNativeBrowserWindow?
+    var isSpaceCommandApplicationActive: () -> Bool = { NSApp.isActive }
     var closingTabIDs = Set<UUID>()
     var modelRetirementIDs = Set<UUID>()
     var transferringTabIDs = Set<UUID>() {
