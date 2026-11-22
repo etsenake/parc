@@ -320,40 +320,34 @@ struct EaselBoardTests {
     }
 }
 
-extension NoteProcessWide {
-    @MainActor final class EaselBoardBacklinkIndexTests {
-        let clock = NoteManualClock()
-        let folder: URL
+@MainActor final class EaselBoardBacklinkIndexTests {
+    let clock = NoteManualClock()
+    let files: NoteFiles
+    let folder: URL
 
-        init() {
-            NoteFileSession.clock = clock
-            NoteFileSession.worker = .inline
-            NoteLibrary.clock = clock
-            NoteLibrary.worker = .inline
-            NoteBacklinkIndex.clock = clock
-            NoteBacklinkIndex.worker = .inline
-            folder = NoteFileTestSupport.makeFolder("easel-backlinks")
-        }
+    init() {
+        files = NoteFileTestSupport.files(clock: clock)
+        folder = NoteFileTestSupport.makeFolder("easel-backlinks")
+    }
 
-        deinit {
-            NoteFileTestSupport.remove(folder)
-        }
+    deinit {
+        NoteFileTestSupport.remove(folder)
+    }
 
-        @Test func anEaselThatLinksToANoteIsABacklinkThatOpensAtTheObject() throws {
-            let notes = folder.appendingPathComponent("Notes", isDirectory: true)
-            let note = NoteFileTestSupport.write("# Roadmap\n", to: notes.appendingPathComponent("Roadmap.md"))
-            let store = try EaselStore(directory: folder.appendingPathComponent("Easels", isDirectory: true))
-            let session = try store.create(title: "Plans")
-            let linked = EaselBoardTests.linked("Roadmap", to: note.absoluteString)
-            try session.perform("Add") { $0.items = [linked] }
-            let index = NoteBacklinkIndex()
-            index.include(store)
-            clock.advance(2)
-            let found = index.backlinks(to: note)
-            try #require(found.count == 1)
-            #expect(found[0].isEasel)
-            #expect(found[0].title == "Plans")
-            #expect(found[0].destination.fragment == linked.id.uuidString.lowercased())
-        }
+    @Test func anEaselThatLinksToANoteIsABacklinkThatOpensAtTheObject() throws {
+        let notes = folder.appendingPathComponent("Notes", isDirectory: true)
+        let note = NoteFileTestSupport.write("# Roadmap\n", to: notes.appendingPathComponent("Roadmap.md"))
+        let store = try EaselStore(directory: folder.appendingPathComponent("Easels", isDirectory: true))
+        let session = try store.create(title: "Plans")
+        let linked = EaselBoardTests.linked("Roadmap", to: note.absoluteString)
+        try session.perform("Add") { $0.items = [linked] }
+        let index = NoteBacklinkIndex(files: files)
+        index.include(store)
+        clock.advance(2)
+        let found = index.backlinks(to: note)
+        try #require(found.count == 1)
+        #expect(found[0].isEasel)
+        #expect(found[0].title == "Plans")
+        #expect(found[0].destination.fragment == linked.id.uuidString.lowercased())
     }
 }
