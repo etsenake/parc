@@ -307,7 +307,7 @@ extension BrowserWindowController {
             && tabSwitcher == nil && themePopover == nil && !siteControlCenterDefers
             && closingTabIDs.isEmpty && modelRetirementIDs.isEmpty && peekRetirementParents.isEmpty
             && resolvingTransfers.isEmpty && !store.isProfileRemovalPending(activeProfileID)
-            && nativeBinding?.canParticipateInPageTransfer == true
+            && nativeSidebarTransferAvailable(nativeBinding)
     }
 
     func prepareSidebarWindowDrop(_ session: SidebarMoveSession, to location: SidebarContainerLocation,

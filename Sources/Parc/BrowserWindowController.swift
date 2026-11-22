@@ -352,6 +352,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var blockedContentAnnouncements: [String: UInt] = [:]
     var isClosing = false
     var nativeBinding: PCNativeBrowserWindow?
+    var nativeSidebarTransferAvailable: (PCNativeBrowserWindow?) -> Bool = {
+        $0?.canParticipateInPageTransfer == true
+    }
     var isSpaceCommandApplicationActive: () -> Bool = { NSApp.isActive }
     var canPresentSplitInteraction: (NSWindow) -> Bool = { PCNativeBrowserApplication.canPresentTabSwitcher(in: $0) }
     var presentSplitPaneMenu: (NSMenu, NSView) -> Void = { menu, anchor in
