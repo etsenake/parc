@@ -36,6 +36,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private let store: BrowserStore
     private let profileID: UUID
     private let files: NoteFiles
+    private let easelStore: (URL) throws -> EaselStore
     private let searchBackdrop = DownloadSearchBackdrop()
     private let search = DownloadSearchField(frame: .zero)
     private let createButton = ActionButton("", symbol: "square.and.pencil")
@@ -67,8 +68,10 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         }
     }
     override var isFlipped: Bool { true }
-    init(store: BrowserStore, profileID: UUID, files: NoteFiles? = nil, easelIcons: EaselTabIcons? = nil) {
+    init(store: BrowserStore, profileID: UUID, files: NoteFiles? = nil, easelIcons: EaselTabIcons? = nil,
+         easelStore: ((URL) throws -> EaselStore)? = nil) {
         self.store = store; self.profileID = profileID; self.files = files ?? .shared
+        self.easelStore = easelStore ?? EaselEditorViewController.sharedStore(directory:)
         super.init(frame: .zero)
         search.placeholderString = "Search Easels & Notes…"; search.delegate = self
         search.setAccessibilityLabel("Search Easels and Notes")
@@ -177,7 +180,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         do {
             let directory = store.easelsDirectory(for: profileID)
             let inputs = try DocumentsLibraryCatalog.inputs(
-                library: library, easels: { try EaselEditorViewController.sharedStore(directory: directory).list() },
+                library: library, easels: { try self.easelStore(directory).list() },
                 pending: store.isProfileRemovalPending(profileID), query: search.stringValue, searchLimit: Self.searchLimit,
                 folder: folderScope)
             if !force && inputs == observedInputs { return }
@@ -319,7 +322,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
                     if self.selectedPage == row.page { self.selectedPage = .note(renamed) }
                     self.onRename?(.note(renamed), title)
                 } else if let id = row.item.easelID {
-                    let session = try EaselEditorViewController.sharedStore(directory: self.store.easelsDirectory(for: self.profileID)).load(id)
+                    let session = try self.easelStore(self.store.easelsDirectory(for: self.profileID)).load(id)
                     guard session.document.title == row.title else { throw DocumentsLibraryRenameError.changed }
                     try session.perform("Rename Easel") { $0.title = field.stringValue.isEmpty ? DocumentsLibraryCatalog.untitledEasel : field.stringValue }
                     self.onRename?(row.page, field.stringValue)
