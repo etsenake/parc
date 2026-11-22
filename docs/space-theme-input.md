@@ -70,10 +70,12 @@ radius.
 
 `SpaceThemeInputTests` exercises the editor's color and noise transactions,
 marking wheel delivery explicitly so cancellation can be checked deterministically.
-`scripts/test-theme-input.sh` exercises production model/AppKit controls with
-explicit event objects: axes/clipping, linked handle promotion, offset tracking,
-one-transaction Undo, intensity cancellation, dial thresholds, rotation/end,
-wheel throttle and parent interruption. Inert geometry checks cover drawn layers,
-button-over-handle precedence, disabled buttons, cursor restoration and circular
-versus rectangular hit regions. Model, appearance and original-window Undo suites
-cover the shared state and persistence boundaries.
+`SpaceThemeControlTests` drives the production AppKit controls with explicit event
+objects on views that are laid out but never shown: axes/clipping, linked handle
+promotion, offset tracking, one-transaction Undo, intensity cancellation, dial
+thresholds, rotation/end, wheel throttle and parent interruption. The editor takes
+its cursor sink and texture bundle per instance, so cursor choices, drawn knob
+geometry, offscreen handle renders, button-over-handle precedence, disabled
+buttons, cursor restoration and circular versus rectangular hit regions are all
+checked without the window server. Model, appearance and original-window Undo
+suites cover the shared state and persistence boundaries.
