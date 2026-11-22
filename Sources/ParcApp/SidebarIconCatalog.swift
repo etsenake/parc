@@ -11,13 +11,22 @@ enum SidebarIconCatalog {
     private static let cache = NSCache<NSString, NSImage>()
 
     static func font(_ font: Font, size: CGFloat) -> NSFont {
-        if descriptors[font] == nil,
-           let url = resourceDirectory?.appendingPathComponent(font.rawValue + ".ttf"),
-           let found = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor], let first = found.first {
+        if descriptors[font] == nil, let first = descriptor(font, in: resourceDirectory) {
             descriptors[font] = first
         }
         guard let descriptor = descriptors[font] else { return .systemFont(ofSize: size) }
         return CTFontCreateWithFontDescriptor(descriptor, size, nil) as NSFont
+    }
+
+    static func font(_ font: Font, size: CGFloat, in directory: URL?) -> NSFont {
+        guard let descriptor = descriptor(font, in: directory) else { return .systemFont(ofSize: size) }
+        return CTFontCreateWithFontDescriptor(descriptor, size, nil) as NSFont
+    }
+
+    private static func descriptor(_ font: Font, in directory: URL?) -> CTFontDescriptor? {
+        guard let url = directory?.appendingPathComponent(font.rawValue + ".ttf"),
+              let found = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor] else { return nil }
+        return found.first
     }
 
     static func glyph(_ type: SidebarIconType) -> UInt32? { glyphs[type] }

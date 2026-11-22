@@ -71,8 +71,13 @@ enum SplitPaneMenuArtwork {
     static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("SplitPaneMenu", isDirectory: true)
     private static var renditions: [String: NSImage] = [:]
 
-    static func image(_ name: String) -> NSImage? {
-        guard let light = rendition(name), let dark = rendition(name + "-dark") else { return nil }
+    static func image(_ name: String) -> NSImage? { image(name, in: directory, cached: true) }
+
+    static func image(_ name: String, in directory: URL?) -> NSImage? { image(name, in: directory, cached: false) }
+
+    private static func image(_ name: String, in directory: URL?, cached: Bool) -> NSImage? {
+        guard let light = rendition(name, in: directory, cached: cached),
+              let dark = rendition(name + "-dark", in: directory, cached: cached) else { return nil }
         let image = NSImage(size: light.size, flipped: false) { rect in
             let isDark = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             (isDark ? dark : light).draw(in: rect)
@@ -82,8 +87,8 @@ enum SplitPaneMenuArtwork {
         return image
     }
 
-    private static func rendition(_ name: String) -> NSImage? {
-        if let cached = renditions[name] { return cached }
+    private static func rendition(_ name: String, in directory: URL?, cached: Bool) -> NSImage? {
+        if cached, let cached = renditions[name] { return cached }
         guard let directory, let data = try? Data(contentsOf: directory.appendingPathComponent(name + ".png")),
               let base = NSBitmapImageRep(data: data) else { return nil }
         base.size = NSSize(width: base.pixelsWide, height: base.pixelsHigh)
@@ -94,7 +99,7 @@ enum SplitPaneMenuArtwork {
             double.size = NSSize(width: CGFloat(double.pixelsWide) / 2, height: CGFloat(double.pixelsHigh) / 2)
             image.addRepresentation(double)
         }
-        renditions[name] = image
+        if cached { renditions[name] = image }
         return image
     }
 }
