@@ -252,4 +252,4 @@ transition; see [Space paging](space-theme-rendering.md#space-paging).
 Implementation lives in the native navigation/history bridge and
 `BrowserWindowController`, `SidebarView`, navigation controls, focus owners and
 `SidebarSpacePager`. Focused coverage includes `NavigationLoadingTests`,
-`tests/SidebarSpacePaging`, `ContentFocusRequestTests` and native focus tests.
+`SidebarSpacePagerTests`, `SidebarSpacePagingModelTests`, `ContentFocusRequestTests` and native focus tests.

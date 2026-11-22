@@ -480,7 +480,9 @@ Relevant existing checks are `test-split-context.sh`, `test-split-dividers.sh`,
 `test-split-divider-snap.sh`, `test-split-pane-controls.sh`,
 `test-split-appearance.sh`, the model/store suites under
 `tests/ParcCoreTests/Windows` (`swift test --filter ExternalSplitDropTests`,
-`InterProfileMoveTests`, `OriginalSplitDropTests`) and `tests/NativeContentDrop`.
+`InterProfileMoveTests`, `OriginalSplitDropTests`) and the external drop suites in
+`tests/ParcTests/Windows` (`ExternalSplitDropSessionTests`, `SplitDropReservationTests`,
+`LocalEditorDropTests`).
 `SplitStackLayoutTests` also covers the snap rule on each divider's axis and flat
 and stacked layouts in tight page areas, `SplitDropIntentTests` covers hover
 intent with a fake clock, and `SplitLayoutFlushSkipTests` covers the divider

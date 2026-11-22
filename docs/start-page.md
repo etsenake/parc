@@ -199,9 +199,9 @@ images live in ignored `work/start-page/`.
 - `Sources/ParcApp/TabCloseFade.swift` and
   `BrowserWindowController+CloseFade.swift`: the close fade.
 
-`tests/StartPage` checks the paper's tint, glows, appearance and swipe hand-off,
+`StartPageViewTests`, `StartPageLayoutTests` and `TabCloseFadeTests` check the paper's tint, glows, appearance and swipe hand-off,
 and runs the close fade on a pretend clock: its curve and lock, when the real
 close starts, "Leave site?", refusal, interruption and Reduce Motion.
-`tests/EmptyWindow` covers the sidebar rule, Command-T and Command-L routing,
+`CloseKeepsSpaceTests`, `PendingSplitPaneSidebarTests` and `SidebarHoverHandOffTests` cover the sidebar rule, Command-T and Command-L routing,
 the start page's focus conditions, and that closing, clearing or a page closing
 itself keeps the window on its Space whatever page the engine picks next.

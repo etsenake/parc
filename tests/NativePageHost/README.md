@@ -12,14 +12,12 @@ Run the focused native suite:
 swift test --filter PageHostTests
 ```
 
-The script compiles the production component and tests with ARC and warnings
-treated as errors, then executes the standalone test binary. It links AppKit
-and QuartzCore, requires no installed browser or Chromium SDK, and writes its executable to
-ignored `build/tests/native-page-host/`. Test NSWindows stay offscreen; the suite
-uses their real view hierarchies, Auto Layout, first-responder mechanism and a
-running main queue.
+`PageHostTests.mm` in `tests/ParcNativeTests/Pages` builds the production component
+with ARC and warnings treated as errors as part of the `ParcNative` package target.
+It needs no installed browser or Chromium SDK. Test NSWindows stay offscreen; the
+suite uses their real view hierarchies, Auto Layout and first-responder mechanism.
 
-The suite runs in `scripts/test.sh` and covers containment/reuse, replacement/
+The suite covers containment/reuse, replacement/
 external removal, deferred renderer focus/replacement, window move and detach, invalidation/weak lifetime,
 reentrant replacement teardown, hidden queued-focus refusal, initially-hidden
 content visibility, reentrant visibility ownership, the pane compositor view

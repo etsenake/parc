@@ -98,6 +98,6 @@ an ordinary launch. With `--no-first-run`, an isolated profile skips onboarding.
 ## Checks
 
 Toolbar, command-admission and preference checks live in
-`tests/DeveloperMode`; native frontend, docking and focus checks live in
+`DeveloperModeTests`; native frontend, docking and focus checks live in
 `tests/NativeDevTools`. Follow [the working contract](../AGENTS.md) before
 running window-based helpers.

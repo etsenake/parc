@@ -76,7 +76,7 @@ and over any visible split pane.
   key or Parc resigning active don't.
 
 A background swipe never activates Parc, raises the window, changes the
-selected pane or moves keyboard focus. `tests/HistorySwipeTargets/main.swift`
+selected pane or moves keyboard focus. `HistorySwipeTargetsTests`
 runs model tests of which panes can swipe and keeps each refusal and commit on
 the per-page path.
 

@@ -56,7 +56,7 @@ identities fall back to the scan. The lookup is never saved or compared.
 `openTabs`, `openTabs(where:)`, `containsOpenTab(where:)` and
 `archivedTabs(where:)` read open and archived tabs from lists the lookup keeps
 in `tabs` order, so open-tab views skip the archive; without a lookup they run
-the same single filter as before. `tests/BrowserTabLookupTests.swift` checks
+the same single filter as before. `BrowserTabLookupTests` checks
 all of these against plain scans through random edits.
 
 ## Checks and measurement

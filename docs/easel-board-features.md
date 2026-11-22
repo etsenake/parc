@@ -207,6 +207,5 @@ board logic: find order, visibility, matching, replacement across rich text
 runs, per-object and per-table refusals, the find session's replace and
 refresh rules, viewport focus, object links, history names, caps and
 recording against a temporary store, selection export scope and the sticky
-CSV, and that every template is a valid Easel. Build it with every `Sources/ParcCore` file
-plus `tests/Support/TestFailure.swift` and run the binary. The views are
-checked by compiling only.
+CSV, and that every template is a valid Easel. Run it with
+`swift test --filter EaselBoardFeaturesTests`.

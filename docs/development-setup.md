@@ -338,6 +338,13 @@ manifest), loaded through `Bundle.module`, never paths built from `#filePath`.
 Nest helpers in the suite or make them `private`, because each target is one
 module.
 
+Never drive AppKit's simulated clicks. `performClick(_:)` on a control and
+`performClose(_:)` on a window spin a nested event-tracking run loop; with tests
+running in parallel that loop can stop the main run loop, which ends the test
+process silently with no summary. Call `sendClick()` from
+`tests/ParcTests/Support/ControlClick.swift`, call a menu item's action on its
+target, and give a window double a `performClose` that asks its delegate.
+
 Test behaviour, not wording: never assert that source files contain particular
 code. Warnings are errors in every target (`treatAllWarnings`), matching the
 release compile.
@@ -346,6 +353,11 @@ Python `unittest` suites exist only for the Python tooling they exercise:
 `tests/BuildTools` (build and release scripts), `tests/Site` (the website, also
 run by GitHub CI), `tests/Documentation` (the docs checker) and the release
 tooling suites beside them.
+
+Checks that need a completed engine build stay outside `swift test`, each in its
+own `tests/` folder with a README and runner: FairPlay (`scripts/test-fairplay-*.sh`),
+error pages, the browser import readers, helper routing, platform codecs and the
+native runtime harness.
 
 ## What to carry over from the old Mac
 

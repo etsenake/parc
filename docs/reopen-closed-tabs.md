@@ -120,6 +120,6 @@ of that record's deleted folders retires it.
 
 ## Validation
 
-`bash scripts/test-close-undo.sh` uses temporary stores and real Undo owners for
+`ClosedTabsUndoTests.swift` uses temporary stores and real Undo owners for
 consent, ordering, split regrouping, two-window/Space isolation, stale records,
 save failure/retry, Peek dismissal and private in-memory behavior.

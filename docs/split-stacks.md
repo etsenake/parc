@@ -224,7 +224,7 @@ through the model and the store, including reopen, Undo, copies, Favorites,
 window projections, drops and Arc import. `SplitStackLayoutTests`
 (also windowless) covers the stacked frames, divider rects
 and regions, tight page areas, splitter values and labels, the layout commands,
-pending-pane previews and reserved drop shapes. `scripts/test-split-drop-geometry.sh`
+pending-pane previews and reserved drop shapes. `ContentDropGeometryTests`
 pins every drop band, corner and four-pane fallback on flat and stacked splits,
 and the original, external and cross-window drop suites commit stack drops. `SplitStackCommandsTests` (windowless) checks command enabling against the store's moves, Split
 This Pane's targets, previews and commits, its single-page start of a split,

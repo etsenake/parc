@@ -487,7 +487,7 @@ press feedback. Status-capsule style/side changes do not animate.
 
 Focused suites are the `SiteControlCenter*Tests` package suites, `tests/NativeSitePermissions`,
 `tests/NativeJavaScriptDialogs`, `tests/NativeHTTPAuth`,
-`tests/NativeExternalProtocol`, `tests/NativeStatusText`, `tests/NativeShiftLink`,
+`tests/NativeExternalProtocol`, `tests/NativeStatusText`, `ShiftLinkTests.mm` in `tests/ParcNativeTests`,
 `RendererCrashPresentationTests`, `BlockedPopupsTests` (blocked-content
 wording and parsing), `SitePermissionRowTests` (permission row
 wording, including location off in macOS) and relevant extension/page-tool

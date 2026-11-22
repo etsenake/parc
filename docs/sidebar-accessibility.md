@@ -262,10 +262,10 @@ neither focus nor selection, and only a running screen reader speaks them.
 | [Sidebar keyboard suites](../tests/ParcCoreTests/CommandBar/Keyboard) | Control-Space announcements, list ends and folder state |
 | `SidebarOutlineTests`, `SidebarOutlineSelectionTests` | Row/cell hierarchy, geometry, stable identities, disclosure, selection and accessibility selection |
 | `SidebarWindowKeyLoopTests` | Bidirectional traversal, renderer replacement, hidden sidebar, Peek and closed-loop exclusions |
-| `tests/SidebarMiniPlayerFocus/check.py` | Mini-player keyboard actions and visible rings |
+| `SidebarMiniPlayerFocusTests` | Mini-player keyboard actions and visible rings |
 | `SidebarDockStripTests`, `SidebarDockMenuTests`, `SidebarSpaceHeaderTests` | Dock order, Space identifiers and header controls |
 | `SidebarWindowButtonsTests` | Window controls and presentation-state pointer handling |
-| `tests/SidebarHeaderGlyphs/check.py` | URL row button reveal rule, popup and panel holds, and VoiceOver |
+| `SidebarHeaderGlyphTests` | URL row button reveal rule, popup and panel holds, and VoiceOver |
 
 These are model and inert AppKit component checks. Inspect their entry points
 before running them under [AGENTS.md](../AGENTS.md). Review each new focus-restore
