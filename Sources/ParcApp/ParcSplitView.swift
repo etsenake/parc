@@ -99,6 +99,8 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         private var retiredTarget: SplitDropTarget?
         var hoverIntent = SplitDropIntent()
         var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+        var intentFireDate: (TimeInterval) -> Date = Date.init(timeIntervalSinceNow:)
+        var scheduleIntentTimer: (Timer) -> Void = { RunLoop.main.add($0, forMode: .common) }
         var onIntentDue: (() -> Void)?
         private var intentTimer: Timer?
         var shownTarget: SplitDropTarget? { hoverIntent.shown?.target }
@@ -261,7 +263,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                 intentTimer?.invalidate(); intentTimer = nil
                 return
             }
-            let date = Date(timeIntervalSinceNow: max(0, deadline - clock()))
+            let date = intentFireDate(max(0, deadline - clock()))
             if let intentTimer, intentTimer.isValid { intentTimer.fireDate = date; return }
             let timer = Timer(fire: date, interval: 0, repeats: false) { [weak self] _ in
                 MainActor.assumeIsolated {
@@ -270,7 +272,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                     if !self.ended { self.onIntentDue?() }
                 }
             }
-            RunLoop.main.add(timer, forMode: .common)
+            scheduleIntentTimer(timer)
             intentTimer = timer
         }
         private func collapsedFrame(for target: SplitDropTarget, orientation: SplitOrientation) -> NSRect? {
@@ -361,6 +363,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         fileprivate weak var owner: ParcSplitView?
         private(set) var ended = false
         private var fallback: Timer?
+        var scheduleFallbackTimer: (Timer) -> Void = { RunLoop.main.add($0, forMode: .common) }
         fileprivate init(owner: ParcSplitView) { self.owner = owner }
         var isDragInside = true { didSet { updateFallback() } }
         private func updateFallback() {
@@ -372,7 +375,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                     self.endIfDragReleased()
                 }
             }
-            RunLoop.main.add(timer, forMode: .common)
+            scheduleFallbackTimer(timer)
             fallback = timer
         }
         func endIfDragReleased() {
@@ -421,6 +424,9 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     private let regionAnimationKey = "Split drop region"
     private var retiringDropRegion: DropRegionView?
     private var regionTransition = UUID()
+    var registerDropRegionCompletion: (@escaping @MainActor () -> Void) -> Void = { completion in
+        CATransaction.setCompletionBlock { MainActor.assumeIsolated { completion() } }
+    }
     private struct RegionPosition {
         let parent: CALayer?
         let position: CGPoint
@@ -465,12 +471,10 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
         CATransaction.begin()
         if removing {
-            CATransaction.setCompletionBlock { [weak self, weak region] in
-                MainActor.assumeIsolated {
-                    guard let self, let region, self.regionTransition == token,
-                          self.retiringDropRegion === region else { return }
-                    self.clearRetiringDropRegion()
-                }
+            registerDropRegionCompletion { [weak self, weak region] in
+                guard let self, let region, self.regionTransition == token,
+                      self.retiringDropRegion === region else { return }
+                self.clearRetiringDropRegion()
             }
         }
         layer.add(animation, forKey: regionAnimationKey)

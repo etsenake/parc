@@ -290,6 +290,23 @@ import Testing
         #expect(lease.reusedRegion == !scene.reduceMotion)
     }
 
+    @Test func aReenteredRegionSurvivesItsOldCollapseCompletion() throws {
+        let scene = Scene()
+        var complete: (@MainActor () -> Void)?
+        scene.split.registerDropRegionCompletion = { complete = $0 }
+        let lease = scene.lease()
+        _ = scene.leftEdge(lease)
+        let region = try #require(scene.region())
+        _ = scene.leave(lease)
+        let finishCollapse = try #require(complete)
+        _ = scene.leftEdge(lease)
+
+        finishCollapse()
+
+        #expect(region.superview === scene.split)
+        #expect(region.layer?.opacity == 1)
+    }
+
     @Test func clearingSynchronouslyRemovesTheBorderAndItsAnimation() throws {
         let scene = Scene()
         let lease = scene.lease()
@@ -608,6 +625,23 @@ import Testing
         #expect(scene.split.arrangedSubviews.map(\.frame) == before)
     }
 
+    @Test func thePassiveCollapseCompletionRemovesItsOwnRegion() throws {
+        let scene = Scene()
+        var complete: (@MainActor () -> Void)?
+        scene.split.registerDropRegionCompletion = { complete = $0 }
+        let lease = scene.lease()
+        _ = scene.leftEdge(lease)
+        let region = try #require(scene.region())
+        lease.end(animated: true)
+        try #require(region.superview === scene.split)
+        let finishCollapse = try #require(complete)
+
+        finishCollapse()
+
+        #expect(region.superview == nil)
+        #expect(scene.split.subviews == scene.panes)
+    }
+
     @Test func theOriginalWindowResigningKeyClearsTheTerminalBorderAndTransition() {
         let scene = Scene()
         let lease = scene.lease()
@@ -676,6 +710,37 @@ import Testing
         rig.sweep(from: NSPoint(x: 1, y: 200), to: rig.seat)
         #expect(rig.lease.hoverIntent.isPending)
         #expect(rig.lease.hoverIntent.deadline == rig.now + 0.05)
+    }
+
+    @Test func externalDropIntentRechecksTheStationaryPointerAtItsDeadline() throws {
+        let scene = Scene()
+        let lease = try #require(scene.split.prepareDropReservation(in: scene.host, contents: scene.panes.map(\.body)))
+        let edge = scene.host.convert(NSPoint(x: 1, y: 200), to: nil)
+        let drag = SplitDropDragInfo(window: scene.window, location: edge)
+        drag.writeURL("https://intent.invalid")
+        var now: TimeInterval = 100
+        var timers: [Timer] = []
+        lease.clock = { now }
+        lease.intentFireDate = { Date(timeIntervalSinceReferenceDate: now + $0) }
+        lease.scheduleIntentTimer = { timers.append($0) }
+        let session = try #require(ExternalSplitDropSession(host: scene.host, info: drag, frames: scene.originalFrames,
+            orientation: .horizontal, reservation: lease, validate: { lease.isCurrent }, insertionColor: { .black },
+            canPropose: scene.allowAll, commit: { _, _ in false }))
+        session.targets.performFeedback = {}
+        var targets: [SplitDropTarget?] = []
+        session.targets.onChange = { targets.append($0) }
+
+        #expect(session.update(drag) == .copy)
+        #expect(targets.isEmpty)
+        let deadline = now + 0.05
+        let timer = try #require(timers.first)
+        #expect(timer.fireDate == Date(timeIntervalSinceReferenceDate: deadline))
+        now = deadline
+        timer.fire()
+
+        #expect(targets == [.insert(0)])
+        #expect(timers.count == 1)
+        #expect(!timer.isValid)
     }
 
     @Test func aReleaseBeforeTheSeatAppearsDropsIntoTheSeatAndMovesNothingFirst() {

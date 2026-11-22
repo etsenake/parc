@@ -190,6 +190,22 @@ import Testing
         #expect(scene.split.isInteractivePaneEditing)
     }
 
+    @Test func leavingTheLastReceiverArmsTheRepeatingDragFallback() throws {
+        let scene = Scene()
+        try #require(scene.enterLeftEdge())
+        let edit = try #require(scene.split.interactivePaneEdit)
+        defer { scene.router.end() }
+        var timers: [Timer] = []
+        edit.scheduleFallbackTimer = { timers.append($0) }
+
+        scene.leaveThePage()
+
+        let timer = try #require(timers.first)
+        #expect(timers.count == 1)
+        #expect(timer.isValid)
+        #expect(timer.timeInterval == 0.05)
+    }
+
     @Test func enteringTheOtherPageBeforeReleaseContinuesTheSameEdit() {
         let scene = Scene()
         #expect(scene.enterLeftEdge())
@@ -495,6 +511,28 @@ import Testing
         #expect(scene.host.draggingUpdated(scene.drag).isEmpty)
         #expect(scene.commits == 0)
         #expect(scene.split.arrangedSubviews.map(\.frame) == scene.originalFrames)
+    }
+
+    @Test func aTextReceiversTerminalCollapseRemovesItsPassiveRegion() throws {
+        let scene = Scene()
+        var complete: (@MainActor () -> Void)?
+        scene.split.registerDropRegionCompletion = { complete = $0 }
+        let receiver = LocalContentDropTextView(frame: scene.pageA.body.bounds)
+        scene.pageA.body.addSubview(receiver)
+        scene.place(NSPoint(x: 1, y: 200))
+        try #require(receiver.draggingEntered(scene.drag) == .copy)
+        let region = try #require(scene.split.subviews.first { $0 !== scene.pageA && $0 !== scene.pageB })
+        scene.place(NSPoint(x: 200, y: 200))
+        receiver.draggingExited(scene.drag)
+        try #require(scene.host.draggingEntered(scene.drag) == .copy)
+        receiver.draggingEnded(scene.drag)
+        try #require(region.superview === scene.split)
+        let finishCollapse = try #require(complete)
+
+        finishCollapse()
+
+        #expect(region.superview == nil)
+        #expect(scene.split.subviews == [scene.pageA, scene.pageB])
     }
 }
 
