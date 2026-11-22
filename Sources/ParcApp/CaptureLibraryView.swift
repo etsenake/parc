@@ -35,7 +35,10 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private var items: [Item] = []
     private var positions: [String: Int]?
     private var listVersion: UInt64 = 0
-    private let planner = MediaLibraryLatestWork<ListPlan>()
+    private let planner: MediaLibraryLatestWork<ListPlan>
+    private let startTask: MediaLibraryStartTask
+    var makeFilePreview: @MainActor () -> DownloadLibraryPreview = { DownloadLibraryPreview(itemName: "media file") }
+    private let fileThumbnail: @MainActor (ExternalMediaFile) async throws -> Data
     private var appliedQuery = ""
     private let accessStatus = NSTextField(labelWithString: "")
     private var actionError: String?
@@ -68,7 +71,14 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private let ownerValid: () -> Bool
     override var isFlipped: Bool { true }
 
-    init(store: CaptureLibraryStore, profileOwner: BrowserStore, media: ExternalMediaLibrary, regularHeader: Bool = false, ownerValid: @escaping () -> Bool) {
+    init<S: Scheduler>(store: CaptureLibraryStore, profileOwner: BrowserStore, media: ExternalMediaLibrary,
+                       regularHeader: Bool = false, delivery: S = RunLoop.main,
+                       startTask: @escaping MediaLibraryStartTask = { Task(operation: $0) },
+                       fileThumbnail: (@MainActor (ExternalMediaFile) async throws -> Data)? = nil,
+                       ownerValid: @escaping () -> Bool) {
+        self.startTask = startTask
+        self.planner = MediaLibraryLatestWork(startTask: startTask)
+        self.fileThumbnail = fileThumbnail ?? media.thumbnail
         self.store = store; self.profileOwner = profileOwner; self.media = media; self.ownerValid = ownerValid
         search = regularHeader ? DownloadSearchField(frame: .zero) : NSSearchField()
         searchBackdrop = regularHeader ? DownloadSearchBackdrop() : nil
@@ -121,8 +131,8 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         scroll.documentView = collection; scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true; scroll.drawsBackground = false; addSubview(scroll)
         message.alignment = .center; message.font = .systemFont(ofSize: 13); addSubview(message)
-        store.$items.combineLatest(store.$loadError, store.$isLoading).receive(on: RunLoop.main).sink { [weak self] _ in self?.reload() }.store(in: &subscriptions)
-        media.$items.combineLatest(media.$folders, media.$error, media.$isLoading).receive(on: RunLoop.main).sink { [weak self] _ in self?.reload() }.store(in: &subscriptions)
+        store.$items.combineLatest(store.$loadError, store.$isLoading).receive(on: delivery).sink { [weak self] _ in self?.reload() }.store(in: &subscriptions)
+        media.$items.combineLatest(media.$folders, media.$error, media.$isLoading).receive(on: delivery).sink { [weak self] _ in self?.reload() }.store(in: &subscriptions)
         accessStatus.font = .systemFont(ofSize: 10.5); accessStatus.textColor = .secondaryLabelColor
         accessStatus.lineBreakMode = .byTruncatingTail; accessStatus.isHidden = true; addSubview(accessStatus)
         search.nextKeyView = collection; collection.nextKeyView = search
@@ -385,13 +395,13 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         }
     }
     private func loadThumbnail(_ item: Item, ticket: UInt64) {
-        let key = item.cacheKey, store = store, media = media
-        let task = Task { [weak self] in
+        let key = item.cacheKey, store = store, fileThumbnail = fileThumbnail
+        let task = startTask { [weak self] in
             let data: Data?
             do {
                 switch item {
                 case .capture(let capture): data = try await store.thumbnail(for: capture)
-                case .file(let file): data = try await media.thumbnail(file)
+                case .file(let file): data = try await fileThumbnail(file)
                 }
             } catch { data = nil }
             guard let self else { return }
@@ -520,7 +530,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         guard ownerValid() else { return }
         if previewedFile?.folder == folder.url { closeFilePreview() }
         let presentation = presentationGeneration
-        Task { [weak self] in
+        _ = startTask { [weak self] in
             guard let self else { return }
             do { try await self.media.setEnabled(enabled, folder: folder.url) }
             catch {
@@ -610,7 +620,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private func hideFile(_ file: ExternalMediaFile) {
         guard ownerValid(), media.contains(file) else { return }
         let presentation = presentationGeneration
-        Task { [weak self] in
+        _ = startTask { [weak self] in
             guard let self else { return }
             do { try await self.media.hide(file) }
             catch {
@@ -742,13 +752,13 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         generation &+= 1; let token = generation
         let presentation = presentationGeneration
         closeFilePreview()
-        Task { [weak self, weak parent] in
+        _ = startTask { [weak self, weak parent] in
             guard let self, let parent else { return }
             do {
                 let access = try await self.media.acquire(file)
                 guard self.ownerValid(), self.window === parent, self.generation == token, self.media.contains(file), parent.attachedSheet == nil else { return }
                 self.prepareFocusReturn()
-                let controller = DownloadLibraryPreview(itemName: "media file")
+                let controller = self.makeFilePreview()
                 controller.sourceRect = { [weak self] in self?.previewSourceRect(.file(file)) }
                 controller.sourceImage = self.thumbnailImage(.file(file))
                 self.fileAccess = access; self.filePreview = controller; self.previewedFile = file

@@ -194,6 +194,9 @@ final class ExternalMediaLibrary: ObservableObject {
     private let systemFolders: (() -> [URL])
     private var clients = Set<UUID>()
     private var watcher: AnyObject?
+    typealias DeliverEvent = @Sendable (@escaping @MainActor @Sendable () -> Void) -> Void
+    private let deliverEvent: DeliverEvent
+    private let startTask: MediaLibraryStartTask
     private let makeWatcher: WatchFactory
     private var watchedRoots: [String]?
     private var watchedAliases: [String: String]?
@@ -214,7 +217,10 @@ final class ExternalMediaLibrary: ObservableObject {
     nonisolated static let screenshotDomain = "com.apple.screencapture"
     init(directory: URL, preferencesAreEphemeral: Bool = false, systemFolders: @escaping () -> [URL] = ExternalMediaLibrary.defaultFolders,
          cloud: ExternalMediaCloud = .system, screenshotPreferences: UserDefaults? = UserDefaults(suiteName: ExternalMediaLibrary.screenshotDomain),
+         startTask: @escaping MediaLibraryStartTask = { Task(operation: $0) },
+         deliverEvent: @escaping DeliverEvent = { action in Task { @MainActor in action() } },
          makeWatcher: @escaping WatchFactory = { ExternalMediaWatcher(aliases: $0, since: $1, handler: $2) }) {
+        self.startTask = startTask; self.deliverEvent = deliverEvent
         self.makeWatcher = makeWatcher
         self.systemFolders = systemFolders; self.cloud = cloud; self.screenshotPreferences = screenshotPreferences
         disk = ExternalMediaDisk(directory: directory, preferencesAreEphemeral: preferencesAreEphemeral, cloud: cloud)
@@ -281,7 +287,7 @@ final class ExternalMediaLibrary: ObservableObject {
         generation &+= 1; let token = generation; let roots = systemFolders(); let mark = FSEventsGetCurrentEventId()
         refreshTask?.cancel(); rescanPending = false
         if announced, !isLoading { isLoading = true }
-        refreshTask = Task { [weak self] in
+        refreshTask = startTask { [weak self] in
             guard let self else { return }
             do {
                 let snapshot = try await self.disk.scan(systemFolders: roots)
@@ -307,7 +313,7 @@ final class ExternalMediaLibrary: ObservableObject {
         guard !clients.isEmpty, refreshTask == nil else { return }
         guard watcher != nil else { startRefresh(announced: false); return }
         generation &+= 1; let token = generation; let roots = systemFolders(); let mark = FSEventsGetCurrentEventId()
-        refreshTask = Task { [weak self] in
+        refreshTask = startTask { [weak self] in
             guard let self else { return }
             let snapshot = try? await self.disk.reconcile(systemFolders: roots)
             guard !Task.isCancelled, self.generation == token, !self.clients.isEmpty else { return }
@@ -359,8 +365,8 @@ final class ExternalMediaLibrary: ObservableObject {
         guard !clients.isEmpty, !folders.isEmpty else { stopCloud(); return }
         if cloudStatus == nil {
             cloudSession &+= 1; let session = cloudSession
-            cloudStatus = cloud.observe { [weak self] changed in
-                Task { @MainActor [weak self] in self?.receiveCloud(changed, session: session) }
+            cloudStatus = cloud.observe { [weak self, deliverEvent] changed in
+                deliverEvent { [weak self] in self?.receiveCloud(changed, session: session) }
             }
         }
         cloudStatus?.present(folders)
@@ -398,8 +404,8 @@ final class ExternalMediaLibrary: ObservableObject {
         watcher = nil; watchedRoots = roots; watchedAliases = aliases; watchSession &+= 1
         guard !roots.isEmpty else { return }
         let session = watchSession
-        watcher = makeWatcher(aliases, mark) { [weak self] batch in
-            Task { @MainActor [weak self] in self?.receive(batch, session: session) }
+        watcher = makeWatcher(aliases, mark) { [weak self, deliverEvent] batch in
+            deliverEvent { [weak self] in self?.receive(batch, session: session) }
         }
     }
     private func receive(_ batch: ExternalMediaWatcher.Batch, session: UInt64) {
@@ -410,7 +416,7 @@ final class ExternalMediaLibrary: ObservableObject {
         }
     }
     private func reread(_ paths: Set<String>) {
-        updateTask = Task { [weak self] in
+        updateTask = startTask { [weak self] in
             guard let self, let change = try? await self.disk.update(paths: paths), !self.clients.isEmpty else { return }
             self.absorb(change)
         }
