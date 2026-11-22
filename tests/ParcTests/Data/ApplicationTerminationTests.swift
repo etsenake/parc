@@ -16,12 +16,19 @@ struct ApplicationTerminationTests {
         func cancelApplicationClose() { closing = false }
     }
 
+    private final class SettingsWindowDouble: NSWindow {
+        var shown = false
+        override var isVisible: Bool { shown }
+    }
+
     private final class Settings: TerminatingSettings {
-        let window: NSWindow? = nil
+        let panel = SettingsWindowDouble(contentRect: .zero, styleMask: [], backing: .buffered, defer: true)
+        var window: NSWindow? { panel }
+        var restores = 0
         var prepares = true, closes = true
         func prepareForTermination() -> Bool { prepares }
-        func attemptClose() -> Bool { closes }
-        func restoreAfterCancelledOwnerClose() {}
+        func attemptClose() -> Bool { panel.shown = false; return closes }
+        func restoreAfterCancelledOwnerClose() { restores += 1; panel.shown = true }
     }
 
     private final class Warning: QuitWarningPrompt {
@@ -126,6 +133,17 @@ struct ApplicationTerminationTests {
     func aRefusedCloseResumesDeferredLaunchWork(_ stop: Stop) {
         let (host, _) = stopped(stop)
         #expect(host.refusalResumes == 1)
+    }
+
+    @Test(arguments: [Stop.settingsCannotClose, .pageRefusesToLeave], [true, false])
+    func aRefusedQuitRestoresSettingsOnlyIfTheyWereVisible(_ stop: Stop, _ wasVisible: Bool) {
+        let host = Host(), termination = ApplicationTermination(host: host)
+        host.settings.panel.shown = wasVisible
+        host.settings.closes = stop != .settingsCannotClose
+        termination.request(nil)
+        if stop == .pageRefusesToLeave { host.resolve(false) }
+        #expect(host.settings.panel.isVisible == wasVisible)
+        #expect(host.settings.restores == (wasVisible ? 1 : 0))
     }
 
     @Test func aRestartsQuitSkipsTheQuitWarningAndKeepsItsRelaunch() {
