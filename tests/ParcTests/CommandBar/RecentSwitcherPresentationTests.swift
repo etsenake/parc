@@ -3,6 +3,8 @@ import Testing
 @testable import Parc
 
 struct RecentSwitcherPresentationTests {
+    enum Preview: CaseIterable { case note, easel, incognito }
+
     @MainActor private final class Window: NSWindow {
         override var isVisible: Bool { true }
     }
@@ -60,6 +62,24 @@ struct RecentSwitcherPresentationTests {
         let item = RecentTabSwitcherView.Item(id: "stacked", title: "Stacked", spaceName: "Space",
             vertical: false, components: ids.map { .init(id: $0, title: "Pane") }, slotSizes: sizes)
         #expect(item.slots?.map { $0.map(\.id) } == (valid ? [[ids[0], ids[1]], [ids[2]]] : nil))
+    }
+
+    @Test @MainActor func theDefaultArtworkFolderIsInTheApplicationBundle() {
+        let artwork = RecentSwitcherArtwork()
+        #expect(artwork.directory == Bundle.main.resourceURL?.appendingPathComponent("RecentSwitcher", isDirectory: true))
+    }
+
+    @Test(arguments: Preview.allCases)
+    @MainActor func bundledPreviewArtworkDecodesAsATemplate(preview: Preview) throws {
+        let resources = try #require(Bundle.module.resourceURL).appendingPathComponent("CommandBarFixtures", isDirectory: true)
+        let artwork = RecentSwitcherArtwork(resources: resources)
+        let image = switch preview {
+        case .note: artwork.note
+        case .easel: artwork.easel
+        case .incognito: artwork.incognito
+        }
+        let template = try #require(image)
+        #expect(template.isValid && template.isTemplate)
     }
 
     @Test @MainActor func focusingAnotherPreviewKeepsTheNativeResponder() {

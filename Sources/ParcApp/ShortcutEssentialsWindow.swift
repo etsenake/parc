@@ -15,14 +15,15 @@ enum EssentialsCopyRoute: Equatable {
 final class ShortcutEssentialsWindow: NSWindowController {
     static let commandIDs = ["newTab:", "cycleToNextRecentTab:", "copyCurrentURL:", "split:"]
     private var subscription: AnyCancellable?
-    private let surface = EssentialsSurface()
+    private let surface: EssentialsSurface
     var onViewAll: (() -> Void)?
     var onCommand: ((String, NSEvent?) -> Void)?
     var onEscape: (() -> Void)?
     var isOwnerAvailable: (() -> Bool)?
     var canPerformCommand: ((String) -> Bool)?
 
-    init(shortcuts: KeyboardShortcuts) {
+    init(shortcuts: KeyboardShortcuts, fontDirectory: URL? = nil) {
+        surface = EssentialsSurface(fontDirectory: fontDirectory)
         let window = EssentialsNativeWindow(contentRect: NSRect(x: 0, y: 0, width: 475, height: 388),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false)
         super.init(window: window)
@@ -163,11 +164,12 @@ private final class EssentialsSurface: NSView {
         layer?.backgroundColor = (dark ? NSColor(srgbRed: 21/255, green: 28/255, blue: 48/255, alpha: 1)
             : NSColor(srgbRed: 250/255, green: 251/255, blue: 1, alpha: 1)).cgColor
     }
-    override init(frame: NSRect) {
+    init(fontDirectory: URL?) {
         super.init(frame: NSRect(x: 0, y: 0, width: 475, height: 388))
         wantsLayer = true
-        title.font = Self.headlineFont
-        title.attributedStringValue = NSAttributedString(string: title.stringValue, attributes: [.font: Self.headlineFont, .kern: -0.8])
+        let headlineFont = fontDirectory.map(Self.headlineFont(in:)) ?? Self.headlineFont
+        title.font = headlineFont
+        title.attributedStringValue = NSAttributedString(string: title.stringValue, attributes: [.font: headlineFont, .kern: -0.8])
         title.frame = NSRect(x: 30, y: 55, width: 312, height: 27); addSubview(title); titles.append(title)
         viewAll.frame = NSRect(x: 346, y: 53, width: 102, height: 32)
         viewAll.onPress = { [weak self] in self?.onViewAll?() }; addSubview(viewAll)
@@ -202,6 +204,12 @@ private final class EssentialsSurface: NSView {
         }
         return NSFont(name: "Nunito-ExtraBold", size: 20) ?? .systemFont(ofSize: 20, weight: .heavy)
     }()
+    private static func headlineFont(in directory: URL) -> NSFont {
+        let url = directory.appendingPathComponent("Nunito-ExtraBold.ttf")
+        guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor],
+              let descriptor = descriptors.first else { return .systemFont(ofSize: 20, weight: .heavy) }
+        return CTFontCreateWithFontDescriptor(descriptor, 20, nil) as NSFont
+    }
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance(); updateColors()
     }
