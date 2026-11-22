@@ -6,6 +6,13 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NSToolbarItemValidation, NSMenuItemValidation {
+    struct Actions {
+        let canReplayOnboarding: @MainActor () -> Bool
+        let replayOnboarding: @MainActor (SettingsWindow) -> Void
+        let adjustWindowFrame: @MainActor (SettingsWindow) -> Void
+    }
+
+    private let actions: Actions
     private let focusState = SettingsFocusState()
     private var sheetFocusContext: String?
     private var lifecycleRevision: UInt64 = 0
@@ -128,9 +135,10 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         let spaces: [BrowserSpace]
     }
 
-    init(store: BrowserStore, spaceID: UUID?, applicationProfileID: UUID? = nil) {
+    init(store: BrowserStore, spaceID: UUID?, applicationProfileID: UUID? = nil, actions: Actions) {
         precondition(!store.isEphemeral, "Application Settings requires the normal store")
         self.store = store
+        self.actions = actions
         membershipPane = MembershipCardSettingsView(cards: .shared(directory: store.directory, name: NSFullUserName()))
         contextSpaceID = spaceID
         self.applicationProfileID = applicationProfileID
@@ -1049,7 +1057,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             button.toolTip = button.isEnabled ? nil : "This Space’s browser settings aren’t available right now."
         }
         moreSettings.isEnabled = settingsContextSpace() != nil && onMoreSettings != nil
-        replay.isEnabled = replaySpaceID != nil && NSApp.delegate?.responds(to: #selector(AppDelegate.replayOnboarding(_:))) == true
+        replay.isEnabled = replaySpaceID != nil && actions.canReplayOnboarding()
         restore.state = store.state.settings.restoreSession ? .on : .off
         renderSpaceList()
         layoutSpaceCards()
@@ -1290,7 +1298,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     var replaySpaceID: UUID? { settingsContextSpace()?.id }
 
     @objc private func adjustWindowFrameSelected() {
-        NSApp.sendAction(#selector(AppDelegate.adjustWindowFrameFromSettings(_:)), to: NSApp.delegate, from: self)
+        actions.adjustWindowFrame(self)
     }
 
     private func refreshWindowFrame(_ state: WindowFramePreferences.State) {
@@ -1302,7 +1310,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
 
     @objc private func replayWelcome() {
-        NSApp.sendAction(#selector(AppDelegate.replayOnboarding(_:)), to: NSApp.delegate, from: self)
+        actions.replayOnboarding(self)
     }
 
     private var showsSpaceEditor: Bool {

@@ -503,6 +503,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
+    static let settingsActions = SettingsWindow.Actions(
+        canReplayOnboarding: { NSApp.delegate?.responds(to: #selector(AppDelegate.replayOnboarding(_:))) == true },
+        replayOnboarding: { NSApp.sendAction(#selector(AppDelegate.replayOnboarding(_:)), to: NSApp.delegate, from: $0) },
+        adjustWindowFrame: { NSApp.sendAction(#selector(AppDelegate.adjustWindowFrameFromSettings(_:)), to: NSApp.delegate, from: $0) }
+    )
+
     @objc func adjustWindowFrameFromSettings(_ sender: Any?) {
         guard let settings = sender as? SettingsWindow, started, initialBrowserOpened, !terminationInProgress,
               onboarding == nil else { return }
@@ -2159,7 +2165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             applicationSettings = nil
         }
         if applicationSettings == nil {
-            let settings = SettingsWindow(store: store, spaceID: nil, applicationProfileID: profileID)
+            let settings = SettingsWindow(store: store, spaceID: nil, applicationProfileID: profileID, actions: Self.settingsActions)
             applicationSettings = settings; applicationSettingsProfileID = profileID
             settings.onMoreSettings = { [weak self, weak settings] spaceID, profileID in
                 guard let self, let settings else { return false }

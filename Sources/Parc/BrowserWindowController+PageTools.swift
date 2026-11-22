@@ -242,7 +242,7 @@ extension BrowserWindowController {
             settings = nil
         }
         if settings == nil {
-            settings = SettingsWindow(store: store, spaceID: spaceID)
+            settings = SettingsWindow(store: store, spaceID: spaceID, actions: AppDelegate.settingsActions)
             settings?.onSheetEnded = { [weak self] in self?.retryPendingSettingsClose() }
             settings?.onProfileSettingsPage = { [weak self] spaceID, profileID, page in
                 guard let self, let settings = self.settings else { return false }
