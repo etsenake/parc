@@ -232,7 +232,9 @@ package final class NoteEmojiLibrary {
         return entry
     }
 
-    package func remove(_ name: String) throws {
+    package func remove(_ name: String, trash: (URL) throws -> Void = { url in
+        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+    }) throws {
         refreshIfNeeded()
         guard let index = byName[name] else { throw NoteEmojiLibraryError.missing }
         let entry = emoji[index]
@@ -241,7 +243,7 @@ package final class NoteEmojiLibrary {
         try commit(next)
         let image = directory.appendingPathComponent(entry.file)
         guard FileManager.default.fileExists(atPath: image.path) else { return }
-        do { try FileManager.default.trashItem(at: image, resultingItemURL: nil) } catch {
+        do { try trash(image) } catch {
             try? FileManager.default.removeItem(at: image)
         }
         refreshStamp()

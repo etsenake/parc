@@ -173,15 +173,15 @@ struct NoteCustomEmojiUpgradeTests {
 
     @Test func deletingRemovesTheEmojiAndItsImage() throws {
         add("cat")
-        try library.remove("cat")
+        try library.remove("cat", trash: FileManager.default.removeItem(at:))
         #expect(library.emoji(named: "cat") == nil)
         #expect(!FileManager.default.fileExists(atPath: notes.appendingPathComponent(".parc/emoji/cat.png").path))
     }
 
     @Test func deletingTwiceSaysItIsGone() throws {
         add("cat")
-        try library.remove("cat")
-        #expect(throwsError(.missing) { try library.remove("cat") })
+        try library.remove("cat", trash: FileManager.default.removeItem(at:))
+        #expect(throwsError(.missing) { try library.remove("cat", trash: FileManager.default.removeItem(at:)) })
     }
 
     @Test func theLibraryReadsBackFromDisk() {
