@@ -171,6 +171,7 @@ struct NoteMDReader {
     let references: [String: NoteMDLinkReference]
     let footnotes: Set<String>
     var customEmoji: Set<String> = []
+    var foldDepth = 0
 
     private struct Event {
         package enum Content {
@@ -193,6 +194,13 @@ struct NoteMDReader {
     }
 
     static let maximumInlineDepth = 96
+    static let maximumFoldDepth = 64
+
+    private var deeper: NoteMDReader {
+        var copy = self
+        copy.foldDepth += 1
+        return copy
+    }
 
     private static let pairableTags: Set<String> = ["b", "strong", "i", "em", "s", "del", "strike", "u", "ins", "code", "mark", "span", "a", "time"]
 
@@ -212,12 +220,12 @@ struct NoteMDReader {
                 if attributes.flags.contains(NoteMDSynced.flag) {
                     appendEmpties(isFirst && documentEdges ? node.blankBefore : max(0, node.blankBefore - 1))
                     lastNumber = nil
-                    guard let close = NoteMDSynced.matchingClose(nodes, after: index) else {
+                    guard foldDepth < Self.maximumFoldDepth, let close = NoteMDSynced.matchingClose(nodes, after: index) else {
                         result.append(NoteBlock(.html, text: NoteText(NoteMDByte.string(node.content))))
                         index += 1
                         continue
                     }
-                    result.append(synced(attributes, children: nodes[(index + 1)..<close], trailing: max(0, nodes[close].blankBefore - 1)))
+                    result.append(deeper.synced(attributes, children: nodes[(index + 1)..<close], trailing: max(0, nodes[close].blankBefore - 1)))
                     index = close + 1
                     continue
                 }
@@ -251,16 +259,16 @@ struct NoteMDReader {
                     index += 1
                     continue
                 }
-                if let opener = Self.details(node.content) {
+                if foldDepth < Self.maximumFoldDepth, let opener = Self.details(node.content) {
                     if opener.closed {
-                        result.append(toggle(opener, children: [][...], trailing: 0))
+                        result.append(deeper.toggle(opener, children: [][...], trailing: 0))
                         lastNumber = nil
                         index += 1
                         continue
                     }
                     if let close = matchingDetailsClose(nodes, after: index) {
                         let children = nodes[(index + 1)..<close]
-                        result.append(toggle(opener, children: children, trailing: max(0, nodes[close].blankBefore - 1)))
+                        result.append(deeper.toggle(opener, children: children, trailing: max(0, nodes[close].blankBefore - 1)))
                         lastNumber = nil
                         index = close + 1
                         continue
