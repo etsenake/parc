@@ -95,10 +95,13 @@ package enum EaselWebItemChrome {
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
-    package static func headerFrame(item: EaselRect, visible: EaselRect, height: Double = headerHeight,
-                            minimumWidth: Double = minimumHeaderWidth) -> EaselRect {
-        let width = max(item.width, min(minimumWidth, max(visible.width, 1)))
-        var x = item.x + (item.width - width) / 2
+    package static func headerFrame(item: EaselRect, visible: EaselRect, scale: Double = 1) -> EaselRect {
+        let zoom = scale.isFinite && scale > 0 ? scale : 1
+        let height = headerHeight / zoom, minimumWidth = minimumHeaderWidth / zoom
+        let left = max(item.x, visible.x), right = min(item.x + item.width, visible.x + visible.width)
+        let shown = right > left ? (x: left, width: right - left) : (x: item.x, width: item.width)
+        let width = max(shown.width, min(minimumWidth, max(visible.width, 1)))
+        var x = shown.x + (shown.width - width) / 2
         x = min(max(x, visible.x), max(visible.x, visible.x + visible.width - width))
         let y: Double
         if item.height >= height {

@@ -138,6 +138,22 @@ struct EaselWebItemChromeTests {
         #expect(narrowAtEdge.x == 0)
     }
 
+    @Test func aZoomedInHeaderKeepsItsScreenSizeAndStaysOnItsCard() {
+        let zoomed = EaselWebItemChrome.headerFrame(item: Self.headerItem, visible: Self.visible, scale: 4)
+        #expect(zoomed.height == 38.0 / 4 && zoomed.width == 400 && zoomed.x == 100)
+    }
+
+    @Test func aCardRunningOffTheLeftKeepsItsHeaderOverItsVisiblePart() {
+        let clipped = EaselWebItemChrome.headerFrame(item: .init(x: -300, y: 200, width: 800, height: 400), visible: Self.visible, scale: 3)
+        #expect(clipped.x == 0 && clipped.width == 500)
+        #expect(clipped.x + clipped.width <= 500)
+    }
+
+    @Test func aZoomedOutNarrowCardsHeaderStillGetsItsReadableWidth() {
+        let small = EaselWebItemChrome.headerFrame(item: .init(x: 400, y: 200, width: 120, height: 200), visible: Self.visible, scale: 0.5)
+        #expect(small.width == 640 && small.height == 76)
+    }
+
     @Test func warmUpStatusMatchesNotes() {
         #expect(EmbeddedPageStatusText.friendly("Loading webpage…", document: "Easel") == "Waking the page up…")
     }
