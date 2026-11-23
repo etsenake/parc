@@ -1,4 +1,3 @@
-// Copyright 2026 Parc contributors.
 #ifndef PARC_PARC_CONTENT_CLIENTS_H_
 #define PARC_PARC_CONTENT_CLIENTS_H_
 
@@ -66,6 +65,7 @@ class ParcContentBrowserClient final : public ChromeContentBrowserClient {
   content::UsbDelegate* GetUsbDelegate() override;
   content::SerialDelegate* GetSerialDelegate() override;
   content::HidDelegate* GetHidDelegate() override;
+  std::optional<gfx::ImageSkia> GetProductLogo() override;
 
  private:
   friend class ParcBrowserMainExtraParts;

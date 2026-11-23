@@ -1,4 +1,5 @@
-// Copyright 2026 Parc contributors.
+#import <AppKit/AppKit.h>
+
 #include <map>
 #include <algorithm>
 #include <memory>
@@ -46,6 +47,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "chrome/browser/ui/unload_controller.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/theme_resources.h"
 #include "components/grit/components_resources.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/prefs/pref_service.h"
@@ -85,6 +87,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/resource/resource_scale_factor.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia_util_mac.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
 
 @interface PCNativePrivateDownloadContext () {
@@ -594,6 +597,12 @@ void InitializeNativeProfile(Profile& profile) {
                                            std::move(document), nil);
           }, profile.GetWeakPtr()));
 }
+gfx::Image PrivateMediaArtwork() {
+  NSImage* icon = NSApp.applicationIconImage;
+  return icon ? gfx::Image(gfx::ImageSkiaFromResizedNSImage(
+                    icon, NSMakeSize(512, 512)))
+              : gfx::Image();
+}
 class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
  public:
   base::FilePath GetPathForResourcePack(
@@ -602,6 +611,9 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
     return pack_path;
   }
   gfx::Image GetImageNamed(int resource_id) override {
+    if (resource_id == IDR_INCOGNITO_WHITE_CIRCLE) {
+      return PrivateMediaArtwork();
+    }
     return GetBrandedImage(resource_id);
   }
   gfx::Image GetNativeImageNamed(int resource_id) override {

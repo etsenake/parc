@@ -1,5 +1,7 @@
 #include "parc/parc_content_clients.h"
 
+#import <AppKit/AppKit.h>
+
 #include <utility>
 
 #include "base/apple/foundation_util.h"
@@ -70,6 +72,8 @@
 #include "third_party/parc_fairplay/chromium/fairplay_cdm_info.h"
 #include "third_party/parc_fairplay/chromium/fairplay_media.mojom.h"
 #include "third_party/parc_fairplay/chromium/fairplay_media_service.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_util_mac.h"
 
 namespace parc {
 namespace {
@@ -348,6 +352,19 @@ content::HidDelegate* ParcContentBrowserClient::GetHidDelegate() {
     hid_delegate_ = CreateNativeHidDelegate();
   }
   return hid_delegate_.get();
+}
+
+std::optional<gfx::ImageSkia> ParcContentBrowserClient::GetProductLogo() {
+  NSImage* icon = NSApp.applicationIconImage;
+  if (!icon) {
+    return std::nullopt;
+  }
+  gfx::ImageSkia logo =
+      gfx::ImageSkiaFromResizedNSImage(icon, NSMakeSize(512, 512));
+  if (logo.isNull()) {
+    return std::nullopt;
+  }
+  return logo;
 }
 
 void ParcContentGpuClient::ExposeInterfacesToBrowser(
