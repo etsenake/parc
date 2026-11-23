@@ -69,6 +69,26 @@ struct NoteCaptureSnapshotCarryTests {
         #expect(importer.attachment("Attachments/Long.png", in: folder) == png)
     }
 
+    @Test func movingACaptureToANoteInAnotherFolderCarriesItsPictureAndPDF() throws {
+        let copied = try copyFromFirstNote()
+        let block = try #require(copied.first.page.page.blocks.first { $0.props.capture != nil })
+        let second = try importer.note(importer.root.appendingPathComponent("B/Plan.md"))
+        let target: NoteCrossNoteMove.Access = { body in body(second.page); return true }
+        let move = try #require(NoteCrossNoteMove.perform([block.id], from: copied.first.page, name: "Move", target: target,
+                                                          rebase: NoteClipboard.movingBlocks(from: copied.first.environment,
+                                                                                             into: second.environment),
+                                                          schedule: { $0() }))
+        importer.jobs.runAll()
+        let moved = try #require(second.page.page.blocks.first { $0.props.capture != nil })
+        #expect(move.copyIDs.contains(moved.id))
+        #expect(moved.props.source == "Attachments/Long.png")
+        #expect(moved.props.capture?.snapshot == "Attachments/Long.pdf")
+        let folder = importer.root.appendingPathComponent("B", isDirectory: true)
+        #expect(importer.attachment("Attachments/Long.png", in: folder) == png)
+        #expect(importer.attachment("Attachments/Long.pdf", in: folder) == copied.pdf)
+        #expect(!copied.first.page.page.blocks.contains { $0.id == block.id })
+    }
+
     @Test func pastingACaptureIntoANoteInTheSameFolderKeepsItsPDF() throws {
         let copied = try copyFromFirstNote()
         let sibling = try importer.note(importer.root.appendingPathComponent("A/Sibling.md"))

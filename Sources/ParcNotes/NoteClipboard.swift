@@ -195,6 +195,12 @@ extension NoteClipboard {
     }
 
     @MainActor
+    static func movingBlocks(from source: NoteEnvironment, into destination: NoteEnvironment) -> @MainActor ([NoteBlock]) -> [NoteBlock] {
+        let base = source.documentURL?.deletingLastPathComponent()
+        return { blocks in rebase(Archive(blocks: blocks, base: base, inline: false), into: destination) }
+    }
+
+    @MainActor
     static func rebase(_ archive: Archive, into environment: NoteEnvironment) -> [NoteBlock] {
         let destination = environment.documentURL?.deletingLastPathComponent().standardizedFileURL
         let base = archive.base.flatMap { written -> URL? in

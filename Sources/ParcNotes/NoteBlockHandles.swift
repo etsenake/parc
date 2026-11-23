@@ -505,7 +505,8 @@ final class NoteBlockHandleController {
         }
         let home = files.openSessions.first { $0.page === session }
         guard NoteCrossNoteMove.perform(ids, from: session, name: "Move to “\(name)”", target: Self.access(file),
-                                        source: home.map(Self.access)) != nil else {
+                                        source: home.map(Self.access),
+                                        rebase: NoteClipboard.movingBlocks(from: editor.environment, into: file.environment)) != nil else {
             presentToast?(.standard("Couldn’t move those blocks. They stayed put."))
             return
         }

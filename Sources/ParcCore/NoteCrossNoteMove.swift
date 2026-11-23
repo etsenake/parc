@@ -72,6 +72,7 @@ package final class NoteCrossNoteMove {
 
     package static func perform(_ ids: [NoteBlockID], from session: NotePageSession, name: String,
                         target: @escaping Access, source: Access? = nil,
+                        rebase: @MainActor ([NoteBlock]) -> [NoteBlock] = { $0 },
                         schedule: @escaping @Sendable (@escaping @Sendable () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) -> NoteCrossNoteMove? {
         let page = session.page
         let top = page.topLevelSelection(ids)
@@ -84,6 +85,8 @@ package final class NoteCrossNoteMove {
         }
         let move = NoteCrossNoteMove(name: name, originals: blocks, placements: top.map { placement(of: $0, in: page) },
                                      source: sourceAccess, target: target, schedule: schedule)
+        let rebased = rebase(move.copies)
+        if rebased.map(\.id) == move.copyIDs { move.copies = rebased }
         move.seen[.source] = session
         var landed = false
         let reached = move.target { other in

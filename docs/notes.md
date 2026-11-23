@@ -56,7 +56,7 @@ it in 512-pixel tiles at the note's width and backing scale, over the PNG until
 they land, and the full-screen zoom draws it the same way. The block takes its
 natural size from the PDF page (1 point per CSS pixel), so a long capture fills
 the column like any capture of a page that wide. Replacing the picture drops the
-PDF. Copy, cut, paste and drag into another note copy the PDF into that note's
+PDF. Copy, cut, paste, drag and Move to another note copy the PDF into that note's
 Attachments with the PNG, an import landing rewrites both paths, and HTML or
 Markdown export copies both. Pasted onto an Easel it keeps both, and an
 unreadable PDF quietly leaves the PNG. Their header
@@ -283,8 +283,9 @@ Escape, selects whole blocks, which can then be moved, coloured, duplicated,
 deleted or copied together. With several sibling blocks selected, Turn into also
 offers 2 to 5 columns and lays them out side by side in order. Hovering a block reveals `+` (add below, ⌥ for
 above) and a grip; clicking the grip opens a searchable action menu (Delete,
-Duplicate, Turn into, Colour, Copy link to block, Move to another note, and kind
-specific items), and dragging it moves blocks anywhere, including beside a block
+Duplicate, Turn into, Colour, Copy link to block, Move to another note, which
+brings pictures and files along into a note in another folder the way a paste
+does, and kind specific items), and dragging it moves blocks anywhere, including beside a block
 to make columns, while the page scrolls along.
 
 Copying writes the note's own block format, Markdown, HTML and plain text, so a
