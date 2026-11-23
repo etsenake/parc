@@ -216,6 +216,7 @@ extension NotePage {
         guard start.block != end.block, let startBlock = block(start.block), let endBlock = block(end.block),
               let startOrder = visiblePosition(of: start.block), let endOrder = visiblePosition(of: end.block),
               startOrder < endOrder else { return false }
+        let start = fitted(start, in: startBlock), end = fitted(end, in: endBlock)
         let order = index.visibleIDs
         let between = order[(startOrder + 1)..<endOrder].filter { id in
             guard let block = block(id) else { return false }
@@ -275,6 +276,11 @@ extension NotePage {
         }
         collapseEmptyColumns()
         return true
+    }
+
+    private func fitted(_ position: NotePosition, in block: NoteBlock) -> NotePosition {
+        let length = block.text(in: position.field)?.length ?? 0
+        return NotePosition(position.block, min(max(0, position.offset), length), field: position.field)
     }
 
     func textFragment(from start: NotePosition, to end: NotePosition) -> [NoteBlock] {
