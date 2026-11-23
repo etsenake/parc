@@ -13,9 +13,10 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     let liveAddress: URL
     let host: Host
     let captureLayout: EaselCaptureLayout?
+    let framesCapture: Bool
     package var positioningAllowed = true {
         didSet {
-            guard positioningAllowed != oldValue, captureLayout != nil else { return }
+            guard positioningAllowed != oldValue, framesCapture else { return }
             if !positioningAllowed, positioning != nil { stopPositioning() }
             if positioningAllowed { needsLayout = true }
         }
@@ -59,7 +60,7 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     private let cover = NSView()
     private let backButton = NoteToolbarButton(icon: .symbol("chevron.left"), label: "Back")
     private let reloadButton = NoteToolbarButton(icon: .symbol("arrow.clockwise"), label: "Reload")
-    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in a tab")
+    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in Peek")
     private let moreButton = NoteToolbarButton(icon: .symbol("ellipsis"), label: "More")
     private let doneButton: NoteToolbarButton
     private let captionButton = NoteToolbarButton(icon: .symbol("text.below.photo"), label: "Caption")
@@ -67,7 +68,7 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     private let fallback: NoteEmbedFallbackView
     private var status: String?
     private var retryTitle = "Retry"
-    private var framing = EaselLiveFraming()
+    private var framing: EaselLiveFraming
     private var positioning: PCNativeLiveCapturePosition?
     private var positionGeneration: UInt64 = 0
     private var positionedWidth: CGFloat = 0
@@ -81,6 +82,8 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         self.address = address
         self.host = host
         self.captureLayout = captureLayout
+        framesCapture = EaselLiveFraming.framesCapture(captureLayout)
+        framing = EaselLiveFraming(phase: framesCapture ? .waiting : .framed)
         liveAddress = captureLayout == nil ? NoteEmbedAddress.liveURL(for: address) : address
         browser = PCBrowserView(frame: .zero, profilePath: profilePath)
         fallback = NoteEmbedFallbackView(address: address)
@@ -180,7 +183,7 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
 
     package func setStatus(_ text: String?, retry: Bool) {
         if host == .easel {
-            if text == nil, captureLayout != nil, !framing.revealsPage { showLiningUp(); return }
+            if text == nil, framesCapture, !framing.revealsPage { showLiningUp(); return }
             status = text
             fallback.configure(status: text.map(friendly), retryTitle: retry ? retryTitle : nil)
             fallback.isHidden = text == nil
@@ -300,7 +303,7 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         NoteMediaMotion.instant { ring.frame = bounds.insetBy(dx: -3, dy: -3) }
         header.frame = NSRect(x: 0, y: 0, width: bounds.width, height: Self.headerHeight)
         clip.frame = pageRect
-        if let captureLayout {
+        if framesCapture, let captureLayout {
             let zoom = browser.nativePage?.liveCaptureZoomFactor ?? 1
             let size = EaselCaptureGeometry.displaySize(captureLayout, availableWidth: bounds.width,
                                                         availableHeight: pageRect.height, pageZoom: zoom)
@@ -348,7 +351,7 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         if host == .easel {
             guard interactive else { return nil }
             if NSApp.currentEvent?.type == .scrollWheel,
-               !EaselLiveFraming.admitsPageScrolling(framesCapture: captureLayout != nil), pageRect.contains(local) { return nil }
+               !EaselLiveFraming.admitsPageScrolling(framesCapture: framesCapture), pageRect.contains(local) { return nil }
             return super.hitTest(point)
         }
         if status == nil, pageRect.contains(local) {
@@ -431,7 +434,7 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         } else {
             items.append(.init(id: "snapshot", title: "Back to Snapshot", icon: .symbol("photo")))
         }
-        items.append(.init(id: "open", title: "Open in a Tab", icon: .symbol("arrow.up.right.square")))
+        items.append(.init(id: "open", title: "Open in Peek", icon: .symbol("arrow.up.right.square")))
         items.append(.init(id: "site", title: "Site Information", icon: .symbol("info.circle"),
                            isEnabled: browser.canShowSiteInfo, separatorBefore: true))
         let list = NoteMenuList(items: items)
@@ -465,7 +468,7 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     }
 
     package func cancelPositioning() {
-        guard captureLayout != nil else { return }
+        guard framesCapture else { return }
         stopPositioning()
         guard host == .easel else { return }
         framing.pageChanged()
@@ -499,7 +502,7 @@ package final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     }
 
     package func positionCapture(force: Bool = false) {
-        guard positioningAllowed, let layout = captureLayout, let page = browser.nativePage, !page.isClosed,
+        guard positioningAllowed, framesCapture, let layout = captureLayout, let page = browser.nativePage, !page.isClosed,
               page.embeddedOwnerValid, window != nil else { return }
         let zoom = page.liveCaptureZoomFactor
         let width = min(clip.bounds.width, clip.bounds.height * layout.region.width / layout.region.height)

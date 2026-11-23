@@ -265,10 +265,10 @@ Webpage objects and captured cards wear the Notes embed block's header
 actions. A selected or hovered captured card floats that header over the top of
 its image, above every other object; it pins to the visible top while the card scrolls
 past and sits just outside cards shorter than the header. It says “Snapshot ·
-captured <day>” and offers **Make live** plus Open in a tab. A card without
-saved region geometry (full-page, cropped, marked-up, Portrait-framed or older)
+captured <day>” and offers **Make live** plus Open in Peek. A card without
+saved capture geometry (cropped, marked-up, Portrait-framed or older)
 says “Snapshot only” and explains why in its tooltip. A live card shows a Live
-badge, **Back to snapshot**, Reload (Stop while loading), Open in a tab and a
+badge, **Back to snapshot**, Reload (Stop while loading), Open in Peek and a
 ••• menu with Site Information. A webpage object shows Back, Reload, Open and a
 ••• menu with Forward, Edit Address or Search… and Site Information; clicking
 its title also edits the address. The ••• menu is a Notes menu list. The check

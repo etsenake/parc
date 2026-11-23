@@ -396,6 +396,13 @@ extension BrowserWindowController {
                       ["http", "https"].contains(url.scheme?.lowercased() ?? "") || InternalPage(urlString: url.absoluteString) != nil else { return }
                 self.openInput(url.absoluteString)
             }
+            editor.onOpenLivePage = { [weak self, weak editor] url in
+                guard let self, let editor, self.documentTakesInput(tab.id), self.activeProfileID == tab.profileID,
+                      self.easelEditors[tab.id]?.editor === editor, self.easelEditors[tab.id]?.documentID == documentID,
+                      !self.isClosing, !self.wholeWindowClose else { return }
+                if self.openDocumentPageInPeek(url, over: tab.id, profileID: tab.profileID) { return }
+                editor.onOpenURL?(url)
+            }
             editor.onOpenNote = { [weak self] url in
                 guard let self, self.currentTabID == tab.id, self.activeProfileID == tab.profileID,
                       self.easelEditors[tab.id]?.documentID == documentID,

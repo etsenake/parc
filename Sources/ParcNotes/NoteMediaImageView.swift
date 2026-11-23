@@ -172,6 +172,8 @@ package final class NoteImageContentView: NoteMediaContentView, NoteMediaResizin
 
     var imageRect: NSRect { rect(for: bounds.width) }
 
+    func imageRect(forWidth width: CGFloat) -> NSRect { rect(for: width) }
+
     package override func measureHeight(width: CGFloat) -> CGFloat {
         let height = rect(for: width).height
         return cropEditor == nil ? height : height + NoteImageCropEditor.barGap + NoteImageCropEditor.barHeight

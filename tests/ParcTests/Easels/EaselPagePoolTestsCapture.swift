@@ -60,6 +60,26 @@ struct EaselPagePoolTestsCapture {
     }
 
     @MainActor @Test
+    func aLiveFullPageCaptureShowsThePageWithoutLiningItUp() throws {
+        let layout = try #require(EaselCaptureGeometry.captured(viewport: .init(x: 1280, y: 800), scroll: .init(x: 0, y: 0),
+            region: .init(x: 0, y: 0, width: 1280, height: 800), scrollContainers: [], fullPage: true))
+        let board = try Board(.capture, layout: layout)
+        defer { board.close() }
+        let (surface, engine, page) = try board.open()
+        board.select()
+        surface.needsLayout = true
+        surface.layoutSubtreeIfNeeded()
+        #expect(board.pool.selectedPage === page)
+        #expect(engine.positionRequests == 0)
+        #expect(!surface.showsRecovery)
+        #expect(captureStatus(in: surface)?.isHiddenOrHasHiddenAncestor != false)
+        let area = surface.pageArea
+        #expect(area.page == area.visible)
+        #expect(area.visible.width == 480 && area.visible.height == 320 - NoteEmbedSurface.headerHeight)
+        #expect(surface.liveAddress.absoluteString == board.item.url)
+    }
+
+    @MainActor @Test
     func navigationDoesNotReplaceTheCaptureProvenance() throws {
         let board = try Board(.capture)
         defer { board.close() }

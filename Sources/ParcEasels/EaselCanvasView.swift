@@ -370,6 +370,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
     package var onExportImage: (() -> Void)?
     package var onError: ((Error) -> Void)?
     var onOpenURL: ((URL) -> Void)?
+    var onOpenLivePage: ((URL) -> Void)?
     var onOpenNote: ((URL) -> Void)?
     var notesFolder: (() -> URL?)?
     package static var textCompletionFactory: (@MainActor () -> EaselTextCompletion)?
@@ -2341,7 +2342,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
             guard liveCaptureEducation == nil, let owner = window, owner.isKeyWindow, owner.attachedSheet == nil else { return }
             let original = session.document, originalSelection = selection
             let alert = ParcDialog(.init(title: "Make it Live",
-                message: "See an up-to-date, interactive view of the region you captured. This does not work on all sites. You can always return to the original screenshot with Back to snapshot.",
+                message: EaselWebItemChrome.liveEducation(fullPage: item.captureLayout?.isFullPage == true, backTitle: "Back to snapshot"),
                 confirm: "Make it Live", cancel: "Cancel"))
             liveCaptureEducation = alert
             _ = alert.begin(for: owner) { [weak self, weak owner, weak alert] response in
@@ -2356,7 +2357,8 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         }
         var next = session.document
         guard let index = next.items.firstIndex(where: { $0.id == id }) else { return }
-        next.items[index].liveCapture = enabled
+        next.items[index] = EaselCaptureGeometry.settingLive(next.items[index], enabled: enabled,
+                                                             imageSize: item.assetID.flatMap { image($0)?.size })
         prepareReplacement(session.merged(next)) { [weak self] in
             guard let self else { return }
             self.commit(enabled ? "Make captured region live" : "Show captured image") { $0 = next }

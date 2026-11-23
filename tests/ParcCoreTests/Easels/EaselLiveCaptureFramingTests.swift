@@ -194,4 +194,61 @@ struct EaselLiveCaptureFramingTests {
         let saved = try JSONDecoder().decode(EaselCaptureLayout.self, from: JSONEncoder().encode(panelled))
         #expect(saved == panelled)
     }
+
+    static var fullPage: EaselCaptureLayout {
+        EaselCaptureGeometry.captured(viewport: viewport, scroll: .init(x: 0, y: 0),
+                                      region: .init(x: 0, y: 0, width: 1280, height: 800), scrollContainers: [], fullPage: true)!
+    }
+
+    static func card(_ layout: EaselCaptureLayout, frame: EaselRect, live: Bool? = nil) -> EaselItem {
+        EaselItem(kind: .webCard, frame: frame, url: "https://example.com", assetID: "a.png", captureLayout: layout, liveCapture: live)
+    }
+
+    @Test func aFullPageCaptureRecordsItsPageAndNothingElseDoes() {
+        #expect(Self.fullPage.isFullPage)
+        #expect(!Self.windowOnly().isFullPage)
+        #expect(Self.windowOnly().fullPage == nil)
+    }
+
+    @Test func layoutsSavedBeforeFullPageCapturesStillDecode() throws {
+        let old = #"{"viewport":{"x":1280,"y":800},"scroll":{"x":0,"y":10},"region":{"x":1,"y":2,"width":30,"height":40}}"#
+        let decoded = try JSONDecoder().decode(EaselCaptureLayout.self, from: Data(old.utf8))
+        #expect(decoded.fullPage == nil && decoded.isValid)
+        let again = try JSONDecoder().decode(EaselCaptureLayout.self, from: JSONEncoder().encode(Self.fullPage))
+        #expect(again == Self.fullPage && again.isFullPage)
+    }
+
+    @Test func onlyRegionCapturesAreFramed() {
+        #expect(EaselLiveFraming.framesCapture(Self.windowOnly()))
+        #expect(!EaselLiveFraming.framesCapture(Self.fullPage))
+        #expect(!EaselLiveFraming.framesCapture(nil))
+    }
+
+    @Test func goingLiveMakesAScreenShapedWindowUnderTheSameTopEdge() {
+        let live = EaselCaptureGeometry.settingLive(Self.card(Self.fullPage, frame: .init(x: 40, y: 60, width: 320, height: 2400)),
+                                                    enabled: true, imageSize: CGSize(width: 1280, height: 9600))
+        #expect(live.liveCapture == true)
+        #expect(live.frame == EaselRect(x: 40, y: 60, width: 320, height: 200))
+    }
+
+    @Test func backToSnapshotUsesTheLiveWidthAndTheImageShape() {
+        let snapshot = EaselCaptureGeometry.settingLive(Self.card(Self.fullPage, frame: .init(x: 40, y: 60, width: 500, height: 312.5), live: true),
+                                                        enabled: false, imageSize: CGSize(width: 1280, height: 9600))
+        #expect(snapshot.liveCapture == false)
+        #expect(snapshot.frame == EaselRect(x: 40, y: 60, width: 500, height: 3750))
+    }
+
+    @Test func regionCapturesKeepTheirFrameEitherWay() {
+        let frame = EaselRect(x: 40, y: 60, width: 320, height: 240)
+        let live = EaselCaptureGeometry.settingLive(Self.card(Self.windowOnly(), frame: frame), enabled: true, imageSize: CGSize(width: 10, height: 90))
+        #expect(live.frame == frame && live.liveCapture == true)
+        let back = EaselCaptureGeometry.settingLive(live, enabled: false, imageSize: CGSize(width: 10, height: 90))
+        #expect(back.frame == frame && back.liveCapture == false)
+    }
+
+    @Test func aMissingImageLeavesTheFrameAlone() {
+        let frame = EaselRect(x: 0, y: 0, width: 500, height: 312.5)
+        let back = EaselCaptureGeometry.settingLive(Self.card(Self.fullPage, frame: frame, live: true), enabled: false, imageSize: nil)
+        #expect(back.frame == frame && back.liveCapture == false)
+    }
 }

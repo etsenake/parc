@@ -112,7 +112,7 @@ package final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHos
             canvas.layoutSubtreeIfNeeded()
         }
         view.onSnapshot = { [weak self] in self?.canvas?.setLiveCapture(item.id, enabled: false) }
-        view.onOpen = { [weak self] url in self?.canvas?.onOpenURL?(url) }
+        view.onOpen = { [weak self] url in self?.canvas?.onOpenLivePage?(url) }
         view.onFramingFailed = { [weak self] in
             self?.framingFailures.insert(item.id)
             DispatchQueue.main.async { [weak self] in self?.canvas?.setLiveCapture(item.id, enabled: false) }
@@ -131,7 +131,7 @@ package final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHos
             self?.framingFailures.remove(id)
             self?.canvas?.setLiveCapture(id, enabled: true)
         }
-        header.onOpen = { [weak self] in self?.canvas?.onOpenURL?(address) }
+        header.onOpen = { [weak self] in self?.canvas?.onOpenLivePage?(address) }
         header.configure(item, address: address, framingFailed: framingFailures.contains(id))
         return header
     }
@@ -181,7 +181,7 @@ final class EaselSnapshotHeader: NSView {
     var onOpen: (() -> Void)?
     private let header = EmbeddedPageHeader()
     private let makeLive = NoteChip(EaselWebItemChrome.makeLiveTitle, icon: .symbol("dot.radiowaves.left.and.right"), style: .filled)
-    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in a tab")
+    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in Peek")
     private var address: URL?
 
     override init(frame: NSRect) {
@@ -195,7 +195,6 @@ final class EaselSnapshotHeader: NSView {
         layer?.shadowOffset = CGSize(width: 0, height: -2)
         header.showsRule = false
         makeLive.onPress = { [weak self] in self?.onMakeLive?() }
-        makeLive.setToolTip(EaselWebItemChrome.makeLiveHelp)
         openButton.onPress = { [weak self] in self?.onOpen?() }
         header.buttons = [openButton]
         addSubview(header)
@@ -216,6 +215,7 @@ final class EaselSnapshotHeader: NSView {
             header.setBadge(EaselWebItemChrome.badge(for: item), help: EaselWebItemChrome.badgeHelp(for: item), live: false)
         }
         header.action = canGoLive ? makeLive : nil
+        makeLive.setToolTip(EaselWebItemChrome.makeLiveHelp(for: item))
         setAccessibilityLabel("Captured page: " + EaselWebItemChrome.title(for: item))
         if self.address != address {
             self.address = address

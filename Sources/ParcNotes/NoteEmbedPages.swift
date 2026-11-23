@@ -61,6 +61,7 @@ package final class NoteEmbeddedPages: EmbeddedPagePool {
     static func pageKey(of block: NoteBlock) -> String? {
         if let capture = liveCapture(of: block), let geometry = block.props.capture?.geometry {
             return "capture " + capture.address.absoluteString + " " + geometry.viewportAttribute + " " + geometry.scrollAttribute + " " + geometry.regionAttribute
+                + (capture.layout.isFullPage ? " fullpage" : "")
         }
         return address(of: block)?.absoluteString
     }

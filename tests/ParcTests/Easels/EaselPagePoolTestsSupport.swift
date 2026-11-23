@@ -60,13 +60,13 @@ enum EaselPagePoolTestsSupport {
         let item: EaselItem
         private var pages: [EaselTestEnginePage] = []
 
-        init(_ kind: Kind = .webpage, store: EaselStore? = nil) throws {
+        init(_ kind: Kind = .webpage, store: EaselStore? = nil, layout: EaselCaptureLayout? = nil) throws {
             source = try Window()
             let url = "https://fixture.invalid/original"
             let frame = EaselRect(x: 40, y: 20, width: 480, height: 320)
             let date = Date(timeIntervalSince1970: 42)
             let assetName = UUID().uuidString.lowercased() + ".png"
-            let capture = EaselCaptureLayout(viewport: .init(x: 1000, y: 700), scroll: .init(x: 10, y: 300),
+            let capture = layout ?? EaselCaptureLayout(viewport: .init(x: 1000, y: 700), scroll: .init(x: 10, y: 300),
                 region: .init(x: 20, y: 40, width: 300, height: 200), scrollContainers: [
                     EaselScrollContainer(anchorID: "main", path: "div:1", scroll: .init(x: 0, y: 900),
                                          frame: .init(x: 0, y: 64, width: 1000, height: 636))

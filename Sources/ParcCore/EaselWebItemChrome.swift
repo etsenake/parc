@@ -12,9 +12,21 @@ package enum EaselWebItemChrome {
     package static let makeLiveTitle = "Make live"
     package static let backToSnapshotTitle = "Back to snapshot"
     package static let makeLiveHelp = "Show this captured region from the live webpage"
+    static let makeLivePageHelp = "Show the live webpage, ready to scroll"
     package static let backToSnapshotHelp = "Return to the original captured image"
-    static let snapshotOnlyHelp = "Only a captured visible region can go live. Full-page, cropped, marked-up and Portrait-framed captures, and older cards, keep just their image."
+    static let snapshotOnlyHelp = "Cropped, marked-up and Portrait-framed captures, and older cards, keep just their image."
+    static let fullPageSnapshotHelp = "The image you captured. Make live shows the current webpage, ready to scroll."
     package static let liveHelp = "Showing the live webpage. The original captured image is kept."
+
+    package static func makeLiveHelp(for item: EaselItem) -> String {
+        item.captureLayout?.isFullPage == true ? makeLivePageHelp : makeLiveHelp
+    }
+
+    package static func liveEducation(fullPage: Bool, backTitle: String) -> String {
+        (fullPage ? "See an up-to-date, interactive view of the page you captured, ready to scroll."
+            : "See an up-to-date, interactive view of the region you captured.")
+            + " This does not work on all sites. You can always return to the original screenshot with " + backTitle + "."
+    }
 
     package static func canMakeLive(_ item: EaselItem) -> Bool {
         guard item.kind == .webCard, item.assetID != nil, let layout = item.captureLayout, layout.isValid,
@@ -50,7 +62,10 @@ package enum EaselWebItemChrome {
     package static func badgeHelp(for item: EaselItem) -> String? {
         switch state(of: item) {
         case .live: return liveHelp
-        case .snapshot(let canGoLive): return canGoLive ? "The image you captured. Make live shows the same region from the current webpage." : snapshotOnlyHelp
+        case .snapshot(let canGoLive):
+            guard canGoLive else { return snapshotOnlyHelp }
+            return item.captureLayout?.isFullPage == true ? fullPageSnapshotHelp
+                : "The image you captured. Make live shows the same region from the current webpage."
         case .page, nil: return nil
         }
     }

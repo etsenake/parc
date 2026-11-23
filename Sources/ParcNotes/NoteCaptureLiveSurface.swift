@@ -16,6 +16,7 @@ final class NoteCaptureLiveSurface: NSView, NoteEmbeddedPageInputSurface {
     let browser: PCBrowserView
     let address: URL
     let captureLayout: EaselCaptureLayout
+    let framesCapture: Bool
     var positioningAllowed = true {
         didSet {
             guard positioningAllowed != oldValue else { return }
@@ -48,7 +49,7 @@ final class NoteCaptureLiveSurface: NSView, NoteEmbeddedPageInputSurface {
     private let fallback: NoteEmbedFallbackView
     private let reloadButton = NoteToolbarButton(icon: .symbol("arrow.clockwise"), label: "Reload")
     private let backButton = NoteToolbarButton(icon: .symbol("chevron.left"), label: "Back")
-    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in a tab")
+    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in Peek")
     private let doneButton = NoteToolbarButton(icon: .symbol("checkmark"), label: "Back to the note")
     private let snapshotChip = NoteChip(EaselWebItemChrome.backToSnapshotTitle, icon: .symbol("photo"))
     private var status: String?
@@ -57,6 +58,7 @@ final class NoteCaptureLiveSurface: NSView, NoteEmbeddedPageInputSurface {
     init(address: URL, layout: EaselCaptureLayout, title: String, profilePath: String) {
         self.address = address
         captureLayout = layout
+        framesCapture = EaselLiveFraming.framesCapture(layout)
         positioner = EmbeddedLiveCapturePositioner(layout: layout)
         browser = PCBrowserView(frame: .zero, profilePath: profilePath)
         fallback = NoteEmbedFallbackView(address: address)
@@ -159,7 +161,7 @@ final class NoteCaptureLiveSurface: NSView, NoteEmbeddedPageInputSurface {
     func cancelPositioning() { positioner.cancel() }
 
     func positionCapture(force: Bool) {
-        guard positioningAllowed else { return }
+        guard positioningAllowed, framesCapture else { return }
         positioner.position(browser: browser, clip: clip, force: force) { [weak self] text, retry in
             self?.setStatus(text, retry: retry)
         }
@@ -182,9 +184,14 @@ final class NoteCaptureLiveSurface: NSView, NoteEmbeddedPageInputSurface {
         content.frame = bounds
         NoteMediaMotion.instant { ring.frame = bounds.insetBy(dx: -3, dy: -3) }
         header.frame = NSRect(x: 0, y: 0, width: bounds.width, height: EmbeddedPageHeader.height)
-        let zoom = browser.nativePage?.liveCaptureZoomFactor ?? 1
-        clip.frame = positioner.clipFrame(in: pageRect, zoom: zoom)
-        browser.frame = NSRect(origin: .zero, size: positioner.pageSize(zoom: zoom))
+        if framesCapture {
+            let zoom = browser.nativePage?.liveCaptureZoomFactor ?? 1
+            clip.frame = positioner.clipFrame(in: pageRect, zoom: zoom)
+            browser.frame = NSRect(origin: .zero, size: positioner.pageSize(zoom: zoom))
+        } else {
+            clip.frame = pageRect
+            browser.frame = clip.bounds
+        }
         cover.frame = pageRect
         fallback.frame = pageRect
         refreshColors()

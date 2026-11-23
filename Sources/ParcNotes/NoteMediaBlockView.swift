@@ -144,8 +144,25 @@ final class NoteMediaBlockView: NoteCaptionedBlockView, NotePageHostObserving {
     override func measureHeight(width: CGFloat) -> CGFloat {
         let inset = NoteMediaStyle.verticalInset
         let span = content?.captionSpan(width: width) ?? (x: 0, width: width)
-        let height = inset + captureHeaderHeight + (content?.measureHeight(width: width) ?? 44) + inset + captionHeight(width: span.width) + creditHeight
+        let body = livePageHeight(width: width) ?? content?.measureHeight(width: width) ?? 44
+        let height = inset + captureHeaderHeight + body + inset + captionHeight(width: span.width) + creditHeight
         return ceil(height)
+    }
+
+    private var livePageLayout: EaselCaptureLayout? {
+        guard showsCapture, window == nil || liveSurface != nil, NoteCaptureLive.ownsLivePage(block),
+              let layout = NoteCaptureLive.layout(of: block), layout.isFullPage else { return nil }
+        return layout
+    }
+
+    private func liveHeaderFrame(width: CGFloat) -> NSRect? {
+        guard let image = content as? NoteImageContentView else { return nil }
+        return NoteCaptureSnapshotHeader.frame(imageRect: image.imageRect(forWidth: width), columnWidth: width, alignment: block.props.alignment)
+    }
+
+    private func livePageHeight(width: CGFloat) -> CGFloat? {
+        guard let layout = livePageLayout, let header = liveHeaderFrame(width: width) else { return nil }
+        return max(1, (header.width * layout.screenAspect).rounded())
     }
 
     private var showsCredit: Bool {
@@ -181,6 +198,12 @@ final class NoteMediaBlockView: NoteCaptionedBlockView, NotePageHostObserving {
     }
 
     private func refreshCapture() {
+        let livePage = livePageLayout != nil
+        attachCapture()
+        if livePage != (livePageLayout != nil) { invalidateMeasuredHeight() }
+    }
+
+    private func attachCapture() {
         guard showsCapture else {
             captureHeader?.removeFromSuperview()
             captureHeader = nil
@@ -194,7 +217,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView, NotePageHostObserving {
             header.onSnapshot = { [weak self] in self?.showSnapshot() }
             header.onOpen = { [weak self] in
                 guard let self, let address = NoteCaptureLive.capture(of: self.block)?.sourceAddress else { return }
-                self.editor?.open(address)
+                if let open = self.pages?.onOpen { open(address) } else { self.editor?.open(address) }
             }
             addSubview(header, positioned: .below, relativeTo: caption)
             captureHeader = header
@@ -226,7 +249,8 @@ final class NoteMediaBlockView: NoteCaptionedBlockView, NotePageHostObserving {
         guard UserDefaults.standard.bool(forKey: NoteCaptureSnapshotHeader.educationKey) else {
             guard liveEducation == nil else { return }
             let original = block
-            liveEducation = NoteCaptureSnapshotHeader.presentEducation(in: window) { [weak self] in
+            liveEducation = NoteCaptureSnapshotHeader.presentEducation(in: window,
+                fullPage: NoteCaptureLive.layout(of: block)?.isFullPage == true) { [weak self] in
                 guard let self else { return }
                 self.liveEducation = nil
                 guard self.window != nil, self.editor?.session.page.block(self.blockID) == original else { return }
@@ -273,19 +297,22 @@ final class NoteMediaBlockView: NoteCaptionedBlockView, NotePageHostObserving {
         let height = content.measureHeight(width: width)
         let headerHeight = captureHeaderHeight
         content.frame = NSRect(x: 0, y: inset + headerHeight, width: width, height: height)
+        var bodyBottom = content.frame.maxY
         if showsCapture {
             let image = (content as? NoteImageContentView)?.imageRect ?? NSRect(x: 0, y: 0, width: width, height: height)
             var header = NoteCaptureSnapshotHeader.frame(imageRect: image, columnWidth: width, alignment: block.props.alignment)
             header.origin.y = inset
+            let pageHeight = livePageHeight(width: width) ?? image.height
+            if livePageLayout != nil { bodyBottom = inset + headerHeight + pageHeight }
             NoteAnimation.withoutAnimation {
                 captureHeader?.frame = header
-                liveSurface?.frame = NSRect(x: header.minX, y: inset, width: header.width, height: headerHeight + image.height)
+                liveSurface?.frame = NSRect(x: header.minX, y: inset, width: header.width, height: headerHeight + pageHeight)
             }
         }
         let span = content.captionSpan(width: width)
-        layoutCaption(top: content.frame.maxY, x: span.x, width: span.width)
+        layoutCaption(top: bodyBottom, x: span.x, width: span.width)
         if showsCredit {
-            let top = (captionVisible ? caption.frame.maxY : content.frame.maxY) + Self.creditGap
+            let top = (captionVisible ? caption.frame.maxY : bodyBottom) + Self.creditGap
             let size = creditLine.intrinsicContentSize
             creditLine.frame = NSRect(x: span.x, y: top, width: min(size.width, span.width), height: size.height)
         }

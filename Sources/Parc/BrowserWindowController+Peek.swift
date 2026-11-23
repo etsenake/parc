@@ -93,7 +93,12 @@ extension BrowserWindowController {
 
     func openNoteLinkInPeek(_ url: URL, click: NoteLinkClick, over host: UUID, profileID: UUID) -> Bool {
         let settings = store.state.settings
-        guard click.route(for: url, automaticPeek: settings.automaticPeekEnabled, shiftPeek: settings.shiftPeekEnabled) == .peek,
+        guard click.route(for: url, automaticPeek: settings.automaticPeekEnabled, shiftPeek: settings.shiftPeekEnabled) == .peek else { return false }
+        return openDocumentPageInPeek(url, over: host, profileID: profileID)
+    }
+
+    func openDocumentPageInPeek(_ url: URL, over host: UUID, profileID: UUID) -> Bool {
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host?.isEmpty == false,
               noteLinkPeekRequest == nil, archivePreviewRequest == nil, peekUndoOpen == nil, !promotingPeek,
               let binding = nativeBinding, noteLinkCanHostPeek(host, profileID: profileID, binding: binding) else { return false }
         let token = UUID()
@@ -111,7 +116,7 @@ extension BrowserWindowController {
 
     private func noteLinkCanHostPeek(_ host: UUID, profileID: UUID, binding: PCNativeBrowserWindow) -> Bool {
         nativeBinding === binding && activePeek == nil && tabPeeks.current == nil
-            && peekHostID == host && peekBackdrop == .pagelessTab(tabID: host) && noteEditors[host] != nil
+            && peekHostID == host && peekBackdrop == .pagelessTab(tabID: host) && (noteEditors[host] != nil || easelEditors[host] != nil)
             && profileID == activeProfileID && store.state.tab(host, where: { $0.archivedAt == nil })?.profileID == profileID
             && ownership.canUse(host, owner: presentationID) && !peeks.values.contains { $0.parentTabID == host && !$0.page.isClosed }
             && windowAdmitsPeek(binding)
@@ -144,7 +149,7 @@ extension BrowserWindowController {
     }
 
     private func openNoteLinkWithoutPeek(_ url: URL, host: UUID, profileID: UUID) {
-        guard currentTabID == host, activeProfileID == profileID, noteEditors[host] != nil, activePeek == nil,
+        guard currentTabID == host, activeProfileID == profileID, noteEditors[host] != nil || easelEditors[host] != nil, activePeek == nil,
               !isClosing, !wholeWindowClose else { return }
         openInput(url.absoluteString)
     }

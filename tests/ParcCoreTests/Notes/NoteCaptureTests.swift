@@ -138,6 +138,35 @@ struct NoteCaptureTests {
         #expect(NoteMarkdown.parse(liveText).blocks.first?.props.capture?.live == true)
     }
 
+    var fullPageBlock: NoteBlock {
+        let layout = EaselCaptureGeometry.captured(viewport: EaselPoint(x: 1280, y: 800), scroll: EaselPoint(x: 0, y: 0),
+                                                   region: EaselRect(x: 0, y: 0, width: 1280, height: 800), scrollContainers: [], fullPage: true)!
+        var block = NoteCapture.block(source: "Attachments/Page.png", title: "Page",
+                                      capture: NoteCapture(sourceURL: "https://example.com/long", capturedAt: Self.date, geometry: NoteCaptureGeometry(layout)))
+        block.props.capture?.live = true
+        return block
+    }
+
+    @Test func aFullPageCaptureIsRememberedInTheFileAndGoesLiveAsAPage() throws {
+        let text = NoteMarkdown.serialize(NotePage(blocks: [fullPageBlock]))
+        #expect(text.contains(" fullpage"))
+        let read = try #require(NoteMarkdown.parse(text).blocks.first)
+        #expect(read.props.capture == fullPageBlock.props.capture)
+        #expect(NoteCaptureLive.ownsLivePage(read))
+        #expect(NoteCaptureLive.layout(of: read)?.isFullPage == true)
+        #expect(NoteMarkdown.serialize(NoteMarkdown.parse(text)) == text)
+    }
+
+    @Test func parcsOwnHTMLKeepsAFullPageCapture() {
+        let back = NoteHTMLReader.blocks(from: NotePageHTML.fragment([fullPageBlock]), baseURL: nil)
+        #expect(back.first?.props.capture?.geometry?.easelLayout?.isFullPage == true)
+    }
+
+    @Test func regionCapturesWriteNoFullPageFlag() {
+        #expect(!sizedText.1.contains("fullpage"))
+        #expect(NoteCaptureLive.layout(of: block)?.isFullPage == false)
+    }
+
     @Test func brokenGeometryLeavesASnapshotOnlyCapture() {
         let handWritten = "![](Attachments/a.png) <!-- parc capture=\"https://x.com\" region=\"1,1,1\" live -->"
         let partial = NoteMarkdown.parse(handWritten).blocks.first?.props.capture

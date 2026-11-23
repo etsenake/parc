@@ -52,10 +52,13 @@ screen, up to 16,384 on the long side and 64 million in all, so a long full-page
 capture stays sharp at the note's width instead of being squeezed. Their header
 shows the page's favicon, title and domain with an Easel-style label such as
 "Snapshot · captured today" and Make live, which frames the live page to the
-captured region in the note's Profile; Back to snapshot returns to the original
-image once the page agrees to close. Make live depends only on the block's saved
-region, never on the source tab. Captures without one (full page, cropped,
-marked up or Portrait-framed) say "Snapshot only". Plain-text notes refuse
+captured region in the note's Profile. A full-page capture goes live as a
+screen-shaped window at the block's width, opened at the top of the page, that
+scrolls like an embed. Back to snapshot returns to the original image once the
+page agrees to close. Make live depends only on the block's saved geometry,
+never on the source tab. Captures without it (cropped, marked up or
+Portrait-framed) say "Snapshot only". Open in Peek opens the page in a Peek over
+the note. Plain-text notes refuse
 captures. The rules are [Easel live captures](easel-live-captures.md#live-captures-in-notes).
 
 Easel blocks (`/easel`, also `canvas`, `board` or `whiteboard`) put an Easel in

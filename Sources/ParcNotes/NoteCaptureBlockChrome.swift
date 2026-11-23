@@ -12,7 +12,7 @@ final class NoteCaptureSnapshotHeader: NSView {
     private let header = EmbeddedPageHeader()
     private let makeLive = NoteChip(EaselWebItemChrome.makeLiveTitle, icon: .symbol("dot.radiowaves.left.and.right"), style: .filled)
     private let snapshot = NoteChip(EaselWebItemChrome.backToSnapshotTitle, icon: .symbol("photo"))
-    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in a tab")
+    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in Peek")
     private var address: URL?
 
     override init(frame: NSRect) {
@@ -25,7 +25,6 @@ final class NoteCaptureSnapshotHeader: NSView {
         header.showsRule = false
         addSubview(header)
         makeLive.onPress = { [weak self] in self?.onMakeLive?() }
-        makeLive.setToolTip(EaselWebItemChrome.makeLiveHelp)
         snapshot.onPress = { [weak self] in self?.onSnapshot?() }
         snapshot.setToolTip(EaselWebItemChrome.backToSnapshotHelp)
         openButton.onPress = { [weak self] in self?.onOpen?() }
@@ -44,6 +43,7 @@ final class NoteCaptureSnapshotHeader: NSView {
         let title = NoteCaptureText.title(for: capture, alt: block.props.alt)
         header.setPage(title: title, host: address.map(NoteCaptureText.displayHost) ?? capture.sourceURL)
         let live = NoteCaptureLive.ownsLivePage(block)
+        makeLive.setToolTip(NoteCaptureLive.chromeItem(of: block).map(EaselWebItemChrome.makeLiveHelp(for:)) ?? EaselWebItemChrome.makeLiveHelp)
         header.setBadge(NoteCaptureLive.badge(of: block), help: NoteCaptureLive.badgeHelp(of: block), live: live)
         if live {
             header.action = canEdit ? snapshot : nil
@@ -85,10 +85,10 @@ final class NoteCaptureSnapshotHeader: NSView {
         return NSRect(x: min(max(0, x.rounded()), max(0, columnWidth - width)), y: 0, width: width, height: EmbeddedPageHeader.height)
     }
 
-    static func presentEducation(in window: NSWindow?, confirmed: @escaping () -> Void) -> ParcDialog? {
+    static func presentEducation(in window: NSWindow?, fullPage: Bool, confirmed: @escaping () -> Void) -> ParcDialog? {
         guard let window, window.isKeyWindow, window.attachedSheet == nil else { return nil }
         let alert = ParcDialog(.init(title: "Make it Live",
-            message: "See an up-to-date, interactive view of the region you captured. This does not work on all sites. You can always return to the original screenshot with Snapshot.",
+            message: EaselWebItemChrome.liveEducation(fullPage: fullPage, backTitle: "Snapshot"),
             confirm: "Make it Live", cancel: "Cancel"))
         guard alert.begin(for: window, completion: { response in
             guard response == .confirm else { return }

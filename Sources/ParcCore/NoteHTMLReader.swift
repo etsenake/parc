@@ -923,7 +923,8 @@ final class NoteHTMLConversion {
             NoteCapture.sourceKey: node["data-capture"], NoteCapture.dateKey: node["data-captured"],
             NoteCapture.viewportKey: node["data-viewport"], NoteCapture.scrollKey: node["data-scroll"], NoteCapture.regionKey: node["data-region"],
             NoteCapture.scrollersKey: node["data-scrollers"],
-        ].compactMapValues { $0 }, flags: node["data-live"] == nil ? [] : [NoteCapture.liveFlag])
+        ].compactMapValues { $0 }, flags: Set([node["data-live"] == nil ? nil : NoteCapture.liveFlag,
+                                                node["data-fullpage"] == nil ? nil : NoteCapture.fullPageFlag].compactMap { $0 }))
         return block
     }
 

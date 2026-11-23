@@ -55,7 +55,8 @@ saved address fresh on show, without its earlier back history or scroll position
 
 An embed block with a web address shows the live page in the note's Profile,
 with its cookies and sign-ins. A slim header shows the favicon, title and host,
-plus Back, Reload (Stop while loading) and Open, which opens the page in a tab.
+plus Back, Reload (Stop while loading) and Open in Peek, which opens the page in
+a Peek over the note (a tab when the window can't show a Peek just then).
 While a page warms up, can't open, closes or crashes, the block shows the
 bookmark-style card with a short status and Retry. Easel webpage objects and
 captured cards share this header (`EmbeddedPageHeader`) and status card. In

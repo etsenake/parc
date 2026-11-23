@@ -290,7 +290,7 @@ final class PageCaptureController: NSObject {
                         EaselCaptureGeometry.captured(viewport: EaselPoint(x: $0.viewportSize.width, y: $0.viewportSize.height),
                             scroll: EaselPoint(x: $0.scrollOffset.x, y: $0.scrollOffset.y),
                             region: EaselRect(x: $0.region.minX, y: $0.region.minY, width: $0.region.width, height: $0.region.height),
-                            scrollContainers: $0.scrollContainers.map(EaselScrollContainer.init))
+                            scrollContainers: $0.scrollContainers.map(EaselScrollContainer.init), fullPage: mode == .fullPage)
                     }
                     self.capturedAt = Date(); self.capturedPageColor = self.lease.pageThemeColor
                     InterfaceSoundEffects.shared.playCapture()

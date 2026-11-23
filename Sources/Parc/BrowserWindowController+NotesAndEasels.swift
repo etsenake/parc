@@ -296,6 +296,7 @@ extension BrowserWindowController: EaselWindowActions {
             open: { [weak self, weak editor] url in
                 guard let self, let editor, self.noteEditors[tabID]?.editor === editor,
                       self.activeProfileID == profileID, !self.isClosing, !self.wholeWindowClose else { return }
+                if self.openDocumentPageInPeek(url, over: tabID, profileID: profileID) { return }
                 self.openInput(url.absoluteString)
             }, windowTransfer: windowTransfer)
     }

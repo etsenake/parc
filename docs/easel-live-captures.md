@@ -18,9 +18,9 @@ and after the reply; matching values and page zoom admit CSS-pixel viewport,
 scroll and outward-rounded capture-region geometry. The lease still validates
 its original document, native page, Profile, window, screenshot policy and
 security ownership. Changed geometry leaves the ordinary genuine PNG intact
-but offers no live-region capability. A full-page capture records the page's
-CSS viewport at capture time, a zero scroll and a region covering that whole
-viewport, so Make live can open the page from its top.
+but offers no live-region capability. Full-page captures record a layout too:
+the page's CSS viewport at capture time, no scroll, a region covering that
+viewport, no panels, and `fullPage` set ([full-page captures](#full-page-captures)).
 
 The same geometry read records the scroll context under the region's centre:
 every scrolled or scrollable ancestor of the element there (up to eight,
@@ -45,6 +45,22 @@ annotated or Portrait-framed captures retain their saved image without Make Live
 their changed output no longer describes the original renderer region. Undo and
 persistence retain exact original asset identity, date, source URL and capture
 geometry.
+
+## Full-page captures
+
+A full-page capture has no region to frame, so Make live turns its tall card
+into a screen-shaped live window: the card keeps its width and top edge and its
+height becomes the width times the captured viewport's height over its width.
+The page loads at its top with no framing transform, no lining-up cover and no
+couldn't-line-up path. While the card is selected, wheel scrolling scrolls the
+page inside it, as for a webpage object; clicks and typing follow the same
+selected-object rules as region captures. Back to snapshot restores the tall
+card at the live card's current width and the image's shape. The live flag and
+the frame change commit together, so one Undo or Redo covers both. In notes the
+block shows the same screen-shaped page at the block's width and returns to the
+tall image on Back to snapshot (`EaselCaptureGeometry.settingLive`,
+`EaselLiveFraming.framesCapture`). Cards and notes saved before full-page
+layouts existed keep their image only.
 
 ## Real page ownership
 

@@ -22,10 +22,32 @@ package enum EaselCaptureGeometry {
     }
 
     package static func captured(viewport: EaselPoint, scroll: EaselPoint, region: EaselRect,
-                         scrollContainers: [EaselScrollContainer]) -> EaselCaptureLayout? {
+                         scrollContainers: [EaselScrollContainer], fullPage: Bool = false) -> EaselCaptureLayout? {
         let layout = EaselCaptureLayout(viewport: viewport, scroll: scroll, region: region,
-                                        scrollContainers: scrollContainers.isEmpty ? nil : scrollContainers)
+                                        scrollContainers: scrollContainers.isEmpty ? nil : scrollContainers,
+                                        fullPage: fullPage ? true : nil)
         return layout.isValid ? layout : nil
+    }
+
+    package static func liveFrame(_ frame: EaselRect, layout: EaselCaptureLayout) -> EaselRect {
+        EaselRect(x: frame.x, y: frame.y, width: frame.width, height: max(1, frame.width * layout.screenAspect))
+    }
+
+    package static func snapshotFrame(_ frame: EaselRect, imageWidth: Double, imageHeight: Double) -> EaselRect {
+        guard imageWidth.isFinite, imageHeight.isFinite, imageWidth > 0, imageHeight > 0 else { return frame }
+        return EaselRect(x: frame.x, y: frame.y, width: frame.width, height: max(1, frame.width * imageHeight / imageWidth))
+    }
+
+    package static func settingLive(_ item: EaselItem, enabled: Bool, imageSize: CGSize?) -> EaselItem {
+        var next = item
+        next.liveCapture = enabled
+        guard let layout = item.captureLayout, layout.isFullPage, (item.liveCapture == true) != enabled else { return next }
+        if enabled {
+            next.frame = liveFrame(item.frame, layout: layout)
+        } else if let imageSize {
+            next.frame = snapshotFrame(item.frame, imageWidth: Double(imageSize.width), imageHeight: Double(imageSize.height))
+        }
+        return next
     }
 
     package static func displaySize(_ layout: EaselCaptureLayout, availableWidth: Double, availableHeight: Double,
@@ -78,4 +100,6 @@ package struct EaselLiveFraming: Equatable {
     }
 
     package static func admitsPageScrolling(framesCapture: Bool) -> Bool { !framesCapture }
+
+    package static func framesCapture(_ layout: EaselCaptureLayout?) -> Bool { layout.map { !$0.isFullPage } ?? false }
 }

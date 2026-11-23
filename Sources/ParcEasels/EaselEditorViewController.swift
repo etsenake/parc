@@ -110,6 +110,7 @@ package final class EaselEditorViewController: NSViewController, NSTextFieldDele
     package var onKeyboardStructureChange: (() -> Void)?
     package var onTitleChange: ((String) -> Void)?
     package var onOpenURL: ((URL) -> Void)?
+    package var onOpenLivePage: ((URL) -> Void)?
     package var onOpenNote: ((URL) -> Void)?
     package var notesFolder: (() -> URL?)?
     private var panels: EaselPanels?
@@ -260,6 +261,10 @@ package final class EaselEditorViewController: NSViewController, NSTextFieldDele
         canvas.onKeyboardStructureChange = { [weak self] in self?.onKeyboardStructureChange?() }
         canvas.onError = { [weak self] error in self?.show(error) }
         canvas.onOpenURL = { [weak self] url in self?.onOpenURL?(url) }
+        canvas.onOpenLivePage = { [weak self] url in
+            guard let self else { return }
+            if let open = self.onOpenLivePage { open(url) } else { self.onOpenURL?(url) }
+        }
         canvas.onExportImage = { [weak self] in self?.exportImage() }
         installSendProvider()
         canvas.onCopiedImage = { [weak self] in self?.showExportToast(.copiedImage) }

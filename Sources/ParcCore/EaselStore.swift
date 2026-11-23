@@ -483,12 +483,19 @@ package struct EaselCaptureLayout: Codable, Equatable {
     package var scroll: EaselPoint
     package var region: EaselRect
     package var scrollContainers: [EaselScrollContainer]? = nil
-    init(viewport: EaselPoint, scroll: EaselPoint, region: EaselRect, scrollContainers: [EaselScrollContainer]? = nil) {
+    package var fullPage: Bool? = nil
+    init(viewport: EaselPoint, scroll: EaselPoint, region: EaselRect, scrollContainers: [EaselScrollContainer]? = nil,
+         fullPage: Bool? = nil) {
         self.viewport = viewport
         self.scroll = scroll
         self.region = region
         self.scrollContainers = scrollContainers
+        self.fullPage = fullPage == true ? true : nil
     }
+
+    package var isFullPage: Bool { fullPage == true }
+
+    package var screenAspect: Double { viewport.y / viewport.x }
 
     var isValid: Bool {
         [viewport.x, viewport.y, scroll.x, scroll.y, region.x, region.y, region.width, region.height]
