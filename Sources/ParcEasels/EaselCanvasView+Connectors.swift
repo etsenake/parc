@@ -452,7 +452,7 @@ extension EaselCanvasView {
         let next = connectorChromeBounds()
         let dirty = previous.union(next)
         guard !dirty.isNull else { return }
-        if usesObjectSurfaces { refreshDecorations() } else { setNeedsDisplay(dirty) }
+        refreshDecorations()
     }
 
     func addConnectorCursorRects() {

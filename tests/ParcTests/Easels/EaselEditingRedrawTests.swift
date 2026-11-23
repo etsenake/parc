@@ -56,7 +56,6 @@ struct EaselEditingRedrawTests {
     @Test func editingATableCellRedrawsThatTablesView() throws {
         let board = try Board()
         defer { board.close() }
-        #expect(board.canvas.usesObjectSurfaces)
         let item = try #require(board.session.document.items.first { $0.id == board.table })
         board.settle()
         board.canvas.beginEditingTableCell(item, cell: EaselTableCoordinate(row: 0, column: 1))

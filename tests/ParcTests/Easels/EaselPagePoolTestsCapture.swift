@@ -205,7 +205,7 @@ struct EaselPagePoolTestsCapture {
         #expect(!board.session.document.items.contains { $0.id == board.item.id })
         #expect(surface.superview == nil)
         #expect(board.pool.entries[board.item.id] == nil)
-        #expect(board.canvas.usesObjectSurfaces != lastLivePage)
-        if lastLivePage { #expect(painted.contains(board.canvas.rect(shape))) }
+        #expect(board.canvas.artwork[shape.id]?.superview === board.canvas)
+        _ = painted
     }
 }

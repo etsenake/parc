@@ -70,7 +70,7 @@ extension EaselCanvasView {
     }
 
     private var showsEmptyState: Bool {
-        session.document.items.isEmpty && editor == nil && fixedCanvasSize == nil && !session.isDeleted && !usesObjectSurfaces
+        session.document.items.isEmpty && editor == nil && fixedCanvasSize == nil && !session.isDeleted
     }
 
     private func refreshEmptyState() {
@@ -99,7 +99,7 @@ extension EaselCanvasView {
             if !view.isPresented { keyboardStructureChanged() }
             view.setPresented(true, animated: window != nil && onboarding.sawObjects)
         } else if view.superview != nil {
-            let animated = window != nil && !usesObjectSurfaces
+            let animated = window != nil
             if view.isPresented { keyboardStructureChanged() }
             view.setPresented(false, animated: animated)
             if !animated { view.removeFromSuperview() }

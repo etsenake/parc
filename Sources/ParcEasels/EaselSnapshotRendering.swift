@@ -292,8 +292,6 @@ extension EaselCanvasView {
                 : displayBounds(of: item)
             if let view = artwork[item.id] {
                 view.setNeedsDisplay(dirty.offsetBy(dx: -view.frame.minX, dy: -view.frame.minY))
-            } else if !usesObjectSurfaces {
-                setNeedsDisplay(dirty)
             }
         }
     }

@@ -148,20 +148,18 @@ struct EaselCanvasTestsEmbeddedRemoval {
     }
 
     @MainActor @Test
-    func cuttingALiveCaptureRepaintsTheWholeBoardAndPastesBackLive() throws {
+    func cuttingALiveCaptureKeepsTheBoardPaintedAndPastesBackLive() throws {
         let capture = Self.liveCapture()
         let board = try Board([capture, Self.shape])
         defer { board.close() }
         let pasteboard = NSPasteboard(name: .init("parc-tests-cut-" + UUID().uuidString))
         defer { pasteboard.releaseGlobally() }
-        #expect(board.canvas.usesObjectSurfaces)
         board.select([capture.id])
         #expect(board.canvas.cutSelection(to: pasteboard))
         board.settle()
         #expect(board.session.document.items.map(\.id) == [Self.shape.id])
-        #expect(!board.canvas.usesObjectSurfaces, "With the live page gone the canvas paints its objects itself again")
         #expect(board.canvas.artwork[capture.id] == nil)
-        #expect(board.repainted(Self.shape), "Objects far from the cut page are painted again when the canvas stops hosting pages")
+        #expect(board.canvas.artwork[Self.shape.id]?.superview === board.canvas, "Objects keep their own views when the last page goes")
         let data = try #require(pasteboard.data(forType: EaselCanvasView.objectsPasteboardType))
         let payload = try EaselClipboardPayload.decoded(data)
         #expect(payload.items.map(\.id) == [capture.id] && payload.items.first?.liveCapture == true)
@@ -170,7 +168,6 @@ struct EaselCanvasTestsEmbeddedRemoval {
         board.settle()
         let restored = try #require(board.session.document.items.first { $0.kind == .webCard })
         #expect(restored.liveCapture == true && restored.ownsEmbeddedPage)
-        #expect(board.canvas.usesObjectSurfaces, "The pasted capture is live again")
         #expect(board.canvas.artwork[restored.id]?.superview === board.canvas)
     }
 

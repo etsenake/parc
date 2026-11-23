@@ -275,7 +275,7 @@ extension EaselCanvasView {
     func refreshMindMapChrome(from previous: NSRect = .null) {
         let dirty = mindMapChromeBounds().union(previous)
         guard !dirty.isNull else { return }
-        if usesObjectSurfaces { refreshDecorations() } else { setNeedsDisplay(dirty) }
+        refreshDecorations()
     }
 
     func addMindMapCursorRects() {
@@ -344,7 +344,7 @@ extension EaselCanvasView {
         mindMaps.dropRect = mindMapDropRect()
         let dirty = previous.union(mindMaps.dropRect)
         guard !dirty.isNull else { return }
-        if usesObjectSurfaces { refreshDecorations() } else { setNeedsDisplay(dirty) }
+        refreshDecorations()
     }
 
     func clearMindMapDrop() {
@@ -353,7 +353,7 @@ extension EaselCanvasView {
         mindMaps.drop = nil
         mindMaps.dropRect = .null
         if dirty.isNull { return }
-        if usesObjectSurfaces { refreshDecorations() } else { setNeedsDisplay(dirty) }
+        refreshDecorations()
     }
 
     func commitMindMapDrop() -> Bool {

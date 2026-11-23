@@ -285,7 +285,7 @@ extension EaselCanvasView {
         let reduced = feedbackReducesMotion
         var snapshot: NSImage?
         let visible = visibleRect
-        if !reduced, !usesObjectSurfaces, !visible.isEmpty, visible.width * visible.height < 16_000_000,
+        if !reduced, !items.contains(where: \.ownsEmbeddedPage), !visible.isEmpty, visible.width * visible.height < 16_000_000,
            let rep = bitmapImageRepForCachingDisplay(in: visible) {
             cacheDisplay(in: visible, to: rep)
             let image = NSImage(size: visible.size)
@@ -300,7 +300,7 @@ extension EaselCanvasView {
         let clip = scroll.contentView
         let duration = flip.reduced ? EaselFeedbackCurve.reducedFade : EaselFeedbackCurve.page
         let timing = CAMediaTimingFunction(controlPoints: 0.215, 0.61, 0.355, 1)
-        let slides = !flip.reduced && !usesObjectSurfaces
+        let slides = !flip.reduced && !items.contains(where: \.ownsEmbeddedPage)
         let travel = CGFloat(EaselFeedbackCurve.pageSlide) * flip.direction
         let down: CGFloat = scroll.isFlipped ? 1 : -1
         CATransaction.begin()

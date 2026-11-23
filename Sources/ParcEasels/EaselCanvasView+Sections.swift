@@ -216,7 +216,7 @@ extension EaselCanvasView {
     }
 
     private func redrawSectionTray(_ section: EaselItem) {
-        if usesObjectSurfaces { artwork[section.id]?.needsDisplay = true } else { setNeedsDisplay(displayBounds(of: section)) }
+        artwork[section.id]?.needsDisplay = true
     }
 
     var selectedSections: [EaselItem] { session.document.items.filter { selection.contains($0.id) && $0.kind == .section } }

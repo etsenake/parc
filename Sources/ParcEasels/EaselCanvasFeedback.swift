@@ -182,7 +182,6 @@ extension EaselCanvasView {
         guard ids != canvasFeedback.extendedSurfaces else { return }
         let changed = ids.symmetricDifference(canvasFeedback.extendedSurfaces)
         canvasFeedback.extendedSurfaces = ids
-        guard usesObjectSurfaces else { return }
         needsLayout = true
         for id in changed { artwork[id]?.needsDisplay = true }
     }
@@ -212,11 +211,9 @@ extension EaselCanvasView {
     }
 
     private func presentCanvasFeedbackDirty(_ rect: NSRect) {
-        if usesObjectSurfaces {
-            for id in feedbackObjectIDs { artwork[id]?.needsDisplay = true }
-        }
+        for id in feedbackObjectIDs { artwork[id]?.needsDisplay = true }
         guard !rect.isNull, rect.width.isFinite, rect.height.isFinite else { return }
-        if usesObjectSurfaces { decoration.setNeedsDisplay(rect) } else { setNeedsDisplay(rect) }
+        decoration.setNeedsDisplay(rect)
     }
 
     func noteCanvasFeedback(from before: EaselDocument, to after: EaselDocument) {

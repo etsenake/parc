@@ -107,7 +107,6 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
     private var trackedEditingCell: EaselTableCoordinate?
     private var trackedHiddenCounts: [UUID: Int] = [:]
     private var trackedChrome = NSRect.null
-    private var trackedObjectSurfaces: Bool?
     private var textLayouts: [UUID: CachedTextLayout] = [:]
     private(set) var presentationNoOpSkipCount = 0
     private(set) var presentationDirtyCount = 0
@@ -628,7 +627,6 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         guard let data = try? session.assetData(id), let value = NSImage(data: data) else { return nil }
         images[id] = value; return value
     }
-    var usesObjectSurfaces: Bool { (pageObjects != nil && items.contains { $0.ownsEmbeddedPage }) || hostsObjectViews }
     func displayBounds(of item: EaselItem) -> NSRect {
         let pad = 16 / max(canvasScale, 0.2) + 16 + CGFloat(EaselPaintRules.strokeWidth(item)) * 1.5 + boardOverhang(item)
             + CGFloat(EaselObjectLink.badgeAllowance(item, scale: max(canvasScale, 0.2)))
@@ -663,8 +661,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
                                                 rich: item.richText, style: item.textStyle, color: item.color, layout: layout)
         return layout
     }
-    private func rememberPaintedArtwork(chrome: NSRect? = nil, surfaces: Bool? = nil) {
-        trackedObjectSurfaces = surfaces ?? usesObjectSurfaces
+    private func rememberPaintedArtwork(chrome: NSRect? = nil) {
         trackedItems = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         trackedSelection = displayedSelection
         trackedHover = hoveredObjectID
@@ -688,8 +685,8 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         }
         return counts
     }
-    private func presentationMatchesPaintedArtwork(chrome: NSRect, surfaces: Bool) -> Bool {
-        guard trackedObjectSurfaces == surfaces, let trackedCanvasScale, trackedCanvasScale == canvasScale,
+    private func presentationMatchesPaintedArtwork(chrome: NSRect) -> Bool {
+        guard let trackedCanvasScale, trackedCanvasScale == canvasScale,
               trackedHidesAnnotations == hidesPassiveAnnotations,
               trackedEditingID == paintedEditingID,
               trackedEditingCell == paintedEditingCell,
@@ -708,8 +705,8 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
     func invalidateIncrementalDisplay(layout: Bool = false) {
         if layout { needsLayout = true }
         redrawCardsDrawnAtOtherZooms()
-        let chrome = controlChromeBounds, surfaces = usesObjectSurfaces
-        if presentationMatchesPaintedArtwork(chrome: chrome, surfaces: surfaces) {
+        let chrome = controlChromeBounds
+        if presentationMatchesPaintedArtwork(chrome: chrome) {
             presentationNoOpSkipCount += 1
             return
         }
@@ -722,7 +719,6 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         let ids = Set(current.map(\.id))
         let scaleChanged = trackedCanvasScale.map { $0 != canvasScale } ?? false
         let hideChanged = trackedHidesAnnotations != hidesPassiveAnnotations
-        let surfacesChanged = trackedObjectSurfaces.map { $0 != surfaces } ?? false
         var removed = false
         for (id, previous) in trackedItems where !ids.contains(id) {
             add(displayBounds(of: previous))
@@ -791,22 +787,10 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         if let rect = marqueeRect { add(rect.insetBy(dx: -marqueePad, dy: -marqueePad)) }
         add(trackedGuideBounds)
         add(guideDirtyBounds())
-        rememberPaintedArtwork(chrome: chrome, surfaces: surfaces)
-        if surfacesChanged {
+        rememberPaintedArtwork(chrome: chrome)
+        if overlayChanged || !dirty.isNull {
             presentationDirtyCount += 1
-            needsLayout = true
-            repaintForObjectSurfaceChange()
-        } else if surfaces {
-            if overlayChanged {
-                presentationDirtyCount += 1
-                decoration.needsDisplay = true
-            }
-        } else if scaleChanged || hideChanged {
-            presentationDirtyCount += 1
-            needsDisplay = true
-        } else if !dirty.isNull {
-            presentationDirtyCount += 1
-            setNeedsDisplay(dirty)
+            if overlayChanged { decoration.needsDisplay = true } else { decoration.setNeedsDisplay(dirty) }
         }
     }
     var objectBarHoverOpen: Bool {
@@ -880,10 +864,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         guard let clip else { return }
         clip.postsBoundsChangedNotifications = true
         headerScrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.positionSnapshotHeader()
-                self?.redrawCardsDrawnAtOtherZooms()
-            }
+            MainActor.assumeIsolated { self?.viewChanged() }
         }
     }
     private func synchronizePageSelection() {
@@ -896,15 +877,6 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         refreshSnapshotHeader()
         positionSectionTitleField()
         synchronizePageSelection()
-        let surfaces = usesObjectSurfaces
-        if let trackedObjectSurfaces, trackedObjectSurfaces != surfaces {
-            self.trackedObjectSurfaces = surfaces
-            repaintForObjectSurfaceChange()
-        }
-        guard surfaces else {
-            artwork.values.forEach { $0.removeFromSuperview() }; artwork.removeAll()
-            decoration.removeFromSuperview(); return
-        }
         let ids = Set(items.map(\.id))
         for id in Array(artwork.keys) where !ids.contains(id) { retireArtwork(artwork.removeValue(forKey: id), id: id) }
         var ordered: [NSView] = []
@@ -946,12 +918,12 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         }
         applySurfaceObjectMotion()
     }
-    private func repaintForObjectSurfaceChange() {
-        needsDisplay = true
-        decoration.needsDisplay = true
+    func viewChanged() {
+        positionSnapshotHeader()
+        redrawCardsDrawnAtOtherZooms()
     }
     func redrawCardsDrawnAtOtherZooms() {
-        guard usesObjectSurfaces, !motion.isInteracting else { return }
+        guard !motion.isInteracting else { return }
         let scale = canvasScale, seen = visibleRect
         guard !seen.isEmpty else { return }
         let reach = seen.insetBy(dx: -seen.width / 2, dy: -seen.height / 2)
@@ -963,11 +935,24 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
     }
     package override func draw(_ dirtyRect: NSRect) {
         NSColor.clear.setFill(); dirtyRect.fill(using: .copy)
-        if !usesObjectSurfaces {
-            paintingLive { drawPresentedObjects(in: dirtyRect) }
-            drawDecorations(in: dirtyRect)
+    }
+    package override func setNeedsDisplay(_ invalidRect: NSRect) {
+        super.setNeedsDisplay(invalidRect)
+        routeDisplay(invalidRect)
+    }
+    package override var needsDisplay: Bool {
+        get { super.needsDisplay }
+        set {
+            super.needsDisplay = newValue
+            if newValue { routeDisplay(bounds) }
         }
-        rememberPaintedArtwork()
+    }
+    private func routeDisplay(_ rect: NSRect) {
+        guard !rect.isNull, !rect.isEmpty else { return }
+        decoration.setNeedsDisplay(rect)
+        for case let card as EaselCanvasArtwork in artwork.values where card.frame.intersects(rect) {
+            card.setNeedsDisplay(rect.offsetBy(dx: -card.frame.minX, dy: -card.frame.minY))
+        }
     }
     fileprivate func drawObject(id: UUID) {
         guard let item = items.first(where: { $0.id == id }) else { return }
@@ -1208,7 +1193,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         let dirty = rotationDirty.union(next)
         rotationDirty = next
         guard !dirty.isNull else { return }
-        if usesObjectSurfaces { decoration.setNeedsDisplay(dirty) } else { setNeedsDisplay(dirty) }
+        decoration.setNeedsDisplay(dirty)
     }
     @discardableResult
     func rotateSelection(by degrees: Double) -> Bool {
@@ -1291,7 +1276,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         return true
     }
     func setOverlayNeedsDisplay(_ rect: NSRect) {
-        if usesObjectSurfaces { decoration.setNeedsDisplay(rect) } else { setNeedsDisplay(rect) }
+        decoration.setNeedsDisplay(rect)
     }
     @discardableResult
     func insertText(at point: NSPoint, width: Double? = nil) -> Bool {
@@ -1835,7 +1820,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
     }
     package override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
-        guard usesObjectSurfaces, let hit, hit !== self else { return hit }
+        guard let hit, hit !== self else { return hit }
         if let snapshotHeader, hit === snapshotHeader || hit.isDescendant(of: snapshotHeader) { return hit }
         if hit === editor || editor.map({ hit.isDescendant(of: $0) }) == true || ownsCodeBlockView(hit) { return hit }
         if let field = boardState.titleField, hit === field || hit.isDescendant(of: field) { return hit }

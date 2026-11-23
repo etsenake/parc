@@ -68,7 +68,6 @@ struct EaselObjectMotionSurfaceTests {
     @Test func anArrangeGlideMovesTheObjectViewAndEndsAtItsFinalFrame() throws {
         let board = try Board()
         defer { board.close() }
-        #expect(board.canvas.usesObjectSurfaces)
         try board.paint(board.right)
         board.canvas.selection = [board.left, board.right]
         #expect(board.canvas.alignSelection(.left))
