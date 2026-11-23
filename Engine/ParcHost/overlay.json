@@ -2294,7 +2294,7 @@
     {
       "source": "Engine/ParcChromium/webui_branding.cc",
       "target": "parc/webui_branding.cc",
-      "sha256": "c6f2bc59e38ef4281d17fdb94e369063257faaf684cfe15600d85fdbef8666d4"
+      "sha256": "93aa43f6fac2e6ce9ca4e1b75a351f1afb8f0dbcb666b881273bfee43510d7fa"
     },
     {
       "source": "Engine/ParcChromium/webui_branding.h",
@@ -2304,7 +2304,7 @@
     {
       "source": "Engine/ParcChromium/webui_branding_rules.h",
       "target": "parc/webui_branding_rules.h",
-      "sha256": "973390f927eb958148e81195d31b97a585a0f6cb9fb7ac3bf93d773fc3c8f1f8"
+      "sha256": "e4fa6ab78f97131b470d1057d014d0e2e3bd288525c9ae76fc1453d286477d9a"
     },
     {
       "source": "Engine/ParcChromium/parc_content_clients.h",

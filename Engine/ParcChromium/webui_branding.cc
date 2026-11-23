@@ -1,4 +1,3 @@
-// Copyright 2026 Parc contributors.
 #include "parc/webui_branding.h"
 
 #include <algorithm>
@@ -66,53 +65,92 @@ constexpr bool CoversEveryRule() {
 }
 static_assert(CoversEveryRule());
 
+enum class Artwork { kMark, kFlower };
+
 struct MarkImage {
   int id;
   int size;
   SkColor ink;
+  Artwork artwork = Artwork::kMark;
 };
 
 constexpr MarkImage kMarkImages[] = {
     {IDR_PRODUCT_LOGO_32, 32, SK_ColorBLACK},
+    {IDR_PRODUCT_LOGO_NAME_22, 32, SK_ColorBLACK},
     {IDR_PRODUCT_LOGO_NAME_22_WHITE, 32, SK_ColorWHITE},
     {IDR_PRODUCT_LOGO, 32, SK_ColorBLACK},
     {IDR_PRODUCT_LOGO_WHITE, 32, SK_ColorWHITE},
     {IDR_PRODUCT_FAVICON, 16, SK_ColorBLACK},
     {IDR_NTP_FAVICON, 16, SK_ColorBLACK},
+    {IDR_CRASH_SAD_FAVICON, 16, SK_ColorBLACK, Artwork::kFlower},
 };
 
-const SkPath& MarkPath() {
-  static const base::NoDestructor<SkPath> path([] {
-    const auto commands = branding::ParsePath(branding::kMarkPath);
-    CHECK(commands);
-    SkPathBuilder builder;
-    for (const branding::PathCommand& command : *commands) {
-      const auto& v = command.values;
-      switch (command.verb) {
-        case 'M':
-          builder.moveTo(v[0], v[1]);
-          break;
-        case 'L':
-          builder.lineTo(v[0], v[1]);
-          break;
-        case 'C':
-          builder.cubicTo(v[0], v[1], v[2], v[3], v[4], v[5]);
-          break;
-        default:
-          builder.close();
-          break;
-      }
+SkPath BuildPath(std::string_view text, branding::Contours contours) {
+  const auto commands = branding::ParsePath(text, contours);
+  CHECK(commands);
+  SkPathBuilder builder;
+  for (const branding::PathCommand& command : *commands) {
+    const auto& v = command.values;
+    switch (command.verb) {
+      case 'M':
+        builder.moveTo(v[0], v[1]);
+        break;
+      case 'L':
+        builder.lineTo(v[0], v[1]);
+        break;
+      case 'C':
+        builder.cubicTo(v[0], v[1], v[2], v[3], v[4], v[5]);
+        break;
+      default:
+        builder.close();
+        break;
     }
-    return builder.detach();
-  }());
+  }
+  return builder.detach();
+}
+
+const SkPath& MarkPath() {
+  static const base::NoDestructor<SkPath> path(
+      BuildPath(branding::kMarkPath, branding::Contours::kClosed));
   return *path;
 }
 
-SkBitmap RenderMark(int pixels, SkColor ink) {
+const std::vector<SkPath>& FlowerPaths() {
+  static const base::NoDestructor<std::vector<SkPath>> paths([] {
+    std::vector<SkPath> all;
+    for (const branding::Stroke& stroke : branding::kFlowerStrokes) {
+      all.push_back(BuildPath(stroke.path, branding::Contours::kOpen));
+    }
+    return all;
+  }());
+  return *paths;
+}
+
+void DrawFlower(SkCanvas& canvas, int pixels, SkColor ink) {
+  const float scale = static_cast<float>(pixels) / branding::kFlowerHeight;
+  canvas.translate((pixels - branding::kFlowerWidth * scale) / 2, 0);
+  canvas.scale(scale, scale);
+  SkPaint paint;
+  paint.setAntiAlias(true);
+  paint.setColor(ink);
+  paint.setStyle(SkPaint::kStroke_Style);
+  paint.setStrokeCap(SkPaint::kRound_Cap);
+  paint.setStrokeJoin(SkPaint::kRound_Join);
+  for (size_t i = 0; i < std::size(branding::kFlowerStrokes); ++i) {
+    paint.setStrokeWidth(branding::kFlowerStrokes[i].width);
+    canvas.drawPath(FlowerPaths()[i], paint);
+  }
+}
+
+SkBitmap RenderMark(int pixels, SkColor ink, Artwork artwork) {
   SkBitmap bitmap;
   bitmap.allocN32Pixels(pixels, pixels);
   bitmap.eraseColor(SK_ColorTRANSPARENT);
   SkCanvas canvas(bitmap);
+  if (artwork == Artwork::kFlower) {
+    DrawFlower(canvas, pixels, ink);
+    return bitmap;
+  }
   const float scale = static_cast<float>(pixels) / 24;
   canvas.scale(scale, scale);
   SkPaint paint;
@@ -122,9 +160,9 @@ SkBitmap RenderMark(int pixels, SkColor ink) {
   return bitmap;
 }
 
-std::string EncodeMark(int pixels, SkColor ink) {
-  const auto png = gfx::PNGCodec::EncodeBGRASkBitmap(RenderMark(pixels, ink),
-                                                     false);
+std::string EncodeMark(int pixels, const MarkImage& image) {
+  const auto png = gfx::PNGCodec::EncodeBGRASkBitmap(
+      RenderMark(pixels, image.ink, image.artwork), false);
   CHECK(png);
   return std::string(png->begin(), png->end());
 }
@@ -138,8 +176,8 @@ const MarkBytes& BytesFor(size_t index) {
   static const base::NoDestructor<std::vector<MarkBytes>> bytes([] {
     std::vector<MarkBytes> all;
     for (const MarkImage& image : kMarkImages) {
-      all.push_back({EncodeMark(image.size, image.ink),
-                     EncodeMark(image.size * 2, image.ink)});
+      all.push_back(
+          {EncodeMark(image.size, image), EncodeMark(image.size * 2, image)});
     }
     return all;
   }());
@@ -148,18 +186,19 @@ const MarkBytes& BytesFor(size_t index) {
 
 class MarkImageSource final : public gfx::ImageSkiaSource {
  public:
-  MarkImageSource(int size, SkColor ink) : size_(size), ink_(ink) {}
+  explicit MarkImageSource(const MarkImage& image) : image_(image) {}
 
   gfx::ImageSkiaRep GetImageForScale(float scale) override {
     return gfx::ImageSkiaRep(
-        RenderMark(std::max(1, base::ClampRound(size_ * scale)), ink_), scale);
+        RenderMark(std::max(1, base::ClampRound(image_.size * scale)),
+                   image_.ink, image_.artwork),
+        scale);
   }
 
   bool HasRepresentationAtAllScales() const override { return true; }
 
  private:
-  const int size_;
-  const SkColor ink_;
+  const MarkImage image_;
 };
 
 }
@@ -222,7 +261,7 @@ gfx::Image GetBrandedImage(int resource_id) {
   for (const MarkImage& image : kMarkImages) {
     if (image.id == resource_id) {
       gfx::ImageSkia mark(
-          std::make_unique<MarkImageSource>(image.size, image.ink),
+          std::make_unique<MarkImageSource>(image),
           gfx::Size(image.size, image.size));
       mark.SetReadOnly();
       return gfx::Image(mark);

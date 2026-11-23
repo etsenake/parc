@@ -11,7 +11,8 @@ swift test --filter WebUIBrandingTests
 ```
 
 - The rule tests parse the mark's path, check its two outlines sit inside the
-  24-unit box and run every rule on
+  24-unit box, check each line of the crash list's flower icon is one open
+  stroke inside its canvas and run every rule on
   Chromium-shaped text: each applies in full, a missing, extra, unclosed or
   nested match leaves the text untouched, groups that don't depend on each other
   still apply, and overlapping matches apply nothing.

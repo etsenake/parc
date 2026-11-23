@@ -1,4 +1,3 @@
-// Copyright 2026 Parc contributors.
 #ifndef PARC_WEBUI_BRANDING_RULES_H_
 #define PARC_WEBUI_BRANDING_RULES_H_
 
@@ -56,6 +55,23 @@ inline constexpr std::string_view kProductIcon =
     "\"></path></g>";
 
 #undef PARC_MARK_PATH
+
+struct Stroke {
+  std::string_view path;
+  float width;
+};
+
+inline constexpr float kFlowerWidth = 96;
+inline constexpr float kFlowerHeight = 103;
+
+inline constexpr Stroke kFlowerStrokes[] = {
+    {"M16 68 L80 68", 8.5f},
+    {"M23 68 L30 97 L66 97 L73 68", 8.5f},
+    {"M44 68 C42 48 46 26 58 20 C70 14 82 22 80 38", 8.5f},
+    {"M43 54 C32 52 25 43 27 35 C36 36 42 44 43 54", 6.8f},
+    {"M80 40 C72 41 69 50 70 58 L74 54 L79 60 L84 54 L88 58 C89 50 87 41 80 40",
+     6.8f},
+};
 
 template <typename T>
 struct List {
@@ -243,7 +259,12 @@ struct PathCommand {
   std::array<float, 6> values;
 };
 
-inline std::optional<std::vector<PathCommand>> ParsePath(std::string_view path) {
+enum class Contours { kClosed, kOpen };
+
+inline std::optional<std::vector<PathCommand>> ParsePath(
+    std::string_view path,
+    Contours contours = Contours::kClosed) {
+  const bool closed = contours == Contours::kClosed;
   std::vector<PathCommand> commands;
   size_t i = 0;
   const auto skip = [&] {
@@ -289,10 +310,11 @@ inline std::optional<std::vector<PathCommand>> ParsePath(std::string_view path) 
       arity = 2;
     } else if (verb == 'C') {
       arity = 6;
-    } else if (verb != 'Z') {
+    } else if (verb != 'Z' || !closed) {
       return std::nullopt;
     }
-    const bool starts_contour = commands.empty() || commands.back().verb == 'Z';
+    const bool starts_contour =
+        commands.empty() || (closed && commands.back().verb == 'Z');
     if (starts_contour != (verb == 'M')) {
       return std::nullopt;
     }
@@ -304,7 +326,8 @@ inline std::optional<std::vector<PathCommand>> ParsePath(std::string_view path) 
     }
     commands.push_back(command);
   }
-  if (commands.empty() || commands.back().verb != 'Z') {
+  if (commands.empty() || (closed ? commands.back().verb != 'Z'
+                                   : commands.size() < 2)) {
     return std::nullopt;
   }
   return commands;

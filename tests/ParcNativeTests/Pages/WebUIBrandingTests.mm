@@ -11,6 +11,7 @@
 #include "webui_branding_rules.h"
 
 using parc::branding::ApplyResourceEdits;
+using parc::branding::Contours;
 using parc::branding::Edit;
 using parc::branding::EditGroup;
 using parc::branding::EditOutcome;
@@ -18,6 +19,9 @@ using parc::branding::FindEdit;
 using parc::branding::FindResourceEdits;
 using parc::branding::kAdaptiveLogoSvg;
 using parc::branding::kDarkLogoSvg;
+using parc::branding::kFlowerHeight;
+using parc::branding::kFlowerStrokes;
+using parc::branding::kFlowerWidth;
 using parc::branding::kMarkPath;
 using parc::branding::kPaddedLogoSvg;
 using parc::branding::kProductIcon;
@@ -153,6 +157,31 @@ static void CheckAppearance(std::string_view text, NSString* box) {
 
 - (void)testACoordinateNeedsDigits {
   PARC_CHECK(!ParsePath("M1 2L.Z").has_value());
+}
+
+- (void)testEveryFlowerStrokeIsOneOpenLineInsideItsCanvas {
+  PARC_CHECK(std::size(kFlowerStrokes) == 5);
+  for (const auto& stroke : kFlowerStrokes) {
+    const auto commands = ParsePath(stroke.path, Contours::kOpen);
+    PARC_CHECK(commands.has_value() && commands->front().verb == 'M');
+    PARC_CHECK(stroke.width == 8.5f || stroke.width == 6.8f);
+    const float half = stroke.width / 2;
+    for (const auto& command : *commands) {
+      PARC_CHECK(command.verb != 'M' || &command == &commands->front());
+      const size_t arity = command.verb == 'C' ? 6 : 2;
+      for (size_t i = 0; i < arity; i += 2) {
+        PARC_CHECK(command.values[i] - half >= 0 && command.values[i] + half <= kFlowerWidth);
+        PARC_CHECK(command.values[i + 1] - half >= 0 && command.values[i + 1] + half <= kFlowerHeight);
+      }
+    }
+  }
+}
+
+- (void)testAnOpenStrokeRejectsClosingAndSecondMoves {
+  PARC_CHECK(!ParsePath("M1 2L3 4Z", Contours::kOpen).has_value());
+  PARC_CHECK(!ParsePath("M1 2L3 4M5 6L7 8", Contours::kOpen).has_value());
+  PARC_CHECK(!ParsePath("M1 2", Contours::kOpen).has_value());
+  PARC_CHECK(ParsePath("M1 2L3 4C5 6 7 8 9 10", Contours::kOpen).has_value());
 }
 
 - (void)testTheParserReadsSignedFractionalCoordinatesAcrossContours {
