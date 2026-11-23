@@ -44,7 +44,10 @@ dates and including local documents without Sidebar references are deterministic
 ordering rules. The existing Easel importer still reopens the selected UUID,
 commits actual PNG bytes and metadata, and retains its undo session. The capture
 lands on the page that Easel shows in the window (page one otherwise), and the
-Easel opens on it with the card selected ([pages](easel-pages.md#sending-captures-and-images)). Missing or
+Easel opens on it with the card selected ([pages](easel-pages.md#sending-captures-and-images)). A
+capture of a page without a web address, such as Parc's own What's New or a
+local file, has no page to link or make live, so it lands as a plain picture
+(`EaselStore.webAddress`). Missing or
 deleted destinations fail without creating substitutes. New Easel still uses
 the original page title and opens the committed document, as the established
 local document ownership policy.

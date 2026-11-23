@@ -82,6 +82,19 @@ struct CaptureDestinationTests {
         }
     }
 
+    @MainActor @Test(arguments: ["parc://whats-new", "chrome://settings", "file:///Users/someone/page.html", "about:blank"])
+    func aCaptureOfAPageWithoutAWebAddressLandsAsAPlainPicture(_ address: String) throws {
+        try withStore { store in
+            var input = EaselImageInput(pngData: try png(), sourceURL: URL(string: address), pageTitle: "What's New", valid: { true },
+                                        capturedPage: true)
+            input.captureLayout = EaselCaptureGeometry.captured(viewport: .init(x: 1280, y: 800), scroll: .init(x: 0, y: 0),
+                region: .init(x: 0, y: 0, width: 1280, height: 800), scrollContainers: [], fullPage: true)
+            let placed = try EaselImagePlacement.place(input, in: store, destinationID: nil, newTitle: "Captured page")
+            let item = try #require(try store.load(placed.id).document.items.first)
+            #expect(item.kind == .image && item.url == nil && item.captureLayout == nil && item.assetID != nil)
+        }
+    }
+
     @MainActor @Test
     func placementAddsAnUndoableImageBelowExistingContent() throws {
         try withStore { store in

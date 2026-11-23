@@ -1189,15 +1189,20 @@ package final class EaselStore {
                 throw EaselStoreError.invalidDocument("live capture has no original geometry")
             }
             if let rawURL = item.url, !(item.kind.holdsText && EaselRichText.isInternalLink(rawURL)) {
-                guard rawURL.utf8.count <= 16_384, let url = URL(string: rawURL),
-                      ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
-                      let host = url.host, !host.isEmpty else { throw EaselStoreError.invalidDocument("card URL") }
+                guard webAddress(URL(string: rawURL)) != nil else { throw EaselStoreError.invalidDocument("card URL") }
             }
             if item.kind == .webCard && item.url == nil { throw EaselStoreError.invalidDocument("card has no URL") }
             if [.arrow, .freehand].contains(item.kind) && item.points.count < 2 { throw EaselStoreError.invalidDocument("drawing has fewer than two points") }
             if (item.kind == .table) != (item.table != nil) { throw EaselStoreError.invalidDocument("table grid on the wrong object") }
             try item.table?.validate()
         }
+    }
+
+    package static func webAddress(_ url: URL?) -> URL? {
+        guard let url, url.absoluteString.utf8.count <= 16_384,
+              ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
+              let host = url.host, !host.isEmpty else { return nil }
+        return url
     }
 
     private static func validateStyle(_ item: EaselItem) throws {

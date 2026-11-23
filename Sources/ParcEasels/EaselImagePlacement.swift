@@ -15,7 +15,7 @@ package struct EaselImageInput {
     package var snapshotPDF: Data?
     package init(pngData: Data, sourceURL: URL?, pageTitle: String, valid: @escaping () -> Bool, capturedPage: Bool = false, captureLayout: EaselCaptureLayout? = nil, capturedAt: Date? = nil, snapshotPDF: Data? = nil) {
         self.pngData = pngData
-        self.sourceURL = sourceURL
+        self.sourceURL = EaselStore.webAddress(sourceURL)
         self.pageTitle = pageTitle
         self.valid = valid
         self.capturedPage = capturedPage
