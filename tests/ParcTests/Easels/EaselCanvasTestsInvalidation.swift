@@ -8,7 +8,7 @@ struct EaselCanvasTestsInvalidation {
     private typealias PageSurfaces = EaselCanvasTestsSupport.PageSurfaces
 
     @MainActor @Test
-    func aCanvasWithoutEmbeddedPagesUsesSoftwarePaint() throws {
+    func aCanvasWithoutEmbeddedPagesGivesEachObjectItsOwnView() throws {
         let board = try GestureBoard([
             EaselItem(kind: .rectangle, frame: .init(x: 30, y: 30, width: 50, height: 50)),
             EaselItem(kind: .circle, frame: .init(x: 130, y: 130, width: 50, height: 50)),
@@ -16,10 +16,8 @@ struct EaselCanvasTestsInvalidation {
         defer { board.close() }
         let canvas = board.canvas
         canvas.layoutSubtreeIfNeeded()
-        #expect(!canvas.subviews.contains(where: { NSStringFromClass(type(of: $0)).contains("EaselCanvasArtwork") }),
-               "Ordinary software canvas does not host per-object artwork")
-        canvas.displayIfNeeded()
-        #expect(!canvas.needsDisplay, "First software paint clears the canvas dirty flag")
+        #expect(canvas.subviews.filter { $0 is EaselCanvasArtwork }.count == 2,
+               "Every object has its own artwork view without embedded pages")
     }
 
     @MainActor @Test

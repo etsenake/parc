@@ -13,7 +13,6 @@ struct EaselCanvasTestsEmbeddedRemoval {
         let canvas: EaselCanvasView
         let window: NSWindow
         let surfaces = PageSurfaces()
-        private(set) var painted = NSRect.null
 
         init(_ items: [EaselItem], pages: [EaselPage]? = nil) throws {
             _ = NSApplication.shared
@@ -34,10 +33,6 @@ struct EaselCanvasTestsEmbeddedRemoval {
             window.contentView = canvas
             canvas.wantsLayer = true
             paint()
-            canvas.onDrawOverlay = { [weak self] dirty, _ in
-                guard let self else { return }
-                self.painted = self.painted.union(dirty)
-            }
         }
 
         func paint() {
@@ -48,7 +43,6 @@ struct EaselCanvasTestsEmbeddedRemoval {
         func select(_ ids: Set<UUID>) {
             canvas.selection = ids
             paint()
-            painted = .null
         }
 
         func settle() {
@@ -58,14 +52,11 @@ struct EaselCanvasTestsEmbeddedRemoval {
             paint()
         }
 
-        func repainted(_ item: EaselItem) -> Bool { painted.contains(canvas.rect(item)) }
-
-        var repaintedEverythingVisible: Bool { !canvas.visibleRect.isEmpty && painted.contains(canvas.visibleRect) }
+        func hasView(_ item: EaselItem) -> Bool { canvas.artwork[item.id]?.superview === canvas }
 
         var hostsSurface: Bool { surfaces.view.superview === canvas }
 
         func close() {
-            canvas.onDrawOverlay = nil
             window.contentView = nil
             window.close()
             try? FileManager.default.removeItem(at: directory)
@@ -85,7 +76,7 @@ struct EaselCanvasTestsEmbeddedRemoval {
     }
 
     @MainActor @Test(arguments: [false, true])
-    func deletingTheLastEmbeddedPageRepaintsTheWholeBoard(_ alongsideOtherObjects: Bool) throws {
+    func deletingTheLastEmbeddedPageKeepsTheBoardPainted(_ alongsideOtherObjects: Bool) throws {
         let board = try Board([Self.browser, Self.shape, Self.sticky])
         defer { board.close() }
         #expect(board.hostsSurface)
@@ -94,12 +85,13 @@ struct EaselCanvasTestsEmbeddedRemoval {
         board.settle()
         #expect(board.session.document.items.map(\.id) == (alongsideOtherObjects ? [Self.shape.id] : [Self.shape.id, Self.sticky.id]))
         #expect(!board.hostsSurface)
-        #expect(board.repainted(Self.shape), "Objects far from the deleted page are painted again when the canvas stops hosting pages")
-        if !alongsideOtherObjects { #expect(board.repainted(Self.sticky)) }
+        #expect(board.hasView(Self.shape), "Objects far from the deleted page keep their own views when the canvas stops hosting pages")
+        if !alongsideOtherObjects { #expect(board.hasView(Self.sticky)) }
+        #expect(board.canvas.artwork[Self.browser.id] == nil)
     }
 
     @MainActor @Test
-    func goingBackToTheSnapshotRepaintsTheWholeBoard() throws {
+    func goingBackToTheSnapshotKeepsTheBoardPainted() throws {
         let capture = Self.liveCapture()
         let board = try Board([capture, Self.shape])
         defer { board.close() }
@@ -107,12 +99,15 @@ struct EaselCanvasTestsEmbeddedRemoval {
         board.canvas.setLiveCapture(capture.id, enabled: false)
         board.settle()
         #expect(board.session.document.items.first?.liveCapture == false)
-        #expect(board.repainted(Self.shape))
-        #expect(board.repainted(capture), "The returned snapshot is painted where the live page was")
+        #expect(board.hasView(Self.shape))
+        #expect(board.hasView(capture))
+        let view = try #require(board.canvas.artwork[capture.id])
+        #expect(type(of: view) == EaselCanvasArtwork.self, "The returned snapshot is drawn by its own artwork view")
+        #expect(view.needsDisplay, "The returned snapshot's view redraws where the live page was")
     }
 
     @MainActor @Test
-    func redoingTheDeleteRepaintsTheWholeBoard() throws {
+    func redoingTheDeleteKeepsTheBoardPainted() throws {
         let board = try Board([Self.browser, Self.shape])
         defer { board.close() }
         board.select([Self.browser.id])
@@ -125,26 +120,27 @@ struct EaselCanvasTestsEmbeddedRemoval {
         board.canvas.redo(nil)
         board.settle()
         #expect(board.session.document.items.map(\.id) == [Self.shape.id])
-        #expect(board.repainted(Self.shape))
+        #expect(board.hasView(Self.shape))
+        #expect(board.canvas.artwork[Self.browser.id] == nil)
     }
 
     @MainActor @Test
-    func undoingTheDeleteClearsTheSoftwarePaintUnderTheRestoredPage() throws {
+    func undoingTheDeleteGivesTheRestoredPageItsViewBack() throws {
         let board = try Board([Self.browser, Self.shape])
         defer { board.close() }
         board.select([Self.browser.id])
         board.canvas.deleteSelection()
         board.settle()
         board.select([])
-        let layer = try #require(board.canvas.layer)
-        try #require(!layer.needsDisplay())
+        #expect(board.canvas.artwork[Self.browser.id] == nil)
         board.canvas.undo(nil)
         let approve = board.surfaces.pending
         board.surfaces.pending = nil
         approve?()
         board.canvas.layoutSubtreeIfNeeded()
         #expect(board.hostsSurface)
-        #expect(layer.needsDisplay(), "The canvas clears its own painting once the restored page brings object surfaces back")
+        #expect(board.hasView(Self.browser))
+        #expect(board.hasView(Self.shape), "Every object keeps its own view once the restored page comes back")
     }
 
     @MainActor @Test
@@ -203,7 +199,8 @@ struct EaselCanvasTestsEmbeddedRemoval {
         #expect(!replacement.items.contains { $0.id == doomed.id })
         board.settle()
         #expect(board.session.document.items.map(\.id) == [kept.id, shape.id])
-        #expect(board.repaintedEverythingVisible)
+        #expect([kept, shape].filter { board.hasView($0) }.count == 2)
+        #expect(board.canvas.artwork[doomed.id] == nil)
     }
 
     @MainActor @Test
