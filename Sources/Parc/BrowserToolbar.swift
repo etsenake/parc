@@ -312,10 +312,8 @@ enum BrowserToolbarActionSurfaceLayoutSkip {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     deinit {
-        MainActor.assumeIsolated {
-            observers.forEach(NotificationCenter.default.removeObserver)
-            if let optionsObserver { NSWorkspace.shared.notificationCenter.removeObserver(optionsObserver) }
-        }
+        observers.forEach(NotificationCenter.default.removeObserver)
+        if let optionsObserver { NSWorkspace.shared.notificationCenter.removeObserver(optionsObserver) }
     }
     private var surfaceFrame: NSRect {
         let height = min(bounds.height, 24)
