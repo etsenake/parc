@@ -478,6 +478,7 @@ package struct NoteTable: Hashable, Codable {
         columnWidths = try container.decodeIfPresent([Double?].self, forKey: .columnWidths) ?? []
         merges = try container.decodeIfPresent([NoteTableMerge].self, forKey: .merges) ?? []
         cellColors = try container.decodeIfPresent([NoteTableCell: NoteColorStyle].self, forKey: .cellColors) ?? [:]
+        normalize()
     }
 
     package static func empty(rows: Int = 3, columns: Int = 3) -> NoteTable {
