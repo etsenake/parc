@@ -851,10 +851,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         let scale = canvasScale
         let placed = EaselWebItemChrome.headerFrame(item: item.frame,
             visible: EaselRect(x: visible.minX, y: visible.minY, width: visible.width, height: visible.height), scale: scale)
-        let next = NSRect(x: placed.x, y: placed.y, width: placed.width, height: placed.height)
-        let drawn = NSRect(x: 0, y: 0, width: placed.width * scale, height: placed.height * scale)
-        if header.frame != next { header.frame = next }
-        if header.bounds != drawn { header.bounds = drawn; header.needsLayout = true }
+        EaselScreenChrome.place(header, boardFrame: NSRect(x: placed.x, y: placed.y, width: placed.width, height: placed.height), scale: scale)
     }
     private func bindHeaderScroll() {
         let clip = enclosingScrollView?.contentView
