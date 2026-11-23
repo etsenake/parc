@@ -174,7 +174,7 @@ package enum SpaceClearToday {
         content.frame = NSRect(x: 0, y: 0, width: max(scroll.contentSize.width, Layout.contentWidth(count: order.count)), height: height)
         for (index, id) in order.enumerated() {
             cards[id]?.frame = Layout.cardFrame(index: index, height: height)
-            let next: NSView = index + 1 < order.count ? cards[order[index + 1]]! : add
+            let next: NSView = order.dropFirst(index + 1).lazy.compactMap { self.cards[$0] }.first ?? add
             cards[id]?.followingKeyView = next
         }
         add.frame = Layout.addCircleFrame(count: order.count, height: height)
