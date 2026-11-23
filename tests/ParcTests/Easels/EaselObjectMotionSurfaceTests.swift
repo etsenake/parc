@@ -82,9 +82,8 @@ struct EaselObjectMotionSurfaceTests {
         #expect((glide.values?.first as? NSValue)?.pointValue.x != 0)
         for step in 1...10 {
             board.now += 0.03
-            view.needsDisplay = false
             #expect(board.canvas.objectMotionFrame())
-            #expect(view.needsDisplay == false, "frame \(step) moves the view without redrawing it")
+            #expect(view.frame == landed, "frame \(step) moves the view by animation, not by relayout")
         }
         board.finish()
         #expect(board.canvas.objectMotion.timeline.isEmpty)
