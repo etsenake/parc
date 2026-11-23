@@ -242,6 +242,11 @@ package struct EaselRichText: Codable, Equatable {
               UUID(uuidString: String(url.path.dropFirst())) != nil else { return false }
         return url.fragment.map { UUID(uuidString: $0) != nil } ?? true
     }
+    static func validFontStyle(_ style: EaselTextStyle) -> Bool {
+        (style.customSize.map { $0.isFinite && EaselTextStyle.customSizes.contains($0) } ?? true)
+            && (style.textScale.map { $0.isFinite && EaselTextStyle.textScales.contains($0) } ?? true)
+    }
+
     package func validate(text: String) throws {
         let units = Array(text.utf16)
         guard units.count <= 1_048_576, runs.count <= 16_384 else { throw EaselStoreError.textTooLarge }
@@ -259,6 +264,7 @@ package struct EaselRichText: Codable, Equatable {
                   !a.font.name.isEmpty, a.font.name.utf8.count <= 256,
                   a.font.size.isFinite, (1...512).contains(a.font.size),
                   [a.font.weight, a.font.width, a.font.slant].allSatisfy({ $0.isFinite && (-1...1).contains($0) }),
+                  a.font.style.map(Self.validFontStyle) ?? true,
                   a.font.variations.count <= 32,
                   a.font.variations.allSatisfy({ UInt32($0.key).map(String.init) == $0.key && $0.value.isFinite && abs($0.value) <= 1_000_000 }),
                   a.semanticInk == nil || a.ink == "#000000FF",
