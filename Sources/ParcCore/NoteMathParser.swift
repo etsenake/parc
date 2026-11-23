@@ -258,7 +258,6 @@ package struct NoteMathParser {
     private static let maximumDepth = 120
     private static let maximumCommandDepth = 48
     private static let maximumColumnPairs = 50
-    private static let maximumDimension = 100.0
 
     private let characters: [Character]
     private let origins: [Range<Int>]
@@ -1251,11 +1250,6 @@ package struct NoteMathParser {
     }
 
     static func dimension(_ text: String) -> Double? {
-        guard let value = unboundedDimension(text), value.isFinite, abs(value) <= maximumDimension else { return nil }
-        return value
-    }
-
-    private static func unboundedDimension(_ text: String) -> Double? {
         let trimmed = text.replacingOccurrences(of: " ", with: "")
         var numberEnd = trimmed.startIndex
         while numberEnd < trimmed.endIndex, "+-.0123456789".contains(trimmed[numberEnd]) {

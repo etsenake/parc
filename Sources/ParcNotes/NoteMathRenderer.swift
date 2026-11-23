@@ -215,13 +215,19 @@ package final class NoteMathRendering {
         return image
     }
 
+    static let largestBitmapSide: CGFloat = 16384
+    static let largestBitmapPixels: CGFloat = 4096 * 4096
+
     func cgImage(scale: CGFloat = 2, appearance: NSAppearance? = nil) -> CGImage? {
-        let width = Int((size.width * scale).rounded(.up))
-        let height = Int((size.height * scale).rounded(.up))
+        guard size.width > 0, size.height > 0, size.width.isFinite, size.height.isFinite else { return nil }
+        let fitted = min(scale, Self.largestBitmapSide / max(size.width, size.height),
+                         (Self.largestBitmapPixels / (size.width * size.height)).squareRoot())
+        let width = Int((size.width * fitted).rounded(.up))
+        let height = Int((size.height * fitted).rounded(.up))
         guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                                       space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        context.scaleBy(x: scale, y: scale)
+        context.scaleBy(x: fitted, y: fitted)
         if let appearance {
             appearance.performAsCurrentDrawingAppearance { self.draw(in: context, at: .zero) }
         } else {

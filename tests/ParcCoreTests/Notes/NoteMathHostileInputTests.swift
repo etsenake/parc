@@ -48,11 +48,11 @@ struct NoteMathHostileInputTests {
 
     @Test(arguments: [
         "\\hspace{\(String(repeating: "9", count: 400))em}",
-        "\\hspace{1000em}",
+        "\\hspace{2000em}",
         "\\rule{1em}{9999999999999999999999999999em}",
         "\\\\[\(String(repeating: "9", count: 30))pt]",
     ])
-    func sizesThatCouldNeverBeDrawnAreRejected(_ source: String) throws {
+    func sizesPastTeXsLargestDimensionAreRejected(_ source: String) throws {
         try rejects(source)
     }
 

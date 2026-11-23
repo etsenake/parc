@@ -65,6 +65,20 @@ struct NoteMathLayoutTestsRasterizationAndFallback {
         #expect(rendering.cgImage() != nil)
     }
 
+    @Test func aGiantEquationRasterizesWithinTheBitmapBudgetAndKeepsItsShape() throws {
+        let rendering = NoteMathRenderer.render("\\rule{1600em}{800em}", fontSize: 16, color: .black, display: true)
+        #expect(rendering.error == nil)
+        let image = try #require(rendering.cgImage())
+        #expect(CGFloat(image.width * image.height) <= NoteMathRendering.largestBitmapPixels + CGFloat(image.width + image.height + 1))
+        #expect(abs(CGFloat(image.width) / CGFloat(image.height) - rendering.size.width / rendering.size.height) < 0.01)
+    }
+
+    @Test func aLargeButValidTeXSpaceStillTypesets() {
+        let rendering = NoteMathRenderer.render("x\\hspace{200em}y", fontSize: 16, color: .black, display: true)
+        #expect(rendering.error == nil)
+        #expect(rendering.size.width > 3000)
+    }
+
     @Test func bracketsDrawOnBothSides() {
         let matrix = fixture.picture("\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}")
         #expect(matrix.ink(x: 0...0.12, y: 0.1...0.9) > 50)
