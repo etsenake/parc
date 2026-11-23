@@ -205,9 +205,9 @@ extension EaselCanvasView {
     }
 
     func drawImageObject(_ item: EaselItem, in r: NSRect) {
-        guard imageEditing.crop?.item.id != item.id, let picture = displayedPicture(for: item) else { return }
+        guard imageEditing.crop?.item.id != item.id, let shown = displayedPicture(for: item) else { return }
         guard EaselImageFraming.isFramed(item) else {
-            picture.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            EaselPictureRenderer.draw(shown.picture, asset: shown.asset, in: r)
             return
         }
         guard let context = NSGraphicsContext.current?.cgContext else { return }
@@ -216,19 +216,19 @@ extension EaselCanvasView {
         context.addPath(item.mask?.path(in: r) ?? CGPath(rect: r, transform: nil))
         context.clip()
         let turns = item.resolvedQuarterTurns
-        drawPicture(picture, in: EaselImageFraming.pictureRect(frame: r, crop: item.crop, turns: turns), turns: turns)
+        drawPicture(shown.picture, asset: shown.asset, in: EaselImageFraming.pictureRect(frame: r, crop: item.crop, turns: turns), turns: turns)
     }
 
-    private func displayedPicture(for item: EaselItem) -> NSImage? {
+    private func displayedPicture(for item: EaselItem) -> (picture: NSImage, asset: String?)? {
         guard let id = item.assetID else { return nil }
-        if let player = imageEditing.gif, player.itemID == item.id, player.assetID == id, let frame = player.frame { return frame }
-        return image(id)
+        if let player = imageEditing.gif, player.itemID == item.id, player.assetID == id, let frame = player.frame { return (frame, nil) }
+        return image(id).map { ($0, id) }
     }
 
-    private func drawPicture(_ picture: NSImage, in rect: CGRect, turns: Int) {
+    private func drawPicture(_ picture: NSImage, asset: String?, in rect: CGRect, turns: Int) {
         let value = EaselImageFraming.turns(turns)
         guard value != 0, let context = NSGraphicsContext.current?.cgContext else {
-            picture.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            EaselPictureRenderer.draw(picture, asset: asset, in: rect)
             return
         }
         context.saveGState()
@@ -236,12 +236,11 @@ extension EaselCanvasView {
         context.translateBy(x: rect.midX, y: rect.midY)
         context.rotate(by: EaselImageFraming.angle(turns: value))
         let size = EaselImageFraming.turnedSize(rect.size, turns: value)
-        picture.draw(in: NSRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height),
-                     from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        EaselPictureRenderer.draw(picture, asset: asset, in: NSRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height))
     }
 
     func renderImageThumbnail(_ item: EaselItem, side: CGFloat = 160) -> CGImage? {
-        guard let picture = image(item.assetID ?? ""), item.frame.width > 0, item.frame.height > 0 else { return nil }
+        guard let asset = item.assetID, let picture = image(asset), item.frame.width > 0, item.frame.height > 0 else { return nil }
         let scale = side / CGFloat(max(item.frame.width, item.frame.height))
         let width = max(1, Int((CGFloat(item.frame.width) * scale).rounded())), height = max(1, Int((CGFloat(item.frame.height) * scale).rounded()))
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
@@ -253,7 +252,7 @@ extension EaselCanvasView {
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
         let frame = CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))
         let turns = item.resolvedQuarterTurns
-        drawPicture(picture, in: EaselImageFraming.pictureRect(frame: frame, crop: item.crop, turns: turns), turns: turns)
+        drawPicture(picture, asset: asset, in: EaselImageFraming.pictureRect(frame: frame, crop: item.crop, turns: turns), turns: turns)
         NSGraphicsContext.restoreGraphicsState()
         return context.makeImage()
     }
@@ -349,9 +348,9 @@ extension EaselCanvasView {
             }
             return
         }
-        guard let picture = image(crop.item.assetID ?? ""), let context = NSGraphicsContext.current?.cgContext else { return }
+        guard let asset = crop.item.assetID, let picture = image(asset), let context = NSGraphicsContext.current?.cgContext else { return }
         let draft = crop.draft, frame = draft.frame, scale = CGFloat(canvasScale)
-        drawPicture(picture, in: draft.picture, turns: draft.turns)
+        drawPicture(picture, asset: asset, in: draft.picture, turns: draft.turns)
         context.saveGState()
         defer { context.restoreGState() }
         let dim = CGMutablePath()

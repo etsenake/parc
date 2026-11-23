@@ -24,6 +24,12 @@ final class EaselImageAttachmentCell: NSTextAttachmentCell {
     }
     required init(coder: NSCoder) { fatalError("Attachment cells are restored from validated image bytes") }
     override func copy(with zone: NSZone? = nil) -> Any { self }
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current?.imageInterpolation = .high
+        super.draw(withFrame: cellFrame, in: controlView)
+    }
     override func cellSize() -> NSSize {
         MainActor.assumeIsolated { ownedCellSize() }
     }

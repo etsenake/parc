@@ -74,7 +74,7 @@ extension EaselCanvasView {
               let page = EaselMediaArt.firstPage(id, size: r.size, scale: window?.backingScaleFactor ?? 2, data: { mediaData(id) }) else { return false }
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(roundedRect: r, xRadius: 8, yRadius: 8).addClip()
-        page.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        EaselPictureRenderer.draw(page, asset: nil, in: r)
         NSGraphicsContext.restoreGraphicsState()
         return true
     }

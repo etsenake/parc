@@ -66,6 +66,17 @@ decode. A new picture lands in the middle of the view, or where it was dropped,
 at up to 480 points wide. Pasting prefers GIF data over PNG or TIFF when an app offers both, so a
 GIF copied from a web page stays animated.
 
+Pictures, captured webpage cards, video posters and PDF first pages always
+draw with high-quality resampling, whatever the zoom, crop, mask or turn. A
+picture shown smaller than its own pixels draws from a downsampled copy
+matched to the pixels it covers (zoom times the display's scale, rounded up to
+the next of four steps per halving), so a 5,000-pixel capture shown at 480
+points stays sharp and isn't resampled from full size every frame. A zoom or
+display change picks a new copy. The copies share one cache of about 24
+million pixels that lets the least recently drawn go first. At or above its
+own size, and in PDF exports, the original picture is drawn. Pictures inside
+text objects draw with high-quality resampling too.
+
 ## Cropping
 
 Double-click an image, press Return on it, or choose Crop Image from its menu
@@ -232,6 +243,9 @@ saved bookmark pictures along with the assets.
   GIF playback, and owns the commands the toolbar, menus and VoiceOver call:
   `beginImageCrop`, `finishImageCrop(save:)`, `setImageMask`,
   `editImageAltText`, `chooseReplacementImage` and `replaceImage(id:data:)`.
+- `EaselPictureRendering.swift` draws every asset picture through
+  `EaselPictureRenderer` and keeps the downsampled copies in
+  `EaselPictureCache`.
 - `EaselCanvasView+Video.swift` loads video facts, draws posters for exports
   and routes play, pause and stop to the hosted Notes player.
 - `NoteMediaHost.swift` is the seam the Notes media views talk to:
@@ -258,4 +272,5 @@ saved bookmark pictures along with the assets.
 `swift test --filter EaselImageFramingTests` covers the crop geometry, turns, presets,
 masking, replacement, validation, asset sniffing, the saved format and the SVG output.
 `EaselStoreTests` covers media placeholders, fields, asset types and placement, and
-`EaselMediaImportTests` the import plan.
+`EaselMediaImportTests` the import plan, and `EaselPictureRenderingTests` the
+resampling, the cache and its budget.

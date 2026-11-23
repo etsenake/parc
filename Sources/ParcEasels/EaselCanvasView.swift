@@ -356,8 +356,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
         EaselAppearance.cardFill.setFill(); shape.fill()
         NSGraphicsContext.saveGraphicsState()
         shape.addClip(); NSBezierPath(rect: page.visibleFrame.offsetBy(dx: frame.minX, dy: frame.minY)).addClip()
-        page.image.draw(in: page.pageFrame.offsetBy(dx: frame.minX, dy: frame.minY), from: .zero,
-                        operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        EaselPictureRenderer.draw(page.image, asset: nil, in: page.pageFrame.offsetBy(dx: frame.minX, dy: frame.minY))
         NSGraphicsContext.restoreGraphicsState()
     }
     private var collectingExportPages = false
@@ -976,7 +975,7 @@ package final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, N
             case .video:
                 if drawsLinkedVideoCard(item) { drawMediaCard(item, in: r) } else { drawVideoObject(item, in: r, controls: showsEditor) }
             case .webCard where item.assetID != nil:
-                if let id = item.assetID { image(id)?.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil) }
+                if let id = item.assetID, let picture = image(id) { EaselPictureRenderer.draw(picture, asset: id, in: r) }
             case .link where item.url != nil:
                 drawBookmarkCard(item, in: r)
             case .link, .webCard, .browser:

@@ -85,11 +85,11 @@ extension EaselCanvasView {
         shape.addClip()
         NSColor.black.setFill()
         r.fill()
-        if let poster = item.poster.flatMap({ image($0) }), poster.size.width > 0, poster.size.height > 0 {
+        if let asset = item.poster, let poster = image(asset), poster.size.width > 0, poster.size.height > 0 {
             let scale = max(r.width / poster.size.width, r.height / poster.size.height)
             let size = NSSize(width: poster.size.width * scale, height: poster.size.height * scale)
-            poster.draw(in: NSRect(x: r.midX - size.width / 2, y: r.midY - size.height / 2, width: size.width, height: size.height),
-                        from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            EaselPictureRenderer.draw(poster, asset: asset,
+                                      in: NSRect(x: r.midX - size.width / 2, y: r.midY - size.height / 2, width: size.width, height: size.height))
         }
         NSGraphicsContext.restoreGraphicsState()
         guard controls, let disc = videoPlayRect(in: r) else { return }

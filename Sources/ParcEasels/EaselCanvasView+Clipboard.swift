@@ -41,15 +41,15 @@ extension EaselCanvasView {
     }
 
     @discardableResult
-    func cutSelection() -> Bool {
+    func cutSelection(to pasteboard: NSPasteboard = .general) -> Bool {
         let ids = removableIDs(for: selection)
-        guard !ids.isEmpty, copyObjects(ids) else { return false }
+        guard !ids.isEmpty, copyObjects(ids, to: pasteboard) else { return false }
         selection = ids
         return deleteSelection()
     }
 
     @discardableResult
-    func copyObjects(_ ids: Set<UUID>) -> Bool {
+    func copyObjects(_ ids: Set<UUID>, to pasteboard: NSPasteboard = .general) -> Bool {
         guard !ids.isEmpty, !session.isClosed else { return false }
         do {
             let document = session.document
@@ -59,7 +59,6 @@ extension EaselCanvasView {
             let item = NSPasteboardItem()
             guard item.setData(try payload.encoded(), forType: Self.objectsPasteboardType) else { throw CocoaError(.fileWriteUnknown) }
             try writeFallbacks(for: payload, into: item)
-            let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             guard pasteboard.writeObjects([item]) else { throw CocoaError(.fileWriteUnknown) }
             arrangeState.lastPaste = nil
