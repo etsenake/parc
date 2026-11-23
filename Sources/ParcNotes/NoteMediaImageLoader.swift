@@ -28,6 +28,14 @@ package enum NoteMediaImageError: Error, Equatable {
 enum NoteMediaImageDecoder {
     static let maximumFrames = 360
     static let maximumAnimatedBytes = 160_000_000
+    static let maximumDecodedPixels = 64_000_000
+
+    static func pixelBudget(_ requested: Int, width: Int, height: Int) -> Int {
+        guard width > 0, height > 0 else { return max(1, requested) }
+        let short = Double(min(width, height)), long = Double(max(width, height))
+        let longest = Int((Double(maximumDecodedPixels) * long / short).squareRoot().rounded(.down))
+        return max(1, min(requested, longest))
+    }
 
     static func naturalSize(of source: CGImageSource) -> CGSize? {
         guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
@@ -66,11 +74,14 @@ enum NoteMediaImageDecoder {
     static func decode(source: CGImageSource, maxPixel: Int) -> NoteMediaImage? {
         guard let type = CGImageSourceGetType(source) as String?, type != UTType.pdf.identifier else { return nil }
         let natural = naturalSize(of: source)
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let budget = pixelBudget(maxPixel, width: (properties?[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue ?? 0,
+                                 height: (properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue ?? 0)
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: max(1, maxPixel),
+            kCGImageSourceThumbnailMaxPixelSize: budget,
         ]
         let count = CGImageSourceGetCount(source)
         guard let first = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
@@ -126,7 +137,7 @@ package final class NoteMediaImageLoader {
     package typealias Completion = (Result<NoteMediaImage, NoteMediaImageError>) -> Void
 
     package static let shared = NoteMediaImageLoader()
-    static let buckets = [128, 256, 512, 1024, 1600, 2400, 3200, 4096]
+    static let buckets = [128, 256, 512, 1024, 1600, 2400, 3200, 4096, 6144, 8192, 12288, 16384]
     nonisolated static let downloadLimit = 60_000_000
 
     private final class Box {

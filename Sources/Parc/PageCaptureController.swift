@@ -85,6 +85,7 @@ final class PageCaptureController: NSObject {
     private var savePanel: NSSavePanel?
     private var observers: [NSObjectProtocol] = []
     private var previewFocusPending = false
+    private let easelDirectory: URL?
 
     init(lease: PCNativePageCapture, sourceView: NSView, containerView: NSView, host: NSView, parent: NSWindow,
          valid: @escaping () -> Bool, destination: CaptureLibraryDestination?,
@@ -93,8 +94,9 @@ final class PageCaptureController: NSObject {
          noteDestinations: (() throws -> [CaptureNoteDestination])? = nil,
          addToNote: ((EaselImageInput, CaptureNoteTarget) throws -> Void)? = nil,
          presentation: PageCaptureOverlay? = nil, framing: CaptureFramingEnvironment = CaptureFramingEnvironment(),
-         finished: @escaping (Bool) -> Void) {
+         easelDirectory: URL? = nil, finished: @escaping (Bool) -> Void) {
         self.destination = destination
+        self.easelDirectory = easelDirectory?.standardizedFileURL
         self.overlay = presentation ?? PageCaptureOverlay(); self.framing = framing
         self.lease = lease; self.sourceView = sourceView; self.containerView = containerView
         self.host = host; self.parent = parent
@@ -152,9 +154,11 @@ final class PageCaptureController: NSObject {
             }
         })
         for name in [Notification.Name.easelDocumentChanged, .easelDocumentRemoved] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                let directory = (note.userInfo?[EaselStore.directoryKey] as? URL)?.standardizedFileURL
                 MainActor.assumeIsolated {
-                    guard let self, self.destinationsLoaded, self.state != .finished else { return }
+                    guard let self, let directory, directory == self.easelDirectory,
+                          self.destinationsLoaded, self.state != .finished else { return }
                     self.refreshDestinations(reload: true)
                 }
             })
@@ -480,6 +484,7 @@ final class PageCaptureController: NSObject {
             } catch {
                 guard !Task.isCancelled, self.state != .finished, !(error is CancellationError),
                       (error as? CocoaError)?.code != .userCancelled else { return }
+                self.destinationsLoad = nil
                 self.overlay.setEaselDestinations([])
                 self.overlay.showError(error.localizedDescription, alert: false)
             }

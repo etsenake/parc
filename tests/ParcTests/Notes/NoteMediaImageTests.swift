@@ -41,9 +41,23 @@ struct NoteMediaImageTests {
                          frameProperties: [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: delay]])
     }
 
-    @Test(arguments: [(1, 128), (513, 1024), (99_999, 4096)] as [(Int, Int)])
+    @Test(arguments: [(1, 128), (513, 1024), (5000, 6144), (99_999, 16384)] as [(Int, Int)])
     func requestsRoundUpToABucketAndCapAtTheLargest(request: Int, bucket: Int) {
         #expect(NoteMediaImageLoader.bucket(for: request) == bucket)
+    }
+
+    @Test func aLongCaptureDecodesWideEnoughForTheNoteColumn() throws {
+        let tall = bitmap(width: 600, height: 9000, shade: 0.4)
+        let url = try write([tall], type: .png, name: "tall-capture.png")
+        let request = NoteMediaImageLoader.pixels(for: CGSize(width: 700, height: 10_500), scale: 2)
+        let image = try #require(NoteMediaImageDecoder.decode(url: url, maxPixel: NoteMediaImageLoader.bucket(for: request)))
+        #expect(image.first.width == 600 && image.first.height == 9000)
+    }
+
+    @Test func aHugeSquarePictureStaysWithinTheMemoryBudget() {
+        #expect(NoteMediaImageDecoder.pixelBudget(16384, width: 12_000, height: 12_000) == 8000)
+        #expect(NoteMediaImageDecoder.pixelBudget(16384, width: 2000, height: 30_000) == 16384)
+        #expect(NoteMediaImageDecoder.pixelBudget(1024, width: 2000, height: 30_000) == 1024)
     }
 
     @Test func pixelsFollowTheLongSideAndScale() {

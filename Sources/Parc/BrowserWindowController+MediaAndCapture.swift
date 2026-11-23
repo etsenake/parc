@@ -632,7 +632,7 @@ extension BrowserWindowController {
                 if let refusal = CaptureSendRefusal.check(parent) { throw refusal }
                 guard valid() else { throw CaptureSendRefusal.captureExpired }
                 try self.placeCaptureInNote(image, target: target, profileID: profileID)
-            } : nil, finished: { [weak self, weak browser, weak parent] restoreFocus in
+            } : nil, easelDirectory: store.easelsDirectory(for: profileID), finished: { [weak self, weak browser, weak parent] restoreFocus in
                 guard let self else { return }
                 self.pageCapture = nil
                 self.sharedQuotes.bind(self.selectedNativePage(), window: self.window)

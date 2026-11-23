@@ -851,6 +851,7 @@ extension Notification.Name {
 @MainActor
 package final class EaselStore {
     package nonisolated static let maximumAssetBytes = 30 * 1024 * 1024
+    package nonisolated static let directoryKey = "directory"
     package nonisolated static let maximumDocumentBytes = 8 * 1024 * 1024
     package let directory: URL
     private let now: () -> Date
@@ -906,7 +907,7 @@ package final class EaselStore {
         let document = EaselDocument(id: UUID(), title: title, createdAt: date, modifiedAt: date)
         try persist(document)
         let created = session(document)
-        NotificationCenter.default.post(name: .easelDocumentChanged, object: document.id)
+        NotificationCenter.default.post(name: .easelDocumentChanged, object: document.id, userInfo: [Self.directoryKey: directory])
         return created
     }
 
@@ -974,7 +975,7 @@ package final class EaselStore {
         syncDirectory(documentsDirectory)
         sessions.removeValue(forKey: id)?.value?.markDeleted()
         onDocumentRemoved?(id)
-        NotificationCenter.default.post(name: .easelDocumentRemoved, object: id)
+        NotificationCenter.default.post(name: .easelDocumentRemoved, object: id, userInfo: [Self.directoryKey: directory])
     }
 
     fileprivate func timestamp() -> Date { now() }
@@ -1662,6 +1663,7 @@ package final class EaselSession: ObservableObject {
         let editable = !document.isLocked
         canUndo = undoStack.last.map { editable || Self.differsOnlyInLock($0, document) } ?? false
         canRedo = redoStack.last.map { editable || Self.differsOnlyInLock($0, document) } ?? false
-        NotificationCenter.default.post(name: .easelDocumentChanged, object: document.id)
+        NotificationCenter.default.post(name: .easelDocumentChanged, object: document.id,
+                                        userInfo: store.map { [EaselStore.directoryKey: $0.directory] })
     }
 }

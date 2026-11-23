@@ -46,7 +46,10 @@ between windows and ask before leaving, like an Easel's pages ([embedded pages](
 
 Captures sent from Parc's capture tool to a note (New Note or one of the
 Space's recent notes) land as image blocks at the caret, or at the end when the
-note has no caret, with the PNG in the note's Attachments folder. Their header
+note has no caret, with the PNG in the note's Attachments folder, and the note
+opens scrolled to the new capture. Pictures load at the pixels they fill on
+screen, up to 16,384 on the long side and 64 million in all, so a long full-page
+capture stays sharp at the note's width instead of being squeezed. Their header
 shows the page's favicon, title and domain with an Easel-style label such as
 "Snapshot · captured today" and Make live, which frames the live page to the
 captured region in the note's Profile; Back to snapshot returns to the original
