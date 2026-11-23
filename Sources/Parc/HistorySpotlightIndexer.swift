@@ -26,7 +26,7 @@ final class HistorySpotlightIndexer {
         guard CSSearchableIndex.isIndexingAvailable() else { return nil }
         self.store = store
         submittedRemovals = store.historyRemovalRevision
-        sync.resyncRequested = { [weak self] delay in
+        sync.start { [weak self] delay in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.schedule(after: delay, force: true) } }
         }
         subscription = store.statePublisher.receive(on: RunLoop.main).sink { [weak self] _ in
@@ -75,10 +75,10 @@ final class HistorySpotlightSync: NSObject, CSSearchableIndexDelegate, @unchecke
     private var indexed: [String: HistorySpotlightItem]?
     private var trustsClientState = true
     private var retryDelay = HistorySpotlightSync.firstRetry
-    var resyncRequested: ((TimeInterval) -> Void)?
+    private var resyncRequested: ((TimeInterval) -> Void)?
 
-    override init() {
-        super.init()
+    func start(resync: @escaping (TimeInterval) -> Void) {
+        resyncRequested = resync
         index.indexDelegate = self
     }
 
