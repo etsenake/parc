@@ -51,7 +51,7 @@ struct EaselCaptureSnapshotTests {
             let (session, item) = try place(pdf, in: store)
             let snapshot = try #require(item.snapshot)
             #expect(item.kind == .webCard && item.assetID != nil && item.url == url.absoluteString)
-            #expect(item.frame.width == 25 && item.frame.height == 100)
+            #expect(item.frame.width == 100 && item.frame.height == 400)
             #expect(EaselAssetType.of(assetID: snapshot) == .pdf)
             #expect(try session.assetData(snapshot) == pdf)
             #expect(try EaselStore(directory: store.directory).load(session.document.id).document.items.first?.snapshot == snapshot)
@@ -73,6 +73,90 @@ struct EaselCaptureSnapshotTests {
             let (_, item) = try place(pdf, in: store)
             #expect(item.kind == .webCard && item.snapshot == nil)
         }
+    }
+
+    @Test func aWidePageSizesTheCardFromThePageNotTheShrunkPicture() throws {
+        try withStore { store in
+            let (_, item) = try place(Self.pdf(width: 1_200, height: 4_800), in: store)
+            #expect(item.snapshot != nil && item.frame.width == 480 && item.frame.height == 1_920)
+        }
+    }
+
+    @Test func aCardWithoutAUsablePageDocumentKeepsThePictureSize() throws {
+        try withStore { store in
+            let (_, item) = try place(Data("%PDF-1.7 broken".utf8), in: store)
+            #expect(item.frame.width == 25 && item.frame.height == 100)
+        }
+    }
+
+    @Test func capturedCardSizeFollowsThePageAtItsAspect() {
+        let wide = EaselMediaPlacement.capturedCardSize(picture: (120, 6_000), page: CGSize(width: 1_200, height: 60_000))
+        #expect(wide.width == 480 && wide.height == 24_000)
+        let narrow = EaselMediaPlacement.capturedCardSize(picture: (150, 450), page: CGSize(width: 300, height: 900))
+        #expect(narrow.width == 300 && narrow.height == 900)
+        let picture = EaselMediaPlacement.capturedCardSize(picture: (120, 6_000), page: nil)
+        #expect(picture.width == 120 && picture.height == 6_000)
+        let unusable = EaselMediaPlacement.capturedCardSize(picture: (120, 6_000), page: CGSize(width: 0, height: 900))
+        #expect(unusable.width == 120 && unusable.height == 6_000)
+    }
+
+    private func key(_ level: Int, _ column: Int, _ row: Int) -> EaselSnapshotTileKey {
+        EaselSnapshotTileKey(asset: "a.pdf", level: level, column: column, row: row)
+    }
+
+    @Test func aMissingTileBorrowsTheCoarserCachedTileThatContainsIt() {
+        let page = CGSize(width: 2_048, height: 2_048)
+        let cached: Set<EaselSnapshotTileKey> = [key(0, 1, 1)]
+        let cover = EaselSnapshotTiling.cover([key(1, 2, 3), key(1, 3, 3)], page: page, sharperThan: 0.25, cached: cached.contains)
+        #expect(cover.fallback == [key(0, 1, 1)] && cover.uncovered.isEmpty)
+    }
+
+    @Test func aFinerLevelCoversOnlyWhenEveryChildIsCached() {
+        let page = CGSize(width: 2_048, height: 2_048)
+        let all: Set<EaselSnapshotTileKey> = [key(2, 0, 0), key(2, 1, 0), key(2, 0, 1), key(2, 1, 1)]
+        #expect(EaselSnapshotTiling.cover([key(1, 0, 0)], page: page, sharperThan: 0, cached: all.contains).fallback
+                == [key(2, 0, 0), key(2, 1, 0), key(2, 0, 1), key(2, 1, 1)])
+        let some: Set<EaselSnapshotTileKey> = [key(2, 0, 0), key(2, 1, 0)]
+        let partial = EaselSnapshotTiling.cover([key(1, 0, 0)], page: page, sharperThan: 0, cached: some.contains)
+        #expect(partial.fallback.isEmpty && partial.uncovered == [CGRect(x: 0, y: 0, width: 256, height: 256)])
+    }
+
+    @Test func theNearestLevelWinsAndSharperBeatsBlurrierAtTheSameDistance() {
+        let page = CGSize(width: 4_096, height: 4_096)
+        let cached: Set<EaselSnapshotTileKey> = [key(-1, 0, 0), key(0, 0, 0), key(2, 0, 0), key(2, 1, 0), key(2, 0, 1), key(2, 1, 1)]
+        #expect(EaselSnapshotTiling.cover([key(1, 0, 0)], page: page, sharperThan: 0, cached: cached.contains).fallback
+                == [key(2, 0, 0), key(2, 1, 0), key(2, 0, 1), key(2, 1, 1)])
+        let coarse: Set<EaselSnapshotTileKey> = [key(-1, 0, 0), key(0, 0, 0)]
+        #expect(EaselSnapshotTiling.cover([key(1, 0, 0)], page: page, sharperThan: 0, cached: coarse.contains).fallback == [key(0, 0, 0)])
+    }
+
+    @Test func aCoarserTileNoSharperThanThePictureLeavesThePictureShowing() {
+        let page = CGSize(width: 2_048, height: 2_048)
+        let cached: Set<EaselSnapshotTileKey> = [key(-1, 0, 0)]
+        let cover = EaselSnapshotTiling.cover([key(1, 0, 0)], page: page, sharperThan: 0.5, cached: cached.contains)
+        #expect(cover.fallback.isEmpty && cover.uncovered == [CGRect(x: 0, y: 0, width: 256, height: 256)])
+        #expect(EaselSnapshotTiling.cover([key(1, 0, 0)], page: page, sharperThan: 0.4, cached: cached.contains).fallback == [key(-1, 0, 0)])
+    }
+
+    @Test func coarserFallbacksAreListedFirstSoSharperOnesPaintOnTop() {
+        let page = CGSize(width: 2_048, height: 2_048)
+        let cached: Set<EaselSnapshotTileKey> = [key(0, 0, 0), key(2, 2, 0), key(2, 3, 0), key(2, 2, 1), key(2, 3, 1)]
+        let cover = EaselSnapshotTiling.cover([key(1, 0, 0), key(1, 1, 0)], page: page, sharperThan: 0, cached: cached.contains)
+        #expect(cover.fallback.map(\.level) == [0, 2, 2, 2, 2] && cover.uncovered.isEmpty)
+        let mixed: Set<EaselSnapshotTileKey> = [key(0, 1, 1), key(2, 0, 0), key(2, 1, 0), key(2, 0, 1), key(2, 1, 1)]
+        let both = EaselSnapshotTiling.cover([key(1, 0, 0), key(1, 2, 2)], page: page, sharperThan: 0, cached: mixed.contains)
+        #expect(both.fallback.map(\.level) == [0, 2, 2, 2, 2] && both.uncovered.isEmpty)
+    }
+
+    @Test func theRenderQueueServesTheNewestRequestFirstAndDropsStaleOnes() {
+        var queue = EaselSnapshotTileQueue(limit: 3)
+        #expect(queue.push(key(0, 0, 0)).isEmpty)
+        queue.push(key(0, 1, 0))
+        queue.push(key(0, 2, 0))
+        queue.push(key(0, 0, 0))
+        #expect(queue.push(key(1, 0, 0)) == [key(0, 1, 0)])
+        #expect(!queue.contains(key(0, 1, 0)))
+        #expect(queue.next() == key(1, 0, 0) && queue.next() == key(0, 0, 0) && queue.next() == key(0, 2, 0) && queue.next() == nil)
     }
 
     @Test func aPlainPictureNeverKeepsAPageDocument() throws {

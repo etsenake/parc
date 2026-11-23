@@ -82,6 +82,16 @@ package enum EaselMediaPlacement {
         return (width.rounded(), min(height, 4 * maximumWidth))
     }
 
+    package static func capturedCardSize(picture: (width: Double, height: Double), page: CGSize?) -> (width: Double, height: Double) {
+        let natural = page.flatMap { page -> (width: Double, height: Double)? in
+            let width = Double(page.width), height = Double(page.height)
+            return width.isFinite && height.isFinite && width >= 1 && height >= 1 ? (width, height) : nil
+        } ?? picture
+        guard natural.width.isFinite, natural.height.isFinite, natural.width > 0, natural.height > 0 else { return (mediaWidth, mediaWidth * 3 / 4) }
+        let width = min(mediaWidth, natural.width)
+        return (width, max(1, width * natural.height / natural.width))
+    }
+
     package static func filledSize(for kind: EaselItemKind, natural: (width: Double, height: Double)? = nil) -> (width: Double, height: Double) {
         switch kind {
         case .image, .pdf:

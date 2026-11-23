@@ -108,13 +108,13 @@ package enum EaselImagePlacement {
             let assetID = try session.importPNG(pngData)
             let card = image.capturedPage && image.sourceURL != nil
             let snapshot = card ? image.snapshotPDF.flatMap { importedSnapshot($0, into: session) } : nil
-            let width = min(480, Double(size.width))
+            let pageSize = snapshot == nil ? nil : image.snapshotPDF.flatMap { CaptureSnapshotPDF(data: $0)?.size }
+            let cardSize = EaselMediaPlacement.capturedCardSize(picture: (Double(size.width), Double(size.height)), page: pageSize)
             let target = EaselPages.resolvedPage(page, in: session.document)
             let onPage = EaselPages.view(session.document, page: target).items
             let bottom = onPage.map { $0.frame.y + $0.frame.height }.max() ?? 0
             let item = EaselItem(kind: card ? .webCard : .image,
-                frame: EaselRect(x: 40, y: max(40, bottom + 32), width: width,
-                                 height: max(1, width * Double(size.height) / Double(size.width))),
+                frame: EaselRect(x: 40, y: max(40, bottom + 32), width: cardSize.width, height: cardSize.height),
                 zIndex: (onPage.map(\.zIndex).max() ?? 0) + 1,
                 text: card ? image.pageTitle : "", url: image.sourceURL?.absoluteString, assetID: assetID, capturedAt: image.capturedAt ?? Date(),
                 captureLayout: card ? image.captureLayout : nil, page: target, snapshot: snapshot)

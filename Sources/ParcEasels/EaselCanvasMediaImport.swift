@@ -154,8 +154,11 @@ extension EaselCanvasView {
         if drawing { drawing = false }
         var imported: [String] = []
         var items: [EaselItem] = []
-        let sizes = entries.map { entry in
-            EaselMediaPlacement.filledSize(for: entry.source.itemKind, natural: entry.natural.map { natural in
+        let sizes = entries.map { entry -> (width: Double, height: Double) in
+            if entry.source.itemKind == .image, entry.captured != nil, let natural = entry.natural {
+                return EaselMediaPlacement.capturedCardSize(picture: natural, page: entry.snapshotPDF.flatMap { CaptureSnapshotPDF(data: $0)?.size })
+            }
+            return EaselMediaPlacement.filledSize(for: entry.source.itemKind, natural: entry.natural.map { natural in
                 guard let crop = entry.crop else { return natural }
                 return (natural.width * crop.width, natural.height * crop.height)
             })

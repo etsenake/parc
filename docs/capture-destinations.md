@@ -89,15 +89,23 @@ closes instead of leaving a menu that ignores clicks.
 ## Sharp long captures
 
 A Full Page capture that carries the engine's vector PDF still lands as the same
-capture card or capture block, framed by the PNG's shape, but its picture is
-drawn from the PDF. On an Easel the PDF is a second asset on the card
+capture card or capture block, but its picture is drawn from the PDF. On an
+Easel the card is sized from the PDF page (one point per CSS pixel): up to 480
+wide at the page's shape, since a very long page's PNG may be rendered narrow to
+stay under 16,384 pixels. The capture send, pasting and dragging in a note's
+capture block all size it this way. On an Easel the PDF is a second asset on the card
 (`snapshot`); the PNG stays for thumbnails, HTML export and fallback. A PDF over
 the 30 MB asset limit, or one PDFKit can't open, is simply left out. The canvas
 draws the PNG while it is at least as sharp as the zoom needs; past that it
 draws 512-pixel tiles rendered off the main thread at the next power-of-two
 scale for only the visible part of the card, from one shared 32-million-pixel
-cache, showing the PNG under tiles that haven't landed. PDF, PNG and Copy as
-Image exports draw the PDF itself as vectors. Copy, paste, Send and Copy to
+cache. Until a tile lands, the canvas shows cached tiles of the same spot from
+the nearest other scale, sharper first, and the PNG only where none exist or
+where a coarser tile would be blurrier than it. The newest requests render
+first and older queued ones are dropped, so tiles for a zoom already left never
+render; unused tiles age out of the cache. PDF, PNG, Copy as
+Image and print draw the PDF itself as vectors in the card's frame; HTML export
+embeds the full-resolution PNG. Copy, paste, Send and Copy to
 Easel and moving an Easel between Profiles carry the PDF with the card. In a
 note the PDF sits in Attachments beside the PNG, as [Notes](notes.md) describes.
 
