@@ -9,6 +9,8 @@ package final class CapturePaletteView: NSView {
     let search = NoteSearchField(placeholder: CapturePaletteView.placeholder)
     let list = NoteMenuList()
     var onSizeChange: (() -> Void)?
+    var onPointerInside: (() -> Void)?
+    private var pointerTracking: NSTrackingArea?
     private let mainPage = CapturePalettePage()
     private let framePage = CapturePalettePage()
     private let statusRule = CapturePaletteRule()
@@ -40,6 +42,19 @@ package final class CapturePaletteView: NSView {
     package required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     package override var isFlipped: Bool { true }
+
+    package override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let pointerTracking { removeTrackingArea(pointerTracking) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
+        addTrackingArea(area)
+        pointerTracking = area
+    }
+
+    package override func mouseEntered(with event: NSEvent) { onPointerInside?() }
+    package override func mouseMoved(with event: NSEvent) { onPointerInside?() }
+
     package override var fittingSize: NSSize { NSSize(width: CapturePresentation.paletteWidth, height: naturalHeight) }
     package override var intrinsicContentSize: NSSize { fittingSize }
 
@@ -153,7 +168,7 @@ private final class CapturePaletteRule: NSView {
 
 @MainActor
 package final class CapturePalette: NSObject {
-    static let flyoutCloseDelay = 0.15
+    static let flyoutSwitchDelay = 0.3
     static let flyoutMaximumHeight: CGFloat = 420
 
     package var onAction: ((CapturePaletteAction) -> Void)?
@@ -381,21 +396,40 @@ package final class CapturePalette: NSObject {
         updateHelp()
         guard let item, let row = rows.first(where: { $0.id == item.id }) else { return }
         if let flyout, flyout.submenu == row.action.submenu { pendingFlyoutClose?.cancel(); return }
+        pendingFlyoutClose?.cancel()
         if NSApp.currentEvent?.type == .keyDown {
-            pendingFlyoutClose?.cancel()
             closeFlyout(animated: true)
             return
         }
-        if let submenu = row.action.submenu {
-            pendingFlyoutClose?.cancel()
-            openFlyout(submenu, keyboard: false)
+        guard flyout != nil else {
+            if let submenu = row.action.submenu { openFlyout(submenu, keyboard: false) }
             return
         }
-        guard flyout != nil else { return }
-        pendingFlyoutClose?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.closeFlyout(animated: true) }
+        let work = DispatchWorkItem { [weak self] in self?.followPointerHighlight() }
         pendingFlyoutClose = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.flyoutCloseDelay, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.flyoutSwitchDelay, execute: work)
+    }
+
+    private func followPointerHighlight() {
+        pendingFlyoutClose = nil
+        guard let flyout else { return }
+        let row = view.list.highlightedItem.flatMap { item in rows.first { $0.id == item.id } }
+        if let submenu = row?.action.submenu {
+            if submenu != flyout.submenu { openFlyout(submenu, keyboard: false) }
+        } else {
+            closeFlyout(animated: true)
+        }
+    }
+
+    private func pointerEnteredFlyout(_ submenu: CapturePaletteSubmenu) {
+        guard let flyout, flyout.submenu == submenu else { return }
+        pendingFlyoutClose?.cancel()
+        pendingFlyoutClose = nil
+        let id = submenu == .easels ? CapturePaletteAction.easels.id : CapturePaletteAction.notes.id
+        if view.list.highlightedItem?.id != id {
+            view.list.highlight(id: id, animated: true)
+            updateHelp()
+        }
     }
 
     private func openFlyout(_ submenu: CapturePaletteSubmenu, keyboard: Bool) {
@@ -412,7 +446,8 @@ package final class CapturePalette: NSObject {
         menu.list.onActivate = { [weak self] item in self?.activate(id: item.id, inFlyout: true) }
         menu.list.onCancel = { [weak self] in self?.closeFlyout(animated: true, refocus: true) }
         menu.list.onCollapse = { [weak self] in self?.closeFlyout(animated: true, refocus: true) }
-        menu.list.onHighlight = { [weak self] item in if item != nil { self?.pendingFlyoutClose?.cancel() } }
+        menu.list.onHighlight = { [weak self] item in if item != nil { self?.pointerEnteredFlyout(submenu) } }
+        menu.onPointerInside = { [weak self] in self?.pointerEnteredFlyout(submenu) }
         menu.search.onChange = { [weak self] _ in self?.reloadFlyout(resetHighlight: true) }
         menu.search.onCommand = { [weak self, weak menu] selector in
             guard let self, let menu else { return false }

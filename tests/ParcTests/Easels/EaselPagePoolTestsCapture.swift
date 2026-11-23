@@ -15,6 +15,24 @@ struct EaselPagePoolTestsCapture {
         return fallback?.subviews.compactMap { $0 as? NSTextField }.first
     }
 
+    @MainActor @Test(arguments: EaselPagePoolTestsSupport.Kind.allCases)
+    func aCaptureCanBeSentToAnEaselWhoseLivePageIsOpen(_ kind: EaselPagePoolTestsSupport.Kind) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try EaselStore(directory: directory)
+        let board = try Board(kind, store: store)
+        defer { board.close() }
+        let (_, _, page) = try board.open()
+        #expect(!page.isClosed && board.pool.pages.contains { $0 === page })
+        var input = EaselImageInput(pngData: Board.png, sourceURL: URL(string: "https://example.com/framed"),
+                                    pageTitle: "Framed", valid: { true })
+        input.capturedPage = true
+        let placed = try EaselImagePlacement.place(input, in: store, destinationID: board.session.document.id, newTitle: "Ignored")
+        #expect(placed.session === board.session)
+        #expect(board.session.document.items.map(\.id) == [board.item.id, placed.itemID])
+        #expect(!page.isClosed && board.pool.pages.contains { $0 === page })
+    }
+
     @MainActor @Test
     func aPausedCaptureDoesNotCreateAWebpage() throws {
         let board = try Board(.capture)

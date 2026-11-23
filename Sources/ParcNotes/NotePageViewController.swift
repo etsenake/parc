@@ -241,6 +241,11 @@ package final class NotePageViewController: NSViewController, NSMenuItemValidati
         return editor.reveal(anchor: anchor)
     }
 
+    package func reveal(block id: NoteBlockID) -> Bool {
+        guard isViewLoaded, !isTornDown, view.window != nil, !view.isHiddenOrHasHiddenAncestor else { return false }
+        return editor.reveal(block: id)
+    }
+
     package func canPerform(_ action: BrowserFindAction) -> Bool {
         guard isViewLoaded, !isTornDown, !editor.hasMarkedText else { return false }
         if let command = Self.findCommand(for: action) { return editor.validate(command) }

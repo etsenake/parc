@@ -26,7 +26,11 @@ available result; arrows skip unavailable rows, Return activates the highlighted
 row, and Return with nothing highlighted highlights the first one. Right or Return on Easel or Note opens its submenu with its
 search focused, Left at the start of that search or Escape closes it, and Escape
 in the palette uses the existing capture cancellation owner. Hovering Easel or
-Note opens its submenu, and moving to another row closes it after 0.15 seconds.
+Note opens its submenu. Once one is open, crossing another row only switches or
+closes it after 0.3 seconds, and reaching the submenu cancels that, so a
+diagonal path into it never swaps in the other list. A submenu with no room on
+either side overlaps the card rather than leaving the capture overlay, so every
+row stays clickable, and a press follows its row even if the list refreshes.
 Tab stays in the palette, as in Parc's other menus. No result means no output
 selection, and input-method composition keeps every key.
 
@@ -64,7 +68,15 @@ modification date, and the catalog keeps the 50 most recent. New Note creates a
 note titled from the page. `NoteCaptureDelivery` copies the PNG into the note's
 Attachments folder and inserts the capture at the open note's caret (replacing
 an empty line) or at the end, as one Undo step; missing, locked and plain-text
-notes fail without a substitute. Private and popup windows offer no notes.
+notes fail without a substitute. The note then opens scrolled to the new
+capture with it selected, including from a capture taken in a Peek. Private and
+popup windows offer no notes.
+
+A Library save in progress holds only Save to Library and the editing rows;
+sending, copying, saving and Messages stay available. The Easel list is read
+once per capture, in the background, from a light summary of each Easel, and a
+failed send reloads it the same way. A capture whose page stops being current
+closes instead of leaving a menu that ignores clicks.
 
 ## Ownership and checks
 

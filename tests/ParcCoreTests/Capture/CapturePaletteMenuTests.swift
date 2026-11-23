@@ -177,6 +177,16 @@ struct CapturePaletteMenuTests {
         #expect(CapturePaletteMenu.firstAvailable(in: busy) == nil)
     }
 
+    @Test func aLibrarySaveOnlyHoldsTheLibraryAndEditRows() {
+        let context = CapturePaletteContext(easels: destinations.easels, framed: true, notesAvailable: true, libraryBusy: true)
+        let rows = CapturePaletteMenu.rows(context)
+        #expect(rows.filter { !$0.isEnabled }.map(\.id) == ["library", "edit", "crop", "frame", "removeFrame", "retake"])
+        let easels = CapturePaletteMenu.submenu(.easels, context: context)
+        #expect(!easels.isEmpty && easels.allSatisfy { $0.isEnabled })
+        let notes = CapturePaletteMenu.submenu(.notes, context: context)
+        #expect(!notes.isEmpty && notes.allSatisfy { $0.isEnabled })
+    }
+
     @Test func unavailableMessagesIsTheOnlySkippedRow() {
         let rows = CapturePaletteMenu.rows(CapturePaletteContext(messageAvailable: false))
         #expect(rows.filter { !$0.isEnabled }.map(\.id) == ["message"])

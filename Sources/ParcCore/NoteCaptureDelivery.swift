@@ -36,7 +36,7 @@ enum NoteCaptureDeliveryError: Error, LocalizedError, Equatable {
 package enum NoteCaptureDelivery {
     package struct Result: Equatable {
         package let note: URL
-        let block: NoteBlockID
+        package let block: NoteBlockID
         let title: String
 
         init(note: URL, block: NoteBlockID, title: String) {

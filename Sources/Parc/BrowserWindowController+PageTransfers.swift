@@ -631,6 +631,11 @@ extension BrowserWindowController {
             && transferringTabIDs.isEmpty && resolvingTransfers.isEmpty && activePeek == nil
     }
     var canCreateNoteInSplit: Bool { canCreateNote && !selectedTabIDs.isEmpty && selectedTabIDs.count < 4 }
+    var canOpenNoteOverPeek: Bool {
+        !isPopupWindow && !isPrivateBrowsing && presentation.isReady && !isClosing && !wholeWindowClose
+            && !windowClosePending && window?.attachedSheet == nil && !store.isProfileRemovalPending(activeProfileID)
+            && transferringTabIDs.isEmpty && resolvingTransfers.isEmpty
+    }
 }
 
 extension PCNativePage {

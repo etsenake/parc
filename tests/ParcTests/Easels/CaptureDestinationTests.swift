@@ -125,6 +125,18 @@ struct CaptureDestinationTests {
     }
 
     @MainActor @Test
+    func backgroundSummariesMatchTheStoreListing() throws {
+        try withStore { store in
+            let first = try store.create(title: "First")
+            try first.perform("Seed") { $0.items = [EaselItem(kind: .text, frame: .init(x: 0, y: 0, width: 10, height: 10), text: "A")] }
+            _ = try store.create(title: "Second")
+            let listed = try store.list()
+            let summaries = EaselStore.summaries(directory: store.directory)
+            #expect(summaries == listed)
+        }
+    }
+
+    @MainActor @Test
     func aPageCaptureRetainsItsOriginalGeometryAndBytes() throws {
         try withStore { store in
             let data = try png()

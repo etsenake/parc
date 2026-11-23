@@ -598,8 +598,10 @@ extension BrowserWindowController {
             destination: destination,
             easelDestinations: { [weak self] in
                 guard let self, valid() else { throw CocoaError(.userCancelled) }
-                let documents = try EaselEditorViewController.sharedStore(directory:
-                    self.store.easelsDirectory(for: profileID)).list()
+                let directory = self.store.easelsDirectory(for: profileID)
+                let documents = await Task.detached(priority: .userInitiated) { EaselStore.summaries(directory: directory) }.value
+                guard valid() else { throw CocoaError(.userCancelled) }
+                EaselTabIcons.shared.learn(documents, directory: directory)
                 let activity = self.store.state.openTabs.flatMap { tab in
                     [InternalPage(urlString: tab.url)?.easelID, InternalPage(urlString: tab.savedURL)?.easelID]
                         .compactMap { $0 }.map {

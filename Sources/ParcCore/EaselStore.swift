@@ -929,6 +929,33 @@ package final class EaselStore {
         return icon
     }
 
+    package nonisolated static func summaries(directory: URL) -> [EaselSummary] {
+        struct Skip: Decodable { init(from decoder: Decoder) throws {} }
+        struct Head: Decodable {
+            var version: Int?
+            var id: UUID
+            var title: String
+            var modifiedAt: Date
+            var items: [Skip]?
+            var icon: EaselPageIcon?
+        }
+        let documents = directory.standardizedFileURL.appendingPathComponent("documents", isDirectory: true)
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+        guard let urls = try? FileManager.default.contentsOfDirectory(at: documents, includingPropertiesForKeys: keys,
+                                                                       options: [.skipsHiddenFiles]) else { return [] }
+        return urls.compactMap { url -> EaselSummary? in
+            guard url.pathExtension == "json", let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent),
+                  let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true,
+                  values.isSymbolicLink != true, (values.fileSize ?? Int.max) <= maximumDocumentBytes,
+                  let data = try? Data(contentsOf: url), let head = try? JSONDecoder().decode(Head.self, from: data),
+                  head.id == id, (head.version ?? EaselDocument.currentVersion) == EaselDocument.currentVersion,
+                  !head.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return EaselSummary(id: id, title: head.title, modifiedAt: head.modifiedAt, itemCount: head.items?.count ?? 0,
+                                icon: head.icon.flatMap { $0.isValid ? $0 : nil })
+        }
+        .sorted { $0.modifiedAt == $1.modifiedAt ? $0.id.uuidString < $1.id.uuidString : $0.modifiedAt > $1.modifiedAt }
+    }
+
     package func validateReference(_ id: UUID) throws {
         let saved = try read(id)
         if let live = sessions[id]?.value, live.document != saved {

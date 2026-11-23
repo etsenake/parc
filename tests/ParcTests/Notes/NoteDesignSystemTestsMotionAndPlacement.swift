@@ -112,6 +112,12 @@ struct NoteDesignSystemTestsMotionAndPlacement {
         #expect(side.frame.maxX == 494)
     }
 
+    @Test func aSubmenuWithoutRoomOnEitherSideStaysInsideTheVisibleRect() {
+        let side = place(NSRect(x: 200, y: 300, width: 200, height: 34), NSSize(width: 273, height: 80), .trailing)
+        #expect(side.frame.minX >= 8 && side.frame.maxX <= 592)
+        #expect(side.frame.width == 273)
+    }
+
     @Test func placementFollowsAScrolledDocumentsVisibleRect() {
         let scrolled = place(NSRect(x: 100, y: 1050, width: 10, height: 20), NSSize(width: 200, height: 150),
                              in: NSRect(x: 0, y: 1000, width: 600, height: 400))

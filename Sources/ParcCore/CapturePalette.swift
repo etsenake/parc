@@ -59,6 +59,13 @@ package enum CapturePaletteAction: Equatable {
         }
     }
 
+    package var waitsForLibrary: Bool {
+        switch self {
+        case .library, .edit, .crop, .frame, .removeFrame, .retake: return true
+        default: return false
+        }
+    }
+
     var title: String {
         switch self {
         case .library: return "Save to Library"
@@ -143,7 +150,8 @@ package struct CapturePaletteContext: Equatable {
     package var notesAvailable = false
     package var messageAvailable = true
     package var busy = false
-    package init(easels: [CaptureEaselDestination] = [], notes: [CaptureNoteDestination] = [], framed: Bool = false, librarySaved: Bool = false, libraryAvailable: Bool = true, easelsAvailable: Bool = true, notesAvailable: Bool = false, messageAvailable: Bool = true, busy: Bool = false) {
+    package var libraryBusy = false
+    package init(easels: [CaptureEaselDestination] = [], notes: [CaptureNoteDestination] = [], framed: Bool = false, librarySaved: Bool = false, libraryAvailable: Bool = true, easelsAvailable: Bool = true, notesAvailable: Bool = false, messageAvailable: Bool = true, busy: Bool = false, libraryBusy: Bool = false) {
         self.easels = easels
         self.notes = notes
         self.framed = framed
@@ -153,6 +161,7 @@ package struct CapturePaletteContext: Equatable {
         self.notesAvailable = notesAvailable
         self.messageAvailable = messageAvailable
         self.busy = busy
+        self.libraryBusy = libraryBusy
     }
 
     var offersEasels: Bool { libraryAvailable && easelsAvailable }
@@ -164,7 +173,7 @@ package enum CapturePaletteMenu {
     static let recentTitle = "Recent"
 
     static func isEnabled(_ action: CapturePaletteAction, in context: CapturePaletteContext) -> Bool {
-        !context.busy && (action != .message || context.messageAvailable)
+        !context.busy && !(context.libraryBusy && action.waitsForLibrary) && (action != .message || context.messageAvailable)
     }
 
     package static func rows(_ context: CapturePaletteContext, query: String = "") -> [CapturePaletteRow] {

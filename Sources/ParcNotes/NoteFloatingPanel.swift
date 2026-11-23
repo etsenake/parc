@@ -250,6 +250,7 @@ package class NoteFloatingPanel: NSView {
             if preferred == .trailing, width > right, left > right { edge = .leading }
             if preferred == .leading, width > left, right > left { edge = .trailing }
             x = edge == .trailing ? anchor.maxX + gap : anchor.minX - gap - width
+            x = min(max(x, bounds.minX), max(bounds.minX, bounds.maxX - width))
             height = min(height, max(minimumVisibleHeight, bounds.height))
             y = anchor.minY - sideOffset
             y = min(max(y, bounds.minY), max(bounds.minY, bounds.maxY - height))
@@ -482,7 +483,9 @@ package final class NoteMenuList: NSView, NoteFloatingPanelContent {
 
     package func setItems(_ newItems: [Item], keepingHighlight: Bool) {
         let keep = keepingHighlight ? highlightedItem?.id : nil
+        let pressedID = pressedIndex.flatMap { items.indices.contains($0) ? items[$0].id : nil }
         items = newItems
+        pressedIndex = pressedID.flatMap { id in items.firstIndex { $0.id == id && $0.isEnabled } }
         if let keep, let index = items.firstIndex(where: { $0.id == keep }), visibleIndices.contains(index) {
             setHighlight(index, animated: false, notify: false, reveal: true)
         }

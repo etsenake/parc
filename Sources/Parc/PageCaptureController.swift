@@ -28,7 +28,9 @@ final class PageCaptureController: NSObject {
     private var sourceURL: String { lease.sourceURL }
     private let valid: () -> Bool
     private let finished: (Bool) -> Void
-    private let easelDestinations: () throws -> [CaptureEaselDestination]
+    private let easelDestinations: @MainActor () async throws -> [CaptureEaselDestination]
+    private var destinationsLoad: Task<Void, Never>?
+    private var destinationsLoaded = false
     private let addToEasel: (EaselImageInput, UUID?) throws -> Void
     private let noteDestinations: (() throws -> [CaptureNoteDestination])?
     private let addToNote: ((EaselImageInput, CaptureNoteTarget) throws -> Void)?
@@ -59,7 +61,7 @@ final class PageCaptureController: NSObject {
 
     init(lease: PCNativePageCapture, sourceView: NSView, containerView: NSView, host: NSView, parent: NSWindow,
          valid: @escaping () -> Bool, destination: CaptureLibraryDestination?,
-         easelDestinations: @escaping () throws -> [CaptureEaselDestination],
+         easelDestinations: @escaping @MainActor () async throws -> [CaptureEaselDestination],
          addToEasel: @escaping (EaselImageInput, UUID?) throws -> Void,
          noteDestinations: (() throws -> [CaptureNoteDestination])? = nil,
          addToNote: ((EaselImageInput, CaptureNoteTarget) throws -> Void)? = nil,
@@ -148,6 +150,7 @@ final class PageCaptureController: NSObject {
     func dismiss(restoreFocus: Bool) {
         guard state != .finished else { return }
         state = .finished; previewFocusPending = false; request &+= 1; hoverRequest &+= 1
+        destinationsLoad?.cancel(); destinationsLoad = nil
         overlay.retirePresentation()
         if let previousMouseMovedEvents { parent?.acceptsMouseMovedEvents = previousMouseMovedEvents }
         previousMouseMovedEvents = nil
@@ -350,7 +353,9 @@ final class PageCaptureController: NSObject {
     }
 
     private func perform(_ action: PageCaptureOverlay.Action) {
-        guard state == .preview, !libraryWriteInProgress, valid(), lease.isValid else { return }
+        guard state == .preview else { return }
+        guard valid(), lease.isValid else { dismiss(restoreFocus: false); return }
+        guard !(libraryWriteInProgress && action.waitsForLibrary) else { return }
         if let savedCapture, library?.contains(savedCapture) != true {
             self.savedCapture = nil; overlay.setLibrarySaved(false)
         }
@@ -413,17 +418,29 @@ final class PageCaptureController: NSObject {
         } catch { overlay.showError(error.localizedDescription) }
     }
 
-    private func refreshDestinations() {
-        var failure: Error?
-        if let destination {
-            do { overlay.setEaselDestinations(try destination.easels(easelDestinations)) }
-            catch { overlay.setEaselDestinations([]); failure = error }
-        } else { overlay.setEaselDestinations([]) }
+    private func refreshDestinations(reload: Bool = false) {
+        guard reload || !destinationsLoaded else { return }
+        destinationsLoaded = true
         if let noteDestinations {
             do { overlay.setNoteDestinations(try noteDestinations()) }
-            catch { overlay.setNoteDestinations([]); failure = failure ?? error }
+            catch { overlay.setNoteDestinations([]); overlay.showError(error.localizedDescription) }
         }
-        if let failure { overlay.showError(failure.localizedDescription) }
+        destinationsLoad?.cancel(); destinationsLoad = nil
+        guard destination?.allowsEasels == true else { overlay.setEaselDestinations([]); return }
+        let load = easelDestinations
+        destinationsLoad = Task { [weak self] in
+            do {
+                let items = try await load()
+                guard let self, !Task.isCancelled, self.state != .finished else { return }
+                self.overlay.setEaselDestinations(items)
+                self.destinationsLoad = nil
+            } catch {
+                guard let self, !Task.isCancelled, self.state != .finished, !(error is CancellationError),
+                      (error as? CocoaError)?.code != .userCancelled else { return }
+                self.overlay.setEaselDestinations([])
+                self.overlay.showError(error.localizedDescription)
+            }
+        }
     }
 
     private func documentInput(_ pngData: Data) -> EaselImageInput {
@@ -458,7 +475,10 @@ final class PageCaptureController: NSObject {
             guard state != .finished else { return }
             state = .preview; reconcile()
             guard state == .preview else { return }
-            refreshDestinations(); overlay.showError(error.localizedDescription)
+            refreshDestinations(reload: true)
+            overlay.showError((error as? CocoaError)?.code == .userCancelled
+                ? "Parc couldn’t send the capture while this window is busy. Try again in a moment."
+                : error.localizedDescription)
             focusPreview()
         }
     }
@@ -953,18 +973,16 @@ final class PageCaptureOverlay: NSView {
     func setLibrarySaved(_ saved: Bool) { palette.update { $0.librarySaved = saved } }
     func setLibraryBusy(_ busy: Bool) {
         libraryBusy = busy
-        palette.setStatus(busy ? "Saving Library changes…" : nil)
-        let blocked = libraryBusy || outputBusy
-        palette.update { $0.busy = blocked }
+        palette.setStatus(busy ? "Saving Library changes…" : outputBusy ? "Finish or cancel in Messages." : nil)
+        palette.update { $0.libraryBusy = busy }
     }
     func setEaselDestinations(_ items: [CaptureEaselDestination]) { palette.update { $0.easels = items } }
     func setNoteDestinations(_ items: [CaptureNoteDestination]) { palette.update { $0.notes = items } }
     func setMessageAvailable(_ available: Bool) { palette.update { $0.messageAvailable = available } }
     func setOutputBusy(_ busy: Bool) {
         outputBusy = busy
-        palette.setStatus(busy ? "Finish or cancel in Messages." : nil)
-        let blocked = libraryBusy || outputBusy
-        palette.update { $0.busy = blocked }
+        palette.setStatus(busy ? "Finish or cancel in Messages." : libraryBusy ? "Saving Library changes…" : nil)
+        palette.update { $0.busy = busy }
     }
     func focusPreferredControl() {
         guard let window, window.isKeyWindow, window.attachedSheet == nil else { return }

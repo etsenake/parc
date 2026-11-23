@@ -34,8 +34,8 @@ extension BrowserWindowController: EaselWindowActions {
         return true
     }
     @discardableResult
-    func openNote(url: URL, inSplit: Bool = false) -> Bool {
-        let result = presentNote(url: url, inSplit: inSplit)
+    func openNote(url: URL, inSplit: Bool = false, overPeek: Bool = false) -> Bool {
+        let result = presentNote(url: url, inSplit: inSplit, overPeek: overPeek)
         if let id = result.tabID, let anchor = url.fragment, !anchor.isEmpty { revealNoteAnchor(anchor, inTab: id) }
         return result.handled
     }
@@ -47,9 +47,9 @@ extension BrowserWindowController: EaselWindowActions {
             pendingNoteAnchors[id] = anchor
         }
     }
-    private func presentNote(url: URL, inSplit: Bool = false) -> (handled: Bool, tabID: UUID?) {
+    private func presentNote(url: URL, inSplit: Bool = false, overPeek: Bool = false) -> (handled: Bool, tabID: UUID?) {
         guard let file = InternalPage.noteFile(url) else { showNoteError(NoteFileError.notANote); return (true, nil) }
-        guard inSplit ? canCreateNoteInSplit : canCreateNote else { return (false, nil) }
+        guard inSplit ? canCreateNoteInSplit : overPeek ? canOpenNoteOverPeek : canCreateNote else { return (false, nil) }
         guard NoteFilePaths.isOpenableFile(file) else {
             showNoteError(NoteFilePaths.itemExists(file) ? NoteFileError.notANote : NoteFileError.missing)
             return (true, nil)
