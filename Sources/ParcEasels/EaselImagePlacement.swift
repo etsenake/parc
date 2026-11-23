@@ -47,10 +47,37 @@ package enum EaselImagePlacement {
         return NSSize(width: width, height: height)
     }
 
+    package static func fitted(_ data: Data) throws -> Data {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0 else { throw EaselStoreError.invalidImage }
+        let pixels = Double(width) * Double(height)
+        var scale = min(1, Double(maximumSide) / Double(max(width, height)), (Double(maximumPixels) / pixels).squareRoot())
+        if scale >= 1, data.count <= EaselStore.maximumAssetBytes { return data }
+        for _ in 0..<12 {
+            let side = max(1, Int((Double(max(width, height)) * scale).rounded(.down)))
+            let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                            kCGImageSourceCreateThumbnailWithTransform: true,
+                                            kCGImageSourceThumbnailMaxPixelSize: side]
+            guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { break }
+            let output = NSMutableData()
+            guard let destination = CGImageDestinationCreateWithData(output, "public.png" as CFString, 1, nil) else { break }
+            CGImageDestinationAddImage(destination, image, nil)
+            guard CGImageDestinationFinalize(destination) else { break }
+            if output.length <= EaselStore.maximumAssetBytes, image.width <= maximumSide, image.height <= maximumSide,
+               Int64(image.width) * Int64(image.height) <= Int64(maximumPixels) { return output as Data }
+            scale *= 0.85
+        }
+        throw EaselStoreError.assetImageTooLarge
+    }
+
     package static func place(_ image: EaselImageInput, in store: EaselStore, destinationID: UUID?,
                       newTitle: String, page: UUID? = nil) throws -> Result {
         guard image.isValid else { throw CocoaError(.userCancelled) }
-        let size = try pixelSize(image.pngData)
+        let pngData = try fitted(image.pngData)
+        let size = try pixelSize(pngData)
         let session: EaselSession
         var createdID: UUID?
         do {
@@ -62,7 +89,7 @@ package enum EaselImagePlacement {
                 createdID = session.document.id
             }
             guard image.isValid else { throw CocoaError(.userCancelled) }
-            let assetID = try session.importPNG(image.pngData)
+            let assetID = try session.importPNG(pngData)
             let width = min(480, Double(size.width))
             let target = EaselPages.resolvedPage(page, in: session.document)
             let onPage = EaselPages.view(session.document, page: target).items

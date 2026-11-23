@@ -684,7 +684,6 @@ final class PeekHostView: PeekHitView {
     private let splitButton = PeekControlButton(symbol: "square.split.2x1")
     private var controlColors = PeekControlColors(fill: .controlBackgroundColor, accent: .labelColor)
     private var backdropOrigin: NSPoint?
-    private static let cornerRadius: CGFloat = 8
     var palette = ThemeChromePalette(theme: SpaceTheme(), isDark: false) {
         didSet { if palette != oldValue { applyPalette() } }
     }
@@ -723,7 +722,7 @@ final class PeekHostView: PeekHitView {
         cardEdge.wantsLayer = true
         cardEdge.layer?.addSublayer(edgeLayer)
         card.wantsLayer = true
-        card.layer?.cornerRadius = Self.cornerRadius; card.layer?.masksToBounds = true
+        card.layer?.cornerRadius = PeekCardAppearance.cornerRadius; card.layer?.masksToBounds = true
         for (button, name, id) in [(closeButton, "Close Peek", "closeTab:"), (expandButton, "Open Peek as Tab", "openInCurrentSpace:"),
                                    (splitButton, Self.splitTitle, nil)] as [(PeekControlButton, String, String?)] {
             LiveShortcutToolTip.set(button, name, commandID: id, anchor: .trailing)
@@ -811,7 +810,7 @@ final class PeekHostView: PeekHitView {
     }
 
     private func layoutCardEdge() {
-        let radius = Self.cornerRadius
+        let radius = PeekCardAppearance.cornerRadius
         CATransaction.begin(); CATransaction.setDisableActions(true)
         edgeLayer.frame = cardEdge.bounds
         edgeLayer.cornerRadius = radius
@@ -821,7 +820,7 @@ final class PeekHostView: PeekHitView {
         edgeLayer.shadowColor = NSColor.black.cgColor
         edgeLayer.shadowOpacity = PeekCardAppearance.shadowOpacity
         edgeLayer.shadowRadius = PeekCardAppearance.shadowRadius
-        edgeLayer.shadowOffset = CGSize(width: 0, height: edgeLayer.contentsAreFlipped() ? 1 : -1)
+        edgeLayer.shadowOffset = CGSize(width: 0, height: edgeLayer.contentsAreFlipped() ? PeekCardAppearance.shadowOffsetY : -PeekCardAppearance.shadowOffsetY)
         edgeLayer.shadowPath = CGPath(roundedRect: edgeLayer.bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
         CATransaction.commit()
     }

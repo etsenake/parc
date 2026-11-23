@@ -844,7 +844,7 @@ extension EaselStoreError {
 
 extension Notification.Name {
     package static let easelDocumentRemoved = Notification.Name("ParcEaselDocumentRemoved")
-    static let easelDocumentChanged = Notification.Name("ParcEaselDocumentChanged")
+    package static let easelDocumentChanged = Notification.Name("ParcEaselDocumentChanged")
     static let easelAssetsRemoved = Notification.Name("ParcEaselAssetsRemoved")
 }
 
@@ -905,7 +905,9 @@ package final class EaselStore {
         let date = now()
         let document = EaselDocument(id: UUID(), title: title, createdAt: date, modifiedAt: date)
         try persist(document)
-        return session(document)
+        let created = session(document)
+        NotificationCenter.default.post(name: .easelDocumentChanged, object: document.id)
+        return created
     }
 
     package func load(_ id: UUID) throws -> EaselSession {

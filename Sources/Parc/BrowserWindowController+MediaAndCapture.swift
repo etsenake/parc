@@ -610,12 +610,12 @@ extension BrowserWindowController {
                 }
                 return CaptureEaselDestination.catalog(documents: documents, activity: activity, profileID: profileID)
             }, addToEasel: { [weak self, weak parent] image, destinationID in
-                guard let self, let parent, parent.isKeyWindow, parent.attachedSheet == nil,
-                      valid(), image.isValid, self.easelImageDestination == nil,
-                      self.presentation.isReady, !self.isClosing, !self.wholeWindowClose,
-                      self.transferringTabIDs.isEmpty else {
-                    throw CocoaError(.userCancelled)
-                }
+                guard let self, let parent else { throw CaptureSendRefusal.captureExpired }
+                if let refusal = CaptureSendRefusal.check(parent) { throw refusal }
+                guard valid(), image.isValid else { throw CaptureSendRefusal.captureExpired }
+                guard self.presentation.isReady, !self.isClosing, !self.wholeWindowClose,
+                      self.transferringTabIDs.isEmpty else { throw CaptureSendRefusal.windowBusy }
+                self.easelImageDestination?.dismiss()
                 let destinationStore = try EaselEditorViewController.sharedStore(directory:
                     self.store.easelsDirectory(for: profileID))
                 let result = try EaselImagePlacement.place(image, in: destinationStore,
@@ -628,9 +628,9 @@ extension BrowserWindowController {
                 guard let self, valid() else { throw CocoaError(.userCancelled) }
                 return try self.captureNoteDestinations(profileID: profileID)
             } : nil, addToNote: allowsCaptureNoteDestinations ? { [weak self, weak parent] image, target in
-                guard let self, let parent, parent.isKeyWindow, parent.attachedSheet == nil, valid() else {
-                    throw CocoaError(.userCancelled)
-                }
+                guard let self, let parent else { throw CaptureSendRefusal.captureExpired }
+                if let refusal = CaptureSendRefusal.check(parent) { throw refusal }
+                guard valid() else { throw CaptureSendRefusal.captureExpired }
                 try self.placeCaptureInNote(image, target: target, profileID: profileID)
             } : nil, finished: { [weak self, weak browser, weak parent] restoreFocus in
                 guard let self else { return }

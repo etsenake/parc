@@ -48,6 +48,8 @@ enum PeekCardAppearance {
     static let shadowOpacity: Float = 0.3
     static let shadowRadius: CGFloat = 4
     static let backdropOpacity: CGFloat = 0.7
+    static let cornerRadius: CGFloat = 8
+    static let shadowOffsetY: CGFloat = 1
 }
 
 @MainActor

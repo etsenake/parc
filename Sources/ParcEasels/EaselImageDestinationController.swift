@@ -112,7 +112,7 @@ package final class EaselImageDestinationController {
     init(image: EaselImageInput, directory: URL, valid: @escaping () -> Bool, shownPage: @escaping (UUID) -> UUID?,
          saved: @escaping (EaselImagePlacement.Result) -> Void, finished: @escaping () -> Void) throws {
         let data = image.pngData
-        _ = try EaselImagePlacement.pixelSize(data)
+        _ = try EaselImagePlacement.pixelSize(EaselImagePlacement.fitted(data))
         guard let preview = NSImage(data: data) else { throw EaselStoreError.invalidImage }
         self.image = image; self.valid = valid; self.shownPage = shownPage; self.saved = saved; self.finished = finished
         store = try EaselEditorViewController.sharedStore(directory: directory)

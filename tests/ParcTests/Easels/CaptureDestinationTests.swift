@@ -124,6 +124,66 @@ struct CaptureDestinationTests {
         }
     }
 
+    @MainActor
+    private func png(width: Int, height: Int, noise: Bool) throws -> Data {
+        let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let pixels = try #require(bitmap.bitmapData)
+        if noise { arc4random_buf(pixels, bitmap.bytesPerRow * height) } else { memset(pixels, 0x40, bitmap.bytesPerRow * height) }
+        return try #require(bitmap.representation(using: .png, properties: [:]))
+    }
+
+    @MainActor @Test
+    func aCaptureWiderThanAnEaselAllowsLandsScaledToFit() throws {
+        try withStore { store in
+            let data = try png(width: EaselImagePlacement.maximumSide + 600, height: 24, noise: false)
+            var input = EaselImageInput(pngData: data, sourceURL: url, pageTitle: "Wide", valid: { true })
+            input.capturedPage = true
+            let placed = try EaselImagePlacement.place(input, in: store, destinationID: nil, newTitle: "Wide")
+            let item = try #require(placed.session.document.items.first { $0.id == placed.itemID })
+            let stored = try placed.session.assetData(try #require(item.assetID))
+            let size = try EaselImagePlacement.pixelSize(stored)
+            #expect(Int(size.width) <= EaselImagePlacement.maximumSide && size.height >= 1)
+        }
+    }
+
+    @MainActor @Test
+    func aFullPageCaptureTallerThanAnEaselAllowsLandsScaledToFit() throws {
+        try withStore { store in
+            let existing = try store.create(title: "Board")
+            let data = try png(width: 900, height: EaselImagePlacement.maximumSide + 4000, noise: false)
+            var input = EaselImageInput(pngData: data, sourceURL: url, pageTitle: "Library", valid: { true })
+            input.capturedPage = true
+            let placed = try EaselImagePlacement.place(input, in: store, destinationID: existing.document.id, newTitle: "Ignored")
+            let item = try #require(existing.document.items.first { $0.id == placed.itemID })
+            let size = try EaselImagePlacement.pixelSize(try existing.assetData(try #require(item.assetID)))
+            #expect(Int(size.height) <= EaselImagePlacement.maximumSide)
+            #expect(abs(size.width / size.height - 900.0 / Double(EaselImagePlacement.maximumSide + 4000)) < 0.01)
+            #expect(item.kind == .webCard)
+        }
+    }
+
+    @MainActor @Test
+    func aCaptureOverTheByteLimitLandsReencodedToFit() throws {
+        try withStore { store in
+            let data = try png(width: 3300, height: 3300, noise: true)
+            try #require(data.count > EaselStore.maximumAssetBytes)
+            let input = EaselImageInput(pngData: data, sourceURL: url, pageTitle: "Heavy", valid: { true })
+            let placed = try EaselImagePlacement.place(input, in: store, destinationID: nil, newTitle: "Heavy")
+            let item = try #require(placed.session.document.items.first { $0.id == placed.itemID })
+            let stored = try placed.session.assetData(try #require(item.assetID))
+            #expect(stored.count <= EaselStore.maximumAssetBytes)
+            #expect(abs(item.frame.width / item.frame.height - 1) < 0.01)
+        }
+    }
+
+    @MainActor @Test
+    func anImageWithinTheLimitsIsKeptByteForByte() throws {
+        let data = try png()
+        #expect(try EaselImagePlacement.fitted(data) == data)
+    }
+
     @MainActor @Test
     func backgroundSummariesMatchTheStoreListing() throws {
         try withStore { store in

@@ -7,6 +7,25 @@ import ParcNotes
 import ParcEasels
 import ParcLibrary
 
+enum CaptureSendRefusal: LocalizedError, Equatable {
+    case windowNotActive, sheetOpen, captureExpired, windowBusy
+
+    var errorDescription: String? {
+        switch self {
+        case .windowNotActive: return "Parc’s window wasn’t active, so nothing was sent. Click the page once, then try again."
+        case .sheetOpen: return "Close the open dialog first, then send the capture."
+        case .captureExpired: return "This capture’s page changed, so it can’t be sent anymore. Retake it to send it."
+        case .windowBusy: return "Parc is still rearranging this window, so nothing was sent. Try again in a moment."
+        }
+    }
+
+    @MainActor static func check(_ window: NSWindow) -> Self? {
+        if window.attachedSheet != nil { return .sheetOpen }
+        if !window.isKeyWindow, window.isVisible, !window.isMiniaturized { window.makeKey() }
+        return window.isKeyWindow ? nil : .windowNotActive
+    }
+}
+
 @MainActor
 final class PageCaptureController: NSObject {
     enum Mode { case region, viewport, fullPage, portrait }
@@ -98,6 +117,7 @@ final class PageCaptureController: NSObject {
         parentFrame = parent.frame; hostBounds = host.bounds
         guard sourceFrame.width > 1, sourceFrame.height > 1 else { dismiss(restoreFocus: false); return }
         overlay.frame = sourceFrame
+        if let theme = host as? ThemeRendererView { overlay.adoptWindowTheme(theme) }
         overlay.pageSize = lease.viewportSize
         previousMouseMovedEvents = parent.acceptsMouseMovedEvents
         parent.acceptsMouseMovedEvents = true
@@ -121,6 +141,14 @@ final class PageCaptureController: NSObject {
                 self.focusPreview()
             }
         })
+        for name in [Notification.Name.easelDocumentChanged, .easelDocumentRemoved] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.destinationsLoaded, self.state != .finished else { return }
+                    self.refreshDestinations(reload: true)
+                }
+            })
+        }
         InterfaceSoundEffects.shared.preload()
         acquisitionMode = mode
         if mode == .region { overlay.showSelection() } else { capture(mode) }
@@ -354,7 +382,8 @@ final class PageCaptureController: NSObject {
 
     private func perform(_ action: PageCaptureOverlay.Action) {
         guard state == .preview else { return }
-        guard valid(), lease.isValid else { dismiss(restoreFocus: false); return }
+        overlay.clearError()
+        guard valid(), lease.isValid else { overlay.showError(CaptureSendRefusal.captureExpired.localizedDescription); return }
         guard !(libraryWriteInProgress && action.waitsForLibrary) else { return }
         if let savedCapture, library?.contains(savedCapture) != true {
             self.savedCapture = nil; overlay.setLibrarySaved(false)
@@ -421,24 +450,26 @@ final class PageCaptureController: NSObject {
     private func refreshDestinations(reload: Bool = false) {
         guard reload || !destinationsLoaded else { return }
         destinationsLoaded = true
-        if let noteDestinations {
-            do { overlay.setNoteDestinations(try noteDestinations()) }
-            catch { overlay.setNoteDestinations([]); overlay.showError(error.localizedDescription) }
-        }
-        destinationsLoad?.cancel(); destinationsLoad = nil
-        guard destination?.allowsEasels == true else { overlay.setEaselDestinations([]); return }
-        let load = easelDestinations
+        destinationsLoad?.cancel()
+        let load = easelDestinations, notes = noteDestinations, offersEasels = destination?.allowsEasels == true
         destinationsLoad = Task { [weak self] in
+            await Task.yield()
+            guard let self, !Task.isCancelled, self.state != .finished else { return }
+            if let notes {
+                do { self.overlay.setNoteDestinations(try notes()) }
+                catch { self.overlay.setNoteDestinations([]); self.overlay.showError(error.localizedDescription, alert: false) }
+            }
+            guard offersEasels else { self.overlay.setEaselDestinations([]); self.destinationsLoad = nil; return }
             do {
                 let items = try await load()
-                guard let self, !Task.isCancelled, self.state != .finished else { return }
+                guard !Task.isCancelled, self.state != .finished else { return }
                 self.overlay.setEaselDestinations(items)
                 self.destinationsLoad = nil
             } catch {
-                guard let self, !Task.isCancelled, self.state != .finished, !(error is CancellationError),
+                guard !Task.isCancelled, self.state != .finished, !(error is CancellationError),
                       (error as? CocoaError)?.code != .userCancelled else { return }
                 self.overlay.setEaselDestinations([])
-                self.overlay.showError(error.localizedDescription)
+                self.overlay.showError(error.localizedDescription, alert: false)
             }
         }
     }
@@ -456,15 +487,24 @@ final class PageCaptureController: NSObject {
     }
 
     private func placeOnEasel(_ id: UUID?) {
-        guard destination?.allowsEasels == true, let pngData, let parent, parent.isKeyWindow, parent.attachedSheet == nil else { return }
+        guard destination?.allowsEasels == true, let pngData, outputWindowReady() else { return }
         state = .output
         deliver { try self.addToEasel(self.documentInput(pngData), id) }
     }
 
     private func placeInNote(_ target: CaptureNoteTarget) {
-        guard let addToNote, let pngData, let parent, parent.isKeyWindow, parent.attachedSheet == nil else { return }
+        guard let addToNote, let pngData, outputWindowReady() else { return }
         state = .output
         deliver { try addToNote(self.documentInput(pngData), target) }
+    }
+
+    private func outputWindowReady() -> Bool {
+        guard let parent else { return false }
+        if let refusal = CaptureSendRefusal.check(parent) {
+            overlay.showError(refusal.localizedDescription)
+            return false
+        }
+        return true
     }
 
     private func deliver(_ placement: () throws -> Void) {
@@ -477,7 +517,7 @@ final class PageCaptureController: NSObject {
             guard state == .preview else { return }
             refreshDestinations(reload: true)
             overlay.showError((error as? CocoaError)?.code == .userCancelled
-                ? "Parc couldn’t send the capture while this window is busy. Try again in a moment."
+                ? CaptureSendRefusal.captureExpired.localizedDescription
                 : error.localizedDescription)
             focusPreview()
         }
@@ -584,6 +624,7 @@ final class PageCaptureOverlay: NSView {
     var onAction: ((Action) -> Void)?
     var pageSize = CGSize.zero
     let palette = CapturePalette()
+    private let wash = ThemeRendererView()
     private let picture = CapturePictureView()
     private let pictureFrame = CaptureFlippedView()
     private let selectionShade = CaptureSelectionShade()
@@ -645,12 +686,17 @@ final class PageCaptureOverlay: NSView {
         setAccessibilityElement(true); setAccessibilityRole(.group)
         setAccessibilityLabel("Page capture")
         picture.setAccessibilityLabel("Captured image preview")
-        picture.layer?.cornerRadius = 3.5; picture.layer?.masksToBounds = true
-        pictureFrame.wantsLayer = true; pictureFrame.layer?.cornerRadius = CapturePresentation.cornerRadius
+        picture.layer?.cornerRadius = PeekCardAppearance.cornerRadius - CapturePresentation.imageBorder
+        picture.layer?.masksToBounds = true
+        pictureFrame.wantsLayer = true; pictureFrame.layer?.cornerRadius = PeekCardAppearance.cornerRadius
+        pictureFrame.layer?.borderWidth = PeekCardAppearance.borderWidth
+        pictureFrame.layer?.borderColor = PeekCardAppearance.borderColor.cgColor
         pictureFrame.layer?.shadowColor = NSColor.black.cgColor
-        pictureFrame.layer?.shadowOpacity = 0.25; pictureFrame.layer?.shadowRadius = 12
-        pictureFrame.layer?.shadowOffset = NSSize(width: 0, height: 8)
-        addSubview(pictureFrame); addSubview(picture)
+        pictureFrame.layer?.shadowOpacity = PeekCardAppearance.shadowOpacity
+        pictureFrame.layer?.shadowRadius = PeekCardAppearance.shadowRadius
+        pictureFrame.layer?.shadowOffset = NSSize(width: 0, height: PeekCardAppearance.shadowOffsetY)
+        wash.alphaValue = PeekCardAppearance.backdropOpacity; wash.isHidden = true
+        addSubview(wash); addSubview(pictureFrame); addSubview(picture)
         addSubview(selectionShade)
         elementLens.isHidden = true; addSubview(elementLens)
         modeChrome.install(in: self)
@@ -674,7 +720,7 @@ final class PageCaptureOverlay: NSView {
         selecting = true; editing = false; busy = false; selection = nil; start = nil
         elementLens.isHidden = false; elementLens.setTarget(nil, animated: false)
         if entering { CaptureModeMotion.enter(elementLens) }
-        selectionShade.region = nil
+        selectionShade.region = nil; hideWash()
         picture.isHidden = true; pictureFrame.isHidden = true; setPaletteShown(false); spinner.stopAnimation(nil); spinner.isHidden = true
         hint.stringValue = message ?? CaptureModeHint.text(mode: selectionMode, targeted: false, dragging: false)
         hint.isHidden = false; cancel.isHidden = true
@@ -686,7 +732,7 @@ final class PageCaptureOverlay: NSView {
     func showBusy() {
         settlePresentation()
         endSelection()
-        selecting = false; editing = false; busy = true; setPaletteShown(false)
+        selecting = false; editing = false; busy = true; setPaletteShown(false); showWash()
         picture.isHidden = true; pictureFrame.isHidden = true
         hint.stringValue = CaptureModeHint.capturing; hint.isHidden = false
         modeChrome.setBusy(true); cancel.isHidden = modeChrome.isShown
@@ -712,16 +758,18 @@ final class PageCaptureOverlay: NSView {
         let previous = drafting ? picture.image : nil
         picture.image = image; imageSize = NSSize(width: image.width, height: image.height)
         if drafting { drafting = false; CaptureMotion.blendPortrait(picture, previous: previous) }
-        picture.isHidden = false; pictureFrame.isHidden = false; hint.isHidden = true
+        picture.isHidden = false; pictureFrame.isHidden = false; hint.isHidden = true; showWash()
         modeChrome.hide(animated: true); cancel.isHidden = true; spinner.stopAnimation(nil); spinner.isHidden = true
         if shown { palette.reset() }
         setPaletteShown(shown); updateKeyLoop()
         needsLayout = true; needsDisplay = true; window?.invalidateCursorRects(for: self)
     }
-    func showError(_ message: String) {
-        palette.setStatus(message)
+    func showError(_ message: String, alert: Bool = true) {
+        palette.setError(message)
+        if alert { NSSound.beep() }
         CaptureMotion.announce(message, from: self)
     }
+    func clearError() { palette.setError(nil) }
     func showFramePage(_ page: NSView, preview: CGImage?) {
         palette.showFramePage(page)
         showDraft(preview)
@@ -746,7 +794,7 @@ final class PageCaptureOverlay: NSView {
     }
     private func updateAppearance() {
         let dark = CaptureAppearance.dark(effectiveAppearance)
-        pictureFrame.layer?.backgroundColor = CaptureAppearance.imageBackground(dark).cgColor
+        pictureFrame.layer?.backgroundColor = PeekCardAppearance.cardFill(dark: dark).cgColor
         cancel.contentTintColor = .white
         needsDisplay = true
     }
@@ -765,18 +813,31 @@ final class PageCaptureOverlay: NSView {
         lift?.retarget(imageRect)
         placePicture()
         elementLens.frame = bounds; selectionShade.frame = bounds
+        if wash.frame != bounds { wash.frame = bounds; wash.invalidateCoordinates() }
         selectionShade.region = editing ? selection : nil; selectionShade.dimmingRect = editing ? imageRect : nil
         if paletteShown, geometry.palette.width > 0, geometry.palette.height > 0 {
             palette.place(geometry.palette, image: imageRect.insetBy(dx: -CapturePresentation.imageBorder,
                 dy: -CapturePresentation.imageBorder), in: self)
         }
     }
-    override func draw(_ dirtyRect: NSRect) {
-        if selecting && !editing { return }
-        NSColor.black.withAlphaComponent(0.25).setFill()
-        let shade = NSBezierPath(rect: bounds)
-        if let selection { shade.appendRect(selection); shade.windingRule = .evenOdd }
-        shade.fill()
+    func adoptWindowTheme(_ source: ThemeRendererView) {
+        if wash.coordinateSpace !== source { wash.coordinateSpace = source }
+        wash.incognito = source.incognito
+        wash.theme = source.theme
+    }
+    private func showWash() {
+        guard wash.isHidden else { return }
+        wash.isHidden = false
+        guard window != nil, !reduceMotion(), let layer = wash.layer else { return }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0; fade.toValue = Float(PeekCardAppearance.backdropOpacity)
+        fade.duration = PeekStepBack.openDuration
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(fade, forKey: "parc.capture.wash")
+    }
+    private func hideWash() {
+        wash.layer?.removeAnimation(forKey: "parc.capture.wash")
+        wash.isHidden = true
     }
     func endSelection() {
         selecting = false
@@ -1036,6 +1097,8 @@ final class PageCaptureOverlay: NSView {
         picture.keepsRendering = lift != nil
         picture.frame = shown
         pictureFrame.frame = shown.insetBy(dx: -CapturePresentation.imageBorder, dy: -CapturePresentation.imageBorder)
+        pictureFrame.layer?.shadowPath = CGPath(roundedRect: pictureFrame.bounds, cornerWidth: PeekCardAppearance.cornerRadius,
+                                                cornerHeight: PeekCardAppearance.cornerRadius, transform: nil)
     }
     private func settlePresentation() {
         settleLift()

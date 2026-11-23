@@ -18,10 +18,9 @@ extension BrowserWindowController {
     }
 
     func placeCaptureInNote(_ image: EaselImageInput, target: CaptureNoteTarget, profileID: UUID) throws {
-        guard allowsCaptureNoteDestinations, image.isValid, canOpenNoteOverPeek, profileID == activeProfileID,
-              presentation.isReady, !isClosing, !wholeWindowClose, transferringTabIDs.isEmpty else {
-            throw CocoaError(.userCancelled)
-        }
+        guard allowsCaptureNoteDestinations, image.isValid, profileID == activeProfileID else { throw CaptureSendRefusal.captureExpired }
+        guard canOpenNoteOverPeek, presentation.isReady, !isClosing, !wholeWindowClose,
+              transferringTabIDs.isEmpty else { throw CaptureSendRefusal.windowBusy }
         let input = NoteCaptureInput(pngData: image.pngData, sourceURL: image.sourceURL?.absoluteString ?? "",
                                      pageTitle: image.pageTitle, capturedAt: image.capturedAt ?? Date(), captureLayout: image.captureLayout)
         let result = try NoteCaptureDelivery.deliver(input, to: target, notesFolder: NoteFolderPreferences.folder(for: profileID))

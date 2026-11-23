@@ -147,7 +147,7 @@ package enum NoteTheme {
     package static let menuHighlight = adaptive("MenuHighlight", light: rgb(0x2B2659, 0.065), dark: rgb(0xFFFFFF, 0.085))
     package static let menuPressed = adaptive("MenuPressed", light: rgb(0x2B2659, 0.11), dark: rgb(0xFFFFFF, 0.13))
     package static let destructiveInk = adaptive("Destructive", light: rgb(0xD0300F), dark: rgb(0xFF7B5E))
-    static let destructiveHighlight = adaptive("DestructiveHighlight", light: rgb(0xF53714, 0.09), dark: rgb(0xF53714, 0.2))
+    package static let destructiveHighlight = adaptive("DestructiveHighlight", light: rgb(0xF53714, 0.09), dark: rgb(0xF53714, 0.2))
     package static let fieldFill = adaptive("FieldFill", light: rgb(0x060E2B, 0.055), dark: rgb(0xEEEEF6, 0.09))
     package static let keycapFace = adaptive("KeycapFace", light: rgb(0xF1F0F7), dark: rgb(0x2C2A47))
     package static let keycapBase = adaptive("KeycapBase", light: rgb(0xBDBACF), dark: rgb(0x4E4B6E))

@@ -14,6 +14,7 @@ package final class CapturePaletteView: NSView {
     private let mainPage = CapturePalettePage()
     private let framePage = CapturePalettePage()
     private let statusRule = CapturePaletteRule()
+    private let errorBanner = CapturePaletteErrorBanner()
     private let status = NSTextField(wrappingLabelWithString: "")
     private(set) var frameContent: NSView?
 
@@ -32,7 +33,8 @@ package final class CapturePaletteView: NSView {
         status.isHidden = true
         statusRule.isHidden = true
         status.setAccessibilityLabel("Capture status")
-        for view in [search, list, statusRule, status] as [NSView] { mainPage.addSubview(view) }
+        errorBanner.isHidden = true
+        for view in [search, errorBanner, list, statusRule, status] as [NSView] { mainPage.addSubview(view) }
         framePage.isHidden = true
         addSubview(mainPage)
         addSubview(framePage)
@@ -60,10 +62,15 @@ package final class CapturePaletteView: NSView {
 
     package var showsFramePage: Bool { frameContent != nil }
     var statusText: String { status.stringValue }
+    var errorText: String? { errorBanner.isHidden ? nil : errorBanner.text }
 
     package var naturalHeight: CGFloat {
         if let frameContent { return ceil(frameContent.fittingSize.height) }
-        return searchSlot + list.intrinsicContentSize.height + statusHeight
+        return searchSlot + errorSlot + list.intrinsicContentSize.height + statusHeight
+    }
+
+    private var errorSlot: CGFloat {
+        errorBanner.isHidden ? 0 : errorBanner.height(for: CapturePresentation.paletteWidth - NoteTheme.menuInset * 2) + NoteTheme.menuInset
     }
 
     private var searchSlot: CGFloat { NoteTheme.fieldHeight + NoteTheme.menuInset * 2 }
@@ -82,14 +89,27 @@ package final class CapturePaletteView: NSView {
             framePage.frame = bounds
             let inset = NoteTheme.menuInset
             search.frame = NSRect(x: inset, y: inset, width: bounds.width - inset * 2, height: NoteTheme.fieldHeight)
-            let statusHeight = statusHeight
-            list.frame = NSRect(x: 0, y: searchSlot - inset, width: bounds.width,
-                                height: max(0, bounds.height - searchSlot - statusHeight + inset))
+            let statusHeight = statusHeight, errorSlot = errorSlot
+            if errorSlot > 0 {
+                errorBanner.frame = NSRect(x: inset, y: searchSlot - inset / 2, width: bounds.width - inset * 2,
+                                           height: errorSlot - inset)
+            }
+            list.frame = NSRect(x: 0, y: searchSlot - inset + errorSlot, width: bounds.width,
+                                height: max(0, bounds.height - searchSlot - errorSlot - statusHeight + inset))
             statusRule.frame = NSRect(x: 0, y: bounds.height - statusHeight, width: bounds.width, height: 1)
             status.frame = NSRect(x: statusInset, y: bounds.height - statusHeight + 9,
                                   width: bounds.width - statusInset * 2, height: max(0, statusHeight - 18))
             frameContent?.frame = framePage.bounds
         }
+    }
+
+    func setError(_ text: String?) {
+        let value = text ?? ""
+        guard value != (errorText ?? "") else { return }
+        errorBanner.text = value
+        errorBanner.isHidden = value.isEmpty
+        needsLayout = true
+        sizeChanged()
     }
 
     func setStatus(_ text: String?) {
@@ -152,6 +172,67 @@ package final class CapturePaletteView: NSView {
 }
 
 @MainActor
+private final class CapturePaletteErrorBanner: NSView {
+    private static let padding: CGFloat = 9
+    private static let iconSide: CGFloat = 15
+    private static let gap: CGFloat = 7
+    private let icon = NSImageView()
+    private let label = NSTextField(wrappingLabelWithString: "")
+
+    var text: String {
+        get { label.stringValue }
+        set { label.stringValue = newValue; setAccessibilityLabel(newValue); needsLayout = true }
+    }
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.cornerCurve = .continuous
+        icon.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        icon.contentTintColor = NoteTheme.destructiveInk
+        label.font = NoteTheme.menuTitleFont()
+        label.textColor = NoteTheme.destructiveInk
+        label.maximumNumberOfLines = 6
+        addSubview(icon)
+        addSubview(label)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        refreshFill()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+
+    func height(for width: CGFloat) -> CGFloat {
+        let textWidth = max(1, width - Self.padding * 2 - Self.iconSide - Self.gap)
+        let textHeight = ceil(label.sizeThatFits(NSSize(width: textWidth, height: .greatestFiniteMagnitude)).height)
+        return max(textHeight, Self.iconSide) + Self.padding * 2
+    }
+
+    override func layout() {
+        super.layout()
+        icon.frame = NSRect(x: Self.padding, y: Self.padding + 1, width: Self.iconSide, height: Self.iconSide)
+        let x = Self.padding + Self.iconSide + Self.gap
+        label.frame = NSRect(x: x, y: Self.padding, width: max(1, bounds.width - x - Self.padding),
+                             height: max(1, bounds.height - Self.padding * 2))
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshFill()
+    }
+
+    private func refreshFill() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NoteTheme.destructiveHighlight.cgColor
+        }
+    }
+}
+
+@MainActor
 private final class CapturePalettePage: NSView {
     override var isFlipped: Bool { true }
 }
@@ -180,6 +261,11 @@ package final class CapturePalette: NSObject {
     private(set) var rows: [CapturePaletteRow] = []
     private var flyout: Flyout?
     private var pendingFlyoutClose: DispatchWorkItem?
+    private var statusText: String?
+    private var errorText: String?
+    var scheduleSwitch: (TimeInterval, DispatchWorkItem) -> Void = { delay, work in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
     private var placedSize = NSSize.zero
 
     private struct Flyout {
@@ -209,6 +295,8 @@ package final class CapturePalette: NSObject {
 
     var isPresented: Bool { card.isPresented }
     var hasSubmenu: Bool { flyout != nil }
+    var openSubmenu: CapturePaletteSubmenu? { flyout?.submenu }
+    var submenuView: CapturePaletteView? { flyout?.menu }
     var highlightedRow: CapturePaletteRow? {
         view.list.highlightedItem.flatMap { item in rows.first { $0.id == item.id } }
     }
@@ -224,13 +312,26 @@ package final class CapturePalette: NSObject {
     package func reset() {
         closeFlyout(animated: false)
         view.search.text = ""
+        statusText = nil
+        errorText = nil
         view.setStatus(nil)
+        view.setError(nil)
         view.showMainPage()
         view.list.prepare(origin: .keyboard)
         reload(resetHighlight: true)
     }
 
-    package func setStatus(_ text: String?) { view.setStatus(text) }
+    package func setStatus(_ text: String?) {
+        statusText = text
+        view.setStatus(text)
+        flyout?.menu.setStatus(text)
+    }
+
+    package func setError(_ text: String?) {
+        errorText = text
+        view.setError(text)
+        flyout?.menu.setError(text)
+    }
 
     package func focusSearch() { view.search.focus() }
 
@@ -407,7 +508,7 @@ package final class CapturePalette: NSObject {
         }
         let work = DispatchWorkItem { [weak self] in self?.followPointerHighlight() }
         pendingFlyoutClose = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.flyoutSwitchDelay, execute: work)
+        scheduleSwitch(Self.flyoutSwitchDelay, work)
     }
 
     private func followPointerHighlight() {
@@ -453,6 +554,8 @@ package final class CapturePalette: NSObject {
             guard let self, let menu else { return false }
             return self.perform(selector, in: .submenu(submenu), editor: menu.search.textField.currentEditor() as? NSTextView)
         }
+        menu.setStatus(statusText)
+        menu.setError(errorText)
         let panel = NoteFloatingPanel(content: menu)
         panel.maximumHeight = Self.flyoutMaximumHeight
         menu.onSizeChange = { [weak panel] in panel?.contentSizeDidChange(animated: true) }

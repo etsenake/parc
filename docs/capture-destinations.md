@@ -72,6 +72,14 @@ notes fail without a substitute. The note then opens scrolled to the new
 capture with it selected, including from a capture taken in a Peek. Private and
 popup windows offer no notes.
 
+A capture bigger than an Easel accepts (over 16,384 pixels on a side, 80 million
+pixels or 30 MB, as long full-page captures often are) is scaled down to fit
+rather than refused. Any failure shows as a red banner with a warning icon under
+the search field of the menu and of an open Easel or Note list, with a beep, and
+a send that can't happen names its reason there: an inactive window (which Parc
+first tries to make active), an open dialog, a capture whose page changed, or a
+window still rearranging.
+
 A Library save in progress holds only Save to Library and the editing rows;
 sending, copying, saving and Messages stay available. The Easel list is read
 once per capture, in the background, from a light summary of each Easel, and a

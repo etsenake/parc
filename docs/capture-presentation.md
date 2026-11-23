@@ -23,11 +23,14 @@ the palette column, a 16-point gap and margins of 8% of the page's shorter side
 (24 points minimum), capped at 64% of the page width and 72% of its height, and
 never larger than it was captured. The card and palette are centred together
 with the palette on the card's right, top-aligned with it, so the dimmed page
-shows on every side. The overlay's quarter-opacity black shade dims the page
-behind every preview.
+shows on every side. Behind every preview the page gets Peek's wash: a copy of
+the window's theme background at 70%, fading in over Peek's 0.3 seconds (at once
+with Reduce Motion), in light and dark themes alike. Selection mode keeps its own
+quarter-opacity scrim.
 
-The preview uses a four-point frame, seven-point outer corners and 3.5-point
-image corners. The palette is a 273-point Notes menu card (`CapturePaletteView`
+The preview card shares Peek's card values (`PeekCardAppearance`): 8-point
+corners, its near-white or near-black fill showing as a four-point frame, its
+hairline edge and soft 4-point shadow, with 4-point image corners inside. The palette is a 273-point Notes menu card (`CapturePaletteView`
 on `NoteFloatingPanel` with `NoteMenuList` rows) with ten-point page margins and
 image spacing. It prefers the image's right side when it fits, otherwise its
 left, with top/bottom anchoring constrained by the page, and glides to its new

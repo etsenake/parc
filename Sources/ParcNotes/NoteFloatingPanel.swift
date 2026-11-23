@@ -768,7 +768,7 @@ package final class NoteMenuList: NSView, NoteFloatingPanelContent {
         highlightedItem.flatMap { rowFrame(forItemID: $0.id) }
     }
 
-    fileprivate func frame(forItem index: Int) -> NSRect? {
+    func frame(forItem index: Int) -> NSRect? {
         for row in placed { if case .item(let candidate) = row.row, candidate == index { return row.frame } }
         return nil
     }
@@ -866,7 +866,7 @@ package final class NoteMenuList: NSView, NoteFloatingPanelContent {
         setHighlight(origin == .keyboard ? highlighted : nil, animated: true, notify: true, reveal: false)
     }
 
-    fileprivate func pointerDown(at point: NSPoint) {
+    func pointerDown(at point: NSPoint) {
         guard let index = item(at: point), items[index].isEnabled else { pressedIndex = nil; return }
         pressedIndex = index
         highlightFromPointer = true
@@ -881,7 +881,7 @@ package final class NoteMenuList: NSView, NoteFloatingPanelContent {
         refreshPlateColor()
     }
 
-    fileprivate func pointerUp(at point: NSPoint) {
+    func pointerUp(at point: NSPoint) {
         defer { pressedIndex = nil; refreshPlateColor() }
         guard let pressed = pressedIndex, item(at: point) == pressed, items[pressed].isEnabled else { return }
         onActivate?(items[pressed])
